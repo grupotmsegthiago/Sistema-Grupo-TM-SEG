@@ -12,11 +12,16 @@
     "@google/genai": "^0.12.0",
     "@react-google-maps/api": "^2.20.8",
     "@supabase/supabase-js": "^2.97.0",
+    "drizzle-zod": "^0.8.3",
     "html2canvas": "^1.4.1",
     "jspdf": "^2.5.2",
     "lucide-react": "^0.344.0",
+    "p-limit": "^7.3.0",
+    "p-retry": "^7.1.1",
     "react": "^18.2.0",
-    "react-dom": "^18.2.0"
+    "react-dom": "^18.2.0",
+    "zod": "^4.3.6",
+    "zod-validation-error": "^5.0.0"
   },
   "devDependencies": {
     "@types/react": "^18.2.64",
