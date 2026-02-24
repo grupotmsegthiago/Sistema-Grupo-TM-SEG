@@ -974,10 +974,8 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
 📣 *OCORRÊNCIA:* ${locationParts[0].trim().toUpperCase()}
 🏙️ *LOCALIZAÇÃO:* ${cityField.toUpperCase()}
 🗾 *LINK DO GOOGLE:* ${mission.mapLink || 'N/A'}`;
-        const encoded = encodeURIComponent(text);
-        window.open(`https://wa.me/?text=${encoded}`, '_blank');
-        setCopiedId(mission.id || 'OS');
-        setTimeout(() => setCopiedId(null), 2000);
+        
+        await handleCopyToClipboard(text, (mission.id || 'OS'), true);
     };
     
     const handleCopyEmail = (mission: Mission) => {
