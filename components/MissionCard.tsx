@@ -472,6 +472,17 @@ Qualquer dúvida, estamos a disposição.
                 <div className="lg:col-span-1 p-1.5 flex flex-col justify-center text-center border-l border-r border-gray-100 bg-gray-50/30 gap-2 min-w-[100px]">
                     <div className="w-full">{isActive && !isPendingKm ? (<AgingTimelineBar minutes={minutesSinceUpdate} status={mission.status} />) : (<div className="h-6 w-full text-center text-[10px] text-gray-400 font-bold uppercase tracking-wider opacity-50">{isPendingKm ? 'KM PENDENTE' : '-'}</div>)}</div>
                     
+                    {!hideProviderInfo && (
+                        <button
+                            onClick={() => onCopy(mission)}
+                            className="w-full flex items-center justify-center gap-1.5 py-1 px-2 rounded-lg border transition-all duration-200 hover:shadow-sm active:scale-95 bg-[#25D366]/10 text-[#25D366] border-[#25D366]/20 hover:bg-[#25D366] hover:text-white"
+                            title="Enviar Relatório via WhatsApp"
+                        >
+                            <WhatsAppIcon size={11} />
+                            <span className="text-[9px] font-black uppercase tracking-wide">WhatsApp</span>
+                        </button>
+                    )}
+
                     {isDirector && (
                         <div className="flex flex-col gap-1">
                            <div className="bg-white border border-green-200 rounded-lg p-1 shadow-sm">
@@ -536,7 +547,6 @@ Qualquer dúvida, estamos a disposição.
                         )}
                         
                         <button onClick={() => onCopyEmail(mission)} className="w-7 h-7 flex items-center justify-center rounded-md bg-slate-50 text-slate-600 border border-slate-200 transition-all duration-200 hover:bg-slate-600 hover:text-white hover:shadow-sm active:scale-95" title="Copiar Template de E-mail"><Mail size={14} /></button>
-                        <button onClick={() => onCopy(mission)} className="w-7 h-7 flex items-center justify-center rounded-md border transition-all duration-200 hover:shadow-sm active:scale-95 bg-[#25D366]/10 text-[#25D366] border-[#25D366]/20 hover:bg-[#25D366] hover:text-white" title="Enviar Relatório via WhatsApp"><WhatsAppIcon size={14}/></button>
                         {onViewHistory && isDirector && (<button onClick={(e) => { e.stopPropagation(); onViewHistory(mission); }} className="w-7 h-7 flex items-center justify-center rounded-md bg-purple-50 text-purple-600 border border-purple-200 transition-all duration-200 hover:bg-purple-600 hover:text-white hover:shadow-sm active:scale-95" title="Histórico Detalhado (Auditoria)"><FileSearch size={14} /></button>)}</>)}
                         {onPrint && (<button onClick={handlePrintClick} className="w-7 h-7 flex items-center justify-center rounded-md bg-gray-50 text-gray-700 border border-gray-200 transition-all duration-200 hover:bg-gray-700 hover:text-white hover:shadow-sm active:scale-95" title="Imprimir Folha de Missão (PDF) e Copiar Texto"><Printer size={14} /></button>)}
                         {isDirector && (<button onClick={() => onDelete(mission)} className="w-7 h-7 flex items-center justify-center rounded-md bg-red-50 text-red-600 border-red-100 transition-all duration-200 hover:bg-red-600 hover:text-white hover:shadow-sm active:scale-95" title="Excluir Missão"><Trash2 size={14}/></button>)}
