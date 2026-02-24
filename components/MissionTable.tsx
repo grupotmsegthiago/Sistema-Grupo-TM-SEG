@@ -895,18 +895,39 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
   
     const sortedMissions = useMemo(() => {
         return [...filteredMissions].sort((a, b) => {
-            const getPriority = (m: Mission) => {
+            const delayA = getDelayMinutes(a);
+            const delayB = getDelayMinutes(b);
+
+            // Nível 1: Prioridade por ociosidade (missões ativas)
+            // Ocioso ≥60min = topo absoluto | Atenção 30-59min = segundo | Atualizado <30min = terceiro
+            const getAgingTier = (m: Mission, delay: number) => {
+                const status = m.status as MissionStatus;
+                const isActive = status === MissionStatus.IN_TRANSIT || status === MissionStatus.ORIGIN;
+                if (!isActive) return 0;
+                if (delay >= 60) return 3; // OCIOSO → topo
+                if (delay >= 30) return 2; // ATENÇÃO → segundo
+                return 1;                  // ATUALIZADO → terceiro
+            };
+
+            const tierA = getAgingTier(a, delayA);
+            const tierB = getAgingTier(b, delayB);
+
+            if (tierA !== tierB) return tierB - tierA;
+
+            // Nível 2: Dentro do mesmo tier, prioriza por tipo de status
+            const getStatusPriority = (m: Mission) => {
                 const status = m.status as MissionStatus;
                 if (status === MissionStatus.IN_TRANSIT) return 1000;
                 if (status === MissionStatus.ORIGIN) return 900;
                 return 0;
             };
 
-            const priorityA = getPriority(a);
-            const priorityB = getPriority(b);
+            const spA = getStatusPriority(a);
+            const spB = getStatusPriority(b);
+            if (spA !== spB) return spB - spA;
 
-            if (priorityA !== priorityB) return priorityB - priorityA;
-            return getDelayMinutes(b) - getDelayMinutes(a);
+            // Nível 3: Dentro do mesmo status, ordena pelo mais ocioso primeiro
+            return delayB - delayA;
         });
     }, [filteredMissions, getDelayMinutes]);
   
