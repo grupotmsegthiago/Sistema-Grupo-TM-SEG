@@ -74,6 +74,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
   const [tollSource, setTollSource] = useState<string>('');
   const [isAddCostModalOpen, setIsAddCostModalOpen] = useState(false);
   const [memoryLoaded, setMemoryLoaded] = useState(false);
+  const [tollConfirmed, setTollConfirmed] = useState(false);
   
 
   useEffect(() => {
@@ -88,7 +89,6 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
   const fetchHistoricalPatterns = async (currentMission: Mission) => {
       if (!currentMission.client || !currentMission.origin) return;
       try {
-          // REGRA 1: Se a missão JÁ TEM toll_value salvo no banco (mesmo que zero), usa ele.
           if (currentMission.toll_value !== null && currentMission.toll_value !== undefined) {
              setSuggestedToll(currentMission.toll_value);
              if (currentMission.toll_value === 0) {
@@ -97,12 +97,12 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                  setTollSource('VALOR GRAVADO');
              }
              setTollInput(currentMission.toll_value.toLocaleString('pt-BR', { minimumFractionDigits: 2 }));
+             setTollConfirmed(true);
           } else {
-             // REGRA 2: Se NÃO tem toll_value, inicia como ZERO.
-             // PROIBIDO buscar de outras missões (IDs diferentes).
              setSuggestedToll(0);
              setTollSource('AGUARDANDO CONFERÊNCIA');
              setTollInput('0,00');
+             setTollConfirmed(false);
           }
 
           setAiMaturity(0);
@@ -126,6 +126,13 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                  }
                  if (details.providerTableId) {
                      setManualProviderTableId(details.providerTableId);
+                 }
+                 if (details.tollValue !== undefined && details.tollValue !== null && currentMission.toll_value === null) {
+                     const memToll = Number(details.tollValue);
+                     setTollInput(memToll.toLocaleString('pt-BR', { minimumFractionDigits: 2 }));
+                     setSuggestedToll(memToll);
+                     setTollSource('MEMÓRIA (Rota Anterior)');
+                     setTollConfirmed(false);
                  }
                  setMemoryLoaded(true);
              } catch (e) { console.error("Erro ao ler memória:", e); }
@@ -214,6 +221,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
   const handleTollChange = (val: string) => {
       setTollInput(val);
       setTollSource('MANUAL (Editando...)');
+      setTollConfirmed(true);
   };
 
   const handleManualInput = (setter: any, val: string) => {
@@ -259,12 +267,12 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
           const { error } = await supabase.from('missions').update(payload).eq('id', mission.id);
           if (error) throw error;
           
-          // MEMÓRIA EVOLUTIVA
           if (approve && manualClientTableId) {
               const routeKey = `${mission.client}|${mission.origin}|${mission.destination}`.toUpperCase();
               const details = JSON.stringify({
                   clientTableId: manualClientTableId,
                   providerTableId: manualProviderTableId || null,
+                  tollValue: toll,
                   routeKey
               });
               
@@ -673,21 +681,23 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                             />
                             <Landmark size={20} className="text-gray-300 ml-2" />
                             
-                            {/* ESTADO DO PEDÁGIO: AVISOS CRÍTICOS */}
-                            {isSavedZero && (
+                            {tollConfirmed && (
                                 <div className="flex items-center gap-1.5 text-[10px] font-black text-white bg-green-600 px-2 py-1 rounded-lg border border-green-700 ml-2">
-                                    <CheckCircle2 size={12}/> {tollSource}
+                                    <CheckCircle2 size={12}/> {tollSource || 'CONFIRMADO'}
                                 </div>
                             )}
                             
-                            {isAwaitingCheck && (
-                                <div className="flex items-center gap-1.5 text-[10px] font-black text-orange-700 bg-orange-50 px-2 py-1 rounded-lg border border-orange-200 ml-2 animate-pulse">
-                                    <AlertTriangle size={12}/> {tollSource}
-                                </div>
+                            {!tollConfirmed && (
+                                <button 
+                                    onClick={() => { setTollConfirmed(true); setTollSource(`CONFERIDO (R$ ${tollInput})`); }}
+                                    className="flex items-center gap-1.5 text-[10px] font-black text-white bg-orange-500 hover:bg-orange-600 px-3 py-1.5 rounded-lg border border-orange-600 ml-2 animate-pulse cursor-pointer transition-colors"
+                                >
+                                    <AlertTriangle size={12}/> CONFIRMAR PEDÁGIO
+                                </button>
                             )}
 
-                            {tollSource === 'VALOR GRAVADO' && (
-                                <div className="flex items-center gap-1.5 text-[10px] font-black text-indigo-600 bg-indigo-50 px-2 py-1 rounded-lg border border-indigo-100 ml-2">
+                            {tollSource === 'MEMÓRIA (Rota Anterior)' && !tollConfirmed && (
+                                <div className="flex items-center gap-1.5 text-[10px] font-black text-purple-600 bg-purple-50 px-2 py-1 rounded-lg border border-purple-200 ml-2">
                                     <BrainCircuit size={12} className="fill-current"/> {tollSource}
                                 </div>
                             )}
@@ -718,8 +728,8 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                 <button onClick={() => handleUpdate(false)} disabled={isUpdating} className="px-6 py-3 bg-white text-slate-900 border border-slate-200 hover:bg-slate-50 rounded-xl text-xs font-black uppercase flex items-center justify-center gap-2 transition-all shadow-sm active:scale-95 h-12">
                                     {isUpdating ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />} Salvar Ajustes
                                 </button>
-                                <button onClick={() => handleUpdate(true)} disabled={isUpdating || isZeroCostError} className={`px-8 py-3 rounded-xl font-black uppercase text-xs shadow-lg flex items-center justify-center gap-2 transition-all active:scale-95 h-12 ${isZeroCostError ? 'bg-gray-400 cursor-not-allowed text-gray-200' : 'bg-blue-600 hover:bg-blue-700 text-white shadow-blue-200'}`}>
-                                    {isUpdating ? <Loader2 size={16} className="animate-spin" /> : <CheckCircle2 size={16} />} Finalizar & Aprovar Faturamento
+                                <button onClick={() => handleUpdate(true)} disabled={isUpdating || isZeroCostError || !tollConfirmed} className={`px-8 py-3 rounded-xl font-black uppercase text-xs shadow-lg flex items-center justify-center gap-2 transition-all active:scale-95 h-12 ${(isZeroCostError || !tollConfirmed) ? 'bg-gray-400 cursor-not-allowed text-gray-200' : 'bg-blue-600 hover:bg-blue-700 text-white shadow-blue-200'}`}>
+                                    {isUpdating ? <Loader2 size={16} className="animate-spin" /> : <CheckCircle2 size={16} />} {!tollConfirmed ? 'Confirme o Pedágio' : 'Finalizar & Aprovar Faturamento'}
                                 </button>
                             </div>
                         </div>
