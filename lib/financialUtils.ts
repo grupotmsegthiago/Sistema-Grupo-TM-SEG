@@ -429,29 +429,25 @@ export const calculateMissionFinancials = (
     const serviceSubtotal = cBase + cExtraKmVal + cExtraHrVal;
     
     // --- INTELIGÊNCIA DE MEMÓRIA (CACHE DE ASSERTIVIDADE) ---
-    // Se a missão já foi validada/paga/recebida anteriormente (histórico),
-    // os valores do banco devem prevalecer sobre o cálculo dinâmico.
     const hasHistory = (mission as any).is_validated === true || (mission as any).billing_status === 'VALIDADO';
-    const historicalTotalRevenue = (mission as any).validated_revenue || 0;
-    const historicalTotalCost = (mission as any).validated_cost || 0;
     
     let iblFee = 0;
     if (manualTableOverrides?.forceIblFee) {
         iblFee = serviceSubtotal * 0.12;
     }
 
-    // CORREÇÃO: O totalRevenue deve ser a SOMA de (Base + Extras) + IBL + Pedágio
-    // Na imagem, Base(730) + ExtraKm(55,49) + ExtraHr(244,20) = 1.029,69
-    // 1.029,69 + 675,75 (Pedágio) = 1.705,44 (Sem IBL)
-    // No entanto, o valor exibido 1.461,24 sugere que o pedágio já está incluso em algum lugar ou a soma está ignorando algo.
-    // Ajustando para garantir que: TOTAL = SERVIÇO (Base + Extras) + PEDÁGIO.
+    // CORREÇÃO FINAL MATEMÁTICA:
+    // O Valor Final deve ser a soma exata dos componentes: (Base + Extra KM + Extra Hora) + IBL + Pedágio.
     let totalRevenue = serviceSubtotal + iblFee + tollValue;
     let totalCost = pBase + pExtraKmVal + pExtraHrVal + tollValue;
 
-    // Se o valor salvo no banco já for o TOTAL (Serviço + Pedágio), não somamos pedágio de novo.
-    if (hasHistory && historicalTotalRevenue > 0) {
-        totalRevenue = historicalTotalRevenue;
-        totalCost = historicalTotalCost;
+    // Se houver histórico de faturamento VALIDADO, usamos os valores de serviço salvos e SOMAMOS o pedágio.
+    const dbRevenueService = (mission as any).revenue_value;
+    const dbCostService = (mission as any).cost_value;
+
+    if (hasHistory && dbRevenueService !== undefined && dbRevenueService !== null && dbRevenueService > 0) {
+        totalRevenue = dbRevenueService + tollValue;
+        totalCost = (dbCostService || 0) + tollValue;
     }
     // ---------------------------------------------------------
 

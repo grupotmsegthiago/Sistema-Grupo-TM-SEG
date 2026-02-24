@@ -251,12 +251,18 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
       });
   }, [mission, clientTables, providerTables, currentTime, manualClientTableId, manualProviderTableId, iblEnabled, tollInput, customProviderKm, customProviderHour, customClientKm, customClientHour, customClientBase, customProviderBase]);
 
-  useEffect(() => {
+    useEffect(() => {
       if (financialData && mission) {
           // Se os dados NÃO foram carregados do banco (é um novo cálculo), atualiza os inputs com a projeção
           if (!isLoadedFromDB) {
               setRevenueInput(financialData.client.total.toLocaleString('pt-BR', {minimumFractionDigits: 2}));
               setCostInput(financialData.provider.total.toLocaleString('pt-BR', {minimumFractionDigits: 2}));
+          } else {
+              // Se veio do banco, garantimos que o input reflita o total real (Serviço + Pedágio)
+              const dbRevTotal = (mission.revenue_value || 0) + (mission.toll_value || 0);
+              const dbCostTotal = (mission.cost_value || 0) + (mission.toll_value || 0);
+              setRevenueInput(dbRevTotal.toLocaleString('pt-BR', {minimumFractionDigits: 2}));
+              setCostInput(dbCostTotal.toLocaleString('pt-BR', {minimumFractionDigits: 2}));
           }
           
           if (!manualProviderTableId && financialData.provider.tableId && !memoryLoaded) {
@@ -266,7 +272,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
               setManualClientTableId(financialData.client.tableId);
           }
       }
-  }, [financialData, memoryLoaded, isLoadedFromDB]); 
+    }, [financialData, memoryLoaded, isLoadedFromDB, mission]); 
 
   // CORREÇÃO AUTOMÁTICA DE CONSISTÊNCIA removida para inputs manuais, mas mantemos
   // a lógica de que se o usuário mudar algo, isLoadedFromDB vira false.
