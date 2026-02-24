@@ -166,7 +166,7 @@ const DailyGoalThermometer: React.FC<Props> = ({ viewPeriod = 'TODAY', customSta
                       viewPeriod === 'MONTH' ? 'Meta Mensal' : 'Faturamento Período';
 
     return (
-        <div className="group perspective-1000 w-full max-w-lg ml-auto mr-auto lg:mr-0">
+        <div className="group perspective-1000 w-full max-w-lg mx-auto">
             <div className="bg-white rounded-[35px] p-5 border-x border-t border-gray-100 border-b-4 border-gray-200/60 shadow-[0_20px_50px_rgba(0,0,0,0.06)] w-full transition-all duration-700 hover:shadow-[0_25px_60px_rgba(0,0,0,0.1)] hover:-translate-y-0.5 transform hover:rotate-0.5">
                 
                 <div className="flex justify-between items-center mb-4">
