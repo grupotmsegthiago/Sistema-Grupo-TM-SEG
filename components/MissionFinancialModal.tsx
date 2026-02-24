@@ -196,15 +196,10 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
               const dbToll = mRes.data.toll_value !== null ? mRes.data.toll_value : 0;
               setTollInput(dbToll.toLocaleString('pt-BR', {minimumFractionDigits: 2}));
               
-              // Se já existem valores salvos e a missão foi aprovada, carrega como verdade absoluta
-              // Se tiver revenue_value > 0 mesmo sem aprovação, também carregamos para não perder trabalho em progresso
+              // Os valores de revenue e cost do banco são usados apenas como referência.
+              // O total exibido será SEMPRE recalculado dinamicamente (Base + Extras + Pedágio)
+              // pelo useEffect que observa financialData.
               if ((mRes.data.revenue_value && mRes.data.revenue_value > 0) || (mRes.data.cost_value && mRes.data.cost_value > 0)) {
-                  // O input deve exibir o TOTAL (Serviço + Pedágio)
-                  const savedTotalRev = (mRes.data.revenue_value || 0) + dbToll;
-                  const savedTotalCost = (mRes.data.cost_value || 0) + dbToll;
-                  
-                  setRevenueInput(savedTotalRev.toLocaleString('pt-BR', {minimumFractionDigits: 2}));
-                  setCostInput(savedTotalCost.toLocaleString('pt-BR', {minimumFractionDigits: 2}));
                   setIsLoadedFromDB(true);
               } else {
                   setIsLoadedFromDB(false);
@@ -253,17 +248,10 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
 
     useEffect(() => {
       if (financialData && mission) {
-          // Se os dados NÃO foram carregados do banco (é um novo cálculo), atualiza os inputs com a projeção
-          if (!isLoadedFromDB) {
-              setRevenueInput(financialData.client.total.toLocaleString('pt-BR', {minimumFractionDigits: 2}));
-              setCostInput(financialData.provider.total.toLocaleString('pt-BR', {minimumFractionDigits: 2}));
-          } else {
-              // Se veio do banco, garantimos que o input reflita o total real (Serviço + Pedágio)
-              const dbRevTotal = (mission.revenue_value || 0) + (mission.toll_value || 0);
-              const dbCostTotal = (mission.cost_value || 0) + (mission.toll_value || 0);
-              setRevenueInput(dbRevTotal.toLocaleString('pt-BR', {minimumFractionDigits: 2}));
-              setCostInput(dbCostTotal.toLocaleString('pt-BR', {minimumFractionDigits: 2}));
-          }
+          // O total SEMPRE vem do cálculo dinâmico (soma dos componentes visíveis)
+          // Isso garante que Base + Extra KM + Extra Hora + Pedágio = Total exibido.
+          setRevenueInput(financialData.client.total.toLocaleString('pt-BR', {minimumFractionDigits: 2}));
+          setCostInput(financialData.provider.total.toLocaleString('pt-BR', {minimumFractionDigits: 2}));
           
           if (!manualProviderTableId && financialData.provider.tableId && !memoryLoaded) {
               setManualProviderTableId(financialData.provider.tableId);
@@ -272,7 +260,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
               setManualClientTableId(financialData.client.tableId);
           }
       }
-    }, [financialData, memoryLoaded, isLoadedFromDB, mission]); 
+    }, [financialData, memoryLoaded, mission]); 
 
   // CORREÇÃO AUTOMÁTICA DE CONSISTÊNCIA removida para inputs manuais, mas mantemos
   // a lógica de que se o usuário mudar algo, isLoadedFromDB vira false.

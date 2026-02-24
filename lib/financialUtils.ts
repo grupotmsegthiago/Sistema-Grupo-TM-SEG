@@ -428,28 +428,17 @@ export const calculateMissionFinancials = (
 
     const serviceSubtotal = cBase + cExtraKmVal + cExtraHrVal;
     
-    // --- INTELIGÊNCIA DE MEMÓRIA (CACHE DE ASSERTIVIDADE) ---
-    const hasHistory = (mission as any).is_validated === true || (mission as any).billing_status === 'VALIDADO';
-    
     let iblFee = 0;
     if (manualTableOverrides?.forceIblFee) {
         iblFee = serviceSubtotal * 0.12;
     }
 
-    // CORREÇÃO FINAL MATEMÁTICA:
-    // O Valor Final deve ser a soma exata dos componentes: (Base + Extra KM + Extra Hora) + IBL + Pedágio.
-    let totalRevenue = serviceSubtotal + iblFee + tollValue;
-    let totalCost = pBase + pExtraKmVal + pExtraHrVal + tollValue;
-
-    // Se houver histórico de faturamento VALIDADO, usamos os valores de serviço salvos e SOMAMOS o pedágio.
-    const dbRevenueService = (mission as any).revenue_value;
-    const dbCostService = (mission as any).cost_value;
-
-    if (hasHistory && dbRevenueService !== undefined && dbRevenueService !== null && dbRevenueService > 0) {
-        totalRevenue = dbRevenueService + tollValue;
-        totalCost = (dbCostService || 0) + tollValue;
-    }
-    // ---------------------------------------------------------
+    // TOTAL = SOMA MATEMÁTICA PURA dos componentes calculados
+    // (Base + Extra KM + Extra Hora) + IBL + Pedágio = Valor Final
+    // O total SEMPRE reflete os componentes visíveis na tela. Valores do banco
+    // são gerenciados pelo frontend (MissionFinancialModal) via isLoadedFromDB.
+    const totalRevenue = serviceSubtotal + iblFee + tollValue;
+    const totalCost = pBase + pExtraKmVal + pExtraHrVal + tollValue;
 
     return {
         realTraveledKm, durationHours, tollValue, isCompleted: isFinished, hasValidKms,
