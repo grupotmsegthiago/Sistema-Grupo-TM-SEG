@@ -1,0 +1,8 @@
+{
+  "name": "22/12 GRUPO TM SEG - ATUALIZADO 22/12",
+  "description": "Sistema profissional de gerenciamento de missões de escolta do Grupo TMSEG.",
+  "requestFramePermissions": [
+    "geolocation",
+    "camera"
+  ]
+}
