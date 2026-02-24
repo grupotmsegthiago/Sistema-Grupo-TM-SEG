@@ -411,7 +411,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                 <select 
                                     className="w-full p-2 bg-gray-50 border border-gray-200 rounded-lg text-xs font-bold text-gray-700 uppercase outline-none focus:border-blue-500"
                                     value={manualClientTableId || ''}
-                                    onChange={(e) => { setManualClientTableId(e.target.value); setIsLoadedFromDB(false); }}
+                                    onChange={(e) => { setManualClientTableId(e.target.value); }}
                                 >
                                     <option value="">Automático (IA Detectando)</option>
                                     {clientTables.map(t => (
@@ -513,7 +513,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                     <div className="flex items-center gap-2">
                                         <span className="text-xs font-bold text-blue-600">{financialData.iblFee > 0 ? formatCurrency(financialData.iblFee) : '---'}</span>
                                         <button 
-                                            onClick={() => { setIblEnabled(!iblEnabled); setIsLoadedFromDB(false); }} 
+                                            onClick={() => { setIblEnabled(!iblEnabled); }} 
                                             className={`w-8 h-4 rounded-full transition-colors relative ${iblEnabled ? 'bg-blue-600' : 'bg-gray-300'}`}
                                         >
                                             <div className={`absolute top-0.5 left-0.5 w-3 h-3 bg-white rounded-full transition-transform ${iblEnabled ? 'translate-x-4' : ''}`}></div>
@@ -535,7 +535,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                     <select 
                                         className={`w-full p-2 bg-gray-50 border rounded-lg text-xs font-bold text-gray-700 uppercase outline-none focus:border-red-500 ${isZeroCostError ? 'border-red-300 bg-red-50 text-red-900 animate-pulse' : 'border-gray-200'}`}
                                         value={manualProviderTableId || ''}
-                                        onChange={(e) => { setManualProviderTableId(e.target.value); setIsLoadedFromDB(false); }}
+                                        onChange={(e) => { setManualProviderTableId(e.target.value); }}
                                         disabled={mission.is_same_os}
                                     >
                                         <option value="">{mission.is_same_os ? 'Custo Zero (Mesma OS)' : 'IA Detectando Melhor Custo...'}</option>
