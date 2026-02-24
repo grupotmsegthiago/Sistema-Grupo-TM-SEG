@@ -547,6 +547,18 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
                 showNotification('Relatório Copiado', 'Monitoramento formatado salvo e copiado.', 'success');
             } catch (err) { console.warn(err); }
 
+            // Broadcast da atualização para outros usuários via Supabase Realtime
+            await supabase.channel('mission-updates').send({
+                type: 'broadcast',
+                event: 'mission_updated',
+                payload: {
+                    missionId: mission.id,
+                    status: finalStatus,
+                    updatedBy: currentUser.name,
+                    changeType: finalDescription || 'Atualização de Status'
+                }
+            });
+
             onSuccess(report);
         } catch (error: any) { alert(error.message); } finally { setIsUpdating(false); }
     };
