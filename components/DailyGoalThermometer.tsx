@@ -103,16 +103,14 @@ const DailyGoalThermometer: React.FC<Props> = ({ viewPeriod = 'TODAY', customSta
     const currentRevenue = useMemo(() => {
         return missions.reduce((acc, m) => {
             const isTerminal = [MissionStatus.COMPLETED, MissionStatus.CANCELLED, MissionStatus.REFUSED].includes(m.status as MissionStatus);
-            // HIERARQUIA DE VALOR: Prioridade para valor auditado (billing_approved) OU status terminal
             const isAudited = m.billing_approved;
+            const hasBeenVerified = !!m.billing_verified_by;
 
-            // 1. Se a missão está CONCLUÍDA/CANCELADA OU AUDITADA: Usa valor gravado no banco (revenue_value).
-            if (isTerminal || isAudited) {
+            if (isTerminal || isAudited || hasBeenVerified) {
                  const storedVal = (m.revenue_value || 0) + (m.toll_value || 0);
                  return acc + storedVal;
             }
 
-            // 2. Se a missão está ATIVA (Em Viagem, Origem, Agendada) e NÃO auditada: Usa cálculo projetado em tempo real.
             const missionObj: Mission = {
                 ...m,
                 startKm: m.start_km,

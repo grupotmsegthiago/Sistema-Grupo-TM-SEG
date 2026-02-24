@@ -143,41 +143,37 @@ const MissionCardComponent: React.FC<MissionCardProps> = ({
         return calculateMissionFinancials(mission, clientTables, providerTables, client, currentTime);
     }, [mission, clientTables, providerTables, clientsData, isDirector, currentTime]);
 
+    const hasBeenVerified = !!(mission as any).billing_verified_by;
+
     const displayRevenue = useMemo(() => {
         const dbToll = mission.toll_value || 0;
         const storedValue = (mission.revenue_value || 0) + dbToll;
         
-        // HIERARQUIA 1: Se o faturamento foi auditado e aprovado, o valor do banco é a verdade absoluta.
-        if (mission.billing_approved) {
+        if (mission.billing_approved || hasBeenVerified) {
             return storedValue;
         }
         
-        // HIERARQUIA 2: Se não aprovado, exibe a projeção calculada em tempo real (mesmo se concluída)
-        // Isso garante que mudanças nas tabelas ou recálculos sejam vistos antes da aprovação.
         if (financials) {
             return financials.client.total;
         }
 
-        // Fallback
         return storedValue;
-    }, [mission.revenue_value, mission.toll_value, mission.billing_approved, financials]);
+    }, [mission.revenue_value, mission.toll_value, mission.billing_approved, hasBeenVerified, financials]);
 
     const displayCost = useMemo(() => {
         const dbToll = mission.toll_value || 0;
         const storedValue = (mission.cost_value || 0) + dbToll;
         
-        // HIERARQUIA 1: Se auditado/aprovado, usa o valor do banco.
-        if (mission.billing_approved) {
+        if (mission.billing_approved || hasBeenVerified) {
             return storedValue;
         }
 
-        // HIERARQUIA 2: Projeção calculada.
         if (financials) {
             return financials.provider.total;
         }
         
         return storedValue;
-    }, [mission.cost_value, mission.toll_value, mission.billing_approved, financials]);
+    }, [mission.cost_value, mission.toll_value, mission.billing_approved, hasBeenVerified, financials]);
 
     const isActive = !isTerminal;
 
@@ -262,10 +258,8 @@ Qualquer dúvida, estamos a disposição.
         };
     }, [mission.currentLocation]);
 
-    // Identifica se é valor ajustado (salvo) ou projetado
-    // Considera "Ajustado" se a missão estiver aprovada/auditada
-    const isAdjustedRevenue = mission.billing_approved;
-    const isAdjustedCost = mission.billing_approved;
+    const isAdjustedRevenue = mission.billing_approved || hasBeenVerified;
+    const isAdjustedCost = mission.billing_approved || hasBeenVerified;
     
     // Calcula o progresso visual para a barra (0 a 100)
     const progressVisual = Math.min(100, Math.max(0, mission.progress || 0));
@@ -475,20 +469,25 @@ Qualquer dúvida, estamos a disposição.
                     {isDirector && (
                         <div className="flex flex-col gap-1">
                            <div className="bg-white border border-green-200 rounded-lg p-1 shadow-sm">
-                               <p className="text-[7px] font-black text-green-500 uppercase tracking-tighter leading-none mb-0.5">Faturamento {isAdjustedRevenue ? '(Auditado)' : '(Projetado)'}</p>
+                               <p className="text-[7px] font-black text-green-500 uppercase tracking-tighter leading-none mb-0.5">Faturamento {mission.billing_approved ? '(Auditado)' : hasBeenVerified ? '(Salvo)' : '(Projetado)'}</p>
                                <p className="text-[10px] font-black text-green-700 font-mono leading-none tracking-tighter">{formatCurrency(displayRevenue)}</p>
                            </div>
 
                            <div className="bg-white border border-red-200 rounded-lg p-1 shadow-sm">
-                               <p className="text-[7px] font-black text-red-400 uppercase tracking-tighter leading-none mb-0.5">Fornecedor {isAdjustedCost ? '(Auditado)' : '(Projetado)'}</p>
+                               <p className="text-[7px] font-black text-red-400 uppercase tracking-tighter leading-none mb-0.5">Fornecedor {mission.billing_approved ? '(Auditado)' : hasBeenVerified ? '(Salvo)' : '(Projetado)'}</p>
                                <p className="text-[10px] font-black text-red-600 font-mono leading-none tracking-tighter">{formatCurrency(displayCost)}</p>
                            </div>
 
-                           <div className={`w-full rounded-lg border p-1 flex flex-col items-center justify-center gap-0.5 shadow-sm transition-all ${mission.billing_approved ? 'bg-blue-50 border-blue-200' : 'bg-orange-50 border-orange-200'}`}>
+                           <div className={`w-full rounded-lg border p-1 flex flex-col items-center justify-center gap-0.5 shadow-sm transition-all ${mission.billing_approved ? 'bg-blue-50 border-blue-200' : hasBeenVerified ? 'bg-green-50 border-green-200' : 'bg-orange-50 border-orange-200'}`}>
                               {mission.billing_approved ? (
                                   <>
                                       <ShieldCheck size={12} className="text-blue-600" />
                                       <span className="text-[7px] font-black text-blue-700 uppercase leading-none">Auditado</span>
+                                  </>
+                              ) : hasBeenVerified ? (
+                                  <>
+                                      <ShieldCheck size={12} className="text-green-600" />
+                                      <span className="text-[7px] font-black text-green-700 uppercase leading-none">Salvo</span>
                                   </>
                               ) : (
                                   <>
