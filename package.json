@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "npx tsx server/index.ts",
-    "build": "vite build",
+    "build": "vite build && node build-server.mjs",
     "preview": "vite preview"
   },
   "dependencies": {
