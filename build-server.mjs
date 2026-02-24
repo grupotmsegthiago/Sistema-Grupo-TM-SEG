@@ -27,7 +27,7 @@ for (const entry of frontendFiles) {
 console.log('Frontend files moved to dist/public/');
 
 execSync(
-  'npx esbuild server/index.ts --bundle --platform=node --format=cjs --outfile=dist/index.cjs --packages=external',
+  'npx esbuild server/index.ts --bundle --platform=node --format=cjs --outfile=dist/index.cjs --packages=external --external:./vite --external:../vite.config',
   { stdio: 'inherit' }
 );
 
