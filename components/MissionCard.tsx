@@ -305,19 +305,10 @@ Qualquer dúvida, estamos a disposição.
                 
                 <div className="lg:col-span-3 p-3 flex flex-col justify-center bg-gray-50/20 border-r border-gray-100">
                     <div className="flex flex-col gap-3">
-                        <div className="flex flex-wrap items-center gap-2">
-                            <span className="text-[10px] font-black text-slate-800 bg-white px-2 py-1 rounded border border-slate-200 uppercase tracking-widest shadow-sm flex-1 min-w-0 truncate">
+                        <div className="flex flex-wrap gap-2">
+                            <span className="text-[10px] font-black text-slate-800 bg-white px-2 py-1 rounded border border-slate-200 uppercase tracking-widest shadow-sm">
                                 <Building2 size={10} className="inline mr-1 text-red-600" /> {mission.client}
                             </span>
-                            {!hideProviderInfo && (
-                                <button
-                                    onClick={() => onUpdate(mission)}
-                                    className={`shrink-0 w-7 h-7 flex items-center justify-center rounded-md border transition-all duration-200 hover:shadow-sm active:scale-95 ${canEditMission ? 'bg-indigo-50 text-indigo-600 border-indigo-100 hover:bg-indigo-600 hover:text-white' : 'bg-gray-50 text-gray-400 border-gray-100 hover:bg-gray-200 hover:text-gray-600'}`}
-                                    title={canEditMission ? "Editar / Atualizar Missão" : "Visualizar Detalhes"}
-                                >
-                                    {canEditMission ? <Pencil size={12}/> : <Eye size={12}/>}
-                                </button>
-                            )}
                         </div>
                         
                         <div className="space-y-2.5 pl-1">
@@ -535,6 +526,7 @@ Qualquer dúvida, estamos a disposição.
                     <div className="grid grid-cols-3 gap-1.5 w-fit justify-items-center"><button onClick={() => onViewMap(mission)} className="w-7 h-7 flex items-center justify-center rounded-md bg-blue-50 text-blue-600 border border-blue-100 transition-all duration-200 hover:bg-blue-600 hover:text-white hover:shadow-sm active:scale-95" title="Abrir Status (Modal Interno)"><Map size={14} /></button>
                         {!hideProviderInfo && (<>
                         <button onClick={(e) => { e.stopPropagation(); if (mission.mapLink) window.open(mission.mapLink, '_blank'); else alert('Nenhuma localização salva nesta OS.'); }} className={`w-7 h-7 flex items-center justify-center rounded-md border transition-all duration-200 hover:shadow-sm active:scale-95 ${mission.mapLink ? 'bg-orange-50 text-orange-600 border-orange-100 hover:bg-orange-600 hover:text-white' : 'bg-gray-50 text-gray-300 border-gray-100 cursor-not-allowed'}`} title={mission.mapLink ? "Abrir Última Localização (Google Maps)" : "Sem localização salva"}><MapPin size={14} /></button>
+                        <button onClick={() => onUpdate(mission)} className={`w-7 h-7 flex items-center justify-center rounded-md border transition-all duration-200 hover:shadow-sm active:scale-95 ${canEditMission ? 'bg-indigo-50 text-indigo-600 border-indigo-100 hover:bg-indigo-600 hover:text-white' : 'bg-gray-50 text-gray-400 border-gray-100 hover:bg-gray-200 hover:text-gray-600'}`} title={canEditMission ? "Editar Missão" : "Visualizar Detalhes"}>{canEditMission ? <Pencil size={14}/> : <Eye size={14}/>}</button>
                         
                         {isDirector && onOpenFinancials && (
                             <button onClick={() => onOpenFinancials(mission)} className={`w-7 h-7 flex items-center justify-center rounded-md transition-all duration-200 hover:shadow-sm active:scale-95 ${mission.billing_approved ? 'bg-blue-600 text-white border-blue-700' : 'bg-green-50 text-green-700 border-green-200 hover:bg-green-600 hover:text-white'}`} title={mission.billing_approved ? "Faturamento Aprovado - Visualizar" : "Conferência e Aprovação de Faturamento"}>
