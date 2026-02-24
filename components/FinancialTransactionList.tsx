@@ -192,7 +192,7 @@ const FinancialTransactionList: React.FC = () => {
                       {id: 'YESTERDAY', label: 'Ontem'},
                       {id: 'LAST_WEEK', label: 'Semana'},
                       {id: 'MONTH', label: 'Mês Atual'},
-                      {id: 'CUSTOM', label: 'Filtro...'},
+                      {id: 'CUSTOM', label: 'Personalizado'},
                       {id: 'ALL', label: 'Tudo'}
                   ].map(p => (
                       <button 

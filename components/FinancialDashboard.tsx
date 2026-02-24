@@ -19,9 +19,11 @@ const FinancialDashboard: React.FC = () => {
   const [accounts, setAccounts] = useState<FinancialAccount[]>([]);
   const [categories, setCategories] = useState<FinancialCategory[]>([]);
   const [loading, setLoading] = useState(true);
-  const [period, setPeriod] = useState<'MONTH' | 'YEAR' | 'ALL'>('MONTH');
+  const [period, setPeriod] = useState<'MONTH' | 'YEAR' | 'ALL' | 'CUSTOM'>('MONTH');
+  const [customStartDate, setCustomStartDate] = useState(new Date().toISOString().split('T')[0]);
+  const [customEndDate, setCustomEndDate] = useState(new Date().toISOString().split('T')[0]);
 
-  useEffect(() => { fetchData(); }, [period]);
+  useEffect(() => { fetchData(); }, [period, customStartDate, customEndDate]);
 
   const fetchData = async () => {
     setLoading(true);
@@ -53,6 +55,10 @@ const FinancialDashboard: React.FC = () => {
         if (period === 'ALL') return true;
         const d = new Date(t.due_date);
         if (period === 'MONTH') return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
+        if (period === 'CUSTOM') {
+            const transDate = t.due_date.split('T')[0];
+            return transDate >= customStartDate && transDate <= customEndDate;
+        }
         return d.getFullYear() === now.getFullYear();
     });
 
@@ -84,7 +90,7 @@ const FinancialDashboard: React.FC = () => {
         margin: incomeConfirmed - expenseConfirmed,
         marginPercent: incomeConfirmed > 0 ? ((incomeConfirmed - expenseConfirmed) / incomeConfirmed) * 100 : 0
     };
-  }, [transactions, accounts, period]);
+  }, [transactions, accounts, period, customStartDate, customEndDate]);
 
   const weeklyChart = useMemo(() => {
     const days = [];
@@ -116,16 +122,28 @@ const FinancialDashboard: React.FC = () => {
           </h2>
           <p className="text-sm text-gray-500 font-medium ml-12">Visão consolidada de performance e liquidez</p>
         </div>
-        <div className="flex items-center gap-2 bg-white p-1.5 rounded-2xl shadow-sm border border-gray-200">
-            {['MONTH', 'YEAR', 'ALL'].map(p => (
+        <div className="flex items-center gap-2 bg-white p-1.5 rounded-2xl shadow-sm border border-gray-200 flex-wrap">
+            {[
+                {id: 'MONTH', label: 'Este Mês'},
+                {id: 'YEAR', label: 'Este Ano'},
+                {id: 'ALL', label: 'Tudo'},
+                {id: 'CUSTOM', label: 'Personalizado'}
+            ].map(p => (
                 <button 
-                    key={p} 
-                    onClick={() => setPeriod(p as any)}
-                    className={`px-4 py-1.5 text-xs font-bold rounded-xl transition-all ${period === p ? 'bg-gray-900 text-white shadow-md' : 'text-gray-500 hover:bg-gray-50'}`}
+                    key={p.id} 
+                    onClick={() => setPeriod(p.id as any)}
+                    className={`px-4 py-1.5 text-xs font-bold rounded-xl transition-all ${period === p.id ? 'bg-gray-900 text-white shadow-md' : 'text-gray-500 hover:bg-gray-50'}`}
                 >
-                    {p === 'MONTH' ? 'Este Mês' : p === 'YEAR' ? 'Este Ano' : 'Tudo'}
+                    {p.label}
                 </button>
             ))}
+            {period === 'CUSTOM' && (
+                <div className="flex items-center gap-2 ml-1">
+                    <input type="date" className="bg-gray-50 border border-gray-200 rounded-lg px-2 py-1 text-xs font-bold text-gray-700 outline-none" value={customStartDate} onChange={e => setCustomStartDate(e.target.value)} />
+                    <span className="text-gray-400 text-xs">até</span>
+                    <input type="date" className="bg-gray-50 border border-gray-200 rounded-lg px-2 py-1 text-xs font-bold text-gray-700 outline-none" value={customEndDate} onChange={e => setCustomEndDate(e.target.value)} />
+                </div>
+            )}
             <button onClick={fetchData} className="p-1.5 text-gray-400 hover:text-red-600 transition-colors">
                 <RefreshCw size={18} className={loading ? 'animate-spin' : ''} />
             </button>
