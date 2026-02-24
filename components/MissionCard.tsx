@@ -478,6 +478,23 @@ Qualquer dúvida, estamos a disposição.
                                <p className="text-[10px] font-black text-red-600 font-mono leading-none tracking-tighter">{formatCurrency(displayCost)}</p>
                            </div>
 
+                           {(() => {
+                               const margin = displayRevenue > 0 ? ((displayRevenue - displayCost) / displayRevenue) * 100 : 0;
+                               const isNegative = margin < 0;
+                               const isLow = margin >= 0 && margin < 20;
+                               return (
+                                   <div className={`w-full rounded-lg border p-1 flex items-center justify-center gap-1 shadow-sm transition-all ${isNegative ? 'bg-red-100 border-red-300 animate-pulse' : isLow ? 'bg-amber-50 border-amber-300' : 'bg-emerald-50 border-emerald-200'}`}>
+                                       {isNegative ? <TrendingDown size={10} className="text-red-600" /> : isLow ? <AlertOctagon size={10} className="text-amber-600" /> : <TrendingUp size={10} className="text-emerald-600" />}
+                                       <span className={`text-[9px] font-black font-mono leading-none ${isNegative ? 'text-red-700' : isLow ? 'text-amber-700' : 'text-emerald-700'}`}>
+                                           {margin.toFixed(1)}%
+                                       </span>
+                                       <span className={`text-[6px] font-black uppercase leading-none ${isNegative ? 'text-red-500' : isLow ? 'text-amber-500' : 'text-emerald-500'}`}>
+                                           {isNegative ? 'PREJUÍZO' : 'MARGEM'}
+                                       </span>
+                                   </div>
+                               );
+                           })()}
+
                            <div className={`w-full rounded-lg border p-1 flex flex-col items-center justify-center gap-0.5 shadow-sm transition-all ${mission.billing_approved ? 'bg-blue-50 border-blue-200' : hasBeenVerified ? 'bg-green-50 border-green-200' : 'bg-orange-50 border-orange-200'}`}>
                               {mission.billing_approved ? (
                                   <>
