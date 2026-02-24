@@ -117,6 +117,20 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, activeScreen, onNavigate, onL
         if (!isAuthorized) return false;
     }
 
+    // REGRAS DO PERFIL AVANÇADO
+    const isAvancado = role === 'avançado' || role === 'avancado';
+    if (isAvancado) {
+        // Bloqueio total de faturamento/financeiro para Avançado (grupo inteiro e todos subitens)
+        if (itemId === 'finance-group' || itemId.startsWith('fin-')) return false;
+        // Avançado tem acesso explícito a clientes e operações
+        const avancadoAllowed = [
+            'dashboard', 'missions', 'clients-group', 'clients', 'client-routes',
+            'client-vehicles', 'quotes', 'providers-group', 'providers', 'provider-agents',
+            'alvara-control', 'ai-support', 'support-network'
+        ];
+        return avancadoAllowed.includes(itemId) || userPermissions.includes(itemId);
+    }
+
     if (isAdmin) return true;
     return userPermissions.includes(itemId);
   };
