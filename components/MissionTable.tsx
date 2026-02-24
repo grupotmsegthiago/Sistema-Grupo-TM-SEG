@@ -699,13 +699,26 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
               }
             )
             .subscribe();
+          const broadcastChannel = supabase
+            .channel('mission-updates')
+            .on('broadcast', { event: 'mission_updated' }, ({ payload }) => {
+              if (payload && payload.updatedBy !== currentUser.name) {
+                showNotification(
+                  `OS ${payload.missionId} Atualizada`,
+                  `${payload.changeType} — por ${payload.updatedBy}`,
+                  'info'
+                );
+              }
+            })
+            .subscribe();
           const interval = setInterval(() => fetchMissions(true), 120000);
           return () => {
             supabase.removeChannel(channel);
+            supabase.removeChannel(broadcastChannel);
             clearInterval(interval);
           };
       }
-    }, [fetchMissions, currentUser]);
+    }, [fetchMissions, currentUser, showNotification]);
   
     const periodMissions = useMemo(() => {
         const todayStart = new Date();
