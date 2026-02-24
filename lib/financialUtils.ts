@@ -152,6 +152,7 @@ export const calculateMissionFinancials = (
 ): CalculatedFinancials => {
     const isTerminalStatus = [MissionStatus.COMPLETED, MissionStatus.CANCELLED, MissionStatus.REFUSED].includes(mission.status as MissionStatus);
     const isFinished = mission.status === MissionStatus.COMPLETED;
+    const isCancelled = mission.status === MissionStatus.CANCELLED;
     
     const getKm = (val: any) => typeof val === 'number' ? val : parseFloat(String(val || '0').replace(',', '.'));
     
@@ -164,7 +165,11 @@ export const calculateMissionFinancials = (
         realTraveledKm = endKm - startKm;
     }
     
-    const distanceForCalculation = hasValidKms ? realTraveledKm : safeNumber(mission.totalDistance);
+    let distanceForCalculation = hasValidKms ? realTraveledKm : safeNumber(mission.totalDistance);
+    
+    if (isCancelled) {
+        distanceForCalculation = 0;
+    }
     
     const scheduledDate = parseSafeDate(mission.startTime || (mission as any).start_time); 
     const creationDate = parseSafeDate(mission.createdAt); 
@@ -187,9 +192,13 @@ export const calculateMissionFinancials = (
     }
 
     const diffMs = endDateObj.getTime() - effectiveStartDate.getTime();
-    const durationHours = Math.max(0, diffMs / (1000 * 60 * 60));
+    let durationHours = Math.max(0, diffMs / (1000 * 60 * 60));
 
-    const tollValue = Math.max(0, safeNumber(mission.toll_value));
+    if (isCancelled) {
+        durationHours = 0;
+    }
+
+    const tollValue = isCancelled ? 0 : Math.max(0, safeNumber(mission.toll_value));
     
     const validAgents = [mission.agent1, mission.agent2]
         .map(a => a ? String(a).trim() : '')
