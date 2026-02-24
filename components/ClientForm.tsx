@@ -783,10 +783,10 @@ const ClientForm: React.FC<ClientFormProps> = ({
                             <tr key={table.id} className={`text-[11px] transition-all ${selectedPriceIds.includes(table.id) ? 'bg-blue-50/50' : table.adjustment_status ? 'bg-green-50/30' : 'hover:bg-gray-50/30'}`}>
                                 <td className="pl-4 py-2"><button onClick={() => handleSelectPriceRow(table.id)}>{selectedPriceIds.includes(table.id) ? <CheckSquare size={16} className="text-blue-600" /> : <Square size={16} />}</button></td>
                                 <td className={`p-2 font-bold uppercase ${table.adjustment_status ? 'text-green-800' : 'text-gray-700'}`}>{table.operation_type}</td>
-                                <td className={`p-2 text-right font-mono font-black ${table.adjustment_status ? 'text-green-700' : 'text-gray-900'}`}>R$ {table.activation_fee.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</td>
+                                <td className={`p-2 text-right font-mono font-black ${table.adjustment_status ? 'text-green-700' : 'text-gray-900'}`}>R$ {(table.activation_fee ?? 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</td>
                                 <td className="p-2 text-center text-gray-500">{table.franchise_km}km / {table.franchise_hours}h</td>
-                                <td className="p-2 text-right text-red-600 font-bold">R$ {table.price_per_extra_km.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</td>
-                                <td className="p-2 text-right text-blue-600 font-bold">R$ {table.price_per_extra_hour.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</td>
+                                <td className="p-2 text-right text-red-600 font-bold">R$ {(table.price_per_extra_km ?? 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</td>
+                                <td className="p-2 text-right text-blue-600 font-bold">R$ {(table.price_per_extra_hour ?? 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</td>
                                 <td className="p-2 text-center">
                                     {table.adjustment_status ? (
                                         <div className="flex flex-col items-center gap-0.5">
