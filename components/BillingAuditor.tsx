@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { supabase } from '../lib/supabase';
-import { GoogleGenAI } from "@google/genai";
+import { generateContent } from '../lib/gemini';
 import { X, Loader2, CheckCircle2, AlertTriangle, FileText, Wrench, Package, BrainCircuit, DollarSign, History, Check, Search } from 'lucide-react';
 import { ClientPriceTable } from '../types';
 import { useNotification } from '../lib/NotificationContext';
@@ -49,9 +49,6 @@ const BillingAuditor: React.FC<Props> = ({ onClose, missions, priceTables, clien
                 return;
             }
 
-            // Guideline check: Exclusively use process.env.API_KEY and initialize right before call
-            const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-            
             const dataToAnalyze = missions.map(m => ({
                 id: m.id,
                 km: (m.end_km || 0) - (m.start_km || 0),
@@ -74,13 +71,11 @@ const BillingAuditor: React.FC<Props> = ({ onClose, missions, priceTables, clien
 
             setProgress('IA auditando valores e medições...');
 
-            const response = await ai.models.generateContent({
+            const resultText = await generateContent({
                 model: 'gemini-3-flash-preview',
                 contents: { parts: [{ text: prompt }] },
                 config: { responseMimeType: "application/json" }
-            });
-
-            const resultText = response.text || "{}";
+            }) || "{}";
             let result = JSON.parse(resultText);
             
             setReport(result.html_summary);
@@ -92,14 +87,6 @@ const BillingAuditor: React.FC<Props> = ({ onClose, missions, priceTables, clien
         } catch (e: any) {
             console.error(e);
             const errorMsg = typeof e === 'string' ? e : (e.message || "Erro de conexão");
-            
-            // Handle mandatory API key re-selection as per guidelines
-            if (errorMsg.includes("Requested entity was not found.")) {
-                if ((window as any).aistudio) {
-                    (window as any).aistudio.openSelectKey();
-                }
-            }
-            
             setReport(`<div class="text-red-600 font-bold p-4 bg-red-50 rounded border border-red-100 flex items-center gap-2"><AlertTriangle size={18}/> Erro ao processar auditoria: ${errorMsg}</div>`);
         } finally {
             setIsAnalyzing(false);

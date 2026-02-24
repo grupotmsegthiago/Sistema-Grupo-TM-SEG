@@ -3,7 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import { X, Save, Loader2, FileSpreadsheet, AlertCircle, HelpCircle, UploadCloud, Zap, Wand2, Trash2, Search, RefreshCw } from 'lucide-react';
 import { ProviderData } from '../types';
-import { GoogleGenAI, Type } from "@google/genai";
+import { generateContent } from '../lib/gemini';
 import { googleMapsApiKey } from '../lib/maps';
 
 interface Props {
@@ -93,7 +93,6 @@ const ImportProviderCostModal: React.FC<Props> = ({ onClose, onSuccess, fixedPro
       setRetryConfig({ payload: inputPayload, isFile });
 
       try {
-          const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
           const prompt = `Analise a tabela de custos e extraia os dados estruturados em JSON. Priorize rotas "ORIGEM X DESTINO".`;
 
           let contentPart: any;
@@ -103,23 +102,23 @@ const ImportProviderCostModal: React.FC<Props> = ({ onClose, onSuccess, fixedPro
              contentPart = { text: `Texto extraído:\n${inputPayload}` };
           }
 
-          const response = await ai.models.generateContent({
+          const resultText = await generateContent({
               model: 'gemini-3-flash-preview', 
               contents: { parts: [ contentPart, { text: prompt } ] },
               config: {
                 responseMimeType: "application/json",
                 responseSchema: {
-                    type: Type.ARRAY,
+                    type: "ARRAY",
                     items: {
-                        type: Type.OBJECT,
+                        type: "OBJECT",
                         properties: {
-                            description: { type: Type.STRING },
-                            km: { type: Type.NUMBER },
-                            hours: { type: Type.NUMBER },
-                            activation: { type: Type.NUMBER },
-                            extraKm: { type: Type.NUMBER },
-                            extraHour: { type: Type.NUMBER },
-                            cancellation: { type: Type.NUMBER }
+                            description: { type: "STRING" },
+                            km: { type: "NUMBER" },
+                            hours: { type: "NUMBER" },
+                            activation: { type: "NUMBER" },
+                            extraKm: { type: "NUMBER" },
+                            extraHour: { type: "NUMBER" },
+                            cancellation: { type: "NUMBER" }
                         },
                         required: ["description", "km", "hours", "activation", "extraKm", "extraHour", "cancellation"]
                     }
@@ -127,7 +126,7 @@ const ImportProviderCostModal: React.FC<Props> = ({ onClose, onSuccess, fixedPro
               }
           });
 
-          const data = JSON.parse(response.text);
+          const data = JSON.parse(resultText);
 
           if (Array.isArray(data) && data.length > 0) {
               const regionPrefix = tableName ? `${tableName.toUpperCase()} - ` : '';

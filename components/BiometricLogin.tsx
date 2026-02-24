@@ -1,6 +1,6 @@
 
 import React, { useState, useRef, useEffect } from 'react';
-import { GoogleGenAI } from "@google/genai";
+import { generateContent } from '../lib/gemini';
 import { Camera, MapPin, Loader2, ShieldCheck, AlertTriangle, X, Smartphone, UserCheck, Eye, Sun, Wind } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 
@@ -48,7 +48,6 @@ const BiometricLogin: React.FC<Props> = ({ user, onVerified, onCancel }) => {
             context?.drawImage(videoRef.current, 0, 0);
             const photoBase64 = canvasRef.current.toDataURL('image/jpeg').split(',')[1];
 
-            const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
             const prompt = `Analise esta foto de autenticação. 
             Regras Críticas:
             1. Existe um rosto humano claro?
@@ -56,12 +55,12 @@ const BiometricLogin: React.FC<Props> = ({ user, onVerified, onCancel }) => {
             3. A pessoa está usando BONÉ ou CHAPÉU? Rejeite se sim.
             Responda apenas "VALID" se passar ou o motivo do erro (ERR_GLASSES, ERR_HAT, ERR_FACE).`;
 
-            const response = await ai.models.generateContent({
+            const resultText = await generateContent({
                 model: 'gemini-3-flash-preview',
                 contents: { parts: [{ inlineData: { mimeType: 'image/jpeg', data: photoBase64 } }, { text: prompt }] }
             });
 
-            const result = response.text.trim().toUpperCase();
+            const result = resultText.trim().toUpperCase();
 
             if (result === 'VALID') {
                 // Atualiza avatar se for primeiro acesso

@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
-import { GoogleGenAI, Type } from "@google/genai";
+import { generateContent } from '../lib/gemini';
 import { Sparkles, Palette, Type as TypeIcon, Image as ImageIcon, Loader2, Download, RefreshCw, AlertCircle } from 'lucide-react';
 import { BrandIdentity } from '../types';
 
@@ -45,14 +45,10 @@ const BrandGenerator: React.FC = () => {
     setSecondaryMarkUrl(null);
 
     try {
-        // Guideline check: Exclusively use process.env.API_KEY and initialize right before call
-        const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-
         // STEP 1: ANALYZE AND GENERATE TEXT DATA (JSON)
         setStatusMessage('Analisando missão e definindo identidade visual...');
         
-        // Changed model to gemini-3-flash-preview for text tasks per guidelines
-        const response = await ai.models.generateContent({
+        const dataText = await generateContent({
             model: "gemini-3-flash-preview",
             contents: `Analyze the following company mission and name to create a comprehensive Brand Identity.
             Company Name: ${companyName}
@@ -67,35 +63,34 @@ const BrandGenerator: React.FC = () => {
             config: {
                 responseMimeType: "application/json",
                 responseSchema: {
-                    type: Type.OBJECT,
+                    type: "OBJECT",
                     properties: {
                         colors: {
-                            type: Type.ARRAY,
+                            type: "ARRAY",
                             items: {
-                                type: Type.OBJECT,
+                                type: "OBJECT",
                                 properties: {
-                                    hex: { type: Type.STRING },
-                                    name: { type: Type.STRING },
-                                    usage: { type: Type.STRING },
+                                    hex: { type: "STRING" },
+                                    name: { type: "STRING" },
+                                    usage: { type: "STRING" },
                                 }
                             }
                         },
                         typography: {
-                            type: Type.OBJECT,
+                            type: "OBJECT",
                             properties: {
-                                headerFont: { type: Type.STRING },
-                                bodyFont: { type: Type.STRING },
-                                reasoning: { type: Type.STRING },
+                                headerFont: { type: "STRING" },
+                                bodyFont: { type: "STRING" },
+                                reasoning: { type: "STRING" },
                             }
                         },
-                        logoPrompt: { type: Type.STRING },
-                        secondaryMarkPrompt: { type: Type.STRING },
+                        logoPrompt: { type: "STRING" },
+                        secondaryMarkPrompt: { type: "STRING" },
                     }
                 }
             }
         });
 
-        const dataText = response.text;
         if (!dataText) throw new Error("No data returned from AI");
         const parsedData = JSON.parse(dataText) as Omit<BrandIdentity, 'mission' | 'companyName'>;
         
@@ -113,7 +108,7 @@ const BrandGenerator: React.FC = () => {
         // STEP 2: GENERATE IMAGES
         // Primary Logo
         setStatusMessage('Desenhando Logo Principal (Alta Definição)...');
-        const logoResponse = await ai.models.generateContent({
+        const logoText = await generateContent({
             model: 'gemini-3-pro-image-preview',
             contents: {
                 parts: [{ text: `Create a professional vector logo for "${companyName}". ${parsedData.logoPrompt}. White background, high quality, minimalist.` }],
@@ -123,20 +118,13 @@ const BrandGenerator: React.FC = () => {
             }
         });
         
-        // Updated to iterate through parts to find the image part per guidelines
-        if (logoResponse.candidates?.[0]?.content?.parts) {
-            for (const part of logoResponse.candidates[0].content.parts) {
-                if (part.inlineData) {
-                    const base64EncodeString: string = part.inlineData.data;
-                    setPrimaryLogoUrl(`data:image/png;base64,${base64EncodeString}`);
-                    break;
-                }
-            }
+        if (logoText) {
+            setPrimaryLogoUrl(`data:image/png;base64,${logoText}`);
         }
 
         // Secondary Mark
         setStatusMessage('Criando Ícone Secundário...');
-        const iconResponse = await ai.models.generateContent({
+        const iconText = await generateContent({
             model: 'gemini-3-pro-image-preview',
             contents: {
                 parts: [{ text: `Create a minimalist icon/symbol for "${companyName}". ${parsedData.secondaryMarkPrompt}. Flat design, vector style, white background.` }],
@@ -146,15 +134,8 @@ const BrandGenerator: React.FC = () => {
             }
         });
 
-        // Updated to iterate through parts to find the image part per guidelines
-        if (iconResponse.candidates?.[0]?.content?.parts) {
-            for (const part of iconResponse.candidates[0].content.parts) {
-                if (part.inlineData) {
-                    const base64EncodeString: string = part.inlineData.data;
-                    setSecondaryMarkUrl(`data:image/png;base64,${base64EncodeString}`);
-                    break;
-                }
-            }
+        if (iconText) {
+            setSecondaryMarkUrl(`data:image/png;base64,${iconText}`);
         }
 
     } catch (err: any) {
@@ -162,12 +143,6 @@ const BrandGenerator: React.FC = () => {
         const msg = err.message || "Erro ao gerar identidade visual.";
         setError(msg);
         
-        // Handle mandatory API key re-selection as per guidelines
-        if (msg.includes("Requested entity was not found.")) {
-            if ((window as any).aistudio) {
-                (window as any).aistudio.openSelectKey();
-            }
-        }
     } finally {
         setIsGenerating(false);
         setStatusMessage('');

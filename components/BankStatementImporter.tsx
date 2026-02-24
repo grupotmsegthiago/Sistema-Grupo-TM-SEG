@@ -3,7 +3,7 @@ import { supabase } from '../lib/supabase';
 import { X, FileText, UploadCloud, CheckCircle2, AlertOctagon, Loader2, Plus, ArrowRight, DollarSign, Tag, Calendar, Banknote, Info, AlertCircle, ShieldCheck, Trash2, Undo2, ChevronDown, Lock, Sparkles, AlertTriangle } from 'lucide-react';
 import { FinancialAccount, FinancialCategory, TransactionType } from '../types';
 import { useNotification } from '../lib/NotificationContext';
-import { GoogleGenAI, Type } from "@google/genai";
+import { generateContent } from '../lib/gemini';
 
 interface Props {
   onClose: () => void;
@@ -89,9 +89,6 @@ const BankStatementImporter: React.FC<Props> = ({ onClose, onSuccess }) => {
           const base64Data = await fileToBase64(file);
           const mimeType = file.type || (file.name.endsWith('.pdf') ? 'application/pdf' : 'image/jpeg');
 
-          // Fix: Exclusively use process.env.API_KEY directly for initialization right before making an API call per guidelines
-          const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-          
           const prompt = `Analise este extrato bancário. Extraia TODAS as transações individuais (entradas e saídas). Ignore saldos e taxas de manutenção se possível.
           Retorne APENAS um JSON Array puro no formato:
           [
@@ -105,7 +102,7 @@ const BankStatementImporter: React.FC<Props> = ({ onClose, onSuccess }) => {
 
           setProgressLabel('IA lendo o documento...');
 
-          const response = await ai.models.generateContent({
+          const rawText = await generateContent({
             model: 'gemini-3-flash-preview',
             contents: { 
               parts: [
@@ -116,14 +113,14 @@ const BankStatementImporter: React.FC<Props> = ({ onClose, onSuccess }) => {
             config: { 
               responseMimeType: "application/json",
               responseSchema: {
-                type: Type.ARRAY,
+                type: "ARRAY",
                 items: {
-                  type: Type.OBJECT,
+                  type: "OBJECT",
                   properties: {
-                    date: { type: Type.STRING },
-                    description: { type: Type.STRING },
-                    amount: { type: Type.NUMBER },
-                    type: { type: Type.STRING }
+                    date: { type: "STRING" },
+                    description: { type: "STRING" },
+                    amount: { type: "NUMBER" },
+                    type: { type: "STRING" }
                   },
                   required: ["date", "description", "amount", "type"]
                 }
@@ -131,7 +128,6 @@ const BankStatementImporter: React.FC<Props> = ({ onClose, onSuccess }) => {
             }
           });
 
-          const rawText = response.text;
           if (!rawText) throw new Error("A IA não retornou conteúdo. Tente outro arquivo.");
 
           const parsed = JSON.parse(rawText);
@@ -175,13 +171,6 @@ const BankStatementImporter: React.FC<Props> = ({ onClose, onSuccess }) => {
           console.error("ERRO CONCILIAÇÃO:", err);
           let userMsg = err.message || "Falha na análise.";
           setError(userMsg);
-
-          // Fix: Handle key selection reset per GenAI guidelines
-          if (userMsg.includes("Requested entity was not found.")) {
-              if ((window as any).aistudio) {
-                  (window as any).aistudio.openSelectKey();
-              }
-          }
       } finally {
           setIsAnalyzing(false);
           setProgressLabel('');

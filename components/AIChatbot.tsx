@@ -1,5 +1,4 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { GoogleGenAI, GenerateContentResponse } from "@google/genai";
 import { Send, Bot, User, Loader2, Sparkles, AlertCircle, Image as ImageIcon, X } from 'lucide-react';
 
 interface Message {
@@ -55,40 +54,66 @@ const AIChatbot: React.FC = () => {
     setMessages(prev => [...prev, { id: modelMessageId, role: 'model', text: '' }]);
 
     try {
-      // Fix: Exclusively use process.env.API_KEY directly for initialization right before making an API call
-      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-      const systemInstruction = "Você é o assistente oficial de logística e segurança do Grupo TMSEG. Responda de forma profissional e técnica.";
-
       if (currentImage) {
         const base64Data = currentImage.split(',')[1];
         const mimeType = currentImage.split(';')[0].split(':')[1];
-        const response = await ai.models.generateContent({
-          model: 'gemini-3-flash-preview',
-          contents: {
-            parts: [
-              { inlineData: { mimeType, data: base64Data } },
-              { text: currentInput || "Analise esta imagem sob a ótica de segurança logística." }
-            ]
-          },
-          config: { systemInstruction }
+        const response = await fetch('/api/chat', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            message: currentInput || "Analise esta imagem sob a ótica de segurança logística.",
+            image: { data: base64Data, mimeType }
+          })
         });
-        const responseText = response.text || "Não foi possível analisar a imagem.";
-        setMessages(prev => prev.map(msg => msg.id === modelMessageId ? { ...msg, text: responseText } : msg));
+        if (!response.ok) {
+          const err = await response.json();
+          throw new Error(err.error || 'Erro ao processar imagem');
+        }
+        const data = await response.json();
+        setMessages(prev => prev.map(msg => msg.id === modelMessageId ? { ...msg, text: data.text } : msg));
       } else {
-        const chat = ai.chats.create({
-          model: 'gemini-3-flash-preview',
-          config: { systemInstruction },
-          history: messages.filter(m => m.id !== modelMessageId).map(m => ({ 
-            role: m.role === 'user' ? 'user' : 'model', 
-            parts: [{ text: m.text }] 
-          }))
+        const history = messages.filter(m => m.id !== '1' && m.id !== modelMessageId).map(m => ({
+          role: m.role,
+          text: m.text
+        }));
+
+        const response = await fetch('/api/chat', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ message: currentInput, history })
         });
-        const responseStream = await chat.sendMessageStream({ message: currentInput });
+
+        if (!response.ok) {
+          const err = await response.json();
+          throw new Error(err.error || 'Erro de conexão');
+        }
+
+        const reader = response.body?.getReader();
+        const decoder = new TextDecoder();
         let fullText = '';
-        for await (const chunk of responseStream) {
-          const c = chunk as GenerateContentResponse;
-          fullText += (c.text || '');
-          setMessages(prev => prev.map(msg => msg.id === modelMessageId ? { ...msg, text: fullText } : msg));
+
+        if (reader) {
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            const chunk = decoder.decode(value);
+            const lines = chunk.split('\n');
+            for (const line of lines) {
+              if (line.startsWith('data: ')) {
+                try {
+                  const data = JSON.parse(line.slice(6));
+                  if (data.done) break;
+                  if (data.error) throw new Error(data.error);
+                  if (data.text) {
+                    fullText += data.text;
+                    setMessages(prev => prev.map(msg => msg.id === modelMessageId ? { ...msg, text: fullText } : msg));
+                  }
+                } catch (e: any) {
+                  if (e.message && e.message !== 'Unexpected end of JSON input') throw e;
+                }
+              }
+            }
+          }
         }
       }
     } catch (err: any) {
@@ -96,13 +121,6 @@ const AIChatbot: React.FC = () => {
       const errorMessage = err.message || "Erro de conexão com o servidor de inteligência.";
       setError(errorMessage);
       setMessages(prev => prev.filter(msg => msg.id !== modelMessageId));
-
-      // Fix: Handle key selection reset per GenAI guidelines
-      if (errorMessage.includes("Requested entity was not found.")) {
-          if ((window as any).aistudio) {
-              (window as any).aistudio.openSelectKey();
-          }
-      }
     } finally {
       setIsLoading(false);
     }

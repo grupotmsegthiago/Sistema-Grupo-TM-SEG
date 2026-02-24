@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
-import { GoogleGenAI } from "@google/genai";
+import { generateContent } from '../lib/gemini';
 import { 
     Cloud, DollarSign, TrendingDown, TrendingUp, RefreshCw, 
     Loader2, ShieldAlert, FileText, 
@@ -68,19 +68,12 @@ const CloudCostManager: React.FC = () => {
     const currentCost = hasApplied ? totalCost * 0.55 : totalCost;
 
     const runCostAudit = async () => {
-        if (!process.env.API_KEY) {
-            showNotification('Erro', 'API Key da IA não configurada.', 'error');
-            return;
-        }
-
         setIsAnalyzing(true);
         setAnalysisReport(null);
         setActiveTab('audit');
         setHasApplied(false);
 
         try {
-            const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-            
             const prompt = `
                 ATUE COMO UM ENGENHEIRO DE SOFTWARE SENIOR ESPECIALISTA EM FINOPS E INFRAESTRUTURA CLOUD.
                 O seu foco é reduzir custos sem alterar o sistema ou remover funcionalidades.
@@ -103,12 +96,11 @@ const CloudCostManager: React.FC = () => {
                 4. ESTIMATIVA DE ECONOMIA MENSAL
             `;
 
-            const response = await ai.models.generateContent({
-                model: 'gemini-3-flash-preview', // Alterado para modelo Flash para economia de tokens
+            const text = await generateContent({
+                model: 'gemini-3-flash-preview',
                 contents: { parts: [{ text: prompt }] },
             });
 
-            const text = response.text;
             if (!text) throw new Error("A IA não retornou o relatório.");
             
             setAnalysisReport(text);

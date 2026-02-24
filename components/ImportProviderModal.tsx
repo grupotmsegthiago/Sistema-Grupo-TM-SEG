@@ -2,7 +2,7 @@
 import React, { useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { X, Save, Loader2, FileSpreadsheet, AlertCircle, HelpCircle, UploadCloud, Zap, Wand2, Trash2 } from 'lucide-react';
-import { GoogleGenAI, Type } from "@google/genai";
+import { generateContent } from '../lib/gemini';
 
 interface Props {
   onClose: () => void;
@@ -46,9 +46,6 @@ const ImportProviderModal: React.FC<Props> = ({ onClose, onSuccess }) => {
       setParsedData([]);
 
       try {
-          // SDK Compliance: Initialize GoogleGenAI exclusively with process.env.API_KEY right before usage
-          const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-          
           const prompt = `
             Você é um assistente administrativo especializado em cadastro de empresas.
             Analise o documento ou texto fornecido (pode ser uma lista, uma ficha cadastral, cartão CNPJ ou planilha).
@@ -69,7 +66,7 @@ const ImportProviderModal: React.FC<Props> = ({ onClose, onSuccess }) => {
              contentPart = { text: `Texto para extração:\n${inputPayload}` };
           }
 
-          const response = await ai.models.generateContent({
+          const text = await generateContent({
               model: 'gemini-3-flash-preview', 
               contents: {
                   parts: [ contentPart, { text: prompt } ]
@@ -77,18 +74,18 @@ const ImportProviderModal: React.FC<Props> = ({ onClose, onSuccess }) => {
               config: {
                 responseMimeType: "application/json",
                 responseSchema: {
-                    type: Type.ARRAY,
+                    type: "ARRAY",
                     items: {
-                        type: Type.OBJECT,
+                        type: "OBJECT",
                         properties: {
-                            cnpj: { type: Type.STRING, description: "Formatado 00.000.000/0000-00" },
-                            name: { type: Type.STRING, description: "Razão Social completa" },
-                            trading_name: { type: Type.STRING, description: "Nome Fantasia. Se não houver, repita a Razão Social" },
-                            contact_name: { type: Type.STRING, description: "Nome do responsável/contato, se houver" },
-                            address: { type: Type.STRING, description: "Logradouro + Número + Bairro" },
-                            city: { type: Type.STRING, description: "Cidade" },
-                            state: { type: Type.STRING, description: "UF - Sigla de 2 letras" },
-                            type: { type: Type.STRING, description: "Escolta Caracterizada, Pronta Resposta, Escolta Velada ou Moto Velada" }
+                            cnpj: { type: "STRING", description: "Formatado 00.000.000/0000-00" },
+                            name: { type: "STRING", description: "Razão Social completa" },
+                            trading_name: { type: "STRING", description: "Nome Fantasia. Se não houver, repita a Razão Social" },
+                            contact_name: { type: "STRING", description: "Nome do responsável/contato, se houver" },
+                            address: { type: "STRING", description: "Logradouro + Número + Bairro" },
+                            city: { type: "STRING", description: "Cidade" },
+                            state: { type: "STRING", description: "UF - Sigla de 2 letras" },
+                            type: { type: "STRING", description: "Escolta Caracterizada, Pronta Resposta, Escolta Velada ou Moto Velada" }
                         },
                         required: ["cnpj", "name", "trading_name", "type"]
                     }
@@ -96,7 +93,6 @@ const ImportProviderModal: React.FC<Props> = ({ onClose, onSuccess }) => {
               }
           });
 
-          const text = response.text;
           if (!text) throw new Error("A IA não retornou nenhum dado legível.");
           
           let data;

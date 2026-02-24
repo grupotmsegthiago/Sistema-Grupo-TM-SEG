@@ -1,6 +1,6 @@
 
 import React, { useState, useRef, useEffect } from 'react';
-import { GoogleGenAI } from "@google/genai";
+import { generateContent } from '../lib/gemini';
 import { Camera, MapPin, Clock, Fingerprint, Loader2, ShieldCheck, AlertTriangle, CheckCircle2, History, Smartphone, Coffee, LogOut, ArrowRight, UserCheck } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useNotification } from '../lib/NotificationContext';
@@ -88,15 +88,13 @@ const TimeClockSystem: React.FC = () => {
             context?.drawImage(videoRef.current, 0, 0);
             const photoBase64 = canvasRef.current.toDataURL('image/jpeg').split(',')[1];
 
-            // IA CHECK
-            const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
             const prompt = "Valide se o rosto está claro e se a pessoa está SEM óculos e SEM boné. Responda apenas VALID ou o motivo do erro.";
-            const response = await ai.models.generateContent({
+            const resultText = await generateContent({
                 model: 'gemini-3-flash-preview',
                 contents: { parts: [{ inlineData: { mimeType: 'image/jpeg', data: photoBase64 } }, { text: prompt }] }
             });
 
-            if (!response.text.toUpperCase().includes('VALID')) {
+            if (!resultText.toUpperCase().includes('VALID')) {
                 throw new Error('Falha na Biometria: Remova óculos/boné e garanta boa luz.');
             }
 

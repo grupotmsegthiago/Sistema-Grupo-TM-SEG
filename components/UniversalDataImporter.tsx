@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { supabase } from '../lib/supabase';
-import { GoogleGenAI } from "@google/genai";
+import { generateContent } from '../lib/gemini';
 import { googleMapsApiKey } from '../lib/maps'; 
 import { 
     Database, UploadCloud, FileSpreadsheet, Loader2, Save, 
@@ -95,9 +95,6 @@ const UniversalDataImporter: React.FC = () => {
         setParsedData([]);
 
         try {
-            // Fix: Exclusively use process.env.API_KEY directly for initialization right before making an API call per guidelines
-            const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-            
             const prompt = `
                 ATUE COMO UM ENGENHEIRO DE DADOS (ETL).
                 TABELA DESTINO: ${targetTable}
@@ -107,12 +104,10 @@ const UniversalDataImporter: React.FC = () => {
                 Retorne APENAS o JSON puro (Array). Sem markdown, sem \`\`\`.
             `;
 
-            const response = await ai.models.generateContent({
+            const text = await generateContent({
                 model: 'gemini-3-flash-preview',
                 contents: { parts: [{ text: prompt }] }
-            });
-
-            const text = response?.text || "[]";
+            }) || "[]";
             const cleanJson = text.replace(/```json/g, '').replace(/```/g, '').trim();
             
             let data;
@@ -143,13 +138,6 @@ const UniversalDataImporter: React.FC = () => {
         } catch (error: any) {
             const errorMsg = error.message || "Erro desconhecido";
             setFeedback({ type: 'error', msg: errorMsg });
-
-            // Fix: Handle key selection reset per GenAI guidelines
-            if (errorMsg.includes("Requested entity was not found.")) {
-                if ((window as any).aistudio) {
-                    (window as any).aistudio.openSelectKey();
-                }
-            }
         } finally {
             setIsAnalyzing(false);
         }

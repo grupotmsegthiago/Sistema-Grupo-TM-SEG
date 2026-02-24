@@ -1,5 +1,5 @@
 import React, { useState, useRef } from 'react';
-import { GoogleGenAI } from "@google/genai";
+import { generateContent } from '../lib/gemini';
 import { Image as ImageIcon, Loader2, Download, Wand2, Upload, X, Sparkles, AlertCircle } from 'lucide-react';
 
 const AIImageGenerator: React.FC = () => {
@@ -31,13 +31,11 @@ const AIImageGenerator: React.FC = () => {
     setError(null);
 
     try {
-      // Guideline check: Exclusively use process.env.API_KEY and initialize right before call
-      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-      let response;
+      let resultText: string;
 
       if (sourceImage) {
         const base64Data = sourceImage.split(',')[1];
-        response = await ai.models.generateContent({
+        resultText = await generateContent({
           model: 'gemini-2.5-flash-image',
           contents: {
             parts: [
@@ -47,38 +45,23 @@ const AIImageGenerator: React.FC = () => {
           }
         });
       } else {
-        response = await ai.models.generateContent({
+        resultText = await generateContent({
           model: 'gemini-3-pro-image-preview',
           contents: { parts: [{ text: prompt }] },
           config: { imageConfig: { aspectRatio: "16:9", imageSize: "1K" } },
         });
       }
 
-      let imageFound = false;
-      if (response.candidates?.[0]?.content?.parts) {
-        // Guideline check: iterate through parts to find image data
-        for (const part of response.candidates[0].content.parts) {
-          if (part.inlineData) {
-            setGeneratedImage(`data:image/png;base64,${part.inlineData.data}`);
-            imageFound = true;
-            break;
-          }
-        }
+      if (resultText) {
+        setGeneratedImage(`data:image/png;base64,${resultText}`);
+      } else {
+        throw new Error("O modelo processou o pedido mas não gerou uma imagem válida.");
       }
-      
-      if (!imageFound) throw new Error("O modelo processou o pedido mas não gerou uma imagem válida.");
 
     } catch (err: any) {
       console.error("Image Gen Error:", err);
       const msg = err.message || "Erro ao conectar com o servidor de imagens.";
       setError(msg);
-      
-      // Handle mandatory API key re-selection as per guidelines
-      if (msg.includes("Requested entity was not found.")) {
-          if ((window as any).aistudio) {
-              (window as any).aistudio.openSelectKey();
-          }
-      }
     } finally {
       setIsLoading(false);
     }

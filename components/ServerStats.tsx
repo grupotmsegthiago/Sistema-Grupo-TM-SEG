@@ -8,7 +8,7 @@ import {
 import { supabase } from '../lib/supabase';
 import { API_BRASIL_CONFIG, WHATSAPP_API_CONFIG, TOLL_API_CONFIG } from '../constants';
 import { googleMapsApiKey } from '../lib/maps';
-import { GoogleGenAI } from "@google/genai";
+import { generateContent } from '../lib/gemini';
 
 interface HourlyStatus {
     hour: string;
@@ -80,14 +80,13 @@ const ServerStats: React.FC = () => {
   const testGemini = async () => {
     setGemini({ ...gemini, status: 'TESTING', result: null, errorDetails: null });
     try {
-        const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-        const response = await ai.models.generateContent({
+        const resultText = await generateContent({
             model: 'gemini-3-flash-preview',
             contents: 'ping',
             config: { maxOutputTokens: 10, thinkingConfig: { thinkingBudget: 0 } }
         });
 
-        if (response.text) {
+        if (resultText) {
             setGemini({ ...gemini, status: 'SUCCESS', result: 'IA Operacional (Gemini 3)', errorDetails: null, showHelp: false });
         } else {
             throw new Error("IA não respondeu ao comando");

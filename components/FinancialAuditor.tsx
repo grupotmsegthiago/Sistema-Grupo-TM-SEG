@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { supabase } from '../lib/supabase';
-import { GoogleGenAI } from "@google/genai";
+import { generateContent } from '../lib/gemini';
 import { X, ShieldAlert, Loader2, Search, CheckCircle2, AlertTriangle, FileText, Wrench, ArrowRight } from 'lucide-react';
 import { FinancialTransaction } from '../types';
 
@@ -55,9 +55,6 @@ const FinancialAuditor: React.FC<Props> = ({ onClose }) => {
 
             setProgress('Consultando Agente Sênior (IA)...');
 
-            // Guideline check: Exclusively use process.env.API_KEY and initialize right before call
-            const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-            
             const dataToAnalyze = transactions.map(t => ({
                 id: t.id,
                 date: t.due_date,
@@ -89,13 +86,11 @@ const FinancialAuditor: React.FC<Props> = ({ onClose }) => {
                 }
             `;
 
-            const response = await ai.models.generateContent({
+            const resultText = await generateContent({
                 model: 'gemini-3-flash-preview',
                 contents: { parts: [{ text: prompt }] },
                 config: { responseMimeType: "application/json" }
-            });
-
-            const resultText = response.text || "{}";
+            }) || "{}";
             const result = JSON.parse(resultText);
             
             setReport(result.html_report);
@@ -107,14 +102,6 @@ const FinancialAuditor: React.FC<Props> = ({ onClose }) => {
         } catch (e: any) {
             console.error(e);
             const errorMsg = typeof e === 'string' ? e : (e.message || "Erro interno");
-            
-            // Handle mandatory API key re-selection as per guidelines
-            if (errorMsg.includes("Requested entity was not found.")) {
-                if ((window as any).aistudio) {
-                    (window as any).aistudio.openSelectKey();
-                }
-            }
-            
             setReport(`<div class="text-red-600 font-bold p-4">Erro na auditoria: ${errorMsg}</div>`);
         } finally {
             setIsAnalyzing(false);

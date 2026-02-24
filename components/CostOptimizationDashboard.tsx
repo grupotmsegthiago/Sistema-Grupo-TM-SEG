@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../lib/supabase';
-import { GoogleGenAI } from "@google/genai";
+import { generateContent } from '../lib/gemini';
 import { 
     Activity, TrendingDown, Zap, Database, Search, 
     Loader2, AlertTriangle, CheckCircle2, ShieldAlert, 
@@ -78,27 +78,15 @@ const CostOptimizationDashboard: React.FC = () => {
 
     const checkAIHealth = async () => {
         try {
-            if ((window as any).aistudio) {
-                const hasKey = await (window as any).aistudio.hasSelectedApiKey();
-                setConnectionStatus(hasKey ? 'READY' : 'NEED_KEY');
-            } else {
-                setConnectionStatus('READY');
-            }
+            setConnectionStatus('READY');
         } catch (e) {
             setConnectionStatus('ERROR');
         }
     };
 
     const handleLinkKey = async () => {
-        try {
-            if ((window as any).aistudio) {
-                await (window as any).aistudio.openSelectKey();
-                setConnectionStatus('READY');
-                showNotification('Conexão Estabelecida', 'IA configurada com sucesso.', 'success');
-            }
-        } catch (e) {
-            console.error(e);
-        }
+        setConnectionStatus('READY');
+        showNotification('Conexão Estabelecida', 'IA configurada com sucesso.', 'success');
     };
 
     const fetchUsageStats = async (silent = false) => {
@@ -154,29 +142,19 @@ const CostOptimizationDashboard: React.FC = () => {
         setIsAnalyzing(true);
         setAiRecommendation(null);
         try {
-            // Guideline check: Exclusively use process.env.API_KEY and initialize right before call
-            const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-            
             const prompt = `Analise os custos da TMSEG. Fatura Projetada: R$ ${costAnalysis.total.toFixed(2)}. 
             Distribuição: Gemini AI (R$ ${costAnalysis.ai.toFixed(2)}), Maps/Places (R$ ${costAnalysis.maps.toFixed(2)}), Banco de Dados (R$ ${costAnalysis.db.toFixed(2)}).
             Sugira 3 ações técnicas de economia para reduzir em pelo menos 15% o gasto cloud. Retorne em Markdown.`;
 
-            const response = await ai.models.generateContent({
+            const text = await generateContent({
                 model: 'gemini-3-flash-preview',
                 contents: prompt
             });
 
-            setAiRecommendation(response.text);
+            setAiRecommendation(text);
             setConnectionStatus('READY');
         } catch (e: any) {
             console.error("Erro Auditoria IA:", e);
-            const msg = e.message || "Erro";
-            // Handle mandatory API key re-selection as per guidelines
-            if (msg.includes("Requested entity was not found.")) {
-                if ((window as any).aistudio) {
-                    (window as any).aistudio.openSelectKey();
-                }
-            }
             if (e.message?.includes("API key not valid") || e.message?.includes("400")) {
                 setConnectionStatus('NEED_KEY');
             }
