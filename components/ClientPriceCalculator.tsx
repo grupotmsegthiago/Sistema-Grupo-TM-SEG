@@ -76,13 +76,11 @@ const ClientPriceCalculator: React.FC<Props> = ({ clientName, clientId, priceTab
         if (!calculation) return 0;
         
         const kmRate = manualKmRate ? parseCurrencyInput(manualKmRate) : calculation.pricePerExtraKm;
-        const franchiseKm = calculation.franchiseKm || 0;
-        const basePrice = calculation.base || 0;
-
-        // CÁLCULO CORRIGIDO: Base + (KM Excedente * Valor KM Extra)
-        const excessKm = Math.max(0, distance - franchiseKm);
         
-        return basePrice + (excessKm * kmRate);
+        // CORREÇÃO APLICADA: Cálculo simples e direto sem franquias ou taxas extras
+        // Fórmula: Total = Distância Total × Valor por KM
+        // Exemplo: 610,3 km × R$ 6,60 = R$ 4.027,98
+        return distance * kmRate;
     }, [calculation, manualKmRate, distance]);
 
     const calculateRoute = async (originAddr?: string, destAddr?: string) => {
