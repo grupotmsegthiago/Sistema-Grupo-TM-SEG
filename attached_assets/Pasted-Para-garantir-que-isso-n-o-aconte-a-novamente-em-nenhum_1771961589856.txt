@@ -1,0 +1,28 @@
+Para garantir que isso não aconteça novamente em nenhuma outra missão, precisamos de um prompt que mude a "mentalidade" do software. O objetivo é fazer com que ele pare de "adivinhar" ou "puxar do passado" e passe a trabalhar com validação em tempo real.
+
+O valor de R$ 675,75 apareceu porque o sistema provavelmente usou um "fallback" (uma reserva) de uma missão anterior salva no banco de dados.
+
+Aqui está o prompt para você aplicar no Replit AI e blindar seu sistema contra esses valores fantasmas:
+
+Prompt para Blindagem de Cálculos e Pedágio (Replit AI)
+"Aja como um Arquiteto de Software e Especialista em Dados. Notei que o sistema está 'herdando' valores de pedágio (como R$ 675,75) de missões passadas de forma indevida. Responda e aplique as correções em Português (Brasil).
+
+Instruções para Blindagem Permanente:
+
+Reset de Pedágio: >    * Altere a lógica de inicialização de novas missões para que o campo de pedágio (toll_value) seja sempre inicializado como Zero (0,00), a menos que haja uma integração direta e atualizada com uma API de rotas para aquela missão específica.
+
+Proíba o sistema de buscar o valor de pedágio de colunas de 'histórico' ou 'última missão' se os IDs das missões forem diferentes.
+
+Prioridade do Cálculo Dinâmico (Override):
+
+No arquivo lib/financialUtils.ts, estabeleça que o cálculo dinâmico (Soma dos Componentes na Tela) tem hierarquia total sobre qualquer valor vindo do banco de dados.
+
+Se o usuário ou o sistema alterar a rota, a origem ou o destino, o campo de pedágio deve ser resetado para 'Recalcular' ou 'Zero', forçando uma nova conferência humana ou sistêmica.
+
+Inteligência de Auditoria:
+
+Adicione uma regra de 'Consistência de Pedágio': Se o sistema encontrar um valor de pedágio no banco, ele deve comparar com a quilometragem. Se o KM mudou mas o pedágio continua o mesmo de uma missão anterior, o sistema deve exibir um alerta: 'Atenção: Valor de pedágio herdado detectado. Verifique a precisão.'
+
+Limpeza de Cache de UI:
+
+No componente MissionFinancialModal.tsx, garanta que ao abrir uma missão, o estado inicial dos inputs de valor (Revenue/Cost) não aceite o isLoadedFromDB se houver divergência entre a soma dos componentes e o total salvo.

@@ -75,8 +75,6 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
   const [isAddCostModalOpen, setIsAddCostModalOpen] = useState(false);
   const [memoryLoaded, setMemoryLoaded] = useState(false);
   
-  // Flag para indicar que os dados vieram do banco e não do cálculo
-  const [isLoadedFromDB, setIsLoadedFromDB] = useState(false);
 
   useEffect(() => {
     const timer = setInterval(() => setCurrentTime(new Date()), 1000); 
@@ -84,11 +82,13 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
   }, []);
 
   // Busca Inteligente de Padrões (Memória Evolutiva)
+  // BLINDAGEM: Pedágio NUNCA é herdado de outras missões (IDs diferentes).
+  // Se a missão atual tem toll_value salvo no banco, usa esse valor.
+  // Se não tem, inicia como ZERO e exige conferência humana.
   const fetchHistoricalPatterns = async (currentMission: Mission) => {
       if (!currentMission.client || !currentMission.origin) return;
       try {
-          // PROTOCOLO DE VALIDAÇÃO DE NULIDADE:
-          // Se o valor já existe no objeto (vido do banco), respeita ele ABSOLUTAMENTE.
+          // REGRA 1: Se a missão JÁ TEM toll_value salvo no banco (mesmo que zero), usa ele.
           if (currentMission.toll_value !== null && currentMission.toll_value !== undefined) {
              setSuggestedToll(currentMission.toll_value);
              if (currentMission.toll_value === 0) {
@@ -97,62 +97,17 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                  setTollSource('VALOR GRAVADO');
              }
              setTollInput(currentMission.toll_value.toLocaleString('pt-BR', { minimumFractionDigits: 2 }));
-             return; 
-          }
-
-          // 1. Busca Pedágio Exato da Rota (Alta Prioridade)
-          const { data: exactRoute } = await supabase
-            .from('missions')
-            .select('toll_value, id, updated_by')
-            .eq('client', currentMission.client)
-            .eq('origin', currentMission.origin)
-            .eq('destination', currentMission.destination)
-            .neq('id', currentMission.id)
-            .order('last_update', { ascending: false })
-            .limit(1)
-            .maybeSingle();
-
-          let avgToll = 0;
-          let sourceLabel = '';
-          let confidence = 0;
-          let isManualFromOther = false;
-
-          if (exactRoute && exactRoute.toll_value !== null) {
-              avgToll = exactRoute.toll_value;
-              sourceLabel = 'PEDÁGIO INSERIDO MANUAL EM OUTRA OS';
-              confidence = 100;
-              isManualFromOther = true;
           } else {
-              // 2. Busca Média Regional
-              const { data: history } = await supabase
-                .from('missions')
-                .select('toll_value')
-                .eq('client', currentMission.client)
-                .eq('billing_approved', true)
-                .gt('toll_value', 0)
-                .limit(50);
-              
-              if (history && history.length > 0) {
-                  const totalToll = history.reduce((acc, h) => acc + (h.toll_value || 0), 0);
-                  avgToll = totalToll / history.length;
-                  sourceLabel = 'MÉDIA REGIONAL';
-                  confidence = Math.min(80, (history.length * 2));
-              }
+             // REGRA 2: Se NÃO tem toll_value, inicia como ZERO.
+             // PROIBIDO buscar de outras missões (IDs diferentes).
+             setSuggestedToll(0);
+             setTollSource('AGUARDANDO CONFERÊNCIA');
+             setTollInput('0,00');
           }
 
-          setSuggestedToll(avgToll);
-          setTollSource(sourceLabel);
-          setTollInput(avgToll.toLocaleString('pt-BR', { minimumFractionDigits: 2 }));
-          
-          if (isManualFromOther) {
-               showNotification('Memória de Rota', `Valor herdado de ajuste manual anterior: R$ ${avgToll.toFixed(2)}`, 'info');
-          } else if (avgToll > 0) {
-               showNotification('IA Logística', `Pedágio estimado: ${sourceLabel}`, 'info');
-          }
+          setAiMaturity(0);
 
-          setAiMaturity(confidence);
-
-          // 2. Busca Memória de Tabela (Pattern Matching no Logs)
+          // Busca Memória de Tabela (Pattern Matching no Logs) - apenas para tabelas, NÃO para pedágio
           const routeKey = `${currentMission.client}|${currentMission.origin}|${currentMission.destination}`.toUpperCase();
           const { data: memLogs } = await supabase
             .from('system_logs')
@@ -193,17 +148,10 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
               const fullMission = { ...initialMission, ...mRes.data };
               setMission(fullMission);
               
-              const dbToll = mRes.data.toll_value !== null ? mRes.data.toll_value : 0;
+              // BLINDAGEM DE PEDÁGIO: Usa APENAS o toll_value da própria missão (nunca herda de outra).
+              // Se a missão não tem toll_value, inicia como ZERO.
+              const dbToll = (mRes.data.toll_value !== null && mRes.data.toll_value !== undefined) ? mRes.data.toll_value : 0;
               setTollInput(dbToll.toLocaleString('pt-BR', {minimumFractionDigits: 2}));
-              
-              // Os valores de revenue e cost do banco são usados apenas como referência.
-              // O total exibido será SEMPRE recalculado dinamicamente (Base + Extras + Pedágio)
-              // pelo useEffect que observa financialData.
-              if ((mRes.data.revenue_value && mRes.data.revenue_value > 0) || (mRes.data.cost_value && mRes.data.cost_value > 0)) {
-                  setIsLoadedFromDB(true);
-              } else {
-                  setIsLoadedFromDB(false);
-              }
               
               fetchHistoricalPatterns(fullMission);
           }
@@ -262,25 +210,20 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
       }
     }, [financialData, memoryLoaded, mission]); 
 
-  // CORREÇÃO AUTOMÁTICA DE CONSISTÊNCIA removida para inputs manuais, mas mantemos
-  // a lógica de que se o usuário mudar algo, isLoadedFromDB vira false.
 
   const handleTollChange = (val: string) => {
       setTollInput(val);
       setTollSource('MANUAL (Editando...)');
-      setIsLoadedFromDB(false);
   };
 
   const handleManualInput = (setter: any, val: string) => {
       setter(val);
-      setIsLoadedFromDB(false);
   }
 
   const handleRecalculateClient = () => {
       setCustomClientBase('');
       setCustomClientKm('');
       setCustomClientHour('');
-      setIsLoadedFromDB(false); 
       showNotification('Recalculado', 'Valores do cliente restaurados para a tabela original.', 'info');
   };
 
@@ -288,7 +231,6 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
       setCustomProviderBase('');
       setCustomProviderKm('');
       setCustomProviderHour('');
-      setIsLoadedFromDB(false);
       showNotification('Recalculado', 'Valores do fornecedor restaurados para a tabela original.', 'info');
   };
 
@@ -354,8 +296,9 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
 
   const isZeroCostError = financialData && financialData.provider.base === 0 && !mission.is_same_os && (financialData.realTraveledKm > 0 || financialData.durationHours > 0);
   
-  const isInheritedToll = tollSource === 'PEDÁGIO INSERIDO MANUAL EM OUTRA OS';
+  const isInheritedToll = false;
   const isSavedZero = tollSource === 'VALOR SALVO (R$ 0,00)';
+  const isAwaitingCheck = tollSource === 'AGUARDANDO CONFERÊNCIA';
 
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-in fade-in">
@@ -559,14 +502,10 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                             type="text" 
                                             className="w-full bg-transparent border-none outline-none font-black text-3xl text-green-900 font-mono" 
                                             value={revenueInput} 
-                                            onChange={e => { setRevenueInput(e.target.value); setIsLoadedFromDB(false); }} 
+                                            onChange={e => { setRevenueInput(e.target.value); }} 
                                         />
                                     </div>
-                                    {isLoadedFromDB ? (
-                                        <p className="text-[8px] text-green-600 font-bold mt-1 uppercase flex items-center gap-1"><CheckCircle2 size={8}/> Valor Salvo</p>
-                                    ) : (
-                                        <p className="text-[8px] text-green-600 font-bold mt-1 italic">* VALOR TOTAL CALCULADO BASEADO NAS FRANQUIAS E MEDIÇÃO</p>
-                                    )}
+                                    <p className="text-[8px] text-green-600 font-bold mt-1 italic">* VALOR TOTAL CALCULADO BASEADO NAS FRANQUIAS E MEDIÇÃO</p>
                                 </div>
 
                                 <div className="mt-3 flex items-center justify-between px-2">
@@ -703,9 +642,8 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                             type="text" 
                                             className="w-full bg-transparent border-none outline-none font-black text-3xl text-blue-900 font-mono" 
                                             value={costInput} 
-                                            onChange={e => { setCostInput(e.target.value); setIsLoadedFromDB(false); }} 
+                                            onChange={e => { setCostInput(e.target.value); }} 
                                         />
-                                        {isLoadedFromDB && <span className="text-[9px] bg-white border border-blue-200 text-blue-600 px-1 rounded uppercase font-bold">Ajustado</span>}
                                     </div>
                                 </div>
                             </div>
@@ -736,19 +674,19 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                             <Landmark size={20} className="text-gray-300 ml-2" />
                             
                             {/* ESTADO DO PEDÁGIO: AVISOS CRÍTICOS */}
-                            {tollSource === 'VALOR SALVO (R$ 0,00)' && (
+                            {isSavedZero && (
                                 <div className="flex items-center gap-1.5 text-[10px] font-black text-white bg-green-600 px-2 py-1 rounded-lg border border-green-700 ml-2">
                                     <CheckCircle2 size={12}/> {tollSource}
                                 </div>
                             )}
                             
-                            {isInheritedToll && (
-                                <div className="flex items-center gap-1.5 text-[10px] font-black text-red-700 bg-red-50 px-2 py-1 rounded-lg border border-red-200 ml-2 animate-pulse">
-                                    <BrainCircuit size={12} className="fill-current"/> {tollSource}
+                            {isAwaitingCheck && (
+                                <div className="flex items-center gap-1.5 text-[10px] font-black text-orange-700 bg-orange-50 px-2 py-1 rounded-lg border border-orange-200 ml-2 animate-pulse">
+                                    <AlertTriangle size={12}/> {tollSource}
                                 </div>
                             )}
 
-                            {!isInheritedToll && !isSavedZero && tollSource && (
+                            {tollSource === 'VALOR GRAVADO' && (
                                 <div className="flex items-center gap-1.5 text-[10px] font-black text-indigo-600 bg-indigo-50 px-2 py-1 rounded-lg border border-indigo-100 ml-2">
                                     <BrainCircuit size={12} className="fill-current"/> {tollSource}
                                 </div>
