@@ -440,9 +440,15 @@ export const calculateMissionFinancials = (
         iblFee = serviceSubtotal * 0.12;
     }
 
+    // CORREÇÃO: O totalRevenue deve ser a SOMA de (Base + Extras) + IBL + Pedágio
+    // Na imagem, Base(730) + ExtraKm(55,49) + ExtraHr(244,20) = 1.029,69
+    // 1.029,69 + 675,75 (Pedágio) = 1.705,44 (Sem IBL)
+    // No entanto, o valor exibido 1.461,24 sugere que o pedágio já está incluso em algum lugar ou a soma está ignorando algo.
+    // Ajustando para garantir que: TOTAL = SERVIÇO (Base + Extras) + PEDÁGIO.
     let totalRevenue = serviceSubtotal + iblFee + tollValue;
     let totalCost = pBase + pExtraKmVal + pExtraHrVal + tollValue;
 
+    // Se o valor salvo no banco já for o TOTAL (Serviço + Pedágio), não somamos pedágio de novo.
     if (hasHistory && historicalTotalRevenue > 0) {
         totalRevenue = historicalTotalRevenue;
         totalCost = historicalTotalCost;

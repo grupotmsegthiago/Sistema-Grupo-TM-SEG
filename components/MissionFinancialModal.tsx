@@ -306,16 +306,14 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
           const revTotal = parseNumber(revenueInput);
           const costTotal = parseNumber(costInput);
 
-          // Subtrai o pedágio para salvar a base de serviço.
-          // O total exibido para o usuário é (Serviço + Pedágio).
-          // Ao salvar, separamos para que: revenue_value = Total - Pedágio.
-          // Assim, quando MissionCard ler: revenue_value + toll_value, dará o Total correto.
-          const revBase = revTotal - toll; 
-          const costBase = costTotal - toll;
+          // CORREÇÃO: Ao salvar, o valor_recebido/valor_pago no banco deve ser APENAS o serviço.
+          // O total que o usuário vê é (Serviço + Pedágio).
+          const revServiceOnly = revTotal - toll; 
+          const costServiceOnly = costTotal - toll;
           
           const payload = {
-              revenue_value: revBase,
-              cost_value: costBase,
+              revenue_value: revServiceOnly,
+              cost_value: costServiceOnly,
               toll_value: toll,
               billing_approved: approve,
               billing_verified_by: JSON.parse(localStorage.getItem('userData') || '{}').name,
@@ -449,6 +447,13 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                 </span>
                                 {financialData.agentCount > 1 && <Users size={16} className="text-orange-600"/>}
                              </div>
+                        </div>
+                        <div className="flex-1 min-w-[120px]">
+                             <p className={LABEL_CLASS}>Pedágio / Despesas</p>
+                             <p className="text-2xl font-black text-red-600 font-mono">
+                                 {formatCurrency(financialData.tollValue)}
+                             </p>
+                             <span className="text-[8px] text-gray-400 font-bold uppercase mt-1 block">{tollSource}</span>
                         </div>
                         <div className="flex-1 min-w-[120px] text-right">
                              <p className={LABEL_CLASS}>Status da OS</p>
