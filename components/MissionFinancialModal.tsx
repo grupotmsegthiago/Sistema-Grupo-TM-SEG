@@ -89,13 +89,9 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
   const fetchHistoricalPatterns = async (currentMission: Mission) => {
       if (!currentMission.client || !currentMission.origin) return;
       try {
-          if (currentMission.toll_value !== null && currentMission.toll_value !== undefined) {
+          if (currentMission.billing_approved && currentMission.toll_value !== null && currentMission.toll_value !== undefined) {
              setSuggestedToll(currentMission.toll_value);
-             if (currentMission.toll_value === 0) {
-                 setTollSource('VALOR SALVO (R$ 0,00)');
-             } else {
-                 setTollSource('VALOR GRAVADO');
-             }
+             setTollSource(currentMission.toll_value === 0 ? 'APROVADO (R$ 0,00)' : 'VALOR APROVADO');
              setTollInput(currentMission.toll_value.toLocaleString('pt-BR', { minimumFractionDigits: 2 }));
              setTollConfirmed(true);
           } else {
@@ -127,7 +123,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                  if (details.providerTableId) {
                      setManualProviderTableId(details.providerTableId);
                  }
-                 if (details.tollValue !== undefined && details.tollValue !== null && currentMission.toll_value === null) {
+                 if (details.tollValue !== undefined && details.tollValue !== null && !currentMission.billing_approved) {
                      const memToll = Number(details.tollValue);
                      setTollInput(memToll.toLocaleString('pt-BR', { minimumFractionDigits: 2 }));
                      setSuggestedToll(memToll);
@@ -155,10 +151,16 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
               const fullMission = { ...initialMission, ...mRes.data };
               setMission(fullMission);
               
-              // BLINDAGEM DE PEDÁGIO: Usa APENAS o toll_value da própria missão (nunca herda de outra).
-              // Se a missão não tem toll_value, inicia como ZERO.
-              const dbToll = (mRes.data.toll_value !== null && mRes.data.toll_value !== undefined) ? mRes.data.toll_value : 0;
-              setTollInput(dbToll.toLocaleString('pt-BR', {minimumFractionDigits: 2}));
+              if (mRes.data.billing_approved) {
+                  const dbToll = mRes.data.toll_value || 0;
+                  setTollInput(dbToll.toLocaleString('pt-BR', {minimumFractionDigits: 2}));
+                  setTollConfirmed(true);
+                  setTollSource(dbToll === 0 ? 'APROVADO (R$ 0,00)' : 'VALOR APROVADO');
+              } else {
+                  setTollInput('0,00');
+                  setTollConfirmed(false);
+                  setTollSource('AGUARDANDO CONFERÊNCIA');
+              }
               
               fetchHistoricalPatterns(fullMission);
           }
