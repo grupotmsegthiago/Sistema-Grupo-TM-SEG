@@ -202,20 +202,24 @@ export const calculateMissionFinancials = (
     const missionTypeKeyword = isVelada ? 'VELADA' : 'CARACTERIZADA';
     const clientMultiplier = 1;
     const missionProviderName = normalize(mission.provider);
-    let providerMultiplier = 1;
-    if (missionProviderName.includes('ATIVA') && agentCount === 2) {
-        providerMultiplier = 1;
-    } else {
-        providerMultiplier = (!missionTypeRaw.includes('CARACTERIZADA') && isVelada && agentCount === 2) ? 2 : 1;
-    }
+    
+    // --- REGRA DE AGENTES ALOCADOS (AJUSTADA) ---
+    // O valor só deve ser multiplicado se houver 2 agentes E o fornecedor for 'ATIVA' ou 'TM SEG'
+    const isSpecialProvider = missionProviderName.includes('ATIVA') || missionProviderName.includes('TM SEG');
+    let providerMultiplier = (agentCount === 2 && isSpecialProvider) ? 2 : 1;
+    
+    // Fallback: Se for velada e não for desses fornecedores, mantém regra base (1 agente)
+    // a menos que a regra anterior já tenha definido como 2.
+    // --------------------------------------------
 
-    const selectStrictTable = (candidateTables: any[], dist: number, region: string, city: string, typeKeyword: string, destCity: string) => {
+    const selectStrictTable = (candidateTables: any[], dist: number, region: string, city: string, typeKeyword: string, destCity: string, routeCode?: string) => {
         if (!candidateTables || candidateTables.length === 0) return { table: null, log: 'Sem tabelas cadastradas' };
 
         const normalizedRegion = normalize(region);
         const normalizedCity = normalize(city);
         const normalizedDestCity = normalize(destCity);
         const normalizedType = normalize(typeKeyword);
+        const normalizedRouteCode = normalize(routeCode);
         
         const allRegions = ['NORTE', 'NORDESTE', 'CENTRO-OESTE', 'SUDESTE', 'SUL'];
         const prohibitedRegions = normalizedRegion ? allRegions.filter(r => r !== normalizedRegion) : [];
@@ -229,27 +233,28 @@ export const calculateMissionFinancials = (
                  score -= 500; 
             }
             
-            // --- REGRA DE EXCLUSIVIDADE: PALHOÇA ---
-            if (tableOp.includes('PALHOCA')) {
-                const missionInvolvesPalhoca = normalizedCity.includes('PALHOCA') || normalizedDestCity.includes('PALHOCA');
-                if (!missionInvolvesPalhoca) {
-                    return { ...t, score: -9999, matchType: 'BLOQUEIO PALHOÇA (Local Inválido)' };
-                } else {
-                    score += 2000; // Prioridade máxima se for Palhoça
-                    matchType = 'Cidade Exata (Palhoça)';
-                }
+            // --- HIERARQUIA INTELIGENTE DE BUSCA ---
+            
+            // 1. PRIORIDADE MÁXIMA: CÓDIGO DA ROTA
+            if (normalizedRouteCode && tableOp.includes(normalizedRouteCode)) {
+                score += 5000;
+                matchType = `Código da Rota (${routeCode})`;
+            }
+            
+            // 2. PRIORIDADE ALTA: CIDADE ORIGEM X DESTINO (UF inclusa no normalize se houver)
+            else if (normalizedCity.length > 3 && normalizedDestCity.length > 3 && 
+                tableOp.includes(normalizedCity) && tableOp.includes(normalizedDestCity)) {
+                score += 2000;
+                matchType = `Rota Exata (${city} x ${destCity})`;
             }
 
-            const hasProhibitedRegion = prohibitedRegions.some(wrong => tableOp.includes(wrong));
-            if (hasProhibitedRegion) {
-                return { ...t, score: -9999, matchType: 'BLOQUEIO REGIONAL' }; 
-            }
-
-            // Prioridade de Cidade Genérica (não Palhoça)
-            if (normalizedCity.length > 3 && tableOp.includes(normalizedCity) && !tableOp.includes('PALHOCA')) {
+            // 3. PRIORIDADE MÉDIA: CIDADE DE ORIGEM (Exclusividade como Palhoça)
+            else if (normalizedCity.length > 3 && tableOp.includes(normalizedCity)) {
                 score += 1000;
-                matchType = `Cidade Exata (${city})`;
+                matchType = `Cidade Origem (${city})`;
             }
+            
+            // 4. PRIORIDADE BASE: REGIÃO
             else if (normalizedRegion && tableOp.includes(normalizedRegion)) {
                 score += 500;
                 matchType = `Região (${region})`;
@@ -285,6 +290,7 @@ export const calculateMissionFinancials = (
     const originCity = extractCityFromAddress(mission.origin || '');
     const destCity = extractCityFromAddress(mission.destination || '');
     const missionClientName = normalize(mission.originalClientName || mission.client);
+    const missionRouteCode = (mission as any).route_code || (mission as any).code;
 
     let appliedClientTable: any = null;
     let clientLog = 'Manual';
@@ -299,7 +305,8 @@ export const calculateMissionFinancials = (
             detectedRegion,
             originCity,
             missionTypeKeyword,
-            destCity
+            destCity,
+            missionRouteCode
         );
         appliedClientTable = result.table;
         clientLog = result.log;
@@ -326,7 +333,8 @@ export const calculateMissionFinancials = (
             detectedRegion,
             originCity,
             missionTypeKeyword,
-            destCity
+            destCity,
+            missionRouteCode
         );
         appliedProviderTable = result.table;
         providerLog = result.log;
@@ -419,13 +427,27 @@ export const calculateMissionFinancials = (
     }
 
     const serviceSubtotal = cBase + cExtraKmVal + cExtraHrVal;
+    
+    // --- INTELIGÊNCIA DE MEMÓRIA (CACHE DE ASSERTIVIDADE) ---
+    // Se a missão já foi validada/paga/recebida anteriormente (histórico),
+    // os valores do banco devem prevalecer sobre o cálculo dinâmico.
+    const hasHistory = (mission as any).is_validated === true || (mission as any).billing_status === 'VALIDADO';
+    const historicalTotalRevenue = (mission as any).validated_revenue || 0;
+    const historicalTotalCost = (mission as any).validated_cost || 0;
+    
     let iblFee = 0;
     if (manualTableOverrides?.forceIblFee) {
         iblFee = serviceSubtotal * 0.12;
     }
 
-    const totalRevenue = serviceSubtotal + iblFee + tollValue;
-    const totalCost = pBase + pExtraKmVal + pExtraHrVal + tollValue;
+    let totalRevenue = serviceSubtotal + iblFee + tollValue;
+    let totalCost = pBase + pExtraKmVal + pExtraHrVal + tollValue;
+
+    if (hasHistory && historicalTotalRevenue > 0) {
+        totalRevenue = historicalTotalRevenue;
+        totalCost = historicalTotalCost;
+    }
+    // ---------------------------------------------------------
 
     return {
         realTraveledKm, durationHours, tollValue, isCompleted: isFinished, hasValidKms,
