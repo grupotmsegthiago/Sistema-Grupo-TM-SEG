@@ -534,9 +534,6 @@ export const calculateMissionFinancials = (
         };
 
         cExcessHr = applyRoundingRule(cExcessHr);
-        
-        // Aplica também ao fornecedor conforme regra de negócio "espelho"
-        pExcessHr = applyRoundingRule(pExcessHr);
     }
     // ---------------------------------------------------------
 
