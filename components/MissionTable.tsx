@@ -66,24 +66,22 @@ const StatCard: React.FC<StatCardProps> = ({ icon: Icon, title, value, bgColor, 
     <button 
       onClick={onClick}
       className={`
-        relative flex flex-col items-start p-2.5 rounded-lg border transition-all duration-200 w-full text-left group
+        relative flex items-center gap-2 p-2 rounded-lg border transition-all duration-200 w-full text-left group
         ${isActive 
           ? 'bg-white border-gray-800 text-gray-900 ring-1 ring-gray-800 shadow-md transform scale-[1.02] z-10' 
           : 'bg-white text-gray-600 border-gray-200 hover:border-gray-400 hover:shadow-sm'
         }
       `}
     >
-      <div className="flex items-center gap-3 mb-2">
-        <div className={`p-2 rounded-lg ${isActive ? 'bg-gray-800 text-white' : `${bgColor} text-white shadow-sm`}`}>
-            <Icon size={16} />
-        </div>
-        <span className="text-[10px] font-black uppercase text-gray-400 tracking-widest">{title}</span>
+      <div className={`p-1.5 rounded-md shrink-0 ${isActive ? 'bg-gray-800 text-white' : `${bgColor} text-white shadow-sm`}`}>
+          <Icon size={13} />
       </div>
-      <div className="w-full min-w-0">
+      <div className="min-w-0 flex-1">
+        <span className="text-[8px] font-black uppercase text-gray-400 tracking-wider block leading-tight truncate">{title}</span>
         {loading ? (
-            <div className="w-8 h-5 bg-gray-200/50 rounded animate-pulse"></div>
+            <div className="w-6 h-4 bg-gray-200/50 rounded animate-pulse mt-0.5"></div>
         ) : (
-            <p className={`text-lg font-black tracking-tight ${isActive ? 'text-gray-900' : 'text-gray-700'} font-mono`}>{value}</p>
+            <p className={`text-sm font-black tracking-tight ${isActive ? 'text-gray-900' : 'text-gray-700'} font-mono leading-tight`}>{value}</p>
         )}
       </div>
     </button>
@@ -754,7 +752,7 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
             </div>
         )}
   
-        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 lg:grid-cols-9 gap-2">
+        <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-10 gap-1.5">
             {/* BOX TOTAL: Reflete o volume absoluto do período conforme solicitado */}
             <StatCard icon={Activity} title="Total" value={totalVolumeCount} bgColor="bg-gray-800" loading={isLoading} isActive={filterStatus === 'ALL' && !showPendingOnly && !showTomorrowOnly && !showUnapprovedOnly} onClick={() => { setFilterStatus('ALL'); setShowPendingOnly(false); setShowTomorrowOnly(false); setShowUnapprovedOnly(false); }} />
             {STATUS_CONFIG.map((status) => ( <StatCard key={status.id} icon={status.icon} title={status.label} value={statusCounts[status.id] || 0} bgColor={status.color} loading={isLoading} isActive={filterStatus === status.id} onClick={() => { setFilterStatus(status.id); }} /> ))}
