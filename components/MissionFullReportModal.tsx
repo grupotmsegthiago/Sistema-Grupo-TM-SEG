@@ -395,14 +395,23 @@ const MissionFullReportModal: React.FC<Props> = ({ mission, onClose }) => {
 
             drawSectionHeader('TIMELINE COMPLETA DE EVENTOS');
 
-            if (logs.length === 0) {
+            const statusChangeToOrigin = history.find(h =>
+                h.field_name === 'status' &&
+                (h.new_value === 'Origem' || h.new_value === 'Em Viagem')
+            );
+            const timelineCutoff = statusChangeToOrigin ? new Date(statusChangeToOrigin.changed_at).getTime() : null;
+            const filteredLogs = timelineCutoff
+                ? logs.filter(l => new Date(l.created_at).getTime() >= timelineCutoff)
+                : logs;
+
+            if (filteredLogs.length === 0) {
                 doc.setFontSize(8);
                 doc.setFont('helvetica', 'italic');
                 doc.setTextColor(150, 150, 150);
-                doc.text('Nenhum evento registrado para esta missão.', margin + 3, y + 3);
+                doc.text('Nenhum evento registrado a partir do início da operação.', margin + 3, y + 3);
                 y += 10;
             } else {
-                logs.forEach((log, idx) => {
+                filteredLogs.forEach((log, idx) => {
                     const dateStr = formatDateTime(log.created_at);
                     const desc = (log.description || '—').toUpperCase();
                     const mapLink = getLogMapLink(log);
@@ -455,10 +464,13 @@ const MissionFullReportModal: React.FC<Props> = ({ mission, onClose }) => {
                 y += 2;
             }
 
-            if (history.length > 0) {
+            const hiddenAuditFields = ['cost_value', 'toll_value', 'is_same_os', 'billing_approved', 'revenue_value', 'billing_verified_by'];
+            const filteredHistory = history.filter(h => !hiddenAuditFields.includes(h.field_name));
+
+            if (filteredHistory.length > 0) {
                 drawSectionHeader('REGISTRO DE ALTERAÇÕES (AUDITORIA)');
 
-                history.forEach((h, idx) => {
+                filteredHistory.forEach((h, idx) => {
                     const dateStr = formatDateTime(h.changed_at);
                     const field = translateField(h.field_name).toUpperCase();
                     const oldVal = cleanDisplayValue(h.old_value);
