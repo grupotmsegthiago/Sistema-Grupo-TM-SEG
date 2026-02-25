@@ -549,21 +549,23 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
         }
         return 0; 
     }, []);
+
+    const getLastUpdateTimestamp = useCallback((m: Mission) => {
+        return new Date(m.lastUpdate || m.createdAt || 0).getTime();
+    }, []);
   
     const sortedMissions = useMemo(() => {
         return [...filteredMissions].sort((a, b) => {
             const delayA = getDelayMinutes(a);
             const delayB = getDelayMinutes(b);
 
-            // Nível 1: Prioridade por ociosidade (missões ativas)
-            // Ocioso ≥60min = topo absoluto | Atenção 30-59min = segundo | Atualizado <30min = terceiro
             const getAgingTier = (m: Mission, delay: number) => {
                 const status = m.status as MissionStatus;
                 const isActive = status === MissionStatus.IN_TRANSIT || status === MissionStatus.ORIGIN;
                 if (!isActive) return 0;
-                if (delay >= 60) return 3; // OCIOSO → topo
-                if (delay >= 30) return 2; // ATENÇÃO → segundo
-                return 1;                  // ATUALIZADO → terceiro
+                if (delay >= 60) return 3;
+                if (delay >= 30) return 2;
+                return 1;
             };
 
             const tierA = getAgingTier(a, delayA);
@@ -571,11 +573,13 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
 
             if (tierA !== tierB) return tierB - tierA;
 
-            // Nível 2: Dentro do mesmo tier, prioriza por tipo de status
             const getStatusPriority = (m: Mission) => {
                 const status = m.status as MissionStatus;
                 if (status === MissionStatus.IN_TRANSIT) return 1000;
                 if (status === MissionStatus.ORIGIN) return 900;
+                if (status === MissionStatus.SCHEDULED) return 800;
+                if (status === MissionStatus.DOCUMENTATION) return 700;
+                if (status === MissionStatus.SOLICITED) return 600;
                 return 0;
             };
 
@@ -583,10 +587,13 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
             const spB = getStatusPriority(b);
             if (spA !== spB) return spB - spA;
 
-            // Nível 3: Dentro do mesmo status, ordena pelo mais ocioso primeiro
-            return delayB - delayA;
+            if (delayA !== delayB) return delayB - delayA;
+
+            const tsA = getLastUpdateTimestamp(a);
+            const tsB = getLastUpdateTimestamp(b);
+            return tsA - tsB;
         });
-    }, [filteredMissions, getDelayMinutes]);
+    }, [filteredMissions, getDelayMinutes, getLastUpdateTimestamp]);
   
     const handleOpenUpdateModal = (mission: Mission) => { setSelectedMission(mission); setIsUpdateModalOpen(true); };
     const handleUpdateSuccess = (reportText?: string) => { setIsUpdateModalOpen(false); setSelectedMission(null); fetchMissions(true); if (reportText) handleCopyToClipboard(reportText, 'relatorio', true); };
