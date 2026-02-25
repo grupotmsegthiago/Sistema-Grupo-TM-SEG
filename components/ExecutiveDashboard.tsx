@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState, useCallback } from 'react';
 import { Mission, MissionStatus, Client, ClientPriceTable, ProviderCostTable } from '../types';
 import { calculateMissionFinancials } from '../lib/financialUtils';
 import {
@@ -8,7 +8,7 @@ import {
 import {
     Activity, TrendingUp, TrendingDown, Wallet, Percent, Truck, Target,
     DollarSign, Users, Calendar, CheckCircle2, XCircle, Clock,
-    Trophy, Briefcase, Shield, BarChart4, PieChart as PieChartIcon, Lock
+    Trophy, Briefcase, Shield, BarChart4, PieChart as PieChartIcon, Lock, RefreshCw
 } from 'lucide-react';
 
 const COLORS = ['#dc2626', '#059669', '#2563eb', '#d97706', '#7c3aed', '#ec4899', '#0891b2', '#84cc16'];
@@ -45,7 +45,16 @@ interface Props {
 
 const ExecutiveDashboard: React.FC<Props> = ({ missions, isDirector, clientTables, providerTables, clientsData, currentTime }) => {
 
+    const [refreshKey, setRefreshKey] = useState(0);
+    const [lastUpdate, setLastUpdate] = useState(new Date());
+
+    const handleRefresh = useCallback(() => {
+        setRefreshKey(k => k + 1);
+        setLastUpdate(new Date());
+    }, []);
+
     const missionFinancials = useMemo(() => {
+        const snapshotTime = new Date();
         return missions.map(m => {
             if (m.status === MissionStatus.REFUSED) return { ...m, rev: 0, cost: 0, profit: 0 };
 
@@ -58,13 +67,13 @@ const ExecutiveDashboard: React.FC<Props> = ({ missions, isDirector, clientTable
                 cost = (m.cost_value || 0) + (m.toll_value || 0);
             } else {
                 const client = clientsData.find(c => c.name === m.client);
-                const projected = calculateMissionFinancials(m, clientTables, providerTables, client, currentTime);
+                const projected = calculateMissionFinancials(m, clientTables, providerTables, client, snapshotTime);
                 rev = projected.client.total;
                 cost = projected.provider.total;
             }
             return { ...m, rev, cost, profit: rev - cost };
         });
-    }, [missions, clientTables, providerTables, clientsData, currentTime]);
+    }, [missions, clientTables, providerTables, clientsData, refreshKey]);
 
     const totals = useMemo(() => {
         const validMissions = missionFinancials.filter(m => m.status !== MissionStatus.REFUSED);
@@ -226,6 +235,22 @@ const ExecutiveDashboard: React.FC<Props> = ({ missions, isDirector, clientTable
 
     return (
         <div className="space-y-6 animate-in fade-in duration-500">
+            <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                    <span className="text-[9px] font-bold text-gray-400 uppercase tracking-wider">
+                        Atualizado às {lastUpdate.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                    </span>
+                </div>
+                <button
+                    onClick={handleRefresh}
+                    className="flex items-center gap-2 px-4 py-2 bg-gray-900 text-white rounded-lg text-[10px] font-black uppercase tracking-wider hover:bg-gray-800 transition-all shadow-sm hover:shadow-md active:scale-95"
+                    data-testid="button-refresh-dashboard"
+                >
+                    <RefreshCw size={13} />
+                    Atualizar
+                </button>
+            </div>
+
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                 <KpiCard label="Volume Total" value={totals.total.toString()} icon={Activity} color="bg-gray-900 text-white" sub={`${totals.completed} concluídas`} />
                 <KpiCard label="Em Trânsito" value={totals.inTransit.toString()} icon={Truck} color="bg-white text-gray-900 border-gray-200" sub="Agora em operação" />
