@@ -448,17 +448,25 @@ export async function registerRoutes(
 
   app.post("/api/missions/recalculate-all", async (req: Request, res: Response) => {
     try {
-      const { data: missions, error: mErr } = await supabaseAdmin.from('missions').select('*');
-      if (mErr) throw mErr;
+      const fetchAll = async (table: string) => {
+        const allRows: any[] = [];
+        let from = 0;
+        const pageSize = 1000;
+        while (true) {
+          const { data, error } = await supabaseAdmin.from(table).select('*').range(from, from + pageSize - 1);
+          if (error) throw error;
+          if (!data || data.length === 0) break;
+          allRows.push(...data);
+          if (data.length < pageSize) break;
+          from += pageSize;
+        }
+        return allRows;
+      };
 
-      const { data: clientTables, error: ctErr } = await supabaseAdmin.from('client_price_tables').select('*');
-      if (ctErr) throw ctErr;
-
-      const { data: providerTables, error: ptErr } = await supabaseAdmin.from('provider_cost_tables').select('*');
-      if (ptErr) throw ptErr;
-
-      const { data: clients, error: clErr } = await supabaseAdmin.from('clients').select('*');
-      if (clErr) throw clErr;
+      const missions = await fetchAll('missions');
+      const clientTables = await fetchAll('client_price_tables');
+      const providerTables = await fetchAll('provider_cost_tables');
+      const clients = await fetchAll('clients');
 
       const { calculateMissionFinancials } = await import('../lib/financialUtils');
 
@@ -467,9 +475,12 @@ export async function registerRoutes(
       let errors: string[] = [];
       const details: any[] = [];
 
+      const TERMINAL_STATUSES = ['Concluída', 'Cancelada', 'COMPLETED', 'CANCELLED'];
+
       for (const m of (missions || [])) {
         try {
-          if (m.status === 'REFUSED') { skipped++; continue; }
+          if (m.status === 'REFUSED' || m.status === 'Recusada') { skipped++; continue; }
+          if (!TERMINAL_STATUSES.includes(m.status)) { skipped++; continue; }
 
           const missionObj = {
             ...m,
