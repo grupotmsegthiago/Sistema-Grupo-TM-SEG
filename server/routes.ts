@@ -301,8 +301,7 @@ export async function registerRoutes(
       }
 
       const GOOGLE_MAPS_KEY = "AIzaSyBIs-lrtAP6hoA1z_VA4Gbx1ujA-AlJe2k";
-      const TOLL_API_URL = "https://www.calcularpedagio.com.br/api/coordenadas/v3";
-      const TOLL_API_KEY = "c584cfb5-0c6a-4816-bfdd-3519c5bc5ef7";
+      const ROTAS_BRASIL_TOKEN = process.env.ROTAS_BRASIL_TOKEN || "";
 
       const geocode = async (address: string) => {
         const url = `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(address)}&key=${GOOGLE_MAPS_KEY}&region=br&language=pt-BR`;
@@ -310,7 +309,7 @@ export async function registerRoutes(
         const data = await resp.json();
         if (data.status === "OK" && data.results.length > 0) {
           const loc = data.results[0].geometry.location;
-          return [loc.lat, loc.lng];
+          return { lat: loc.lat, lng: loc.lng };
         }
         return null;
       };
@@ -330,63 +329,114 @@ export async function registerRoutes(
         });
       }
 
-      const tollResp = await fetch(TOLL_API_URL, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${TOLL_API_KEY}`,
-        },
-        body: JSON.stringify({
-          pontos: [originCoords, destCoords],
-        }),
-      });
+      if (ROTAS_BRASIL_TOKEN) {
+        try {
+          const pontos = `${originCoords.lng},${originCoords.lat};${destCoords.lng},${destCoords.lat}`;
+          const rbUrl = `https://rotasbrasil.com.br/apiRotas/coordenadas/?pontos=${encodeURIComponent(pontos)}&veiculo=auto&eixo=2&paradas=true&token=${ROTAS_BRASIL_TOKEN}`;
 
-      const tollText = await tollResp.text();
-      let tollData: any = null;
-      try { tollData = JSON.parse(tollText); } catch { /* ignore */ }
+          const rbResp = await fetch(rbUrl);
+          const rbText = await rbResp.text();
+          let rbData: any = null;
+          try { rbData = JSON.parse(rbText); } catch { /* ignore */ }
 
-      if (tollData?.error) {
-        return res.json({
-          success: false,
-          apiError: tollData.error,
-          tollValue: 0,
-          tollCount: 0,
-          tolls: [],
-          origin: { address: origin, coords: originCoords },
-          destination: { address: destination, coords: destCoords },
-        });
+          if (rbData?.rotas && rbData.rotas.length > 0) {
+            const rota = rbData.rotas[0];
+            const pedagios = (rota.pedagios || []).map((p: any) => ({
+              nome: p.praca || "Pedágio",
+              cidade: "",
+              rodovia: p.rodovia || "",
+              concessionaria: p.concessionaria || "",
+              km: p.km || "",
+              valorDinheiro: p.valor || 0,
+              valorTag: p.valor || 0,
+              distanciaOrigem: p.distanciaOrigem || 0,
+            }));
+
+            return res.json({
+              success: true,
+              provider: "rotasbrasil",
+              tollValue: rota.valorPedagio || 0,
+              tollCount: pedagios.length,
+              tolls: pedagios,
+              distance: rota.distancia || 0,
+              duration: rota.duracao || "",
+              credits: rota.creditoDisponivel || null,
+              origin: { address: origin, coords: originCoords },
+              destination: { address: destination, coords: destCoords },
+            });
+          }
+
+          if (rbData?.error || rbData?.message) {
+            console.error("Rotas Brasil API error:", rbData.error || rbData.message);
+          }
+        } catch (rbErr: any) {
+          console.error("Erro ao consultar Rotas Brasil:", rbErr.message);
+        }
       }
 
-      if (!tollResp.ok || !tollData) {
-        return res.json({
-          success: false,
-          apiError: "API de pedágio indisponível",
-          tollValue: 0,
-          tollCount: 0,
-          tolls: [],
-          origin: { address: origin, coords: originCoords },
-          destination: { address: destination, coords: destCoords },
+      const TOLL_API_KEY = "c584cfb5-0c6a-4816-bfdd-3519c5bc5ef7";
+      try {
+        const tollResp = await fetch("https://www.calcularpedagio.com.br/api/coordenadas/v3", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${TOLL_API_KEY}`,
+          },
+          body: JSON.stringify({
+            pontos: [[originCoords.lat, originCoords.lng], [destCoords.lat, destCoords.lng]],
+          }),
         });
+
+        const tollText = await tollResp.text();
+        let tollData: any = null;
+        try { tollData = JSON.parse(tollText); } catch { /* ignore */ }
+
+        if (tollData?.error) {
+          return res.json({
+            success: false,
+            apiError: ROTAS_BRASIL_TOKEN
+              ? tollData.error
+              : "Token Rotas Brasil não configurado. Configure o secret ROTAS_BRASIL_TOKEN para ativar o cálculo automático de pedágio.",
+            tollValue: 0,
+            tollCount: 0,
+            tolls: [],
+            origin: { address: origin, coords: originCoords },
+            destination: { address: destination, coords: destCoords },
+          });
+        }
+
+        if (tollResp.ok && tollData) {
+          const totalDinheiro = tollData?.custoTotalPedagiosDinheiro?.auto2eixos ?? 0;
+          const pedagios = (tollData?.pedagiosRota || []).map((p: any) => ({
+            nome: p.nome || p.concessionaria || "Pedágio",
+            cidade: p.cidade || "",
+            rodovia: p.rodovia || "",
+            valorDinheiro: p.auto2eixos || 0,
+            valorTag: p.autoTag2eixos || p.auto2eixos || 0,
+          }));
+
+          return res.json({
+            success: true,
+            provider: "calcularpedagio",
+            tollValue: totalDinheiro,
+            tollCount: pedagios.length,
+            tolls: pedagios,
+            origin: { address: origin, coords: originCoords },
+            destination: { address: destination, coords: destCoords },
+          });
+        }
+      } catch (cpErr: any) {
+        console.error("Erro ao consultar CalcularPedágio:", cpErr.message);
       }
-
-      const totalDinheiro =
-        tollData?.custoTotalPedagiosDinheiro?.auto2eixos ?? null;
-      const totalTag = tollData?.custoTotalPedagiosTag?.auto2eixos ?? null;
-
-      const pedagios = (tollData?.pedagiosRota || []).map((p: any) => ({
-        nome: p.nome || p.concessionaria || "Pedágio",
-        cidade: p.cidade || "",
-        rodovia: p.rodovia || "",
-        valorDinheiro: p.auto2eixos || 0,
-        valorTag: p.autoTag2eixos || p.auto2eixos || 0,
-      }));
 
       res.json({
-        success: true,
-        tollValue: totalDinheiro || 0,
-        tollValueTag: totalTag || 0,
-        tollCount: pedagios.length,
-        tolls: pedagios,
+        success: false,
+        apiError: ROTAS_BRASIL_TOKEN
+          ? "Nenhuma API de pedágio retornou resultado."
+          : "Token Rotas Brasil não configurado. Acesse rotasbrasil.com.br, crie uma conta, e adicione o token no secret ROTAS_BRASIL_TOKEN.",
+        tollValue: 0,
+        tollCount: 0,
+        tolls: [],
         origin: { address: origin, coords: originCoords },
         destination: { address: destination, coords: destCoords },
       });

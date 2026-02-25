@@ -302,7 +302,7 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
   const [isCalculatingToll, setIsCalculatingToll] = useState(false);
   const [tollDetails, setTollDetails] = useState<{ count: number; tolls: any[] } | null>(null);
 
-  const calculateTollFromAPI = async (origin: string, destination: string): Promise<{ value: number; count: number; tolls: any[]; apiError?: string } | null> => {
+  const calculateTollFromAPI = async (origin: string, destination: string): Promise<{ value: number; count: number; tolls: any[]; apiError?: string; distance?: number; duration?: string; provider?: string } | null> => {
       try {
           setIsCalculatingToll(true);
           const resp = await fetch('/api/toll/calculate', {
@@ -313,7 +313,7 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
           if (!resp.ok) return null;
           const data = await resp.json();
           if (data.success && data.tollValue > 0) {
-              return { value: data.tollValue, count: data.tollCount, tolls: data.tolls || [] };
+              return { value: data.tollValue, count: data.tollCount, tolls: data.tolls || [], distance: data.distance, duration: data.duration, provider: data.provider };
           }
           if (data.apiError) {
               return { value: 0, count: 0, tolls: [], apiError: data.apiError };
@@ -368,12 +368,13 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
           const apiResult = await calculateTollFromAPI(route.origin, route.destination);
           if (apiResult) {
               if (apiResult.apiError) {
-                  showNotification('API Pedágio', `Serviço indisponível: ${apiResult.apiError}. Usando valor do histórico/cadastro.`, 'error');
+                  showNotification('API Pedágio', apiResult.apiError, 'error');
               } else if (apiResult.value > 0) {
                   setTollDetails({ count: apiResult.count, tolls: apiResult.tolls });
                   if (tollSource !== 'history' || Math.abs(apiResult.value - suggestedToll) > 1) {
                       setFormData(prev => ({ ...prev, tollValue: apiResult.value.toFixed(2) }));
-                      showNotification('API Pedágio', `R$ ${apiResult.value.toFixed(2)} calculado automaticamente (${apiResult.count} praça${apiResult.count > 1 ? 's' : ''} - Veículo leve 2 eixos).`, 'success');
+                      const providerLabel = apiResult.provider === 'rotasbrasil' ? 'Rotas Brasil' : 'API Pedágio';
+                      showNotification(providerLabel, `R$ ${apiResult.value.toFixed(2)} calculado automaticamente (${apiResult.count} praça${apiResult.count > 1 ? 's' : ''} - Veículo leve 2 eixos).`, 'success');
                   }
               }
           }
@@ -683,10 +684,10 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
                           {isCalculatingToll ? 'Calculando pedágio via API...' : tollDetails ? `${tollDetails.count} praça${tollDetails.count > 1 ? 's' : ''} de pedágio na rota (Veículo leve 2 eixos)` : 'Valor preenchido via Memória Evolutiva / API Pedágio'}
                       </p>
                       {tollDetails && tollDetails.tolls.length > 0 && (
-                          <div className="mt-2 max-h-24 overflow-y-auto">
+                          <div className="mt-2 max-h-28 overflow-y-auto">
                               {tollDetails.tolls.map((t: any, i: number) => (
                                   <div key={i} className="flex items-center justify-between text-[9px] font-bold text-gray-500 py-0.5 border-b border-gray-100 last:border-0">
-                                      <span className="truncate mr-2">{t.nome}{t.rodovia ? ` (${t.rodovia})` : ''}</span>
+                                      <span className="truncate mr-2">{t.nome}{t.concessionaria ? ` — ${t.concessionaria}` : ''}{t.rodovia ? ` (${t.rodovia})` : ''}</span>
                                       <span className="text-gray-700 whitespace-nowrap">R$ {(t.valorDinheiro || 0).toFixed(2)}</span>
                                   </div>
                               ))}

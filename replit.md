@@ -73,15 +73,18 @@ Preferred communication style: Simple, everyday language.
 - **Backend Route:** `POST /api/toll/calculate` in `server/routes.ts`
   - Receives `{ origin, destination }` addresses
   - Geocodes both via Google Maps Geocoding API
-  - Sends coordinates to calcularpedagio.com.br API (v3 coordenadas endpoint)
-  - Returns toll value for `auto2eixos` (light vehicle, 2 axles) + individual toll details
-  - Handles API payment/availability errors gracefully
+  - **Primary:** Rotas Brasil API (`rotasbrasil.com.br/apiRotas/coordenadas/`) — GET with lng,lat coordinates, `veiculo=auto&eixo=2`
+  - **Fallback:** calcularpedagio.com.br API (v3 coordenadas endpoint)
+  - Returns toll value for light vehicle 2 axles + individual toll plaza details (name, concessionária, rodovia, valor)
+  - Handles API payment/availability errors gracefully with clear user messages
 - **Frontend Integration:** `components/MissionForm.tsx`
   - When a route is selected, toll calculation flows: 1) Fixed route toll → 2) Historical mission toll → 3) API calculation
   - API runs asynchronously after initial suggestion, overrides if API returns a different value
-  - Shows loading spinner, toll plaza count, and individual toll breakdown
+  - Shows loading spinner, toll plaza count, and individual toll breakdown with concessionária info
   - Shows error notification if API is unavailable (keeps historical/fixed value)
-- **API Key:** Configured in `constants.ts` as `TOLL_API_CONFIG` — requires active payment on calcularpedagio.com.br
+- **API Keys:**
+  - `ROTAS_BRASIL_TOKEN` — Environment secret (primary). User must create account at rotasbrasil.com.br and add token
+  - `TOLL_API_CONFIG` in `constants.ts` — calcularpedagio.com.br (fallback, requires active payment)
 
 ### Mission Report (`MissionFullReportModal`)
 - `hideProviderInfo` prop: When true (client users), hides provider name, agent details (CPF/RG/CNV), vehicle, tracker from report HTML. Also filters audit entries for provider/agent/vehicle fields.
