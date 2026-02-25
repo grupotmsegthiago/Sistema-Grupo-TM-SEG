@@ -1,6 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
+import { APP_VERSION } from '../constants';
 import { 
   Plus, Shield, Loader2, RefreshCw, Pencil, Eye, EyeOff, 
   Trash2, Ban, CheckCircle2, Database, AlertTriangle, 
@@ -165,9 +166,9 @@ const UserList: React.FC<UserListProps> = ({ onAddUser, onEdit, userType }) => {
             force_password_change: targetUser.force_password_change
         };
 
-        // Salva a nova "identidade" no localStorage
         localStorage.setItem('authToken', `impersonation-token-${targetUser.id}-${Date.now()}`);
         localStorage.setItem('userData', JSON.stringify(impersonatedData));
+        localStorage.setItem('app_version', APP_VERSION);
         
         showNotification('Acesso Trocado', `Você agora está logado como ${targetUser.name}`, 'success');
         
