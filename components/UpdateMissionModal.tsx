@@ -212,6 +212,16 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
         const currentTable = cTables.find(t => t.franchise_km >= plannedKm) || cTables[cTables.length - 1];
         
         if (currentTable) {
+            const isFixedHoursRule = editData.applyVtc02h || 
+                (currentTable.operation_type || '').toUpperCase().includes('02H') ||
+                (currentTable.operation_type || '').toUpperCase().includes('02 HORAS');
+            const isFixedDistRule = editData.applyCeva200km || isLogitech ||
+                (currentTable.operation_type || '').toUpperCase().includes('200KM') ||
+                (currentTable.operation_type || '').toUpperCase().includes('100KM');
+            
+            if (isFixedHoursRule) {
+                totalHours = Math.min(totalHours, currentTable.franchise_hours || 3);
+            }
             extraHours = Math.max(0, totalHours - (currentTable.franchise_hours || 0));
         }
 

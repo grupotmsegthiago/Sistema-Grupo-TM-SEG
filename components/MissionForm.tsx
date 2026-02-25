@@ -728,7 +728,7 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
                                       if (route) calculatePricing(route, undefined, manualRevenueTableId, '', { ceva200km: checked, vtc02h: formData.applyVtc02h, isSameOs: formData.isSameOs });
                                   }} />
                                   <TrendingUp size={14} className={formData.applyCeva200km ? 'text-white' : 'text-gray-400'} />
-                                  <span className="text-[10px] font-black uppercase tracking-wider">Regra 200KM (CEVA)</span>
+                                  <span className="text-[10px] font-black uppercase tracking-wider">Regra 200KM</span>
                               </label>
                           </div>
                       </div>

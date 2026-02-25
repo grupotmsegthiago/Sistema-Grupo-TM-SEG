@@ -374,10 +374,45 @@ export const calculateMissionFinancials = (
         : (appliedClientTable?.price_per_extra_hour || 0);
 
     const appliedTableName = (appliedClientTable?.operation_type || '').toUpperCase();
-    const isCeva = missionClientName.includes('CEVA');
-    const isStrict200KmRule = isCeva && (appliedTableName.includes('200KM') || appliedTableName.includes('LOGITECH'));
-    
-    // Provider Vars
+    const missionDest = (mission.destination || '').toUpperCase();
+
+    const isFixedDistanceClientRule = appliedTableName.includes('200KM') || 
+                                      appliedTableName.includes('200 KM') || 
+                                      appliedTableName.includes('100KM') || 
+                                      appliedTableName.includes('100 KM') || 
+                                      appliedTableName.includes('LOGITECH') ||
+                                      missionDest.includes('200KM');
+
+    const isFixedHoursClientRule = appliedTableName.includes('02H') || 
+                                   appliedTableName.includes('02 HORAS') ||
+                                   missionDest.includes('02 HORAS') ||
+                                   missionDest.includes('02H');
+
+    if (isFixedDistanceClientRule && !isCancelled) {
+        distanceForCalculation = Math.min(distanceForCalculation, cFranchiseKm);
+    }
+    if (isFixedHoursClientRule && !isCancelled) {
+        durationHours = Math.min(durationHours, cFranchiseHr);
+    }
+
+    cExcessKm = Math.max(0, distanceForCalculation - cFranchiseKm);
+    cExcessHr = Math.max(0, durationHours - cFranchiseHr);
+
+    const providerTableName = (appliedProviderTable?.operation_type || '').toUpperCase();
+    const isFixedDistanceProviderRule = providerTableName.includes('200KM') || 
+                                        providerTableName.includes('200 KM') || 
+                                        providerTableName.includes('100KM') || 
+                                        providerTableName.includes('100 KM') || 
+                                        providerTableName.includes('LOGITECH') ||
+                                        isFixedDistanceClientRule;
+
+    const isFixedHoursProviderRule = providerTableName.includes('02H') || 
+                                     providerTableName.includes('02 HORAS') ||
+                                     isFixedHoursClientRule;
+
+    let providerDistForCalc = distanceForCalculation;
+    let providerDurationForCalc = durationHours;
+
     const rawBaseCost = appliedProviderTable?.activation_cost || 0;
     const pBase = manualTableOverrides?.customProviderBase !== undefined
         ? manualTableOverrides.customProviderBase
@@ -386,8 +421,15 @@ export const calculateMissionFinancials = (
     const pFranchiseKm = (appliedProviderTable?.franchise_km || 100);
     const pFranchiseHr = (appliedProviderTable?.franchise_hours || 3);
 
-    let pExcessKm = mission.is_same_os ? 0 : Math.max(0, distanceForCalculation - pFranchiseKm);
-    let pExcessHr = mission.is_same_os ? 0 : Math.max(0, durationHours - pFranchiseHr);
+    if (isFixedDistanceProviderRule && !isCancelled) {
+        providerDistForCalc = Math.min(providerDistForCalc, pFranchiseKm);
+    }
+    if (isFixedHoursProviderRule && !isCancelled) {
+        providerDurationForCalc = Math.min(providerDurationForCalc, pFranchiseHr);
+    }
+
+    let pExcessKm = mission.is_same_os ? 0 : Math.max(0, providerDistForCalc - pFranchiseKm);
+    let pExcessHr = mission.is_same_os ? 0 : Math.max(0, providerDurationForCalc - pFranchiseHr);
 
     const pUnitCostKm = manualTableOverrides?.customProviderUnitKm !== undefined
         ? manualTableOverrides.customProviderUnitKm
@@ -396,12 +438,6 @@ export const calculateMissionFinancials = (
     const pUnitCostHour = manualTableOverrides?.customProviderUnitHour !== undefined
         ? manualTableOverrides.customProviderUnitHour
         : (appliedProviderTable?.cost_per_extra_hour || 0);
-
-    const providerTableName = (appliedProviderTable?.operation_type || '').toUpperCase();
-    const isProviderFixed200Km = (isCeva || missionClientName.includes('LOGITECH')) && 
-                                 (providerTableName.includes('200KM') || 
-                                  providerTableName.includes('200 KM') || 
-                                  providerTableName.includes('LOGITECH'));
 
     // --- APLICAÇÃO DA REGRA DE 16 MINUTOS (ARREDONDAMENTO) ---
     if (clientData?.full_extra_hour_after_16_min) {
@@ -428,18 +464,8 @@ export const calculateMissionFinancials = (
     let cExtraKmVal = Math.max(0, cExcessKm * cUnitPriceKm);
     let cExtraHrVal = Math.max(0, cExcessHr * cUnitPriceHour);
 
-    if (isStrict200KmRule) {
-         cExtraKmVal = 0;
-         cExtraHrVal = 0;
-    }
-
     let pExtraKmVal = Math.max(0, pExcessKm * pUnitCostKm);
     let pExtraHrVal = Math.max(0, pExcessHr * pUnitCostHour);
-
-    if (isProviderFixed200Km) {
-        pExtraKmVal = 0;
-        pExtraHrVal = 0;
-    }
 
     const serviceSubtotal = cBase + cExtraKmVal + cExtraHrVal;
     
@@ -463,24 +489,24 @@ export const calculateMissionFinancials = (
         calculationMemory: isVelada ? 'Regra Velada' : 'Regra Padrão', iblFee, effectiveStartLabel: startLabel,
         client: { 
             total: totalRevenue, base: cBase, extraKmVal: cExtraKmVal, extraHrVal: cExtraHrVal, 
-            excessKm: isStrict200KmRule ? 0 : cExcessKm, 
-            excessHours: isStrict200KmRule ? 0 : cExcessHr,
+            excessKm: cExcessKm, 
+            excessHours: cExcessHr,
             unitPriceKm: cUnitPriceKm,
             unitPriceHour: cUnitPriceHour,
-            usedSpecialRule: isStrict200KmRule, 
+            usedSpecialRule: isFixedDistanceClientRule || isFixedHoursClientRule, 
             tableName: appliedClientTable?.operation_type, 
             tableId: appliedClientTable?.id.toString(),
             detectionLog: clientLog
         },
         provider: { 
             total: totalCost, base: pBase, extraKmVal: pExtraKmVal, extraHrVal: pExtraHrVal, 
-            excessKm: isProviderFixed200Km ? 0 : pExcessKm, 
-            excessHours: isProviderFixed200Km ? 0 : pExcessHr,
+            excessKm: pExcessKm, 
+            excessHours: pExcessHr,
             unitCostKm: pUnitCostKm,
             unitCostHour: pUnitCostHour,
             tableName: appliedProviderTable?.operation_type, 
             tableId: appliedProviderTable?.id.toString(),
-            usedSpecialRule: isProviderFixed200Km,
+            usedSpecialRule: isFixedDistanceProviderRule || isFixedHoursProviderRule,
             detectionLog: providerLog
         },
         profit: totalRevenue - totalCost,

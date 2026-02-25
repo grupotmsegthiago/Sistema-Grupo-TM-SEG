@@ -90,11 +90,25 @@ const BillingControlCenter: React.FC = () => {
         cTables.sort((a, b) => a.franchise_km - b.franchise_km);
         let cTable = cTables.find(t => t.franchise_km >= traveledKm) || cTables[cTables.length - 1];
 
+        const missionDest = (m.destination || '').toUpperCase();
+
         let revBase = 0, revExtraKmVal = 0, revExtraHrVal = 0, totalRevenue = 0;
         if (cTable) {
+            const cTableName = (cTable.operation_type || '').toUpperCase();
+            const isFixedDistClient = cTableName.includes('200KM') || cTableName.includes('200 KM') || 
+                                      cTableName.includes('100KM') || cTableName.includes('100 KM') ||
+                                      cTableName.includes('LOGITECH') || missionDest.includes('200KM');
+            const isFixedHoursClient = cTableName.includes('02H') || cTableName.includes('02 HORAS') || 
+                                       missionDest.includes('02 HORAS') || missionDest.includes('02H');
+
+            let effectiveKm = traveledKm;
+            let effectiveHours = durationHours;
+            if (isFixedDistClient) effectiveKm = Math.min(effectiveKm, cTable.franchise_km);
+            if (isFixedHoursClient) effectiveHours = Math.min(effectiveHours, cTable.franchise_hours);
+
             revBase = cTable.activation_fee;
-            const extraKm = Math.max(0, traveledKm - cTable.franchise_km);
-            let extraHr = Math.max(0, durationHours - cTable.franchise_hours);
+            const extraKm = Math.max(0, effectiveKm - cTable.franchise_km);
+            let extraHr = Math.max(0, effectiveHours - cTable.franchise_hours);
             
             const currentClient = clients.find(c => c.name === m.client);
             if (currentClient?.full_extra_hour_after_16_min && extraHr > 0) {
@@ -115,9 +129,21 @@ const BillingControlCenter: React.FC = () => {
             let pTable = pTables.find(t => t.franchise_km >= traveledKm) || pTables[pTables.length - 1];
             
             if (pTable) {
+                const pTableName = (pTable.operation_type || '').toUpperCase();
+                const isFixedDistProv = pTableName.includes('200KM') || pTableName.includes('200 KM') || 
+                                        pTableName.includes('100KM') || pTableName.includes('100 KM') ||
+                                        pTableName.includes('LOGITECH') || missionDest.includes('200KM');
+                const isFixedHoursProv = pTableName.includes('02H') || pTableName.includes('02 HORAS') || 
+                                         missionDest.includes('02 HORAS') || missionDest.includes('02H');
+
+                let pEffectiveKm = traveledKm;
+                let pEffectiveHours = durationHours;
+                if (isFixedDistProv) pEffectiveKm = Math.min(pEffectiveKm, pTable.franchise_km);
+                if (isFixedHoursProv) pEffectiveHours = Math.min(pEffectiveHours, pTable.franchise_hours);
+
                 const costBase = pTable.activation_cost;
-                const pExtraKm = Math.max(0, traveledKm - pTable.franchise_km);
-                const pExtraHr = Math.max(0, durationHours - pTable.franchise_hours);
+                const pExtraKm = Math.max(0, pEffectiveKm - pTable.franchise_km);
+                const pExtraHr = Math.max(0, pEffectiveHours - pTable.franchise_hours);
                 const costExtraKmVal = pExtraKm * (pTable.cost_per_extra_km || 0);
                 const costExtraHrVal = pExtraHr * (pTable.cost_per_extra_hour || 0);
                 totalCost = costBase + costExtraKmVal + costExtraHrVal + toll;
