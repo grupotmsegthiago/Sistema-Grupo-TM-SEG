@@ -447,6 +447,14 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!formData.client || !selectedRouteId) return alert("Selecione cliente e rota.");
+
+    const scheduledDateTime = new Date(`${formData.scheduledDate}T${formData.scheduledTime}:00`);
+    const now = new Date();
+    const toleranceMs = 5 * 60 * 1000;
+    if (scheduledDateTime.getTime() < now.getTime() - toleranceMs) {
+        return alert("Não é possível agendar uma missão no passado. Ajuste a data e horário para um momento futuro.");
+    }
+
     setIsSaving(true);
     try {
         let attempts = 0, saved = false, finalId = '';
@@ -455,7 +463,7 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
         
         while (attempts < 10 && !saved) {
             finalId = await generateId();
-            const scheduledIso = new Date(`${formData.scheduledDate}T${formData.scheduledTime}:00`).toISOString();
+            const scheduledIso = scheduledDateTime.toISOString();
             
             const vehicleId = formData.clientVehicleId;
             
