@@ -9,14 +9,15 @@ interface Props {
   id?: string | null;
   // Callback agora aceita o ID opcionalmente para auto-seleção
   onSuccess?: (newId?: string) => void;
-  fixedProviderName?: string; // Novo: Permite travar o fornecedor no modal flutuante
+  fixedProviderName?: string;
+  defaultOperationType?: string;
 }
 
 const INPUT_CLASS = "w-full pl-12 pr-4 py-3 bg-white border border-gray-300 rounded-lg outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-500 text-sm transition-all text-gray-700 font-medium placeholder-gray-400";
 const SELECT_CLASS = `${INPUT_CLASS} appearance-none bg-[url('https://api.iconify.design/lucide/chevron-down.svg?color=%239ca3af')] bg-[length:1.25em] bg-no-repeat bg-[position:right_1rem_center]`;
 const LABEL_CLASS = "text-xs font-bold text-gray-600 uppercase mb-1.5 block";
 
-const ProviderCostForm: React.FC<Props> = ({ onBack, id, onSuccess, fixedProviderName }) => {
+const ProviderCostForm: React.FC<Props> = ({ onBack, id, onSuccess, fixedProviderName, defaultOperationType }) => {
   const [formData, setFormData] = useState({
     provider: '',
     operation_type: 'CARACTERIZADA',
@@ -40,9 +41,11 @@ const ProviderCostForm: React.FC<Props> = ({ onBack, id, onSuccess, fixedProvide
             const { data: provData } = await supabase.from('providers').select('id, name').neq('status', 'Bloqueado');
             if(provData) setProviders(provData as any);
 
-            // Se for modo flutuante com fornecedor fixo
             if (fixedProviderName) {
                 setFormData(prev => ({ ...prev, provider: fixedProviderName }));
+            }
+            if (defaultOperationType && !id) {
+                setFormData(prev => ({ ...prev, operation_type: defaultOperationType }));
             }
 
             if(id) {
@@ -63,7 +66,7 @@ const ProviderCostForm: React.FC<Props> = ({ onBack, id, onSuccess, fixedProvide
         finally { setIsLoading(false) }
     }
     loadData();
-  }, [id, fixedProviderName]);
+  }, [id, fixedProviderName, defaultOperationType]);
 
   const checkDuplicate = async (provName: string, opType: string) => {
       if (!provName || !opType) return;

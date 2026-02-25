@@ -392,7 +392,20 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                   <ProviderCostForm 
                       onBack={() => setIsAddCostModalOpen(false)} 
                       onSuccess={handleNewCostTableSuccess}
-                      fixedProviderName={mission.provider} 
+                      fixedProviderName={mission.provider}
+                      defaultOperationType={(() => {
+                          const extractCity = (addr: string) => {
+                              if (!addr) return '';
+                              const parts = addr.split(',')[0].split('-')[0].trim();
+                              return parts.toUpperCase();
+                          };
+                          const originCity = extractCity(mission.origin || '');
+                          const destCity = extractCity(mission.destination || '');
+                          const region = financialData?.detectedRegion || '';
+                          const prefix = region ? `${region.toUpperCase()} - ` : '';
+                          if (originCity && destCity) return `${prefix}${originCity} X ${destCity}`;
+                          return mission.mission_type?.toUpperCase() || 'CARACTERIZADA';
+                      })()}
                   />
               </div>
           </div>
