@@ -695,10 +695,10 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
             />
         )}
         {isRestrictedClientView && showClientDash && (
-            <ClientExecutiveDashboard missions={analyticsMissions} />
+            <ClientExecutiveDashboard missions={allMissions} />
         )}
         {isRestrictedClientView && showClientReports && (
-            <ClientReportsTab missions={analyticsMissions} />
+            <ClientReportsTab missions={allMissions} onViewReport={(m: Mission) => { setMissionForFullReport(m); setIsFullReportOpen(true); }} />
         )}
   
         {showFleetMap && isLoaded && !loadError && (

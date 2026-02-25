@@ -3,6 +3,7 @@ import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { GoogleGenAI } from "@google/genai";
 import { createClient } from "@supabase/supabase-js";
+import pg from "pg";
 
 const ai = new GoogleGenAI({
   apiKey: process.env.AI_INTEGRATIONS_GEMINI_API_KEY,
@@ -542,6 +543,130 @@ export async function registerRoutes(
       console.error("Erro no recálculo:", e);
       res.status(500).json({ error: e.message });
     }
+  });
+
+  app.post("/api/client-registries/init", async (_req: Request, res: Response) => {
+    try {
+      const dbUrl = process.env.DATABASE_URL;
+      if (!dbUrl) { res.json({ ok: false, error: "No DATABASE_URL" }); return; }
+      const pool = new pg.Pool({ connectionString: dbUrl, ssl: { rejectUnauthorized: false } });
+      await pool.query(`
+        CREATE TABLE IF NOT EXISTS client_registries (
+          id SERIAL PRIMARY KEY,
+          client_id TEXT NOT NULL,
+          type TEXT NOT NULL,
+          name TEXT NOT NULL,
+          created_at TIMESTAMPTZ DEFAULT NOW(),
+          UNIQUE(client_id, type, name)
+        );
+      `);
+      await pool.query(`
+        CREATE TABLE IF NOT EXISTS client_mission_notes (
+          id SERIAL PRIMARY KEY,
+          mission_id TEXT NOT NULL UNIQUE,
+          client_id TEXT NOT NULL,
+          motivo TEXT DEFAULT '',
+          contrato TEXT DEFAULT '',
+          operacao TEXT DEFAULT '',
+          tsp TEXT DEFAULT '',
+          obs TEXT DEFAULT '',
+          created_at TIMESTAMPTZ DEFAULT NOW(),
+          updated_at TIMESTAMPTZ DEFAULT NOW()
+        );
+      `);
+      await pool.end();
+      console.log("Client registries tables created/verified.");
+      res.json({ ok: true });
+    } catch (e: any) {
+      console.error("Error creating client registries tables:", e.message);
+      res.json({ ok: true, note: e.message });
+    }
+  });
+
+  const getDbPool = () => {
+    const dbUrl = process.env.DATABASE_URL;
+    if (!dbUrl) throw new Error("No DATABASE_URL");
+    return new pg.Pool({ connectionString: dbUrl, ssl: { rejectUnauthorized: false }, max: 3 });
+  };
+
+  app.get("/api/client-registries/:clientId/:type", async (req: Request, res: Response) => {
+    let pool;
+    try {
+      const { clientId, type } = req.params;
+      pool = getDbPool();
+      const result = await pool.query('SELECT * FROM client_registries WHERE client_id = $1 AND type = $2 ORDER BY name', [clientId, type]);
+      res.json(result.rows);
+    } catch (e: any) {
+      res.json([]);
+    } finally { pool?.end().catch(() => {}); }
+  });
+
+  app.post("/api/client-registries", async (req: Request, res: Response) => {
+    let pool;
+    try {
+      const { client_id, type, name } = req.body;
+      if (!client_id || !type || !name) return res.status(400).json({ error: "Campos obrigatórios" });
+      pool = getDbPool();
+      const result = await pool.query(
+        'INSERT INTO client_registries (client_id, type, name) VALUES ($1, $2, $3) ON CONFLICT (client_id, type, name) DO NOTHING RETURNING *',
+        [client_id, type, name.trim()]
+      );
+      res.json(result.rows[0] || { client_id, type, name: name.trim() });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    } finally { pool?.end().catch(() => {}); }
+  });
+
+  app.delete("/api/client-registries/:id", async (req: Request, res: Response) => {
+    let pool;
+    try {
+      pool = getDbPool();
+      await pool.query('DELETE FROM client_registries WHERE id = $1', [req.params.id]);
+      res.json({ ok: true });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    } finally { pool?.end().catch(() => {}); }
+  });
+
+  app.get("/api/client-mission-notes/:missionId", async (req: Request, res: Response) => {
+    let pool;
+    try {
+      pool = getDbPool();
+      const result = await pool.query('SELECT * FROM client_mission_notes WHERE mission_id = $1', [req.params.missionId]);
+      res.json(result.rows[0] || null);
+    } catch (e: any) {
+      res.json(null);
+    } finally { pool?.end().catch(() => {}); }
+  });
+
+  app.post("/api/client-mission-notes", async (req: Request, res: Response) => {
+    let pool;
+    try {
+      const { mission_id, client_id, motivo, contrato, operacao, tsp, obs } = req.body;
+      if (!mission_id || !client_id) return res.status(400).json({ error: "Campos obrigatórios" });
+      pool = getDbPool();
+      const result = await pool.query(
+        `INSERT INTO client_mission_notes (mission_id, client_id, motivo, contrato, operacao, tsp, obs, updated_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())
+         ON CONFLICT (mission_id) DO UPDATE SET motivo=$3, contrato=$4, operacao=$5, tsp=$6, obs=$7, updated_at=NOW()
+         RETURNING *`,
+        [mission_id, client_id, motivo || '', contrato || '', operacao || '', tsp || '', obs || '']
+      );
+      res.json(result.rows[0]);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    } finally { pool?.end().catch(() => {}); }
+  });
+
+  app.get("/api/client-mission-notes/bulk/:clientId", async (req: Request, res: Response) => {
+    let pool;
+    try {
+      pool = getDbPool();
+      const result = await pool.query('SELECT * FROM client_mission_notes WHERE client_id = $1', [req.params.clientId]);
+      res.json(result.rows);
+    } catch (e: any) {
+      res.json([]);
+    } finally { pool?.end().catch(() => {}); }
   });
 
   return httpServer;
