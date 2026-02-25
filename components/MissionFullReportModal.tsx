@@ -406,6 +406,8 @@ const MissionFullReportModal: React.FC<Props> = ({ mission, onClose }) => {
                 h.new_value === 'Em Viagem'
             );
             const timelineCutoff = statusChangeToInTransit ? new Date(statusChangeToInTransit.changed_at).getTime() : null;
+            
+            // Filter logs: only those STRICTLY at or after the 'Em Viagem' change time
             const filteredLogs = timelineCutoff
                 ? logs.filter(l => new Date(l.created_at).getTime() >= timelineCutoff)
                 : logs;
@@ -493,10 +495,23 @@ const MissionFullReportModal: React.FC<Props> = ({ mission, onClose }) => {
                 (!timelineCutoff || new Date(h.changed_at).getTime() >= timelineCutoff)
             );
 
-            if (filteredHistory.length > 0) {
+            // Additional check to ensure we don't include an entry that happened at the exact same ms as the cutoff but is logically "before"
+            // (Like the example where 'Fim Viagem' update and 'Status' change share the same timestamp)
+            const finalHistory = filteredHistory.filter(h => {
+                if (!timelineCutoff) return true;
+                const hTime = new Date(h.changed_at).getTime();
+                if (hTime > timelineCutoff) return true;
+                if (hTime === timelineCutoff) {
+                    // Only keep the status change itself if it's the exact cutoff point
+                    return h.field_name === 'status' && h.new_value === 'Em Viagem';
+                }
+                return false;
+            });
+
+            if (finalHistory.length > 0) {
                 drawSectionHeader('REGISTRO DE ALTERAÇÕES (AUDITORIA)');
 
-                filteredHistory.forEach((h, idx) => {
+                finalHistory.forEach((h, idx) => {
                     const dateStr = formatDateTime(h.changed_at);
                     const field = translateField(h.field_name).toUpperCase();
                     const oldVal = cleanDisplayValue(h.old_value);
