@@ -1,6 +1,5 @@
 import React, { useMemo, useState, useCallback } from 'react';
 import { Mission, MissionStatus, Client, ClientPriceTable, ProviderCostTable } from '../types';
-import { calculateMissionFinancials } from '../lib/financialUtils';
 import {
     BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
     PieChart, Pie, Cell, AreaChart, Area, ComposedChart, Line, Legend, LabelList
@@ -98,24 +97,13 @@ const ExecutiveDashboard: React.FC<Props> = ({ missions, isDirector, clientTable
     }, [missions, period, customStart, customEnd, refreshKey]);
 
     const missionFinancials = useMemo(() => {
-        const snapshotTime = new Date();
         return filteredMissions.map(m => {
             if (m.status === MissionStatus.REFUSED) return { ...m, rev: 0, cost: 0, profit: 0 };
-            const isTerminal = [MissionStatus.COMPLETED, MissionStatus.CANCELLED].includes(m.status as MissionStatus);
-            const isAudited = m.billing_approved;
-            let rev = 0, cost = 0;
-            if (isTerminal || isAudited) {
-                rev = (m.revenue_value || 0) + (m.toll_value || 0);
-                cost = (m.cost_value || 0) + (m.toll_value || 0);
-            } else {
-                const client = clientsData.find(c => c.name === m.client);
-                const projected = calculateMissionFinancials(m, clientTables, providerTables, client, snapshotTime);
-                rev = projected.client.total;
-                cost = projected.provider.total;
-            }
+            const rev = (m.revenue_value || 0) + (m.toll_value || 0);
+            const cost = (m.cost_value || 0) + (m.toll_value || 0);
             return { ...m, rev, cost, profit: rev - cost };
         });
-    }, [filteredMissions, clientTables, providerTables, clientsData, refreshKey]);
+    }, [filteredMissions, refreshKey]);
 
     const totals = useMemo(() => {
         const valid = missionFinancials.filter(m => m.status !== MissionStatus.REFUSED);
