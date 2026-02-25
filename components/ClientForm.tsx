@@ -701,6 +701,12 @@ const ClientForm: React.FC<ClientFormProps> = ({
                     <button onClick={handleCopyPriceTable} disabled={!copySourceClientId || isSavingPrice} className="bg-indigo-600 text-white px-3 py-2 rounded-lg text-[10px] font-black uppercase hover:bg-indigo-700 transition-all flex items-center gap-1.5 disabled:opacity-50"><Copy size={12}/> Copiar Tarifário</button>
                     <div className="h-6 w-px bg-gray-300 mx-1"></div>
                     <button onClick={() => setIsImportModalOpen(true)} className="bg-white text-indigo-700 px-3 py-2 rounded-lg text-[10px] font-black uppercase border border-indigo-200 hover:bg-indigo-50 transition-colors flex items-center gap-1.5"><FileSpreadsheet size={14} /> Importar (IA)</button>
+                    {id && priceTables.length > 0 && (
+                      <>
+                        <div className="h-6 w-px bg-gray-300 mx-1"></div>
+                        <button onClick={() => setIsProposalModalOpen(true)} className="bg-green-600 text-white px-3 py-2 rounded-lg text-[10px] font-black uppercase hover:bg-green-700 transition-all flex items-center gap-1.5 shadow-md"><FileText size={14} /> Gerar Cotação</button>
+                      </>
+                    )}
                   </div>
               </div>
               
