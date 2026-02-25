@@ -421,7 +421,10 @@ const MissionFullReportModal: React.FC<Props> = ({ mission, onClose }) => {
                         if (c) mapCoordText = `GPS: ${c.lat}, ${c.lng}`;
                     }
 
-                    const descLines = doc.splitTextToSize(desc, contentWidth - 14);
+                    // Format: DATA - HORA: STATUS: ALTERAÇÃO / OBSERVAÇÃO
+                    const logStatus = mission.status.toUpperCase();
+                    const timelineText = `${dateStr}: ${logStatus}: ${desc}`;
+                    const descLines = doc.splitTextToSize(timelineText, contentWidth - 14);
                     const rowHeight = 10 + (descLines.length * 3.5) + (mapCoordText ? 5 : 0);
 
                     checkPageBreak(rowHeight + 4);
@@ -440,16 +443,12 @@ const MissionFullReportModal: React.FC<Props> = ({ mission, onClose }) => {
                     doc.setFontSize(7);
                     doc.setFont('helvetica', 'bold');
                     doc.setTextColor(100, 116, 139);
-                    doc.text(dateStr, margin + 7, y + 3);
-
-                    doc.setTextColor(30, 64, 175);
-                    doc.setFont('helvetica', 'bold');
-                    doc.text('CM - GRUPO TM SEG', margin + 55, y + 3);
+                    doc.text('CM - GRUPO TM SEG', margin + 7, y + 3);
 
                     doc.setFontSize(7.5);
                     doc.setTextColor(15, 23, 42);
                     doc.setFont('helvetica', 'normal');
-                    doc.text(descLines, margin + 7, y + 9);
+                    doc.text(descLines, margin + 7, y + 8);
 
                     if (mapCoordText) {
                         const gpY = y + 9 + descLines.length * 3.5 + 1;
