@@ -293,5 +293,108 @@ export async function registerRoutes(
     }
   });
 
+  app.post("/api/toll/calculate", async (req: Request, res: Response) => {
+    try {
+      const { origin, destination } = req.body;
+      if (!origin || !destination) {
+        return res.status(400).json({ error: "Origem e destino são obrigatórios" });
+      }
+
+      const GOOGLE_MAPS_KEY = "AIzaSyBIs-lrtAP6hoA1z_VA4Gbx1ujA-AlJe2k";
+      const TOLL_API_URL = "https://www.calcularpedagio.com.br/api/coordenadas/v3";
+      const TOLL_API_KEY = "c584cfb5-0c6a-4816-bfdd-3519c5bc5ef7";
+
+      const geocode = async (address: string) => {
+        const url = `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(address)}&key=${GOOGLE_MAPS_KEY}&region=br&language=pt-BR`;
+        const resp = await fetch(url);
+        const data = await resp.json();
+        if (data.status === "OK" && data.results.length > 0) {
+          const loc = data.results[0].geometry.location;
+          return [loc.lat, loc.lng];
+        }
+        return null;
+      };
+
+      const [originCoords, destCoords] = await Promise.all([
+        geocode(origin),
+        geocode(destination),
+      ]);
+
+      if (!originCoords || !destCoords) {
+        return res.status(400).json({
+          error: "Não foi possível geocodificar os endereços",
+          details: {
+            origin: originCoords ? "OK" : "Falha",
+            destination: destCoords ? "OK" : "Falha",
+          },
+        });
+      }
+
+      const tollResp = await fetch(TOLL_API_URL, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${TOLL_API_KEY}`,
+        },
+        body: JSON.stringify({
+          pontos: [originCoords, destCoords],
+        }),
+      });
+
+      const tollText = await tollResp.text();
+      let tollData: any = null;
+      try { tollData = JSON.parse(tollText); } catch { /* ignore */ }
+
+      if (tollData?.error) {
+        return res.json({
+          success: false,
+          apiError: tollData.error,
+          tollValue: 0,
+          tollCount: 0,
+          tolls: [],
+          origin: { address: origin, coords: originCoords },
+          destination: { address: destination, coords: destCoords },
+        });
+      }
+
+      if (!tollResp.ok || !tollData) {
+        return res.json({
+          success: false,
+          apiError: "API de pedágio indisponível",
+          tollValue: 0,
+          tollCount: 0,
+          tolls: [],
+          origin: { address: origin, coords: originCoords },
+          destination: { address: destination, coords: destCoords },
+        });
+      }
+
+      const totalDinheiro =
+        tollData?.custoTotalPedagiosDinheiro?.auto2eixos ?? null;
+      const totalTag = tollData?.custoTotalPedagiosTag?.auto2eixos ?? null;
+
+      const pedagios = (tollData?.pedagiosRota || []).map((p: any) => ({
+        nome: p.nome || p.concessionaria || "Pedágio",
+        cidade: p.cidade || "",
+        rodovia: p.rodovia || "",
+        valorDinheiro: p.auto2eixos || 0,
+        valorTag: p.autoTag2eixos || p.auto2eixos || 0,
+      }));
+
+      res.json({
+        success: true,
+        tollValue: totalDinheiro || 0,
+        tollValueTag: totalTag || 0,
+        tollCount: pedagios.length,
+        tolls: pedagios,
+        origin: { address: origin, coords: originCoords },
+        destination: { address: destination, coords: destCoords },
+      });
+    } catch (e: any) {
+      console.error("Erro ao calcular pedágio:", e);
+      res.status(500).json({ error: e.message });
+    }
+  });
+
   return httpServer;
 }

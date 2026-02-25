@@ -299,14 +299,46 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
       } finally { setIsCalculating(false); }
   }, [formData.client, formData.provider, formData.applyCeva200km, formData.applyVtc02h, formData.isSameOs, clientPriceTables, providerCostTables]);
 
+  const [isCalculatingToll, setIsCalculatingToll] = useState(false);
+  const [tollDetails, setTollDetails] = useState<{ count: number; tolls: any[] } | null>(null);
+
+  const calculateTollFromAPI = async (origin: string, destination: string): Promise<{ value: number; count: number; tolls: any[]; apiError?: string } | null> => {
+      try {
+          setIsCalculatingToll(true);
+          const resp = await fetch('/api/toll/calculate', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ origin, destination }),
+          });
+          if (!resp.ok) return null;
+          const data = await resp.json();
+          if (data.success && data.tollValue > 0) {
+              return { value: data.tollValue, count: data.tollCount, tolls: data.tolls || [] };
+          }
+          if (data.apiError) {
+              return { value: 0, count: 0, tolls: [], apiError: data.apiError };
+          }
+          return null;
+      } catch (e) {
+          console.error('Erro ao consultar API de pedágio:', e);
+          return null;
+      } finally {
+          setIsCalculatingToll(false);
+      }
+  };
+
   const handleRouteSelect = async (route: ClientRoute) => {
       setSelectedRouteId(route.id.toString());
       setRouteSearchTerm(route.name);
       setActiveDropdown(null);
+      setTollDetails(null);
       
       let suggestedToll = 0;
+      let tollSource = '';
+
       if (route.toll_cost && route.toll_cost > 0) {
           suggestedToll = route.toll_cost;
+          tollSource = 'fixed';
           showNotification('IA Logística', `Pedágio de R$ ${suggestedToll.toFixed(2)} aplicado via cadastro de rota fixa.`, 'success');
       } else {
           try {
@@ -323,6 +355,7 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
               
               if (lastMission && lastMission.toll_value && lastMission.toll_value > 0) {
                   suggestedToll = lastMission.toll_value;
+                  tollSource = 'history';
                   showNotification('Aprendizado de Máquina', `Sugestão de R$ ${suggestedToll.toFixed(2)} identificada no histórico desta rota.`, 'info');
               }
           } catch (e) { console.error(e); }
@@ -330,6 +363,21 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
 
       setFormData(prev => ({ ...prev, tollValue: suggestedToll.toString() }));
       calculatePricing(route);
+
+      if (tollSource !== 'fixed') {
+          const apiResult = await calculateTollFromAPI(route.origin, route.destination);
+          if (apiResult) {
+              if (apiResult.apiError) {
+                  showNotification('API Pedágio', `Serviço indisponível: ${apiResult.apiError}. Usando valor do histórico/cadastro.`, 'error');
+              } else if (apiResult.value > 0) {
+                  setTollDetails({ count: apiResult.count, tolls: apiResult.tolls });
+                  if (tollSource !== 'history' || Math.abs(apiResult.value - suggestedToll) > 1) {
+                      setFormData(prev => ({ ...prev, tollValue: apiResult.value.toFixed(2) }));
+                      showNotification('API Pedágio', `R$ ${apiResult.value.toFixed(2)} calculado automaticamente (${apiResult.count} praça${apiResult.count > 1 ? 's' : ''} - Veículo leve 2 eixos).`, 'success');
+                  }
+              }
+          }
+      }
   };
 
   const handleVehicleSelect = (v: ClientVehicleDB) => {
@@ -620,16 +668,30 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
                           <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm font-bold text-gray-400">R$</span>
                           <input 
                             type="number" step="0.01" 
-                            className="w-full bg-white border border-gray-200 rounded-lg py-2 pl-9 pr-3 text-lg font-black text-gray-700 outline-none focus:ring-2 focus:ring-indigo-500/20"
+                            className={`w-full bg-white border border-gray-200 rounded-lg py-2 pl-9 pr-10 text-lg font-black text-gray-700 outline-none focus:ring-2 focus:ring-indigo-500/20 ${isCalculatingToll ? 'opacity-50' : ''}`}
                             value={formData.tollValue}
                             onChange={e => setFormData({...formData, tollValue: e.target.value})}
+                            disabled={isCalculatingToll}
+                            data-testid="input-toll-value"
                           />
-                          {/* Fix: Wrap Zap icon in a span with the title attribute */}
-                          <span title="Valor sugerido via Inteligência de Rota" className="absolute right-3 top-1/2 -translate-y-1/2">
-                              <Zap size={16} className="text-yellow-500 animate-pulse" />
+                          <span title={isCalculatingToll ? "Consultando API de pedágio..." : "Valor calculado via API de Pedágio"} className="absolute right-3 top-1/2 -translate-y-1/2">
+                              {isCalculatingToll ? <Loader2 size={16} className="text-indigo-500 animate-spin" /> : <Zap size={16} className="text-yellow-500 animate-pulse" />}
                           </span>
                       </div>
-                      <p className="text-[8px] text-gray-400 font-bold uppercase mt-1.5 flex items-center gap-1"><Info size={8}/> Valor preenchido via Memória Evolutiva</p>
+                      <p className="text-[8px] text-gray-400 font-bold uppercase mt-1.5 flex items-center gap-1">
+                          <Info size={8}/>
+                          {isCalculatingToll ? 'Calculando pedágio via API...' : tollDetails ? `${tollDetails.count} praça${tollDetails.count > 1 ? 's' : ''} de pedágio na rota (Veículo leve 2 eixos)` : 'Valor preenchido via Memória Evolutiva / API Pedágio'}
+                      </p>
+                      {tollDetails && tollDetails.tolls.length > 0 && (
+                          <div className="mt-2 max-h-24 overflow-y-auto">
+                              {tollDetails.tolls.map((t: any, i: number) => (
+                                  <div key={i} className="flex items-center justify-between text-[9px] font-bold text-gray-500 py-0.5 border-b border-gray-100 last:border-0">
+                                      <span className="truncate mr-2">{t.nome}{t.rodovia ? ` (${t.rodovia})` : ''}</span>
+                                      <span className="text-gray-700 whitespace-nowrap">R$ {(t.valorDinheiro || 0).toFixed(2)}</span>
+                                  </div>
+                              ))}
+                          </div>
+                      )}
                   </div>
 
                   <div className="md:col-span-2 relative">

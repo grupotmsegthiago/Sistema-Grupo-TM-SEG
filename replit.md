@@ -69,6 +69,20 @@ Preferred communication style: Simple, everyday language.
 - **Frontend Tabs:** Overview (service health + incidents), Database (table-level metrics with bars), Storage (bucket usage), Links (billing/usage/logs dashboards)
 - **Auto-refresh:** Every 60 seconds alongside existing API diagnostics
 
+### Toll Calculation API
+- **Backend Route:** `POST /api/toll/calculate` in `server/routes.ts`
+  - Receives `{ origin, destination }` addresses
+  - Geocodes both via Google Maps Geocoding API
+  - Sends coordinates to calcularpedagio.com.br API (v3 coordenadas endpoint)
+  - Returns toll value for `auto2eixos` (light vehicle, 2 axles) + individual toll details
+  - Handles API payment/availability errors gracefully
+- **Frontend Integration:** `components/MissionForm.tsx`
+  - When a route is selected, toll calculation flows: 1) Fixed route toll → 2) Historical mission toll → 3) API calculation
+  - API runs asynchronously after initial suggestion, overrides if API returns a different value
+  - Shows loading spinner, toll plaza count, and individual toll breakdown
+  - Shows error notification if API is unavailable (keeps historical/fixed value)
+- **API Key:** Configured in `constants.ts` as `TOLL_API_CONFIG` — requires active payment on calcularpedagio.com.br
+
 ### Mission Report (`MissionFullReportModal`)
 - `hideProviderInfo` prop: When true (client users), hides provider name, agent details (CPF/RG/CNV), vehicle, tracker from report HTML. Also filters audit entries for provider/agent/vehicle fields.
 - Report opens in new browser tab as full HTML page with print/PDF support
