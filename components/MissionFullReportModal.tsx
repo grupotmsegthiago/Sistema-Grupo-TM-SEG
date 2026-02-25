@@ -156,15 +156,16 @@ const MissionFullReportModal: React.FC<Props> = ({ mission, onClose }) => {
             const agent1Data = agents.find(a => a.name === mission.agent1);
             const agent2Data = agents.find(a => a.name === mission.agent2);
 
-            const statusChangeToInTransit = history.find(h =>
-                h.field_name === 'status' &&
-                h.new_value === 'Em Viagem'
-            );
-            const timelineCutoff = statusChangeToInTransit ? new Date(statusChangeToInTransit.changed_at).getTime() : null;
-
-            const filteredLogs = timelineCutoff
-                ? logs.filter(l => new Date(l.created_at).getTime() >= timelineCutoff)
-                : logs;
+            // Filter logs: only those STRICTLY at or after the 'Em Viagem' change time
+            // PLUS ensure we don't include technical setup logs like "Início de Missão"
+            // Note: If mission hasn't reached "Em Viagem" yet, show all logs to avoid empty timeline
+            const filteredLogs = logs.filter(l => {
+                const logTime = new Date(l.created_at).getTime();
+                const isAfterCutoff = !timelineCutoff || logTime >= timelineCutoff;
+                const desc = (l.description || '').toUpperCase();
+                const isNotTechnical = !desc.includes('INÍCIO DE MISSÃO') && !desc.includes('MISSÃO CRIADA');
+                return isAfterCutoff && isNotTechnical;
+            });
 
             const hiddenAuditFields = ['cost_value', 'toll_value', 'is_same_os', 'billing_approved', 'revenue_value', 'billing_verified_by'];
             const filteredHistory = history.filter(h =>
@@ -240,7 +241,7 @@ const MissionFullReportModal: React.FC<Props> = ({ mission, onClose }) => {
                 ? ''
                 : `
                     <div class="section-header">REGISTRO DE ALTERAÇÕES (AUDITORIA)</div>
-                    <div style="border:1px solid #E2E8F0;border-radius:8px;overflow:hidden;margin-bottom:24px;">
+                    <div style="border:1px solid #E2E8F0;border-top:none;border-radius:0 0 6px 6px;overflow:hidden;margin-bottom:24px;">
                         ${finalHistory.map((h, idx) => {
                             const dateStr = formatDateTime(h.changed_at);
                             const field = translateField(h.field_name).toUpperCase();
@@ -248,32 +249,44 @@ const MissionFullReportModal: React.FC<Props> = ({ mission, onClose }) => {
                             const newVal = cleanDisplayValue(h.new_value);
                             const bgColor = idx % 2 === 0 ? '#F8FAFC' : '#FFFFFF';
 
-                            let oldDisplay = `<span style="color:#B91C1C;font-weight:500;">${oldVal}</span>`;
-                            let newDisplay = `<span style="color:#166534;font-weight:500;">${newVal}</span>`;
+                            let oldDisplay = `<span style="color:#B91C1C;font-weight:600;">${oldVal}</span>`;
+                            let newDisplay = `<span style="color:#166534;font-weight:600;">${newVal}</span>`;
 
                             if (isMapLinkValue(h.old_value)) {
                                 const coords = extractCoordsFromMapLink(h.old_value!);
                                 oldDisplay = coords
-                                    ? `<a href="${h.old_value}" target="_blank" style="color:#B91C1C;font-weight:500;text-decoration:none;">📍 ${coords.lat}, ${coords.lng} ↗</a>`
+                                    ? `<a href="${h.old_value}" target="_blank" style="color:#B91C1C;font-weight:600;text-decoration:none;">📍 VER ANTES ↗</a>`
                                     : oldDisplay;
                             }
                             if (isMapLinkValue(h.new_value)) {
                                 const coords = extractCoordsFromMapLink(h.new_value!);
                                 newDisplay = coords
-                                    ? `<a href="${h.new_value}" target="_blank" style="color:#166534;font-weight:500;text-decoration:none;">📍 ${coords.lat}, ${coords.lng} ↗</a>`
+                                    ? `<a href="${h.new_value}" target="_blank" style="color:#166534;font-weight:600;text-decoration:none;">📍 VER DEPOIS ↗</a>`
                                     : newDisplay;
                             }
 
                             return `
-                                <div style="padding:10px 16px;background:${bgColor};border-bottom:1px solid #F1F5F9;">
-                                    <div style="display:flex;align-items:center;gap:16px;margin-bottom:4px;flex-wrap:wrap;">
-                                        <span style="color:#64748B;font-size:11px;font-weight:700;">${dateStr}</span>
-                                        <span style="color:#1E40AF;font-size:11px;font-weight:600;">CM - GRUPO TM SEG</span>
-                                        <span style="color:#0F172A;font-size:11px;font-weight:700;">${field}</span>
+                                <div style="padding:14px 16px;background:${bgColor};border-bottom:1px solid #EDF2F7;display:flex;align-items:center;justify-content:space-between;gap:20px;">
+                                    <div style="flex: 1; min-width: 150px;">
+                                        <div style="color:#718096;font-size:10px;font-weight:700;margin-bottom:3px;letter-spacing:0.3px;">${dateStr}</div>
+                                        <div style="color:#1A202C;font-size:11px;font-weight:800;letter-spacing:0.8px;display:flex;align-items:center;gap:6px;">
+                                            <span style="width:6px;height:6px;background:#B91C1C;border-radius:1px;"></span>
+                                            ${field}
+                                        </div>
                                     </div>
-                                    <div style="display:flex;gap:24px;font-size:11px;flex-wrap:wrap;">
-                                        <div><span style="color:#94A3B8;font-weight:700;font-size:9px;">ANTES:</span> ${oldDisplay}</div>
-                                        <div><span style="color:#94A3B8;font-weight:700;font-size:9px;">DEPOIS:</span> ${newDisplay}</div>
+                                    
+                                    <div style="flex: 2; display:flex; align-items:center; gap:16px; font-size:11px; justify-content: flex-end;">
+                                        <div style="background:#FFF5F5; padding:6px 10px; border-radius:6px; border:1px solid #FED7D7; min-width:140px;">
+                                            <span style="color:#E53E3E; font-size:8px; font-weight:900; display:block; margin-bottom:2px; opacity:0.7;">DE:</span>
+                                            <div style="color:#C53030; font-weight:700;">${oldDisplay}</div>
+                                        </div>
+                                        
+                                        <div style="color:#A0AEC0; font-weight:bold; font-size:14px;">→</div>
+                                        
+                                        <div style="background:#F0FFF4; padding:6px 10px; border-radius:6px; border:1px solid #C6F6D5; min-width:140px;">
+                                            <span style="color:#38A169; font-size:8px; font-weight:900; display:block; margin-bottom:2px; opacity:0.7;">PARA:</span>
+                                            <div style="color:#2F855A; font-weight:700;">${newDisplay}</div>
+                                        </div>
                                     </div>
                                 </div>
                             `;
