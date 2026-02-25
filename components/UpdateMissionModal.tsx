@@ -121,7 +121,6 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
             MissionStatus.ORIGIN, 
             MissionStatus.IN_TRANSIT, 
             MissionStatus.COMPLETED, 
-            MissionStatus.CANCELLED, 
             MissionStatus.REFUSED
         ].includes(editData.status as MissionStatus);
     }, [editData.status]);
