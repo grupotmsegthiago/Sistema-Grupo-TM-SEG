@@ -86,6 +86,14 @@ Preferred communication style: Simple, everyday language.
   - `ROTAS_BRASIL_TOKEN` — Environment secret (primary). User must create account at rotasbrasil.com.br and add token
   - `TOLL_API_CONFIG` in `constants.ts` — calcularpedagio.com.br (fallback, requires active payment)
 
+### CEVA + Jundiaí Price Table Intelligence
+- **Location:** `lib/financialUtils.ts` — Post-selection override after `selectStrictTable`
+- **Logic:** When client is CEVA AND origin contains "Jundiaí":
+  - If `distanceForCalculation > 200km` → Forces selection of the "Sudeste - Operação Logitech - 200KM" table (looks for LOGITECH or 200KM in table name with `franchise_km >= 200`)
+  - If `distanceForCalculation ≤ 200km` → If current selection is a Logitech/200KM table, downgrades to the standard CEVA table (e.g., 100KM) to avoid overbilling short routes like Jundiaí → Cajamar
+- **Override:** Only applies to automatic detection; manual/memory selections are preserved
+- **Log output:** Shows descriptive messages like "CEVA Jundiaí >200km → Sudeste - Operação Logitech - 200KM"
+
 ### Mission Report (`MissionFullReportModal`)
 - `hideProviderInfo` prop: When true (client users), hides provider name, agent details (CPF/RG/CNV), vehicle, tracker from report HTML. Also filters audit entries for provider/agent/vehicle fields.
 - Report opens in new browser tab as full HTML page with print/PDF support

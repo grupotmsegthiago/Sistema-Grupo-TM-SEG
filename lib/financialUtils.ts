@@ -318,8 +318,9 @@ export const calculateMissionFinancials = (
         appliedClientTable = clientTables.find(t => t.id.toString() === manualTableOverrides.clientTableId);
         clientLog = 'Seleção Manual / Memória';
     } else {
+        const cevaClientTables = clientTables.filter(t => normalize(t.client) === missionClientName);
         const result = selectStrictTable(
-            clientTables.filter(t => normalize(t.client) === missionClientName), 
+            cevaClientTables, 
             distanceForCalculation, 
             detectedRegion,
             originCity,
@@ -329,6 +330,33 @@ export const calculateMissionFinancials = (
         );
         appliedClientTable = result.table;
         clientLog = result.log;
+
+        const isCevaClient = missionClientName.includes('CEVA');
+        const isJundiai = normalize(mission.origin || '').includes('JUNDIAI');
+        if (isCevaClient && isJundiai && cevaClientTables.length > 0) {
+            if (distanceForCalculation > 200) {
+                const logitech200 = cevaClientTables.find(t => {
+                    const op = normalize(t.operation_type || '');
+                    return (op.includes('LOGITECH') || op.includes('200KM') || op.includes('200 KM')) && t.franchise_km >= 200;
+                });
+                if (logitech200 && appliedClientTable?.id !== logitech200.id) {
+                    appliedClientTable = logitech200;
+                    clientLog = `CEVA Jundiaí >200km → ${logitech200.operation_type}`;
+                }
+            } else {
+                const currentOp = normalize(appliedClientTable?.operation_type || '');
+                if (currentOp.includes('LOGITECH') || (currentOp.includes('200KM') || currentOp.includes('200 KM'))) {
+                    const table100 = cevaClientTables.find(t => {
+                        const op = normalize(t.operation_type || '');
+                        return !op.includes('LOGITECH') && !op.includes('200KM') && !op.includes('200 KM') && t.franchise_km <= 200;
+                    });
+                    if (table100) {
+                        appliedClientTable = table100;
+                        clientLog = `CEVA Jundiaí ≤200km → ${table100.operation_type}`;
+                    }
+                }
+            }
+        }
     }
 
     let appliedProviderTable: any = null;
