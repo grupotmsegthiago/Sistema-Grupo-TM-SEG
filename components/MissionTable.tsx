@@ -1015,6 +1015,7 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
             {dbStatus === 'ok' && ( <div className="flex items-center gap-2 text-[10px] font-bold text-green-700 bg-green-50 px-2 py-1 rounded w-fit border border-green-200 mt-2 ml-4.5"><Database size={12} /> Realtime Sync</div> )}
           </div>
 
+          {!isRestrictedClientView && (
           <div className="flex-1 w-full max-w-[450px]">
              <DailyGoalThermometer 
                 viewPeriod={viewPeriod} 
@@ -1022,6 +1023,7 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
                 customEndDate={customEndDate} 
              />
           </div>
+          )}
 
           <div className="flex flex-wrap gap-2 items-center justify-end xl:flex-1">
                 {!isRestrictedClientView && ( <div className="flex items-center gap-2 bg-indigo-50 p-1.5 rounded-lg border border-indigo-200"><input type="text" className="bg-transparent text-xs font-bold text-indigo-900 placeholder-indigo-400 outline-none w-32 pl-2" placeholder="OS..." value={searchHistoryId} onChange={(e) => setSearchHistoryId(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleSearchHistory()} /><button onClick={handleSearchHistory} className="p-1 bg-indigo-600 text-white rounded hover:bg-indigo-700"><FileSearch size={14} /></button></div> )}

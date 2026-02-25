@@ -346,11 +346,22 @@ Qualquer dúvida, estamos a disposição.
                 </div>
 
                 <div className="lg:col-span-2 p-3 flex flex-col justify-center bg-white">
+                    {hideProviderInfo ? (
+                        <div className="flex flex-col items-center justify-center h-full">
+                            <span className={`text-[10px] font-black uppercase px-2 py-0.5 rounded-md border shadow-sm ${
+                                mission.mission_type?.toUpperCase().includes('VELADA') 
+                                ? 'bg-indigo-50 text-indigo-700 border-indigo-200' 
+                                : 'bg-red-50 text-red-700 border-red-200'
+                            }`}>
+                                {(mission.mission_type || 'CARACTERIZADA').toUpperCase()}
+                            </span>
+                        </div>
+                    ) : (
                     <div className="flex flex-col gap-2">
                         <div className="flex flex-wrap gap-2 mb-1">
                             <span className="text-[10px] font-black text-slate-800 bg-white px-2 py-1 rounded border border-slate-200 uppercase tracking-widest shadow-sm">
                                 <Briefcase size={10} className="inline mr-1 text-blue-600" /> 
-                                {hideProviderInfo ? 'RESTRITO' : (formatProviderName(mission.provider) || 'PENDENTE')}
+                                {formatProviderName(mission.provider) || 'PENDENTE'}
                             </span>
                         </div>
 
@@ -358,7 +369,7 @@ Qualquer dúvida, estamos a disposição.
                             <div className="p-1.5 bg-white rounded-lg text-red-600 border border-gray-100 shadow-sm"><CarFront size={12}/></div>
                             <div className="min-w-0 flex items-center gap-2">
                                 <span className="text-[11px] font-black text-gray-900 uppercase block leading-none">
-                                    {hideProviderInfo ? 'VIATURA' : (mission.vehicleId || '---')}
+                                    {mission.vehicleId || '---'}
                                 </span>
                                 <span className="text-gray-300 font-black">-</span>
                                 <span className={`text-[10px] font-black uppercase px-2 py-0.5 rounded-md border shadow-sm ${
@@ -376,9 +387,9 @@ Qualquer dúvida, estamos a disposição.
                             <div className="flex-1 min-w-0 flex flex-col gap-1.5">
                                 <div className="flex items-center justify-between">
                                     <span className="text-[10px] font-bold text-gray-800 uppercase block leading-tight" title={mission.agent1}>
-                                        {hideProviderInfo ? 'AGENTE 01' : getAgentDisplayName(mission.agent1)}
+                                        {getAgentDisplayName(mission.agent1)}
                                     </span>
-                                    {!hideProviderInfo && mission.agent1 && (
+                                    {mission.agent1 && (
                                         <button 
                                             onClick={() => handleWhatsAppContact(agentPhonesMap?.[mission.agent1], mission.agent1)}
                                             className="p-1 bg-emerald-50 text-emerald-600 rounded-md hover:bg-emerald-600 hover:text-white transition-all shadow-sm"
@@ -391,22 +402,21 @@ Qualquer dúvida, estamos a disposição.
                                 {mission.agent2 && mission.agent2 !== '---' && (
                                     <div className="flex items-center justify-between border-t border-gray-50 pt-1">
                                         <span className="text-[10px] font-bold text-gray-800 uppercase block leading-tight" title={mission.agent2}>
-                                            {hideProviderInfo ? 'AGENTE 02' : getAgentDisplayName(mission.agent2)}
+                                            {getAgentDisplayName(mission.agent2)}
                                         </span>
-                                        {!hideProviderInfo && (
-                                            <button 
-                                                onClick={() => handleWhatsAppContact(agentPhonesMap?.[mission.agent2], mission.agent2)}
-                                                className="p-1 bg-emerald-50 text-emerald-600 rounded-md hover:bg-emerald-600 hover:text-white transition-all shadow-sm"
-                                                title={`Chamar ${mission.agent2} no WhatsApp`}
-                                            >
-                                                <MessageCircle size={10} />
-                                            </button>
-                                        )}
+                                        <button 
+                                            onClick={() => handleWhatsAppContact(agentPhonesMap?.[mission.agent2], mission.agent2)}
+                                            className="p-1 bg-emerald-50 text-emerald-600 rounded-md hover:bg-emerald-600 hover:text-white transition-all shadow-sm"
+                                            title={`Chamar ${mission.agent2} no WhatsApp`}
+                                        >
+                                            <MessageCircle size={10} />
+                                        </button>
                                     </div>
                                 )}
                             </div>
                         </div>
                     </div>
+                    )}
                 </div>
                 
                 <div className="lg:col-span-3 p-3 flex flex-col justify-center relative bg-gray-50/20">
@@ -472,7 +482,7 @@ Qualquer dúvida, estamos a disposição.
                 </div>
 
                 <div className="lg:col-span-1 p-1.5 flex flex-col justify-center text-center border-l border-r border-gray-100 bg-gray-50/30 gap-2 min-w-[100px]">
-                    {isDirector && (
+                    {isDirector && !hideProviderInfo && (
                         <div className="flex flex-col gap-1">
                            <div className="bg-white border border-green-200 rounded-lg p-1 shadow-sm">
                                <p className="text-[7px] font-black text-green-500 uppercase tracking-tighter leading-none mb-0.5">Faturamento {mission.billing_approved ? '(Auditado)' : hasBeenVerified ? '(Salvo)' : '(Projetado)'}</p>
@@ -540,7 +550,7 @@ Qualquer dúvida, estamos a disposição.
                         {onViewHistory && isDirector && (<button onClick={(e) => { e.stopPropagation(); onViewHistory(mission); }} className="w-7 h-7 flex items-center justify-center rounded-md bg-purple-50 text-purple-600 border border-purple-200 transition-all duration-200 hover:bg-purple-600 hover:text-white hover:shadow-sm active:scale-95" title="Histórico Detalhado (Auditoria)"><FileSearch size={14} /></button>)}</>)}
                         {onPrint && (<button onClick={handlePrintClick} className="w-7 h-7 flex items-center justify-center rounded-md bg-gray-50 text-gray-700 border border-gray-200 transition-all duration-200 hover:bg-gray-700 hover:text-white hover:shadow-sm active:scale-95" title="Imprimir Folha de Missão (PDF) e Copiar Texto"><Printer size={14} /></button>)}
                         {onFullReport && (<button onClick={() => onFullReport(mission)} className="w-7 h-7 flex items-center justify-center rounded-md bg-amber-50 text-amber-700 border border-amber-200 transition-all duration-200 hover:bg-amber-600 hover:text-white hover:shadow-sm active:scale-95" title="Relatório Completo PDF (Timeline + Auditoria)"><FileText size={14} /></button>)}
-                        {isDirector && (<button onClick={() => onDelete(mission)} className="w-7 h-7 flex items-center justify-center rounded-md bg-red-50 text-red-600 border-red-100 transition-all duration-200 hover:bg-red-600 hover:text-white hover:shadow-sm active:scale-95" title="Excluir Missão"><Trash2 size={14}/></button>)}
+                        {isDirector && !hideProviderInfo && (<button onClick={() => onDelete(mission)} className="w-7 h-7 flex items-center justify-center rounded-md bg-red-50 text-red-600 border-red-100 transition-all duration-200 hover:bg-red-600 hover:text-white hover:shadow-sm active:scale-95" title="Excluir Missão"><Trash2 size={14}/></button>)}
                     </div>
                 </div>
             </div>
