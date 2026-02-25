@@ -268,20 +268,42 @@ const ClientPriceCalculator: React.FC<Props> = ({ clientName, clientId, priceTab
 
         setIsSavingToTable(true);
         try {
-            const payload = {
-                client: clientName,
-                operation_type: finalName,
-                activation_fee: currentTotal,
-                franchise_hours: calculation.franchiseHours,
-                franchise_km: parseFloat(distance.toFixed(1)),
-                price_per_extra_km: kmRate,
-                price_per_extra_hour: hrRate
-            };
+            const { data: existing } = await supabase
+                .from('client_price_tables')
+                .select('id, operation_type')
+                .eq('client', clientName)
+                .ilike('operation_type', finalName)
+                .maybeSingle();
 
-            const { error } = await supabase.from('client_price_tables').insert([payload]);
-            if (error) throw error;
-
-            showNotification('Tabela Atualizada', 'Rota fixa adicionada ao tarifário.', 'success');
+            if (existing) {
+                const updateConfirm = confirm(`Já existe uma rota cadastrada com este nome:\n\n"${existing.operation_type}"\n\nDeseja ATUALIZAR os valores desta rota existente?`);
+                if (!updateConfirm) {
+                    setIsSavingToTable(false);
+                    return;
+                }
+                const { error } = await supabase.from('client_price_tables').update({
+                    activation_fee: currentTotal,
+                    franchise_hours: calculation.franchiseHours,
+                    franchise_km: parseFloat(distance.toFixed(1)),
+                    price_per_extra_km: kmRate,
+                    price_per_extra_hour: hrRate
+                }).eq('id', existing.id);
+                if (error) throw error;
+                showNotification('Tabela Atualizada', 'Valores da rota existente foram atualizados.', 'success');
+            } else {
+                const payload = {
+                    client: clientName,
+                    operation_type: finalName,
+                    activation_fee: currentTotal,
+                    franchise_hours: calculation.franchiseHours,
+                    franchise_km: parseFloat(distance.toFixed(1)),
+                    price_per_extra_km: kmRate,
+                    price_per_extra_hour: hrRate
+                };
+                const { error } = await supabase.from('client_price_tables').insert([payload]);
+                if (error) throw error;
+                showNotification('Tabela Atualizada', 'Rota fixa adicionada ao tarifário.', 'success');
+            }
         } catch (error: any) {
             alert("Erro: " + error.message);
         } finally {
