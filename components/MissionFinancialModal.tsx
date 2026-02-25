@@ -74,6 +74,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
   const [suggestedToll, setSuggestedToll] = useState<number | null>(null);
   const [tollSource, setTollSource] = useState<string>('');
   const [isAddCostModalOpen, setIsAddCostModalOpen] = useState(false);
+  const [editCostTableId, setEditCostTableId] = useState<string | null>(null);
   const [memoryLoaded, setMemoryLoaded] = useState(false);
   const [tollConfirmed, setTollConfirmed] = useState(false);
 
@@ -383,17 +384,18 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
               <div className="bg-white rounded-2xl w-full max-w-3xl p-6 relative shadow-2xl border-2 border-red-100">
                   <div className="flex justify-between items-center mb-6 border-b pb-4">
                       <h3 className="font-black text-lg text-red-700 uppercase flex items-center gap-2">
-                          <Zap size={20} /> Cadastro de Tabela Rápido
+                          <Zap size={20} /> {editCostTableId ? 'Editar Tabela de Custo' : 'Cadastro de Tabela Rápido'}
                       </h3>
                       <button onClick={() => setIsAddCostModalOpen(false)} className="p-2 bg-gray-100 rounded-full hover:bg-red-50 text-gray-500 hover:text-red-500 transition-colors">
                           <X size={20}/>
                       </button>
                   </div>
                   <ProviderCostForm 
-                      onBack={() => setIsAddCostModalOpen(false)} 
+                      onBack={() => { setIsAddCostModalOpen(false); setEditCostTableId(null); }} 
                       onSuccess={handleNewCostTableSuccess}
-                      fixedProviderName={mission.provider}
-                      defaultOperationType={(() => {
+                      id={editCostTableId}
+                      fixedProviderName={editCostTableId ? undefined : mission.provider}
+                      defaultOperationType={editCostTableId ? undefined : (() => {
                           const extractCity = (addr: string) => {
                               if (!addr) return '';
                               const parts = addr.split(',')[0].split('-')[0].trim();
@@ -682,9 +684,18 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                             <option key={t.id} value={t.id}>{t.operation_type}</option>
                                         ))}
                                     </select>
+                                    {!mission.is_same_os && manualProviderTableId && (
+                                        <button 
+                                            onClick={() => { setEditCostTableId(manualProviderTableId); setIsAddCostModalOpen(true); }}
+                                            className="p-2 bg-amber-600 text-white rounded-lg hover:bg-amber-700 transition-all shadow-md active:scale-95"
+                                            title="Editar Tabela Selecionada"
+                                        >
+                                            <Edit2 size={14}/>
+                                        </button>
+                                    )}
                                     {!mission.is_same_os && (
                                         <button 
-                                            onClick={() => setIsAddCostModalOpen(true)}
+                                            onClick={() => { setEditCostTableId(null); setIsAddCostModalOpen(true); }}
                                             className="p-2 bg-slate-900 text-white rounded-lg hover:bg-black transition-all shadow-md active:scale-95"
                                             title="Cadastrar Nova Tabela"
                                         >
