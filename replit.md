@@ -2,9 +2,7 @@
 
 ## Overview
 
-Grupo TMSEG is a comprehensive operational management system for a Brazilian security escort company. It manages escort missions, fleet vehicles, clients, providers (subcontractors), financial operations, billing, contracts, and AI-powered features. The system is a full-stack application with a React frontend and an Express backend, using Supabase as the primary database and authentication layer, Google Maps for routing/geolocation, and Google Gemini AI for intelligent features like chatbots, document analysis, image generation, and billing auditing.
-
-**CRITICAL RULE:** The visual layout, design, colors, button positioning, and all UI aesthetics are frozen and must NOT be modified. Changes should focus exclusively on logic, bug fixes, and new functional features without altering the existing look and feel.
+Grupo TMSEG is a comprehensive operational management system designed for a Brazilian security escort company. Its primary purpose is to streamline and manage all facets of the business, including escort missions, fleet vehicles, clients, subcontractors, financial operations, billing, contracts, and advanced AI-powered functionalities. The system aims to enhance operational efficiency, improve financial oversight, and provide intelligent automation for tasks like reporting, auditing, and communication. Key capabilities include full mission lifecycle management, detailed client and provider management, a robust financial module, automated billing with AI auditing, and various AI features for enhanced decision-making and task automation.
 
 ## User Preferences
 
@@ -13,138 +11,43 @@ Preferred communication style: Simple, everyday language.
 ## System Architecture
 
 ### Frontend Architecture
-- **Framework:** React 18 with TypeScript
-- **Build Tool:** Vite 5 with `@vitejs/plugin-react`
-- **Styling:** Tailwind CSS 3.4 loaded via CDN in `index.html` with additional config in `tailwind.config.js`. There is also a `tailwind.config.ts` for a `client/` directory structure (shadcn/ui new-york style configured in `components.json`), suggesting a migration or dual setup.
-- **Icons:** Lucide React
-- **Maps:** `@react-google-maps/api` for Google Maps integration (routing, autocomplete, markers)
-- **PDF Generation:** jsPDF + html2canvas for generating printable documents and commercial proposals
-- **Entry Point:** `index.tsx` renders `App.tsx` which manages all routing/views via state (no client-side router like React Router — navigation is state-driven through a sidebar)
-- **Component Organization:** All components live in a flat `components/` directory. The app uses a sidebar + header layout with conditional rendering based on the active view state.
-- **State Management:** Local component state with React hooks. User session data stored in `localStorage`. A `NotificationContext` provides app-wide toast notifications.
+The frontend is built with React 18 and TypeScript, using Vite 5 for tooling. Styling is managed with Tailwind CSS. Google Maps is integrated for geolocation and routing. PDF generation uses `jsPDF` and `html2canvas`. Navigation is state-driven via a sidebar, and state management relies on local component state with React hooks, complemented by `localStorage` for user session data and a `NotificationContext` for app-wide alerts. The UI aesthetics, including layout, colors, and button positioning, are frozen and should not be modified.
 
 ### Backend Architecture
-- **Runtime:** Node.js with Express 5
-- **Dev Server:** `npx tsx server/index.ts` — uses tsx for TypeScript execution
-- **Server Port:** Vite dev server runs on port 5000, host `0.0.0.0`
-- **Database ORM:** Drizzle ORM configured with PostgreSQL (`drizzle.config.ts` points to `shared/schema.ts`). Requires `DATABASE_URL` environment variable.
-- **Schema Location:** `shared/schema.ts` (referenced by drizzle config)
-- **Migrations:** Output to `./migrations` directory
+The backend is built with Node.js and Express 5, using `tsx` for TypeScript execution. It integrates with Drizzle ORM for PostgreSQL. All AI calls are proxied through server routes, utilizing Replit AI Integrations for Google Gemini.
 
 ### Data Storage
-- **Primary Database:** Supabase (PostgreSQL). The Supabase client is initialized in `lib/supabase.ts`. All CRUD operations go through the Supabase JS client directly from the frontend.
-- **Drizzle ORM:** Configured for PostgreSQL but currently the frontend bypasses it by using Supabase client directly. The Drizzle setup with `shared/schema.ts` is for the Express backend layer.
-- **Key Tables:** `missions`, `clients`, `providers`, `vehicles`, `client_vehicles`, `client_routes`, `client_price_tables`, `provider_cost_tables`, `system_users`, `system_logs`, `financial_transactions`, `financial_accounts`, `financial_categories`, `commercial_proposals`, `quotes`, `provider_agents`
+The primary database is Supabase (PostgreSQL), with the Supabase JS client used directly from the frontend for CRUD operations. The backend also has Drizzle ORM configured for PostgreSQL, referencing a `shared/schema.ts`. Key tables include `missions`, `clients`, `providers`, `vehicles`, `system_users`, `financial_transactions`, and `commercial_proposals`.
 
 ### Authentication & Authorization
-- **Auth Method:** Custom authentication against a `system_users` table in Supabase (not Supabase Auth). User data is stored in `localStorage` after login.
-- **Role-Based Access:** Roles include `Administrador`, `Diretoria`, `Avançado`, `Comercial`, and client-scoped users. Permissions are checked via `user.role` and `user.permissions` array (wildcard `*` for full access).
-- **Biometric Login:** Optional biometric verification component using device camera + Gemini AI for face detection, plus geolocation capture.
+Authentication is custom, using a `system_users` table in Supabase. User session data is stored in `localStorage`. The system implements role-based access control with roles like `Administrador`, `Diretoria`, `Avançado`, and `Comercial`. Optional biometric login with Gemini AI for face detection and geolocation is available.
 
 ### Key Modules
-1. **Missions** — Full lifecycle management (Solicited → Documentation → Scheduled → Origin → In Transit → Completed/Cancelled/Refused) with status tracking, financial calculations, map visualization, and history logging.
-2. **Clients** — Client management with price tables, vehicle fleets, routes, quotes, and commercial proposals. Supports client-type user login with restricted views.
-3. **Providers** — Subcontractor management with cost tables, agent registration, and alvará (license) expiration tracking.
-4. **Financial** — Complete financial module with accounts, categories (DRE structure), transactions, bank statement import/reconciliation via AI, daily cash movement, and financial reports.
-5. **Billing** — Automated billing calculations matching missions to client price tables and provider cost tables, with AI-powered auditing.
-6. **AI Features** — Chatbot, image generation, billing auditor, financial auditor, brand identity generator, bank statement analyzer — all powered by Google Gemini API.
-7. **Reports** — Operational and financial reporting dashboards.
-8. **System Admin** — User management, profile/permission management, system logs, server stats, cost optimization dashboard.
+1.  **Missions:** Manages the full lifecycle of escort missions, including status tracking, financial calculations, and map visualization.
+2.  **Clients:** Handles client information, price tables, vehicle fleets, and commercial proposals.
+3.  **Providers:** Manages subcontractors, their cost tables, agents, and license tracking.
+4.  **Financial:** Provides a comprehensive financial module with accounts, categories, transactions, bank statement processing, and reports.
+5.  **Billing:** Automates billing calculations, matching missions to client and provider rates, with AI-powered auditing.
+6.  **AI Features:** Integrates Google Gemini for a chatbot, image generation, billing/financial auditing, brand identity generation, and bank statement analysis.
+7.  **Reports:** Offers operational and financial dashboards.
+8.  **System Admin:** Includes user, profile, and permission management, system logs, and server statistics.
 
-### AI Integration
-- **Gemini AI** is provided by Replit AI Integrations — no user API key required
-- All AI calls are proxied through server routes (`/api/chat` for chatbot, `/api/gemini/generate` for other AI features)
-- Server routes use `AI_INTEGRATIONS_GEMINI_API_KEY` and `AI_INTEGRATIONS_GEMINI_BASE_URL` (auto-configured)
-- Frontend components import `generateContent` from `lib/gemini.ts` which calls the server proxy
-- AIChatbot calls `/api/chat` directly with SSE streaming
-
-### Supabase Monitor (Server Status Page)
-- **Component:** `components/ServerStats.tsx` — Enhanced with full Supabase monitoring panel
-- **Backend Routes:** Added to `server/routes.ts`:
-  - `GET /api/supabase/status` — REST API ping, Supabase platform incidents, scheduled maintenances
-  - `GET /api/supabase/db-metrics` — Row counts and estimated sizes for all project tables
-  - `GET /api/supabase/storage-usage` — Storage bucket listing with object counts and sizes
-  - `GET /api/supabase/health-check` — Multi-service health check (Database, Auth, Storage, Realtime)
-  - `GET /api/supabase/billing-links` — Direct links to Supabase dashboard pages
-- **Frontend Tabs:** Overview (service health + incidents), Database (table-level metrics with bars), Storage (bucket usage), Links (billing/usage/logs dashboards)
-- **Auto-refresh:** Every 60 seconds alongside existing API diagnostics
-
-### Toll Calculation API
-- **Backend Route:** `POST /api/toll/calculate` in `server/routes.ts`
-  - Receives `{ origin, destination }` addresses
-  - Geocodes both via Google Maps Geocoding API
-  - **Primary:** Rotas Brasil API (`rotasbrasil.com.br/apiRotas/coordenadas/`) — GET with lng,lat coordinates, `veiculo=auto&eixo=2`
-  - **Fallback:** calcularpedagio.com.br API (v3 coordenadas endpoint)
-  - Returns toll value for light vehicle 2 axles + individual toll plaza details (name, concessionária, rodovia, valor)
-  - Handles API payment/availability errors gracefully with clear user messages
-- **Frontend Integration:** `components/MissionForm.tsx`
-  - When a route is selected, toll calculation flows: 1) Fixed route toll → 2) Historical mission toll → 3) API calculation
-  - API runs asynchronously after initial suggestion, overrides if API returns a different value
-  - Shows loading spinner, toll plaza count, and individual toll breakdown with concessionária info
-  - Shows error notification if API is unavailable (keeps historical/fixed value)
-- **API Keys:**
-  - `ROTAS_BRASIL_TOKEN` — Environment secret (primary). User must create account at rotasbrasil.com.br and add token
-  - `TOLL_API_CONFIG` in `constants.ts` — calcularpedagio.com.br (fallback, requires active payment)
-
-### CEVA + Jundiaí Price Table Intelligence
-- **Location:** `lib/financialUtils.ts` — Post-selection override after `selectStrictTable`
-- **Logic:** When client is CEVA AND origin contains "Jundiaí":
-  - If `distanceForCalculation > 200km` → Forces selection of the "Sudeste - Operação Logitech - 200KM" table (looks for LOGITECH or 200KM in table name with `franchise_km >= 200`)
-  - If `distanceForCalculation ≤ 200km` → If current selection is a Logitech/200KM table, downgrades to the standard CEVA table (e.g., 100KM) to avoid overbilling short routes like Jundiaí → Cajamar
-- **Override:** Only applies to automatic detection; manual/memory selections are preserved
-- **Log output:** Shows descriptive messages like "CEVA Jundiaí >200km → Sudeste - Operação Logitech - 200KM"
-- **Distance reference:** Uses `Math.max(totalDistance, distanceForCalculation)` — considers both the route distance (KM Previsto) and odometer distance (KM Real) to ensure correct table detection even when KM Real is capped at franchise. Also checks if destination contains "200KM" as additional trigger.
-- **Provider tables:** Also use `Math.max(totalDistance, distanceForCalculation)` for scoring, ensuring correct provider table selection for long-distance routes
-
-### Mission Report (`MissionFullReportModal`)
-- `hideProviderInfo` prop: When true (client users), hides provider name, agent details (CPF/RG/CNV), vehicle, tracker from report HTML. Also filters audit entries for provider/agent/vehicle fields.
-- Report opens in new browser tab as full HTML page with print/PDF support
-
-### Environment Variables
-- `DATABASE_URL` — PostgreSQL connection string (required for Drizzle/backend)
-- `AI_INTEGRATIONS_GEMINI_API_KEY` / `AI_INTEGRATIONS_GEMINI_BASE_URL` — Auto-configured by Replit AI Integrations
-- Supabase credentials are configured in `lib/supabase.ts`
+### Key Features and Integrations
+-   **Investment Dashboard:** Manages investment accounts, tracks balance snapshots, and provides analytical charts (Recharts) with AI analysis capabilities.
+-   **Supabase Monitor:** A server status page providing real-time health checks, database metrics, storage usage, and direct links to Supabase dashboards.
+-   **Toll Calculation API:** Dynamically calculates toll costs for routes using primary and fallback external APIs, integrating these costs into mission forms.
+-   **CEVA + Jundiaí Price Table Intelligence:** Implements specific business logic to automatically adjust price table selection for the CEVA client based on distance and location, preventing overbilling.
+-   **Mission Report:** Generates detailed mission reports with configurable visibility for client users, hiding sensitive provider information.
 
 ## External Dependencies
 
 ### Third-Party Services
-- **Supabase** — PostgreSQL database, storage, and real-time subscriptions. Used as the primary data layer accessed directly from the frontend via `@supabase/supabase-js`.
-- **Google Gemini AI** (`@google/genai`) — Powers the AI chatbot, image generation, document analysis (OCR for bank statements, price tables), billing auditing, financial auditing, brand generation, and biometric verification.
-- **Google Maps Platform** (`@react-google-maps/api`) — Maps display, directions/routing, distance calculation, place autocomplete, geocoding. API key configured in `lib/maps.ts`.
-- **WDAPI** (`wdapi2.com.br`) — Brazilian vehicle plate lookup API for auto-filling vehicle data. Token and config in `constants.ts`.
-- **Toll Calculator API** (`calcularpedagio.com.br`) — Toll cost calculation for routes. API key in `constants.ts`.
-- **Z-API (WhatsApp)** — WhatsApp messaging integration. Instance ID and token in `constants.ts`.
-
-### Executive Dashboard (`ExecutiveDashboard.tsx`)
-- **Component:** `components/ExecutiveDashboard.tsx` — Replaces the old `AnalyticsDashboard` in MissionTable
-- **Charts (Recharts):** 10 professional charts:
-  1. Missões por Dia (BarChart) — daily mission count for current month
-  2. Faturamento vs Custo vs Lucro (ComposedChart) — revenue, cost, profit bars+line
-  3. Receita Acumulada (AreaChart) — cumulative daily revenue
-  4. Distribuição por Status (PieChart) — mission status breakdown
-  5. Top Clientes por Volume (horizontal BarChart) — top 7 clients by mission count
-  6. Top Clientes por Faturamento (horizontal BarChart) — top 7 by revenue (R$)
-  7. Mix de Operação (PieChart) — Caracterizada vs Velada vs Pronta Resposta
-  8. Custo por Fornecedor (horizontal BarChart) — provider cost ranking
-  9. Margem de Lucro por Cliente (horizontal BarChart) — profit margin % per client
-  10. Eficiência Operacional (PieChart) — success rate breakdown
-- **KPI Cards:** Volume total, em trânsito, canceladas, eficiência, faturamento, custo, lucro, lucratividade
-- **Access Control:** Financial charts (revenue, cost, profit, margins) only visible to `isDirector` users
-- **META Calculation:** REFUSED missions are excluded from all revenue calculations; CANCELLED missions are included
-
-### Key NPM Packages
-- `react`, `react-dom` — UI framework
-- `@supabase/supabase-js` — Supabase client
-- `@google/genai` — Gemini AI SDK
-- `@react-google-maps/api` — Google Maps React wrapper
-- `recharts` — Professional charting library for executive dashboard
-- `lucide-react` — Icon library
-- `html2canvas` + `jspdf` — PDF generation
-- `express` — Backend server
-- `drizzle-zod`, `zod` — Schema validation
-- `tsx` — TypeScript execution for the server
-- `p-limit`, `p-retry` — Concurrency and retry utilities
+-   **Supabase:** Primary PostgreSQL database, storage, and real-time services.
+-   **Google Gemini AI:** Powers all AI-driven features (chatbot, image generation, auditing, analysis).
+-   **Google Maps Platform:** Provides mapping, routing, distance calculation, and geocoding functionalities.
+-   **WDAPI:** Used for Brazilian vehicle plate lookup to auto-fill vehicle data.
+-   **Rotas Brasil API / calcularpedagio.com.br:** External APIs for toll cost calculation.
+-   **Z-API (WhatsApp):** Integrates WhatsApp messaging capabilities.
 
 ### Deployment
-- **Vercel** — Configured via `vercel.json` with SPA rewrites and cache headers. The frontend builds with Vite (`vite build`).
-- **Dev:** `npm run dev` starts the Express server via tsx which likely also serves the Vite dev server.
+-   **Vercel:** Used for frontend deployment, configured with SPA rewrites and cache headers.

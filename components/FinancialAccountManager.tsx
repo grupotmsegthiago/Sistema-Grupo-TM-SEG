@@ -1,408 +1,749 @@
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { supabase } from '../lib/supabase';
 import { FinancialAccount, FinancialCategory } from '../types';
-import { Plus, Trash2, Landmark, Save, X, Loader2, Wallet, Pencil, TrendingUp, TrendingDown, RefreshCw, CheckCircle2, AlertCircle, Zap, PencilLine, Calculator, History, Sparkles, BarChart } from 'lucide-react';
+import { Plus, Trash2, Landmark, Save, X, Loader2, Wallet, Pencil, TrendingUp, TrendingDown, RefreshCw, CheckCircle2, AlertCircle, Zap, PencilLine, Calculator, History, Sparkles, BarChart, DollarSign, ArrowUpRight, ArrowDownRight, Calendar, Clock, Eye, ChevronDown, ChevronUp, Brain, LineChart as LineChartIcon } from 'lucide-react';
+import { LineChart, Line, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend, PieChart, Pie, Cell, ComposedChart, Bar } from 'recharts';
 
 interface Props {
     onClose?: () => void;
 }
 
-interface HistoryPoint {
-    day: number;
-    date: string;
-    value: number;
-    yield: number;
-    yieldPercent: number;
-    isAdjustment: boolean;
-    hasMovement: boolean;
+interface BalanceSnapshot {
+    id: number;
+    account_id: string;
+    balance: number;
+    notes: string;
+    created_by: string;
+    recorded_at: string;
 }
 
-interface EnrichedFinancialAccount extends FinancialAccount {
+interface EnrichedAccount extends FinancialAccount {
     current_calculated_balance: number;
-    historyPoints?: number[]; 
+    snapshots: BalanceSnapshot[];
+    latestSnapshot?: BalanceSnapshot;
+    previousSnapshot?: BalanceSnapshot;
+    changeValue: number;
+    changePercent: number;
+    weeklyChange: number;
+    weeklyChangePercent: number;
+    monthlyChange: number;
+    monthlyChangePercent: number;
 }
 
-const Sparkline: React.FC<{ data: number[]; width?: number; height?: number }> = ({ data, width = 120, height = 40 }) => {
-    if (!data || data.length < 2) return <div style={{ width, height }} className="flex items-center justify-center text-[10px] text-gray-300 bg-gray-50 rounded">Sem dados</div>;
-    const min = Math.min(...data);
-    const max = Math.max(...data);
-    const range = max - min || 1;
-    const points = data.map((val, i) => {
-        const x = (i / (data.length - 1)) * width;
-        const y = height - ((val - min) / range) * (height - 10) - 5; 
-        return `${x},${y}`;
-    }).join(' ');
-    const isGrowth = data[data.length - 1] >= data[0];
-    const color = isGrowth ? '#22c55e' : '#ef4444'; 
-    return (
-        <svg width={width} height={height} viewBox={`0 0 ${width} ${height}`} className="overflow-visible">
-            <polyline points={points} fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-            <circle cx={width} cy={height - ((data[data.length - 1] - min) / range) * (height - 10) - 5} r="3" fill={color} />
-        </svg>
-    );
-};
+type ViewMode = 'dashboard' | 'account-detail';
+type PeriodFilter = '7d' | '30d' | '90d' | '180d' | '365d' | 'all';
+
+const COLORS = ['#3B82F6', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6', '#EC4899', '#06B6D4', '#84CC16'];
+
+const formatBRL = (v: number) => v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+const formatPct = (v: number) => `${v >= 0 ? '+' : ''}${v.toFixed(2)}%`;
+const formatDate = (d: string) => new Date(d).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
+const formatDateTime = (d: string) => new Date(d).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' });
 
 const FinancialAccountManager: React.FC<Props> = ({ onClose }) => {
-    const [accounts, setAccounts] = useState<EnrichedFinancialAccount[]>([]);
+    const [accounts, setAccounts] = useState<EnrichedAccount[]>([]);
+    const [allSnapshots, setAllSnapshots] = useState<BalanceSnapshot[]>([]);
     const [isLoading, setIsLoading] = useState(true);
+    const [categories, setCategories] = useState<FinancialCategory[]>([]);
+
     const [formData, setFormData] = useState({ name: '', initial_balance: '', bank_name: '' });
     const [isSaving, setIsSaving] = useState(false);
     const [editingId, setEditingId] = useState<string | null>(null);
+    const [showForm, setShowForm] = useState(false);
 
-    const [updatingAccountId, setUpdatingAccountId] = useState<string | null>(null);
-    const [newBalanceInput, setNewBalanceInput] = useState<string>('');
+    const [viewMode, setViewMode] = useState<ViewMode>('dashboard');
+    const [selectedAccountId, setSelectedAccountId] = useState<string | null>(null);
+    const [periodFilter, setPeriodFilter] = useState<PeriodFilter>('90d');
+
+    const [updateAccountId, setUpdateAccountId] = useState<string | null>(null);
+    const [newBalanceInput, setNewBalanceInput] = useState('');
     const [isProcessingUpdate, setIsProcessingUpdate] = useState(false);
 
-    const [categories, setCategories] = useState<FinancialCategory[]>([]);
-    const [viewHistoryId, setViewHistoryId] = useState<string | null>(null);
-    const [historyData, setHistoryData] = useState<HistoryPoint[]>([]);
-    const [historyLoading, setHistoryLoading] = useState(false);
+    const [aiAnalysis, setAiAnalysis] = useState<string | null>(null);
+    const [isAnalyzing, setIsAnalyzing] = useState(false);
+
+    const [dbReady, setDbReady] = useState(false);
 
     useEffect(() => {
-        fetchAccounts();
-        fetchCategories();
+        const init = async () => {
+            await fetch('/api/investment/init', { method: 'POST' });
+            setDbReady(true);
+        };
+        init();
     }, []);
 
-    const fetchCategories = async () => {
-        const { data } = await supabase.from('financial_categories').select('*');
-        if (data) setCategories(data as any);
-    };
+    useEffect(() => {
+        if (dbReady) {
+            fetchData();
+        }
+    }, [dbReady, periodFilter]);
 
-    const fetchAccounts = async (silent = false) => {
-        if (!silent) setIsLoading(true);
+    const fetchData = async () => {
+        setIsLoading(true);
         try {
-            const { data: accData } = await supabase.from('financial_accounts').select('*').order('name');
-            const { data: transData } = await supabase.from('financial_transactions').select('*').eq('status', 'PAID');
+            const days = periodFilter === 'all' ? 3650 : parseInt(periodFilter);
+            const [accRes, catRes, snapRes] = await Promise.all([
+                supabase.from('financial_accounts').select('*').order('name'),
+                supabase.from('financial_categories').select('*'),
+                fetch(`/api/investment/snapshots-all?days=${days}`).then(r => r.json()),
+            ]);
 
-            const enriched: EnrichedFinancialAccount[] = (accData || []).map((acc: any) => {
-                const accTrans = (transData || []).filter((t: any) => t.account_id === acc.id);
-                let currentVal = acc.initial_balance;
-                const points = [currentVal];
+            const accData = accRes.data || [];
+            setCategories((catRes.data || []) as any);
 
-                accTrans.forEach((t: any) => {
-                    if (t.type === 'INCOME') currentVal += t.amount;
-                    else currentVal -= t.amount;
-                    points.push(currentVal);
-                });
+            const snapshots: BalanceSnapshot[] = (snapRes || []).map((s: any) => ({ ...s, balance: parseFloat(s.balance) }));
+            setAllSnapshots(snapshots);
 
-                return { ...acc, current_calculated_balance: currentVal, historyPoints: points };
+            const now = Date.now();
+            const weekAgo = now - 7 * 86400000;
+            const monthAgo = now - 30 * 86400000;
+
+            const enriched: EnrichedAccount[] = accData.map((acc: any) => {
+                const accSnaps = snapshots.filter((s: BalanceSnapshot) => s.account_id === acc.id).sort((a: BalanceSnapshot, b: BalanceSnapshot) => new Date(a.recorded_at).getTime() - new Date(b.recorded_at).getTime());
+
+                const latestSnapshot = accSnaps.length > 0 ? accSnaps[accSnaps.length - 1] : null;
+                const previousSnapshot = accSnaps.length > 1 ? accSnaps[accSnaps.length - 2] : null;
+                const currentBalance = latestSnapshot ? latestSnapshot.balance : acc.initial_balance;
+
+                const changeValue = previousSnapshot ? currentBalance - previousSnapshot.balance : 0;
+                const changePercent = previousSnapshot && previousSnapshot.balance !== 0 ? (changeValue / previousSnapshot.balance) * 100 : 0;
+
+                const weekSnap = accSnaps.filter((s: BalanceSnapshot) => new Date(s.recorded_at).getTime() <= weekAgo).pop();
+                const weekRef = weekSnap ? weekSnap.balance : (accSnaps.length > 0 ? accSnaps[0].balance : acc.initial_balance);
+                const weeklyChange = currentBalance - weekRef;
+                const weeklyChangePercent = weekRef !== 0 ? (weeklyChange / weekRef) * 100 : 0;
+
+                const monthSnap = accSnaps.filter((s: BalanceSnapshot) => new Date(s.recorded_at).getTime() <= monthAgo).pop();
+                const monthRef = monthSnap ? monthSnap.balance : (accSnaps.length > 0 ? accSnaps[0].balance : acc.initial_balance);
+                const monthlyChange = currentBalance - monthRef;
+                const monthlyChangePercent = monthRef !== 0 ? (monthlyChange / monthRef) * 100 : 0;
+
+                return {
+                    ...acc,
+                    current_calculated_balance: currentBalance,
+                    snapshots: accSnaps,
+                    latestSnapshot,
+                    previousSnapshot,
+                    changeValue,
+                    changePercent,
+                    weeklyChange,
+                    weeklyChangePercent,
+                    monthlyChange,
+                    monthlyChangePercent,
+                };
             });
 
             setAccounts(enriched);
-        } catch (e) { console.error(e); } finally { if (!silent) setIsLoading(false); }
-    };
-
-    const fetchAccountHistory = async (accountId: string) => {
-        setHistoryLoading(true);
-        try {
-            const now = new Date();
-            const currentMonth = now.getMonth();
-            const currentYear = now.getFullYear();
-            
-            const { data: accData } = await supabase.from('financial_accounts').select('initial_balance').eq('id', accountId).single();
-            // Busca TODAS as transações passadas para compor o saldo inicial do mês
-            const { data: transactions } = await supabase
-                .from('financial_transactions')
-                .select('*')
-                .eq('account_id', accountId)
-                .eq('status', 'PAID')
-                .order('payment_date', { ascending: true });
-
-            let runningBalance = accData?.initial_balance || 0;
-            const fullHistory: HistoryPoint[] = [];
-
-            // 1. Calcula saldo até o início do mês atual
-            const startOfMonth = new Date(currentYear, currentMonth, 1);
-            
-            const monthPoints: Record<number, { value: number, yield: number, isAdj: boolean, hasMovement: boolean }> = {};
-            
-            // Inicializa os 31 dias
-            for(let d=1; d<=31; d++) {
-                monthPoints[d] = { value: 0, yield: 0, isAdj: false, hasMovement: false };
-            }
-
-            if (transactions) {
-                transactions.forEach(t => {
-                    const tDate = new Date(t.payment_date || t.due_date);
-                    const prevBal = runningBalance;
-                    
-                    if (t.type === 'INCOME') runningBalance += t.amount;
-                    else runningBalance -= t.amount;
-
-                    // Se a transação for do mês atual, marca o dia
-                    if (tDate.getMonth() === currentMonth && tDate.getFullYear() === currentYear) {
-                        const day = tDate.getDate();
-                        const isAdj = (t.notes || '').includes('Conciliação') || (t.category_name || '').includes('Ajuste');
-                        
-                        monthPoints[day] = {
-                            value: runningBalance,
-                            yield: (monthPoints[day].yield || 0) + (t.type === 'INCOME' ? t.amount : -t.amount),
-                            isAdj: monthPoints[day].isAdj || isAdj,
-                            hasMovement: true
-                        };
-                    }
-                });
-            }
-
-            // 2. Preenche as lacunas (dias sem movimento mantêm o saldo do dia anterior)
-            let lastKnownBalance = runningBalance; 
-            // Precisamos descobrir o saldo EXATO no dia 1 (antes de qualquer transação do dia 1)
-            // Para simplificar, vamos iterar do dia 1 ao 31 reconstruindo a linha do tempo do mês
-            
-            // Primeiro: Descobrir saldo em 01/Mês
-            let balanceAtStartOfMonth = accData?.initial_balance || 0;
-            if (transactions) {
-                transactions.forEach(t => {
-                    const tDate = new Date(t.payment_date || t.due_date);
-                    if (tDate < startOfMonth) {
-                        if (t.type === 'INCOME') balanceAtStartOfMonth += t.amount;
-                        else balanceAtStartOfMonth -= t.amount;
-                    }
-                });
-            }
-
-            let currentRefBalance = balanceAtStartOfMonth;
-            for (let d = 1; d <= 31; d++) {
-                const dayData = monthPoints[d];
-                if (dayData.hasMovement) {
-                    currentRefBalance = dayData.value;
-                }
-                
-                fullHistory.push({
-                    day: d,
-                    date: `${d}/${currentMonth + 1}`,
-                    value: currentRefBalance,
-                    yield: dayData.yield,
-                    yieldPercent: (currentRefBalance - dayData.yield) > 0 ? (dayData.yield / (currentRefBalance - dayData.yield)) * 100 : 0,
-                    isAdjustment: dayData.isAdj,
-                    hasMovement: dayData.hasMovement
-                });
-            }
-
-            setHistoryData(fullHistory);
-        } catch (e) { 
-            console.error(e); 
-        } finally { 
-            setHistoryLoading(false); 
-        }
+        } catch (e) { console.error(e); } finally { setIsLoading(false); }
     };
 
     const handleUpdateBalance = async (e: React.FormEvent) => {
         e.preventDefault();
-        const account = accounts.find(a => a.id === updatingAccountId);
-        if (!account) return;
-
-        const newBal = parseFloat(newBalanceInput);
-        const diff = newBal - account.current_calculated_balance;
-        if (Math.abs(diff) < 0.01) return setUpdatingAccountId(null);
+        if (!updateAccountId) return;
+        const newBal = parseFloat(newBalanceInput.replace(',', '.'));
+        if (isNaN(newBal)) return;
 
         setIsProcessingUpdate(true);
         try {
-            const isGain = diff > 0;
-            const cat = categories.find(c => c.group === 'NAO_OPERACIONAL' || c.name.includes('Ajuste'));
+            const userName = JSON.parse(localStorage.getItem('userData') || '{}').name || '';
+            await fetch('/api/investment/snapshots', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ account_id: updateAccountId, balance: newBal, notes: '', created_by: userName }),
+            });
 
-            await supabase.from('financial_transactions').insert([{
-                description: isGain ? 'Rendimento Automático (Ajuste)' : 'Desvalorização/Ajuste (Perda)',
-                amount: Math.abs(diff),
-                type: isGain ? 'INCOME' : 'EXPENSE',
-                status: 'PAID',
-                due_date: new Date().toISOString(),
-                payment_date: new Date().toISOString(),
-                category_id: cat?.id || null,
-                category_name: cat?.name || 'AJUSTE DE SALDO',
-                account_id: account.id,
-                account_name: account.name,
-                notes: 'Ajuste Automático de Saldo Real (Conciliação)',
-                created_by: JSON.parse(localStorage.getItem('userData') || '{}').name
-            }]);
+            const account = accounts.find(a => a.id === updateAccountId);
+            if (account) {
+                const diff = newBal - account.current_calculated_balance;
+                if (Math.abs(diff) >= 0.01) {
+                    const isGain = diff > 0;
+                    const cat = categories.find(c => c.group === 'NAO_OPERACIONAL' || c.name.includes('Ajuste'));
+                    await supabase.from('financial_transactions').insert([{
+                        description: isGain ? 'Rendimento de Investimento' : 'Desvalorização de Investimento',
+                        amount: Math.abs(diff),
+                        type: isGain ? 'INCOME' : 'EXPENSE',
+                        status: 'PAID',
+                        due_date: new Date().toISOString(),
+                        payment_date: new Date().toISOString(),
+                        category_id: cat?.id || null,
+                        category_name: cat?.name || 'AJUSTE DE SALDO',
+                        account_id: account.id,
+                        account_name: account.name,
+                        notes: `Atualização de saldo de investimento (${formatBRL(account.current_calculated_balance)} → ${formatBRL(newBal)})`,
+                        created_by: userName,
+                    }]);
+                }
+            }
 
-            setUpdatingAccountId(null);
-            fetchAccounts();
-            alert("Saldo sincronizado com sucesso!");
+            setUpdateAccountId(null);
+            setNewBalanceInput('');
+            fetchData();
         } catch (e: any) { alert(e.message); } finally { setIsProcessingUpdate(false); }
     };
 
-    const handleDelete = async (id: string) => {
-        if (!confirm("Excluir conta bancária?")) return;
-        try {
-            const { error } = await supabase.from('financial_accounts').delete().eq('id', id);
-            if (error) throw error;
-            fetchAccounts();
-        } catch (e: any) { alert("Erro ao excluir: " + e.message); }
+    const handleDeleteSnapshot = async (id: number) => {
+        if (!confirm('Excluir este registro de saldo?')) return;
+        await fetch(`/api/investment/snapshots/${id}`, { method: 'DELETE' });
+        fetchData();
     };
 
-    const handleCancelEdit = () => { setEditingId(null); setFormData({ name: '', initial_balance: '', bank_name: '' }); };
-
-    const handleSubmit = async (e: React.FormEvent) => {
+    const handleSubmitAccount = async (e: React.FormEvent) => {
         e.preventDefault();
         setIsSaving(true);
         try {
             const val = parseFloat(formData.initial_balance);
-            if (editingId) await supabase.from('financial_accounts').update({ name: formData.name, initial_balance: val, bank_name: formData.bank_name }).eq('id', editingId);
-            else await supabase.from('financial_accounts').insert([{ name: formData.name, initial_balance: val, bank_name: formData.bank_name, status: 'Ativo' }]);
-            handleCancelEdit();
-            fetchAccounts();
+            if (editingId) {
+                await supabase.from('financial_accounts').update({ name: formData.name, initial_balance: val, bank_name: formData.bank_name }).eq('id', editingId);
+            } else {
+                await supabase.from('financial_accounts').insert([{ name: formData.name, initial_balance: val, bank_name: formData.bank_name, status: 'Ativo' }]);
+            }
+            setEditingId(null);
+            setShowForm(false);
+            setFormData({ name: '', initial_balance: '', bank_name: '' });
+            fetchData();
         } catch (e: any) { alert(e.message); } finally { setIsSaving(false); }
     };
 
-    const maxHistoryValue = useMemo(() => {
-        return Math.max(...historyData.map(h => h.value), 1);
-    }, [historyData]);
+    const handleDeleteAccount = async (id: string) => {
+        if (!confirm('Excluir conta bancária e todo histórico?')) return;
+        await supabase.from('financial_accounts').delete().eq('id', id);
+        fetchData();
+    };
+
+    const runAIAnalysis = async () => {
+        setIsAnalyzing(true);
+        setAiAnalysis(null);
+        try {
+            const summaryData = accounts.map(a => ({
+                conta: a.name,
+                banco: a.bank_name,
+                saldoInicial: a.initial_balance,
+                saldoAtual: a.current_calculated_balance,
+                variacaoSemana: `${formatPct(a.weeklyChangePercent)} (${formatBRL(a.weeklyChange)})`,
+                variacaoMes: `${formatPct(a.monthlyChangePercent)} (${formatBRL(a.monthlyChange)})`,
+                registros: a.snapshots.length,
+                ultimosValores: a.snapshots.slice(-10).map(s => ({ data: formatDateTime(s.recorded_at), valor: s.balance })),
+            }));
+
+            const totalInvestido = accounts.reduce((s, a) => s + a.current_calculated_balance, 0);
+
+            const prompt = `Você é um analista financeiro especializado em investimentos brasileiros. Analise os dados de investimento abaixo e forneça:
+
+1. **Resumo Geral**: Total investido e distribuição
+2. **Performance**: Quais contas estão com melhor e pior performance
+3. **Tendências**: O que os dados mostram sobre a tendência de cada investimento
+4. **Recomendações**: Sugestões de diversificação ou rebalanceamento
+5. **Alerta de Riscos**: Se alguma conta apresenta sinais preocupantes
+6. **Comparação com CDI**: Compare a rentabilidade com o CDI atual (~13.25% a.a. / ~1.04% a.m.)
+
+Total investido: ${formatBRL(totalInvestido)}
+
+Dados das contas:
+${JSON.stringify(summaryData, null, 2)}
+
+Responda de forma concisa e profissional, em português, formatado com markdown.`;
+
+            const response = await fetch('/api/chat', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ message: prompt }),
+            });
+
+            const reader = response.body?.getReader();
+            const decoder = new TextDecoder();
+            let fullText = '';
+            if (reader) {
+                while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+                    const chunk = decoder.decode(value);
+                    const lines = chunk.split('\n');
+                    for (const line of lines) {
+                        if (line.startsWith('data: ')) {
+                            const data = line.slice(6);
+                            if (data === '[DONE]') continue;
+                            try {
+                                const parsed = JSON.parse(data);
+                                if (parsed.text) fullText += parsed.text;
+                            } catch { fullText += data; }
+                        }
+                    }
+                    setAiAnalysis(fullText);
+                }
+            }
+        } catch (e: any) {
+            setAiAnalysis('Erro ao gerar análise: ' + e.message);
+        } finally { setIsAnalyzing(false); }
+    };
+
+    const totalInvestido = useMemo(() => accounts.reduce((s, a) => s + a.current_calculated_balance, 0), [accounts]);
+    const totalInitial = useMemo(() => accounts.reduce((s, a) => s + a.initial_balance, 0), [accounts]);
+    const totalChange = totalInvestido - totalInitial;
+    const totalChangePct = totalInitial !== 0 ? (totalChange / totalInitial) * 100 : 0;
+
+    const selectedAccount = useMemo(() => accounts.find(a => a.id === selectedAccountId), [accounts, selectedAccountId]);
+
+    const combinedChartData = useMemo(() => {
+        if (accounts.length === 0) return [];
+        const dateMap: Record<string, any> = {};
+
+        accounts.forEach((acc) => {
+            acc.snapshots.forEach((snap) => {
+                const dateKey = formatDate(snap.recorded_at);
+                if (!dateMap[dateKey]) dateMap[dateKey] = { date: dateKey, _ts: new Date(snap.recorded_at).getTime() };
+                dateMap[dateKey][acc.name] = snap.balance;
+            });
+        });
+
+        const sorted = Object.values(dateMap).sort((a: any, b: any) => a._ts - b._ts);
+        let lastKnown: Record<string, number> = {};
+        return sorted.map((point: any) => {
+            accounts.forEach(acc => {
+                if (point[acc.name] !== undefined) {
+                    lastKnown[acc.name] = point[acc.name];
+                } else if (lastKnown[acc.name] !== undefined) {
+                    point[acc.name] = lastKnown[acc.name];
+                }
+            });
+            let total = 0;
+            accounts.forEach(acc => { if (point[acc.name]) total += point[acc.name]; });
+            point['Total'] = total;
+            return point;
+        });
+    }, [accounts]);
+
+    const accountChartData = useMemo(() => {
+        if (!selectedAccount) return [];
+        return selectedAccount.snapshots.map(s => ({
+            date: formatDateTime(s.recorded_at),
+            dateShort: formatDate(s.recorded_at),
+            saldo: s.balance,
+            _ts: new Date(s.recorded_at).getTime(),
+        }));
+    }, [selectedAccount]);
+
+    const accountEvolutionData = useMemo(() => {
+        if (!selectedAccount || selectedAccount.snapshots.length < 2) return [];
+        const snaps = selectedAccount.snapshots;
+        return snaps.slice(1).map((s, i) => {
+            const prev = snaps[i];
+            const change = s.balance - prev.balance;
+            const pct = prev.balance !== 0 ? (change / prev.balance) * 100 : 0;
+            return {
+                date: formatDate(s.recorded_at),
+                dateTime: formatDateTime(s.recorded_at),
+                valor: change,
+                percentual: parseFloat(pct.toFixed(2)),
+                saldo: s.balance,
+            };
+        });
+    }, [selectedAccount]);
+
+    const distributionData = useMemo(() => {
+        return accounts.filter(a => a.current_calculated_balance > 0).map(a => ({
+            name: a.name,
+            value: a.current_calculated_balance,
+        }));
+    }, [accounts]);
+
+    const CustomTooltip = ({ active, payload, label }: any) => {
+        if (!active || !payload?.length) return null;
+        return (
+            <div className="bg-gray-900 text-white px-3 py-2 rounded-lg shadow-xl border border-gray-700 text-xs">
+                <p className="font-bold mb-1">{label}</p>
+                {payload.map((p: any, i: number) => (
+                    <p key={i} style={{ color: p.color }} className="flex items-center gap-2">
+                        <span className="w-2 h-2 rounded-full inline-block" style={{ background: p.color }}/>
+                        {p.name}: {formatBRL(p.value)}
+                    </p>
+                ))}
+            </div>
+        );
+    };
+
+    if (isLoading && !accounts.length) {
+        return (
+            <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200 min-h-[400px] flex items-center justify-center">
+                <Loader2 size={32} className="animate-spin text-blue-600" />
+            </div>
+        );
+    }
+
+    if (viewMode === 'account-detail' && selectedAccount) {
+        return (
+            <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200 relative min-h-[400px] space-y-6">
+                <div className="flex justify-between items-center">
+                    <div className="flex items-center gap-3">
+                        <button onClick={() => { setViewMode('dashboard'); setSelectedAccountId(null); setAiAnalysis(null); }} className="p-2 hover:bg-gray-100 rounded-full transition-colors"><X size={20}/></button>
+                        <div>
+                            <h3 className="text-xl font-black uppercase tracking-tight">{selectedAccount.name}</h3>
+                            <p className="text-[10px] text-gray-400 font-bold uppercase tracking-widest">{selectedAccount.bank_name || 'Sem banco definido'}</p>
+                        </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                        <select value={periodFilter} onChange={e => setPeriodFilter(e.target.value as PeriodFilter)} className="text-xs font-bold border rounded-lg px-3 py-2 bg-gray-50 uppercase">
+                            <option value="7d">7 Dias</option>
+                            <option value="30d">30 Dias</option>
+                            <option value="90d">90 Dias</option>
+                            <option value="180d">6 Meses</option>
+                            <option value="365d">1 Ano</option>
+                            <option value="all">Tudo</option>
+                        </select>
+                        {onClose && <button onClick={onClose}><X size={20}/></button>}
+                    </div>
+                </div>
+
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                    <div className="bg-gradient-to-br from-blue-600 to-blue-700 text-white p-4 rounded-xl">
+                        <p className="text-[10px] font-bold uppercase opacity-70">Saldo Atual</p>
+                        <p className="text-xl font-black">{formatBRL(selectedAccount.current_calculated_balance)}</p>
+                    </div>
+                    <div className={`p-4 rounded-xl border ${selectedAccount.changeValue >= 0 ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'}`}>
+                        <p className="text-[10px] font-bold uppercase text-gray-500">Última Variação</p>
+                        <p className={`text-lg font-black ${selectedAccount.changeValue >= 0 ? 'text-green-700' : 'text-red-700'}`}>{formatBRL(selectedAccount.changeValue)}</p>
+                        <p className={`text-xs font-bold ${selectedAccount.changeValue >= 0 ? 'text-green-600' : 'text-red-600'}`}>{formatPct(selectedAccount.changePercent)}</p>
+                    </div>
+                    <div className={`p-4 rounded-xl border ${selectedAccount.weeklyChange >= 0 ? 'bg-emerald-50 border-emerald-200' : 'bg-orange-50 border-orange-200'}`}>
+                        <p className="text-[10px] font-bold uppercase text-gray-500">Semana</p>
+                        <p className={`text-lg font-black ${selectedAccount.weeklyChange >= 0 ? 'text-emerald-700' : 'text-orange-700'}`}>{formatBRL(selectedAccount.weeklyChange)}</p>
+                        <p className={`text-xs font-bold ${selectedAccount.weeklyChange >= 0 ? 'text-emerald-600' : 'text-orange-600'}`}>{formatPct(selectedAccount.weeklyChangePercent)}</p>
+                    </div>
+                    <div className={`p-4 rounded-xl border ${selectedAccount.monthlyChange >= 0 ? 'bg-teal-50 border-teal-200' : 'bg-rose-50 border-rose-200'}`}>
+                        <p className="text-[10px] font-bold uppercase text-gray-500">Mês</p>
+                        <p className={`text-lg font-black ${selectedAccount.monthlyChange >= 0 ? 'text-teal-700' : 'text-rose-700'}`}>{formatBRL(selectedAccount.monthlyChange)}</p>
+                        <p className={`text-xs font-bold ${selectedAccount.monthlyChange >= 0 ? 'text-teal-600' : 'text-rose-600'}`}>{formatPct(selectedAccount.monthlyChangePercent)}</p>
+                    </div>
+                </div>
+
+                {accountChartData.length >= 2 && (
+                    <div className="bg-gray-50 p-4 rounded-xl border border-gray-200">
+                        <h4 className="text-xs font-black uppercase text-gray-600 mb-3 flex items-center gap-2"><TrendingUp size={14}/> Evolução do Saldo</h4>
+                        <ResponsiveContainer width="100%" height={280}>
+                            <AreaChart data={accountChartData}>
+                                <defs>
+                                    <linearGradient id="colorSaldo" x1="0" y1="0" x2="0" y2="1">
+                                        <stop offset="5%" stopColor="#3B82F6" stopOpacity={0.3}/>
+                                        <stop offset="95%" stopColor="#3B82F6" stopOpacity={0}/>
+                                    </linearGradient>
+                                </defs>
+                                <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb"/>
+                                <XAxis dataKey="dateShort" tick={{ fontSize: 10, fill: '#6b7280' }}/>
+                                <YAxis tickFormatter={(v) => `${(v/1000).toFixed(0)}k`} tick={{ fontSize: 10, fill: '#6b7280' }}/>
+                                <Tooltip content={<CustomTooltip/>}/>
+                                <Area type="monotone" dataKey="saldo" name="Saldo" stroke="#3B82F6" fill="url(#colorSaldo)" strokeWidth={2.5} dot={{ r: 3, fill: '#3B82F6' }} activeDot={{ r: 5 }}/>
+                            </AreaChart>
+                        </ResponsiveContainer>
+                    </div>
+                )}
+
+                {accountEvolutionData.length > 0 && (
+                    <div className="bg-gray-50 p-4 rounded-xl border border-gray-200">
+                        <h4 className="text-xs font-black uppercase text-gray-600 mb-3 flex items-center gap-2"><BarChart size={14}/> Variação entre Registros (R$ e %)</h4>
+                        <ResponsiveContainer width="100%" height={200}>
+                            <ComposedChart data={accountEvolutionData}>
+                                <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb"/>
+                                <XAxis dataKey="date" tick={{ fontSize: 10, fill: '#6b7280' }}/>
+                                <YAxis yAxisId="left" tickFormatter={(v) => formatBRL(v)} tick={{ fontSize: 9, fill: '#6b7280' }}/>
+                                <YAxis yAxisId="right" orientation="right" tickFormatter={(v) => `${v}%`} tick={{ fontSize: 9, fill: '#6b7280' }}/>
+                                <Tooltip content={({ active, payload, label }: any) => {
+                                    if (!active || !payload?.length) return null;
+                                    return (
+                                        <div className="bg-gray-900 text-white px-3 py-2 rounded-lg shadow-xl text-xs">
+                                            <p className="font-bold mb-1">{label}</p>
+                                            <p>Variação: {formatBRL(payload[0]?.value || 0)}</p>
+                                            <p>Percentual: {formatPct(payload[1]?.value || 0)}</p>
+                                        </div>
+                                    );
+                                }}/>
+                                <Bar yAxisId="left" dataKey="valor" name="Variação R$" fill="#3B82F6" radius={[4, 4, 0, 0]}/>
+                                <Line yAxisId="right" type="monotone" dataKey="percentual" name="%" stroke="#F59E0B" strokeWidth={2} dot={{ r: 3 }}/>
+                            </ComposedChart>
+                        </ResponsiveContainer>
+                    </div>
+                )}
+
+                <div className="overflow-x-auto border border-gray-200 rounded-xl bg-white shadow-sm">
+                    <table className="w-full text-left text-[10px] uppercase font-bold">
+                        <thead className="bg-gray-50 border-b border-gray-200 text-gray-400 tracking-widest">
+                            <tr>
+                                <th className="p-3">Data/Hora</th>
+                                <th className="p-3">Saldo Registrado</th>
+                                <th className="p-3">Variação</th>
+                                <th className="p-3">%</th>
+                                <th className="p-3">Registrado por</th>
+                                <th className="p-3 text-right">Ação</th>
+                            </tr>
+                        </thead>
+                        <tbody className="divide-y divide-gray-100">
+                            {[...selectedAccount.snapshots].reverse().map((snap, idx, arr) => {
+                                const prevSnap = idx < arr.length - 1 ? arr[idx + 1] : null;
+                                const diff = prevSnap ? snap.balance - prevSnap.balance : 0;
+                                const pct = prevSnap && prevSnap.balance !== 0 ? (diff / prevSnap.balance) * 100 : 0;
+                                return (
+                                    <tr key={snap.id} className="hover:bg-gray-50 transition-colors">
+                                        <td className="p-3 text-gray-600 flex items-center gap-1.5"><Clock size={12} className="text-gray-300"/>{formatDateTime(snap.recorded_at)}</td>
+                                        <td className="p-3 font-mono text-blue-700 font-black text-sm">{formatBRL(snap.balance)}</td>
+                                        <td className={`p-3 font-mono ${diff > 0 ? 'text-green-600' : diff < 0 ? 'text-red-600' : 'text-gray-300'}`}>
+                                            {diff !== 0 ? `${diff > 0 ? '+' : ''}${formatBRL(diff)}` : '-'}
+                                        </td>
+                                        <td className={`p-3 font-mono ${pct > 0 ? 'text-green-600' : pct < 0 ? 'text-red-600' : 'text-gray-300'}`}>
+                                            {pct !== 0 ? formatPct(pct) : '-'}
+                                        </td>
+                                        <td className="p-3 text-gray-500">{snap.created_by || '-'}</td>
+                                        <td className="p-3 text-right">
+                                            <button onClick={() => handleDeleteSnapshot(snap.id)} className="text-gray-300 hover:text-red-500 transition-colors"><Trash2 size={13}/></button>
+                                        </td>
+                                    </tr>
+                                );
+                            })}
+                            {selectedAccount.snapshots.length === 0 && (
+                                <tr><td colSpan={6} className="p-6 text-center text-gray-400">Nenhum registro de saldo ainda. Clique em "Atualizar Saldo" para começar.</td></tr>
+                            )}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        );
+    }
 
     return (
-        <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200 relative min-h-[400px]">
-            {/* MODAL HISTÓRICO */}
-            {viewHistoryId && (
-                <div className="absolute inset-0 z-50 bg-white/95 backdrop-blur-md rounded-xl flex flex-col p-6 animate-in fade-in zoom-in-95 duration-200 overflow-y-auto">
-                    <div className="flex justify-between items-center mb-6">
-                        <div className="flex items-center gap-3">
-                            <div className="p-3 bg-gray-900 text-white rounded-2xl"><TrendingUp size={24}/></div>
-                            <div>
-                                <h3 className="text-xl font-black uppercase tracking-tight">Evolução Patrimonial Diária</h3>
-                                <p className="text-[10px] text-gray-400 font-bold uppercase tracking-widest">Performance consolidada do mês atual</p>
-                            </div>
-                        </div>
-                        <button onClick={() => setViewHistoryId(null)} className="p-2 hover:bg-gray-100 rounded-full border border-gray-200 shadow-sm"><X size={24}/></button>
-                    </div>
-
-                    {historyLoading ? (
-                        <div className="flex-1 flex items-center justify-center"><Loader2 size={40} className="animate-spin text-blue-600"/></div>
-                    ) : (
-                        <div className="space-y-8">
-                            {/* GRÁFICO DE BARRAS 1-31 */}
-                            <div className="bg-white p-6 rounded-2xl border border-gray-100 shadow-sm">
-                                <div className="h-48 flex items-end gap-1 px-2">
-                                    {historyData.map((point, idx) => (
-                                        <div key={idx} className="flex-1 flex flex-col items-center gap-1 h-full justify-end group relative">
-                                            {/* Tooltip */}
-                                            <div className="absolute bottom-full mb-2 bg-gray-900 text-white text-[9px] px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap z-10 pointer-events-none">
-                                                Dia {point.day}: R$ {point.value.toLocaleString('pt-BR')}
-                                            </div>
-                                            
-                                            <div 
-                                                className={`w-full rounded-t-sm transition-all duration-500 cursor-help ${point.hasMovement ? 'bg-indigo-600 group-hover:bg-indigo-400' : 'bg-gray-100 group-hover:bg-gray-200'}`}
-                                                style={{ height: `${(point.value / maxHistoryValue) * 100}%`, minHeight: '2px' }}
-                                            ></div>
-                                            <span className={`text-[8px] font-black mt-2 ${point.day % 5 === 0 || point.day === 1 || point.day === 31 ? 'text-gray-400' : 'text-transparent'}`}>{point.day}</span>
-                                        </div>
-                                    ))}
-                                </div>
-                                <div className="flex justify-between mt-2 px-1 text-[9px] text-gray-300 font-bold uppercase tracking-widest border-t border-gray-50 pt-2">
-                                    <span>Início do Mês</span>
-                                    <span>Ciclo Diário (1 a 31)</span>
-                                    <span>Fechamento</span>
-                                </div>
-                            </div>
-
-                            <div className="overflow-x-auto border border-gray-200 rounded-xl bg-white shadow-sm">
-                                <table className="w-full text-left text-[10px] uppercase font-bold">
-                                    <thead className="bg-gray-50 border-b border-gray-200 text-gray-400 tracking-widest">
-                                        <tr>
-                                            <th className="p-4">Dia/Data</th>
-                                            <th className="p-4">Saldo Final do Dia</th>
-                                            <th className="p-4">Variação Líquida</th>
-                                            <th className="p-4 text-right">Status Mov.</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody className="divide-y divide-gray-100">
-                                        {[...historyData].reverse().map((point, idx) => (
-                                            <tr key={idx} className={`hover:bg-gray-50 transition-colors ${point.hasMovement ? 'bg-blue-50/20' : 'opacity-60'}`}>
-                                                <td className="p-4 text-gray-500">
-                                                    <span className="bg-gray-100 px-1.5 py-0.5 rounded text-gray-600 mr-2">DIA {point.day.toString().padStart(2, '0')}</span>
-                                                    {point.date}
-                                                </td>
-                                                <td className="p-4 font-mono text-blue-700 font-black">R$ {point.value.toLocaleString('pt-BR', {minimumFractionDigits: 2})}</td>
-                                                <td className={`p-4 font-mono ${point.yield > 0 ? 'text-green-600' : point.yield < 0 ? 'text-red-600' : 'text-gray-300'}`}>
-                                                    {point.yield > 0 ? '+' : ''}{point.yield !== 0 ? point.yield.toLocaleString('pt-BR', {minimumFractionDigits: 2}) : '-'}
-                                                </td>
-                                                <td className="p-4 text-right">
-                                                    {point.hasMovement ? (
-                                                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-green-50 text-green-700 border border-green-200 text-[8px]">MOVIMENTADO</span>
-                                                    ) : (
-                                                        <span className="text-gray-300">ESTÁVEL</span>
-                                                    )}
-                                                </td>
-                                            </tr>
-                                        ))}
-                                    </tbody>
-                                </table>
-                            </div>
-                        </div>
-                    )}
-                </div>
-            )}
-
-            {/* MODAL CONCILIAÇÃO */}
-            {updatingAccountId && (
+        <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200 relative min-h-[400px] space-y-6">
+            {updateAccountId && (
                 <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-in fade-in">
                     <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden border border-gray-200">
                         <div className="p-5 border-b border-gray-100 bg-gray-50 flex justify-between items-center">
-                            <h3 className="font-bold text-gray-800 flex items-center gap-2 uppercase text-xs tracking-widest"><RefreshCw size={16} className="text-blue-600" /> Sincronizar Saldo Real</h3>
-                            <button onClick={() => setUpdatingAccountId(null)}><X size={18} className="text-gray-400"/></button>
+                            <h3 className="font-bold text-gray-800 flex items-center gap-2 uppercase text-xs tracking-widest"><DollarSign size={16} className="text-blue-600" /> Atualizar Saldo de Investimento</h3>
+                            <button onClick={() => setUpdateAccountId(null)}><X size={18} className="text-gray-400"/></button>
                         </div>
                         <form onSubmit={handleUpdateBalance} className="p-6 space-y-4">
-                            <div className="bg-blue-50 p-4 rounded-xl border border-blue-100 flex justify-between items-center">
-                                <div><p className="text-[10px] font-bold text-blue-600 uppercase">Saldo no Sistema</p><p className="text-lg font-black text-blue-900">R$ {accounts.find(a => a.id === updatingAccountId)?.current_calculated_balance.toLocaleString('pt-BR', {minimumFractionDigits: 2})}</p></div>
-                                <Calculator size={20} className="text-blue-600"/>
+                            <div className="bg-blue-50 p-4 rounded-xl border border-blue-100">
+                                <p className="text-[10px] font-bold text-blue-600 uppercase">Conta</p>
+                                <p className="font-black text-blue-900">{accounts.find(a => a.id === updateAccountId)?.name}</p>
+                                <p className="text-[10px] font-bold text-blue-600 uppercase mt-2">Saldo Atual no Sistema</p>
+                                <p className="text-lg font-black text-blue-900">{formatBRL(accounts.find(a => a.id === updateAccountId)?.current_calculated_balance || 0)}</p>
                             </div>
                             <div>
-                                <label className="text-[10px] font-bold text-gray-500 uppercase block mb-1">Informe o Saldo Real no Aplicativo do Banco</label>
+                                <label className="text-[10px] font-bold text-gray-500 uppercase block mb-1">Informe o Saldo Real do Investimento Hoje</label>
                                 <div className="relative">
                                     <span className="absolute left-3 top-1/2 -translate-y-1/2 font-bold text-gray-400">R$</span>
                                     <input type="number" step="0.01" required autoFocus className="w-full pl-10 pr-4 py-3 bg-gray-50 border border-gray-200 rounded-xl text-lg font-black text-gray-900 focus:border-blue-500 outline-none" placeholder="0.00" value={newBalanceInput} onChange={e => setNewBalanceInput(e.target.value)} />
                                 </div>
+                                <p className="text-[9px] text-gray-400 mt-1 flex items-center gap-1"><Clock size={10}/> Data e hora serão registradas automaticamente</p>
                             </div>
-                            <button type="submit" disabled={isProcessingUpdate} className="w-full py-3 bg-blue-600 text-white rounded-xl font-bold hover:bg-blue-700 transition-all flex items-center justify-center gap-2 shadow-lg">{isProcessingUpdate ? <Loader2 size={20} className="animate-spin" /> : <CheckCircle2 size={20} />} Atualizar Saldo</button>
+                            <button type="submit" disabled={isProcessingUpdate} className="w-full py-3 bg-blue-600 text-white rounded-xl font-bold hover:bg-blue-700 transition-all flex items-center justify-center gap-2 shadow-lg">
+                                {isProcessingUpdate ? <Loader2 size={20} className="animate-spin" /> : <CheckCircle2 size={20} />} Registrar Saldo
+                            </button>
                         </form>
                     </div>
                 </div>
             )}
 
-            <div className="flex justify-between items-center mb-6">
-                <h3 className="text-lg font-bold text-gray-800 flex items-center gap-2"><Landmark className="text-blue-600" /> Instituições e Contas Bancárias</h3>
-                {onClose && <button onClick={onClose}><X size={20} /></button>}
+            <div className="flex justify-between items-center">
+                <h3 className="text-xl font-black text-gray-800 flex items-center gap-3 uppercase tracking-tight">
+                    <div className="p-2.5 bg-gradient-to-br from-blue-600 to-indigo-700 text-white rounded-xl shadow-lg"><Landmark size={22}/></div>
+                    Painel de Investimentos
+                </h3>
+                <div className="flex items-center gap-2">
+                    <select value={periodFilter} onChange={e => setPeriodFilter(e.target.value as PeriodFilter)} className="text-xs font-bold border rounded-lg px-3 py-2 bg-gray-50 uppercase">
+                        <option value="7d">7 Dias</option>
+                        <option value="30d">30 Dias</option>
+                        <option value="90d">90 Dias</option>
+                        <option value="180d">6 Meses</option>
+                        <option value="365d">1 Ano</option>
+                        <option value="all">Tudo</option>
+                    </select>
+                    <button onClick={() => setShowForm(!showForm)} className="bg-blue-600 text-white px-4 py-2 rounded-lg text-xs font-bold flex items-center gap-1.5 hover:bg-blue-700 transition-all shadow-md">
+                        <Plus size={14}/> Nova Conta
+                    </button>
+                    <button onClick={runAIAnalysis} disabled={isAnalyzing || accounts.length === 0} className="bg-gradient-to-r from-purple-600 to-indigo-600 text-white px-4 py-2 rounded-lg text-xs font-bold flex items-center gap-1.5 hover:from-purple-700 hover:to-indigo-700 transition-all shadow-md disabled:opacity-50">
+                        {isAnalyzing ? <Loader2 size={14} className="animate-spin"/> : <Brain size={14}/>} Análise IA
+                    </button>
+                    {onClose && <button onClick={onClose} className="p-2 hover:bg-gray-100 rounded-full"><X size={20}/></button>}
+                </div>
             </div>
 
-            <form onSubmit={handleSubmit} className={`p-4 rounded-lg border mb-6 grid grid-cols-1 md:grid-cols-4 gap-4 items-end transition-colors ${editingId ? 'bg-amber-50 border-amber-200' : 'bg-gray-50 border-gray-200'}`}>
-                <div className="md:col-span-1"><label className="text-xs font-bold text-gray-500 uppercase mb-1 block">Identificação</label><input type="text" required className="w-full p-2 border rounded text-sm bg-white" placeholder="Ex: Itaú Empresa" value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} /></div>
-                <div className="md:col-span-1"><label className="text-xs font-bold text-gray-500 uppercase mb-1 block">Banco</label><input type="text" className="w-full p-2 border rounded text-sm bg-white" placeholder="Ex: Banco Itaú" value={formData.bank_name} onChange={e => setFormData({...formData, bank_name: e.target.value})} /></div>
-                <div className="md:col-span-1"><label className="text-xs font-bold text-gray-500 uppercase mb-1 block">Saldo de Início</label><input type="number" step="0.01" required className="w-full p-2 border rounded text-sm font-mono font-bold text-blue-700 bg-white" placeholder="0.00" value={formData.initial_balance} onChange={e => setFormData({...formData, initial_balance: e.target.value})} /></div>
-                <div className="flex gap-2">
-                    <button type="submit" disabled={isSaving} className={`flex-1 text-white p-2 rounded hover:opacity-90 font-bold text-sm flex items-center justify-center gap-2 h-[38px] ${editingId ? 'bg-amber-600' : 'bg-blue-600'}`}>
-                        {isSaving ? <Loader2 size={16} className="animate-spin"/> : (editingId ? <Save size={16}/> : <Plus size={16}/>)} 
-                        {editingId ? 'Salvar' : 'Cadastrar'}
-                    </button>
-                    {editingId && <button type="button" onClick={handleCancelEdit} className="px-3 bg-gray-200 text-gray-600 rounded hover:bg-gray-300 font-bold text-sm"><X size={16} /></button>}
-                </div>
-            </form>
+            {showForm && (
+                <form onSubmit={handleSubmitAccount} className={`p-4 rounded-xl border grid grid-cols-1 md:grid-cols-4 gap-4 items-end transition-colors animate-in slide-in-from-top-2 ${editingId ? 'bg-amber-50 border-amber-200' : 'bg-gray-50 border-gray-200'}`}>
+                    <div><label className="text-[10px] font-bold text-gray-500 uppercase mb-1 block">Identificação</label><input type="text" required className="w-full p-2.5 border rounded-lg text-sm bg-white" placeholder="Ex: Itaú Investimento" value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} /></div>
+                    <div><label className="text-[10px] font-bold text-gray-500 uppercase mb-1 block">Banco / Corretora</label><input type="text" className="w-full p-2.5 border rounded-lg text-sm bg-white" placeholder="Ex: BTG Pactual" value={formData.bank_name} onChange={e => setFormData({...formData, bank_name: e.target.value})} /></div>
+                    <div><label className="text-[10px] font-bold text-gray-500 uppercase mb-1 block">Saldo Inicial</label><input type="number" step="0.01" required className="w-full p-2.5 border rounded-lg text-sm font-mono font-bold text-blue-700 bg-white" placeholder="0.00" value={formData.initial_balance} onChange={e => setFormData({...formData, initial_balance: e.target.value})} /></div>
+                    <div className="flex gap-2">
+                        <button type="submit" disabled={isSaving} className={`flex-1 text-white p-2.5 rounded-lg hover:opacity-90 font-bold text-sm flex items-center justify-center gap-2 ${editingId ? 'bg-amber-600' : 'bg-blue-600'}`}>
+                            {isSaving ? <Loader2 size={16} className="animate-spin"/> : (editingId ? <Save size={16}/> : <Plus size={16}/>)} 
+                            {editingId ? 'Salvar' : 'Cadastrar'}
+                        </button>
+                        <button type="button" onClick={() => { setShowForm(false); setEditingId(null); setFormData({ name: '', initial_balance: '', bank_name: '' }); }} className="px-3 bg-gray-200 text-gray-600 rounded-lg hover:bg-gray-300 font-bold text-sm"><X size={16}/></button>
+                    </div>
+                </form>
+            )}
 
-            <div className="overflow-hidden border border-gray-200 rounded-lg">
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                <div className="bg-gradient-to-br from-gray-900 to-gray-800 text-white p-4 rounded-xl shadow-lg">
+                    <p className="text-[10px] font-bold uppercase opacity-60 tracking-widest">Patrimônio Total</p>
+                    <p className="text-2xl font-black mt-1">{formatBRL(totalInvestido)}</p>
+                    <p className="text-[10px] mt-1 opacity-60">{accounts.length} conta(s) ativa(s)</p>
+                </div>
+                <div className={`p-4 rounded-xl border shadow-sm ${totalChange >= 0 ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'}`}>
+                    <p className="text-[10px] font-bold uppercase text-gray-500 tracking-widest">Rentabilidade Total</p>
+                    <p className={`text-xl font-black mt-1 ${totalChange >= 0 ? 'text-green-700' : 'text-red-700'}`}>{formatBRL(totalChange)}</p>
+                    <p className={`text-xs font-bold ${totalChange >= 0 ? 'text-green-600' : 'text-red-600'}`}>{formatPct(totalChangePct)} desde o início</p>
+                </div>
+                <div className="bg-blue-50 border border-blue-200 p-4 rounded-xl shadow-sm">
+                    <p className="text-[10px] font-bold uppercase text-gray-500 tracking-widest">Maior Posição</p>
+                    {accounts.length > 0 ? (() => {
+                        const top = [...accounts].sort((a, b) => b.current_calculated_balance - a.current_calculated_balance)[0];
+                        return (<><p className="text-lg font-black text-blue-700 mt-1">{formatBRL(top.current_calculated_balance)}</p><p className="text-[10px] text-blue-600 font-bold truncate">{top.name}</p></>);
+                    })() : <p className="text-gray-400 mt-1">-</p>}
+                </div>
+                <div className="bg-purple-50 border border-purple-200 p-4 rounded-xl shadow-sm">
+                    <p className="text-[10px] font-bold uppercase text-gray-500 tracking-widest">Melhor Performance Mês</p>
+                    {accounts.filter(a => a.snapshots.length > 0).length > 0 ? (() => {
+                        const best = [...accounts].sort((a, b) => b.monthlyChangePercent - a.monthlyChangePercent)[0];
+                        return (<><p className={`text-lg font-black mt-1 ${best.monthlyChangePercent >= 0 ? 'text-green-700' : 'text-red-700'}`}>{formatPct(best.monthlyChangePercent)}</p><p className="text-[10px] text-purple-600 font-bold truncate">{best.name}</p></>);
+                    })() : <p className="text-gray-400 mt-1">-</p>}
+                </div>
+            </div>
+
+            {combinedChartData.length >= 2 && (
+                <div className="bg-gray-50 p-5 rounded-xl border border-gray-200">
+                    <h4 className="text-xs font-black uppercase text-gray-600 mb-4 flex items-center gap-2"><LineChartIcon size={14}/> Evolução Comparativa de Todos os Investimentos</h4>
+                    <ResponsiveContainer width="100%" height={320}>
+                        <LineChart data={combinedChartData}>
+                            <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb"/>
+                            <XAxis dataKey="date" tick={{ fontSize: 10, fill: '#6b7280' }}/>
+                            <YAxis tickFormatter={(v) => `${(v/1000).toFixed(0)}k`} tick={{ fontSize: 10, fill: '#6b7280' }}/>
+                            <Tooltip content={<CustomTooltip/>}/>
+                            <Legend wrapperStyle={{ fontSize: '11px', fontWeight: 'bold' }}/>
+                            {accounts.map((acc, i) => (
+                                <Line key={acc.id} type="monotone" dataKey={acc.name} stroke={COLORS[i % COLORS.length]} strokeWidth={2} dot={{ r: 2 }} connectNulls/>
+                            ))}
+                            <Line type="monotone" dataKey="Total" stroke="#111827" strokeWidth={3} strokeDasharray="5 5" dot={false} connectNulls/>
+                        </LineChart>
+                    </ResponsiveContainer>
+                </div>
+            )}
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {distributionData.length > 0 && (
+                    <div className="bg-gray-50 p-5 rounded-xl border border-gray-200">
+                        <h4 className="text-xs font-black uppercase text-gray-600 mb-3 flex items-center gap-2"><Wallet size={14}/> Distribuição do Patrimônio</h4>
+                        <ResponsiveContainer width="100%" height={220}>
+                            <PieChart>
+                                <Pie data={distributionData} cx="50%" cy="50%" innerRadius={50} outerRadius={85} paddingAngle={2} dataKey="value" nameKey="name" label={({ name, percent }) => `${name.substring(0,15)} (${(percent*100).toFixed(0)}%)`} labelLine={false} style={{ fontSize: '9px', fontWeight: 'bold' }}>
+                                    {distributionData.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]}/>)}
+                                </Pie>
+                                <Tooltip formatter={(v: number) => formatBRL(v)}/>
+                            </PieChart>
+                        </ResponsiveContainer>
+                    </div>
+                )}
+
+                <div className="bg-gray-50 p-5 rounded-xl border border-gray-200">
+                    <h4 className="text-xs font-black uppercase text-gray-600 mb-3 flex items-center gap-2"><TrendingUp size={14}/> Performance Mensal por Conta</h4>
+                    {accounts.filter(a => a.snapshots.length > 0).length > 0 ? (
+                        <ResponsiveContainer width="100%" height={220}>
+                            <ComposedChart layout="vertical" data={accounts.filter(a => a.snapshots.length > 0).map(a => ({ name: a.name.substring(0, 20), pct: parseFloat(a.monthlyChangePercent.toFixed(2)), valor: a.monthlyChange })).sort((a, b) => b.pct - a.pct)}>
+                                <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb"/>
+                                <XAxis type="number" tickFormatter={v => `${v}%`} tick={{ fontSize: 10, fill: '#6b7280' }}/>
+                                <YAxis type="category" dataKey="name" tick={{ fontSize: 9, fill: '#6b7280' }} width={120}/>
+                                <Tooltip content={({ active, payload }: any) => {
+                                    if (!active || !payload?.length) return null;
+                                    return (
+                                        <div className="bg-gray-900 text-white px-3 py-2 rounded-lg shadow-xl text-xs">
+                                            <p className="font-bold">{payload[0]?.payload?.name}</p>
+                                            <p>Variação: {formatPct(payload[0]?.value || 0)}</p>
+                                            <p>Valor: {formatBRL(payload[0]?.payload?.valor || 0)}</p>
+                                        </div>
+                                    );
+                                }}/>
+                                <Bar dataKey="pct" name="% Mês" fill="#3B82F6" radius={[0, 4, 4, 0]}>
+                                    {accounts.filter(a => a.snapshots.length > 0).map((_, i) => <Cell key={i} fill={accounts[i]?.monthlyChangePercent >= 0 ? '#10B981' : '#EF4444'}/>)}
+                                </Bar>
+                            </ComposedChart>
+                        </ResponsiveContainer>
+                    ) : (
+                        <div className="h-[220px] flex items-center justify-center text-gray-400 text-xs">Registre saldos para ver a performance</div>
+                    )}
+                </div>
+            </div>
+
+            <div className="overflow-hidden border border-gray-200 rounded-xl">
                 <table className="w-full text-left text-sm font-bold uppercase">
-                    <thead className="bg-gray-100 text-gray-600 text-[10px] tracking-widest">
-                        <tr><th className="p-3">Conta</th><th className="p-3">Saldo Sistema</th><th className="p-3 text-center">Tendência</th><th className="p-3 text-right">Ações</th></tr>
+                    <thead className="bg-gray-100 text-gray-500 text-[10px] tracking-widest">
+                        <tr>
+                            <th className="p-3">Conta / Investimento</th>
+                            <th className="p-3">Saldo Atual</th>
+                            <th className="p-3 text-center">Semana</th>
+                            <th className="p-3 text-center">Mês</th>
+                            <th className="p-3 text-center">Último Registro</th>
+                            <th className="p-3 text-right">Ações</th>
+                        </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-100">
-                        {isLoading ? <tr><td colSpan={4} className="p-4 text-center text-gray-500">Carregando...</td></tr> : accounts.map(acc => (
-                            <tr key={acc.id} className="hover:bg-gray-50 group">
+                        {accounts.map(acc => (
+                            <tr key={acc.id} className="hover:bg-blue-50/50 group transition-colors cursor-pointer" onClick={() => { setSelectedAccountId(acc.id); setViewMode('account-detail'); }}>
                                 <td className="p-3">
-                                    <div className="flex items-center gap-2"><Wallet size={16} className="text-gray-400"/><div><p className="text-gray-800">{acc.name}</p><p className="text-[9px] text-gray-500">{acc.bank_name || '-'}</p></div></div>
+                                    <div className="flex items-center gap-2">
+                                        <div className="w-2 h-8 rounded-full" style={{ background: COLORS[accounts.indexOf(acc) % COLORS.length] }}/>
+                                        <div>
+                                            <p className="text-gray-800 text-xs">{acc.name}</p>
+                                            <p className="text-[9px] text-gray-400 normal-case">{acc.bank_name || '-'}</p>
+                                        </div>
+                                    </div>
                                 </td>
-                                <td className="p-3"><p className={`font-mono text-base font-black ${acc.current_calculated_balance < 0 ? 'text-red-600' : 'text-blue-700'}`}>R$ {acc.current_calculated_balance.toLocaleString('pt-BR', {minimumFractionDigits: 2})}</p></td>
-                                <td className="p-3">{acc.historyPoints && <div className="flex justify-center"><Sparkline data={acc.historyPoints} width={70} height={25} /></div>}</td>
-                                <td className="p-3 text-right">
-                                    <div className="flex justify-end gap-2 transition-opacity">
-                                        <button onClick={() => { setUpdatingAccountId(acc.id); setNewBalanceInput(acc.current_calculated_balance.toFixed(2)); }} className="bg-blue-50 text-blue-700 border border-blue-200 hover:bg-blue-100 px-3 py-1.5 rounded-lg text-[10px] font-black flex items-center gap-1.5 shadow-sm" title="Sincronizar Saldo"><PencilLine size={14}/> Sincronizar</button>
-                                        <button onClick={() => { setViewHistoryId(acc.id); fetchAccountHistory(acc.id); }} className="bg-green-50 text-green-700 border border-green-200 hover:bg-green-100 px-3 py-1.5 rounded-lg text-[10px] font-black flex items-center gap-1.5 shadow-sm"><History size={14}/> Histórico</button>
-                                        <button onClick={() => { setEditingId(acc.id); setFormData({ name: acc.name, initial_balance: acc.initial_balance.toString(), bank_name: acc.bank_name || '' }); }} className="text-gray-400 hover:text-blue-600 p-1.5 transition-colors"><Pencil size={16}/></button>
-                                        <button onClick={() => handleDelete(acc.id)} className="text-gray-400 hover:text-red-500 p-1.5 transition-colors"><Trash2 size={16}/></button>
+                                <td className="p-3">
+                                    <p className={`font-mono text-sm font-black ${acc.current_calculated_balance < 0 ? 'text-red-600' : 'text-blue-700'}`}>{formatBRL(acc.current_calculated_balance)}</p>
+                                </td>
+                                <td className="p-3 text-center">
+                                    <div className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold ${acc.weeklyChange > 0 ? 'bg-green-50 text-green-700' : acc.weeklyChange < 0 ? 'bg-red-50 text-red-700' : 'bg-gray-50 text-gray-400'}`}>
+                                        {acc.weeklyChange > 0 ? <ArrowUpRight size={10}/> : acc.weeklyChange < 0 ? <ArrowDownRight size={10}/> : null}
+                                        {acc.weeklyChange !== 0 ? formatPct(acc.weeklyChangePercent) : '-'}
+                                    </div>
+                                </td>
+                                <td className="p-3 text-center">
+                                    <div className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold ${acc.monthlyChange > 0 ? 'bg-green-50 text-green-700' : acc.monthlyChange < 0 ? 'bg-red-50 text-red-700' : 'bg-gray-50 text-gray-400'}`}>
+                                        {acc.monthlyChange > 0 ? <ArrowUpRight size={10}/> : acc.monthlyChange < 0 ? <ArrowDownRight size={10}/> : null}
+                                        {acc.monthlyChange !== 0 ? formatPct(acc.monthlyChangePercent) : '-'}
+                                    </div>
+                                </td>
+                                <td className="p-3 text-center">
+                                    <span className="text-[10px] text-gray-400">{acc.latestSnapshot ? formatDateTime(acc.latestSnapshot.recorded_at) : 'Sem registro'}</span>
+                                </td>
+                                <td className="p-3 text-right" onClick={e => e.stopPropagation()}>
+                                    <div className="flex justify-end gap-1.5">
+                                        <button onClick={() => { setUpdateAccountId(acc.id); setNewBalanceInput(acc.current_calculated_balance.toFixed(2)); }} className="bg-blue-50 text-blue-700 border border-blue-200 hover:bg-blue-100 px-2.5 py-1 rounded-lg text-[10px] font-black flex items-center gap-1 shadow-sm" title="Atualizar Saldo">
+                                            <DollarSign size={12}/> Atualizar
+                                        </button>
+                                        <button onClick={() => { setSelectedAccountId(acc.id); setViewMode('account-detail'); }} className="bg-green-50 text-green-700 border border-green-200 hover:bg-green-100 px-2.5 py-1 rounded-lg text-[10px] font-black flex items-center gap-1 shadow-sm">
+                                            <Eye size={12}/> Detalhe
+                                        </button>
+                                        <button onClick={() => { setEditingId(acc.id); setFormData({ name: acc.name, initial_balance: acc.initial_balance.toString(), bank_name: acc.bank_name || '' }); setShowForm(true); }} className="text-gray-300 hover:text-blue-600 p-1 transition-colors">
+                                            <Pencil size={14}/>
+                                        </button>
+                                        <button onClick={() => handleDeleteAccount(acc.id)} className="text-gray-300 hover:text-red-500 p-1 transition-colors">
+                                            <Trash2 size={14}/>
+                                        </button>
                                     </div>
                                 </td>
                             </tr>
                         ))}
+                        {accounts.length === 0 && (
+                            <tr><td colSpan={6} className="p-8 text-center text-gray-400 text-xs">Nenhuma conta cadastrada. Clique em "Nova Conta" para começar.</td></tr>
+                        )}
                     </tbody>
                 </table>
             </div>
+
+            {aiAnalysis && (
+                <div className="bg-gradient-to-br from-purple-50 to-indigo-50 p-5 rounded-xl border border-purple-200 shadow-sm">
+                    <div className="flex justify-between items-center mb-3">
+                        <h4 className="text-xs font-black uppercase text-purple-700 flex items-center gap-2"><Brain size={14}/> Análise de Investimentos por IA</h4>
+                        <button onClick={() => setAiAnalysis(null)} className="text-gray-400 hover:text-gray-600"><X size={16}/></button>
+                    </div>
+                    <div className="prose prose-sm max-w-none text-gray-700 text-xs leading-relaxed whitespace-pre-wrap">{aiAnalysis}</div>
+                </div>
+            )}
         </div>
     );
 };

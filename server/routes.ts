@@ -660,6 +660,87 @@ export async function registerRoutes(
     } finally { pool?.end().catch(() => {}); }
   });
 
+  app.post("/api/investment/init", async (_req: Request, res: Response) => {
+    let pool;
+    try {
+      pool = getDbPool();
+      await pool.query(`
+        CREATE TABLE IF NOT EXISTS account_balance_snapshots (
+          id SERIAL PRIMARY KEY,
+          account_id TEXT NOT NULL,
+          balance NUMERIC(15,2) NOT NULL DEFAULT 0,
+          notes TEXT DEFAULT '',
+          created_by TEXT DEFAULT '',
+          recorded_at TIMESTAMPTZ DEFAULT NOW()
+        );
+      `);
+      await pool.query(`CREATE INDEX IF NOT EXISTS idx_abs_account ON account_balance_snapshots(account_id)`);
+      await pool.query(`CREATE INDEX IF NOT EXISTS idx_abs_recorded ON account_balance_snapshots(recorded_at)`);
+      res.json({ ok: true });
+    } catch (e: any) {
+      res.json({ ok: true, note: e.message });
+    } finally { pool?.end().catch(() => {}); }
+  });
+
+  app.get("/api/investment/snapshots/:accountId", async (req: Request, res: Response) => {
+    let pool;
+    try {
+      pool = getDbPool();
+      const { accountId } = req.params;
+      const days = parseInt(req.query.days as string) || 365;
+      const since = new Date(Date.now() - days * 86400000).toISOString();
+      const result = await pool.query(
+        'SELECT * FROM account_balance_snapshots WHERE account_id = $1 AND recorded_at >= $2 ORDER BY recorded_at ASC',
+        [accountId, since]
+      );
+      res.json(result.rows);
+    } catch (e: any) {
+      res.json([]);
+    } finally { pool?.end().catch(() => {}); }
+  });
+
+  app.get("/api/investment/snapshots-all", async (req: Request, res: Response) => {
+    let pool;
+    try {
+      pool = getDbPool();
+      const days = parseInt(req.query.days as string) || 365;
+      const since = new Date(Date.now() - days * 86400000).toISOString();
+      const result = await pool.query(
+        'SELECT * FROM account_balance_snapshots WHERE recorded_at >= $1 ORDER BY recorded_at ASC',
+        [since]
+      );
+      res.json(result.rows);
+    } catch (e: any) {
+      res.json([]);
+    } finally { pool?.end().catch(() => {}); }
+  });
+
+  app.post("/api/investment/snapshots", async (req: Request, res: Response) => {
+    let pool;
+    try {
+      pool = getDbPool();
+      const { account_id, balance, notes, created_by } = req.body;
+      const result = await pool.query(
+        'INSERT INTO account_balance_snapshots (account_id, balance, notes, created_by) VALUES ($1, $2, $3, $4) RETURNING *',
+        [account_id, balance, notes || '', created_by || '']
+      );
+      res.json(result.rows[0]);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    } finally { pool?.end().catch(() => {}); }
+  });
+
+  app.delete("/api/investment/snapshots/:id", async (req: Request, res: Response) => {
+    let pool;
+    try {
+      pool = getDbPool();
+      await pool.query('DELETE FROM account_balance_snapshots WHERE id = $1', [req.params.id]);
+      res.json({ ok: true });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    } finally { pool?.end().catch(() => {}); }
+  });
+
   app.get("/api/client-mission-notes/bulk/:clientId", async (req: Request, res: Response) => {
     let pool;
     try {
