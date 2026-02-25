@@ -3,6 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { Mission, MissionLog, MissionHistory, Agent, Vehicle, MissionStatus } from '../types';
 import { supabase } from '../lib/supabase';
 import { X, ExternalLink, Loader2, FileText } from 'lucide-react';
+import { googleMapsApiKey } from '../lib/maps';
 
 interface Client {
     id: number;
@@ -28,7 +29,7 @@ const STATUS_LABELS: Record<string, string> = {
     'Pendente': 'PENDENTE'
 };
 
-const MAPS_API_KEY = 'AIzaSyBIs-lrtAP6hoA1z_VA4Gbx1ujA-AlJe2k';
+const MAPS_API_KEY = googleMapsApiKey;
 
 const MissionFullReportModal: React.FC<Props> = ({ mission, onClose }) => {
     const [logs, setLogs] = useState<MissionLog[]>([]);
