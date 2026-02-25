@@ -446,5 +446,92 @@ export async function registerRoutes(
     }
   });
 
+  app.post("/api/missions/recalculate-all", async (req: Request, res: Response) => {
+    try {
+      const { data: missions, error: mErr } = await supabaseAdmin.from('missions').select('*');
+      if (mErr) throw mErr;
+
+      const { data: clientTables, error: ctErr } = await supabaseAdmin.from('client_price_tables').select('*');
+      if (ctErr) throw ctErr;
+
+      const { data: providerTables, error: ptErr } = await supabaseAdmin.from('provider_cost_tables').select('*');
+      if (ptErr) throw ptErr;
+
+      const { data: clients, error: clErr } = await supabaseAdmin.from('clients').select('*');
+      if (clErr) throw clErr;
+
+      const { calculateMissionFinancials } = await import('../lib/financialUtils');
+
+      let updated = 0;
+      let skipped = 0;
+      let errors: string[] = [];
+      const details: any[] = [];
+
+      for (const m of (missions || [])) {
+        try {
+          if (m.status === 'REFUSED') { skipped++; continue; }
+
+          const missionObj = {
+            ...m,
+            startKm: m.start_km,
+            endKm: m.end_km,
+            startTime: m.start_time,
+            endTime: m.end_time,
+          };
+
+          const clientData = (clients || []).find((c: any) => c.name === m.client);
+          const financials = calculateMissionFinancials(missionObj, clientTables || [], providerTables || [], clientData);
+
+          const newRevenue = parseFloat((financials.client.total - financials.tollValue).toFixed(2));
+          const newCost = parseFloat((financials.provider.total - financials.tollValue).toFixed(2));
+
+          const oldRevenue = m.revenue_value || 0;
+          const oldCost = m.cost_value || 0;
+          const revDiff = Math.abs(newRevenue - oldRevenue);
+          const costDiff = Math.abs(newCost - oldCost);
+
+          if (revDiff > 0.01 || costDiff > 0.01) {
+            const { error: upErr } = await supabaseAdmin.from('missions').update({
+              revenue_value: newRevenue,
+              cost_value: newCost,
+            }).eq('id', m.id);
+
+            if (upErr) { errors.push(`${m.id}: ${upErr.message}`); continue; }
+
+            details.push({
+              id: m.id,
+              client: m.client,
+              provider: m.provider,
+              agents: [m.agent1, m.agent2].filter(Boolean).length,
+              oldRev: oldRevenue, newRev: newRevenue,
+              oldCost: oldCost, newCost: newCost,
+              clientTable: financials.client.tableName || '-',
+              providerTable: financials.provider.tableName || '-',
+              providerLog: financials.provider.detectionLog,
+            });
+            updated++;
+          } else {
+            skipped++;
+          }
+        } catch (e: any) {
+          errors.push(`${m.id}: ${e.message}`);
+        }
+      }
+
+      res.json({
+        success: true,
+        total: (missions || []).length,
+        updated,
+        skipped,
+        errors: errors.length,
+        errorDetails: errors.slice(0, 10),
+        updatedMissions: details,
+      });
+    } catch (e: any) {
+      console.error("Erro no recálculo:", e);
+      res.status(500).json({ error: e.message });
+    }
+  });
+
   return httpServer;
 }

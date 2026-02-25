@@ -212,16 +212,10 @@ export const calculateMissionFinancials = (
     const clientMultiplier = 1;
     const missionProviderName = normalize(mission.provider);
     
-    // --- REGRA DE AGENTES ALOCADOS (AJUSTADA) ---
-    // O valor só deve ser multiplicado se houver 2 agentes E o fornecedor for 'ATIVA' ou 'TM SEG'
     const isSpecialProvider = missionProviderName.includes('ATIVA') || missionProviderName.includes('TM SEG');
-    let providerMultiplier = (agentCount === 2 && isSpecialProvider) ? 2 : 1;
-    
-    // Fallback: Se for velada e não for desses fornecedores, mantém regra base (1 agente)
-    // a menos que a regra anterior já tenha definido como 2.
-    // --------------------------------------------
+    let providerMultiplier = 1;
 
-    const selectStrictTable = (candidateTables: any[], dist: number, region: string, city: string, typeKeyword: string, destCity: string, routeCode?: string) => {
+    const selectStrictTable = (candidateTables: any[], dist: number, region: string, city: string, typeKeyword: string, destCity: string, routeCode?: string, agentAware?: { count: number, isSpecial: boolean }) => {
         if (!candidateTables || candidateTables.length === 0) return { table: null, log: 'Sem tabelas cadastradas' };
 
         const normalizedRegion = normalize(region);
@@ -242,7 +236,18 @@ export const calculateMissionFinancials = (
                  score -= 500; 
             }
             
-            // --- HIERARQUIA INTELIGENTE DE BUSCA ---
+            if (agentAware && agentAware.isSpecial) {
+                const isTable02 = tableOp.includes('02 ARMADO') || tableOp.includes('DOIS ARMADO') || (tableOp.includes('02') && !tableOp.includes('01'));
+                const isTable01 = tableOp.includes('01 ARMADO') || tableOp.includes('01 PRONTA') || (tableOp.includes('PRONTA RESPOSTA') && !tableOp.includes('02'));
+                
+                if (agentAware.count >= 2) {
+                    if (isTable02) { score += 3000; matchType = '02 Agentes (Tabela Dupla)'; }
+                    else if (isTable01) { score -= 2000; }
+                } else {
+                    if (isTable01) { score += 3000; matchType = '01 Agente (Pronta Resposta)'; }
+                    else if (isTable02) { score -= 2000; }
+                }
+            }
             
             // 1. PRIORIDADE MÁXIMA: CÓDIGO DA ROTA
             if (normalizedRouteCode && tableOp.includes(normalizedRouteCode)) {
@@ -343,7 +348,8 @@ export const calculateMissionFinancials = (
             originCity,
             missionTypeKeyword,
             destCity,
-            missionRouteCode
+            missionRouteCode,
+            { count: agentCount, isSpecial: isSpecialProvider }
         );
         appliedProviderTable = result.table;
         providerLog = result.log;
@@ -427,8 +433,8 @@ export const calculateMissionFinancials = (
          cExtraHrVal = 0;
     }
 
-    let pExtraKmVal = Math.max(0, pExcessKm * pUnitCostKm * providerMultiplier);
-    let pExtraHrVal = Math.max(0, pExcessHr * pUnitCostHour * providerMultiplier);
+    let pExtraKmVal = Math.max(0, pExcessKm * pUnitCostKm);
+    let pExtraHrVal = Math.max(0, pExcessHr * pUnitCostHour);
 
     if (isProviderFixed200Km) {
         pExtraKmVal = 0;
