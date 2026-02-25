@@ -19,6 +19,7 @@ import MissionCard from './MissionCard';
 import MissionPrintModal from './MissionPrintModal';
 import MissionHistoryModal from './MissionHistoryModal';
 import MissionFinancialModal from './MissionFinancialModal';
+import MissionFullReportModal from './MissionFullReportModal';
 import DailyGoalThermometer from './DailyGoalThermometer';
 
 const LABEL_CLASS = "text-[10px] font-black text-gray-400 uppercase mb-1.5 block tracking-widest";
@@ -497,6 +498,8 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
   const [missionLogs, setMissionLogs] = useState<MissionLog[]>([]);
   const [isPrintModalOpen, setIsPrintModalOpen] = useState(false);
   const [missionForPrint, setMissionForPrint] = useState<Mission | null>(null);
+  const [isFullReportOpen, setIsFullReportOpen] = useState(false);
+  const [missionForFullReport, setMissionForFullReport] = useState<Mission | null>(null);
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
   const [missionToDelete, setMissionToDelete] = useState<Mission | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
@@ -1173,6 +1176,7 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
                                       hideProviderInfo={isRestrictedClientView}
                                       onPrint={handleOpenPrintModal}
                                       onViewHistory={handleViewHistory}
+                                      onFullReport={(m: Mission) => { setMissionForFullReport(m); setIsFullReportOpen(true); }}
                                       clientTables={clientTables}
                                       providerTables={providerTables}
                                       clientsData={clientsData}
@@ -1192,6 +1196,7 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
         {isHistoryModalOpen && <MissionHistoryModal missionId={historyMissionId} onClose={() => setIsHistoryModalOpen(false)} />}
         {isUpdateModalOpen && <UpdateMissionModal isOpen={isUpdateModalOpen} onClose={() => setIsUpdateModalOpen(false)} mission={selectedMission} currentUser={currentUser} onSuccess={handleUpdateSuccess} />}
         {isPrintModalOpen && missionForPrint && <MissionPrintModal mission={missionForPrint} onClose={() => setIsPrintModalOpen(false)} />}
+        {isFullReportOpen && missionForFullReport && <MissionFullReportModal mission={missionForFullReport} onClose={() => { setIsFullReportOpen(false); setMissionForFullReport(null); }} />}
         {isDeleteModalOpen && missionToDelete && (
             <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-in fade-in">
                 <div className="bg-white rounded-xl shadow-2xl w-full max-sm overflow-hidden border border-red-200">
