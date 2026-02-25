@@ -15,6 +15,7 @@ interface Client {
 interface Props {
     mission: Mission;
     onClose: () => void;
+    hideProviderInfo?: boolean;
 }
 
 const STATUS_LABELS: Record<string, string> = {
@@ -31,7 +32,7 @@ const STATUS_LABELS: Record<string, string> = {
 
 const MAPS_API_KEY = googleMapsApiKey;
 
-const MissionFullReportModal: React.FC<Props> = ({ mission, onClose }) => {
+const MissionFullReportModal: React.FC<Props> = ({ mission, onClose, hideProviderInfo = false }) => {
     const [logs, setLogs] = useState<MissionLog[]>([]);
     const [history, setHistory] = useState<MissionHistory[]>([]);
     const [agents, setAgents] = useState<Agent[]>([]);
@@ -176,7 +177,8 @@ const MissionFullReportModal: React.FC<Props> = ({ mission, onClose }) => {
                 return isAfterCutoff && isNotTechnical;
             });
 
-            const hiddenAuditFields = ['cost_value', 'toll_value', 'is_same_os', 'billing_approved', 'revenue_value', 'billing_verified_by'];
+            const hiddenAuditFields = ['cost_value', 'toll_value', 'is_same_os', 'billing_approved', 'revenue_value', 'billing_verified_by',
+                ...(hideProviderInfo ? ['provider', 'agent1', 'agent2', 'vehicle_id', 'start_km', 'end_km'] : [])];
             const filteredHistory = history.filter(h =>
                 !hiddenAuditFields.includes(h.field_name) &&
                 (!timelineCutoff || new Date(h.changed_at).getTime() >= timelineCutoff)
@@ -607,11 +609,11 @@ const MissionFullReportModal: React.FC<Props> = ({ mission, onClose }) => {
 
             <div class="section-header">EQUIPE DE ESCOLTA / SEGURANÇA</div>
             <div class="section-body">
-                <div>
+                ${!hideProviderInfo ? `<div>
                     <div class="field-label">FORNECEDOR</div>
                     <div class="field-value">${(mission.provider || '—').toUpperCase()}</div>
-                </div>
-                ${mission.agent1 ? `
+                </div>` : ''}
+                ${!hideProviderInfo && mission.agent1 ? `
                     <div class="divider"></div>
                     <div class="grid-4">
                         <div>
@@ -632,7 +634,7 @@ const MissionFullReportModal: React.FC<Props> = ({ mission, onClose }) => {
                         </div>
                     </div>
                 ` : ''}
-                ${mission.agent2 && mission.agent2 !== '---' ? `
+                ${!hideProviderInfo && mission.agent2 && mission.agent2 !== '---' ? `
                     <div class="divider"></div>
                     <div class="grid-4">
                         <div>
@@ -653,7 +655,7 @@ const MissionFullReportModal: React.FC<Props> = ({ mission, onClose }) => {
                         </div>
                     </div>
                 ` : ''}
-                <div class="divider"></div>
+                ${!hideProviderInfo ? `<div class="divider"></div>
                 <div class="grid-2">
                     <div>
                         <div class="field-label">VIATURA</div>
@@ -663,7 +665,7 @@ const MissionFullReportModal: React.FC<Props> = ({ mission, onClose }) => {
                         <div class="field-label">RASTREADOR</div>
                         <div class="field-value">${trackerDisplay}</div>
                     </div>
-                </div>
+                </div>` : ''}
             </div>
 
             <div class="section-header">ÚLTIMA OCORRÊNCIA REGISTRADA</div>
