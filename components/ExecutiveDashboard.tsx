@@ -35,7 +35,6 @@ function getDateRange(period: DashPeriod, customStart: string, customEnd: string
     const now = new Date();
     const startOfDay = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate(), 0, 0, 0, 0);
     const endOfDay = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate(), 23, 59, 59, 999);
-
     switch (period) {
         case 'TODAY': return [startOfDay(now), endOfDay(now)];
         case 'YESTERDAY': { const y = new Date(now); y.setDate(y.getDate() - 1); return [startOfDay(y), endOfDay(y)]; }
@@ -53,39 +52,15 @@ function getDateRange(period: DashPeriod, customStart: string, customEnd: string
 const CustomTooltip = ({ active, payload, label }: any) => {
     if (!active || !payload) return null;
     return (
-        <div className="bg-gray-900 text-white p-3 rounded-lg shadow-2xl border border-gray-700 text-xs max-w-xs">
-            <p className="font-black text-gray-400 uppercase tracking-wider mb-1 text-[9px]">{label}</p>
+        <div className="bg-gray-900 text-white px-4 py-3 rounded-xl shadow-2xl border border-gray-700 max-w-xs">
+            <p className="font-black text-gray-300 uppercase tracking-wider mb-1.5 text-[11px] border-b border-gray-700 pb-1">{label}</p>
             {payload.map((p: any, i: number) => (
-                <p key={i} className="font-bold text-[10px]" style={{ color: p.color || '#fff' }}>
-                    {p.name}: {typeof p.value === 'number' ? (p.value > 50 || p.name?.includes('R$') || p.name?.includes('aturamento') || p.name?.includes('usto') || p.name?.includes('ucro') || p.name?.includes('cumulado') ? fmtBRL(p.value) : p.value) : p.value}
+                <p key={i} className="font-bold text-[12px] leading-relaxed" style={{ color: p.color || '#fff' }}>
+                    {p.name}: {typeof p.value === 'number' ? (p.value > 50 || p.name?.includes('aturamento') || p.name?.includes('usto') || p.name?.includes('ucro') || p.name?.includes('cumulado') ? fmtBRL(p.value) : p.value) : p.value}
                 </p>
             ))}
         </div>
     );
-};
-
-const renderBarLabel = (props: any) => {
-    const { x, y, width, height, value } = props;
-    if (!value || value === 0) return null;
-    return <text x={x + width + 4} y={y + height / 2} fill="#64748b" fontSize={9} fontWeight={800} dominantBaseline="middle">{value}</text>;
-};
-
-const renderBarLabelBRL = (props: any) => {
-    const { x, y, width, height, value } = props;
-    if (!value || value === 0) return null;
-    return <text x={x + width + 4} y={y + height / 2} fill="#64748b" fontSize={8} fontWeight={800} dominantBaseline="middle">{fmtShort(value)}</text>;
-};
-
-const renderBarLabelPercent = (props: any) => {
-    const { x, y, width, height, value } = props;
-    if (value === undefined || value === null) return null;
-    return <text x={x + width + 4} y={y + height / 2} fill="#64748b" fontSize={9} fontWeight={800} dominantBaseline="middle">{value}%</text>;
-};
-
-const renderTopLabel = (props: any) => {
-    const { x, y, width, value } = props;
-    if (!value || value === 0) return null;
-    return <text x={x + width / 2} y={y - 6} fill="#64748b" fontSize={9} fontWeight={800} textAnchor="middle">{value}</text>;
 };
 
 interface Props {
@@ -96,6 +71,10 @@ interface Props {
     clientsData: Client[];
     currentTime: Date;
 }
+
+const AXIS_TICK = { fontSize: 11, fontWeight: 700, fill: '#64748b' };
+const AXIS_TICK_SM = { fontSize: 10, fontWeight: 700, fill: '#64748b' };
+const AXIS_LABEL_Y = { fontSize: 10, fontWeight: 800, fill: '#475569' };
 
 const ExecutiveDashboard: React.FC<Props> = ({ missions, isDirector, clientTables, providerTables, clientsData }) => {
 
@@ -165,12 +144,7 @@ const ExecutiveDashboard: React.FC<Props> = ({ missions, isDirector, clientTable
         missionFinancials.filter(m => m.status !== MissionStatus.REFUSED).forEach(m => {
             const date = new Date(m.startTime || m.createdAt);
             const key = `${date.getDate().toString().padStart(2, '0')}/${(date.getMonth() + 1).toString().padStart(2, '0')}`;
-            if (days[key]) {
-                days[key].missoes++;
-                days[key].faturamento += m.rev;
-                days[key].custo += m.cost;
-                days[key].lucro += m.profit;
-            }
+            if (days[key]) { days[key].missoes++; days[key].faturamento += m.rev; days[key].custo += m.cost; days[key].lucro += m.profit; }
         });
         return Object.values(days);
     }, [missionFinancials, period, customStart, customEnd]);
@@ -193,53 +167,47 @@ const ExecutiveDashboard: React.FC<Props> = ({ missions, isDirector, clientTable
                           m.status === MissionStatus.PENDING ? 'Pendente' : m.status;
             counts[label] = (counts[label] || 0) + 1;
         });
-        return Object.entries(counts)
-            .map(([name, value]) => ({ name, value, color: STATUS_COLORS[name] || '#94a3b8' }))
-            .sort((a, b) => b.value - a.value);
+        return Object.entries(counts).map(([name, value]) => ({ name, value, color: STATUS_COLORS[name] || '#94a3b8' })).sort((a, b) => b.value - a.value);
     }, [filteredMissions]);
 
     const topClientsByVolume = useMemo(() => {
         const counts: Record<string, number> = {};
         filteredMissions.filter(m => m.status !== MissionStatus.REFUSED).forEach(m => { counts[m.client] = (counts[m.client] || 0) + 1; });
         return Object.entries(counts).sort((a, b) => b[1] - a[1]).slice(0, 7)
-            .map(([name, missoes]) => ({ name: name.length > 20 ? name.substring(0, 20) + '...' : name, missoes }));
+            .map(([name, missoes]) => ({ name: name.length > 22 ? name.substring(0, 22) + '...' : name, missoes }));
     }, [filteredMissions]);
 
     const topClientsByRevenue = useMemo(() => {
         const revs: Record<string, number> = {};
         missionFinancials.filter(m => m.status !== MissionStatus.REFUSED).forEach(m => { revs[m.client] = (revs[m.client] || 0) + m.rev; });
         return Object.entries(revs).sort((a, b) => b[1] - a[1]).slice(0, 7)
-            .map(([name, faturamento]) => ({ name: name.length > 20 ? name.substring(0, 20) + '...' : name, faturamento: Math.round(faturamento * 100) / 100 }));
+            .map(([name, faturamento]) => ({ name: name.length > 22 ? name.substring(0, 22) + '...' : name, faturamento: Math.round(faturamento * 100) / 100 }));
     }, [missionFinancials]);
 
     const typeData = useMemo(() => {
         const counts: Record<string, number> = {};
         filteredMissions.filter(m => m.status !== MissionStatus.REFUSED).forEach(m => { counts[m.mission_type || 'Caracterizada'] = (counts[m.mission_type || 'Caracterizada'] || 0) + 1; });
-        return Object.entries(counts).map(([name, value], i) => ({
-            name, value, color: i === 0 ? '#dc2626' : i === 1 ? '#0f172a' : '#6366f1'
-        }));
+        return Object.entries(counts).map(([name, value], i) => ({ name, value, color: i === 0 ? '#dc2626' : i === 1 ? '#0f172a' : '#6366f1' }));
     }, [filteredMissions]);
 
     const providerCosts = useMemo(() => {
         const costs: Record<string, { custo: number, qtd: number }> = {};
         missionFinancials.filter(m => m.status !== MissionStatus.REFUSED && m.provider).forEach(m => {
             if (!costs[m.provider]) costs[m.provider] = { custo: 0, qtd: 0 };
-            costs[m.provider].custo += m.cost;
-            costs[m.provider].qtd++;
+            costs[m.provider].custo += m.cost; costs[m.provider].qtd++;
         });
         return Object.entries(costs).sort((a, b) => b[1].custo - a[1].custo).slice(0, 7)
-            .map(([name, data]) => ({ name: name.length > 20 ? name.substring(0, 20) + '...' : name, custo: Math.round(data.custo * 100) / 100, missoes: data.qtd }));
+            .map(([name, data]) => ({ name: name.length > 22 ? name.substring(0, 22) + '...' : name, custo: Math.round(data.custo * 100) / 100, missoes: data.qtd }));
     }, [missionFinancials]);
 
     const clientMargins = useMemo(() => {
         const data: Record<string, { rev: number, cost: number }> = {};
         missionFinancials.filter(m => m.status !== MissionStatus.REFUSED).forEach(m => {
             if (!data[m.client]) data[m.client] = { rev: 0, cost: 0 };
-            data[m.client].rev += m.rev;
-            data[m.client].cost += m.cost;
+            data[m.client].rev += m.rev; data[m.client].cost += m.cost;
         });
         return Object.entries(data).filter(([_, d]) => d.rev > 0)
-            .map(([name, d]) => ({ name: name.length > 20 ? name.substring(0, 20) + '...' : name, margem: parseFloat(((d.rev - d.cost) / d.rev * 100).toFixed(1)) }))
+            .map(([name, d]) => ({ name: name.length > 22 ? name.substring(0, 22) + '...' : name, margem: parseFloat(((d.rev - d.cost) / d.rev * 100).toFixed(1)) }))
             .sort((a, b) => b.margem - a.margem).slice(0, 7);
     }, [missionFinancials]);
 
@@ -257,23 +225,23 @@ const ExecutiveDashboard: React.FC<Props> = ({ missions, isDirector, clientTable
     }, [filteredMissions]);
 
     const KpiCard = ({ label, value, icon: Icon, color, sub }: { label: string; value: string; icon: any; color: string; sub?: string }) => (
-        <div className={`p-4 rounded-xl border shadow-sm group ${color}`} data-testid={`kpi-${label.toLowerCase().replace(/\s/g, '-')}`}>
-            <div className="flex items-center justify-between mb-1">
-                <p className="text-[8px] font-black uppercase tracking-[0.15em] opacity-60">{label}</p>
-                <Icon size={14} className="opacity-30" />
+        <div className={`p-5 rounded-xl border shadow-sm group ${color}`} data-testid={`kpi-${label.toLowerCase().replace(/\s/g, '-')}`}>
+            <div className="flex items-center justify-between mb-2">
+                <p className="text-[11px] font-black uppercase tracking-wider opacity-70">{label}</p>
+                <Icon size={18} className="opacity-30" />
             </div>
-            <h3 className="text-lg md:text-xl font-black font-mono tracking-tight leading-none">{value}</h3>
-            {sub && <p className="text-[8px] font-bold uppercase mt-1.5 opacity-40">{sub}</p>}
+            <h3 className="text-xl md:text-2xl font-black font-mono tracking-tight leading-none">{value}</h3>
+            {sub && <p className="text-[10px] font-bold uppercase mt-2 opacity-50">{sub}</p>}
         </div>
     );
 
     const ChartCard = ({ title, icon: Icon, children, span = 1 }: { title: string; icon: any; children: React.ReactNode; span?: number }) => (
-        <div className={`bg-white p-4 rounded-xl border border-gray-100 shadow-sm ${span === 2 ? 'lg:col-span-2' : ''}`}>
-            <div className="flex items-center gap-2 mb-3 pb-2 border-b border-gray-50">
-                <div className="p-1.5 bg-gray-900 text-white rounded-md"><Icon size={12} /></div>
-                <h4 className="text-[9px] font-black text-gray-500 uppercase tracking-[0.2em]">{title}</h4>
+        <div className={`bg-white p-5 rounded-xl border border-gray-200 shadow-sm ${span === 2 ? 'lg:col-span-2' : ''}`}>
+            <div className="flex items-center gap-2.5 mb-4 pb-2.5 border-b border-gray-100">
+                <div className="p-2 bg-gray-900 text-white rounded-lg"><Icon size={14} /></div>
+                <h4 className="text-xs font-black text-gray-700 uppercase tracking-widest">{title}</h4>
             </div>
-            <div className="w-full" style={{ minHeight: 200 }}>{children}</div>
+            <div className="w-full" style={{ minHeight: 240 }}>{children}</div>
         </div>
     );
 
@@ -281,36 +249,43 @@ const ExecutiveDashboard: React.FC<Props> = ({ missions, isDirector, clientTable
         ? `${new Date(customStart + 'T00:00:00').toLocaleDateString('pt-BR')} a ${new Date(customEnd + 'T00:00:00').toLocaleDateString('pt-BR')}`
         : PERIOD_LABELS[period];
 
-    const pieLabelFn = ({ name, value, percent }: any) => `${name}: ${value} (${(percent * 100).toFixed(0)}%)`;
+    const renderPieLabel = ({ name, value, percent, cx, x }: any) => {
+        const isLeft = x < cx;
+        return (
+            <text x={x} y={0} dominantBaseline="central" textAnchor={isLeft ? 'end' : 'start'} style={{ fontSize: 11, fontWeight: 800, fill: '#334155' }}>
+                {`${name} ${value} (${(percent * 100).toFixed(0)}%)`}
+            </text>
+        );
+    };
 
     return (
         <div className="space-y-5">
-            <div className="bg-white p-4 rounded-xl border border-gray-100 shadow-sm flex flex-col md:flex-row items-center justify-between gap-3">
-                <div className="flex items-center gap-2">
-                    <div className="p-1.5 bg-gray-900 text-white rounded-md"><Activity size={14} /></div>
+            <div className="bg-white p-5 rounded-xl border border-gray-200 shadow-sm flex flex-col md:flex-row items-center justify-between gap-4">
+                <div className="flex items-center gap-3">
+                    <div className="p-2 bg-gray-900 text-white rounded-lg"><Activity size={16} /></div>
                     <div>
-                        <h3 className="text-xs font-black text-gray-900 uppercase tracking-wider">Dashboard Executivo</h3>
-                        <p className="text-[8px] font-bold text-gray-400 uppercase">{periodLabel} &middot; Atualizado {lastUpdate.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}</p>
+                        <h3 className="text-sm font-black text-gray-900 uppercase tracking-wider">Dashboard Executivo</h3>
+                        <p className="text-[11px] font-bold text-gray-400">{periodLabel} &middot; Atualizado {lastUpdate.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}</p>
                     </div>
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
-                    <div className="flex bg-gray-50 rounded-lg border border-gray-200 p-0.5">
+                    <div className="flex bg-gray-100 rounded-lg border border-gray-200 p-0.5">
                         {(Object.keys(PERIOD_LABELS) as DashPeriod[]).map(p => (
                             <button key={p} onClick={() => setPeriod(p)}
-                                className={`px-3 py-1.5 rounded-md text-[9px] font-black uppercase tracking-wider transition-all ${period === p ? 'bg-gray-900 text-white shadow-sm' : 'text-gray-500 hover:text-gray-900'}`}
+                                className={`px-3 py-2 rounded-md text-[11px] font-black uppercase tracking-wide transition-all ${period === p ? 'bg-gray-900 text-white shadow-sm' : 'text-gray-500 hover:text-gray-900'}`}
                                 data-testid={`filter-${p.toLowerCase()}`}
                             >{PERIOD_LABELS[p]}</button>
                         ))}
                     </div>
                     {period === 'CUSTOM' && (
-                        <div className="flex items-center gap-1.5 bg-gray-50 p-1 rounded-lg border border-gray-200">
-                            <input type="date" className="bg-transparent text-[10px] font-bold text-gray-700 outline-none" value={customStart} onChange={e => setCustomStart(e.target.value)} />
-                            <span className="text-gray-300 text-[9px]">a</span>
-                            <input type="date" className="bg-transparent text-[10px] font-bold text-gray-700 outline-none" value={customEnd} onChange={e => setCustomEnd(e.target.value)} />
+                        <div className="flex items-center gap-2 bg-gray-50 p-1.5 rounded-lg border border-gray-200">
+                            <input type="date" className="bg-transparent text-xs font-bold text-gray-700 outline-none" value={customStart} onChange={e => setCustomStart(e.target.value)} />
+                            <span className="text-gray-400 text-xs font-bold">a</span>
+                            <input type="date" className="bg-transparent text-xs font-bold text-gray-700 outline-none" value={customEnd} onChange={e => setCustomEnd(e.target.value)} />
                         </div>
                     )}
-                    <button onClick={handleRefresh} className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-900 text-white rounded-lg text-[9px] font-black uppercase tracking-wider hover:bg-gray-800 transition-all active:scale-95" data-testid="button-refresh-dashboard">
-                        <RefreshCw size={11} /> Atualizar
+                    <button onClick={handleRefresh} className="flex items-center gap-2 px-4 py-2 bg-gray-900 text-white rounded-lg text-[11px] font-black uppercase tracking-wide hover:bg-gray-800 transition-all active:scale-95" data-testid="button-refresh-dashboard">
+                        <RefreshCw size={13} /> Atualizar
                     </button>
                 </div>
             </div>
@@ -331,16 +306,16 @@ const ExecutiveDashboard: React.FC<Props> = ({ missions, isDirector, clientTable
                 </div>
             )}
 
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
                 <ChartCard title="Missões por Dia" icon={Calendar} span={2}>
-                    <ResponsiveContainer width="100%" height={220}>
-                        <BarChart data={dailyData} margin={{ top: 20, right: 10, left: -15, bottom: 0 }}>
-                            <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
-                            <XAxis dataKey="day" tick={{ fontSize: 8, fontWeight: 700, fill: '#94a3b8' }} interval={dailyData.length > 15 ? 1 : 0} />
-                            <YAxis tick={{ fontSize: 9, fontWeight: 700, fill: '#94a3b8' }} allowDecimals={false} />
+                    <ResponsiveContainer width="100%" height={260}>
+                        <BarChart data={dailyData} margin={{ top: 25, right: 15, left: -10, bottom: 5 }}>
+                            <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                            <XAxis dataKey="day" tick={AXIS_TICK_SM} interval={dailyData.length > 15 ? 1 : 0} />
+                            <YAxis tick={AXIS_TICK} allowDecimals={false} />
                             <Tooltip content={<CustomTooltip />} />
-                            <Bar dataKey="missoes" name="Missões" fill="#dc2626" radius={[4, 4, 0, 0]}>
-                                <LabelList dataKey="missoes" position="top" style={{ fontSize: 8, fontWeight: 800, fill: '#64748b' }} formatter={(v: number) => v > 0 ? v : ''} />
+                            <Bar dataKey="missoes" name="Missões" fill="#dc2626" radius={[4, 4, 0, 0]} barSize={dailyData.length > 20 ? 14 : 22}>
+                                <LabelList dataKey="missoes" position="top" style={{ fontSize: 11, fontWeight: 900, fill: '#334155' }} formatter={(v: number) => v > 0 ? v : ''} />
                             </Bar>
                         </BarChart>
                     </ResponsiveContainer>
@@ -348,52 +323,52 @@ const ExecutiveDashboard: React.FC<Props> = ({ missions, isDirector, clientTable
             </div>
 
             {isDirector && (
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
                     <ChartCard title="Faturamento vs Custo vs Lucro" icon={DollarSign} span={2}>
-                        <ResponsiveContainer width="100%" height={260}>
-                            <ComposedChart data={dailyData} margin={{ top: 5, right: 10, left: 5, bottom: 0 }}>
-                                <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
-                                <XAxis dataKey="day" tick={{ fontSize: 8, fontWeight: 700, fill: '#94a3b8' }} interval={dailyData.length > 15 ? 1 : 0} />
-                                <YAxis tick={{ fontSize: 9, fontWeight: 700, fill: '#94a3b8' }} tickFormatter={(v: number) => fmtShort(v)} />
+                        <ResponsiveContainer width="100%" height={280}>
+                            <ComposedChart data={dailyData} margin={{ top: 10, right: 15, left: 10, bottom: 5 }}>
+                                <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                                <XAxis dataKey="day" tick={AXIS_TICK_SM} interval={dailyData.length > 15 ? 1 : 0} />
+                                <YAxis tick={AXIS_TICK} tickFormatter={(v: number) => fmtShort(v)} />
                                 <Tooltip content={<CustomTooltip />} />
-                                <Legend wrapperStyle={{ fontSize: 9, fontWeight: 800 }} />
-                                <Bar dataKey="faturamento" name="Faturamento" fill="#059669" radius={[3, 3, 0, 0]} opacity={0.85} />
-                                <Bar dataKey="custo" name="Custo" fill="#dc2626" radius={[3, 3, 0, 0]} opacity={0.65} />
-                                <Line type="monotone" dataKey="lucro" name="Lucro" stroke="#2563eb" strokeWidth={2.5} dot={false} />
+                                <Legend wrapperStyle={{ fontSize: 12, fontWeight: 800, paddingTop: 8 }} />
+                                <Bar dataKey="faturamento" name="Faturamento" fill="#059669" radius={[3, 3, 0, 0]} opacity={0.85} barSize={dailyData.length > 20 ? 10 : 16} />
+                                <Bar dataKey="custo" name="Custo" fill="#dc2626" radius={[3, 3, 0, 0]} opacity={0.7} barSize={dailyData.length > 20 ? 10 : 16} />
+                                <Line type="monotone" dataKey="lucro" name="Lucro" stroke="#2563eb" strokeWidth={3} dot={false} />
                             </ComposedChart>
                         </ResponsiveContainer>
                     </ChartCard>
 
                     <ChartCard title="Receita Acumulada" icon={TrendingUp}>
-                        <ResponsiveContainer width="100%" height={220}>
-                            <AreaChart data={cumulativeRevenue} margin={{ top: 5, right: 10, left: 5, bottom: 0 }}>
-                                <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
-                                <XAxis dataKey="day" tick={{ fontSize: 8, fontWeight: 700, fill: '#94a3b8' }} interval={cumulativeRevenue.length > 15 ? 1 : 0} />
-                                <YAxis tick={{ fontSize: 9, fontWeight: 700, fill: '#94a3b8' }} tickFormatter={(v: number) => fmtShort(v)} />
+                        <ResponsiveContainer width="100%" height={260}>
+                            <AreaChart data={cumulativeRevenue} margin={{ top: 10, right: 15, left: 10, bottom: 5 }}>
+                                <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                                <XAxis dataKey="day" tick={AXIS_TICK_SM} interval={cumulativeRevenue.length > 15 ? 1 : 0} />
+                                <YAxis tick={AXIS_TICK} tickFormatter={(v: number) => fmtShort(v)} />
                                 <Tooltip content={<CustomTooltip />} />
                                 <defs>
                                     <linearGradient id="gradRevAcc" x1="0" y1="0" x2="0" y2="1">
-                                        <stop offset="5%" stopColor="#059669" stopOpacity={0.3} />
-                                        <stop offset="95%" stopColor="#059669" stopOpacity={0.02} />
+                                        <stop offset="5%" stopColor="#059669" stopOpacity={0.35} />
+                                        <stop offset="95%" stopColor="#059669" stopOpacity={0.03} />
                                     </linearGradient>
                                 </defs>
-                                <Area type="monotone" dataKey="acumulado" name="Acumulado" stroke="#059669" strokeWidth={2.5} fill="url(#gradRevAcc)" />
+                                <Area type="monotone" dataKey="acumulado" name="Acumulado" stroke="#059669" strokeWidth={3} fill="url(#gradRevAcc)" />
                             </AreaChart>
                         </ResponsiveContainer>
                     </ChartCard>
 
                     <ChartCard title="Margem de Lucro por Cliente" icon={Percent}>
-                        <ResponsiveContainer width="100%" height={220}>
-                            <BarChart data={clientMargins} layout="vertical" margin={{ top: 5, right: 45, left: 10, bottom: 0 }}>
-                                <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
-                                <XAxis type="number" tick={{ fontSize: 9, fontWeight: 700, fill: '#94a3b8' }} tickFormatter={(v: number) => `${v}%`} />
-                                <YAxis dataKey="name" type="category" tick={{ fontSize: 8, fontWeight: 700, fill: '#64748b' }} width={120} />
+                        <ResponsiveContainer width="100%" height={260}>
+                            <BarChart data={clientMargins} layout="vertical" margin={{ top: 5, right: 55, left: 5, bottom: 5 }}>
+                                <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                                <XAxis type="number" tick={AXIS_TICK} tickFormatter={(v: number) => `${v}%`} />
+                                <YAxis dataKey="name" type="category" tick={AXIS_LABEL_Y} width={130} />
                                 <Tooltip content={<CustomTooltip />} />
-                                <Bar dataKey="margem" name="Margem %" fill="#2563eb" radius={[0, 4, 4, 0]}>
+                                <Bar dataKey="margem" name="Margem %" fill="#2563eb" radius={[0, 6, 6, 0]} barSize={18}>
                                     {clientMargins.map((entry, i) => (
                                         <Cell key={i} fill={entry.margem >= 20 ? '#059669' : entry.margem >= 10 ? '#2563eb' : '#dc2626'} />
                                     ))}
-                                    <LabelList content={renderBarLabelPercent} />
+                                    <LabelList dataKey="margem" position="right" style={{ fontSize: 12, fontWeight: 900, fill: '#334155' }} formatter={(v: number) => `${v}%`} />
                                 </Bar>
                             </BarChart>
                         </ResponsiveContainer>
@@ -401,28 +376,37 @@ const ExecutiveDashboard: React.FC<Props> = ({ missions, isDirector, clientTable
                 </div>
             )}
 
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
                 <ChartCard title="Distribuição por Status" icon={PieChartIcon}>
-                    <ResponsiveContainer width="100%" height={220}>
-                        <PieChart>
-                            <Pie data={statusData} cx="50%" cy="50%" innerRadius={45} outerRadius={75} paddingAngle={3} dataKey="value"
-                                label={pieLabelFn} labelLine={false} style={{ fontSize: 7, fontWeight: 800 }}>
-                                {statusData.map((entry, i) => <Cell key={i} fill={entry.color} />)}
-                            </Pie>
-                            <Tooltip content={<CustomTooltip />} />
-                        </PieChart>
-                    </ResponsiveContainer>
+                    <div className="flex flex-col">
+                        <ResponsiveContainer width="100%" height={200}>
+                            <PieChart>
+                                <Pie data={statusData} cx="50%" cy="50%" innerRadius={40} outerRadius={75} paddingAngle={3} dataKey="value" label={false}>
+                                    {statusData.map((entry, i) => <Cell key={i} fill={entry.color} stroke="#fff" strokeWidth={2} />)}
+                                </Pie>
+                                <Tooltip content={<CustomTooltip />} />
+                            </PieChart>
+                        </ResponsiveContainer>
+                        <div className="flex flex-wrap gap-x-4 gap-y-1.5 justify-center mt-1 px-2">
+                            {statusData.map((s, i) => (
+                                <div key={i} className="flex items-center gap-1.5">
+                                    <div className="w-3 h-3 rounded-sm" style={{ backgroundColor: s.color }} />
+                                    <span className="text-[11px] font-bold text-gray-600">{s.name}: <span className="text-gray-900 font-black">{s.value}</span></span>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
                 </ChartCard>
 
                 <ChartCard title="Top Clientes por Volume" icon={Trophy}>
-                    <ResponsiveContainer width="100%" height={220}>
-                        <BarChart data={topClientsByVolume} layout="vertical" margin={{ top: 5, right: 35, left: 10, bottom: 0 }}>
-                            <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
-                            <XAxis type="number" tick={{ fontSize: 9, fontWeight: 700, fill: '#94a3b8' }} allowDecimals={false} />
-                            <YAxis dataKey="name" type="category" tick={{ fontSize: 7, fontWeight: 700, fill: '#64748b' }} width={120} />
+                    <ResponsiveContainer width="100%" height={260}>
+                        <BarChart data={topClientsByVolume} layout="vertical" margin={{ top: 5, right: 40, left: 5, bottom: 5 }}>
+                            <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                            <XAxis type="number" tick={AXIS_TICK} allowDecimals={false} />
+                            <YAxis dataKey="name" type="category" tick={AXIS_LABEL_Y} width={130} />
                             <Tooltip content={<CustomTooltip />} />
-                            <Bar dataKey="missoes" name="Missões" fill="#dc2626" radius={[0, 4, 4, 0]}>
-                                <LabelList content={renderBarLabel} />
+                            <Bar dataKey="missoes" name="Missões" fill="#dc2626" radius={[0, 6, 6, 0]} barSize={18}>
+                                <LabelList dataKey="missoes" position="right" style={{ fontSize: 13, fontWeight: 900, fill: '#1e293b' }} />
                             </Bar>
                         </BarChart>
                     </ResponsiveContainer>
@@ -430,66 +414,84 @@ const ExecutiveDashboard: React.FC<Props> = ({ missions, isDirector, clientTable
 
                 {isDirector ? (
                     <ChartCard title="Top Clientes por Faturamento" icon={DollarSign}>
-                        <ResponsiveContainer width="100%" height={220}>
-                            <BarChart data={topClientsByRevenue} layout="vertical" margin={{ top: 5, right: 55, left: 10, bottom: 0 }}>
-                                <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
-                                <XAxis type="number" tick={{ fontSize: 9, fontWeight: 700, fill: '#94a3b8' }} tickFormatter={(v: number) => fmtShort(v)} />
-                                <YAxis dataKey="name" type="category" tick={{ fontSize: 7, fontWeight: 700, fill: '#64748b' }} width={120} />
+                        <ResponsiveContainer width="100%" height={260}>
+                            <BarChart data={topClientsByRevenue} layout="vertical" margin={{ top: 5, right: 65, left: 5, bottom: 5 }}>
+                                <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                                <XAxis type="number" tick={AXIS_TICK} tickFormatter={(v: number) => fmtShort(v)} />
+                                <YAxis dataKey="name" type="category" tick={AXIS_LABEL_Y} width={130} />
                                 <Tooltip content={<CustomTooltip />} />
-                                <Bar dataKey="faturamento" name="Faturamento" fill="#059669" radius={[0, 4, 4, 0]}>
-                                    <LabelList content={renderBarLabelBRL} />
+                                <Bar dataKey="faturamento" name="Faturamento" fill="#059669" radius={[0, 6, 6, 0]} barSize={18}>
+                                    <LabelList dataKey="faturamento" position="right" style={{ fontSize: 11, fontWeight: 900, fill: '#334155' }} formatter={(v: number) => fmtShort(v)} />
                                 </Bar>
                             </BarChart>
                         </ResponsiveContainer>
                     </ChartCard>
                 ) : (
                     <ChartCard title="Top Clientes por Faturamento" icon={DollarSign}>
-                        <div className="flex flex-col items-center justify-center h-full text-gray-300"><Lock size={28} /><span className="text-[8px] font-black uppercase mt-2">Restrito</span></div>
+                        <div className="flex flex-col items-center justify-center h-full text-gray-300"><Lock size={32} /><span className="text-xs font-black uppercase mt-3">Restrito</span></div>
                     </ChartCard>
                 )}
 
                 <ChartCard title="Mix de Operação" icon={Shield}>
-                    <ResponsiveContainer width="100%" height={220}>
-                        <PieChart>
-                            <Pie data={typeData} cx="50%" cy="50%" innerRadius={45} outerRadius={75} paddingAngle={4} dataKey="value"
-                                label={pieLabelFn} labelLine={false} style={{ fontSize: 8, fontWeight: 800 }}>
-                                {typeData.map((entry, i) => <Cell key={i} fill={entry.color} />)}
-                            </Pie>
-                            <Tooltip content={<CustomTooltip />} />
-                        </PieChart>
-                    </ResponsiveContainer>
+                    <div className="flex flex-col">
+                        <ResponsiveContainer width="100%" height={200}>
+                            <PieChart>
+                                <Pie data={typeData} cx="50%" cy="50%" innerRadius={40} outerRadius={75} paddingAngle={4} dataKey="value" label={false}>
+                                    {typeData.map((entry, i) => <Cell key={i} fill={entry.color} stroke="#fff" strokeWidth={2} />)}
+                                </Pie>
+                                <Tooltip content={<CustomTooltip />} />
+                            </PieChart>
+                        </ResponsiveContainer>
+                        <div className="flex flex-wrap gap-x-4 gap-y-1.5 justify-center mt-1 px-2">
+                            {typeData.map((s, i) => (
+                                <div key={i} className="flex items-center gap-1.5">
+                                    <div className="w-3 h-3 rounded-sm" style={{ backgroundColor: s.color }} />
+                                    <span className="text-[11px] font-bold text-gray-600">{s.name}: <span className="text-gray-900 font-black">{s.value}</span></span>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
                 </ChartCard>
 
                 {isDirector ? (
                     <ChartCard title="Custo por Fornecedor" icon={Briefcase}>
-                        <ResponsiveContainer width="100%" height={220}>
-                            <BarChart data={providerCosts} layout="vertical" margin={{ top: 5, right: 55, left: 10, bottom: 0 }}>
-                                <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
-                                <XAxis type="number" tick={{ fontSize: 9, fontWeight: 700, fill: '#94a3b8' }} tickFormatter={(v: number) => fmtShort(v)} />
-                                <YAxis dataKey="name" type="category" tick={{ fontSize: 7, fontWeight: 700, fill: '#64748b' }} width={120} />
+                        <ResponsiveContainer width="100%" height={260}>
+                            <BarChart data={providerCosts} layout="vertical" margin={{ top: 5, right: 65, left: 5, bottom: 5 }}>
+                                <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                                <XAxis type="number" tick={AXIS_TICK} tickFormatter={(v: number) => fmtShort(v)} />
+                                <YAxis dataKey="name" type="category" tick={AXIS_LABEL_Y} width={130} />
                                 <Tooltip content={<CustomTooltip />} />
-                                <Bar dataKey="custo" name="Custo Total" fill="#7c3aed" radius={[0, 4, 4, 0]}>
-                                    <LabelList content={renderBarLabelBRL} />
+                                <Bar dataKey="custo" name="Custo Total" fill="#7c3aed" radius={[0, 6, 6, 0]} barSize={18}>
+                                    <LabelList dataKey="custo" position="right" style={{ fontSize: 11, fontWeight: 900, fill: '#334155' }} formatter={(v: number) => fmtShort(v)} />
                                 </Bar>
                             </BarChart>
                         </ResponsiveContainer>
                     </ChartCard>
                 ) : (
                     <ChartCard title="Custo por Fornecedor" icon={Briefcase}>
-                        <div className="flex flex-col items-center justify-center h-full text-gray-300"><Lock size={28} /><span className="text-[8px] font-black uppercase mt-2">Restrito</span></div>
+                        <div className="flex flex-col items-center justify-center h-full text-gray-300"><Lock size={32} /><span className="text-xs font-black uppercase mt-3">Restrito</span></div>
                     </ChartCard>
                 )}
 
                 <ChartCard title="Eficiência Operacional" icon={CheckCircle2}>
-                    <ResponsiveContainer width="100%" height={220}>
-                        <PieChart>
-                            <Pie data={efficiencyData} cx="50%" cy="50%" innerRadius={45} outerRadius={75} paddingAngle={3} dataKey="value"
-                                label={pieLabelFn} labelLine={false} style={{ fontSize: 7, fontWeight: 800 }}>
-                                {efficiencyData.map((entry, i) => <Cell key={i} fill={entry.color} />)}
-                            </Pie>
-                            <Tooltip content={<CustomTooltip />} />
-                        </PieChart>
-                    </ResponsiveContainer>
+                    <div className="flex flex-col">
+                        <ResponsiveContainer width="100%" height={200}>
+                            <PieChart>
+                                <Pie data={efficiencyData} cx="50%" cy="50%" innerRadius={40} outerRadius={75} paddingAngle={3} dataKey="value" label={false}>
+                                    {efficiencyData.map((entry, i) => <Cell key={i} fill={entry.color} stroke="#fff" strokeWidth={2} />)}
+                                </Pie>
+                                <Tooltip content={<CustomTooltip />} />
+                            </PieChart>
+                        </ResponsiveContainer>
+                        <div className="flex flex-wrap gap-x-4 gap-y-1.5 justify-center mt-1 px-2">
+                            {efficiencyData.map((s, i) => (
+                                <div key={i} className="flex items-center gap-1.5">
+                                    <div className="w-3 h-3 rounded-sm" style={{ backgroundColor: s.color }} />
+                                    <span className="text-[11px] font-bold text-gray-600">{s.name}: <span className="text-gray-900 font-black">{s.value}</span></span>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
                 </ChartCard>
             </div>
         </div>
