@@ -132,6 +132,12 @@ const MissionFullReportModal: React.FC<Props> = ({ mission, onClose }) => {
     const openReportPage = () => {
         setIsOpening(true);
         try {
+            // Check for critical missing data
+            if (!mission) throw new Error('Dados da missão ausentes');
+            if (!clients || clients.length === 0) {
+                console.warn('Lista de clientes vazia, tentando prosseguir com nome da missão');
+            }
+
             const clientData = clients.find(c => c.name === mission.client);
             const clientDisplay = clientData ? `${clientData.name} - CNPJ: ${clientData.cnpj || '—'}` : mission.client;
 
@@ -159,6 +165,9 @@ const MissionFullReportModal: React.FC<Props> = ({ mission, onClose }) => {
             // Filter logs: only those STRICTLY at or after the 'Em Viagem' change time
             // PLUS ensure we don't include technical setup logs like "Início de Missão"
             // Note: If mission hasn't reached "Em Viagem" yet, show all logs to avoid empty timeline
+            const timelineCutoffEntry = history.find(h => h.field_name === 'status' && h.new_value === 'Em Viagem');
+            const timelineCutoff = timelineCutoffEntry ? new Date(timelineCutoffEntry.changed_at).getTime() : null;
+
             const filteredLogs = logs.filter(l => {
                 const logTime = new Date(l.created_at).getTime();
                 const isAfterCutoff = !timelineCutoff || logTime >= timelineCutoff;
@@ -253,16 +262,16 @@ const MissionFullReportModal: React.FC<Props> = ({ mission, onClose }) => {
                             let newDisplay = `<span style="color:#166534;font-weight:600;">${newVal}</span>`;
 
                             if (isMapLinkValue(h.old_value)) {
-                                const coords = extractCoordsFromMapLink(h.old_value!);
-                                oldDisplay = coords
-                                    ? `<a href="${h.old_value}" target="_blank" style="color:#B91C1C;font-weight:600;text-decoration:none;">📍 VER ANTES ↗</a>`
-                                    : oldDisplay;
+                                const coords = extractCoordsFromMapLink(h.old_value || '');
+                                if (coords) {
+                                    oldDisplay = `<a href="${h.old_value}" target="_blank" style="color:#B91C1C;font-weight:600;text-decoration:none;">📍 VER ANTES ↗</a>`;
+                                }
                             }
                             if (isMapLinkValue(h.new_value)) {
-                                const coords = extractCoordsFromMapLink(h.new_value!);
-                                newDisplay = coords
-                                    ? `<a href="${h.new_value}" target="_blank" style="color:#166534;font-weight:600;text-decoration:none;">📍 VER DEPOIS ↗</a>`
-                                    : newDisplay;
+                                const coords = extractCoordsFromMapLink(h.new_value || '');
+                                if (coords) {
+                                    newDisplay = `<a href="${h.new_value}" target="_blank" style="color:#166534;font-weight:600;text-decoration:none;">📍 VER DEPOIS ↗</a>`;
+                                }
                             }
 
                             return `
@@ -703,27 +712,21 @@ const MissionFullReportModal: React.FC<Props> = ({ mission, onClose }) => {
 
         <div style="text-align:center;padding:0 0 20px;font-size:10px;color:#94A3B8;">
             GRUPO TMSEG — Relatório Operacional Confidencial — Gerado em ${new Date().toLocaleString('pt-BR')}
-        </div>
-    </div>
-</body>
-</html>`;
-
             const newWindow = window.open('', '_blank');
-            if (newWindow) {
-                newWindow.document.write(html);
-                newWindow.document.close();
-            } else {
-                alert('Não foi possível abrir a nova aba. Verifique se o bloqueador de pop-ups está desativado.');
-            }
-
-        } catch (err) {
-            console.error('Erro ao gerar relatório:', err);
-            alert('Erro ao gerar o relatório. Tente novamente.');
-        } finally {
-            setIsOpening(false);
-        }
-    };
-
+              if (newWindow) {
+                  newWindow.document.write(html);
+                  newWindow.document.close();
+              } else {
+                  alert('O bloqueador de pop-ups impediu a abertura do relatório. Por favor, autorize pop-ups para este site.');
+              }
+          } catch (err: any) {
+              console.error('Erro ao gerar relatório:', err);
+              const errorMsg = err instanceof Error ? err.message : String(err);
+              alert(`Erro ao gerar o relatório: ${errorMsg}. Tente novamente.`);
+          } finally {
+              setIsOpening(false);
+          }
+      };
     return (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-in fade-in">
             <div className="bg-white rounded-2xl w-full max-w-lg shadow-2xl border border-gray-200 overflow-hidden">
