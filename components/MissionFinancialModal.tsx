@@ -263,8 +263,13 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
           if (!manualProviderTableId && financialData.provider.tableId && !memoryLoaded) {
               setManualProviderTableId(financialData.provider.tableId);
           }
-          if (!manualClientTableId && financialData.client.tableId && !memoryLoaded) {
-              setManualClientTableId(financialData.client.tableId);
+          if (financialData.client.tableId) {
+              if (!manualClientTableId && !memoryLoaded) {
+                  setManualClientTableId(financialData.client.tableId);
+              }
+              if (manualClientTableId && financialData.client.tableId !== manualClientTableId && financialData.client.detectionLog.includes('CEVA Jundiaí')) {
+                  setManualClientTableId(financialData.client.tableId);
+              }
           }
       }
     }, [financialData, memoryLoaded, mission]); 

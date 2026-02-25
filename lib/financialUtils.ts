@@ -168,7 +168,8 @@ export const calculateMissionFinancials = (
         realTraveledKm = endKm - startKm;
     }
     
-    let distanceForCalculation = hasValidKms ? realTraveledKm : safeNumber(mission.totalDistance);
+    const totalDistance = safeNumber(mission.totalDistance || (mission as any).total_distance);
+    let distanceForCalculation = hasValidKms ? realTraveledKm : totalDistance;
     
     if (isZeroValueMission) {
         distanceForCalculation = 0;
@@ -314,14 +315,15 @@ export const calculateMissionFinancials = (
     let appliedClientTable: any = null;
     let clientLog = 'Manual';
 
+    const allClientTablesForThisClient = clientTables.filter(t => normalize(t.client) === missionClientName);
+
     if (manualTableOverrides?.clientTableId) {
         appliedClientTable = clientTables.find(t => t.id.toString() === manualTableOverrides.clientTableId);
         clientLog = 'Seleção Manual / Memória';
     } else {
-        const cevaClientTables = clientTables.filter(t => normalize(t.client) === missionClientName);
-        const clientDistReference = Math.max(safeNumber(mission.totalDistance), distanceForCalculation);
+        const clientDistReference = Math.max(totalDistance, distanceForCalculation);
         const result = selectStrictTable(
-            cevaClientTables, 
+            allClientTablesForThisClient, 
             clientDistReference, 
             detectedRegion,
             originCity,
@@ -331,36 +333,39 @@ export const calculateMissionFinancials = (
         );
         appliedClientTable = result.table;
         clientLog = result.log;
+    }
 
-        const isCevaClient = missionClientName.includes('CEVA');
-        const normalizedOrigin = normalize(mission.origin || '');
-        const normalizedDest = normalize(mission.destination || '');
-        const isJundiai = normalizedOrigin.includes('JUNDIAI');
-        const destHas200km = normalizedDest.includes('200KM') || normalizedDest.includes('200 KM');
-        const routeDistance = safeNumber(mission.totalDistance);
-        const referenceDistance = Math.max(routeDistance, distanceForCalculation);
+    const isCevaClient = missionClientName.includes('CEVA');
+    const normalizedOrigin = normalize(mission.origin || '');
+    const normalizedDest = normalize(mission.destination || '');
+    const isJundiai = normalizedOrigin.includes('JUNDIAI');
+    const destHas200km = normalizedDest.includes('200KM') || normalizedDest.includes('200 KM');
+    const referenceDistance = Math.max(totalDistance, distanceForCalculation);
 
-        if (isCevaClient && isJundiai && cevaClientTables.length > 0) {
-            if (referenceDistance > 200 || destHas200km) {
-                const logitech200 = cevaClientTables.find(t => {
+    if (isCevaClient && isJundiai && allClientTablesForThisClient.length > 0) {
+        if (referenceDistance > 200 || destHas200km) {
+            const currentOp = normalize(appliedClientTable?.operation_type || '');
+            const isAlreadyLogitech = currentOp.includes('LOGITECH') || currentOp.includes('200KM') || currentOp.includes('200 KM');
+            if (!isAlreadyLogitech) {
+                const logitech200 = allClientTablesForThisClient.find(t => {
                     const op = normalize(t.operation_type || '');
                     return (op.includes('LOGITECH') || op.includes('200KM') || op.includes('200 KM')) && t.franchise_km >= 200;
                 });
-                if (logitech200 && appliedClientTable?.id !== logitech200.id) {
+                if (logitech200) {
                     appliedClientTable = logitech200;
                     clientLog = `CEVA Jundiaí >200km → ${logitech200.operation_type}`;
                 }
-            } else {
-                const currentOp = normalize(appliedClientTable?.operation_type || '');
-                if (currentOp.includes('LOGITECH') || (currentOp.includes('200KM') || currentOp.includes('200 KM'))) {
-                    const table100 = cevaClientTables.find(t => {
-                        const op = normalize(t.operation_type || '');
-                        return !op.includes('LOGITECH') && !op.includes('200KM') && !op.includes('200 KM') && t.franchise_km <= 200;
-                    });
-                    if (table100) {
-                        appliedClientTable = table100;
-                        clientLog = `CEVA Jundiaí ≤200km → ${table100.operation_type}`;
-                    }
+            }
+        } else {
+            const currentOp = normalize(appliedClientTable?.operation_type || '');
+            if (currentOp.includes('LOGITECH') || currentOp.includes('200KM') || currentOp.includes('200 KM')) {
+                const table100 = allClientTablesForThisClient.find(t => {
+                    const op = normalize(t.operation_type || '');
+                    return !op.includes('LOGITECH') && !op.includes('200KM') && !op.includes('200 KM') && t.franchise_km <= 200;
+                });
+                if (table100) {
+                    appliedClientTable = table100;
+                    clientLog = `CEVA Jundiaí ≤200km → ${table100.operation_type}`;
                 }
             }
         }
@@ -377,7 +382,7 @@ export const calculateMissionFinancials = (
          });
     }
 
-    const providerDistReference = Math.max(safeNumber(mission.totalDistance), distanceForCalculation);
+    const providerDistReference = Math.max(totalDistance, distanceForCalculation);
 
     if (manualTableOverrides?.providerTableId) {
         appliedProviderTable = providerTables.find(t => t.id.toString() === manualTableOverrides.providerTableId);
