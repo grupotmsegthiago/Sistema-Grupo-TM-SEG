@@ -440,4 +440,10 @@ const ExecutiveDashboard: React.FC<Props> = ({ missions, isDirector, clientTable
     );
 };
 
-export default ExecutiveDashboard;
+export default React.memo(ExecutiveDashboard, (prev, next) => {
+    return prev.missions === next.missions &&
+           prev.isDirector === next.isDirector &&
+           prev.clientTables === next.clientTables &&
+           prev.providerTables === next.providerTables &&
+           prev.clientsData === next.clientsData;
+});
