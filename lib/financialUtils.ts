@@ -154,6 +154,7 @@ export const calculateMissionFinancials = (
     const isFinished = mission.status === MissionStatus.COMPLETED;
     const isCancelled = mission.status === MissionStatus.CANCELLED;
     const isRefused = mission.status === MissionStatus.REFUSED;
+    const isPending = mission.status === MissionStatus.PENDING;
     const isZeroValueMission = isCancelled || isRefused;
     
     const getKm = (val: any) => typeof val === 'number' ? val : parseFloat(String(val || '0').replace(',', '.'));
@@ -188,8 +189,10 @@ export const calculateMissionFinancials = (
             const lastUpdateDate = parseSafeDate(mission.lastUpdate);
             endDateObj = lastUpdateDate || currentTime;
         }
+    } else if (isPending) {
+        const lastUpdateDate = parseSafeDate(mission.lastUpdate);
+        endDateObj = lastUpdateDate || currentTime;
     } else {
-        // LÓGICA DE TEMPO REAL: Missão Ativa usa Hora Atual para forçar cálculo de Hora Extra ao vivo
         endDateObj = currentTime;
     }
 
