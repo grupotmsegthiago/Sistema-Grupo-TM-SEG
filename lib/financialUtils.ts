@@ -264,7 +264,7 @@ export const calculateMissionFinancials = (
             // 2. PRIORIDADE ALTA: CIDADE ORIGEM X DESTINO (UF inclusa no normalize se houver)
             else if (normalizedCity.length > 3 && normalizedDestCity.length > 3 && 
                 tableOp.includes(normalizedCity) && tableOp.includes(normalizedDestCity)) {
-                score += 2000;
+                score += 5000;
                 matchType = `Rota Exata (${city} x ${destCity})`;
             }
 

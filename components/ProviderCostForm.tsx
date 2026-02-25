@@ -96,7 +96,15 @@ const ProviderCostForm: React.FC<Props> = ({ onBack, id, onSuccess, fixedProvide
     }
     setIsSaving(true);
     try {
-        const payload = { ...formData };
+        const payload = {
+            provider: formData.provider,
+            operation_type: formData.operation_type,
+            activation_cost: parseFloat(String(formData.activation_cost)) || 0,
+            franchise_hours: parseFloat(String(formData.franchise_hours)) || 0,
+            franchise_km: parseFloat(String(formData.franchise_km)) || 0,
+            cost_per_extra_km: parseFloat(String(formData.cost_per_extra_km)) || 0,
+            cost_per_extra_hour: parseFloat(String(formData.cost_per_extra_hour)) || 0,
+        };
         let resultId = id;
 
         if(id) {
@@ -251,30 +259,30 @@ const ProviderCostForm: React.FC<Props> = ({ onBack, id, onSuccess, fixedProvide
             
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                <div>
-                   <label className={LABEL_CLASS}>Custo KM Extra</label>
+                   <label className={LABEL_CLASS}>Custo KM Extra (por KM excedente)</label>
                    <div className="relative">
                       <input 
                         type="number" step="0.01" required
                         className={INPUT_CLASS} 
-                        placeholder="0.00"
+                        placeholder="Ex: 1.20"
                         value={formData.cost_per_extra_km}
                         onChange={e => setFormData({...formData, cost_per_extra_km: e.target.value})}
                       />
-                      <span className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-500 font-bold text-xs">R$</span>
+                      <Gauge size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-orange-500 pointer-events-none" />
                    </div>
                </div>
 
                <div>
-                   <label className={LABEL_CLASS}>Custo Hora Extra</label>
+                   <label className={LABEL_CLASS}>Custo Hora Extra (por hora excedente)</label>
                    <div className="relative">
                       <input 
                         type="number" step="0.01" required
                         className={INPUT_CLASS} 
-                        placeholder="0.00"
+                        placeholder="Ex: 35.00"
                         value={formData.cost_per_extra_hour}
                         onChange={e => setFormData({...formData, cost_per_extra_hour: e.target.value})}
                       />
-                      <span className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-500 font-bold text-xs">R$</span>
+                      <Clock size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-blue-500 pointer-events-none" />
                    </div>
                </div>
             </div>
