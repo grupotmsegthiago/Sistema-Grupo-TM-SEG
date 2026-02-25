@@ -10,6 +10,7 @@ import ClientRouteList from './ClientRouteList';
 import QuoteList from './QuoteList';
 import CommercialProposalModal from './CommercialProposalModal';
 import ClientPriceCalculator from './ClientPriceCalculator';
+import QuotePrintModal from './QuotePrintModal';
 
 interface ClientFormProps {
   onBack: () => void;
@@ -95,6 +96,7 @@ const ClientForm: React.FC<ClientFormProps> = ({
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
   const [isProposalModalOpen, setIsProposalModalOpen] = useState(false);
   const [showCalculator, setShowCalculator] = useState(false);
+  const [quickQuoteTable, setQuickQuoteTable] = useState<ClientPriceTable | null>(null);
 
   // States para Reajuste e Seleção
   const [adjustmentPercent, setAdjustmentPercent] = useState('');
@@ -432,6 +434,17 @@ const ClientForm: React.FC<ClientFormProps> = ({
   return (
     <div className="max-w-6xl mx-auto space-y-6 animate-in slide-in-from-right-4 duration-300 relative pb-20">
       {isImportModalOpen && <ImportClientPriceModal onClose={() => setIsImportModalOpen(false)} onSuccess={() => fetchPriceTables(formData.name)} fixedClientName={formData.name} />}
+      {quickQuoteTable && (
+          <QuotePrintModal 
+              quote={{
+                  id: 'COTAÇÃO', client_id: parseInt(id || '0'), client_name: formData.trading_name || formData.name,
+                  origin: '', destination: '', total_km: quickQuoteTable.franchise_km, total_hours: quickQuoteTable.franchise_hours,
+                  total_value: quickQuoteTable.activation_fee, status: 'Rascunho', created_at: new Date().toISOString(), created_by: JSON.parse(localStorage.getItem('userData') || '{}').name || '',
+                  contract_details: `Operação: ${quickQuoteTable.operation_type}\nAcionamento: R$ ${(quickQuoteTable.activation_fee ?? 0).toLocaleString('pt-BR', {minimumFractionDigits: 2})}\nFranquia KM: ${quickQuoteTable.franchise_km} km\nFranquia Horas: ${quickQuoteTable.franchise_hours}h\nKM Excedente: R$ ${(quickQuoteTable.price_per_extra_km ?? 0).toLocaleString('pt-BR', {minimumFractionDigits: 2})}\nHora Excedente: R$ ${(quickQuoteTable.price_per_extra_hour ?? 0).toLocaleString('pt-BR', {minimumFractionDigits: 2})}\nValidade da Proposta: 5 dias.`
+              }} 
+              onClose={() => setQuickQuoteTable(null)} 
+          />
+      )}
       {isProposalModalOpen && (
           <CommercialProposalModal 
             onClose={() => { setIsProposalModalOpen(false); fetchClientData(); }} 
@@ -701,12 +714,6 @@ const ClientForm: React.FC<ClientFormProps> = ({
                     <button onClick={handleCopyPriceTable} disabled={!copySourceClientId || isSavingPrice} className="bg-indigo-600 text-white px-3 py-2 rounded-lg text-[10px] font-black uppercase hover:bg-indigo-700 transition-all flex items-center gap-1.5 disabled:opacity-50"><Copy size={12}/> Copiar Tarifário</button>
                     <div className="h-6 w-px bg-gray-300 mx-1"></div>
                     <button onClick={() => setIsImportModalOpen(true)} className="bg-white text-indigo-700 px-3 py-2 rounded-lg text-[10px] font-black uppercase border border-indigo-200 hover:bg-indigo-50 transition-colors flex items-center gap-1.5"><FileSpreadsheet size={14} /> Importar (IA)</button>
-                    {id && priceTables.length > 0 && (
-                      <>
-                        <div className="h-6 w-px bg-gray-300 mx-1"></div>
-                        <button onClick={() => setIsProposalModalOpen(true)} className="bg-green-600 text-white px-3 py-2 rounded-lg text-[10px] font-black uppercase hover:bg-green-700 transition-all flex items-center gap-1.5 shadow-md"><FileText size={14} /> Gerar Cotação</button>
-                      </>
-                    )}
                   </div>
               </div>
               
@@ -805,7 +812,7 @@ const ClientForm: React.FC<ClientFormProps> = ({
                                         <span className="text-gray-300 font-bold uppercase text-[8px]">Pendente</span>
                                     )}
                                 </td>
-                                <td className="p-2 text-right"><div className="flex justify-end gap-1"><button onClick={() => handleEditPrice(table)} className="p-1 text-blue-600 hover:bg-blue-50 rounded"><Edit size={12} /></button><button onClick={async () => { if(confirm("Excluir?")) { await supabase.from('client_price_tables').delete().eq('id', table.id); fetchPriceTables(formData.name); } }} className="p-1 text-red-600 hover:bg-red-50 rounded"><Trash2 size={12} /></button></div></td>
+                                <td className="p-2 text-right"><div className="flex justify-end gap-1"><button onClick={() => setQuickQuoteTable(table)} className="p-1 text-green-600 hover:bg-green-50 rounded" title="Gerar Proposta"><FileText size={12} /></button><button onClick={() => handleEditPrice(table)} className="p-1 text-blue-600 hover:bg-blue-50 rounded"><Edit size={12} /></button><button onClick={async () => { if(confirm("Excluir?")) { await supabase.from('client_price_tables').delete().eq('id', table.id); fetchPriceTables(formData.name); } }} className="p-1 text-red-600 hover:bg-red-50 rounded"><Trash2 size={12} /></button></div></td>
                             </tr> 
                         ))}
                     </tbody>
