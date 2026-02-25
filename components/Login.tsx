@@ -159,10 +159,10 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
           <div className="text-center space-y-4 relative">
             <div className="inline-flex items-center gap-3 bg-white/5 backdrop-blur-sm border border-white/10 rounded-full px-6 py-3">
               <Radio size={14} className="text-red-500 animate-pulse" />
-              <span className="text-white/60 text-xs font-bold uppercase tracking-[0.3em]">Monitoramento 24h</span>
+              <span className="text-white/60 text-xs font-bold uppercase tracking-[0.3em]">Gestão Operacional 24h</span>
             </div>
-            <h2 className="text-5xl font-black text-white/10 tracking-widest uppercase">Proteção</h2>
-            <h2 className="text-5xl font-black text-white/5 tracking-widest uppercase">Total</h2>
+            <h2 className="text-5xl font-black text-white/10 tracking-widest uppercase">Consultoria</h2>
+            <h2 className="text-5xl font-black text-white/5 tracking-widest uppercase">& Intermediação</h2>
           </div>
         </div>
       </div>
@@ -197,7 +197,7 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
                 <h1 className="text-2xl font-black text-white tracking-wide">
                   GRUPO TM<span className="text-red-500">SEG</span>
                 </h1>
-                <p className="text-[10px] font-bold text-gray-500 uppercase tracking-[0.35em]">Segurança Patrimonial & Escolta Armada</p>
+                <p className="text-[10px] font-bold text-gray-500 uppercase tracking-[0.25em]">Intermediadora de Escolta Armada & Seg. Patrimonial</p>
               </div>
             </div>
 
@@ -307,9 +307,9 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
 
           <div className="mt-6 grid grid-cols-3 gap-3">
             {[
-              { label: 'Escolta Armada', icon: Shield },
-              { label: 'Rastreamento', icon: Radio },
-              { label: 'Seg. Patrimonial', icon: Fingerprint },
+              { label: 'Intermediação de Escolta', icon: Shield },
+              { label: 'Gestão Operacional', icon: Radio },
+              { label: 'Consultoria em Segurança', icon: Fingerprint },
             ].map((item, i) => (
               <div key={i} className="flex flex-col items-center gap-2 p-3 bg-white/[0.02] rounded-xl border border-white/5">
                 <item.icon size={16} className="text-red-600/60" />
