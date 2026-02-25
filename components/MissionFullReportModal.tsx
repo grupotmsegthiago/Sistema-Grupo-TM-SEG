@@ -401,11 +401,11 @@ const MissionFullReportModal: React.FC<Props> = ({ mission, onClose }) => {
 
             drawSectionHeader('TIMELINE COMPLETA DE EVENTOS');
 
-            const statusChangeToOrigin = history.find(h =>
+            const statusChangeToInTransit = history.find(h =>
                 h.field_name === 'status' &&
-                (h.new_value === 'Origem' || h.new_value === 'Em Viagem')
+                h.new_value === 'Em Viagem'
             );
-            const timelineCutoff = statusChangeToOrigin ? new Date(statusChangeToOrigin.changed_at).getTime() : null;
+            const timelineCutoff = statusChangeToInTransit ? new Date(statusChangeToInTransit.changed_at).getTime() : null;
             const filteredLogs = timelineCutoff
                 ? logs.filter(l => new Date(l.created_at).getTime() >= timelineCutoff)
                 : logs;
@@ -414,7 +414,7 @@ const MissionFullReportModal: React.FC<Props> = ({ mission, onClose }) => {
                 doc.setFontSize(8);
                 doc.setFont('helvetica', 'italic');
                 doc.setTextColor(150, 150, 150);
-                doc.text('Nenhum evento registrado a partir do início da operação.', margin + 3, y + 3);
+                doc.text('Nenhum evento registrado a partir do início da viagem.', margin + 3, y + 3);
                 y += 10;
             } else {
                 filteredLogs.forEach((log, idx) => {
@@ -554,24 +554,8 @@ const MissionFullReportModal: React.FC<Props> = ({ mission, onClose }) => {
             checkPageBreak(100);
             drawSectionHeader('MAPA DA OPERAÇÃO');
 
-            const waypoints = getMapLinksFromLogs();
-
             let mapUrl = '';
-            if (waypoints.length >= 2) {
-                let pathParam = `&path=color:0xB91C1Cff|weight:4`;
-                waypoints.forEach(w => { pathParam += `|${w.lat},${w.lng}`; });
-
-                let markersParam = '';
-                waypoints.forEach((w, i) => {
-                    if (i === 0) markersParam += `&markers=color:green%7Clabel:A%7C${w.lat},${w.lng}`;
-                    else if (i === waypoints.length - 1) markersParam += `&markers=color:red%7Clabel:B%7C${w.lat},${w.lng}`;
-                    else markersParam += `&markers=color:blue%7Clabel:${i}%7C${w.lat},${w.lng}`;
-                });
-
-                mapUrl = `https://maps.googleapis.com/maps/api/staticmap?size=640x400&maptype=roadmap${markersParam}${pathParam}&key=${MAPS_API_KEY}`;
-            } else if (waypoints.length === 1) {
-                mapUrl = `https://maps.googleapis.com/maps/api/staticmap?center=${waypoints[0].lat},${waypoints[0].lng}&zoom=13&size=640x400&maptype=roadmap&markers=color:red%7C${waypoints[0].lat},${waypoints[0].lng}&key=${MAPS_API_KEY}`;
-            } else if (mission.origin && mission.destination) {
+            if (mission.origin && mission.destination) {
                 const oEnc = encodeURIComponent(mission.origin);
                 const dEnc = encodeURIComponent(mission.destination);
                 mapUrl = `https://maps.googleapis.com/maps/api/staticmap?size=640x400&maptype=roadmap&markers=color:green%7Clabel:A%7C${oEnc}&markers=color:red%7Clabel:B%7C${dEnc}&key=${MAPS_API_KEY}`;
@@ -596,10 +580,11 @@ const MissionFullReportModal: React.FC<Props> = ({ mission, onClose }) => {
             } else {
                 doc.setFontSize(8);
                 doc.setTextColor(150, 150, 150);
-                doc.text('Sem coordenadas GPS para exibir o mapa.', margin + 3, y + 3);
+                doc.text('Sem cidades de origem/destino para exibir o mapa.', margin + 3, y + 3);
                 y += 10;
             }
 
+            const waypoints = getMapLinksFromLogs();
             if (waypoints.length > 0) {
                 checkPageBreak(10);
                 doc.setFontSize(6.5);
