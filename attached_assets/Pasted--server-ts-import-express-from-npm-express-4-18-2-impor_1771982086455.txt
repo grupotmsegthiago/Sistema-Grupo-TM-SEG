@@ -1,0 +1,133 @@
+// server.ts
+import express from "npm:express@4.18.2"
+import cors from "npm:cors@2.8.5"
+import fetch from "node-fetch" // Replit Node 18+ já tem fetch; se necessário: npm i node-fetch@3
+import { createClient } from "npm:@supabase/supabase-js@2.43.4"
+
+const app = express()
+app.use(cors())
+app.use(express.json())
+
+// Env
+const SUPABASE_URL = process.env.SUPABASE_URL!
+const SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE_KEY!
+const ANON_KEY = process.env.SUPABASE_ANON_KEY! // opcional, não usado aqui
+if (!SUPABASE_URL || !SERVICE_ROLE) {
+  console.error("Configure SUPABASE_URL e SUPABASE_SERVICE_ROLE_KEY nas variáveis de ambiente.")
+  process.exit(1)
+}
+
+const admin = createClient(SUPABASE_URL, SERVICE_ROLE, {
+  auth: { persistSession: false },
+})
+
+// Helpers
+async function sql<T = any>(statement: string) {
+  const resp = await fetch(`${SUPABASE_URL}/rest/v1/rpc/`, {
+    method: "POST",
+    headers: {
+      apikey: SERVICE_ROLE,
+      Authorization: `Bearer ${SERVICE_ROLE}`,
+      "Content-Type": "application/json",
+      Accept: "application/json",
+      Prefer: "return=representation",
+    },
+    body: JSON.stringify({}), // Não usamos RPC aqui; preferível usar Postgres via pooled connection abaixo
+  })
+  return resp.json() as Promise<T>
+}
+
+// Preferível: conectar direto no Postgres via Supabase-js PostgREST? Para consultas arbitrárias, use o novo Query (experimental) ou crie views.
+// Abaixo usaremos Edge Functions-like via postgres/meta endpoints onde possível.
+// Como alternativa simples e segura: crie views no banco e consuma via REST. Aqui, vou consultar usando Postgres functions expostas via SQL.
+
+// Crie uma função no banco para consolidar métricas (ver seção SQL abaixo)
+
+// Rotas
+
+// 1) Status geral + incidentes
+app.get("/api/status", async (_req, res) => {
+  try {
+    // Incidentes ativos (status.supa)
+    const incidents = await fetch("https://status.supabase.com/api/v2/incidents.json").then(r => r.json()).catch(() => ({ incidents: [] }))
+
+    // Ping ao PostgREST
+    const restOk = await fetch(`${SUPABASE_URL}/rest/v1/`, {
+      headers: { apikey: SERVICE_ROLE, Authorization: `Bearer ${SERVICE_ROLE}` },
+    }).then(r => r.ok).catch(() => false)
+
+    // Últimos erros de API (logs)
+    const logsApi = await admin.functions.invoke("log-proxy", {
+      body: { service: "api", level: "error", limit: 50 },
+    }).catch(() => ({ data: [] }))
+
+    res.json({
+      rest_ok: restOk,
+      incidents,
+      recent_api_errors: logsApi?.data ?? [],
+      timestamp: new Date().toISOString(),
+    })
+  } catch (e: any) {
+    res.status(500).json({ error: e.message })
+  }
+})
+
+// 2) Segurança e performance advisors
+app.get("/api/advisors", async (_req, res) => {
+  try {
+    // Supabase Advisors ainda não tem endpoint público direto; usaremos função Edge (abaixo) que chama Management API
+    const security = await admin.functions.invoke("advisors-proxy", { body: { type: "security" } })
+    const performance = await admin.functions.invoke("advisors-proxy", { body: { type: "performance" } })
+    res.json({
+      security: security.data ?? [],
+      performance: performance.data ?? [],
+    })
+  } catch (e: any) {
+    res.status(500).json({ error: e.message })
+  }
+})
+
+// 3) Uso de armazenamento de banco (tamanho DB, esquemas, tabelas)
+app.get("/api/storage/db-usage", async (_req, res) => {
+  try {
+    const { data, error } = await admin.rpc("metrics_db_storage")
+    if (error) throw error
+    res.json(data)
+  } catch (e: any) {
+    res.status(500).json({ error: e.message })
+  }
+})
+
+// 4) Uso do Storage (arquivos por bucket, bytes)
+app.get("/api/storage/objects-usage", async (_req, res) => {
+  try {
+    const { data, error } = await admin.rpc("metrics_storage_objects")
+    if (error) throw error
+    res.json(data)
+  } catch (e: any) {
+    res.status(500).json({ error: e.message })
+  }
+})
+
+// 5) Desempenho (latência média e taxa de erro por serviço via logs)
+app.get("/api/perf", async (_req, res) => {
+  try {
+    const perf = await admin.functions.invoke("logs-metrics", { body: { window_minutes: 60 } })
+    res.json(perf.data ?? {})
+  } catch (e: any) {
+    res.status(500).json({ error: e.message })
+  }
+})
+
+// 6) Custos: sem API pública detalhada — forneceremos links
+app.get("/api/billing/links", (_req, res) => {
+  res.json({
+    billing_dashboard: "https://supabase.com/dashboard/org/_/billing",
+    usage_dashboard: "https://supabase.com/dashboard/org/_/usage",
+  })
+})
+
+const PORT = process.env.PORT || 3000
+app.listen(PORT, () => {
+  console.log(`Monitor backend running on :${PORT}`)
+})

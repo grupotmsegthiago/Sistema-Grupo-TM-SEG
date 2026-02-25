@@ -58,6 +58,21 @@ Preferred communication style: Simple, everyday language.
 - Frontend components import `generateContent` from `lib/gemini.ts` which calls the server proxy
 - AIChatbot calls `/api/chat` directly with SSE streaming
 
+### Supabase Monitor (Server Status Page)
+- **Component:** `components/ServerStats.tsx` — Enhanced with full Supabase monitoring panel
+- **Backend Routes:** Added to `server/routes.ts`:
+  - `GET /api/supabase/status` — REST API ping, Supabase platform incidents, scheduled maintenances
+  - `GET /api/supabase/db-metrics` — Row counts and estimated sizes for all project tables
+  - `GET /api/supabase/storage-usage` — Storage bucket listing with object counts and sizes
+  - `GET /api/supabase/health-check` — Multi-service health check (Database, Auth, Storage, Realtime)
+  - `GET /api/supabase/billing-links` — Direct links to Supabase dashboard pages
+- **Frontend Tabs:** Overview (service health + incidents), Database (table-level metrics with bars), Storage (bucket usage), Links (billing/usage/logs dashboards)
+- **Auto-refresh:** Every 60 seconds alongside existing API diagnostics
+
+### Mission Report (`MissionFullReportModal`)
+- `hideProviderInfo` prop: When true (client users), hides provider name, agent details (CPF/RG/CNV), vehicle, tracker from report HTML. Also filters audit entries for provider/agent/vehicle fields.
+- Report opens in new browser tab as full HTML page with print/PDF support
+
 ### Environment Variables
 - `DATABASE_URL` — PostgreSQL connection string (required for Drizzle/backend)
 - `AI_INTEGRATIONS_GEMINI_API_KEY` / `AI_INTEGRATIONS_GEMINI_BASE_URL` — Auto-configured by Replit AI Integrations

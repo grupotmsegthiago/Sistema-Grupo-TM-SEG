@@ -1,0 +1,300 @@
+Frontend (React + Vite)
+Crie um app Vite React e adicione as páginas abaixo.
+
+main.jsx
+import
+ React 
+from
+ 
+"react"
+
+import
+ ReactDOM 
+from
+ 
+"react-dom/client"
+
+import
+ App 
+from
+ 
+"./App"
+
+ReactDOM.createRoot(
+document
+.getElementById(
+"root"
+)).render(
+  <React.StrictMode>
+    <App />
+  </React.StrictMode>
+)
+
+App.jsx
+import
+ React, { useEffect, useState } 
+from
+ 
+"react"
+
+import
+ { Line, Bar, Doughnut } 
+from
+ 
+"react-chartjs-2"
+
+import
+ {
+  Chart 
+as
+ ChartJS,
+  CategoryScale, LinearScale, PointElement, LineElement, BarElement, ArcElement, Tooltip, Legend,
+} 
+from
+ 
+"chart.js"
+
+ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, BarElement, ArcElement, Tooltip, Legend)
+const
+ API_BASE = 
+import
+.meta.env.VITE_API_BASE || 
+"http://localhost:3000"
+
+export
+ 
+default
+ 
+function
+ 
+App
+(
+) 
+{
+  
+const
+ [status, setStatus] = useState(
+null
+)
+  
+const
+ [advisors, setAdvisors] = useState(
+null
+)
+  
+const
+ [dbUsage, setDbUsage] = useState(
+null
+)
+  
+const
+ [objectsUsage, setObjectsUsage] = useState(
+null
+)
+  
+const
+ [perf, setPerf] = useState(
+null
+)
+  
+const
+ [billingLinks, setBillingLinks] = useState(
+null
+)
+  useEffect(
+() =>
+ {
+    
+const
+ fetchAll = 
+async
+ () => {
+      
+const
+ [s, a, d, o, p, b] = 
+await
+ 
+Promise
+.all([
+        fetch(
+`
+${API_BASE}
+/api/status`
+).then(
+r
+=>
+r.json()),
+        fetch(
+`
+${API_BASE}
+/api/advisors`
+).then(
+r
+=>
+r.json()),
+        fetch(
+`
+${API_BASE}
+/api/storage/db-usage`
+).then(
+r
+=>
+r.json()),
+        fetch(
+`
+${API_BASE}
+/api/storage/objects-usage`
+).then(
+r
+=>
+r.json()),
+        fetch(
+`
+${API_BASE}
+/api/perf`
+).then(
+r
+=>
+r.json()),
+        fetch(
+`
+${API_BASE}
+/api/billing/links`
+).then(
+r
+=>
+r.json()),
+      ])
+      setStatus(s); setAdvisors(a); setDbUsage(d); setObjectsUsage(o); setPerf(p); setBillingLinks(b)
+    }
+    fetchAll()
+    
+const
+ id = 
+setInterval
+(fetchAll, 
+60_000
+)
+    
+return
+ 
+() =>
+ 
+clearInterval
+(id)
+  }, [])
+  
+const
+ totalDb = dbUsage?.database_size_bytes || 
+0
+
+  
+const
+ tables = (dbUsage?.tables || []).slice(
+0
+, 
+10
+)
+  
+const
+ storageBuckets = objectsUsage || []
+  
+return
+ (
+    <div style={{ padding: 20, fontFamily: "sans-serif" }}>
+      <h1>Supabase Monitor</h1>
+      <section>
+        <h2>Status</h2>
+        <p>REST: {status?.rest_ok ? "OK" : "Indisponível"}</p>
+        <p>Incidentes ativos: {status?.incidents?.incidents?.length ?? 0}</p>
+      </section>
+      <section>
+        <h2>Segurança e Performance (Advisors)</h2>
+        <pre style={{ background: "#111", color: "#0f0", padding: 10, overflow: "auto" }}>
+{JSON.stringify(advisors, null, 2)}
+        </pre>
+      </section>
+      <section>
+        <h2>Armazenamento do Banco</h2>
+        <p>Total do DB: {(totalDb/1024/1024).toFixed(2)} MB</p>
+        <Bar data={{
+          labels: tables.map(t => t.table || `${t.schema}.${t.table}`),
+          datasets: [{
+            label: "Tamanho (MB)",
+            data: tables.map(t => (t.size_bytes || 0)/1024/1024),
+            backgroundColor: "rgba(54, 162, 235, 0.5)"
+          }]
+        }} />
+      </section>
+      <section>
+        <h2>Storage (Buckets)</h2>
+        <Doughnut data={{
+          labels: storageBuckets.map(b => b.bucket_id),
+          datasets: [{
+            data: storageBuckets.map(b => (b.size_bytes || 0)/1024/1024),
+            backgroundColor: ["#36a2eb","#ff6384","#ff9f40","#4bc0c0","#9966ff","#c9cbcf"]
+          }]
+        }} />
+        <ul>
+          {storageBuckets.map(b => (
+            <li key={b.bucket_id}>{b.bucket_id}: {b.objects} objetos, {(b.size_bytes/1024/1024).toFixed(2)} MB</li>
+          ))}
+        </ul>
+      </section>
+      <section>
+        <h2>Desempenho</h2>
+        <pre style={{ background: "#111", color: "#0f0", padding: 10, overflow: "auto" }}>
+{JSON.stringify(perf, null, 2)}
+        </pre>
+        {perf?.api && (
+          <Bar data={{
+            labels: ["API", "Postgres", "Edge"],
+            datasets: [
+              {
+                label: "Erro (%)",
+                data: [perf.api.error_rate*100, perf.postgres.error_rate*100, perf.edge.error_rate*100],
+                backgroundColor: "rgba(255,99,132,0.5)"
+              },
+              {
+                label: "Latência média (ms)",
+                data: [perf.api.avg_latency_ms || 0, perf.postgres.avg_latency_ms || 0, perf.edge.avg_latency_ms || 0],
+                backgroundColor: "rgba(75,192,192,0.5)"
+              }
+            ]
+          }} />
+        )}
+      </section>
+      <section>
+        <h2>Custos e Uso (Links)</h2>
+        <ul>
+          <li><a href={billingLinks?.billing_dashboard} target="_blank">Billing</a></li>
+          <li><a href={billingLinks?.usage_dashboard} target="_blank">Usage</a></li>
+        </ul>
+      </section>
+    </div>
+  )
+}
+
+.env para frontend (opcional)
+VITE_API_BASE=https://<seu-replit-url>
+Como colocar para rodar no Replit
+Crie um Repl Node.js.
+Adicione as variáveis ​​de ambiente: SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, SUPABASE_ANON_KEY.
+Instalar:
+Backend: npm i express cors @supabase/supabase-js node-fetch
+Frontend: npm i react react-dom vite chart.js react-chartjs-2
+Configure o script:
+"start": "node server.ts" (use ts-node ou transpile para JS)
+Alternativa: transpile TypeScript ou escreva server.js em JS puro.
+Rode o backend e o frontend (pode separar em dois Repls ou servir o build do frontend via o mesmo Express).
+Segurança
+Nunca exponha SERVICE_ROLE no frontend.
+Se quiser autenticar o acesso ao painel, adicione um token próprio no cabeçalho e valide no Express.
+Limite CORS ao seu domínio do painel.
+Sobre “por que meu banco caiu?”
+Causas comuns: saturação de conexões, consultas pesadas sem índice, loops no Realtime, falta de recursos no plano, timeouts ou incidentes da plataforma.
+Usar:
+/api/status para verificar incidentes e saúde do REST.
+/api/perf para ver picos de latência/erros.
+Assessores para detectar políticas RLS/índices ausentes.
+Monitore conexões e consultas lentas criando visualizações adicionais (posso fornecer SQL para pg_stat_statements, conexões por usuário, etc.).
