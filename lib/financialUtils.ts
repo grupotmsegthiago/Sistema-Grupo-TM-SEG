@@ -452,12 +452,14 @@ export const calculateMissionFinancials = (
     const appliedTableName = (appliedClientTable?.operation_type || '').toUpperCase();
     const missionDest = (mission.destination || '').toUpperCase();
 
-    const isFixedDistanceClientRule = appliedTableName.includes('200KM') || 
+    const hasAtePrefix = (name: string) => name.includes('ATÉ') || name.includes('ATE');
+    const isFixedDistanceClientRule = (!hasAtePrefix(appliedTableName)) && (
+                                      appliedTableName.includes('200KM') || 
                                       appliedTableName.includes('200 KM') || 
                                       appliedTableName.includes('100KM') || 
                                       appliedTableName.includes('100 KM') || 
                                       appliedTableName.includes('LOGITECH') ||
-                                      missionDest.includes('200KM');
+                                      missionDest.includes('200KM'));
 
     const isFixedHoursClientRule = appliedTableName.includes('02H') || 
                                    appliedTableName.includes('02 HORAS') ||
@@ -475,11 +477,12 @@ export const calculateMissionFinancials = (
     cExcessHr = Math.max(0, durationHours - cFranchiseHr);
 
     const providerTableName = (appliedProviderTable?.operation_type || '').toUpperCase();
-    const isFixedDistanceProviderRule = providerTableName.includes('200KM') || 
+    const isFixedDistanceProviderRule = (!hasAtePrefix(providerTableName)) && (
+                                        providerTableName.includes('200KM') || 
                                         providerTableName.includes('200 KM') || 
                                         providerTableName.includes('100KM') || 
                                         providerTableName.includes('100 KM') || 
-                                        providerTableName.includes('LOGITECH') ||
+                                        providerTableName.includes('LOGITECH')) ||
                                         isFixedDistanceClientRule;
 
     const isFixedHoursProviderRule = providerTableName.includes('02H') || 
