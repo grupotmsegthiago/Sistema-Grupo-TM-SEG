@@ -712,6 +712,10 @@ const MissionFullReportModal: React.FC<Props> = ({ mission, onClose }) => {
 
         <div style="text-align:center;padding:0 0 20px;font-size:10px;color:#94A3B8;">
             GRUPO TMSEG — Relatório Operacional Confidencial — Gerado em ${new Date().toLocaleString('pt-BR')}
+          </div>
+      </div>
+  </body>
+  </html>`;
             const newWindow = window.open('', '_blank');
               if (newWindow) {
                   newWindow.document.write(html);
