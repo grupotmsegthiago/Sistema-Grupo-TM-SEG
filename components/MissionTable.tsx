@@ -3,12 +3,11 @@ import { Mission, MissionStatus, MissionLog, User as UserType, Agent, Client, Cl
 import { supabase } from '../lib/supabase';
 import { useNotification } from '../lib/NotificationContext';
 import { logAction } from '../lib/logger';
-import { extractUF, UF_TO_REGION, calculateMissionFinancials } from '../lib/financialUtils';
 import { 
-  Plus, Loader2, Activity, Search, Database, AlertTriangle, Check, Trash2, Lock, Share2, X, Eye, EyeOff, Layers, PlayCircle, CheckCircle2, FileClock,
+  Plus, Loader2, Activity, Search, Database, AlertTriangle, Check, Trash2, Lock, Share2, X, Eye, EyeOff, Layers, PlayCircle, CheckCircle2,
   ClipboardList, FileSearch, CalendarClock, MapPin, Truck, Flag, XCircle, UserX, AlertOctagon, ToggleLeft, ToggleRight, Calendar,
-  BarChart4, TrendingUp, TrendingDown, DollarSign, PieChart, Wallet, Map as MapIcon, Globe, Building2, LayoutDashboard, User, CreditCard, ExternalLink, RefreshCw,
-  Trophy, Target, Shield, Gauge, Clock, Zap, Briefcase, ClipboardCheck, ShieldCheck, Percent, History, CalendarPlus, ShieldAlert, Mail, MessageCircle
+  BarChart4, Globe, Building2, LayoutDashboard, User, ExternalLink, RefreshCw,
+  Target, Clock, History, CalendarPlus, ShieldAlert, Mail, MessageCircle
 } from 'lucide-react';
 import { GoogleMap, useLoadScript, Marker, InfoWindow } from '@react-google-maps/api';
 import { googleMapsLoadConfig } from '../lib/maps';
@@ -22,370 +21,9 @@ import MissionFinancialModal from './MissionFinancialModal';
 import MissionFullReportModal from './MissionFullReportModal';
 import DailyGoalThermometer from './DailyGoalThermometer';
 import ExecutiveDashboard from './ExecutiveDashboard';
+import ClientExecutiveDashboard from './ClientExecutiveDashboard';
+import ClientReportsTab from './ClientReportsTab';
 
-const LABEL_CLASS = "text-[10px] font-black text-gray-400 uppercase mb-1.5 block tracking-widest";
-
-const formatCurrency = (val: number | null | undefined) => {
-    if (val === null || val === undefined) return 'R$ 0,00';
-    return val.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
-};
-
-const ChartContainer: React.FC<{ title: string; icon: any; children: React.ReactNode }> = ({ title, icon: Icon, children }) => (
-    <div className="bg-white p-5 rounded-2xl border border-gray-200 shadow-sm hover:shadow-md transition-all flex flex-col h-full group">
-        <div className="flex items-center gap-2 mb-6 border-b border-gray-50 pb-3">
-            <div className="p-2 bg-gray-900 text-white rounded-lg group-hover:bg-red-700 transition-colors">
-                <Icon size={14} />
-            </div>
-            <h4 className="text-[10px] font-black text-gray-500 uppercase tracking-[0.2em]">{title}</h4>
-        </div>
-        <div className="flex-1 flex items-center justify-center min-h-[160px] w-full">
-            {children}
-        </div>
-    </div>
-);
-
-const SimplePieChart: React.FC<{ data: { label: string; value: number; color: string }[] }> = ({ data }) => {
-    const total = data.reduce((acc, curr) => acc + curr.value, 0);
-    let currentAngle = 0;
-    
-    if (total === 0) return <div className="text-[10px] font-bold text-gray-300 uppercase">Sem dados</div>;
-
-    return (
-        <div className="flex flex-col items-center gap-4 w-full">
-            <svg viewBox="0 0 100 100" className="w-28 h-28 transform -rotate-90">
-                {data.map((item, i) => {
-                    const angle = (item.value / total) * 360;
-                    if (angle === 0) return null;
-                    const x1 = 50 + 45 * Math.cos((Math.PI * currentAngle) / 180);
-                    const y1 = 50 + 45 * Math.sin((Math.PI * currentAngle) / 180);
-                    currentAngle += angle;
-                    const x2 = 50 + 45 * Math.cos((Math.PI * currentAngle) / 180);
-                    const y2 = 50 + 45 * Math.sin((Math.PI * currentAngle) / 180);
-                    const largeArcFlag = angle > 180 ? 1 : 0;
-                    return (
-                        <path key={i} d={`M 50 50 L ${x1} ${y1} A 45 45 0 ${largeArcFlag} 1 ${x2} ${y2} Z`} fill={item.color} className="hover:opacity-80 transition-opacity cursor-help" />
-                    );
-                })}
-                <circle cx={50} cy={50} r="28" fill="white" />
-            </svg>
-            <div className="grid grid-cols-2 gap-x-2 gap-y-1 w-full">
-                {data.map((item, i) => (
-                    <div key={i} className="flex items-center gap-1.5 overflow-hidden">
-                        <div className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: item.color }}></div>
-                        <span className="text-[8px] font-black text-gray-500 uppercase truncate" title={item.label}>{item.value} {item.label}</span>
-                    </div>
-                ))}
-            </div>
-        </div>
-    );
-};
-
-const HorizontalBarChart: React.FC<{ data: { label: string; value: number; color: string }[] }> = ({ data }) => {
-    const max = Math.max(...data.map(d => d.value), 1);
-    return (
-        <div className="w-full space-y-3">
-            {data.map((item, i) => (
-                <div key={i} className="space-y-1">
-                    <div className="flex justify-between items-center text-[8px] font-black uppercase tracking-tighter">
-                        <span className="text-gray-600 truncate max-w-[120px]">{item.label}</span>
-                        <span className="text-gray-900">{item.value}</span>
-                    </div>
-                    <div className="w-full h-1.5 bg-gray-100 rounded-full overflow-hidden">
-                        <div className={`h-full transition-all duration-1000 ${item.color}`} style={{ width: `${(item.value / max) * 100}%` }}></div>
-                    </div>
-                </div>
-            ))}
-        </div>
-    );
-};
-
-const FinancialBarChart: React.FC<{ revenue: number; cost: number }> = ({ revenue, cost }) => {
-    const max = Math.max(revenue, cost, 1);
-    const profit = revenue - cost;
-    return (
-        <div className="w-full flex flex-col gap-4">
-            <div className="flex justify-around items-end h-24 gap-4">
-                <div className="flex flex-col items-center gap-2 flex-1">
-                    <div className="w-full bg-green-500 rounded-t-lg transition-all duration-1000" style={{ height: `${(revenue / max) * 100}%` }}></div>
-                    <span className="text-[7px] font-black text-gray-400 uppercase">Rec</span>
-                </div>
-                <div className="flex flex-col items-center gap-2 flex-1">
-                    <div className="w-full bg-red-600 rounded-t-lg transition-all duration-1000" style={{ height: `${(cost / max) * 100}%` }}></div>
-                    <span className="text-[7px] font-black text-gray-400 uppercase">Cst</span>
-                </div>
-            </div>
-            <div className="p-2 bg-gray-900 rounded-xl text-center">
-                <p className={`text-[10px] font-black font-mono ${profit >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                    {formatCurrency(profit)}
-                </p>
-            </div>
-        </div>
-    );
-};
-
-interface AnalyticsDashboardProps {
-    missions: Mission[];
-    isDirector: boolean;
-    clientTables: ClientPriceTable[];
-    providerTables: ProviderCostTable[];
-    clientsData: Client[];
-    currentTime: Date;
-}
-
-const AnalyticsDashboard: React.FC<AnalyticsDashboardProps> = ({ missions, isDirector, clientTables, providerTables, clientsData, currentTime }) => {
-    const statusData = useMemo(() => {
-        const counts: Record<string, number> = {};
-        missions.forEach(m => counts[m.status] = (counts[m.status] || 0) + 1);
-        return [
-            { label: 'Viagem', value: counts[MissionStatus.IN_TRANSIT] || 0, color: '#7c3aed' },
-            { label: 'Concluído', value: counts[MissionStatus.COMPLETED] || 0, color: '#059669' },
-            { label: 'Agendado', value: counts[MissionStatus.SCHEDULED] || 0, color: '#eab308' },
-            { label: 'Cancelado', value: (counts[MissionStatus.CANCELLED] || 0) + (counts[MissionStatus.REFUSED] || 0), color: '#dc2626' }
-        ];
-    }, [missions]);
-
-    const typeData = useMemo(() => {
-        const char = missions.filter(m => (m.mission_type || '').includes('Caracterizada')).length;
-        const vel = missions.filter(m => (m.mission_type || '').includes('Velada')).length;
-        return [
-            { label: 'Caracterizada', value: char, color: '#b91c1c' },
-            { label: 'Velada', value: vel, color: '#0f172a' }
-        ];
-    }, [missions]);
-
-    const topClients = useMemo(() => {
-        const counts: Record<string, number> = {};
-        missions.forEach(m => counts[m.client] = (counts[m.client] || 0) + 1);
-        return Object.entries(counts)
-            .sort((a, b) => b[1] - a[1])
-            .slice(0, 5)
-            .map(([label, value]) => ({ label, value, color: 'bg-red-700' }));
-    }, [missions]);
-
-    const topProviders = useMemo(() => {
-        const counts: Record<string, number> = {};
-        missions.forEach(m => { if(m.provider) counts[m.provider] = (counts[m.provider] || 0) + 1; });
-        return Object.entries(counts)
-            .sort((a, b) => b[1] - a[1])
-            .slice(0, 5)
-            .map(([label, value]) => ({ label, value, color: 'bg-slate-800' }));
-    }, [missions]);
-
-    const financials = useMemo(() => {
-        return missions.reduce((acc, m) => {
-            if (m.status === MissionStatus.REFUSED) return acc;
-
-            const isTerminal = [MissionStatus.COMPLETED, MissionStatus.CANCELLED].includes(m.status as MissionStatus);
-            const isAudited = m.billing_approved;
-            
-            let rev = 0;
-            let cost = 0;
-
-            if (isTerminal || isAudited) {
-                rev = (m.revenue_value || 0) + (m.toll_value || 0);
-                cost = (m.cost_value || 0) + (m.toll_value || 0);
-            } else {
-                const client = clientsData.find(c => c.name === m.client);
-                const projected = calculateMissionFinancials(m, clientTables, providerTables, client, currentTime);
-                rev = projected.client.total;
-                cost = projected.provider.total;
-            }
-
-            return {
-                rev: acc.rev + rev,
-                cost: acc.cost + cost,
-                profit: acc.profit + (rev - cost)
-            };
-        }, { rev: 0, cost: 0, profit: 0 });
-    }, [missions, clientTables, providerTables, clientsData, currentTime]);
-
-    const profitMargin = useMemo(() => {
-        if (financials.rev === 0) return 0;
-        return (financials.profit / financials.rev) * 100;
-    }, [financials]);
-
-    const regionalData = useMemo(() => {
-        const counts: Record<string, number> = { 'SUDESTE': 0, 'SUL': 0, 'CENTRO-OESTE': 0, 'NORDESTE': 0, 'NORTE': 0 };
-        missions.forEach(m => {
-            const uf = extractUF(m.origin || '');
-            const reg = UF_TO_REGION[uf] || 'OUTROS';
-            if (counts[reg] !== undefined) counts[reg]++;
-        });
-        return Object.entries(counts)
-            .filter(([_, v]) => v > 0)
-            .map(([label, value]) => ({ label, value, color: '#dc2626' }));
-    }, [missions]);
-
-    const distanceData = useMemo(() => {
-        const ranges = { '< 100km': 0, '100-500km': 0, '500km+': 0 };
-        missions.forEach(m => {
-            const d = m.totalDistance || 0;
-            if(d < 100) ranges['< 100km']++;
-            else if(d < 500) ranges['100-500km']++;
-            else ranges['500km+']++;
-        });
-        return Object.entries(ranges).map(([label, value]) => ({ label, value, color: 'bg-indigo-600' }));
-    }, [missions]);
-
-    const billingAudit = useMemo(() => {
-        const app = missions.filter(m => m.billing_approved).length;
-        const pen = missions.filter(m => !m.billing_approved && m.status === MissionStatus.COMPLETED).length;
-        return [
-            { label: 'Aprovado', value: app, color: '#22c55e' },
-            { label: 'Pendente', value: pen, color: '#f97316' }
-        ];
-    }, [missions]);
-
-    const dailyTrend = useMemo(() => {
-        const days: Record<string, number> = {};
-        missions.slice(0, 50).forEach(m => {
-            const d = new Date(m.createdAt).toLocaleDateString('pt-BR', { weekday: 'short' });
-            days[d] = (days[d] || 0) + 1;
-        });
-        return Object.entries(days).map(([label, value]) => ({ label, value, color: 'bg-red-600' }));
-    }, [missions]);
-
-    const efficiencyData = useMemo(() => {
-        const done = missions.filter(m => m.status === MissionStatus.COMPLETED).length;
-        const lost = missions.filter(m => [MissionStatus.CANCELLED, MissionStatus.REFUSED].includes(m.status as MissionStatus)).length;
-        return [
-            { label: 'Sucesso', value: done, color: '#16a34a' },
-            { label: 'Perda', value: lost, color: '#450a0a' }
-        ];
-    }, [missions]);
-
-    return (
-        <div className="space-y-6 animate-in fade-in duration-500">
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                <div className="bg-gray-900 p-6 rounded-2xl text-white shadow-xl relative overflow-hidden group border border-white/5">
-                    <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:scale-125 transition-transform"><Activity size={60}/></div>
-                    <p className="text-[10px] font-black text-gray-500 uppercase tracking-widest mb-1">Volume Operacional</p>
-                    <h3 className="text-3xl font-black">{missions.length}</h3>
-                </div>
-                <div className="bg-white p-6 rounded-2xl border border-gray-200 shadow-sm">
-                    <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Em Trânsito Agora</p>
-                    <div className="flex items-center gap-3">
-                        <h3 className="text-3xl font-black text-gray-900">{missions.filter(m => m.status === MissionStatus.IN_TRANSIT).length}</h3>
-                        <Truck size={20} className="text-purple-600"/>
-                    </div>
-                </div>
-                <div className="bg-white p-6 rounded-2xl border border-gray-200 shadow-sm">
-                    <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Pendência Financeira</p>
-                    <div className="flex items-center gap-3">
-                        <h3 className="text-3xl font-black text-orange-600">{missions.filter(m => !m.billing_approved && m.status === MissionStatus.COMPLETED).length}</h3>
-                        <FileClock size={20} className="text-orange-600"/>
-                    </div>
-                </div>
-                <div className="bg-white p-6 rounded-2xl border border-gray-200 shadow-sm">
-                    <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Eficiência Geral</p>
-                    <div className="flex items-center gap-3">
-                        <h3 className="text-3xl font-black text-green-700">{missions.length > 0 ? Math.round((missions.filter(m => m.status === MissionStatus.COMPLETED).length / missions.length) * 100) : 0}%</h3>
-                        <Target size={20} className="text-green-600"/>
-                    </div>
-                </div>
-            </div>
-
-            {isDirector && (
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 animate-in slide-in-from-top-4">
-                    <div className="bg-white p-5 rounded-2xl border border-gray-200 shadow-sm group hover:border-green-200 transition-colors">
-                        <p className="text-[9px] font-black text-gray-400 uppercase tracking-[0.2em] mb-1.5 flex items-center gap-2">
-                            <TrendingUp size={12} className="text-green-500" /> Faturamento (c/ extras)
-                        </p>
-                        <h3 className="text-2xl font-black text-green-700 font-mono tracking-tighter">
-                            {formatCurrency(financials.rev)}
-                        </h3>
-                    </div>
-                    <div className="bg-white p-5 rounded-2xl border border-gray-200 shadow-sm group hover:border-red-200 transition-colors">
-                        <p className="text-[9px] font-black text-gray-400 uppercase tracking-[0.2em] mb-1.5 flex items-center gap-2">
-                            <TrendingDown size={12} className="text-red-500" /> Fornecedor (c/ extras)
-                        </p>
-                        <h3 className="text-2xl font-black text-red-700 font-mono tracking-tighter">
-                            {formatCurrency(financials.cost)}
-                        </h3>
-                    </div>
-                    <div className="bg-white p-5 rounded-2xl border border-gray-200 shadow-sm group hover:border-blue-200 transition-colors">
-                        <p className="text-[9px] font-black text-gray-400 uppercase tracking-[0.2em] mb-1.5 flex items-center gap-2">
-                            <Wallet size={12} className="text-blue-500" /> Quanto Sobrou
-                        </p>
-                        <h3 className={`text-2xl font-black font-mono tracking-tighter ${financials.profit >= 0 ? 'text-blue-700' : 'text-red-600'}`}>
-                            {formatCurrency(financials.profit)}
-                        </h3>
-                    </div>
-                    <div className="bg-slate-900 p-5 rounded-2xl border border-slate-800 shadow-xl group hover:scale-[1.02] transition-transform">
-                        <p className="text-[9px] font-black text-slate-500 uppercase tracking-[0.2em] mb-1.5 flex items-center gap-2">
-                            <Percent size={12} className="text-red-500" /> Lucratividade %
-                        </p>
-                        <h3 className={`text-2xl font-black font-mono tracking-tighter ${profitMargin >= 20 ? 'text-green-400' : profitMargin >= 10 ? 'text-blue-400' : 'text-amber-400'}`}>
-                            {profitMargin.toFixed(1)}%
-                        </h3>
-                    </div>
-                </div>
-            )}
-
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6">
-                <ChartContainer title="Status de Frota" icon={PieChart}><SimplePieChart data={statusData} /></ChartContainer>
-                <ChartContainer title="Mix de Operação" icon={Shield}><SimplePieChart data={typeData} /></ChartContainer>
-                <ChartContainer title="Ranking Clientes" icon={Trophy}><HorizontalBarChart data={topClients} /></ChartContainer>
-                <ChartContainer title="Parceiros Ativos" icon={Briefcase}><SimplePieChart data={topProviders} /></ChartContainer>
-                <ChartContainer title="Performance Fin." icon={DollarSign}>
-                    {isDirector ? <FinancialBarChart revenue={financials.rev} cost={financials.cost} /> : <div className="text-gray-300 flex flex-col items-center"><Lock size={24}/><span className="text-[8px] font-black uppercase mt-1">Restrito</span></div>}
-                </ChartContainer>
-                <ChartContainer title="Distribuição Regional" icon={Globe}><SimplePieChart data={regionalData} /></ChartContainer>
-                <ChartContainer title="Faixas de KM" icon={Gauge}><HorizontalBarChart data={distanceData} /></ChartContainer>
-                <ChartContainer title="Auditoria Mensal" icon={ClipboardCheck}><SimplePieChart data={billingAudit} /></ChartContainer>
-                <ChartContainer title="Demanda Semanal" icon={Calendar}><HorizontalBarChart data={dailyTrend} /></ChartContainer>
-                <ChartContainer title="Taxa de Sucesso" icon={CheckCircle2}><SimplePieChart data={efficiencyData} /></ChartContainer>
-            </div>
-        </div>
-    );
-};
-
-interface ClientAnalyticsDashboardProps {
-    missions: Mission[];
-    clientTables: ClientPriceTable[];
-    providerTables: ProviderCostTable[];
-    clientsData: Client[];
-}
-
-const ClientAnalyticsDashboard: React.FC<ClientAnalyticsDashboardProps> = ({ missions }) => {
-    const total = missions.length;
-    const completed = missions.filter(m => m.status === MissionStatus.COMPLETED).length;
-    const inTransit = missions.filter(m => m.status === MissionStatus.IN_TRANSIT).length;
-
-    const statusData = [
-        { label: 'Em Viagem', value: inTransit, color: '#3b82f6' },
-        { label: 'Concluído', value: completed, color: '#22c55e' },
-        { label: 'Outros', value: Math.max(0, total - (completed + inTransit)), color: '#94a3b8' }
-    ];
-
-    return (
-        <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 mb-6 animate-in slide-in-from-top-4">
-            <div className="lg:col-span-1 space-y-4">
-                <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm">
-                    <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Total de Missões</p>
-                    <h3 className="text-3xl font-black text-gray-900">{total}</h3>
-                </div>
-                <div className="bg-green-600 p-6 rounded-2xl text-white shadow-xl">
-                    <p className="text-[10px] font-black text-white/60 uppercase tracking-widest mb-1">Taxa de Conclusão</p>
-                    <h3 className="text-3xl font-black">{total > 0 ? Math.round((completed / total) * 100) : 0}%</h3>
-                </div>
-            </div>
-            <div className="lg:col-span-3 grid grid-cols-1 md:grid-cols-3 gap-6">
-                <ChartContainer title="Status das Operações" icon={Activity}><SimplePieChart data={statusData} /></ChartContainer>
-                <div className="lg:col-span-2 bg-white p-6 rounded-2xl border border-gray-200 shadow-sm flex flex-col justify-center relative overflow-hidden">
-                    <div className="absolute top-0 right-0 p-4 opacity-5"><Zap size={100}/></div>
-                    <h4 className="text-[11px] font-black text-gray-900 uppercase tracking-widest mb-4 flex items-center gap-2">
-                        <ShieldCheck className="text-red-700" size={16}/> Compromisso com a Segurança
-                    </h4>
-                    <p className="text-xs text-gray-500 leading-relaxed font-medium">
-                        Sua carga está sob monitoramento constante da nossa Central de Inteligência. 
-                        Mantemos conformidade rigorosa com os protocolos da Polícia Federal em 100% das missões.
-                    </p>
-                </div>
-            </div>
-        </div>
-    );
-};
 
 interface MissionTableProps {
   onNewMission?: () => void;
@@ -489,6 +127,7 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
   
   const [showAnalyticsDash, setShowAnalyticsDash] = useState(false);
   const [showClientDash, setShowClientDash] = useState(false);
+  const [showClientReports, setShowClientReports] = useState(false);
   const [showFleetMap, setShowFleetMap] = useState(false);
   const [selectedMapMission, setSelectedMapMission] = useState<Mission | null>(null);
   const [isUpdateModalOpen, setIsUpdateModalOpen] = useState(false);
@@ -1029,6 +668,8 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
                 {!isRestrictedClientView && ( <div className="flex items-center gap-2 bg-indigo-50 p-1.5 rounded-lg border border-indigo-200"><input type="text" className="bg-transparent text-xs font-bold text-indigo-900 placeholder-indigo-400 outline-none w-32 pl-2" placeholder="OS..." value={searchHistoryId} onChange={(e) => setSearchHistoryId(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleSearchHistory()} /><button onClick={handleSearchHistory} className="p-1 bg-indigo-600 text-white rounded hover:bg-indigo-700"><FileSearch size={14} /></button></div> )}
                 <button onClick={() => setShowFleetMap(!showFleetMap)} className={`flex items-center gap-2 px-3 py-2.5 rounded-lg text-[11px] font-bold uppercase transition-all border ${showFleetMap ? 'bg-indigo-600 text-white border-indigo-700 shadow-md' : 'bg-white text-indigo-600 border-indigo-200 hover:bg-indigo-50'}`}><Globe size={14} /> Mapa</button>
                 {!isRestrictedClientView && ( <button onClick={() => setShowAnalyticsDash(!showAnalyticsDash)} className={`flex items-center gap-2 px-3 py-2.5 rounded-lg text-[11px] font-bold uppercase transition-all border ${showAnalyticsDash ? 'bg-blue-600 text-white border-blue-700 shadow-md' : 'bg-white text-gray-600 border-gray-300 hover:bg-gray-50'}`}><BarChart4 size={14} /> Analytics</button> )}
+                {isRestrictedClientView && ( <button onClick={() => { setShowClientDash(!showClientDash); if (!showClientDash) setShowClientReports(false); }} className={`flex items-center gap-2 px-3 py-2.5 rounded-lg text-[11px] font-bold uppercase transition-all border ${showClientDash ? 'bg-red-700 text-white border-red-800 shadow-md' : 'bg-white text-gray-600 border-gray-300 hover:bg-gray-50'}`} data-testid="button-client-dashboard"><BarChart4 size={14} /> Painel</button> )}
+                {isRestrictedClientView && ( <button onClick={() => { setShowClientReports(!showClientReports); if (!showClientReports) setShowClientDash(false); }} className={`flex items-center gap-2 px-3 py-2.5 rounded-lg text-[11px] font-bold uppercase transition-all border ${showClientReports ? 'bg-red-700 text-white border-red-800 shadow-md' : 'bg-white text-gray-600 border-gray-300 hover:bg-gray-50'}`} data-testid="button-client-reports"><Activity size={14} /> Relatórios</button> )}
                 <div className="flex items-center gap-2 bg-gray-50 p-1.5 rounded-lg border border-gray-200"><Calendar size={14} className="text-gray-500 ml-1" /><select value={viewPeriod} onChange={(e) => setViewPeriod(e.target.value)} className="bg-transparent border-none text-[11px] font-bold text-gray-700 outline-none cursor-pointer uppercase focus:ring-0"><option value="TODAY">HOJE</option><option value="YESTERDAY">ONTEM</option><option value="WEEK">SEMANA</option><option value="MONTH">MÊS</option><option value="YEAR">ANO</option><option value="CUSTOM">PERSONALIZADO</option><option value="ALL">TOTAL ABERTOS</option></select></div>
                 {viewPeriod === 'CUSTOM' && (
                     <div className="flex items-center gap-2 bg-gray-50 p-1.5 rounded-lg border border-gray-200">
@@ -1052,12 +693,10 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
             />
         )}
         {isRestrictedClientView && showClientDash && (
-            <ClientAnalyticsDashboard 
-                missions={analyticsMissions} 
-                clientTables={clientTables} 
-                providerTables={providerTables} 
-                clientsData={clientsData}
-            />
+            <ClientExecutiveDashboard missions={analyticsMissions} />
+        )}
+        {isRestrictedClientView && showClientReports && (
+            <ClientReportsTab missions={analyticsMissions} />
         )}
   
         {showFleetMap && isLoaded && !loadError && (
