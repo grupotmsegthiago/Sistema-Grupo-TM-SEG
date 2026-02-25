@@ -537,25 +537,23 @@ export const calculateMissionFinancials = (
     }
     // ---------------------------------------------------------
 
-    let cExtraKmVal = Math.max(0, cExcessKm * cUnitPriceKm);
-    let cExtraHrVal = Math.max(0, cExcessHr * cUnitPriceHour);
+    const round2 = (v: number) => Math.round(v * 100) / 100;
 
-    let pExtraKmVal = Math.max(0, pExcessKm * pUnitCostKm);
-    let pExtraHrVal = Math.max(0, pExcessHr * pUnitCostHour);
+    let cExtraKmVal = round2(Math.max(0, cExcessKm * cUnitPriceKm));
+    let cExtraHrVal = round2(Math.max(0, cExcessHr * cUnitPriceHour));
 
-    const serviceSubtotal = cBase + cExtraKmVal + cExtraHrVal;
+    let pExtraKmVal = round2(Math.max(0, pExcessKm * pUnitCostKm));
+    let pExtraHrVal = round2(Math.max(0, pExcessHr * pUnitCostHour));
+
+    const serviceSubtotal = round2(cBase + cExtraKmVal + cExtraHrVal);
     
     let iblFee = 0;
     if (manualTableOverrides?.forceIblFee) {
-        iblFee = serviceSubtotal * 0.12;
+        iblFee = round2(serviceSubtotal * 0.12);
     }
 
-    // TOTAL = SOMA MATEMÁTICA PURA dos componentes calculados
-    // (Base + Extra KM + Extra Hora) + IBL + Pedágio = Valor Final
-    // O total SEMPRE reflete os componentes visíveis na tela. Valores do banco
-    // são gerenciados pelo frontend (MissionFinancialModal) via isLoadedFromDB.
-    const totalRevenue = serviceSubtotal + iblFee + tollValue;
-    const totalCost = pBase + pExtraKmVal + pExtraHrVal + tollValue;
+    const totalRevenue = round2(serviceSubtotal + iblFee + tollValue);
+    const totalCost = round2(pBase + pExtraKmVal + pExtraHrVal + tollValue);
 
     return {
         realTraveledKm, durationHours, tollValue, isCompleted: isFinished, hasValidKms,
