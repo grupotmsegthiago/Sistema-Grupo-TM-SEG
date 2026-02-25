@@ -1,9 +1,12 @@
 import React, { useState, useMemo, useEffect, useCallback, useRef } from 'react';
-import { Mission, MissionStatus } from '../types';
-import { FileText, Download, Calendar, Printer, Search, ChevronDown, Activity, Eye, Plus, X, Check, Save, Loader2 } from 'lucide-react';
+import { Mission, MissionStatus, ClientPriceTable, ProviderCostTable } from '../types';
+import { calculateMissionFinancials } from '../lib/financialUtils';
+import { FileText, Download, Calendar, Printer, Search, ChevronDown, Activity, Eye, Plus, X, Check, Loader2, Filter } from 'lucide-react';
 
 interface Props {
     missions: Mission[];
+    clientTables?: ClientPriceTable[];
+    providerTables?: ProviderCostTable[];
     onViewReport?: (mission: Mission) => void;
 }
 
@@ -30,7 +33,6 @@ const STATUS_COLORS: Record<string, string> = {
 };
 
 const fmtDate = (d: string) => d ? new Date(d).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' }) : '---';
-const fmtDateTime = (d: string) => d ? new Date(d).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '---';
 const fmtCurrency = (v: number) => v ? v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) : 'R$ 0,00';
 const fmtNum = (v: number | undefined | null) => v ? Math.round(v).toLocaleString('pt-BR') : '---';
 
@@ -48,8 +50,15 @@ function calcHoursNum(start?: string, end?: string): number {
     return Math.max(0, (new Date(end).getTime() - new Date(start).getTime()) / 3600000);
 }
 
+function fmtHoursDecimal(h: number): string {
+    if (h <= 0) return '---';
+    const hrs = Math.floor(h);
+    const mins = Math.round((h - hrs) * 60);
+    return `${hrs}h${mins.toString().padStart(2, '0')}`;
+}
+
 interface RegistryItem { id: number; name: string; client_id: string; type: string }
-interface MissionNote { mission_id: string; motivo: string; contrato: string; operacao: string; tsp: string; obs: string }
+interface MissionNote { mission_id: string; motivo: string; contrato: string; operacao: string; tsp: string; responsavel: string; obs: string }
 
 const RegistryDropdown: React.FC<{
     value: string;
@@ -112,7 +121,7 @@ const RegistryDropdown: React.FC<{
     );
 };
 
-const ClientReportsTab: React.FC<Props> = ({ missions, onViewReport }) => {
+const ClientReportsTab: React.FC<Props> = ({ missions, clientTables = [], providerTables = [], onViewReport }) => {
     const [startDate, setStartDate] = useState(() => {
         const d = new Date(); d.setMonth(d.getMonth() - 1);
         return d.toISOString().split('T')[0];
@@ -122,12 +131,18 @@ const ClientReportsTab: React.FC<Props> = ({ missions, onViewReport }) => {
     const [searchTerm, setSearchTerm] = useState('');
     const [clientId, setClientId] = useState<string>('');
 
+    const [filterOperacao, setFilterOperacao] = useState<string>('');
+    const [filterResponsavel, setFilterResponsavel] = useState<string>('');
+    const [filterTsp, setFilterTsp] = useState<string>('');
+
     const [contratos, setContratos] = useState<RegistryItem[]>([]);
     const [operacoes, setOperacoes] = useState<RegistryItem[]>([]);
     const [tsps, setTsps] = useState<RegistryItem[]>([]);
+    const [responsaveis, setResponsaveis] = useState<RegistryItem[]>([]);
     const [notes, setNotes] = useState<Record<string, MissionNote>>({});
     const [savingNotes, setSavingNotes] = useState<Record<string, boolean>>({});
     const [registriesLoaded, setRegistriesLoaded] = useState(false);
+    const [currentTime] = useState(new Date());
 
     useEffect(() => {
         try {
@@ -143,14 +158,16 @@ const ClientReportsTab: React.FC<Props> = ({ missions, onViewReport }) => {
     const fetchRegistries = useCallback(async () => {
         if (!clientId) return;
         try {
-            const [c, o, t] = await Promise.all([
+            const [c, o, t, r] = await Promise.all([
                 fetch(`/api/client-registries/${encodeURIComponent(clientId)}/contrato`).then(r => r.json()),
                 fetch(`/api/client-registries/${encodeURIComponent(clientId)}/operacao`).then(r => r.json()),
                 fetch(`/api/client-registries/${encodeURIComponent(clientId)}/tsp`).then(r => r.json()),
+                fetch(`/api/client-registries/${encodeURIComponent(clientId)}/responsavel`).then(r => r.json()),
             ]);
             setContratos(Array.isArray(c) ? c : []);
             setOperacoes(Array.isArray(o) ? o : []);
             setTsps(Array.isArray(t) ? t : []);
+            setResponsaveis(Array.isArray(r) ? r : []);
         } catch (e) { console.error(e); }
     }, [clientId]);
 
@@ -189,7 +206,7 @@ const ClientReportsTab: React.FC<Props> = ({ missions, onViewReport }) => {
 
     const saveNote = async (missionId: string, field: string, value: string) => {
         if (!clientId) return;
-        const current = notes[missionId] || { mission_id: missionId, motivo: '', contrato: '', operacao: '', tsp: '', obs: '' };
+        const current = notes[missionId] || { mission_id: missionId, motivo: '', contrato: '', operacao: '', tsp: '', responsavel: '', obs: '' };
         const updated = { ...current, [field]: value };
         setNotes(prev => ({ ...prev, [missionId]: updated }));
         setSavingNotes(prev => ({ ...prev, [missionId]: true }));
@@ -202,6 +219,25 @@ const ClientReportsTab: React.FC<Props> = ({ missions, onViewReport }) => {
         } catch (e) { console.error(e); }
         setTimeout(() => setSavingNotes(prev => ({ ...prev, [missionId]: false })), 500);
     };
+
+    const missionFinancials = useMemo(() => {
+        const map: Record<string, { excessKm: number; excessHours: number; extraKmVal: number; extraHrVal: number }> = {};
+        missions.forEach(m => {
+            if (m.status === MissionStatus.REFUSED) { map[m.id] = { excessKm: 0, excessHours: 0, extraKmVal: 0, extraHrVal: 0 }; return; }
+            try {
+                const fin = calculateMissionFinancials(m, clientTables, providerTables, undefined, currentTime);
+                map[m.id] = {
+                    excessKm: fin.client.excessKm || 0,
+                    excessHours: fin.client.excessHours || 0,
+                    extraKmVal: fin.client.extraKmVal || 0,
+                    extraHrVal: fin.client.extraHrVal || 0,
+                };
+            } catch {
+                map[m.id] = { excessKm: 0, excessHours: 0, extraKmVal: 0, extraHrVal: 0 };
+            }
+        });
+        return map;
+    }, [missions, clientTables, providerTables, currentTime]);
 
     const filtered = useMemo(() => {
         const start = new Date(startDate + 'T00:00:00');
@@ -218,9 +254,13 @@ const ClientReportsTab: React.FC<Props> = ({ missions, onViewReport }) => {
                     !(m.clientVehicle?.plate || '').toLowerCase().includes(s) &&
                     !(m.driver_name || '').toLowerCase().includes(s)) return false;
             }
+            const n = notes[m.id];
+            if (filterOperacao && (!n || !n.operacao || !n.operacao.toLowerCase().includes(filterOperacao.toLowerCase()))) return false;
+            if (filterResponsavel && (!n || !n.responsavel || !n.responsavel.toLowerCase().includes(filterResponsavel.toLowerCase()))) return false;
+            if (filterTsp && (!n || !n.tsp || !n.tsp.toLowerCase().includes(filterTsp.toLowerCase()))) return false;
             return true;
         }).sort((a, b) => new Date(b.startTime || b.createdAt).getTime() - new Date(a.startTime || a.createdAt).getTime());
-    }, [missions, startDate, endDate, statusFilter, searchTerm]);
+    }, [missions, startDate, endDate, statusFilter, searchTerm, notes, filterOperacao, filterResponsavel, filterTsp]);
 
     const summary = useMemo(() => {
         const total = filtered.length;
@@ -228,24 +268,46 @@ const ClientReportsTab: React.FC<Props> = ({ missions, onViewReport }) => {
         const cancelled = filtered.filter(m => m.status === MissionStatus.CANCELLED).length;
         const inTransit = filtered.filter(m => m.status === MissionStatus.IN_TRANSIT).length;
         const totalKm = filtered.reduce((s, m) => s + (m.totalDistance || 0), 0);
-        return { total, completed, cancelled, inTransit, totalKm };
-    }, [filtered]);
+        const totalRevenue = filtered.reduce((s, m) => s + ((m.revenue_value || 0) + (m.toll_value || 0)), 0);
+
+        let totalExtraKmVal = 0;
+        let totalExtraHrVal = 0;
+        let totalExcessHours = 0;
+
+        filtered.forEach(m => {
+            const fin = missionFinancials[m.id];
+            if (fin) {
+                totalExtraKmVal += fin.extraKmVal;
+                totalExtraHrVal += fin.extraHrVal;
+                totalExcessHours += fin.excessHours;
+            }
+        });
+
+        return { total, completed, cancelled, inTransit, totalKm, totalRevenue, totalExtraKmVal, totalExtraHrVal, totalExcessHours };
+    }, [filtered, missionFinancials]);
+
+    const hasActiveFilters = filterOperacao || filterResponsavel || filterTsp;
 
     const handlePrint = () => {
         const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Relatório de Operações</title>
         <style>
             body { font-family: 'Segoe UI', Arial, sans-serif; margin: 15px; color: #1e293b; font-size: 9px; }
             h1 { font-size: 16px; color: #b91c1c; border-bottom: 3px solid #b91c1c; padding-bottom: 6px; text-transform: uppercase; letter-spacing: 2px; }
-            .header-info { display: flex; justify-content: space-between; margin-bottom: 15px; padding: 10px; background: #f8fafc; border-radius: 6px; border: 1px solid #e2e8f0; }
-            .header-info div { text-align: center; }
+            .header-info { display: flex; justify-content: space-between; margin-bottom: 15px; padding: 10px; background: #f8fafc; border-radius: 6px; border: 1px solid #e2e8f0; flex-wrap: wrap; gap: 8px; }
+            .header-info div { text-align: center; flex: 1; min-width: 80px; }
             .header-info .label { font-size: 8px; color: #64748b; text-transform: uppercase; font-weight: 800; letter-spacing: 1px; }
-            .header-info .value { font-size: 16px; font-weight: 900; color: #0f172a; }
+            .header-info .value { font-size: 14px; font-weight: 900; color: #0f172a; }
+            .header-info .value.green { color: #059669; }
+            .header-info .value.red { color: #dc2626; }
+            .header-info .value.blue { color: #2563eb; }
             table { width: 100%; border-collapse: collapse; margin-top: 10px; }
             th { background: #0f172a; color: white; padding: 5px 4px; text-align: left; font-size: 7px; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 800; white-space: nowrap; }
             th.green { background: #166534; }
+            th.orange { background: #c2410c; }
             td { padding: 4px; border-bottom: 1px solid #e2e8f0; font-size: 8px; white-space: nowrap; }
             tr:nth-child(even) { background: #f8fafc; }
             .status { padding: 1px 6px; border-radius: 3px; font-weight: 800; font-size: 7px; text-transform: uppercase; }
+            .totals-row td { font-weight: 900; background: #f1f5f9; border-top: 2px solid #1e293b; font-size: 9px; }
             .footer { margin-top: 15px; padding-top: 8px; border-top: 2px solid #e2e8f0; font-size: 8px; color: #94a3b8; text-align: center; }
             @media print { body { margin: 5px; } @page { size: landscape; margin: 10mm; } }
         </style></head><body>
@@ -253,22 +315,27 @@ const ClientReportsTab: React.FC<Props> = ({ missions, onViewReport }) => {
         <div class="header-info">
             <div><div class="label">Período</div><div class="value" style="font-size:11px">${fmtDate(startDate)} a ${fmtDate(endDate)}</div></div>
             <div><div class="label">Total</div><div class="value">${summary.total}</div></div>
-            <div><div class="label">Concluídas</div><div class="value" style="color:#059669">${summary.completed}</div></div>
-            <div><div class="label">Canceladas</div><div class="value" style="color:#dc2626">${summary.cancelled}</div></div>
-            <div><div class="label">KM Total</div><div class="value">${Math.round(summary.totalKm).toLocaleString('pt-BR')}</div></div>
+            <div><div class="label">Concluídas</div><div class="value green">${summary.completed}</div></div>
+            <div><div class="label">Canceladas</div><div class="value red">${summary.cancelled}</div></div>
+            <div><div class="label">R$ Total</div><div class="value blue">${fmtCurrency(summary.totalRevenue)}</div></div>
+            <div><div class="label">KM Excedente</div><div class="value" style="color:#c2410c">${fmtCurrency(summary.totalExtraKmVal)}</div></div>
+            <div><div class="label">HRS Excedente</div><div class="value" style="color:#c2410c">${fmtCurrency(summary.totalExtraHrVal)} (${fmtHoursDecimal(summary.totalExcessHours)})</div></div>
         </div>
         <table>
             <thead><tr>
                 <th>OS</th><th>Data Início</th><th>Data Fim</th><th>Origem</th><th>Destino</th><th>Veículo</th><th>Motorista</th><th>Tipo</th><th>Status</th>
-                <th>Motivo</th><th>Contrato</th><th>Operação</th><th>TSP</th>
+                <th>Motivo</th><th>Contrato</th><th>Operação</th><th>Responsável</th><th>TSP</th>
                 <th class="green">KM Início</th><th class="green">KM Fim</th><th class="green">KM Rodado</th>
-                <th class="green">HRS Trab.</th><th class="green">Pedágio</th>
-                <th class="green">R$ Total</th><th class="green">OBS</th>
+                <th class="green">HRS Trab.</th><th class="green">Pedágio</th><th class="green">R$ Total</th>
+                <th class="orange">KM Exced.</th><th class="orange">R$ KM Exced.</th>
+                <th class="orange">HRS Exced.</th><th class="orange">R$ HRS Exced.</th>
+                <th class="green">OBS</th>
             </tr></thead>
             <tbody>
             ${filtered.map(m => {
-                const n = notes[m.id] || {};
+                const n = notes[m.id] || {} as any;
                 const kmRodado = (m.endKm && m.startKm) ? m.endKm - m.startKm : (m.totalDistance || 0);
+                const fin = missionFinancials[m.id] || { excessKm: 0, excessHours: 0, extraKmVal: 0, extraHrVal: 0 };
                 return `<tr>
                     <td style="font-weight:800">${m.id}</td>
                     <td>${fmtDate(m.startTime || m.createdAt)}</td>
@@ -279,17 +346,22 @@ const ClientReportsTab: React.FC<Props> = ({ missions, onViewReport }) => {
                     <td>${m.driver_name || '---'}</td>
                     <td>${m.mission_type || '---'}</td>
                     <td>${STATUS_LABELS[m.status] || m.status}</td>
-                    <td>${(n as any).motivo || ''}</td>
-                    <td>${(n as any).contrato || ''}</td>
-                    <td>${(n as any).operacao || ''}</td>
-                    <td>${(n as any).tsp || ''}</td>
+                    <td>${n.motivo || ''}</td>
+                    <td>${n.contrato || ''}</td>
+                    <td>${n.operacao || ''}</td>
+                    <td>${n.responsavel || ''}</td>
+                    <td>${n.tsp || ''}</td>
                     <td style="text-align:right">${fmtNum(m.startKm)}</td>
                     <td style="text-align:right">${fmtNum(m.endKm)}</td>
                     <td style="text-align:right">${fmtNum(kmRodado)}</td>
                     <td>${calcHours(m.startTime, m.endTime)}</td>
                     <td style="text-align:right">${m.toll_value ? fmtCurrency(m.toll_value) : '---'}</td>
-                    <td style="text-align:right">${m.revenue_value ? fmtCurrency(m.revenue_value) : '---'}</td>
-                    <td>${(n as any).obs || ''}</td>
+                    <td style="text-align:right">${m.revenue_value ? fmtCurrency((m.revenue_value || 0) + (m.toll_value || 0)) : '---'}</td>
+                    <td style="text-align:right;color:#c2410c">${fin.excessKm > 0 ? fmtNum(fin.excessKm) + ' km' : '---'}</td>
+                    <td style="text-align:right;color:#c2410c">${fin.extraKmVal > 0 ? fmtCurrency(fin.extraKmVal) : '---'}</td>
+                    <td style="text-align:right;color:#c2410c">${fin.excessHours > 0 ? fmtHoursDecimal(fin.excessHours) : '---'}</td>
+                    <td style="text-align:right;color:#c2410c">${fin.extraHrVal > 0 ? fmtCurrency(fin.extraHrVal) : '---'}</td>
+                    <td>${n.obs || ''}</td>
                 </tr>`;
             }).join('')}
             </tbody>
@@ -301,11 +373,12 @@ const ClientReportsTab: React.FC<Props> = ({ missions, onViewReport }) => {
     };
 
     const handleExportCSV = () => {
-        const header = 'OS;Data Início;Data Fim;Origem;Destino;Veículo;Motorista;Tipo;Status;Motivo;Contrato;Operação;TSP;KM Início;KM Fim;KM Rodado;HRS Trabalhada;Pedágio;R$ Total;OBS\n';
+        const header = 'OS;Data Início;Data Fim;Origem;Destino;Veículo;Motorista;Tipo;Status;Motivo;Contrato;Operação;Responsável;TSP;KM Início;KM Fim;KM Rodado;HRS Trabalhada;Pedágio;R$ Total;KM Excedente;R$ KM Excedente;HRS Excedente;R$ HRS Excedente;OBS\n';
         const rows = filtered.map(m => {
             const n = notes[m.id] || {} as any;
             const kmRodado = (m.endKm && m.startKm) ? m.endKm - m.startKm : (m.totalDistance || 0);
-            return `${m.id};${fmtDate(m.startTime || m.createdAt)};${fmtDate(m.endTime || '')};${(m.origin || '').split(',')[0]};${(m.destination || '').split(',')[0]};${m.clientVehicle?.plate || ''};${m.driver_name || ''};${m.mission_type || ''};${STATUS_LABELS[m.status] || m.status};${n.motivo || ''};${n.contrato || ''};${n.operacao || ''};${n.tsp || ''};${m.startKm || ''};${m.endKm || ''};${Math.round(kmRodado)};${calcHours(m.startTime, m.endTime)};${m.toll_value || ''};${m.revenue_value || ''};${n.obs || ''}`;
+            const fin = missionFinancials[m.id] || { excessKm: 0, excessHours: 0, extraKmVal: 0, extraHrVal: 0 };
+            return `${m.id};${fmtDate(m.startTime || m.createdAt)};${fmtDate(m.endTime || '')};${(m.origin || '').split(',')[0]};${(m.destination || '').split(',')[0]};${m.clientVehicle?.plate || ''};${m.driver_name || ''};${m.mission_type || ''};${STATUS_LABELS[m.status] || m.status};${n.motivo || ''};${n.contrato || ''};${n.operacao || ''};${n.responsavel || ''};${n.tsp || ''};${m.startKm || ''};${m.endKm || ''};${Math.round(kmRodado)};${calcHours(m.startTime, m.endTime)};${m.toll_value || ''};${(m.revenue_value || 0) + (m.toll_value || 0)};${fin.excessKm > 0 ? Math.round(fin.excessKm) : ''};${fin.extraKmVal > 0 ? fin.extraKmVal.toFixed(2) : ''};${fin.excessHours > 0 ? fmtHoursDecimal(fin.excessHours) : ''};${fin.extraHrVal > 0 ? fin.extraHrVal.toFixed(2) : ''};${n.obs || ''}`;
         }).join('\n');
         const blob = new Blob(['\uFEFF' + header + rows], { type: 'text/csv;charset=utf-8;' });
         const url = URL.createObjectURL(blob);
@@ -316,7 +389,7 @@ const ClientReportsTab: React.FC<Props> = ({ missions, onViewReport }) => {
 
     const debounceTimers = useRef<Record<string, NodeJS.Timeout>>({});
     const handleNoteChange = (missionId: string, field: string, value: string) => {
-        const current = notes[missionId] || { mission_id: missionId, motivo: '', contrato: '', operacao: '', tsp: '', obs: '' };
+        const current = notes[missionId] || { mission_id: missionId, motivo: '', contrato: '', operacao: '', tsp: '', responsavel: '', obs: '' };
         setNotes(prev => ({ ...prev, [missionId]: { ...current, [field]: value } }));
         const key = `${missionId}-${field}`;
         if (debounceTimers.current[key]) clearTimeout(debounceTimers.current[key]);
@@ -360,7 +433,40 @@ const ClientReportsTab: React.FC<Props> = ({ missions, onViewReport }) => {
                     </div>
                 </div>
 
-                <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mt-4">
+                <div className="flex flex-wrap items-center gap-3 pt-3 pb-2">
+                    <div className="flex items-center gap-1.5">
+                        <Filter size={13} className="text-gray-400" />
+                        <span className="text-[9px] font-black text-gray-400 uppercase tracking-widest">Filtros:</span>
+                    </div>
+                    <div className="relative">
+                        <select value={filterOperacao} onChange={e => setFilterOperacao(e.target.value)} className="appearance-none bg-gray-50 border border-gray-200 rounded-lg px-3 py-1.5 pr-7 text-[10px] font-bold text-gray-700 outline-none min-w-[130px]" data-testid="filter-operacao">
+                            <option value="">Todas Operações</option>
+                            {operacoes.map(o => <option key={o.id} value={o.name}>{o.name}</option>)}
+                        </select>
+                        <ChevronDown size={12} className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+                    </div>
+                    <div className="relative">
+                        <select value={filterResponsavel} onChange={e => setFilterResponsavel(e.target.value)} className="appearance-none bg-gray-50 border border-gray-200 rounded-lg px-3 py-1.5 pr-7 text-[10px] font-bold text-gray-700 outline-none min-w-[130px]" data-testid="filter-responsavel">
+                            <option value="">Todos Responsáveis</option>
+                            {responsaveis.map(r => <option key={r.id} value={r.name}>{r.name}</option>)}
+                        </select>
+                        <ChevronDown size={12} className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+                    </div>
+                    <div className="relative">
+                        <select value={filterTsp} onChange={e => setFilterTsp(e.target.value)} className="appearance-none bg-gray-50 border border-gray-200 rounded-lg px-3 py-1.5 pr-7 text-[10px] font-bold text-gray-700 outline-none min-w-[130px]" data-testid="filter-transportadora">
+                            <option value="">Todas Transportadoras</option>
+                            {tsps.map(t => <option key={t.id} value={t.name}>{t.name}</option>)}
+                        </select>
+                        <ChevronDown size={12} className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+                    </div>
+                    {hasActiveFilters && (
+                        <button onClick={() => { setFilterOperacao(''); setFilterResponsavel(''); setFilterTsp(''); }} className="flex items-center gap-1 px-2.5 py-1.5 bg-red-50 text-red-700 border border-red-200 rounded-lg text-[10px] font-bold hover:bg-red-100 transition-colors" data-testid="btn-clear-filters">
+                            <X size={12} /> Limpar
+                        </button>
+                    )}
+                </div>
+
+                <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-3 mt-4">
                     <div className="bg-gray-900 text-white p-3 rounded-lg text-center">
                         <p className="text-[9px] font-black uppercase tracking-widest opacity-60">Total</p>
                         <p className="text-xl font-black font-mono">{summary.total}</p>
@@ -378,8 +484,20 @@ const ClientReportsTab: React.FC<Props> = ({ missions, onViewReport }) => {
                         <p className="text-xl font-black font-mono text-red-700">{summary.cancelled}</p>
                     </div>
                     <div className="bg-blue-50 border border-blue-200 p-3 rounded-lg text-center">
-                        <p className="text-[9px] font-black uppercase tracking-widest text-blue-600">KM Total</p>
-                        <p className="text-xl font-black font-mono text-blue-700">{Math.round(summary.totalKm).toLocaleString('pt-BR')}</p>
+                        <p className="text-[9px] font-black uppercase tracking-widest text-blue-600">R$ Total</p>
+                        <p className="text-base font-black font-mono text-blue-700">{fmtCurrency(summary.totalRevenue)}</p>
+                    </div>
+                    <div className="bg-orange-50 border border-orange-200 p-3 rounded-lg text-center">
+                        <p className="text-[9px] font-black uppercase tracking-widest text-orange-600">R$ KM Exced.</p>
+                        <p className="text-base font-black font-mono text-orange-700">{fmtCurrency(summary.totalExtraKmVal)}</p>
+                    </div>
+                    <div className="bg-orange-50 border border-orange-200 p-3 rounded-lg text-center">
+                        <p className="text-[9px] font-black uppercase tracking-widest text-orange-600">R$ HRS Exced.</p>
+                        <p className="text-base font-black font-mono text-orange-700">{fmtCurrency(summary.totalExtraHrVal)}</p>
+                    </div>
+                    <div className="bg-amber-50 border border-amber-200 p-3 rounded-lg text-center">
+                        <p className="text-[9px] font-black uppercase tracking-widest text-amber-600">HRS Exced. Total</p>
+                        <p className="text-base font-black font-mono text-amber-700">{fmtHoursDecimal(summary.totalExcessHours)}</p>
                     </div>
                 </div>
             </div>
@@ -389,8 +507,8 @@ const ClientReportsTab: React.FC<Props> = ({ missions, onViewReport }) => {
                     <table className="w-full border-collapse" data-testid="table-client-report">
                         <thead className="sticky top-0 z-10">
                             <tr>
-                                <th className="bg-gray-900 text-white px-3 py-2.5 text-left text-[8px] font-black uppercase tracking-widest whitespace-nowrap sticky left-0 z-20 min-w-[50px]"></th>
-                                <th className="bg-gray-900 text-white px-3 py-2.5 text-left text-[8px] font-black uppercase tracking-widest whitespace-nowrap sticky left-[50px] z-20 min-w-[90px]">OS</th>
+                                <th className="bg-gray-900 text-white px-2 py-2.5 text-center text-[8px] font-black uppercase tracking-widest whitespace-nowrap sticky left-0 z-20 w-[40px]"></th>
+                                <th className="bg-gray-900 text-white px-2 py-2.5 text-left text-[8px] font-black uppercase tracking-widest whitespace-nowrap sticky left-[40px] z-20 w-[85px]">OS</th>
                                 <th className="bg-gray-900 text-white px-3 py-2.5 text-left text-[8px] font-black uppercase tracking-widest whitespace-nowrap min-w-[85px]">Data Início</th>
                                 <th className="bg-gray-900 text-white px-3 py-2.5 text-left text-[8px] font-black uppercase tracking-widest whitespace-nowrap min-w-[85px]">Data Fim</th>
                                 <th className="bg-gray-900 text-white px-3 py-2.5 text-left text-[8px] font-black uppercase tracking-widest whitespace-nowrap min-w-[130px]">Origem</th>
@@ -402,6 +520,7 @@ const ClientReportsTab: React.FC<Props> = ({ missions, onViewReport }) => {
                                 <th className="bg-indigo-900 text-white px-3 py-2.5 text-left text-[8px] font-black uppercase tracking-widest whitespace-nowrap min-w-[120px]">Motivo</th>
                                 <th className="bg-indigo-900 text-white px-3 py-2.5 text-left text-[8px] font-black uppercase tracking-widest whitespace-nowrap min-w-[120px]">Contrato</th>
                                 <th className="bg-indigo-900 text-white px-3 py-2.5 text-left text-[8px] font-black uppercase tracking-widest whitespace-nowrap min-w-[120px]">Operação</th>
+                                <th className="bg-indigo-900 text-white px-3 py-2.5 text-left text-[8px] font-black uppercase tracking-widest whitespace-nowrap min-w-[120px]">Responsável</th>
                                 <th className="bg-indigo-900 text-white px-3 py-2.5 text-left text-[8px] font-black uppercase tracking-widest whitespace-nowrap min-w-[120px]">TSP</th>
                                 <th className="bg-green-800 text-white px-3 py-2.5 text-right text-[8px] font-black uppercase tracking-widest whitespace-nowrap min-w-[75px]">KM Início</th>
                                 <th className="bg-green-800 text-white px-3 py-2.5 text-right text-[8px] font-black uppercase tracking-widest whitespace-nowrap min-w-[75px]">KM Fim</th>
@@ -409,29 +528,34 @@ const ClientReportsTab: React.FC<Props> = ({ missions, onViewReport }) => {
                                 <th className="bg-green-800 text-white px-3 py-2.5 text-center text-[8px] font-black uppercase tracking-widest whitespace-nowrap min-w-[75px]">HRS Trab.</th>
                                 <th className="bg-green-800 text-white px-3 py-2.5 text-right text-[8px] font-black uppercase tracking-widest whitespace-nowrap min-w-[80px]">Pedágio</th>
                                 <th className="bg-green-800 text-white px-3 py-2.5 text-right text-[8px] font-black uppercase tracking-widest whitespace-nowrap min-w-[85px]">R$ Total</th>
+                                <th className="bg-orange-700 text-white px-3 py-2.5 text-right text-[8px] font-black uppercase tracking-widest whitespace-nowrap min-w-[70px]">KM Exc.</th>
+                                <th className="bg-orange-700 text-white px-3 py-2.5 text-right text-[8px] font-black uppercase tracking-widest whitespace-nowrap min-w-[85px]">R$ KM Exc.</th>
+                                <th className="bg-orange-700 text-white px-3 py-2.5 text-center text-[8px] font-black uppercase tracking-widest whitespace-nowrap min-w-[70px]">HRS Exc.</th>
+                                <th className="bg-orange-700 text-white px-3 py-2.5 text-right text-[8px] font-black uppercase tracking-widest whitespace-nowrap min-w-[85px]">R$ HRS Exc.</th>
                                 <th className="bg-green-800 text-white px-3 py-2.5 text-left text-[8px] font-black uppercase tracking-widest whitespace-nowrap min-w-[150px]">OBS</th>
                             </tr>
                         </thead>
                         <tbody>
                             {filtered.length === 0 ? (
-                                <tr><td colSpan={21} className="text-center py-12 text-gray-400">
+                                <tr><td colSpan={26} className="text-center py-12 text-gray-400">
                                     <Activity size={32} className="mx-auto mb-2 opacity-30" />
                                     <p className="text-sm font-bold">Nenhuma missão encontrada para este filtro.</p>
                                 </td></tr>
                             ) : filtered.map((m, i) => {
-                                const n = notes[m.id] || { mission_id: m.id, motivo: '', contrato: '', operacao: '', tsp: '', obs: '' };
+                                const n = notes[m.id] || { mission_id: m.id, motivo: '', contrato: '', operacao: '', tsp: '', responsavel: '', obs: '' };
                                 const kmRodado = (m.endKm && m.startKm) ? m.endKm - m.startKm : (m.totalDistance || 0);
                                 const isSaving = savingNotes[m.id];
+                                const fin = missionFinancials[m.id] || { excessKm: 0, excessHours: 0, extraKmVal: 0, extraHrVal: 0 };
                                 return (
                                     <tr key={m.id} className={`border-b border-gray-100 hover:bg-yellow-50/40 transition-colors ${i % 2 === 0 ? 'bg-white' : 'bg-gray-50/30'}`} data-testid={`row-report-${m.id}`}>
-                                        <td className="px-2 py-2 sticky left-0 bg-inherit z-10">
-                                            <button onClick={() => onViewReport?.(m)} className="p-1.5 rounded-lg bg-amber-50 text-amber-700 border border-amber-200 hover:bg-amber-100 transition-colors" title="Ver Relatório Completo" data-testid={`btn-report-${m.id}`}>
-                                                <Eye size={13} />
+                                        <td className="px-1 py-2 sticky left-0 bg-inherit z-10 text-center w-[40px]">
+                                            <button onClick={() => onViewReport?.(m)} className="p-1 rounded-lg bg-amber-50 text-amber-700 border border-amber-200 hover:bg-amber-100 transition-colors" title="Ver Relatório Completo" data-testid={`btn-report-${m.id}`}>
+                                                <Eye size={12} />
                                             </button>
                                         </td>
-                                        <td className="px-3 py-2 text-[11px] font-black text-gray-900 sticky left-[50px] bg-inherit z-10 whitespace-nowrap">
-                                            {m.id}
-                                            {isSaving && <Loader2 size={10} className="inline ml-1 animate-spin text-red-500" />}
+                                        <td className="px-2 py-2 sticky left-[40px] bg-inherit z-10 w-[85px]">
+                                            <span className="text-[10px] font-black text-gray-900 whitespace-nowrap block truncate" title={m.id}>{m.id}</span>
+                                            {isSaving && <Loader2 size={10} className="inline animate-spin text-red-500" />}
                                         </td>
                                         <td className="px-3 py-2 text-[10px] font-bold text-gray-600 whitespace-nowrap">{fmtDate(m.startTime || m.createdAt)}</td>
                                         <td className="px-3 py-2 text-[10px] font-bold text-gray-600 whitespace-nowrap">{fmtDate(m.endTime || '')}</td>
@@ -459,6 +583,9 @@ const ClientReportsTab: React.FC<Props> = ({ missions, onViewReport }) => {
                                             <RegistryDropdown value={n.operacao || ''} onChange={v => handleNoteChange(m.id, 'operacao', v)} options={operacoes} onAdd={name => addRegistry('operacao', name)} placeholder="Operação..." label="Operação" />
                                         </td>
                                         <td className="px-2 py-1.5">
+                                            <RegistryDropdown value={n.responsavel || ''} onChange={v => handleNoteChange(m.id, 'responsavel', v)} options={responsaveis} onAdd={name => addRegistry('responsavel', name)} placeholder="Responsável..." label="Responsável" />
+                                        </td>
+                                        <td className="px-2 py-1.5">
                                             <RegistryDropdown value={n.tsp || ''} onChange={v => handleNoteChange(m.id, 'tsp', v)} options={tsps} onAdd={name => addRegistry('tsp', name)} placeholder="TSP..." label="TSP" />
                                         </td>
                                         <td className="px-3 py-2 text-[10px] font-bold text-green-800 text-right font-mono whitespace-nowrap">{fmtNum(m.startKm)}</td>
@@ -466,7 +593,11 @@ const ClientReportsTab: React.FC<Props> = ({ missions, onViewReport }) => {
                                         <td className="px-3 py-2 text-[10px] font-black text-green-900 text-right font-mono whitespace-nowrap">{fmtNum(kmRodado)}</td>
                                         <td className="px-3 py-2 text-[10px] font-bold text-green-800 text-center font-mono whitespace-nowrap">{calcHours(m.startTime, m.endTime)}</td>
                                         <td className="px-3 py-2 text-[10px] font-bold text-green-800 text-right font-mono whitespace-nowrap">{m.toll_value ? fmtCurrency(m.toll_value) : '---'}</td>
-                                        <td className="px-3 py-2 text-[10px] font-black text-green-900 text-right font-mono whitespace-nowrap">{m.revenue_value ? fmtCurrency(m.revenue_value) : '---'}</td>
+                                        <td className="px-3 py-2 text-[10px] font-black text-green-900 text-right font-mono whitespace-nowrap">{m.revenue_value ? fmtCurrency((m.revenue_value || 0) + (m.toll_value || 0)) : '---'}</td>
+                                        <td className="px-3 py-2 text-[10px] font-bold text-orange-700 text-right font-mono whitespace-nowrap">{fin.excessKm > 0 ? `${Math.round(fin.excessKm)} km` : '---'}</td>
+                                        <td className="px-3 py-2 text-[10px] font-black text-orange-800 text-right font-mono whitespace-nowrap">{fin.extraKmVal > 0 ? fmtCurrency(fin.extraKmVal) : '---'}</td>
+                                        <td className="px-3 py-2 text-[10px] font-bold text-orange-700 text-center font-mono whitespace-nowrap">{fin.excessHours > 0 ? fmtHoursDecimal(fin.excessHours) : '---'}</td>
+                                        <td className="px-3 py-2 text-[10px] font-black text-orange-800 text-right font-mono whitespace-nowrap">{fin.extraHrVal > 0 ? fmtCurrency(fin.extraHrVal) : '---'}</td>
                                         <td className="px-2 py-1.5">
                                             <input type="text" className="w-full min-w-[120px] px-2 py-1 text-[10px] font-bold border border-gray-200 rounded bg-white outline-none focus:border-green-400" placeholder="Observação..." value={n.obs || ''} onChange={e => handleNoteChange(m.id, 'obs', e.target.value)} />
                                         </td>

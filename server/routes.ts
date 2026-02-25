@@ -569,11 +569,13 @@ export async function registerRoutes(
           contrato TEXT DEFAULT '',
           operacao TEXT DEFAULT '',
           tsp TEXT DEFAULT '',
+          responsavel TEXT DEFAULT '',
           obs TEXT DEFAULT '',
           created_at TIMESTAMPTZ DEFAULT NOW(),
           updated_at TIMESTAMPTZ DEFAULT NOW()
         );
       `);
+      await pool.query(`ALTER TABLE client_mission_notes ADD COLUMN IF NOT EXISTS responsavel TEXT DEFAULT ''`).catch(() => {});
       await pool.end();
       console.log("Client registries tables created/verified.");
       res.json({ ok: true });
@@ -642,15 +644,15 @@ export async function registerRoutes(
   app.post("/api/client-mission-notes", async (req: Request, res: Response) => {
     let pool;
     try {
-      const { mission_id, client_id, motivo, contrato, operacao, tsp, obs } = req.body;
+      const { mission_id, client_id, motivo, contrato, operacao, tsp, responsavel, obs } = req.body;
       if (!mission_id || !client_id) return res.status(400).json({ error: "Campos obrigatórios" });
       pool = getDbPool();
       const result = await pool.query(
-        `INSERT INTO client_mission_notes (mission_id, client_id, motivo, contrato, operacao, tsp, obs, updated_at)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())
-         ON CONFLICT (mission_id) DO UPDATE SET motivo=$3, contrato=$4, operacao=$5, tsp=$6, obs=$7, updated_at=NOW()
+        `INSERT INTO client_mission_notes (mission_id, client_id, motivo, contrato, operacao, tsp, responsavel, obs, updated_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW())
+         ON CONFLICT (mission_id) DO UPDATE SET motivo=$3, contrato=$4, operacao=$5, tsp=$6, responsavel=$7, obs=$8, updated_at=NOW()
          RETURNING *`,
-        [mission_id, client_id, motivo || '', contrato || '', operacao || '', tsp || '', obs || '']
+        [mission_id, client_id, motivo || '', contrato || '', operacao || '', tsp || '', responsavel || '', obs || '']
       );
       res.json(result.rows[0]);
     } catch (e: any) {
