@@ -153,6 +153,8 @@ export const calculateMissionFinancials = (
     const isTerminalStatus = [MissionStatus.COMPLETED, MissionStatus.CANCELLED, MissionStatus.REFUSED].includes(mission.status as MissionStatus);
     const isFinished = mission.status === MissionStatus.COMPLETED;
     const isCancelled = mission.status === MissionStatus.CANCELLED;
+    const isRefused = mission.status === MissionStatus.REFUSED;
+    const isZeroValueMission = isCancelled || isRefused;
     
     const getKm = (val: any) => typeof val === 'number' ? val : parseFloat(String(val || '0').replace(',', '.'));
     
@@ -167,7 +169,7 @@ export const calculateMissionFinancials = (
     
     let distanceForCalculation = hasValidKms ? realTraveledKm : safeNumber(mission.totalDistance);
     
-    if (isCancelled) {
+    if (isZeroValueMission) {
         distanceForCalculation = 0;
     }
     
@@ -194,11 +196,11 @@ export const calculateMissionFinancials = (
     const diffMs = endDateObj.getTime() - effectiveStartDate.getTime();
     let durationHours = Math.max(0, diffMs / (1000 * 60 * 60));
 
-    if (isCancelled) {
+    if (isZeroValueMission) {
         durationHours = 0;
     }
 
-    const tollValue = isCancelled ? 0 : Math.max(0, safeNumber(mission.toll_value));
+    const tollValue = isZeroValueMission ? 0 : Math.max(0, safeNumber(mission.toll_value));
     
     const validAgents = [mission.agent1, mission.agent2]
         .map(a => a ? String(a).trim() : '')
@@ -355,9 +357,9 @@ export const calculateMissionFinancials = (
         providerLog = result.log;
     }
 
-    const cBase = manualTableOverrides?.customClientBase !== undefined 
+    const cBase = isRefused ? 0 : (manualTableOverrides?.customClientBase !== undefined 
         ? manualTableOverrides.customClientBase 
-        : Math.max(0, (appliedClientTable?.activation_fee || 0) * clientMultiplier);
+        : Math.max(0, (appliedClientTable?.activation_fee || 0) * clientMultiplier));
     
     const cFranchiseKm = (appliedClientTable?.franchise_km || 100);
     const cFranchiseHr = (appliedClientTable?.franchise_hours || 3);
@@ -388,10 +390,10 @@ export const calculateMissionFinancials = (
                                    missionDest.includes('02 HORAS') ||
                                    missionDest.includes('02H');
 
-    if (isFixedDistanceClientRule && !isCancelled) {
+    if (isFixedDistanceClientRule && !isZeroValueMission) {
         distanceForCalculation = Math.min(distanceForCalculation, cFranchiseKm);
     }
-    if (isFixedHoursClientRule && !isCancelled) {
+    if (isFixedHoursClientRule && !isZeroValueMission) {
         durationHours = Math.min(durationHours, cFranchiseHr);
     }
 
@@ -414,17 +416,17 @@ export const calculateMissionFinancials = (
     let providerDurationForCalc = durationHours;
 
     const rawBaseCost = appliedProviderTable?.activation_cost || 0;
-    const pBase = manualTableOverrides?.customProviderBase !== undefined
+    const pBase = isRefused ? 0 : (manualTableOverrides?.customProviderBase !== undefined
         ? manualTableOverrides.customProviderBase
-        : (mission.is_same_os ? 0 : Math.max(0, rawBaseCost * providerMultiplier));
+        : (mission.is_same_os ? 0 : Math.max(0, rawBaseCost * providerMultiplier)));
     
     const pFranchiseKm = (appliedProviderTable?.franchise_km || 100);
     const pFranchiseHr = (appliedProviderTable?.franchise_hours || 3);
 
-    if (isFixedDistanceProviderRule && !isCancelled) {
+    if (isFixedDistanceProviderRule && !isZeroValueMission) {
         providerDistForCalc = Math.min(providerDistForCalc, pFranchiseKm);
     }
-    if (isFixedHoursProviderRule && !isCancelled) {
+    if (isFixedHoursProviderRule && !isZeroValueMission) {
         providerDurationForCalc = Math.min(providerDurationForCalc, pFranchiseHr);
     }
 
