@@ -402,6 +402,35 @@ export const calculateMissionFinancials = (
         providerLog = result.log;
     }
 
+    if (isCevaClient && isJundiai && filteredProviderTables.length > 0) {
+        if (referenceDistance > 200 || destHas200km) {
+            const provOp = normalize(appliedProviderTable?.operation_type || '');
+            const provAlready200 = provOp.includes('LOGITECH') || provOp.includes('200KM') || provOp.includes('200 KM');
+            if (!provAlready200) {
+                const prov200 = filteredProviderTables.find(t => {
+                    const op = normalize(t.operation_type || '');
+                    return (op.includes('LOGITECH') || op.includes('200KM') || op.includes('200 KM')) && t.franchise_km >= 200;
+                });
+                if (prov200) {
+                    appliedProviderTable = prov200;
+                    providerLog = `CEVA Jundiaí >200km → ${prov200.operation_type}`;
+                }
+            }
+        } else {
+            const provOp = normalize(appliedProviderTable?.operation_type || '');
+            if (provOp.includes('LOGITECH') || provOp.includes('200KM') || provOp.includes('200 KM')) {
+                const prov100 = filteredProviderTables.find(t => {
+                    const op = normalize(t.operation_type || '');
+                    return !op.includes('LOGITECH') && !op.includes('200KM') && !op.includes('200 KM') && t.franchise_km <= 200;
+                });
+                if (prov100) {
+                    appliedProviderTable = prov100;
+                    providerLog = `CEVA Jundiaí ≤200km → ${prov100.operation_type}`;
+                }
+            }
+        }
+    }
+
     const cBase = isRefused ? 0 : (manualTableOverrides?.customClientBase !== undefined 
         ? manualTableOverrides.customClientBase 
         : Math.max(0, (appliedClientTable?.activation_fee || 0) * clientMultiplier));

@@ -265,8 +265,13 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
           setRevenueInput(financialData.client.total.toLocaleString('pt-BR', {minimumFractionDigits: 2}));
           setCostInput(financialData.provider.total.toLocaleString('pt-BR', {minimumFractionDigits: 2}));
           
-          if (!manualProviderTableId && financialData.provider.tableId && !memoryLoaded) {
-              setManualProviderTableId(financialData.provider.tableId);
+          if (financialData.provider.tableId) {
+              if (!manualProviderTableId && !memoryLoaded) {
+                  setManualProviderTableId(financialData.provider.tableId);
+              }
+              if (manualProviderTableId && financialData.provider.tableId !== manualProviderTableId && financialData.provider.detectionLog.includes('CEVA Jundiaí')) {
+                  setManualProviderTableId(financialData.provider.tableId);
+              }
           }
           if (financialData.client.tableId) {
               if (!manualClientTableId && !memoryLoaded) {
@@ -535,7 +540,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                     onChange={(e) => { setManualClientTableId(e.target.value); }}
                                 >
                                     <option value="">Automático (IA Detectando)</option>
-                                    {clientTables.map(t => (
+                                    {[...clientTables].sort((a, b) => (a.operation_type || '').localeCompare(b.operation_type || '')).map(t => (
                                         <option key={t.id} value={t.id}>{t.operation_type}</option>
                                     ))}
                                 </select>
@@ -660,7 +665,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                         disabled={mission.is_same_os}
                                     >
                                         <option value="">{mission.is_same_os ? 'Custo Zero (Mesma OS)' : 'IA Detectando Melhor Custo...'}</option>
-                                        {!mission.is_same_os && filteredProviderTables.map(t => (
+                                        {!mission.is_same_os && [...filteredProviderTables].sort((a, b) => (a.operation_type || '').localeCompare(b.operation_type || '')).map(t => (
                                             <option key={t.id} value={t.id}>{t.operation_type}</option>
                                         ))}
                                     </select>
