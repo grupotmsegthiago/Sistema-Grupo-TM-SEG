@@ -118,26 +118,6 @@ export async function registerRoutes(
   const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFqaG1tanVld2RzdWtlY2FpbWlrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjQxNzUxMjEsImV4cCI6MjA3OTc1MTEyMX0.5bXRWTyb1HxLimt3lqJTBfjzDoumux7TXlW4lycXrPk';
   const supabaseAdmin = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
-  app.post("/api/migrate/add-vehicle2-columns", async (_req: Request, res: Response) => {
-    try {
-      const testResult = await supabaseAdmin.from('missions').select('client_vehicle_2').limit(1);
-      if (!testResult.error) {
-        return res.json({ message: 'Columns already exist', status: 'ok' });
-      }
-      const columns = ['client_vehicle_2 integer', 'driver_name_2 text', 'driver_phone_2 text'];
-      for (const col of columns) {
-        const colName = col.split(' ')[0];
-        const { error } = await supabaseAdmin.rpc('exec_sql', { query: `ALTER TABLE missions ADD COLUMN IF NOT EXISTS ${col}` });
-        if (error) {
-          return res.status(500).json({ error: `Failed to add ${colName}: ${error.message}` });
-        }
-      }
-      res.json({ message: 'Columns added successfully', status: 'ok' });
-    } catch (e: any) {
-      res.status(500).json({ error: e.message });
-    }
-  });
-
   app.get("/api/supabase/status", async (_req: Request, res: Response) => {
     try {
       const startTime = Date.now();

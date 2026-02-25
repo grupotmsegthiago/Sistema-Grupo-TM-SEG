@@ -66,7 +66,9 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
     scheduledDate: defaultDate, scheduledTime: defaultTime, missionType: 'Caracterizada', 
     revenueValue: '', costValue: '', tollValue: '0', applyCeva200km: false, applyVtc02h: false, isSameOs: false,
     clientVehicleId: '', clientVehiclePlate: '', clientVehicleModel: '',
-    driver_name: '', driver_phone: '', startKm: ''
+    clientVehicleId2: '', clientVehiclePlate2: '', clientVehicleModel2: '',
+    driver_name: '', driver_phone: '', startKm: '',
+    driver_name_2: '', driver_phone_2: ''
   });
   
   const [isSaving, setIsSaving] = useState(false);
@@ -84,7 +86,9 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
   const [manualCostTableId, setManualCostTableId] = useState('');
   const [routeSearchTerm, setRouteSearchTerm] = useState('');
   const [vehicleSearchTerm, setVehicleSearchTerm] = useState('');
+  const [vehicleSearchTerm2, setVehicleSearchTerm2] = useState('');
   const [driverSearchTerm, setDriverSearchTerm] = useState('');
+  const [showSecondVehicle, setShowSecondVehicle] = useState(false);
   
   // Provider Search
   const [providerSearchTerm, setProviderSearchTerm] = useState('');
@@ -392,6 +396,17 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
       setActiveDropdown(null);
   };
 
+  const handleVehicleSelect2 = (v: ClientVehicleDB) => {
+      setFormData(prev => ({ 
+          ...prev, 
+          clientVehicleId2: v.id.toString(), 
+          clientVehiclePlate2: v.plate, 
+          clientVehicleModel2: v.model 
+      }));
+      setVehicleSearchTerm2(v.plate);
+      setActiveDropdown(null);
+  };
+
   const handleDriverSelect = (d: {name: string, phone: string}) => {
       setFormData(prev => ({ ...prev, driver_name: d.name, driver_phone: d.phone }));
       setDriverSearchTerm(d.name);
@@ -454,8 +469,11 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
                 toll_value: parseFloat(formData.tollValue) || 0,
                 is_same_os: formData.isSameOs, current_location: 'Solicitação Criada',
                 client_vehicle: vehicleId ? parseInt(vehicleId) : null,
+                client_vehicle_2: formData.clientVehicleId2 ? parseInt(formData.clientVehicleId2) : null,
                 driver_name: (formData.driver_name || '').toUpperCase(),
                 driver_phone: formData.driver_phone,
+                driver_name_2: formData.driver_name_2 ? (formData.driver_name_2 || '').toUpperCase() : null,
+                driver_phone_2: formData.driver_phone_2 || null,
                 start_km: parseFloat(formData.startKm) || null
             }]);
             if (!error) saved = true; else if (error.code === '23505') attempts++; else throw error;
@@ -472,6 +490,11 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
 
   const filteredVehicles = dbClientVehicles.filter(v => 
       (v.plate || '').includes(vehicleSearchTerm.toUpperCase())
+  );
+
+  const filteredVehicles2 = dbClientVehicles.filter(v => 
+      (v.plate || '').includes(vehicleSearchTerm2.toUpperCase()) &&
+      v.id.toString() !== formData.clientVehicleId
   );
 
   const filteredDrivers = dbPastDrivers.filter(d => 
@@ -516,8 +539,13 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
                                             clientVehicleId: '', 
                                             clientVehiclePlate: '', 
                                             clientVehicleModel: '', 
+                                            clientVehicleId2: '',
+                                            clientVehiclePlate2: '',
+                                            clientVehicleModel2: '',
                                             driver_name: '', 
-                                            driver_phone: ''
+                                            driver_phone: '',
+                                            driver_name_2: '',
+                                            driver_phone_2: ''
                                         };
                                         const route = clientRoutes.find(r => r.id.toString() === selectedRouteId);
                                         if (route) {
@@ -619,6 +647,55 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
                     </div>
                   </div>
               </div>
+
+              {!showSecondVehicle && formData.client && (
+                  <div className="flex justify-center">
+                      <button type="button" onClick={() => setShowSecondVehicle(true)} className="flex items-center gap-2 px-4 py-2 bg-blue-50 text-blue-700 border border-blue-200 rounded-lg text-[11px] font-black uppercase tracking-wider hover:bg-blue-100 transition-all active:scale-95" data-testid="button-add-vehicle-2">
+                          <Plus size={14} /> Adicionar 2° Veículo de Carga
+                      </button>
+                  </div>
+              )}
+
+              {showSecondVehicle && (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6 p-5 bg-blue-50/50 rounded-xl border border-blue-100 relative">
+                      <button type="button" onClick={() => { setShowSecondVehicle(false); setFormData(prev => ({ ...prev, clientVehicleId2: '', clientVehiclePlate2: '', clientVehicleModel2: '', driver_name_2: '', driver_phone_2: '' })); setVehicleSearchTerm2(''); }} className="absolute top-3 right-3 p-1.5 bg-white rounded-full border border-gray-200 text-gray-400 hover:text-red-600 hover:border-red-200 transition-all shadow-sm" data-testid="button-remove-vehicle-2"><X size={14} /></button>
+                      <div className="col-span-full"><span className="text-[10px] font-black text-blue-600 uppercase tracking-widest flex items-center gap-1.5"><Truck size={12} /> 2° Veículo de Carga</span></div>
+                      
+                      <div className="relative">
+                          <label className={LABEL_CLASS}>Placa do 2° Veículo</label>
+                          <div className="flex gap-1.5">
+                              <div className="relative flex-1">
+                                  <input type="text" className={INPUT_CLASS} placeholder="Buscar veículo..." value={vehicleSearchTerm2} onChange={e => { setVehicleSearchTerm2(e.target.value.toUpperCase()); setActiveDropdown('vehicle2'); }} onFocus={() => formData.client && setActiveDropdown('vehicle2')} disabled={!formData.client} data-testid="input-vehicle-2" />
+                                  <Truck size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-blue-400 pointer-events-none" />
+                                  {activeDropdown === 'vehicle2' && formData.client && filteredVehicles2.length > 0 && (
+                                      <div className="absolute z-[100] left-0 right-0 mt-1 bg-white border border-gray-200 rounded-xl shadow-xl max-h-48 overflow-y-auto ring-1 ring-black/5">
+                                          {filteredVehicles2.map(v => (
+                                              <button key={v.id} type="button" onClick={() => handleVehicleSelect2(v)} className={DROPDOWN_ITEM_CLASS}>{v.plate} ({v.model})</button>
+                                          ))}
+                                      </div>
+                                  )}
+                              </div>
+                              <button type="button" disabled={!formData.client} onClick={() => setIsVehicleModalOpen(true)} className="p-2.5 bg-gray-100 text-gray-600 border border-gray-200 rounded-lg hover:bg-gray-200 transition-all shadow-sm active:scale-95 disabled:opacity-50"><Plus size={18} /></button>
+                          </div>
+                      </div>
+
+                      <div className="relative">
+                          <label className={LABEL_CLASS}>Motorista do 2° Veículo</label>
+                          <div className="relative">
+                              <input type="text" className={INPUT_CLASS} placeholder="Nome do 2° condutor..." value={formData.driver_name_2} onChange={e => setFormData({...formData, driver_name_2: e.target.value.toUpperCase()})} data-testid="input-driver-name-2" />
+                              <User size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-blue-400" />
+                          </div>
+                      </div>
+
+                      <div className="relative">
+                          <label className={LABEL_CLASS}>Telefone do 2° Motorista</label>
+                          <div className="relative">
+                              <input type="text" className={INPUT_CLASS} placeholder="(00) 00000-0000" value={formData.driver_phone_2} onChange={e => setFormData({...formData, driver_phone_2: e.target.value})} data-testid="input-driver-phone-2" />
+                              <Phone size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-blue-400 pointer-events-none" />
+                          </div>
+                      </div>
+                  </div>
+              )}
 
               <div className="relative"><label className={LABEL_CLASS}>3. Selecione a Rota Cadastrada *</label><div className="flex gap-2"><div className="relative flex-1"><input type="text" required className={INPUT_CLASS} placeholder={formData.client ? "Buscar rota (Ex: PERUS)..." : "Aguardando Cliente..."} value={routeSearchTerm} onChange={e => { setRouteSearchTerm(e.target.value); setActiveDropdown('route'); }} onFocus={() => formData.client && setActiveDropdown('route')} disabled={!formData.client} /><Navigation size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-red-600 opacity-50 pointer-events-none" />{activeDropdown === 'route' && formData.client && filteredRoutes.length > 0 && (<div className="absolute z-[100] left-0 right-0 mt-1 bg-white border border-gray-200 rounded-xl shadow-xl max-h-64 overflow-y-auto ring-1 ring-black/5">{filteredRoutes.map(r => (<div key={r.id} onClick={() => handleRouteSelect(r)} className="p-3 border-b border-gray-50 hover:bg-red-50 cursor-pointer transition-colors group"><p className="font-bold text-xs text-gray-800 uppercase group-hover:text-red-700">{r.name}</p><p className="text-[10px] text-gray-400 font-medium uppercase mt-0.5">{r.origin.split(',')[0]} x {r.destination.split(',')[0]} | {r.distance} KM</p></div>))}</div>)}</div><button type="button" disabled={!formData.client} onClick={() => setIsRouteModalOpen(true)} className="p-3 bg-red-700 text-white rounded-lg hover:bg-red-800 transition-all shadow-md active:scale-95 disabled:opacity-50"><Plus size={20} /></button></div></div>
 

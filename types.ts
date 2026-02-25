@@ -29,10 +29,13 @@ export interface Mission {
   vehicleType: string;
   vehicleId: string;
   clientVehicle: ClientVehicleData;
+  clientVehicle2?: ClientVehicleData;
   vehicle?: Vehicle;
   vehicleData?: Vehicle;
   driver_name?: string; 
   driver_phone?: string; 
+  driver_name_2?: string;
+  driver_phone_2?: string;
   status: MissionStatus;
   lastUpdate: string;
   updatedBy: string;
