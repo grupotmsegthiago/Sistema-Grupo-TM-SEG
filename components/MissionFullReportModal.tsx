@@ -22,6 +22,8 @@ const STATUS_LABELS: Record<string, string> = {
     'Pendente': 'PENDENTE'
 };
 
+const MAPS_API_KEY = 'AIzaSyBIs-lrtAP6hoA1z_VA4Gbx1ujA-AlJe2k';
+
 const MissionFullReportModal: React.FC<Props> = ({ mission, onClose }) => {
     const [isGenerating, setIsGenerating] = useState(false);
     const [logs, setLogs] = useState<MissionLog[]>([]);
@@ -65,11 +67,6 @@ const MissionFullReportModal: React.FC<Props> = ({ mission, onClose }) => {
         return `${d.toLocaleDateString('pt-BR')} ${d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`;
     };
 
-    const formatDate = (iso?: string) => {
-        if (!iso) return '—';
-        return new Date(iso).toLocaleDateString('pt-BR');
-    };
-
     const formatCurrency = (val?: number) => {
         if (val === undefined || val === null) return 'R$ 0,00';
         return val.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
@@ -85,11 +82,80 @@ const MissionFullReportModal: React.FC<Props> = ({ mission, onClose }) => {
             'cost_value': 'Custo', 'toll_value': 'Pedágio', 'origin': 'Origem',
             'destination': 'Destino', 'mission_type': 'Tipo Missão',
             'gr_espelhamento': 'GR/Espelhamento', 'client': 'Cliente',
-            'client_vehicle': 'Veículo Cliente', 'map_link': 'Link Mapa',
+            'client_vehicle': 'Veículo Cliente', 'map_link': 'Link GPS',
             'progress': 'Progresso', 'total_distance': 'Distância Total',
-            'is_same_os': 'Mesma OS', 'billing_approved': 'Faturamento Aprovado'
+            'is_same_os': 'Mesma OS', 'billing_approved': 'Faturamento Aprovado',
+            'last_update': 'Última Atualização', 'updated_by': 'Atualizado Por',
+            'special_operation_type': 'Operação Especial'
         };
-        return map[field] || field.replace(/_/g, ' ').toUpperCase();
+        return map[field] || field.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+    };
+
+    const cleanDisplayValue = (val: string | null) => {
+        if (!val) return '—';
+        let cleaned = val;
+        cleaned = cleaned.replace(/^(true|false)$/i, (m) => m.toLowerCase() === 'true' ? 'SIM' : 'NÃO');
+        cleaned = cleaned.replace(/^null$/i, '—');
+        return cleaned.toUpperCase();
+    };
+
+    const extractCoordsFromMapLink = (link: string): { lat: string; lng: string } | null => {
+        const match = link.match(/q=(-?\d+\.?\d*),(-?\d+\.?\d*)/);
+        if (match) return { lat: match[1], lng: match[2] };
+        const match2 = link.match(/@(-?\d+\.?\d*),(-?\d+\.?\d*)/);
+        if (match2) return { lat: match2[1], lng: match2[2] };
+        return null;
+    };
+
+    const extractMapLinkFromDescription = (desc: string): string | null => {
+        const match = desc.match(/https?:\/\/[^\s]+google[^\s]+/i);
+        return match ? match[0] : null;
+    };
+
+    const getMapLinksFromLogs = (): { lat: string; lng: string; label: string }[] => {
+        const points: { lat: string; lng: string; label: string }[] = [];
+        
+        logs.forEach((log, idx) => {
+            if (log.map_link) {
+                const coords = extractCoordsFromMapLink(log.map_link);
+                if (coords) points.push({ ...coords, label: `${idx + 1}` });
+            }
+        });
+
+        history.filter(h => h.field_name === 'map_link' && h.new_value).forEach((h) => {
+            const coords = extractCoordsFromMapLink(h.new_value || '');
+            if (coords) {
+                const exists = points.some(p => p.lat === coords.lat && p.lng === coords.lng);
+                if (!exists) points.push({ ...coords, label: `${points.length + 1}` });
+            }
+        });
+
+        if (mission.mapLink) {
+            const coords = extractCoordsFromMapLink(mission.mapLink);
+            if (coords) {
+                const exists = points.some(p => p.lat === coords.lat && p.lng === coords.lng);
+                if (!exists) points.push({ ...coords, label: `${points.length + 1}` });
+            }
+        }
+
+        return points;
+    };
+
+    const getLogMapLink = (log: MissionLog): string | null => {
+        if (log.map_link) return log.map_link;
+
+        const logTime = new Date(log.created_at).getTime();
+        const mapChange = history.find(h => 
+            h.field_name === 'map_link' && 
+            h.new_value && 
+            Math.abs(new Date(h.changed_at).getTime() - logTime) < 120000
+        );
+        if (mapChange?.new_value) return mapChange.new_value;
+
+        const descLink = extractMapLinkFromDescription(log.description || '');
+        if (descLink) return descLink;
+
+        return null;
     };
 
     const generatePDF = async () => {
@@ -102,23 +168,10 @@ const MissionFullReportModal: React.FC<Props> = ({ mission, onClose }) => {
             const contentWidth = pageWidth - (margin * 2);
             let y = margin;
 
-            const colors = {
-                black: '#0f172a',
-                darkRed: '#7f1d1d',
-                red: '#b91c1c',
-                gray: '#64748b',
-                lightGray: '#f1f5f9',
-                white: '#ffffff',
-                green: '#166534',
-                blue: '#1e40af',
-                orange: '#c2410c'
-            };
-
             const checkPageBreak = (needed: number) => {
                 if (y + needed > pageHeight - 20) {
                     doc.addPage();
                     y = margin;
-                    drawPageFooter(doc, pageWidth, pageHeight, margin);
                     return true;
                 }
                 return false;
@@ -133,62 +186,57 @@ const MissionFullReportModal: React.FC<Props> = ({ mission, onClose }) => {
                 d.line(m, ph - 12, pw - m, ph - 12);
             };
 
-            const drawSectionHeader = (title: string, bgColor: string = colors.black) => {
-                checkPageBreak(12);
-                doc.setFillColor(bgColor === colors.black ? 15 : 127, bgColor === colors.black ? 23 : 29, bgColor === colors.black ? 42 : 29);
+            const drawSectionHeader = (title: string, bgColor: string = 'dark') => {
+                checkPageBreak(14);
+                y += 2;
+                if (bgColor === 'red') {
+                    doc.setFillColor(127, 29, 29);
+                } else {
+                    doc.setFillColor(15, 23, 42);
+                }
                 doc.rect(margin, y, contentWidth, 8, 'F');
                 doc.setFontSize(8);
                 doc.setFont('helvetica', 'bold');
                 doc.setTextColor(255, 255, 255);
                 doc.text(title, margin + 3, y + 5.5);
-                y += 10;
+                y += 11;
             };
 
-            const drawKeyValue = (label: string, value: string, x: number, width: number) => {
-                doc.setFontSize(7);
+            const drawField = (label: string, value: string, x: number, width: number) => {
+                doc.setFontSize(6.5);
                 doc.setFont('helvetica', 'bold');
                 doc.setTextColor(100, 116, 139);
-                doc.text(label, x, y);
+                doc.text(`${label}:`, x, y);
+
                 doc.setFontSize(8);
                 doc.setFont('helvetica', 'bold');
                 doc.setTextColor(15, 23, 42);
-                const lines = doc.splitTextToSize(value || '—', width - 2);
-                doc.text(lines, x, y + 4);
-                return 4 + (lines.length * 3.5);
+                const lines = doc.splitTextToSize(value || '—', width - 4);
+                doc.text(lines, x, y + 4.5);
+                return 5 + (lines.length * 3.5);
             };
 
-            const drawTableRow = (cols: string[], widths: number[], isHeader: boolean = false, bgColor?: string) => {
-                checkPageBreak(7);
-                if (isHeader || bgColor) {
-                    if (isHeader) {
-                        doc.setFillColor(15, 23, 42);
-                    } else if (bgColor === 'alt') {
-                        doc.setFillColor(248, 250, 252);
-                    }
-                    doc.rect(margin, y - 0.5, contentWidth, 6, 'F');
-                }
-                doc.setFontSize(7);
-                doc.setFont('helvetica', isHeader ? 'bold' : 'normal');
-                doc.setTextColor(isHeader ? 255 : 30, isHeader ? 255 : 30, isHeader ? 255 : 30);
-                let x = margin + 2;
-                cols.forEach((col, i) => {
-                    const maxW = widths[i] - 4;
-                    const text = col.length > Math.floor(maxW / 1.8) ? col.substring(0, Math.floor(maxW / 1.8)) + '...' : col;
-                    doc.text(text, x, y + 3.5);
-                    x += widths[i];
+            const drawFieldRow = (fields: { label: string; value: string }[], colCount?: number) => {
+                const cols = colCount || fields.length;
+                const colWidth = contentWidth / cols;
+                let maxH = 0;
+                fields.forEach((f, i) => {
+                    const h = drawField(f.label, f.value, margin + 2 + (i * colWidth), colWidth - 4);
+                    if (h > maxH) maxH = h;
                 });
-                y += 6;
+                y += maxH + 3;
             };
 
-            // ==========================================
-            // PÁGINA 1 — CABEÇALHO E IDENTIFICAÇÃO
-            // ==========================================
+            const drawSeparator = () => {
+                doc.setDrawColor(230, 230, 230);
+                doc.setLineWidth(0.15);
+                doc.line(margin + 2, y, pageWidth - margin - 2, y);
+                y += 2;
+            };
 
-            // Barra superior vermelha
             doc.setFillColor(185, 28, 28);
             doc.rect(0, 0, pageWidth, 3, 'F');
 
-            // Cabeçalho principal
             doc.setFillColor(15, 23, 42);
             doc.rect(margin, y, contentWidth, 28, 'F');
 
@@ -203,7 +251,6 @@ const MissionFullReportModal: React.FC<Props> = ({ mission, onClose }) => {
             doc.text('GESTÃO DE RISCO E SEGURANÇA PATRIMONIAL', margin + 5, y + 16);
             doc.text('CNPJ: XX.XXX.XXX/0001-XX', margin + 5, y + 21);
 
-            // OS Badge
             doc.setFillColor(185, 28, 28);
             doc.roundedRect(pageWidth - margin - 45, y + 4, 40, 20, 2, 2, 'F');
             doc.setFontSize(8);
@@ -216,7 +263,6 @@ const MissionFullReportModal: React.FC<Props> = ({ mission, onClose }) => {
 
             y += 32;
 
-            // Status Badge
             const statusLabel = STATUS_LABELS[mission.status] || mission.status.toUpperCase();
             const isCompleted = mission.status === MissionStatus.COMPLETED;
             const isCancelled = mission.status === MissionStatus.CANCELLED || mission.status === MissionStatus.REFUSED;
@@ -231,14 +277,12 @@ const MissionFullReportModal: React.FC<Props> = ({ mission, onClose }) => {
             doc.setFont('helvetica', 'bold');
             doc.text(statusLabel, margin + 20, y + 4.2, { align: 'center' });
 
-            // Tipo de operação
             const opType = (mission.mission_type || 'CARACTERIZADA').toUpperCase();
             doc.setFillColor(100, 116, 139);
             doc.roundedRect(margin + 43, y, 35, 6, 1, 1, 'F');
             doc.setTextColor(255, 255, 255);
             doc.text(opType, margin + 60, y + 4.2, { align: 'center' });
 
-            // Data geração
             doc.setFontSize(7);
             doc.setTextColor(100, 116, 139);
             doc.setFont('helvetica', 'normal');
@@ -246,108 +290,95 @@ const MissionFullReportModal: React.FC<Props> = ({ mission, onClose }) => {
 
             y += 12;
 
-            // ==========================================
-            // SEÇÃO: DADOS DO CLIENTE
-            // ==========================================
             drawSectionHeader('DADOS DO CLIENTE / CONTRATANTE');
+            drawFieldRow([
+                { label: 'CLIENTE', value: mission.client?.toUpperCase() || '—' },
+                { label: 'GR / ESPELHAMENTO', value: mission.gr_espelhamento || '—' }
+            ]);
 
-            const h1 = drawKeyValue('CLIENTE:', mission.client?.toUpperCase() || '—', margin + 2, contentWidth / 2);
-            drawKeyValue('GR / ESPELHAMENTO:', mission.gr_espelhamento || '—', margin + contentWidth / 2, contentWidth / 2);
-            y += Math.max(h1, 8) + 2;
-
-            // ==========================================
-            // SEÇÃO: ROTA DA OPERAÇÃO
-            // ==========================================
             drawSectionHeader('ROTA DA OPERAÇÃO');
-
-            const h2 = drawKeyValue('ORIGEM:', mission.origin?.toUpperCase() || '—', margin + 2, contentWidth / 2);
-            drawKeyValue('DESTINO:', mission.destination?.toUpperCase() || '—', margin + contentWidth / 2, contentWidth / 2);
-            y += Math.max(h2, 8) + 1;
-
-            const h3 = drawKeyValue('DISTÂNCIA PLANEJADA:', `${mission.totalDistance || 0} KM`, margin + 2, contentWidth / 3);
-            drawKeyValue('KM INICIAL:', mission.startKm ? `${mission.startKm}` : '—', margin + contentWidth / 3, contentWidth / 3);
-            drawKeyValue('KM FINAL:', mission.endKm ? `${mission.endKm}` : '—', margin + (contentWidth / 3) * 2, contentWidth / 3);
-            y += Math.max(h3, 8) + 1;
+            drawFieldRow([
+                { label: 'ORIGEM', value: mission.origin?.toUpperCase() || '—' },
+                { label: 'DESTINO', value: mission.destination?.toUpperCase() || '—' }
+            ]);
 
             const kmTraveled = (mission.endKm && mission.startKm) ? (mission.endKm - mission.startKm) : 0;
-            drawKeyValue('KM PERCORRIDO:', `${kmTraveled.toFixed(1)} KM`, margin + 2, contentWidth / 3);
-            drawKeyValue('PROGRESSO:', `${Math.floor(mission.progress || 0)}%`, margin + contentWidth / 3, contentWidth / 3);
-            if (mission.mapLink) {
-                drawKeyValue('LINK GPS:', mission.mapLink, margin + (contentWidth / 3) * 2, contentWidth / 3);
-            }
-            y += 10;
+            drawFieldRow([
+                { label: 'DISTÂNCIA PLANEJADA', value: `${mission.totalDistance || 0} KM` },
+                { label: 'KM INICIAL', value: mission.startKm ? `${mission.startKm}` : '—' },
+                { label: 'KM FINAL', value: mission.endKm ? `${mission.endKm}` : '—' }
+            ]);
+            drawFieldRow([
+                { label: 'KM PERCORRIDO', value: `${kmTraveled.toFixed(1)} KM` },
+                { label: 'PROGRESSO', value: `${Math.floor(mission.progress || 0)}%` }
+            ]);
 
-            // ==========================================
-            // SEÇÃO: CRONOLOGIA
-            // ==========================================
             drawSectionHeader('CRONOLOGIA DA OPERAÇÃO');
+            drawFieldRow([
+                { label: 'CRIAÇÃO DA OS', value: formatDateTime(mission.createdAt) },
+                { label: 'INÍCIO DA VIAGEM', value: formatDateTime(mission.startTime) },
+                { label: 'FIM DA VIAGEM', value: formatDateTime(mission.endTime) }
+            ]);
 
-            const h4 = drawKeyValue('CRIAÇÃO DA OS:', formatDateTime(mission.createdAt), margin + 2, contentWidth / 3);
-            drawKeyValue('INÍCIO DA VIAGEM:', formatDateTime(mission.startTime), margin + contentWidth / 3, contentWidth / 3);
-            drawKeyValue('FIM DA VIAGEM:', formatDateTime(mission.endTime), margin + (contentWidth / 3) * 2, contentWidth / 3);
-            y += Math.max(h4, 8) + 1;
-
+            let operationHours = '—';
             if (mission.startTime && mission.endTime) {
                 const diffMs = new Date(mission.endTime).getTime() - new Date(mission.startTime).getTime();
                 if (diffMs > 0) {
                     const hours = Math.floor(diffMs / (1000 * 60 * 60));
                     const mins = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60));
-                    drawKeyValue('TEMPO TOTAL DE OPERAÇÃO:', `${hours}h ${mins}min`, margin + 2, contentWidth / 2);
-                    y += 8;
+                    operationHours = `${hours}h ${mins}min`;
                 }
             }
+            drawFieldRow([
+                { label: 'TEMPO TOTAL DE OPERAÇÃO', value: operationHours },
+                { label: 'KM RODADOS', value: kmTraveled > 0 ? `${kmTraveled.toFixed(1)} KM` : '—' }
+            ]);
 
-            // ==========================================
-            // SEÇÃO: DADOS DA CARGA
-            // ==========================================
             drawSectionHeader('DADOS DA CARGA / VEÍCULO DO CLIENTE');
+            drawFieldRow([
+                { label: 'MOTORISTA', value: (mission.driver_name || '—').toUpperCase() },
+                { label: 'TELEFONE', value: mission.driver_phone || '—' },
+                { label: 'PLACA', value: mission.clientVehicle?.plate || '—' }
+            ]);
+            drawFieldRow([
+                { label: 'MODELO', value: (mission.clientVehicle?.model || '—').toUpperCase() },
+                { label: 'MARCA', value: (mission.clientVehicle?.brand || '—').toUpperCase() }
+            ]);
 
-            const h5 = drawKeyValue('MOTORISTA:', (mission.driver_name || '—').toUpperCase(), margin + 2, contentWidth / 3);
-            drawKeyValue('TELEFONE:', mission.driver_phone || '—', margin + contentWidth / 3, contentWidth / 3);
-            drawKeyValue('PLACA:', mission.clientVehicle?.plate || '—', margin + (contentWidth / 3) * 2, contentWidth / 3);
-            y += Math.max(h5, 8) + 1;
-
-            drawKeyValue('MODELO:', (mission.clientVehicle?.model || '—').toUpperCase(), margin + 2, contentWidth / 2);
-            y += 10;
-
-            // ==========================================
-            // SEÇÃO: EQUIPE DE ESCOLTA
-            // ==========================================
             drawSectionHeader('EQUIPE DE ESCOLTA / SEGURANÇA');
-
-            const h6 = drawKeyValue('FORNECEDOR:', (mission.provider || '—').toUpperCase(), margin + 2, contentWidth);
-            y += Math.max(h6, 8) + 1;
+            drawFieldRow([
+                { label: 'FORNECEDOR', value: (mission.provider || '—').toUpperCase() }
+            ]);
 
             const agent1Data = agents.find(a => a.name === mission.agent1);
             const agent2Data = agents.find(a => a.name === mission.agent2);
 
             if (mission.agent1) {
-                drawKeyValue('AGENTE 01:', (mission.agent1).toUpperCase(), margin + 2, contentWidth / 4);
-                drawKeyValue('CPF:', agent1Data?.cpf || '—', margin + contentWidth / 4, contentWidth / 4);
-                drawKeyValue('RG:', agent1Data?.rg || '—', margin + (contentWidth / 4) * 2, contentWidth / 4);
-                drawKeyValue('CNV:', agent1Data?.cnv || '—', margin + (contentWidth / 4) * 3, contentWidth / 4);
-                y += 10;
+                drawSeparator();
+                drawFieldRow([
+                    { label: 'AGENTE 01', value: (mission.agent1).toUpperCase() },
+                    { label: 'CPF', value: agent1Data?.cpf || '—' },
+                    { label: 'RG', value: agent1Data?.rg || '—' },
+                    { label: 'CNV', value: agent1Data?.cnv || '—' }
+                ]);
             }
             if (mission.agent2 && mission.agent2 !== '---') {
-                drawKeyValue('AGENTE 02:', (mission.agent2).toUpperCase(), margin + 2, contentWidth / 4);
-                drawKeyValue('CPF:', agent2Data?.cpf || '—', margin + contentWidth / 4, contentWidth / 4);
-                drawKeyValue('RG:', agent2Data?.rg || '—', margin + (contentWidth / 4) * 2, contentWidth / 4);
-                drawKeyValue('CNV:', agent2Data?.cnv || '—', margin + (contentWidth / 4) * 3, contentWidth / 4);
-                y += 10;
+                drawSeparator();
+                drawFieldRow([
+                    { label: 'AGENTE 02', value: (mission.agent2).toUpperCase() },
+                    { label: 'CPF', value: agent2Data?.cpf || '—' },
+                    { label: 'RG', value: agent2Data?.rg || '—' },
+                    { label: 'CNV', value: agent2Data?.cnv || '—' }
+                ]);
             }
 
-            // Viatura
-            drawKeyValue('VIATURA:', vehicle ? `${vehicle.model || ''} — ${vehicle.plate || ''} — ${vehicle.color || ''}`.toUpperCase() : mission.vehicleId || '—', margin + 2, contentWidth / 2);
-            if (vehicle) {
-                drawKeyValue('RASTREADOR:', `${vehicle.tracker_type || '—'} / ${vehicle.tracker_id || '—'}`, margin + contentWidth / 2, contentWidth / 2);
-            }
-            y += 10;
+            drawSeparator();
+            drawFieldRow([
+                { label: 'VIATURA', value: vehicle ? `${vehicle.model || ''} — ${vehicle.plate || ''} — ${vehicle.color || ''}`.toUpperCase() : mission.vehicleId || '—' },
+                { label: 'RASTREADOR', value: vehicle ? `${vehicle.tracker_type || '—'} / ${vehicle.tracker_id || '—'}` : '—' }
+            ]);
 
-            // ==========================================
-            // SEÇÃO: ÚLTIMA OCORRÊNCIA
-            // ==========================================
             drawSectionHeader('ÚLTIMA OCORRÊNCIA REGISTRADA');
-
             const locationText = mission.currentLocation || 'Sem ocorrências registradas.';
             doc.setFontSize(8);
             doc.setFont('helvetica', 'normal');
@@ -355,20 +386,48 @@ const MissionFullReportModal: React.FC<Props> = ({ mission, onClose }) => {
             const locLines = doc.splitTextToSize(locationText.toUpperCase(), contentWidth - 4);
             checkPageBreak(locLines.length * 4 + 4);
             doc.text(locLines, margin + 2, y);
-            y += locLines.length * 4 + 6;
+            y += locLines.length * 4 + 4;
 
-            // ==========================================
-            // SEÇÃO: DEMONSTRATIVO FINANCEIRO (se aprovado)
-            // ==========================================
             if (mission.billing_approved) {
-                drawSectionHeader('DEMONSTRATIVO FINANCEIRO', colors.darkRed);
+                drawSectionHeader('DEMONSTRATIVO FINANCEIRO', 'red');
 
                 const colWidths = [contentWidth * 0.4, contentWidth * 0.3, contentWidth * 0.3];
-                drawTableRow(['ITEM', 'DESCRIÇÃO', 'VALOR (R$)'], colWidths, true);
-                drawTableRow(['SERVIÇO DE ESCOLTA', 'FATURAMENTO BASE + EXTRAS', formatCurrency(mission.revenue_value)], colWidths);
-                drawTableRow(['PEDÁGIO / REEMBOLSO', 'VALOR COMPROVADO', formatCurrency(mission.toll_value)], colWidths, false, 'alt');
-                const total = (mission.revenue_value || 0) + (mission.toll_value || 0);
                 
+                checkPageBreak(7);
+                doc.setFillColor(15, 23, 42);
+                doc.rect(margin, y - 0.5, contentWidth, 6, 'F');
+                doc.setFontSize(7);
+                doc.setFont('helvetica', 'bold');
+                doc.setTextColor(255, 255, 255);
+                let tx = margin + 2;
+                ['ITEM', 'DESCRIÇÃO', 'VALOR (R$)'].forEach((h, i) => {
+                    doc.text(h, tx, y + 3.5);
+                    tx += colWidths[i];
+                });
+                y += 6;
+
+                const rows = [
+                    ['SERVIÇO DE ESCOLTA', 'FATURAMENTO BASE + EXTRAS', formatCurrency(mission.revenue_value)],
+                    ['PEDÁGIO / REEMBOLSO', 'COMPROVADO', formatCurrency(mission.toll_value)]
+                ];
+                rows.forEach((row, ri) => {
+                    checkPageBreak(7);
+                    if (ri % 2 === 1) {
+                        doc.setFillColor(248, 250, 252);
+                        doc.rect(margin, y - 0.5, contentWidth, 6, 'F');
+                    }
+                    doc.setFontSize(7);
+                    doc.setFont('helvetica', 'normal');
+                    doc.setTextColor(30, 30, 30);
+                    let rx = margin + 2;
+                    row.forEach((col, ci) => {
+                        doc.text(col, rx, y + 3.5);
+                        rx += colWidths[ci];
+                    });
+                    y += 6;
+                });
+
+                const total = (mission.revenue_value || 0) + (mission.toll_value || 0);
                 doc.setFillColor(15, 23, 42);
                 doc.rect(margin, y - 0.5, contentWidth, 7, 'F');
                 doc.setFontSize(8);
@@ -376,12 +435,9 @@ const MissionFullReportModal: React.FC<Props> = ({ mission, onClose }) => {
                 doc.setTextColor(255, 255, 255);
                 doc.text('TOTAL GERAL DA MISSÃO:', margin + 4, y + 4);
                 doc.text(formatCurrency(total), pageWidth - margin - 4, y + 4, { align: 'right' });
-                y += 12;
+                y += 10;
             }
 
-            // ==========================================
-            // SEÇÃO: TIMELINE DE EVENTOS (mission_logs)
-            // ==========================================
             drawSectionHeader('TIMELINE COMPLETA DE EVENTOS');
 
             if (logs.length === 0) {
@@ -391,152 +447,203 @@ const MissionFullReportModal: React.FC<Props> = ({ mission, onClose }) => {
                 doc.text('Nenhum evento registrado para esta missão.', margin + 2, y + 3);
                 y += 10;
             } else {
-                const logColWidths = [contentWidth * 0.22, contentWidth * 0.15, contentWidth * 0.63];
-                drawTableRow(['DATA / HORA', 'OPERADOR', 'OCORRÊNCIA / DESCRIÇÃO'], logColWidths, true);
-
                 logs.forEach((log, idx) => {
                     const dateStr = formatDateTime(log.created_at);
-                    const operator = (log.updated_by || 'SISTEMA').toUpperCase();
                     const desc = (log.description || '—').toUpperCase();
+                    const mapLink = getLogMapLink(log);
+                    const mapLabel = mapLink ? 'Ver no Google Maps' : '';
 
-                    const descLines = doc.splitTextToSize(desc, logColWidths[2] - 6);
-                    const rowHeight = Math.max(6, descLines.length * 3.5 + 2);
+                    const descLines = doc.splitTextToSize(desc, contentWidth - 10);
+                    const rowHeight = Math.max(12, 8 + descLines.length * 3.5 + (mapLink ? 5 : 0));
 
-                    checkPageBreak(rowHeight + 2);
+                    checkPageBreak(rowHeight + 4);
 
                     if (idx % 2 === 1) {
                         doc.setFillColor(248, 250, 252);
-                        doc.rect(margin, y - 0.5, contentWidth, rowHeight, 'F');
+                        doc.rect(margin, y - 1, contentWidth, rowHeight + 2, 'F');
                     }
 
-                    // Linha vertical da timeline
                     doc.setDrawColor(185, 28, 28);
-                    doc.setLineWidth(0.3);
-                    doc.line(margin + 1, y, margin + 1, y + rowHeight - 1);
+                    doc.setLineWidth(0.4);
+                    doc.line(margin + 2, y, margin + 2, y + rowHeight - 2);
                     doc.setFillColor(185, 28, 28);
-                    doc.circle(margin + 1, y + 2, 1, 'F');
+                    doc.circle(margin + 2, y + 2, 1.2, 'F');
 
                     doc.setFontSize(7);
-                    doc.setFont('helvetica', 'normal');
+                    doc.setFont('helvetica', 'bold');
                     doc.setTextColor(100, 116, 139);
-                    doc.text(dateStr, margin + 4, y + 3.5);
+                    doc.text(dateStr, margin + 6, y + 3);
 
                     doc.setTextColor(30, 64, 175);
                     doc.setFont('helvetica', 'bold');
-                    doc.text(operator.substring(0, 18), margin + logColWidths[0] + 2, y + 3.5);
+                    doc.text('CM - GRUPO TM SEG', margin + 50, y + 3);
 
+                    doc.setFontSize(7.5);
                     doc.setTextColor(30, 30, 30);
                     doc.setFont('helvetica', 'normal');
-                    doc.text(descLines, margin + logColWidths[0] + logColWidths[1] + 2, y + 3.5);
+                    doc.text(descLines, margin + 6, y + 8);
 
-                    y += rowHeight + 1;
+                    if (mapLink) {
+                        const mapY = y + 8 + descLines.length * 3.5;
+                        doc.setFontSize(6.5);
+                        doc.setFont('helvetica', 'bold');
+                        doc.setTextColor(30, 64, 175);
+                        doc.textWithLink(mapLabel, margin + 6, mapY, { url: mapLink });
+                        doc.setDrawColor(30, 64, 175);
+                        doc.setLineWidth(0.1);
+                        doc.line(margin + 6, mapY + 0.5, margin + 6 + doc.getTextWidth(mapLabel), mapY + 0.5);
+                    }
+
+                    y += rowHeight + 2;
                 });
                 y += 4;
             }
 
-            // ==========================================
-            // SEÇÃO: HISTÓRICO DETALHADO DE ALTERAÇÕES (mission_history)
-            // ==========================================
             if (history.length > 0) {
                 drawSectionHeader('REGISTRO DE ALTERAÇÕES (AUDITORIA)');
 
-                const histColWidths = [contentWidth * 0.18, contentWidth * 0.12, contentWidth * 0.20, contentWidth * 0.25, contentWidth * 0.25];
-                drawTableRow(['DATA / HORA', 'OPERADOR', 'CAMPO', 'VALOR ANTERIOR', 'NOVO VALOR'], histColWidths, true);
-
                 history.forEach((h, idx) => {
                     const dateStr = formatDateTime(h.changed_at);
-                    const operator = (h.changed_by || 'SISTEMA').substring(0, 14).toUpperCase();
-                    const field = translateField(h.field_name).substring(0, 22).toUpperCase();
-                    const oldVal = (h.old_value || '—').substring(0, 30).toUpperCase();
-                    const newVal = (h.new_value || '—').substring(0, 30).toUpperCase();
+                    const field = translateField(h.field_name).toUpperCase();
+                    const oldVal = cleanDisplayValue(h.old_value);
+                    const newVal = cleanDisplayValue(h.new_value);
 
-                    checkPageBreak(7);
+                    const entryHeight = 14;
+                    checkPageBreak(entryHeight + 2);
 
-                    if (idx % 2 === 1) {
+                    if (idx % 2 === 0) {
                         doc.setFillColor(248, 250, 252);
-                        doc.rect(margin, y - 0.5, contentWidth, 6, 'F');
+                        doc.rect(margin, y - 1, contentWidth, entryHeight, 'F');
                     }
 
                     doc.setFontSize(6.5);
-                    doc.setFont('helvetica', 'normal');
+                    doc.setFont('helvetica', 'bold');
                     doc.setTextColor(100, 116, 139);
-                    doc.text(dateStr, margin + 2, y + 3.5);
+                    doc.text(dateStr, margin + 2, y + 3);
 
                     doc.setTextColor(30, 64, 175);
-                    doc.setFont('helvetica', 'bold');
-                    doc.text(operator, margin + histColWidths[0] + 2, y + 3.5);
+                    doc.text('CM - GRUPO TM SEG', margin + 45, y + 3);
 
-                    doc.setTextColor(30, 30, 30);
+                    doc.setTextColor(15, 23, 42);
                     doc.setFont('helvetica', 'bold');
-                    doc.text(field, margin + histColWidths[0] + histColWidths[1] + 2, y + 3.5);
+                    doc.text(field, margin + 100, y + 3);
 
+                    doc.setFontSize(6);
                     doc.setFont('helvetica', 'normal');
                     doc.setTextColor(185, 28, 28);
-                    doc.text(oldVal, margin + histColWidths[0] + histColWidths[1] + histColWidths[2] + 2, y + 3.5);
+                    const oldLines = doc.splitTextToSize(oldVal, contentWidth / 2 - 10);
+                    doc.text(oldLines[0] || '—', margin + 4, y + 8.5);
 
                     doc.setTextColor(22, 101, 52);
-                    doc.text(newVal, margin + histColWidths[0] + histColWidths[1] + histColWidths[2] + histColWidths[3] + 2, y + 3.5);
+                    const newLines = doc.splitTextToSize(newVal, contentWidth / 2 - 10);
+                    doc.text(newLines[0] || '—', margin + contentWidth / 2 + 4, y + 8.5);
 
-                    y += 6;
+                    doc.setFontSize(5);
+                    doc.setTextColor(150, 150, 150);
+                    doc.text('ANTES', margin + 4, y + 12);
+                    doc.text('DEPOIS', margin + contentWidth / 2 + 4, y + 12);
+
+                    y += entryHeight + 1;
                 });
                 y += 4;
             }
 
-            // ==========================================
-            // SEÇÃO: MAPA ESTÁTICO (se tiver coordenadas)
-            // ==========================================
-            if (mission.mapLink) {
-                checkPageBreak(60);
-                drawSectionHeader('POSIÇÃO GPS / TRAJETO');
+            checkPageBreak(80);
+            drawSectionHeader('MAPA DA OPERAÇÃO — ORIGEM / DESTINO');
 
-                const coordMatch = mission.mapLink.match(/q=(-?\d+\.?\d*),(-?\d+\.?\d*)/);
-                if (coordMatch) {
-                    const lat = coordMatch[1];
-                    const lng = coordMatch[2];
-                    const staticMapUrl = `https://maps.googleapis.com/maps/api/staticmap?center=${lat},${lng}&zoom=12&size=640x300&maptype=roadmap&markers=color:red%7C${lat},${lng}&key=AIzaSyBhPm6dSnk1WJKX9WBP6j4InqDm4aKKMz0`;
+            const waypoints = getMapLinksFromLogs();
 
-                    try {
-                        const img = new Image();
-                        img.crossOrigin = 'anonymous';
-                        
-                        await new Promise<void>((resolve, reject) => {
-                            img.onload = () => {
-                                try {
-                                    const canvas = document.createElement('canvas');
-                                    canvas.width = img.width;
-                                    canvas.height = img.height;
-                                    const ctx = canvas.getContext('2d');
-                                    if (ctx) {
-                                        ctx.drawImage(img, 0, 0);
-                                        const imgData = canvas.toDataURL('image/jpeg', 0.85);
-                                        doc.addImage(imgData, 'JPEG', margin, y, contentWidth, contentWidth * 0.47);
-                                        y += contentWidth * 0.47 + 4;
-                                    }
-                                    resolve();
-                                } catch (e) {
-                                    resolve();
-                                }
-                            };
-                            img.onerror = () => resolve();
-                            img.src = staticMapUrl;
-                        });
-                    } catch (e) {
-                        doc.setFontSize(8);
-                        doc.setTextColor(150, 150, 150);
-                        doc.text(`Coordenadas GPS: ${lat}, ${lng}`, margin + 2, y + 3);
-                        y += 8;
+            let mapUrl = '';
+            if (waypoints.length >= 2) {
+                const origin = `${waypoints[0].lat},${waypoints[0].lng}`;
+                const dest = `${waypoints[waypoints.length - 1].lat},${waypoints[waypoints.length - 1].lng}`;
+                const midpoints = waypoints.slice(1, -1).map(w => `${w.lat},${w.lng}`).join('|');
+                
+                let pathParam = `&path=color:0xB91C1Cff|weight:3`;
+                waypoints.forEach(w => {
+                    pathParam += `|${w.lat},${w.lng}`;
+                });
+
+                let markersParam = '';
+                waypoints.forEach((w, i) => {
+                    if (i === 0) {
+                        markersParam += `&markers=color:green%7Clabel:A%7C${w.lat},${w.lng}`;
+                    } else if (i === waypoints.length - 1) {
+                        markersParam += `&markers=color:red%7Clabel:B%7C${w.lat},${w.lng}`;
+                    } else {
+                        markersParam += `&markers=color:blue%7Clabel:${i}%7C${w.lat},${w.lng}`;
                     }
-                }
+                });
 
-                doc.setFontSize(7);
-                doc.setTextColor(100, 116, 139);
-                doc.text(`Link completo: ${mission.mapLink}`, margin + 2, y);
+                mapUrl = `https://maps.googleapis.com/maps/api/staticmap?size=640x360&maptype=roadmap${markersParam}${pathParam}&key=${MAPS_API_KEY}`;
+            } else if (mission.mapLink) {
+                const coords = extractCoordsFromMapLink(mission.mapLink);
+                if (coords) {
+                    mapUrl = `https://maps.googleapis.com/maps/api/staticmap?center=${coords.lat},${coords.lng}&zoom=12&size=640x360&maptype=roadmap&markers=color:red%7C${coords.lat},${coords.lng}&key=${MAPS_API_KEY}`;
+                }
+            } else if (mission.origin && mission.destination) {
+                const originEnc = encodeURIComponent(mission.origin);
+                const destEnc = encodeURIComponent(mission.destination);
+                mapUrl = `https://maps.googleapis.com/maps/api/staticmap?size=640x360&maptype=roadmap&markers=color:green%7Clabel:A%7C${originEnc}&markers=color:red%7Clabel:B%7C${destEnc}&key=${MAPS_API_KEY}`;
+            }
+
+            if (mapUrl) {
+                try {
+                    const img = new Image();
+                    img.crossOrigin = 'anonymous';
+                    
+                    await new Promise<void>((resolve) => {
+                        img.onload = () => {
+                            try {
+                                const canvas = document.createElement('canvas');
+                                canvas.width = img.width;
+                                canvas.height = img.height;
+                                const ctx = canvas.getContext('2d');
+                                if (ctx) {
+                                    ctx.drawImage(img, 0, 0);
+                                    const imgData = canvas.toDataURL('image/jpeg', 0.85);
+                                    const mapHeight = contentWidth * 0.56;
+                                    checkPageBreak(mapHeight + 10);
+                                    doc.addImage(imgData, 'JPEG', margin, y, contentWidth, mapHeight);
+                                    y += mapHeight + 4;
+                                }
+                                resolve();
+                            } catch (e) {
+                                resolve();
+                            }
+                        };
+                        img.onerror = () => resolve();
+                        img.src = mapUrl;
+                    });
+                } catch (e) {
+                    doc.setFontSize(8);
+                    doc.setTextColor(150, 150, 150);
+                    doc.text('Mapa indisponível.', margin + 2, y + 3);
+                    y += 8;
+                }
+            } else {
+                doc.setFontSize(8);
+                doc.setTextColor(150, 150, 150);
+                doc.text('Sem coordenadas GPS disponíveis para exibir o mapa.', margin + 2, y + 3);
                 y += 8;
             }
 
-            // ==========================================
-            // RODAPÉ FINAL — ASSINATURAS
-            // ==========================================
+            if (mission.origin && mission.destination) {
+                const originEnc = encodeURIComponent(mission.origin);
+                const destEnc = encodeURIComponent(mission.destination);
+                const mapsDirectionsUrl = `https://www.google.com/maps/dir/${originEnc}/${destEnc}`;
+
+                doc.setFontSize(7);
+                doc.setFont('helvetica', 'bold');
+                doc.setTextColor(30, 64, 175);
+                const linkText = 'Abrir Rota Completa no Google Maps';
+                doc.textWithLink(linkText, margin + 2, y + 2, { url: mapsDirectionsUrl });
+                doc.setDrawColor(30, 64, 175);
+                doc.setLineWidth(0.1);
+                doc.line(margin + 2, y + 2.5, margin + 2 + doc.getTextWidth(linkText), y + 2.5);
+                y += 8;
+            }
+
             checkPageBreak(45);
 
             y += 5;
@@ -556,7 +663,6 @@ const MissionFullReportModal: React.FC<Props> = ({ mission, onClose }) => {
             doc.text(discLines, pageWidth / 2, y, { align: 'center' });
             y += discLines.length * 3 + 8;
 
-            // Linhas de assinatura
             const sigWidth = (contentWidth - 20) / 2;
             doc.setDrawColor(30, 30, 30);
             doc.setLineWidth(0.3);
@@ -569,14 +675,12 @@ const MissionFullReportModal: React.FC<Props> = ({ mission, onClose }) => {
             doc.text('RESPONSÁVEL PELA OPERAÇÃO', margin + 5 + sigWidth / 2, y + 4, { align: 'center' });
             doc.text('CLIENTE / CONTRATANTE', pageWidth - margin - 5 - sigWidth / 2, y + 4, { align: 'center' });
 
-            // Rodapé de todas as páginas
             const totalPages = doc.getNumberOfPages();
             for (let i = 1; i <= totalPages; i++) {
                 doc.setPage(i);
                 drawPageFooter(doc, pageWidth, pageHeight, margin);
             }
 
-            // Salvar
             const originCity = mission.origin ? mission.origin.split(',')[0].split('-')[0].trim() : 'ROTA';
             const destCity = mission.destination ? mission.destination.split(',')[0].split('-')[0].trim() : '';
             const fileName = `TMSEG_RELATORIO_${mission.id}_${originCity}_x_${destCity}.pdf`.replace(/\s+/g, '_').toUpperCase();
