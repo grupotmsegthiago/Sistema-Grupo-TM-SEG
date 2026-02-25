@@ -68,7 +68,12 @@ import BillingControlCenter from './components/BillingControlCenter';
 const INACTIVITY_LIMIT = 30 * 60 * 1000;
 
 const App: React.FC = () => {
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [isAuthenticated, setIsAuthenticated] = useState(() => {
+    const token = localStorage.getItem('authToken');
+    const userData = localStorage.getItem('userData');
+    const version = localStorage.getItem('app_version');
+    return !!(token && userData && version === APP_VERSION);
+  });
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [needsPasswordChange, setNeedsPasswordChange] = useState(false);
   const [isProfileSettingsOpen, setIsProfileSettingsOpen] = useState(false);
