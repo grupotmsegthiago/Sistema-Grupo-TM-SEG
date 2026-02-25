@@ -29,6 +29,7 @@ const MissionFullReportModal: React.FC<Props> = ({ mission, onClose }) => {
     const [logs, setLogs] = useState<MissionLog[]>([]);
     const [history, setHistory] = useState<MissionHistory[]>([]);
     const [agents, setAgents] = useState<Agent[]>([]);
+    const [clients, setClients] = useState<Client[]>([]);
     const [vehicle, setVehicle] = useState<Vehicle | null>(null);
     const [isLoading, setIsLoading] = useState(true);
 
@@ -39,7 +40,7 @@ const MissionFullReportModal: React.FC<Props> = ({ mission, onClose }) => {
     const fetchAllData = async () => {
         setIsLoading(true);
         try {
-            const [logsRes, historyRes, agentsRes, vehicleRes] = await Promise.all([
+            const [logsRes, historyRes, agentsRes, vehicleRes, clientsRes] = await Promise.all([
                 supabase.from('mission_logs').select('*').eq('mission_id', mission.id).order('created_at', { ascending: true }),
                 supabase.from('mission_history').select('*').eq('mission_id', mission.id).order('changed_at', { ascending: true }),
                 supabase.from('agents').select('*').in('name', [mission.agent1, mission.agent2].filter(Boolean)),
@@ -47,13 +48,15 @@ const MissionFullReportModal: React.FC<Props> = ({ mission, onClose }) => {
                     ? (!isNaN(Number(mission.vehicleId))
                         ? supabase.from('vehicles').select('*').eq('id', mission.vehicleId).maybeSingle()
                         : supabase.from('vehicles').select('*').eq('plate', mission.vehicleId).maybeSingle())
-                    : Promise.resolve({ data: null })
+                    : Promise.resolve({ data: null }),
+                supabase.from('clients').select('*').eq('name', mission.client)
             ]);
 
             if (logsRes.data) setLogs(logsRes.data);
             if (historyRes.data) setHistory(historyRes.data);
             if (agentsRes.data) setAgents(agentsRes.data as Agent[]);
             if (vehicleRes.data) setVehicle(vehicleRes.data as Vehicle);
+            if (clientsRes.data) setClients(clientsRes.data as Client[]);
         } catch (err) {
             console.error('Erro ao carregar dados do relatório:', err);
         } finally {
@@ -251,11 +254,14 @@ const MissionFullReportModal: React.FC<Props> = ({ mission, onClose }) => {
             doc.setTextColor(255, 255, 255);
             doc.text('GRUPO TMSEG', margin + 5, y + 10);
 
+            const clientData = clients.find(c => c.name === mission.client);
+            const clientDisplay = clientData ? `${clientData.name} - CNPJ: ${clientData.cnpj}` : mission.client;
+
             doc.setFontSize(8);
             doc.setFont('helvetica', 'normal');
             doc.setTextColor(148, 163, 184);
-            doc.text('GESTÃO DE RISCO E SEGURANÇA PATRIMONIAL', margin + 5, y + 16);
-            doc.text('CNPJ: XX.XXX.XXX/0001-XX', margin + 5, y + 21);
+            doc.text(clientDisplay.toUpperCase(), margin + 5, y + 16);
+            doc.text('GESTÃO DE RISCO E SEGURANÇA PATRIMONIAL', margin + 5, y + 21);
 
             doc.setFillColor(185, 28, 28);
             doc.roundedRect(pageWidth - margin - 45, y + 4, 40, 20, 2, 2, 'F');
@@ -421,9 +427,27 @@ const MissionFullReportModal: React.FC<Props> = ({ mission, onClose }) => {
                         if (c) mapCoordText = `GPS: ${c.lat}, ${c.lng}`;
                     }
 
+                    // Find status change in history around this log time
+                    const logTime = new Date(log.created_at).getTime();
+                    const statusHistory = history.filter(h => h.field_name === 'status');
+                    
+                    // Get the status at the time of this log
+                    let logStatus = mission.status.toUpperCase();
+                    const lastStatusChange = [...statusHistory]
+                        .reverse()
+                        .find(h => new Date(h.changed_at).getTime() <= logTime);
+                    
+                    if (lastStatusChange) {
+                        logStatus = lastStatusChange.new_value?.toUpperCase() || logStatus;
+                    }
+
+                    // Check if this specific log is a status change event
+                    const exactStatusChange = statusHistory.find(h => 
+                        Math.abs(new Date(h.changed_at).getTime() - logTime) < 5000
+                    );
+
                     // Format: DATA - HORA: STATUS: ALTERAÇÃO / OBSERVAÇÃO
-                    const logStatus = mission.status.toUpperCase();
-                    const timelineText = `${dateStr}: ${logStatus}: ${desc}`;
+                    const timelineText = `${dateStr}: ${logStatus}: ${desc}${exactStatusChange ? ' [ALTERAÇÃO DE STATUS]' : ''}`;
                     const descLines = doc.splitTextToSize(timelineText, contentWidth - 14);
                     const rowHeight = 10 + (descLines.length * 3.5) + (mapCoordText ? 5 : 0);
 
