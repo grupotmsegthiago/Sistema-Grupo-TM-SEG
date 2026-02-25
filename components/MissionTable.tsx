@@ -30,6 +30,7 @@ interface MissionTableProps {
 }
 
 const STATUS_CONFIG = [
+    { id: MissionStatus.PENDING, label: 'Pendente', icon: Clock, color: 'bg-gray-500' },
     { id: MissionStatus.SOLICITED, label: 'Solicitada', icon: ClipboardList, color: 'bg-orange-500' },
     { id: MissionStatus.DOCUMENTATION, label: 'Documentação', icon: FileSearch, color: 'bg-blue-400' }, 
     { id: MissionStatus.SCHEDULED, label: 'Agendada', icon: CalendarClock, color: 'bg-yellow-500' },
