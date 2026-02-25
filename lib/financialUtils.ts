@@ -319,9 +319,10 @@ export const calculateMissionFinancials = (
         clientLog = 'Seleção Manual / Memória';
     } else {
         const cevaClientTables = clientTables.filter(t => normalize(t.client) === missionClientName);
+        const clientDistReference = Math.max(safeNumber(mission.totalDistance), distanceForCalculation);
         const result = selectStrictTable(
             cevaClientTables, 
-            distanceForCalculation, 
+            clientDistReference, 
             detectedRegion,
             originCity,
             missionTypeKeyword,
@@ -332,9 +333,15 @@ export const calculateMissionFinancials = (
         clientLog = result.log;
 
         const isCevaClient = missionClientName.includes('CEVA');
-        const isJundiai = normalize(mission.origin || '').includes('JUNDIAI');
+        const normalizedOrigin = normalize(mission.origin || '');
+        const normalizedDest = normalize(mission.destination || '');
+        const isJundiai = normalizedOrigin.includes('JUNDIAI');
+        const destHas200km = normalizedDest.includes('200KM') || normalizedDest.includes('200 KM');
+        const routeDistance = safeNumber(mission.totalDistance);
+        const referenceDistance = Math.max(routeDistance, distanceForCalculation);
+
         if (isCevaClient && isJundiai && cevaClientTables.length > 0) {
-            if (distanceForCalculation > 200) {
+            if (referenceDistance > 200 || destHas200km) {
                 const logitech200 = cevaClientTables.find(t => {
                     const op = normalize(t.operation_type || '');
                     return (op.includes('LOGITECH') || op.includes('200KM') || op.includes('200 KM')) && t.franchise_km >= 200;
@@ -370,13 +377,15 @@ export const calculateMissionFinancials = (
          });
     }
 
+    const providerDistReference = Math.max(safeNumber(mission.totalDistance), distanceForCalculation);
+
     if (manualTableOverrides?.providerTableId) {
         appliedProviderTable = providerTables.find(t => t.id.toString() === manualTableOverrides.providerTableId);
         providerLog = 'Seleção Manual / Memória';
     } else {
         const result = selectStrictTable(
             filteredProviderTables, 
-            distanceForCalculation, 
+            providerDistReference, 
             detectedRegion,
             originCity,
             missionTypeKeyword,

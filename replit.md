@@ -93,6 +93,8 @@ Preferred communication style: Simple, everyday language.
   - If `distanceForCalculation ≤ 200km` → If current selection is a Logitech/200KM table, downgrades to the standard CEVA table (e.g., 100KM) to avoid overbilling short routes like Jundiaí → Cajamar
 - **Override:** Only applies to automatic detection; manual/memory selections are preserved
 - **Log output:** Shows descriptive messages like "CEVA Jundiaí >200km → Sudeste - Operação Logitech - 200KM"
+- **Distance reference:** Uses `Math.max(totalDistance, distanceForCalculation)` — considers both the route distance (KM Previsto) and odometer distance (KM Real) to ensure correct table detection even when KM Real is capped at franchise. Also checks if destination contains "200KM" as additional trigger.
+- **Provider tables:** Also use `Math.max(totalDistance, distanceForCalculation)` for scoring, ensuring correct provider table selection for long-distance routes
 
 ### Mission Report (`MissionFullReportModal`)
 - `hideProviderInfo` prop: When true (client users), hides provider name, agent details (CPF/RG/CNV), vehicle, tracker from report HTML. Also filters audit entries for provider/agent/vehicle fields.
