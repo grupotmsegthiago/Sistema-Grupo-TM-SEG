@@ -184,10 +184,12 @@ const MissionFullReportModal: React.FC<Props> = ({ mission, onClose }) => {
             const statusHistory = history.filter(h => h.field_name === 'status');
 
             let mapEmbedUrl = '';
+            let mapDirectionsLink = '';
             if (mission.origin && mission.destination) {
                 const oEnc = encodeURIComponent(mission.origin);
                 const dEnc = encodeURIComponent(mission.destination);
-                mapEmbedUrl = `https://www.google.com/maps/embed/v1/directions?key=${MAPS_API_KEY}&origin=${oEnc}&destination=${dEnc}&mode=driving`;
+                mapEmbedUrl = `https://www.google.com/maps?saddr=${oEnc}&daddr=${dEnc}&output=embed`;
+                mapDirectionsLink = `https://www.google.com/maps/dir/${oEnc}/${dEnc}`;
             }
 
             const timelineHTML = filteredLogs.length === 0
@@ -660,7 +662,10 @@ const MissionFullReportModal: React.FC<Props> = ({ mission, onClose }) => {
             <div class="section-header">MAPA DA OPERAÇÃO</div>
             <div class="map-container">
                 ${mapEmbedUrl
-                    ? `<iframe src="${mapEmbedUrl}" allowfullscreen loading="lazy" referrerpolicy="no-referrer-when-downgrade"></iframe>`
+                    ? `<iframe src="${mapEmbedUrl}" allowfullscreen loading="lazy" referrerpolicy="no-referrer-when-downgrade" style="width:100%;height:450px;border:none;"></iframe>
+                       <div style="padding:8px 16px;text-align:right;background:#F8FAFC;border-top:1px solid #E2E8F0;">
+                           <a href="${mapDirectionsLink}" target="_blank" style="color:#1E40AF;font-size:11px;font-weight:600;text-decoration:none;">📍 Abrir rota completa no Google Maps ↗</a>
+                       </div>`
                     : `<div style="padding:40px;text-align:center;color:#94A3B8;">Sem cidades de origem/destino para exibir o mapa.</div>`
                 }
             </div>
