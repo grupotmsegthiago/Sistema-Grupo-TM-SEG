@@ -547,6 +547,9 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
             const scheduledTime = new Date(m.startTime).getTime();
             if (nowTime > scheduledTime) return Math.max(0, Math.floor((nowTime - scheduledTime) / 60000));
         }
+        if (m.status === MissionStatus.SOLICITED || m.status === MissionStatus.DOCUMENTATION) {
+            return Math.max(0, Math.floor((nowTime - lastUpdateTime) / 60000));
+        }
         return 0; 
     }, []);
 
@@ -562,7 +565,8 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
             const getAgingTier = (m: Mission, delay: number) => {
                 const status = m.status as MissionStatus;
                 const isActive = status === MissionStatus.IN_TRANSIT || status === MissionStatus.ORIGIN;
-                if (!isActive) return 0;
+                const isOverdueScheduled = (status === MissionStatus.SCHEDULED || status === MissionStatus.SOLICITED || status === MissionStatus.DOCUMENTATION) && delay > 0;
+                if (!isActive && !isOverdueScheduled) return 0;
                 if (delay >= 60) return 3;
                 if (delay >= 30) return 2;
                 return 1;
