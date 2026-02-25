@@ -488,7 +488,10 @@ const MissionFullReportModal: React.FC<Props> = ({ mission, onClose }) => {
             }
 
             const hiddenAuditFields = ['cost_value', 'toll_value', 'is_same_os', 'billing_approved', 'revenue_value', 'billing_verified_by'];
-            const filteredHistory = history.filter(h => !hiddenAuditFields.includes(h.field_name));
+            const filteredHistory = history.filter(h => 
+                !hiddenAuditFields.includes(h.field_name) &&
+                (!timelineCutoff || new Date(h.changed_at).getTime() >= timelineCutoff)
+            );
 
             if (filteredHistory.length > 0) {
                 drawSectionHeader('REGISTRO DE ALTERAÇÕES (AUDITORIA)');
