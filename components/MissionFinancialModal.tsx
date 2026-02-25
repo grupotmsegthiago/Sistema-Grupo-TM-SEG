@@ -160,9 +160,14 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
               supabase.from('missions').select('*').eq('id', initialMission.id).single(),
               supabase.from('client_price_tables').select('*').eq('client', clientName),
               supabase.from('provider_cost_tables').select('*'),
-              supabase.from('clients').select('*').eq('name', clientName).single()
+              supabase.from('clients').select('*').ilike('name', clientName || '').single()
           ]);
-          if (clRes.data) setClientData(clRes.data as Client);
+          if (clRes.data) {
+              setClientData(clRes.data as Client);
+          } else if (clientName) {
+              const { data: fuzzy } = await supabase.from('clients').select('*').ilike('name', `%${clientName.split(' ')[0]}%`).limit(1).single();
+              if (fuzzy) setClientData(fuzzy as Client);
+          }
           
           if (mRes.data) {
               const fullMission = { ...initialMission, ...mRes.data };
