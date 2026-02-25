@@ -75,6 +75,19 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
   const [isAddCostModalOpen, setIsAddCostModalOpen] = useState(false);
   const [memoryLoaded, setMemoryLoaded] = useState(false);
   const [tollConfirmed, setTollConfirmed] = useState(false);
+
+  const [editStartKm, setEditStartKm] = useState('');
+  const [editEndKm, setEditEndKm] = useState('');
+  const [editStartTime, setEditStartTime] = useState('');
+  const [editEndTime, setEditEndTime] = useState('');
+  const [isEditingOpsData, setIsEditingOpsData] = useState(false);
+
+  const canEditOpsData = useMemo(() => {
+    try {
+      const u = JSON.parse(localStorage.getItem('userData') || '{}');
+      return u.role === 'Diretoria' || u.role === 'Administrador' || u.permissions?.includes('*');
+    } catch { return false; }
+  }, []);
   
 
   useEffect(() => {
@@ -150,7 +163,15 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
           if (mRes.data) {
               const fullMission = { ...initialMission, ...mRes.data };
               setMission(fullMission);
-              
+
+              setEditStartKm(mRes.data.start_km ? String(mRes.data.start_km) : '');
+              setEditEndKm(mRes.data.end_km ? String(mRes.data.end_km) : '');
+              const st = mRes.data.start_time ? new Date(mRes.data.start_time) : null;
+              const et = mRes.data.end_time ? new Date(mRes.data.end_time) : null;
+              setEditStartTime(st ? `${st.toLocaleDateString('en-CA')}T${st.toLocaleTimeString('pt-BR', { hour:'2-digit', minute:'2-digit' })}` : '');
+              setEditEndTime(et ? `${et.toLocaleDateString('en-CA')}T${et.toLocaleTimeString('pt-BR', { hour:'2-digit', minute:'2-digit' })}` : '');
+              setIsEditingOpsData(false);
+
               if (mRes.data.billing_approved) {
                   const dbToll = mRes.data.toll_value || 0;
                   setTollInput(dbToll.toLocaleString('pt-BR', {minimumFractionDigits: 2}));
@@ -181,6 +202,31 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
           }
       }
       setIsAddCostModalOpen(false);
+  };
+
+  const handleSaveOpsData = async () => {
+      if (!mission) return;
+      setIsUpdating(true);
+      try {
+          const updatePayload: any = {};
+          if (editStartKm) updatePayload.start_km = parseFloat(editStartKm) || null;
+          if (editEndKm) updatePayload.end_km = parseFloat(editEndKm) || null;
+          if (editStartTime) updatePayload.start_time = new Date(editStartTime).toISOString();
+          if (editEndTime) updatePayload.end_time = new Date(editEndTime).toISOString();
+          updatePayload.last_update = new Date().toISOString();
+          updatePayload.updated_by = JSON.parse(localStorage.getItem('userData') || '{}').name;
+
+          const { error } = await supabase.from('missions').update(updatePayload).eq('id', mission.id);
+          if (error) throw error;
+
+          const updated = { ...mission, ...updatePayload, startKm: updatePayload.start_km, endKm: updatePayload.end_km, startTime: updatePayload.start_time, endTime: updatePayload.end_time, lastUpdate: updatePayload.last_update };
+          setMission(updated);
+          setIsEditingOpsData(false);
+          showNotification('Salvo', 'Dados operacionais atualizados com sucesso.', 'success');
+          if (onUpdate) onUpdate();
+      } catch (e: any) {
+          showNotification('Erro', e.message || 'Falha ao salvar dados operacionais.', 'error');
+      } finally { setIsUpdating(false); }
   };
 
   useEffect(() => { if (isOpen) loadData(); }, [isOpen]);
@@ -365,46 +411,97 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
             ) : financialData && (
                 <div className="space-y-6 animate-in slide-in-from-bottom-4 duration-500">
                     
-                    <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm flex flex-wrap gap-6 items-center justify-between">
-                        <div className="flex-1 min-w-[120px]">
-                             <p className={LABEL_CLASS}>KM Real Executado</p>
-                             <p className="text-2xl font-black text-gray-800 font-mono">
-                                 {financialData.realTraveledKm.toFixed(1)} <span className="text-sm text-gray-400">KM</span>
-                             </p>
+                    <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm">
+                        <div className="flex flex-wrap gap-6 items-center justify-between">
+                            <div className="flex-1 min-w-[120px]">
+                                 <p className={LABEL_CLASS}>KM Real Executado</p>
+                                 <p className="text-2xl font-black text-gray-800 font-mono">
+                                     {financialData.realTraveledKm.toFixed(1)} <span className="text-sm text-gray-400">KM</span>
+                                 </p>
+                            </div>
+                            <div className="flex-1 min-w-[120px]">
+                                 <p className={LABEL_CLASS}>KM Previsto (Rota)</p>
+                                 <p className="text-2xl font-bold text-blue-600 font-mono">
+                                     {safeNumber(mission.totalDistance).toFixed(1)} <span className="text-sm text-blue-300">KM</span>
+                                 </p>
+                            </div>
+                            <div className="flex-1 min-w-[120px]">
+                                 <p className={LABEL_CLASS}>Tempo de Operação</p>
+                                 <p className="text-2xl font-black text-gray-800 font-mono">
+                                     {financialData.durationHours.toFixed(2)} <span className="text-sm text-gray-400">H</span>
+                                 </p>
+                                 <span className="text-[8px] text-gray-400 font-bold uppercase mt-1 block">Início: {financialData.effectiveStartLabel}</span>
+                            </div>
+                            <div className="flex-1 min-w-[120px]">
+                                 <p className={LABEL_CLASS}>Equipe Alocada</p>
+                                 <div className="flex items-center gap-2">
+                                    <span className={`text-sm font-black px-2 py-1 rounded w-fit uppercase ${financialData.providerMult === 2 ? 'bg-orange-100 text-orange-700' : 'bg-indigo-50 text-indigo-700'}`}>
+                                        {financialData.agentCount > 1 ? `${financialData.agentCount} AGENTES` : '1 AGENTE'}
+                                        {financialData.providerMult === 2 && ' (x2)'}
+                                    </span>
+                                    {financialData.agentCount > 1 && <Users size={16} className="text-orange-600"/>}
+                                 </div>
+                            </div>
+                            <div className="flex-1 min-w-[120px]">
+                                 <p className={LABEL_CLASS}>Pedágio / Despesas</p>
+                                 <p className="text-2xl font-black text-red-600 font-mono">
+                                     {formatCurrency(financialData.tollValue)}
+                                 </p>
+                                 <span className="text-[8px] text-gray-400 font-bold uppercase mt-1 block">{tollSource}</span>
+                            </div>
+                            <div className="flex-1 min-w-[120px] text-right">
+                                 <p className={LABEL_CLASS}>Status da OS</p>
+                                 <p className="text-lg font-bold text-gray-600 uppercase">{mission.status}</p>
+                            </div>
                         </div>
-                        <div className="flex-1 min-w-[120px]">
-                             <p className={LABEL_CLASS}>KM Previsto (Rota)</p>
-                             <p className="text-2xl font-bold text-blue-600 font-mono">
-                                 {safeNumber(mission.totalDistance).toFixed(1)} <span className="text-sm text-blue-300">KM</span>
-                             </p>
-                        </div>
-                        <div className="flex-1 min-w-[120px]">
-                             <p className={LABEL_CLASS}>Tempo de Operação</p>
-                             <p className="text-2xl font-black text-gray-800 font-mono">
-                                 {financialData.durationHours.toFixed(2)} <span className="text-sm text-gray-400">H</span>
-                             </p>
-                             <span className="text-[8px] text-gray-400 font-bold uppercase mt-1 block">Início: {financialData.effectiveStartLabel}</span>
-                        </div>
-                        <div className="flex-1 min-w-[120px]">
-                             <p className={LABEL_CLASS}>Equipe Alocada</p>
-                             <div className="flex items-center gap-2">
-                                <span className={`text-sm font-black px-2 py-1 rounded w-fit uppercase ${financialData.providerMult === 2 ? 'bg-orange-100 text-orange-700' : 'bg-indigo-50 text-indigo-700'}`}>
-                                    {financialData.agentCount > 1 ? `${financialData.agentCount} AGENTES` : '1 AGENTE'}
-                                    {financialData.providerMult === 2 && ' (x2)'}
-                                </span>
-                                {financialData.agentCount > 1 && <Users size={16} className="text-orange-600"/>}
-                             </div>
-                        </div>
-                        <div className="flex-1 min-w-[120px]">
-                             <p className={LABEL_CLASS}>Pedágio / Despesas</p>
-                             <p className="text-2xl font-black text-red-600 font-mono">
-                                 {formatCurrency(financialData.tollValue)}
-                             </p>
-                             <span className="text-[8px] text-gray-400 font-bold uppercase mt-1 block">{tollSource}</span>
-                        </div>
-                        <div className="flex-1 min-w-[120px] text-right">
-                             <p className={LABEL_CLASS}>Status da OS</p>
-                             <p className="text-lg font-bold text-gray-600 uppercase">{mission.status}</p>
+
+                        <div className="mt-4 pt-4 border-t border-gray-100">
+                            <div className="flex items-center justify-between mb-3">
+                                <p className="text-[10px] font-black text-gray-500 uppercase tracking-widest flex items-center gap-1.5"><MapPin size={12}/> Dados Operacionais</p>
+                                {canEditOpsData && !isEditingOpsData && (
+                                    <button onClick={() => setIsEditingOpsData(true)} className="flex items-center gap-1 px-2 py-1 text-[9px] font-black text-indigo-600 bg-indigo-50 rounded-lg hover:bg-indigo-100 uppercase tracking-wider transition-all" data-testid="button-edit-ops-data"><Edit2 size={10}/> Editar</button>
+                                )}
+                                {isEditingOpsData && (
+                                    <div className="flex gap-2">
+                                        <button onClick={() => setIsEditingOpsData(false)} className="px-2 py-1 text-[9px] font-black text-gray-500 bg-gray-100 rounded-lg hover:bg-gray-200 uppercase tracking-wider">Cancelar</button>
+                                        <button onClick={handleSaveOpsData} disabled={isUpdating} className="flex items-center gap-1 px-3 py-1 text-[9px] font-black text-white bg-green-600 rounded-lg hover:bg-green-700 uppercase tracking-wider disabled:opacity-50" data-testid="button-save-ops-data">{isUpdating ? <Loader2 size={10} className="animate-spin"/> : <Save size={10}/>} Salvar</button>
+                                    </div>
+                                )}
+                            </div>
+                            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                                <div>
+                                    <p className="text-[9px] font-bold text-gray-400 uppercase mb-1">Hora Inicial</p>
+                                    {isEditingOpsData ? (
+                                        <input type="datetime-local" value={editStartTime} onChange={e => setEditStartTime(e.target.value)} className="w-full text-xs font-bold text-gray-700 border border-gray-300 rounded-lg px-2 py-1.5 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none" data-testid="input-start-time" />
+                                    ) : (
+                                        <p className="text-sm font-bold text-gray-700 font-mono">{mission.startTime ? new Date(mission.startTime).toLocaleString('pt-BR', { day:'2-digit', month:'2-digit', year:'2-digit', hour:'2-digit', minute:'2-digit' }) : '---'}</p>
+                                    )}
+                                </div>
+                                <div>
+                                    <p className="text-[9px] font-bold text-gray-400 uppercase mb-1">KM Inicial</p>
+                                    {isEditingOpsData ? (
+                                        <input type="number" step="0.1" value={editStartKm} onChange={e => setEditStartKm(e.target.value)} placeholder="0" className="w-full text-xs font-bold text-gray-700 border border-gray-300 rounded-lg px-2 py-1.5 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none" data-testid="input-start-km" />
+                                    ) : (
+                                        <p className="text-sm font-bold text-gray-700 font-mono">{mission.startKm ? `${safeNumber(mission.startKm).toLocaleString('pt-BR')} km` : '---'}</p>
+                                    )}
+                                </div>
+                                <div>
+                                    <p className="text-[9px] font-bold text-gray-400 uppercase mb-1">Hora Final</p>
+                                    {isEditingOpsData ? (
+                                        <input type="datetime-local" value={editEndTime} onChange={e => setEditEndTime(e.target.value)} className="w-full text-xs font-bold text-gray-700 border border-gray-300 rounded-lg px-2 py-1.5 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none" data-testid="input-end-time" />
+                                    ) : (
+                                        <p className="text-sm font-bold text-gray-700 font-mono">{mission.endTime ? new Date(mission.endTime).toLocaleString('pt-BR', { day:'2-digit', month:'2-digit', year:'2-digit', hour:'2-digit', minute:'2-digit' }) : '---'}</p>
+                                    )}
+                                </div>
+                                <div>
+                                    <p className="text-[9px] font-bold text-gray-400 uppercase mb-1">KM Final</p>
+                                    {isEditingOpsData ? (
+                                        <input type="number" step="0.1" value={editEndKm} onChange={e => setEditEndKm(e.target.value)} placeholder="0" className="w-full text-xs font-bold text-gray-700 border border-gray-300 rounded-lg px-2 py-1.5 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none" data-testid="input-end-km" />
+                                    ) : (
+                                        <p className="text-sm font-bold text-gray-700 font-mono">{mission.endKm ? `${safeNumber(mission.endKm).toLocaleString('pt-BR')} km` : '---'}</p>
+                                    )}
+                                </div>
+                            </div>
                         </div>
                     </div>
 
