@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
-import { Mission, ClientPriceTable, ProviderCostTable, MissionStatus } from '../types';
+import { Mission, ClientPriceTable, ProviderCostTable, MissionStatus, Client } from '../types';
 import { supabase } from '../lib/supabase';
 import { useNotification } from '../lib/NotificationContext';
 import { calculateMissionFinancials } from '../lib/financialUtils';
@@ -48,6 +48,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
   const [mission, setMission] = useState<Mission | null>(initialMission);
   const [clientTables, setClientTables] = useState<ClientPriceTable[]>([]);
   const [providerTables, setProviderTables] = useState<ProviderCostTable[]>([]);
+  const [clientData, setClientData] = useState<Client | undefined>(undefined);
   const [isLoading, setIsLoading] = useState(true);
   const [isUpdating, setIsUpdating] = useState(false);
   const [currentTime, setCurrentTime] = useState(new Date());
@@ -154,11 +155,14 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
       if (!initialMission?.id) return;
       setIsLoading(true);
       try {
-          const [mRes, ctRes, ptRes] = await Promise.all([
+          const clientName = initialMission.originalClientName || initialMission.client;
+          const [mRes, ctRes, ptRes, clRes] = await Promise.all([
               supabase.from('missions').select('*').eq('id', initialMission.id).single(),
-              supabase.from('client_price_tables').select('*').eq('client', initialMission.originalClientName || initialMission.client),
-              supabase.from('provider_cost_tables').select('*')
+              supabase.from('client_price_tables').select('*').eq('client', clientName),
+              supabase.from('provider_cost_tables').select('*'),
+              supabase.from('clients').select('*').eq('name', clientName).single()
           ]);
+          if (clRes.data) setClientData(clRes.data as Client);
           
           if (mRes.data) {
               const fullMission = { ...initialMission, ...mRes.data };
@@ -236,7 +240,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
       const currentToll = parseNumber(tollInput);
       const missionWithToll = { ...mission, toll_value: currentToll };
 
-      return calculateMissionFinancials(missionWithToll, clientTables, providerTables, undefined, currentTime, {
+      return calculateMissionFinancials(missionWithToll, clientTables, providerTables, clientData, currentTime, {
           clientTableId: manualClientTableId || undefined,
           providerTableId: manualProviderTableId || undefined,
           forceIblFee: iblEnabled,
@@ -247,7 +251,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
           customClientBase: customClientBase ? parseNumber(customClientBase) : undefined,
           customProviderBase: customProviderBase ? parseNumber(customProviderBase) : undefined
       });
-  }, [mission, clientTables, providerTables, currentTime, manualClientTableId, manualProviderTableId, iblEnabled, tollInput, customProviderKm, customProviderHour, customClientKm, customClientHour, customClientBase, customProviderBase]);
+  }, [mission, clientTables, providerTables, clientData, currentTime, manualClientTableId, manualProviderTableId, iblEnabled, tollInput, customProviderKm, customProviderHour, customClientKm, customClientHour, customClientBase, customProviderBase]);
 
     useEffect(() => {
       if (financialData && mission) {

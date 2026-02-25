@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { supabase } from '../lib/supabase';
 import { Target, Loader2, Trophy, Zap, Clock } from 'lucide-react';
 import { calculateMissionFinancials } from '../lib/financialUtils';
-import { Mission, ClientPriceTable, ProviderCostTable, MissionStatus } from '../types';
+import { Mission, ClientPriceTable, ProviderCostTable, MissionStatus, Client } from '../types';
 
 const DAILY_GOAL = 35000.00;
 
@@ -22,6 +22,7 @@ const DailyGoalThermometer: React.FC<Props> = ({ viewPeriod = 'TODAY', customSta
     const [userRole, setUserRole] = useState<string>('');
     const [priceTables, setPriceTables] = useState<ClientPriceTable[]>([]);
     const [providerTables, setProviderTables] = useState<ProviderCostTable[]>([]);
+    const [clientsData, setClientsData] = useState<Client[]>([]);
     const [currentTime, setCurrentTime] = useState(new Date());
 
     useEffect(() => {
@@ -56,12 +57,14 @@ const DailyGoalThermometer: React.FC<Props> = ({ viewPeriod = 'TODAY', customSta
             }
 
             if (priceTables.length === 0) {
-                const [pTablesRes, prTablesRes] = await Promise.all([
+                const [pTablesRes, prTablesRes, clRes] = await Promise.all([
                     supabase.from('client_price_tables').select('*'),
-                    supabase.from('provider_cost_tables').select('*')
+                    supabase.from('provider_cost_tables').select('*'),
+                    supabase.from('clients').select('id,name,full_extra_hour_after_16_min')
                 ]);
                 if (pTablesRes.data) setPriceTables(pTablesRes.data as any);
                 if (prTablesRes.data) setProviderTables(prTablesRes.data as any);
+                if (clRes.data) setClientsData(clRes.data as Client[]);
             }
 
             const { data, error } = await supabase
@@ -120,17 +123,19 @@ const DailyGoalThermometer: React.FC<Props> = ({ viewPeriod = 'TODAY', customSta
                 startTime: m.start_time,
                 endTime: m.end_time
             };
+            const clientName = (m.originalClientName || m.client || '').trim();
+            const matchedClient = clientsData.find(c => c.name === clientName);
             const financials = calculateMissionFinancials(
                 missionObj, 
                 priceTables, 
                 providerTables, 
-                undefined, 
+                matchedClient, 
                 currentTime 
             );
             return acc + (financials.client.total || 0);
 
         }, 0);
-    }, [missions, priceTables, providerTables, currentTime]);
+    }, [missions, priceTables, providerTables, clientsData, currentTime]);
 
     const stats = useMemo(() => {
         const percentage = Math.min(100, (currentRevenue / DAILY_GOAL) * 100);
