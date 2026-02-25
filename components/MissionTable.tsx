@@ -1041,7 +1041,7 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
   
         {!isRestrictedClientView && showAnalyticsDash && (
             <ExecutiveDashboard 
-                missions={analyticsMissions} 
+                missions={allMissions} 
                 isDirector={isDirector} 
                 clientTables={clientTables} 
                 providerTables={providerTables} 
