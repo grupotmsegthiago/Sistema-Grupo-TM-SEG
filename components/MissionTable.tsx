@@ -1115,6 +1115,7 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
                     <Search size={18} className="absolute left-3.5 top-3 text-gray-400" />
                 </div>
           
+                {!isRestrictedClientView && (
                 <div className="flex items-center gap-2">
                     {(isDanielPinto || isDirector) && (
                         <button 
@@ -1149,6 +1150,7 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
                         </button>
                     )}
                 </div>
+                )}
             </div>
             <div className="flex items-center gap-2 text-xs text-gray-500"><span className="hidden md:inline">Filtrados:</span><span className="font-bold text-gray-800 bg-gray-200 px-2 py-1 rounded">{filteredMissions.length}</span></div></div>
   
