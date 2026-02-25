@@ -21,6 +21,7 @@ import MissionHistoryModal from './MissionHistoryModal';
 import MissionFinancialModal from './MissionFinancialModal';
 import MissionFullReportModal from './MissionFullReportModal';
 import DailyGoalThermometer from './DailyGoalThermometer';
+import ExecutiveDashboard from './ExecutiveDashboard';
 
 const LABEL_CLASS = "text-[10px] font-black text-gray-400 uppercase mb-1.5 block tracking-widest";
 
@@ -172,19 +173,18 @@ const AnalyticsDashboard: React.FC<AnalyticsDashboardProps> = ({ missions, isDir
 
     const financials = useMemo(() => {
         return missions.reduce((acc, m) => {
-            const isTerminal = [MissionStatus.COMPLETED, MissionStatus.CANCELLED, MissionStatus.REFUSED].includes(m.status as MissionStatus);
-            // HIERARQUIA DE VALOR: Prioridade para valor auditado (billing_approved) OU status terminal
+            if (m.status === MissionStatus.REFUSED) return acc;
+
+            const isTerminal = [MissionStatus.COMPLETED, MissionStatus.CANCELLED].includes(m.status as MissionStatus);
             const isAudited = m.billing_approved;
             
             let rev = 0;
             let cost = 0;
 
             if (isTerminal || isAudited) {
-                // Se concluída/cancelada OU auditada, usa valor gravado no banco (verdade absoluta)
                 rev = (m.revenue_value || 0) + (m.toll_value || 0);
                 cost = (m.cost_value || 0) + (m.toll_value || 0);
             } else {
-                // Se ativa e não auditada, usa projeção em tempo real
                 const client = clientsData.find(c => c.name === m.client);
                 const projected = calculateMissionFinancials(m, clientTables, providerTables, client, currentTime);
                 rev = projected.client.total;
@@ -1040,9 +1040,9 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
         </div>
   
         {!isRestrictedClientView && showAnalyticsDash && (
-            <AnalyticsDashboard 
+            <ExecutiveDashboard 
                 missions={analyticsMissions} 
-                isDirector = {isDirector} 
+                isDirector={isDirector} 
                 clientTables={clientTables} 
                 providerTables={providerTables} 
                 clientsData={clientsData}

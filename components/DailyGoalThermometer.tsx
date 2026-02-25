@@ -102,7 +102,9 @@ const DailyGoalThermometer: React.FC<Props> = ({ viewPeriod = 'TODAY', customSta
 
     const currentRevenue = useMemo(() => {
         return missions.reduce((acc, m) => {
-            const isTerminal = [MissionStatus.COMPLETED, MissionStatus.CANCELLED, MissionStatus.REFUSED].includes(m.status as MissionStatus);
+            if (m.status === MissionStatus.REFUSED) return acc;
+
+            const isTerminal = [MissionStatus.COMPLETED, MissionStatus.CANCELLED].includes(m.status as MissionStatus);
             const isAudited = m.billing_approved;
             const hasBeenVerified = !!m.billing_verified_by;
 

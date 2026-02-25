@@ -105,11 +105,29 @@ Preferred communication style: Simple, everyday language.
 - **Toll Calculator API** (`calcularpedagio.com.br`) — Toll cost calculation for routes. API key in `constants.ts`.
 - **Z-API (WhatsApp)** — WhatsApp messaging integration. Instance ID and token in `constants.ts`.
 
+### Executive Dashboard (`ExecutiveDashboard.tsx`)
+- **Component:** `components/ExecutiveDashboard.tsx` — Replaces the old `AnalyticsDashboard` in MissionTable
+- **Charts (Recharts):** 10 professional charts:
+  1. Missões por Dia (BarChart) — daily mission count for current month
+  2. Faturamento vs Custo vs Lucro (ComposedChart) — revenue, cost, profit bars+line
+  3. Receita Acumulada (AreaChart) — cumulative daily revenue
+  4. Distribuição por Status (PieChart) — mission status breakdown
+  5. Top Clientes por Volume (horizontal BarChart) — top 7 clients by mission count
+  6. Top Clientes por Faturamento (horizontal BarChart) — top 7 by revenue (R$)
+  7. Mix de Operação (PieChart) — Caracterizada vs Velada vs Pronta Resposta
+  8. Custo por Fornecedor (horizontal BarChart) — provider cost ranking
+  9. Margem de Lucro por Cliente (horizontal BarChart) — profit margin % per client
+  10. Eficiência Operacional (PieChart) — success rate breakdown
+- **KPI Cards:** Volume total, em trânsito, canceladas, eficiência, faturamento, custo, lucro, lucratividade
+- **Access Control:** Financial charts (revenue, cost, profit, margins) only visible to `isDirector` users
+- **META Calculation:** REFUSED missions are excluded from all revenue calculations; CANCELLED missions are included
+
 ### Key NPM Packages
 - `react`, `react-dom` — UI framework
 - `@supabase/supabase-js` — Supabase client
 - `@google/genai` — Gemini AI SDK
 - `@react-google-maps/api` — Google Maps React wrapper
+- `recharts` — Professional charting library for executive dashboard
 - `lucide-react` — Icon library
 - `html2canvas` + `jspdf` — PDF generation
 - `express` — Backend server
