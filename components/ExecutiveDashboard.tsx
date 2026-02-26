@@ -98,6 +98,73 @@ const ExecutiveDashboard: React.FC<Props> = ({ missions, isDirector, clientTable
         setLastUpdate(new Date());
     }, []);
 
+    const filteredMissions = useMemo(() => {
+        const [start, end] = getDateRange(period, customStart, customEnd);
+        return missions.filter(m => {
+            const d = new Date(m.startTime || m.createdAt);
+            return d >= start && d <= end;
+        });
+    }, [missions, period, customStart, customEnd, refreshKey]);
+
+    const missionFinancials = useMemo(() => {
+        return filteredMissions.map(m => {
+            if (m.status === MissionStatus.REFUSED) return { ...m, rev: 0, cost: 0, profit: 0 };
+
+            const isAudited = m.billing_approved;
+            const hasBeenVerified = !!m.billing_verified_by;
+            const hasStoredRevenue = (m.revenue_value != null && m.revenue_value > 0);
+            const hasStoredCost = (m.cost_value != null && m.cost_value > 0);
+
+            if ((isAudited || hasBeenVerified) && hasStoredRevenue) {
+                const rev = (m.revenue_value || 0) + (m.toll_value || 0);
+                const cost = (m.cost_value || 0) + (m.toll_value || 0);
+                return { ...m, rev, cost, profit: rev - cost };
+            }
+
+            const hasStoredRevenueAny = (m.revenue_value != null && m.revenue_value > 0);
+            if (hasStoredRevenueAny) {
+                const rev = (m.revenue_value || 0) + (m.toll_value || 0);
+                const cost = (m.cost_value || 0) + (m.toll_value || 0);
+                return { ...m, rev, cost, profit: rev - cost };
+            }
+
+            const terminalStatuses = [MissionStatus.COMPLETED, MissionStatus.CANCELLED];
+            const isTerminal = terminalStatuses.includes(m.status as MissionStatus);
+            const hasKm = ((m.startKm || m.start_km) > 0 && (m.endKm || m.end_km) > 0);
+            const hasTime = !!(m.startTime || m.start_time) && !!(m.endTime || m.end_time);
+
+            if (!isTerminal && !hasKm && !hasTime) {
+                const baseFee = m.toll_value || 0;
+                return { ...m, rev: baseFee, cost: baseFee, profit: 0 };
+            }
+
+            const missionObj: Mission = {
+                ...m,
+                startKm: m.startKm ?? m.start_km,
+                endKm: m.endKm ?? m.end_km,
+                startTime: m.startTime ?? m.start_time,
+                endTime: m.endTime ?? m.end_time
+            };
+            const clientName = (m.originalClientName || m.client || '').trim();
+            const matchedClient = clientsData.find(c => c.name === clientName);
+            const financials = calculateMissionFinancials(
+                missionObj,
+                clientTables,
+                providerTables,
+                matchedClient,
+                new Date()
+            );
+            let rev = financials.client.total || 0;
+            let cost = financials.provider.total || 0;
+
+            const MAX_SINGLE_MISSION = 50000;
+            if (rev > MAX_SINGLE_MISSION) rev = 0;
+            if (cost > MAX_SINGLE_MISSION) cost = 0;
+
+            return { ...m, rev, cost, profit: rev - cost, anomaly: (rev > 15000 || cost > 15000) };
+        });
+    }, [filteredMissions, clientTables, providerTables, clientsData, refreshKey]);
+
     const parseExcelValue = (val: any): number => {
         if (val == null) return 0;
         if (typeof val === 'number') return val;
@@ -226,73 +293,6 @@ const ExecutiveDashboard: React.FC<Props> = ({ missions, isDirector, clientTable
             if (fileInputRef.current) fileInputRef.current.value = '';
         }
     }, [missionFinancials]);
-
-    const filteredMissions = useMemo(() => {
-        const [start, end] = getDateRange(period, customStart, customEnd);
-        return missions.filter(m => {
-            const d = new Date(m.startTime || m.createdAt);
-            return d >= start && d <= end;
-        });
-    }, [missions, period, customStart, customEnd, refreshKey]);
-
-    const missionFinancials = useMemo(() => {
-        return filteredMissions.map(m => {
-            if (m.status === MissionStatus.REFUSED) return { ...m, rev: 0, cost: 0, profit: 0 };
-
-            const isAudited = m.billing_approved;
-            const hasBeenVerified = !!m.billing_verified_by;
-            const hasStoredRevenue = (m.revenue_value != null && m.revenue_value > 0);
-            const hasStoredCost = (m.cost_value != null && m.cost_value > 0);
-
-            if ((isAudited || hasBeenVerified) && hasStoredRevenue) {
-                const rev = (m.revenue_value || 0) + (m.toll_value || 0);
-                const cost = (m.cost_value || 0) + (m.toll_value || 0);
-                return { ...m, rev, cost, profit: rev - cost };
-            }
-
-            const hasStoredRevenueAny = (m.revenue_value != null && m.revenue_value > 0);
-            if (hasStoredRevenueAny) {
-                const rev = (m.revenue_value || 0) + (m.toll_value || 0);
-                const cost = (m.cost_value || 0) + (m.toll_value || 0);
-                return { ...m, rev, cost, profit: rev - cost };
-            }
-
-            const terminalStatuses = [MissionStatus.COMPLETED, MissionStatus.CANCELLED];
-            const isTerminal = terminalStatuses.includes(m.status as MissionStatus);
-            const hasKm = ((m.startKm || m.start_km) > 0 && (m.endKm || m.end_km) > 0);
-            const hasTime = !!(m.startTime || m.start_time) && !!(m.endTime || m.end_time);
-
-            if (!isTerminal && !hasKm && !hasTime) {
-                const baseFee = m.toll_value || 0;
-                return { ...m, rev: baseFee, cost: baseFee, profit: 0 };
-            }
-
-            const missionObj: Mission = {
-                ...m,
-                startKm: m.startKm ?? m.start_km,
-                endKm: m.endKm ?? m.end_km,
-                startTime: m.startTime ?? m.start_time,
-                endTime: m.endTime ?? m.end_time
-            };
-            const clientName = (m.originalClientName || m.client || '').trim();
-            const matchedClient = clientsData.find(c => c.name === clientName);
-            const financials = calculateMissionFinancials(
-                missionObj,
-                clientTables,
-                providerTables,
-                matchedClient,
-                new Date()
-            );
-            let rev = financials.client.total || 0;
-            let cost = financials.provider.total || 0;
-
-            const MAX_SINGLE_MISSION = 50000;
-            if (rev > MAX_SINGLE_MISSION) rev = 0;
-            if (cost > MAX_SINGLE_MISSION) cost = 0;
-
-            return { ...m, rev, cost, profit: rev - cost, anomaly: (rev > 15000 || cost > 15000) };
-        });
-    }, [filteredMissions, clientTables, providerTables, clientsData, refreshKey]);
 
     const totals = useMemo(() => {
         const valid = missionFinancials.filter(m => m.status !== MissionStatus.REFUSED);
