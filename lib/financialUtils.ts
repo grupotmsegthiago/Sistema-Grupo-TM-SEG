@@ -398,7 +398,7 @@ export const calculateMissionFinancials = (
             missionTypeKeyword,
             destCity,
             missionRouteCode,
-            undefined,
+            isSpecialProvider ? { count: agentCount, isSpecial: true } : undefined,
             originUF,
             mission.origin || ''
         );
