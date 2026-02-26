@@ -184,13 +184,13 @@ const ExecutiveDashboard: React.FC<Props> = ({ missions, isDirector, clientTable
                 const issues: string[] = [];
                 if (m.rev > REVENUE_ALERT) issues.push(`Receita alta: ${fmtBRL(m.rev)}`);
                 if (m.cost > COST_ALERT) issues.push(`Custo alto: ${fmtBRL(m.cost)}`);
-                if (m.rev > 0 && m.cost > 0) {
+                if (m.rev > 0 && m.cost > 0 && !m.is_same_os) {
                     const mg = ((m.rev - m.cost) / m.rev) * 100;
                     if (mg < MARGIN_ALERT_LOW) issues.push(`Margem negativa: ${mg.toFixed(1)}%`);
                     if (mg > MARGIN_ALERT_HIGH) issues.push(`Margem suspeita: ${mg.toFixed(1)}%`);
                 }
                 if (m.rev === 0 && m.status === MissionStatus.COMPLETED && !m.billing_approved) issues.push('Concluída sem valor');
-                if (m.rev > 0 && m.cost === 0 && m.status === MissionStatus.COMPLETED) issues.push('Sem custo registrado');
+                if (m.rev > 0 && m.cost === 0 && m.status === MissionStatus.COMPLETED && !m.is_same_os) issues.push('Sem custo registrado');
 
                 const hasKm = ((m.startKm || (m as any).start_km) > 0 && (m.endKm || (m as any).end_km) > 0);
                 const km = hasKm ? ((m.endKm || (m as any).end_km) - (m.startKm || (m as any).start_km)) : 0;
