@@ -3,7 +3,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../lib/supabase';
 import { Mission, Client, ClientPriceTable, ProviderCostTable } from '../types';
 import { FileText, Search, Printer, Loader2 } from 'lucide-react';
-import { calculateMissionFinancials } from '../lib/financialUtils';
+import { calculateMissionFinancials, extractCityFromAddress } from '../lib/financialUtils';
 
 const ClientBillingReport: React.FC = () => {
     const [clients, setClients] = useState<Client[]>([]);
@@ -157,6 +157,12 @@ const ClientBillingReport: React.FC = () => {
 
             const cargoPlate = m._clientVehicle?.plate || '-';
 
+            const cidadeOrigem = extractCityFromAddress(m.origin || '');
+            const cidadeDestino = extractCityFromAddress(m.destination || '');
+            const refCidades = cidadeOrigem && cidadeDestino
+                ? `${cidadeOrigem} X ${cidadeDestino}`
+                : cidadeOrigem || cidadeDestino || m.region || '-';
+
             return {
                 id: (m.id || '').replace('GTM-', ''),
                 route: usedTable?.route_name || route,
@@ -170,7 +176,7 @@ const ClientBillingReport: React.FC = () => {
                 status: 'CONCLUÍDO',
                 startDate: fmtDate(m.start_time),
                 startTime: fmtTime(m.start_time),
-                region: m.region || '-',
+                region: refCidades,
                 viatura: m.company_vehicle?.plate || m.vehicle_id || '-',
                 cargoPlate,
                 endDate: fmtDate(m.end_time),
@@ -322,7 +328,7 @@ const ClientBillingReport: React.FC = () => {
                                 <col style={{ width: '50px' }} />
                                 <col style={{ width: '50px' }} />
                                 <col style={{ width: '38px' }} />
-                                <col style={{ width: '60px' }} />
+                                <col style={{ width: '110px' }} />
                                 <col style={{ width: '55px' }} />
                                 <col style={{ width: '55px' }} />
                                 <col style={{ width: '50px' }} />
@@ -416,14 +422,14 @@ const ClientBillingReport: React.FC = () => {
                                             <td style={{ ...cellStyle, backgroundColor: bgHr }}>{r.timeEnd}</td>
                                             <td style={{ ...cellBold, backgroundColor: bgHr }}>{r.timeTotal}</td>
                                             <td style={{ ...cellStyle, backgroundColor: bgKmExc }}>{r.kmExtraQtd > 0 ? fmtNum(r.kmExtraQtd) : '-'}</td>
-                                            <td style={{ ...cellRight, backgroundColor: bgKmExc }}>{r.kmExtraQtd > 0 ? fmtBRL(r.kmExtraUnit) : '-'}</td>
-                                            <td style={{ ...cellRight, backgroundColor: bgKmExc }}>{r.kmExtraTotal > 0 ? fmtBRL(r.kmExtraTotal) : 'R$ 0,00'}</td>
+                                            <td style={{ ...cellStyle, backgroundColor: bgKmExc }}>{r.kmExtraQtd > 0 ? fmtBRL(r.kmExtraUnit) : '-'}</td>
+                                            <td style={{ ...cellStyle, backgroundColor: bgKmExc }}>{r.kmExtraTotal > 0 ? fmtBRL(r.kmExtraTotal) : 'R$ 0,00'}</td>
                                             <td style={{ ...cellStyle, backgroundColor: bgHrExc }}>{r.hrExtraQtd > 0 ? fmtHHMM(r.hrExtraQtd) : '-'}</td>
-                                            <td style={{ ...cellRight, backgroundColor: bgHrExc }}>{r.hrExtraQtd > 0 ? fmtBRL(r.hrExtraUnit) : '-'}</td>
-                                            <td style={{ ...cellRight, backgroundColor: bgHrExc }}>{r.hrExtraTotal > 0 ? fmtBRL(r.hrExtraTotal) : 'R$ 0,00'}</td>
-                                            <td style={{ ...cellRight, backgroundColor: bgVal }}>{fmtBRL(r.escoltaVal)}</td>
-                                            <td style={{ ...cellRight, backgroundColor: bgVal }}>{r.tollVal > 0 ? fmtBRL(r.tollVal) : 'R$ 0,00'}</td>
-                                            <td style={{ ...cellRight, fontWeight: 900, backgroundColor: bgVal }}>{fmtBRL(r.totalGeral)}</td>
+                                            <td style={{ ...cellStyle, backgroundColor: bgHrExc }}>{r.hrExtraQtd > 0 ? fmtBRL(r.hrExtraUnit) : '-'}</td>
+                                            <td style={{ ...cellStyle, backgroundColor: bgHrExc }}>{r.hrExtraTotal > 0 ? fmtBRL(r.hrExtraTotal) : 'R$ 0,00'}</td>
+                                            <td style={{ ...cellStyle, backgroundColor: bgVal }}>{fmtBRL(r.escoltaVal)}</td>
+                                            <td style={{ ...cellStyle, backgroundColor: bgVal }}>{r.tollVal > 0 ? fmtBRL(r.tollVal) : 'R$ 0,00'}</td>
+                                            <td style={{ ...cellBold, backgroundColor: bgVal }}>{fmtBRL(r.totalGeral)}</td>
                                         </tr>
                                     ))
                                 )}
