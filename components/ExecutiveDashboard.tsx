@@ -183,6 +183,44 @@ const ExecutiveDashboard: React.FC<Props> = ({ missions, isDirector, clientTable
         return str;
     };
 
+    const detectSheetLayout = (ws: XLSX.WorkSheet) => {
+        const range = XLSX.utils.decode_range(ws['!ref'] || 'A1');
+        let headerRow = -1;
+        let osCol = -1;
+        let clienteCol = -1;
+        let revTotalCol = -1;
+        let costTotalCol = -1;
+        let fornecedorCol = -1;
+
+        for (let r = 0; r <= Math.min(20, range.e.r); r++) {
+            for (let c = 0; c <= Math.min(range.e.c, 100); c++) {
+                const cell = ws[XLSX.utils.encode_cell({r, c})];
+                if (!cell) continue;
+                const v = String(cell.v).toUpperCase().trim();
+                if (v === 'Nº' || v === 'N°' || v === 'NR' || v === 'OS') {
+                    if (headerRow === -1 || r === headerRow) {
+                        headerRow = r;
+                        if (osCol === -1) osCol = c;
+                    }
+                }
+            }
+        }
+
+        if (headerRow >= 0) {
+            for (let c = 0; c <= Math.min(range.e.c, 100); c++) {
+                const cell = ws[XLSX.utils.encode_cell({r: headerRow, c})];
+                if (!cell) continue;
+                const v = String(cell.v).toUpperCase().trim();
+                if (v === 'CLIENTE' && clienteCol === -1) clienteCol = c;
+                if (v === 'FORNECEDOR' && fornecedorCol === -1) fornecedorCol = c;
+                if (v === 'VALOR TOTAL' && revTotalCol === -1) revTotalCol = c;
+                if (v === 'TOTAL' && c > 60 && costTotalCol === -1) costTotalCol = c;
+            }
+        }
+
+        return { headerRow, osCol, clienteCol, fornecedorCol, revTotalCol, costTotalCol, maxRow: range.e.r };
+    };
+
     const handleExcelUpload = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
         if (!file) return;
@@ -194,31 +232,61 @@ const ExecutiveDashboard: React.FC<Props> = ({ missions, isDirector, clientTable
             const buffer = await file.arrayBuffer();
             const wb = XLSX.read(buffer, { type: 'array' });
             const ws = wb.Sheets[wb.SheetNames[0]];
-            const rows: any[] = XLSX.utils.sheet_to_json(ws, { defval: '' });
 
-            const osColumn = Object.keys(rows[0] || {}).find(k => {
-                const kn = k.toUpperCase();
-                return kn.includes('OS') || kn.includes('GTM') || kn.includes('MISSÃO') || kn.includes('MISSAO') || kn.includes('NÚMERO') || kn.includes('NUMERO') || kn === 'Nº' || kn === 'N°';
-            }) || Object.keys(rows[0] || {})[0];
+            const layout = detectSheetLayout(ws);
+            const getCell = (r: number, c: number) => {
+                const cell = ws[XLSX.utils.encode_cell({r, c})];
+                return cell ? cell.v : null;
+            };
 
-            const revenueCol = Object.keys(rows[0] || {}).find(k => {
-                const kn = k.toUpperCase();
-                return kn.includes('RECEITA') || kn.includes('FATURAMENTO') || kn.includes('VALOR') || kn.includes('TOTAL') || kn.includes('PREÇO') || kn.includes('PRECO');
-            });
+            let { headerRow, osCol, clienteCol, fornecedorCol, revTotalCol, costTotalCol, maxRow } = layout;
 
-            const costCol = Object.keys(rows[0] || {}).find(k => {
-                const kn = k.toUpperCase();
-                return kn.includes('CUSTO') || kn.includes('PAGAMENTO') || kn.includes('FORNECEDOR');
-            });
+            if (headerRow === -1) {
+                const rows: any[] = XLSX.utils.sheet_to_json(ws, { defval: '' });
+                const keys = Object.keys(rows[0] || {});
+                osCol = 0;
+                const osKey = keys.find(k => { const kn = k.toUpperCase(); return kn.includes('OS') || kn.includes('GTM') || kn === 'Nº'; }) || keys[0];
+                const revKey = keys.find(k => { const kn = k.toUpperCase(); return kn.includes('VALOR TOTAL') || kn.includes('RECEITA') || kn.includes('FATURAMENTO'); });
+                const costKey = keys.find(k => { const kn = k.toUpperCase(); return kn.includes('CUSTO') || kn.includes('PAGAMENTO'); });
+
+                const comparisons: any[] = [];
+                for (const row of rows) {
+                    const osId = extractOsNumber(row[osKey]);
+                    if (!osId) continue;
+                    const excelRev = revKey ? parseExcelValue(row[revKey]) : 0;
+                    const excelCost = costKey ? parseExcelValue(row[costKey]) : 0;
+                    const systemMission = missionFinancials.find(m => {
+                        const sysId = String(m.id || '').toUpperCase().trim();
+                        return sysId === osId || `GTM-${sysId}` === osId || sysId.replace('GTM-', '') === osId.replace('GTM-', '');
+                    });
+                    const sysRev = systemMission?.rev || 0;
+                    const sysCost = systemMission?.cost || 0;
+                    const revDiff = excelRev > 0 ? Math.abs(sysRev - excelRev) : 0;
+                    const costDiff = excelCost > 0 ? Math.abs(sysCost - excelCost) : 0;
+                    const revMatch = excelRev > 0 ? (revDiff / Math.max(excelRev, 1)) < 0.02 : true;
+                    const costMatch = excelCost > 0 ? (costDiff / Math.max(excelCost, 1)) < 0.02 : true;
+                    comparisons.push({ osId, found: !!systemMission, excelRev, excelCost, sysRev, sysCost, revDiff, costDiff, revMatch, costMatch, status: systemMission?.status || 'Não encontrada', client: systemMission?.client || '-' });
+                }
+                comparisons.sort((a, b) => (!a.found ? -1 : !b.found ? 1 : (!a.revMatch||!a.costMatch) ? -1 : (!b.revMatch||!b.costMatch) ? 1 : (b.revDiff+b.costDiff)-(a.revDiff+a.costDiff)));
+                setExcelComparison(comparisons);
+                setShowExcelPanel(true);
+                setIsExcelLoading(false);
+                if (fileInputRef.current) fileInputRef.current.value = '';
+                return;
+            }
 
             const comparisons: any[] = [];
+            for (let r = headerRow + 1; r <= maxRow; r++) {
+                const osRaw = getCell(r, osCol);
+                if (!osRaw || (typeof osRaw !== 'number' && !String(osRaw).match(/\d{3,}/))) continue;
 
-            for (const row of rows) {
-                const osId = extractOsNumber(row[osColumn]);
+                const osId = extractOsNumber(osRaw);
                 if (!osId) continue;
 
-                const excelRev = revenueCol ? parseExcelValue(row[revenueCol]) : 0;
-                const excelCost = costCol ? parseExcelValue(row[costCol]) : 0;
+                const clienteRaw = clienteCol >= 0 ? String(getCell(r, clienteCol) || '') : '';
+                const fornRaw = fornecedorCol >= 0 ? String(getCell(r, fornecedorCol) || '') : '';
+                const excelRev = revTotalCol >= 0 ? parseExcelValue(getCell(r, revTotalCol)) : 0;
+                const excelCost = costTotalCol >= 0 ? parseExcelValue(getCell(r, costTotalCol)) : 0;
 
                 const systemMission = missionFinancials.find(m => {
                     const sysId = String(m.id || '').toUpperCase().trim();
@@ -241,7 +309,8 @@ const ExecutiveDashboard: React.FC<Props> = ({ missions, isDirector, clientTable
                     revDiff, costDiff,
                     revMatch, costMatch,
                     status: systemMission?.status || 'Não encontrada',
-                    client: systemMission?.client || row[Object.keys(row).find(k => k.toUpperCase().includes('CLIENTE')) || ''] || '-'
+                    client: systemMission?.client || clienteRaw || '-',
+                    provider: systemMission?.provider || fornRaw || '-'
                 });
             }
 
@@ -277,7 +346,7 @@ const ExecutiveDashboard: React.FC<Props> = ({ missions, isDirector, clientTable
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({
-                            prompt: `Você é auditor financeiro da TM SEG (escolta armada). Analise as divergências entre a planilha Excel e o sistema. Para cada OS com diferença, explique possíveis causas e recomende ações. Use português e valores em BRL. Seja direto e objetivo.\n\nDivergências encontradas:\n${JSON.stringify(summaryData, null, 2)}\n\nTotal de linhas na planilha: ${comparisons.length}\nTotal com divergência: ${divergences.length}\nTotal não encontradas no sistema: ${comparisons.filter(c => !c.found).length}`,
+                            prompt: `Você é auditor financeiro da TM SEG (escolta armada). Analise as divergências entre a planilha Excel e o sistema de gestão. Para cada OS com diferença significativa, explique possíveis causas (tabela errada, KM divergente, hora arredondada, pedágio diferente) e recomende ações corretivas. Use português e valores em BRL. Seja direto.\n\nDivergências:\n${JSON.stringify(summaryData, null, 2)}\n\nTotal OS na planilha: ${comparisons.length}\nTotal com divergência: ${divergences.length}\nNão encontradas no sistema: ${comparisons.filter(c => !c.found).length}`,
                             stream: false
                         })
                     });
