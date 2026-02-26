@@ -4,6 +4,10 @@ import { storage } from "./storage";
 import { GoogleGenAI } from "@google/genai";
 import { createClient } from "@supabase/supabase-js";
 import pg from "pg";
+import { Resend } from "resend";
+
+const resend = new Resend(process.env.RESEND_API_KEY);
+const verificationCodes = new Map<string, { code: string; expiresAt: number; email: string }>();
 
 const ai = new GoogleGenAI({
   apiKey: process.env.AI_INTEGRATIONS_GEMINI_API_KEY,
@@ -750,6 +754,86 @@ export async function registerRoutes(
     } catch (e: any) {
       res.json([]);
     } finally { pool?.end().catch(() => {}); }
+  });
+
+  app.post("/api/email/send-verification", async (req: Request, res: Response) => {
+    try {
+      const { email, userName } = req.body;
+      if (!email) return res.status(400).json({ error: "E-mail obrigatório" });
+
+      const code = Math.floor(100000 + Math.random() * 900000).toString();
+      const sessionId = `${email}_${Date.now()}`;
+
+      verificationCodes.set(sessionId, {
+        code,
+        expiresAt: Date.now() + 10 * 60 * 1000,
+        email
+      });
+
+      for (const [key, val] of verificationCodes.entries()) {
+        if (val.expiresAt < Date.now()) verificationCodes.delete(key);
+      }
+
+      const { error } = await resend.emails.send({
+        from: "TMSEG Sistema <onboarding@resend.dev>",
+        to: [email],
+        subject: "🔐 Código de Verificação - Grupo TMSEG",
+        html: `
+          <div style="font-family: 'Segoe UI', Tahoma, sans-serif; max-width: 500px; margin: 0 auto; background: #0f172a; border-radius: 16px; overflow: hidden; border: 1px solid #1e293b;">
+            <div style="background: linear-gradient(135deg, #dc2626 0%, #991b1b 100%); padding: 32px 24px; text-align: center;">
+              <h1 style="color: white; margin: 0; font-size: 22px; font-weight: 900; letter-spacing: 2px;">GRUPO TMSEG</h1>
+              <p style="color: #fca5a5; margin: 4px 0 0; font-size: 10px; text-transform: uppercase; letter-spacing: 3px;">Verificação de Segurança</p>
+            </div>
+            <div style="padding: 32px 24px; text-align: center;">
+              <p style="color: #94a3b8; font-size: 14px; margin: 0 0 8px;">Olá <strong style="color: white;">${userName || 'Usuário'}</strong>,</p>
+              <p style="color: #64748b; font-size: 13px; margin: 0 0 24px;">Use o código abaixo para confirmar a criação da sua conta:</p>
+              <div style="background: #1e293b; border: 2px solid #dc2626; border-radius: 12px; padding: 20px; display: inline-block; min-width: 200px;">
+                <span style="font-size: 36px; font-weight: 900; color: #dc2626; letter-spacing: 12px; font-family: 'Courier New', monospace;">${code}</span>
+              </div>
+              <p style="color: #475569; font-size: 11px; margin: 20px 0 0;">Este código expira em <strong style="color: #f59e0b;">10 minutos</strong>.</p>
+              <p style="color: #334155; font-size: 10px; margin: 16px 0 0;">Se você não solicitou este código, ignore este e-mail.</p>
+            </div>
+            <div style="background: #020617; padding: 16px 24px; text-align: center; border-top: 1px solid #1e293b;">
+              <p style="color: #334155; font-size: 9px; margin: 0; text-transform: uppercase; letter-spacing: 2px;">Intermediadora de Escolta Armada e Segurança Patrimonial</p>
+            </div>
+          </div>
+        `
+      });
+
+      if (error) {
+        console.error("Resend error:", error);
+        return res.status(500).json({ error: "Falha ao enviar e-mail de verificação" });
+      }
+
+      res.json({ sessionId, message: "Código enviado com sucesso" });
+    } catch (e: any) {
+      console.error("Email verification error:", e);
+      res.status(500).json({ error: e.message || "Erro interno ao enviar e-mail" });
+    }
+  });
+
+  app.post("/api/email/verify-code", async (req: Request, res: Response) => {
+    try {
+      const { sessionId, code } = req.body;
+      if (!sessionId || !code) return res.status(400).json({ verified: false, error: "Dados incompletos" });
+
+      const session = verificationCodes.get(sessionId);
+      if (!session) return res.status(400).json({ verified: false, error: "Sessão expirada. Solicite um novo código." });
+
+      if (session.expiresAt < Date.now()) {
+        verificationCodes.delete(sessionId);
+        return res.status(400).json({ verified: false, error: "Código expirado. Solicite um novo código." });
+      }
+
+      if (session.code !== code.trim()) {
+        return res.status(400).json({ verified: false, error: "Código incorreto. Tente novamente." });
+      }
+
+      verificationCodes.delete(sessionId);
+      res.json({ verified: true });
+    } catch (e: any) {
+      res.status(500).json({ verified: false, error: e.message });
+    }
   });
 
   return httpServer;

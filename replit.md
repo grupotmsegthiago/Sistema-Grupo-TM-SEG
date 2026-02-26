@@ -49,5 +49,8 @@ Authentication is custom, using a `system_users` table in Supabase. User session
 -   **Rotas Brasil API / calcularpedagio.com.br:** External APIs for toll cost calculation.
 -   **Z-API (WhatsApp):** Integrates WhatsApp messaging capabilities.
 
+### Email Verification (User Creation)
+-   **Resend API:** Used for sending email verification codes during user creation. Flow: fill form → send 6-digit code to email → user confirms code → define strong password → user created. Server routes: `POST /api/email/send-verification`, `POST /api/email/verify-code`. Codes stored in-memory with 10-min expiration. Password requirements: 8+ chars, uppercase, lowercase, number, special character.
+
 ### Deployment
 -   **Vercel:** Used for frontend deployment, configured with SPA rewrites and cache headers.
