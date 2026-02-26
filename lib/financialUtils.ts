@@ -285,17 +285,14 @@ export const calculateMissionFinancials = (
             
             if (agentAware && agentAware.isSpecial) {
                 const isTable02 = tableOp.includes('02 ARMADO') || tableOp.includes('DOIS ARMADO');
-                const isTable01Armado = tableOp.includes('01 ARMADO');
-                const isProntaResposta = tableOp.includes('PRONTA RESPOSTA') && !isTable02 && !isTable01Armado;
+                const isTable01 = tableOp.includes('01 ARMADO') || tableOp.includes('01 PRONTA') || (tableOp.includes('PRONTA RESPOSTA') && !isTable02);
                 
                 if (agentAware.count >= 2) {
                     if (isTable02) { score += 3000; matchType = '02 Agentes (Tabela Dupla)'; }
-                    else if (isProntaResposta) { score -= 2000; }
-                    else if (isTable01Armado) { score -= 1000; }
+                    else if (isTable01) { score -= 2000; }
                 } else {
-                    if (isProntaResposta) { score += 3000; matchType = '01 Agente (Pronta Resposta)'; }
+                    if (isTable01) { score += 3000; matchType = '01 Agente (Pronta Resposta)'; }
                     else if (isTable02) { score -= 2000; }
-                    else if (isTable01Armado) { score -= 1000; }
                 }
             }
             
