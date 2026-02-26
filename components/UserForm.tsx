@@ -73,6 +73,7 @@ const UserForm: React.FC<UserFormProps> = ({ onBack, userType, id }) => {
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [showNewPassword, setShowNewPassword] = useState(false);
+  const [fallbackCode, setFallbackCode] = useState('');
 
   useEffect(() => {
     fetchAuxData();
@@ -178,7 +179,14 @@ const UserForm: React.FC<UserFormProps> = ({ onBack, userType, id }) => {
       setCodeSentTo(formData.email);
       setVerificationStep('code');
       setCountdown(600);
-      showNotification('Código Enviado', `Um código de 6 dígitos foi enviado para ${formData.email}`, 'success');
+
+      if (data.fallbackCode) {
+        setFallbackCode(data.fallbackCode);
+        showNotification('Código Gerado', 'E-mail não pôde ser enviado. O código está exibido na tela.', 'info');
+      } else {
+        setFallbackCode('');
+        showNotification('Código Enviado', `Um código de 6 dígitos foi enviado para ${formData.email}`, 'success');
+      }
     } catch (e: any) {
       showNotification('Erro', e.message || 'Falha ao enviar código de verificação.', 'error');
     } finally {
@@ -226,7 +234,13 @@ const UserForm: React.FC<UserFormProps> = ({ onBack, userType, id }) => {
       setVerificationCode('');
       setCodeError('');
       setCountdown(600);
-      showNotification('Reenviado', 'Novo código enviado.', 'success');
+      if (data.fallbackCode) {
+        setFallbackCode(data.fallbackCode);
+        showNotification('Código Gerado', 'Novo código gerado e exibido na tela.', 'info');
+      } else {
+        setFallbackCode('');
+        showNotification('Reenviado', 'Novo código enviado.', 'success');
+      }
     } catch (e: any) {
       showNotification('Erro', e.message, 'error');
     } finally {
@@ -334,8 +348,20 @@ const UserForm: React.FC<UserFormProps> = ({ onBack, userType, id }) => {
               <Mail size={28} className="text-red-600" />
             </div>
             <h3 className="font-bold text-lg text-gray-900" data-testid="text-verification-title">Confirme seu E-mail</h3>
-            <p className="text-sm text-gray-500 mt-2">Enviamos um código de 6 dígitos para:</p>
-            <p className="text-sm font-bold text-red-600 mt-1" data-testid="text-email-sent-to">{codeSentTo}</p>
+            {fallbackCode ? (
+              <>
+                <p className="text-sm text-gray-500 mt-2">O e-mail não pôde ser enviado. Informe o código abaixo ao novo usuário:</p>
+                <div className="mt-3 bg-red-50 border-2 border-red-200 rounded-xl p-4">
+                  <span className="text-2xl font-mono font-black text-red-600 tracking-[12px]" data-testid="text-fallback-code">{fallbackCode}</span>
+                </div>
+                <p className="text-[10px] text-gray-400 mt-2">Quando o domínio for verificado no Resend, os códigos serão enviados por e-mail automaticamente.</p>
+              </>
+            ) : (
+              <>
+                <p className="text-sm text-gray-500 mt-2">Enviamos um código de 6 dígitos para:</p>
+                <p className="text-sm font-bold text-red-600 mt-1" data-testid="text-email-sent-to">{codeSentTo}</p>
+              </>
+            )}
           </div>
 
           <div>

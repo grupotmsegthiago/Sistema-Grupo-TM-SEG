@@ -802,7 +802,7 @@ export async function registerRoutes(
 
       if (error) {
         console.error("Resend error:", error);
-        return res.status(500).json({ error: "Falha ao enviar e-mail de verificação" });
+        return res.json({ sessionId, message: "E-mail não pôde ser enviado (domínio não verificado no Resend). Use o código exibido na tela.", fallbackCode: code });
       }
 
       res.json({ sessionId, message: "Código enviado com sucesso" });
