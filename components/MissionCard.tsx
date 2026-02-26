@@ -148,7 +148,8 @@ const MissionCardComponent: React.FC<MissionCardProps> = ({
     
     const financials = useMemo(() => {
         if (!isDirector) return null;
-        const client = clientsData.find(c => c.name === mission.client);
+        const clientName = ((mission as any).originalClientName || mission.client || '').trim();
+        const client = clientsData.find(c => c.name === clientName);
         return calculateMissionFinancials(mission, clientTables, providerTables, client, currentTime);
     }, [mission, clientTables, providerTables, clientsData, isDirector, currentTime]);
 
