@@ -101,6 +101,9 @@ const ExecutiveDashboard: React.FC<Props> = ({ missions, isDirector, clientTable
     const filteredMissions = useMemo(() => {
         const [start, end] = getDateRange(period, customStart, customEnd);
         return missions.filter(m => {
+            const activeStatuses = [MissionStatus.IN_TRANSIT, MissionStatus.ORIGIN, MissionStatus.SCHEDULED, MissionStatus.SOLICITED, MissionStatus.DOCUMENTATION];
+            const isActive = activeStatuses.includes(m.status as MissionStatus);
+            if (period === 'TODAY' && isActive) return true;
             const d = new Date(m.startTime || m.createdAt);
             return d >= start && d <= end;
         });
@@ -110,26 +113,24 @@ const ExecutiveDashboard: React.FC<Props> = ({ missions, isDirector, clientTable
         return filteredMissions.map(m => {
             if (m.status === MissionStatus.REFUSED) return { ...m, rev: 0, cost: 0, profit: 0 };
 
+            const terminalStatuses = [MissionStatus.COMPLETED, MissionStatus.CANCELLED];
+            const isTerminal = terminalStatuses.includes(m.status as MissionStatus);
             const isAudited = m.billing_approved;
             const hasBeenVerified = !!m.billing_verified_by;
             const hasStoredRevenue = (m.revenue_value != null && m.revenue_value > 0);
-            const hasStoredCost = (m.cost_value != null && m.cost_value > 0);
 
-            if ((isAudited || hasBeenVerified) && hasStoredRevenue) {
+            if (isTerminal && (isAudited || hasBeenVerified) && hasStoredRevenue) {
                 const rev = (m.revenue_value || 0) + (m.toll_value || 0);
                 const cost = (m.cost_value || 0) + (m.toll_value || 0);
                 return { ...m, rev, cost, profit: rev - cost };
             }
 
-            const hasStoredRevenueAny = (m.revenue_value != null && m.revenue_value > 0);
-            if (hasStoredRevenueAny) {
+            if (isTerminal && hasStoredRevenue) {
                 const rev = (m.revenue_value || 0) + (m.toll_value || 0);
                 const cost = (m.cost_value || 0) + (m.toll_value || 0);
                 return { ...m, rev, cost, profit: rev - cost };
             }
 
-            const terminalStatuses = [MissionStatus.COMPLETED, MissionStatus.CANCELLED];
-            const isTerminal = terminalStatuses.includes(m.status as MissionStatus);
             const hasKm = ((m.startKm || m.start_km) > 0 && (m.endKm || m.end_km) > 0);
             const hasTime = !!(m.startTime || m.start_time) && !!(m.endTime || m.end_time);
 

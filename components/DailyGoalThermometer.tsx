@@ -107,11 +107,13 @@ const DailyGoalThermometer: React.FC<Props> = ({ viewPeriod = 'TODAY', customSta
         return missions.reduce((acc, m) => {
             if (m.status === MissionStatus.REFUSED) return acc;
 
+            const terminalStatuses = [MissionStatus.COMPLETED, MissionStatus.CANCELLED];
+            const isTerminal = terminalStatuses.includes(m.status as MissionStatus);
             const isAudited = m.billing_approved;
             const hasBeenVerified = !!m.billing_verified_by;
             const hasStoredRevenue = (m.revenue_value != null && m.revenue_value > 0);
 
-            if ((isAudited || hasBeenVerified) && hasStoredRevenue) {
+            if (isTerminal && (isAudited || hasBeenVerified) && hasStoredRevenue) {
                  const storedVal = (m.revenue_value || 0) + (m.toll_value || 0);
                  return acc + storedVal;
             }
