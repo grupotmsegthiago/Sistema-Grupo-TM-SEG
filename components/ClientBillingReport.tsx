@@ -165,7 +165,7 @@ const ClientBillingReport: React.FC = () => {
 
             return {
                 id: (m.id || '').replace('GTM-', ''),
-                route: usedTable?.route_name || route,
+                route: refCidades,
                 client: displayClientName,
                 activationFee,
                 franchiseHours,
@@ -176,7 +176,6 @@ const ClientBillingReport: React.FC = () => {
                 status: 'CONCLUÍDO',
                 startDate: fmtDate(m.start_time),
                 startTime: fmtTime(m.start_time),
-                region: refCidades,
                 viatura: m.company_vehicle?.plate || m.vehicle_id || '-',
                 cargoPlate,
                 endDate: fmtDate(m.end_time),
@@ -317,42 +316,41 @@ const ClientBillingReport: React.FC = () => {
                     <div style={{ overflowX: 'auto' }}>
                         <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed' }}>
                             <colgroup>
-                                <col style={{ width: '32px' }} />
-                                <col style={{ width: '100px' }} />
-                                <col style={{ width: '55px' }} />
-                                <col style={{ width: '50px' }} />
-                                <col style={{ width: '38px' }} />
-                                <col style={{ width: '38px' }} />
-                                <col style={{ width: '50px' }} />
-                                <col style={{ width: '45px' }} />
-                                <col style={{ width: '50px' }} />
-                                <col style={{ width: '50px' }} />
-                                <col style={{ width: '38px' }} />
-                                <col style={{ width: '110px' }} />
-                                <col style={{ width: '55px' }} />
-                                <col style={{ width: '55px' }} />
-                                <col style={{ width: '50px' }} />
-                                <col style={{ width: '38px' }} />
+                                <col style={{ width: '34px' }} />
+                                <col style={{ width: '130px' }} />
+                                <col style={{ width: '58px' }} />
+                                <col style={{ width: '46px' }} />
+                                <col style={{ width: '42px' }} />
+                                <col style={{ width: '52px' }} />
+                                <col style={{ width: '52px' }} />
+                                <col style={{ width: '48px' }} />
+                                <col style={{ width: '52px' }} />
+                                <col style={{ width: '52px' }} />
+                                <col style={{ width: '42px' }} />
+                                <col style={{ width: '58px' }} />
+                                <col style={{ width: '58px' }} />
+                                <col style={{ width: '52px' }} />
+                                <col style={{ width: '42px' }} />
+                                <col style={{ width: '48px' }} />
+                                <col style={{ width: '48px' }} />
                                 <col style={{ width: '42px' }} />
                                 <col style={{ width: '42px' }} />
-                                <col style={{ width: '38px' }} />
-                                <col style={{ width: '38px' }} />
-                                <col style={{ width: '38px' }} />
-                                <col style={{ width: '38px' }} />
-                                <col style={{ width: '32px' }} />
-                                <col style={{ width: '50px' }} />
-                                <col style={{ width: '55px' }} />
-                                <col style={{ width: '38px' }} />
-                                <col style={{ width: '50px' }} />
-                                <col style={{ width: '55px' }} />
-                                <col style={{ width: '50px' }} />
-                                <col style={{ width: '50px' }} />
+                                <col style={{ width: '42px' }} />
+                                <col style={{ width: '42px' }} />
+                                <col style={{ width: '34px' }} />
+                                <col style={{ width: '52px' }} />
+                                <col style={{ width: '56px' }} />
+                                <col style={{ width: '42px' }} />
+                                <col style={{ width: '52px' }} />
+                                <col style={{ width: '56px' }} />
+                                <col style={{ width: '56px' }} />
+                                <col style={{ width: '52px' }} />
                                 <col style={{ width: '62px' }} />
                             </colgroup>
                             <thead>
                                 <tr>
                                     <th style={groupHeaderStyle} colSpan={9}>TABELA ACORDADA</th>
-                                    <th style={groupHeaderStyle} colSpan={7}>INFORMAÇÕES DA VIAGEM</th>
+                                    <th style={groupHeaderStyle} colSpan={6}>INFORMAÇÕES DA VIAGEM</th>
                                     <th style={grpKm} colSpan={3}>KILOMETRAGEM</th>
                                     <th style={grpHr} colSpan={3}>HORÁRIOS</th>
                                     <th style={grpKmExc} colSpan={3}>KM EXCEDENTE</th>
@@ -361,7 +359,7 @@ const ClientBillingReport: React.FC = () => {
                                 </tr>
                                 <tr>
                                     <th style={headerStyle}>Nº</th>
-                                    <th style={headerStyle}>ROTA</th>
+                                    <th style={{ ...headerStyle, textAlign: 'left' }}>ROTA</th>
                                     <th style={headerStyle}>VALOR</th>
                                     <th style={headerStyle}>HR FRANQ</th>
                                     <th style={headerStyle}>KM FRANQ</th>
@@ -371,7 +369,6 @@ const ClientBillingReport: React.FC = () => {
                                     <th style={headerStyle}>STATUS</th>
                                     <th style={headerStyle}>DATA INÍCIO</th>
                                     <th style={headerStyle}>HORA INÍCIO</th>
-                                    <th style={headerStyle}>REF.</th>
                                     <th style={headerStyle}>VIATURA</th>
                                     <th style={headerStyle}>VEÍC. ESCOLTADO</th>
                                     <th style={headerStyle}>DATA FIM</th>
@@ -395,22 +392,21 @@ const ClientBillingReport: React.FC = () => {
                             </thead>
                             <tbody>
                                 {rowsData.length === 0 ? (
-                                    <tr><td colSpan={31} style={{ ...cellStyle, padding: '16px', fontSize: '10px', fontWeight: 700, color: '#9ca3af' }}>NENHUMA MISSÃO NO PERÍODO.</td></tr>
+                                    <tr><td colSpan={30} style={{ ...cellStyle, padding: '16px', fontSize: '10px', fontWeight: 700, color: '#9ca3af' }}>NENHUMA MISSÃO NO PERÍODO.</td></tr>
                                 ) : (
                                     rowsData.map((r, i) => (
                                         <tr key={i} style={{ backgroundColor: i % 2 === 0 ? '#fff' : '#f9fafb' }}>
                                             <td style={cellBold}>{r.id}</td>
-                                            <td style={cellStyle} title={r.route}>{r.route}</td>
-                                            <td style={cellRight}>{fmtBRL(r.activationFee)}</td>
+                                            <td style={{ ...cellStyle, textAlign: 'left' }} title={r.route}>{r.route}</td>
+                                            <td style={cellStyle}>{fmtBRL(r.activationFee)}</td>
                                             <td style={cellStyle}>{r.franchiseHoursFmt}</td>
                                             <td style={cellStyle}>{fmtNum(r.franchiseKm)}</td>
-                                            <td style={cellRight}>{fmtBRL(r.unitHr)}</td>
-                                            <td style={cellRight}>{fmtBRL(r.unitKm)}</td>
+                                            <td style={cellStyle}>{fmtBRL(r.unitHr)}</td>
+                                            <td style={cellStyle}>{fmtBRL(r.unitKm)}</td>
                                             <td style={cellStyle}>{r.tollLabel}</td>
                                             <td style={cellStyle}>{r.status}</td>
                                             <td style={cellStyle}>{r.startDate}</td>
                                             <td style={cellStyle}>{r.startTime}</td>
-                                            <td style={cellStyle}>{r.region}</td>
                                             <td style={{ ...cellStyle, fontFamily: 'monospace' }}>{r.viatura}</td>
                                             <td style={{ ...cellStyle, fontFamily: 'monospace' }}>{r.cargoPlate}</td>
                                             <td style={cellStyle}>{r.endDate}</td>
@@ -437,8 +433,8 @@ const ClientBillingReport: React.FC = () => {
                             {rowsData.length > 0 && (
                                 <tfoot>
                                     <tr style={{ backgroundColor: '#111827', color: '#fff' }}>
-                                        <td colSpan={30} style={{ ...cellStyle, textAlign: 'right', fontWeight: 900, fontSize: '8px', color: '#fff', border: '1px solid #000' }}>TOTAL</td>
-                                        <td style={{ ...cellRight, fontWeight: 900, fontSize: '9px', color: '#fff', border: '1px solid #000' }}>{fmtBRL(grandTotal)}</td>
+                                        <td colSpan={29} style={{ ...cellStyle, textAlign: 'right', fontWeight: 900, fontSize: '8px', color: '#fff', border: '1px solid #000' }}>TOTAL</td>
+                                        <td style={{ ...cellStyle, fontWeight: 900, fontSize: '9px', color: '#fff', border: '1px solid #000' }}>{fmtBRL(grandTotal)}</td>
                                     </tr>
                                 </tfoot>
                             )}
