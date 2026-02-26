@@ -1,4 +1,4 @@
-import React, { useMemo, useState, useCallback } from 'react';
+import React, { useMemo, useState, useCallback, useRef } from 'react';
 import { Mission, MissionStatus, Client, ClientPriceTable, ProviderCostTable } from '../types';
 import { calculateMissionFinancials } from '../lib/financialUtils';
 import {
@@ -8,8 +8,10 @@ import {
 import {
     Activity, TrendingUp, TrendingDown, Wallet, Percent, Truck, Target,
     DollarSign, Calendar, CheckCircle2, XCircle, AlertTriangle,
-    Trophy, Briefcase, Shield, PieChart as PieChartIcon, Lock, RefreshCw
+    Trophy, Briefcase, Shield, PieChart as PieChartIcon, Lock, RefreshCw,
+    Upload, FileSpreadsheet, Loader2, Search, CheckCircle, XOctagon
 } from 'lucide-react';
+import * as XLSX from 'xlsx';
 
 const COLORS = ['#dc2626', '#059669', '#2563eb', '#d97706', '#7c3aed', '#ec4899', '#0891b2', '#84cc16'];
 const STATUS_COLORS: Record<string, string> = {
@@ -84,11 +86,146 @@ const ExecutiveDashboard: React.FC<Props> = ({ missions, isDirector, clientTable
     const [period, setPeriod] = useState<DashPeriod>('MONTH');
     const [customStart, setCustomStart] = useState('');
     const [customEnd, setCustomEnd] = useState('');
+    const [excelComparison, setExcelComparison] = useState<any[] | null>(null);
+    const [excelAiAnalysis, setExcelAiAnalysis] = useState<string | null>(null);
+    const [isExcelLoading, setIsExcelLoading] = useState(false);
+    const [isAiAnalyzing, setIsAiAnalyzing] = useState(false);
+    const [showExcelPanel, setShowExcelPanel] = useState(false);
+    const fileInputRef = useRef<HTMLInputElement>(null);
 
     const handleRefresh = useCallback(() => {
         setRefreshKey(k => k + 1);
         setLastUpdate(new Date());
     }, []);
+
+    const parseExcelValue = (val: any): number => {
+        if (val == null) return 0;
+        if (typeof val === 'number') return val;
+        const str = String(val).replace(/[R$\s.]/g, '').replace(',', '.');
+        const n = parseFloat(str);
+        return isNaN(n) ? 0 : n;
+    };
+
+    const extractOsNumber = (val: any): string => {
+        if (!val) return '';
+        const str = String(val).trim().toUpperCase();
+        const match = str.match(/GTM[-\s]?(\d+)/i);
+        if (match) return `GTM-${match[1]}`;
+        const numOnly = str.replace(/\D/g, '');
+        if (numOnly.length >= 3) return `GTM-${numOnly}`;
+        return str;
+    };
+
+    const handleExcelUpload = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+        setIsExcelLoading(true);
+        setExcelComparison(null);
+        setExcelAiAnalysis(null);
+
+        try {
+            const buffer = await file.arrayBuffer();
+            const wb = XLSX.read(buffer, { type: 'array' });
+            const ws = wb.Sheets[wb.SheetNames[0]];
+            const rows: any[] = XLSX.utils.sheet_to_json(ws, { defval: '' });
+
+            const osColumn = Object.keys(rows[0] || {}).find(k => {
+                const kn = k.toUpperCase();
+                return kn.includes('OS') || kn.includes('GTM') || kn.includes('MISSÃO') || kn.includes('MISSAO') || kn.includes('NÚMERO') || kn.includes('NUMERO') || kn === 'Nº' || kn === 'N°';
+            }) || Object.keys(rows[0] || {})[0];
+
+            const revenueCol = Object.keys(rows[0] || {}).find(k => {
+                const kn = k.toUpperCase();
+                return kn.includes('RECEITA') || kn.includes('FATURAMENTO') || kn.includes('VALOR') || kn.includes('TOTAL') || kn.includes('PREÇO') || kn.includes('PRECO');
+            });
+
+            const costCol = Object.keys(rows[0] || {}).find(k => {
+                const kn = k.toUpperCase();
+                return kn.includes('CUSTO') || kn.includes('PAGAMENTO') || kn.includes('FORNECEDOR');
+            });
+
+            const comparisons: any[] = [];
+
+            for (const row of rows) {
+                const osId = extractOsNumber(row[osColumn]);
+                if (!osId) continue;
+
+                const excelRev = revenueCol ? parseExcelValue(row[revenueCol]) : 0;
+                const excelCost = costCol ? parseExcelValue(row[costCol]) : 0;
+
+                const systemMission = missionFinancials.find(m => {
+                    const sysId = String(m.id || '').toUpperCase().trim();
+                    return sysId === osId || `GTM-${sysId}` === osId || sysId.replace('GTM-', '') === osId.replace('GTM-', '');
+                });
+
+                const sysRev = systemMission?.rev || 0;
+                const sysCost = systemMission?.cost || 0;
+
+                const revDiff = excelRev > 0 ? Math.abs(sysRev - excelRev) : 0;
+                const costDiff = excelCost > 0 ? Math.abs(sysCost - excelCost) : 0;
+                const revMatch = excelRev > 0 ? (revDiff / Math.max(excelRev, 1)) < 0.02 : true;
+                const costMatch = excelCost > 0 ? (costDiff / Math.max(excelCost, 1)) < 0.02 : true;
+
+                comparisons.push({
+                    osId,
+                    found: !!systemMission,
+                    excelRev, excelCost,
+                    sysRev, sysCost,
+                    revDiff, costDiff,
+                    revMatch, costMatch,
+                    status: systemMission?.status || 'Não encontrada',
+                    client: systemMission?.client || row[Object.keys(row).find(k => k.toUpperCase().includes('CLIENTE')) || ''] || '-'
+                });
+            }
+
+            comparisons.sort((a, b) => {
+                if (!a.found && b.found) return -1;
+                if (a.found && !b.found) return 1;
+                if (!a.revMatch || !a.costMatch) return -1;
+                if (!b.revMatch || !b.costMatch) return 1;
+                return (b.revDiff + b.costDiff) - (a.revDiff + a.costDiff);
+            });
+
+            setExcelComparison(comparisons);
+            setShowExcelPanel(true);
+
+            const divergences = comparisons.filter(c => !c.found || !c.revMatch || !c.costMatch);
+            if (divergences.length > 0) {
+                setIsAiAnalyzing(true);
+                try {
+                    const summaryData = divergences.slice(0, 30).map(d => ({
+                        os: d.osId,
+                        encontrada: d.found,
+                        planilha_receita: d.excelRev,
+                        sistema_receita: d.sysRev,
+                        diff_receita: d.revDiff,
+                        planilha_custo: d.excelCost,
+                        sistema_custo: d.sysCost,
+                        diff_custo: d.costDiff,
+                        cliente: d.client,
+                        status: d.status
+                    }));
+
+                    const res = await fetch('/api/gemini/generate', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            prompt: `Você é auditor financeiro da TM SEG (escolta armada). Analise as divergências entre a planilha Excel e o sistema. Para cada OS com diferença, explique possíveis causas e recomende ações. Use português e valores em BRL. Seja direto e objetivo.\n\nDivergências encontradas:\n${JSON.stringify(summaryData, null, 2)}\n\nTotal de linhas na planilha: ${comparisons.length}\nTotal com divergência: ${divergences.length}\nTotal não encontradas no sistema: ${comparisons.filter(c => !c.found).length}`,
+                            stream: false
+                        })
+                    });
+                    const data = await res.json();
+                    setExcelAiAnalysis(data.text || data.response || 'Análise indisponível');
+                } catch { setExcelAiAnalysis('Erro ao gerar análise com IA'); }
+                finally { setIsAiAnalyzing(false); }
+            }
+        } catch (err: any) {
+            alert(`Erro ao processar planilha: ${err.message}`);
+        } finally {
+            setIsExcelLoading(false);
+            if (fileInputRef.current) fileInputRef.current.value = '';
+        }
+    }, [missionFinancials]);
 
     const filteredMissions = useMemo(() => {
         const [start, end] = getDateRange(period, customStart, customEnd);
@@ -173,8 +310,6 @@ const ExecutiveDashboard: React.FC<Props> = ({ missions, isDirector, clientTable
     }, [missionFinancials]);
 
     const anomalies = useMemo(() => {
-        const REVENUE_ALERT = 8000;
-        const COST_ALERT = 6000;
         const MARGIN_ALERT_LOW = -10;
         const MARGIN_ALERT_HIGH = 85;
 
@@ -182,8 +317,22 @@ const ExecutiveDashboard: React.FC<Props> = ({ missions, isDirector, clientTable
             .filter(m => m.status !== MissionStatus.REFUSED)
             .map(m => {
                 const issues: string[] = [];
-                if (m.rev > REVENUE_ALERT) issues.push(`Receita alta: ${fmtBRL(m.rev)}`);
-                if (m.cost > COST_ALERT) issues.push(`Custo alto: ${fmtBRL(m.cost)}`);
+
+                const startT = m.startTime || m.start_time;
+                const endT = m.endTime || m.end_time;
+                let opHours = 0;
+                if (startT && endT) {
+                    opHours = (new Date(endT).getTime() - new Date(startT).getTime()) / 3600000;
+                }
+                const hasKm = ((m.startKm || (m as any).start_km) > 0 && (m.endKm || (m as any).end_km) > 0);
+                const km = hasKm ? ((m.endKm || (m as any).end_km) - (m.startKm || (m as any).start_km)) : 0;
+
+                const expectedMaxRev = Math.max(3000, (opHours > 0 ? opHours * 250 : 0) + (km > 0 ? km * 15 : 0));
+                const expectedMaxCost = Math.max(2000, (opHours > 0 ? opHours * 180 : 0) + (km > 0 ? km * 10 : 0));
+
+                if (m.rev > expectedMaxRev && m.rev > 8000) issues.push(`Receita alta: ${fmtBRL(m.rev)}`);
+                if (m.cost > expectedMaxCost && m.cost > 6000) issues.push(`Custo alto: ${fmtBRL(m.cost)}`);
+
                 if (m.rev > 0 && m.cost > 0 && !m.is_same_os) {
                     const mg = ((m.rev - m.cost) / m.rev) * 100;
                     if (mg < MARGIN_ALERT_LOW) issues.push(`Margem negativa: ${mg.toFixed(1)}%`);
@@ -192,8 +341,6 @@ const ExecutiveDashboard: React.FC<Props> = ({ missions, isDirector, clientTable
                 if (m.rev === 0 && m.status === MissionStatus.COMPLETED && !m.billing_approved) issues.push('Concluída sem valor');
                 if (m.rev > 0 && m.cost === 0 && m.status === MissionStatus.COMPLETED && !m.is_same_os) issues.push('Sem custo registrado');
 
-                const hasKm = ((m.startKm || (m as any).start_km) > 0 && (m.endKm || (m as any).end_km) > 0);
-                const km = hasKm ? ((m.endKm || (m as any).end_km) - (m.startKm || (m as any).start_km)) : 0;
                 if (km > 2000) issues.push(`KM suspeito: ${km.toLocaleString('pt-BR')} km`);
                 if (km < 0) issues.push(`KM negativo: ${km} km`);
 
@@ -417,6 +564,123 @@ const ExecutiveDashboard: React.FC<Props> = ({ missions, isDirector, clientTable
                     </div>
                 </div>
             )}
+
+            <div className="bg-white border border-gray-200 rounded-xl p-4 shadow-sm">
+                <div className="flex items-center justify-between mb-3">
+                    <div className="flex items-center gap-2.5">
+                        <div className="p-2 bg-blue-600 text-white rounded-lg"><FileSpreadsheet size={14} /></div>
+                        <div>
+                            <h4 className="text-xs font-black text-gray-900 uppercase tracking-widest">Comparativo Planilha vs Sistema</h4>
+                            <p className="text-[10px] text-gray-400 font-bold">Importe sua planilha Excel e compare OS por OS com a IA</p>
+                        </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                        {excelComparison && (
+                            <button onClick={() => { setExcelComparison(null); setExcelAiAnalysis(null); setShowExcelPanel(false); }}
+                                className="px-3 py-1.5 bg-gray-100 text-gray-600 rounded-lg text-[10px] font-black uppercase hover:bg-gray-200 transition-all" data-testid="button-clear-excel">
+                                Limpar
+                            </button>
+                        )}
+                        <input type="file" ref={fileInputRef} accept=".xlsx,.xls,.xlsb,.csv" onChange={handleExcelUpload} className="hidden" data-testid="input-excel-upload" />
+                        <button onClick={() => fileInputRef.current?.click()} disabled={isExcelLoading}
+                            className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg text-[11px] font-black uppercase tracking-wide hover:bg-blue-700 transition-all active:scale-95 disabled:opacity-50" data-testid="button-upload-excel">
+                            {isExcelLoading ? <Loader2 size={13} className="animate-spin" /> : <Upload size={13} />}
+                            {isExcelLoading ? 'Processando...' : 'Importar Planilha'}
+                        </button>
+                    </div>
+                </div>
+
+                {showExcelPanel && excelComparison && (() => {
+                    const total = excelComparison.length;
+                    const matched = excelComparison.filter(c => c.found && c.revMatch && c.costMatch).length;
+                    const divergent = excelComparison.filter(c => c.found && (!c.revMatch || !c.costMatch)).length;
+                    const notFound = excelComparison.filter(c => !c.found).length;
+                    return (
+                        <div className="space-y-3">
+                            <div className="grid grid-cols-4 gap-2">
+                                <div className="bg-gray-50 rounded-lg p-2.5 text-center border border-gray-100">
+                                    <p className="text-[10px] font-bold text-gray-400 uppercase">Total OS</p>
+                                    <p className="text-lg font-black text-gray-900">{total}</p>
+                                </div>
+                                <div className="bg-green-50 rounded-lg p-2.5 text-center border border-green-100">
+                                    <p className="text-[10px] font-bold text-green-600 uppercase">Conferem</p>
+                                    <p className="text-lg font-black text-green-700">{matched}</p>
+                                </div>
+                                <div className="bg-red-50 rounded-lg p-2.5 text-center border border-red-100">
+                                    <p className="text-[10px] font-bold text-red-600 uppercase">Divergentes</p>
+                                    <p className="text-lg font-black text-red-700">{divergent}</p>
+                                </div>
+                                <div className="bg-amber-50 rounded-lg p-2.5 text-center border border-amber-100">
+                                    <p className="text-[10px] font-bold text-amber-600 uppercase">Não Encontradas</p>
+                                    <p className="text-lg font-black text-amber-700">{notFound}</p>
+                                </div>
+                            </div>
+
+                            <div className="max-h-72 overflow-y-auto border border-gray-200 rounded-lg">
+                                <table className="w-full text-[11px]">
+                                    <thead className="bg-gray-50 sticky top-0 z-10">
+                                        <tr>
+                                            <th className="text-left px-3 py-2 font-black text-gray-600 uppercase">OS</th>
+                                            <th className="text-left px-3 py-2 font-black text-gray-600 uppercase">Cliente</th>
+                                            <th className="text-right px-3 py-2 font-black text-gray-600 uppercase">Planilha Receita</th>
+                                            <th className="text-right px-3 py-2 font-black text-gray-600 uppercase">Sistema Receita</th>
+                                            <th className="text-right px-3 py-2 font-black text-gray-600 uppercase">Planilha Custo</th>
+                                            <th className="text-right px-3 py-2 font-black text-gray-600 uppercase">Sistema Custo</th>
+                                            <th className="text-center px-3 py-2 font-black text-gray-600 uppercase">Status</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {excelComparison.map((c, i) => {
+                                            const hasIssue = !c.found || !c.revMatch || !c.costMatch;
+                                            return (
+                                                <tr key={i} className={`border-t border-gray-100 ${hasIssue ? 'bg-red-50/50' : 'hover:bg-gray-50'}`}
+                                                    onClick={() => {
+                                                        if (c.found && onOpenMission) {
+                                                            const mission = filteredMissions.find(m => String(m.id).toUpperCase().replace('GTM-', '') === c.osId.replace('GTM-', ''));
+                                                            if (mission) onOpenMission(mission as Mission);
+                                                        }
+                                                    }}
+                                                    style={{ cursor: c.found ? 'pointer' : 'default' }}
+                                                    data-testid={`excel-row-${c.osId}`}
+                                                >
+                                                    <td className="px-3 py-2 font-black text-blue-600">{c.osId}</td>
+                                                    <td className="px-3 py-2 font-bold text-gray-600 truncate max-w-[120px]">{(c.client || '').substring(0, 20)}</td>
+                                                    <td className={`px-3 py-2 text-right font-bold ${!c.revMatch ? 'text-red-600' : 'text-gray-700'}`}>{c.excelRev > 0 ? fmtBRL(c.excelRev) : '-'}</td>
+                                                    <td className={`px-3 py-2 text-right font-bold ${!c.revMatch ? 'text-red-600' : 'text-gray-700'}`}>{c.found ? fmtBRL(c.sysRev) : '-'}</td>
+                                                    <td className={`px-3 py-2 text-right font-bold ${!c.costMatch ? 'text-red-600' : 'text-gray-700'}`}>{c.excelCost > 0 ? fmtBRL(c.excelCost) : '-'}</td>
+                                                    <td className={`px-3 py-2 text-right font-bold ${!c.costMatch ? 'text-red-600' : 'text-gray-700'}`}>{c.found ? fmtBRL(c.sysCost) : '-'}</td>
+                                                    <td className="px-3 py-2 text-center">
+                                                        {!c.found ? <span className="text-[9px] font-black bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full">NÃO ENCONTRADA</span> :
+                                                         hasIssue ? <span className="text-[9px] font-black bg-red-100 text-red-700 px-2 py-0.5 rounded-full flex items-center justify-center gap-1"><XOctagon size={10} /> DIVERGENTE</span> :
+                                                         <span className="text-[9px] font-black bg-green-100 text-green-700 px-2 py-0.5 rounded-full flex items-center justify-center gap-1"><CheckCircle size={10} /> OK</span>}
+                                                    </td>
+                                                </tr>
+                                            );
+                                        })}
+                                    </tbody>
+                                </table>
+                            </div>
+
+                            {isAiAnalyzing && (
+                                <div className="flex items-center gap-3 bg-blue-50 border border-blue-200 rounded-lg p-4">
+                                    <Loader2 size={16} className="animate-spin text-blue-600" />
+                                    <p className="text-xs font-bold text-blue-700">IA analisando divergências...</p>
+                                </div>
+                            )}
+
+                            {excelAiAnalysis && (
+                                <div className="bg-gray-900 text-white rounded-xl p-4 border border-gray-700">
+                                    <div className="flex items-center gap-2 mb-3 pb-2 border-b border-gray-700">
+                                        <Search size={14} className="text-blue-400" />
+                                        <h5 className="text-xs font-black uppercase tracking-widest text-blue-400">Análise da IA</h5>
+                                    </div>
+                                    <div className="text-[12px] font-medium leading-relaxed whitespace-pre-wrap text-gray-200">{excelAiAnalysis}</div>
+                                </div>
+                            )}
+                        </div>
+                    );
+                })()}
+            </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
                 <ChartCard title="Missões por Dia" icon={Calendar} span={2}>

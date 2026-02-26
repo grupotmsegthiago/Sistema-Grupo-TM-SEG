@@ -38,6 +38,7 @@ Authentication is custom, using a `system_users` table in Supabase. User session
 -   **Toll Calculation API:** Dynamically calculates toll costs for routes using primary and fallback external APIs, integrating these costs into mission forms.
 -   **CEVA + Jundiaí Price Table Intelligence:** Implements specific business logic to automatically adjust price table selection for the CEVA client based on distance and location, preventing overbilling.
 -   **Mission Report:** Generates detailed mission reports with configurable visibility for client users, hiding sensitive provider information.
+-   **Excel Comparison Module:** Upload Excel spreadsheets to compare OS values (revenue/cost) with the system. Auto-detects OS number, revenue and cost columns. Shows divergences in a table with color-coded status. Gemini AI analyzes divergences and suggests corrective actions. Located in `ExecutiveDashboard.tsx`.
 
 ## External Dependencies
 
