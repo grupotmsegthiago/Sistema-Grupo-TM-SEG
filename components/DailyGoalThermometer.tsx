@@ -116,12 +116,14 @@ const DailyGoalThermometer: React.FC<Props> = ({ viewPeriod = 'TODAY', customSta
                  return acc + storedVal;
             }
 
+            const isCancelled = m.status === MissionStatus.CANCELLED;
             const missionObj: Mission = {
                 ...m,
                 startKm: m.start_km,
                 endKm: m.end_km,
                 startTime: m.start_time,
-                endTime: m.end_time
+                endTime: m.end_time,
+                ...(isCancelled ? { status: MissionStatus.COMPLETED } : {})
             };
             const clientName = (m.originalClientName || m.client || '').trim();
             const matchedClient = clientsData.find(c => c.name === clientName);

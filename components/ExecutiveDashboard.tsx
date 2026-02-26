@@ -138,12 +138,14 @@ const ExecutiveDashboard: React.FC<Props> = ({ missions, isDirector, clientTable
                 return { ...m, rev: baseFee, cost: baseFee, profit: 0 };
             }
 
+            const isCancelledMission = m.status === MissionStatus.CANCELLED;
             const missionObj: Mission = {
                 ...m,
                 startKm: m.startKm ?? m.start_km,
                 endKm: m.endKm ?? m.end_km,
                 startTime: m.startTime ?? m.start_time,
-                endTime: m.endTime ?? m.end_time
+                endTime: m.endTime ?? m.end_time,
+                ...(isCancelledMission ? { status: MissionStatus.COMPLETED } : {})
             };
             const clientName = (m.originalClientName || m.client || '').trim();
             const matchedClient = clientsData.find(c => c.name === clientName);
@@ -263,8 +265,8 @@ const ExecutiveDashboard: React.FC<Props> = ({ missions, isDirector, clientTable
                     const sysCost = systemMission?.cost || 0;
                     const revDiff = excelRev > 0 ? Math.abs(sysRev - excelRev) : 0;
                     const costDiff = excelCost > 0 ? Math.abs(sysCost - excelCost) : 0;
-                    const revMatch = excelRev > 0 ? (revDiff / Math.max(excelRev, 1)) < 0.02 : true;
-                    const costMatch = excelCost > 0 ? (costDiff / Math.max(excelCost, 1)) < 0.02 : true;
+                    const revMatch = excelRev > 0 ? revDiff <= 5 : true;
+                    const costMatch = excelCost > 0 ? costDiff <= 5 : true;
                     comparisons.push({ osId, found: !!systemMission, excelRev, excelCost, sysRev, sysCost, revDiff, costDiff, revMatch, costMatch, status: systemMission?.status || 'Não encontrada', client: systemMission?.client || '-' });
                 }
                 comparisons.sort((a, b) => (!a.found ? -1 : !b.found ? 1 : (!a.revMatch||!a.costMatch) ? -1 : (!b.revMatch||!b.costMatch) ? 1 : (b.revDiff+b.costDiff)-(a.revDiff+a.costDiff)));
@@ -298,8 +300,8 @@ const ExecutiveDashboard: React.FC<Props> = ({ missions, isDirector, clientTable
 
                 const revDiff = excelRev > 0 ? Math.abs(sysRev - excelRev) : 0;
                 const costDiff = excelCost > 0 ? Math.abs(sysCost - excelCost) : 0;
-                const revMatch = excelRev > 0 ? (revDiff / Math.max(excelRev, 1)) < 0.02 : true;
-                const costMatch = excelCost > 0 ? (costDiff / Math.max(excelCost, 1)) < 0.02 : true;
+                const revMatch = excelRev > 0 ? revDiff <= 5 : true;
+                const costMatch = excelCost > 0 ? costDiff <= 5 : true;
 
                 comparisons.push({
                     osId,
@@ -685,6 +687,28 @@ const ExecutiveDashboard: React.FC<Props> = ({ missions, isDirector, clientTable
                                 </div>
                             </div>
 
+                            {divergent > 0 && (
+                                <div className="bg-slate-50 border border-slate-200 rounded-lg p-3">
+                                    <p className="text-[11px] font-black text-slate-700 uppercase mb-1.5">Resumo das Divergências</p>
+                                    <div className="text-[11px] font-bold text-slate-600 space-y-0.5">
+                                        {(() => {
+                                            const divItems = excelComparison.filter(c => c.found && (!c.revMatch || !c.costMatch));
+                                            const onlyRevDiff = divItems.filter(c => !c.revMatch && c.costMatch).length;
+                                            const onlyCostDiff = divItems.filter(c => c.revMatch && !c.costMatch).length;
+                                            const bothDiff = divItems.filter(c => !c.revMatch && !c.costMatch).length;
+                                            const totalRevDiff = divItems.reduce((a, c) => a + c.revDiff, 0);
+                                            const totalCostDiff = divItems.reduce((a, c) => a + c.costDiff, 0);
+                                            return (<>
+                                                {onlyRevDiff > 0 && <p>• {onlyRevDiff} OS com divergência apenas na <span className="text-red-600">receita</span> (diferença total: {fmtBRL(totalRevDiff)})</p>}
+                                                {onlyCostDiff > 0 && <p>• {onlyCostDiff} OS com divergência apenas no <span className="text-red-600">custo</span> (diferença total: {fmtBRL(totalCostDiff)})</p>}
+                                                {bothDiff > 0 && <p>• {bothDiff} OS com divergência em <span className="text-red-600">receita e custo</span></p>}
+                                                <p className="text-[10px] text-slate-400 pt-1">Tolerância: diferenças até R$ 5,00 são consideradas OK</p>
+                                            </>);
+                                        })()}
+                                    </div>
+                                </div>
+                            )}
+
                             <div className="max-h-72 overflow-y-auto border border-gray-200 rounded-lg">
                                 <table className="w-full text-[11px]">
                                     <thead className="bg-gray-50 sticky top-0 z-10">
@@ -693,8 +717,10 @@ const ExecutiveDashboard: React.FC<Props> = ({ missions, isDirector, clientTable
                                             <th className="text-left px-3 py-2 font-black text-gray-600 uppercase">Cliente</th>
                                             <th className="text-right px-3 py-2 font-black text-gray-600 uppercase">Planilha Receita</th>
                                             <th className="text-right px-3 py-2 font-black text-gray-600 uppercase">Sistema Receita</th>
+                                            <th className="text-right px-3 py-2 font-black text-gray-600 uppercase">Diff. Receita</th>
                                             <th className="text-right px-3 py-2 font-black text-gray-600 uppercase">Planilha Custo</th>
                                             <th className="text-right px-3 py-2 font-black text-gray-600 uppercase">Sistema Custo</th>
+                                            <th className="text-right px-3 py-2 font-black text-gray-600 uppercase">Diff. Custo</th>
                                             <th className="text-center px-3 py-2 font-black text-gray-600 uppercase">Status</th>
                                         </tr>
                                     </thead>
@@ -716,8 +742,10 @@ const ExecutiveDashboard: React.FC<Props> = ({ missions, isDirector, clientTable
                                                     <td className="px-3 py-2 font-bold text-gray-600 truncate max-w-[120px]">{(c.client || '').substring(0, 20)}</td>
                                                     <td className={`px-3 py-2 text-right font-bold ${!c.revMatch ? 'text-red-600' : 'text-gray-700'}`}>{c.excelRev > 0 ? fmtBRL(c.excelRev) : '-'}</td>
                                                     <td className={`px-3 py-2 text-right font-bold ${!c.revMatch ? 'text-red-600' : 'text-gray-700'}`}>{c.found ? fmtBRL(c.sysRev) : '-'}</td>
+                                                    <td className={`px-3 py-2 text-right font-bold ${c.revDiff > 5 ? 'text-red-600' : 'text-gray-400'}`}>{c.found && c.excelRev > 0 ? (c.revDiff > 0.01 ? fmtBRL(c.revDiff) : '-') : '-'}</td>
                                                     <td className={`px-3 py-2 text-right font-bold ${!c.costMatch ? 'text-red-600' : 'text-gray-700'}`}>{c.excelCost > 0 ? fmtBRL(c.excelCost) : '-'}</td>
                                                     <td className={`px-3 py-2 text-right font-bold ${!c.costMatch ? 'text-red-600' : 'text-gray-700'}`}>{c.found ? fmtBRL(c.sysCost) : '-'}</td>
+                                                    <td className={`px-3 py-2 text-right font-bold ${c.costDiff > 5 ? 'text-red-600' : 'text-gray-400'}`}>{c.found && c.excelCost > 0 ? (c.costDiff > 0.01 ? fmtBRL(c.costDiff) : '-') : '-'}</td>
                                                     <td className="px-3 py-2 text-center">
                                                         {!c.found ? <span className="text-[9px] font-black bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full">NÃO ENCONTRADA</span> :
                                                          hasIssue ? <span className="text-[9px] font-black bg-red-100 text-red-700 px-2 py-0.5 rounded-full flex items-center justify-center gap-1"><XOctagon size={10} /> DIVERGENTE</span> :
