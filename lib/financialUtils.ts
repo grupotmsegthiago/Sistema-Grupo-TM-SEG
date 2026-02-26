@@ -80,24 +80,66 @@ export const extractUF = (address: string): string => {
     const cleanAddr = address.split('(')[0].trim(); 
     const upper = cleanAddr.toUpperCase();
     
-    const match = upper.match(/[-/,]\s*([A-Z]{2})\b/);
-    if (match) return match[1];
+    const VALID_UFS = new Set(Object.keys(UF_TO_REGION));
+    
+    const allMatches = [...upper.matchAll(/[-/,]\s*([A-Z]{2})\b/g)];
+    for (let i = allMatches.length - 1; i >= 0; i--) {
+        const uf = allMatches[i][1];
+        if (VALID_UFS.has(uf)) return uf;
+    }
 
-    if (upper.includes('SAO PAULO') || upper.includes('SÃO PAULO') || upper.includes('SP')) return 'SP';
-    if (upper.includes('RIO DE JANEIRO') || upper.includes('RJ')) return 'RJ';
-    if (upper.includes('MINAS GERAIS') || upper.includes('MG')) return 'MG';
-    if (upper.includes('ESPIRITO SANTO') || upper.includes('ES')) return 'ES';
-    if (upper.includes('DISTRITO FEDERAL') || upper.includes('BRASILIA')) return 'DF';
+    if (upper.includes('SAO PAULO') || upper.includes('SÃO PAULO')) return 'SP';
+    if (upper.includes('RIO DE JANEIRO')) return 'RJ';
+    if (upper.includes('MINAS GERAIS')) return 'MG';
+    if (upper.includes('ESPIRITO SANTO') || upper.includes('ESPÍRITO SANTO')) return 'ES';
+    if (upper.includes('DISTRITO FEDERAL') || upper.includes('BRASILIA') || upper.includes('BRASÍLIA')) return 'DF';
+    if (upper.includes('PARANA') || upper.includes('PARANÁ')) return 'PR';
+    if (upper.includes('SANTA CATARINA')) return 'SC';
+    if (upper.includes('RIO GRANDE DO SUL')) return 'RS';
+    if (upper.includes('BAHIA')) return 'BA';
+    if (upper.includes('PERNAMBUCO')) return 'PE';
+    if (upper.includes('CEARA') || upper.includes('CEARÁ')) return 'CE';
+    if (upper.includes('MARANHAO') || upper.includes('MARANHÃO')) return 'MA';
+    if (upper.includes('PARA') || upper.includes('PARÁ')) return 'PA';
     
     return '';
 };
 
 export const extractCityFromAddress = (address: string): string => {
     if (!address) return '';
+    const upper = address.toUpperCase().trim();
+    
+    const VALID_UFS = new Set(Object.keys(UF_TO_REGION));
+    
+    const ufPattern = /,\s*([A-ZÀ-Ú\s]+?)\s*[-–]\s*([A-Z]{2})\s*[,\b]/;
+    const match = upper.match(ufPattern);
+    if (match && VALID_UFS.has(match[2])) {
+        return match[1].trim();
+    }
+    
+    const ufPatternEnd = /,\s*([A-ZÀ-Ú\s]+?)\s*[-–]\s*([A-Z]{2})\s*$/;
+    const matchEnd = upper.match(ufPatternEnd);
+    if (matchEnd && VALID_UFS.has(matchEnd[2])) {
+        return matchEnd[1].trim();
+    }
+    
+    const segments = address.split(',').map(s => s.trim());
+    for (let i = segments.length - 1; i >= 0; i--) {
+        const seg = segments[i].trim();
+        const ufSplit = seg.split(/\s*[-–]\s*/);
+        if (ufSplit.length >= 2) {
+            const possibleUF = ufSplit[ufSplit.length - 1].trim().toUpperCase();
+            if (VALID_UFS.has(possibleUF)) {
+                const city = ufSplit[ufSplit.length - 2].trim();
+                if (city.length > 2 && !/^\d/.test(city)) return city.toUpperCase();
+            }
+        }
+    }
+    
     const parts = address.split(/[-,]/);
     if (parts.length >= 2) {
         const potentialCity = parts[parts.length - 2].trim();
-        if (potentialCity.length > 2) return potentialCity;
+        if (potentialCity.length > 2 && !/^\d/.test(potentialCity)) return potentialCity;
     }
     return parts[0].trim();
 };
@@ -221,7 +263,7 @@ export const calculateMissionFinancials = (
     const isSpecialProvider = missionProviderName.includes('ATIVA') || missionProviderName.includes('TM SEG');
     let providerMultiplier = 1;
 
-    const selectStrictTable = (candidateTables: any[], dist: number, region: string, city: string, typeKeyword: string, destCity: string, routeCode?: string, agentAware?: { count: number, isSpecial: boolean }) => {
+    const selectStrictTable = (candidateTables: any[], dist: number, region: string, city: string, typeKeyword: string, destCity: string, routeCode?: string, agentAware?: { count: number, isSpecial: boolean }, originUFCode?: string, originAddress?: string) => {
         if (!candidateTables || candidateTables.length === 0) return { table: null, log: 'Sem tabelas cadastradas' };
 
         const normalizedRegion = normalize(region);
@@ -229,9 +271,8 @@ export const calculateMissionFinancials = (
         const normalizedDestCity = normalize(destCity);
         const normalizedType = normalize(typeKeyword);
         const normalizedRouteCode = normalize(routeCode);
-        
-        const allRegions = ['NORTE', 'NORDESTE', 'CENTRO-OESTE', 'SUDESTE', 'SUL'];
-        const prohibitedRegions = normalizedRegion ? allRegions.filter(r => r !== normalizedRegion) : [];
+        const normalizedOriginAddr = normalize(originAddress);
+        const ufCode = (originUFCode || '').toUpperCase();
 
         const scoredTables = candidateTables.map(t => {
             const tableOp = normalize(t.operation_type || '');
@@ -255,33 +296,60 @@ export const calculateMissionFinancials = (
                 }
             }
             
-            // 1. PRIORIDADE MÁXIMA: CÓDIGO DA ROTA
             if (normalizedRouteCode && tableOp.includes(normalizedRouteCode)) {
                 score += 5000;
                 matchType = `Código da Rota (${routeCode})`;
             }
             
-            // 2. PRIORIDADE ALTA: CIDADE ORIGEM X DESTINO (UF inclusa no normalize se houver)
             else if (normalizedCity.length > 3 && normalizedDestCity.length > 3 && 
                 tableOp.includes(normalizedCity) && tableOp.includes(normalizedDestCity)) {
                 score += 5000;
                 matchType = `Rota Exata (${city} x ${destCity})`;
             }
 
-            // 3. PRIORIDADE MÉDIA: CIDADE DE ORIGEM (Exclusividade como Palhoça)
             else if (normalizedCity.length > 3 && tableOp.includes(normalizedCity)) {
-                score += 1000;
+                score += 2000;
                 matchType = `Cidade Origem (${city})`;
             }
             
-            // 4. PRIORIDADE BASE: REGIÃO
-            else if (normalizedRegion && tableOp.includes(normalizedRegion)) {
-                score += 500;
-                matchType = `Região (${region})`;
+            else if (normalizedOriginAddr && normalizedCity.length <= 3) {
+                const cityNames = normalizedOriginAddr.split(/[,\-–]/).map((s: string) => s.trim()).filter((s: string) => s.length > 3 && !/^\d/.test(s));
+                for (const cn of cityNames) {
+                    if (tableOp.includes(cn)) {
+                        score += 2000;
+                        matchType = `Cidade Endereço (${cn})`;
+                        break;
+                    }
+                }
             }
-            else if (normalizedRegion === 'SUDESTE' && (tableOp.includes('SP') || tableOp.includes('SAO PAULO'))) {
-                score += 250;
-                matchType = 'Estado (SP)';
+
+            if (score < 2000) {
+                if (normalizedRegion && tableOp.includes(normalizedRegion)) {
+                    score += 500;
+                    if (matchType === 'Genérico') matchType = `Região (${region})`;
+                }
+                else if (normalizedRegion === 'SUDESTE' && (tableOp.includes('SP') || tableOp.includes('SAO PAULO'))) {
+                    score += 250;
+                    if (matchType === 'Genérico') matchType = 'Estado (SP)';
+                }
+            }
+
+            if (tableOp.includes('EXCETO')) {
+                if (ufCode === 'MG' && tableOp.includes('EXCETO MG')) {
+                    score -= 3000;
+                    matchType = 'Bloqueado (EXCETO MG)';
+                }
+                if (ufCode === 'ES' && (tableOp.includes('EXCETO') && tableOp.includes('ES'))) {
+                    score -= 3000;
+                    matchType = 'Bloqueado (EXCETO ES)';
+                }
+            }
+
+            if (ufCode && (ufCode === 'MG' || ufCode === 'ES')) {
+                if (tableOp.includes('MG') && tableOp.includes('ES') && !tableOp.includes('EXCETO')) {
+                    score += 800;
+                    matchType = `UF Específico (${ufCode})`;
+                }
             }
 
             if (t.franchise_km >= dist) {
@@ -329,7 +397,10 @@ export const calculateMissionFinancials = (
             originCity,
             missionTypeKeyword,
             destCity,
-            missionRouteCode
+            missionRouteCode,
+            undefined,
+            originUF,
+            mission.origin || ''
         );
         appliedClientTable = result.table;
         clientLog = result.log;
@@ -396,7 +467,9 @@ export const calculateMissionFinancials = (
             missionTypeKeyword,
             destCity,
             missionRouteCode,
-            { count: agentCount, isSpecial: isSpecialProvider }
+            { count: agentCount, isSpecial: isSpecialProvider },
+            originUF,
+            mission.origin || ''
         );
         appliedProviderTable = result.table;
         providerLog = result.log;
