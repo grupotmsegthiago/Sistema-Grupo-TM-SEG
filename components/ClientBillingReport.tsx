@@ -101,7 +101,7 @@ const ClientBillingReport: React.FC = () => {
     const handlePrint = () => { window.print(); };
 
     const formatMoney = (val: number) => val.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
-    const formatNumber = (val: number, decimals = 0) => val.toLocaleString('pt-BR', { minimumFractionDigits: decimals, maximumFractionDigits: decimals });
+    const formatNumber = (val: number | null | undefined, decimals = 0) => (val ?? 0).toLocaleString('pt-BR', { minimumFractionDigits: decimals, maximumFractionDigits: decimals });
     
     // Funções auxiliares de data/hora
     const getDate = (iso?: string) => iso ? new Date(iso).toLocaleDateString('pt-BR') : '-';
