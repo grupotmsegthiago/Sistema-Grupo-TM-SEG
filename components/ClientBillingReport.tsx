@@ -50,8 +50,8 @@ const ClientBillingReport: React.FC = () => {
         setIsLoading(true);
         setReportGenerated(false);
         try {
-            const clientData = clients.find(c => c.id.toString() === selectedClient);
-            const clientName = clientData?.name;
+            const clientObj = clients.find(c => c.id.toString() === selectedClient);
+            const clientName = clientObj?.name;
             const { data: missionData, error } = await supabase
                 .from('missions')
                 .select('*, client_vehicle_data:client_vehicles(*), company_vehicle:vehicles(*)')
@@ -80,13 +80,22 @@ const ClientBillingReport: React.FC = () => {
 
     const handlePrint = () => { window.print(); };
 
-    const fmtMoney = (val: number | null | undefined) => (val ?? 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+    const fmtBRL = (val: number | null | undefined) => {
+        const v = val ?? 0;
+        return v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+    };
     const fmtNum = (val: number | null | undefined, dec = 0) => (val ?? 0).toLocaleString('pt-BR', { minimumFractionDigits: dec, maximumFractionDigits: dec });
     const fmtDate = (iso?: string) => iso ? new Date(iso).toLocaleDateString('pt-BR') : '-';
     const fmtTime = (iso?: string) => iso ? new Date(iso).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) : '-';
-    const fmtDateDisplay = (s: string) => { if (!s) return ''; const [y, m, d] = s.split('-'); return `${d}/${m}/${y}`; };
-    const fmtDecToTime = (h: number) => {
+    const fmtDateDisp = (s: string) => { if (!s) return ''; const [y, m, d] = s.split('-'); return `${d}/${m}/${y}`; };
+    const fmtHHMM = (h: number) => {
         if (isNaN(h) || h <= 0) return '00:00';
+        const hrs = Math.floor(h);
+        const mins = Math.round((h - hrs) * 60);
+        return `${hrs.toString().padStart(2, '0')}:${mins.toString().padStart(2, '0')}`;
+    };
+    const fmtFranchiseHr = (h: number) => {
+        if (!h || h <= 0) return '00:00';
         const hrs = Math.floor(h);
         const mins = Math.round((h - hrs) * 60);
         return `${hrs.toString().padStart(2, '0')}:${mins.toString().padStart(2, '0')}`;
@@ -98,15 +107,15 @@ const ClientBillingReport: React.FC = () => {
     const getPeriodLabel = () => {
         if (!startDate || !endDate) return '';
         const sDate = new Date(startDate + 'T12:00:00');
-        const eDate = new Date(endDate + 'T12:00:00');
         const months = ['JANEIRO', 'FEVEREIRO', 'MARÇO', 'ABRIL', 'MAIO', 'JUNHO', 'JULHO', 'AGOSTO', 'SETEMBRO', 'OUTUBRO', 'NOVEMBRO', 'DEZEMBRO'];
         const month = months[sDate.getMonth()];
         const year = sDate.getFullYear();
         const sDay = sDate.getDate();
+        const eDate = new Date(endDate + 'T12:00:00');
         const eDay = eDate.getDate();
         if (sDay === 1 && eDay === 15) return `GERAL - ${month} /${year} - 1ª QUINZENA DE ${month}`;
         if (sDay === 16) return `GERAL - ${month} /${year} - 2ª QUINZENA DE ${month}`;
-        return `GERAL - ${month} /${year} - ${fmtDateDisplay(startDate)} A ${fmtDateDisplay(endDate)}`;
+        return `GERAL - ${month} /${year} - ${fmtDateDisp(startDate)} A ${fmtDateDisp(endDate)}`;
     };
 
     const rowsData = useMemo(() => {
@@ -130,10 +139,10 @@ const ClientBillingReport: React.FC = () => {
             const hrExtraQtd = fin.client.excessHours;
             const hrExtraTotal = fin.client.extraHrVal;
             const durationHours = fin.durationHours;
-
-            const escoltaVal = activationFee;
             const tollVal = m.toll_value || 0;
             const totalGeral = (m.revenue_value || 0) + tollVal;
+
+            const cargoPlate = m.client_vehicle_data?.plate || '-';
 
             return {
                 id: (m.id || '').replace('GTM-', ''),
@@ -145,14 +154,14 @@ const ClientBillingReport: React.FC = () => {
                 franchiseKm,
                 unitHr,
                 unitKm,
-                tollLabel: tollVal > 0 ? 'À PARTE' : '-',
+                tollLabel: 'À PARTE',
                 status: 'CONCLUÍDO',
                 startDate: fmtDate(m.start_time),
                 startTime: fmtTime(m.start_time),
                 region,
                 routeDetail: route,
                 viatura: m.company_vehicle?.plate || m.vehicle_id || '-',
-                clientPlate: m.client_vehicle_data?.plate || m.clientVehicle?.plate || '-',
+                cargoPlate,
                 endDate: fmtDate(m.end_time),
                 endTime: fmtTime(m.end_time),
                 kmStart: m.start_km ?? 0,
@@ -160,36 +169,60 @@ const ClientBillingReport: React.FC = () => {
                 kmTotal,
                 timeStart: fmtTime(m.start_time),
                 timeEnd: fmtTime(m.end_time),
-                timeTotal: fmtDecToTime(durationHours),
+                timeTotal: fmtHHMM(durationHours),
                 kmExtraQtd,
                 kmExtraUnit: unitKm,
                 kmExtraTotal,
                 hrExtraQtd,
                 hrExtraUnit: unitHr,
                 hrExtraTotal,
-                escoltaVal,
+                escoltaVal: activationFee,
                 tollVal,
-                totalGeral
+                totalGeral,
+                franchiseHoursFmt: fmtFranchiseHr(franchiseHours)
             };
         });
     }, [missions, priceTables, providerTables, clientData, displayClientName]);
 
     const grandTotal = useMemo(() => rowsData.reduce((s, r) => s + r.totalGeral, 0), [rowsData]);
 
-    const TH = "border border-black p-1 text-center text-[8px] font-black uppercase bg-gray-200 text-black";
-    const TD = "border border-gray-400 p-0.5 text-center text-[8px] font-medium";
-    const TDR = "border border-gray-400 p-0.5 text-right text-[8px] font-medium";
-    const TDB = "border border-gray-400 p-0.5 text-center text-[8px] font-bold";
+    const cellStyle: React.CSSProperties = {
+        border: '1px solid #9ca3af',
+        padding: '2px 4px',
+        fontSize: '7.5px',
+        textAlign: 'center',
+        whiteSpace: 'nowrap',
+        overflow: 'hidden',
+        textOverflow: 'ellipsis',
+        maxWidth: '90px'
+    };
+    const cellRight: React.CSSProperties = { ...cellStyle, textAlign: 'right' };
+    const cellBold: React.CSSProperties = { ...cellStyle, fontWeight: 800 };
+    const headerStyle: React.CSSProperties = {
+        ...cellStyle,
+        backgroundColor: '#e5e7eb',
+        fontWeight: 900,
+        fontSize: '7px',
+        textTransform: 'uppercase' as const,
+        color: '#000'
+    };
+    const groupHeaderStyle: React.CSSProperties = {
+        ...headerStyle,
+        backgroundColor: '#d1d5db',
+        fontSize: '7.5px',
+        letterSpacing: '0.5px'
+    };
 
     return (
         <div className="space-y-6 animate-fade-in pb-20 relative">
             <style>{`
                 @media print {
-                    @page { size: landscape; margin: 4mm; }
+                    @page { size: landscape; margin: 3mm; }
                     body * { visibility: hidden; }
                     #print-area, #print-area * { visibility: visible; }
                     #print-area { position: absolute; left: 0; top: 0; width: 100%; }
                     .no-print { display: none !important; }
+                    table { table-layout: fixed; }
                 }
             `}</style>
 
@@ -239,118 +272,156 @@ const ClientBillingReport: React.FC = () => {
             </div>
 
             {reportGenerated && (
-                <div id="print-area" className="bg-white p-3 w-full border border-gray-200 rounded-lg overflow-x-auto">
+                <div id="print-area" className="bg-white p-2 w-full border border-gray-200 rounded-lg">
                     <div className="mb-2 text-center">
-                        <h1 className="text-sm font-black uppercase tracking-wide">BOLETIM DE MEDIÇÃO</h1>
-                        <p className="text-[9px] font-bold uppercase text-gray-700">{getPeriodLabel()}</p>
-                        <p className="text-[8px] font-bold uppercase text-gray-500 mt-0.5">REFERENTE A INTERMEDIAÇÃO DE SEGURANÇA E MONITORAMENTO DE CARGAS</p>
+                        <h1 style={{ fontSize: '13px', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '1px' }}>BOLETIM DE MEDIÇÃO</h1>
+                        <p style={{ fontSize: '9px', fontWeight: 700, textTransform: 'uppercase', color: '#374151' }}>{getPeriodLabel()}</p>
+                        <p style={{ fontSize: '7px', fontWeight: 600, textTransform: 'uppercase', color: '#6b7280', marginTop: '2px' }}>REFERENTE A INTERMEDIAÇÃO DE SEGURANÇA E MONITORAMENTO DE CARGAS</p>
                     </div>
 
-                    <table className="w-full border-collapse" style={{ fontSize: '8px' }}>
-                        <thead>
-                            <tr>
-                                <th className={TH} colSpan={11}>TABELA ACORDADA</th>
-                                <th className={TH} colSpan={8}>INFORMAÇÕES DA VIAGEM</th>
-                                <th className={TH} colSpan={3}>KILOMETRAGEM</th>
-                                <th className={TH} colSpan={3}>HORÁRIOS</th>
-                                <th className={TH} colSpan={3}>KM EXCEDENTE</th>
-                                <th className={TH} colSpan={3}>HORA EXCEDENTE</th>
-                                <th className={TH} colSpan={3}>VALORES</th>
-                            </tr>
-                            <tr>
-                                <th className={TH}>Nº</th>
-                                <th className={TH}>ROTA</th>
-                                <th className={TH}>CLIENTE</th>
-                                <th className={TH}>OPERAÇÃO</th>
-                                <th className={TH}>VALOR</th>
-                                <th className={TH}>HR FRANQ</th>
-                                <th className={TH}>KM FRANQ</th>
-                                <th className={TH}>HR EXTRA</th>
-                                <th className={TH}>KM EXTRA</th>
-                                <th className={TH}>PEDÁGIO</th>
-                                <th className={TH}>STATUS</th>
-                                <th className={TH}>DATA INICIAL</th>
-                                <th className={TH}>HORA INICIAL</th>
-                                <th className={TH}>REF.</th>
-                                <th className={TH}>ROTA</th>
-                                <th className={TH}>VIATURA</th>
-                                <th className={TH}>VEÍC. ESCOLTADO</th>
-                                <th className={TH}>DATA FINAL</th>
-                                <th className={TH}>HORA FINAL</th>
-                                <th className={TH}>INICIAL</th>
-                                <th className={TH}>FINAL</th>
-                                <th className={TH}>TOTAL</th>
-                                <th className={TH}>INICIAL</th>
-                                <th className={TH}>FINAL</th>
-                                <th className={TH}>TOTAL</th>
-                                <th className={TH}>KM</th>
-                                <th className={TH}>VALOR</th>
-                                <th className={TH}>TOTAL</th>
-                                <th className={TH}>HORA</th>
-                                <th className={TH}>VALOR</th>
-                                <th className={TH}>TOTAL</th>
-                                <th className={TH}>ESCOLTA</th>
-                                <th className={TH}>PEDÁGIO</th>
-                                <th className={TH}>TOTAL</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {rowsData.length === 0 ? (
-                                <tr><td colSpan={34} className="p-4 text-center font-bold text-gray-400 text-xs">NENHUMA MISSÃO NO PERÍODO.</td></tr>
-                            ) : (
-                                rowsData.map((r, i) => (
-                                    <tr key={i} className={i % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
-                                        <td className={TDB}>{r.id}</td>
-                                        <td className={`${TD} text-left max-w-[100px] truncate`} title={r.route}>{r.route}</td>
-                                        <td className={`${TD} max-w-[60px] truncate`}>{r.client}</td>
-                                        <td className={TD}>{r.operationType}</td>
-                                        <td className={TDR}>{fmtNum(r.activationFee)}</td>
-                                        <td className={TD}>{r.franchiseHours}</td>
-                                        <td className={TD}>{r.franchiseKm}</td>
-                                        <td className={TDR}>{fmtNum(r.unitHr, 2)}</td>
-                                        <td className={TDR}>{fmtNum(r.unitKm, 2)}</td>
-                                        <td className={TD}>{r.tollLabel}</td>
-                                        <td className={TD}>{r.status}</td>
-                                        <td className={TD}>{r.startDate}</td>
-                                        <td className={TD}>{r.startTime}</td>
-                                        <td className={TD}>{r.region}</td>
-                                        <td className={`${TD} text-left max-w-[100px] truncate`} title={r.routeDetail}>{r.routeDetail}</td>
-                                        <td className={`${TD} font-mono`}>{r.viatura}</td>
-                                        <td className={`${TD} font-mono`}>{r.clientPlate}</td>
-                                        <td className={TD}>{r.endDate}</td>
-                                        <td className={TD}>{r.endTime}</td>
-                                        <td className={TD}>{fmtNum(r.kmStart)}</td>
-                                        <td className={TD}>{fmtNum(r.kmEnd)}</td>
-                                        <td className={TDB}>{fmtNum(r.kmTotal)}</td>
-                                        <td className={TD}>{r.timeStart}</td>
-                                        <td className={TD}>{r.timeEnd}</td>
-                                        <td className={TDB}>{r.timeTotal}</td>
-                                        <td className={TD}>{r.kmExtraQtd > 0 ? fmtNum(r.kmExtraQtd) : '-'}</td>
-                                        <td className={TDR}>{r.kmExtraQtd > 0 ? fmtNum(r.kmExtraUnit, 2) : '-'}</td>
-                                        <td className={TDR}>{r.kmExtraTotal > 0 ? fmtMoney(r.kmExtraTotal) : ' R$-   '}</td>
-                                        <td className={TD}>{r.hrExtraQtd > 0 ? fmtNum(r.hrExtraQtd, 2) : '-'}</td>
-                                        <td className={TDR}>{r.hrExtraQtd > 0 ? fmtNum(r.hrExtraUnit, 2) : '-'}</td>
-                                        <td className={TDR}>{r.hrExtraTotal > 0 ? fmtMoney(r.hrExtraTotal) : ' R$-   '}</td>
-                                        <td className={TDR}>{fmtNum(r.escoltaVal)}</td>
-                                        <td className={TDR}>{r.tollVal > 0 ? fmtNum(r.tollVal, 2) : ' R$ -   '}</td>
-                                        <td className={`${TDR} font-black bg-gray-100`}>{fmtNum(r.totalGeral, 2)}</td>
-                                    </tr>
-                                ))
-                            )}
-                        </tbody>
-                        {rowsData.length > 0 && (
-                            <tfoot>
-                                <tr className="bg-gray-900 text-white font-black">
-                                    <td colSpan={33} className="border border-black p-1 text-right text-[9px] uppercase">TOTAL</td>
-                                    <td className="border border-black p-1 text-right text-[9px]">{fmtNum(grandTotal, 2)}</td>
+                    <div style={{ overflowX: 'auto' }}>
+                        <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed' }}>
+                            <colgroup>
+                                <col style={{ width: '32px' }} />
+                                <col style={{ width: '95px' }} />
+                                <col style={{ width: '50px' }} />
+                                <col style={{ width: '65px' }} />
+                                <col style={{ width: '48px' }} />
+                                <col style={{ width: '38px' }} />
+                                <col style={{ width: '38px' }} />
+                                <col style={{ width: '48px' }} />
+                                <col style={{ width: '42px' }} />
+                                <col style={{ width: '48px' }} />
+                                <col style={{ width: '55px' }} />
+                                <col style={{ width: '55px' }} />
+                                <col style={{ width: '38px' }} />
+                                <col style={{ width: '58px' }} />
+                                <col style={{ width: '95px' }} />
+                                <col style={{ width: '55px' }} />
+                                <col style={{ width: '55px' }} />
+                                <col style={{ width: '55px' }} />
+                                <col style={{ width: '38px' }} />
+                                <col style={{ width: '42px' }} />
+                                <col style={{ width: '42px' }} />
+                                <col style={{ width: '38px' }} />
+                                <col style={{ width: '38px' }} />
+                                <col style={{ width: '38px' }} />
+                                <col style={{ width: '38px' }} />
+                                <col style={{ width: '32px' }} />
+                                <col style={{ width: '48px' }} />
+                                <col style={{ width: '55px' }} />
+                                <col style={{ width: '38px' }} />
+                                <col style={{ width: '48px' }} />
+                                <col style={{ width: '55px' }} />
+                                <col style={{ width: '48px' }} />
+                                <col style={{ width: '50px' }} />
+                                <col style={{ width: '60px' }} />
+                            </colgroup>
+                            <thead>
+                                <tr>
+                                    <th style={groupHeaderStyle} colSpan={11}>TABELA ACORDADA</th>
+                                    <th style={groupHeaderStyle} colSpan={8}>INFORMAÇÕES DA VIAGEM</th>
+                                    <th style={groupHeaderStyle} colSpan={3}>KILOMETRAGEM</th>
+                                    <th style={groupHeaderStyle} colSpan={3}>HORÁRIOS</th>
+                                    <th style={groupHeaderStyle} colSpan={3}>KM EXCEDENTE</th>
+                                    <th style={groupHeaderStyle} colSpan={3}>HORA EXCEDENTE</th>
+                                    <th style={groupHeaderStyle} colSpan={3}>VALORES</th>
                                 </tr>
-                            </tfoot>
-                        )}
-                    </table>
+                                <tr>
+                                    <th style={headerStyle}>Nº</th>
+                                    <th style={headerStyle}>ROTA</th>
+                                    <th style={headerStyle}>CLIENTE</th>
+                                    <th style={headerStyle}>OPERAÇÃO</th>
+                                    <th style={headerStyle}>VALOR</th>
+                                    <th style={headerStyle}>HR FRANQ</th>
+                                    <th style={headerStyle}>KM FRANQ</th>
+                                    <th style={headerStyle}>HR EXTRA</th>
+                                    <th style={headerStyle}>KM EXTRA</th>
+                                    <th style={headerStyle}>PEDÁGIO</th>
+                                    <th style={headerStyle}>STATUS</th>
+                                    <th style={headerStyle}>DATA INICIAL</th>
+                                    <th style={headerStyle}>HORA INICIAL</th>
+                                    <th style={headerStyle}>REF.</th>
+                                    <th style={headerStyle}>ROTA</th>
+                                    <th style={headerStyle}>VIATURA</th>
+                                    <th style={headerStyle}>VEÍC. ESCOLTADO</th>
+                                    <th style={headerStyle}>DATA FINAL</th>
+                                    <th style={headerStyle}>HORA FINAL</th>
+                                    <th style={headerStyle}>INICIAL</th>
+                                    <th style={headerStyle}>FINAL</th>
+                                    <th style={headerStyle}>TOTAL</th>
+                                    <th style={headerStyle}>INICIAL</th>
+                                    <th style={headerStyle}>FINAL</th>
+                                    <th style={headerStyle}>TOTAL</th>
+                                    <th style={headerStyle}>KM</th>
+                                    <th style={headerStyle}>VALOR</th>
+                                    <th style={headerStyle}>TOTAL</th>
+                                    <th style={headerStyle}>HORA</th>
+                                    <th style={headerStyle}>VALOR</th>
+                                    <th style={headerStyle}>TOTAL</th>
+                                    <th style={headerStyle}>ESCOLTA</th>
+                                    <th style={headerStyle}>PEDÁGIO</th>
+                                    <th style={headerStyle}>TOTAL</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {rowsData.length === 0 ? (
+                                    <tr><td colSpan={34} style={{ ...cellStyle, padding: '16px', fontSize: '10px', fontWeight: 700, color: '#9ca3af' }}>NENHUMA MISSÃO NO PERÍODO.</td></tr>
+                                ) : (
+                                    rowsData.map((r, i) => (
+                                        <tr key={i} style={{ backgroundColor: i % 2 === 0 ? '#fff' : '#f9fafb' }}>
+                                            <td style={cellBold}>{r.id}</td>
+                                            <td style={{ ...cellStyle, textAlign: 'left' }} title={r.route}>{r.route}</td>
+                                            <td style={cellStyle} title={r.client}>{r.client}</td>
+                                            <td style={cellStyle}>{r.operationType}</td>
+                                            <td style={cellRight}>{fmtBRL(r.activationFee)}</td>
+                                            <td style={cellStyle}>{r.franchiseHoursFmt}</td>
+                                            <td style={cellStyle}>{fmtNum(r.franchiseKm)}</td>
+                                            <td style={cellRight}>{fmtBRL(r.unitHr)}</td>
+                                            <td style={cellRight}>{fmtBRL(r.unitKm)}</td>
+                                            <td style={cellStyle}>{r.tollLabel}</td>
+                                            <td style={cellStyle}>{r.status}</td>
+                                            <td style={cellStyle}>{r.startDate}</td>
+                                            <td style={cellStyle}>{r.startTime}</td>
+                                            <td style={cellStyle}>{r.region}</td>
+                                            <td style={{ ...cellStyle, textAlign: 'left' }} title={r.routeDetail}>{r.routeDetail}</td>
+                                            <td style={{ ...cellStyle, fontFamily: 'monospace' }}>{r.viatura}</td>
+                                            <td style={{ ...cellStyle, fontFamily: 'monospace' }}>{r.cargoPlate}</td>
+                                            <td style={cellStyle}>{r.endDate}</td>
+                                            <td style={cellStyle}>{r.endTime}</td>
+                                            <td style={cellStyle}>{fmtNum(r.kmStart)}</td>
+                                            <td style={cellStyle}>{fmtNum(r.kmEnd)}</td>
+                                            <td style={cellBold}>{fmtNum(r.kmTotal)}</td>
+                                            <td style={cellStyle}>{r.timeStart}</td>
+                                            <td style={cellStyle}>{r.timeEnd}</td>
+                                            <td style={cellBold}>{r.timeTotal}</td>
+                                            <td style={cellStyle}>{r.kmExtraQtd > 0 ? fmtNum(r.kmExtraQtd) : '-'}</td>
+                                            <td style={cellRight}>{r.kmExtraQtd > 0 ? fmtBRL(r.kmExtraUnit) : '-'}</td>
+                                            <td style={cellRight}>{r.kmExtraTotal > 0 ? fmtBRL(r.kmExtraTotal) : 'R$ 0,00'}</td>
+                                            <td style={cellStyle}>{r.hrExtraQtd > 0 ? fmtHHMM(r.hrExtraQtd) : '-'}</td>
+                                            <td style={cellRight}>{r.hrExtraQtd > 0 ? fmtBRL(r.hrExtraUnit) : '-'}</td>
+                                            <td style={cellRight}>{r.hrExtraTotal > 0 ? fmtBRL(r.hrExtraTotal) : 'R$ 0,00'}</td>
+                                            <td style={cellRight}>{fmtBRL(r.escoltaVal)}</td>
+                                            <td style={cellRight}>{r.tollVal > 0 ? fmtBRL(r.tollVal) : 'R$ 0,00'}</td>
+                                            <td style={{ ...cellRight, fontWeight: 900, backgroundColor: '#f3f4f6' }}>{fmtBRL(r.totalGeral)}</td>
+                                        </tr>
+                                    ))
+                                )}
+                            </tbody>
+                            {rowsData.length > 0 && (
+                                <tfoot>
+                                    <tr style={{ backgroundColor: '#111827', color: '#fff' }}>
+                                        <td colSpan={33} style={{ ...cellStyle, textAlign: 'right', fontWeight: 900, fontSize: '8px', color: '#fff', border: '1px solid #000' }}>TOTAL</td>
+                                        <td style={{ ...cellRight, fontWeight: 900, fontSize: '9px', color: '#fff', border: '1px solid #000' }}>{fmtBRL(grandTotal)}</td>
+                                    </tr>
+                                </tfoot>
+                            )}
+                        </table>
+                    </div>
 
-                    <div className="mt-8 flex justify-between px-10">
-                        <div className="text-center border-t border-black w-64 pt-2 text-[8px] font-bold uppercase">Assinatura TMSEG</div>
-                        <div className="text-center border-t border-black w-64 pt-2 text-[8px] font-bold uppercase">Assinatura Cliente</div>
+                    <div style={{ marginTop: '32px', display: 'flex', justifyContent: 'space-between', padding: '0 40px' }}>
+                        <div style={{ textAlign: 'center', borderTop: '1px solid #000', width: '250px', paddingTop: '8px', fontSize: '8px', fontWeight: 700, textTransform: 'uppercase' }}>Assinatura TMSEG</div>
+                        <div style={{ textAlign: 'center', borderTop: '1px solid #000', width: '250px', paddingTop: '8px', fontSize: '8px', fontWeight: 700, textTransform: 'uppercase' }}>Assinatura Cliente</div>
                     </div>
                 </div>
             )}
