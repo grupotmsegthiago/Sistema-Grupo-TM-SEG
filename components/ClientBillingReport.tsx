@@ -203,6 +203,8 @@ const ClientBillingReport: React.FC = () => {
 
     const grandTotal = useMemo(() => rowsData.reduce((s, r) => s + r.totalGeral, 0), [rowsData]);
 
+    const fmtBRLExcel = (v: number) => v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+
     const handleExportExcel = useCallback(() => {
         if (rowsData.length === 0) return;
 
@@ -234,11 +236,11 @@ const ClientBillingReport: React.FC = () => {
         const dataRows = rowsData.map(r => [
             r.id,
             r.route,
-            r.activationFee,
+            fmtBRLExcel(r.activationFee),
             r.franchiseHoursFmt,
-            r.franchiseKm,
-            r.unitHr,
-            r.unitKm,
+            r.franchiseKm > 0 ? fmtNum(r.franchiseKm) : '-',
+            fmtBRLExcel(r.unitHr),
+            fmtBRLExcel(r.unitKm),
             r.tollLabel,
             r.status,
             r.startDate,
@@ -247,42 +249,41 @@ const ClientBillingReport: React.FC = () => {
             r.cargoPlate,
             r.endDate,
             r.endTime,
-            r.kmStart,
-            r.kmEnd,
-            r.kmTotal,
+            r.kmStart > 0 ? fmtNum(r.kmStart) : '-',
+            r.kmEnd > 0 ? fmtNum(r.kmEnd) : '-',
+            r.kmTotal > 0 ? fmtNum(r.kmTotal) : '-',
             r.timeStart,
             r.timeEnd,
             r.timeTotal,
-            r.kmExtraQtd > 0 ? r.kmExtraQtd : '',
-            r.kmExtraQtd > 0 ? r.kmExtraUnit : '',
-            r.kmExtraTotal > 0 ? r.kmExtraTotal : 0,
-            r.hrExtraQtd > 0 ? fmtHHMM(r.hrExtraQtd) : '',
-            r.hrExtraQtd > 0 ? r.hrExtraUnit : '',
-            r.hrExtraTotal > 0 ? r.hrExtraTotal : 0,
-            r.escoltaVal,
-            r.tollVal,
-            r.totalGeral
+            r.kmExtraQtd > 0 ? fmtNum(r.kmExtraQtd) : '-',
+            r.kmExtraQtd > 0 ? fmtBRLExcel(r.kmExtraUnit) : '-',
+            r.kmExtraTotal > 0 ? fmtBRLExcel(r.kmExtraTotal) : 'R$ 0,00',
+            r.hrExtraQtd > 0 ? fmtHHMM(r.hrExtraQtd) : '-',
+            r.hrExtraQtd > 0 ? fmtBRLExcel(r.hrExtraUnit) : '-',
+            r.hrExtraTotal > 0 ? fmtBRLExcel(r.hrExtraTotal) : 'R$ 0,00',
+            fmtBRLExcel(r.escoltaVal),
+            r.tollVal > 0 ? fmtBRLExcel(r.tollVal) : 'R$ 0,00',
+            fmtBRLExcel(r.totalGeral)
         ]);
 
         const totalRow = Array(30).fill('');
         totalRow[0] = 'TOTAL';
-        totalRow[29] = grandTotal;
+        totalRow[29] = fmtBRLExcel(grandTotal);
 
         const allRows = [titleRow, periodRow, subtitleRow, [], headerGroup, headerSub, ...dataRows, [], totalRow];
         const ws = XLSX.utils.aoa_to_sheet(allRows);
 
-        const colWidths = [
-            { wch: 6 }, { wch: 28 }, { wch: 10 }, { wch: 8 }, { wch: 8 }, { wch: 10 }, { wch: 10 }, { wch: 10 }, { wch: 10 },
-            { wch: 12 }, { wch: 8 }, { wch: 10 }, { wch: 10 }, { wch: 12 }, { wch: 8 },
-            { wch: 8 }, { wch: 8 }, { wch: 8 },
+        ws['!cols'] = [
+            { wch: 6 }, { wch: 30 }, { wch: 12 }, { wch: 7 }, { wch: 7 }, { wch: 12 }, { wch: 12 }, { wch: 10 }, { wch: 12 },
+            { wch: 12 }, { wch: 8 }, { wch: 10 }, { wch: 12 }, { wch: 12 }, { wch: 8 },
+            { wch: 9 }, { wch: 9 }, { wch: 8 },
             { wch: 7 }, { wch: 7 }, { wch: 7 },
-            { wch: 6 }, { wch: 10 }, { wch: 10 },
-            { wch: 7 }, { wch: 10 }, { wch: 10 },
-            { wch: 10 }, { wch: 10 }, { wch: 12 }
+            { wch: 6 }, { wch: 12 }, { wch: 12 },
+            { wch: 7 }, { wch: 12 }, { wch: 12 },
+            { wch: 12 }, { wch: 12 }, { wch: 14 }
         ];
-        ws['!cols'] = colWidths;
 
-        const merges = [
+        ws['!merges'] = [
             { s: { r: 0, c: 0 }, e: { r: 0, c: 29 } },
             { s: { r: 1, c: 0 }, e: { r: 1, c: 29 } },
             { s: { r: 2, c: 0 }, e: { r: 2, c: 29 } },
@@ -294,21 +295,6 @@ const ClientBillingReport: React.FC = () => {
             { s: { r: 4, c: 24 }, e: { r: 4, c: 26 } },
             { s: { r: 4, c: 27 }, e: { r: 4, c: 29 } },
         ];
-        ws['!merges'] = merges;
-
-        const moneyColumns = [2, 5, 6, 22, 23, 25, 26, 27, 28, 29];
-        const dataStartRow = 6;
-        const dataEndRow = dataStartRow + dataRows.length - 1;
-        for (let row = dataStartRow; row <= dataEndRow; row++) {
-            for (const col of moneyColumns) {
-                const cellRef = XLSX.utils.encode_cell({ r: row, c: col });
-                if (ws[cellRef] && typeof ws[cellRef].v === 'number') {
-                    ws[cellRef].z = '#,##0.00';
-                }
-            }
-        }
-        const totalCellRef = XLSX.utils.encode_cell({ r: dataEndRow + 2, c: 29 });
-        if (ws[totalCellRef]) ws[totalCellRef].z = '#,##0.00';
 
         const clientLabel = displayClientName || 'CLIENTE';
         const periodShort = startDate && endDate ? `${startDate.replace(/-/g, '')}_${endDate.replace(/-/g, '')}` : 'PERIODO';
@@ -367,12 +353,30 @@ const ClientBillingReport: React.FC = () => {
         <div className="space-y-6 animate-fade-in pb-20 relative">
             <style>{`
                 @media print {
-                    @page { size: landscape; margin: 2mm; }
-                    body * { visibility: hidden; }
-                    #print-area, #print-area * { visibility: visible; }
-                    #print-area { position: absolute; left: 0; top: 0; width: 100%; }
-                    #print-area table { font-size: 6px !important; table-layout: auto !important; width: 100% !important; }
-                    #print-area td, #print-area th { padding: 1px 2px !important; font-size: 6px !important; max-width: none !important; }
+                    @page { size: A4 landscape; margin: 2mm; }
+                    body * { visibility: hidden !important; }
+                    #print-area, #print-area * { visibility: visible !important; }
+                    #print-area {
+                        position: absolute; left: 0; top: 0;
+                        width: 297mm;
+                        transform-origin: top left;
+                    }
+                    #print-area table {
+                        table-layout: auto !important;
+                        width: 100% !important;
+                        border-collapse: collapse !important;
+                    }
+                    #print-area td, #print-area th {
+                        padding: 1px 2px !important;
+                        font-size: 5.5px !important;
+                        max-width: none !important;
+                        white-space: nowrap !important;
+                        overflow: visible !important;
+                        border: 0.5px solid #999 !important;
+                    }
+                    #print-area h1 { font-size: 10px !important; }
+                    #print-area p { font-size: 7px !important; }
+                    #print-area colgroup { display: none !important; }
                     .no-print { display: none !important; }
                 }
             `}</style>
