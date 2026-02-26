@@ -7,7 +7,7 @@ import {
 } from 'recharts';
 import {
     Activity, TrendingUp, TrendingDown, Wallet, Percent, Truck, Target,
-    DollarSign, Calendar, CheckCircle2, XCircle,
+    DollarSign, Calendar, CheckCircle2, XCircle, AlertTriangle,
     Trophy, Briefcase, Shield, PieChart as PieChartIcon, Lock, RefreshCw
 } from 'lucide-react';
 
@@ -112,6 +112,23 @@ const ExecutiveDashboard: React.FC<Props> = ({ missions, isDirector, clientTable
                 return { ...m, rev, cost, profit: rev - cost };
             }
 
+            const hasStoredRevenueAny = (m.revenue_value != null && m.revenue_value > 0);
+            if (hasStoredRevenueAny) {
+                const rev = (m.revenue_value || 0) + (m.toll_value || 0);
+                const cost = (m.cost_value || 0) + (m.toll_value || 0);
+                return { ...m, rev, cost, profit: rev - cost };
+            }
+
+            const terminalStatuses = [MissionStatus.COMPLETED, MissionStatus.CANCELLED];
+            const isTerminal = terminalStatuses.includes(m.status as MissionStatus);
+            const hasKm = ((m.startKm || m.start_km) > 0 && (m.endKm || m.end_km) > 0);
+            const hasTime = !!(m.startTime || m.start_time) && !!(m.endTime || m.end_time);
+
+            if (!isTerminal && !hasKm && !hasTime) {
+                const baseFee = m.toll_value || 0;
+                return { ...m, rev: baseFee, cost: baseFee, profit: 0 };
+            }
+
             const missionObj: Mission = {
                 ...m,
                 startKm: m.startKm ?? m.start_km,
@@ -128,9 +145,14 @@ const ExecutiveDashboard: React.FC<Props> = ({ missions, isDirector, clientTable
                 matchedClient,
                 new Date()
             );
-            const rev = financials.client.total || 0;
-            const cost = financials.provider.total || 0;
-            return { ...m, rev, cost, profit: rev - cost };
+            let rev = financials.client.total || 0;
+            let cost = financials.provider.total || 0;
+
+            const MAX_SINGLE_MISSION = 50000;
+            if (rev > MAX_SINGLE_MISSION) rev = 0;
+            if (cost > MAX_SINGLE_MISSION) cost = 0;
+
+            return { ...m, rev, cost, profit: rev - cost, anomaly: (rev > 15000 || cost > 15000) };
         });
     }, [filteredMissions, clientTables, providerTables, clientsData, refreshKey]);
 
@@ -147,6 +169,36 @@ const ExecutiveDashboard: React.FC<Props> = ({ missions, isDirector, clientTable
         const avgTicket = total > 0 ? totalRev / total : 0;
         const pendingAudit = valid.filter(m => !m.billing_approved && m.status === MissionStatus.COMPLETED).length;
         return { totalRev, totalCost, totalProfit, margin, completed, inTransit, cancelled, total, avgTicket, pendingAudit };
+    }, [missionFinancials]);
+
+    const anomalies = useMemo(() => {
+        const REVENUE_ALERT = 8000;
+        const COST_ALERT = 6000;
+        const MARGIN_ALERT_LOW = -10;
+        const MARGIN_ALERT_HIGH = 85;
+
+        return missionFinancials
+            .filter(m => m.status !== MissionStatus.REFUSED)
+            .map(m => {
+                const issues: string[] = [];
+                if (m.rev > REVENUE_ALERT) issues.push(`Receita alta: ${fmtBRL(m.rev)}`);
+                if (m.cost > COST_ALERT) issues.push(`Custo alto: ${fmtBRL(m.cost)}`);
+                if (m.rev > 0 && m.cost > 0) {
+                    const mg = ((m.rev - m.cost) / m.rev) * 100;
+                    if (mg < MARGIN_ALERT_LOW) issues.push(`Margem negativa: ${mg.toFixed(1)}%`);
+                    if (mg > MARGIN_ALERT_HIGH) issues.push(`Margem suspeita: ${mg.toFixed(1)}%`);
+                }
+                if (m.rev === 0 && m.status === MissionStatus.COMPLETED && !m.billing_approved) issues.push('Concluída sem valor');
+                if (m.rev > 0 && m.cost === 0 && m.status === MissionStatus.COMPLETED) issues.push('Sem custo registrado');
+
+                const hasKm = ((m.startKm || (m as any).start_km) > 0 && (m.endKm || (m as any).end_km) > 0);
+                const km = hasKm ? ((m.endKm || (m as any).end_km) - (m.startKm || (m as any).start_km)) : 0;
+                if (km > 2000) issues.push(`KM suspeito: ${km.toLocaleString('pt-BR')} km`);
+                if (km < 0) issues.push(`KM negativo: ${km} km`);
+
+                return issues.length > 0 ? { id: m.id, client: m.client, status: m.status, rev: m.rev, cost: m.cost, issues } : null;
+            })
+            .filter(Boolean) as { id: string; client: string; status: string; rev: number; cost: number; issues: string[] }[];
     }, [missionFinancials]);
 
     const dailyData = useMemo(() => {
@@ -320,6 +372,41 @@ const ExecutiveDashboard: React.FC<Props> = ({ missions, isDirector, clientTable
                     <KpiCard label="Custo" value={fmtBRL(totals.totalCost)} icon={TrendingDown} color="bg-red-50 text-red-800 border-red-200" />
                     <KpiCard label="Lucro" value={fmtBRL(totals.totalProfit)} icon={Wallet} color={`${totals.totalProfit >= 0 ? 'bg-blue-50 text-blue-800 border-blue-200' : 'bg-red-50 text-red-800 border-red-200'}`} />
                     <KpiCard label="Margem" value={`${totals.margin.toFixed(1)}%`} icon={Percent} color="bg-slate-900 text-white border-slate-800" sub={`Ticket: ${fmtBRL(totals.avgTicket)}`} />
+                </div>
+            )}
+
+            {anomalies.length > 0 && (
+                <div className="bg-amber-50 border border-amber-300 rounded-xl p-4 shadow-sm" data-testid="anomaly-alerts-panel">
+                    <div className="flex items-center gap-2.5 mb-3 pb-2 border-b border-amber-200">
+                        <div className="p-2 bg-amber-500 text-white rounded-lg"><AlertTriangle size={14} /></div>
+                        <h4 className="text-xs font-black text-amber-800 uppercase tracking-widest">Alertas de OS ({anomalies.length})</h4>
+                    </div>
+                    <div className="max-h-48 overflow-y-auto space-y-1.5">
+                        {anomalies.slice(0, 20).map((a, i) => (
+                            <div key={i} className="flex items-start gap-3 bg-white border border-amber-200 rounded-lg px-3 py-2" data-testid={`anomaly-row-${a.id}`}>
+                                <AlertTriangle size={14} className="text-amber-500 mt-0.5 flex-shrink-0" />
+                                <div className="flex-1 min-w-0">
+                                    <div className="flex items-center gap-2 flex-wrap">
+                                        <span className="text-[11px] font-black text-gray-900">OS {a.id}</span>
+                                        <span className="text-[10px] font-bold text-gray-400">{(a.client || '').substring(0, 25)}</span>
+                                        <span className={`text-[9px] font-black px-1.5 py-0.5 rounded ${a.status === MissionStatus.COMPLETED ? 'bg-green-100 text-green-700' : a.status === MissionStatus.IN_TRANSIT ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-600'}`}>{a.status}</span>
+                                    </div>
+                                    <div className="flex flex-wrap gap-2 mt-1">
+                                        {a.issues.map((issue, j) => (
+                                            <span key={j} className="text-[10px] font-bold text-amber-700 bg-amber-100 px-2 py-0.5 rounded-full">{issue}</span>
+                                        ))}
+                                    </div>
+                                </div>
+                                <div className="text-right flex-shrink-0">
+                                    <p className="text-[10px] font-bold text-gray-500">Receita: <span className="text-gray-900">{fmtBRL(a.rev)}</span></p>
+                                    <p className="text-[10px] font-bold text-gray-500">Custo: <span className="text-gray-900">{fmtBRL(a.cost)}</span></p>
+                                </div>
+                            </div>
+                        ))}
+                        {anomalies.length > 20 && (
+                            <p className="text-[11px] font-bold text-amber-600 text-center pt-1">+{anomalies.length - 20} alertas adicionais</p>
+                        )}
+                    </div>
                 </div>
             )}
 
