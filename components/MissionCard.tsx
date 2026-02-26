@@ -159,7 +159,7 @@ const MissionCardComponent: React.FC<MissionCardProps> = ({
         const dbToll = mission.toll_value || 0;
         const storedValue = (mission.revenue_value || 0) + dbToll;
         
-        if (mission.billing_approved || hasBeenVerified) {
+        if (isTerminal && (mission.billing_approved || hasBeenVerified)) {
             return storedValue;
         }
         
@@ -168,13 +168,13 @@ const MissionCardComponent: React.FC<MissionCardProps> = ({
         }
 
         return storedValue;
-    }, [mission.revenue_value, mission.toll_value, mission.billing_approved, hasBeenVerified, financials]);
+    }, [mission.revenue_value, mission.toll_value, mission.billing_approved, hasBeenVerified, financials, isTerminal]);
 
     const displayCost = useMemo(() => {
         const dbToll = mission.toll_value || 0;
         const storedValue = (mission.cost_value || 0) + dbToll;
         
-        if (mission.billing_approved || hasBeenVerified) {
+        if (isTerminal && (mission.billing_approved || hasBeenVerified)) {
             return storedValue;
         }
 
@@ -183,7 +183,7 @@ const MissionCardComponent: React.FC<MissionCardProps> = ({
         }
         
         return storedValue;
-    }, [mission.cost_value, mission.toll_value, mission.billing_approved, hasBeenVerified, financials]);
+    }, [mission.cost_value, mission.toll_value, mission.billing_approved, hasBeenVerified, financials, isTerminal]);
 
     const isActive = !isTerminal;
 
