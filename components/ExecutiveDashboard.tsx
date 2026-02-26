@@ -1,5 +1,6 @@
 import React, { useMemo, useState, useCallback } from 'react';
 import { Mission, MissionStatus, Client, ClientPriceTable, ProviderCostTable } from '../types';
+import { calculateMissionFinancials } from '../lib/financialUtils';
 import {
     BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
     PieChart, Pie, Cell, AreaChart, Area, ComposedChart, Line, Legend, LabelList
@@ -99,11 +100,39 @@ const ExecutiveDashboard: React.FC<Props> = ({ missions, isDirector, clientTable
     const missionFinancials = useMemo(() => {
         return filteredMissions.map(m => {
             if (m.status === MissionStatus.REFUSED) return { ...m, rev: 0, cost: 0, profit: 0 };
-            const rev = (m.revenue_value || 0) + (m.toll_value || 0);
-            const cost = (m.cost_value || 0) + (m.toll_value || 0);
+
+            const isAudited = m.billing_approved;
+            const hasBeenVerified = !!m.billing_verified_by;
+            const hasStoredRevenue = (m.revenue_value != null && m.revenue_value > 0);
+            const hasStoredCost = (m.cost_value != null && m.cost_value > 0);
+
+            if ((isAudited || hasBeenVerified) && hasStoredRevenue) {
+                const rev = (m.revenue_value || 0) + (m.toll_value || 0);
+                const cost = (m.cost_value || 0) + (m.toll_value || 0);
+                return { ...m, rev, cost, profit: rev - cost };
+            }
+
+            const missionObj: Mission = {
+                ...m,
+                startKm: m.startKm ?? m.start_km,
+                endKm: m.endKm ?? m.end_km,
+                startTime: m.startTime ?? m.start_time,
+                endTime: m.endTime ?? m.end_time
+            };
+            const clientName = (m.originalClientName || m.client || '').trim();
+            const matchedClient = clientsData.find(c => c.name === clientName);
+            const financials = calculateMissionFinancials(
+                missionObj,
+                clientTables,
+                providerTables,
+                matchedClient,
+                new Date()
+            );
+            const rev = financials.client.total || 0;
+            const cost = financials.provider.total || 0;
             return { ...m, rev, cost, profit: rev - cost };
         });
-    }, [filteredMissions, refreshKey]);
+    }, [filteredMissions, clientTables, providerTables, clientsData, refreshKey]);
 
     const totals = useMemo(() => {
         const valid = missionFinancials.filter(m => m.status !== MissionStatus.REFUSED);
