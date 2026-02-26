@@ -70,13 +70,14 @@ interface Props {
     providerTables: ProviderCostTable[];
     clientsData: Client[];
     currentTime: Date;
+    onOpenMission?: (mission: Mission) => void;
 }
 
 const AXIS_TICK = { fontSize: 11, fontWeight: 700, fill: '#64748b' };
 const AXIS_TICK_SM = { fontSize: 10, fontWeight: 700, fill: '#64748b' };
 const AXIS_LABEL_Y = { fontSize: 10, fontWeight: 800, fill: '#475569' };
 
-const ExecutiveDashboard: React.FC<Props> = ({ missions, isDirector, clientTables, providerTables, clientsData }) => {
+const ExecutiveDashboard: React.FC<Props> = ({ missions, isDirector, clientTables, providerTables, clientsData, onOpenMission }) => {
 
     const [refreshKey, setRefreshKey] = useState(0);
     const [lastUpdate, setLastUpdate] = useState(new Date());
@@ -383,11 +384,18 @@ const ExecutiveDashboard: React.FC<Props> = ({ missions, isDirector, clientTable
                     </div>
                     <div className="max-h-48 overflow-y-auto space-y-1.5">
                         {anomalies.slice(0, 20).map((a, i) => (
-                            <div key={i} className="flex items-start gap-3 bg-white border border-amber-200 rounded-lg px-3 py-2" data-testid={`anomaly-row-${a.id}`}>
+                            <div key={i} className="flex items-start gap-3 bg-white border border-amber-200 rounded-lg px-3 py-2 hover:bg-amber-50 transition-colors cursor-pointer" data-testid={`anomaly-row-${a.id}`}
+                                onClick={() => {
+                                    if (onOpenMission) {
+                                        const mission = filteredMissions.find(m => String(m.id) === String(a.id));
+                                        if (mission) onOpenMission(mission as Mission);
+                                    }
+                                }}
+                            >
                                 <AlertTriangle size={14} className="text-amber-500 mt-0.5 flex-shrink-0" />
                                 <div className="flex-1 min-w-0">
                                     <div className="flex items-center gap-2 flex-wrap">
-                                        <span className="text-[11px] font-black text-gray-900">OS {a.id}</span>
+                                        <span className="text-[11px] font-black text-blue-600 underline decoration-blue-300 hover:text-blue-800">OS {a.id}</span>
                                         <span className="text-[10px] font-bold text-gray-400">{(a.client || '').substring(0, 25)}</span>
                                         <span className={`text-[9px] font-black px-1.5 py-0.5 rounded ${a.status === MissionStatus.COMPLETED ? 'bg-green-100 text-green-700' : a.status === MissionStatus.IN_TRANSIT ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-600'}`}>{a.status}</span>
                                     </div>
