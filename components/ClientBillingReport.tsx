@@ -96,6 +96,113 @@ const ClientBillingReport: React.FC = () => {
 
     const handlePrint = () => { window.print(); };
 
+    const fmtBRL = (val: number | null | undefined) => {
+        const v = val ?? 0;
+        return v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+    };
+    const fmtNum = (val: number | null | undefined, dec = 0) => (val ?? 0).toLocaleString('pt-BR', { minimumFractionDigits: dec, maximumFractionDigits: dec });
+    const fmtDate = (iso?: string) => iso ? new Date(iso).toLocaleDateString('pt-BR') : '-';
+    const fmtTime = (iso?: string) => iso ? new Date(iso).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) : '-';
+    const fmtDateDisp = (s: string) => { if (!s) return ''; const [y, m, d] = s.split('-'); return `${d}/${m}/${y}`; };
+    const fmtHHMM = (h: number) => {
+        if (isNaN(h) || h <= 0) return '00:00';
+        const hrs = Math.floor(h);
+        const mins = Math.round((h - hrs) * 60);
+        return `${hrs.toString().padStart(2, '0')}:${mins.toString().padStart(2, '0')}`;
+    };
+    const fmtFranchiseHr = (h: number) => {
+        if (!h || h <= 0) return '00:00';
+        const hrs = Math.floor(h);
+        const mins = Math.round((h - hrs) * 60);
+        return `${hrs.toString().padStart(2, '0')}:${mins.toString().padStart(2, '0')}`;
+    };
+
+    const clientData = clients.find(c => c.id.toString() === selectedClient);
+    const displayClientName = clientData ? (clientData.trading_name || clientData.name) : '';
+
+    const getPeriodLabel = () => {
+        if (!startDate || !endDate) return '';
+        const sDate = new Date(startDate + 'T12:00:00');
+        const months = ['JANEIRO', 'FEVEREIRO', 'MARÇO', 'ABRIL', 'MAIO', 'JUNHO', 'JULHO', 'AGOSTO', 'SETEMBRO', 'OUTUBRO', 'NOVEMBRO', 'DEZEMBRO'];
+        const month = months[sDate.getMonth()];
+        const year = sDate.getFullYear();
+        const sDay = sDate.getDate();
+        const eDate = new Date(endDate + 'T12:00:00');
+        const eDay = eDate.getDate();
+        if (sDay === 1 && eDay === 15) return `GERAL - ${month} /${year} - 1ª QUINZENA DE ${month}`;
+        if (sDay === 16) return `GERAL - ${month} /${year} - 2ª QUINZENA DE ${month}`;
+        return `GERAL - ${month} /${year} - ${fmtDateDisp(startDate)} A ${fmtDateDisp(endDate)}`;
+    };
+
+    const rowsData = useMemo(() => {
+        return missions.map(m => {
+            const fin = calculateMissionFinancials(m, priceTables, providerTables, clientData);
+            const usedTable = priceTables.find(t => t.id.toString() === fin.client.tableId);
+            const franchiseKm = usedTable?.franchise_km ?? 0;
+            const franchiseHours = usedTable?.franchise_hours ?? 0;
+            const activationFee = usedTable?.activation_fee ?? 0;
+            const unitKm = usedTable?.price_per_extra_km ?? 0;
+            const unitHr = usedTable?.price_per_extra_hour ?? 0;
+            const route = m.origin && m.destination
+                ? `${(m.origin || '').split(',')[0].trim()} X ${(m.destination || '').split(',')[0].trim()}`
+                : (usedTable?.route_name || '-');
+
+            const kmTotal = fin.realTraveledKm;
+            const kmExtraQtd = fin.client.excessKm;
+            const kmExtraTotal = fin.client.extraKmVal;
+            const hrExtraQtd = fin.client.excessHours;
+            const hrExtraTotal = fin.client.extraHrVal;
+            const durationHours = fin.durationHours;
+            const tollVal = m.toll_value || 0;
+            const totalGeral = (m.revenue_value || 0) + tollVal;
+
+            const cargoPlate = m._clientVehicle?.plate || '-';
+
+            const cidadeOrigem = extractCityFromAddress(m.origin || '');
+            const cidadeDestino = extractCityFromAddress(m.destination || '');
+            const refCidades = cidadeOrigem && cidadeDestino
+                ? `${cidadeOrigem} X ${cidadeDestino}`
+                : cidadeOrigem || cidadeDestino || m.region || '-';
+
+            return {
+                id: (m.id || '').replace('GTM-', ''),
+                route: refCidades,
+                client: displayClientName,
+                activationFee,
+                franchiseHours,
+                franchiseKm,
+                unitHr,
+                unitKm,
+                tollLabel: 'À PARTE',
+                status: 'CONCLUÍDO',
+                startDate: fmtDate(m.start_time),
+                startTime: fmtTime(m.start_time),
+                viatura: m.company_vehicle?.plate || m.vehicle_id || '-',
+                cargoPlate,
+                endDate: fmtDate(m.end_time),
+                endTime: fmtTime(m.end_time),
+                kmStart: m.start_km ?? 0,
+                kmEnd: m.end_km ?? 0,
+                kmTotal,
+                timeStart: fmtTime(m.start_time),
+                timeEnd: fmtTime(m.end_time),
+                timeTotal: fmtHHMM(durationHours),
+                kmExtraQtd,
+                kmExtraUnit: unitKm,
+                kmExtraTotal,
+                hrExtraQtd,
+                hrExtraUnit: unitHr,
+                hrExtraTotal,
+                escoltaVal: activationFee,
+                tollVal,
+                totalGeral,
+                franchiseHoursFmt: fmtFranchiseHr(franchiseHours)
+            };
+        });
+    }, [missions, priceTables, providerTables, clientData, displayClientName]);
+
+    const grandTotal = useMemo(() => rowsData.reduce((s, r) => s + r.totalGeral, 0), [rowsData]);
+
     const handleExportExcel = useCallback(() => {
         if (rowsData.length === 0) return;
 
@@ -210,113 +317,6 @@ const ClientBillingReport: React.FC = () => {
         XLSX.utils.book_append_sheet(wb, ws, 'Boletim');
         XLSX.writeFile(wb, fileName);
     }, [rowsData, grandTotal, displayClientName, startDate, endDate]);
-
-    const fmtBRL = (val: number | null | undefined) => {
-        const v = val ?? 0;
-        return v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
-    };
-    const fmtNum = (val: number | null | undefined, dec = 0) => (val ?? 0).toLocaleString('pt-BR', { minimumFractionDigits: dec, maximumFractionDigits: dec });
-    const fmtDate = (iso?: string) => iso ? new Date(iso).toLocaleDateString('pt-BR') : '-';
-    const fmtTime = (iso?: string) => iso ? new Date(iso).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) : '-';
-    const fmtDateDisp = (s: string) => { if (!s) return ''; const [y, m, d] = s.split('-'); return `${d}/${m}/${y}`; };
-    const fmtHHMM = (h: number) => {
-        if (isNaN(h) || h <= 0) return '00:00';
-        const hrs = Math.floor(h);
-        const mins = Math.round((h - hrs) * 60);
-        return `${hrs.toString().padStart(2, '0')}:${mins.toString().padStart(2, '0')}`;
-    };
-    const fmtFranchiseHr = (h: number) => {
-        if (!h || h <= 0) return '00:00';
-        const hrs = Math.floor(h);
-        const mins = Math.round((h - hrs) * 60);
-        return `${hrs.toString().padStart(2, '0')}:${mins.toString().padStart(2, '0')}`;
-    };
-
-    const clientData = clients.find(c => c.id.toString() === selectedClient);
-    const displayClientName = clientData ? (clientData.trading_name || clientData.name) : '';
-
-    const getPeriodLabel = () => {
-        if (!startDate || !endDate) return '';
-        const sDate = new Date(startDate + 'T12:00:00');
-        const months = ['JANEIRO', 'FEVEREIRO', 'MARÇO', 'ABRIL', 'MAIO', 'JUNHO', 'JULHO', 'AGOSTO', 'SETEMBRO', 'OUTUBRO', 'NOVEMBRO', 'DEZEMBRO'];
-        const month = months[sDate.getMonth()];
-        const year = sDate.getFullYear();
-        const sDay = sDate.getDate();
-        const eDate = new Date(endDate + 'T12:00:00');
-        const eDay = eDate.getDate();
-        if (sDay === 1 && eDay === 15) return `GERAL - ${month} /${year} - 1ª QUINZENA DE ${month}`;
-        if (sDay === 16) return `GERAL - ${month} /${year} - 2ª QUINZENA DE ${month}`;
-        return `GERAL - ${month} /${year} - ${fmtDateDisp(startDate)} A ${fmtDateDisp(endDate)}`;
-    };
-
-    const rowsData = useMemo(() => {
-        return missions.map(m => {
-            const fin = calculateMissionFinancials(m, priceTables, providerTables, clientData);
-            const usedTable = priceTables.find(t => t.id.toString() === fin.client.tableId);
-            const franchiseKm = usedTable?.franchise_km ?? 0;
-            const franchiseHours = usedTable?.franchise_hours ?? 0;
-            const activationFee = usedTable?.activation_fee ?? 0;
-            const unitKm = usedTable?.price_per_extra_km ?? 0;
-            const unitHr = usedTable?.price_per_extra_hour ?? 0;
-            const route = m.origin && m.destination
-                ? `${(m.origin || '').split(',')[0].trim()} X ${(m.destination || '').split(',')[0].trim()}`
-                : (usedTable?.route_name || '-');
-
-            const kmTotal = fin.realTraveledKm;
-            const kmExtraQtd = fin.client.excessKm;
-            const kmExtraTotal = fin.client.extraKmVal;
-            const hrExtraQtd = fin.client.excessHours;
-            const hrExtraTotal = fin.client.extraHrVal;
-            const durationHours = fin.durationHours;
-            const tollVal = m.toll_value || 0;
-            const totalGeral = (m.revenue_value || 0) + tollVal;
-
-            const cargoPlate = m._clientVehicle?.plate || '-';
-
-            const cidadeOrigem = extractCityFromAddress(m.origin || '');
-            const cidadeDestino = extractCityFromAddress(m.destination || '');
-            const refCidades = cidadeOrigem && cidadeDestino
-                ? `${cidadeOrigem} X ${cidadeDestino}`
-                : cidadeOrigem || cidadeDestino || m.region || '-';
-
-            return {
-                id: (m.id || '').replace('GTM-', ''),
-                route: refCidades,
-                client: displayClientName,
-                activationFee,
-                franchiseHours,
-                franchiseKm,
-                unitHr,
-                unitKm,
-                tollLabel: 'À PARTE',
-                status: 'CONCLUÍDO',
-                startDate: fmtDate(m.start_time),
-                startTime: fmtTime(m.start_time),
-                viatura: m.company_vehicle?.plate || m.vehicle_id || '-',
-                cargoPlate,
-                endDate: fmtDate(m.end_time),
-                endTime: fmtTime(m.end_time),
-                kmStart: m.start_km ?? 0,
-                kmEnd: m.end_km ?? 0,
-                kmTotal,
-                timeStart: fmtTime(m.start_time),
-                timeEnd: fmtTime(m.end_time),
-                timeTotal: fmtHHMM(durationHours),
-                kmExtraQtd,
-                kmExtraUnit: unitKm,
-                kmExtraTotal,
-                hrExtraQtd,
-                hrExtraUnit: unitHr,
-                hrExtraTotal,
-                escoltaVal: activationFee,
-                tollVal,
-                totalGeral,
-                franchiseHoursFmt: fmtFranchiseHr(franchiseHours)
-            };
-        });
-    }, [missions, priceTables, providerTables, clientData, displayClientName]);
-
-    const grandTotal = useMemo(() => rowsData.reduce((s, r) => s + r.totalGeral, 0), [rowsData]);
 
     const cellStyle: React.CSSProperties = {
         border: '1px solid #9ca3af',
