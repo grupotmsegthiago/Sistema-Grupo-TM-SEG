@@ -536,6 +536,32 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                     )}
                                 </div>
                             </div>
+                            <div className="grid grid-cols-2 gap-3 mt-3 pt-3 border-t border-dashed border-gray-200">
+                                <div className="bg-indigo-50 rounded-lg px-3 py-2">
+                                    <p className="text-[9px] font-bold text-indigo-400 uppercase mb-0.5">Duração Total</p>
+                                    <p className="text-sm font-black text-indigo-800 font-mono" data-testid="text-total-duration">
+                                        {(() => {
+                                            if (!mission.startTime || !mission.endTime) return '---';
+                                            const diffMs = new Date(mission.endTime).getTime() - new Date(mission.startTime).getTime();
+                                            if (diffMs <= 0) return '---';
+                                            const h = Math.floor(diffMs / 3600000);
+                                            const m = Math.floor((diffMs % 3600000) / 60000);
+                                            return `${h.toString().padStart(2,'0')}h${m.toString().padStart(2,'0')}min`;
+                                        })()}
+                                    </p>
+                                </div>
+                                <div className="bg-indigo-50 rounded-lg px-3 py-2">
+                                    <p className="text-[9px] font-bold text-indigo-400 uppercase mb-0.5">KM Rodado</p>
+                                    <p className="text-sm font-black text-indigo-800 font-mono" data-testid="text-total-km">
+                                        {(() => {
+                                            const sk = safeNumber(mission.startKm);
+                                            const ek = safeNumber(mission.endKm);
+                                            if (sk <= 0 || ek <= 0) return '---';
+                                            return `${(ek - sk).toLocaleString('pt-BR')} km`;
+                                        })()}
+                                    </p>
+                                </div>
+                            </div>
                         </div>
                     </div>
 

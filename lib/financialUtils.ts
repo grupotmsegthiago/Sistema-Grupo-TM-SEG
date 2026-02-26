@@ -554,12 +554,10 @@ export const calculateMissionFinancials = (
                                         providerTableName.includes('200 KM') || 
                                         providerTableName.includes('100KM') || 
                                         providerTableName.includes('100 KM') || 
-                                        providerTableName.includes('LOGITECH')) ||
-                                        isFixedDistanceClientRule;
+                                        providerTableName.includes('LOGITECH'));
 
     const isFixedHoursProviderRule = providerTableName.includes('02H') || 
-                                     providerTableName.includes('02 HORAS') ||
-                                     isFixedHoursClientRule;
+                                     providerTableName.includes('02 HORAS');
 
     let providerDistForCalc = distanceForCalculation;
     let providerDurationForCalc = durationHours;
