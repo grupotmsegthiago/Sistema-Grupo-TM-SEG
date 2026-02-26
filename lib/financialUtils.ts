@@ -284,8 +284,8 @@ export const calculateMissionFinancials = (
             }
             
             if (agentAware && agentAware.isSpecial) {
-                const isTable02 = tableOp.includes('02 ARMADO') || tableOp.includes('DOIS ARMADO');
-                const isTable01 = tableOp.includes('01 ARMADO') || tableOp.includes('01 PRONTA') || (tableOp.includes('PRONTA RESPOSTA') && !isTable02);
+                const isTable02 = tableOp.includes('02 ARMADO') || tableOp.includes('02 ARMADOS') || tableOp.includes('DOIS ARMADO');
+                const isTable01 = (tableOp.includes('01 ARMADO') || tableOp.includes('01 AGENTE') || tableOp.includes('01 PRONTA') || (tableOp.includes('PRONTA RESPOSTA') && !isTable02)) && !isTable02;
                 
                 if (agentAware.count >= 2) {
                     if (isTable02) { score += 3000; matchType = '02 Agentes (Tabela Dupla)'; }
