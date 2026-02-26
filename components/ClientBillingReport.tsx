@@ -54,7 +54,7 @@ const ClientBillingReport: React.FC = () => {
             const clientName = clientObj?.name;
             const { data: missionData, error } = await supabase
                 .from('missions')
-                .select('*, client_vehicle_data:client_vehicles(*), company_vehicle:vehicles(*)')
+                .select('*, company_vehicle:vehicles(*)')
                 .eq('client', clientName)
                 .eq('billing_approved', true)
                 .gte('created_at', `${startDate}T00:00:00`)
@@ -62,13 +62,28 @@ const ClientBillingReport: React.FC = () => {
                 .neq('status', 'Cancelada')
                 .order('created_at', { ascending: true });
             if (error) throw error;
+
+            const clientVehicleIds = [...new Set((missionData || []).map((m: any) => m.client_vehicle).filter((id: any) => id))];
+            let clientVehiclesMap: Record<string, any> = {};
+            if (clientVehicleIds.length > 0) {
+                const { data: cvData } = await supabase.from('client_vehicles').select('id, plate, model, brand, color').in('id', clientVehicleIds);
+                if (cvData) {
+                    cvData.forEach((v: any) => { clientVehiclesMap[v.id.toString()] = v; });
+                }
+            }
+
+            const enrichedMissions = (missionData || []).map((m: any) => ({
+                ...m,
+                _clientVehicle: m.client_vehicle ? clientVehiclesMap[m.client_vehicle.toString()] : null
+            }));
+
             const [ptRes, pctRes] = await Promise.all([
                 supabase.from('client_price_tables').select('*').eq('client', clientName),
                 supabase.from('provider_cost_tables').select('*')
             ]);
             setPriceTables(ptRes.data as ClientPriceTable[] || []);
             setProviderTables(pctRes.data as any || []);
-            setMissions(missionData || []);
+            setMissions(enrichedMissions);
             setReportGenerated(true);
         } catch (err) {
             console.error(err);
@@ -127,8 +142,6 @@ const ClientBillingReport: React.FC = () => {
             const activationFee = usedTable?.activation_fee ?? 0;
             const unitKm = usedTable?.price_per_extra_km ?? 0;
             const unitHr = usedTable?.price_per_extra_hour ?? 0;
-            const operationType = usedTable?.operation_type || m.operation_type || 'CARACTERIZADA';
-            const region = m.region || '-';
             const route = m.origin && m.destination
                 ? `${(m.origin || '').split(',')[0].trim()} X ${(m.destination || '').split(',')[0].trim()}`
                 : (usedTable?.route_name || '-');
@@ -142,13 +155,12 @@ const ClientBillingReport: React.FC = () => {
             const tollVal = m.toll_value || 0;
             const totalGeral = (m.revenue_value || 0) + tollVal;
 
-            const cargoPlate = m.client_vehicle_data?.plate || '-';
+            const cargoPlate = m._clientVehicle?.plate || '-';
 
             return {
                 id: (m.id || '').replace('GTM-', ''),
                 route: usedTable?.route_name || route,
                 client: displayClientName,
-                operationType,
                 activationFee,
                 franchiseHours,
                 franchiseKm,
@@ -158,8 +170,7 @@ const ClientBillingReport: React.FC = () => {
                 status: 'CONCLUÍDO',
                 startDate: fmtDate(m.start_time),
                 startTime: fmtTime(m.start_time),
-                region,
-                routeDetail: route,
+                region: m.region || '-',
                 viatura: m.company_vehicle?.plate || m.vehicle_id || '-',
                 cargoPlate,
                 endDate: fmtDate(m.end_time),
@@ -190,7 +201,7 @@ const ClientBillingReport: React.FC = () => {
         border: '1px solid #9ca3af',
         padding: '2px 4px',
         fontSize: '7.5px',
-        textAlign: 'center',
+        textAlign: 'left',
         whiteSpace: 'nowrap',
         overflow: 'hidden',
         textOverflow: 'ellipsis',
@@ -204,13 +215,15 @@ const ClientBillingReport: React.FC = () => {
         fontWeight: 900,
         fontSize: '7px',
         textTransform: 'uppercase' as const,
-        color: '#000'
+        color: '#000',
+        textAlign: 'left'
     };
     const groupHeaderStyle: React.CSSProperties = {
         ...headerStyle,
         backgroundColor: '#d1d5db',
         fontSize: '7.5px',
-        letterSpacing: '0.5px'
+        letterSpacing: '0.5px',
+        textAlign: 'center'
     };
 
     return (
@@ -283,23 +296,20 @@ const ClientBillingReport: React.FC = () => {
                         <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed' }}>
                             <colgroup>
                                 <col style={{ width: '32px' }} />
-                                <col style={{ width: '95px' }} />
+                                <col style={{ width: '100px' }} />
+                                <col style={{ width: '55px' }} />
                                 <col style={{ width: '50px' }} />
-                                <col style={{ width: '65px' }} />
-                                <col style={{ width: '48px' }} />
                                 <col style={{ width: '38px' }} />
                                 <col style={{ width: '38px' }} />
-                                <col style={{ width: '48px' }} />
-                                <col style={{ width: '42px' }} />
-                                <col style={{ width: '48px' }} />
-                                <col style={{ width: '55px' }} />
-                                <col style={{ width: '55px' }} />
+                                <col style={{ width: '50px' }} />
+                                <col style={{ width: '45px' }} />
+                                <col style={{ width: '50px' }} />
+                                <col style={{ width: '50px' }} />
                                 <col style={{ width: '38px' }} />
-                                <col style={{ width: '58px' }} />
-                                <col style={{ width: '95px' }} />
+                                <col style={{ width: '60px' }} />
                                 <col style={{ width: '55px' }} />
                                 <col style={{ width: '55px' }} />
-                                <col style={{ width: '55px' }} />
+                                <col style={{ width: '50px' }} />
                                 <col style={{ width: '38px' }} />
                                 <col style={{ width: '42px' }} />
                                 <col style={{ width: '42px' }} />
@@ -308,19 +318,19 @@ const ClientBillingReport: React.FC = () => {
                                 <col style={{ width: '38px' }} />
                                 <col style={{ width: '38px' }} />
                                 <col style={{ width: '32px' }} />
-                                <col style={{ width: '48px' }} />
+                                <col style={{ width: '50px' }} />
                                 <col style={{ width: '55px' }} />
                                 <col style={{ width: '38px' }} />
-                                <col style={{ width: '48px' }} />
-                                <col style={{ width: '55px' }} />
-                                <col style={{ width: '48px' }} />
                                 <col style={{ width: '50px' }} />
-                                <col style={{ width: '60px' }} />
+                                <col style={{ width: '55px' }} />
+                                <col style={{ width: '50px' }} />
+                                <col style={{ width: '50px' }} />
+                                <col style={{ width: '62px' }} />
                             </colgroup>
                             <thead>
                                 <tr>
-                                    <th style={groupHeaderStyle} colSpan={11}>TABELA ACORDADA</th>
-                                    <th style={groupHeaderStyle} colSpan={8}>INFORMAÇÕES DA VIAGEM</th>
+                                    <th style={groupHeaderStyle} colSpan={9}>TABELA ACORDADA</th>
+                                    <th style={groupHeaderStyle} colSpan={7}>INFORMAÇÕES DA VIAGEM</th>
                                     <th style={groupHeaderStyle} colSpan={3}>KILOMETRAGEM</th>
                                     <th style={groupHeaderStyle} colSpan={3}>HORÁRIOS</th>
                                     <th style={groupHeaderStyle} colSpan={3}>KM EXCEDENTE</th>
@@ -330,8 +340,6 @@ const ClientBillingReport: React.FC = () => {
                                 <tr>
                                     <th style={headerStyle}>Nº</th>
                                     <th style={headerStyle}>ROTA</th>
-                                    <th style={headerStyle}>CLIENTE</th>
-                                    <th style={headerStyle}>OPERAÇÃO</th>
                                     <th style={headerStyle}>VALOR</th>
                                     <th style={headerStyle}>HR FRANQ</th>
                                     <th style={headerStyle}>KM FRANQ</th>
@@ -339,14 +347,13 @@ const ClientBillingReport: React.FC = () => {
                                     <th style={headerStyle}>KM EXTRA</th>
                                     <th style={headerStyle}>PEDÁGIO</th>
                                     <th style={headerStyle}>STATUS</th>
-                                    <th style={headerStyle}>DATA INICIAL</th>
-                                    <th style={headerStyle}>HORA INICIAL</th>
+                                    <th style={headerStyle}>DATA INÍCIO</th>
+                                    <th style={headerStyle}>HORA INÍCIO</th>
                                     <th style={headerStyle}>REF.</th>
-                                    <th style={headerStyle}>ROTA</th>
                                     <th style={headerStyle}>VIATURA</th>
                                     <th style={headerStyle}>VEÍC. ESCOLTADO</th>
-                                    <th style={headerStyle}>DATA FINAL</th>
-                                    <th style={headerStyle}>HORA FINAL</th>
+                                    <th style={headerStyle}>DATA FIM</th>
+                                    <th style={headerStyle}>HORA FIM</th>
                                     <th style={headerStyle}>INICIAL</th>
                                     <th style={headerStyle}>FINAL</th>
                                     <th style={headerStyle}>TOTAL</th>
@@ -366,14 +373,12 @@ const ClientBillingReport: React.FC = () => {
                             </thead>
                             <tbody>
                                 {rowsData.length === 0 ? (
-                                    <tr><td colSpan={34} style={{ ...cellStyle, padding: '16px', fontSize: '10px', fontWeight: 700, color: '#9ca3af' }}>NENHUMA MISSÃO NO PERÍODO.</td></tr>
+                                    <tr><td colSpan={31} style={{ ...cellStyle, padding: '16px', fontSize: '10px', fontWeight: 700, color: '#9ca3af' }}>NENHUMA MISSÃO NO PERÍODO.</td></tr>
                                 ) : (
                                     rowsData.map((r, i) => (
                                         <tr key={i} style={{ backgroundColor: i % 2 === 0 ? '#fff' : '#f9fafb' }}>
                                             <td style={cellBold}>{r.id}</td>
-                                            <td style={{ ...cellStyle, textAlign: 'left' }} title={r.route}>{r.route}</td>
-                                            <td style={cellStyle} title={r.client}>{r.client}</td>
-                                            <td style={cellStyle}>{r.operationType}</td>
+                                            <td style={cellStyle} title={r.route}>{r.route}</td>
                                             <td style={cellRight}>{fmtBRL(r.activationFee)}</td>
                                             <td style={cellStyle}>{r.franchiseHoursFmt}</td>
                                             <td style={cellStyle}>{fmtNum(r.franchiseKm)}</td>
@@ -384,7 +389,6 @@ const ClientBillingReport: React.FC = () => {
                                             <td style={cellStyle}>{r.startDate}</td>
                                             <td style={cellStyle}>{r.startTime}</td>
                                             <td style={cellStyle}>{r.region}</td>
-                                            <td style={{ ...cellStyle, textAlign: 'left' }} title={r.routeDetail}>{r.routeDetail}</td>
                                             <td style={{ ...cellStyle, fontFamily: 'monospace' }}>{r.viatura}</td>
                                             <td style={{ ...cellStyle, fontFamily: 'monospace' }}>{r.cargoPlate}</td>
                                             <td style={cellStyle}>{r.endDate}</td>
@@ -411,7 +415,7 @@ const ClientBillingReport: React.FC = () => {
                             {rowsData.length > 0 && (
                                 <tfoot>
                                     <tr style={{ backgroundColor: '#111827', color: '#fff' }}>
-                                        <td colSpan={33} style={{ ...cellStyle, textAlign: 'right', fontWeight: 900, fontSize: '8px', color: '#fff', border: '1px solid #000' }}>TOTAL</td>
+                                        <td colSpan={30} style={{ ...cellStyle, textAlign: 'right', fontWeight: 900, fontSize: '8px', color: '#fff', border: '1px solid #000' }}>TOTAL</td>
                                         <td style={{ ...cellRight, fontWeight: 900, fontSize: '9px', color: '#fff', border: '1px solid #000' }}>{fmtBRL(grandTotal)}</td>
                                     </tr>
                                 </tfoot>
