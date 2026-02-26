@@ -6,6 +6,7 @@ import { useNotification } from '../lib/NotificationContext';
 import { calculateMissionFinancials } from '../lib/financialUtils';
 import { X, Calculator, Loader2, Save, CheckCircle2, TrendingUp, Landmark, Zap, RotateCcw, Building2, Briefcase, Plus, Users, MapPin, ArrowRight, BrainCircuit, AlertTriangle, AlertCircle, Edit2, Info, RefreshCw } from 'lucide-react';
 import ProviderCostForm from './ProviderCostForm';
+import ClientPriceForm from './ClientPriceForm';
 import { formatProviderName } from '../lib/utils';
 
 interface Props {
@@ -75,6 +76,8 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
   const [tollSource, setTollSource] = useState<string>('');
   const [isAddCostModalOpen, setIsAddCostModalOpen] = useState(false);
   const [editCostTableId, setEditCostTableId] = useState<string | null>(null);
+  const [isEditClientTableOpen, setIsEditClientTableOpen] = useState(false);
+  const [editClientTableId, setEditClientTableId] = useState<string | null>(null);
   const [memoryLoaded, setMemoryLoaded] = useState(false);
   const [tollConfirmed, setTollConfirmed] = useState(false);
 
@@ -379,6 +382,25 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-in fade-in">
       
+      {isEditClientTableOpen && (
+          <div className="absolute inset-0 z-[110] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in zoom-in-95">
+              <div className="bg-white rounded-2xl w-full max-w-3xl p-6 relative shadow-2xl border-2 border-blue-100">
+                  <div className="flex justify-between items-center mb-6 border-b pb-4">
+                      <h3 className="font-black text-lg text-blue-700 uppercase flex items-center gap-2">
+                          <Zap size={20} /> {editClientTableId ? 'Editar Tabela de Preço' : 'Cadastro de Tabela de Preço'}
+                      </h3>
+                      <button onClick={() => setIsEditClientTableOpen(false)} className="p-2 bg-gray-100 rounded-full hover:bg-blue-50 text-gray-500 hover:text-blue-500 transition-colors">
+                          <X size={20}/>
+                      </button>
+                  </div>
+                  <ClientPriceForm 
+                      onBack={() => { setIsEditClientTableOpen(false); setEditClientTableId(null); }} 
+                      id={editClientTableId}
+                  />
+              </div>
+          </div>
+      )}
+
       {isAddCostModalOpen && (
           <div className="absolute inset-0 z-[110] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in zoom-in-95">
               <div className="bg-white rounded-2xl w-full max-w-3xl p-6 relative shadow-2xl border-2 border-red-100">
@@ -575,16 +597,36 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                             
                             <div className="mb-4">
                                 <label className={LABEL_CLASS}>Tabela de Preço Aplicada</label>
-                                <select 
-                                    className="w-full p-2 bg-gray-50 border border-gray-200 rounded-lg text-xs font-bold text-gray-700 uppercase outline-none focus:border-blue-500"
-                                    value={manualClientTableId || ''}
-                                    onChange={(e) => { setManualClientTableId(e.target.value); }}
-                                >
-                                    <option value="">Automático (IA Detectando)</option>
-                                    {[...clientTables].sort((a, b) => (a.operation_type || '').localeCompare(b.operation_type || '')).map(t => (
-                                        <option key={t.id} value={t.id}>{t.operation_type}</option>
-                                    ))}
-                                </select>
+                                <div className="flex gap-2">
+                                    <select 
+                                        className="w-full p-2 bg-gray-50 border border-gray-200 rounded-lg text-xs font-bold text-gray-700 uppercase outline-none focus:border-blue-500"
+                                        value={manualClientTableId || ''}
+                                        onChange={(e) => { setManualClientTableId(e.target.value); }}
+                                    >
+                                        <option value="">Automático (IA Detectando)</option>
+                                        {[...clientTables].sort((a, b) => (a.operation_type || '').localeCompare(b.operation_type || '')).map(t => (
+                                            <option key={t.id} value={t.id}>{t.operation_type}</option>
+                                        ))}
+                                    </select>
+                                    {manualClientTableId && (
+                                        <button 
+                                            onClick={() => { setEditClientTableId(manualClientTableId); setIsEditClientTableOpen(true); }}
+                                            className="p-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-all shadow-md active:scale-95"
+                                            title="Editar Tabela Selecionada"
+                                            data-testid="button-edit-client-table"
+                                        >
+                                            <Edit2 size={14}/>
+                                        </button>
+                                    )}
+                                    <button 
+                                        onClick={() => { setEditClientTableId(null); setIsEditClientTableOpen(true); }}
+                                        className="p-2 bg-slate-900 text-white rounded-lg hover:bg-black transition-all shadow-md active:scale-95"
+                                        title="Cadastrar Nova Tabela"
+                                        data-testid="button-add-client-table"
+                                    >
+                                        <Plus size={14}/>
+                                    </button>
+                                </div>
                                 {/* LOG DE DETECÇÃO DA IA */}
                                 <div className="mt-2 text-[9px] font-bold text-gray-400 flex items-center gap-1.5 bg-gray-50 p-2 rounded-lg border border-gray-100">
                                     <BrainCircuit size={12} className="text-blue-500" />

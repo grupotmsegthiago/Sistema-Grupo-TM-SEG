@@ -526,12 +526,13 @@ export const calculateMissionFinancials = (
     const missionDest = (mission.destination || '').toUpperCase();
 
     const hasAtePrefix = (name: string) => name.includes('ATÉ') || name.includes('ATE');
-    const isFixedDistanceClientRule = appliedTableName.includes('200KM') || 
+    const isFixedDistanceClientRule = (!hasAtePrefix(appliedTableName)) && (
+                                      appliedTableName.includes('200KM') || 
                                       appliedTableName.includes('200 KM') || 
                                       appliedTableName.includes('100KM') || 
                                       appliedTableName.includes('100 KM') || 
                                       appliedTableName.includes('LOGITECH') ||
-                                      missionDest.includes('200KM');
+                                      missionDest.includes('200KM'));
 
     const isFixedHoursClientRule = appliedTableName.includes('02H') || 
                                    appliedTableName.includes('02 HORAS') ||
