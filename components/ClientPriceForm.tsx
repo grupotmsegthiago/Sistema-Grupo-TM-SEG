@@ -6,6 +6,7 @@ import { Client } from '../types';
 
 interface Props {
   onBack: () => void;
+  onSuccess?: (newId?: string) => void;
   id?: string | null;
 }
 
@@ -28,7 +29,7 @@ const parseCurrency = (value: string | number): number => {
     return isNaN(parsed) ? 0 : parsed;
 };
 
-const ClientPriceForm: React.FC<Props> = ({ onBack, id }) => {
+const ClientPriceForm: React.FC<Props> = ({ onBack, onSuccess, id }) => {
   const [formData, setFormData] = useState({
     client: '',
     region: '',
@@ -103,9 +104,16 @@ const ClientPriceForm: React.FC<Props> = ({ onBack, id }) => {
             price_per_extra_km: parseCurrency(formData.price_per_extra_km),
             price_per_extra_hour: parseCurrency(formData.price_per_extra_hour)
         };
-        if (id) await supabase.from('client_price_tables').update(payload).eq('id', id);
-        else await supabase.from('client_price_tables').insert([payload]);
-        onBack();
+        if (id) {
+            await supabase.from('client_price_tables').update(payload).eq('id', id);
+            if (onSuccess) onSuccess(id);
+            else onBack();
+        } else {
+            const { data: inserted } = await supabase.from('client_price_tables').insert([payload]).select('id');
+            const newId = inserted?.[0]?.id?.toString();
+            if (onSuccess) onSuccess(newId);
+            else onBack();
+        }
     } catch(e: any) { alert(e.message) } finally { setIsSaving(false) }
   };
 

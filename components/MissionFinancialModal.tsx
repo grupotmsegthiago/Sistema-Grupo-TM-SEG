@@ -395,6 +395,18 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                   </div>
                   <ClientPriceForm 
                       onBack={() => { setIsEditClientTableOpen(false); setEditClientTableId(null); }} 
+                      onSuccess={async (newTableId?: string) => {
+                          const { data } = await supabase.from('client_price_tables').select('*');
+                          if (data) {
+                              setClientTables(data as any);
+                              if (newTableId) {
+                                  setManualClientTableId(newTableId);
+                                  showNotification('Atualizado', 'Tabela de preço salva e selecionada.', 'success');
+                              }
+                          }
+                          setIsEditClientTableOpen(false);
+                          setEditClientTableId(null);
+                      }}
                       id={editClientTableId}
                   />
               </div>
