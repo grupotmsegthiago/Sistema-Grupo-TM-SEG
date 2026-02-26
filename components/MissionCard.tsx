@@ -50,11 +50,13 @@ const formatCurrency = (val: number | null | undefined) => {
 const AgingTimelineBar: React.FC<{ minutes: number; status: string }> = ({ minutes, status }) => {
     const isFuture = [MissionStatus.SOLICITED, MissionStatus.SCHEDULED, MissionStatus.DOCUMENTATION].includes(status as MissionStatus);
     
+    if (isFuture && minutes === 0) return null;
+
     let colorClass = 'bg-gray-300'; 
     let textColor = 'text-gray-500';
     let borderColor = 'border-gray-200';
     let bgBase = 'bg-gray-50';
-    let label = isFuture && minutes === 0 ? 'Agendado' : 'Atualizado';
+    let label = 'Atualizado';
 
     if (minutes >= 60) { 
         colorClass = 'bg-red-600';
@@ -73,7 +75,7 @@ const AgingTimelineBar: React.FC<{ minutes: number; status: string }> = ({ minut
     const widthPercentage = Math.min(100, Math.max(5, (minutes / 240) * 100));
     const hours = Math.floor(minutes / 60);
     const mins = Math.floor(minutes % 60);
-    const timeDisplay = isFuture && minutes === 0 ? "Aguardando" : hours > 0 ? `${hours}h ${mins}m` : `${mins} min`;
+    const timeDisplay = hours > 0 ? `${hours}h ${mins}m` : `${mins} min`;
 
     return (
         <div className={`flex flex-col w-full rounded-lg border ${borderColor} ${bgBase} p-2 shadow-sm`} title="Tempo sem atualização (Ociosidade)">

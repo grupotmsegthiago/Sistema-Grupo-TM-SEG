@@ -547,6 +547,11 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
             if (nowTime > scheduledTime) return Math.max(0, Math.floor((nowTime - scheduledTime) / 60000));
         }
         if (m.status === MissionStatus.SOLICITED || m.status === MissionStatus.DOCUMENTATION) {
+            if (m.startTime) {
+                const scheduledTime = new Date(m.startTime).getTime();
+                if (nowTime < scheduledTime) return 0;
+                return Math.max(0, Math.floor((nowTime - scheduledTime) / 60000));
+            }
             return Math.max(0, Math.floor((nowTime - lastUpdateTime) / 60000));
         }
         return 0; 
