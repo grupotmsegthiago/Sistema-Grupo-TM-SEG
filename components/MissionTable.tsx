@@ -714,6 +714,9 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
                 clientsData={clientsData}
                 currentTime={currentTime}
                 onOpenMission={handleOpenFinancialModal}
+                viewPeriod={viewPeriod}
+                customStartDate={customStartDate}
+                customEndDate={customEndDate}
             />
         )}
         {isRestrictedClientView && showClientDash && (

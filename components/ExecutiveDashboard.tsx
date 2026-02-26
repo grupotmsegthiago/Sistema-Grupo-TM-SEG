@@ -73,19 +73,34 @@ interface Props {
     clientsData: Client[];
     currentTime: Date;
     onOpenMission?: (mission: Mission) => void;
+    viewPeriod?: string;
+    customStartDate?: string;
+    customEndDate?: string;
 }
 
 const AXIS_TICK = { fontSize: 11, fontWeight: 700, fill: '#64748b' };
 const AXIS_TICK_SM = { fontSize: 10, fontWeight: 700, fill: '#64748b' };
 const AXIS_LABEL_Y = { fontSize: 10, fontWeight: 800, fill: '#475569' };
 
-const ExecutiveDashboard: React.FC<Props> = ({ missions, isDirector, clientTables, providerTables, clientsData, onOpenMission }) => {
+const mapViewPeriodToDash = (vp?: string): DashPeriod => {
+    if (!vp) return 'MONTH';
+    const map: Record<string, DashPeriod> = { TODAY: 'TODAY', YESTERDAY: 'YESTERDAY', WEEK: 'WEEK', MONTH: 'MONTH', YEAR: 'YEAR', CUSTOM: 'CUSTOM', ALL: 'YEAR' };
+    return map[vp] || 'MONTH';
+};
+
+const ExecutiveDashboard: React.FC<Props> = ({ missions, isDirector, clientTables, providerTables, clientsData, onOpenMission, viewPeriod: parentPeriod, customStartDate: parentStartDate, customEndDate: parentEndDate }) => {
 
     const [refreshKey, setRefreshKey] = useState(0);
     const [lastUpdate, setLastUpdate] = useState(new Date());
-    const [period, setPeriod] = useState<DashPeriod>('MONTH');
-    const [customStart, setCustomStart] = useState('');
-    const [customEnd, setCustomEnd] = useState('');
+    const [period, setPeriod] = useState<DashPeriod>(mapViewPeriodToDash(parentPeriod));
+    const [customStart, setCustomStart] = useState(parentStartDate || '');
+    const [customEnd, setCustomEnd] = useState(parentEndDate || '');
+    
+    useEffect(() => {
+        setPeriod(mapViewPeriodToDash(parentPeriod));
+        if (parentStartDate) setCustomStart(parentStartDate);
+        if (parentEndDate) setCustomEnd(parentEndDate);
+    }, [parentPeriod, parentStartDate, parentEndDate]);
     const [excelComparison, setExcelComparison] = useState<any[] | null>(null);
     const [excelAiAnalysis, setExcelAiAnalysis] = useState<string | null>(null);
     const [isExcelLoading, setIsExcelLoading] = useState(false);
@@ -125,20 +140,6 @@ const ExecutiveDashboard: React.FC<Props> = ({ missions, isDirector, clientTable
                 return { ...m, rev, cost, profit: rev - cost };
             }
 
-            if (isTerminal && hasStoredRevenue) {
-                const rev = (m.revenue_value || 0) + (m.toll_value || 0);
-                const cost = (m.cost_value || 0) + (m.toll_value || 0);
-                return { ...m, rev, cost, profit: rev - cost };
-            }
-
-            const hasKm = ((m.startKm || m.start_km) > 0 && (m.endKm || m.end_km) > 0);
-            const hasTime = !!(m.startTime || m.start_time) && !!(m.endTime || m.end_time);
-
-            if (!isTerminal && !hasKm && !hasTime) {
-                const baseFee = m.toll_value || 0;
-                return { ...m, rev: baseFee, cost: baseFee, profit: 0 };
-            }
-
             const isCancelledMission = m.status === MissionStatus.CANCELLED;
             const missionObj: Mission = {
                 ...m,
@@ -157,14 +158,10 @@ const ExecutiveDashboard: React.FC<Props> = ({ missions, isDirector, clientTable
                 matchedClient,
                 new Date()
             );
-            let rev = financials.client.total || 0;
-            let cost = financials.provider.total || 0;
+            const rev = financials.client.total || 0;
+            const cost = financials.provider.total || 0;
 
-            const MAX_SINGLE_MISSION = 50000;
-            if (rev > MAX_SINGLE_MISSION) rev = 0;
-            if (cost > MAX_SINGLE_MISSION) cost = 0;
-
-            return { ...m, rev, cost, profit: rev - cost, anomaly: (rev > 15000 || cost > 15000) };
+            return { ...m, rev, cost, profit: rev - cost };
         });
     }, [filteredMissions, clientTables, providerTables, clientsData, refreshKey]);
 
