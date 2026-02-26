@@ -1,9 +1,10 @@
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { supabase } from '../lib/supabase';
 import { Mission, Client, ClientPriceTable, ProviderCostTable } from '../types';
-import { FileText, Search, Printer, Loader2 } from 'lucide-react';
+import { FileText, Search, Printer, Loader2, FileSpreadsheet } from 'lucide-react';
 import { calculateMissionFinancials, extractCityFromAddress } from '../lib/financialUtils';
+import * as XLSX from 'xlsx';
 
 const ClientBillingReport: React.FC = () => {
     const [clients, setClients] = useState<Client[]>([]);
@@ -94,6 +95,121 @@ const ClientBillingReport: React.FC = () => {
     };
 
     const handlePrint = () => { window.print(); };
+
+    const handleExportExcel = useCallback(() => {
+        if (rowsData.length === 0) return;
+
+        const wb = XLSX.utils.book_new();
+
+        const headerGroup = [
+            'TABELA ACORDADA', '', '', '', '', '', '', '', '',
+            'INFORMAÇÕES DA VIAGEM', '', '', '', '', '',
+            'KILOMETRAGEM', '', '',
+            'HORÁRIOS', '', '',
+            'KM EXCEDENTE', '', '',
+            'HORA EXCEDENTE', '', '',
+            'VALORES', '', ''
+        ];
+        const headerSub = [
+            'Nº', 'ROTA', 'VALOR', 'HR FRANQ', 'KM FRANQ', 'HR EXTRA', 'KM EXTRA', 'PEDÁGIO', 'STATUS',
+            'DATA INÍCIO', 'HORA INÍCIO', 'VIATURA', 'VEÍC. ESCOLTADO', 'DATA FIM', 'HORA FIM',
+            'INICIAL', 'FINAL', 'TOTAL',
+            'INICIAL', 'FINAL', 'TOTAL',
+            'KM', 'VALOR', 'TOTAL',
+            'HORA', 'VALOR', 'TOTAL',
+            'ESCOLTA', 'PEDÁGIO', 'TOTAL'
+        ];
+
+        const titleRow = ['BOLETIM DE MEDIÇÃO'];
+        const periodRow = [getPeriodLabel()];
+        const subtitleRow = ['REFERENTE A INTERMEDIAÇÃO DE SEGURANÇA E MONITORAMENTO DE CARGAS'];
+
+        const dataRows = rowsData.map(r => [
+            r.id,
+            r.route,
+            r.activationFee,
+            r.franchiseHoursFmt,
+            r.franchiseKm,
+            r.unitHr,
+            r.unitKm,
+            r.tollLabel,
+            r.status,
+            r.startDate,
+            r.startTime,
+            r.viatura,
+            r.cargoPlate,
+            r.endDate,
+            r.endTime,
+            r.kmStart,
+            r.kmEnd,
+            r.kmTotal,
+            r.timeStart,
+            r.timeEnd,
+            r.timeTotal,
+            r.kmExtraQtd > 0 ? r.kmExtraQtd : '',
+            r.kmExtraQtd > 0 ? r.kmExtraUnit : '',
+            r.kmExtraTotal > 0 ? r.kmExtraTotal : 0,
+            r.hrExtraQtd > 0 ? fmtHHMM(r.hrExtraQtd) : '',
+            r.hrExtraQtd > 0 ? r.hrExtraUnit : '',
+            r.hrExtraTotal > 0 ? r.hrExtraTotal : 0,
+            r.escoltaVal,
+            r.tollVal,
+            r.totalGeral
+        ]);
+
+        const totalRow = Array(30).fill('');
+        totalRow[0] = 'TOTAL';
+        totalRow[29] = grandTotal;
+
+        const allRows = [titleRow, periodRow, subtitleRow, [], headerGroup, headerSub, ...dataRows, [], totalRow];
+        const ws = XLSX.utils.aoa_to_sheet(allRows);
+
+        const colWidths = [
+            { wch: 6 }, { wch: 28 }, { wch: 10 }, { wch: 8 }, { wch: 8 }, { wch: 10 }, { wch: 10 }, { wch: 10 }, { wch: 10 },
+            { wch: 12 }, { wch: 8 }, { wch: 10 }, { wch: 10 }, { wch: 12 }, { wch: 8 },
+            { wch: 8 }, { wch: 8 }, { wch: 8 },
+            { wch: 7 }, { wch: 7 }, { wch: 7 },
+            { wch: 6 }, { wch: 10 }, { wch: 10 },
+            { wch: 7 }, { wch: 10 }, { wch: 10 },
+            { wch: 10 }, { wch: 10 }, { wch: 12 }
+        ];
+        ws['!cols'] = colWidths;
+
+        const merges = [
+            { s: { r: 0, c: 0 }, e: { r: 0, c: 29 } },
+            { s: { r: 1, c: 0 }, e: { r: 1, c: 29 } },
+            { s: { r: 2, c: 0 }, e: { r: 2, c: 29 } },
+            { s: { r: 4, c: 0 }, e: { r: 4, c: 8 } },
+            { s: { r: 4, c: 9 }, e: { r: 4, c: 14 } },
+            { s: { r: 4, c: 15 }, e: { r: 4, c: 17 } },
+            { s: { r: 4, c: 18 }, e: { r: 4, c: 20 } },
+            { s: { r: 4, c: 21 }, e: { r: 4, c: 23 } },
+            { s: { r: 4, c: 24 }, e: { r: 4, c: 26 } },
+            { s: { r: 4, c: 27 }, e: { r: 4, c: 29 } },
+        ];
+        ws['!merges'] = merges;
+
+        const moneyColumns = [2, 5, 6, 22, 23, 25, 26, 27, 28, 29];
+        const dataStartRow = 6;
+        const dataEndRow = dataStartRow + dataRows.length - 1;
+        for (let row = dataStartRow; row <= dataEndRow; row++) {
+            for (const col of moneyColumns) {
+                const cellRef = XLSX.utils.encode_cell({ r: row, c: col });
+                if (ws[cellRef] && typeof ws[cellRef].v === 'number') {
+                    ws[cellRef].z = '#,##0.00';
+                }
+            }
+        }
+        const totalCellRef = XLSX.utils.encode_cell({ r: dataEndRow + 2, c: 29 });
+        if (ws[totalCellRef]) ws[totalCellRef].z = '#,##0.00';
+
+        const clientLabel = displayClientName || 'CLIENTE';
+        const periodShort = startDate && endDate ? `${startDate.replace(/-/g, '')}_${endDate.replace(/-/g, '')}` : 'PERIODO';
+        const fileName = `Boletim_${clientLabel.replace(/[^a-zA-Z0-9]/g, '_').substring(0, 20)}_${periodShort}.xlsx`;
+
+        XLSX.utils.book_append_sheet(wb, ws, 'Boletim');
+        XLSX.writeFile(wb, fileName);
+    }, [rowsData, grandTotal, displayClientName, startDate, endDate]);
 
     const fmtBRL = (val: number | null | undefined) => {
         const v = val ?? 0;
@@ -251,12 +367,13 @@ const ClientBillingReport: React.FC = () => {
         <div className="space-y-6 animate-fade-in pb-20 relative">
             <style>{`
                 @media print {
-                    @page { size: landscape; margin: 3mm; }
+                    @page { size: landscape; margin: 2mm; }
                     body * { visibility: hidden; }
                     #print-area, #print-area * { visibility: visible; }
                     #print-area { position: absolute; left: 0; top: 0; width: 100%; }
+                    #print-area table { font-size: 6px !important; table-layout: auto !important; width: 100% !important; }
+                    #print-area td, #print-area th { padding: 1px 2px !important; font-size: 6px !important; max-width: none !important; }
                     .no-print { display: none !important; }
-                    table { table-layout: fixed; }
                 }
             `}</style>
 
@@ -296,9 +413,14 @@ const ClientBillingReport: React.FC = () => {
                                 {isLoading ? <Loader2 size={18} className="animate-spin" /> : <Search size={18} />} Gerar
                             </button>
                             {reportGenerated && (
-                                <button onClick={handlePrint} className="bg-gray-800 hover:bg-gray-900 text-white px-4 py-2.5 rounded-lg text-sm font-bold shadow-sm flex items-center justify-center gap-2">
-                                    <Printer size={18} /> Imprimir
-                                </button>
+                                <>
+                                    <button onClick={handleExportExcel} className="bg-emerald-700 hover:bg-emerald-800 text-white px-4 py-2.5 rounded-lg text-sm font-bold shadow-sm flex items-center justify-center gap-2">
+                                        <FileSpreadsheet size={18} /> Excel
+                                    </button>
+                                    <button onClick={handlePrint} className="bg-gray-800 hover:bg-gray-900 text-white px-4 py-2.5 rounded-lg text-sm font-bold shadow-sm flex items-center justify-center gap-2">
+                                        <Printer size={18} /> PDF
+                                    </button>
+                                </>
                             )}
                         </div>
                     </div>
