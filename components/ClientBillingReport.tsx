@@ -201,7 +201,7 @@ const ClientBillingReport: React.FC = () => {
         border: '1px solid #9ca3af',
         padding: '2px 4px',
         fontSize: '7.5px',
-        textAlign: 'left',
+        textAlign: 'center',
         whiteSpace: 'nowrap',
         overflow: 'hidden',
         textOverflow: 'ellipsis',
@@ -215,16 +215,32 @@ const ClientBillingReport: React.FC = () => {
         fontWeight: 900,
         fontSize: '7px',
         textTransform: 'uppercase' as const,
-        color: '#000',
-        textAlign: 'left'
+        color: '#000'
     };
     const groupHeaderStyle: React.CSSProperties = {
         ...headerStyle,
         backgroundColor: '#d1d5db',
         fontSize: '7.5px',
-        letterSpacing: '0.5px',
-        textAlign: 'center'
+        letterSpacing: '0.5px'
     };
+
+    const bgKm = '#eef2ff';
+    const bgHr = '#fef9c3';
+    const bgKmExc = '#ecfdf5';
+    const bgHrExc = '#fdf2f8';
+    const bgVal = '#f0f9ff';
+
+    const hdrKm: React.CSSProperties = { ...headerStyle, backgroundColor: '#c7d2fe' };
+    const hdrHr: React.CSSProperties = { ...headerStyle, backgroundColor: '#fde68a' };
+    const hdrKmExc: React.CSSProperties = { ...headerStyle, backgroundColor: '#a7f3d0' };
+    const hdrHrExc: React.CSSProperties = { ...headerStyle, backgroundColor: '#fbcfe8' };
+    const hdrVal: React.CSSProperties = { ...headerStyle, backgroundColor: '#bae6fd' };
+
+    const grpKm: React.CSSProperties = { ...groupHeaderStyle, backgroundColor: '#a5b4fc' };
+    const grpHr: React.CSSProperties = { ...groupHeaderStyle, backgroundColor: '#fcd34d' };
+    const grpKmExc: React.CSSProperties = { ...groupHeaderStyle, backgroundColor: '#6ee7b7' };
+    const grpHrExc: React.CSSProperties = { ...groupHeaderStyle, backgroundColor: '#f9a8d4' };
+    const grpVal: React.CSSProperties = { ...groupHeaderStyle, backgroundColor: '#7dd3fc' };
 
     return (
         <div className="space-y-6 animate-fade-in pb-20 relative">
@@ -331,11 +347,11 @@ const ClientBillingReport: React.FC = () => {
                                 <tr>
                                     <th style={groupHeaderStyle} colSpan={9}>TABELA ACORDADA</th>
                                     <th style={groupHeaderStyle} colSpan={7}>INFORMAÇÕES DA VIAGEM</th>
-                                    <th style={groupHeaderStyle} colSpan={3}>KILOMETRAGEM</th>
-                                    <th style={groupHeaderStyle} colSpan={3}>HORÁRIOS</th>
-                                    <th style={groupHeaderStyle} colSpan={3}>KM EXCEDENTE</th>
-                                    <th style={groupHeaderStyle} colSpan={3}>HORA EXCEDENTE</th>
-                                    <th style={groupHeaderStyle} colSpan={3}>VALORES</th>
+                                    <th style={grpKm} colSpan={3}>KILOMETRAGEM</th>
+                                    <th style={grpHr} colSpan={3}>HORÁRIOS</th>
+                                    <th style={grpKmExc} colSpan={3}>KM EXCEDENTE</th>
+                                    <th style={grpHrExc} colSpan={3}>HORA EXCEDENTE</th>
+                                    <th style={grpVal} colSpan={3}>VALORES</th>
                                 </tr>
                                 <tr>
                                     <th style={headerStyle}>Nº</th>
@@ -354,21 +370,21 @@ const ClientBillingReport: React.FC = () => {
                                     <th style={headerStyle}>VEÍC. ESCOLTADO</th>
                                     <th style={headerStyle}>DATA FIM</th>
                                     <th style={headerStyle}>HORA FIM</th>
-                                    <th style={headerStyle}>INICIAL</th>
-                                    <th style={headerStyle}>FINAL</th>
-                                    <th style={headerStyle}>TOTAL</th>
-                                    <th style={headerStyle}>INICIAL</th>
-                                    <th style={headerStyle}>FINAL</th>
-                                    <th style={headerStyle}>TOTAL</th>
-                                    <th style={headerStyle}>KM</th>
-                                    <th style={headerStyle}>VALOR</th>
-                                    <th style={headerStyle}>TOTAL</th>
-                                    <th style={headerStyle}>HORA</th>
-                                    <th style={headerStyle}>VALOR</th>
-                                    <th style={headerStyle}>TOTAL</th>
-                                    <th style={headerStyle}>ESCOLTA</th>
-                                    <th style={headerStyle}>PEDÁGIO</th>
-                                    <th style={headerStyle}>TOTAL</th>
+                                    <th style={hdrKm}>INICIAL</th>
+                                    <th style={hdrKm}>FINAL</th>
+                                    <th style={hdrKm}>TOTAL</th>
+                                    <th style={hdrHr}>INICIAL</th>
+                                    <th style={hdrHr}>FINAL</th>
+                                    <th style={hdrHr}>TOTAL</th>
+                                    <th style={hdrKmExc}>KM</th>
+                                    <th style={hdrKmExc}>VALOR</th>
+                                    <th style={hdrKmExc}>TOTAL</th>
+                                    <th style={hdrHrExc}>HORA</th>
+                                    <th style={hdrHrExc}>VALOR</th>
+                                    <th style={hdrHrExc}>TOTAL</th>
+                                    <th style={hdrVal}>ESCOLTA</th>
+                                    <th style={hdrVal}>PEDÁGIO</th>
+                                    <th style={hdrVal}>TOTAL</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -393,21 +409,21 @@ const ClientBillingReport: React.FC = () => {
                                             <td style={{ ...cellStyle, fontFamily: 'monospace' }}>{r.cargoPlate}</td>
                                             <td style={cellStyle}>{r.endDate}</td>
                                             <td style={cellStyle}>{r.endTime}</td>
-                                            <td style={cellStyle}>{fmtNum(r.kmStart)}</td>
-                                            <td style={cellStyle}>{fmtNum(r.kmEnd)}</td>
-                                            <td style={cellBold}>{fmtNum(r.kmTotal)}</td>
-                                            <td style={cellStyle}>{r.timeStart}</td>
-                                            <td style={cellStyle}>{r.timeEnd}</td>
-                                            <td style={cellBold}>{r.timeTotal}</td>
-                                            <td style={cellStyle}>{r.kmExtraQtd > 0 ? fmtNum(r.kmExtraQtd) : '-'}</td>
-                                            <td style={cellRight}>{r.kmExtraQtd > 0 ? fmtBRL(r.kmExtraUnit) : '-'}</td>
-                                            <td style={cellRight}>{r.kmExtraTotal > 0 ? fmtBRL(r.kmExtraTotal) : 'R$ 0,00'}</td>
-                                            <td style={cellStyle}>{r.hrExtraQtd > 0 ? fmtHHMM(r.hrExtraQtd) : '-'}</td>
-                                            <td style={cellRight}>{r.hrExtraQtd > 0 ? fmtBRL(r.hrExtraUnit) : '-'}</td>
-                                            <td style={cellRight}>{r.hrExtraTotal > 0 ? fmtBRL(r.hrExtraTotal) : 'R$ 0,00'}</td>
-                                            <td style={cellRight}>{fmtBRL(r.escoltaVal)}</td>
-                                            <td style={cellRight}>{r.tollVal > 0 ? fmtBRL(r.tollVal) : 'R$ 0,00'}</td>
-                                            <td style={{ ...cellRight, fontWeight: 900, backgroundColor: '#f3f4f6' }}>{fmtBRL(r.totalGeral)}</td>
+                                            <td style={{ ...cellStyle, backgroundColor: bgKm }}>{fmtNum(r.kmStart)}</td>
+                                            <td style={{ ...cellStyle, backgroundColor: bgKm }}>{fmtNum(r.kmEnd)}</td>
+                                            <td style={{ ...cellBold, backgroundColor: bgKm }}>{fmtNum(r.kmTotal)}</td>
+                                            <td style={{ ...cellStyle, backgroundColor: bgHr }}>{r.timeStart}</td>
+                                            <td style={{ ...cellStyle, backgroundColor: bgHr }}>{r.timeEnd}</td>
+                                            <td style={{ ...cellBold, backgroundColor: bgHr }}>{r.timeTotal}</td>
+                                            <td style={{ ...cellStyle, backgroundColor: bgKmExc }}>{r.kmExtraQtd > 0 ? fmtNum(r.kmExtraQtd) : '-'}</td>
+                                            <td style={{ ...cellRight, backgroundColor: bgKmExc }}>{r.kmExtraQtd > 0 ? fmtBRL(r.kmExtraUnit) : '-'}</td>
+                                            <td style={{ ...cellRight, backgroundColor: bgKmExc }}>{r.kmExtraTotal > 0 ? fmtBRL(r.kmExtraTotal) : 'R$ 0,00'}</td>
+                                            <td style={{ ...cellStyle, backgroundColor: bgHrExc }}>{r.hrExtraQtd > 0 ? fmtHHMM(r.hrExtraQtd) : '-'}</td>
+                                            <td style={{ ...cellRight, backgroundColor: bgHrExc }}>{r.hrExtraQtd > 0 ? fmtBRL(r.hrExtraUnit) : '-'}</td>
+                                            <td style={{ ...cellRight, backgroundColor: bgHrExc }}>{r.hrExtraTotal > 0 ? fmtBRL(r.hrExtraTotal) : 'R$ 0,00'}</td>
+                                            <td style={{ ...cellRight, backgroundColor: bgVal }}>{fmtBRL(r.escoltaVal)}</td>
+                                            <td style={{ ...cellRight, backgroundColor: bgVal }}>{r.tollVal > 0 ? fmtBRL(r.tollVal) : 'R$ 0,00'}</td>
+                                            <td style={{ ...cellRight, fontWeight: 900, backgroundColor: bgVal }}>{fmtBRL(r.totalGeral)}</td>
                                         </tr>
                                     ))
                                 )}
