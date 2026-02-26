@@ -30,6 +30,7 @@
     "recharts": "^3.7.0",
     "resend": "^6.9.2",
     "tsx": "^4.21.0",
+    "xlsx": "^0.18.5",
     "zod": "^4.3.6",
     "zod-validation-error": "^5.0.0"
   },
