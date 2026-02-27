@@ -262,6 +262,7 @@ export const calculateMissionFinancials = (
     const missionProviderName = normalize(mission.provider);
     
     const isSpecialProvider = missionProviderName.includes('ATIVA') || missionProviderName.includes('TM SEG');
+    const isProviderMacor = missionProviderName.includes('MACOR');
     let providerMultiplier = 1;
 
     const selectStrictTable = (candidateTables: any[], dist: number, region: string, city: string, typeKeyword: string, destCity: string, routeCode?: string, agentAware?: { count: number, isSpecial: boolean }, originUFCode?: string, originAddress?: string) => {
@@ -386,13 +387,26 @@ export const calculateMissionFinancials = (
 
     const allClientTablesForThisClient = clientTables.filter(t => normalize(t.client) === missionClientName);
 
+    const isIblClient = missionClientName.includes('IBL') || missionClientName.includes('INTERMODAL BRASIL');
+
+    let clientTablesFiltered = allClientTablesForThisClient;
+    if (isIblClient && !isProviderMacor) {
+        clientTablesFiltered = allClientTablesForThisClient.filter(t => !normalize(t.operation_type || '').includes('MACOR'));
+    }
+
     if (manualTableOverrides?.clientTableId) {
         appliedClientTable = clientTables.find(t => t.id.toString() === manualTableOverrides.clientTableId);
         clientLog = 'Seleção Manual / Memória';
+    } else if (isCancelled && clientTablesFiltered.length > 0) {
+        const sorted = [...clientTablesFiltered]
+            .filter(t => (t.activation_fee || 0) > 0)
+            .sort((a, b) => (a.activation_fee || 0) - (b.activation_fee || 0));
+        appliedClientTable = sorted.length > 0 ? sorted[0] : clientTablesFiltered[0];
+        clientLog = `Cancelada → Menor Acionamento (${appliedClientTable?.operation_type})`;
     } else {
         const clientDistReference = Math.max(totalDistance, distanceForCalculation);
         const result = selectStrictTable(
-            allClientTablesForThisClient, 
+            clientTablesFiltered, 
             clientDistReference, 
             detectedRegion,
             originCity,
@@ -414,7 +428,7 @@ export const calculateMissionFinancials = (
     const destHas200km = normalizedDest.includes('200KM') || normalizedDest.includes('200 KM');
     const referenceDistance = Math.max(totalDistance, distanceForCalculation);
 
-    if (isCevaClient && isJundiai && allClientTablesForThisClient.length > 0) {
+    if (isCevaClient && isJundiai && !isCancelled && allClientTablesForThisClient.length > 0) {
         if (referenceDistance > 200 || destHas200km) {
             const currentOp = normalize(appliedClientTable?.operation_type || '');
             const isAlreadyLogitech = currentOp.includes('LOGITECH') || currentOp.includes('200KM') || currentOp.includes('200 KM');
@@ -459,6 +473,47 @@ export const calculateMissionFinancials = (
     if (manualTableOverrides?.providerTableId) {
         appliedProviderTable = providerTables.find(t => t.id.toString() === manualTableOverrides.providerTableId);
         providerLog = 'Seleção Manual / Memória';
+    } else if (isCancelled && filteredProviderTables.length > 0) {
+        const sorted = [...filteredProviderTables]
+            .filter(t => (t.activation_cost || 0) > 0)
+            .sort((a, b) => (a.activation_cost || 0) - (b.activation_cost || 0));
+        appliedProviderTable = sorted.length > 0 ? sorted[0] : filteredProviderTables[0];
+        providerLog = `Cancelada → Menor Custo (${appliedProviderTable?.operation_type})`;
+    } else if (isSpecialProvider && filteredProviderTables.length > 0) {
+        const prontaResposta = filteredProviderTables.filter(t => {
+            const op = normalize(t.operation_type || '');
+            return op.includes('PRONTA RESPOSTA') || op.includes('PRONTA');
+        });
+        
+        if (prontaResposta.length > 0) {
+            let bestPR: any = null;
+            if (agentCount >= 2) {
+                bestPR = prontaResposta.find(t => {
+                    const op = normalize(t.operation_type || '');
+                    return op.includes('02') || op.includes('DOIS');
+                });
+            }
+            if (!bestPR) {
+                bestPR = prontaResposta.find(t => {
+                    const op = normalize(t.operation_type || '');
+                    return op.includes('01') || (!op.includes('02') && !op.includes('DOIS'));
+                });
+            }
+            if (bestPR) {
+                appliedProviderTable = bestPR;
+                providerLog = `${agentCount >= 2 ? '02' : '01'} Agente → ${bestPR.operation_type}`;
+            }
+        }
+        
+        if (!appliedProviderTable) {
+            const result = selectStrictTable(
+                filteredProviderTables, providerDistReference, detectedRegion, originCity,
+                missionTypeKeyword, destCity, missionRouteCode,
+                { count: agentCount, isSpecial: true }, originUF, mission.origin || ''
+            );
+            appliedProviderTable = result.table;
+            providerLog = result.log;
+        }
     } else {
         const result = selectStrictTable(
             filteredProviderTables, 
@@ -476,7 +531,7 @@ export const calculateMissionFinancials = (
         providerLog = result.log;
     }
 
-    if (isCevaClient && isJundiai && filteredProviderTables.length > 0) {
+    if (isCevaClient && isJundiai && !isCancelled && filteredProviderTables.length > 0) {
         if (referenceDistance > 200 || destHas200km) {
             const provOp = normalize(appliedProviderTable?.operation_type || '');
             const provAlready200 = provOp.includes('LOGITECH') || provOp.includes('200KM') || provOp.includes('200 KM');
