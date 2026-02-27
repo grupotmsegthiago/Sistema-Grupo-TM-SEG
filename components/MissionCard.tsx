@@ -13,7 +13,7 @@ const WhatsAppIcon = ({ size = 14 }: { size?: number }) => (
 );
 import MissionTimer from './MissionTimer';
 import { useNotification } from '../lib/NotificationContext';
-import { applyRegionSuffix, calculateMissionFinancials } from '../lib/financialUtils';
+import { applyRegionSuffix, calculateMissionFinancials, auditMissionFinancials } from '../lib/financialUtils';
 import { formatProviderName } from '../lib/utils';
 
 interface MissionCardProps {
@@ -154,6 +154,16 @@ const MissionCardComponent: React.FC<MissionCardProps> = ({
     }, [mission, clientTables, providerTables, clientsData, isDirector, currentTime]);
 
     const hasBeenVerified = !!(mission as any).billing_verified_by;
+
+    const auditResult = useMemo(() => {
+        if (!isDirector || !isTerminal) return null;
+        const storedRev = (mission.revenue_value || 0);
+        const storedCost = (mission.cost_value || 0);
+        if (storedRev === 0 && storedCost === 0) return null;
+        const clientName = ((mission as any).originalClientName || mission.client || '').trim();
+        const client = clientsData.find(c => c.name === clientName);
+        return auditMissionFinancials(mission, clientTables, providerTables, client);
+    }, [mission, clientTables, providerTables, clientsData, isDirector, isTerminal]);
 
     const displayRevenue = useMemo(() => {
         const dbToll = mission.toll_value || 0;
@@ -514,8 +524,13 @@ Qualquer dúvida, estamos a disposição.
                                );
                            })()}
 
-                           <div className={`w-full rounded-lg border p-1 flex flex-col items-center justify-center gap-0.5 shadow-sm transition-all ${mission.billing_approved ? 'bg-blue-50 border-blue-200' : hasBeenVerified ? 'bg-green-50 border-green-200' : 'bg-orange-50 border-orange-200'}`}>
-                              {mission.billing_approved ? (
+                           <div className={`w-full rounded-lg border p-1 flex flex-col items-center justify-center gap-0.5 shadow-sm transition-all ${auditResult?.isInconsistent ? 'bg-amber-50 border-amber-400 ring-1 ring-amber-300' : mission.billing_approved ? 'bg-blue-50 border-blue-200' : hasBeenVerified ? 'bg-green-50 border-green-200' : 'bg-orange-50 border-orange-200'}`} title={auditResult?.isInconsistent ? auditResult.reason : ''}>
+                              {auditResult?.isInconsistent ? (
+                                  <>
+                                      <AlertOctagon size={12} className="text-amber-600 animate-pulse" />
+                                      <span className="text-[7px] font-black text-amber-700 uppercase leading-none">Divergente</span>
+                                  </>
+                              ) : mission.billing_approved ? (
                                   <>
                                       <ShieldCheck size={12} className="text-blue-600" />
                                       <span className="text-[7px] font-black text-blue-700 uppercase leading-none">Auditado</span>

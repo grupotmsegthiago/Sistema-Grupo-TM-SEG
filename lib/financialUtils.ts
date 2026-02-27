@@ -16,6 +16,7 @@ export interface CalculatedFinancials {
     calculationMemory: string;
     iblFee: number; 
     effectiveStartLabel: string;
+    isMinimumActivationRule: boolean;
     client: {
       total: number;
       base: number;
@@ -610,6 +611,14 @@ export const calculateMissionFinancials = (
 
     const round2 = (v: number) => Math.round(v * 100) / 100;
 
+    const isMinimumActivationRule = !isZeroValueMission && distanceForCalculation <= 200 && durationHours <= 2;
+    if (isMinimumActivationRule) {
+        cExcessKm = 0;
+        cExcessHr = 0;
+        pExcessKm = 0;
+        pExcessHr = 0;
+    }
+
     let cExtraKmVal = round2(Math.max(0, cExcessKm * cUnitPriceKm));
     let cExtraHrVal = round2(Math.max(0, cExcessHr * cUnitPriceHour));
 
@@ -631,7 +640,9 @@ export const calculateMissionFinancials = (
         clientMult: clientMultiplier, providerMult: providerMultiplier, 
         agentCount, hasTwoAgentsOnMission: agentCount === 2,
         regionConflict: false, detectedRegion, autoCorrected: !manualTableOverrides,
-        calculationMemory: isVelada ? 'Regra Velada' : 'Regra Padrão', iblFee, effectiveStartLabel: startLabel,
+        calculationMemory: isMinimumActivationRule ? 'Acionamento Mínimo (≤200km/≤2h)' : isVelada ? 'Regra Velada' : 'Regra Padrão',
+        iblFee, effectiveStartLabel: startLabel,
+        isMinimumActivationRule,
         client: { 
             total: totalRevenue, base: cBase, extraKmVal: cExtraKmVal, extraHrVal: cExtraHrVal, 
             excessKm: cExcessKm, 
@@ -656,5 +667,60 @@ export const calculateMissionFinancials = (
         },
         profit: totalRevenue - totalCost,
         marginPercent: totalRevenue > 0 ? ((totalRevenue - totalCost) / totalRevenue) * 100 : 0
+    };
+};
+
+export interface AuditResult {
+    missionId: string;
+    client: string;
+    storedRevenue: number;
+    calculatedRevenue: number;
+    storedCost: number;
+    calculatedCost: number;
+    revenueDiff: number;
+    costDiff: number;
+    isInconsistent: boolean;
+    reason: string;
+}
+
+export const auditMissionFinancials = (
+    mission: Mission,
+    clientTables: ClientPriceTable[],
+    providerTables: ProviderCostTable[],
+    clientData?: Client,
+    tolerance: number = 5
+): AuditResult => {
+    const fin = calculateMissionFinancials(mission, clientTables, providerTables, clientData);
+    
+    const storedRevenue = safeNumber(mission.revenue_value);
+    const storedCost = safeNumber(mission.cost_value);
+    const calculatedRevenue = fin.client.total;
+    const calculatedCost = fin.provider.total;
+    
+    const revenueDiff = Math.abs(storedRevenue - calculatedRevenue);
+    const costDiff = Math.abs(storedCost - calculatedCost);
+    
+    const hasStoredValues = storedRevenue > 0 || storedCost > 0;
+    const isInconsistent = hasStoredValues && (revenueDiff > tolerance || costDiff > tolerance);
+    
+    let reason = '';
+    if (isInconsistent) {
+        const reasons: string[] = [];
+        if (revenueDiff > tolerance) reasons.push(`Receita: salvo R$${storedRevenue.toFixed(2)} vs tabela R$${calculatedRevenue.toFixed(2)} (dif: R$${revenueDiff.toFixed(2)})`);
+        if (costDiff > tolerance) reasons.push(`Custo: salvo R$${storedCost.toFixed(2)} vs tabela R$${calculatedCost.toFixed(2)} (dif: R$${costDiff.toFixed(2)})`);
+        reason = reasons.join(' | ');
+    }
+    
+    return {
+        missionId: mission.id || '',
+        client: mission.client || '',
+        storedRevenue,
+        calculatedRevenue,
+        storedCost,
+        calculatedCost,
+        revenueDiff,
+        costDiff,
+        isInconsistent,
+        reason
     };
 };

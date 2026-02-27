@@ -3,7 +3,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { Mission, ClientPriceTable, ProviderCostTable, MissionStatus, Client } from '../types';
 import { supabase } from '../lib/supabase';
 import { useNotification } from '../lib/NotificationContext';
-import { calculateMissionFinancials } from '../lib/financialUtils';
+import { calculateMissionFinancials, auditMissionFinancials } from '../lib/financialUtils';
 import { X, Calculator, Loader2, Save, CheckCircle2, TrendingUp, Landmark, Zap, RotateCcw, Building2, Briefcase, Plus, Users, MapPin, ArrowRight, BrainCircuit, AlertTriangle, AlertCircle, Edit2, Info, RefreshCw } from 'lucide-react';
 import ProviderCostForm from './ProviderCostForm';
 import ClientPriceForm from './ClientPriceForm';
@@ -479,6 +479,55 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
             ) : financialData && (
                 <div className="space-y-6 animate-in slide-in-from-bottom-4 duration-500">
                     
+                    {(() => {
+                        const audit = auditMissionFinancials(mission, clientTables, providerTables, clientData);
+                        if (!audit.isInconsistent) return null;
+                        return (
+                            <div className="bg-amber-50 border-2 border-amber-400 rounded-xl p-4 shadow-md" data-testid="audit-alert-franchise">
+                                <div className="flex items-start gap-3">
+                                    <div className="p-2 bg-amber-100 rounded-lg shrink-0"><AlertTriangle size={20} className="text-amber-700" /></div>
+                                    <div className="flex-1 min-w-0">
+                                        <p className="text-xs font-black text-amber-800 uppercase tracking-wider mb-1">Cálculo Fora da Regra de Franquia</p>
+                                        <p className="text-[10px] text-amber-700 font-bold leading-relaxed">{audit.reason}</p>
+                                        <div className="flex items-center gap-3 mt-3">
+                                            <div className="flex items-center gap-2 text-[10px]">
+                                                <span className="font-bold text-gray-500">Salvo:</span>
+                                                <span className="font-black text-red-700">{formatCurrency(audit.storedRevenue)}</span>
+                                            </div>
+                                            <span className="text-gray-300">→</span>
+                                            <div className="flex items-center gap-2 text-[10px]">
+                                                <span className="font-bold text-gray-500">Tabela Oficial:</span>
+                                                <span className="font-black text-green-700">{formatCurrency(audit.calculatedRevenue)}</span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <button
+                                        onClick={() => {
+                                            if (financialData) {
+                                                const toll = financialData.tollValue;
+                                                setRevenueInput((financialData.client.total).toLocaleString('pt-BR', { minimumFractionDigits: 2 }));
+                                                setCostInput((financialData.provider.total).toLocaleString('pt-BR', { minimumFractionDigits: 2 }));
+                                                setTollInput(toll.toLocaleString('pt-BR', { minimumFractionDigits: 2 }));
+                                                showNotification('Tabela Aplicada', 'Valores ajustados conforme tabela oficial de franquia.', 'success');
+                                            }
+                                        }}
+                                        className="shrink-0 flex items-center gap-1.5 px-3 py-2 bg-amber-600 text-white rounded-lg text-[10px] font-black uppercase hover:bg-amber-700 transition-all shadow-sm"
+                                        data-testid="button-apply-official-table"
+                                    >
+                                        <RefreshCw size={12} /> Aplicar Tabela Oficial
+                                    </button>
+                                </div>
+                            </div>
+                        );
+                    })()}
+
+                    {financialData?.isMinimumActivationRule && (
+                        <div className="bg-blue-50 border border-blue-200 rounded-xl px-4 py-3 flex items-center gap-3" data-testid="minimum-activation-rule-info">
+                            <Info size={16} className="text-blue-600 shrink-0" />
+                            <p className="text-[10px] font-bold text-blue-700 uppercase tracking-wider">Regra de Acionamento Mínimo Ativa: Distância ≤200km e Tempo ≤2h — Valor travado no acionamento base, sem extras.</p>
+                        </div>
+                    )}
+
                     <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm">
                         <div className="flex flex-wrap gap-6 items-center justify-between">
                             <div className="flex-1 min-w-[120px]">
