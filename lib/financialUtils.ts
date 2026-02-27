@@ -102,6 +102,50 @@ export const extractUF = (address: string): string => {
     if (upper.includes('CEARA') || upper.includes('CEARÁ')) return 'CE';
     if (upper.includes('MARANHAO') || upper.includes('MARANHÃO')) return 'MA';
     if (upper.includes('PARA') || upper.includes('PARÁ')) return 'PA';
+    if (upper.includes('GOIAS') || upper.includes('GOIÁS')) return 'GO';
+    if (upper.includes('MATO GROSSO DO SUL')) return 'MS';
+    if (upper.includes('MATO GROSSO')) return 'MT';
+    if (upper.includes('RIO GRANDE DO NORTE')) return 'RN';
+    if (upper.includes('PARAIBA') || upper.includes('PARAÍBA')) return 'PB';
+    if (upper.includes('ALAGOAS')) return 'AL';
+    if (upper.includes('SERGIPE')) return 'SE';
+    if (upper.includes('PIAUI') || upper.includes('PIAUÍ')) return 'PI';
+    if (upper.includes('AMAZONAS')) return 'AM';
+    if (upper.includes('TOCANTINS')) return 'TO';
+    if (upper.includes('RONDONIA') || upper.includes('RONDÔNIA')) return 'RO';
+    if (upper.includes('ACRE')) return 'AC';
+    if (upper.includes('RORAIMA')) return 'RR';
+    if (upper.includes('AMAPA') || upper.includes('AMAPÁ')) return 'AP';
+
+    const CITY_TO_UF: Record<string, string> = {
+        'JABOATAO DOS GUARARAPES': 'PE', 'JABOATAO': 'PE', 'RECIFE': 'PE', 'OLINDA': 'PE', 'CARUARU': 'PE', 'PETROLINA': 'PE', 'PAULISTA': 'PE', 'CABO DE SANTO AGOSTINHO': 'PE', 'CAMARAGIBE': 'PE', 'GARANHUNS': 'PE', 'IPOJUCA': 'PE', 'SUAPE': 'PE', 'IGARASSU': 'PE', 'ABREU E LIMA': 'PE',
+        'SALVADOR': 'BA', 'FEIRA DE SANTANA': 'BA', 'VITORIA DA CONQUISTA': 'BA', 'CAMACARI': 'BA', 'LAURO DE FREITAS': 'BA', 'ILHEUS': 'BA', 'ITABUNA': 'BA', 'JUAZEIRO': 'BA', 'SIMOES FILHO': 'BA', 'DIAS D\'AVILA': 'BA', 'CANDEIAS': 'BA', 'ALAGOINHAS': 'BA',
+        'FORTALEZA': 'CE', 'CAUCAIA': 'CE', 'JUAZEIRO DO NORTE': 'CE', 'MARACANAU': 'CE', 'SOBRAL': 'CE', 'CRATO': 'CE', 'EUSEBIO': 'CE', 'PECÉM': 'CE', 'PECEM': 'CE', 'HORIZONTE': 'CE', 'PACATUBA': 'CE',
+        'SAO LUIS': 'MA', 'IMPERATRIZ': 'MA', 'TIMON': 'MA', 'CAXIAS': 'MA', 'BACABAL': 'MA',
+        'NATAL': 'RN', 'MOSSORO': 'RN', 'PARNAMIRIM': 'RN', 'SAO GONCALO DO AMARANTE': 'RN', 'MACAIBA': 'RN',
+        'JOAO PESSOA': 'PB', 'CAMPINA GRANDE': 'PB', 'SANTA RITA': 'PB', 'BAYEUX': 'PB', 'CABEDELO': 'PB',
+        'MACEIO': 'AL', 'ARAPIRACA': 'AL', 'RIO LARGO': 'AL', 'MARECHAL DEODORO': 'AL',
+        'ARACAJU': 'SE', 'NOSSA SENHORA DO SOCORRO': 'SE', 'LAGARTO': 'SE', 'ITABAIANA': 'SE',
+        'TERESINA': 'PI', 'PARNAIBA': 'PI',
+        'BELEM': 'PA', 'ANANINDEUA': 'PA', 'SANTAREM': 'PA', 'MARABA': 'PA', 'CASTANHAL': 'PA', 'BARCARENA': 'PA',
+        'MANAUS': 'AM', 'PARINTINS': 'AM',
+        'PALMAS': 'TO', 'PORTO VELHO': 'RO', 'RIO BRANCO': 'AC', 'BOA VISTA': 'RR', 'MACAPA': 'AP',
+        'GOIANIA': 'GO', 'APARECIDA DE GOIANIA': 'GO', 'ANAPOLIS': 'GO', 'LUZIANIA': 'GO',
+        'CUIABA': 'MT', 'VARZEA GRANDE': 'MT', 'RONDONOPOLIS': 'MT', 'SINOP': 'MT',
+        'CAMPO GRANDE': 'MS', 'DOURADOS': 'MS', 'TRES LAGOAS': 'MS',
+        'CURITIBA': 'PR', 'LONDRINA': 'PR', 'MARINGA': 'PR', 'PONTA GROSSA': 'PR', 'CASCAVEL': 'PR', 'SAO JOSE DOS PINHAIS': 'PR', 'FOZ DO IGUACU': 'PR', 'COLOMBO': 'PR', 'PARANAGUA': 'PR',
+        'FLORIANOPOLIS': 'SC', 'JOINVILLE': 'SC', 'BLUMENAU': 'SC', 'ITAJAI': 'SC', 'CHAPECO': 'SC', 'CRICIUMA': 'SC', 'NAVEGANTES': 'SC',
+        'PORTO ALEGRE': 'RS', 'CAXIAS DO SUL': 'RS', 'CANOAS': 'RS', 'PELOTAS': 'RS', 'SANTA MARIA': 'RS', 'GRAVATAI': 'RS', 'NOVO HAMBURGO': 'RS', 'SAO LEOPOLDO': 'RS',
+        'BRASILIA': 'DF', 'TAGUATINGA': 'DF', 'CEILANDIA': 'DF', 'SAMAMBAIA': 'DF',
+        'BELO HORIZONTE': 'MG', 'UBERLANDIA': 'MG', 'CONTAGEM': 'MG', 'JUIZ DE FORA': 'MG', 'BETIM': 'MG', 'MONTES CLAROS': 'MG', 'UBERABA': 'MG', 'GOVERNADOR VALADARES': 'MG', 'IPATINGA': 'MG', 'POUSO ALEGRE': 'MG', 'EXTREMA': 'MG',
+        'CAMPINAS': 'SP', 'GUARULHOS': 'SP', 'OSASCO': 'SP', 'SANTO ANDRE': 'SP', 'SAO BERNARDO DO CAMPO': 'SP', 'SANTOS': 'SP', 'RIBEIRAO PRETO': 'SP', 'SOROCABA': 'SP', 'SAO JOSE DOS CAMPOS': 'SP', 'BARUERI': 'SP', 'JUNDIAI': 'SP', 'PIRACICABA': 'SP', 'MAUA': 'SP', 'CAJAMAR': 'SP', 'BAURU': 'SP', 'DIADEMA': 'SP', 'ITAQUAQUECETUBA': 'SP', 'TABOAO DA SERRA': 'SP', 'COTIA': 'SP', 'EMBU DAS ARTES': 'SP', 'SUMARE': 'SP', 'INDAIATUBA': 'SP', 'AMERICANA': 'SP', 'LIMEIRA': 'SP', 'FRANCA': 'SP', 'PRAIA GRANDE': 'SP', 'CUBATAO': 'SP', 'GUARUJA': 'SP',
+        'NITEROI': 'RJ', 'SAO GONCALO': 'RJ', 'DUQUE DE CAXIAS': 'RJ', 'NOVA IGUACU': 'RJ', 'CAMPOS DOS GOYTACAZES': 'RJ', 'BELFORD ROXO': 'RJ', 'VOLTA REDONDA': 'RJ', 'PETROPOLIS': 'RJ', 'MACAE': 'RJ', 'ITABORAI': 'RJ', 'RESENDE': 'RJ',
+        'VITORIA': 'ES', 'VILA VELHA': 'ES', 'SERRA': 'ES', 'CARIACICA': 'ES', 'CACHOEIRO DE ITAPEMIRIM': 'ES', 'LINHARES': 'ES', 'GUARAPARI': 'ES', 'ARACRUZ': 'ES'
+    };
+    const normalizedUpper = upper.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+    for (const [cityName, ufCode] of Object.entries(CITY_TO_UF)) {
+        if (normalizedUpper.includes(cityName)) return ufCode;
+    }
     
     return '';
 };
