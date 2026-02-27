@@ -168,8 +168,9 @@ const MissionCardComponent: React.FC<MissionCardProps> = ({
     const displayRevenue = useMemo(() => {
         const dbToll = mission.toll_value || 0;
         const storedValue = (mission.revenue_value || 0) + dbToll;
+        const hasStoredRevenue = (mission.revenue_value != null && mission.revenue_value > 0);
         
-        if (isTerminal && (mission.billing_approved || hasBeenVerified)) {
+        if (hasStoredRevenue) {
             return storedValue;
         }
         
@@ -178,13 +179,14 @@ const MissionCardComponent: React.FC<MissionCardProps> = ({
         }
 
         return storedValue;
-    }, [mission.revenue_value, mission.toll_value, mission.billing_approved, hasBeenVerified, financials, isTerminal]);
+    }, [mission.revenue_value, mission.toll_value, financials]);
 
     const displayCost = useMemo(() => {
         const dbToll = mission.toll_value || 0;
         const storedValue = (mission.cost_value || 0) + dbToll;
+        const hasStoredCost = (mission.cost_value != null && mission.cost_value > 0);
         
-        if (isTerminal && (mission.billing_approved || hasBeenVerified)) {
+        if (hasStoredCost) {
             return storedValue;
         }
 
@@ -193,7 +195,7 @@ const MissionCardComponent: React.FC<MissionCardProps> = ({
         }
         
         return storedValue;
-    }, [mission.cost_value, mission.toll_value, mission.billing_approved, hasBeenVerified, financials, isTerminal]);
+    }, [mission.cost_value, mission.toll_value, financials]);
 
     const isActive = !isTerminal;
 
@@ -278,8 +280,8 @@ Qualquer dúvida, estamos a disposição.
         };
     }, [mission.currentLocation]);
 
-    const isAdjustedRevenue = mission.billing_approved || hasBeenVerified;
-    const isAdjustedCost = mission.billing_approved || hasBeenVerified;
+    const isAdjustedRevenue = mission.billing_approved || hasBeenVerified || (mission.revenue_value != null && mission.revenue_value > 0);
+    const isAdjustedCost = mission.billing_approved || hasBeenVerified || (mission.cost_value != null && mission.cost_value > 0);
     
     // Calcula o progresso visual para a barra (0 a 100)
     const progressVisual = Math.min(100, Math.max(0, mission.progress || 0));
@@ -498,12 +500,12 @@ Qualquer dúvida, estamos a disposição.
                     {isDirector && !hideProviderInfo && (
                         <div className="flex flex-col gap-1">
                            <div className="bg-white border border-green-200 rounded-lg p-1 shadow-sm">
-                               <p className="text-[7px] font-black text-green-500 uppercase tracking-tighter leading-none mb-0.5">Faturamento {mission.billing_approved ? '(Auditado)' : hasBeenVerified ? '(Salvo)' : '(Projetado)'}</p>
+                               <p className="text-[7px] font-black text-green-500 uppercase tracking-tighter leading-none mb-0.5">Faturamento {mission.billing_approved ? '(Auditado)' : isAdjustedRevenue ? '(Salvo)' : '(Projetado)'}</p>
                                <p className="text-[10px] font-black text-green-700 font-mono leading-none tracking-tighter">{formatCurrency(displayRevenue)}</p>
                            </div>
 
                            <div className="bg-white border border-red-200 rounded-lg p-1 shadow-sm">
-                               <p className="text-[7px] font-black text-red-400 uppercase tracking-tighter leading-none mb-0.5">Fornecedor {mission.billing_approved ? '(Auditado)' : hasBeenVerified ? '(Salvo)' : '(Projetado)'}</p>
+                               <p className="text-[7px] font-black text-red-400 uppercase tracking-tighter leading-none mb-0.5">Fornecedor {mission.billing_approved ? '(Auditado)' : isAdjustedCost ? '(Salvo)' : '(Projetado)'}</p>
                                <p className="text-[10px] font-black text-red-600 font-mono leading-none tracking-tighter">{formatCurrency(displayCost)}</p>
                            </div>
 
