@@ -221,7 +221,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, activeScreen, onNavigate, onL
                <img 
                   src="/logo.png" 
                   alt="Logo" 
-                  className="h-10 w-auto object-contain transition-all group-hover:h-12"
+                  className="h-14 w-auto object-contain transition-all group-hover:h-16 brightness-0 invert"
                   onError={(e) => {
                     e.currentTarget.src = 'https://placehold.co/80x80/b91c1c/white?text=TM';
                   }}

@@ -64,12 +64,9 @@ const Header: React.FC<HeaderProps> = ({ onMenuClick, onProfileSettingsClick }) 
              <img 
                 src="/logo.png" 
                 alt="Logo TMSEG" 
-                className="h-8 w-auto object-contain"
+                className="h-12 w-auto object-contain"
                 onError={(e) => { e.currentTarget.style.display = 'none'; }} 
              />
-             <span className="font-black text-gray-900 text-lg tracking-tight hidden sm:block lg:hidden">
-                 TM<span className="text-red-600">SEG</span>
-             </span>
         </div>
       </div>
 

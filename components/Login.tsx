@@ -173,11 +173,11 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
           <div className="mb-10">
             <div className="flex items-center gap-4 mb-8">
               <div className="relative">
-                <div className="w-14 h-14 bg-gradient-to-br from-red-600 to-red-800 rounded-2xl flex items-center justify-center shadow-lg shadow-red-900/30 rotate-3">
+                <div className="flex items-center justify-center">
                   <img
                     src="/logo.png"
                     alt="TMSEG"
-                    className="h-9 w-auto object-contain drop-shadow-lg -rotate-3"
+                    className="h-16 w-auto object-contain drop-shadow-lg"
                     onError={(e) => {
                       e.currentTarget.style.display = 'none';
                       const parent = e.currentTarget.parentElement;
@@ -188,9 +188,6 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
                       }
                     }}
                   />
-                </div>
-                <div className="absolute -bottom-1 -right-1 w-5 h-5 bg-green-500 rounded-full border-2 border-black flex items-center justify-center">
-                  <div className="w-2 h-2 bg-white rounded-full"></div>
                 </div>
               </div>
               <div>
