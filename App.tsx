@@ -221,7 +221,7 @@ const App: React.FC = () => {
 
   return (
     <NotificationProvider>
-        <div className="flex h-screen overflow-hidden font-sans text-gray-800 relative">
+        <div className="flex h-screen overflow-hidden md:overflow-hidden font-sans text-gray-800 relative">
         
         {rebootCountdown !== null && (
             <div className="fixed inset-0 z-[9999] bg-black flex flex-col items-center justify-center text-center p-6 backdrop-blur-xl animate-in fade-in duration-500">
@@ -236,7 +236,7 @@ const App: React.FC = () => {
         <div className="flex-1 flex flex-col h-full relative z-10 overflow-hidden lg:pl-20">
             {isSidebarOpen && <div className="fixed inset-0 bg-black/50 z-40 lg:hidden" onClick={() => setIsSidebarOpen(false)}></div>}
             <Header onMenuClick={toggleSidebar} onProfileSettingsClick={() => setIsProfileSettingsOpen(true)} />
-            <main className="flex-1 overflow-y-auto p-4 md:p-6 scrollbar-hide">
+            <main className="flex-1 overflow-y-auto p-4 md:p-6 scrollbar-thin">
             <div className="w-full mx-auto relative">
                 {renderContent()}
                 <footer className="mt-8 text-center text-[10px] text-gray-400 pb-4 uppercase">&copy; {new Date().getFullYear()} Grupo TMSEG.</footer>

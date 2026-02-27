@@ -23,6 +23,7 @@ import DailyGoalThermometer from './DailyGoalThermometer';
 import ExecutiveDashboard from './ExecutiveDashboard';
 import ClientExecutiveDashboard from './ClientExecutiveDashboard';
 import ClientReportsTab from './ClientReportsTab';
+import ClientMissionRequest from './ClientMissionRequest';
 
 
 interface MissionTableProps {
@@ -149,6 +150,9 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
   
   const [isFinancialModalOpen, setIsFinancialModalOpen] = useState(false);
   const [missionForFinancials, setMissionForFinancials] = useState<Mission | null>(null);
+  const [showClientRequestModal, setShowClientRequestModal] = useState(false);
+  const [solicitationCount, setSolicitationCount] = useState(0);
+  const [resolvedClientName, setResolvedClientName] = useState('');
 
   // Relógio para projeções
   const [currentTime, setCurrentTime] = useState(new Date());
@@ -206,7 +210,7 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
       
       if (currentUser?.clientId) {
           const { data: clientData } = await supabase.from('clients').select('name').eq('id', currentUser.clientId).single();
-          if (clientData) query = query.eq('client', clientData.name);
+          if (clientData) { query = query.eq('client', clientData.name); setResolvedClientName(clientData.name); }
           else { setAllMissions([]); setIsLoading(false); return; }
       } else if (isCommercial || (currentUser?.permissions && currentUser.permissions.some(p => p.startsWith('client_view:')))) {
           const allowedClientIds = currentUser?.permissions?.filter(p => p.startsWith('client_view:')).map(p => p.split(':')[1]) || [];
@@ -223,6 +227,7 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
 
           if (validNames.length > 0) {
               query = query.in('client', validNames);
+              if (validNames.length === 1) setResolvedClientName(validNames[0]);
           } else {
               query = query.eq('client', 'NON_EXISTENT_CLIENT_TO_FORCE_EMPTY');
           }
@@ -317,6 +322,8 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
                 };
             });
             setAllMissions(mapped);
+            const solCount = mapped.filter(m => m.status === MissionStatus.SOLICITED && (m.currentLocation || '').includes('Solicitação via Portal')).length;
+            setSolicitationCount(solCount);
         }
       } catch (error: any) {
         console.error('Error fetching missions:', error.message || error);
@@ -325,7 +332,7 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
       } finally {
         if (!silent) setIsLoading(false);
       }
-    }, [showNotification, currentUser, isCommercial]);
+    }, [showNotification, currentUser, isCommercial, isRestrictedClientView]);
   
     useEffect(() => {
       if (currentUser) {
@@ -701,6 +708,17 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
                         <input type="date" className="bg-transparent border-none text-[11px] font-bold text-gray-700 outline-none cursor-pointer" value={customEndDate} onChange={e => setCustomEndDate(e.target.value)} />
                     </div>
                 )}
+                {isRestrictedClientView && resolvedClientName && (
+                    <button onClick={() => setShowClientRequestModal(true)} className="flex items-center gap-2 bg-red-700 hover:bg-red-800 text-white px-4 py-2.5 rounded-lg text-[11px] font-black transition-all shadow-md uppercase" data-testid="button-client-new-request">
+                        <Plus size={16} /> Solicitar Escolta
+                    </button>
+                )}
+                {!isRestrictedClientView && solicitationCount > 0 && (
+                    <button onClick={() => { setFilterStatus(MissionStatus.SOLICITED); }} className="relative flex items-center gap-2 px-4 py-2.5 rounded-lg text-[11px] font-black uppercase border transition-all bg-pink-50 text-pink-800 border-pink-300 shadow-sm hover:bg-pink-100 animate-pulse" data-testid="button-solicitations-badge">
+                        <Mail size={14} className="text-pink-600" /> Solicitações
+                        <span className="absolute -top-1.5 -right-1.5 px-1.5 py-0.5 rounded-full text-[9px] bg-pink-600 text-white font-black min-w-[18px] text-center">{solicitationCount}</span>
+                    </button>
+                )}
                 {onNewMission && !isRestrictedClientView && ( <button onClick={onNewMission} className="flex items-center gap-2 bg-orange-500 hover:bg-orange-600 text-black px-4 py-2.5 rounded-lg text-[11px] font-black transition-all shadow-md uppercase"> <Plus size={16} /> Nova Missão </button> )}
           </div>
         </div>
@@ -770,7 +788,7 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
         <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-10 gap-1.5">
             {/* BOX TOTAL: Reflete o volume absoluto do período conforme solicitado */}
             <StatCard icon={Activity} title="Total" value={totalVolumeCount} bgColor="bg-gray-800" loading={isLoading} isActive={filterStatus === 'ALL' && !showPendingOnly && !showTomorrowOnly && !showUnapprovedOnly} onClick={() => { setFilterStatus('ALL'); setShowPendingOnly(false); setShowTomorrowOnly(false); setShowUnapprovedOnly(false); }} />
-            {STATUS_CONFIG.map((status) => ( <StatCard key={status.id} icon={status.icon} title={status.label} value={statusCounts[status.id] || 0} bgColor={status.color} loading={isLoading} isActive={filterStatus === status.id} onClick={() => { setFilterStatus(status.id); }} /> ))}
+            {STATUS_CONFIG.filter(s => isRestrictedClientView ? s.id !== MissionStatus.PENDING : true).map((status) => ( <StatCard key={status.id} icon={status.icon} title={status.label} value={statusCounts[status.id] || 0} bgColor={status.color} loading={isLoading} isActive={filterStatus === status.id} onClick={() => { setFilterStatus(status.id); }} /> ))}
         </div>
   
         <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden sticky top-0 z-20">
@@ -867,6 +885,7 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
         {isUpdateModalOpen && <UpdateMissionModal isOpen={isUpdateModalOpen} onClose={() => setIsUpdateModalOpen(false)} mission={selectedMission} currentUser={currentUser} onSuccess={handleUpdateSuccess} />}
         {isPrintModalOpen && missionForPrint && <MissionPrintModal mission={missionForPrint} onClose={() => setIsPrintModalOpen(false)} />}
         {isFullReportOpen && missionForFullReport && <MissionFullReportModal mission={missionForFullReport} onClose={() => { setIsFullReportOpen(false); setMissionForFullReport(null); }} hideProviderInfo={isRestrictedClientView} />}
+        {showClientRequestModal && resolvedClientName && <ClientMissionRequest clientName={resolvedClientName} onClose={() => setShowClientRequestModal(false)} onSuccess={() => { fetchMissions(true); showNotification('Sucesso', 'Solicitação enviada com sucesso!', 'success'); }} />}
         {isDeleteModalOpen && missionToDelete && (
             <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-in fade-in">
                 <div className="bg-white rounded-xl shadow-2xl w-full max-sm overflow-hidden border border-red-200">

@@ -39,6 +39,9 @@ Authentication is custom, using a `system_users` table in Supabase. User session
 -   **CEVA + Jundiaí Price Table Intelligence:** Implements specific business logic to automatically adjust price table selection for the CEVA client based on distance and location, preventing overbilling.
 -   **Mission Report:** Generates detailed mission reports with configurable visibility for client users, hiding sensitive provider information.
 -   **Excel Comparison Module:** Upload Excel spreadsheets to compare OS values (revenue/cost) with the system. Auto-detects OS number, revenue and cost columns. Shows divergences in a table with color-coded status. Gemini AI analyzes divergences and suggests corrective actions. Located in `ExecutiveDashboard.tsx`.
+-   **Client Portal OS Request:** Client users can create escort requests ("Solicitar Escolta") via `ClientMissionRequest.tsx`. Creates missions with status "Solicitada" and `current_location` tag "Solicitação via Portal". Internal users see a blinking "Solicitações" badge with count of pending client-created requests.
+-   **Dashboard Click-to-Filter (PowerBI):** `ClientExecutiveDashboard.tsx` supports clicking on chart bars, pie slices, and legend items to filter dashboard data. Active filter shown with indicator bar and "Limpar Filtro" button. Supports filtering by status, operation type, route, vehicle, distance range, and weekday.
+-   **Thin Scrollbars:** `.scrollbar-thin` CSS class in `client/index.html` for visible thin scrollbars on notebook/mobile. Main content area uses thin scrollbar instead of hidden.
 
 ## External Dependencies
 

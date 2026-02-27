@@ -5,7 +5,7 @@ import {
     PieChart, Pie, Cell, AreaChart, Area, ComposedChart, Line, Legend, LabelList
 } from 'recharts';
 import {
-    Activity, Truck, Target, CheckCircle2, XCircle, Calendar, Clock, Shield,
+    Activity, Truck, CheckCircle2, XCircle, Calendar, Clock, Shield,
     MapPin, TrendingUp, RefreshCw, BarChart3, Navigation, Flag, Layers
 } from 'lucide-react';
 
@@ -55,22 +55,65 @@ const TICK = { fontSize: 11, fontWeight: 700, fill: '#64748b' };
 const TICK_SM = { fontSize: 10, fontWeight: 700, fill: '#64748b' };
 const TICK_LABEL = { fontSize: 10, fontWeight: 800, fill: '#475569' };
 
+type ChartFilter = { type: string; value: string } | null;
+
 const ClientExecutiveDashboard: React.FC<Props> = ({ missions }) => {
     const [period, setPeriod] = useState<DashPeriod>('MONTH');
     const [customStart, setCustomStart] = useState('');
     const [customEnd, setCustomEnd] = useState('');
     const [refreshKey, setRefreshKey] = useState(0);
     const [lastUpdate, setLastUpdate] = useState(new Date());
+    const [chartFilter, setChartFilter] = useState<ChartFilter>(null);
 
-    const handleRefresh = useCallback(() => { setRefreshKey(k => k + 1); setLastUpdate(new Date()); }, []);
+    const handleRefresh = useCallback(() => { setRefreshKey(k => k + 1); setLastUpdate(new Date()); setChartFilter(null); }, []);
 
-    const filtered = useMemo(() => {
+    const toggleChartFilter = useCallback((type: string, value: string) => {
+        setChartFilter(prev => prev && prev.type === type && prev.value === value ? null : { type, value });
+    }, []);
+
+    const periodFiltered = useMemo(() => {
         const [start, end] = getDateRange(period, customStart, customEnd);
         return missions.filter(m => {
             const d = new Date(m.startTime || m.createdAt);
             return d >= start && d <= end;
         });
     }, [missions, period, customStart, customEnd, refreshKey]);
+
+    const filtered = useMemo(() => {
+        if (!chartFilter) return periodFiltered;
+        return periodFiltered.filter(m => {
+            const statusLabel = m.status === MissionStatus.IN_TRANSIT ? 'Em Viagem' :
+                m.status === MissionStatus.COMPLETED ? 'Concluída' :
+                m.status === MissionStatus.SCHEDULED ? 'Agendada' :
+                m.status === MissionStatus.CANCELLED ? 'Cancelada' :
+                m.status === MissionStatus.ORIGIN ? 'Na Origem' :
+                m.status === MissionStatus.SOLICITED ? 'Solicitada' :
+                m.status === MissionStatus.DOCUMENTATION ? 'Documentação' :
+                m.status === MissionStatus.REFUSED ? 'Recusada' : m.status;
+            if (chartFilter.type === 'status') return statusLabel === chartFilter.value;
+            if (chartFilter.type === 'type') return (m.mission_type || 'Caracterizada') === chartFilter.value;
+            if (chartFilter.type === 'weekday') {
+                const d = new Date(m.startTime || m.createdAt);
+                return WEEKDAY_NAMES[d.getDay()] === chartFilter.value;
+            }
+            if (chartFilter.type === 'route') {
+                const originShort = (m.origin || '').split(',')[0].split('-')[0].trim().toUpperCase();
+                const destShort = (m.destination || '').split(',')[0].split('-')[0].trim().toUpperCase();
+                const route = `${originShort} → ${destShort}`;
+                const filterVal = chartFilter.value.endsWith('…') ? chartFilter.value.slice(0, -1) : chartFilter.value;
+                return route.startsWith(filterVal);
+            }
+            if (chartFilter.type === 'vehicle') return m.clientVehicle?.plate === chartFilter.value;
+            if (chartFilter.type === 'distance') {
+                const d = m.totalDistance || 0;
+                if (chartFilter.value === '< 100 km') return d < 100;
+                if (chartFilter.value === '100-300 km') return d >= 100 && d < 300;
+                if (chartFilter.value === '300-500 km') return d >= 300 && d < 500;
+                if (chartFilter.value === '500+ km') return d >= 500;
+            }
+            return true;
+        });
+    }, [periodFiltered, chartFilter]);
 
     const kpis = useMemo(() => {
         const total = filtered.length;
@@ -191,18 +234,6 @@ const ClientExecutiveDashboard: React.FC<Props> = ({ missions }) => {
         return Object.entries(months).map(([mes, missoes]) => ({ mes, missoes }));
     }, [missions]);
 
-    const efficiencyData = useMemo(() => {
-        const data = [];
-        const completed = filtered.filter(m => m.status === MissionStatus.COMPLETED).length;
-        const cancelled = filtered.filter(m => m.status === MissionStatus.CANCELLED).length;
-        const refused = filtered.filter(m => m.status === MissionStatus.REFUSED).length;
-        const active = filtered.filter(m => ![MissionStatus.COMPLETED, MissionStatus.CANCELLED, MissionStatus.REFUSED].includes(m.status as MissionStatus)).length;
-        if (completed) data.push({ name: 'Concluídas', value: completed, color: '#059669' });
-        if (active) data.push({ name: 'Em Andamento', value: active, color: '#2563eb' });
-        if (cancelled) data.push({ name: 'Canceladas', value: cancelled, color: '#d97706' });
-        if (refused) data.push({ name: 'Recusadas', value: refused, color: '#dc2626' });
-        return data;
-    }, [filtered]);
 
     const vehicleRanking = useMemo(() => {
         const counts: Record<string, number> = {};
@@ -225,11 +256,14 @@ const ClientExecutiveDashboard: React.FC<Props> = ({ missions }) => {
         </div>
     );
 
-    const ChartCard = ({ title, icon: Icon, children, span = 1 }: { title: string; icon: any; children: React.ReactNode; span?: number }) => (
-        <div className={`bg-white p-5 rounded-xl border border-gray-200 shadow-sm ${span === 2 ? 'lg:col-span-2' : ''}`}>
+    const ChartCard = ({ title, icon: Icon, children, span = 1, filterType }: { title: string; icon: any; children: React.ReactNode; span?: number; filterType?: string }) => (
+        <div className={`bg-white p-5 rounded-xl border shadow-sm transition-all ${span === 2 ? 'lg:col-span-2' : ''} ${chartFilter && filterType && chartFilter.type === filterType ? 'border-red-400 ring-2 ring-red-100' : 'border-gray-200'}`}>
             <div className="flex items-center gap-2.5 mb-4 pb-2.5 border-b border-gray-100">
                 <div className="p-2 bg-red-700 text-white rounded-lg"><Icon size={14} /></div>
                 <h4 className="text-xs font-black text-gray-700 uppercase tracking-widest">{title}</h4>
+                {chartFilter && filterType && chartFilter.type === filterType && (
+                    <span className="ml-auto text-[10px] font-black text-red-600 bg-red-50 px-2 py-1 rounded-full">{chartFilter.value}</span>
+                )}
             </div>
             <div className="w-full" style={{ minHeight: 240 }}>{children}</div>
         </div>
@@ -275,8 +309,22 @@ const ClientExecutiveDashboard: React.FC<Props> = ({ missions }) => {
                 <KpiCard label="Total Missões" value={kpis.total.toString()} icon={Activity} color="bg-gray-900 text-white" sub={`${kpis.completed} concluídas`} />
                 <KpiCard label="Em Trânsito" value={kpis.inTransit.toString()} icon={Truck} color="bg-white text-gray-900 border-gray-200" sub="Agora em operação" />
                 <KpiCard label="Agendadas" value={kpis.scheduled.toString()} icon={Calendar} color="bg-white text-gray-900 border-gray-200" sub="Próximas missões" />
-                <KpiCard label="Eficiência" value={`${kpis.efficiency}%`} icon={Target} color="bg-white text-gray-900 border-gray-200" sub={`${Math.round(kpis.totalKm).toLocaleString('pt-BR')} km percorridos`} />
+                <KpiCard label="Km Total" value={`${Math.round(kpis.totalKm).toLocaleString('pt-BR')}`} icon={MapPin} color="bg-white text-gray-900 border-gray-200" sub={`${kpis.cancelled} cancelada${kpis.cancelled !== 1 ? 's' : ''}`} />
             </div>
+
+            {chartFilter && (
+                <div className="flex items-center gap-3 bg-red-50 border border-red-200 rounded-xl px-4 py-3" data-testid="chart-filter-indicator">
+                    <div className="flex items-center gap-2">
+                        <div className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
+                        <span className="text-xs font-black text-red-800 uppercase">Filtro Ativo:</span>
+                        <span className="text-xs font-bold text-red-700">{chartFilter.value}</span>
+                        <span className="text-[10px] text-red-500">({filtered.length} de {periodFiltered.length} missões)</span>
+                    </div>
+                    <button onClick={() => setChartFilter(null)} className="ml-auto flex items-center gap-1.5 px-3 py-1.5 bg-red-700 text-white rounded-lg text-[10px] font-black uppercase hover:bg-red-800 transition-all" data-testid="button-clear-chart-filter">
+                        <XCircle size={12} /> Limpar Filtro
+                    </button>
+                </div>
+            )}
 
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
                 <ChartCard title="Missões por Dia" icon={Calendar} span={2}>
@@ -295,20 +343,20 @@ const ClientExecutiveDashboard: React.FC<Props> = ({ missions }) => {
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-                <ChartCard title="Distribuição por Status" icon={Flag}>
+                <ChartCard title="Distribuição por Status" icon={Flag} filterType="status">
                     <div className="flex flex-col">
                         <ResponsiveContainer width="100%" height={200}>
                             <PieChart>
-                                <Pie data={statusData} cx="50%" cy="50%" innerRadius={40} outerRadius={75} paddingAngle={3} dataKey="value" label={false}>
-                                    {statusData.map((entry, i) => <Cell key={i} fill={entry.color} stroke="#fff" strokeWidth={2} />)}
+                                <Pie data={statusData} cx="50%" cy="50%" innerRadius={40} outerRadius={75} paddingAngle={3} dataKey="value" label={false} className="cursor-pointer" onClick={(data: any) => data && toggleChartFilter('status', data.name)}>
+                                    {statusData.map((entry, i) => <Cell key={i} fill={entry.color} stroke={chartFilter?.type === 'status' && chartFilter.value === entry.name ? '#000' : '#fff'} strokeWidth={chartFilter?.type === 'status' && chartFilter.value === entry.name ? 3 : 2} />)}
                                 </Pie>
                                 <Tooltip content={<CustomTooltip />} />
                             </PieChart>
                         </ResponsiveContainer>
                         <div className="flex flex-wrap gap-x-4 gap-y-1.5 justify-center mt-1 px-2">
                             {statusData.map((s, i) => (
-                                <div key={i} className="flex items-center gap-1.5">
-                                    <div className="w-3 h-3 rounded-sm" style={{ backgroundColor: s.color }} />
+                                <div key={i} className="flex items-center gap-1.5 cursor-pointer hover:opacity-80 transition-opacity" onClick={() => toggleChartFilter('status', s.name)}>
+                                    <div className="w-3 h-3 rounded-sm" style={{ backgroundColor: s.color, outline: chartFilter?.type === 'status' && chartFilter.value === s.name ? '2px solid #000' : 'none' }} />
                                     <span className="text-[11px] font-bold text-gray-600">{s.name}: <span className="text-gray-900 font-black">{s.value}</span></span>
                                 </div>
                             ))}
@@ -316,20 +364,20 @@ const ClientExecutiveDashboard: React.FC<Props> = ({ missions }) => {
                     </div>
                 </ChartCard>
 
-                <ChartCard title="Mix de Operação" icon={Shield}>
+                <ChartCard title="Mix de Operação" icon={Shield} filterType="type">
                     <div className="flex flex-col">
                         <ResponsiveContainer width="100%" height={200}>
                             <PieChart>
-                                <Pie data={typeMix} cx="50%" cy="50%" innerRadius={40} outerRadius={75} paddingAngle={4} dataKey="value" label={false}>
-                                    {typeMix.map((entry, i) => <Cell key={i} fill={entry.color} stroke="#fff" strokeWidth={2} />)}
+                                <Pie data={typeMix} cx="50%" cy="50%" innerRadius={40} outerRadius={75} paddingAngle={4} dataKey="value" label={false} className="cursor-pointer" onClick={(data: any) => data && toggleChartFilter('type', data.name)}>
+                                    {typeMix.map((entry, i) => <Cell key={i} fill={entry.color} stroke={chartFilter?.type === 'type' && chartFilter.value === entry.name ? '#000' : '#fff'} strokeWidth={chartFilter?.type === 'type' && chartFilter.value === entry.name ? 3 : 2} />)}
                                 </Pie>
                                 <Tooltip content={<CustomTooltip />} />
                             </PieChart>
                         </ResponsiveContainer>
                         <div className="flex flex-wrap gap-x-4 gap-y-1.5 justify-center mt-1 px-2">
                             {typeMix.map((s, i) => (
-                                <div key={i} className="flex items-center gap-1.5">
-                                    <div className="w-3 h-3 rounded-sm" style={{ backgroundColor: s.color }} />
+                                <div key={i} className="flex items-center gap-1.5 cursor-pointer hover:opacity-80 transition-opacity" onClick={() => toggleChartFilter('type', s.name)}>
+                                    <div className="w-3 h-3 rounded-sm" style={{ backgroundColor: s.color, outline: chartFilter?.type === 'type' && chartFilter.value === s.name ? '2px solid #000' : 'none' }} />
                                     <span className="text-[11px] font-bold text-gray-600">{s.name}: <span className="text-gray-900 font-black">{s.value}</span></span>
                                 </div>
                             ))}
@@ -337,69 +385,48 @@ const ClientExecutiveDashboard: React.FC<Props> = ({ missions }) => {
                     </div>
                 </ChartCard>
 
-                <ChartCard title="Eficiência Operacional" icon={CheckCircle2}>
-                    <div className="flex flex-col">
-                        <ResponsiveContainer width="100%" height={200}>
-                            <PieChart>
-                                <Pie data={efficiencyData} cx="50%" cy="50%" innerRadius={40} outerRadius={75} paddingAngle={3} dataKey="value" label={false}>
-                                    {efficiencyData.map((entry, i) => <Cell key={i} fill={entry.color} stroke="#fff" strokeWidth={2} />)}
-                                </Pie>
-                                <Tooltip content={<CustomTooltip />} />
-                            </PieChart>
-                        </ResponsiveContainer>
-                        <div className="flex flex-wrap gap-x-4 gap-y-1.5 justify-center mt-1 px-2">
-                            {efficiencyData.map((s, i) => (
-                                <div key={i} className="flex items-center gap-1.5">
-                                    <div className="w-3 h-3 rounded-sm" style={{ backgroundColor: s.color }} />
-                                    <span className="text-[11px] font-bold text-gray-600">{s.name}: <span className="text-gray-900 font-black">{s.value}</span></span>
-                                </div>
-                            ))}
-                        </div>
-                    </div>
-                </ChartCard>
-
-                <ChartCard title="Top Rotas Mais Frequentes" icon={Navigation}>
+                <ChartCard title="Top Rotas Mais Frequentes" icon={Navigation} filterType="route">
                     <ResponsiveContainer width="100%" height={260}>
-                        <BarChart data={routeRanking} layout="vertical" margin={{ top: 5, right: 40, left: 5, bottom: 5 }}>
+                        <BarChart data={routeRanking} layout="vertical" margin={{ top: 5, right: 40, left: 5, bottom: 5 }} onClick={(e: any) => e?.activePayload?.[0]?.payload && toggleChartFilter('route', e.activePayload[0].payload.rota)}>
                             <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
                             <XAxis type="number" tick={TICK} allowDecimals={false} />
                             <YAxis dataKey="rota" type="category" tick={TICK_LABEL} width={140} />
                             <Tooltip content={<CustomTooltip />} />
-                            <Bar dataKey="qtd" name="Missões" fill="#b91c1c" radius={[0, 6, 6, 0]} barSize={18}>
+                            <Bar dataKey="qtd" name="Missões" fill="#b91c1c" radius={[0, 6, 6, 0]} barSize={18} className="cursor-pointer">
                                 <LabelList dataKey="qtd" position="right" style={{ fontSize: 13, fontWeight: 900, fill: '#1e293b' }} />
                             </Bar>
                         </BarChart>
                     </ResponsiveContainer>
                 </ChartCard>
 
-                <ChartCard title="Veículos Mais Escoltados" icon={Truck}>
+                <ChartCard title="Veículos Mais Escoltados" icon={Truck} filterType="vehicle">
                     <ResponsiveContainer width="100%" height={260}>
-                        <BarChart data={vehicleRanking} layout="vertical" margin={{ top: 5, right: 40, left: 5, bottom: 5 }}>
+                        <BarChart data={vehicleRanking} layout="vertical" margin={{ top: 5, right: 40, left: 5, bottom: 5 }} onClick={(e: any) => e?.activePayload?.[0]?.payload && toggleChartFilter('vehicle', e.activePayload[0].payload.placa)}>
                             <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
                             <XAxis type="number" tick={TICK} allowDecimals={false} />
                             <YAxis dataKey="placa" type="category" tick={TICK_LABEL} width={100} />
                             <Tooltip content={<CustomTooltip />} />
-                            <Bar dataKey="qtd" name="Missões" fill="#7c3aed" radius={[0, 6, 6, 0]} barSize={18}>
+                            <Bar dataKey="qtd" name="Missões" fill="#7c3aed" radius={[0, 6, 6, 0]} barSize={18} className="cursor-pointer">
                                 <LabelList dataKey="qtd" position="right" style={{ fontSize: 13, fontWeight: 900, fill: '#1e293b' }} />
                             </Bar>
                         </BarChart>
                     </ResponsiveContainer>
                 </ChartCard>
 
-                <ChartCard title="Faixas de Distância" icon={MapPin}>
+                <ChartCard title="Faixas de Distância" icon={MapPin} filterType="distance">
                     <div className="flex flex-col">
                         <ResponsiveContainer width="100%" height={200}>
                             <PieChart>
-                                <Pie data={distanceRanges} cx="50%" cy="50%" innerRadius={40} outerRadius={75} paddingAngle={4} dataKey="value" label={false}>
-                                    {distanceRanges.map((entry, i) => <Cell key={i} fill={entry.color} stroke="#fff" strokeWidth={2} />)}
+                                <Pie data={distanceRanges} cx="50%" cy="50%" innerRadius={40} outerRadius={75} paddingAngle={4} dataKey="value" label={false} className="cursor-pointer" onClick={(data: any) => data && toggleChartFilter('distance', data.name)}>
+                                    {distanceRanges.map((entry, i) => <Cell key={i} fill={entry.color} stroke={chartFilter?.type === 'distance' && chartFilter.value === entry.name ? '#000' : '#fff'} strokeWidth={chartFilter?.type === 'distance' && chartFilter.value === entry.name ? 3 : 2} />)}
                                 </Pie>
                                 <Tooltip content={<CustomTooltip />} />
                             </PieChart>
                         </ResponsiveContainer>
                         <div className="flex flex-wrap gap-x-4 gap-y-1.5 justify-center mt-1 px-2">
                             {distanceRanges.map((s, i) => (
-                                <div key={i} className="flex items-center gap-1.5">
-                                    <div className="w-3 h-3 rounded-sm" style={{ backgroundColor: s.color }} />
+                                <div key={i} className="flex items-center gap-1.5 cursor-pointer hover:opacity-80 transition-opacity" onClick={() => toggleChartFilter('distance', s.name)}>
+                                    <div className="w-3 h-3 rounded-sm" style={{ backgroundColor: s.color, outline: chartFilter?.type === 'distance' && chartFilter.value === s.name ? '2px solid #000' : 'none' }} />
                                     <span className="text-[11px] font-bold text-gray-600">{s.name}: <span className="text-gray-900 font-black">{s.value}</span></span>
                                 </div>
                             ))}
@@ -407,14 +434,14 @@ const ClientExecutiveDashboard: React.FC<Props> = ({ missions }) => {
                     </div>
                 </ChartCard>
 
-                <ChartCard title="Demanda por Dia da Semana" icon={Layers}>
+                <ChartCard title="Demanda por Dia da Semana" icon={Layers} filterType="weekday">
                     <ResponsiveContainer width="100%" height={260}>
-                        <BarChart data={weekdayData} margin={{ top: 25, right: 15, left: -10, bottom: 5 }}>
+                        <BarChart data={weekdayData} margin={{ top: 25, right: 15, left: -10, bottom: 5 }} onClick={(e: any) => e?.activePayload?.[0]?.payload && toggleChartFilter('weekday', e.activePayload[0].payload.dia)}>
                             <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
                             <XAxis dataKey="dia" tick={TICK} />
                             <YAxis tick={TICK} allowDecimals={false} />
                             <Tooltip content={<CustomTooltip />} />
-                            <Bar dataKey="missoes" name="Missões" fill="#0891b2" radius={[4, 4, 0, 0]} barSize={30}>
+                            <Bar dataKey="missoes" name="Missões" fill="#0891b2" radius={[4, 4, 0, 0]} barSize={30} className="cursor-pointer">
                                 <LabelList dataKey="missoes" position="top" style={{ fontSize: 12, fontWeight: 900, fill: '#334155' }} formatter={(v: number) => v > 0 ? v : ''} />
                             </Bar>
                         </BarChart>
