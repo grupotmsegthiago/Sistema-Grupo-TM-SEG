@@ -221,7 +221,7 @@ const App: React.FC = () => {
 
   return (
     <NotificationProvider>
-        <div className="flex h-screen overflow-hidden md:overflow-hidden font-sans text-gray-800 relative">
+        <div className="flex h-screen overflow-y-auto md:overflow-hidden font-sans text-gray-800 relative">
         
         {rebootCountdown !== null && (
             <div className="fixed inset-0 z-[9999] bg-black flex flex-col items-center justify-center text-center p-6 backdrop-blur-xl animate-in fade-in duration-500">
