@@ -128,12 +128,10 @@ const ExecutiveDashboard: React.FC<Props> = ({ missions, isDirector, clientTable
         return filteredMissions.map(m => {
             if (m.status === MissionStatus.REFUSED) return { ...m, rev: 0, cost: 0, profit: 0 };
 
-            const terminalStatuses = [MissionStatus.COMPLETED, MissionStatus.CANCELLED];
-            const isTerminal = terminalStatuses.includes(m.status as MissionStatus);
             const hasStoredRevenue = (m.revenue_value != null && m.revenue_value > 0);
             const hasStoredCost = (m.cost_value != null && m.cost_value > 0);
 
-            if (isTerminal && (hasStoredRevenue || hasStoredCost)) {
+            if (hasStoredRevenue || hasStoredCost) {
                 const rev = (m.revenue_value || 0) + (m.toll_value || 0);
                 const cost = (m.cost_value || 0) + (m.toll_value || 0);
                 return { ...m, rev, cost, profit: rev - cost };
@@ -213,7 +211,7 @@ const ExecutiveDashboard: React.FC<Props> = ({ missions, isDirector, clientTable
                 if (v === 'CLIENTE' && clienteCol === -1) clienteCol = c;
                 if (v === 'FORNECEDOR' && fornecedorCol === -1) fornecedorCol = c;
                 if (v === 'VALOR TOTAL' && revTotalCol === -1) revTotalCol = c;
-                if (v === 'TOTAL' && c > 60 && costTotalCol === -1) costTotalCol = c;
+                if (v === 'TOTAL' && c > 60) costTotalCol = c;
             }
         }
 
