@@ -152,6 +152,7 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
   const [missionForFinancials, setMissionForFinancials] = useState<Mission | null>(null);
   const [showClientRequestModal, setShowClientRequestModal] = useState(false);
   const [solicitationCount, setSolicitationCount] = useState(0);
+  const [accidentCount, setAccidentCount] = useState(0);
   const [resolvedClientName, setResolvedClientName] = useState('');
 
   // Relógio para projeções
@@ -322,8 +323,9 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
                 };
             });
             setAllMissions(mapped);
-            const solCount = mapped.filter(m => m.status === MissionStatus.SOLICITED && (m.currentLocation || '').includes('Solicitação via Portal')).length;
-            setSolicitationCount(solCount);
+            const portalMissions = mapped.filter(m => m.status === MissionStatus.SOLICITED && (m.currentLocation || '').includes('Solicitação via Portal'));
+            setSolicitationCount(portalMissions.length);
+            setAccidentCount(portalMissions.filter(m => (m.currentLocation || '').includes('ACIDENTE')).length);
         }
       } catch (error: any) {
         console.error('Error fetching missions:', error.message || error);
@@ -713,8 +715,14 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
                         <Plus size={16} /> Solicitar Escolta
                     </button>
                 )}
+                {!isRestrictedClientView && accidentCount > 0 && (
+                    <button onClick={() => { setFilterStatus(MissionStatus.SOLICITED); }} className="relative flex items-center gap-2 px-4 py-2.5 rounded-lg text-[11px] font-black uppercase border-2 transition-all bg-red-600 text-white border-red-700 shadow-lg animate-pulse" data-testid="button-accident-badge">
+                        <AlertOctagon size={16} className="text-white" /> ACIDENTE
+                        <span className="absolute -top-2 -right-2 px-2 py-0.5 rounded-full text-[10px] bg-white text-red-700 font-black min-w-[20px] text-center shadow-md ring-2 ring-red-600">{accidentCount}</span>
+                    </button>
+                )}
                 {!isRestrictedClientView && solicitationCount > 0 && (
-                    <button onClick={() => { setFilterStatus(MissionStatus.SOLICITED); }} className="relative flex items-center gap-2 px-4 py-2.5 rounded-lg text-[11px] font-black uppercase border transition-all bg-pink-50 text-pink-800 border-pink-300 shadow-sm hover:bg-pink-100 animate-pulse" data-testid="button-solicitations-badge">
+                    <button onClick={() => { setFilterStatus(MissionStatus.SOLICITED); }} className={`relative flex items-center gap-2 px-4 py-2.5 rounded-lg text-[11px] font-black uppercase border transition-all shadow-sm hover:bg-pink-100 ${accidentCount > 0 ? 'bg-pink-50 text-pink-800 border-pink-300' : 'bg-pink-50 text-pink-800 border-pink-300 animate-pulse'}`} data-testid="button-solicitations-badge">
                         <Mail size={14} className="text-pink-600" /> Solicitações
                         <span className="absolute -top-1.5 -right-1.5 px-1.5 py-0.5 rounded-full text-[9px] bg-pink-600 text-white font-black min-w-[18px] text-center">{solicitationCount}</span>
                     </button>

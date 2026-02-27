@@ -9,8 +9,12 @@ import {
     MapPin, TrendingUp, RefreshCw, BarChart3, Navigation, Flag, Layers
 } from 'lucide-react';
 
+const CEVA_PRIMARY = '#9E0032';
+const CEVA_NAVY = '#021D49';
+const CEVA_DARK = '#1a1a2e';
+
 const STATUS_COLORS: Record<string, string> = {
-    'Em Viagem': '#7c3aed', 'Concluída': '#059669', 'Agendada': '#eab308',
+    'Em Viagem': '#6d28d9', 'Concluída': '#059669', 'Agendada': '#d97706',
     'Cancelada': '#dc2626', 'Na Origem': '#0891b2', 'Solicitada': '#ec4899',
     'Documentação': '#2563eb', 'Recusada': '#450a0a'
 };
@@ -169,7 +173,7 @@ const ClientExecutiveDashboard: React.FC<Props> = ({ missions }) => {
     const typeMix = useMemo(() => {
         const counts: Record<string, number> = {};
         filtered.forEach(m => { counts[m.mission_type || 'Caracterizada'] = (counts[m.mission_type || 'Caracterizada'] || 0) + 1; });
-        const colors = ['#b91c1c', '#0f172a', '#6366f1', '#0891b2'];
+        const colors = [CEVA_PRIMARY, CEVA_NAVY, '#6d28d9', '#059669'];
         return Object.entries(counts).map(([name, value], i) => ({ name, value, color: colors[i % colors.length] }));
     }, [filtered]);
 
@@ -214,7 +218,7 @@ const ClientExecutiveDashboard: React.FC<Props> = ({ missions }) => {
             else if (d < 500) ranges['300-500 km']++;
             else ranges['500+ km']++;
         });
-        const colors = ['#2563eb', '#059669', '#d97706', '#dc2626'];
+        const colors = [CEVA_NAVY, CEVA_PRIMARY, '#d97706', '#dc2626'];
         return Object.entries(ranges).filter(([, v]) => v > 0).map(([name, value], i) => ({ name, value, color: colors[i] }));
     }, [filtered]);
 
@@ -245,8 +249,8 @@ const ClientExecutiveDashboard: React.FC<Props> = ({ missions }) => {
             .map(([placa, qtd]) => ({ placa, qtd }));
     }, [filtered]);
 
-    const KpiCard = ({ label, value, icon: Icon, color, sub }: { label: string; value: string; icon: any; color: string; sub?: string }) => (
-        <div className={`p-5 rounded-xl border shadow-sm group ${color}`} data-testid={`client-kpi-${label.toLowerCase().replace(/\s/g, '-')}`}>
+    const KpiCard = ({ label, value, icon: Icon, color, sub, bgStyle }: { label: string; value: string; icon: any; color: string; sub?: string; bgStyle?: React.CSSProperties }) => (
+        <div className={`p-5 rounded-xl border shadow-sm group ${color}`} style={bgStyle} data-testid={`client-kpi-${label.toLowerCase().replace(/\s/g, '-')}`}>
             <div className="flex items-center justify-between mb-2">
                 <p className="text-[11px] font-black uppercase tracking-wider opacity-70">{label}</p>
                 <Icon size={18} className="opacity-30" />
@@ -257,12 +261,12 @@ const ClientExecutiveDashboard: React.FC<Props> = ({ missions }) => {
     );
 
     const ChartCard = ({ title, icon: Icon, children, span = 1, filterType }: { title: string; icon: any; children: React.ReactNode; span?: number; filterType?: string }) => (
-        <div className={`bg-white p-5 rounded-xl border shadow-sm transition-all ${span === 2 ? 'lg:col-span-2' : ''} ${chartFilter && filterType && chartFilter.type === filterType ? 'border-red-400 ring-2 ring-red-100' : 'border-gray-200'}`}>
+        <div className={`bg-white p-5 rounded-xl border shadow-sm transition-all ${span === 2 ? 'lg:col-span-2' : ''} ${chartFilter && filterType && chartFilter.type === filterType ? 'ring-2' : 'border-gray-200'}`} style={chartFilter && filterType && chartFilter.type === filterType ? { borderColor: CEVA_PRIMARY, boxShadow: `0 0 0 2px ${CEVA_PRIMARY}20` } : {}}>
             <div className="flex items-center gap-2.5 mb-4 pb-2.5 border-b border-gray-100">
-                <div className="p-2 bg-red-700 text-white rounded-lg"><Icon size={14} /></div>
+                <div className="p-2 text-white rounded-lg" style={{ backgroundColor: CEVA_PRIMARY }}><Icon size={14} /></div>
                 <h4 className="text-xs font-black text-gray-700 uppercase tracking-widest">{title}</h4>
                 {chartFilter && filterType && chartFilter.type === filterType && (
-                    <span className="ml-auto text-[10px] font-black text-red-600 bg-red-50 px-2 py-1 rounded-full">{chartFilter.value}</span>
+                    <span className="ml-auto text-[10px] font-black px-2 py-1 rounded-full" style={{ color: CEVA_PRIMARY, backgroundColor: `${CEVA_PRIMARY}10` }}>{chartFilter.value}</span>
                 )}
             </div>
             <div className="w-full" style={{ minHeight: 240 }}>{children}</div>
@@ -277,7 +281,7 @@ const ClientExecutiveDashboard: React.FC<Props> = ({ missions }) => {
         <div className="space-y-5 mb-6 animate-in fade-in duration-500" data-testid="client-executive-dashboard">
             <div className="bg-white p-5 rounded-xl border border-gray-200 shadow-sm flex flex-col md:flex-row items-center justify-between gap-4">
                 <div className="flex items-center gap-3">
-                    <div className="p-2 bg-red-700 text-white rounded-lg"><BarChart3 size={16} /></div>
+                    <div className="p-2 text-white rounded-lg" style={{ backgroundColor: CEVA_PRIMARY }}><BarChart3 size={16} /></div>
                     <div>
                         <h3 className="text-sm font-black text-gray-900 uppercase tracking-wider">Painel Gerencial</h3>
                         <p className="text-[11px] font-bold text-gray-400">{periodLabel} &middot; Atualizado {lastUpdate.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}</p>
@@ -287,7 +291,8 @@ const ClientExecutiveDashboard: React.FC<Props> = ({ missions }) => {
                     <div className="flex bg-gray-100 rounded-lg border border-gray-200 p-0.5">
                         {(Object.keys(PERIOD_LABELS) as DashPeriod[]).map(p => (
                             <button key={p} onClick={() => setPeriod(p)}
-                                className={`px-3 py-2 rounded-md text-[11px] font-black uppercase tracking-wide transition-all ${period === p ? 'bg-red-700 text-white shadow-sm' : 'text-gray-500 hover:text-gray-900'}`}
+                                className={`px-3 py-2 rounded-md text-[11px] font-black uppercase tracking-wide transition-all ${period === p ? 'text-white shadow-sm' : 'text-gray-500 hover:text-gray-900'}`}
+                                style={period === p ? { backgroundColor: CEVA_PRIMARY } : {}}
                                 data-testid={`client-filter-${p.toLowerCase()}`}
                             >{PERIOD_LABELS[p]}</button>
                         ))}
@@ -299,28 +304,28 @@ const ClientExecutiveDashboard: React.FC<Props> = ({ missions }) => {
                             <input type="date" className="bg-transparent text-xs font-bold text-gray-700 outline-none" value={customEnd} onChange={e => setCustomEnd(e.target.value)} />
                         </div>
                     )}
-                    <button onClick={handleRefresh} className="flex items-center gap-2 px-4 py-2 bg-red-700 text-white rounded-lg text-[11px] font-black uppercase tracking-wide hover:bg-red-800 transition-all active:scale-95" data-testid="client-button-refresh">
+                    <button onClick={handleRefresh} className="flex items-center gap-2 px-4 py-2 text-white rounded-lg text-[11px] font-black uppercase tracking-wide hover:opacity-90 transition-all active:scale-95" style={{ backgroundColor: CEVA_PRIMARY }} data-testid="client-button-refresh">
                         <RefreshCw size={13} /> Atualizar
                     </button>
                 </div>
             </div>
 
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                <KpiCard label="Total Missões" value={kpis.total.toString()} icon={Activity} color="bg-gray-900 text-white" sub={`${kpis.completed} concluídas`} />
+                <KpiCard label="Total Missões" value={kpis.total.toString()} icon={Activity} color="text-white" bgStyle={{ backgroundColor: CEVA_NAVY }} sub={`${kpis.completed} concluídas`} />
                 <KpiCard label="Em Trânsito" value={kpis.inTransit.toString()} icon={Truck} color="bg-white text-gray-900 border-gray-200" sub="Agora em operação" />
                 <KpiCard label="Agendadas" value={kpis.scheduled.toString()} icon={Calendar} color="bg-white text-gray-900 border-gray-200" sub="Próximas missões" />
                 <KpiCard label="Km Total" value={`${Math.round(kpis.totalKm).toLocaleString('pt-BR')}`} icon={MapPin} color="bg-white text-gray-900 border-gray-200" sub={`${kpis.cancelled} cancelada${kpis.cancelled !== 1 ? 's' : ''}`} />
             </div>
 
             {chartFilter && (
-                <div className="flex items-center gap-3 bg-red-50 border border-red-200 rounded-xl px-4 py-3" data-testid="chart-filter-indicator">
+                <div className="flex items-center gap-3 rounded-xl px-4 py-3" style={{ backgroundColor: '#f0f3f8', borderColor: CEVA_NAVY, border: `1px solid ${CEVA_NAVY}30` }} data-testid="chart-filter-indicator">
                     <div className="flex items-center gap-2">
-                        <div className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
-                        <span className="text-xs font-black text-red-800 uppercase">Filtro Ativo:</span>
-                        <span className="text-xs font-bold text-red-700">{chartFilter.value}</span>
-                        <span className="text-[10px] text-red-500">({filtered.length} de {periodFiltered.length} missões)</span>
+                        <div className="w-2 h-2 rounded-full animate-pulse" style={{ backgroundColor: CEVA_PRIMARY }} />
+                        <span className="text-xs font-black uppercase" style={{ color: CEVA_NAVY }}>Filtro Ativo:</span>
+                        <span className="text-xs font-bold" style={{ color: CEVA_PRIMARY }}>{chartFilter.value}</span>
+                        <span className="text-[10px] text-gray-500">({filtered.length} de {periodFiltered.length} missões)</span>
                     </div>
-                    <button onClick={() => setChartFilter(null)} className="ml-auto flex items-center gap-1.5 px-3 py-1.5 bg-red-700 text-white rounded-lg text-[10px] font-black uppercase hover:bg-red-800 transition-all" data-testid="button-clear-chart-filter">
+                    <button onClick={() => setChartFilter(null)} className="ml-auto flex items-center gap-1.5 px-3 py-1.5 text-white rounded-lg text-[10px] font-black uppercase hover:opacity-90 transition-all" style={{ backgroundColor: CEVA_PRIMARY }} data-testid="button-clear-chart-filter">
                         <XCircle size={12} /> Limpar Filtro
                     </button>
                 </div>
@@ -334,7 +339,7 @@ const ClientExecutiveDashboard: React.FC<Props> = ({ missions }) => {
                             <XAxis dataKey="dia" tick={TICK_SM} interval={dailyData.length > 15 ? 1 : 0} />
                             <YAxis tick={TICK} allowDecimals={false} />
                             <Tooltip content={<CustomTooltip />} />
-                            <Bar dataKey="missoes" name="Missões" fill="#b91c1c" radius={[4, 4, 0, 0]} barSize={dailyData.length > 20 ? 14 : 22}>
+                            <Bar dataKey="missoes" name="Missões" fill={CEVA_PRIMARY} radius={[4, 4, 0, 0]} barSize={dailyData.length > 20 ? 14 : 22}>
                                 <LabelList dataKey="missoes" position="top" style={{ fontSize: 11, fontWeight: 900, fill: '#334155' }} formatter={(v: number) => v > 0 ? v : ''} />
                             </Bar>
                         </BarChart>
@@ -392,7 +397,7 @@ const ClientExecutiveDashboard: React.FC<Props> = ({ missions }) => {
                             <XAxis type="number" tick={TICK} allowDecimals={false} />
                             <YAxis dataKey="rota" type="category" tick={TICK_LABEL} width={140} />
                             <Tooltip content={<CustomTooltip />} />
-                            <Bar dataKey="qtd" name="Missões" fill="#b91c1c" radius={[0, 6, 6, 0]} barSize={18} className="cursor-pointer">
+                            <Bar dataKey="qtd" name="Missões" fill={CEVA_PRIMARY} radius={[0, 6, 6, 0]} barSize={18} className="cursor-pointer">
                                 <LabelList dataKey="qtd" position="right" style={{ fontSize: 13, fontWeight: 900, fill: '#1e293b' }} />
                             </Bar>
                         </BarChart>
@@ -406,7 +411,7 @@ const ClientExecutiveDashboard: React.FC<Props> = ({ missions }) => {
                             <XAxis type="number" tick={TICK} allowDecimals={false} />
                             <YAxis dataKey="placa" type="category" tick={TICK_LABEL} width={100} />
                             <Tooltip content={<CustomTooltip />} />
-                            <Bar dataKey="qtd" name="Missões" fill="#7c3aed" radius={[0, 6, 6, 0]} barSize={18} className="cursor-pointer">
+                            <Bar dataKey="qtd" name="Missões" fill={CEVA_NAVY} radius={[0, 6, 6, 0]} barSize={18} className="cursor-pointer">
                                 <LabelList dataKey="qtd" position="right" style={{ fontSize: 13, fontWeight: 900, fill: '#1e293b' }} />
                             </Bar>
                         </BarChart>
@@ -441,7 +446,7 @@ const ClientExecutiveDashboard: React.FC<Props> = ({ missions }) => {
                             <XAxis dataKey="dia" tick={TICK} />
                             <YAxis tick={TICK} allowDecimals={false} />
                             <Tooltip content={<CustomTooltip />} />
-                            <Bar dataKey="missoes" name="Missões" fill="#0891b2" radius={[4, 4, 0, 0]} barSize={30} className="cursor-pointer">
+                            <Bar dataKey="missoes" name="Missões" fill={CEVA_NAVY} radius={[4, 4, 0, 0]} barSize={30} className="cursor-pointer">
                                 <LabelList dataKey="missoes" position="top" style={{ fontSize: 12, fontWeight: 900, fill: '#334155' }} formatter={(v: number) => v > 0 ? v : ''} />
                             </Bar>
                         </BarChart>
@@ -457,11 +462,11 @@ const ClientExecutiveDashboard: React.FC<Props> = ({ missions }) => {
                             <Tooltip content={<CustomTooltip />} />
                             <defs>
                                 <linearGradient id="gradHour" x1="0" y1="0" x2="0" y2="1">
-                                    <stop offset="5%" stopColor="#7c3aed" stopOpacity={0.3} />
-                                    <stop offset="95%" stopColor="#7c3aed" stopOpacity={0.03} />
+                                    <stop offset="5%" stopColor={CEVA_NAVY} stopOpacity={0.3} />
+                                    <stop offset="95%" stopColor={CEVA_NAVY} stopOpacity={0.03} />
                                 </linearGradient>
                             </defs>
-                            <Area type="monotone" dataKey="missoes" name="Missões" stroke="#7c3aed" strokeWidth={3} fill="url(#gradHour)" />
+                            <Area type="monotone" dataKey="missoes" name="Missões" stroke={CEVA_NAVY} strokeWidth={3} fill="url(#gradHour)" />
                         </AreaChart>
                     </ResponsiveContainer>
                 </ChartCard>
@@ -473,10 +478,10 @@ const ClientExecutiveDashboard: React.FC<Props> = ({ missions }) => {
                             <XAxis dataKey="mes" tick={TICK} />
                             <YAxis tick={TICK} allowDecimals={false} />
                             <Tooltip content={<CustomTooltip />} />
-                            <Bar dataKey="missoes" name="Missões" fill="#059669" radius={[4, 4, 0, 0]} barSize={30}>
+                            <Bar dataKey="missoes" name="Missões" fill={CEVA_PRIMARY} radius={[4, 4, 0, 0]} barSize={30}>
                                 <LabelList dataKey="missoes" position="top" style={{ fontSize: 12, fontWeight: 900, fill: '#334155' }} />
                             </Bar>
-                            <Line type="monotone" dataKey="missoes" stroke="#dc2626" strokeWidth={2} dot={{ r: 4, fill: '#dc2626' }} />
+                            <Line type="monotone" dataKey="missoes" stroke={CEVA_NAVY} strokeWidth={2} dot={{ r: 4, fill: CEVA_NAVY }} />
                         </ComposedChart>
                     </ResponsiveContainer>
                 </ChartCard>
