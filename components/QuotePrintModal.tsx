@@ -246,7 +246,7 @@ const QuotePrintModal: React.FC<Props> = ({ quote, onClose }) => {
           </div>
         </div>
 
-        <div className="flex-1 overflow-y-auto bg-slate-700/30 p-10 flex justify-center scrollbar-hide">
+        <div className="flex-1 overflow-y-auto bg-slate-700/30 p-10 flex justify-center scrollbar-thin">
             <div id="print-area" className="bg-white w-[210mm] min-h-[297mm] p-12 shadow-2xl text-slate-900 font-sans border-t-[12px] border-red-700 flex flex-col">
                 
                 <div className="flex justify-between items-start mb-12 border-b border-gray-100 pb-8">

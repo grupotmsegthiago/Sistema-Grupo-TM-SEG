@@ -214,7 +214,7 @@ const OperationalInfoPanel: React.FC = () => {
                     <button onClick={fetchData} className="text-gray-400 hover:text-gray-600"><RefreshCw size={14}/></button>
                 </div>
 
-                <div className="flex-1 overflow-y-auto max-h-[140px] space-y-3 pr-2 scrollbar-hide">
+                <div className="flex-1 overflow-y-auto max-h-[140px] space-y-3 pr-2 scrollbar-thin">
                     {newsFeed.map(news => (
                         <div key={news.id} className="flex gap-3 group">
                             <div className="mt-1">

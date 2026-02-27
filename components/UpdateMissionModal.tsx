@@ -588,7 +588,7 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
 
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in">
-          <div className="bg-[#f8fafc] rounded-[24px] shadow-2xl w-full max-w-6xl max-h-[95vh] overflow-y-auto flex flex-col relative border border-gray-100 scrollbar-hide">
+          <div className="bg-[#f8fafc] rounded-[24px] shadow-2xl w-full max-w-6xl max-h-[95vh] overflow-y-auto flex flex-col relative border border-gray-100 scrollbar-thin">
             
             {/* MODAIS DE CADASTRO RÁPIDO E BUSCA */}
             {quickModal === 'provider' && (
@@ -673,7 +673,7 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
             {isLoadingData ? (
                 <div className="flex justify-center p-20 flex-1"><Loader2 className="animate-spin text-red-600" size={40} /></div>
             ) : (
-                <form onSubmit={handleUpdateSubmit} className="p-6 space-y-6 flex-1 overflow-y-auto scrollbar-hide" ref={dropdownRef}>
+                <form onSubmit={handleUpdateSubmit} className="p-6 space-y-6 flex-1 overflow-y-auto scrollbar-thin" ref={dropdownRef}>
                     
                     {/* STATUS E REGRAS ESPECIAIS */}
                     <div className="bg-white p-5 rounded-3xl border border-gray-200 shadow-sm">

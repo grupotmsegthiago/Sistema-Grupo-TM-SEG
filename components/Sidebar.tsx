@@ -232,7 +232,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, activeScreen, onNavigate, onL
                 <span className="text-red-600 text-2xl font-bold tracking-widest">TMSEG</span>
            </div>
         </div>
-        <nav className="flex-1 overflow-y-auto overflow-x-hidden py-4 space-y-1 scrollbar-hide">
+        <nav className="flex-1 overflow-y-auto overflow-x-hidden py-4 space-y-1 scrollbar-thin">
           {NAV_ITEMS.map((item) => renderNavItem(item))}
         </nav>
         <div className="p-4 border-t border-white/10 bg-black/30 shrink-0 overflow-hidden flex flex-col gap-3">

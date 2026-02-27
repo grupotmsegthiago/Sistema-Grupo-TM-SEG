@@ -230,7 +230,7 @@ const MissionStatusModal: React.FC<Props> = ({
             </div>
           </div>
 
-          <div className="col-span-12 lg:col-span-4 flex flex-col gap-4 overflow-y-auto pr-2 scrollbar-hide">
+          <div className="col-span-12 lg:col-span-4 flex flex-col gap-4 overflow-y-auto pr-2 scrollbar-thin">
             <div className="bg-white p-5 rounded-2xl border border-gray-200 shadow-sm relative overflow-hidden">
                 <div className="absolute top-0 right-0 p-4 opacity-5"><Navigation size={60} /></div>
                 <h4 className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] mb-5">Trajeto Operacional</h4>
@@ -341,7 +341,7 @@ const MissionStatusModal: React.FC<Props> = ({
 
             <div className="bg-white p-5 rounded-2xl border border-gray-200 shadow-sm flex-1 flex flex-col min-h-0">
                 <h4 className="text-[10px] font-black uppercase text-gray-400 tracking-widest mb-4">Histórico de Eventos</h4>
-                <ul className="space-y-5 overflow-y-auto pr-2 scrollbar-hide flex-1">
+                <ul className="space-y-5 overflow-y-auto pr-2 scrollbar-thin flex-1">
                     {logs.length > 0 ? logs.map((log, idx) => (
                         <li key={log.id} className="flex gap-4 relative">
                             {idx < logs.length - 1 && <div className="absolute left-4 top-8 bottom-[-20px] w-px bg-gray-100"></div>}

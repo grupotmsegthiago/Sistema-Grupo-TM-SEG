@@ -396,7 +396,7 @@ const CommercialProposalModal: React.FC<Props> = ({
         </div>
 
         <div className="flex-1 flex overflow-hidden">
-          <div className="flex-1 overflow-y-auto bg-slate-950 p-6 md:p-12 scrollbar-hide">
+          <div className="flex-1 overflow-y-auto bg-slate-950 p-6 md:p-12 scrollbar-thin">
             
             {activeTab === 'proposal' && (
                 <div id="proposal-content" className="mx-auto">

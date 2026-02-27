@@ -185,11 +185,15 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
               setEditEndTime(et ? `${et.toLocaleDateString('en-CA')}T${et.toLocaleTimeString('pt-BR', { hour:'2-digit', minute:'2-digit' })}` : '');
               setIsEditingOpsData(false);
 
+              const dbToll = mRes.data.toll_value || 0;
               if (mRes.data.billing_approved) {
-                  const dbToll = mRes.data.toll_value || 0;
                   setTollInput(dbToll.toLocaleString('pt-BR', {minimumFractionDigits: 2}));
                   setTollConfirmed(true);
                   setTollSource(dbToll === 0 ? 'APROVADO (R$ 0,00)' : 'VALOR APROVADO');
+              } else if (dbToll > 0 || (mRes.data.revenue_value != null && mRes.data.revenue_value > 0)) {
+                  setTollInput(dbToll.toLocaleString('pt-BR', {minimumFractionDigits: 2}));
+                  setTollConfirmed(true);
+                  setTollSource(dbToll === 0 ? 'VALOR SALVO (R$ 0,00)' : 'VALOR SALVO');
               } else {
                   setTollInput('0,00');
                   setTollConfirmed(false);

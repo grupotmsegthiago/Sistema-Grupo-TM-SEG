@@ -199,7 +199,7 @@ const SupportMapFinder: React.FC<{ onNavigate?: (s: string) => void }> = ({ onNa
                             <h3 className="text-[10px] font-black uppercase tracking-[0.2em] flex items-center gap-2"><Users size={14} className="text-red-500"/> Agentes Disponíveis</h3>
                             <button onClick={fetchAgents} className="p-1.5 hover:bg-white/10 rounded-lg transition-colors"><RefreshCw size={14} className={isLoading ? 'animate-spin' : ''} /></button>
                         </div>
-                        <div className="flex-1 overflow-y-auto divide-y divide-gray-100 scrollbar-hide bg-gray-50/30">
+                        <div className="flex-1 overflow-y-auto divide-y divide-gray-100 scrollbar-thin bg-gray-50/30">
                             {isLoading ? (
                                 <div className="p-20 text-center flex flex-col items-center"><Loader2 className="animate-spin text-red-600 mb-4" size={32}/><p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Sincronizando Base...</p></div>
                             ) : (

@@ -136,7 +136,7 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
   };
 
   return (
-    <div className="min-h-screen flex font-sans overflow-hidden relative">
+    <div className="min-h-screen flex font-sans overflow-y-auto relative">
 
       <div className="absolute inset-0 z-0">
         {bgImages.map((img, idx) => (
