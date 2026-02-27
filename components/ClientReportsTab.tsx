@@ -507,8 +507,8 @@ const ClientReportsTab: React.FC<Props> = ({ missions, clientTables = [], provid
                     <table className="w-full border-collapse" data-testid="table-client-report">
                         <thead className="sticky top-0 z-10">
                             <tr>
-                                <th className="bg-gray-900 text-white px-2 py-2.5 text-center text-[8px] font-black uppercase tracking-widest whitespace-nowrap sticky left-0 z-20 w-[40px]"></th>
-                                <th className="bg-gray-900 text-white px-2 py-2.5 text-left text-[8px] font-black uppercase tracking-widest whitespace-nowrap sticky left-[40px] z-20 w-[85px]">OS</th>
+                                <th className="bg-gray-900 text-white px-1 py-2.5 text-center text-[8px] font-black uppercase tracking-widest whitespace-nowrap sticky left-0 z-20 w-[32px] min-w-[32px] max-w-[32px]"></th>
+                                <th className="bg-gray-900 text-white px-2 py-2.5 text-left text-[8px] font-black uppercase tracking-widest whitespace-nowrap sticky left-[32px] z-20 w-[95px] min-w-[95px]">OS</th>
                                 <th className="bg-gray-900 text-white px-3 py-2.5 text-left text-[8px] font-black uppercase tracking-widest whitespace-nowrap min-w-[85px]">Data Início</th>
                                 <th className="bg-gray-900 text-white px-3 py-2.5 text-left text-[8px] font-black uppercase tracking-widest whitespace-nowrap min-w-[85px]">Data Fim</th>
                                 <th className="bg-gray-900 text-white px-3 py-2.5 text-left text-[8px] font-black uppercase tracking-widest whitespace-nowrap min-w-[130px]">Origem</th>
@@ -548,13 +548,13 @@ const ClientReportsTab: React.FC<Props> = ({ missions, clientTables = [], provid
                                 const fin = missionFinancials[m.id] || { excessKm: 0, excessHours: 0, extraKmVal: 0, extraHrVal: 0 };
                                 return (
                                     <tr key={m.id} className={`border-b border-gray-100 hover:bg-yellow-50/40 transition-colors ${i % 2 === 0 ? 'bg-white' : 'bg-gray-50/30'}`} data-testid={`row-report-${m.id}`}>
-                                        <td className="px-1 py-2 sticky left-0 bg-inherit z-10 text-center w-[40px]">
+                                        <td className="px-1 py-2 sticky left-0 bg-inherit z-10 text-center w-[32px] min-w-[32px] max-w-[32px]">
                                             <button onClick={() => onViewReport?.(m)} className="p-1 rounded-lg bg-amber-50 text-amber-700 border border-amber-200 hover:bg-amber-100 transition-colors" title="Ver Relatório Completo" data-testid={`btn-report-${m.id}`}>
                                                 <Eye size={12} />
                                             </button>
                                         </td>
-                                        <td className="px-2 py-2 sticky left-[40px] bg-inherit z-10 w-[85px]">
-                                            <span className="text-[10px] font-black text-gray-900 whitespace-nowrap block truncate" title={m.id}>{m.id}</span>
+                                        <td className="px-2 py-2 sticky left-[32px] bg-inherit z-10 w-[95px] min-w-[95px]">
+                                            <span className="text-[10px] font-black text-gray-900 whitespace-nowrap block" title={m.id}>{m.id}</span>
                                             {isSaving && <Loader2 size={10} className="inline animate-spin text-red-500" />}
                                         </td>
                                         <td className="px-3 py-2 text-[10px] font-bold text-gray-600 whitespace-nowrap">{fmtDate(m.startTime || m.createdAt)}</td>
