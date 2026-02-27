@@ -130,11 +130,10 @@ const ExecutiveDashboard: React.FC<Props> = ({ missions, isDirector, clientTable
 
             const terminalStatuses = [MissionStatus.COMPLETED, MissionStatus.CANCELLED];
             const isTerminal = terminalStatuses.includes(m.status as MissionStatus);
-            const isAudited = m.billing_approved;
-            const hasBeenVerified = !!m.billing_verified_by;
             const hasStoredRevenue = (m.revenue_value != null && m.revenue_value > 0);
+            const hasStoredCost = (m.cost_value != null && m.cost_value > 0);
 
-            if (isTerminal && (isAudited || hasBeenVerified) && hasStoredRevenue) {
+            if (isTerminal && (hasStoredRevenue || hasStoredCost)) {
                 const rev = (m.revenue_value || 0) + (m.toll_value || 0);
                 const cost = (m.cost_value || 0) + (m.toll_value || 0);
                 return { ...m, rev, cost, profit: rev - cost };
