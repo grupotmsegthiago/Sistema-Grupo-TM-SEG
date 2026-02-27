@@ -378,17 +378,11 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
 
         if (viewPeriod === 'TODAY') {
             return allMissions.filter(m => {
-                const isTerminal = [MissionStatus.COMPLETED, MissionStatus.CANCELLED, MissionStatus.REFUSED].includes(m.status as MissionStatus);
-                if (isTerminal) {
-                    if (!m.startTime) return false;
-                    const mDate = new Date(m.startTime);
-                    return mDate >= todayStart && mDate <= todayEnd;
-                }
-                if (m.startTime) {
-                    const mDate = new Date(m.startTime);
-                    if (mDate > todayEnd) return false;
-                }
-                return true;
+                const isOperational = [MissionStatus.ORIGIN, MissionStatus.IN_TRANSIT].includes(m.status as MissionStatus);
+                if (isOperational) return true;
+
+                const mDate = new Date(m.startTime || m.createdAt);
+                return mDate >= todayStart && mDate <= todayEnd;
             });
         }
   
