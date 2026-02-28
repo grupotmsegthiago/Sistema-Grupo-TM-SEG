@@ -62,6 +62,7 @@ export interface Mission {
   revenue_value?: number; 
   cost_value?: number;    
   toll_value?: number;
+  toll_value_provider?: number;
   
   billing_approved?: boolean;
   billing_verified_by?: string;

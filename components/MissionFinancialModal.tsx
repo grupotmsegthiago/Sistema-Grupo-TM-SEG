@@ -57,6 +57,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
   const [revenueInput, setRevenueInput] = useState('');
   const [costInput, setCostInput] = useState('');
   const [tollInput, setTollInput] = useState('');
+  const [tollProviderInput, setTollProviderInput] = useState('');
   
   // Custom Unit Prices (Edição Livre)
   const [customProviderKm, setCustomProviderKm] = useState<string>('');
@@ -109,21 +110,25 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
       if (!currentMission.client || !currentMission.origin) return;
       try {
           const dbToll = currentMission.toll_value ?? 0;
+          const dbTollProv = currentMission.toll_value_provider ?? dbToll;
           const hasRevenue = currentMission.revenue_value != null && currentMission.revenue_value > 0;
           if (currentMission.billing_approved && currentMission.toll_value !== null && currentMission.toll_value !== undefined) {
              setSuggestedToll(dbToll);
              setTollSource(dbToll === 0 ? 'APROVADO (R$ 0,00)' : 'VALOR APROVADO');
              setTollInput(dbToll.toLocaleString('pt-BR', { minimumFractionDigits: 2 }));
+             setTollProviderInput(dbTollProv.toLocaleString('pt-BR', { minimumFractionDigits: 2 }));
              setTollConfirmed(true);
           } else if (dbToll > 0 || hasRevenue) {
              setSuggestedToll(dbToll);
              setTollSource(dbToll === 0 ? 'VALOR SALVO (R$ 0,00)' : 'VALOR SALVO');
              setTollInput(dbToll.toLocaleString('pt-BR', { minimumFractionDigits: 2 }));
+             setTollProviderInput(dbTollProv.toLocaleString('pt-BR', { minimumFractionDigits: 2 }));
              setTollConfirmed(true);
           } else {
              setSuggestedToll(0);
              setTollSource('AGUARDANDO CONFERÊNCIA');
              setTollInput('0,00');
+             setTollProviderInput('0,00');
              setTollConfirmed(false);
           }
 
@@ -194,25 +199,29 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
               setIsEditingOpsData(false);
 
               const dbToll = mRes.data.toll_value || 0;
+              const dbTollProvider = mRes.data.toll_value_provider ?? dbToll;
               const savedRev = safeNumber(mRes.data.revenue_value);
               const savedCost = safeNumber(mRes.data.cost_value);
               if (mRes.data.billing_approved) {
                   setTollInput(dbToll.toLocaleString('pt-BR', {minimumFractionDigits: 2}));
+                  setTollProviderInput(dbTollProvider.toLocaleString('pt-BR', {minimumFractionDigits: 2}));
                   setTollConfirmed(true);
                   setTollSource(dbToll === 0 ? 'APROVADO (R$ 0,00)' : 'VALOR APROVADO');
               } else if (dbToll > 0 || savedRev > 0) {
                   setTollInput(dbToll.toLocaleString('pt-BR', {minimumFractionDigits: 2}));
+                  setTollProviderInput(dbTollProvider.toLocaleString('pt-BR', {minimumFractionDigits: 2}));
                   setTollConfirmed(true);
                   setTollSource(dbToll === 0 ? 'VALOR SALVO (R$ 0,00)' : 'VALOR SALVO');
               } else {
                   setTollInput('0,00');
+                  setTollProviderInput('0,00');
                   setTollConfirmed(false);
                   setTollSource('AGUARDANDO CONFERÊNCIA');
               }
 
               if (savedRev > 0 || savedCost > 0) {
                   const totalRev = savedRev + dbToll;
-                  const totalCost = savedCost + dbToll;
+                  const totalCost = savedCost + dbTollProvider;
                   setRevenueInput(totalRev.toLocaleString('pt-BR', {minimumFractionDigits: 2}));
                   setCostInput(totalCost.toLocaleString('pt-BR', {minimumFractionDigits: 2}));
                   setUseSavedValues(true);
@@ -342,18 +351,18 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
       setIsUpdating(true);
       try {
           const toll = parseNumber(tollInput);
+          const tollProv = parseNumber(tollProviderInput);
           const revTotal = parseNumber(revenueInput);
           const costTotal = parseNumber(costInput);
 
-          // CORREÇÃO: Ao salvar, o valor_recebido/valor_pago no banco deve ser APENAS o serviço.
-          // O total que o usuário vê é (Serviço + Pedágio).
           const revServiceOnly = revTotal - toll; 
-          const costServiceOnly = costTotal - toll;
+          const costServiceOnly = costTotal - tollProv;
           
           const payload = {
               revenue_value: revServiceOnly,
               cost_value: costServiceOnly,
               toll_value: toll,
+              toll_value_provider: tollProv,
               billing_approved: approve,
               billing_verified_by: JSON.parse(localStorage.getItem('userData') || '{}').name,
               last_update: new Date().toISOString()
@@ -533,6 +542,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                                 setRevenueInput((financialData.client.total).toLocaleString('pt-BR', { minimumFractionDigits: 2 }));
                                                 setCostInput((financialData.provider.total).toLocaleString('pt-BR', { minimumFractionDigits: 2 }));
                                                 setTollInput(toll.toLocaleString('pt-BR', { minimumFractionDigits: 2 }));
+                                                setTollProviderInput(toll.toLocaleString('pt-BR', { minimumFractionDigits: 2 }));
                                                 showNotification('Tabela Aplicada', 'Valores ajustados conforme tabela oficial de franquia.', 'success');
                                             }
                                         }}
@@ -587,9 +597,9 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                             <div className="flex-1 min-w-[120px]">
                                  <p className={LABEL_CLASS}>Pedágio / Despesas</p>
                                  <p className="text-2xl font-black text-red-600 font-mono">
-                                     {formatCurrency(financialData.tollValue)}
+                                     {formatCurrency(parseNumber(tollInput))}
                                  </p>
-                                 <span className="text-[8px] text-gray-400 font-bold uppercase mt-1 block">{tollSource}</span>
+                                 <span className="text-[8px] text-gray-400 font-bold uppercase mt-1 block">{tollSource}{parseNumber(tollProviderInput) !== parseNumber(tollInput) ? ` | Forn: ${formatCurrency(parseNumber(tollProviderInput))}` : ''}</span>
                             </div>
                             <div className="flex-1 min-w-[120px] text-right">
                                  <p className={LABEL_CLASS}>Status da OS</p>
@@ -958,51 +968,61 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                     </div>
 
                     <div className="bg-white p-5 rounded-2xl border border-gray-200 shadow-inner">
-                        <div className="flex justify-between items-center mb-1.5">
+                        <div className="flex justify-between items-center mb-3">
                             <label className={LABEL_CLASS}>Pedágio / Despesas de Rota</label>
-                            {aiMaturity > 0 && (
-                                <div className="flex items-center gap-2">
-                                    <span className="text-[9px] font-black text-indigo-500 uppercase tracking-widest">Confiança IA: {aiMaturity}%</span>
-                                    <div className="w-16 h-1.5 bg-gray-100 rounded-full overflow-hidden">
-                                        <div className="h-full bg-indigo-500" style={{ width: `${aiMaturity}%` }}></div>
+                            <div className="flex items-center gap-2">
+                                {aiMaturity > 0 && (
+                                    <div className="flex items-center gap-2">
+                                        <span className="text-[9px] font-black text-indigo-500 uppercase tracking-widest">Confiança IA: {aiMaturity}%</span>
+                                        <div className="w-16 h-1.5 bg-gray-100 rounded-full overflow-hidden">
+                                            <div className="h-full bg-indigo-500" style={{ width: `${aiMaturity}%` }}></div>
+                                        </div>
                                     </div>
-                                </div>
-                            )}
+                                )}
+                                {tollConfirmed && (
+                                    <div className="flex items-center gap-1.5 text-[10px] font-black text-white bg-green-600 px-2 py-1 rounded-lg border border-green-700">
+                                        <CheckCircle2 size={12}/> {tollSource || 'CONFIRMADO'}
+                                    </div>
+                                )}
+                                {!tollConfirmed && (
+                                    <button 
+                                        onClick={() => { setTollConfirmed(true); setTollSource(`CONFERIDO (R$ ${tollInput})`); }}
+                                        className="flex items-center gap-1.5 text-[10px] font-black text-white bg-orange-500 hover:bg-orange-600 px-3 py-1.5 rounded-lg border border-orange-600 animate-pulse cursor-pointer transition-colors"
+                                    >
+                                        <AlertTriangle size={12}/> CONFIRMAR PEDÁGIO
+                                    </button>
+                                )}
+                            </div>
                         </div>
                         
-                        <div className="relative bg-gray-50 border border-gray-200 rounded-xl p-3 flex items-center">
-                            <span className="text-sm font-bold text-slate-400 mr-2">R$</span>
-                            <input 
-                                type="text" 
-                                className="flex-1 bg-transparent border-none outline-none font-black text-xl text-slate-800" 
-                                value={tollInput} 
-                                onChange={e => handleTollChange(e.target.value)} 
-                            />
-                            <Landmark size={20} className="text-gray-300 ml-2" />
-                            
-                            {tollConfirmed && (
-                                <div className="flex items-center gap-1.5 text-[10px] font-black text-white bg-green-600 px-2 py-1 rounded-lg border border-green-700 ml-2">
-                                    <CheckCircle2 size={12}/> {tollSource || 'CONFIRMADO'}
+                        <div className="grid grid-cols-2 gap-3">
+                            <div>
+                                <label className="text-[9px] font-black text-green-700 uppercase mb-1 block">Pedágio Cliente</label>
+                                <div className="relative bg-green-50 border border-green-200 rounded-xl p-3 flex items-center">
+                                    <span className="text-sm font-bold text-green-500 mr-2">R$</span>
+                                    <input 
+                                        type="text" 
+                                        className="flex-1 bg-transparent border-none outline-none font-black text-xl text-green-900" 
+                                        value={tollInput} 
+                                        onChange={e => handleTollChange(e.target.value)} 
+                                        data-testid="input-toll-client"
+                                    />
+                                    <Building2 size={16} className="text-green-300 ml-2" />
                                 </div>
-                            )}
-                            
-                            {!tollConfirmed && (
-                                <button 
-                                    onClick={() => { setTollConfirmed(true); setTollSource(`CONFERIDO (R$ ${tollInput})`); }}
-                                    className="flex items-center gap-1.5 text-[10px] font-black text-white bg-orange-500 hover:bg-orange-600 px-3 py-1.5 rounded-lg border border-orange-600 ml-2 animate-pulse cursor-pointer transition-colors"
-                                >
-                                    <AlertTriangle size={12}/> CONFIRMAR PEDÁGIO
-                                </button>
-                            )}
-
-                            {tollSource === 'MEMÓRIA (Rota Anterior)' && !tollConfirmed && (
-                                <div className="flex items-center gap-1.5 text-[10px] font-black text-purple-600 bg-purple-50 px-2 py-1 rounded-lg border border-purple-200 ml-2">
-                                    <BrainCircuit size={12} className="fill-current"/> {tollSource}
+                            </div>
+                            <div>
+                                <label className="text-[9px] font-black text-blue-700 uppercase mb-1 block">Pedágio Fornecedor</label>
+                                <div className="relative bg-blue-50 border border-blue-200 rounded-xl p-3 flex items-center">
+                                    <span className="text-sm font-bold text-blue-500 mr-2">R$</span>
+                                    <input 
+                                        type="text" 
+                                        className="flex-1 bg-transparent border-none outline-none font-black text-xl text-blue-900" 
+                                        value={tollProviderInput} 
+                                        onChange={e => { setTollProviderInput(e.target.value); setTollSource('MANUAL (Editando...)'); setTollConfirmed(true); }}
+                                        data-testid="input-toll-provider"
+                                    />
+                                    <Briefcase size={16} className="text-blue-300 ml-2" />
                                 </div>
-                            )}
-
-                            <div className="flex items-center gap-1.5 text-[10px] font-black text-orange-600 bg-orange-50 px-2 py-1 rounded-lg border border-orange-100 ml-2">
-                                <Zap size={12} className="fill-current"/> SOMA AUTOMÁTICA
                             </div>
                         </div>
                     </div>
