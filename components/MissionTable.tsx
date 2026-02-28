@@ -688,7 +688,7 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
 
           {isCevaClient && (
           <div className="flex items-center justify-center px-4">
-              <img src={cevaLogoPath} alt="CEVA Logistics" className="h-8 object-contain" data-testid="img-ceva-logo-header" />
+              <img src={cevaLogoPath} alt="CEVA Logistics" className="h-8 object-contain mix-blend-lighten" data-testid="img-ceva-logo-header" />
           </div>
           )}
 

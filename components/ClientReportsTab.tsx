@@ -503,7 +503,7 @@ const ClientReportsTab: React.FC<Props> = ({ missions, clientTables = [], provid
             </div>
 
             <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
-                <div className="overflow-x-auto" style={{ maxHeight: '70vh' }}>
+                <div className="overflow-auto scrollbar-thin" style={{ maxHeight: '70vh' }}>
                     <table className="w-full border-collapse" data-testid="table-client-report">
                         <thead className="sticky top-0 z-10">
                             <tr>
