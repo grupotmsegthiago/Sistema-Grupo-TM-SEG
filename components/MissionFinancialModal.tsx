@@ -292,7 +292,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
           customClientBase: customClientBase ? parseNumber(customClientBase) : undefined,
           customProviderBase: customProviderBase ? parseNumber(customProviderBase) : undefined
       });
-  }, [mission, clientTables, providerTables, clientData, currentTime, manualClientTableId, manualProviderTableId, iblEnabled, tollInput, customProviderKm, customProviderHour, customClientKm, customClientHour, customClientBase, customProviderBase]);
+  }, [mission, clientTables, providerTables, clientData, manualClientTableId, manualProviderTableId, iblEnabled, tollInput, customProviderKm, customProviderHour, customClientKm, customClientHour, customClientBase, customProviderBase]);
 
     useEffect(() => {
       if (financialData && mission) {
@@ -809,7 +809,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                             inputMode="decimal"
                                             className={`w-full bg-white/60 border border-green-200 rounded-lg px-2 py-1 outline-none font-black text-3xl text-green-900 font-mono focus:ring-2 focus:ring-green-400 focus:border-green-400 ${!canEditOpsData ? 'pointer-events-none opacity-70' : 'cursor-text'}`}
                                             value={revenueInput} 
-                                            onChange={e => { if (canEditOpsData) { setUseSavedValues(false); setRevenueInput(e.target.value); } }}
+                                            onChange={e => { if (canEditOpsData) { setUseSavedValues(true); setRevenueInput(e.target.value); } }}
                                             readOnly={!canEditOpsData}
                                             data-testid="input-revenue-total"
                                         />
@@ -961,7 +961,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                             inputMode="decimal"
                                             className={`w-full bg-white/60 border border-blue-200 rounded-lg px-2 py-1 outline-none font-black text-3xl text-blue-900 font-mono focus:ring-2 focus:ring-blue-400 focus:border-blue-400 ${!canEditOpsData ? 'pointer-events-none opacity-70' : 'cursor-text'}`}
                                             value={costInput} 
-                                            onChange={e => { if (canEditOpsData) { setUseSavedValues(false); setCostInput(e.target.value); } }}
+                                            onChange={e => { if (canEditOpsData) { setUseSavedValues(true); setCostInput(e.target.value); } }}
                                             readOnly={!canEditOpsData}
                                             data-testid="input-cost-total"
                                         />
