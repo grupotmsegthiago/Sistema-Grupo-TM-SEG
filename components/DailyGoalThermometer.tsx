@@ -67,17 +67,20 @@ const DailyGoalThermometer: React.FC<Props> = ({ viewPeriod = 'TODAY', customSta
                 if (clRes.data) setClientsData(clRes.data as Client[]);
             }
 
-            const { data: periodData, error } = await supabase
-                .from('missions')
-                .select('*')
-                .gte('start_time', start.toISOString())
-                .lte('start_time', end.toISOString());
+            const [byStartTime, byCreatedAt] = await Promise.all([
+                supabase.from('missions').select('*').gte('start_time', start.toISOString()).lte('start_time', end.toISOString()),
+                supabase.from('missions').select('*').is('start_time', null).gte('created_at', start.toISOString()).lte('created_at', end.toISOString())
+            ]);
 
-            if (error) throw error;
-            let allMissions = periodData || [];
+            if (byStartTime.error) throw byStartTime.error;
+            const idSet = new Set((byStartTime.data || []).map((m: any) => m.id));
+            let allMissions = [
+                ...(byStartTime.data || []),
+                ...(byCreatedAt.data || []).filter((m: any) => !idSet.has(m.id))
+            ];
 
+            const activeStatuses = [MissionStatus.IN_TRANSIT, MissionStatus.ORIGIN, MissionStatus.SCHEDULED, MissionStatus.SOLICITED, MissionStatus.DOCUMENTATION];
             if (viewPeriod === 'TODAY' || viewPeriod === 'YESTERDAY') {
-                const activeStatuses = [MissionStatus.IN_TRANSIT, MissionStatus.ORIGIN, MissionStatus.SCHEDULED, MissionStatus.SOLICITED, MissionStatus.DOCUMENTATION];
                 const { data: activeMissions } = await supabase
                     .from('missions')
                     .select('*')

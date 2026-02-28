@@ -420,7 +420,7 @@ const ExecutiveDashboard: React.FC<Props> = ({ missions, isDirector, clientTable
         const MARGIN_ALERT_HIGH = 85;
 
         return missionFinancials
-            .filter(m => m.status !== MissionStatus.REFUSED)
+            .filter(m => m.status !== MissionStatus.REFUSED && !m.billing_approved)
             .map(m => {
                 const issues: string[] = [];
 
