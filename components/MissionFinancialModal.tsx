@@ -795,12 +795,13 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                         <span className="text-sm font-bold text-green-600">R$</span>
                                         <input 
                                             type="text" 
-                                            className="w-full bg-transparent border-none outline-none font-black text-3xl text-green-900 font-mono" 
+                                            className={`w-full bg-transparent border-none outline-none font-black text-3xl text-green-900 font-mono ${!canEditOpsData ? 'pointer-events-none' : ''}`}
                                             value={revenueInput} 
-                                            onChange={e => { setRevenueInput(e.target.value); }} 
+                                            onChange={e => { if (canEditOpsData) { setUseSavedValues(false); setRevenueInput(e.target.value); } }}
+                                            readOnly={!canEditOpsData}
                                         />
                                     </div>
-                                    <p className="text-[8px] text-green-600 font-bold mt-1 italic">* VALOR TOTAL CALCULADO BASEADO NAS FRANQUIAS E MEDIÇÃO</p>
+                                    <p className="text-[8px] text-green-600 font-bold mt-1 italic">{canEditOpsData ? '* EDITÁVEL - DIRETORIA / ADMINISTRADOR' : '* VALOR TOTAL CALCULADO BASEADO NAS FRANQUIAS E MEDIÇÃO'}</p>
                                 </div>
 
                                 <div className="mt-3 flex items-center justify-between px-2">
@@ -944,11 +945,13 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                         <span className="text-sm font-bold text-blue-600">R$</span>
                                         <input 
                                             type="text" 
-                                            className="w-full bg-transparent border-none outline-none font-black text-3xl text-blue-900 font-mono" 
+                                            className={`w-full bg-transparent border-none outline-none font-black text-3xl text-blue-900 font-mono ${!canEditOpsData ? 'pointer-events-none' : ''}`}
                                             value={costInput} 
-                                            onChange={e => { setCostInput(e.target.value); }} 
+                                            onChange={e => { if (canEditOpsData) { setUseSavedValues(false); setCostInput(e.target.value); } }}
+                                            readOnly={!canEditOpsData}
                                         />
                                     </div>
+                                    <p className="text-[8px] text-blue-600 font-bold mt-1 italic">{canEditOpsData ? '* EDITÁVEL - DIRETORIA / ADMINISTRADOR' : ''}</p>
                                 </div>
                             </div>
                         </div>
