@@ -92,7 +92,8 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
   const canEditOpsData = useMemo(() => {
     try {
       const u = JSON.parse(localStorage.getItem('userData') || '{}');
-      return u.role === 'Diretoria' || u.role === 'Administrador' || u.permissions?.includes('*');
+      const roleLower = (u.role || '').toLowerCase();
+      return ['diretoria', 'administrador'].includes(roleLower) || u.permissions?.includes('*');
     } catch { return false; }
   }, []);
   
@@ -805,13 +806,15 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                         <span className="text-sm font-bold text-green-600">R$</span>
                                         <input 
                                             type="text" 
-                                            className={`w-full bg-transparent border-none outline-none font-black text-3xl text-green-900 font-mono ${!canEditOpsData ? 'pointer-events-none' : ''}`}
+                                            inputMode="decimal"
+                                            className={`w-full bg-white/60 border border-green-200 rounded-lg px-2 py-1 outline-none font-black text-3xl text-green-900 font-mono focus:ring-2 focus:ring-green-400 focus:border-green-400 ${!canEditOpsData ? 'pointer-events-none opacity-70' : 'cursor-text'}`}
                                             value={revenueInput} 
                                             onChange={e => { if (canEditOpsData) { setUseSavedValues(false); setRevenueInput(e.target.value); } }}
                                             readOnly={!canEditOpsData}
+                                            data-testid="input-revenue-total"
                                         />
                                     </div>
-                                    <p className="text-[8px] text-green-600 font-bold mt-1 italic">{canEditOpsData ? '* EDITÁVEL - DIRETORIA / ADMINISTRADOR' : '* VALOR TOTAL CALCULADO BASEADO NAS FRANQUIAS E MEDIÇÃO'}</p>
+                                    <p className="text-[8px] text-green-600 font-bold mt-1 italic">{canEditOpsData ? '* EDITÁVEL - DIRETORIA / ADMINISTRADOR (toque para editar)' : '* VALOR TOTAL CALCULADO BASEADO NAS FRANQUIAS E MEDIÇÃO'}</p>
                                 </div>
 
                                 <div className="mt-3 flex items-center justify-between px-2">
@@ -955,13 +958,15 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                         <span className="text-sm font-bold text-blue-600">R$</span>
                                         <input 
                                             type="text" 
-                                            className={`w-full bg-transparent border-none outline-none font-black text-3xl text-blue-900 font-mono ${!canEditOpsData ? 'pointer-events-none' : ''}`}
+                                            inputMode="decimal"
+                                            className={`w-full bg-white/60 border border-blue-200 rounded-lg px-2 py-1 outline-none font-black text-3xl text-blue-900 font-mono focus:ring-2 focus:ring-blue-400 focus:border-blue-400 ${!canEditOpsData ? 'pointer-events-none opacity-70' : 'cursor-text'}`}
                                             value={costInput} 
                                             onChange={e => { if (canEditOpsData) { setUseSavedValues(false); setCostInput(e.target.value); } }}
                                             readOnly={!canEditOpsData}
+                                            data-testid="input-cost-total"
                                         />
                                     </div>
-                                    <p className="text-[8px] text-blue-600 font-bold mt-1 italic">{canEditOpsData ? '* EDITÁVEL - DIRETORIA / ADMINISTRADOR' : ''}</p>
+                                    <p className="text-[8px] text-blue-600 font-bold mt-1 italic">{canEditOpsData ? '* EDITÁVEL - DIRETORIA / ADMINISTRADOR (toque para editar)' : ''}</p>
                                 </div>
                             </div>
                         </div>
