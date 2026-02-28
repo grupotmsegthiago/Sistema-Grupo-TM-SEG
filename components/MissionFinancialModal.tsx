@@ -81,7 +81,9 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
   const [editClientTableId, setEditClientTableId] = useState<string | null>(null);
   const [memoryLoaded, setMemoryLoaded] = useState(false);
   const [tollConfirmed, setTollConfirmed] = useState(false);
-  const [useSavedValues, setUseSavedValues] = useState(false);
+  const [useSavedValues, _setUseSavedValues] = useState(false);
+  const useSavedValuesRef = React.useRef(false);
+  const setUseSavedValues = (val: boolean) => { useSavedValuesRef.current = val; _setUseSavedValues(val); };
 
   const [editStartKm, setEditStartKm] = useState('');
   const [editEndKm, setEditEndKm] = useState('');
@@ -221,11 +223,11 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
               }
 
               if (savedRev > 0 || savedCost > 0) {
+                  setUseSavedValues(true);
                   const totalRev = savedRev + dbToll;
                   const totalCost = savedCost + dbTollProvider;
                   setRevenueInput(totalRev.toLocaleString('pt-BR', {minimumFractionDigits: 2}));
                   setCostInput(totalCost.toLocaleString('pt-BR', {minimumFractionDigits: 2}));
-                  setUseSavedValues(true);
               }
               
               fetchHistoricalPatterns(fullMission);
@@ -296,7 +298,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
 
     useEffect(() => {
       if (financialData && mission) {
-          if (!useSavedValues) {
+          if (!useSavedValuesRef.current) {
               setRevenueInput(financialData.client.total.toLocaleString('pt-BR', {minimumFractionDigits: 2}));
               setCostInput(financialData.provider.total.toLocaleString('pt-BR', {minimumFractionDigits: 2}));
           }
