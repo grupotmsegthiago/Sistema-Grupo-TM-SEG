@@ -80,6 +80,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
   const [editClientTableId, setEditClientTableId] = useState<string | null>(null);
   const [memoryLoaded, setMemoryLoaded] = useState(false);
   const [tollConfirmed, setTollConfirmed] = useState(false);
+  const [useSavedValues, setUseSavedValues] = useState(false);
 
   const [editStartKm, setEditStartKm] = useState('');
   const [editEndKm, setEditEndKm] = useState('');
@@ -193,11 +194,13 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
               setIsEditingOpsData(false);
 
               const dbToll = mRes.data.toll_value || 0;
+              const savedRev = safeNumber(mRes.data.revenue_value);
+              const savedCost = safeNumber(mRes.data.cost_value);
               if (mRes.data.billing_approved) {
                   setTollInput(dbToll.toLocaleString('pt-BR', {minimumFractionDigits: 2}));
                   setTollConfirmed(true);
                   setTollSource(dbToll === 0 ? 'APROVADO (R$ 0,00)' : 'VALOR APROVADO');
-              } else if (dbToll > 0 || (mRes.data.revenue_value != null && mRes.data.revenue_value > 0)) {
+              } else if (dbToll > 0 || savedRev > 0) {
                   setTollInput(dbToll.toLocaleString('pt-BR', {minimumFractionDigits: 2}));
                   setTollConfirmed(true);
                   setTollSource(dbToll === 0 ? 'VALOR SALVO (R$ 0,00)' : 'VALOR SALVO');
@@ -205,6 +208,14 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                   setTollInput('0,00');
                   setTollConfirmed(false);
                   setTollSource('AGUARDANDO CONFERÊNCIA');
+              }
+
+              if (savedRev > 0 || savedCost > 0) {
+                  const totalRev = savedRev + dbToll;
+                  const totalCost = savedCost + dbToll;
+                  setRevenueInput(totalRev.toLocaleString('pt-BR', {minimumFractionDigits: 2}));
+                  setCostInput(totalCost.toLocaleString('pt-BR', {minimumFractionDigits: 2}));
+                  setUseSavedValues(true);
               }
               
               fetchHistoricalPatterns(fullMission);
@@ -275,10 +286,10 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
 
     useEffect(() => {
       if (financialData && mission) {
-          // O total SEMPRE vem do cálculo dinâmico (soma dos componentes visíveis)
-          // Isso garante que Base + Extra KM + Extra Hora + Pedágio = Total exibido.
-          setRevenueInput(financialData.client.total.toLocaleString('pt-BR', {minimumFractionDigits: 2}));
-          setCostInput(financialData.provider.total.toLocaleString('pt-BR', {minimumFractionDigits: 2}));
+          if (!useSavedValues) {
+              setRevenueInput(financialData.client.total.toLocaleString('pt-BR', {minimumFractionDigits: 2}));
+              setCostInput(financialData.provider.total.toLocaleString('pt-BR', {minimumFractionDigits: 2}));
+          }
           
           if (financialData.provider.tableId) {
               if (!manualProviderTableId && !memoryLoaded) {
@@ -314,6 +325,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
       setCustomClientBase('');
       setCustomClientKm('');
       setCustomClientHour('');
+      setUseSavedValues(false);
       showNotification('Recalculado', 'Valores do cliente restaurados para a tabela original.', 'info');
   };
 
@@ -321,6 +333,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
       setCustomProviderBase('');
       setCustomProviderKm('');
       setCustomProviderHour('');
+      setUseSavedValues(false);
       showNotification('Recalculado', 'Valores do fornecedor restaurados para a tabela original.', 'info');
   };
 
@@ -516,6 +529,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                         onClick={() => {
                                             if (financialData) {
                                                 const toll = financialData.tollValue;
+                                                setUseSavedValues(false);
                                                 setRevenueInput((financialData.client.total).toLocaleString('pt-BR', { minimumFractionDigits: 2 }));
                                                 setCostInput((financialData.provider.total).toLocaleString('pt-BR', { minimumFractionDigits: 2 }));
                                                 setTollInput(toll.toLocaleString('pt-BR', { minimumFractionDigits: 2 }));
