@@ -318,6 +318,7 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
                     revenue_value: m.revenue_value,
                     cost_value: m.cost_value,
                     toll_value: m.toll_value,
+                    toll_value_provider: m.toll_value_provider,
                     billing_approved: m.billing_approved,
                     billing_verified_by: m.billing_verified_by
                 };

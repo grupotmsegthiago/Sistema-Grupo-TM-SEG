@@ -67,14 +67,29 @@ const DailyGoalThermometer: React.FC<Props> = ({ viewPeriod = 'TODAY', customSta
                 if (clRes.data) setClientsData(clRes.data as Client[]);
             }
 
-            const { data, error } = await supabase
+            const { data: periodData, error } = await supabase
                 .from('missions')
                 .select('*')
                 .gte('start_time', start.toISOString())
                 .lte('start_time', end.toISOString());
 
             if (error) throw error;
-            setMissions(data || []);
+            let allMissions = periodData || [];
+
+            if (viewPeriod === 'TODAY' || viewPeriod === 'YESTERDAY') {
+                const activeStatuses = [MissionStatus.IN_TRANSIT, MissionStatus.ORIGIN, MissionStatus.SCHEDULED, MissionStatus.SOLICITED, MissionStatus.DOCUMENTATION];
+                const { data: activeMissions } = await supabase
+                    .from('missions')
+                    .select('*')
+                    .in('status', activeStatuses);
+                if (activeMissions) {
+                    const periodIds = new Set(allMissions.map((m: any) => m.id));
+                    const extra = activeMissions.filter((m: any) => !periodIds.has(m.id));
+                    allMissions = [...allMissions, ...extra];
+                }
+            }
+
+            setMissions(allMissions);
         } catch (error) {
             console.error("Erro ao sincronizar meta diária:", error);
         } finally {
