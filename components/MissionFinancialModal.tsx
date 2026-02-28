@@ -113,7 +113,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
       if (!currentMission.client || !currentMission.origin) return;
       try {
           const dbToll = currentMission.toll_value ?? 0;
-          const dbTollProv = currentMission.toll_value_provider ?? dbToll;
+          const dbTollProv = currentMission.toll_value_provider != null ? currentMission.toll_value_provider : dbToll;
           const hasRevenue = currentMission.revenue_value != null && currentMission.revenue_value > 0;
           if (currentMission.billing_approved && currentMission.toll_value !== null && currentMission.toll_value !== undefined) {
              setSuggestedToll(dbToll);
@@ -202,7 +202,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
               setIsEditingOpsData(false);
 
               const dbToll = mRes.data.toll_value || 0;
-              const dbTollProvider = mRes.data.toll_value_provider ?? dbToll;
+              const dbTollProvider = mRes.data.toll_value_provider != null ? mRes.data.toll_value_provider : dbToll;
               const savedRev = safeNumber(mRes.data.revenue_value);
               const savedCost = safeNumber(mRes.data.cost_value);
               if (mRes.data.billing_approved) {
@@ -361,17 +361,20 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
           const revServiceOnly = revTotal - toll; 
           const costServiceOnly = costTotal - tollProv;
           
-          const payload = {
+          const basePayload = {
               revenue_value: revServiceOnly,
               cost_value: costServiceOnly,
               toll_value: toll,
-              toll_value_provider: tollProv,
               billing_approved: approve,
               billing_verified_by: JSON.parse(localStorage.getItem('userData') || '{}').name,
               last_update: new Date().toISOString()
           };
-          
-          const { error } = await supabase.from('missions').update(payload).eq('id', mission.id);
+
+          let { error } = await supabase.from('missions').update({ ...basePayload, toll_value_provider: tollProv }).eq('id', mission.id);
+          if (error && error.message?.includes('toll_value_provider')) {
+              const fallback = await supabase.from('missions').update(basePayload).eq('id', mission.id);
+              error = fallback.error;
+          }
           if (error) throw error;
           
           if (approve && manualClientTableId) {
