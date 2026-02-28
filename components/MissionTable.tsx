@@ -24,6 +24,7 @@ import ExecutiveDashboard from './ExecutiveDashboard';
 import ClientExecutiveDashboard from './ClientExecutiveDashboard';
 import ClientReportsTab from './ClientReportsTab';
 import ClientMissionRequest from './ClientMissionRequest';
+const cevaLogoPath = '/logo_ceva.png';
 
 
 interface MissionTableProps {
@@ -202,6 +203,10 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
       }
       return false;
   }, [currentUser]);
+
+  const isCevaClient = useMemo(() => {
+      return isRestrictedClientView && resolvedClientName.toUpperCase().includes('CEVA');
+  }, [isRestrictedClientView, resolvedClientName]);
 
   const fetchMissions = useCallback(async (silent = false) => {
     if (!silent) setIsLoading(true);
@@ -672,14 +677,20 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
   
     return (
       <div className="space-y-6 animate-fade-in pb-20 relative">
-        <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200 flex flex-col xl:flex-row items-center justify-between gap-6">
+        <div className={`p-6 rounded-xl shadow-sm border flex flex-col xl:flex-row items-center justify-between gap-6 ${isCevaClient ? 'bg-[#152c54] border-[#152c54]' : 'bg-white border-gray-200'}`}>
           <div className="xl:w-[350px] shrink-0">
             <div className="flex items-center gap-3">
-              <span className="w-1.5 h-6 bg-red-700 rounded-full"></span>
-              <h2 className="text-xl font-bold text-gray-900">Monitoramento de Missões</h2>
+              <span className={`w-1.5 h-6 rounded-full ${isCevaClient ? 'bg-[#e81818]' : 'bg-red-700'}`}></span>
+              <h2 className={`text-xl font-bold ${isCevaClient ? 'text-white' : 'text-gray-900'}`}>Monitoramento de Missões</h2>
             </div>
-            {dbStatus === 'ok' && ( <div className="flex items-center gap-2 text-[10px] font-bold text-green-700 bg-green-50 px-2 py-1 rounded w-fit border border-green-200 mt-2 ml-4.5"><Database size={12} /> Realtime Sync</div> )}
+            {dbStatus === 'ok' && ( <div className={`flex items-center gap-2 text-[10px] font-bold px-2 py-1 rounded w-fit border mt-2 ml-4.5 ${isCevaClient ? 'text-green-300 bg-green-900/30 border-green-700' : 'text-green-700 bg-green-50 border-green-200'}`}><Database size={12} /> Realtime Sync</div> )}
           </div>
+
+          {isCevaClient && (
+          <div className="flex-1 w-full max-w-[450px] flex items-center justify-center">
+              <img src={cevaLogoPath} alt="CEVA Logistics" className="h-14 object-contain" data-testid="img-ceva-logo-header" />
+          </div>
+          )}
 
           {!isRestrictedClientView && (
           <div className="flex-1 w-full max-w-[450px]">
@@ -693,10 +704,10 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
 
           <div className="flex flex-wrap gap-2 items-center justify-end xl:flex-1">
                 {!isRestrictedClientView && ( <div className="flex items-center gap-2 bg-indigo-50 p-1.5 rounded-lg border border-indigo-200"><input type="text" className="bg-transparent text-xs font-bold text-indigo-900 placeholder-indigo-400 outline-none w-32 pl-2" placeholder="OS..." value={searchHistoryId} onChange={(e) => setSearchHistoryId(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleSearchHistory()} /><button onClick={handleSearchHistory} className="p-1 bg-indigo-600 text-white rounded hover:bg-indigo-700"><FileSearch size={14} /></button></div> )}
-                <button onClick={() => setShowFleetMap(!showFleetMap)} className={`flex items-center gap-2 px-3 py-2.5 rounded-lg text-[11px] font-bold uppercase transition-all border ${showFleetMap ? 'bg-indigo-600 text-white border-indigo-700 shadow-md' : 'bg-white text-indigo-600 border-indigo-200 hover:bg-indigo-50'}`}><Globe size={14} /> Mapa</button>
+                <button onClick={() => setShowFleetMap(!showFleetMap)} className={`flex items-center gap-2 px-3 py-2.5 rounded-lg text-[11px] font-bold uppercase transition-all border ${showFleetMap ? (isCevaClient ? 'bg-[#e81818] text-white border-[#e81818] shadow-md' : 'bg-indigo-600 text-white border-indigo-700 shadow-md') : (isCevaClient ? 'bg-white/10 text-white border-white/30 hover:bg-white/20' : 'bg-white text-indigo-600 border-indigo-200 hover:bg-indigo-50')}`}><Globe size={14} /> Mapa</button>
                 {!isRestrictedClientView && ( <button onClick={() => setShowAnalyticsDash(!showAnalyticsDash)} className={`flex items-center gap-2 px-3 py-2.5 rounded-lg text-[11px] font-bold uppercase transition-all border ${showAnalyticsDash ? 'bg-blue-600 text-white border-blue-700 shadow-md' : 'bg-white text-gray-600 border-gray-300 hover:bg-gray-50'}`}><BarChart4 size={14} /> Analytics</button> )}
-                {isRestrictedClientView && ( <button onClick={() => { setShowClientDash(!showClientDash); if (!showClientDash) setShowClientReports(false); }} className={`flex items-center gap-2 px-3 py-2.5 rounded-lg text-[11px] font-bold uppercase transition-all border ${showClientDash ? 'bg-red-700 text-white border-red-800 shadow-md' : 'bg-white text-gray-600 border-gray-300 hover:bg-gray-50'}`} data-testid="button-client-dashboard"><BarChart4 size={14} /> Painel</button> )}
-                {isRestrictedClientView && ( <button onClick={() => { setShowClientReports(!showClientReports); if (!showClientReports) setShowClientDash(false); }} className={`flex items-center gap-2 px-3 py-2.5 rounded-lg text-[11px] font-bold uppercase transition-all border ${showClientReports ? 'bg-red-700 text-white border-red-800 shadow-md' : 'bg-white text-gray-600 border-gray-300 hover:bg-gray-50'}`} data-testid="button-client-reports"><Activity size={14} /> Relatórios</button> )}
+                {isRestrictedClientView && ( <button onClick={() => { setShowClientDash(!showClientDash); if (!showClientDash) setShowClientReports(false); }} className={`flex items-center gap-2 px-3 py-2.5 rounded-lg text-[11px] font-bold uppercase transition-all border ${showClientDash ? (isCevaClient ? 'bg-[#e81818] text-white border-[#e81818] shadow-md' : 'bg-red-700 text-white border-red-800 shadow-md') : (isCevaClient ? 'bg-white/10 text-white border-white/30 hover:bg-white/20' : 'bg-white text-gray-600 border-gray-300 hover:bg-gray-50')}`} data-testid="button-client-dashboard"><BarChart4 size={14} /> Painel</button> )}
+                {isRestrictedClientView && ( <button onClick={() => { setShowClientReports(!showClientReports); if (!showClientReports) setShowClientDash(false); }} className={`flex items-center gap-2 px-3 py-2.5 rounded-lg text-[11px] font-bold uppercase transition-all border ${showClientReports ? (isCevaClient ? 'bg-[#e81818] text-white border-[#e81818] shadow-md' : 'bg-red-700 text-white border-red-800 shadow-md') : (isCevaClient ? 'bg-white/10 text-white border-white/30 hover:bg-white/20' : 'bg-white text-gray-600 border-gray-300 hover:bg-gray-50')}`} data-testid="button-client-reports"><Activity size={14} /> Relatórios</button> )}
                 <div className="flex items-center gap-2 bg-gray-50 p-1.5 rounded-lg border border-gray-200"><Calendar size={14} className="text-gray-500 ml-1" /><select value={viewPeriod} onChange={(e) => setViewPeriod(e.target.value)} className="bg-transparent border-none text-[11px] font-bold text-gray-700 outline-none cursor-pointer uppercase focus:ring-0"><option value="TODAY">HOJE</option><option value="YESTERDAY">ONTEM</option><option value="WEEK">SEMANA</option><option value="MONTH">MÊS</option><option value="YEAR">ANO</option><option value="CUSTOM">PERSONALIZADO</option><option value="ALL">TOTAL ABERTOS</option></select></div>
                 {viewPeriod === 'CUSTOM' && (
                     <div className="flex items-center gap-2 bg-gray-50 p-1.5 rounded-lg border border-gray-200">
@@ -706,7 +717,7 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
                     </div>
                 )}
                 {isRestrictedClientView && resolvedClientName && (
-                    <button onClick={() => setShowClientRequestModal(true)} className="flex items-center gap-2 bg-red-700 hover:bg-red-800 text-white px-4 py-2.5 rounded-lg text-[11px] font-black transition-all shadow-md uppercase" data-testid="button-client-new-request">
+                    <button onClick={() => setShowClientRequestModal(true)} className={`flex items-center gap-2 text-white px-4 py-2.5 rounded-lg text-[11px] font-black transition-all shadow-md uppercase ${isCevaClient ? 'bg-[#e81818] hover:bg-[#c01515]' : 'bg-red-700 hover:bg-red-800'}`} data-testid="button-client-new-request">
                         <Plus size={16} /> Solicitar Escolta
                     </button>
                 )}
@@ -842,7 +853,13 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
             <div className="flex items-center gap-2 text-xs text-gray-500"><span className="hidden md:inline">Filtrados:</span><span className="font-bold text-gray-800 bg-gray-200 px-2 py-1 rounded">{filteredMissions.length}</span></div></div>
   
           <div className="bg-gray-50/5 p-4 min-h-[400px]">
-              {isLoading ? ( <div className="flex flex-col items-center justify-center h-64 text-gray-400"><Loader2 size={32} className="animate-spin mb-2 text-red-600" /><p className="text-sm font-medium">Carregando...</p></div> ) : sortedMissions.length === 0 ? ( <div className="flex flex-col items-center justify-center h-64 text-gray-400 border-2 border-dashed border-gray-200 rounded-xl bg-white"><Activity size={48} className="mb-2 opacity-20" /><p className="text-sm font-bold text-gray-500">Nenhuma missão encontrada para este filtro.</p></div> ) : (
+              {isLoading ? ( <div className="flex flex-col items-center justify-center h-64 text-gray-400"><Loader2 size={32} className="animate-spin mb-2 text-red-600" /><p className="text-sm font-medium">Carregando...</p></div> ) : sortedMissions.length === 0 ? ( <div className="relative flex flex-col items-center justify-center h-64 text-gray-400 border-2 border-dashed border-gray-200 rounded-xl bg-white overflow-hidden">
+                  <svg viewBox="0 0 320 80" className="absolute h-32 opacity-[0.06] pointer-events-none" fill="none" xmlns="http://www.w3.org/2000/svg">
+                      <g transform="translate(10, 5) scale(0.85)"><path d="M40 5 L10 15 V35 C10 55 25 70 40 75 C55 70 70 55 70 35 V15 L40 5 Z" stroke="#000" strokeWidth="4" fill="none" strokeLinejoin="round"/><path d="M20 50 Q40 65 60 40" stroke="#b91c1c" strokeWidth="6" strokeLinecap="round"/><path d="M28 22 L40 22 L40 55" stroke="#000" strokeWidth="5" strokeLinecap="round" strokeLinejoin="round"/><path d="M45 22 L55 38 L65 22 L65 55 M45 55 L45 22" stroke="#000" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round"/></g>
+                      <text x="95" y="52" fontFamily="Arial, sans-serif" fontWeight="900" fontSize="34" fill="#000" letterSpacing="3">GRUPO TMSEG</text>
+                  </svg>
+                  <p className="text-sm font-bold text-gray-500 relative z-10">Nenhuma missão encontrada para este filtro.</p>
+              </div> ) : (
                   <div className="flex flex-col gap-3">
                       {sortedMissions.map((mission) => {
                           const diffMinutes = getDelayMinutes(mission);
