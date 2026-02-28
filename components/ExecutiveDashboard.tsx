@@ -135,7 +135,8 @@ const ExecutiveDashboard: React.FC<Props> = ({ missions, isDirector, clientTable
 
             if (hasStoredRevenue || hasStoredCost) {
                 const rev = (m.revenue_value || 0) + (m.toll_value || 0);
-                const cost = (m.cost_value || 0) + (m.toll_value || 0);
+                const tollProv = m.toll_value_provider != null ? m.toll_value_provider : (m.toll_value || 0);
+                const cost = (m.cost_value || 0) + tollProv;
                 return { ...m, rev, cost, profit: rev - cost };
             }
 

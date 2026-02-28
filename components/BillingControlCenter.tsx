@@ -266,7 +266,8 @@ const BillingControlCenter: React.FC = () => {
                                 filteredMissions.map(m => {
                                     const billing = calculateBilling(m);
                                     const revInDb = (m.revenue_value || 0) + (m.toll_value || 0);
-                                    const costInDb = (m.cost_value || 0) + (m.toll_value || 0);
+                                    const tollProv = m.toll_value_provider != null ? m.toll_value_provider : (m.toll_value || 0);
+                                    const costInDb = (m.cost_value || 0) + tollProv;
                                     const hasDiff = Math.abs(billing.totalRevenue - revInDb) > 1 || billing.totalRevenue <= 0;
                                     
                                     return (

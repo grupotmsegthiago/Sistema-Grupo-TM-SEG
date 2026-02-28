@@ -182,8 +182,8 @@ const MissionCardComponent: React.FC<MissionCardProps> = ({
     }, [mission.revenue_value, mission.toll_value, financials]);
 
     const displayCost = useMemo(() => {
-        const dbToll = mission.toll_value || 0;
-        const storedValue = (mission.cost_value || 0) + dbToll;
+        const tollProv = mission.toll_value_provider != null ? mission.toll_value_provider : (mission.toll_value || 0);
+        const storedValue = (mission.cost_value || 0) + tollProv;
         const hasStoredCost = (mission.cost_value != null && mission.cost_value > 0);
         
         if (hasStoredCost) {
@@ -195,7 +195,7 @@ const MissionCardComponent: React.FC<MissionCardProps> = ({
         }
         
         return storedValue;
-    }, [mission.cost_value, mission.toll_value, financials]);
+    }, [mission.cost_value, mission.toll_value, mission.toll_value_provider, financials]);
 
     const isActive = !isTerminal;
 

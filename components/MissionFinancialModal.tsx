@@ -324,9 +324,27 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
 
 
   const handleTollChange = (val: string) => {
+      const oldToll = parseNumber(tollInput);
+      const newToll = parseNumber(val);
       setTollInput(val);
       setTollSource('MANUAL (Editando...)');
       setTollConfirmed(true);
+      if (useSavedValuesRef.current) {
+          const currentRev = parseNumber(revenueInput);
+          setRevenueInput((currentRev - oldToll + newToll).toLocaleString('pt-BR', { minimumFractionDigits: 2 }));
+      }
+  };
+
+  const handleTollProviderChange = (val: string) => {
+      const oldTollProv = parseNumber(tollProviderInput);
+      const newTollProv = parseNumber(val);
+      setTollProviderInput(val);
+      setTollSource('MANUAL (Editando...)');
+      setTollConfirmed(true);
+      if (useSavedValuesRef.current) {
+          const currentCost = parseNumber(costInput);
+          setCostInput((currentCost - oldTollProv + newTollProv).toLocaleString('pt-BR', { minimumFractionDigits: 2 }));
+      }
   };
 
   const handleManualInput = (setter: any, val: string) => {
@@ -1028,7 +1046,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                         type="text" 
                                         className="flex-1 bg-transparent border-none outline-none font-black text-xl text-blue-900" 
                                         value={tollProviderInput} 
-                                        onChange={e => { setTollProviderInput(e.target.value); setTollSource('MANUAL (Editando...)'); setTollConfirmed(true); }}
+                                        onChange={e => handleTollProviderChange(e.target.value)}
                                         data-testid="input-toll-provider"
                                     />
                                     <Briefcase size={16} className="text-blue-300 ml-2" />
