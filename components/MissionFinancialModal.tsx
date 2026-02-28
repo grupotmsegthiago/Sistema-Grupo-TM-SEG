@@ -107,10 +107,17 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
   const fetchHistoricalPatterns = async (currentMission: Mission) => {
       if (!currentMission.client || !currentMission.origin) return;
       try {
+          const dbToll = currentMission.toll_value ?? 0;
+          const hasRevenue = currentMission.revenue_value != null && currentMission.revenue_value > 0;
           if (currentMission.billing_approved && currentMission.toll_value !== null && currentMission.toll_value !== undefined) {
-             setSuggestedToll(currentMission.toll_value);
-             setTollSource(currentMission.toll_value === 0 ? 'APROVADO (R$ 0,00)' : 'VALOR APROVADO');
-             setTollInput(currentMission.toll_value.toLocaleString('pt-BR', { minimumFractionDigits: 2 }));
+             setSuggestedToll(dbToll);
+             setTollSource(dbToll === 0 ? 'APROVADO (R$ 0,00)' : 'VALOR APROVADO');
+             setTollInput(dbToll.toLocaleString('pt-BR', { minimumFractionDigits: 2 }));
+             setTollConfirmed(true);
+          } else if (dbToll > 0 || hasRevenue) {
+             setSuggestedToll(dbToll);
+             setTollSource(dbToll === 0 ? 'VALOR SALVO (R$ 0,00)' : 'VALOR SALVO');
+             setTollInput(dbToll.toLocaleString('pt-BR', { minimumFractionDigits: 2 }));
              setTollConfirmed(true);
           } else {
              setSuggestedToll(0);
@@ -141,7 +148,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                  if (details.providerTableId) {
                      setManualProviderTableId(details.providerTableId);
                  }
-                 if (details.tollValue !== undefined && details.tollValue !== null && !currentMission.billing_approved) {
+                 if (details.tollValue !== undefined && details.tollValue !== null && !currentMission.billing_approved && !(dbToll > 0 || hasRevenue)) {
                      const memToll = Number(details.tollValue);
                      setTollInput(memToll.toLocaleString('pt-BR', { minimumFractionDigits: 2 }));
                      setSuggestedToll(memToll);

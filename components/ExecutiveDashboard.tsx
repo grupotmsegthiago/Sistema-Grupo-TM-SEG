@@ -9,7 +9,7 @@ import {
     Activity, TrendingUp, TrendingDown, Wallet, Percent, Truck, Target,
     DollarSign, Calendar, CheckCircle2, XCircle, AlertTriangle,
     Trophy, Briefcase, Shield, PieChart as PieChartIcon, Lock, RefreshCw,
-    Upload, FileSpreadsheet, Loader2, Search, CheckCircle, XOctagon
+    Upload, FileSpreadsheet, Loader2, Search, CheckCircle, XOctagon, Edit2
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 
@@ -107,6 +107,44 @@ const ExecutiveDashboard: React.FC<Props> = ({ missions, isDirector, clientTable
     const [isAiAnalyzing, setIsAiAnalyzing] = useState(false);
     const [showExcelPanel, setShowExcelPanel] = useState(false);
     const fileInputRef = useRef<HTMLInputElement>(null);
+    const [adjustedOsIds, setAdjustedOsIds] = useState<Set<string>>(new Set());
+    const prevMissionFinancialsRef = useRef<any[] | null>(null);
+
+    useEffect(() => {
+        if (!excelComparison || excelComparison.length === 0) {
+            prevMissionFinancialsRef.current = missionFinancials;
+            return;
+        }
+        const prev = prevMissionFinancialsRef.current;
+        prevMissionFinancialsRef.current = missionFinancials;
+        if (!prev || prev === missionFinancials) return;
+
+        let hasChanges = false;
+        const newAdjustedIds = new Set(adjustedOsIds);
+        const updated = excelComparison.map(c => {
+            if (!c.found) return c;
+            const systemMission = missionFinancials.find((m: any) => {
+                const sysId = String(m.id || '').toUpperCase().trim();
+                const cId = c.osId.replace('GTM-', '');
+                return sysId === c.osId || `GTM-${sysId}` === c.osId || sysId.replace('GTM-', '') === cId;
+            });
+            if (!systemMission) return c;
+            const newSysRev = systemMission.rev || 0;
+            const newSysCost = systemMission.cost || 0;
+            if (Math.abs(newSysRev - c.sysRev) < 0.01 && Math.abs(newSysCost - c.sysCost) < 0.01) return c;
+            hasChanges = true;
+            newAdjustedIds.add(c.osId);
+            const revDiff = c.excelRev > 0 ? Math.abs(newSysRev - c.excelRev) : 0;
+            const costDiff = c.excelCost > 0 ? Math.abs(newSysCost - c.excelCost) : 0;
+            const revMatch = c.excelRev > 0 ? revDiff <= 5 : true;
+            const costMatch = c.excelCost > 0 ? costDiff <= 5 : true;
+            return { ...c, sysRev: newSysRev, sysCost: newSysCost, revDiff, costDiff, revMatch, costMatch };
+        });
+        if (hasChanges) {
+            setAdjustedOsIds(newAdjustedIds);
+            setExcelComparison(updated);
+        }
+    }, [missionFinancials]);
 
     const handleRefresh = useCallback(() => {
         setRefreshKey(k => k + 1);
@@ -224,6 +262,7 @@ const ExecutiveDashboard: React.FC<Props> = ({ missions, isDirector, clientTable
         setIsExcelLoading(true);
         setExcelComparison(null);
         setExcelAiAnalysis(null);
+        setAdjustedOsIds(new Set());
 
         try {
             const buffer = await file.arrayBuffer();
@@ -642,7 +681,7 @@ const ExecutiveDashboard: React.FC<Props> = ({ missions, isDirector, clientTable
                     </div>
                     <div className="flex items-center gap-2">
                         {excelComparison && (
-                            <button onClick={() => { setExcelComparison(null); setExcelAiAnalysis(null); setShowExcelPanel(false); }}
+                            <button onClick={() => { setExcelComparison(null); setExcelAiAnalysis(null); setShowExcelPanel(false); setAdjustedOsIds(new Set()); }}
                                 className="px-3 py-1.5 bg-gray-100 text-gray-600 rounded-lg text-[10px] font-black uppercase hover:bg-gray-200 transition-all" data-testid="button-clear-excel">
                                 Limpar
                             </button>
@@ -658,12 +697,13 @@ const ExecutiveDashboard: React.FC<Props> = ({ missions, isDirector, clientTable
 
                 {showExcelPanel && excelComparison && (() => {
                     const total = excelComparison.length;
-                    const matched = excelComparison.filter(c => c.found && c.revMatch && c.costMatch).length;
-                    const divergent = excelComparison.filter(c => c.found && (!c.revMatch || !c.costMatch)).length;
+                    const adjusted = excelComparison.filter(c => c.found && adjustedOsIds.has(c.osId)).length;
+                    const matched = excelComparison.filter(c => c.found && c.revMatch && c.costMatch && !adjustedOsIds.has(c.osId)).length;
+                    const divergent = excelComparison.filter(c => c.found && (!c.revMatch || !c.costMatch) && !adjustedOsIds.has(c.osId)).length;
                     const notFound = excelComparison.filter(c => !c.found).length;
                     return (
                         <div className="space-y-3">
-                            <div className="grid grid-cols-4 gap-2">
+                            <div className={`grid ${adjusted > 0 ? 'grid-cols-5' : 'grid-cols-4'} gap-2`}>
                                 <div className="bg-gray-50 rounded-lg p-2.5 text-center border border-gray-100">
                                     <p className="text-[10px] font-bold text-gray-400 uppercase">Total OS</p>
                                     <p className="text-lg font-black text-gray-900">{total}</p>
@@ -676,6 +716,12 @@ const ExecutiveDashboard: React.FC<Props> = ({ missions, isDirector, clientTable
                                     <p className="text-[10px] font-bold text-red-600 uppercase">Divergentes</p>
                                     <p className="text-lg font-black text-red-700">{divergent}</p>
                                 </div>
+                                {adjusted > 0 && (
+                                    <div className="bg-blue-50 rounded-lg p-2.5 text-center border border-blue-100">
+                                        <p className="text-[10px] font-bold text-blue-600 uppercase">Ajustados</p>
+                                        <p className="text-lg font-black text-blue-700">{adjusted}</p>
+                                    </div>
+                                )}
                                 <div className="bg-amber-50 rounded-lg p-2.5 text-center border border-amber-100">
                                     <p className="text-[10px] font-bold text-amber-600 uppercase">Não Encontradas</p>
                                     <p className="text-lg font-black text-amber-700">{notFound}</p>
@@ -722,8 +768,9 @@ const ExecutiveDashboard: React.FC<Props> = ({ missions, isDirector, clientTable
                                     <tbody>
                                         {excelComparison.map((c, i) => {
                                             const hasIssue = !c.found || !c.revMatch || !c.costMatch;
+                                            const isAdjusted = adjustedOsIds.has(c.osId);
                                             return (
-                                                <tr key={i} className={`border-t border-gray-100 ${hasIssue ? 'bg-red-50/50' : 'hover:bg-gray-50'}`}
+                                                <tr key={i} className={`border-t border-gray-100 ${isAdjusted ? 'bg-blue-50/50' : hasIssue ? 'bg-red-50/50' : 'hover:bg-gray-50'}`}
                                                     onClick={() => {
                                                         if (c.found && onOpenMission) {
                                                             const mission = filteredMissions.find(m => String(m.id).toUpperCase().replace('GTM-', '') === c.osId.replace('GTM-', ''));
@@ -735,14 +782,16 @@ const ExecutiveDashboard: React.FC<Props> = ({ missions, isDirector, clientTable
                                                 >
                                                     <td className="px-3 py-2 font-black text-blue-600">{c.osId}</td>
                                                     <td className="px-3 py-2 font-bold text-gray-600 truncate max-w-[120px]">{(c.client || '').substring(0, 20)}</td>
-                                                    <td className={`px-3 py-2 text-right font-bold ${!c.revMatch ? 'text-red-600' : 'text-gray-700'}`}>{c.excelRev > 0 ? fmtBRL(c.excelRev) : '-'}</td>
-                                                    <td className={`px-3 py-2 text-right font-bold ${!c.revMatch ? 'text-red-600' : 'text-gray-700'}`}>{c.found ? fmtBRL(c.sysRev) : '-'}</td>
-                                                    <td className={`px-3 py-2 text-right font-bold ${c.revDiff > 5 ? 'text-red-600' : 'text-gray-400'}`}>{c.found && c.excelRev > 0 ? (c.revDiff > 0.01 ? fmtBRL(c.revDiff) : '-') : '-'}</td>
-                                                    <td className={`px-3 py-2 text-right font-bold ${!c.costMatch ? 'text-red-600' : 'text-gray-700'}`}>{c.excelCost > 0 ? fmtBRL(c.excelCost) : '-'}</td>
-                                                    <td className={`px-3 py-2 text-right font-bold ${!c.costMatch ? 'text-red-600' : 'text-gray-700'}`}>{c.found ? fmtBRL(c.sysCost) : '-'}</td>
-                                                    <td className={`px-3 py-2 text-right font-bold ${c.costDiff > 5 ? 'text-red-600' : 'text-gray-400'}`}>{c.found && c.excelCost > 0 ? (c.costDiff > 0.01 ? fmtBRL(c.costDiff) : '-') : '-'}</td>
+                                                    <td className={`px-3 py-2 text-right font-bold ${!c.revMatch && !isAdjusted ? 'text-red-600' : isAdjusted ? 'text-blue-700' : 'text-gray-700'}`}>{c.excelRev > 0 ? fmtBRL(c.excelRev) : '-'}</td>
+                                                    <td className={`px-3 py-2 text-right font-bold ${!c.revMatch && !isAdjusted ? 'text-red-600' : isAdjusted ? 'text-blue-700' : 'text-gray-700'}`}>{c.found ? fmtBRL(c.sysRev) : '-'}</td>
+                                                    <td className={`px-3 py-2 text-right font-bold ${c.revDiff > 5 && !isAdjusted ? 'text-red-600' : isAdjusted ? 'text-blue-600' : 'text-gray-400'}`}>{c.found && c.excelRev > 0 ? (c.revDiff > 0.01 ? fmtBRL(c.revDiff) : '-') : '-'}</td>
+                                                    <td className={`px-3 py-2 text-right font-bold ${!c.costMatch && !isAdjusted ? 'text-red-600' : isAdjusted ? 'text-blue-700' : 'text-gray-700'}`}>{c.excelCost > 0 ? fmtBRL(c.excelCost) : '-'}</td>
+                                                    <td className={`px-3 py-2 text-right font-bold ${!c.costMatch && !isAdjusted ? 'text-red-600' : isAdjusted ? 'text-blue-700' : 'text-gray-700'}`}>{c.found ? fmtBRL(c.sysCost) : '-'}</td>
+                                                    <td className={`px-3 py-2 text-right font-bold ${c.costDiff > 5 && !isAdjusted ? 'text-red-600' : isAdjusted ? 'text-blue-600' : 'text-gray-400'}`}>{c.found && c.excelCost > 0 ? (c.costDiff > 0.01 ? fmtBRL(c.costDiff) : '-') : '-'}</td>
                                                     <td className="px-3 py-2 text-center">
                                                         {!c.found ? <span className="text-[9px] font-black bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full">NÃO ENCONTRADA</span> :
+                                                         isAdjusted && c.revMatch && c.costMatch ? <span className="text-[9px] font-black bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full flex items-center justify-center gap-1"><CheckCircle size={10} /> AJUSTADO</span> :
+                                                         isAdjusted ? <span className="text-[9px] font-black bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full flex items-center justify-center gap-1"><Edit2 size={10} /> ALTERADO</span> :
                                                          hasIssue ? <span className="text-[9px] font-black bg-red-100 text-red-700 px-2 py-0.5 rounded-full flex items-center justify-center gap-1"><XOctagon size={10} /> DIVERGENTE</span> :
                                                          <span className="text-[9px] font-black bg-green-100 text-green-700 px-2 py-0.5 rounded-full flex items-center justify-center gap-1"><CheckCircle size={10} /> OK</span>}
                                                     </td>
