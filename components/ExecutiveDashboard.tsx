@@ -110,42 +110,6 @@ const ExecutiveDashboard: React.FC<Props> = ({ missions, isDirector, clientTable
     const [adjustedOsIds, setAdjustedOsIds] = useState<Set<string>>(new Set());
     const prevMissionFinancialsRef = useRef<any[] | null>(null);
 
-    useEffect(() => {
-        if (!excelComparison || excelComparison.length === 0) {
-            prevMissionFinancialsRef.current = missionFinancials;
-            return;
-        }
-        const prev = prevMissionFinancialsRef.current;
-        prevMissionFinancialsRef.current = missionFinancials;
-        if (!prev || prev === missionFinancials) return;
-
-        let hasChanges = false;
-        const newAdjustedIds = new Set(adjustedOsIds);
-        const updated = excelComparison.map(c => {
-            if (!c.found) return c;
-            const systemMission = missionFinancials.find((m: any) => {
-                const sysId = String(m.id || '').toUpperCase().trim();
-                const cId = c.osId.replace('GTM-', '');
-                return sysId === c.osId || `GTM-${sysId}` === c.osId || sysId.replace('GTM-', '') === cId;
-            });
-            if (!systemMission) return c;
-            const newSysRev = systemMission.rev || 0;
-            const newSysCost = systemMission.cost || 0;
-            if (Math.abs(newSysRev - c.sysRev) < 0.01 && Math.abs(newSysCost - c.sysCost) < 0.01) return c;
-            hasChanges = true;
-            newAdjustedIds.add(c.osId);
-            const revDiff = c.excelRev > 0 ? Math.abs(newSysRev - c.excelRev) : 0;
-            const costDiff = c.excelCost > 0 ? Math.abs(newSysCost - c.excelCost) : 0;
-            const revMatch = c.excelRev > 0 ? revDiff <= 5 : true;
-            const costMatch = c.excelCost > 0 ? costDiff <= 5 : true;
-            return { ...c, sysRev: newSysRev, sysCost: newSysCost, revDiff, costDiff, revMatch, costMatch };
-        });
-        if (hasChanges) {
-            setAdjustedOsIds(newAdjustedIds);
-            setExcelComparison(updated);
-        }
-    }, [missionFinancials]);
-
     const handleRefresh = useCallback(() => {
         setRefreshKey(k => k + 1);
         setLastUpdate(new Date());
@@ -199,6 +163,42 @@ const ExecutiveDashboard: React.FC<Props> = ({ missions, isDirector, clientTable
             return { ...m, rev, cost, profit: rev - cost };
         });
     }, [filteredMissions, clientTables, providerTables, clientsData, refreshKey]);
+
+    useEffect(() => {
+        if (!excelComparison || excelComparison.length === 0) {
+            prevMissionFinancialsRef.current = missionFinancials;
+            return;
+        }
+        const prev = prevMissionFinancialsRef.current;
+        prevMissionFinancialsRef.current = missionFinancials;
+        if (!prev || prev === missionFinancials) return;
+
+        let hasChanges = false;
+        const newAdjustedIds = new Set(adjustedOsIds);
+        const updated = excelComparison.map(c => {
+            if (!c.found) return c;
+            const systemMission = missionFinancials.find((m: any) => {
+                const sysId = String(m.id || '').toUpperCase().trim();
+                const cId = c.osId.replace('GTM-', '');
+                return sysId === c.osId || `GTM-${sysId}` === c.osId || sysId.replace('GTM-', '') === cId;
+            });
+            if (!systemMission) return c;
+            const newSysRev = systemMission.rev || 0;
+            const newSysCost = systemMission.cost || 0;
+            if (Math.abs(newSysRev - c.sysRev) < 0.01 && Math.abs(newSysCost - c.sysCost) < 0.01) return c;
+            hasChanges = true;
+            newAdjustedIds.add(c.osId);
+            const revDiff = c.excelRev > 0 ? Math.abs(newSysRev - c.excelRev) : 0;
+            const costDiff = c.excelCost > 0 ? Math.abs(newSysCost - c.excelCost) : 0;
+            const revMatch = c.excelRev > 0 ? revDiff <= 5 : true;
+            const costMatch = c.excelCost > 0 ? costDiff <= 5 : true;
+            return { ...c, sysRev: newSysRev, sysCost: newSysCost, revDiff, costDiff, revMatch, costMatch };
+        });
+        if (hasChanges) {
+            setAdjustedOsIds(newAdjustedIds);
+            setExcelComparison(updated);
+        }
+    }, [missionFinancials]);
 
     const parseExcelValue = (val: any): number => {
         if (val == null) return 0;
