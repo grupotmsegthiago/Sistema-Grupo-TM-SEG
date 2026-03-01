@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { Mission, MissionStatus } from '../types';
 import { supabase } from '../lib/supabase';
 import { generateContent } from '../lib/gemini';
-import { X, Loader2, FileText, Upload, Trash2, Sparkles, Download, Image as ImageIcon, Plus, Clock, MapPin, Truck, User, Shield, Phone, Navigation, Activity, Camera, Gauge, RefreshCw, PenLine } from 'lucide-react';
+import { X, Loader2, FileText, Upload, Trash2, Sparkles, Download, Image as ImageIcon, Plus, Clock, MapPin, Truck, User, Shield, Phone, Navigation, Activity, Camera, Gauge, RefreshCw, PenLine, Save, Edit3, Check } from 'lucide-react';
 import html2canvas from 'html2canvas';
 import jsPDF from 'jspdf';
 
@@ -58,6 +58,11 @@ const MissionOperationalReport: React.FC<Props> = ({ mission, onClose, isClientV
     const [isGenerating, setIsGenerating] = useState(false);
     const [generatedReport, setGeneratedReport] = useState<string | null>(null);
     const [isExporting, setIsExporting] = useState(false);
+    const [isSaving, setIsSaving] = useState(false);
+    const [isSaved, setIsSaved] = useState(false);
+    const [loadedFromDb, setLoadedFromDb] = useState(false);
+    const [editingSection, setEditingSection] = useState<number | null>(null);
+    const [sectionEditText, setSectionEditText] = useState('');
     const [missionLogs, setMissionLogs] = useState<any[]>([]);
     const reportRef = useRef<HTMLDivElement>(null);
 
@@ -82,19 +87,87 @@ const MissionOperationalReport: React.FC<Props> = ({ mission, onClose, isClientV
     const totalKm = endKm > startKm ? endKm - startKm : (mission as any).total_distance || (mission as any).traveled_distance || 0;
 
     useEffect(() => {
-        const fetchLogs = async () => {
-            const { data } = await supabase
-                .from('mission_logs')
-                .select('*')
-                .eq('mission_id', mission.id)
-                .order('created_at', { ascending: true });
-            setMissionLogs(data || []);
-            if (isClientView && data && data.length > 0) {
-                handleAutoGenerate(data);
+        const fetchData = async () => {
+            const [logsRes, reportRes] = await Promise.all([
+                supabase.from('mission_logs').select('*').eq('mission_id', mission.id).order('created_at', { ascending: true }),
+                supabase.from('missions').select('operational_report').eq('id', mission.id).single()
+            ]);
+            setMissionLogs(logsRes.data || []);
+            if (reportRes.data?.operational_report) {
+                setGeneratedReport(reportRes.data.operational_report);
+                setLoadedFromDb(true);
+                setIsSaved(true);
+            } else if (isClientView && logsRes.data && logsRes.data.length > 0) {
+                handleAutoGenerate(logsRes.data);
             }
         };
-        fetchLogs();
+        fetchData();
     }, [mission.id]);
+
+    const handleSaveReport = async () => {
+        if (!generatedReport) return;
+        setIsSaving(true);
+        try {
+            const { error } = await supabase.from('missions').update({ operational_report: generatedReport }).eq('id', mission.id);
+            if (error) {
+                if (error.message?.includes('operational_report') || error.code === '42703') {
+                    console.warn('Coluna operational_report não existe ainda. Relatório salvo apenas localmente.');
+                } else {
+                    throw error;
+                }
+            }
+            setIsSaved(true);
+            setLoadedFromDb(true);
+        } catch (e: any) {
+            alert('Erro ao salvar relatório: ' + e.message);
+        } finally {
+            setIsSaving(false);
+        }
+    };
+
+    const parseSections = useCallback((html: string): string[] => {
+        const parser = new DOMParser();
+        const doc = parser.parseFromString(`<div>${html}</div>`, 'text/html');
+        const sections = doc.querySelectorAll('.report-section');
+        return Array.from(sections).map(s => s.outerHTML);
+    }, []);
+
+    const handleSectionEdit = (sectionIndex: number) => {
+        if (!generatedReport) return;
+        const sections = parseSections(generatedReport);
+        if (sections[sectionIndex]) {
+            const parser = new DOMParser();
+            const doc = parser.parseFromString(sections[sectionIndex], 'text/html');
+            const h3 = doc.querySelector('h3');
+            const content = doc.querySelector('section');
+            if (content && h3) {
+                const cloned = content.cloneNode(true) as HTMLElement;
+                const h3Clone = cloned.querySelector('h3');
+                if (h3Clone) h3Clone.remove();
+                setSectionEditText(cloned.innerHTML.trim());
+            } else {
+                setSectionEditText(sections[sectionIndex]);
+            }
+            setEditingSection(sectionIndex);
+        }
+    };
+
+    const handleSectionSave = () => {
+        if (editingSection === null || !generatedReport) return;
+        const sections = parseSections(generatedReport);
+        if (sections[editingSection]) {
+            const parser = new DOMParser();
+            const doc = parser.parseFromString(sections[editingSection], 'text/html');
+            const h3 = doc.querySelector('h3');
+            const title = h3 ? h3.outerHTML : '';
+            sections[editingSection] = `<section class="report-section">${title}${sectionEditText}</section>`;
+            const newReport = sections.join('\n');
+            setGeneratedReport(newReport);
+            setIsSaved(false);
+        }
+        setEditingSection(null);
+        setSectionEditText('');
+    };
 
     const parseWhatsAppTimeline = (text: string): TimelineEvent[] => {
         const lines = text.split('\n').filter(l => l.trim().length > 0);
@@ -387,8 +460,8 @@ Retorne APENAS HTML com sections: SÍNTESE OPERACIONAL, DILIGÊNCIA E CONSTATAÇ
                     </div>
                     <div className="flex items-center gap-4">
                         {isCeva && (
-                            <div className="bg-white/10 backdrop-blur-sm px-3 py-1.5 rounded-lg border border-white/15">
-                                <img src="/logo_ceva.png" alt="CEVA" className="h-5 object-contain" style={{ mixBlendMode: 'lighten' }} crossOrigin="anonymous" />
+                            <div className="bg-white px-3 py-1.5 rounded-lg">
+                                <img src="/logo_ceva.png" alt="CEVA" className="h-6 object-contain" crossOrigin="anonymous" />
                             </div>
                         )}
                         <div className="bg-white/10 backdrop-blur-sm px-4 py-2 rounded-lg border border-white/15 text-center">
@@ -458,7 +531,47 @@ Retorne APENAS HTML com sections: SÍNTESE OPERACIONAL, DILIGÊNCIA E CONSTATAÇ
             </div>
 
             {generatedReport && (
-                <div data-pdf-section="ai-content" className="bg-white px-8 py-2 report-ai-content" dangerouslySetInnerHTML={{ __html: generatedReport }} />
+                <div data-pdf-section="ai-content" className="bg-white px-8 py-2 report-ai-content">
+                    {parseSections(generatedReport).map((sectionHtml, idx) => (
+                        <div key={idx} className="relative group/section" data-report-section={idx}>
+                            {!isClientView && editingSection === idx ? (
+                                <div className="border-2 border-amber-300 rounded-xl p-3 bg-amber-50/50 mb-3">
+                                    <textarea
+                                        value={sectionEditText}
+                                        onChange={e => setSectionEditText(e.target.value)}
+                                        rows={8}
+                                        className="w-full px-3 py-2 border border-gray-200 rounded-lg text-xs font-mono text-gray-700 focus:ring-2 focus:ring-amber-200 focus:border-amber-400 outline-none resize-y bg-white"
+                                        data-testid={`textarea-section-edit-${idx}`}
+                                    />
+                                    <div className="flex items-center gap-2 mt-2">
+                                        <button onClick={handleSectionSave} className="flex items-center gap-1 px-3 py-1.5 bg-green-600 text-white rounded-lg text-[10px] font-black uppercase hover:bg-green-700 transition-colors" data-testid={`button-section-save-${idx}`}>
+                                            <Check size={12} /> Salvar Seção
+                                        </button>
+                                        <button onClick={() => { setEditingSection(null); setSectionEditText(''); }} className="flex items-center gap-1 px-3 py-1.5 bg-gray-200 text-gray-700 rounded-lg text-[10px] font-black uppercase hover:bg-gray-300 transition-colors" data-testid={`button-section-cancel-${idx}`}>
+                                            <X size={12} /> Cancelar
+                                        </button>
+                                    </div>
+                                </div>
+                            ) : (
+                                <>
+                                    <div dangerouslySetInnerHTML={{ __html: sectionHtml }} />
+                                    {!isClientView && (
+                                        <button
+                                            onClick={() => handleSectionEdit(idx)}
+                                            className="absolute top-1 right-1 opacity-0 group-hover/section:opacity-100 transition-opacity flex items-center gap-1 px-2 py-1 bg-white border border-gray-200 rounded-lg text-[9px] font-bold text-gray-500 hover:text-gray-800 hover:border-gray-400 shadow-sm"
+                                            data-testid={`button-section-edit-${idx}`}
+                                        >
+                                            <Edit3 size={10} /> Editar
+                                        </button>
+                                    )}
+                                </>
+                            )}
+                        </div>
+                    ))}
+                    {parseSections(generatedReport).length === 0 && (
+                        <div dangerouslySetInnerHTML={{ __html: generatedReport }} />
+                    )}
+                </div>
             )}
 
             {allPhotos.length > 0 && (
@@ -619,8 +732,32 @@ Retorne APENAS HTML com sections: SÍNTESE OPERACIONAL, DILIGÊNCIA E CONSTATAÇ
                                 </>
                             ) : (
                                 <>
-                                    <div className="flex items-center gap-2 mb-3">
-                                        <button type="button" onClick={() => setGeneratedReport(null)} className="flex items-center gap-1 px-3 py-1.5 text-[10px] font-bold text-gray-600 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors" data-testid="button-back-to-form">← Voltar ao Formulário</button>
+                                    <div className="flex items-center justify-between gap-2 mb-3">
+                                        <div className="flex items-center gap-2">
+                                            {!loadedFromDb && (
+                                                <button type="button" onClick={() => setGeneratedReport(null)} className="flex items-center gap-1 px-3 py-1.5 text-[10px] font-bold text-gray-600 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors" data-testid="button-back-to-form">← Voltar ao Formulário</button>
+                                            )}
+                                            {loadedFromDb && (
+                                                <button type="button" onClick={() => { setGeneratedReport(null); setLoadedFromDb(false); setIsSaved(false); }} className="flex items-center gap-1 px-3 py-1.5 text-[10px] font-bold text-gray-600 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors" data-testid="button-regenerate">
+                                                    <RefreshCw size={10} /> Refazer Relatório
+                                                </button>
+                                            )}
+                                        </div>
+                                        <div className="flex items-center gap-2">
+                                            {isSaved && (
+                                                <span className="flex items-center gap-1 text-[10px] font-black text-green-600 uppercase">
+                                                    <Check size={12} /> Salvo
+                                                </span>
+                                            )}
+                                            <button type="button" onClick={handleSaveReport} disabled={isSaving || (isSaved && loadedFromDb)} className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-white font-black text-[10px] uppercase tracking-wider transition-all hover:brightness-110 disabled:opacity-40" style={{ backgroundColor: isSaved ? '#059669' : accentColor }} data-testid="button-save-report">
+                                                {isSaving ? <><Loader2 size={12} className="animate-spin" /> Salvando...</> : <><Save size={12} /> {isSaved ? 'Relatório Salvo' : 'Salvar Relatório'}</>}
+                                            </button>
+                                        </div>
+                                    </div>
+
+                                    <div className="mb-3 p-3 rounded-xl border border-blue-100 bg-blue-50/50 flex items-center gap-2">
+                                        <Edit3 size={14} className="text-blue-500 shrink-0" />
+                                        <p className="text-[10px] text-blue-700 font-bold">Passe o mouse sobre cada seção do relatório para editá-la individualmente.</p>
                                     </div>
 
                                     {renderReportDocument()}

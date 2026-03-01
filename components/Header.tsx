@@ -6,9 +6,10 @@ import { useNotification } from '../lib/NotificationContext';
 interface HeaderProps {
   onMenuClick: () => void;
   onProfileSettingsClick: () => void;
+  isCevaClient?: boolean;
 }
 
-const Header: React.FC<HeaderProps> = ({ onMenuClick, onProfileSettingsClick }) => {
+const Header: React.FC<HeaderProps> = ({ onMenuClick, onProfileSettingsClick, isCevaClient = false }) => {
   const [time, setTime] = useState(new Date());
   const [user, setUser] = useState<any>(null);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
@@ -62,8 +63,8 @@ const Header: React.FC<HeaderProps> = ({ onMenuClick, onProfileSettingsClick }) 
         
         <div className="flex items-center gap-3">
              <img 
-                src="/logo.png" 
-                alt="Logo TMSEG" 
+                src={isCevaClient ? "/logo_ceva.png" : "/logo.png"} 
+                alt={isCevaClient ? "CEVA Logistics" : "Logo TMSEG"} 
                 className="h-12 w-auto object-contain"
                 onError={(e) => { e.currentTarget.style.display = 'none'; }} 
              />

@@ -81,6 +81,7 @@ const App: React.FC = () => {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   
   const [rebootCountdown, setRebootCountdown] = useState<number | null>(null);
+  const [isCevaClient, setIsCevaClient] = useState(false);
 
   const normalizedPath = window.location.pathname.toLowerCase().replace(/\/$/, '');
   const isPublicRoute = normalizedPath === '/cadastro-operacional';
@@ -104,7 +105,7 @@ const App: React.FC = () => {
       if (!storedUser) return;
       try {
           const user = JSON.parse(storedUser);
-          const { data, error } = await supabase.from('system_users').select(`status, force_password_change, permissions, profile_id, profiles:profile_id ( permissions )`).eq('id', user.id).single();
+          const { data, error } = await supabase.from('system_users').select(`status, force_password_change, permissions, profile_id, client_id, profiles:profile_id ( permissions )`).eq('id', user.id).single();
           if (error || !data || data.status !== 'Ativo') { handleLogout(); return; }
           if (data.force_password_change) setNeedsPasswordChange(true);
           const profilePerms = data.profiles?.permissions || [];
@@ -113,6 +114,12 @@ const App: React.FC = () => {
           if (JSON.stringify(user.permissions) !== JSON.stringify(combinedPermissions)) {
               user.permissions = combinedPermissions;
               localStorage.setItem('userData', JSON.stringify(user));
+          }
+          if (data.client_id) {
+              const { data: clientData } = await supabase.from('clients').select('name').eq('id', data.client_id).single();
+              if (clientData && (clientData.name || '').toUpperCase().includes('CEVA')) {
+                  setIsCevaClient(true);
+              }
           }
           if (!isAuthenticated) setIsAuthenticated(true);
       } catch (e) { console.error(e); }
@@ -235,7 +242,7 @@ const App: React.FC = () => {
         <Sidebar isOpen={isSidebarOpen} activeScreen={currentScreen} onNavigate={navigateTo} onLogout={handleLogout} />
         <div className="flex-1 flex flex-col h-full relative z-10 overflow-hidden lg:pl-20">
             {isSidebarOpen && <div className="fixed inset-0 bg-black/50 z-40 lg:hidden" onClick={() => setIsSidebarOpen(false)}></div>}
-            <Header onMenuClick={toggleSidebar} onProfileSettingsClick={() => setIsProfileSettingsOpen(true)} />
+            <Header onMenuClick={toggleSidebar} onProfileSettingsClick={() => setIsProfileSettingsOpen(true)} isCevaClient={isCevaClient} />
             <main className="flex-1 overflow-y-auto p-4 md:p-6 scrollbar-thin">
             <div className="w-full mx-auto relative">
                 {renderContent()}
