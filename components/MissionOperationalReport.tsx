@@ -214,7 +214,8 @@ REGRAS:
 - Retorne APENAS as 4 sections.
 - Mínimo 400 palavras.
 - Português claro e simples, sem palavras difíceis.
-- Use <h3>, <p>, <ul>, <li>, <strong>.`;
+- Use <h3>, <p>, <ul>, <li>, <strong>.
+- CRONOLOGIA: Use EXATAMENTE os horários fornecidos nos dados (hora:minuto:segundo). NUNCA substitua minutos ou segundos por "xx". Se o horário exato não estiver disponível, omita o item ao invés de inventar "xx". Cada item da cronologia DEVE ter horário real completo (ex: 09:02:15, 10:31:00).`;
 
         if (refinement) {
             prompt += `\n\nAJUSTES SOLICITADOS PELO OPERADOR (aplique estas correções ao relatório anterior):\n${refinement}\n\nRELATÓRIO ANTERIOR PARA AJUSTAR:\n${generatedReport}`;
@@ -290,23 +291,66 @@ Retorne APENAS HTML com sections: SÍNTESE OPERACIONAL, DILIGÊNCIA E CONSTATAÇ
         if (!reportRef.current) return;
         setIsExporting(true);
         try {
-            const canvas = await html2canvas(reportRef.current, { scale: 2, useCORS: true, backgroundColor: '#ffffff', windowWidth: 794 });
-            const imgData = canvas.toDataURL('image/jpeg', 0.95);
+            const sections = reportRef.current.querySelectorAll('[data-pdf-section]');
             const pdf = new jsPDF('p', 'mm', 'a4');
             const pageWidth = 210;
             const pageHeight = 297;
-            const imgWidth = pageWidth;
-            const imgHeight = (canvas.height * imgWidth) / canvas.width;
-            let heightLeft = imgHeight;
-            let position = 0;
-            pdf.addImage(imgData, 'JPEG', 0, position, imgWidth, imgHeight);
-            heightLeft -= pageHeight;
-            while (heightLeft > 0) {
-                position = -(imgHeight - heightLeft);
-                pdf.addPage();
-                pdf.addImage(imgData, 'JPEG', 0, position, imgWidth, imgHeight);
-                heightLeft -= pageHeight;
+            const margin = 4;
+            const usableWidth = pageWidth - margin * 2;
+            const usableHeight = pageHeight - margin * 2;
+            let currentY = margin;
+            let isFirstPage = true;
+
+            for (let i = 0; i < sections.length; i++) {
+                const section = sections[i] as HTMLElement;
+                const canvas = await html2canvas(section, {
+                    scale: 3,
+                    useCORS: true,
+                    backgroundColor: null,
+                    windowWidth: 794,
+                    logging: false,
+                });
+                const imgData = canvas.toDataURL('image/png');
+                const imgWidth = usableWidth;
+                const imgHeight = (canvas.height * imgWidth) / canvas.width;
+
+                if (!isFirstPage && currentY + imgHeight > pageHeight - margin) {
+                    pdf.addPage();
+                    currentY = margin;
+                }
+
+                if (imgHeight > usableHeight) {
+                    const totalCanvasHeight = canvas.height;
+                    const pixelsPerPage = (usableHeight / imgHeight) * totalCanvasHeight;
+                    let srcY = 0;
+
+                    while (srcY < totalCanvasHeight) {
+                        if (srcY > 0) {
+                            pdf.addPage();
+                            currentY = margin;
+                        }
+                        const sliceHeight = Math.min(pixelsPerPage, totalCanvasHeight - srcY);
+                        const sliceCanvas = document.createElement('canvas');
+                        sliceCanvas.width = canvas.width;
+                        sliceCanvas.height = sliceHeight;
+                        const ctx = sliceCanvas.getContext('2d');
+                        if (ctx) {
+                            ctx.drawImage(canvas, 0, srcY, canvas.width, sliceHeight, 0, 0, canvas.width, sliceHeight);
+                            const sliceData = sliceCanvas.toDataURL('image/png');
+                            const sliceImgHeight = (sliceHeight * imgWidth) / canvas.width;
+                            pdf.addImage(sliceData, 'PNG', margin, currentY, imgWidth, sliceImgHeight);
+                            currentY += sliceImgHeight;
+                        }
+                        srcY += sliceHeight;
+                    }
+                } else {
+                    pdf.addImage(imgData, 'PNG', margin, currentY, imgWidth, imgHeight);
+                    currentY += imgHeight;
+                }
+
+                isFirstPage = false;
             }
+
             pdf.save(`Relatorio_Operacional_${mission.id}_${new Date().toISOString().slice(0, 10)}.pdf`);
         } catch (error: any) {
             alert('Erro ao exportar PDF: ' + error.message);
@@ -335,9 +379,8 @@ Retorne APENAS HTML com sections: SÍNTESE OPERACIONAL, DILIGÊNCIA E CONSTATAÇ
 
     const renderReportDocument = () => (
         <div ref={reportRef} className="bg-white" style={{ width: '794px', maxWidth: '100%', margin: '0 auto', boxShadow: '0 8px 40px rgba(0,0,0,0.12)', borderRadius: '16px', overflow: 'hidden' }}>
-            <div className="relative overflow-hidden" style={{ background: `linear-gradient(135deg, ${gradientStart}, ${gradientEnd})`, padding: '24px 32px 20px' }}>
+            <div data-pdf-section="header" className="relative overflow-hidden" style={{ background: `linear-gradient(135deg, ${gradientStart}, ${gradientEnd})`, padding: '24px 32px 20px' }}>
                 <div className="absolute top-0 right-0 w-80 h-80 opacity-[0.03]" style={{ background: 'radial-gradient(circle, white 0%, transparent 70%)', transform: 'translate(30%, -40%)' }} />
-
                 <div className="flex items-center justify-between relative z-10">
                     <div className="flex items-center gap-4">
                         <img src="/logo.png" alt="TMSEG" className="h-10 w-auto object-contain drop-shadow-lg" crossOrigin="anonymous" />
@@ -354,7 +397,6 @@ Retorne APENAS HTML com sections: SÍNTESE OPERACIONAL, DILIGÊNCIA E CONSTATAÇ
                         </div>
                     </div>
                 </div>
-
                 <div className="mt-4 flex items-center justify-between">
                     <h1 className="text-white text-[15px] font-black uppercase tracking-[0.15em]">Relatório Operacional</h1>
                     <p className="text-white/30 text-[8px] font-bold">{new Date().toLocaleString('pt-BR')}</p>
@@ -362,7 +404,7 @@ Retorne APENAS HTML com sections: SÍNTESE OPERACIONAL, DILIGÊNCIA E CONSTATAÇ
                 <div className="h-[2px] rounded-full mt-3" style={{ background: `linear-gradient(90deg, ${accentColor}, ${accentColor}40, transparent)` }} />
             </div>
 
-            <div className="px-8 pt-6 pb-2">
+            <div data-pdf-section="dados-operacao" className="bg-white px-8 pt-6 pb-2">
                 <div className="flex items-center gap-2 mb-4">
                     <div className="w-[3px] h-5 rounded-full" style={{ backgroundColor: accentColor }} />
                     <h2 className="text-[12px] font-black uppercase tracking-[0.15em]" style={{ color: primaryColor }}>Dados da Operação</h2>
@@ -379,7 +421,7 @@ Retorne APENAS HTML com sections: SÍNTESE OPERACIONAL, DILIGÊNCIA E CONSTATAÇ
                 </div>
             </div>
 
-            <div className="px-8 pt-4 pb-2">
+            <div data-pdf-section="dados-veiculo" className="bg-white px-8 pt-4 pb-2">
                 <div className="flex items-center gap-2 mb-4">
                     <div className="w-[3px] h-5 rounded-full" style={{ backgroundColor: accentColor }} />
                     <h2 className="text-[12px] font-black uppercase tracking-[0.15em]" style={{ color: primaryColor }}>Dados do Veículo</h2>
@@ -392,7 +434,7 @@ Retorne APENAS HTML com sections: SÍNTESE OPERACIONAL, DILIGÊNCIA E CONSTATAÇ
                 </div>
             </div>
 
-            <div className="px-8 pt-4 pb-2">
+            <div data-pdf-section="agente" className="bg-white px-8 pt-4 pb-2">
                 <div className="flex items-center gap-2 mb-4">
                     <div className="w-[3px] h-5 rounded-full" style={{ backgroundColor: accentColor }} />
                     <h2 className="text-[12px] font-black uppercase tracking-[0.15em]" style={{ color: primaryColor }}>Agente de Campo</h2>
@@ -403,7 +445,7 @@ Retorne APENAS HTML com sections: SÍNTESE OPERACIONAL, DILIGÊNCIA E CONSTATAÇ
                 </div>
             </div>
 
-            <div className="px-8 pt-4 pb-4">
+            <div data-pdf-section="quilometragem" className="bg-white px-8 pt-4 pb-4">
                 <div className="flex items-center gap-2 mb-4">
                     <div className="w-[3px] h-5 rounded-full" style={{ backgroundColor: accentColor }} />
                     <h2 className="text-[12px] font-black uppercase tracking-[0.15em]" style={{ color: primaryColor }}>Quilometragem</h2>
@@ -416,11 +458,11 @@ Retorne APENAS HTML com sections: SÍNTESE OPERACIONAL, DILIGÊNCIA E CONSTATAÇ
             </div>
 
             {generatedReport && (
-                <div className="px-8 py-2 report-ai-content" dangerouslySetInnerHTML={{ __html: generatedReport }} />
+                <div data-pdf-section="ai-content" className="bg-white px-8 py-2 report-ai-content" dangerouslySetInnerHTML={{ __html: generatedReport }} />
             )}
 
             {allPhotos.length > 0 && (
-                <div className="px-8 pt-2 pb-5">
+                <div data-pdf-section="fotos" className="bg-white px-8 pt-2 pb-5">
                     <div className="flex items-center gap-2 mb-4">
                         <div className="w-[3px] h-5 rounded-full" style={{ backgroundColor: accentColor }} />
                         <h2 className="text-[12px] font-black uppercase tracking-[0.15em]" style={{ color: primaryColor }}>Registro Fotográfico</h2>
@@ -463,7 +505,7 @@ Retorne APENAS HTML com sections: SÍNTESE OPERACIONAL, DILIGÊNCIA E CONSTATAÇ
                 </div>
             )}
 
-            <div className="px-8 py-3 flex items-center justify-between" style={{ background: `linear-gradient(135deg, ${gradientStart}, ${gradientEnd})` }}>
+            <div data-pdf-section="footer" className="px-8 py-3 flex items-center justify-between" style={{ background: `linear-gradient(135deg, ${gradientStart}, ${gradientEnd})` }}>
                 <div className="flex items-center gap-3">
                     <img src="/logo.png" alt="TMSEG" className="h-5 w-auto object-contain opacity-80" crossOrigin="anonymous" />
                 </div>
