@@ -580,12 +580,26 @@ export async function registerRoutes(
         );
       `);
       await pool.query(`ALTER TABLE client_mission_notes ADD COLUMN IF NOT EXISTS responsavel TEXT DEFAULT ''`).catch(() => {});
+      await pool.query(`ALTER TABLE missions ADD COLUMN IF NOT EXISTS operational_report TEXT`).catch(() => {});
       await pool.end();
       console.log("Client registries tables created/verified.");
       res.json({ ok: true });
     } catch (e: any) {
       console.error("Error creating client registries tables:", e.message);
       res.json({ ok: true, note: e.message });
+    }
+  });
+
+  app.post("/api/missions/ensure-report-column", async (_req: Request, res: Response) => {
+    try {
+      const dbUrl = process.env.DATABASE_URL;
+      if (!dbUrl) { res.json({ ok: false }); return; }
+      const pool = new pg.Pool({ connectionString: dbUrl, ssl: { rejectUnauthorized: false } });
+      await pool.query(`ALTER TABLE missions ADD COLUMN IF NOT EXISTS operational_report TEXT`);
+      await pool.end();
+      res.json({ ok: true });
+    } catch (e: any) {
+      res.json({ ok: false, error: e.message });
     }
   });
 

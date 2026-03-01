@@ -88,16 +88,24 @@ const MissionOperationalReport: React.FC<Props> = ({ mission, onClose, isClientV
 
     useEffect(() => {
         const fetchData = async () => {
-            const [logsRes, reportRes] = await Promise.all([
-                supabase.from('mission_logs').select('*').eq('mission_id', mission.id).order('created_at', { ascending: true }),
-                supabase.from('missions').select('operational_report').eq('id', mission.id).single()
-            ]);
+            await fetch('/api/missions/ensure-report-column', { method: 'POST' }).catch(() => {});
+
+            const logsRes = await supabase.from('mission_logs').select('*').eq('mission_id', mission.id).order('created_at', { ascending: true });
             setMissionLogs(logsRes.data || []);
-            if (reportRes.data?.operational_report) {
-                setGeneratedReport(reportRes.data.operational_report);
-                setLoadedFromDb(true);
-                setIsSaved(true);
-            } else if (isClientView && logsRes.data && logsRes.data.length > 0) {
+
+            try {
+                const reportRes = await supabase.from('missions').select('operational_report').eq('id', mission.id).single();
+                if (reportRes.data?.operational_report) {
+                    setGeneratedReport(reportRes.data.operational_report);
+                    setLoadedFromDb(true);
+                    setIsSaved(true);
+                    return;
+                }
+            } catch (e) {
+                console.warn('Coluna operational_report pode não existir:', e);
+            }
+
+            if (isClientView && logsRes.data && logsRes.data.length > 0) {
                 handleAutoGenerate(logsRes.data);
             }
         };
@@ -108,13 +116,10 @@ const MissionOperationalReport: React.FC<Props> = ({ mission, onClose, isClientV
         if (!generatedReport) return;
         setIsSaving(true);
         try {
+            await fetch('/api/missions/ensure-report-column', { method: 'POST' }).catch(() => {});
             const { error } = await supabase.from('missions').update({ operational_report: generatedReport }).eq('id', mission.id);
             if (error) {
-                if (error.message?.includes('operational_report') || error.code === '42703') {
-                    console.warn('Coluna operational_report não existe ainda. Relatório salvo apenas localmente.');
-                } else {
-                    throw error;
-                }
+                throw error;
             }
             setIsSaved(true);
             setLoadedFromDb(true);
@@ -673,7 +678,7 @@ Retorne APENAS HTML com sections: SÍNTESE OPERACIONAL, DILIGÊNCIA E CONSTATAÇ
                             {!generatedReport ? (
                                 <>
                                     <div className="p-4 rounded-xl border border-blue-100 bg-gradient-to-r from-blue-50 to-indigo-50">
-                                        <p className="text-[10px] font-black text-blue-800 uppercase tracking-wider mb-1 flex items-center gap-1.5"><Sparkles size={12} /> Relatório com Inteligência Artificial</p>
+                                        <p className="text-[10px] font-black text-blue-800 uppercase tracking-wider mb-1 flex items-center gap-1.5"><Sparkles size={12} /> Relatório Operacional</p>
                                         <p className="text-[11px] text-blue-700">Preencha o descritivo da operação e a IA vai gerar um relatório profissional e objetivo.</p>
                                     </div>
 
@@ -727,7 +732,7 @@ Retorne APENAS HTML com sections: SÍNTESE OPERACIONAL, DILIGÊNCIA E CONSTATAÇ
                                     </div>
 
                                     <button type="button" onClick={handleGenerate} disabled={isGenerating} className="w-full flex items-center justify-center gap-2 py-3.5 rounded-xl text-white font-black text-sm uppercase tracking-wider transition-all shadow-lg hover:shadow-xl disabled:opacity-50" style={{ background: `linear-gradient(135deg, ${gradientStart}, ${gradientEnd})` }} data-testid="button-generate-report">
-                                        {isGenerating ? <><Loader2 size={18} className="animate-spin" /> Gerando Relatório com IA...</> : <><Sparkles size={18} /> Gerar Relatório</>}
+                                        {isGenerating ? <><Loader2 size={18} className="animate-spin" /> Gerando Relatório...</> : <><Sparkles size={18} /> Gerar Relatório</>}
                                     </button>
                                 </>
                             ) : (
@@ -769,7 +774,7 @@ Retorne APENAS HTML com sections: SÍNTESE OPERACIONAL, DILIGÊNCIA E CONSTATAÇ
                                         </label>
                                         <textarea value={editSuggestion} onChange={e => setEditSuggestion(e.target.value)} rows={3} placeholder="Descreva aqui o que quer alterar no relatório. Ex: 'Remover menção ao abastecimento', 'Detalhar mais a parte de segurança', 'Trocar cronologia para iniciar às 08:30'..." className="w-full px-3 py-2.5 border border-amber-200 rounded-xl text-sm text-gray-700 focus:ring-2 focus:ring-amber-200 focus:border-amber-400 outline-none resize-none bg-white" data-testid="input-report-edit-suggestion" />
                                         <button type="button" onClick={handleRefine} disabled={isGenerating || !editSuggestion.trim()} className="mt-2 flex items-center gap-2 px-4 py-2.5 rounded-lg text-white font-black text-[10px] uppercase tracking-wider transition-all hover:brightness-110 disabled:opacity-40" style={{ backgroundColor: accentColor }} data-testid="button-refine-report">
-                                            {isGenerating ? <><Loader2 size={14} className="animate-spin" /> Ajustando...</> : <><RefreshCw size={14} /> Aplicar Ajustes com IA</>}
+                                            {isGenerating ? <><Loader2 size={14} className="animate-spin" /> Ajustando...</> : <><RefreshCw size={14} /> Aplicar Ajustes</>}
                                         </button>
                                     </div>
                                 </>

@@ -688,13 +688,6 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
             {dbStatus === 'ok' && ( <div className={`flex items-center gap-2 text-[10px] font-bold px-2 py-1 rounded w-fit border mt-2 ml-4.5 ${isCevaClient ? 'text-green-300 bg-green-900/30 border-green-700' : 'text-green-700 bg-green-50 border-green-200'}`}><Database size={12} /> Realtime Sync</div> )}
           </div>
 
-          {isCevaClient && (
-          <div className="flex items-center justify-center px-4">
-              <div className="bg-white px-3 py-1.5 rounded-lg">
-                  <img src={cevaLogoPath} alt="CEVA Logistics" className="h-7 object-contain" data-testid="img-ceva-logo-header" />
-              </div>
-          </div>
-          )}
 
           {!isRestrictedClientView && (
           <div className="flex-1 w-full max-w-[450px]">
