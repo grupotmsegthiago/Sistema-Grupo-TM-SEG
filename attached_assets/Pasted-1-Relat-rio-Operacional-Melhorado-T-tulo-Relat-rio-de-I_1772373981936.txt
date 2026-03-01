@@ -1,0 +1,70 @@
+1. Relatório Operacional Melhorado
+
+Título: Relatório de Inspeção e Averiguação Operacional – Unidade Porto Alegre Status: Finalizado Responsável: Nicolas 
++2
+
+I. Informações Gerais
+
+Operação: Porto Alegre/RS 
+
+Localização: Av. Plínio Kroeff, nº 1400 – Bairro Sarandi 
+
+
+Data/Hora da Chegada: 09h00 
+
+
+Objetivo: Averiguação de rotina e auditoria de segurança patrimonial.
+
+II. Diligência e Constatações In Loco
+
+Acesso e Identificação: O agente realizou a conferência perimetral do endereço, validando os pontos de acesso principais.
+
+
+Atividade Operacional: No momento da inspeção, não foi detectada presença de colaboradores ou movimentação de carga no interior das instalações.
++3
+
+
+Inteligência de Campo: Em entrevista com a equipe de vigilância da empresa adjacente, confirmou-se que o fluxo operacional ocorre predominantemente de segunda a sexta-feira, com presença da gerência em horário comercial.
+
+III. Análise de Segurança e Vulnerabilidades
+
+Segurança Física: Ausência de vigilância humana presencial (postura estática ou rondas).
++2
+
+
+Segurança Eletrônica: Identificada a presença de sistemas de monitoramento por CFTV e alarmes de intrusão ativos.
++2
+
+
+Monitoramento Aéreo (Drone): Utilização de RPA (Aeronave Remotamente Pilotada) para varredura de pátio. Foi confirmada a permanência de frota (caminhões) estacionada, sem sinais de violação ou movimentação suspeita no período.
++2
+
+IV. Conclusão e Recomendações
+O local apresenta conformidade com o cronograma de funcionamento relatado, embora a ausência de segurança física presencial em áreas com ativos de alto valor (caminhões) seja um ponto de atenção. Recomenda-se a manutenção do monitoramento remoto e vistorias aleatórias.
++4
+
+2. Lógica para Automação (Prompt para o Replit)
+Para automatizar isso no Replit, você precisará de uma estrutura que receba os dados brutos e os organize em um template (pode ser usando Python com a biblioteca python-pptx ou reportlab para PDF).
+
+Prompt Sugerido para o Replit:
+
+"Crie um script em Python que funcione como um gerador automático de relatórios operacionais. O sistema deve:
+
+Interface: Ter campos de entrada para 'Operação', 'Agente', 'Endereço', e 'Observações de Campo'.
+
+Upload de Imagens: Permitir o upload de fotos que serão automaticamente redimensionadas e inseridas em uma seção chamada 'Anexo Fotográfico'.
+
+Processamento de Texto: Utilizar um template padrão (baseado no conteúdo acima) que transforme frases simples em linguagem técnica corporativa.
+
+Saída: Gerar um arquivo PDF ou PPTX formatado com o logo da CEVA Logistics e as cores da TMSEG (Azul Marinho e Vermelho).
+
+Botão Único: Um botão 'Gerar Relatório' que compile as informações, as fotos e salve o arquivo final."
+
+Como estruturar os campos de fotos no sistema:
+Para que as fotos fiquem nos locais corretos, você deve criar "âncoras" no seu código:
+
+Placeholder 1: Foto da fachada (entrada).
+
+Placeholder 2: Print do voo do drone (visão do pátio).
+
+Placeholder 3: Fotos de detalhes (placas de caminhões ou sistemas de alarme).

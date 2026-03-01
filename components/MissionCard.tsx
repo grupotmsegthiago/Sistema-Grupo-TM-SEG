@@ -35,6 +35,7 @@ interface MissionCardProps {
     onPrintLabels?: (m: Mission) => void;
     onViewHistory?: (m: Mission) => void;
     onFullReport?: (m: Mission) => void;
+    onOperationalReport?: (m: Mission) => void;
     clientTables: ClientPriceTable[];
     providerTables: ProviderCostTable[];
     clientsData: Client[];
@@ -136,7 +137,7 @@ const getAgentDisplayName = (fullName?: string) => {
 
 const MissionCardComponent: React.FC<MissionCardProps> = ({ 
     mission, canEditMission, isDirector, isRedLight, isImminent, minutesSinceUpdate, copiedId, hideProviderInfo,
-    onViewMap, onUpdate, onOpenFinancials, onCopy, onCopyEmail, onDelete, onPrint, onViewHistory, onFullReport,
+    onViewMap, onUpdate, onOpenFinancials, onCopy, onCopyEmail, onDelete, onPrint, onViewHistory, onFullReport, onOperationalReport,
     clientTables, providerTables, clientsData, agentPhonesMap, currentTime
 }) => {
     
@@ -570,6 +571,7 @@ Qualquer dúvida, estamos a disposição.
                         {onViewHistory && isDirector && (<button onClick={(e) => { e.stopPropagation(); onViewHistory(mission); }} className="w-7 h-7 flex items-center justify-center rounded-md bg-purple-50 text-purple-600 border border-purple-200 transition-all duration-200 hover:bg-purple-600 hover:text-white hover:shadow-sm active:scale-95" title="Histórico Detalhado (Auditoria)"><FileSearch size={14} /></button>)}</>)}
                         {onPrint && (<button onClick={handlePrintClick} className="w-7 h-7 flex items-center justify-center rounded-md bg-gray-50 text-gray-700 border border-gray-200 transition-all duration-200 hover:bg-gray-700 hover:text-white hover:shadow-sm active:scale-95" title="Imprimir Folha de Missão (PDF) e Copiar Texto"><Printer size={14} /></button>)}
                         {onFullReport && (<button onClick={() => onFullReport(mission)} className="w-7 h-7 flex items-center justify-center rounded-md bg-amber-50 text-amber-700 border border-amber-200 transition-all duration-200 hover:bg-amber-600 hover:text-white hover:shadow-sm active:scale-95" title="Relatório Completo PDF (Timeline + Auditoria)"><FileText size={14} /></button>)}
+                        {onOperationalReport && (<button onClick={() => onOperationalReport(mission)} className="w-7 h-7 flex items-center justify-center rounded-md bg-red-50 text-red-700 border border-red-200 transition-all duration-200 hover:bg-red-700 hover:text-white hover:shadow-sm active:scale-95" title="Relatório Operacional com IA" data-testid={`button-op-report-${mission.id}`}><Briefcase size={14} /></button>)}
                         {isDirector && !hideProviderInfo && (<button onClick={() => onDelete(mission)} className="w-7 h-7 flex items-center justify-center rounded-md bg-red-50 text-red-600 border-red-100 transition-all duration-200 hover:bg-red-600 hover:text-white hover:shadow-sm active:scale-95" title="Excluir Missão"><Trash2 size={14}/></button>)}
                     </div>
                 </div>

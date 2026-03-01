@@ -24,6 +24,7 @@ import ExecutiveDashboard from './ExecutiveDashboard';
 import ClientExecutiveDashboard from './ClientExecutiveDashboard';
 import ClientReportsTab from './ClientReportsTab';
 import ClientMissionRequest from './ClientMissionRequest';
+import MissionOperationalReport from './MissionOperationalReport';
 const cevaLogoPath = '/logo_ceva.png';
 
 
@@ -140,6 +141,7 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
   const [missionForPrint, setMissionForPrint] = useState<Mission | null>(null);
   const [isFullReportOpen, setIsFullReportOpen] = useState(false);
   const [missionForFullReport, setMissionForFullReport] = useState<Mission | null>(null);
+  const [missionForOpReport, setMissionForOpReport] = useState<Mission | null>(null);
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
   const [missionToDelete, setMissionToDelete] = useState<Mission | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
@@ -885,6 +887,7 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
                                       onPrint={handleOpenPrintModal}
                                       onViewHistory={handleViewHistory}
                                       onFullReport={(m: Mission) => { setMissionForFullReport(m); setIsFullReportOpen(true); }}
+                                      onOperationalReport={(m: Mission) => setMissionForOpReport(m)}
                                       clientTables={clientTables}
                                       providerTables={providerTables}
                                       clientsData={clientsData}
@@ -906,6 +909,7 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
         {isPrintModalOpen && missionForPrint && <MissionPrintModal mission={missionForPrint} onClose={() => setIsPrintModalOpen(false)} />}
         {isFullReportOpen && missionForFullReport && <MissionFullReportModal mission={missionForFullReport} onClose={() => { setIsFullReportOpen(false); setMissionForFullReport(null); }} hideProviderInfo={isRestrictedClientView} />}
         {showClientRequestModal && resolvedClientName && <ClientMissionRequest clientName={resolvedClientName} onClose={() => setShowClientRequestModal(false)} onSuccess={() => { fetchMissions(true); showNotification('Sucesso', 'Solicitação enviada com sucesso!', 'success'); }} />}
+        {missionForOpReport && <MissionOperationalReport mission={missionForOpReport} onClose={() => setMissionForOpReport(null)} />}
         {isDeleteModalOpen && missionToDelete && (
             <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-in fade-in">
                 <div className="bg-white rounded-xl shadow-2xl w-full max-sm overflow-hidden border border-red-200">
