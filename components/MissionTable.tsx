@@ -162,7 +162,7 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
   const [currentTime, setCurrentTime] = useState(new Date());
 
   useEffect(() => {
-    const timer = setInterval(() => setCurrentTime(new Date()), 1000);
+    const timer = setInterval(() => setCurrentTime(new Date()), 300000);
     return () => clearInterval(timer);
   }, []);
 
