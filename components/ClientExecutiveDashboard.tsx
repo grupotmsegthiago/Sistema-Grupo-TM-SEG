@@ -115,6 +115,11 @@ const ClientExecutiveDashboard: React.FC<Props> = ({ missions }) => {
                 if (chartFilter.value === '300-500 km') return d >= 300 && d < 500;
                 if (chartFilter.value === '500+ km') return d >= 500;
             }
+            if (chartFilter.type === 'day') {
+                const d = new Date(m.startTime || m.createdAt);
+                const dayStr = `${d.getDate().toString().padStart(2, '0')}/${(d.getMonth() + 1).toString().padStart(2, '0')}`;
+                return dayStr === chartFilter.value;
+            }
             return true;
         });
     }, [periodFiltered, chartFilter]);
@@ -230,13 +235,13 @@ const ClientExecutiveDashboard: React.FC<Props> = ({ missions }) => {
             const key = `${(d.getMonth() + 1).toString().padStart(2, '0')}/${d.getFullYear().toString().slice(2)}`;
             months[key] = 0;
         }
-        missions.forEach(m => {
+        filtered.forEach(m => {
             const d = new Date(m.startTime || m.createdAt);
             const key = `${(d.getMonth() + 1).toString().padStart(2, '0')}/${d.getFullYear().toString().slice(2)}`;
             if (months[key] !== undefined) months[key]++;
         });
         return Object.entries(months).map(([mes, missoes]) => ({ mes, missoes }));
-    }, [missions]);
+    }, [filtered]);
 
 
     const vehicleRanking = useMemo(() => {
@@ -332,14 +337,20 @@ const ClientExecutiveDashboard: React.FC<Props> = ({ missions }) => {
             )}
 
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-                <ChartCard title="Missões por Dia" icon={Calendar} span={2}>
+                <ChartCard title="Missões por Dia" icon={Calendar} span={2} filterType="day">
                     <ResponsiveContainer width="100%" height={260}>
-                        <BarChart data={dailyData} margin={{ top: 25, right: 15, left: -10, bottom: 5 }}>
+                        <BarChart data={dailyData} margin={{ top: 25, right: 15, left: -10, bottom: 5 }} onClick={(e: any) => e?.activePayload?.[0]?.payload && toggleChartFilter('day', e.activePayload[0].payload.dia)}>
                             <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
                             <XAxis dataKey="dia" tick={TICK_SM} interval={dailyData.length > 15 ? 1 : 0} />
                             <YAxis tick={TICK} allowDecimals={false} />
                             <Tooltip content={<CustomTooltip />} />
-                            <Bar dataKey="missoes" name="Missões" fill={CEVA_PRIMARY} radius={[4, 4, 0, 0]} barSize={dailyData.length > 20 ? 14 : 22}>
+                            <Bar dataKey="missoes" name="Missões" radius={[4, 4, 0, 0]} barSize={dailyData.length > 20 ? 14 : 22} className="cursor-pointer">
+                                {dailyData.map((entry, i) => {
+                                    const isSelected = chartFilter?.type === 'day' && chartFilter.value === entry.dia;
+                                    const isSiblingDimmed = chartFilter?.type === 'day' && !isSelected;
+                                    const isGlobalDimmed = chartFilter && chartFilter.type !== 'day';
+                                    return <Cell key={i} fill={CEVA_PRIMARY} fillOpacity={isSiblingDimmed ? 0.2 : isGlobalDimmed ? 0.5 : 1} />;
+                                })}
                                 <LabelList dataKey="missoes" position="top" style={{ fontSize: 11, fontWeight: 900, fill: '#334155' }} formatter={(v: number) => v > 0 ? v : ''} />
                             </Bar>
                         </BarChart>
@@ -353,18 +364,27 @@ const ClientExecutiveDashboard: React.FC<Props> = ({ missions }) => {
                         <ResponsiveContainer width="100%" height={200}>
                             <PieChart>
                                 <Pie data={statusData} cx="50%" cy="50%" innerRadius={40} outerRadius={75} paddingAngle={3} dataKey="value" label={false} className="cursor-pointer" onClick={(data: any) => data && toggleChartFilter('status', data.name)}>
-                                    {statusData.map((entry, i) => <Cell key={i} fill={entry.color} stroke={chartFilter?.type === 'status' && chartFilter.value === entry.name ? '#000' : '#fff'} strokeWidth={chartFilter?.type === 'status' && chartFilter.value === entry.name ? 3 : 2} />)}
+                                    {statusData.map((entry, i) => {
+                                        const isSelected = chartFilter?.type === 'status' && chartFilter.value === entry.name;
+                                        const isDimmed = chartFilter && chartFilter.type !== 'status';
+                                        const isSiblingDimmed = chartFilter?.type === 'status' && chartFilter.value !== entry.name;
+                                        return <Cell key={i} fill={entry.color} stroke={isSelected ? '#000' : '#fff'} strokeWidth={isSelected ? 3 : 2} fillOpacity={isSiblingDimmed ? 0.25 : isDimmed ? 0.5 : 1} />;
+                                    })}
                                 </Pie>
                                 <Tooltip content={<CustomTooltip />} />
                             </PieChart>
                         </ResponsiveContainer>
                         <div className="flex flex-wrap gap-x-4 gap-y-1.5 justify-center mt-1 px-2">
-                            {statusData.map((s, i) => (
-                                <div key={i} className="flex items-center gap-1.5 cursor-pointer hover:opacity-80 transition-opacity" onClick={() => toggleChartFilter('status', s.name)}>
-                                    <div className="w-3 h-3 rounded-sm" style={{ backgroundColor: s.color, outline: chartFilter?.type === 'status' && chartFilter.value === s.name ? '2px solid #000' : 'none' }} />
-                                    <span className="text-[11px] font-bold text-gray-600">{s.name}: <span className="text-gray-900 font-black">{s.value}</span></span>
-                                </div>
-                            ))}
+                            {statusData.map((s, i) => {
+                                const isActive = chartFilter?.type === 'status' && chartFilter.value === s.name;
+                                const isDimmed = chartFilter?.type === 'status' && chartFilter.value !== s.name;
+                                return (
+                                    <div key={i} className={`flex items-center gap-1.5 cursor-pointer transition-all duration-200 ${isDimmed ? 'opacity-35' : 'hover:opacity-80'}`} onClick={() => toggleChartFilter('status', s.name)}>
+                                        <div className="w-3 h-3 rounded-sm transition-all" style={{ backgroundColor: s.color, outline: isActive ? '2px solid #000' : 'none', transform: isActive ? 'scale(1.3)' : 'scale(1)' }} />
+                                        <span className={`text-[11px] font-bold ${isActive ? 'text-gray-900' : 'text-gray-600'}`}>{s.name}: <span className="text-gray-900 font-black">{s.value}</span></span>
+                                    </div>
+                                );
+                            })}
                         </div>
                     </div>
                 </ChartCard>
@@ -374,18 +394,27 @@ const ClientExecutiveDashboard: React.FC<Props> = ({ missions }) => {
                         <ResponsiveContainer width="100%" height={200}>
                             <PieChart>
                                 <Pie data={typeMix} cx="50%" cy="50%" innerRadius={40} outerRadius={75} paddingAngle={4} dataKey="value" label={false} className="cursor-pointer" onClick={(data: any) => data && toggleChartFilter('type', data.name)}>
-                                    {typeMix.map((entry, i) => <Cell key={i} fill={entry.color} stroke={chartFilter?.type === 'type' && chartFilter.value === entry.name ? '#000' : '#fff'} strokeWidth={chartFilter?.type === 'type' && chartFilter.value === entry.name ? 3 : 2} />)}
+                                    {typeMix.map((entry, i) => {
+                                        const isSelected = chartFilter?.type === 'type' && chartFilter.value === entry.name;
+                                        const isSiblingDimmed = chartFilter?.type === 'type' && chartFilter.value !== entry.name;
+                                        const isDimmed = chartFilter && chartFilter.type !== 'type';
+                                        return <Cell key={i} fill={entry.color} stroke={isSelected ? '#000' : '#fff'} strokeWidth={isSelected ? 3 : 2} fillOpacity={isSiblingDimmed ? 0.25 : isDimmed ? 0.5 : 1} />;
+                                    })}
                                 </Pie>
                                 <Tooltip content={<CustomTooltip />} />
                             </PieChart>
                         </ResponsiveContainer>
                         <div className="flex flex-wrap gap-x-4 gap-y-1.5 justify-center mt-1 px-2">
-                            {typeMix.map((s, i) => (
-                                <div key={i} className="flex items-center gap-1.5 cursor-pointer hover:opacity-80 transition-opacity" onClick={() => toggleChartFilter('type', s.name)}>
-                                    <div className="w-3 h-3 rounded-sm" style={{ backgroundColor: s.color, outline: chartFilter?.type === 'type' && chartFilter.value === s.name ? '2px solid #000' : 'none' }} />
-                                    <span className="text-[11px] font-bold text-gray-600">{s.name}: <span className="text-gray-900 font-black">{s.value}</span></span>
-                                </div>
-                            ))}
+                            {typeMix.map((s, i) => {
+                                const isActive = chartFilter?.type === 'type' && chartFilter.value === s.name;
+                                const isDimmed = chartFilter?.type === 'type' && chartFilter.value !== s.name;
+                                return (
+                                    <div key={i} className={`flex items-center gap-1.5 cursor-pointer transition-all duration-200 ${isDimmed ? 'opacity-35' : 'hover:opacity-80'}`} onClick={() => toggleChartFilter('type', s.name)}>
+                                        <div className="w-3 h-3 rounded-sm transition-all" style={{ backgroundColor: s.color, outline: isActive ? '2px solid #000' : 'none', transform: isActive ? 'scale(1.3)' : 'scale(1)' }} />
+                                        <span className={`text-[11px] font-bold ${isActive ? 'text-gray-900' : 'text-gray-600'}`}>{s.name}: <span className="text-gray-900 font-black">{s.value}</span></span>
+                                    </div>
+                                );
+                            })}
                         </div>
                     </div>
                 </ChartCard>
@@ -397,7 +426,13 @@ const ClientExecutiveDashboard: React.FC<Props> = ({ missions }) => {
                             <XAxis type="number" tick={TICK} allowDecimals={false} />
                             <YAxis dataKey="rota" type="category" tick={TICK_LABEL} width={140} />
                             <Tooltip content={<CustomTooltip />} />
-                            <Bar dataKey="qtd" name="Missões" fill={CEVA_PRIMARY} radius={[0, 6, 6, 0]} barSize={18} className="cursor-pointer">
+                            <Bar dataKey="qtd" name="Missões" radius={[0, 6, 6, 0]} barSize={18} className="cursor-pointer">
+                                {routeRanking.map((entry, i) => {
+                                    const isSelected = chartFilter?.type === 'route' && (chartFilter.value === entry.rota || entry.rota.startsWith(chartFilter.value.replace('…', '')));
+                                    const isSiblingDimmed = chartFilter?.type === 'route' && !isSelected;
+                                    const isGlobalDimmed = chartFilter && chartFilter.type !== 'route';
+                                    return <Cell key={i} fill={CEVA_PRIMARY} fillOpacity={isSiblingDimmed ? 0.2 : isGlobalDimmed ? 0.5 : 1} />;
+                                })}
                                 <LabelList dataKey="qtd" position="right" style={{ fontSize: 13, fontWeight: 900, fill: '#1e293b' }} />
                             </Bar>
                         </BarChart>
@@ -411,7 +446,13 @@ const ClientExecutiveDashboard: React.FC<Props> = ({ missions }) => {
                             <XAxis type="number" tick={TICK} allowDecimals={false} />
                             <YAxis dataKey="placa" type="category" tick={TICK_LABEL} width={100} />
                             <Tooltip content={<CustomTooltip />} />
-                            <Bar dataKey="qtd" name="Missões" fill={CEVA_NAVY} radius={[0, 6, 6, 0]} barSize={18} className="cursor-pointer">
+                            <Bar dataKey="qtd" name="Missões" radius={[0, 6, 6, 0]} barSize={18} className="cursor-pointer">
+                                {vehicleRanking.map((entry, i) => {
+                                    const isSelected = chartFilter?.type === 'vehicle' && chartFilter.value === entry.placa;
+                                    const isSiblingDimmed = chartFilter?.type === 'vehicle' && !isSelected;
+                                    const isGlobalDimmed = chartFilter && chartFilter.type !== 'vehicle';
+                                    return <Cell key={i} fill={CEVA_NAVY} fillOpacity={isSiblingDimmed ? 0.2 : isGlobalDimmed ? 0.5 : 1} />;
+                                })}
                                 <LabelList dataKey="qtd" position="right" style={{ fontSize: 13, fontWeight: 900, fill: '#1e293b' }} />
                             </Bar>
                         </BarChart>
@@ -423,18 +464,27 @@ const ClientExecutiveDashboard: React.FC<Props> = ({ missions }) => {
                         <ResponsiveContainer width="100%" height={200}>
                             <PieChart>
                                 <Pie data={distanceRanges} cx="50%" cy="50%" innerRadius={40} outerRadius={75} paddingAngle={4} dataKey="value" label={false} className="cursor-pointer" onClick={(data: any) => data && toggleChartFilter('distance', data.name)}>
-                                    {distanceRanges.map((entry, i) => <Cell key={i} fill={entry.color} stroke={chartFilter?.type === 'distance' && chartFilter.value === entry.name ? '#000' : '#fff'} strokeWidth={chartFilter?.type === 'distance' && chartFilter.value === entry.name ? 3 : 2} />)}
+                                    {distanceRanges.map((entry, i) => {
+                                        const isSelected = chartFilter?.type === 'distance' && chartFilter.value === entry.name;
+                                        const isSiblingDimmed = chartFilter?.type === 'distance' && chartFilter.value !== entry.name;
+                                        const isDimmed = chartFilter && chartFilter.type !== 'distance';
+                                        return <Cell key={i} fill={entry.color} stroke={isSelected ? '#000' : '#fff'} strokeWidth={isSelected ? 3 : 2} fillOpacity={isSiblingDimmed ? 0.25 : isDimmed ? 0.5 : 1} />;
+                                    })}
                                 </Pie>
                                 <Tooltip content={<CustomTooltip />} />
                             </PieChart>
                         </ResponsiveContainer>
                         <div className="flex flex-wrap gap-x-4 gap-y-1.5 justify-center mt-1 px-2">
-                            {distanceRanges.map((s, i) => (
-                                <div key={i} className="flex items-center gap-1.5 cursor-pointer hover:opacity-80 transition-opacity" onClick={() => toggleChartFilter('distance', s.name)}>
-                                    <div className="w-3 h-3 rounded-sm" style={{ backgroundColor: s.color, outline: chartFilter?.type === 'distance' && chartFilter.value === s.name ? '2px solid #000' : 'none' }} />
-                                    <span className="text-[11px] font-bold text-gray-600">{s.name}: <span className="text-gray-900 font-black">{s.value}</span></span>
-                                </div>
-                            ))}
+                            {distanceRanges.map((s, i) => {
+                                const isActive = chartFilter?.type === 'distance' && chartFilter.value === s.name;
+                                const isDimmed = chartFilter?.type === 'distance' && chartFilter.value !== s.name;
+                                return (
+                                    <div key={i} className={`flex items-center gap-1.5 cursor-pointer transition-all duration-200 ${isDimmed ? 'opacity-35' : 'hover:opacity-80'}`} onClick={() => toggleChartFilter('distance', s.name)}>
+                                        <div className="w-3 h-3 rounded-sm transition-all" style={{ backgroundColor: s.color, outline: isActive ? '2px solid #000' : 'none', transform: isActive ? 'scale(1.3)' : 'scale(1)' }} />
+                                        <span className={`text-[11px] font-bold ${isActive ? 'text-gray-900' : 'text-gray-600'}`}>{s.name}: <span className="text-gray-900 font-black">{s.value}</span></span>
+                                    </div>
+                                );
+                            })}
                         </div>
                     </div>
                 </ChartCard>
@@ -446,7 +496,13 @@ const ClientExecutiveDashboard: React.FC<Props> = ({ missions }) => {
                             <XAxis dataKey="dia" tick={TICK} />
                             <YAxis tick={TICK} allowDecimals={false} />
                             <Tooltip content={<CustomTooltip />} />
-                            <Bar dataKey="missoes" name="Missões" fill={CEVA_NAVY} radius={[4, 4, 0, 0]} barSize={30} className="cursor-pointer">
+                            <Bar dataKey="missoes" name="Missões" radius={[4, 4, 0, 0]} barSize={30} className="cursor-pointer">
+                                {weekdayData.map((entry, i) => {
+                                    const isSelected = chartFilter?.type === 'weekday' && chartFilter.value === entry.dia;
+                                    const isSiblingDimmed = chartFilter?.type === 'weekday' && !isSelected;
+                                    const isGlobalDimmed = chartFilter && chartFilter.type !== 'weekday';
+                                    return <Cell key={i} fill={CEVA_NAVY} fillOpacity={isSiblingDimmed ? 0.2 : isGlobalDimmed ? 0.5 : 1} />;
+                                })}
                                 <LabelList dataKey="missoes" position="top" style={{ fontSize: 12, fontWeight: 900, fill: '#334155' }} formatter={(v: number) => v > 0 ? v : ''} />
                             </Bar>
                         </BarChart>
