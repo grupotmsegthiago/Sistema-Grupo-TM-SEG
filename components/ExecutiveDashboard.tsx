@@ -233,7 +233,7 @@ const ExecutiveDashboard: React.FC<Props> = ({ missions, isDirector, clientTable
                 const cell = ws[XLSX.utils.encode_cell({r, c})];
                 if (!cell) continue;
                 const v = String(cell.v).toUpperCase().trim();
-                if (v === 'Nº' || v === 'N°' || v === 'NR' || v === 'OS') {
+                if (v === 'Nº' || v === 'N°' || v === 'NR' || v === 'OS' || v === 'NUM' || v === 'NÚMERO' || v === 'NUMERO' || v === 'N' || v === 'COD' || v === 'CODIGO' || v === 'CÓDIGO') {
                     if (headerRow === -1 || r === headerRow) {
                         headerRow = r;
                         if (osCol === -1) osCol = c;
@@ -282,7 +282,7 @@ const ExecutiveDashboard: React.FC<Props> = ({ missions, isDirector, clientTable
                 const rows: any[] = XLSX.utils.sheet_to_json(ws, { defval: '' });
                 const keys = Object.keys(rows[0] || {});
                 osCol = 0;
-                const osKey = keys.find(k => { const kn = k.toUpperCase(); return kn.includes('OS') || kn.includes('GTM') || kn === 'Nº'; }) || keys[0];
+                const osKey = keys.find(k => { const kn = k.toUpperCase(); return kn.includes('OS') || kn.includes('GTM') || kn === 'Nº' || kn === 'N°' || kn === 'NR' || kn === 'NUM' || kn === 'NÚMERO' || kn === 'NUMERO' || kn === 'COD' || kn === 'CODIGO' || kn === 'CÓDIGO' || kn === 'N'; }) || keys[0];
                 const revKey = keys.find(k => { const kn = k.toUpperCase(); return kn.includes('VALOR TOTAL') || kn.includes('RECEITA') || kn.includes('FATURAMENTO'); });
                 const costKey = keys.find(k => { const kn = k.toUpperCase(); return kn.includes('CUSTO') || kn.includes('PAGAMENTO'); });
 
