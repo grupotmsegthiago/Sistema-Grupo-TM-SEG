@@ -264,7 +264,9 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
           }
           if (revTable) {
               revenue = revTable.activation_fee;
-              if (!isSpecialRuleActive && realDist > revTable.franchise_km) revenue += (realDist - revTable.franchise_km) * (revTable.price_per_extra_km || 0);
+              const revTableName = (revTable.operation_type || '').toUpperCase();
+              const isFixedPriceRevTable = revTableName.includes('LOGITECH') || revTableName.includes('200KM') || revTableName.includes('200 KM') || revTableName.includes('100KM') || revTableName.includes('100 KM');
+              if (!isSpecialRuleActive && !isFixedPriceRevTable && realDist > revTable.franchise_km) revenue += (realDist - revTable.franchise_km) * (revTable.price_per_extra_km || 0);
           }
 
           let cstTable: any = null;
@@ -284,7 +286,9 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
               }
               if (cstTable) {
                   cost = cstTable.activation_cost;
-                  if (!isSpecialRuleActive && realDist > cstTable.franchise_km) cost += (realDist - cstTable.franchise_km) * (cstTable.cost_per_extra_km || 0);
+                  const cstTableName = (cstTable.operation_type || '').toUpperCase();
+                  const isFixedPriceCstTable = cstTableName.includes('LOGITECH') || cstTableName.includes('200KM') || cstTableName.includes('200 KM') || cstTableName.includes('100KM') || cstTableName.includes('100 KM');
+                  if (!isSpecialRuleActive && !isFixedPriceCstTable && realDist > cstTable.franchise_km) cost += (realDist - cstTable.franchise_km) * (cstTable.cost_per_extra_km || 0);
               }
           }
 
