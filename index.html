@@ -2,7 +2,9 @@
 <html lang="pt-BR">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
     <meta http-equiv="Pragma" content="no-cache" />
@@ -37,11 +39,35 @@
       }
     </script>
     <style>
+      :root {
+        --vh: 1vh;
+      }
+      html, body {
+        height: 100%;
+        height: -webkit-fill-available;
+      }
       body {
         font-family: 'Plus Jakarta Sans', sans-serif;
         background-color: #f3f4f6;
         -webkit-font-smoothing: antialiased;
         -moz-osx-font-smoothing: grayscale;
+        -webkit-text-size-adjust: 100%;
+        -webkit-tap-highlight-color: transparent;
+        min-height: 100vh;
+        min-height: -webkit-fill-available;
+        padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+      }
+      #root {
+        height: 100%;
+        height: -webkit-fill-available;
+      }
+      .h-screen-ios {
+        height: 100vh;
+        height: calc(var(--vh, 1vh) * 100);
+        height: -webkit-fill-available;
+      }
+      @supports (height: 100dvh) {
+        .h-screen-ios { height: 100dvh; }
       }
       .scrollbar-hide::-webkit-scrollbar {
           display: none;
@@ -49,10 +75,6 @@
       .scrollbar-hide {
           -ms-overflow-style: none;
           scrollbar-width: none;
-      }
-      .scrollbar-thin {
-          scrollbar-width: thin;
-          scrollbar-color: #cbd5e1 transparent;
       }
       .scrollbar-thin::-webkit-scrollbar {
           width: 6px;
@@ -62,22 +84,70 @@
           background: transparent;
       }
       .scrollbar-thin::-webkit-scrollbar-thumb {
-          background-color: #cbd5e1;
+          background: #cbd5e1;
           border-radius: 3px;
       }
       .scrollbar-thin::-webkit-scrollbar-thumb:hover {
-          background-color: #94a3b8;
+          background: #94a3b8;
+      }
+      .scrollbar-thin {
+          scrollbar-width: thin;
+          scrollbar-color: #cbd5e1 transparent;
       }
       .animate-fade-in {
         animation: fadeIn 0.3s ease-in-out;
       }
       @keyframes fadeIn {
-        from { opacity: 0; transform: translateY(10px); }
-        to { opacity: 1; transform: translateY(0); }
+        from { opacity: 0; -webkit-transform: translateY(10px); transform: translateY(10px); }
+        to { opacity: 1; -webkit-transform: translateY(0); transform: translateY(0); }
       }
+      #ios-error-overlay {
+        display: none;
+        position: fixed;
+        inset: 0;
+        z-index: 99999;
+        background: #1e293b;
+        color: #f1f5f9;
+        padding: 24px;
+        font-family: 'Plus Jakarta Sans', monospace, sans-serif;
+        overflow-y: auto;
+        -webkit-overflow-scrolling: touch;
+      }
+      #ios-error-overlay.active { display: flex; flex-direction: column; }
+      #ios-error-overlay h2 { color: #f87171; font-size: 18px; font-weight: 800; margin-bottom: 12px; }
+      #ios-error-overlay pre { background: #0f172a; padding: 16px; border-radius: 8px; font-size: 12px; white-space: pre-wrap; word-break: break-all; overflow-x: auto; -webkit-overflow-scrolling: touch; flex: 1; }
+      #ios-error-overlay button { margin-top: 16px; background: #3b82f6; color: white; border: none; padding: 12px 24px; border-radius: 8px; font-weight: 700; font-size: 14px; cursor: pointer; -webkit-appearance: none; }
     </style>
+    <script>
+      (function() {
+        function setVh() {
+          var vh = window.innerHeight * 0.01;
+          document.documentElement.style.setProperty('--vh', vh + 'px');
+        }
+        setVh();
+        window.addEventListener('resize', setVh);
+        window.addEventListener('orientationchange', function() { setTimeout(setVh, 100); });
+
+        window.onerror = function(msg, src, line, col, err) {
+          showIosError('Erro JS Global', msg + '\nArquivo: ' + (src || '?') + '\nLinha: ' + (line || '?') + ':' + (col || '?') + '\n\n' + (err && err.stack ? err.stack : ''));
+          return false;
+        };
+        window.addEventListener('unhandledrejection', function(ev) {
+          var reason = ev.reason;
+          var detail = reason instanceof Error ? reason.message + '\n' + reason.stack : String(reason);
+          showIosError('Promise Rejeitada', detail);
+        });
+        window.showIosError = function(title, detail) {
+          var el = document.getElementById('ios-error-overlay');
+          if (!el) return;
+          el.innerHTML = '<h2>ERRO: ' + title + '</h2><pre>' + detail + '</pre><button onclick="location.reload()">Recarregar App</button><p style="margin-top:8px;font-size:11px;color:#94a3b8;">Envie esta tela ao suporte tecnico.</p>';
+          el.classList.add('active');
+        };
+      })();
+    </script>
   </head>
   <body>
+    <div id="ios-error-overlay"></div>
     <div id="root"></div>
     <script type="module" src="/index.tsx"></script>
   </body>
