@@ -483,11 +483,16 @@ Retorne APENAS HTML com sections: SÍNTESE OPERACIONAL, DILIGÊNCIA E CONSTATAÇ
                 const canvas = await html2canvas(section, {
                     scale: 3,
                     useCORS: true,
+                    allowTaint: true,
                     backgroundColor: null,
                     windowWidth: 794,
                     logging: false,
-                });
-                const imgData = canvas.toDataURL('image/png');
+                }).catch(() => null);
+                if (!canvas) continue;
+                let imgData: string;
+                try {
+                    imgData = canvas.toDataURL('image/png');
+                } catch { continue; }
                 const imgWidth = usableWidth;
                 const imgHeight = (canvas.height * imgWidth) / canvas.width;
 
@@ -530,7 +535,7 @@ Retorne APENAS HTML com sections: SÍNTESE OPERACIONAL, DILIGÊNCIA E CONSTATAÇ
 
             pdf.save(`Relatorio_Operacional_${mission.id}_${new Date().toISOString().slice(0, 10)}.pdf`);
         } catch (error: any) {
-            alert('Erro ao exportar PDF: ' + error.message);
+            alert('Erro ao exportar PDF: ' + (error?.message || String(error) || 'Erro desconhecido'));
         } finally {
             setIsExporting(false);
         }
@@ -641,7 +646,7 @@ Retorne APENAS HTML com sections: SÍNTESE OPERACIONAL, DILIGÊNCIA E CONSTATAÇ
                         <h2 className="text-[12px] font-black uppercase tracking-[0.15em]" style={{ color: primaryColor }}>Trajeto da Operação</h2>
                     </div>
                     <div className="rounded-xl overflow-hidden border border-gray-200" style={{ boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
-                        <img src={routeMapUrl} alt="Mapa do Trajeto" className="w-full h-auto object-cover" crossOrigin="anonymous" />
+                        <img src={routeMapUrl} alt="Mapa do Trajeto" className="w-full h-auto object-cover" />
                         <div className="px-4 py-2 bg-gray-50 flex items-center justify-between border-t border-gray-100">
                             <div className="flex items-center gap-3">
                                 <div className="flex items-center gap-1.5"><div className="w-2.5 h-2.5 rounded-full bg-green-600" /><span className="text-[9px] font-bold text-gray-500">A — Origem</span></div>
