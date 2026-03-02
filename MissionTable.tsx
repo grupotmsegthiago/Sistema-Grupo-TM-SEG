@@ -882,7 +882,7 @@ Grupo TMSEG`;
                       <Marker
                           key={m.id}
                           position={m.position}
-                          icon={{ url: m.status === MissionStatus.IN_TRANSIT ? 'http://maps.google.com/mapfiles/ms/icons/green-dot.png' : 'http://maps.google.com/mapfiles/ms/icons/blue-dot.png' }}
+                          icon={{ url: m.status === MissionStatus.IN_TRANSIT ? 'https://maps.google.com/mapfiles/ms/icons/green-dot.png' : 'https://maps.google.com/mapfiles/ms/icons/blue-dot.png' }}
                           onClick={() => setSelectedMapMission(m)}
                       />
                   ))}

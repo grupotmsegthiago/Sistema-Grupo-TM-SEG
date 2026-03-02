@@ -69,7 +69,7 @@ const ChangePasswordModal: React.FC<ChangePasswordModalProps> = ({ onSuccess }) 
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center relative overflow-hidden font-sans bg-gray-100">
+    <div className="h-screen-ios flex items-center justify-center relative overflow-hidden font-sans bg-gray-100">
       <div className="absolute inset-0 z-0">
         <img 
           src="/background.png" 

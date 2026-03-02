@@ -272,11 +272,11 @@ const PublicAgentRegistration: React.FC = () => {
       }
   };
 
-  if (!isLoaded) return <div className="h-screen flex items-center justify-center text-gray-500 bg-gray-50"><Loader2 className="animate-spin mr-2"/> Carregando sistema...</div>;
+  if (!isLoaded) return <div className="h-screen-ios flex items-center justify-center text-gray-500 bg-gray-50"><Loader2 className="animate-spin mr-2"/> Carregando sistema...</div>;
 
   if (success) {
       return (
-          <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-200 flex items-center justify-center p-4">
+          <div className="h-screen-ios bg-gradient-to-br from-gray-50 to-gray-200 flex items-center justify-center p-4">
               <div className="bg-white p-10 rounded-3xl shadow-2xl max-w-md w-full text-center border border-gray-100 animate-fade-in relative overflow-hidden">
                   <div className="absolute top-0 left-0 w-full h-2 bg-green-600"></div>
                   
@@ -314,7 +314,7 @@ const PublicAgentRegistration: React.FC = () => {
 
   if (blocked) {
       return (
-          <div className="min-h-screen bg-gray-100 flex items-center justify-center p-4">
+          <div className="h-screen-ios bg-gray-100 flex items-center justify-center p-4">
               <div className="bg-white p-8 rounded-2xl shadow-lg max-w-md w-full text-center border-t-4 border-orange-500">
                   <div className="w-16 h-16 bg-orange-100 rounded-full flex items-center justify-center mx-auto mb-4">
                       <AlertTriangle size={32} className="text-orange-600" />
@@ -330,7 +330,7 @@ const PublicAgentRegistration: React.FC = () => {
   }
 
   return (
-    <div className="min-h-screen bg-[#f8fafc] flex flex-col font-sans">
+    <div className="bg-[#f8fafc] flex flex-col font-sans" style={{ minHeight: 'calc(var(--vh, 1vh) * 100)' }}>
         
         {/* Banner Superior */}
         <div className="bg-black text-white pb-24 pt-12 px-6 relative overflow-hidden">

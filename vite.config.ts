@@ -16,8 +16,10 @@ export default defineConfig(({ mode }) => {
       host: '0.0.0.0',
       port: 5000,
     },
+    build: {
+      target: ['es2020', 'safari13'],
+    },
     define: {
-      // Injeta a chave como string literal no build
       'process.env.API_KEY': JSON.stringify(finalKey),
       'process.env.NODE_ENV': JSON.stringify(mode),
     }

@@ -136,7 +136,7 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
   };
 
   return (
-    <div className="min-h-screen flex font-sans overflow-y-auto relative">
+    <div className="flex font-sans overflow-y-auto relative h-screen-ios">
 
       <div className="absolute inset-0 z-0">
         {bgImages.map((img, idx) => (
@@ -167,7 +167,7 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
         </div>
       </div>
 
-      <div className="relative z-10 flex items-center w-full lg:w-[45%] min-h-screen">
+      <div className="relative z-10 flex items-center w-full lg:w-[45%] h-screen-ios">
         <div className="w-full max-w-md mx-auto px-8 md:px-12 py-12">
 
           <div className="mb-10">
