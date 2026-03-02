@@ -511,6 +511,15 @@ export const calculateMissionFinancials = (
             return (tProv.includes(missionProviderName) || missionProviderName.includes(tProv)) && tProv.length > 2;
          });
     }
+    if (filteredProviderTables.length === 0 && missionProviderName.length > 3) {
+         const providerWords = missionProviderName.split(/\s+/).filter(w => w.length > 2);
+         if (providerWords.length > 0) {
+             filteredProviderTables = providerTables.filter(t => {
+                 const tProv = normalize(t.provider);
+                 return providerWords.some(w => tProv.includes(w)) && tProv.length > 2;
+             });
+         }
+    }
 
     const providerDistReference = Math.max(totalDistance, distanceForCalculation);
 
