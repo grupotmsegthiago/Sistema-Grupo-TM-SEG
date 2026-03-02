@@ -34,7 +34,7 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [isSoundEnabled, setIsSoundEnabled] = useState(true);
   const [permission, setPermission] = useState<NotificationPermission>(
-    typeof window !== 'undefined' ? (Notification.permission as NotificationPermission) : 'default'
+    typeof window !== 'undefined' && 'Notification' in window ? (Notification.permission as NotificationPermission) : 'default'
   );
   
   const [audio] = useState(new Audio('https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3'));
@@ -64,7 +64,7 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
   }, []);
 
   const sendBrowserNotification = useCallback((title: string, body: string) => {
-      if (permission === 'granted') {
+      if (permission === 'granted' && 'Notification' in window) {
           try {
               new Notification(title, {
                   body,
