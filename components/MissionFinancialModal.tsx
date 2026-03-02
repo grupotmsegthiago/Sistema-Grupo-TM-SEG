@@ -817,42 +817,6 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                 </div>
                             </div>
 
-                            <div className="mt-auto">
-                                <div className="p-4 bg-green-50 border border-green-100 rounded-xl relative group">
-                                    <div className="flex justify-between items-center mb-1">
-                                        <label className="text-[10px] font-black text-green-700 uppercase">Valor Final (Serviço + Pedágio)</label>
-                                        <button type="button" onClick={handleRecalculateClient} className="flex items-center gap-1 text-[9px] font-bold text-green-700 hover:text-green-900 bg-green-100 hover:bg-green-200 px-2 py-0.5 rounded transition-colors" title="Resetar para o cálculo da tabela">
-                                            <RefreshCw size={10} /> Recalcular
-                                        </button>
-                                    </div>
-                                    <div className="flex items-baseline gap-2">
-                                        <span className="text-sm font-bold text-green-600">R$</span>
-                                        <input 
-                                            type="text" 
-                                            inputMode="decimal"
-                                            className={`w-full bg-white/60 border border-green-200 rounded-lg px-2 py-1 outline-none font-black text-3xl text-green-900 font-mono focus:ring-2 focus:ring-green-400 focus:border-green-400 ${!canEditOpsData ? 'pointer-events-none opacity-70' : 'cursor-text'}`}
-                                            value={revenueInput} 
-                                            onChange={e => { if (canEditOpsData) { setUseSavedValues(true); setRevenueInput(e.target.value); } }}
-                                            readOnly={!canEditOpsData}
-                                            data-testid="input-revenue-total"
-                                        />
-                                    </div>
-                                    <p className="text-[8px] text-green-600 font-bold mt-1 italic">{canEditOpsData ? '* EDITÁVEL - DIRETORIA / ADMINISTRADOR (toque para editar)' : '* VALOR TOTAL CALCULADO BASEADO NAS FRANQUIAS E MEDIÇÃO'}</p>
-                                </div>
-
-                                <div className="mt-3 flex items-center justify-between px-2">
-                                    <label className="text-[10px] font-black text-blue-700 uppercase">Taxa IBL (12%):</label>
-                                    <div className="flex items-center gap-2">
-                                        <span className="text-xs font-bold text-blue-600">{financialData.iblFee > 0 ? formatCurrency(financialData.iblFee) : '---'}</span>
-                                        <button 
-                                            onClick={() => { setIblEnabled(!iblEnabled); }} 
-                                            className={`w-8 h-4 rounded-full transition-colors relative ${iblEnabled ? 'bg-blue-600' : 'bg-gray-300'}`}
-                                        >
-                                            <div className={`absolute top-0.5 left-0.5 w-3 h-3 bg-white rounded-full transition-transform ${iblEnabled ? 'translate-x-4' : ''}`}></div>
-                                        </button>
-                                    </div>
-                                </div>
-                            </div>
                         </div>
 
                         {/* COLUNA CUSTO (FORNECEDOR) */}
@@ -894,7 +858,6 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                         </button>
                                     )}
                                 </div>
-                                {/* LOG DE DETECÇÃO DA IA */}
                                 <div className="mt-2 text-[9px] font-bold text-gray-400 flex items-center gap-1.5 bg-gray-50 p-2 rounded-lg border border-gray-100">
                                     <BrainCircuit size={12} className="text-red-500" />
                                     <span>IA Detectou: {financialData.provider.detectionLog}</span>
@@ -968,30 +931,6 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                     </div>
                                 </div>
                             </div>
-
-                            <div className="mt-auto">
-                                <div className="p-4 bg-blue-50 border border-blue-100 rounded-xl relative group">
-                                    <div className="flex justify-between items-center mb-1">
-                                        <label className="text-[10px] font-black text-blue-700 uppercase">Pagamento Fornecedor (Tabela + Pedágio)</label>
-                                        <button type="button" onClick={handleRecalculateProvider} className="flex items-center gap-1 text-[9px] font-bold text-blue-700 hover:text-blue-900 bg-blue-100 hover:bg-blue-200 px-2 py-0.5 rounded transition-colors" title="Resetar para o cálculo da tabela">
-                                            <RefreshCw size={10} /> Recalcular
-                                        </button>
-                                    </div>
-                                    <div className="flex items-baseline gap-2">
-                                        <span className="text-sm font-bold text-blue-600">R$</span>
-                                        <input 
-                                            type="text" 
-                                            inputMode="decimal"
-                                            className={`w-full bg-white/60 border border-blue-200 rounded-lg px-2 py-1 outline-none font-black text-3xl text-blue-900 font-mono focus:ring-2 focus:ring-blue-400 focus:border-blue-400 ${!canEditOpsData ? 'pointer-events-none opacity-70' : 'cursor-text'}`}
-                                            value={costInput} 
-                                            onChange={e => { if (canEditOpsData) { setUseSavedValues(true); setCostInput(e.target.value); } }}
-                                            readOnly={!canEditOpsData}
-                                            data-testid="input-cost-total"
-                                        />
-                                    </div>
-                                    <p className="text-[8px] text-blue-600 font-bold mt-1 italic">{canEditOpsData ? '* EDITÁVEL - DIRETORIA / ADMINISTRADOR (toque para editar)' : ''}</p>
-                                </div>
-                            </div>
                         </div>
                     </div>
 
@@ -1052,6 +991,76 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                     <Briefcase size={16} className="text-blue-300 ml-2" />
                                 </div>
                             </div>
+                        </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <div className="p-4 bg-green-50 border border-green-100 rounded-xl relative group">
+                            <div className="flex justify-between items-center mb-2">
+                                <label className="text-[10px] font-black text-green-700 uppercase">Valor Final Cliente (Serviço + Pedágio)</label>
+                                <button type="button" onClick={handleRecalculateClient} className="flex items-center gap-1 text-[9px] font-bold text-green-700 hover:text-green-900 bg-green-100 hover:bg-green-200 px-2 py-0.5 rounded transition-colors" title="Resetar para o cálculo da tabela">
+                                    <RefreshCw size={10} /> Recalcular
+                                </button>
+                            </div>
+                            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[9px] font-bold text-green-600 mb-2 bg-green-100/60 px-2 py-1.5 rounded-lg border border-green-200">
+                                <span>{formatCurrency(financialData.client.base)} <span className="text-green-400">(base)</span></span>
+                                <span>+ {formatCurrency(financialData.client.extraKmVal)} <span className="text-green-400">(km)</span></span>
+                                <span>+ {formatCurrency(financialData.client.extraHrVal)} <span className="text-green-400">(hora)</span></span>
+                                <span>+ {formatCurrency(parseNumber(tollInput))} <span className="text-green-400">(pedágio)</span></span>
+                            </div>
+                            <div className="flex items-baseline gap-2">
+                                <span className="text-sm font-bold text-green-600">R$</span>
+                                <input 
+                                    type="text" 
+                                    inputMode="decimal"
+                                    className={`w-full bg-white/60 border border-green-200 rounded-lg px-2 py-1 outline-none font-black text-3xl text-green-900 font-mono focus:ring-2 focus:ring-green-400 focus:border-green-400 ${!canEditOpsData ? 'pointer-events-none opacity-70' : 'cursor-text'}`}
+                                    value={revenueInput} 
+                                    onChange={e => { if (canEditOpsData) { setUseSavedValues(true); setRevenueInput(e.target.value); } }}
+                                    readOnly={!canEditOpsData}
+                                    data-testid="input-revenue-total"
+                                />
+                            </div>
+                            <p className="text-[8px] text-green-600 font-bold mt-1 italic">{canEditOpsData ? '* EDITÁVEL - DIRETORIA / ADMINISTRADOR (toque para editar)' : '* VALOR TOTAL CALCULADO BASEADO NAS FRANQUIAS E MEDIÇÃO'}</p>
+                            <div className="mt-3 flex items-center justify-between px-1 pt-2 border-t border-green-200">
+                                <label className="text-[10px] font-black text-blue-700 uppercase">Taxa IBL (12%):</label>
+                                <div className="flex items-center gap-2">
+                                    <span className="text-xs font-bold text-blue-600">{financialData.iblFee > 0 ? formatCurrency(financialData.iblFee) : '---'}</span>
+                                    <button 
+                                        onClick={() => { setIblEnabled(!iblEnabled); }} 
+                                        className={`w-8 h-4 rounded-full transition-colors relative ${iblEnabled ? 'bg-blue-600' : 'bg-gray-300'}`}
+                                    >
+                                        <div className={`absolute top-0.5 left-0.5 w-3 h-3 bg-white rounded-full transition-transform ${iblEnabled ? 'translate-x-4' : ''}`}></div>
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div className="p-4 bg-blue-50 border border-blue-100 rounded-xl relative group">
+                            <div className="flex justify-between items-center mb-2">
+                                <label className="text-[10px] font-black text-blue-700 uppercase">Pagamento Fornecedor (Tabela + Pedágio)</label>
+                                <button type="button" onClick={handleRecalculateProvider} className="flex items-center gap-1 text-[9px] font-bold text-blue-700 hover:text-blue-900 bg-blue-100 hover:bg-blue-200 px-2 py-0.5 rounded transition-colors" title="Resetar para o cálculo da tabela">
+                                    <RefreshCw size={10} /> Recalcular
+                                </button>
+                            </div>
+                            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[9px] font-bold text-blue-600 mb-2 bg-blue-100/60 px-2 py-1.5 rounded-lg border border-blue-200">
+                                <span>{formatCurrency(financialData.provider.base)} <span className="text-blue-400">(base)</span></span>
+                                <span>+ {formatCurrency(financialData.provider.extraKmVal)} <span className="text-blue-400">(km)</span></span>
+                                <span>+ {formatCurrency(financialData.provider.extraHrVal)} <span className="text-blue-400">(hora)</span></span>
+                                <span>+ {formatCurrency(parseNumber(tollProviderInput))} <span className="text-blue-400">(pedágio)</span></span>
+                            </div>
+                            <div className="flex items-baseline gap-2">
+                                <span className="text-sm font-bold text-blue-600">R$</span>
+                                <input 
+                                    type="text" 
+                                    inputMode="decimal"
+                                    className={`w-full bg-white/60 border border-blue-200 rounded-lg px-2 py-1 outline-none font-black text-3xl text-blue-900 font-mono focus:ring-2 focus:ring-blue-400 focus:border-blue-400 ${!canEditOpsData ? 'pointer-events-none opacity-70' : 'cursor-text'}`}
+                                    value={costInput} 
+                                    onChange={e => { if (canEditOpsData) { setUseSavedValues(true); setCostInput(e.target.value); } }}
+                                    readOnly={!canEditOpsData}
+                                    data-testid="input-cost-total"
+                                />
+                            </div>
+                            <p className="text-[8px] text-blue-600 font-bold mt-1 italic">{canEditOpsData ? '* EDITÁVEL - DIRETORIA / ADMINISTRADOR (toque para editar)' : ''}</p>
                         </div>
                     </div>
 
