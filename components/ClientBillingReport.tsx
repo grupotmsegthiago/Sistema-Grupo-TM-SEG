@@ -306,13 +306,12 @@ const ClientBillingReport: React.FC = () => {
 
     const cellStyle: React.CSSProperties = {
         border: '1px solid #9ca3af',
-        padding: '2px 4px',
-        fontSize: '7.5px',
+        padding: '1px 2px',
+        fontSize: '7px',
         textAlign: 'center',
         whiteSpace: 'nowrap',
         overflow: 'hidden',
-        textOverflow: 'ellipsis',
-        maxWidth: '90px'
+        textOverflow: 'ellipsis'
     };
     const cellRight: React.CSSProperties = { ...cellStyle, textAlign: 'right' };
     const cellBold: React.CSSProperties = { ...cellStyle, fontWeight: 800 };
@@ -320,15 +319,15 @@ const ClientBillingReport: React.FC = () => {
         ...cellStyle,
         backgroundColor: '#e5e7eb',
         fontWeight: 900,
-        fontSize: '7px',
+        fontSize: '6.5px',
         textTransform: 'uppercase' as const,
         color: '#000'
     };
     const groupHeaderStyle: React.CSSProperties = {
         ...headerStyle,
         backgroundColor: '#d1d5db',
-        fontSize: '7.5px',
-        letterSpacing: '0.5px'
+        fontSize: '7px',
+        letterSpacing: '0.3px'
     };
 
     const bgKm = '#eef2ff';
@@ -353,30 +352,38 @@ const ClientBillingReport: React.FC = () => {
         <div className="space-y-6 animate-fade-in pb-20 relative">
             <style>{`
                 @media print {
-                    @page { size: A4 landscape; margin: 2mm; }
+                    @page { size: A4 landscape; margin: 3mm; }
                     body * { visibility: hidden !important; }
                     #print-area, #print-area * { visibility: visible !important; }
                     #print-area {
                         position: absolute; left: 0; top: 0;
-                        width: 297mm;
+                        width: 290mm;
                         transform-origin: top left;
                     }
                     #print-area table {
-                        table-layout: auto !important;
-                        width: 100% !important;
+                        table-layout: fixed !important;
+                        width: 290mm !important;
                         border-collapse: collapse !important;
+                        page-break-inside: auto !important;
+                    }
+                    #print-area thead {
+                        display: table-header-group !important;
+                    }
+                    #print-area tr {
+                        page-break-inside: avoid !important;
                     }
                     #print-area td, #print-area th {
-                        padding: 1px 2px !important;
-                        font-size: 5.5px !important;
+                        padding: 0.5px 1px !important;
+                        font-size: 4.8px !important;
                         max-width: none !important;
                         white-space: nowrap !important;
-                        overflow: visible !important;
-                        border: 0.5px solid #999 !important;
+                        overflow: hidden !important;
+                        text-overflow: ellipsis !important;
+                        border: 0.3px solid #999 !important;
+                        line-height: 1.1 !important;
                     }
                     #print-area h1 { font-size: 10px !important; }
                     #print-area p { font-size: 7px !important; }
-                    #print-area colgroup { display: none !important; }
                     .no-print { display: none !important; }
                 }
             `}</style>
@@ -442,36 +449,36 @@ const ClientBillingReport: React.FC = () => {
                     <div style={{ overflowX: 'auto' }}>
                         <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed' }}>
                             <colgroup>
-                                <col style={{ width: '34px' }} />
-                                <col style={{ width: '130px' }} />
-                                <col style={{ width: '58px' }} />
-                                <col style={{ width: '46px' }} />
-                                <col style={{ width: '42px' }} />
-                                <col style={{ width: '52px' }} />
-                                <col style={{ width: '52px' }} />
-                                <col style={{ width: '48px' }} />
-                                <col style={{ width: '52px' }} />
-                                <col style={{ width: '52px' }} />
-                                <col style={{ width: '42px' }} />
-                                <col style={{ width: '58px' }} />
-                                <col style={{ width: '58px' }} />
-                                <col style={{ width: '52px' }} />
-                                <col style={{ width: '42px' }} />
-                                <col style={{ width: '48px' }} />
-                                <col style={{ width: '48px' }} />
-                                <col style={{ width: '42px' }} />
-                                <col style={{ width: '42px' }} />
-                                <col style={{ width: '42px' }} />
-                                <col style={{ width: '42px' }} />
-                                <col style={{ width: '34px' }} />
-                                <col style={{ width: '52px' }} />
-                                <col style={{ width: '56px' }} />
-                                <col style={{ width: '42px' }} />
-                                <col style={{ width: '52px' }} />
-                                <col style={{ width: '56px' }} />
-                                <col style={{ width: '56px' }} />
-                                <col style={{ width: '52px' }} />
-                                <col style={{ width: '62px' }} />
+                                <col style={{ width: '2.8%' }} />
+                                <col style={{ width: '10%' }} />
+                                <col style={{ width: '4.2%' }} />
+                                <col style={{ width: '3%' }} />
+                                <col style={{ width: '3%' }} />
+                                <col style={{ width: '3.5%' }} />
+                                <col style={{ width: '3.5%' }} />
+                                <col style={{ width: '3.2%' }} />
+                                <col style={{ width: '4.5%' }} />
+                                <col style={{ width: '4%' }} />
+                                <col style={{ width: '3%' }} />
+                                <col style={{ width: '4.5%' }} />
+                                <col style={{ width: '4.5%' }} />
+                                <col style={{ width: '4%' }} />
+                                <col style={{ width: '3%' }} />
+                                <col style={{ width: '3.2%' }} />
+                                <col style={{ width: '3.2%' }} />
+                                <col style={{ width: '3%' }} />
+                                <col style={{ width: '3%' }} />
+                                <col style={{ width: '3%' }} />
+                                <col style={{ width: '3%' }} />
+                                <col style={{ width: '2.5%' }} />
+                                <col style={{ width: '3.5%' }} />
+                                <col style={{ width: '3.8%' }} />
+                                <col style={{ width: '2.5%' }} />
+                                <col style={{ width: '3.5%' }} />
+                                <col style={{ width: '3.8%' }} />
+                                <col style={{ width: '3.8%' }} />
+                                <col style={{ width: '3.5%' }} />
+                                <col style={{ width: '4.2%' }} />
                             </colgroup>
                             <thead>
                                 <tr>
