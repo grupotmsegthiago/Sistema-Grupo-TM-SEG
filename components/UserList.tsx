@@ -101,9 +101,16 @@ const UserList: React.FC<UserListProps> = ({ onAddUser, onEdit, userType }) => {
             providers: user.provider_id ? { name: providerMap[user.provider_id] || 'Desconhecido' } : null,
         }));
 
+        const currentUserData = (() => {
+            try { return JSON.parse(localStorage.getItem('userData') || '{}'); } catch { return {}; }
+        })();
+        const currentUserClientId = currentUserData.client_id;
+
         const filteredUsers = enrichedUsers.filter((u: any) => {
             if (userType === 'internal') {
                 return u.user_type === 'internal' || (!u.client_id && !u.provider_id);
+            } else if (userType === 'client' && currentUserClientId) {
+                return u.user_type === 'client' && u.client_id === currentUserClientId;
             } else {
                 return u.user_type === userType;
             }

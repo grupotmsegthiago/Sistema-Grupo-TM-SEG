@@ -38,10 +38,20 @@ const UserForm: React.FC<UserFormProps> = ({ onBack, userType, id }) => {
   const [emailError, setEmailError] = useState('');
   const [generatedPass, setGeneratedPass] = useState('');
 
+  const currentUser = (() => {
+    try { return JSON.parse(localStorage.getItem('userData') || '{}'); } catch { return {}; }
+  })();
+  const isClientUser = !!currentUser.client_id;
+
   useEffect(() => {
     fetchAuxData();
     if (id) loadUser();
-    else generateRandomPassword();
+    else {
+      generateRandomPassword();
+      if (isClientUser && userType === 'client') {
+        setFormData(prev => ({ ...prev, clientId: currentUser.client_id }));
+      }
+    }
   }, [id]);
 
   const fetchAuxData = async () => {
@@ -222,13 +232,24 @@ const UserForm: React.FC<UserFormProps> = ({ onBack, userType, id }) => {
                   <div className="bg-blue-50 p-4 rounded-xl border border-blue-100 animate-in fade-in">
                       <label className={LABEL_CLASS}>Cliente Vinculado</label>
                       <div className="relative">
-                          <select required className={`${SELECT_CLASS} bg-white`} value={formData.clientId} onChange={e => setFormData({...formData, clientId: e.target.value})}>
-                              <option value="">Selecione a empresa...</option>
-                              {clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-                          </select>
-                          <Building2 size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-blue-600 pointer-events-none" />
+                          {isClientUser ? (
+                              <>
+                                  <div className={`${INPUT_CLASS} bg-gray-100 cursor-not-allowed flex items-center`}>
+                                      <span className="text-gray-700 font-medium">{clients.find(c => c.id === currentUser.client_id)?.name || 'Carregando...'}</span>
+                                  </div>
+                                  <Building2 size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-blue-600 pointer-events-none" />
+                              </>
+                          ) : (
+                              <>
+                                  <select required className={`${SELECT_CLASS} bg-white`} value={formData.clientId} onChange={e => setFormData({...formData, clientId: e.target.value})}>
+                                      <option value="">Selecione a empresa...</option>
+                                      {clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                                  </select>
+                                  <Building2 size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-blue-600 pointer-events-none" />
+                              </>
+                          )}
                       </div>
-                      <p className="text-[10px] text-blue-700 mt-2 flex items-center gap-1"><Info size={12}/> Este usuário verá apenas dados deste cliente.</p>
+                      <p className="text-[10px] text-blue-700 mt-2 flex items-center gap-1"><Info size={12}/> {isClientUser ? 'Novo usuário será vinculado automaticamente à sua empresa.' : 'Este usuário verá apenas dados deste cliente.'}</p>
                   </div>
               )}
 
