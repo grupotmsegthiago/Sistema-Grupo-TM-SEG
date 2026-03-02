@@ -670,15 +670,74 @@ export async function registerRoutes(
   });
 
   app.post("/api/missions/ensure-report-column", async (_req: Request, res: Response) => {
+    res.json({ ok: true });
+  });
+
+  const ensureReportsTable = async () => {
+    const dbUrl = process.env.DATABASE_URL;
+    if (!dbUrl) return;
+    const pool = new pg.Pool({ connectionString: dbUrl, ssl: { rejectUnauthorized: false }, max: 2 });
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS operational_reports (
+        id SERIAL PRIMARY KEY,
+        mission_id TEXT NOT NULL UNIQUE,
+        report_html TEXT NOT NULL DEFAULT '',
+        acionado_por TEXT DEFAULT '',
+        descritivo TEXT DEFAULT '',
+        whatsapp_raw TEXT DEFAULT '',
+        photos JSONB DEFAULT '[]',
+        created_at TIMESTAMPTZ DEFAULT NOW(),
+        updated_at TIMESTAMPTZ DEFAULT NOW()
+      );
+    `);
+    await pool.end();
+  };
+  ensureReportsTable().catch(e => console.warn('Erro ao criar tabela operational_reports:', e.message));
+
+  app.get("/api/missions/:id/operational-report", async (req: Request, res: Response) => {
+    let pool;
     try {
       const dbUrl = process.env.DATABASE_URL;
-      if (!dbUrl) { res.json({ ok: false }); return; }
-      const pool = new pg.Pool({ connectionString: dbUrl, ssl: { rejectUnauthorized: false } });
-      await pool.query(`ALTER TABLE missions ADD COLUMN IF NOT EXISTS operational_report TEXT`);
-      await pool.end();
+      if (!dbUrl) { res.json({ operational_report: null }); return; }
+      pool = new pg.Pool({ connectionString: dbUrl, ssl: { rejectUnauthorized: false }, max: 2 });
+      const result = await pool.query('SELECT * FROM operational_reports WHERE mission_id = $1', [req.params.id]);
+      if (result.rows.length > 0) {
+        const row = result.rows[0];
+        res.json({
+          operational_report: row.report_html,
+          acionado_por: row.acionado_por || '',
+          descritivo: row.descritivo || '',
+          whatsapp_raw: row.whatsapp_raw || '',
+          photos: row.photos || []
+        });
+      } else {
+        res.json({ operational_report: null });
+      }
+    } catch (e: any) {
+      res.json({ operational_report: null, error: e.message });
+    } finally {
+      if (pool) await pool.end();
+    }
+  });
+
+  app.patch("/api/missions/:id/operational-report", async (req: Request, res: Response) => {
+    let pool;
+    try {
+      const dbUrl = process.env.DATABASE_URL;
+      if (!dbUrl) { res.status(500).json({ ok: false, error: 'No DATABASE_URL' }); return; }
+      pool = new pg.Pool({ connectionString: dbUrl, ssl: { rejectUnauthorized: false }, max: 2 });
+      const { operational_report, acionado_por, descritivo, whatsapp_raw, photos } = req.body;
+      await pool.query(`
+        INSERT INTO operational_reports (mission_id, report_html, acionado_por, descritivo, whatsapp_raw, photos, updated_at)
+        VALUES ($1, $2, $3, $4, $5, $6, NOW())
+        ON CONFLICT (mission_id)
+        DO UPDATE SET report_html = $2, acionado_por = $3, descritivo = $4, whatsapp_raw = $5, photos = $6, updated_at = NOW()
+      `, [req.params.id, operational_report || '', acionado_por || '', descritivo || '', whatsapp_raw || '', JSON.stringify(photos || [])]);
       res.json({ ok: true });
     } catch (e: any) {
-      res.json({ ok: false, error: e.message });
+      res.status(500).json({ ok: false, error: e.message });
+    } finally {
+      if (pool) await pool.end();
     }
   });
 

@@ -88,21 +88,23 @@ const MissionOperationalReport: React.FC<Props> = ({ mission, onClose, isClientV
 
     useEffect(() => {
         const fetchData = async () => {
-            await fetch('/api/missions/ensure-report-column', { method: 'POST' }).catch(() => {});
-
             const logsRes = await supabase.from('mission_logs').select('*').eq('mission_id', mission.id).order('created_at', { ascending: true });
             setMissionLogs(logsRes.data || []);
 
             try {
-                const reportRes = await supabase.from('missions').select('operational_report').eq('id', mission.id).single();
-                if (reportRes.data?.operational_report) {
-                    setGeneratedReport(reportRes.data.operational_report);
+                const reportRes = await fetch(`/api/missions/${encodeURIComponent(mission.id)}/operational-report`);
+                const reportData = await reportRes.json();
+                if (reportData?.operational_report) {
+                    setGeneratedReport(reportData.operational_report);
+                    if (reportData.acionado_por) setAcionadoPor(reportData.acionado_por);
+                    if (reportData.descritivo) setDescritivoOperacao(reportData.descritivo);
+                    if (reportData.whatsapp_raw) setWhatsappConversation(reportData.whatsapp_raw);
                     setLoadedFromDb(true);
                     setIsSaved(true);
                     return;
                 }
             } catch (e) {
-                console.warn('Coluna operational_report pode não existir:', e);
+                console.warn('Erro ao carregar relatório operacional:', e);
             }
 
             if (isClientView && logsRes.data && logsRes.data.length > 0) {
@@ -116,10 +118,19 @@ const MissionOperationalReport: React.FC<Props> = ({ mission, onClose, isClientV
         if (!generatedReport) return;
         setIsSaving(true);
         try {
-            await fetch('/api/missions/ensure-report-column', { method: 'POST' }).catch(() => {});
-            const { error } = await supabase.from('missions').update({ operational_report: generatedReport }).eq('id', mission.id);
-            if (error) {
-                throw error;
+            const res = await fetch(`/api/missions/${encodeURIComponent(mission.id)}/operational-report`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    operational_report: generatedReport,
+                    acionado_por: acionadoPor,
+                    descritivo: descritivoOperacao,
+                    whatsapp_raw: whatsappConversation
+                })
+            });
+            const result = await res.json();
+            if (!result.ok) {
+                throw new Error(result.error || 'Erro ao salvar');
             }
             setIsSaved(true);
             setLoadedFromDb(true);
