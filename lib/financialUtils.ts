@@ -291,7 +291,7 @@ export const calculateMissionFinancials = (
         durationHours = 0;
     }
 
-    const tollValue = isZeroValueMission ? 0 : Math.max(0, safeNumber(mission.toll_value));
+    let tollValue = isZeroValueMission ? 0 : Math.max(0, safeNumber(mission.toll_value));
     
     const validAgents = [mission.agent1, mission.agent2]
         .map(a => a ? String(a).trim() : '')
@@ -723,6 +723,11 @@ export const calculateMissionFinancials = (
 
     let pExtraKmVal = round2(Math.max(0, pExcessKm * pUnitCostKm));
     let pExtraHrVal = round2(Math.max(0, pExcessHr * pUnitCostHour));
+
+    const isLogitechTable = appliedTableName.includes('LOGITECH') || appliedTableName.includes('200KM') || appliedTableName.includes('200 KM');
+    if (isLogitechTable && !isZeroValueMission && tollValue === 0) {
+        tollValue = 35;
+    }
 
     const serviceSubtotal = round2(cBase + cExtraKmVal + cExtraHrVal);
     
