@@ -64,6 +64,8 @@ const MissionOperationalReport: React.FC<Props> = ({ mission, onClose, isClientV
     const [loadedFromDb, setLoadedFromDb] = useState(false);
     const [editingSection, setEditingSection] = useState<number | null>(null);
     const [sectionEditText, setSectionEditText] = useState('');
+    const [sectionAiInstruction, setSectionAiInstruction] = useState('');
+    const [isSectionAiLoading, setIsSectionAiLoading] = useState(false);
     const [missionLogs, setMissionLogs] = useState<any[]>([]);
     const reportRef = useRef<HTMLDivElement>(null);
 
@@ -192,6 +194,7 @@ const MissionOperationalReport: React.FC<Props> = ({ mission, onClose, isClientV
                 setSectionEditText(sections[sectionIndex]);
             }
             setEditingSection(sectionIndex);
+            setSectionAiInstruction('');
         }
     };
 
@@ -210,6 +213,64 @@ const MissionOperationalReport: React.FC<Props> = ({ mission, onClose, isClientV
         }
         setEditingSection(null);
         setSectionEditText('');
+        setSectionAiInstruction('');
+    };
+
+    const handleSectionAiRefine = async () => {
+        if (editingSection === null || !generatedReport) return;
+        const sections = parseSections(generatedReport);
+        const currentSection = sections[editingSection];
+        if (!currentSection) return;
+
+        setIsSectionAiLoading(true);
+        try {
+            const parser = new DOMParser();
+            const doc = parser.parseFromString(currentSection, 'text/html');
+            const h3 = doc.querySelector('h3');
+            const sectionTitle = h3?.textContent || 'Seção';
+
+            const instruction = sectionAiInstruction.trim();
+            const prompt = `Você é um redator técnico de relatórios operacionais de escolta de cargas do Grupo TMSEG.
+
+REGRAS DE ESTILO:
+- Português claro e direto. Frases curtas e objetivas.
+- Use "Agente de Campo" (NUNCA "Equipe Operacional").
+- Use "Central de Monitoramento" (NUNCA "Comando Operacional").
+- Seja imparcial. Relate apenas fatos.
+- NUNCA inclua nomes de pessoas.
+
+CONTEXTO DA MISSÃO:
+- OS: ${mission.id}, Cliente: ${mission.client}
+- Origem: ${mission.origin || 'N/A'} → Destino: ${mission.destination || 'N/A'}
+- Início: ${fmtDateTime(startTime)} | Fim: ${fmtDateTime(endTime)}
+- KM Total: ${totalKm || 'N/A'}
+
+SEÇÃO ATUAL ("${sectionTitle}"):
+${sectionEditText}
+
+${instruction ? `INSTRUÇÃO DO OPERADOR:\n${instruction}` : 'INSTRUÇÃO: Reescreva esta seção mantendo o mesmo conteúdo mas melhorando a redação, clareza e profissionalismo. Mantenha o mesmo nível de detalhe.'}
+
+FORMATO: Retorne APENAS o conteúdo interno da seção (parágrafos com <p>, listas com <ul><li>, etc). NÃO inclua <section> nem <h3>. NÃO inclua markdown. Apenas HTML interno.`;
+
+            const result = await generateContent({
+                contents: [{ role: 'user', parts: [{ text: prompt }] }],
+                config: { temperature: 0.7 },
+                model: 'gemini-2.5-flash'
+            });
+
+            const cleaned = result
+                .replace(/<section[^>]*>/gi, '').replace(/<\/section>/gi, '')
+                .replace(/<h3[^>]*>.*?<\/h3>/gi, '')
+                .replace(/```html/gi, '').replace(/```/g, '')
+                .trim();
+
+            setSectionEditText(cleaned);
+            setSectionAiInstruction('');
+        } catch (error: any) {
+            alert('Erro ao ajustar com IA: ' + error.message);
+        } finally {
+            setIsSectionAiLoading(false);
+        }
     };
 
     const parseWhatsAppTimeline = (text: string): TimelineEvent[] => {
@@ -605,11 +666,37 @@ Retorne APENAS HTML com sections: SÍNTESE OPERACIONAL, DILIGÊNCIA E CONSTATAÇ
                                         className="w-full px-3 py-2 border border-gray-200 rounded-lg text-xs font-mono text-gray-700 focus:ring-2 focus:ring-amber-200 focus:border-amber-400 outline-none resize-y bg-white"
                                         data-testid={`textarea-section-edit-${idx}`}
                                     />
+                                    <div className="mt-2 p-2.5 rounded-lg border border-blue-200 bg-blue-50/50">
+                                        <div className="flex items-center gap-1.5 mb-1.5">
+                                            <Sparkles size={11} className="text-blue-500" />
+                                            <span className="text-[9px] font-black text-blue-700 uppercase tracking-wider">Ajustar com IA</span>
+                                        </div>
+                                        <div className="flex gap-2">
+                                            <input
+                                                type="text"
+                                                value={sectionAiInstruction}
+                                                onChange={e => setSectionAiInstruction(e.target.value)}
+                                                placeholder="Ex: 'Reescrever mais formal', 'Adicionar detalhe sobre o drone', 'Resumir em 2 linhas'..."
+                                                className="flex-1 px-2.5 py-1.5 border border-blue-200 rounded-lg text-[11px] text-gray-700 focus:ring-2 focus:ring-blue-200 focus:border-blue-400 outline-none bg-white"
+                                                onKeyDown={e => { if (e.key === 'Enter' && !isSectionAiLoading) handleSectionAiRefine(); }}
+                                                data-testid={`input-section-ai-${idx}`}
+                                            />
+                                            <button
+                                                onClick={handleSectionAiRefine}
+                                                disabled={isSectionAiLoading}
+                                                className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-white font-black text-[9px] uppercase tracking-wider transition-all hover:brightness-110 disabled:opacity-50 shrink-0"
+                                                style={{ backgroundColor: accentColor }}
+                                                data-testid={`button-section-ai-${idx}`}
+                                            >
+                                                {isSectionAiLoading ? <><Loader2 size={11} className="animate-spin" /> Ajustando...</> : <><Sparkles size={11} /> {sectionAiInstruction.trim() ? 'Aplicar' : 'Melhorar Texto'}</>}
+                                            </button>
+                                        </div>
+                                    </div>
                                     <div className="flex items-center gap-2 mt-2">
-                                        <button onClick={handleSectionSave} className="flex items-center gap-1 px-3 py-1.5 bg-green-600 text-white rounded-lg text-[10px] font-black uppercase hover:bg-green-700 transition-colors" data-testid={`button-section-save-${idx}`}>
+                                        <button onClick={handleSectionSave} disabled={isSectionAiLoading} className="flex items-center gap-1 px-3 py-1.5 bg-green-600 text-white rounded-lg text-[10px] font-black uppercase hover:bg-green-700 transition-colors disabled:opacity-50" data-testid={`button-section-save-${idx}`}>
                                             <Check size={12} /> Salvar Seção
                                         </button>
-                                        <button onClick={() => { setEditingSection(null); setSectionEditText(''); }} className="flex items-center gap-1 px-3 py-1.5 bg-gray-200 text-gray-700 rounded-lg text-[10px] font-black uppercase hover:bg-gray-300 transition-colors" data-testid={`button-section-cancel-${idx}`}>
+                                        <button onClick={() => { setEditingSection(null); setSectionEditText(''); setSectionAiInstruction(''); }} disabled={isSectionAiLoading} className="flex items-center gap-1 px-3 py-1.5 bg-gray-200 text-gray-700 rounded-lg text-[10px] font-black uppercase hover:bg-gray-300 transition-colors disabled:opacity-50" data-testid={`button-section-cancel-${idx}`}>
                                             <X size={12} /> Cancelar
                                         </button>
                                     </div>
