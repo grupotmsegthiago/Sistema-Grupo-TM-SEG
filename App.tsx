@@ -65,7 +65,7 @@ import DailyCashMovement from './components/DailyCashMovement';
 import BillingControlCenter from './components/BillingControlCenter';
 
 // TEMPO DE INATIVIDADE (30 minutos)
-const INACTIVITY_LIMIT = 30 * 60 * 1000;
+const INACTIVITY_LIMIT = 20 * 60 * 1000;
 
 const App: React.FC = () => {
   const [isAuthenticated, setIsAuthenticated] = useState(() => {
