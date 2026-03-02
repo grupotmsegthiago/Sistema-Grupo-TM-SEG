@@ -1,0 +1,31 @@
+Aja como um Desenvolvedor Front-End Sênior especialista em UX/UI.
+
+Objetivo: Ajustar o layout do Dashboard e do Relatório Operacional para que ocupem 100% da largura da tela (Single Page), permitindo crescimento apenas vertical (scroll para baixo).
+
+Requisitos de Layout:
+
+Cabeçalho Fixo: O cabeçalho do sistema (com logo e informações da OS) deve permanecer fixo no topo (sticky) enquanto o usuário rola a página para baixo.
+
+Responsividade Vertical: Se novos dados ou linhas forem adicionados (como no "Boletim de Medição"), a página deve expandir para baixo automaticamente, sem quebrar o layout horizontal.
+
+Container Único: Utilize um container principal com max-width: 100vw e overflow-x: hidden. Certifique-se de que nenhum elemento interno force uma barra de rolagem horizontal.
+
+Impressão/PDF: Configure o CSS Media Query @media print para que, ao gerar o PDF, o cabeçalho seja repetido no topo de cada nova página física, mantendo as margens de segurança para visualização.
+
+Ajuste Específico para iPhone (iOS):
+
+Utilize min-height: 100vh no body e evite o uso de height: 100% em containers aninhados, pois isso causa o erro de "tela branca" no Safari móvel quando o conteúdo excede a dobra da página.
+
+Lógica de Dados:
+
+Ao adicionar novas linhas na tabela de medição, o sistema deve renderizar os novos componentes abaixo dos existentes, mantendo o alinhamento das colunas do cabeçalho da tabela.
+
+Por que isso resolve o seu problema?
+Visão Cliente: Ao manter o cabeçalho fixo, o cliente nunca perde o contexto de qual OS ou operação ele está visualizando, mesmo em relatórios longos. 2.  Boletim de Medição: A imagem que você enviou do "Boletim de Medição" tem muitas colunas. Para que isso não quebre em uma tela de celular, o Replit precisa implementar um "scroll horizontal interno" apenas para a tabela, mantendo o restante da página (cabeçalho e filtros) fixo e visível.
+
+Mascaramento: O sistema continuará seguindo a regra de trocar nomes internos por 'Grupo TM SEG', conforme sua instrução anterior.
+
+Dica de Ouro para o PDF:
+Para que o PDF não fique "ruim de visualizar" como você temia, peça ao sistema o seguinte:
+
+"No PDF, use a propriedade CSS break-inside: avoid para que uma linha da tabela ou um gráfico nunca seja cortado ao meio entre uma página e outra."

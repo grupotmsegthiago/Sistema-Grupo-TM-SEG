@@ -228,7 +228,7 @@ const App: React.FC = () => {
 
   return (
     <NotificationProvider>
-        <div className="flex h-screen-ios overflow-y-auto md:overflow-hidden font-sans text-gray-800 relative">
+        <div className="flex h-screen-ios overflow-x-hidden overflow-y-auto md:overflow-y-hidden font-sans text-gray-800 relative" style={{ maxWidth: '100vw' }}>
         
         {rebootCountdown !== null && (
             <div className="fixed inset-0 z-[9999] bg-black flex flex-col items-center justify-center text-center p-6 backdrop-blur-xl animate-in fade-in duration-500">
@@ -240,7 +240,7 @@ const App: React.FC = () => {
         )}
         <div className="absolute inset-0 z-0 pointer-events-none"><img src="/background.png" alt="System Background" className="w-full h-full object-cover fixed opacity-[0.03]"/><div className="absolute inset-0 bg-[#f8fafc] -z-10"></div></div>
         <Sidebar isOpen={isSidebarOpen} activeScreen={currentScreen} onNavigate={navigateTo} onLogout={handleLogout} />
-        <div className="flex-1 flex flex-col h-full relative z-10 overflow-hidden lg:pl-20">
+        <div className="flex-1 flex flex-col h-full relative z-10 overflow-x-hidden lg:pl-20">
             {isSidebarOpen && <div className="fixed inset-0 bg-black/50 z-40 lg:hidden" onClick={() => setIsSidebarOpen(false)}></div>}
             <Header onMenuClick={toggleSidebar} onProfileSettingsClick={() => setIsProfileSettingsOpen(true)} isCevaClient={isCevaClient} />
             <main className="flex-1 overflow-y-auto p-4 md:p-6 scrollbar-thin">

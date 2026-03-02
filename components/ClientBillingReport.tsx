@@ -362,6 +362,10 @@ const ClientBillingReport: React.FC = () => {
                         position: absolute; left: 0; top: 0;
                         width: 293mm;
                         transform-origin: top left;
+                        overflow: visible !important;
+                    }
+                    #print-area .report-table-scroll {
+                        overflow: visible !important;
                     }
                     #print-area table {
                         table-layout: fixed !important;
@@ -370,7 +374,10 @@ const ClientBillingReport: React.FC = () => {
                         page-break-inside: auto !important;
                     }
                     #print-area thead { display: table-header-group !important; }
-                    #print-area tr { page-break-inside: avoid !important; }
+                    #print-area tr {
+                        page-break-inside: avoid !important;
+                        break-inside: avoid !important;
+                    }
                     #print-area td, #print-area th {
                         padding: 0.3mm 0.5mm !important;
                         font-size: 1.6mm !important;
@@ -392,8 +399,16 @@ const ClientBillingReport: React.FC = () => {
                     #print-area .subtitle-line { font-size: 2.2mm !important; }
                     #print-area .ref-line { font-size: 1.8mm !important; }
                     .no-print { display: none !important; }
-                    #print-area .sign-section { margin-top: 15mm !important; }
+                    #print-area .sign-section {
+                        margin-top: 15mm !important;
+                        break-inside: avoid !important;
+                        page-break-inside: avoid !important;
+                    }
                     #print-area .sign-box { font-size: 2mm !important; width: 60mm !important; }
+                    #print-area tfoot tr {
+                        break-inside: avoid !important;
+                        page-break-inside: avoid !important;
+                    }
                 }
             `}</style>
 
@@ -455,7 +470,7 @@ const ClientBillingReport: React.FC = () => {
                         <p className="ref-line" style={{ fontSize: '7px', fontWeight: 600, textTransform: 'uppercase', color: '#6b7280', marginTop: '2px' }}>REFERENTE A INTERMEDIAÇÃO DE SEGURANÇA E MONITORAMENTO DE CARGAS</p>
                     </div>
 
-                    <div style={{ overflowX: 'auto' }}>
+                    <div className="report-table-scroll" style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
                         <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed' }}>
                             <colgroup>
                                 {/* TABELA ACORDADA: Nº, ROTA, VALOR, HR FRANQ, KM FRANQ, HR EXTRA, KM EXTRA */}
