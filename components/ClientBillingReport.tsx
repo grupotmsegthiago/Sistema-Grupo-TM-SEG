@@ -301,7 +301,7 @@ const ClientBillingReport: React.FC = () => {
         const fileName = `Boletim_${clientLabel.replace(/[^a-zA-Z0-9]/g, '_').substring(0, 20)}_${periodShort}.xlsx`;
 
         XLSX.utils.book_append_sheet(wb, ws, 'Boletim');
-        XLSX.writeFile(wb, fileName);
+        XLSX.writeFile(wb, fileName, { compression: true });
     }, [rowsData, grandTotal, displayClientName, startDate, endDate]);
 
     const cellStyle: React.CSSProperties = {

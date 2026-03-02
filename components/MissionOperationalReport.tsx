@@ -481,17 +481,17 @@ Retorne APENAS HTML com sections: SÍNTESE OPERACIONAL, DILIGÊNCIA E CONSTATAÇ
             for (let i = 0; i < sections.length; i++) {
                 const section = sections[i] as HTMLElement;
                 const canvas = await html2canvas(section, {
-                    scale: 3,
+                    scale: 2,
                     useCORS: true,
                     allowTaint: true,
-                    backgroundColor: null,
+                    backgroundColor: '#ffffff',
                     windowWidth: 794,
                     logging: false,
                 }).catch(() => null);
                 if (!canvas) continue;
                 let imgData: string;
                 try {
-                    imgData = canvas.toDataURL('image/png');
+                    imgData = canvas.toDataURL('image/jpeg', 0.85);
                 } catch { continue; }
                 const imgWidth = usableWidth;
                 const imgHeight = (canvas.height * imgWidth) / canvas.width;
@@ -518,15 +518,15 @@ Retorne APENAS HTML com sections: SÍNTESE OPERACIONAL, DILIGÊNCIA E CONSTATAÇ
                         const ctx = sliceCanvas.getContext('2d');
                         if (ctx) {
                             ctx.drawImage(canvas, 0, srcY, canvas.width, sliceHeight, 0, 0, canvas.width, sliceHeight);
-                            const sliceData = sliceCanvas.toDataURL('image/png');
+                            const sliceData = sliceCanvas.toDataURL('image/jpeg', 0.85);
                             const sliceImgHeight = (sliceHeight * imgWidth) / canvas.width;
-                            pdf.addImage(sliceData, 'PNG', margin, currentY, imgWidth, sliceImgHeight);
+                            pdf.addImage(sliceData, 'JPEG', margin, currentY, imgWidth, sliceImgHeight);
                             currentY += sliceImgHeight;
                         }
                         srcY += sliceHeight;
                     }
                 } else {
-                    pdf.addImage(imgData, 'PNG', margin, currentY, imgWidth, imgHeight);
+                    pdf.addImage(imgData, 'JPEG', margin, currentY, imgWidth, imgHeight);
                     currentY += imgHeight;
                 }
 
