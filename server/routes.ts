@@ -590,6 +590,85 @@ export async function registerRoutes(
     }
   });
 
+  app.post("/api/missions/fix-ceva-logitech-values", async (_req: Request, res: Response) => {
+    try {
+      const sbUrl = 'https://ajhmmjuewdsukecaimik.supabase.co';
+      const sbKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFqaG1tanVld2RzdWtlY2FpbWlrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjQxNzUxMjEsImV4cCI6MjA3OTc1MTEyMX0.5bXRWTyb1HxLimt3lqJTBfjzDoumux7TXlW4lycXrPk';
+      const headers = { 'apikey': sbKey, 'Authorization': `Bearer ${sbKey}`, 'Content-Type': 'application/json', 'Prefer': 'return=minimal' };
+
+      const missionsRes = await fetch(`${sbUrl}/rest/v1/missions?client=ilike.*CEVA*&or=(destination.ilike.*200KM*,destination.ilike.*200%20KM*,destination.ilike.*LOGITECH*)&select=id,revenue_value,cost_value,toll_value,destination,origin,client,provider,status`, { headers });
+      const missions = await missionsRes.json();
+
+      const clientTablesRes = await fetch(`${sbUrl}/rest/v1/client_price_tables?client=ilike.*CEVA*&select=*`, { headers });
+      const clientTables = await clientTablesRes.json();
+
+      const provTablesRes = await fetch(`${sbUrl}/rest/v1/provider_cost_tables?select=*`, { headers });
+      const providerTables = await provTablesRes.json();
+
+      const findTable = (tables: any[], keyword: string) => {
+        const norm = keyword.toUpperCase();
+        return tables.find((t: any) => {
+          const op = (t.operation_type || '').toUpperCase();
+          return op.includes(norm);
+        });
+      };
+
+      let fixed = 0;
+      const details: any[] = [];
+
+      for (const m of missions) {
+        const dest = (m.destination || '').toUpperCase();
+        let targetKeyword = 'LOGITECH';
+        if (dest.includes('200KM') || dest.includes('200 KM')) targetKeyword = '200KM';
+        if (dest.includes('LOGITECH')) targetKeyword = 'LOGITECH';
+
+        let revTable = findTable(clientTables, targetKeyword);
+        if (!revTable && targetKeyword === '200KM') revTable = findTable(clientTables, 'LOGITECH');
+        if (!revTable && targetKeyword === 'LOGITECH') revTable = findTable(clientTables, '200KM');
+
+        if (!revTable) continue;
+
+        const correctRevenue = revTable.activation_fee || 0;
+        const storedRevenue = parseFloat(m.revenue_value) || 0;
+
+        if (Math.abs(storedRevenue - correctRevenue) > 5) {
+          const providerName = (m.provider || '').toUpperCase().trim();
+          let provTable = providerTables.find((t: any) => {
+            const op = (t.operation_type || '').toUpperCase();
+            const prov = (t.provider || '').toUpperCase().trim();
+            return prov === providerName && (op.includes('LOGITECH') || op.includes('200KM') || op.includes('200 KM'));
+          });
+
+          let correctCost = parseFloat(m.cost_value) || 0;
+          if (provTable) {
+            correctCost = provTable.activation_cost || correctCost;
+          }
+
+          await fetch(`${sbUrl}/rest/v1/missions?id=eq.${m.id}`, {
+            method: 'PATCH',
+            headers: { ...headers, 'Prefer': 'return=minimal' },
+            body: JSON.stringify({ revenue_value: correctRevenue, cost_value: correctCost })
+          });
+
+          fixed++;
+          details.push({
+            id: m.id,
+            oldRevenue: storedRevenue,
+            newRevenue: correctRevenue,
+            oldCost: parseFloat(m.cost_value) || 0,
+            newCost: correctCost,
+            table: revTable.operation_type
+          });
+        }
+      }
+
+      res.json({ ok: true, fixed, total: missions.length, details });
+    } catch (e: any) {
+      console.error("Fix CEVA Logitech error:", e.message);
+      res.json({ ok: false, error: e.message });
+    }
+  });
+
   app.post("/api/missions/ensure-report-column", async (_req: Request, res: Response) => {
     try {
       const dbUrl = process.env.DATABASE_URL;
