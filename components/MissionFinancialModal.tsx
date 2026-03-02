@@ -109,7 +109,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
   // BLINDAGEM: Pedágio NUNCA é herdado de outras missões (IDs diferentes).
   // Se a missão atual tem toll_value salvo no banco, usa esse valor.
   // Se não tem, inicia como ZERO e exige conferência humana.
-  const fetchHistoricalPatterns = async (currentMission: Mission) => {
+  const fetchHistoricalPatterns = async (currentMission: Mission, allProviderTables?: ProviderCostTable[]) => {
       if (!currentMission.client || !currentMission.origin) return;
       try {
           const dbToll = currentMission.toll_value ?? 0;
@@ -155,7 +155,13 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                      showNotification('Memória Evolutiva', 'Tabela aplicada com base em aprovação anterior.', 'success');
                  }
                  if (details.providerTableId) {
-                     setManualProviderTableId(details.providerTableId);
+                     const tablesToCheck = allProviderTables || providerTables;
+                     const memProvTable = tablesToCheck.find(t => t.id === details.providerTableId);
+                     const missionProvNorm = (currentMission.provider || '').toUpperCase().trim();
+                     const memProvNorm = (memProvTable?.provider || '').toUpperCase().trim();
+                     if (memProvTable && memProvNorm === missionProvNorm) {
+                         setManualProviderTableId(details.providerTableId);
+                     }
                  }
                  if (details.tollValue !== undefined && details.tollValue !== null && !currentMission.billing_approved && !(dbToll > 0 || hasRevenue)) {
                      const memToll = Number(details.tollValue);
@@ -230,7 +236,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                   setCostInput(totalCost.toLocaleString('pt-BR', {minimumFractionDigits: 2}));
               }
               
-              fetchHistoricalPatterns(fullMission);
+              fetchHistoricalPatterns(fullMission, (ptRes.data || []) as ProviderCostTable[]);
           }
           if (ctRes.data) setClientTables(ctRes.data as any);
           if (ptRes.data) setProviderTables(ptRes.data as any);
@@ -304,7 +310,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
           }
           
           if (financialData.provider.tableId) {
-              if (!manualProviderTableId && !memoryLoaded) {
+              if (!manualProviderTableId) {
                   setManualProviderTableId(financialData.provider.tableId);
               }
               if (manualProviderTableId && financialData.provider.tableId !== manualProviderTableId && financialData.provider.detectionLog.includes('CEVA Jundiaí')) {
@@ -312,7 +318,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
               }
           }
           if (financialData.client.tableId) {
-              if (!manualClientTableId && !memoryLoaded) {
+              if (!manualClientTableId) {
                   setManualClientTableId(financialData.client.tableId);
               }
               if (manualClientTableId && financialData.client.tableId !== manualClientTableId && financialData.client.detectionLog.includes('CEVA Jundiaí')) {
