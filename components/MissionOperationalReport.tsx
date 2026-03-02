@@ -2,7 +2,8 @@ import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { Mission, MissionStatus } from '../types';
 import { supabase } from '../lib/supabase';
 import { generateContent } from '../lib/gemini';
-import { X, Loader2, FileText, Upload, Trash2, Sparkles, Download, Image as ImageIcon, Plus, Clock, MapPin, Truck, User, Shield, Phone, Navigation, Activity, Camera, Gauge, RefreshCw, PenLine, Save, Edit3, Check } from 'lucide-react';
+import { googleMapsApiKey } from '../lib/maps';
+import { X, Loader2, FileText, Upload, Trash2, Sparkles, Download, Image as ImageIcon, Plus, Clock, MapPin, Truck, User, Shield, Phone, Navigation, Activity, Camera, Gauge, RefreshCw, PenLine, Save, Edit3, Check, Map } from 'lucide-react';
 import html2canvas from 'html2canvas';
 import jsPDF from 'jspdf';
 
@@ -79,6 +80,9 @@ const MissionOperationalReport: React.FC<Props> = ({ mission, onClose, isClientV
     const accentColor = isCeva ? '#e81818' : '#b91c1c';
     const gradientStart = isCeva ? '#152c54' : '#1a1a2e';
     const gradientEnd = isCeva ? '#0d1b38' : '#16213e';
+
+    const routeMapUrl = (mission.origin && mission.destination && googleMapsApiKey) ?
+        `https://maps.googleapis.com/maps/api/staticmap?size=740x280&maptype=roadmap&markers=color:green%7Clabel:A%7C${encodeURIComponent(mission.origin)}&markers=color:red%7Clabel:B%7C${encodeURIComponent(mission.destination)}&path=enc:&key=${googleMapsApiKey}&language=pt-BR&region=BR` : null;
 
     const startTime = mission.startTime || (mission as any).start_time;
     const endTime = mission.endTime || (mission as any).end_time;
@@ -569,6 +573,25 @@ Retorne APENAS HTML com sections: SÍNTESE OPERACIONAL, DILIGÊNCIA E CONSTATAÇ
                 </div>
             </div>
 
+            {routeMapUrl && (
+                <div data-pdf-section="mapa-trajeto" className="bg-white px-8 pt-4 pb-2">
+                    <div className="flex items-center gap-2 mb-4">
+                        <div className="w-[3px] h-5 rounded-full" style={{ backgroundColor: accentColor }} />
+                        <h2 className="text-[12px] font-black uppercase tracking-[0.15em]" style={{ color: primaryColor }}>Trajeto da Operação</h2>
+                    </div>
+                    <div className="rounded-xl overflow-hidden border border-gray-200" style={{ boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
+                        <img src={routeMapUrl} alt="Mapa do Trajeto" className="w-full h-auto object-cover" crossOrigin="anonymous" />
+                        <div className="px-4 py-2 bg-gray-50 flex items-center justify-between border-t border-gray-100">
+                            <div className="flex items-center gap-3">
+                                <div className="flex items-center gap-1.5"><div className="w-2.5 h-2.5 rounded-full bg-green-600" /><span className="text-[9px] font-bold text-gray-500">A — Origem</span></div>
+                                <div className="flex items-center gap-1.5"><div className="w-2.5 h-2.5 rounded-full bg-red-600" /><span className="text-[9px] font-bold text-gray-500">B — Destino</span></div>
+                            </div>
+                            <span className="text-[8px] font-bold text-gray-400">{totalKm ? `${Number(totalKm).toLocaleString('pt-BR')} km` : ''}</span>
+                        </div>
+                    </div>
+                </div>
+            )}
+
             {generatedReport && (
                 <div data-pdf-section="ai-content" className="bg-white px-8 py-2 report-ai-content">
                     {parseSections(generatedReport).map((sectionHtml, idx) => (
@@ -777,8 +800,8 @@ Retorne APENAS HTML com sections: SÍNTESE OPERACIONAL, DILIGÊNCIA E CONSTATAÇ
                                                 <button type="button" onClick={() => setGeneratedReport(null)} className="flex items-center gap-1 px-3 py-1.5 text-[10px] font-bold text-gray-600 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors" data-testid="button-back-to-form">← Voltar ao Formulário</button>
                                             )}
                                             {loadedFromDb && (
-                                                <button type="button" onClick={() => { setGeneratedReport(null); setLoadedFromDb(false); setIsSaved(false); }} className="flex items-center gap-1 px-3 py-1.5 text-[10px] font-bold text-gray-600 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors" data-testid="button-regenerate">
-                                                    <RefreshCw size={10} /> Refazer Relatório
+                                                <button type="button" onClick={() => { setGeneratedReport(null); setLoadedFromDb(false); setIsSaved(false); }} className="flex items-center gap-1 px-3 py-1.5 text-[10px] font-bold text-amber-700 bg-amber-50 border border-amber-200 rounded-lg hover:bg-amber-100 transition-colors" data-testid="button-regenerate">
+                                                    <RefreshCw size={10} /> Refazer Texto (IA)
                                                 </button>
                                             )}
                                         </div>
@@ -800,6 +823,41 @@ Retorne APENAS HTML com sections: SÍNTESE OPERACIONAL, DILIGÊNCIA E CONSTATAÇ
                                     </div>
 
                                     {renderReportDocument()}
+
+                                    <div className="mt-5 p-4 rounded-xl border border-gray-200 bg-gray-50/50">
+                                        <div className="flex items-center gap-2 mb-3">
+                                            <Camera size={14} className="text-gray-500" />
+                                            <h4 className="text-[11px] font-black text-gray-700 uppercase tracking-wider">Fotos do Relatório</h4>
+                                        </div>
+                                        <div className="mb-3">
+                                            <label className="text-[10px] font-black text-gray-500 uppercase tracking-wider flex items-center gap-1.5 mb-2"><Gauge size={12} /> Fotos de Quilometragem</label>
+                                            <div className="grid grid-cols-2 gap-3">
+                                                <PhotoUploadBox label="KM Inicial" preview={kmInicialPreview} onUpload={(f) => handleFileToPreview(f, setKmInicialPreview)} onRemove={() => { setKmInicialPreview(null); setIsSaved(false); }} icon={Gauge} />
+                                                <PhotoUploadBox label="KM Final" preview={kmFinalPreview} onUpload={(f) => handleFileToPreview(f, setKmFinalPreview)} onRemove={() => { setKmFinalPreview(null); setIsSaved(false); }} icon={Gauge} />
+                                            </div>
+                                        </div>
+                                        <div>
+                                            <div className="flex items-center justify-between mb-2">
+                                                <label className="text-[10px] font-black text-gray-500 uppercase tracking-wider flex items-center gap-1.5"><Camera size={12} /> Fotos do Local</label>
+                                                <button type="button" onClick={addLocalPhotoSlot} className="flex items-center gap-1 text-[10px] font-bold text-blue-600 hover:text-blue-800 transition-colors" data-testid="button-add-photo-slot-edit"><Plus size={12} /> Adicionar</button>
+                                            </div>
+                                            <div className="grid grid-cols-4 gap-2">
+                                                {localPhotos.map(slot => (
+                                                    <PhotoUploadBox
+                                                        key={slot.id}
+                                                        label={slot.label}
+                                                        preview={slot.preview}
+                                                        onUpload={(f) => { handleLocalPhotoUpload(slot.id, f); setIsSaved(false); }}
+                                                        onRemove={() => { removeLocalPhoto(slot.id); setIsSaved(false); }}
+                                                        icon={Camera}
+                                                    />
+                                                ))}
+                                            </div>
+                                        </div>
+                                        {(kmInicialPreview || kmFinalPreview || localPhotos.some(s => s.preview)) && (
+                                            <p className="text-[9px] text-amber-600 font-bold mt-2 flex items-center gap-1">⚠ Lembre de clicar "Salvar Relatório" para persistir as fotos.</p>
+                                        )}
+                                    </div>
 
                                     <div className="mt-5 p-4 rounded-xl border border-amber-200 bg-gradient-to-r from-amber-50 to-yellow-50">
                                         <label className="block text-[10px] font-black text-amber-800 uppercase mb-2 tracking-wider flex items-center gap-1.5">
