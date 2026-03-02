@@ -307,27 +307,32 @@ const ClientBillingReport: React.FC = () => {
     const cellStyle: React.CSSProperties = {
         border: '1px solid #9ca3af',
         padding: '1px 2px',
-        fontSize: '7px',
+        fontSize: '6.5px',
+        fontFamily: "'Segoe UI', Tahoma, Geneva, Verdana, sans-serif",
         textAlign: 'center',
         whiteSpace: 'nowrap',
         overflow: 'hidden',
-        textOverflow: 'ellipsis'
+        textOverflow: 'ellipsis',
+        color: '#1f2937',
+        lineHeight: '1.3'
     };
     const cellRight: React.CSSProperties = { ...cellStyle, textAlign: 'right' };
-    const cellBold: React.CSSProperties = { ...cellStyle, fontWeight: 800 };
+    const cellBold: React.CSSProperties = { ...cellStyle, fontWeight: 800, color: '#111827' };
     const headerStyle: React.CSSProperties = {
         ...cellStyle,
         backgroundColor: '#e5e7eb',
         fontWeight: 900,
-        fontSize: '6.5px',
+        fontSize: '6px',
         textTransform: 'uppercase' as const,
-        color: '#000'
+        color: '#000',
+        padding: '2px 1px'
     };
     const groupHeaderStyle: React.CSSProperties = {
         ...headerStyle,
         backgroundColor: '#d1d5db',
-        fontSize: '7px',
-        letterSpacing: '0.3px'
+        fontSize: '6.5px',
+        letterSpacing: '0.3px',
+        padding: '3px 2px'
     };
 
     const bgKm = '#eef2ff';
@@ -352,39 +357,45 @@ const ClientBillingReport: React.FC = () => {
         <div className="space-y-6 animate-fade-in pb-20 relative">
             <style>{`
                 @media print {
-                    @page { size: A4 landscape; margin: 3mm; }
+                    @page { size: A4 landscape; margin: 2mm 2mm; }
                     body * { visibility: hidden !important; }
                     #print-area, #print-area * { visibility: visible !important; }
                     #print-area {
                         position: absolute; left: 0; top: 0;
-                        width: 290mm;
+                        width: 293mm;
                         transform-origin: top left;
                     }
                     #print-area table {
                         table-layout: fixed !important;
-                        width: 290mm !important;
+                        width: 293mm !important;
                         border-collapse: collapse !important;
                         page-break-inside: auto !important;
                     }
-                    #print-area thead {
-                        display: table-header-group !important;
-                    }
-                    #print-area tr {
-                        page-break-inside: avoid !important;
-                    }
+                    #print-area thead { display: table-header-group !important; }
+                    #print-area tr { page-break-inside: avoid !important; }
                     #print-area td, #print-area th {
-                        padding: 0.5px 1px !important;
-                        font-size: 4.8px !important;
-                        max-width: none !important;
+                        padding: 0.3mm 0.5mm !important;
+                        font-size: 1.6mm !important;
                         white-space: nowrap !important;
                         overflow: hidden !important;
                         text-overflow: ellipsis !important;
-                        border: 0.3px solid #999 !important;
-                        line-height: 1.1 !important;
+                        border: 0.2px solid #888 !important;
+                        line-height: 1.2 !important;
                     }
-                    #print-area h1 { font-size: 10px !important; }
-                    #print-area p { font-size: 7px !important; }
+                    #print-area td.route-cell {
+                        white-space: normal !important;
+                        word-break: break-word !important;
+                        line-height: 1.1 !important;
+                        font-size: 1.5mm !important;
+                    }
+                    #print-area .group-hdr th { font-size: 1.7mm !important; padding: 0.5mm !important; }
+                    #print-area .sub-hdr th { font-size: 1.5mm !important; padding: 0.3mm 0.4mm !important; }
+                    #print-area h1 { font-size: 3.5mm !important; margin: 0 !important; }
+                    #print-area .subtitle-line { font-size: 2.2mm !important; }
+                    #print-area .ref-line { font-size: 1.8mm !important; }
                     .no-print { display: none !important; }
+                    #print-area .sign-section { margin-top: 15mm !important; }
+                    #print-area .sign-box { font-size: 2mm !important; width: 60mm !important; }
                 }
             `}</style>
 
@@ -442,46 +453,53 @@ const ClientBillingReport: React.FC = () => {
                 <div id="print-area" className="bg-white p-2 w-full border border-gray-200 rounded-lg">
                     <div className="mb-2 text-center">
                         <h1 style={{ fontSize: '13px', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '1px' }}>BOLETIM DE MEDIÇÃO</h1>
-                        <p style={{ fontSize: '9px', fontWeight: 700, textTransform: 'uppercase', color: '#374151' }}>{getPeriodLabel()}</p>
-                        <p style={{ fontSize: '7px', fontWeight: 600, textTransform: 'uppercase', color: '#6b7280', marginTop: '2px' }}>REFERENTE A INTERMEDIAÇÃO DE SEGURANÇA E MONITORAMENTO DE CARGAS</p>
+                        <p className="subtitle-line" style={{ fontSize: '9px', fontWeight: 700, textTransform: 'uppercase', color: '#374151' }}>{getPeriodLabel()}</p>
+                        <p className="ref-line" style={{ fontSize: '7px', fontWeight: 600, textTransform: 'uppercase', color: '#6b7280', marginTop: '2px' }}>REFERENTE A INTERMEDIAÇÃO DE SEGURANÇA E MONITORAMENTO DE CARGAS</p>
                     </div>
 
                     <div style={{ overflowX: 'auto' }}>
                         <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed' }}>
                             <colgroup>
+                                {/* TABELA ACORDADA: Nº, ROTA, VALOR, HR FRANQ, KM FRANQ, HR EXTRA, KM EXTRA, PEDÁGIO, STATUS */}
+                                <col style={{ width: '2.4%' }} />
+                                <col style={{ width: '8.5%' }} />
+                                <col style={{ width: '3.6%' }} />
+                                <col style={{ width: '2.6%' }} />
+                                <col style={{ width: '2.6%' }} />
+                                <col style={{ width: '3.2%' }} />
+                                <col style={{ width: '3.2%' }} />
+                                <col style={{ width: '3%' }} />
+                                <col style={{ width: '3.8%' }} />
+                                {/* INFO VIAGEM: DATA INÍCIO, HORA INI, VIATURA, VEÍC ESCOLT, DATA FIM, HORA FIM */}
+                                <col style={{ width: '3.6%' }} />
+                                <col style={{ width: '2.6%' }} />
+                                <col style={{ width: '3.6%' }} />
+                                <col style={{ width: '3.6%' }} />
+                                <col style={{ width: '3.6%' }} />
+                                <col style={{ width: '2.6%' }} />
+                                {/* KILOMETRAGEM: INICIAL, FINAL, TOTAL */}
+                                <col style={{ width: '3%' }} />
+                                <col style={{ width: '3%' }} />
+                                <col style={{ width: '3%' }} />
+                                {/* HORÁRIOS: INICIAL, FINAL, TOTAL */}
+                                <col style={{ width: '2.6%' }} />
+                                <col style={{ width: '2.6%' }} />
                                 <col style={{ width: '2.8%' }} />
-                                <col style={{ width: '10%' }} />
-                                <col style={{ width: '4.2%' }} />
-                                <col style={{ width: '3%' }} />
-                                <col style={{ width: '3%' }} />
-                                <col style={{ width: '3.5%' }} />
-                                <col style={{ width: '3.5%' }} />
-                                <col style={{ width: '3.2%' }} />
-                                <col style={{ width: '4.5%' }} />
-                                <col style={{ width: '4%' }} />
-                                <col style={{ width: '3%' }} />
-                                <col style={{ width: '4.5%' }} />
-                                <col style={{ width: '4.5%' }} />
-                                <col style={{ width: '4%' }} />
-                                <col style={{ width: '3%' }} />
-                                <col style={{ width: '3.2%' }} />
-                                <col style={{ width: '3.2%' }} />
-                                <col style={{ width: '3%' }} />
-                                <col style={{ width: '3%' }} />
-                                <col style={{ width: '3%' }} />
-                                <col style={{ width: '3%' }} />
-                                <col style={{ width: '2.5%' }} />
-                                <col style={{ width: '3.5%' }} />
-                                <col style={{ width: '3.8%' }} />
-                                <col style={{ width: '2.5%' }} />
-                                <col style={{ width: '3.5%' }} />
-                                <col style={{ width: '3.8%' }} />
-                                <col style={{ width: '3.8%' }} />
-                                <col style={{ width: '3.5%' }} />
+                                {/* KM EXCEDENTE: KM, VALOR, TOTAL */}
+                                <col style={{ width: '2.4%' }} />
+                                <col style={{ width: '3.4%' }} />
+                                <col style={{ width: '3.6%' }} />
+                                {/* HORA EXCEDENTE: HORA, VALOR, TOTAL */}
+                                <col style={{ width: '2.4%' }} />
+                                <col style={{ width: '3.4%' }} />
+                                <col style={{ width: '3.6%' }} />
+                                {/* VALORES: ESCOLTA, PEDÁGIO, TOTAL */}
+                                <col style={{ width: '3.6%' }} />
+                                <col style={{ width: '3.4%' }} />
                                 <col style={{ width: '4.2%' }} />
                             </colgroup>
                             <thead>
-                                <tr>
+                                <tr className="group-hdr">
                                     <th style={groupHeaderStyle} colSpan={9}>TABELA ACORDADA</th>
                                     <th style={groupHeaderStyle} colSpan={6}>INFORMAÇÕES DA VIAGEM</th>
                                     <th style={grpKm} colSpan={3}>KILOMETRAGEM</th>
@@ -490,7 +508,7 @@ const ClientBillingReport: React.FC = () => {
                                     <th style={grpHrExc} colSpan={3}>HORA EXCEDENTE</th>
                                     <th style={grpVal} colSpan={3}>VALORES</th>
                                 </tr>
-                                <tr>
+                                <tr className="sub-hdr">
                                     <th style={headerStyle}>Nº</th>
                                     <th style={{ ...headerStyle, textAlign: 'left' }}>ROTA</th>
                                     <th style={headerStyle}>VALOR</th>
@@ -530,7 +548,7 @@ const ClientBillingReport: React.FC = () => {
                                     rowsData.map((r, i) => (
                                         <tr key={i} style={{ backgroundColor: i % 2 === 0 ? '#fff' : '#f9fafb' }}>
                                             <td style={cellBold}>{r.id}</td>
-                                            <td style={{ ...cellStyle, textAlign: 'left' }} title={r.route}>{r.route}</td>
+                                            <td className="route-cell" style={{ ...cellStyle, textAlign: 'left' }} title={r.route}>{r.route}</td>
                                             <td style={cellStyle}>{fmtBRL(r.activationFee)}</td>
                                             <td style={cellStyle}>{r.franchiseHoursFmt}</td>
                                             <td style={cellStyle}>{fmtNum(r.franchiseKm)}</td>
@@ -574,9 +592,9 @@ const ClientBillingReport: React.FC = () => {
                         </table>
                     </div>
 
-                    <div style={{ marginTop: '32px', display: 'flex', justifyContent: 'space-between', padding: '0 40px' }}>
-                        <div style={{ textAlign: 'center', borderTop: '1px solid #000', width: '250px', paddingTop: '8px', fontSize: '8px', fontWeight: 700, textTransform: 'uppercase' }}>Assinatura TMSEG</div>
-                        <div style={{ textAlign: 'center', borderTop: '1px solid #000', width: '250px', paddingTop: '8px', fontSize: '8px', fontWeight: 700, textTransform: 'uppercase' }}>Assinatura Cliente</div>
+                    <div className="sign-section" style={{ marginTop: '32px', display: 'flex', justifyContent: 'space-between', padding: '0 40px' }}>
+                        <div className="sign-box" style={{ textAlign: 'center', borderTop: '1px solid #000', width: '250px', paddingTop: '8px', fontSize: '8px', fontWeight: 700, textTransform: 'uppercase' }}>Assinatura TMSEG</div>
+                        <div className="sign-box" style={{ textAlign: 'center', borderTop: '1px solid #000', width: '250px', paddingTop: '8px', fontSize: '8px', fontWeight: 700, textTransform: 'uppercase' }}>Assinatura Cliente</div>
                     </div>
                 </div>
             )}
