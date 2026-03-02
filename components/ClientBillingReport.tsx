@@ -211,7 +211,7 @@ const ClientBillingReport: React.FC = () => {
         const wb = XLSX.utils.book_new();
 
         const headerGroup = [
-            'TABELA ACORDADA', '', '', '', '', '', '', '', '',
+            'TABELA ACORDADA', '', '', '', '', '', '',
             'INFORMAÇÕES DA VIAGEM', '', '', '', '', '',
             'KILOMETRAGEM', '', '',
             'HORÁRIOS', '', '',
@@ -220,7 +220,7 @@ const ClientBillingReport: React.FC = () => {
             'VALORES', '', ''
         ];
         const headerSub = [
-            'Nº', 'ROTA', 'VALOR', 'HR FRANQ', 'KM FRANQ', 'HR EXTRA', 'KM EXTRA', 'PEDÁGIO', 'STATUS',
+            'Nº', 'ROTA', 'VALOR', 'HR FRANQ', 'KM FRANQ', 'HR EXTRA', 'KM EXTRA',
             'DATA INÍCIO', 'HORA INÍCIO', 'VIATURA', 'VEÍC. ESCOLTADO', 'DATA FIM', 'HORA FIM',
             'INICIAL', 'FINAL', 'TOTAL',
             'INICIAL', 'FINAL', 'TOTAL',
@@ -241,8 +241,6 @@ const ClientBillingReport: React.FC = () => {
             r.franchiseKm > 0 ? fmtNum(r.franchiseKm) : '-',
             fmtBRLExcel(r.unitHr),
             fmtBRLExcel(r.unitKm),
-            r.tollLabel,
-            r.status,
             r.startDate,
             r.startTime,
             r.viatura,
@@ -266,15 +264,15 @@ const ClientBillingReport: React.FC = () => {
             fmtBRLExcel(r.totalGeral)
         ]);
 
-        const totalRow = Array(30).fill('');
+        const totalRow = Array(28).fill('');
         totalRow[0] = 'TOTAL';
-        totalRow[29] = fmtBRLExcel(grandTotal);
+        totalRow[27] = fmtBRLExcel(grandTotal);
 
         const allRows = [titleRow, periodRow, subtitleRow, [], headerGroup, headerSub, ...dataRows, [], totalRow];
         const ws = XLSX.utils.aoa_to_sheet(allRows);
 
         ws['!cols'] = [
-            { wch: 6 }, { wch: 30 }, { wch: 12 }, { wch: 7 }, { wch: 7 }, { wch: 12 }, { wch: 12 }, { wch: 10 }, { wch: 12 },
+            { wch: 6 }, { wch: 30 }, { wch: 12 }, { wch: 7 }, { wch: 7 }, { wch: 12 }, { wch: 12 },
             { wch: 12 }, { wch: 8 }, { wch: 10 }, { wch: 12 }, { wch: 12 }, { wch: 8 },
             { wch: 9 }, { wch: 9 }, { wch: 8 },
             { wch: 7 }, { wch: 7 }, { wch: 7 },
@@ -284,16 +282,16 @@ const ClientBillingReport: React.FC = () => {
         ];
 
         ws['!merges'] = [
-            { s: { r: 0, c: 0 }, e: { r: 0, c: 29 } },
-            { s: { r: 1, c: 0 }, e: { r: 1, c: 29 } },
-            { s: { r: 2, c: 0 }, e: { r: 2, c: 29 } },
-            { s: { r: 4, c: 0 }, e: { r: 4, c: 8 } },
-            { s: { r: 4, c: 9 }, e: { r: 4, c: 14 } },
-            { s: { r: 4, c: 15 }, e: { r: 4, c: 17 } },
-            { s: { r: 4, c: 18 }, e: { r: 4, c: 20 } },
-            { s: { r: 4, c: 21 }, e: { r: 4, c: 23 } },
-            { s: { r: 4, c: 24 }, e: { r: 4, c: 26 } },
-            { s: { r: 4, c: 27 }, e: { r: 4, c: 29 } },
+            { s: { r: 0, c: 0 }, e: { r: 0, c: 27 } },
+            { s: { r: 1, c: 0 }, e: { r: 1, c: 27 } },
+            { s: { r: 2, c: 0 }, e: { r: 2, c: 27 } },
+            { s: { r: 4, c: 0 }, e: { r: 4, c: 6 } },
+            { s: { r: 4, c: 7 }, e: { r: 4, c: 12 } },
+            { s: { r: 4, c: 13 }, e: { r: 4, c: 15 } },
+            { s: { r: 4, c: 16 }, e: { r: 4, c: 18 } },
+            { s: { r: 4, c: 19 }, e: { r: 4, c: 21 } },
+            { s: { r: 4, c: 22 }, e: { r: 4, c: 24 } },
+            { s: { r: 4, c: 25 }, e: { r: 4, c: 27 } },
         ];
 
         const clientLabel = displayClientName || 'CLIENTE';
@@ -460,47 +458,45 @@ const ClientBillingReport: React.FC = () => {
                     <div style={{ overflowX: 'auto' }}>
                         <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed' }}>
                             <colgroup>
-                                {/* TABELA ACORDADA: Nº, ROTA, VALOR, HR FRANQ, KM FRANQ, HR EXTRA, KM EXTRA, PEDÁGIO, STATUS */}
-                                <col style={{ width: '2.4%' }} />
-                                <col style={{ width: '8.5%' }} />
-                                <col style={{ width: '3.6%' }} />
+                                {/* TABELA ACORDADA: Nº, ROTA, VALOR, HR FRANQ, KM FRANQ, HR EXTRA, KM EXTRA */}
                                 <col style={{ width: '2.6%' }} />
-                                <col style={{ width: '2.6%' }} />
-                                <col style={{ width: '3.2%' }} />
-                                <col style={{ width: '3.2%' }} />
+                                <col style={{ width: '10%' }} />
+                                <col style={{ width: '4%' }} />
                                 <col style={{ width: '3%' }} />
-                                <col style={{ width: '3.8%' }} />
+                                <col style={{ width: '3%' }} />
+                                <col style={{ width: '3.6%' }} />
+                                <col style={{ width: '3.6%' }} />
                                 {/* INFO VIAGEM: DATA INÍCIO, HORA INI, VIATURA, VEÍC ESCOLT, DATA FIM, HORA FIM */}
-                                <col style={{ width: '3.6%' }} />
-                                <col style={{ width: '2.6%' }} />
-                                <col style={{ width: '3.6%' }} />
-                                <col style={{ width: '3.6%' }} />
-                                <col style={{ width: '3.6%' }} />
-                                <col style={{ width: '2.6%' }} />
-                                {/* KILOMETRAGEM: INICIAL, FINAL, TOTAL */}
-                                <col style={{ width: '3%' }} />
-                                <col style={{ width: '3%' }} />
-                                <col style={{ width: '3%' }} />
-                                {/* HORÁRIOS: INICIAL, FINAL, TOTAL */}
-                                <col style={{ width: '2.6%' }} />
-                                <col style={{ width: '2.6%' }} />
+                                <col style={{ width: '3.8%' }} />
                                 <col style={{ width: '2.8%' }} />
+                                <col style={{ width: '4%' }} />
+                                <col style={{ width: '4%' }} />
+                                <col style={{ width: '3.8%' }} />
+                                <col style={{ width: '2.8%' }} />
+                                {/* KILOMETRAGEM: INICIAL, FINAL, TOTAL */}
+                                <col style={{ width: '3.2%' }} />
+                                <col style={{ width: '3.2%' }} />
+                                <col style={{ width: '3.2%' }} />
+                                {/* HORÁRIOS: INICIAL, FINAL, TOTAL */}
+                                <col style={{ width: '2.8%' }} />
+                                <col style={{ width: '2.8%' }} />
+                                <col style={{ width: '3%' }} />
                                 {/* KM EXCEDENTE: KM, VALOR, TOTAL */}
-                                <col style={{ width: '2.4%' }} />
-                                <col style={{ width: '3.4%' }} />
+                                <col style={{ width: '2.6%' }} />
                                 <col style={{ width: '3.6%' }} />
+                                <col style={{ width: '3.8%' }} />
                                 {/* HORA EXCEDENTE: HORA, VALOR, TOTAL */}
-                                <col style={{ width: '2.4%' }} />
-                                <col style={{ width: '3.4%' }} />
+                                <col style={{ width: '2.6%' }} />
                                 <col style={{ width: '3.6%' }} />
+                                <col style={{ width: '3.8%' }} />
                                 {/* VALORES: ESCOLTA, PEDÁGIO, TOTAL */}
+                                <col style={{ width: '4%' }} />
                                 <col style={{ width: '3.6%' }} />
-                                <col style={{ width: '3.4%' }} />
-                                <col style={{ width: '4.2%' }} />
+                                <col style={{ width: '4.8%' }} />
                             </colgroup>
                             <thead>
                                 <tr className="group-hdr">
-                                    <th style={groupHeaderStyle} colSpan={9}>TABELA ACORDADA</th>
+                                    <th style={groupHeaderStyle} colSpan={7}>TABELA ACORDADA</th>
                                     <th style={groupHeaderStyle} colSpan={6}>INFORMAÇÕES DA VIAGEM</th>
                                     <th style={grpKm} colSpan={3}>KILOMETRAGEM</th>
                                     <th style={grpHr} colSpan={3}>HORÁRIOS</th>
@@ -516,8 +512,6 @@ const ClientBillingReport: React.FC = () => {
                                     <th style={headerStyle}>KM FRANQ</th>
                                     <th style={headerStyle}>HR EXTRA</th>
                                     <th style={headerStyle}>KM EXTRA</th>
-                                    <th style={headerStyle}>PEDÁGIO</th>
-                                    <th style={headerStyle}>STATUS</th>
                                     <th style={headerStyle}>DATA INÍCIO</th>
                                     <th style={headerStyle}>HORA INÍCIO</th>
                                     <th style={headerStyle}>VIATURA</th>
@@ -543,7 +537,7 @@ const ClientBillingReport: React.FC = () => {
                             </thead>
                             <tbody>
                                 {rowsData.length === 0 ? (
-                                    <tr><td colSpan={30} style={{ ...cellStyle, padding: '16px', fontSize: '10px', fontWeight: 700, color: '#9ca3af' }}>NENHUMA MISSÃO NO PERÍODO.</td></tr>
+                                    <tr><td colSpan={28} style={{ ...cellStyle, padding: '16px', fontSize: '10px', fontWeight: 700, color: '#9ca3af' }}>NENHUMA MISSÃO NO PERÍODO.</td></tr>
                                 ) : (
                                     rowsData.map((r, i) => (
                                         <tr key={i} style={{ backgroundColor: i % 2 === 0 ? '#fff' : '#f9fafb' }}>
@@ -554,8 +548,6 @@ const ClientBillingReport: React.FC = () => {
                                             <td style={cellStyle}>{fmtNum(r.franchiseKm)}</td>
                                             <td style={cellStyle}>{fmtBRL(r.unitHr)}</td>
                                             <td style={cellStyle}>{fmtBRL(r.unitKm)}</td>
-                                            <td style={cellStyle}>{r.tollLabel}</td>
-                                            <td style={cellStyle}>{r.status}</td>
                                             <td style={cellStyle}>{r.startDate}</td>
                                             <td style={cellStyle}>{r.startTime}</td>
                                             <td style={{ ...cellStyle, fontFamily: 'monospace' }}>{r.viatura}</td>
@@ -584,7 +576,7 @@ const ClientBillingReport: React.FC = () => {
                             {rowsData.length > 0 && (
                                 <tfoot>
                                     <tr style={{ backgroundColor: '#111827', color: '#fff' }}>
-                                        <td colSpan={29} style={{ ...cellStyle, textAlign: 'right', fontWeight: 900, fontSize: '8px', color: '#fff', border: '1px solid #000' }}>TOTAL</td>
+                                        <td colSpan={27} style={{ ...cellStyle, textAlign: 'right', fontWeight: 900, fontSize: '8px', color: '#fff', border: '1px solid #000' }}>TOTAL</td>
                                         <td style={{ ...cellStyle, fontWeight: 900, fontSize: '9px', color: '#fff', border: '1px solid #000' }}>{fmtBRL(grandTotal)}</td>
                                     </tr>
                                 </tfoot>
