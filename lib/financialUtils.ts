@@ -796,8 +796,8 @@ export const auditMissionFinancials = (
 ): AuditResult => {
     const fin = calculateMissionFinancials(mission, clientTables, providerTables, clientData);
     
-    const storedRevenue = safeNumber(mission.revenue_value);
-    const storedCost = safeNumber(mission.cost_value);
+    const storedRevenue = safeNumber(mission.revenue_value) + safeNumber(mission.toll_value);
+    const storedCost = safeNumber(mission.cost_value) + safeNumber(mission.toll_value_provider != null ? mission.toll_value_provider : mission.toll_value);
     const calculatedRevenue = fin.client.total;
     const calculatedCost = fin.provider.total;
     

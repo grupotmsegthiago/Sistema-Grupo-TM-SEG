@@ -355,7 +355,9 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
       setCustomClientBase('');
       setCustomClientKm('');
       setCustomClientHour('');
-      setUseSavedValues(false);
+      if (financialData) {
+          setRevenueInput(financialData.client.total.toLocaleString('pt-BR', { minimumFractionDigits: 2 }));
+      }
       showNotification('Recalculado', 'Valores do cliente restaurados para a tabela original.', 'info');
   };
 
@@ -363,7 +365,9 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
       setCustomProviderBase('');
       setCustomProviderKm('');
       setCustomProviderHour('');
-      setUseSavedValues(false);
+      if (financialData) {
+          setCostInput(financialData.provider.total.toLocaleString('pt-BR', { minimumFractionDigits: 2 }));
+      }
       showNotification('Recalculado', 'Valores do fornecedor restaurados para a tabela original.', 'info');
   };
 
@@ -1023,19 +1027,21 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                 </button>
                             </div>
                             {(() => {
-                                const calcTotal = financialData.client.base + financialData.client.extraKmVal + financialData.client.extraHrVal + parseNumber(tollInput);
+                                const ibl = financialData.iblFee || 0;
+                                const calcTotal = financialData.client.base + financialData.client.extraKmVal + financialData.client.extraHrVal + ibl + parseNumber(tollInput);
                                 const savedTotal = parseNumber(revenueInput);
-                                const isDivergent = useSavedValuesRef.current && Math.abs(calcTotal - savedTotal) > 1;
+                                const isDivergent = Math.abs(calcTotal - savedTotal) > 1;
                                 return (
                                     <div className={`flex flex-col gap-1 text-[9px] font-bold mb-2 px-2 py-1.5 rounded-lg border ${isDivergent ? 'text-amber-700 bg-amber-50/80 border-amber-300' : 'text-green-600 bg-green-100/60 border-green-200'}`}>
                                         <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5">
                                             <span>{formatCurrency(financialData.client.base)} <span className={isDivergent ? 'text-amber-400' : 'text-green-400'}>(base)</span></span>
                                             <span>+ {formatCurrency(financialData.client.extraKmVal)} <span className={isDivergent ? 'text-amber-400' : 'text-green-400'}>(km{financialData.client.excessKm > 0 ? `: ${financialData.client.excessKm.toFixed(1)}×R$${financialData.client.unitPriceKm.toFixed(2)}` : ''})</span></span>
                                             <span>+ {formatCurrency(financialData.client.extraHrVal)} <span className={isDivergent ? 'text-amber-400' : 'text-green-400'}>(hora{financialData.client.excessHours > 0 ? `: ${financialData.client.excessHours.toFixed(2)}h×R$${financialData.client.unitPriceHour.toFixed(2)}` : ''})</span></span>
+                                            {ibl > 0 && <span>+ {formatCurrency(ibl)} <span className={isDivergent ? 'text-amber-400' : 'text-green-400'}>(IBL 12%)</span></span>}
                                             <span>+ {formatCurrency(parseNumber(tollInput))} <span className={isDivergent ? 'text-amber-400' : 'text-green-400'}>(pedágio)</span></span>
                                             <span className="font-black">= {formatCurrency(calcTotal)}</span>
                                         </div>
-                                        {isDivergent && <span className="text-[8px] text-amber-600 font-black">⚠ Valor salvo ({formatCurrency(savedTotal)}) difere da tabela ({formatCurrency(calcTotal)}). Clique "Recalcular" para usar tabela.</span>}
+                                        {isDivergent && <span className="text-[8px] text-amber-600 font-black">⚠ Valor exibido ({formatCurrency(savedTotal)}) difere da tabela ({formatCurrency(calcTotal)}). Clique "Recalcular" para corrigir.</span>}
                                     </div>
                                 );
                             })()}
@@ -1076,7 +1082,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                             {(() => {
                                 const calcTotal = financialData.provider.base + financialData.provider.extraKmVal + financialData.provider.extraHrVal + parseNumber(tollProviderInput);
                                 const savedTotal = parseNumber(costInput);
-                                const isDivergent = useSavedValuesRef.current && Math.abs(calcTotal - savedTotal) > 1;
+                                const isDivergent = Math.abs(calcTotal - savedTotal) > 1;
                                 return (
                                     <div className={`flex flex-col gap-1 text-[9px] font-bold mb-2 px-2 py-1.5 rounded-lg border ${isDivergent ? 'text-amber-700 bg-amber-50/80 border-amber-300' : 'text-blue-600 bg-blue-100/60 border-blue-200'}`}>
                                         <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5">
@@ -1086,7 +1092,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                             <span>+ {formatCurrency(parseNumber(tollProviderInput))} <span className={isDivergent ? 'text-amber-400' : 'text-blue-400'}>(pedágio)</span></span>
                                             <span className="font-black">= {formatCurrency(calcTotal)}</span>
                                         </div>
-                                        {isDivergent && <span className="text-[8px] text-amber-600 font-black">⚠ Valor salvo ({formatCurrency(savedTotal)}) difere da tabela ({formatCurrency(calcTotal)}). Clique "Recalcular" para usar tabela.</span>}
+                                        {isDivergent && <span className="text-[8px] text-amber-600 font-black">⚠ Valor exibido ({formatCurrency(savedTotal)}) difere da tabela ({formatCurrency(calcTotal)}). Clique "Recalcular" para corrigir.</span>}
                                     </div>
                                 );
                             })()}
