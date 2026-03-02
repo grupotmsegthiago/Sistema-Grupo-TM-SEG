@@ -99,6 +99,22 @@ const MissionOperationalReport: React.FC<Props> = ({ mission, onClose, isClientV
                     if (reportData.acionado_por) setAcionadoPor(reportData.acionado_por);
                     if (reportData.descritivo) setDescritivoOperacao(reportData.descritivo);
                     if (reportData.whatsapp_raw) setWhatsappConversation(reportData.whatsapp_raw);
+                    if (reportData.photos && Array.isArray(reportData.photos)) {
+                        const savedPhotos = reportData.photos as Array<{ type: string; label: string; preview: string }>;
+                        const kmIni = savedPhotos.find(p => p.type === 'km_inicial');
+                        const kmFin = savedPhotos.find(p => p.type === 'km_final');
+                        if (kmIni?.preview) setKmInicialPreview(kmIni.preview);
+                        if (kmFin?.preview) setKmFinalPreview(kmFin.preview);
+                        const locals = savedPhotos.filter(p => p.type === 'local');
+                        if (locals.length > 0) {
+                            setLocalPhotos(locals.map((lp, i) => ({
+                                id: `loc_db_${i}`,
+                                label: lp.label || `Foto do Local ${i + 1}`,
+                                file: null,
+                                preview: lp.preview
+                            })));
+                        }
+                    }
                     setLoadedFromDb(true);
                     setIsSaved(true);
                     return;
@@ -118,6 +134,12 @@ const MissionOperationalReport: React.FC<Props> = ({ mission, onClose, isClientV
         if (!generatedReport) return;
         setIsSaving(true);
         try {
+            const photosPayload: Array<{ type: string; label: string; preview: string }> = [];
+            if (kmInicialPreview) photosPayload.push({ type: 'km_inicial', label: 'KM Inicial', preview: kmInicialPreview });
+            if (kmFinalPreview) photosPayload.push({ type: 'km_final', label: 'KM Final', preview: kmFinalPreview });
+            localPhotos.filter(s => s.preview).forEach(s => {
+                photosPayload.push({ type: 'local', label: s.label, preview: s.preview! });
+            });
             const res = await fetch(`/api/missions/${encodeURIComponent(mission.id)}/operational-report`, {
                 method: 'PATCH',
                 headers: { 'Content-Type': 'application/json' },
@@ -125,7 +147,8 @@ const MissionOperationalReport: React.FC<Props> = ({ mission, onClose, isClientV
                     operational_report: generatedReport,
                     acionado_por: acionadoPor,
                     descritivo: descritivoOperacao,
-                    whatsapp_raw: whatsappConversation
+                    whatsapp_raw: whatsappConversation,
+                    photos: photosPayload
                 })
             });
             const result = await res.json();
