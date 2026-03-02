@@ -1,10 +1,22 @@
 
 import React, { useState, useEffect } from 'react';
-import { ArrowLeft, Save, UserCog, Building2, Shield, Info, Loader2, Key, RefreshCw, Eye, EyeOff, Copy, Briefcase, AlertTriangle, CheckSquare, Square, Mail } from 'lucide-react';
+import { ArrowLeft, Save, UserCog, Building2, Shield, Info, Loader2, Key, RefreshCw, Eye, EyeOff, Copy, Briefcase, AlertTriangle, CheckSquare, Square, Mail, LayoutDashboard, MapPin, Truck, Route, Users, FileText, BarChart3, Bell, FileBarChart } from 'lucide-react';
 import { Client, AccessProfile, ProviderData } from '../types';
 import { supabase } from '../lib/supabase';
 import { logAction } from '../lib/logger';
 import { useNotification } from '../lib/NotificationContext';
+
+const CLIENT_PERMISSION_OPTIONS = [
+    { id: 'dashboard', label: 'Página Inicial (Dashboard)', description: 'Visão geral com indicadores e gráficos', icon: LayoutDashboard, default: true },
+    { id: 'missions', label: 'Monitoramento de Escoltas', description: 'Acompanhar escoltas em tempo real', icon: MapPin, default: true },
+    { id: 'client-users', label: 'Gestão de Usuários', description: 'Criar e gerenciar outros usuários da empresa', icon: Users, default: false },
+    { id: 'client-vehicles', label: 'Veículos (Carga)', description: 'Visualizar e cadastrar veículos de carga', icon: Truck, default: false },
+    { id: 'client-routes', label: 'Rotas Cadastradas', description: 'Visualizar e gerenciar rotas', icon: Route, default: false },
+    { id: 'fin-billing', label: 'Boletim de Medição', description: 'Acessar boletins de medição e faturamento', icon: FileText, default: false },
+    { id: 'client-reports', label: 'Relatórios Executivos', description: 'Dashboards e relatórios da operação', icon: BarChart3, default: false },
+    { id: 'client-mission-request', label: 'Solicitar Escolta', description: 'Criar novas solicitações de escolta', icon: Bell, default: false },
+    { id: 'operational-reports', label: 'Relatórios Operacionais', description: 'Visualizar relatórios detalhados das missões', icon: FileBarChart, default: false },
+];
 
 interface UserFormProps {
   onBack: () => void;
@@ -37,6 +49,9 @@ const UserForm: React.FC<UserFormProps> = ({ onBack, userType, id }) => {
   const [showPassword, setShowPassword] = useState(false);
   const [emailError, setEmailError] = useState('');
   const [generatedPass, setGeneratedPass] = useState('');
+  const [selectedPermissions, setSelectedPermissions] = useState<string[]>(
+    CLIENT_PERMISSION_OPTIONS.filter(p => p.default).map(p => p.id)
+  );
 
   const currentUser = (() => {
     try { return JSON.parse(localStorage.getItem('userData') || '{}'); } catch { return {}; }
@@ -91,6 +106,9 @@ const UserForm: React.FC<UserFormProps> = ({ onBack, userType, id }) => {
                   providerId: data.provider_id || '',
                   status: data.status
               });
+              if (data.permissions && Array.isArray(data.permissions) && data.permissions.length > 0) {
+                  setSelectedPermissions(data.permissions);
+              }
           }
       } catch (e) {
           console.error(e);
@@ -135,7 +153,7 @@ const UserForm: React.FC<UserFormProps> = ({ onBack, userType, id }) => {
 
       setIsSaving(true);
       try {
-          const payload = {
+          const payload: any = {
               name: formData.name,
               email: formData.email,
               password: formData.password,
@@ -146,6 +164,9 @@ const UserForm: React.FC<UserFormProps> = ({ onBack, userType, id }) => {
               status: formData.status,
               force_password_change: !id
           };
+          if (userType === 'client' && isClientUser) {
+              payload.permissions = selectedPermissions;
+          }
 
           if (id) {
               await supabase.from('system_users').update(payload).eq('id', id);
@@ -255,6 +276,45 @@ const UserForm: React.FC<UserFormProps> = ({ onBack, userType, id }) => {
                           )}
                       </div>
                       <p className="text-[10px] text-blue-700 mt-2 flex items-center gap-1"><Info size={12}/> {isClientUser ? 'Novo usuário será vinculado automaticamente à sua empresa.' : 'Este usuário verá apenas dados deste cliente.'}</p>
+                  </div>
+              )}
+
+              {userType === 'client' && isClientUser && (
+                  <div className="bg-indigo-50 p-4 rounded-xl border border-indigo-100 animate-in fade-in">
+                      <div className="flex items-center justify-between mb-3">
+                          <label className={LABEL_CLASS}>Permissões de Acesso</label>
+                          <div className="flex gap-2">
+                              <button type="button" onClick={() => setSelectedPermissions(CLIENT_PERMISSION_OPTIONS.map(p => p.id))} className="text-[9px] font-bold text-indigo-600 hover:text-indigo-800 uppercase tracking-wider" data-testid="button-select-all-perms">Marcar Todos</button>
+                              <span className="text-gray-300">|</span>
+                              <button type="button" onClick={() => setSelectedPermissions(CLIENT_PERMISSION_OPTIONS.filter(p => p.default).map(p => p.id))} className="text-[9px] font-bold text-gray-500 hover:text-gray-700 uppercase tracking-wider" data-testid="button-reset-perms">Padrão</button>
+                          </div>
+                      </div>
+                      <div className="space-y-1.5">
+                          {CLIENT_PERMISSION_OPTIONS.map(perm => {
+                              const Icon = perm.icon;
+                              const isChecked = selectedPermissions.includes(perm.id);
+                              return (
+                                  <button
+                                      key={perm.id}
+                                      type="button"
+                                      onClick={() => setSelectedPermissions(prev => isChecked ? prev.filter(p => p !== perm.id) : [...prev, perm.id])}
+                                      className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg border transition-all text-left ${isChecked ? 'bg-white border-indigo-300 shadow-sm' : 'bg-indigo-50/50 border-transparent hover:bg-white hover:border-gray-200'}`}
+                                      data-testid={`toggle-perm-${perm.id}`}
+                                  >
+                                      <div className={`w-5 h-5 rounded flex items-center justify-center shrink-0 transition-colors ${isChecked ? 'bg-indigo-600 text-white' : 'bg-gray-200 text-transparent'}`}>
+                                          {isChecked ? <CheckSquare size={14} /> : <Square size={14} />}
+                                      </div>
+                                      <Icon size={16} className={isChecked ? 'text-indigo-600' : 'text-gray-400'} />
+                                      <div className="flex-1 min-w-0">
+                                          <p className={`text-xs font-bold ${isChecked ? 'text-gray-800' : 'text-gray-500'}`}>{perm.label}</p>
+                                          <p className="text-[9px] text-gray-400 truncate">{perm.description}</p>
+                                      </div>
+                                      {perm.default && <span className="text-[8px] font-bold text-indigo-400 uppercase bg-indigo-100 px-1.5 py-0.5 rounded shrink-0">Padrão</span>}
+                                  </button>
+                              );
+                          })}
+                      </div>
+                      <p className="text-[10px] text-indigo-600 mt-3 flex items-center gap-1"><Shield size={12}/> {selectedPermissions.length} de {CLIENT_PERMISSION_OPTIONS.length} módulos selecionados</p>
                   </div>
               )}
 
