@@ -222,7 +222,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                   setTollSource('AGUARDANDO CONFERÊNCIA');
               }
 
-              if (mRes.data.billing_approved && (savedRev > 0 || savedCost > 0)) {
+              if (savedRev > 0 || savedCost > 0) {
                   setUseSavedValues(true);
                   const totalRev = savedRev + dbToll;
                   const totalCost = savedCost + dbTollProvider;
@@ -1002,12 +1002,20 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                     <RefreshCw size={10} /> Recalcular
                                 </button>
                             </div>
-                            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[9px] font-bold text-green-600 mb-2 bg-green-100/60 px-2 py-1.5 rounded-lg border border-green-200">
-                                <span>{formatCurrency(financialData.client.base)} <span className="text-green-400">(base)</span></span>
-                                <span>+ {formatCurrency(financialData.client.extraKmVal)} <span className="text-green-400">(km)</span></span>
-                                <span>+ {formatCurrency(financialData.client.extraHrVal)} <span className="text-green-400">(hora)</span></span>
-                                <span>+ {formatCurrency(parseNumber(tollInput))} <span className="text-green-400">(pedágio)</span></span>
-                            </div>
+                            {(() => {
+                                const calcTotal = financialData.client.base + financialData.client.extraKmVal + financialData.client.extraHrVal + parseNumber(tollInput);
+                                const savedTotal = parseNumber(revenueInput);
+                                const isDivergent = useSavedValuesRef.current && Math.abs(calcTotal - savedTotal) > 1;
+                                return (
+                                    <div className={`flex flex-wrap items-center gap-x-3 gap-y-1 text-[9px] font-bold mb-2 px-2 py-1.5 rounded-lg border ${isDivergent ? 'text-amber-700 bg-amber-50/80 border-amber-300' : 'text-green-600 bg-green-100/60 border-green-200'}`}>
+                                        <span>{formatCurrency(financialData.client.base)} <span className={isDivergent ? 'text-amber-400' : 'text-green-400'}>(base)</span></span>
+                                        <span>+ {formatCurrency(financialData.client.extraKmVal)} <span className={isDivergent ? 'text-amber-400' : 'text-green-400'}>(km)</span></span>
+                                        <span>+ {formatCurrency(financialData.client.extraHrVal)} <span className={isDivergent ? 'text-amber-400' : 'text-green-400'}>(hora)</span></span>
+                                        <span>+ {formatCurrency(parseNumber(tollInput))} <span className={isDivergent ? 'text-amber-400' : 'text-green-400'}>(pedágio)</span></span>
+                                        {isDivergent && <span className="text-[8px] text-amber-600 ml-1">= {formatCurrency(calcTotal)} (tabela) | Valor salvo: {formatCurrency(savedTotal)}</span>}
+                                    </div>
+                                );
+                            })()}
                             <div className="flex items-baseline gap-2">
                                 <span className="text-sm font-bold text-green-600">R$</span>
                                 <input 
@@ -1042,12 +1050,20 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                     <RefreshCw size={10} /> Recalcular
                                 </button>
                             </div>
-                            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[9px] font-bold text-blue-600 mb-2 bg-blue-100/60 px-2 py-1.5 rounded-lg border border-blue-200">
-                                <span>{formatCurrency(financialData.provider.base)} <span className="text-blue-400">(base)</span></span>
-                                <span>+ {formatCurrency(financialData.provider.extraKmVal)} <span className="text-blue-400">(km)</span></span>
-                                <span>+ {formatCurrency(financialData.provider.extraHrVal)} <span className="text-blue-400">(hora)</span></span>
-                                <span>+ {formatCurrency(parseNumber(tollProviderInput))} <span className="text-blue-400">(pedágio)</span></span>
-                            </div>
+                            {(() => {
+                                const calcTotal = financialData.provider.base + financialData.provider.extraKmVal + financialData.provider.extraHrVal + parseNumber(tollProviderInput);
+                                const savedTotal = parseNumber(costInput);
+                                const isDivergent = useSavedValuesRef.current && Math.abs(calcTotal - savedTotal) > 1;
+                                return (
+                                    <div className={`flex flex-wrap items-center gap-x-3 gap-y-1 text-[9px] font-bold mb-2 px-2 py-1.5 rounded-lg border ${isDivergent ? 'text-amber-700 bg-amber-50/80 border-amber-300' : 'text-blue-600 bg-blue-100/60 border-blue-200'}`}>
+                                        <span>{formatCurrency(financialData.provider.base)} <span className={isDivergent ? 'text-amber-400' : 'text-blue-400'}>(base)</span></span>
+                                        <span>+ {formatCurrency(financialData.provider.extraKmVal)} <span className={isDivergent ? 'text-amber-400' : 'text-blue-400'}>(km)</span></span>
+                                        <span>+ {formatCurrency(financialData.provider.extraHrVal)} <span className={isDivergent ? 'text-amber-400' : 'text-blue-400'}>(hora)</span></span>
+                                        <span>+ {formatCurrency(parseNumber(tollProviderInput))} <span className={isDivergent ? 'text-amber-400' : 'text-blue-400'}>(pedágio)</span></span>
+                                        {isDivergent && <span className="text-[8px] text-amber-600 ml-1">= {formatCurrency(calcTotal)} (tabela) | Valor salvo: {formatCurrency(savedTotal)}</span>}
+                                    </div>
+                                );
+                            })()}
                             <div className="flex items-baseline gap-2">
                                 <span className="text-sm font-bold text-blue-600">R$</span>
                                 <input 
