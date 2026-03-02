@@ -606,7 +606,7 @@ Qualquer dúvida, estamos a disposição.
                            </div>
                            <div className="rounded-lg p-1.5 shadow-sm border border-green-400" style={{ background: 'linear-gradient(135deg, #dcfce7 0%, #bbf7d0 100%)' }}>
                                <p className="text-[7px] font-black text-green-700 uppercase tracking-wider leading-none mb-0.5">Valor Total</p>
-                               <p className="text-[12px] font-black text-green-900 font-mono leading-none tracking-tight">{formatCurrency(displayRevenue)}</p>
+                               <p className="text-[12px] font-black text-green-900 font-mono leading-none tracking-tight">{formatCurrency(financials.client.base + financials.client.extraHrVal + financials.client.extraKmVal + financials.tollValue)}</p>
                            </div>
                         </div>
                     )}
