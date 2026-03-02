@@ -155,11 +155,20 @@ const MissionCardComponent: React.FC<MissionCardProps> = ({
     }, [mission, clientTables, providerTables, clientsData, isDirector, hideProviderInfo, currentTime]);
 
     const isExtraHourActive = useMemo(() => {
+        if (!hideProviderInfo) return false;
         if (!financials) return false;
         if (isTerminal) return false;
         if (mission.status !== MissionStatus.IN_TRANSIT) return false;
         return financials.client.excessHours > 0;
-    }, [financials, isTerminal, mission.status]);
+    }, [financials, isTerminal, mission.status, hideProviderInfo]);
+
+    const formatExcessTime = (hours: number) => {
+        const totalSeconds = Math.round(hours * 3600);
+        const h = Math.floor(totalSeconds / 3600);
+        const m = Math.floor((totalSeconds % 3600) / 60);
+        const s = totalSeconds % 60;
+        return `${h}h ${m.toString().padStart(2, '0')}m ${s.toString().padStart(2, '0')}s`;
+    };
 
     const hasBeenVerified = !!(mission as any).billing_verified_by;
 
@@ -311,7 +320,7 @@ Qualquer dúvida, estamos a disposição.
                             Hora Extra Ativa
                         </span>
                         <span className="text-[10px] font-black text-yellow-100 bg-black/20 px-2 py-0.5 rounded-full" style={{ boxShadow: 'inset 0 1px 2px rgba(0,0,0,0.2)' }}>
-                            +{financials?.client.excessHours?.toFixed(1)}h
+                            +{financials ? formatExcessTime(financials.client.excessHours) : ''}
                         </span>
                     </div>
                     <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/10 to-transparent animate-pulse pointer-events-none"></div>
@@ -586,7 +595,7 @@ Qualquer dúvida, estamos a disposição.
                                <div className="rounded-lg p-1.5 shadow-sm border bg-amber-50 border-amber-300">
                                    <p className="text-[7px] font-black text-amber-700 uppercase tracking-wider leading-none mb-0.5">Hora Extra</p>
                                    <p className="text-[10px] font-black text-amber-800 font-mono leading-none">{formatCurrency(financials.client.extraHrVal)}</p>
-                                   <p className="text-[7px] font-bold text-amber-500 mt-0.5">+{financials.client.excessHours.toFixed(1)}h</p>
+                                   <p className="text-[7px] font-bold text-amber-500 mt-0.5">+{formatExcessTime(financials.client.excessHours)}</p>
                                </div>
                            )}
                            {financials.client.extraKmVal > 0 && (
