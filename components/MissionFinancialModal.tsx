@@ -721,7 +721,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                     <select 
                                         className="w-full p-2 bg-gray-50 border border-gray-200 rounded-lg text-xs font-bold text-gray-700 uppercase outline-none focus:border-blue-500"
                                         value={manualClientTableId || ''}
-                                        onChange={(e) => { setManualClientTableId(e.target.value); }}
+                                        onChange={(e) => { setManualClientTableId(e.target.value); setUseSavedValues(false); }}
                                     >
                                         <option value="">Automático (IA Detectando)</option>
                                         {[...clientTables].sort((a, b) => (a.operation_type || '').localeCompare(b.operation_type || '')).map(t => (
@@ -831,7 +831,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                     <select 
                                         className={`w-full p-2 bg-gray-50 border rounded-lg text-xs font-bold text-gray-700 uppercase outline-none focus:border-red-500 ${isZeroCostError ? 'border-red-300 bg-red-50 text-red-900 animate-pulse' : 'border-gray-200'}`}
                                         value={manualProviderTableId || ''}
-                                        onChange={(e) => { setManualProviderTableId(e.target.value); }}
+                                        onChange={(e) => { setManualProviderTableId(e.target.value); setUseSavedValues(false); }}
                                         disabled={mission.is_same_os}
                                     >
                                         <option value="">{mission.is_same_os ? 'Custo Zero (Mesma OS)' : 'IA Detectando Melhor Custo...'}</option>
