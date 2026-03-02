@@ -586,30 +586,28 @@ Qualquer dúvida, estamos a disposição.
                         </div>
                     )}
                     {hideProviderInfo && financials && (
-                        <div className="flex flex-col gap-1.5" data-testid={`client-billing-${mission.id}`}>
-                           <div className="rounded-lg p-2 shadow-sm border" style={{ background: 'linear-gradient(135deg, #f0fdf4 0%, #dcfce7 100%)', borderColor: '#86efac' }}>
-                               <p className="text-[7px] font-black text-green-600 uppercase tracking-wider leading-none mb-1">Faturamento Cliente</p>
-                               <p className="text-[12px] font-black text-green-800 font-mono leading-none tracking-tight">{formatCurrency(displayRevenue)}</p>
+                        <div className="flex flex-col gap-1" data-testid={`client-billing-${mission.id}`}>
+                           <div className="rounded-lg p-1.5 shadow-sm border" style={{ background: 'linear-gradient(135deg, #f0fdf4 0%, #dcfce7 100%)', borderColor: '#86efac' }}>
+                               <p className="text-[7px] font-black text-green-600 uppercase tracking-wider leading-none mb-0.5">Faturamento</p>
+                               <p className="text-[11px] font-black text-green-800 font-mono leading-none tracking-tight">{formatCurrency(financials.client.base)}</p>
                            </div>
-                           {financials.client.extraHrVal > 0 && (
-                               <div className="rounded-lg p-1.5 shadow-sm border bg-amber-50 border-amber-300">
-                                   <p className="text-[7px] font-black text-amber-700 uppercase tracking-wider leading-none mb-0.5">Hora Extra</p>
-                                   <p className="text-[10px] font-black text-amber-800 font-mono leading-none">{formatCurrency(financials.client.extraHrVal)}</p>
-                                   <p className="text-[7px] font-bold text-amber-500 mt-0.5">+{formatExcessTime(financials.client.excessHours)}</p>
-                               </div>
-                           )}
-                           {financials.client.extraKmVal > 0 && (
-                               <div className="rounded-lg p-1.5 shadow-sm border bg-blue-50 border-blue-200">
-                                   <p className="text-[7px] font-black text-blue-600 uppercase tracking-wider leading-none mb-0.5">Km Extra</p>
-                                   <p className="text-[10px] font-black text-blue-800 font-mono leading-none">{formatCurrency(financials.client.extraKmVal)}</p>
-                               </div>
-                           )}
-                           {isTerminal && (
-                               <div className="rounded-lg border p-1 flex items-center justify-center gap-1 shadow-sm bg-green-50 border-green-200">
-                                   <Check size={10} className="text-green-600" />
-                                   <span className="text-[7px] font-black text-green-700 uppercase leading-none">Finalizada</span>
-                               </div>
-                           )}
+                           <div className={`rounded-lg p-1.5 shadow-sm border ${financials.client.extraHrVal > 0 ? 'bg-amber-50 border-amber-300' : 'bg-gray-50 border-gray-200'}`}>
+                               <p className="text-[7px] font-black text-amber-700 uppercase tracking-wider leading-none mb-0.5">Hora Extra</p>
+                               <p className={`text-[10px] font-black font-mono leading-none ${financials.client.extraHrVal > 0 ? 'text-amber-800' : 'text-gray-400'}`}>{formatCurrency(financials.client.extraHrVal)}</p>
+                               {financials.client.excessHours > 0 && <p className="text-[7px] font-bold text-amber-500 mt-0.5">+{formatExcessTime(financials.client.excessHours)}</p>}
+                           </div>
+                           <div className={`rounded-lg p-1.5 shadow-sm border ${financials.client.extraKmVal > 0 ? 'bg-blue-50 border-blue-200' : 'bg-gray-50 border-gray-200'}`}>
+                               <p className="text-[7px] font-black text-blue-600 uppercase tracking-wider leading-none mb-0.5">Km Extra</p>
+                               <p className={`text-[10px] font-black font-mono leading-none ${financials.client.extraKmVal > 0 ? 'text-blue-800' : 'text-gray-400'}`}>{formatCurrency(financials.client.extraKmVal)}</p>
+                           </div>
+                           <div className={`rounded-lg p-1.5 shadow-sm border ${financials.tollValue > 0 ? 'bg-purple-50 border-purple-200' : 'bg-gray-50 border-gray-200'}`}>
+                               <p className="text-[7px] font-black text-purple-600 uppercase tracking-wider leading-none mb-0.5">Pedágio</p>
+                               <p className={`text-[10px] font-black font-mono leading-none ${financials.tollValue > 0 ? 'text-purple-800' : 'text-gray-400'}`}>{formatCurrency(financials.tollValue)}</p>
+                           </div>
+                           <div className="rounded-lg p-1.5 shadow-sm border border-green-400" style={{ background: 'linear-gradient(135deg, #dcfce7 0%, #bbf7d0 100%)' }}>
+                               <p className="text-[7px] font-black text-green-700 uppercase tracking-wider leading-none mb-0.5">Valor Total</p>
+                               <p className="text-[12px] font-black text-green-900 font-mono leading-none tracking-tight">{formatCurrency(displayRevenue)}</p>
+                           </div>
                         </div>
                     )}
                 </div>
