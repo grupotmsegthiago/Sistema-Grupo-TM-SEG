@@ -104,7 +104,7 @@ const UserList: React.FC<UserListProps> = ({ onAddUser, onEdit, userType }) => {
         const currentUserData = (() => {
             try { return JSON.parse(localStorage.getItem('userData') || '{}'); } catch { return {}; }
         })();
-        const currentUserClientId = currentUserData.client_id;
+        const currentUserClientId = currentUserData.clientId || currentUserData.client_id || '';
 
         const filteredUsers = enrichedUsers.filter((u: any) => {
             if (userType === 'internal') {

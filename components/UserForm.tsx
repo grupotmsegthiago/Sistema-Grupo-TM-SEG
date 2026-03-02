@@ -41,7 +41,8 @@ const UserForm: React.FC<UserFormProps> = ({ onBack, userType, id }) => {
   const currentUser = (() => {
     try { return JSON.parse(localStorage.getItem('userData') || '{}'); } catch { return {}; }
   })();
-  const isClientUser = !!currentUser.client_id;
+  const currentUserClientId = currentUser.clientId || currentUser.client_id || '';
+  const isClientUser = !!currentUserClientId;
 
   useEffect(() => {
     fetchAuxData();
@@ -49,16 +50,20 @@ const UserForm: React.FC<UserFormProps> = ({ onBack, userType, id }) => {
     else {
       generateRandomPassword();
       if (isClientUser && userType === 'client') {
-        setFormData(prev => ({ ...prev, clientId: currentUser.client_id }));
+        setFormData(prev => ({ ...prev, clientId: currentUserClientId }));
       }
     }
   }, [id]);
 
   const fetchAuxData = async () => {
     try {
+        const clientQuery = isClientUser
+            ? supabase.from('clients').select('id, name').eq('id', currentUserClientId)
+            : supabase.from('clients').select('id, name').eq('status', 'Ativo').order('name');
+
         const [profRes, cliRes, provRes] = await Promise.all([
             supabase.from('profiles').select('*').order('name'),
-            supabase.from('clients').select('id, name').eq('status', 'Ativo').order('name'),
+            clientQuery,
             supabase.from('providers').select('id, name').eq('status', 'Ativo').order('name')
         ]);
 
@@ -135,7 +140,7 @@ const UserForm: React.FC<UserFormProps> = ({ onBack, userType, id }) => {
               email: formData.email,
               password: formData.password,
               profile_id: formData.profileId || null,
-              client_id: userType === 'client' ? formData.clientId : null,
+              client_id: userType === 'client' ? (isClientUser ? currentUserClientId : formData.clientId) : null,
               provider_id: userType === 'provider' ? formData.providerId : null,
               user_type: userType,
               status: formData.status,
@@ -235,7 +240,7 @@ const UserForm: React.FC<UserFormProps> = ({ onBack, userType, id }) => {
                           {isClientUser ? (
                               <>
                                   <div className={`${INPUT_CLASS} bg-gray-100 cursor-not-allowed flex items-center`}>
-                                      <span className="text-gray-700 font-medium">{clients.find(c => c.id === currentUser.client_id)?.name || 'Carregando...'}</span>
+                                      <span className="text-gray-700 font-medium">{clients.find(c => c.id === currentUserClientId)?.name || 'Carregando...'}</span>
                                   </div>
                                   <Building2 size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-blue-600 pointer-events-none" />
                               </>
