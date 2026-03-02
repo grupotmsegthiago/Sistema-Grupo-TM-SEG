@@ -148,11 +148,18 @@ const MissionCardComponent: React.FC<MissionCardProps> = ({
     }, [mission.status]);
     
     const financials = useMemo(() => {
-        if (!isDirector) return null;
+        if (!isDirector && !hideProviderInfo) return null;
         const clientName = ((mission as any).originalClientName || mission.client || '').trim();
         const client = clientsData.find(c => c.name === clientName);
         return calculateMissionFinancials(mission, clientTables, providerTables, client, currentTime);
-    }, [mission, clientTables, providerTables, clientsData, isDirector, currentTime]);
+    }, [mission, clientTables, providerTables, clientsData, isDirector, hideProviderInfo, currentTime]);
+
+    const isExtraHourActive = useMemo(() => {
+        if (!financials) return false;
+        if (isTerminal) return false;
+        if (mission.status !== MissionStatus.IN_TRANSIT) return false;
+        return financials.client.excessHours > 0;
+    }, [financials, isTerminal, mission.status]);
 
     const hasBeenVerified = !!(mission as any).billing_verified_by;
 
@@ -293,8 +300,25 @@ Qualquer dúvida, estamos a disposição.
               isRedLight ? 'border-red-200 ring-1 ring-red-100' : isImminent ? 'border-amber-200 ring-1 ring-amber-100' : 'border-gray-200 hover:border-blue-200'
           }`}
         >
+            {isExtraHourActive && (
+                <div className="relative overflow-hidden rounded-t-xl" style={{ background: 'linear-gradient(135deg, #f59e0b 0%, #d97706 50%, #b45309 100%)', boxShadow: 'inset 0 2px 4px rgba(255,255,255,0.3), inset 0 -2px 4px rgba(0,0,0,0.2), 0 4px 12px rgba(245,158,11,0.4), 0 2px 4px rgba(0,0,0,0.15)' }}>
+                    <div className="flex items-center justify-center gap-2 py-2 px-3 relative z-10">
+                        <div className="relative">
+                            <Clock size={14} className="text-white drop-shadow-md animate-pulse" strokeWidth={3} />
+                            <div className="absolute -inset-1 bg-white/20 rounded-full blur-sm animate-ping"></div>
+                        </div>
+                        <span className="text-[11px] font-black text-white uppercase tracking-widest drop-shadow-md" style={{ textShadow: '0 1px 3px rgba(0,0,0,0.4), 0 0 8px rgba(255,255,255,0.15)' }}>
+                            Hora Extra Ativa
+                        </span>
+                        <span className="text-[10px] font-black text-yellow-100 bg-black/20 px-2 py-0.5 rounded-full" style={{ boxShadow: 'inset 0 1px 2px rgba(0,0,0,0.2)' }}>
+                            +{financials?.client.excessHours?.toFixed(1)}h
+                        </span>
+                    </div>
+                    <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/10 to-transparent animate-pulse pointer-events-none"></div>
+                </div>
+            )}
             {(missingInfo.length > 0 || isPendingKm) && (
-                <div className="bg-red-600 text-white text-[10px] font-bold uppercase py-1.5 px-3 flex items-center justify-center gap-2 animate-pulse rounded-t-xl">
+                <div className={`bg-red-600 text-white text-[10px] font-bold uppercase py-1.5 px-3 flex items-center justify-center gap-2 animate-pulse ${isExtraHourActive ? '' : 'rounded-t-xl'}`}>
                     <AlertOctagon size={12} strokeWidth={3} /> PENDENTE: {isPendingKm ? ['KM FINAL', ...missingInfo].join(' • ') : missingInfo.join(' • ')}
                 </div>
             )}
@@ -550,6 +574,33 @@ Qualquer dúvida, estamos a disposição.
                                   </>
                               )}
                            </div>
+                        </div>
+                    )}
+                    {hideProviderInfo && financials && (
+                        <div className="flex flex-col gap-1.5" data-testid={`client-billing-${mission.id}`}>
+                           <div className="rounded-lg p-2 shadow-sm border" style={{ background: 'linear-gradient(135deg, #f0fdf4 0%, #dcfce7 100%)', borderColor: '#86efac' }}>
+                               <p className="text-[7px] font-black text-green-600 uppercase tracking-wider leading-none mb-1">Faturamento Cliente</p>
+                               <p className="text-[12px] font-black text-green-800 font-mono leading-none tracking-tight">{formatCurrency(displayRevenue)}</p>
+                           </div>
+                           {financials.client.extraHrVal > 0 && (
+                               <div className="rounded-lg p-1.5 shadow-sm border bg-amber-50 border-amber-300">
+                                   <p className="text-[7px] font-black text-amber-700 uppercase tracking-wider leading-none mb-0.5">Hora Extra</p>
+                                   <p className="text-[10px] font-black text-amber-800 font-mono leading-none">{formatCurrency(financials.client.extraHrVal)}</p>
+                                   <p className="text-[7px] font-bold text-amber-500 mt-0.5">+{financials.client.excessHours.toFixed(1)}h</p>
+                               </div>
+                           )}
+                           {financials.client.extraKmVal > 0 && (
+                               <div className="rounded-lg p-1.5 shadow-sm border bg-blue-50 border-blue-200">
+                                   <p className="text-[7px] font-black text-blue-600 uppercase tracking-wider leading-none mb-0.5">Km Extra</p>
+                                   <p className="text-[10px] font-black text-blue-800 font-mono leading-none">{formatCurrency(financials.client.extraKmVal)}</p>
+                               </div>
+                           )}
+                           {isTerminal && (
+                               <div className="rounded-lg border p-1 flex items-center justify-center gap-1 shadow-sm bg-green-50 border-green-200">
+                                   <Check size={10} className="text-green-600" />
+                                   <span className="text-[7px] font-black text-green-700 uppercase leading-none">Finalizada</span>
+                               </div>
+                           )}
                         </div>
                     )}
                 </div>
