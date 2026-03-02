@@ -781,8 +781,13 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                     <p className="text-[8px] font-black text-gray-400 uppercase">Extra KM</p>
                                     <div className="flex flex-col">
                                         <span className={`text-xs font-bold ${financialData.client.extraKmVal > 0 ? 'text-green-600' : 'text-gray-400'}`}>
-                                            {financialData.client.extraKmVal > 0 ? '+' : ''}{formatCurrency(financialData.client.extraKmVal)}
+                                            +{formatCurrency(financialData.client.extraKmVal)}
                                         </span>
+                                        {financialData.client.extraKmVal > 0 && (
+                                            <span className="text-[7px] text-gray-500 font-mono">
+                                                {financialData.client.excessKm.toFixed(1)}km × R${financialData.client.unitPriceKm.toFixed(2)}
+                                            </span>
+                                        )}
                                         <div className="flex items-center gap-1">
                                             <span className="text-[8px] text-gray-400">R$</span>
                                             <input 
@@ -800,8 +805,13 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                     <p className="text-[8px] font-black text-gray-400 uppercase">Extra Hora</p>
                                     <div className="flex flex-col">
                                         <span className={`text-xs font-bold ${financialData.client.extraHrVal > 0 ? 'text-green-600' : 'text-gray-400'}`}>
-                                            {financialData.client.extraHrVal > 0 ? '+' : ''}{formatCurrency(financialData.client.extraHrVal)}
+                                            +{formatCurrency(financialData.client.extraHrVal)}
                                         </span>
+                                        {financialData.client.extraHrVal > 0 && (
+                                            <span className="text-[7px] text-gray-500 font-mono">
+                                                {financialData.client.excessHours.toFixed(2)}h × R${financialData.client.unitPriceHour.toFixed(2)}
+                                            </span>
+                                        )}
                                         <div className="flex items-center gap-1">
                                             <span className="text-[8px] text-gray-400">R$</span>
                                             <input 
@@ -898,6 +908,11 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                         <span className={`text-xs font-bold ${financialData.provider.extraKmVal > 0 ? 'text-red-600' : 'text-gray-400'}`}>
                                             +{formatCurrency(financialData.provider.extraKmVal)}
                                         </span>
+                                        {financialData.provider.extraKmVal > 0 && (
+                                            <span className="text-[7px] text-gray-500 font-mono">
+                                                {financialData.provider.excessKm.toFixed(1)}km × R${financialData.provider.unitCostKm.toFixed(2)}
+                                            </span>
+                                        )}
                                         <div className="flex items-center gap-1">
                                             <span className="text-[8px] text-gray-400">R$</span>
                                             <input 
@@ -917,6 +932,11 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                         <span className={`text-xs font-bold ${financialData.provider.extraHrVal > 0 ? 'text-red-600' : 'text-gray-400'}`}>
                                             +{formatCurrency(financialData.provider.extraHrVal)}
                                         </span>
+                                        {financialData.provider.extraHrVal > 0 && (
+                                            <span className="text-[7px] text-gray-500 font-mono">
+                                                {financialData.provider.excessHours.toFixed(2)}h × R${financialData.provider.unitCostHour.toFixed(2)}
+                                            </span>
+                                        )}
                                         <div className="flex items-center gap-1">
                                             <span className="text-[8px] text-gray-400">R$</span>
                                             <input 
@@ -1007,12 +1027,15 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                 const savedTotal = parseNumber(revenueInput);
                                 const isDivergent = useSavedValuesRef.current && Math.abs(calcTotal - savedTotal) > 1;
                                 return (
-                                    <div className={`flex flex-wrap items-center gap-x-3 gap-y-1 text-[9px] font-bold mb-2 px-2 py-1.5 rounded-lg border ${isDivergent ? 'text-amber-700 bg-amber-50/80 border-amber-300' : 'text-green-600 bg-green-100/60 border-green-200'}`}>
-                                        <span>{formatCurrency(financialData.client.base)} <span className={isDivergent ? 'text-amber-400' : 'text-green-400'}>(base)</span></span>
-                                        <span>+ {formatCurrency(financialData.client.extraKmVal)} <span className={isDivergent ? 'text-amber-400' : 'text-green-400'}>(km)</span></span>
-                                        <span>+ {formatCurrency(financialData.client.extraHrVal)} <span className={isDivergent ? 'text-amber-400' : 'text-green-400'}>(hora)</span></span>
-                                        <span>+ {formatCurrency(parseNumber(tollInput))} <span className={isDivergent ? 'text-amber-400' : 'text-green-400'}>(pedágio)</span></span>
-                                        {isDivergent && <span className="text-[8px] text-amber-600 ml-1">= {formatCurrency(calcTotal)} (tabela) | Valor salvo: {formatCurrency(savedTotal)}</span>}
+                                    <div className={`flex flex-col gap-1 text-[9px] font-bold mb-2 px-2 py-1.5 rounded-lg border ${isDivergent ? 'text-amber-700 bg-amber-50/80 border-amber-300' : 'text-green-600 bg-green-100/60 border-green-200'}`}>
+                                        <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5">
+                                            <span>{formatCurrency(financialData.client.base)} <span className={isDivergent ? 'text-amber-400' : 'text-green-400'}>(base)</span></span>
+                                            <span>+ {formatCurrency(financialData.client.extraKmVal)} <span className={isDivergent ? 'text-amber-400' : 'text-green-400'}>(km{financialData.client.excessKm > 0 ? `: ${financialData.client.excessKm.toFixed(1)}×R$${financialData.client.unitPriceKm.toFixed(2)}` : ''})</span></span>
+                                            <span>+ {formatCurrency(financialData.client.extraHrVal)} <span className={isDivergent ? 'text-amber-400' : 'text-green-400'}>(hora{financialData.client.excessHours > 0 ? `: ${financialData.client.excessHours.toFixed(2)}h×R$${financialData.client.unitPriceHour.toFixed(2)}` : ''})</span></span>
+                                            <span>+ {formatCurrency(parseNumber(tollInput))} <span className={isDivergent ? 'text-amber-400' : 'text-green-400'}>(pedágio)</span></span>
+                                            <span className="font-black">= {formatCurrency(calcTotal)}</span>
+                                        </div>
+                                        {isDivergent && <span className="text-[8px] text-amber-600 font-black">⚠ Valor salvo ({formatCurrency(savedTotal)}) difere da tabela ({formatCurrency(calcTotal)}). Clique "Recalcular" para usar tabela.</span>}
                                     </div>
                                 );
                             })()}
@@ -1055,12 +1078,15 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                 const savedTotal = parseNumber(costInput);
                                 const isDivergent = useSavedValuesRef.current && Math.abs(calcTotal - savedTotal) > 1;
                                 return (
-                                    <div className={`flex flex-wrap items-center gap-x-3 gap-y-1 text-[9px] font-bold mb-2 px-2 py-1.5 rounded-lg border ${isDivergent ? 'text-amber-700 bg-amber-50/80 border-amber-300' : 'text-blue-600 bg-blue-100/60 border-blue-200'}`}>
-                                        <span>{formatCurrency(financialData.provider.base)} <span className={isDivergent ? 'text-amber-400' : 'text-blue-400'}>(base)</span></span>
-                                        <span>+ {formatCurrency(financialData.provider.extraKmVal)} <span className={isDivergent ? 'text-amber-400' : 'text-blue-400'}>(km)</span></span>
-                                        <span>+ {formatCurrency(financialData.provider.extraHrVal)} <span className={isDivergent ? 'text-amber-400' : 'text-blue-400'}>(hora)</span></span>
-                                        <span>+ {formatCurrency(parseNumber(tollProviderInput))} <span className={isDivergent ? 'text-amber-400' : 'text-blue-400'}>(pedágio)</span></span>
-                                        {isDivergent && <span className="text-[8px] text-amber-600 ml-1">= {formatCurrency(calcTotal)} (tabela) | Valor salvo: {formatCurrency(savedTotal)}</span>}
+                                    <div className={`flex flex-col gap-1 text-[9px] font-bold mb-2 px-2 py-1.5 rounded-lg border ${isDivergent ? 'text-amber-700 bg-amber-50/80 border-amber-300' : 'text-blue-600 bg-blue-100/60 border-blue-200'}`}>
+                                        <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5">
+                                            <span>{formatCurrency(financialData.provider.base)} <span className={isDivergent ? 'text-amber-400' : 'text-blue-400'}>(base)</span></span>
+                                            <span>+ {formatCurrency(financialData.provider.extraKmVal)} <span className={isDivergent ? 'text-amber-400' : 'text-blue-400'}>(km{financialData.provider.excessKm > 0 ? `: ${financialData.provider.excessKm.toFixed(1)}×R$${financialData.provider.unitCostKm.toFixed(2)}` : ''})</span></span>
+                                            <span>+ {formatCurrency(financialData.provider.extraHrVal)} <span className={isDivergent ? 'text-amber-400' : 'text-blue-400'}>(hora{financialData.provider.excessHours > 0 ? `: ${financialData.provider.excessHours.toFixed(2)}h×R$${financialData.provider.unitCostHour.toFixed(2)}` : ''})</span></span>
+                                            <span>+ {formatCurrency(parseNumber(tollProviderInput))} <span className={isDivergent ? 'text-amber-400' : 'text-blue-400'}>(pedágio)</span></span>
+                                            <span className="font-black">= {formatCurrency(calcTotal)}</span>
+                                        </div>
+                                        {isDivergent && <span className="text-[8px] text-amber-600 font-black">⚠ Valor salvo ({formatCurrency(savedTotal)}) difere da tabela ({formatCurrency(calcTotal)}). Clique "Recalcular" para usar tabela.</span>}
                                     </div>
                                 );
                             })()}
