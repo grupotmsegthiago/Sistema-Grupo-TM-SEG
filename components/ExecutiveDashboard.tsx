@@ -227,6 +227,11 @@ const ExecutiveDashboard: React.FC<Props> = ({ missions, isDirector, clientTable
         let revTotalCol = -1;
         let costTotalCol = -1;
         let fornecedorCol = -1;
+        let kmCol = -1;
+        let horaInicioCol = -1;
+        let horaFimCol = -1;
+        let acionamentoCol = -1;
+        let pedagioCol = -1;
 
         for (let r = 0; r <= Math.min(20, range.e.r); r++) {
             for (let c = 0; c <= Math.min(range.e.c, 100); c++) {
@@ -251,10 +256,15 @@ const ExecutiveDashboard: React.FC<Props> = ({ missions, isDirector, clientTable
                 if (v === 'FORNECEDOR' && fornecedorCol === -1) fornecedorCol = c;
                 if (v === 'VALOR TOTAL' && revTotalCol === -1) revTotalCol = c;
                 if (v === 'TOTAL' && c > 60) costTotalCol = c;
+                if ((v === 'KM' || v === 'KM TOTAL' || v === 'QUILOMETRAGEM' || v === 'DISTÂNCIA' || v === 'DISTANCIA' || v === 'KM REAL' || v === 'KM PERCORRIDO') && kmCol === -1) kmCol = c;
+                if ((v === 'HORA INÍCIO' || v === 'HORA INICIO' || v === 'HR INÍCIO' || v === 'HR INICIO' || v === 'INÍCIO' || v === 'INICIO' || v === 'HORA INI' || v === 'H. INÍCIO' || v === 'H. INICIO' || v === 'SAÍDA' || v === 'SAIDA') && horaInicioCol === -1) horaInicioCol = c;
+                if ((v === 'HORA FIM' || v === 'HORA FINAL' || v === 'HR FIM' || v === 'HR FINAL' || v === 'FIM' || v === 'FINAL' || v === 'HORA FIN' || v === 'H. FIM' || v === 'H. FINAL' || v === 'CHEGADA') && horaFimCol === -1) horaFimCol = c;
+                if ((v === 'ACIONAMENTO' || v === 'VALOR BASE' || v === 'BASE' || v === 'VALOR ACIONAMENTO' || v === 'ATIVAÇÃO' || v === 'ATIVACAO' || v === 'TAXA BASE') && acionamentoCol === -1) acionamentoCol = c;
+                if ((v === 'PEDÁGIO' || v === 'PEDAGIO' || v === 'VALOR PEDÁGIO' || v === 'VALOR PEDAGIO') && pedagioCol === -1) pedagioCol = c;
             }
         }
 
-        return { headerRow, osCol, clienteCol, fornecedorCol, revTotalCol, costTotalCol, maxRow: range.e.r };
+        return { headerRow, osCol, clienteCol, fornecedorCol, revTotalCol, costTotalCol, kmCol, horaInicioCol, horaFimCol, acionamentoCol, pedagioCol, maxRow: range.e.r };
     };
 
     const handleExcelUpload = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -276,7 +286,32 @@ const ExecutiveDashboard: React.FC<Props> = ({ missions, isDirector, clientTable
                 return cell ? cell.v : null;
             };
 
-            let { headerRow, osCol, clienteCol, fornecedorCol, revTotalCol, costTotalCol, maxRow } = layout;
+            let { headerRow, osCol, clienteCol, fornecedorCol, revTotalCol, costTotalCol, kmCol, horaInicioCol, horaFimCol, acionamentoCol, pedagioCol, maxRow } = layout;
+
+            const parseExcelTime = (val: any): string => {
+                if (val == null) return '';
+                if (typeof val === 'number' && val < 1) {
+                    const totalMinutes = Math.round(val * 24 * 60);
+                    const h = Math.floor(totalMinutes / 60);
+                    const m = totalMinutes % 60;
+                    return `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}`;
+                }
+                return String(val).trim();
+            };
+
+            const extractSysMissionDetails = (sm: any) => {
+                if (!sm) return null;
+                const startKm = sm.startKm ?? sm.start_km ?? null;
+                const endKm = sm.endKm ?? sm.end_km ?? null;
+                const sysKm = (startKm != null && endKm != null && endKm > startKm) ? endKm - startKm : (sm.traveled_km ?? sm.traveledKm ?? null);
+                const st = sm.startTime ?? sm.start_time;
+                const et = sm.endTime ?? sm.end_time;
+                const sysHoraInicio = st ? new Date(st).toLocaleTimeString('pt-BR', { hour:'2-digit', minute:'2-digit' }) : '';
+                const sysHoraFim = et ? new Date(et).toLocaleTimeString('pt-BR', { hour:'2-digit', minute:'2-digit' }) : '';
+                const sysToll = Math.max(0, sm.toll_value || 0);
+                const sysActivation = sm.revenue_value || 0;
+                return { sysKm, sysHoraInicio, sysHoraFim, sysToll, sysActivation };
+            };
 
             if (headerRow === -1) {
                 const rows: any[] = XLSX.utils.sheet_to_json(ws, { defval: '' });
@@ -285,6 +320,11 @@ const ExecutiveDashboard: React.FC<Props> = ({ missions, isDirector, clientTable
                 const osKey = keys.find(k => { const kn = k.toUpperCase(); return kn.includes('OS') || kn.includes('GTM') || kn === 'Nº' || kn === 'N°' || kn === 'NR' || kn === 'NUM' || kn === 'NÚMERO' || kn === 'NUMERO' || kn === 'COD' || kn === 'CODIGO' || kn === 'CÓDIGO' || kn === 'N'; }) || keys[0];
                 const revKey = keys.find(k => { const kn = k.toUpperCase(); return kn.includes('VALOR TOTAL') || kn.includes('RECEITA') || kn.includes('FATURAMENTO'); });
                 const costKey = keys.find(k => { const kn = k.toUpperCase(); return kn.includes('CUSTO') || kn.includes('PAGAMENTO'); });
+                const kmKey = keys.find(k => { const kn = k.toUpperCase(); return kn === 'KM' || kn.includes('KM TOTAL') || kn.includes('QUILOMETRAGEM') || kn.includes('DISTÂNCIA') || kn.includes('DISTANCIA') || kn.includes('KM REAL') || kn.includes('KM PERCORRIDO'); });
+                const horaIniKey = keys.find(k => { const kn = k.toUpperCase(); return kn.includes('HORA INÍCIO') || kn.includes('HORA INICIO') || kn.includes('HR INÍCIO') || kn.includes('HR INICIO') || kn === 'INÍCIO' || kn === 'INICIO' || kn.includes('SAÍDA') || kn.includes('SAIDA'); });
+                const horaFimKey = keys.find(k => { const kn = k.toUpperCase(); return kn.includes('HORA FIM') || kn.includes('HORA FINAL') || kn.includes('HR FIM') || kn.includes('HR FINAL') || kn === 'FIM' || kn === 'FINAL' || kn.includes('CHEGADA'); });
+                const acionKey = keys.find(k => { const kn = k.toUpperCase(); return kn.includes('ACIONAMENTO') || kn.includes('VALOR BASE') || kn === 'BASE' || kn.includes('ATIVAÇÃO') || kn.includes('ATIVACAO'); });
+                const tollKey = keys.find(k => { const kn = k.toUpperCase(); return kn.includes('PEDÁGIO') || kn.includes('PEDAGIO'); });
 
                 const comparisons: any[] = [];
                 for (const row of rows) {
@@ -292,17 +332,23 @@ const ExecutiveDashboard: React.FC<Props> = ({ missions, isDirector, clientTable
                     if (!osId) continue;
                     const excelRev = revKey ? parseExcelValue(row[revKey]) : 0;
                     const excelCost = costKey ? parseExcelValue(row[costKey]) : 0;
+                    const excelKm = kmKey ? parseExcelValue(row[kmKey]) : null;
+                    const excelHoraInicio = horaIniKey ? parseExcelTime(row[horaIniKey]) : '';
+                    const excelHoraFim = horaFimKey ? parseExcelTime(row[horaFimKey]) : '';
+                    const excelAcionamento = acionKey ? parseExcelValue(row[acionKey]) : null;
+                    const excelToll = tollKey ? parseExcelValue(row[tollKey]) : null;
                     const systemMission = missionFinancials.find(m => {
                         const sysId = String(m.id || '').toUpperCase().trim();
                         return sysId === osId || `GTM-${sysId}` === osId || sysId.replace('GTM-', '') === osId.replace('GTM-', '');
                     });
                     const sysRev = systemMission?.rev || 0;
                     const sysCost = systemMission?.cost || 0;
+                    const sysDetails = extractSysMissionDetails(systemMission);
                     const revDiff = excelRev > 0 ? Math.abs(sysRev - excelRev) : 0;
                     const costDiff = excelCost > 0 ? Math.abs(sysCost - excelCost) : 0;
                     const revMatch = excelRev > 0 ? revDiff <= 5 : true;
                     const costMatch = excelCost > 0 ? costDiff <= 5 : true;
-                    comparisons.push({ osId, found: !!systemMission, excelRev, excelCost, sysRev, sysCost, revDiff, costDiff, revMatch, costMatch, status: systemMission?.status || 'Não encontrada', client: systemMission?.client || '-' });
+                    comparisons.push({ osId, found: !!systemMission, excelRev, excelCost, sysRev, sysCost, revDiff, costDiff, revMatch, costMatch, status: systemMission?.status || 'Não encontrada', client: systemMission?.client || '-', excelKm, excelHoraInicio, excelHoraFim, excelAcionamento, excelToll, ...(sysDetails || {}) });
                 }
                 comparisons.sort((a, b) => (!a.found ? -1 : !b.found ? 1 : (!a.revMatch||!a.costMatch) ? -1 : (!b.revMatch||!b.costMatch) ? 1 : (b.revDiff+b.costDiff)-(a.revDiff+a.costDiff)));
                 setExcelComparison(comparisons);
@@ -324,6 +370,11 @@ const ExecutiveDashboard: React.FC<Props> = ({ missions, isDirector, clientTable
                 const fornRaw = fornecedorCol >= 0 ? String(getCell(r, fornecedorCol) || '') : '';
                 const excelRev = revTotalCol >= 0 ? parseExcelValue(getCell(r, revTotalCol)) : 0;
                 const excelCost = costTotalCol >= 0 ? parseExcelValue(getCell(r, costTotalCol)) : 0;
+                const excelKm = kmCol >= 0 ? parseExcelValue(getCell(r, kmCol)) : null;
+                const excelHoraInicio = horaInicioCol >= 0 ? parseExcelTime(getCell(r, horaInicioCol)) : '';
+                const excelHoraFim = horaFimCol >= 0 ? parseExcelTime(getCell(r, horaFimCol)) : '';
+                const excelAcionamento = acionamentoCol >= 0 ? parseExcelValue(getCell(r, acionamentoCol)) : null;
+                const excelToll = pedagioCol >= 0 ? parseExcelValue(getCell(r, pedagioCol)) : null;
 
                 const systemMission = missionFinancials.find(m => {
                     const sysId = String(m.id || '').toUpperCase().trim();
@@ -332,6 +383,7 @@ const ExecutiveDashboard: React.FC<Props> = ({ missions, isDirector, clientTable
 
                 const sysRev = systemMission?.rev || 0;
                 const sysCost = systemMission?.cost || 0;
+                const sysDetails = extractSysMissionDetails(systemMission);
 
                 const revDiff = excelRev > 0 ? Math.abs(sysRev - excelRev) : 0;
                 const costDiff = excelCost > 0 ? Math.abs(sysCost - excelCost) : 0;
@@ -347,7 +399,9 @@ const ExecutiveDashboard: React.FC<Props> = ({ missions, isDirector, clientTable
                     revMatch, costMatch,
                     status: systemMission?.status || 'Não encontrada',
                     client: systemMission?.client || clienteRaw || '-',
-                    provider: systemMission?.provider || fornRaw || '-'
+                    provider: systemMission?.provider || fornRaw || '-',
+                    excelKm, excelHoraInicio, excelHoraFim, excelAcionamento, excelToll,
+                    ...(sysDetails || {})
                 });
             }
 
@@ -366,24 +420,56 @@ const ExecutiveDashboard: React.FC<Props> = ({ missions, isDirector, clientTable
             if (divergences.length > 0) {
                 setIsAiAnalyzing(true);
                 try {
-                    const summaryData = divergences.slice(0, 30).map(d => ({
-                        os: d.osId,
-                        encontrada: d.found,
-                        planilha_receita: d.excelRev,
-                        sistema_receita: d.sysRev,
-                        diff_receita: d.revDiff,
-                        planilha_custo: d.excelCost,
-                        sistema_custo: d.sysCost,
-                        diff_custo: d.costDiff,
-                        cliente: d.client,
-                        status: d.status
-                    }));
+                    const summaryData = divergences.slice(0, 30).map(d => {
+                        const entry: any = {
+                            os: d.osId,
+                            encontrada: d.found,
+                            cliente: d.client,
+                            status: d.status,
+                            planilha_receita: d.excelRev,
+                            sistema_receita: d.sysRev,
+                            diff_receita: d.revDiff,
+                            planilha_custo: d.excelCost,
+                            sistema_custo: d.sysCost,
+                            diff_custo: d.costDiff,
+                        };
+                        if (d.excelKm != null || d.sysKm != null) {
+                            entry.planilha_km = d.excelKm;
+                            entry.sistema_km = d.sysKm;
+                            if (d.excelKm != null && d.sysKm != null) entry.diff_km = Math.abs(d.excelKm - d.sysKm);
+                        }
+                        if (d.excelHoraInicio || d.sysHoraInicio) {
+                            entry.planilha_hora_inicio = d.excelHoraInicio || '-';
+                            entry.sistema_hora_inicio = d.sysHoraInicio || '-';
+                        }
+                        if (d.excelHoraFim || d.sysHoraFim) {
+                            entry.planilha_hora_fim = d.excelHoraFim || '-';
+                            entry.sistema_hora_fim = d.sysHoraFim || '-';
+                        }
+                        if (d.excelAcionamento != null || d.sysActivation) {
+                            entry.planilha_acionamento = d.excelAcionamento;
+                            entry.sistema_acionamento = d.sysActivation;
+                            if (d.excelAcionamento != null && d.sysActivation) entry.diff_acionamento = Math.abs(d.excelAcionamento - d.sysActivation);
+                        }
+                        if (d.excelToll != null || d.sysToll != null) {
+                            entry.planilha_pedagio = d.excelToll;
+                            entry.sistema_pedagio = d.sysToll;
+                            if (d.excelToll != null && d.sysToll != null) entry.diff_pedagio = Math.abs(d.excelToll - d.sysToll);
+                        }
+                        return entry;
+                    });
+
+                    const hasDetailedCols = summaryData.some(d => d.planilha_km != null || d.planilha_hora_inicio || d.planilha_hora_fim || d.planilha_acionamento != null || d.planilha_pedagio != null);
+
+                    const detailInstructions = hasDetailedCols
+                        ? `\n\nIMPORTANTE: A planilha contém colunas detalhadas (KM, horários, acionamento, pedágio). Para CADA OS divergente, identifique EXATAMENTE qual campo está diferente:\n- Se o KM da planilha difere do sistema, informe os dois valores\n- Se o horário de início ou fim está diferente, informe os dois valores\n- Se o valor de acionamento/base difere, informe os dois valores\n- Se o pedágio está diferente, informe os dois valores\nIsso ajuda o operador a saber EXATAMENTE o que precisa ajustar em cada OS.`
+                        : `\n\nA planilha não contém colunas de KM, horários ou acionamento separados. Analise as diferenças de valor total e sugira as causas prováveis (tabela errada, KM divergente, hora extra, pedágio diferente).`;
 
                     const res = await fetch('/api/gemini/generate', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({
-                            prompt: `Você é auditor financeiro da TM SEG (escolta armada). Analise as divergências entre a planilha Excel e o sistema de gestão. Para cada OS com diferença significativa, explique possíveis causas (tabela errada, KM divergente, hora arredondada, pedágio diferente) e recomende ações corretivas. Use português e valores em BRL. Seja direto.\n\nDivergências:\n${JSON.stringify(summaryData, null, 2)}\n\nTotal OS na planilha: ${comparisons.length}\nTotal com divergência: ${divergences.length}\nNão encontradas no sistema: ${comparisons.filter(c => !c.found).length}`,
+                            prompt: `Você é auditor financeiro da TM SEG (escolta armada). Analise as divergências entre a planilha Excel do cliente/fornecedor e o sistema de gestão.\n\nPara CADA OS divergente, faça uma análise detalhada campo a campo:\n1. Compare KM da planilha vs sistema — diferença de KM impacta cálculo de KM extra\n2. Compare horários (início/fim) — diferença de horário impacta hora extra\n3. Compare valor de acionamento/base — pode indicar tabela de preço errada\n4. Compare pedágio — valor diferente impacta total\n5. Compare valor total (receita/custo)\n\nPara cada divergência, diga EXATAMENTE:\n- Qual campo está errado\n- Qual é o valor na planilha vs no sistema\n- Qual a ação corretiva recomendada (ajustar KM, corrigir horário, trocar tabela, etc.)\n\nUse português, valores em BRL, seja direto e objetivo. Organize por OS.${detailInstructions}\n\nDivergências:\n${JSON.stringify(summaryData, null, 2)}\n\nTotal OS na planilha: ${comparisons.length}\nTotal com divergência: ${divergences.length}\nNão encontradas no sistema: ${comparisons.filter(c => !c.found).length}`,
                             stream: false
                         })
                     });
