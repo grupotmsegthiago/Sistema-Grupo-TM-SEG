@@ -222,8 +222,9 @@ const ClientForm: React.FC<ClientFormProps> = ({
 
   const isFinanceAdmin = currentUser && (() => {
       const r = (currentUser.role || '').toLowerCase();
+      const perms = currentUser.permissions || [];
       return r === 'diretoria' || r === 'administrador' || r === 'comercial' ||
-             (currentUser.permissions && currentUser.permissions.includes('*'));
+             perms.includes('*') || perms.includes('clients');
   })();
 
   const fetchPriceTables = async (clientName: string) => {
