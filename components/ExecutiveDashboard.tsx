@@ -9,7 +9,7 @@ import {
     Activity, TrendingUp, TrendingDown, Wallet, Percent, Truck, Target,
     DollarSign, Calendar, CheckCircle2, XCircle, AlertTriangle,
     Trophy, Briefcase, Shield, PieChart as PieChartIcon, Lock, RefreshCw,
-    Upload, FileSpreadsheet, Loader2, Search, CheckCircle, XOctagon, Edit2
+    Upload, FileSpreadsheet, Loader2, Search, CheckCircle, XOctagon, Edit2, Download
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 
@@ -924,11 +924,6 @@ const ExecutiveDashboard: React.FC<Props> = ({ missions, isDirector, clientTable
                     const divergent = excelComparison.filter(c => c.found && (!c.revMatch || !c.costMatch) && !adjustedOsIds.has(c.osId)).length;
                     const notFound = excelComparison.filter(c => !c.found).length;
 
-                    const foundItems = excelComparison.filter(c => c.found && !adjustedOsIds.has(c.osId));
-                    const withAnyDiff = foundItems.filter(c => c.revDiff > 0.01 || c.costDiff > 0.01);
-                    const diffBelow50 = withAnyDiff.filter(c => c.revDiff <= 50 && c.costDiff <= 50);
-                    const diffAbove50 = withAnyDiff.filter(c => c.revDiff > 50 || c.costDiff > 50);
-
                     return (
                         <div className="space-y-3">
                             <div className={`grid ${adjusted > 0 ? 'grid-cols-5' : 'grid-cols-4'} gap-2`}>
@@ -956,68 +951,65 @@ const ExecutiveDashboard: React.FC<Props> = ({ missions, isDirector, clientTable
                                 </div>
                             </div>
 
-                            {(diffBelow50.length > 0 || diffAbove50.length > 0) && (
-                                <div className="grid grid-cols-2 gap-2">
-                                    <div className="bg-emerald-50 rounded-lg p-2.5 border border-emerald-200">
-                                        <div className="flex items-center justify-between">
-                                            <div>
-                                                <p className="text-[10px] font-bold text-emerald-600 uppercase">Dif. ≤ R$ 50</p>
-                                                <p className="text-[9px] text-emerald-500">Dentro da tolerância</p>
-                                            </div>
-                                            <p className="text-lg font-black text-emerald-700">{diffBelow50.length}</p>
-                                        </div>
-                                        {diffBelow50.length > 0 && (
-                                            <div className="mt-1.5 max-h-20 overflow-y-auto scrollbar-thin">
-                                                {diffBelow50.map((c, i) => (
-                                                    <p key={i} className="text-[9px] text-emerald-600 font-mono">
-                                                        {c.osId} — {c.revDiff > 0.01 ? `Rec: ${fmtBRL(c.revDiff)}` : ''}{c.revDiff > 0.01 && c.costDiff > 0.01 ? ' | ' : ''}{c.costDiff > 0.01 ? `Cst: ${fmtBRL(c.costDiff)}` : ''}
-                                                    </p>
-                                                ))}
-                                            </div>
-                                        )}
-                                    </div>
-                                    <div className="bg-rose-50 rounded-lg p-2.5 border border-rose-200">
-                                        <div className="flex items-center justify-between">
-                                            <div>
-                                                <p className="text-[10px] font-bold text-rose-600 uppercase">Dif. &gt; R$ 50</p>
-                                                <p className="text-[9px] text-rose-500">Acima da tolerância</p>
-                                            </div>
-                                            <p className="text-lg font-black text-rose-700">{diffAbove50.length}</p>
-                                        </div>
-                                        {diffAbove50.length > 0 && (
-                                            <div className="mt-1.5 max-h-20 overflow-y-auto scrollbar-thin">
-                                                {diffAbove50.map((c, i) => (
-                                                    <p key={i} className="text-[9px] text-rose-600 font-mono">
-                                                        {c.osId} — {c.revDiff > 50 ? `Rec: ${fmtBRL(c.revDiff)}` : ''}{c.revDiff > 50 && c.costDiff > 50 ? ' | ' : ''}{c.costDiff > 50 ? `Cst: ${fmtBRL(c.costDiff)}` : ''}
-                                                    </p>
-                                                ))}
-                                            </div>
-                                        )}
-                                    </div>
+                            <div className="bg-slate-50 border border-slate-200 rounded-lg p-3">
+                                <div className="flex items-center justify-between mb-1.5">
+                                    <p className="text-[11px] font-black text-slate-700 uppercase">{divergent > 0 ? 'Resumo das Divergências' : 'Resumo da Comparação'}</p>
+                                    <button
+                                        data-testid="btn-export-divergence-report"
+                                        onClick={(e) => {
+                                            e.stopPropagation();
+                                            const conferidos = excelComparison.filter(c => c.found && c.revMatch && c.costMatch);
+                                            const divergentes = excelComparison.filter(c => c.found && (!c.revMatch || !c.costMatch));
+                                            const naoEncontradas = excelComparison.filter(c => !c.found);
+                                            const mapRow = (c: any, status: string) => ({
+                                                'OS': c.osId,
+                                                'Cliente': c.client || '-',
+                                                'Status': status,
+                                                'Planilha Receita': c.excelRev || 0,
+                                                'Sistema Receita': c.sysRev || 0,
+                                                'Diff. Receita': c.revDiff || 0,
+                                                'Planilha Custo': c.excelCost || 0,
+                                                'Sistema Custo': c.sysCost || 0,
+                                                'Diff. Custo': c.costDiff || 0,
+                                            });
+                                            const wb = XLSX.utils.book_new();
+                                            const wsConf = XLSX.utils.json_to_sheet(conferidos.map(c => mapRow(c, 'CONFERIDO')));
+                                            XLSX.utils.book_append_sheet(wb, wsConf, `Conferidos (${conferidos.length})`);
+                                            if (divergentes.length > 0) {
+                                                const wsDiv = XLSX.utils.json_to_sheet(divergentes.map(c => mapRow(c, 'DIVERGENTE')));
+                                                XLSX.utils.book_append_sheet(wb, wsDiv, `Divergentes (${divergentes.length})`);
+                                            }
+                                            if (naoEncontradas.length > 0) {
+                                                const wsNE = XLSX.utils.json_to_sheet(naoEncontradas.map(c => mapRow(c, 'NÃO ENCONTRADA')));
+                                                XLSX.utils.book_append_sheet(wb, wsNE, `Não Encontradas (${naoEncontradas.length})`);
+                                            }
+                                            const wsAll = XLSX.utils.json_to_sheet(excelComparison.map(c => mapRow(c, c.found ? (c.revMatch && c.costMatch ? 'CONFERIDO' : 'DIVERGENTE') : 'NÃO ENCONTRADA')));
+                                            XLSX.utils.book_append_sheet(wb, wsAll, 'Todas as OS');
+                                            XLSX.writeFile(wb, `Relatorio_Comparativo_${new Date().toISOString().slice(0,10)}.xlsx`);
+                                        }}
+                                        className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white text-[10px] font-bold rounded-lg transition-colors"
+                                    >
+                                        <Download size={12} /> Exportar Relatório
+                                    </button>
                                 </div>
-                            )}
-
-                            {divergent > 0 && (
-                                <div className="bg-slate-50 border border-slate-200 rounded-lg p-3">
-                                    <p className="text-[11px] font-black text-slate-700 uppercase mb-1.5">Resumo das Divergências</p>
-                                    <div className="text-[11px] font-bold text-slate-600 space-y-0.5">
-                                        {(() => {
-                                            const divItems = excelComparison.filter(c => c.found && (!c.revMatch || !c.costMatch));
-                                            const onlyRevDiff = divItems.filter(c => !c.revMatch && c.costMatch).length;
-                                            const onlyCostDiff = divItems.filter(c => c.revMatch && !c.costMatch).length;
-                                            const bothDiff = divItems.filter(c => !c.revMatch && !c.costMatch).length;
-                                            const totalRevDiff = divItems.reduce((a, c) => a + c.revDiff, 0);
-                                            const totalCostDiff = divItems.reduce((a, c) => a + c.costDiff, 0);
-                                            return (<>
-                                                {onlyRevDiff > 0 && <p>• {onlyRevDiff} OS com divergência apenas na <span className="text-red-600">receita</span> (diferença total: {fmtBRL(totalRevDiff)})</p>}
-                                                {onlyCostDiff > 0 && <p>• {onlyCostDiff} OS com divergência apenas no <span className="text-red-600">custo</span> (diferença total: {fmtBRL(totalCostDiff)})</p>}
-                                                {bothDiff > 0 && <p>• {bothDiff} OS com divergência em <span className="text-red-600">receita e custo</span></p>}
-                                                <p className="text-[10px] text-slate-400 pt-1">Tolerância: diferenças até R$ 50,00 são consideradas CONFERIDO</p>
-                                            </>);
-                                        })()}
-                                    </div>
+                                <div className="text-[11px] font-bold text-slate-600 space-y-0.5">
+                                    {(() => {
+                                        const divItems = excelComparison.filter(c => c.found && (!c.revMatch || !c.costMatch));
+                                        const onlyRevDiff = divItems.filter(c => !c.revMatch && c.costMatch).length;
+                                        const onlyCostDiff = divItems.filter(c => c.revMatch && !c.costMatch).length;
+                                        const bothDiff = divItems.filter(c => !c.revMatch && !c.costMatch).length;
+                                        const totalRevDiff = divItems.reduce((a, c) => a + c.revDiff, 0);
+                                        const totalCostDiff = divItems.reduce((a, c) => a + c.costDiff, 0);
+                                        return (<>
+                                            {onlyRevDiff > 0 && <p>• {onlyRevDiff} OS com divergência apenas na <span className="text-red-600">receita</span> (diferença total: {fmtBRL(totalRevDiff)})</p>}
+                                            {onlyCostDiff > 0 && <p>• {onlyCostDiff} OS com divergência apenas no <span className="text-red-600">custo</span> (diferença total: {fmtBRL(totalCostDiff)})</p>}
+                                            {bothDiff > 0 && <p>• {bothDiff} OS com divergência em <span className="text-red-600">receita e custo</span></p>}
+                                            {divergent === 0 && <p className="text-green-600">Todas as OS estão conferidas!</p>}
+                                            <p className="text-[10px] text-slate-400 pt-1">Tolerância: diferenças até R$ 50,00 são consideradas CONFERIDO</p>
+                                        </>);
+                                    })()}
                                 </div>
-                            )}
+                            </div>
 
                             <div className="max-h-72 overflow-y-auto border border-gray-200 rounded-lg">
                                 <table className="w-full text-[11px]">
