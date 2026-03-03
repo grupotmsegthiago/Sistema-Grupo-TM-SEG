@@ -135,8 +135,8 @@ const ClientBillingReport: React.FC = () => {
 
     const chartComputedData = useMemo(() => {
         if (!chartsGenerated || allPeriodMissions.length === 0) return { clientData: [], providerData: [] };
-        const clientTotals: Record<string, { revenue: number; count: number }> = {};
-        const providerTotals: Record<string, { cost: number; count: number }> = {};
+        const clientTotals: Record<string, { revenue: number; cost: number; count: number }> = {};
+        const providerTotals: Record<string, { cost: number; revenue: number; count: number }> = {};
 
         allPeriodMissions.forEach(m => {
             const clientName = m.client || 'Sem Cliente';
@@ -150,22 +150,32 @@ const ClientBillingReport: React.FC = () => {
             const revenue = fin.client.total + (m.toll_value || 0);
             const cost = fin.provider.total + (m.toll_value_provider || m.toll_value || 0);
 
-            if (!clientTotals[displayClient]) clientTotals[displayClient] = { revenue: 0, count: 0 };
+            if (!clientTotals[displayClient]) clientTotals[displayClient] = { revenue: 0, cost: 0, count: 0 };
             clientTotals[displayClient].revenue += revenue;
+            clientTotals[displayClient].cost += cost;
             clientTotals[displayClient].count++;
 
-            if (!providerTotals[providerName]) providerTotals[providerName] = { cost: 0, count: 0 };
+            if (!providerTotals[providerName]) providerTotals[providerName] = { cost: 0, revenue: 0, count: 0 };
             providerTotals[providerName].cost += cost;
+            providerTotals[providerName].revenue += revenue;
             providerTotals[providerName].count++;
         });
 
         const clientData = Object.entries(clientTotals)
             .sort((a, b) => b[1].revenue - a[1].revenue)
-            .map(([nome, d]) => ({ nome, valor: Math.round(d.revenue * 100) / 100, count: d.count, fullName: nome }));
+            .map(([nome, d]) => {
+                const lucro = d.revenue - d.cost;
+                const pct = d.revenue > 0 ? Math.round((lucro / d.revenue) * 100) : 0;
+                return { nome, valor: Math.round(d.revenue * 100) / 100, custo: Math.round(d.cost * 100) / 100, lucro: Math.round(lucro * 100) / 100, pct, count: d.count, fullName: nome };
+            });
 
         const providerData = Object.entries(providerTotals)
             .sort((a, b) => b[1].cost - a[1].cost)
-            .map(([nome, d]) => ({ nome, valor: Math.round(d.cost * 100) / 100, count: d.count, fullName: nome }));
+            .map(([nome, d]) => {
+                const lucro = d.revenue - d.cost;
+                const pct = d.revenue > 0 ? Math.round((lucro / d.revenue) * 100) : 0;
+                return { nome, valor: Math.round(d.cost * 100) / 100, receita: Math.round(d.revenue * 100) / 100, lucro: Math.round(lucro * 100) / 100, pct, count: d.count, fullName: nome };
+            });
 
         return { clientData, providerData };
     }, [chartsGenerated, allPeriodMissions, clients, allClientTables, allProviderTables]);
@@ -179,11 +189,26 @@ const ClientBillingReport: React.FC = () => {
     const ChartTooltip = ({ active, payload, label }: any) => {
         if (!active || !payload?.[0]) return null;
         const data = payload[0].payload;
+        const isProvider = data.receita !== undefined;
         return (
-            <div className="bg-gray-900 text-white px-4 py-3 rounded-xl shadow-2xl border border-gray-700 max-w-xs">
-                <p className="font-black text-gray-300 uppercase tracking-wider mb-1.5 text-[11px] border-b border-gray-700 pb-1.5">{data.fullName || label}</p>
-                <p className="font-black text-[15px] text-white">{fmtBRL(payload[0].value)}</p>
-                {data.count && <p className="text-[11px] text-gray-400 font-bold mt-1">{data.count} missões</p>}
+            <div className="bg-gray-900 text-white px-4 py-3 rounded-xl shadow-2xl border border-gray-700 min-w-[200px]">
+                <p className="font-black text-gray-300 uppercase tracking-wider mb-2 text-[11px] border-b border-gray-700 pb-2">{data.fullName || label}</p>
+                {isProvider ? (
+                    <>
+                        <p className="text-[12px] font-bold text-gray-300">Custo: <span className="text-red-400 font-black">{fmtBRL(data.valor)}</span></p>
+                        <p className="text-[12px] font-bold text-gray-300">Receita vinculada: <span className="text-blue-400 font-black">{fmtBRL(data.receita)}</span></p>
+                    </>
+                ) : (
+                    <>
+                        <p className="text-[12px] font-bold text-gray-300">Receita: <span className="text-blue-400 font-black">{fmtBRL(data.valor)}</span></p>
+                        <p className="text-[12px] font-bold text-gray-300">Custo: <span className="text-red-400 font-black">{fmtBRL(data.custo)}</span></p>
+                    </>
+                )}
+                <div className="mt-2 pt-2 border-t border-gray-700 flex items-center justify-between">
+                    <span className="text-[12px] font-bold text-gray-300">Lucro: <span className={`font-black ${data.lucro >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>{fmtBRL(data.lucro)}</span></span>
+                    <span className={`text-[13px] font-black px-2 py-0.5 rounded-md ${data.pct >= 0 ? 'bg-emerald-500/20 text-emerald-400' : 'bg-red-500/20 text-red-400'}`}>{data.pct}%</span>
+                </div>
+                <p className="text-[10px] text-gray-500 font-bold mt-1.5">{data.count} missões</p>
             </div>
         );
     };
@@ -566,23 +591,34 @@ const ClientBillingReport: React.FC = () => {
                             <div className="p-2 bg-blue-700 text-white rounded-lg"><Users size={14} /></div>
                             <div>
                                 <h4 className="text-xs font-black text-gray-700 uppercase tracking-widest">Faturamento por Cliente</h4>
-                                <p className="text-[10px] text-gray-400 font-bold mt-0.5">{allPeriodMissions.length} missões no período &middot; {fmtBRL(clientChartData.reduce((s, d) => s + d.valor, 0))}</p>
+                                <p className="text-[10px] text-gray-400 font-bold mt-0.5">{allPeriodMissions.length} missões &middot; Total: {fmtBRL(clientChartData.reduce((s, d) => s + d.valor, 0))}</p>
                             </div>
                         </div>
-                        <ResponsiveContainer width="100%" height={Math.max(300, clientChartData.length * 48)}>
-                            <BarChart data={clientChartData} layout="vertical" margin={{ top: 5, right: 100, left: 10, bottom: 5 }}>
-                                <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-                                <XAxis type="number" tick={{ fontSize: 11, fontWeight: 700, fill: '#64748b' }} tickFormatter={(v: number) => v >= 1000 ? `R$ ${(v / 1000).toFixed(0)}k` : `R$ ${v.toFixed(0)}`} />
-                                <YAxis dataKey="nome" type="category" tick={{ fontSize: 12, fontWeight: 800, fill: '#1e293b' }} width={180} interval={0} />
-                                <Tooltip content={<ChartTooltip />} />
-                                <Bar dataKey="valor" name="Faturamento" radius={[0, 6, 6, 0]} barSize={28}>
-                                    {clientChartData.map((_, i) => (
-                                        <Cell key={i} fill={CHART_COLORS_CLIENT[i % CHART_COLORS_CLIENT.length]} />
-                                    ))}
-                                    <LabelList dataKey="valor" position="right" style={{ fontSize: 11, fontWeight: 900, fill: '#1e293b' }} formatter={(v: number) => fmtBRL(v)} />
-                                </Bar>
-                            </BarChart>
-                        </ResponsiveContainer>
+                        <div className="space-y-2">
+                            {clientChartData.map((item, i) => {
+                                const maxVal = clientChartData[0]?.valor || 1;
+                                const pctWidth = Math.max(3, (item.valor / maxVal) * 100);
+                                return (
+                                    <div key={i} className="group">
+                                        <div className="flex items-center justify-between mb-0.5">
+                                            <span className="text-[12px] font-black text-gray-800 truncate max-w-[55%]" title={item.fullName}>{item.nome}</span>
+                                            <div className="flex items-center gap-2">
+                                                <span className="text-[11px] font-black text-gray-700">{fmtBRL(item.valor)}</span>
+                                                <span className={`text-[10px] font-black px-1.5 py-0.5 rounded ${item.pct >= 0 ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'}`}>{item.pct}%</span>
+                                            </div>
+                                        </div>
+                                        <div className="w-full bg-gray-100 rounded-full h-5 relative overflow-hidden">
+                                            <div className="h-full rounded-full transition-all duration-500" style={{ width: `${pctWidth}%`, backgroundColor: CHART_COLORS_CLIENT[i % CHART_COLORS_CLIENT.length] }} />
+                                        </div>
+                                        <div className="flex items-center gap-3 mt-0.5">
+                                            <span className="text-[9px] text-gray-400 font-bold">{item.count} missões</span>
+                                            <span className="text-[9px] text-gray-400 font-bold">Custo: {fmtBRL(item.custo)}</span>
+                                            <span className={`text-[9px] font-bold ${item.lucro >= 0 ? 'text-emerald-500' : 'text-red-500'}`}>Lucro: {fmtBRL(item.lucro)}</span>
+                                        </div>
+                                    </div>
+                                );
+                            })}
+                        </div>
                     </div>
 
                     <div className="bg-white p-5 rounded-xl shadow-sm border border-gray-200">
@@ -590,23 +626,34 @@ const ClientBillingReport: React.FC = () => {
                             <div className="p-2 bg-red-700 text-white rounded-lg"><Building2 size={14} /></div>
                             <div>
                                 <h4 className="text-xs font-black text-gray-700 uppercase tracking-widest">Custo por Fornecedor</h4>
-                                <p className="text-[10px] text-gray-400 font-bold mt-0.5">{allPeriodMissions.length} missões no período &middot; {fmtBRL(providerChartData.reduce((s, d) => s + d.valor, 0))}</p>
+                                <p className="text-[10px] text-gray-400 font-bold mt-0.5">{allPeriodMissions.length} missões &middot; Total: {fmtBRL(providerChartData.reduce((s, d) => s + d.valor, 0))}</p>
                             </div>
                         </div>
-                        <ResponsiveContainer width="100%" height={Math.max(300, providerChartData.length * 48)}>
-                            <BarChart data={providerChartData} layout="vertical" margin={{ top: 5, right: 100, left: 10, bottom: 5 }}>
-                                <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-                                <XAxis type="number" tick={{ fontSize: 11, fontWeight: 700, fill: '#64748b' }} tickFormatter={(v: number) => v >= 1000 ? `R$ ${(v / 1000).toFixed(0)}k` : `R$ ${v.toFixed(0)}`} />
-                                <YAxis dataKey="nome" type="category" tick={{ fontSize: 12, fontWeight: 800, fill: '#1e293b' }} width={180} interval={0} />
-                                <Tooltip content={<ChartTooltip />} />
-                                <Bar dataKey="valor" name="Custo" radius={[0, 6, 6, 0]} barSize={28}>
-                                    {providerChartData.map((_, i) => (
-                                        <Cell key={i} fill={CHART_COLORS_PROVIDER[i % CHART_COLORS_PROVIDER.length]} />
-                                    ))}
-                                    <LabelList dataKey="valor" position="right" style={{ fontSize: 11, fontWeight: 900, fill: '#1e293b' }} formatter={(v: number) => fmtBRL(v)} />
-                                </Bar>
-                            </BarChart>
-                        </ResponsiveContainer>
+                        <div className="space-y-2">
+                            {providerChartData.map((item, i) => {
+                                const maxVal = providerChartData[0]?.valor || 1;
+                                const pctWidth = Math.max(3, (item.valor / maxVal) * 100);
+                                return (
+                                    <div key={i} className="group">
+                                        <div className="flex items-center justify-between mb-0.5">
+                                            <span className="text-[12px] font-black text-gray-800 truncate max-w-[55%]" title={item.fullName}>{item.nome}</span>
+                                            <div className="flex items-center gap-2">
+                                                <span className="text-[11px] font-black text-gray-700">{fmtBRL(item.valor)}</span>
+                                                <span className={`text-[10px] font-black px-1.5 py-0.5 rounded ${item.pct >= 0 ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'}`}>{item.pct}%</span>
+                                            </div>
+                                        </div>
+                                        <div className="w-full bg-gray-100 rounded-full h-5 relative overflow-hidden">
+                                            <div className="h-full rounded-full transition-all duration-500" style={{ width: `${pctWidth}%`, backgroundColor: CHART_COLORS_PROVIDER[i % CHART_COLORS_PROVIDER.length] }} />
+                                        </div>
+                                        <div className="flex items-center gap-3 mt-0.5">
+                                            <span className="text-[9px] text-gray-400 font-bold">{item.count} missões</span>
+                                            <span className="text-[9px] text-gray-400 font-bold">Receita: {fmtBRL(item.receita)}</span>
+                                            <span className={`text-[9px] font-bold ${item.lucro >= 0 ? 'text-emerald-500' : 'text-red-500'}`}>Lucro: {fmtBRL(item.lucro)}</span>
+                                        </div>
+                                    </div>
+                                );
+                            })}
+                        </div>
                     </div>
                 </div>
             )}
