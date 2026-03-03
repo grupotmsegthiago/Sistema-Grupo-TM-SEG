@@ -1,0 +1,335 @@
+Integre no seu backend (Express no Replit) um endpoint que retorna:
+
+used_bytes: tamanho atual do DB
+limit_bytes: capacidade total ajustada (via env)
+percent_used: usado/limitado
+Pré-requisito: defina a variável de ambiente DB_CAPACITY_GB com o limite do seu plano (ex.: 0,5, 8, 50, etc.).
+
+Exemplo em Node/Express usando supabase-js v2:
+
+// server.js
+
+import
+ express 
+from
+ 
+"npm:express@4.18.2"
+
+import
+ cors 
+from
+ 
+"npm:cors@2.8.5"
+
+import
+ { createClient } 
+from
+ 
+"npm:@supabase/supabase-js@2.43.4"
+
+const
+ app = express()
+app.use(cors())
+app.use(express.json())
+const
+ SUPABASE_URL = process.env.SUPABASE_URL
+const
+ SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE_KEY
+const
+ DB_CAPACITY_GB = 
+Number
+(process.env.DB_CAPACITY_GB || 
+8
+) 
+// ajuste conforme seu plano
+
+if
+ (!SUPABASE_URL || !SERVICE_ROLE) {
+  
+console
+.error(
+"Configure SUPABASE_URL e SUPABASE_SERVICE_ROLE_KEY"
+)
+  process.exit(
+1
+)
+}
+const
+ admin = createClient(SUPABASE_URL, SERVICE_ROLE, { 
+auth
+: { 
+persistSession
+: 
+false
+ } })
+// Endpoint: capacidade e uso
+
+app.get(
+"/api/db/capacity"
+, 
+async
+ (_req, res) => {
+  
+try
+ {
+    
+// Chama a função RPC
+
+    
+const
+ { data, error } = 
+await
+ admin.rpc(
+"get_db_usage_bytes"
+)
+    
+if
+ (error) 
+throw
+ error
+    
+const
+ used_bytes = 
+Number
+(data || 
+0
+)
+    
+const
+ limit_bytes = 
+Math
+.round(DB_CAPACITY_GB * 
+1024
+ * 
+1024
+ * 
+1024
+)
+    
+const
+ percent_used = limit_bytes > 
+0
+ ? used_bytes / limit_bytes : 
+null
+
+    res.json({
+      used_bytes,
+      limit_bytes,
+      percent_used,
+      
+used_gb
+: +(used_bytes / 
+1024
+ / 
+1024
+ / 
+1024
+).toFixed(
+3
+),
+      
+limit_gb
+: DB_CAPACITY_GB,
+      
+updated_at
+: 
+new
+ 
+Date
+().toISOString(),
+    })
+  } 
+catch
+ (e) {
+    res.status(
+500
+).json({ 
+error
+: e.message })
+  }
+})
+const
+ PORT = process.env.PORT || 
+3000
+
+app.listen(PORT, 
+() =>
+ 
+console
+.log(
+`Server on :
+${PORT}
+`
+))
+
+Como configurar:
+
+No Replit (ou onde roda seu backend), adicione:
+SUPABASE_URL = https://.supabase.co
+SUPABASE_SERVICE_ROLE_KEY = sua função_de_serviço
+DB_CAPACITY_GB = número com a capacidade do seu plano (ex.: 0,5 para Free; 8 para Pro, confirme no seu dashboard)
+3) Frontend: “prompt”/widget
+Um exemplo simples em React que consome o endpoint e mostra uma barra de progresso:
+
+import
+ React, { useEffect, useState } 
+from
+ 
+"react"
+
+const
+ API_BASE = 
+import
+.meta.env.VITE_API_BASE || 
+"http://localhost:3000"
+
+export
+ 
+default
+ 
+function
+ 
+DbCapacityWidget
+(
+) 
+{
+  
+const
+ [data, setData] = useState(
+null
+)
+  
+const
+ [error, setError] = useState(
+null
+)
+  useEffect(
+() =>
+ {
+    
+const
+ load = 
+async
+ () => {
+      
+try
+ {
+        
+const
+ r = 
+await
+ fetch(
+`
+${API_BASE}
+/api/db/capacity`
+)
+        
+const
+ j = 
+await
+ r.json()
+        
+if
+ (!r.ok) 
+throw
+ 
+new
+ 
+Error
+(j.error || 
+"Erro ao carregar capacidade"
+)
+        setData(j)
+      } 
+catch
+ (e) {
+        setError(e.message)
+      }
+    }
+    load()
+    
+const
+ id = 
+setInterval
+(load, 
+60_000
+) 
+// atualiza a cada 1 min
+
+    
+return
+ 
+() =>
+ 
+clearInterval
+(id)
+  }, [])
+  
+if
+ (error) 
+return
+ <div style={{ padding: 12, background: "#fee", color: "#900" }}>Erro: {error}</div>
+  
+if
+ (!data) 
+return
+ <div>Carregando...</div>
+  
+const
+ pct = 
+Math
+.min(
+100
+, 
+Math
+.round((data.percent_used || 
+0
+) * 
+100
+))
+  
+const
+ barColor =
+    pct < 
+70
+ ? 
+"#4caf50"
+ : pct < 
+90
+ ? 
+"#ff9800"
+ : 
+"#f44336"
+
+  
+return
+ (
+    <div style={{ border: "1px solid #ddd", borderRadius: 8, padding: 16, maxWidth: 420 }}>
+      <h3 style={{ marginTop: 0 }}>Capacidade do Banco</h3>
+      <div style={{ fontSize: 14, marginBottom: 8 }}>
+        Usado: {data.used_gb} GB de {data.limit_gb} GB ({pct}%)
+      </div>
+      <div style={{ background: "#eee", borderRadius: 6, overflow: "hidden", height: 14 }}>
+        <div style={{
+          width: `${pct}%`,
+          background: barColor,
+          height: "100%",
+          transition: "width 0.4s ease",
+        }} />
+      </div>
+      <div style={{ fontSize: 12, marginTop: 8, color: "#666" }}>
+        Atualizado em {new Date(data.updated_at).toLocaleString()}
+      </div>
+    </div>
+  )
+}
+
+Uso:
+
+Importe o componente no seu App e passe
+Pode ser adaptado para qualquer framework (Vue, Angular) ou até renderização server-side.
+Ext LÓGICO útil
+Mostrar alertas quando percent_used > 0,8 (80%) e enviar e-mail/SMS/Slack.
+Adicionar séries históricas:
+Salve o valor de used_bytes em uma tabela a cada X minutos (cron job) e plote um gráfico de tendência.
+Exibir detalhes por esquema/tabela usando a função que você passou antes (metrics_db_storage).

@@ -101,6 +101,7 @@ const ServerStats: React.FC = () => {
   const [monitorLoading, setMonitorLoading] = useState(false);
   const [showAllTables, setShowAllTables] = useState(false);
   const [activeMonitorTab, setActiveMonitorTab] = useState<'overview' | 'database' | 'storage' | 'links'>('overview');
+  const [dbCapacity, setDbCapacity] = useState<any>(null);
 
   useEffect(() => {
       runFullDiagnostic();
@@ -112,18 +113,20 @@ const ServerStats: React.FC = () => {
   const fetchMonitorData = async (silent = false) => {
       if (!silent) setMonitorLoading(true);
       try {
-          const [statusRes, dbRes, storageRes, healthRes, linksRes] = await Promise.allSettled([
+          const [statusRes, dbRes, storageRes, healthRes, linksRes, capRes] = await Promise.allSettled([
               fetch('/api/supabase/status').then(r => r.json()),
               fetch('/api/supabase/db-metrics').then(r => r.json()),
               fetch('/api/supabase/storage-usage').then(r => r.json()),
               fetch('/api/supabase/health-check').then(r => r.json()),
               fetch('/api/supabase/billing-links').then(r => r.json()),
+              fetch('/api/db/capacity').then(r => r.json()),
           ]);
           if (statusRes.status === 'fulfilled') setSupaStatus(statusRes.value);
           if (dbRes.status === 'fulfilled') setDbMetrics(dbRes.value);
           if (storageRes.status === 'fulfilled') setStorageUsage(storageRes.value);
           if (healthRes.status === 'fulfilled') setHealthCheck(healthRes.value);
           if (linksRes.status === 'fulfilled') setBillingLinks(linksRes.value);
+          if (capRes.status === 'fulfilled') setDbCapacity(capRes.value);
       } catch (err) {
           console.error('Monitor fetch error:', err);
       } finally {
@@ -485,30 +488,67 @@ const ServerStats: React.FC = () => {
                         </div>
                     )}
 
-                    {dbMetrics && (
-                        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                            <div className="bg-slate-800/50 p-5 rounded-xl border border-slate-700">
-                                <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest mb-1">Total de Registros</p>
-                                <p className="text-3xl font-black text-white font-mono">{dbMetrics.total_rows.toLocaleString('pt-BR')}</p>
-                            </div>
-                            <div className="bg-slate-800/50 p-5 rounded-xl border border-slate-700">
-                                <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest mb-1">Tamanho Estimado</p>
-                                <p className="text-3xl font-black text-blue-400 font-mono">{dbMetrics.total_estimated_size_mb} <span className="text-sm">MB</span></p>
-                            </div>
-                            <div className="bg-slate-800/50 p-5 rounded-xl border border-slate-700">
-                                <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest mb-1">Cota Free Tier</p>
-                                <p className="text-3xl font-black text-amber-400 font-mono">{dbMetrics.usage_percent}<span className="text-sm">%</span></p>
-                                <div className="w-full bg-slate-700 h-1.5 mt-2 rounded-full overflow-hidden">
-                                    <div className={`h-full rounded-full transition-all duration-700 ${dbMetrics.usage_percent > 80 ? 'bg-red-500' : dbMetrics.usage_percent > 50 ? 'bg-amber-500' : 'bg-emerald-500'}`} style={{ width: `${Math.min(dbMetrics.usage_percent, 100)}%` }}></div>
+                    {(dbMetrics || dbCapacity) && (() => {
+                        const capUsedMb = dbCapacity?.used_mb || dbMetrics?.total_estimated_size_mb || 0;
+                        const capLimitMb = dbCapacity ? dbCapacity.limit_gb * 1024 : (dbMetrics?.quota_mb || DB_QUOTA_MB);
+                        const capPct = capLimitMb > 0 ? Math.min(100, Math.round(capUsedMb / capLimitMb * 100)) : 0;
+                        const capColor = capPct < 70 ? 'bg-emerald-500' : capPct < 90 ? 'bg-amber-500' : 'bg-red-500';
+                        const totalRows = dbCapacity?.total_rows || dbMetrics?.total_rows || 0;
+                        const activeTables = dbCapacity?.tables?.filter((t: any) => t.rows > 0).length || dbMetrics?.tables.filter(t => (t.count || 0) > 0).length || 0;
+                        const totalTables = dbCapacity?.tables?.length || dbMetrics?.tables.length || 0;
+                        return (
+                        <div className="space-y-3">
+                            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                                <div className="bg-slate-800/50 p-5 rounded-xl border border-slate-700">
+                                    <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest mb-1">Total de Registros</p>
+                                    <p className="text-3xl font-black text-white font-mono">{totalRows.toLocaleString('pt-BR')}</p>
+                                </div>
+                                <div className="bg-slate-800/50 p-5 rounded-xl border border-slate-700">
+                                    <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest mb-1">Tamanho do Banco</p>
+                                    <p className="text-3xl font-black text-blue-400 font-mono">{capUsedMb.toFixed(1)} <span className="text-sm">MB</span></p>
+                                    <p className="text-[9px] text-slate-500 mt-1">{dbCapacity?.source === 'rpc' ? 'Dado real via RPC' : 'Estimativa por registros'}</p>
+                                </div>
+                                <div className="bg-slate-800/50 p-5 rounded-xl border border-slate-700">
+                                    <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest mb-1">Capacidade Utilizada</p>
+                                    <p className="text-3xl font-black text-amber-400 font-mono">{capPct}<span className="text-sm">%</span></p>
+                                    <div className="w-full bg-slate-700 h-2 mt-2 rounded-full overflow-hidden">
+                                        <div className={`h-full rounded-full transition-all duration-700 ${capColor}`} style={{ width: `${capPct}%` }}></div>
+                                    </div>
+                                    <p className="text-[9px] text-slate-500 mt-1">{capUsedMb.toFixed(1)} MB de {capLimitMb.toFixed(0)} MB ({dbCapacity?.limit_gb || (capLimitMb / 1024).toFixed(1)} GB)</p>
+                                </div>
+                                <div className="bg-slate-800/50 p-5 rounded-xl border border-slate-700">
+                                    <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest mb-1">Tabelas Ativas</p>
+                                    <p className="text-3xl font-black text-emerald-400 font-mono">{activeTables}</p>
+                                    <p className="text-[9px] text-slate-500 mt-1">de {totalTables} monitoradas</p>
                                 </div>
                             </div>
-                            <div className="bg-slate-800/50 p-5 rounded-xl border border-slate-700">
-                                <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest mb-1">Tabelas Ativas</p>
-                                <p className="text-3xl font-black text-emerald-400 font-mono">{dbMetrics.tables.filter(t => (t.count || 0) > 0).length}</p>
-                                <p className="text-[9px] text-slate-500 mt-1">de {dbMetrics.tables.length} monitoradas</p>
-                            </div>
+
+                            {dbCapacity?.tables && dbCapacity.tables.length > 0 && (
+                                <div className="bg-slate-800/50 rounded-xl border border-slate-700 p-4">
+                                    <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3">Registros por Tabela</h4>
+                                    <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+                                        {dbCapacity.tables.slice(0, 12).map((t: any, i: number) => {
+                                            const maxRows = Math.max(...dbCapacity.tables.map((x: any) => x.rows || 0), 1);
+                                            const pct = Math.round((t.rows / maxRows) * 100);
+                                            return (
+                                                <div key={i} className="bg-slate-900/50 rounded-lg p-2.5 border border-slate-700/50">
+                                                    <p className="text-[9px] font-bold text-slate-400 truncate">{t.table}</p>
+                                                    <p className="text-sm font-black text-white font-mono">{(t.rows || 0).toLocaleString('pt-BR')}</p>
+                                                    <div className="w-full bg-slate-700 h-1 mt-1 rounded-full overflow-hidden">
+                                                        <div className="h-full bg-blue-500 rounded-full" style={{ width: `${pct}%` }}></div>
+                                                    </div>
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                    {dbCapacity.updated_at && (
+                                        <p className="text-[8px] text-slate-600 mt-2 text-right">Atualizado: {new Date(dbCapacity.updated_at).toLocaleString('pt-BR')}</p>
+                                    )}
+                                </div>
+                            )}
                         </div>
-                    )}
+                        );
+                    })()}
                 </div>
             )}
 

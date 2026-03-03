@@ -242,6 +242,64 @@ export async function registerRoutes(
     }
   });
 
+  app.get("/api/db/capacity", async (_req: Request, res: Response) => {
+    try {
+      const DB_CAPACITY_GB = Number(process.env.DB_CAPACITY_GB || 0.5);
+
+      const tables = ['missions', 'clients', 'providers', 'vehicles', 'system_users',
+        'financial_transactions', 'commercial_proposals', 'client_price_tables',
+        'provider_cost_tables', 'system_logs', 'financial_accounts', 'financial_categories'];
+
+      let totalRows = 0;
+      const tableStats: any[] = [];
+
+      for (const table of tables) {
+        try {
+          const { count, error } = await supabaseAdmin.from(table).select('*', { count: 'exact', head: true });
+          if (!error && count !== null) {
+            totalRows += count;
+            tableStats.push({ table, rows: count });
+          }
+        } catch {}
+      }
+
+      let used_bytes = 0;
+      let dbSizeSource = 'estimate';
+
+      try {
+        const { data: rpcData, error: rpcErr } = await supabaseAdmin.rpc('get_db_usage_bytes');
+        if (!rpcErr && rpcData) {
+          used_bytes = Number(rpcData);
+          dbSizeSource = 'rpc';
+        }
+      } catch {}
+
+      if (used_bytes === 0) {
+        const avgRowBytes = 800;
+        used_bytes = totalRows * avgRowBytes;
+        dbSizeSource = 'estimate';
+      }
+
+      const limit_bytes = Math.round(DB_CAPACITY_GB * 1024 * 1024 * 1024);
+      const percent_used = limit_bytes > 0 ? used_bytes / limit_bytes : null;
+
+      res.json({
+        used_bytes,
+        limit_bytes,
+        percent_used,
+        used_mb: +(used_bytes / 1024 / 1024).toFixed(2),
+        used_gb: +(used_bytes / 1024 / 1024 / 1024).toFixed(3),
+        limit_gb: DB_CAPACITY_GB,
+        total_rows: totalRows,
+        tables: tableStats.sort((a, b) => b.rows - a.rows),
+        source: dbSizeSource,
+        updated_at: new Date().toISOString(),
+      });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
   app.get("/api/supabase/billing-links", (_req: Request, res: Response) => {
     const projectRef = 'ajhmmjuewdsukecaimik';
     res.json({
