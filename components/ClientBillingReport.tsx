@@ -108,18 +108,23 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate })
         setChartsLoading(true);
         setChartsGenerated(false);
         try {
-            const rangeStart = new Date(`${startDate}T00:00:00`);
-            const rangeEnd = new Date(`${endDate}T23:59:59`);
-            const { data: rawData, error } = await supabase
-                .from('missions')
-                .select('*')
-                .neq('status', 'Recusada')
-                .order('created_at', { ascending: true });
+            const rangeStart = `${startDate}T00:00:00`;
+            const rangeEnd = `${endDate}T23:59:59`;
+            const [byCreated, byStart] = await Promise.all([
+                supabase.from('missions').select('*').neq('status', 'Recusada')
+                    .gte('created_at', rangeStart).lte('created_at', rangeEnd),
+                supabase.from('missions').select('*').neq('status', 'Recusada')
+                    .not('start_time', 'is', null)
+                    .gte('start_time', rangeStart).lte('start_time', rangeEnd)
+            ]);
+            const error = byCreated.error || byStart.error;
             if (error) throw error;
-            const missionData = (rawData || []).filter(m => {
-                const d = new Date(m.start_time || m.created_at);
-                return d >= rangeStart && d <= rangeEnd;
+            const seen = new Set<string>();
+            const missionData: any[] = [];
+            [...(byCreated.data || []), ...(byStart.data || [])].forEach(m => {
+                if (!seen.has(m.id)) { seen.add(m.id); missionData.push(m); }
             });
+            missionData.sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
 
             const [ptRes, pctRes] = await Promise.all([
                 supabase.from('client_price_tables').select('*'),
