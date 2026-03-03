@@ -636,7 +636,7 @@ export const calculateMissionFinancials = (
     const appliedTableName = (appliedClientTable?.operation_type || '').toUpperCase();
     const missionDest = (mission.destination || '').toUpperCase();
 
-    const hasAtePrefix = (name: string) => name.includes('ATÉ') || name.includes('ATE');
+    const hasAtePrefix = (name: string) => name.includes('ATÉ') || name.includes('ATE') || name.includes('FAIXA');
     const isFixedDistanceClientRule = (!hasAtePrefix(appliedTableName)) && (
                                       appliedTableName.includes('200KM') || 
                                       appliedTableName.includes('200 KM') || 
