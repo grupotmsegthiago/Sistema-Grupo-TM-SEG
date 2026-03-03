@@ -133,43 +133,57 @@ const ClientBillingReport: React.FC = () => {
         }
     };
 
-    const clientChartData = useMemo(() => {
-        if (!chartsGenerated || allPeriodMissions.length === 0) return [];
-        const totals: Record<string, number> = {};
-        allPeriodMissions.forEach(m => {
-            const name = m.client || 'Sem Cliente';
-            const clientObj = clients.find(c => c.name === name);
-            const displayName = clientObj?.trading_name || name;
-            const revenue = (m.revenue_value || 0) + (m.toll_value || 0);
-            totals[displayName] = (totals[displayName] || 0) + revenue;
-        });
-        return Object.entries(totals)
-            .sort((a, b) => b[1] - a[1])
-            .map(([nome, valor]) => ({ nome: nome.length > 20 ? nome.substring(0, 20) + '…' : nome, valor: Math.round(valor * 100) / 100, fullName: nome }));
-    }, [chartsGenerated, allPeriodMissions, clients]);
+    const chartComputedData = useMemo(() => {
+        if (!chartsGenerated || allPeriodMissions.length === 0) return { clientData: [], providerData: [] };
+        const clientTotals: Record<string, { revenue: number; count: number }> = {};
+        const providerTotals: Record<string, { cost: number; count: number }> = {};
 
-    const providerChartData = useMemo(() => {
-        if (!chartsGenerated || allPeriodMissions.length === 0) return [];
-        const totals: Record<string, number> = {};
         allPeriodMissions.forEach(m => {
-            const name = m.provider || 'Sem Fornecedor';
-            const cost = (m.cost_value || 0) + (m.toll_value_provider || m.toll_value || 0);
-            totals[name] = (totals[name] || 0) + cost;
+            const clientName = m.client || 'Sem Cliente';
+            const providerName = m.provider || 'Sem Fornecedor';
+            const clientObj = clients.find(c => c.name === clientName);
+            const displayClient = clientObj?.trading_name || clientName;
+
+            const clientTablesForM = allClientTables.filter(t => t.client === clientName);
+            const fin = calculateMissionFinancials(m, clientTablesForM, allProviderTables, clientObj);
+
+            const revenue = fin.client.total + (m.toll_value || 0);
+            const cost = fin.provider.total + (m.toll_value_provider || m.toll_value || 0);
+
+            if (!clientTotals[displayClient]) clientTotals[displayClient] = { revenue: 0, count: 0 };
+            clientTotals[displayClient].revenue += revenue;
+            clientTotals[displayClient].count++;
+
+            if (!providerTotals[providerName]) providerTotals[providerName] = { cost: 0, count: 0 };
+            providerTotals[providerName].cost += cost;
+            providerTotals[providerName].count++;
         });
-        return Object.entries(totals)
-            .sort((a, b) => b[1] - a[1])
-            .map(([nome, valor]) => ({ nome: nome.length > 20 ? nome.substring(0, 20) + '…' : nome, valor: Math.round(valor * 100) / 100, fullName: nome }));
-    }, [chartsGenerated, allPeriodMissions]);
+
+        const clientData = Object.entries(clientTotals)
+            .sort((a, b) => b[1].revenue - a[1].revenue)
+            .map(([nome, d]) => ({ nome, valor: Math.round(d.revenue * 100) / 100, count: d.count, fullName: nome }));
+
+        const providerData = Object.entries(providerTotals)
+            .sort((a, b) => b[1].cost - a[1].cost)
+            .map(([nome, d]) => ({ nome, valor: Math.round(d.cost * 100) / 100, count: d.count, fullName: nome }));
+
+        return { clientData, providerData };
+    }, [chartsGenerated, allPeriodMissions, clients, allClientTables, allProviderTables]);
+
+    const clientChartData = chartComputedData.clientData;
+    const providerChartData = chartComputedData.providerData;
 
     const CHART_COLORS_CLIENT = ['#1e40af', '#2563eb', '#3b82f6', '#60a5fa', '#93c5fd', '#bfdbfe', '#1e3a5f', '#0c4a6e', '#0369a1', '#0284c7'];
     const CHART_COLORS_PROVIDER = ['#991b1b', '#b91c1c', '#dc2626', '#ef4444', '#f87171', '#fca5a5', '#7f1d1d', '#9a3412', '#c2410c', '#ea580c'];
 
     const ChartTooltip = ({ active, payload, label }: any) => {
         if (!active || !payload?.[0]) return null;
+        const data = payload[0].payload;
         return (
             <div className="bg-gray-900 text-white px-4 py-3 rounded-xl shadow-2xl border border-gray-700 max-w-xs">
-                <p className="font-black text-gray-300 uppercase tracking-wider mb-1 text-[11px] border-b border-gray-700 pb-1">{payload[0].payload.fullName || label}</p>
-                <p className="font-bold text-[13px]">{fmtBRL(payload[0].value)}</p>
+                <p className="font-black text-gray-300 uppercase tracking-wider mb-1.5 text-[11px] border-b border-gray-700 pb-1.5">{data.fullName || label}</p>
+                <p className="font-black text-[15px] text-white">{fmtBRL(payload[0].value)}</p>
+                {data.count && <p className="text-[11px] text-gray-400 font-bold mt-1">{data.count} missões</p>}
             </div>
         );
     };
@@ -555,17 +569,17 @@ const ClientBillingReport: React.FC = () => {
                                 <p className="text-[10px] text-gray-400 font-bold mt-0.5">{allPeriodMissions.length} missões no período &middot; {fmtBRL(clientChartData.reduce((s, d) => s + d.valor, 0))}</p>
                             </div>
                         </div>
-                        <ResponsiveContainer width="100%" height={Math.max(280, clientChartData.length * 38)}>
-                            <BarChart data={clientChartData} layout="vertical" margin={{ top: 5, right: 80, left: 5, bottom: 5 }}>
+                        <ResponsiveContainer width="100%" height={Math.max(300, clientChartData.length * 48)}>
+                            <BarChart data={clientChartData} layout="vertical" margin={{ top: 5, right: 100, left: 10, bottom: 5 }}>
                                 <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-                                <XAxis type="number" tick={{ fontSize: 10, fontWeight: 700, fill: '#64748b' }} tickFormatter={(v: number) => `R$ ${(v / 1000).toFixed(0)}k`} />
-                                <YAxis dataKey="nome" type="category" tick={{ fontSize: 10, fontWeight: 800, fill: '#475569' }} width={150} />
+                                <XAxis type="number" tick={{ fontSize: 11, fontWeight: 700, fill: '#64748b' }} tickFormatter={(v: number) => v >= 1000 ? `R$ ${(v / 1000).toFixed(0)}k` : `R$ ${v.toFixed(0)}`} />
+                                <YAxis dataKey="nome" type="category" tick={{ fontSize: 12, fontWeight: 800, fill: '#1e293b' }} width={180} interval={0} />
                                 <Tooltip content={<ChartTooltip />} />
-                                <Bar dataKey="valor" name="Faturamento" radius={[0, 6, 6, 0]} barSize={22}>
+                                <Bar dataKey="valor" name="Faturamento" radius={[0, 6, 6, 0]} barSize={28}>
                                     {clientChartData.map((_, i) => (
                                         <Cell key={i} fill={CHART_COLORS_CLIENT[i % CHART_COLORS_CLIENT.length]} />
                                     ))}
-                                    <LabelList dataKey="valor" position="right" style={{ fontSize: 10, fontWeight: 900, fill: '#1e293b' }} formatter={(v: number) => fmtBRL(v)} />
+                                    <LabelList dataKey="valor" position="right" style={{ fontSize: 11, fontWeight: 900, fill: '#1e293b' }} formatter={(v: number) => fmtBRL(v)} />
                                 </Bar>
                             </BarChart>
                         </ResponsiveContainer>
@@ -579,17 +593,17 @@ const ClientBillingReport: React.FC = () => {
                                 <p className="text-[10px] text-gray-400 font-bold mt-0.5">{allPeriodMissions.length} missões no período &middot; {fmtBRL(providerChartData.reduce((s, d) => s + d.valor, 0))}</p>
                             </div>
                         </div>
-                        <ResponsiveContainer width="100%" height={Math.max(280, providerChartData.length * 38)}>
-                            <BarChart data={providerChartData} layout="vertical" margin={{ top: 5, right: 80, left: 5, bottom: 5 }}>
+                        <ResponsiveContainer width="100%" height={Math.max(300, providerChartData.length * 48)}>
+                            <BarChart data={providerChartData} layout="vertical" margin={{ top: 5, right: 100, left: 10, bottom: 5 }}>
                                 <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-                                <XAxis type="number" tick={{ fontSize: 10, fontWeight: 700, fill: '#64748b' }} tickFormatter={(v: number) => `R$ ${(v / 1000).toFixed(0)}k`} />
-                                <YAxis dataKey="nome" type="category" tick={{ fontSize: 10, fontWeight: 800, fill: '#475569' }} width={150} />
+                                <XAxis type="number" tick={{ fontSize: 11, fontWeight: 700, fill: '#64748b' }} tickFormatter={(v: number) => v >= 1000 ? `R$ ${(v / 1000).toFixed(0)}k` : `R$ ${v.toFixed(0)}`} />
+                                <YAxis dataKey="nome" type="category" tick={{ fontSize: 12, fontWeight: 800, fill: '#1e293b' }} width={180} interval={0} />
                                 <Tooltip content={<ChartTooltip />} />
-                                <Bar dataKey="valor" name="Custo" radius={[0, 6, 6, 0]} barSize={22}>
+                                <Bar dataKey="valor" name="Custo" radius={[0, 6, 6, 0]} barSize={28}>
                                     {providerChartData.map((_, i) => (
                                         <Cell key={i} fill={CHART_COLORS_PROVIDER[i % CHART_COLORS_PROVIDER.length]} />
                                     ))}
-                                    <LabelList dataKey="valor" position="right" style={{ fontSize: 10, fontWeight: 900, fill: '#1e293b' }} formatter={(v: number) => fmtBRL(v)} />
+                                    <LabelList dataKey="valor" position="right" style={{ fontSize: 11, fontWeight: 900, fill: '#1e293b' }} formatter={(v: number) => fmtBRL(v)} />
                                 </Bar>
                             </BarChart>
                         </ResponsiveContainer>
