@@ -84,6 +84,7 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
 
     // Inteligência de Software
     const [iblWarning, setIblWarning] = useState('');
+    const [originalStatus, setOriginalStatus] = useState('');
 
     const [editData, setEditData] = useState({
         provider: '', vehicleId: '', agent1: '', agent2: '',
@@ -268,6 +269,7 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
             const { data: clientObj } = await supabase.from('clients').select('id').eq('name', m.client).maybeSingle();
             if (clientObj) setClientId(clientObj.id);
 
+            setOriginalStatus(m.status);
             setEditData({
                 provider: m.provider || '', vehicleId: m.vehicle_id?.toString() || '',
                 agent1: m.agent1 || '', agent2: m.agent2 || '',
@@ -434,7 +436,21 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
         e.preventDefault();
         if (!mission || !currentUser) return;
 
-        const startIso = new Date(`${editData.startDate}T${editData.startTime}`).toISOString();
+        let startIso = new Date(`${editData.startDate}T${editData.startTime}`).toISOString();
+
+        const isTransitionToInTransit = editData.status === MissionStatus.IN_TRANSIT && 
+            [MissionStatus.ORIGIN, MissionStatus.SCHEDULED, MissionStatus.DOCUMENTATION, MissionStatus.SOLICITED].includes(originalStatus as MissionStatus);
+        
+        if (isTransitionToInTransit) {
+            const now = new Date();
+            const scheduledStart = new Date(`${editData.startDate}T${editData.startTime}`);
+            if (now < scheduledStart) {
+                startIso = now.toISOString();
+                const newDate = now.toLocaleDateString('en-CA');
+                const newTime = now.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+                setEditData(prev => ({ ...prev, startDate: newDate, startTime: newTime }));
+            }
+        }
         
         let endIso = null;
         if (editData.endDate && editData.endTime) {
