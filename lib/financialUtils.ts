@@ -721,7 +721,8 @@ export const calculateMissionFinancials = (
 
     const round2 = (v: number) => Math.round(v * 100) / 100;
 
-    const isMinimumActivationRule = !isZeroValueMission && distanceForCalculation <= 200 && durationHours <= 2 && cFranchiseKm >= 200 && pFranchiseKm >= 200;
+    const effectiveDistanceForMinRule = Math.max(distanceForCalculation, totalDistance);
+    const isMinimumActivationRule = !isZeroValueMission && effectiveDistanceForMinRule <= 200 && durationHours <= 2 && cFranchiseKm >= 200 && pFranchiseKm >= 200;
     if (isMinimumActivationRule) {
         cExcessKm = 0;
         cExcessHr = 0;
