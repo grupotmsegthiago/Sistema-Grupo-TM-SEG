@@ -75,6 +75,8 @@ export const NAV_ITEMS: NavItem[] = [
   { name: 'Página Inicial', icon: 'LayoutDashboard', id: 'dashboard' },
   { name: 'Monitoramento', icon: 'MapPin', id: 'missions' },
   { name: 'Rede de Apoio (QRF)', icon: 'Map', id: 'support-network' },
+  { name: 'Chatbot IA', icon: 'Bot', id: 'ai-support' },
+  { name: 'Relatórios', icon: 'FileBarChart', id: 'reports' },
   {
     name: 'Financeiro',
     icon: 'Wallet', 
@@ -101,6 +103,7 @@ export const NAV_ITEMS: NavItem[] = [
       { name: 'Cadastro de Usuário', id: 'client-users' },
       { name: 'Veículos (Carga)', id: 'client-vehicles' }, 
       { name: 'Cadastro de Rotas', id: 'client-routes' },
+      { name: 'Propostas Comerciais', id: 'quotes' },
     ]
   },
   { 
