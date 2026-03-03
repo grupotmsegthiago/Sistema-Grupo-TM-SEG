@@ -302,11 +302,28 @@ export async function registerRoutes(
 
   app.get("/api/platform/costs", async (_req: Request, res: Response) => {
     try {
-      const BRL_RATE = Number(process.env.USD_TO_BRL || 5.80);
+      let overrides: Record<string, number> = {};
+      const dbUrl = process.env.DATABASE_URL;
+      if (dbUrl) {
+        const pool = new pg.Pool({ connectionString: dbUrl, ssl: { rejectUnauthorized: false }, max: 1 });
+        try {
+          await pool.query(`CREATE TABLE IF NOT EXISTS platform_cost_overrides (
+            key TEXT PRIMARY KEY,
+            value NUMERIC DEFAULT 0,
+            updated_at TIMESTAMP DEFAULT NOW()
+          )`);
+          const { rows } = await pool.query('SELECT key, value FROM platform_cost_overrides');
+          rows.forEach((r: any) => { overrides[r.key] = Number(r.value) || 0; });
+        } catch (e) { console.error('Erro ao ler overrides:', e); }
+        finally { await pool.end(); }
+      }
+
+      const BRL_RATE = overrides['usd_to_brl'] || Number(process.env.USD_TO_BRL || 5.80);
 
       const replitPlan = process.env.REPLIT_PLAN || 'Hacker';
       const replitPlanCosts: Record<string, { usd: number, label: string }> = {
         'Free': { usd: 0, label: 'Free' },
+        'Starter': { usd: 9, label: 'Starter ($9/mês)' },
         'Hacker': { usd: 7, label: 'Hacker ($7/mês)' },
         'Pro': { usd: 20, label: 'Pro ($20/mês)' },
         'Teams': { usd: 25, label: 'Teams ($25/mês)' },
@@ -321,18 +338,20 @@ export async function registerRoutes(
       };
       const supabaseBase = supabasePlanCosts[supabasePlan] || supabasePlanCosts['Free'];
 
-      const replitExtraEgress = Number(process.env.REPLIT_EXTRA_EGRESS_USD || 0);
-      const replitExtraCompute = Number(process.env.REPLIT_EXTRA_COMPUTE_USD || 0);
-      const replitExtraStorage = Number(process.env.REPLIT_EXTRA_STORAGE_USD || 0);
-      const supabaseExtraDb = Number(process.env.SUPABASE_EXTRA_DB_USD || 0);
-      const supabaseExtraBandwidth = Number(process.env.SUPABASE_EXTRA_BANDWIDTH_USD || 0);
-      const supabaseExtraStorage = Number(process.env.SUPABASE_EXTRA_STORAGE_USD || 0);
+      const replitExtraEgress = overrides['replit_egress'] ?? Number(process.env.REPLIT_EXTRA_EGRESS_USD || 0);
+      const replitExtraCompute = overrides['replit_compute'] ?? Number(process.env.REPLIT_EXTRA_COMPUTE_USD || 0);
+      const replitExtraStorage = overrides['replit_storage'] ?? Number(process.env.REPLIT_EXTRA_STORAGE_USD || 0);
+      const replitExtraAlwaysOn = overrides['replit_always_on'] ?? 0;
+      const replitExtraOther = overrides['replit_other'] ?? 0;
+      const supabaseExtraDb = overrides['supabase_db'] ?? Number(process.env.SUPABASE_EXTRA_DB_USD || 0);
+      const supabaseExtraBandwidth = overrides['supabase_bandwidth'] ?? Number(process.env.SUPABASE_EXTRA_BANDWIDTH_USD || 0);
+      const supabaseExtraStorage = overrides['supabase_storage'] ?? Number(process.env.SUPABASE_EXTRA_STORAGE_USD || 0);
 
-      const googleMapsEstimate = Number(process.env.GOOGLE_MAPS_MONTHLY_USD || 0);
-      const resendEstimate = Number(process.env.RESEND_MONTHLY_USD || 0);
-      const otherCosts = Number(process.env.OTHER_MONTHLY_COSTS_USD || 0);
+      const googleMapsEstimate = overrides['google_maps'] ?? Number(process.env.GOOGLE_MAPS_MONTHLY_USD || 0);
+      const resendEstimate = overrides['resend'] ?? Number(process.env.RESEND_MONTHLY_USD || 0);
+      const otherCosts = overrides['other_apis'] ?? Number(process.env.OTHER_MONTHLY_COSTS_USD || 0);
 
-      const replitTotalUsd = replitBase.usd + replitExtraEgress + replitExtraCompute + replitExtraStorage;
+      const replitTotalUsd = replitBase.usd + replitExtraEgress + replitExtraCompute + replitExtraStorage + replitExtraAlwaysOn + replitExtraOther;
       const supabaseTotalUsd = supabaseBase.usd + supabaseExtraDb + supabaseExtraBandwidth + supabaseExtraStorage;
       const apiTotalUsd = googleMapsEstimate + resendEstimate + otherCosts;
       const grandTotalUsd = replitTotalUsd + supabaseTotalUsd + apiTotalUsd;
@@ -416,6 +435,8 @@ export async function registerRoutes(
             egress: { usd: replitExtraEgress, brl: toR(replitExtraEgress) },
             compute: { usd: replitExtraCompute, brl: toR(replitExtraCompute) },
             storage: { usd: replitExtraStorage, brl: toR(replitExtraStorage) },
+            always_on: { usd: replitExtraAlwaysOn, brl: toR(replitExtraAlwaysOn) },
+            other: { usd: replitExtraOther, brl: toR(replitExtraOther) },
           },
           total_usd: replitTotalUsd,
           total_brl: toR(replitTotalUsd),
@@ -445,6 +466,36 @@ export async function registerRoutes(
         saving_tips: savingTips,
         updated_at: new Date().toISOString(),
       });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.post("/api/platform/costs/overrides", async (req: Request, res: Response) => {
+    try {
+      const dbUrl = process.env.DATABASE_URL;
+      if (!dbUrl) return res.status(500).json({ error: 'DATABASE_URL não configurada' });
+      const { overrides } = req.body;
+      if (!overrides || typeof overrides !== 'object') return res.status(400).json({ error: 'overrides inválidos' });
+
+      const pool = new pg.Pool({ connectionString: dbUrl, ssl: { rejectUnauthorized: false }, max: 1 });
+      try {
+        await pool.query(`CREATE TABLE IF NOT EXISTS platform_cost_overrides (
+          key TEXT PRIMARY KEY,
+          value NUMERIC DEFAULT 0,
+          updated_at TIMESTAMP DEFAULT NOW()
+        )`);
+        for (const [key, value] of Object.entries(overrides)) {
+          const numVal = Number(value) || 0;
+          await pool.query(
+            `INSERT INTO platform_cost_overrides (key, value, updated_at) VALUES ($1, $2, NOW()) ON CONFLICT (key) DO UPDATE SET value = $2, updated_at = NOW()`,
+            [key, numVal]
+          );
+        }
+        res.json({ success: true, saved: Object.keys(overrides).length });
+      } finally {
+        await pool.end();
+      }
     } catch (e: any) {
       res.status(500).json({ error: e.message });
     }

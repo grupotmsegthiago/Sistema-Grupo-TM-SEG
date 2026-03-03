@@ -7,7 +7,8 @@ import {
     ArrowRight, Sparkles, BarChart3, Trash2, RefreshCw,
     Globe, Server, DollarSign, BrainCircuit, Lock, ShieldCheck,
     MessageSquare, Lightbulb, Play, Key, ExternalLink, RefreshCcw,
-    TrendingUp, ArrowUpRight, Wallet, Info, FileText, ChevronRight
+    TrendingUp, ArrowUpRight, Wallet, Info, FileText, ChevronRight,
+    Pencil, Save, X
 } from 'lucide-react';
 import { COST_ESTIMATES, API_BRASIL_CONFIG } from '../constants';
 import { useNotification } from '../lib/NotificationContext';
@@ -21,6 +22,22 @@ const CostOptimizationDashboard: React.FC = () => {
     const [connectionStatus, setConnectionStatus] = useState<'CHECKING' | 'READY' | 'NEED_KEY' | 'ERROR'>('CHECKING');
     
     const [platformCosts, setPlatformCosts] = useState<any>(null);
+    const [editingCosts, setEditingCosts] = useState(false);
+    const [savingCosts, setSavingCosts] = useState(false);
+    const [costForm, setCostForm] = useState({
+        replit_egress: 0,
+        replit_compute: 0,
+        replit_storage: 0,
+        replit_always_on: 0,
+        replit_other: 0,
+        supabase_db: 0,
+        supabase_bandwidth: 0,
+        supabase_storage: 0,
+        google_maps: 0,
+        resend: 0,
+        other_apis: 0,
+        usd_to_brl: 5.80,
+    });
 
     const [achievedSavings, setAchievedSavings] = useState(0);
     const [optimizationHistory, setOptimizationHistory] = useState<any[]>([]);
@@ -81,9 +98,48 @@ const CostOptimizationDashboard: React.FC = () => {
     const fetchPlatformCosts = async () => {
         try {
             const resp = await fetch('/api/platform/costs');
-            if (resp.ok) setPlatformCosts(await resp.json());
+            if (resp.ok) {
+                const data = await resp.json();
+                setPlatformCosts(data);
+                setCostForm({
+                    replit_egress: data.replit.extras.egress.usd,
+                    replit_compute: data.replit.extras.compute.usd,
+                    replit_storage: data.replit.extras.storage.usd,
+                    replit_always_on: data.replit.extras.always_on?.usd || 0,
+                    replit_other: data.replit.extras.other?.usd || 0,
+                    supabase_db: data.supabase.extras.db.usd,
+                    supabase_bandwidth: data.supabase.extras.bandwidth.usd,
+                    supabase_storage: data.supabase.extras.storage.usd,
+                    google_maps: data.apis.google_maps.usd,
+                    resend: data.apis.resend.usd,
+                    other_apis: data.apis.other.usd,
+                    usd_to_brl: data.currency_rate,
+                });
+            }
         } catch (e) {
             console.error('Erro ao buscar custos de plataforma:', e);
+        }
+    };
+
+    const saveCostOverrides = async () => {
+        setSavingCosts(true);
+        try {
+            const resp = await fetch('/api/platform/costs/overrides', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ overrides: costForm }),
+            });
+            if (resp.ok) {
+                showNotification('Custos Atualizados', 'Os valores de excedentes foram salvos com sucesso.', 'success');
+                setEditingCosts(false);
+                await fetchPlatformCosts();
+            } else {
+                throw new Error('Falha ao salvar');
+            }
+        } catch (e: any) {
+            showNotification('Erro', 'Não foi possível salvar os custos: ' + e.message, 'error');
+        } finally {
+            setSavingCosts(false);
         }
     };
 
@@ -267,100 +323,272 @@ const CostOptimizationDashboard: React.FC = () => {
                         </div>
                     </div>
 
-                    <div className="p-8 grid grid-cols-1 md:grid-cols-3 gap-6">
-                        <div className="bg-blue-50 rounded-2xl border border-blue-100 p-6" data-testid="card-cost-replit">
-                            <div className="flex items-center gap-3 mb-4">
-                                <div className="p-2.5 bg-blue-600 text-white rounded-xl shadow-lg"><Server size={18} /></div>
-                                <div>
-                                    <h4 className="text-sm font-black text-blue-900 uppercase tracking-tight">Replit</h4>
-                                    <p className="text-[10px] text-blue-600 font-bold">{platformCosts.replit.plan}</p>
-                                </div>
+                    <div className="px-8 pt-6 flex justify-end">
+                        {!editingCosts ? (
+                            <button 
+                                onClick={() => setEditingCosts(true)}
+                                className="flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-black uppercase bg-slate-100 text-slate-700 hover:bg-slate-200 border border-slate-200 transition-all"
+                                data-testid="button-edit-costs"
+                            >
+                                <Pencil size={14} /> Editar Custos Reais
+                            </button>
+                        ) : (
+                            <div className="flex gap-2">
+                                <button 
+                                    onClick={() => setEditingCosts(false)}
+                                    className="flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-black uppercase bg-gray-100 text-gray-600 hover:bg-gray-200 border border-gray-200 transition-all"
+                                    data-testid="button-cancel-edit"
+                                >
+                                    <X size={14} /> Cancelar
+                                </button>
+                                <button 
+                                    onClick={saveCostOverrides}
+                                    disabled={savingCosts}
+                                    className="flex items-center gap-2 px-6 py-2 rounded-xl text-xs font-black uppercase bg-emerald-600 text-white hover:bg-emerald-700 shadow-lg transition-all disabled:opacity-50"
+                                    data-testid="button-save-costs"
+                                >
+                                    {savingCosts ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />} Salvar
+                                </button>
                             </div>
-                            <p className="text-3xl font-black text-blue-900 font-mono tracking-tighter mb-4" data-testid="text-replit-cost">{formatCurrency(platformCosts.replit.total_brl)}</p>
-                            <div className="space-y-2 border-t border-blue-200 pt-3">
-                                <div className="flex justify-between text-xs">
-                                    <span className="text-blue-600 font-bold">Plano Base</span>
-                                    <span className="text-blue-900 font-mono font-black">{formatCurrency(platformCosts.replit.base_brl)}</span>
-                                </div>
-                                {platformCosts.replit.extras.egress.brl > 0 && (
-                                    <div className="flex justify-between text-xs">
-                                        <span className="text-blue-600 font-bold">Egress Extra</span>
-                                        <span className="text-amber-700 font-mono font-black">{formatCurrency(platformCosts.replit.extras.egress.brl)}</span>
-                                    </div>
-                                )}
-                                {platformCosts.replit.extras.compute.brl > 0 && (
-                                    <div className="flex justify-between text-xs">
-                                        <span className="text-blue-600 font-bold">Compute Extra</span>
-                                        <span className="text-amber-700 font-mono font-black">{formatCurrency(platformCosts.replit.extras.compute.brl)}</span>
-                                    </div>
-                                )}
-                                {platformCosts.replit.extras.storage.brl > 0 && (
-                                    <div className="flex justify-between text-xs">
-                                        <span className="text-blue-600 font-bold">Storage Extra</span>
-                                        <span className="text-amber-700 font-mono font-black">{formatCurrency(platformCosts.replit.extras.storage.brl)}</span>
-                                    </div>
-                                )}
-                            </div>
-                        </div>
-
-                        <div className="bg-emerald-50 rounded-2xl border border-emerald-100 p-6" data-testid="card-cost-supabase">
-                            <div className="flex items-center gap-3 mb-4">
-                                <div className="p-2.5 bg-emerald-600 text-white rounded-xl shadow-lg"><Database size={18} /></div>
-                                <div>
-                                    <h4 className="text-sm font-black text-emerald-900 uppercase tracking-tight">Supabase</h4>
-                                    <p className="text-[10px] text-emerald-600 font-bold">{platformCosts.supabase.plan}</p>
-                                </div>
-                            </div>
-                            <p className="text-3xl font-black text-emerald-900 font-mono tracking-tighter mb-4" data-testid="text-supabase-cost">{formatCurrency(platformCosts.supabase.total_brl)}</p>
-                            <div className="space-y-2 border-t border-emerald-200 pt-3">
-                                <div className="flex justify-between text-xs">
-                                    <span className="text-emerald-600 font-bold">Plano Base</span>
-                                    <span className="text-emerald-900 font-mono font-black">{formatCurrency(platformCosts.supabase.base_brl)}</span>
-                                </div>
-                                <div className="flex justify-between text-xs">
-                                    <span className="text-emerald-600 font-bold">Capacidade DB</span>
-                                    <span className="text-emerald-900 font-mono font-black">{platformCosts.supabase.db_capacity_gb} GB</span>
-                                </div>
-                                {platformCosts.supabase.extras.db.brl > 0 && (
-                                    <div className="flex justify-between text-xs">
-                                        <span className="text-emerald-600 font-bold">DB Extra</span>
-                                        <span className="text-amber-700 font-mono font-black">{formatCurrency(platformCosts.supabase.extras.db.brl)}</span>
-                                    </div>
-                                )}
-                                {platformCosts.supabase.extras.bandwidth.brl > 0 && (
-                                    <div className="flex justify-between text-xs">
-                                        <span className="text-emerald-600 font-bold">Bandwidth Extra</span>
-                                        <span className="text-amber-700 font-mono font-black">{formatCurrency(platformCosts.supabase.extras.bandwidth.brl)}</span>
-                                    </div>
-                                )}
-                            </div>
-                        </div>
-
-                        <div className="bg-amber-50 rounded-2xl border border-amber-100 p-6" data-testid="card-cost-apis">
-                            <div className="flex items-center gap-3 mb-4">
-                                <div className="p-2.5 bg-amber-600 text-white rounded-xl shadow-lg"><Globe size={18} /></div>
-                                <div>
-                                    <h4 className="text-sm font-black text-amber-900 uppercase tracking-tight">APIs Externas</h4>
-                                    <p className="text-[10px] text-amber-600 font-bold">Google Maps, Resend, etc.</p>
-                                </div>
-                            </div>
-                            <p className="text-3xl font-black text-amber-900 font-mono tracking-tighter mb-4" data-testid="text-apis-cost">{formatCurrency(platformCosts.apis.total_brl)}</p>
-                            <div className="space-y-2 border-t border-amber-200 pt-3">
-                                <div className="flex justify-between text-xs">
-                                    <span className="text-amber-600 font-bold">Google Maps</span>
-                                    <span className="text-amber-900 font-mono font-black">{formatCurrency(platformCosts.apis.google_maps.brl)}</span>
-                                </div>
-                                <div className="flex justify-between text-xs">
-                                    <span className="text-amber-600 font-bold">Resend (Email)</span>
-                                    <span className="text-amber-900 font-mono font-black">{formatCurrency(platformCosts.apis.resend.brl)}</span>
-                                </div>
-                                <div className="flex justify-between text-xs">
-                                    <span className="text-amber-600 font-bold">Gemini AI</span>
-                                    <span className="text-emerald-600 font-mono font-black">Gratuito</span>
-                                </div>
-                            </div>
-                        </div>
+                        )}
                     </div>
+
+                    {editingCosts ? (
+                        <div className="p-8 space-y-8">
+                            <div className="bg-blue-50 rounded-2xl border border-blue-200 p-6">
+                                <div className="flex items-center gap-3 mb-5">
+                                    <div className="p-2.5 bg-blue-600 text-white rounded-xl shadow-lg"><Server size={18} /></div>
+                                    <h4 className="text-sm font-black text-blue-900 uppercase tracking-tight">Excedentes Replit (USD/mês)</h4>
+                                </div>
+                                <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+                                    {[
+                                        { key: 'replit_egress', label: 'Egress' },
+                                        { key: 'replit_compute', label: 'Compute' },
+                                        { key: 'replit_storage', label: 'Storage' },
+                                        { key: 'replit_always_on', label: 'Always-On' },
+                                        { key: 'replit_other', label: 'Outros' },
+                                    ].map(f => (
+                                        <div key={f.key}>
+                                            <label className="text-[10px] font-black text-blue-700 uppercase block mb-1">{f.label}</label>
+                                            <div className="relative">
+                                                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs text-blue-400 font-bold">$</span>
+                                                <input
+                                                    type="number"
+                                                    step="0.01"
+                                                    min="0"
+                                                    value={costForm[f.key as keyof typeof costForm]}
+                                                    onChange={e => setCostForm(prev => ({ ...prev, [f.key]: Number(e.target.value) || 0 }))}
+                                                    className="w-full pl-7 pr-3 py-2.5 rounded-xl border border-blue-300 bg-white text-sm font-mono font-bold text-blue-900 focus:ring-2 focus:ring-blue-400 focus:border-blue-400 outline-none"
+                                                    data-testid={`input-${f.key}`}
+                                                />
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+
+                            <div className="bg-emerald-50 rounded-2xl border border-emerald-200 p-6">
+                                <div className="flex items-center gap-3 mb-5">
+                                    <div className="p-2.5 bg-emerald-600 text-white rounded-xl shadow-lg"><Database size={18} /></div>
+                                    <h4 className="text-sm font-black text-emerald-900 uppercase tracking-tight">Excedentes Supabase (USD/mês)</h4>
+                                </div>
+                                <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                                    {[
+                                        { key: 'supabase_db', label: 'Database' },
+                                        { key: 'supabase_bandwidth', label: 'Bandwidth' },
+                                        { key: 'supabase_storage', label: 'Storage' },
+                                    ].map(f => (
+                                        <div key={f.key}>
+                                            <label className="text-[10px] font-black text-emerald-700 uppercase block mb-1">{f.label}</label>
+                                            <div className="relative">
+                                                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs text-emerald-400 font-bold">$</span>
+                                                <input
+                                                    type="number"
+                                                    step="0.01"
+                                                    min="0"
+                                                    value={costForm[f.key as keyof typeof costForm]}
+                                                    onChange={e => setCostForm(prev => ({ ...prev, [f.key]: Number(e.target.value) || 0 }))}
+                                                    className="w-full pl-7 pr-3 py-2.5 rounded-xl border border-emerald-300 bg-white text-sm font-mono font-bold text-emerald-900 focus:ring-2 focus:ring-emerald-400 focus:border-emerald-400 outline-none"
+                                                    data-testid={`input-${f.key}`}
+                                                />
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+
+                            <div className="bg-amber-50 rounded-2xl border border-amber-200 p-6">
+                                <div className="flex items-center gap-3 mb-5">
+                                    <div className="p-2.5 bg-amber-600 text-white rounded-xl shadow-lg"><Globe size={18} /></div>
+                                    <h4 className="text-sm font-black text-amber-900 uppercase tracking-tight">APIs Externas (USD/mês)</h4>
+                                </div>
+                                <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                                    {[
+                                        { key: 'google_maps', label: 'Google Maps' },
+                                        { key: 'resend', label: 'Resend (Email)' },
+                                        { key: 'other_apis', label: 'Outros' },
+                                    ].map(f => (
+                                        <div key={f.key}>
+                                            <label className="text-[10px] font-black text-amber-700 uppercase block mb-1">{f.label}</label>
+                                            <div className="relative">
+                                                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs text-amber-400 font-bold">$</span>
+                                                <input
+                                                    type="number"
+                                                    step="0.01"
+                                                    min="0"
+                                                    value={costForm[f.key as keyof typeof costForm]}
+                                                    onChange={e => setCostForm(prev => ({ ...prev, [f.key]: Number(e.target.value) || 0 }))}
+                                                    className="w-full pl-7 pr-3 py-2.5 rounded-xl border border-amber-300 bg-white text-sm font-mono font-bold text-amber-900 focus:ring-2 focus:ring-amber-400 focus:border-amber-400 outline-none"
+                                                    data-testid={`input-${f.key}`}
+                                                />
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+
+                            <div className="bg-gray-50 rounded-2xl border border-gray-200 p-6">
+                                <div className="flex items-center gap-3 mb-5">
+                                    <div className="p-2.5 bg-gray-600 text-white rounded-xl shadow-lg"><DollarSign size={18} /></div>
+                                    <h4 className="text-sm font-black text-gray-900 uppercase tracking-tight">Câmbio USD → BRL</h4>
+                                </div>
+                                <div className="max-w-[200px]">
+                                    <div className="relative">
+                                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 font-bold">R$</span>
+                                        <input
+                                            type="number"
+                                            step="0.01"
+                                            min="0"
+                                            value={costForm.usd_to_brl}
+                                            onChange={e => setCostForm(prev => ({ ...prev, usd_to_brl: Number(e.target.value) || 5.80 }))}
+                                            className="w-full pl-8 pr-3 py-2.5 rounded-xl border border-gray-300 bg-white text-sm font-mono font-bold text-gray-900 focus:ring-2 focus:ring-gray-400 focus:border-gray-400 outline-none"
+                                            data-testid="input-usd-to-brl"
+                                        />
+                                    </div>
+                                </div>
+                            </div>
+
+                            <p className="text-[10px] text-gray-400 font-bold italic">
+                                Consulte os valores reais na página de billing do Replit e do Supabase. Os excedentes são valores MENSAIS em USD que são cobrados além do plano base.
+                            </p>
+                        </div>
+                    ) : (
+                        <div className="p-8 grid grid-cols-1 md:grid-cols-3 gap-6">
+                            <div className="bg-blue-50 rounded-2xl border border-blue-100 p-6" data-testid="card-cost-replit">
+                                <div className="flex items-center gap-3 mb-4">
+                                    <div className="p-2.5 bg-blue-600 text-white rounded-xl shadow-lg"><Server size={18} /></div>
+                                    <div>
+                                        <h4 className="text-sm font-black text-blue-900 uppercase tracking-tight">Replit</h4>
+                                        <p className="text-[10px] text-blue-600 font-bold">{platformCosts.replit.plan}</p>
+                                    </div>
+                                </div>
+                                <p className="text-3xl font-black text-blue-900 font-mono tracking-tighter mb-4" data-testid="text-replit-cost">{formatCurrency(platformCosts.replit.total_brl)}</p>
+                                <div className="space-y-2 border-t border-blue-200 pt-3">
+                                    <div className="flex justify-between text-xs">
+                                        <span className="text-blue-600 font-bold">Plano Base</span>
+                                        <span className="text-blue-900 font-mono font-black">{formatCurrency(platformCosts.replit.base_brl)}</span>
+                                    </div>
+                                    {platformCosts.replit.extras.egress.brl > 0 && (
+                                        <div className="flex justify-between text-xs">
+                                            <span className="text-blue-600 font-bold">Egress Extra</span>
+                                            <span className="text-amber-700 font-mono font-black">{formatCurrency(platformCosts.replit.extras.egress.brl)}</span>
+                                        </div>
+                                    )}
+                                    {platformCosts.replit.extras.compute.brl > 0 && (
+                                        <div className="flex justify-between text-xs">
+                                            <span className="text-blue-600 font-bold">Compute Extra</span>
+                                            <span className="text-amber-700 font-mono font-black">{formatCurrency(platformCosts.replit.extras.compute.brl)}</span>
+                                        </div>
+                                    )}
+                                    {platformCosts.replit.extras.storage.brl > 0 && (
+                                        <div className="flex justify-between text-xs">
+                                            <span className="text-blue-600 font-bold">Storage Extra</span>
+                                            <span className="text-amber-700 font-mono font-black">{formatCurrency(platformCosts.replit.extras.storage.brl)}</span>
+                                        </div>
+                                    )}
+                                    {platformCosts.replit.extras.always_on?.brl > 0 && (
+                                        <div className="flex justify-between text-xs">
+                                            <span className="text-blue-600 font-bold">Always-On</span>
+                                            <span className="text-amber-700 font-mono font-black">{formatCurrency(platformCosts.replit.extras.always_on.brl)}</span>
+                                        </div>
+                                    )}
+                                    {platformCosts.replit.extras.other?.brl > 0 && (
+                                        <div className="flex justify-between text-xs">
+                                            <span className="text-blue-600 font-bold">Outros</span>
+                                            <span className="text-amber-700 font-mono font-black">{formatCurrency(platformCosts.replit.extras.other.brl)}</span>
+                                        </div>
+                                    )}
+                                    {platformCosts.replit.total_brl === platformCosts.replit.base_brl && (
+                                        <p className="text-[9px] text-blue-400 italic mt-2">Sem excedentes. Clique em "Editar Custos Reais" para inserir valores da fatura.</p>
+                                    )}
+                                </div>
+                            </div>
+
+                            <div className="bg-emerald-50 rounded-2xl border border-emerald-100 p-6" data-testid="card-cost-supabase">
+                                <div className="flex items-center gap-3 mb-4">
+                                    <div className="p-2.5 bg-emerald-600 text-white rounded-xl shadow-lg"><Database size={18} /></div>
+                                    <div>
+                                        <h4 className="text-sm font-black text-emerald-900 uppercase tracking-tight">Supabase</h4>
+                                        <p className="text-[10px] text-emerald-600 font-bold">{platformCosts.supabase.plan}</p>
+                                    </div>
+                                </div>
+                                <p className="text-3xl font-black text-emerald-900 font-mono tracking-tighter mb-4" data-testid="text-supabase-cost">{formatCurrency(platformCosts.supabase.total_brl)}</p>
+                                <div className="space-y-2 border-t border-emerald-200 pt-3">
+                                    <div className="flex justify-between text-xs">
+                                        <span className="text-emerald-600 font-bold">Plano Base</span>
+                                        <span className="text-emerald-900 font-mono font-black">{formatCurrency(platformCosts.supabase.base_brl)}</span>
+                                    </div>
+                                    <div className="flex justify-between text-xs">
+                                        <span className="text-emerald-600 font-bold">Capacidade DB</span>
+                                        <span className="text-emerald-900 font-mono font-black">{platformCosts.supabase.db_capacity_gb} GB</span>
+                                    </div>
+                                    {platformCosts.supabase.extras.db.brl > 0 && (
+                                        <div className="flex justify-between text-xs">
+                                            <span className="text-emerald-600 font-bold">DB Extra</span>
+                                            <span className="text-amber-700 font-mono font-black">{formatCurrency(platformCosts.supabase.extras.db.brl)}</span>
+                                        </div>
+                                    )}
+                                    {platformCosts.supabase.extras.bandwidth.brl > 0 && (
+                                        <div className="flex justify-between text-xs">
+                                            <span className="text-emerald-600 font-bold">Bandwidth Extra</span>
+                                            <span className="text-amber-700 font-mono font-black">{formatCurrency(platformCosts.supabase.extras.bandwidth.brl)}</span>
+                                        </div>
+                                    )}
+                                    {platformCosts.supabase.extras.storage?.brl > 0 && (
+                                        <div className="flex justify-between text-xs">
+                                            <span className="text-emerald-600 font-bold">Storage Extra</span>
+                                            <span className="text-amber-700 font-mono font-black">{formatCurrency(platformCosts.supabase.extras.storage.brl)}</span>
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+
+                            <div className="bg-amber-50 rounded-2xl border border-amber-100 p-6" data-testid="card-cost-apis">
+                                <div className="flex items-center gap-3 mb-4">
+                                    <div className="p-2.5 bg-amber-600 text-white rounded-xl shadow-lg"><Globe size={18} /></div>
+                                    <div>
+                                        <h4 className="text-sm font-black text-amber-900 uppercase tracking-tight">APIs Externas</h4>
+                                        <p className="text-[10px] text-amber-600 font-bold">Google Maps, Resend, etc.</p>
+                                    </div>
+                                </div>
+                                <p className="text-3xl font-black text-amber-900 font-mono tracking-tighter mb-4" data-testid="text-apis-cost">{formatCurrency(platformCosts.apis.total_brl)}</p>
+                                <div className="space-y-2 border-t border-amber-200 pt-3">
+                                    <div className="flex justify-between text-xs">
+                                        <span className="text-amber-600 font-bold">Google Maps</span>
+                                        <span className="text-amber-900 font-mono font-black">{formatCurrency(platformCosts.apis.google_maps.brl)}</span>
+                                    </div>
+                                    <div className="flex justify-between text-xs">
+                                        <span className="text-amber-600 font-bold">Resend (Email)</span>
+                                        <span className="text-amber-900 font-mono font-black">{formatCurrency(platformCosts.apis.resend.brl)}</span>
+                                    </div>
+                                    <div className="flex justify-between text-xs">
+                                        <span className="text-amber-600 font-bold">Gemini AI</span>
+                                        <span className="text-emerald-600 font-mono font-black">Gratuito</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    )}
 
                     {platformCosts.saving_tips && platformCosts.saving_tips.length > 0 && (
                         <div className="px-8 pb-8">
