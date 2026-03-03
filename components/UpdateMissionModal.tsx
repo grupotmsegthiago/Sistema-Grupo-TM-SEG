@@ -65,6 +65,7 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
     const [providersList, setProvidersList] = useState<ProviderData[]>([]);
     const [vehiclesList, setVehiclesList] = useState<Vehicle[]>([]); 
     const [agentsList, setAgentsList] = useState<Agent[]>([]);
+    const [allAgentsList, setAllAgentsList] = useState<Agent[]>([]);
     const [clientTables, setClientTables] = useState<ClientPriceTable[]>([]);
     const [clientVehiclesList, setClientVehiclesList] = useState<ClientVehicleDB[]>([]);
     const [dbPastDrivers, setDbPastDrivers] = useState<{name: string, phone: string}[]>([]);
@@ -306,10 +307,11 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
     };
 
     const refreshAuxData = async (clientName: string, providerName: string, vId?: string, cId?: number) => {
-        const [pRes, vRes, aRes, ctRes, cvRes, dRes] = await Promise.all([
+        const [pRes, vRes, aRes, allARes, ctRes, cvRes, dRes] = await Promise.all([
             supabase.from('providers').select('*').eq('status', 'Ativo').order('name'),
             supabase.from('vehicles').select('*').eq('status', 'Ativo'),
             supabase.from('agents').select('*').eq('status', 'Ativo').order('name'),
+            supabase.from('agents').select('*').order('name'),
             supabase.from('client_price_tables').select('*').eq('client', clientName),
             cId ? supabase.from('client_vehicles').select('*').eq('client_id', cId).order('plate') : { data: [] },
             supabase.from('missions').select('driver_name, driver_phone').not('driver_name', 'is', null).order('created_at', { ascending: false }).limit(200)
@@ -318,6 +320,7 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
         if (pRes.data) setProvidersList(pRes.data);
         if (vRes.data) setVehiclesList(vRes.data);
         if (aRes.data) setAgentsList(aRes.data);
+        if (allARes.data) setAllAgentsList(allARes.data);
         if (ctRes.data) setClientTables(ctRes.data);
         if (cvRes.data) setClientVehiclesList(cvRes.data as any);
         
@@ -471,6 +474,20 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
             return;
         }
 
+        const checkBlockedAgent = (agentName: string, fieldLabel: string) => {
+            if (!agentName || agentName.trim() === '') return false;
+            const nameUpper = agentName.trim().toUpperCase();
+            const found = allAgentsList.find(a => a.name.toUpperCase() === nameUpper);
+            if (found && found.status !== 'Ativo') {
+                alert(`⛔ BLOQUEIO DE SEGURANÇA\n\nO agente "${found.name}" está com status "${found.status}" e NÃO pode ser escalado para nenhuma operação.\n\nCampo: ${fieldLabel}\n\nRemova este agente ou selecione outro com status ATIVO.`);
+                return true;
+            }
+            return false;
+        };
+
+        if (checkBlockedAgent(editData.agent1, 'Agente 1 (Líder)')) return;
+        if (checkBlockedAgent(editData.agent2, 'Agente 2 (Auxiliar)')) return;
+
         setIsUpdating(true);
         try {
             const finalDescription = editData.description.trim().toUpperCase();
@@ -591,6 +608,16 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
     const filteredProviders = providersList.filter(p => p.name.toLowerCase().includes(searchProvider.toLowerCase()));
     const filteredVehicles = vehiclesList.filter(v => v.provider === editData.provider && (v.plate.toLowerCase().includes(searchVehicle.toLowerCase()) || (v.model && v.model.toLowerCase().includes(searchVehicle.toLowerCase()))));
     const filteredAgents = agentsList.filter(a => a.provider === editData.provider && a.name.toLowerCase().includes((activeDropdown === 'agent1' ? searchAgent1 : searchAgent2).toLowerCase()));
+
+    const getBlockedAgentWarning = (agentName: string) => {
+        if (!agentName || agentName.trim() === '') return null;
+        const nameUpper = agentName.trim().toUpperCase();
+        const found = allAgentsList.find(a => a.name.toUpperCase() === nameUpper);
+        if (found && found.status !== 'Ativo') return found;
+        return null;
+    };
+    const blockedAgent1 = getBlockedAgentWarning(editData.agent1);
+    const blockedAgent2 = getBlockedAgentWarning(editData.agent2);
     const filteredCargoVehicles = clientVehiclesList.filter(v => v.plate.toLowerCase().includes(searchCargoVehicle.toLowerCase()) || (v.model && v.model.toLowerCase().includes(searchCargoVehicle.toLowerCase())));
     const filteredDrivers = dbPastDrivers.filter(d => d.name.toLowerCase().includes(searchDriver.toLowerCase()));
 
@@ -784,8 +811,8 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
                             <label className={LABEL_CLASS}>Agente 1 (Líder)</label>
                             <div className="flex gap-1.5">
                                 <div className="relative flex-1">
-                                    <input type="text" className={INPUT_CLASS} placeholder={editData.provider ? "Nome..." : "Aguardando Fornecedor..."} value={searchAgent1} onChange={e => setSearchAgent1(e.target.value)} onFocus={() => editData.provider && setActiveDropdown('agent1')} disabled={!editData.provider} />
-                                    <UserCheck size={14} className="absolute right-3 top-3 text-gray-300" />
+                                    <input type="text" className={`${INPUT_CLASS} ${blockedAgent1 ? '!border-red-500 !bg-red-50 !text-red-700' : ''}`} placeholder={editData.provider ? "Nome..." : "Aguardando Fornecedor..."} value={searchAgent1} onChange={e => setSearchAgent1(e.target.value)} onFocus={() => editData.provider && setActiveDropdown('agent1')} disabled={!editData.provider} />
+                                    {blockedAgent1 ? <ShieldAlert size={14} className="absolute right-3 top-3 text-red-500" /> : <UserCheck size={14} className="absolute right-3 top-3 text-gray-300" />}
                                     {activeDropdown === 'agent1' && editData.provider && (
                                         <div className="absolute z-[100] left-0 right-0 mt-1 bg-white border border-gray-200 rounded-xl shadow-2xl max-h-48 overflow-y-auto">
                                             {filteredAgents.map(a => (
@@ -799,14 +826,20 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
                                 </div>
                                 <button type="button" disabled={!editData.provider} onClick={() => setQuickModal('agent')} className="p-2.5 bg-gray-100 text-gray-600 rounded-xl hover:bg-gray-200 transition-all border border-gray-200 disabled:opacity-50"><Plus size={18}/></button>
                             </div>
+                            {blockedAgent1 && (
+                                <div className="mt-1.5 flex items-center gap-1.5 px-3 py-2 bg-red-100 border border-red-300 rounded-lg">
+                                    <ShieldAlert size={12} className="text-red-600 flex-shrink-0" />
+                                    <span className="text-[10px] font-black text-red-700 uppercase">⛔ AGENTE BLOQUEADO — Status: {blockedAgent1.status}. Não é permitido escalar este agente.</span>
+                                </div>
+                            )}
                         </div>
 
                         <div className="relative">
                             <label className={LABEL_CLASS}>Agente 2 (Auxiliar)</label>
                             <div className="flex gap-1.5">
                                 <div className="relative flex-1">
-                                    <input type="text" className={INPUT_CLASS} placeholder={editData.provider ? "Nome..." : "Aguardando Fornecedor..."} value={searchAgent2} onChange={e => setSearchAgent2(e.target.value)} onFocus={() => editData.provider && setActiveDropdown('agent2')} disabled={!editData.provider} />
-                                    <UserCheck size={14} className="absolute right-3 top-3 text-gray-300" />
+                                    <input type="text" className={`${INPUT_CLASS} ${blockedAgent2 ? '!border-red-500 !bg-red-50 !text-red-700' : ''}`} placeholder={editData.provider ? "Nome..." : "Aguardando Fornecedor..."} value={searchAgent2} onChange={e => setSearchAgent2(e.target.value)} onFocus={() => editData.provider && setActiveDropdown('agent2')} disabled={!editData.provider} />
+                                    {blockedAgent2 ? <ShieldAlert size={14} className="absolute right-3 top-3 text-red-500" /> : <UserCheck size={14} className="absolute right-3 top-3 text-gray-300" />}
                                     {activeDropdown === 'agent2' && editData.provider && (
                                         <div className="absolute z-[100] left-0 right-0 mt-1 bg-white border border-gray-200 rounded-xl shadow-2xl max-h-48 overflow-y-auto">
                                             {filteredAgents.map(a => (
@@ -820,6 +853,12 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
                                 </div>
                                 <button type="button" disabled={!editData.provider} onClick={() => setQuickModal('agent')} className="p-2.5 bg-gray-100 text-gray-600 rounded-xl hover:bg-gray-200 transition-all border border-gray-200 disabled:opacity-50"><Plus size={18}/></button>
                             </div>
+                            {blockedAgent2 && (
+                                <div className="mt-1.5 flex items-center gap-1.5 px-3 py-2 bg-red-100 border border-red-300 rounded-lg">
+                                    <ShieldAlert size={12} className="text-red-600 flex-shrink-0" />
+                                    <span className="text-[10px] font-black text-red-700 uppercase">⛔ AGENTE BLOQUEADO — Status: {blockedAgent2.status}. Não é permitido escalar este agente.</span>
+                                </div>
+                            )}
                         </div>
                     </div>
 
