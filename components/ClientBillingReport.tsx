@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { supabase } from '../lib/supabase';
 import { Mission, Client, ClientPriceTable, ProviderCostTable } from '../types';
-import { FileText, Search, Printer, Loader2, FileSpreadsheet, BarChart3, Users, Building2 } from 'lucide-react';
+import { FileText, Search, Printer, Loader2, FileSpreadsheet, BarChart3, Users, Building2, ChevronDown, ChevronRight } from 'lucide-react';
 import { calculateMissionFinancials, extractCityFromAddress } from '../lib/financialUtils';
 import {
     BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, LabelList
@@ -133,10 +133,16 @@ const ClientBillingReport: React.FC = () => {
         }
     };
 
+    interface MissionDetail { id: string; route: string; revenue: number; cost: number; lucro: number; pct: number; date: string; provider: string; client: string; km: number; }
+    type ChartItem = { nome: string; valor: number; custo: number; lucro: number; pct: number; count: number; fullName: string; missions: MissionDetail[]; receita?: number; };
+
+    const [expandedClient, setExpandedClient] = useState<string | null>(null);
+    const [expandedProvider, setExpandedProvider] = useState<string | null>(null);
+
     const chartComputedData = useMemo(() => {
-        if (!chartsGenerated || allPeriodMissions.length === 0) return { clientData: [], providerData: [] };
-        const clientTotals: Record<string, { revenue: number; cost: number; count: number }> = {};
-        const providerTotals: Record<string, { cost: number; revenue: number; count: number }> = {};
+        if (!chartsGenerated || allPeriodMissions.length === 0) return { clientData: [] as ChartItem[], providerData: [] as ChartItem[] };
+        const clientTotals: Record<string, { revenue: number; cost: number; count: number; missions: MissionDetail[] }> = {};
+        const providerTotals: Record<string, { cost: number; revenue: number; count: number; missions: MissionDetail[] }> = {};
 
         allPeriodMissions.forEach(m => {
             const clientName = m.client || 'Sem Cliente';
@@ -149,32 +155,55 @@ const ClientBillingReport: React.FC = () => {
 
             const revenue = fin.client.total + (m.toll_value || 0);
             const cost = fin.provider.total + (m.toll_value_provider || m.toll_value || 0);
+            const mLucro = revenue - cost;
+            const mPct = revenue > 0 ? Math.round((mLucro / revenue) * 100) : 0;
 
-            if (!clientTotals[displayClient]) clientTotals[displayClient] = { revenue: 0, cost: 0, count: 0 };
+            const cidadeO = extractCityFromAddress(m.origin || '');
+            const cidadeD = extractCityFromAddress(m.destination || '');
+            const route = cidadeO && cidadeD ? `${cidadeO} → ${cidadeD}` : m.region || '-';
+
+            const detail: MissionDetail = {
+                id: m.id || '',
+                route,
+                revenue: Math.round(revenue * 100) / 100,
+                cost: Math.round(cost * 100) / 100,
+                lucro: Math.round(mLucro * 100) / 100,
+                pct: mPct,
+                date: m.created_at ? new Date(m.created_at).toLocaleDateString('pt-BR') : '-',
+                provider: providerName,
+                client: displayClient,
+                km: m.total_distance || m.traveled_distance || 0
+            };
+
+            if (!clientTotals[displayClient]) clientTotals[displayClient] = { revenue: 0, cost: 0, count: 0, missions: [] };
             clientTotals[displayClient].revenue += revenue;
             clientTotals[displayClient].cost += cost;
             clientTotals[displayClient].count++;
+            clientTotals[displayClient].missions.push(detail);
 
-            if (!providerTotals[providerName]) providerTotals[providerName] = { cost: 0, revenue: 0, count: 0 };
+            if (!providerTotals[providerName]) providerTotals[providerName] = { cost: 0, revenue: 0, count: 0, missions: [] };
             providerTotals[providerName].cost += cost;
             providerTotals[providerName].revenue += revenue;
             providerTotals[providerName].count++;
+            providerTotals[providerName].missions.push(detail);
         });
 
-        const clientData = Object.entries(clientTotals)
+        const clientData: ChartItem[] = Object.entries(clientTotals)
             .sort((a, b) => b[1].revenue - a[1].revenue)
             .map(([nome, d]) => {
                 const lucro = d.revenue - d.cost;
                 const pct = d.revenue > 0 ? Math.round((lucro / d.revenue) * 100) : 0;
-                return { nome, valor: Math.round(d.revenue * 100) / 100, custo: Math.round(d.cost * 100) / 100, lucro: Math.round(lucro * 100) / 100, pct, count: d.count, fullName: nome };
+                const sortedMissions = d.missions.sort((a, b) => a.lucro - b.lucro);
+                return { nome, valor: Math.round(d.revenue * 100) / 100, custo: Math.round(d.cost * 100) / 100, lucro: Math.round(lucro * 100) / 100, pct, count: d.count, fullName: nome, missions: sortedMissions };
             });
 
-        const providerData = Object.entries(providerTotals)
+        const providerData: ChartItem[] = Object.entries(providerTotals)
             .sort((a, b) => b[1].cost - a[1].cost)
             .map(([nome, d]) => {
                 const lucro = d.revenue - d.cost;
                 const pct = d.revenue > 0 ? Math.round((lucro / d.revenue) * 100) : 0;
-                return { nome, valor: Math.round(d.cost * 100) / 100, receita: Math.round(d.revenue * 100) / 100, lucro: Math.round(lucro * 100) / 100, pct, count: d.count, fullName: nome };
+                const sortedMissions = d.missions.sort((a, b) => a.lucro - b.lucro);
+                return { nome, valor: Math.round(d.cost * 100) / 100, receita: Math.round(d.revenue * 100) / 100, custo: Math.round(d.cost * 100) / 100, lucro: Math.round(lucro * 100) / 100, pct, count: d.count, fullName: nome, missions: sortedMissions };
             });
 
         return { clientData, providerData };
@@ -594,27 +623,67 @@ const ClientBillingReport: React.FC = () => {
                                 <p className="text-[10px] text-gray-400 font-bold mt-0.5">{allPeriodMissions.length} missões &middot; Total: {fmtBRL(clientChartData.reduce((s, d) => s + d.valor, 0))}</p>
                             </div>
                         </div>
-                        <div className="space-y-2">
+                        <div className="space-y-1">
                             {clientChartData.map((item, i) => {
                                 const maxVal = clientChartData[0]?.valor || 1;
                                 const pctWidth = Math.max(3, (item.valor / maxVal) * 100);
+                                const isExpanded = expandedClient === item.nome;
                                 return (
-                                    <div key={i} className="group">
-                                        <div className="flex items-center justify-between mb-0.5">
-                                            <span className="text-[12px] font-black text-gray-800 truncate max-w-[55%]" title={item.fullName}>{item.nome}</span>
-                                            <div className="flex items-center gap-2">
-                                                <span className="text-[11px] font-black text-gray-700">{fmtBRL(item.valor)}</span>
-                                                <span className={`text-[10px] font-black px-1.5 py-0.5 rounded ${item.pct >= 0 ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'}`}>{item.pct}%</span>
+                                    <div key={i}>
+                                        <div className={`cursor-pointer rounded-lg p-2 transition-all hover:bg-gray-50 ${isExpanded ? 'bg-blue-50/50 ring-1 ring-blue-200' : ''}`} onClick={() => setExpandedClient(isExpanded ? null : item.nome)} data-testid={`chart-client-row-${i}`}>
+                                            <div className="flex items-center justify-between mb-0.5">
+                                                <div className="flex items-center gap-1.5 min-w-0 max-w-[55%]">
+                                                    {isExpanded ? <ChevronDown size={12} className="text-blue-600 shrink-0" /> : <ChevronRight size={12} className="text-gray-400 shrink-0" />}
+                                                    <span className="text-[12px] font-black text-gray-800 truncate" title={item.fullName}>{item.nome}</span>
+                                                </div>
+                                                <div className="flex items-center gap-2">
+                                                    <span className="text-[11px] font-black text-gray-700">{fmtBRL(item.valor)}</span>
+                                                    <span className={`text-[10px] font-black px-1.5 py-0.5 rounded ${item.pct >= 0 ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'}`}>{item.pct}%</span>
+                                                </div>
+                                            </div>
+                                            <div className="w-full bg-gray-100 rounded-full h-5 relative overflow-hidden">
+                                                <div className="h-full rounded-full transition-all duration-500" style={{ width: `${pctWidth}%`, backgroundColor: CHART_COLORS_CLIENT[i % CHART_COLORS_CLIENT.length] }} />
+                                            </div>
+                                            <div className="flex items-center gap-3 mt-0.5">
+                                                <span className="text-[9px] text-gray-400 font-bold">{item.count} missões</span>
+                                                <span className="text-[9px] text-gray-400 font-bold">Custo: {fmtBRL(item.custo)}</span>
+                                                <span className={`text-[9px] font-bold ${item.lucro >= 0 ? 'text-emerald-500' : 'text-red-500'}`}>Lucro: {fmtBRL(item.lucro)}</span>
                                             </div>
                                         </div>
-                                        <div className="w-full bg-gray-100 rounded-full h-5 relative overflow-hidden">
-                                            <div className="h-full rounded-full transition-all duration-500" style={{ width: `${pctWidth}%`, backgroundColor: CHART_COLORS_CLIENT[i % CHART_COLORS_CLIENT.length] }} />
-                                        </div>
-                                        <div className="flex items-center gap-3 mt-0.5">
-                                            <span className="text-[9px] text-gray-400 font-bold">{item.count} missões</span>
-                                            <span className="text-[9px] text-gray-400 font-bold">Custo: {fmtBRL(item.custo)}</span>
-                                            <span className={`text-[9px] font-bold ${item.lucro >= 0 ? 'text-emerald-500' : 'text-red-500'}`}>Lucro: {fmtBRL(item.lucro)}</span>
-                                        </div>
+                                        {isExpanded && (
+                                            <div className="ml-4 mr-1 mt-1 mb-2 border border-blue-100 rounded-lg overflow-hidden animate-fade-in">
+                                                <table className="w-full text-[10px]">
+                                                    <thead>
+                                                        <tr className="bg-blue-50">
+                                                            <th className="text-left px-2 py-1.5 font-black text-blue-800 uppercase">OS</th>
+                                                            <th className="text-left px-2 py-1.5 font-black text-blue-800 uppercase">Data</th>
+                                                            <th className="text-left px-2 py-1.5 font-black text-blue-800 uppercase">Rota</th>
+                                                            <th className="text-left px-2 py-1.5 font-black text-blue-800 uppercase">Fornecedor</th>
+                                                            <th className="text-right px-2 py-1.5 font-black text-blue-800 uppercase">KM</th>
+                                                            <th className="text-right px-2 py-1.5 font-black text-blue-800 uppercase">Receita</th>
+                                                            <th className="text-right px-2 py-1.5 font-black text-blue-800 uppercase">Custo</th>
+                                                            <th className="text-right px-2 py-1.5 font-black text-blue-800 uppercase">Lucro</th>
+                                                            <th className="text-right px-2 py-1.5 font-black text-blue-800 uppercase">%</th>
+                                                        </tr>
+                                                    </thead>
+                                                    <tbody>
+                                                        {item.missions.map((m, mi) => (
+                                                            <tr key={mi} className={`border-t border-blue-50 ${m.lucro < 0 ? 'bg-red-50' : mi % 2 === 0 ? 'bg-white' : 'bg-gray-50/50'}`}>
+                                                                <td className="px-2 py-1 font-black text-gray-800">{m.id.replace('GTM-', '')}</td>
+                                                                <td className="px-2 py-1 text-gray-600 font-bold">{m.date}</td>
+                                                                <td className="px-2 py-1 text-gray-600 font-bold truncate max-w-[120px]" title={m.route}>{m.route}</td>
+                                                                <td className="px-2 py-1 text-gray-600 font-bold truncate max-w-[100px]" title={m.provider}>{m.provider}</td>
+                                                                <td className="px-2 py-1 text-right text-gray-600 font-bold">{m.km > 0 ? Math.round(m.km) : '-'}</td>
+                                                                <td className="px-2 py-1 text-right font-bold text-blue-700">{fmtBRL(m.revenue)}</td>
+                                                                <td className="px-2 py-1 text-right font-bold text-red-600">{fmtBRL(m.cost)}</td>
+                                                                <td className={`px-2 py-1 text-right font-black ${m.lucro >= 0 ? 'text-emerald-600' : 'text-red-700'}`}>{fmtBRL(m.lucro)}</td>
+                                                                <td className={`px-2 py-1 text-right font-black ${m.pct >= 0 ? 'text-emerald-600' : 'text-red-700'}`}>{m.pct}%</td>
+                                                            </tr>
+                                                        ))}
+                                                    </tbody>
+                                                </table>
+                                            </div>
+                                        )}
                                     </div>
                                 );
                             })}
@@ -629,27 +698,67 @@ const ClientBillingReport: React.FC = () => {
                                 <p className="text-[10px] text-gray-400 font-bold mt-0.5">{allPeriodMissions.length} missões &middot; Total: {fmtBRL(providerChartData.reduce((s, d) => s + d.valor, 0))}</p>
                             </div>
                         </div>
-                        <div className="space-y-2">
+                        <div className="space-y-1">
                             {providerChartData.map((item, i) => {
                                 const maxVal = providerChartData[0]?.valor || 1;
                                 const pctWidth = Math.max(3, (item.valor / maxVal) * 100);
+                                const isExpanded = expandedProvider === item.nome;
                                 return (
-                                    <div key={i} className="group">
-                                        <div className="flex items-center justify-between mb-0.5">
-                                            <span className="text-[12px] font-black text-gray-800 truncate max-w-[55%]" title={item.fullName}>{item.nome}</span>
-                                            <div className="flex items-center gap-2">
-                                                <span className="text-[11px] font-black text-gray-700">{fmtBRL(item.valor)}</span>
-                                                <span className={`text-[10px] font-black px-1.5 py-0.5 rounded ${item.pct >= 0 ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'}`}>{item.pct}%</span>
+                                    <div key={i}>
+                                        <div className={`cursor-pointer rounded-lg p-2 transition-all hover:bg-gray-50 ${isExpanded ? 'bg-red-50/50 ring-1 ring-red-200' : ''}`} onClick={() => setExpandedProvider(isExpanded ? null : item.nome)} data-testid={`chart-provider-row-${i}`}>
+                                            <div className="flex items-center justify-between mb-0.5">
+                                                <div className="flex items-center gap-1.5 min-w-0 max-w-[55%]">
+                                                    {isExpanded ? <ChevronDown size={12} className="text-red-600 shrink-0" /> : <ChevronRight size={12} className="text-gray-400 shrink-0" />}
+                                                    <span className="text-[12px] font-black text-gray-800 truncate" title={item.fullName}>{item.nome}</span>
+                                                </div>
+                                                <div className="flex items-center gap-2">
+                                                    <span className="text-[11px] font-black text-gray-700">{fmtBRL(item.valor)}</span>
+                                                    <span className={`text-[10px] font-black px-1.5 py-0.5 rounded ${item.pct >= 0 ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'}`}>{item.pct}%</span>
+                                                </div>
+                                            </div>
+                                            <div className="w-full bg-gray-100 rounded-full h-5 relative overflow-hidden">
+                                                <div className="h-full rounded-full transition-all duration-500" style={{ width: `${pctWidth}%`, backgroundColor: CHART_COLORS_PROVIDER[i % CHART_COLORS_PROVIDER.length] }} />
+                                            </div>
+                                            <div className="flex items-center gap-3 mt-0.5">
+                                                <span className="text-[9px] text-gray-400 font-bold">{item.count} missões</span>
+                                                <span className="text-[9px] text-gray-400 font-bold">Receita: {fmtBRL(item.receita)}</span>
+                                                <span className={`text-[9px] font-bold ${item.lucro >= 0 ? 'text-emerald-500' : 'text-red-500'}`}>Lucro: {fmtBRL(item.lucro)}</span>
                                             </div>
                                         </div>
-                                        <div className="w-full bg-gray-100 rounded-full h-5 relative overflow-hidden">
-                                            <div className="h-full rounded-full transition-all duration-500" style={{ width: `${pctWidth}%`, backgroundColor: CHART_COLORS_PROVIDER[i % CHART_COLORS_PROVIDER.length] }} />
-                                        </div>
-                                        <div className="flex items-center gap-3 mt-0.5">
-                                            <span className="text-[9px] text-gray-400 font-bold">{item.count} missões</span>
-                                            <span className="text-[9px] text-gray-400 font-bold">Receita: {fmtBRL(item.receita)}</span>
-                                            <span className={`text-[9px] font-bold ${item.lucro >= 0 ? 'text-emerald-500' : 'text-red-500'}`}>Lucro: {fmtBRL(item.lucro)}</span>
-                                        </div>
+                                        {isExpanded && (
+                                            <div className="ml-4 mr-1 mt-1 mb-2 border border-red-100 rounded-lg overflow-hidden animate-fade-in">
+                                                <table className="w-full text-[10px]">
+                                                    <thead>
+                                                        <tr className="bg-red-50">
+                                                            <th className="text-left px-2 py-1.5 font-black text-red-800 uppercase">OS</th>
+                                                            <th className="text-left px-2 py-1.5 font-black text-red-800 uppercase">Data</th>
+                                                            <th className="text-left px-2 py-1.5 font-black text-red-800 uppercase">Rota</th>
+                                                            <th className="text-left px-2 py-1.5 font-black text-red-800 uppercase">Cliente</th>
+                                                            <th className="text-right px-2 py-1.5 font-black text-red-800 uppercase">KM</th>
+                                                            <th className="text-right px-2 py-1.5 font-black text-red-800 uppercase">Receita</th>
+                                                            <th className="text-right px-2 py-1.5 font-black text-red-800 uppercase">Custo</th>
+                                                            <th className="text-right px-2 py-1.5 font-black text-red-800 uppercase">Lucro</th>
+                                                            <th className="text-right px-2 py-1.5 font-black text-red-800 uppercase">%</th>
+                                                        </tr>
+                                                    </thead>
+                                                    <tbody>
+                                                        {item.missions.map((m, mi) => (
+                                                            <tr key={mi} className={`border-t border-red-50 ${m.lucro < 0 ? 'bg-red-50' : mi % 2 === 0 ? 'bg-white' : 'bg-gray-50/50'}`}>
+                                                                <td className="px-2 py-1 font-black text-gray-800">{m.id.replace('GTM-', '')}</td>
+                                                                <td className="px-2 py-1 text-gray-600 font-bold">{m.date}</td>
+                                                                <td className="px-2 py-1 text-gray-600 font-bold truncate max-w-[120px]" title={m.route}>{m.route}</td>
+                                                                <td className="px-2 py-1 text-gray-600 font-bold truncate max-w-[100px]" title={m.client}>{m.client}</td>
+                                                                <td className="px-2 py-1 text-right text-gray-600 font-bold">{m.km > 0 ? Math.round(m.km) : '-'}</td>
+                                                                <td className="px-2 py-1 text-right font-bold text-blue-700">{fmtBRL(m.revenue)}</td>
+                                                                <td className="px-2 py-1 text-right font-bold text-red-600">{fmtBRL(m.cost)}</td>
+                                                                <td className={`px-2 py-1 text-right font-black ${m.lucro >= 0 ? 'text-emerald-600' : 'text-red-700'}`}>{fmtBRL(m.lucro)}</td>
+                                                                <td className={`px-2 py-1 text-right font-black ${m.pct >= 0 ? 'text-emerald-600' : 'text-red-700'}`}>{m.pct}%</td>
+                                                            </tr>
+                                                        ))}
+                                                    </tbody>
+                                                </table>
+                                            </div>
+                                        )}
                                     </div>
                                 );
                             })}
