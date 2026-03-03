@@ -108,14 +108,18 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate })
         setChartsLoading(true);
         setChartsGenerated(false);
         try {
-            const { data: missionData, error } = await supabase
+            const rangeStart = new Date(`${startDate}T00:00:00`);
+            const rangeEnd = new Date(`${endDate}T23:59:59`);
+            const { data: rawData, error } = await supabase
                 .from('missions')
                 .select('*')
-                .gte('created_at', `${startDate}T00:00:00`)
-                .lte('created_at', `${endDate}T23:59:59`)
                 .neq('status', 'Recusada')
                 .order('created_at', { ascending: true });
             if (error) throw error;
+            const missionData = (rawData || []).filter(m => {
+                const d = new Date(m.start_time || m.created_at);
+                return d >= rangeStart && d <= rangeEnd;
+            });
 
             const [ptRes, pctRes] = await Promise.all([
                 supabase.from('client_price_tables').select('*'),
