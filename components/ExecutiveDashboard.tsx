@@ -209,8 +209,8 @@ const ExecutiveDashboard: React.FC<Props> = ({ missions, isDirector, clientTable
             newAdjustedIds.add(c.osId);
             const revDiff = c.excelRev > 0 ? Math.abs(newSysRev - c.excelRev) : 0;
             const costDiff = c.excelCost > 0 ? Math.abs(newSysCost - c.excelCost) : 0;
-            const revMatch = c.excelRev > 0 ? revDiff <= 5 : true;
-            const costMatch = c.excelCost > 0 ? costDiff <= 5 : true;
+            const revMatch = c.excelRev > 0 ? revDiff <= 50 : true;
+            const costMatch = c.excelCost > 0 ? costDiff <= 50 : true;
             return { ...c, sysRev: newSysRev, sysCost: newSysCost, revDiff, costDiff, revMatch, costMatch };
         });
         if (hasChanges) {
@@ -436,8 +436,8 @@ const ExecutiveDashboard: React.FC<Props> = ({ missions, isDirector, clientTable
                     const sysDetails = extractSysMissionDetails(systemMission);
                     const revDiff = excelRev > 0 ? Math.abs(sysRev - excelRev) : 0;
                     const costDiff = excelCost > 0 ? Math.abs(sysCost - excelCost) : 0;
-                    const revMatch = excelRev > 0 ? revDiff <= 5 : true;
-                    const costMatch = excelCost > 0 ? costDiff <= 5 : true;
+                    const revMatch = excelRev > 0 ? revDiff <= 50 : true;
+                    const costMatch = excelCost > 0 ? costDiff <= 50 : true;
                     comparisons.push({ osId, found: !!systemMission, excelRev, excelCost, sysRev, sysCost, revDiff, costDiff, revMatch, costMatch, status: systemMission?.status || 'Não encontrada', client: systemMission?.client || '-', excelKm, excelHoraInicio, excelHoraFim, excelAcionamento, excelToll, ...(sysDetails || {}) });
                 }
                 comparisons.sort((a, b) => (!a.found ? -1 : !b.found ? 1 : (!a.revMatch||!a.costMatch) ? -1 : (!b.revMatch||!b.costMatch) ? 1 : (b.revDiff+b.costDiff)-(a.revDiff+a.costDiff)));
@@ -490,8 +490,8 @@ const ExecutiveDashboard: React.FC<Props> = ({ missions, isDirector, clientTable
 
                 const revDiff = excelRev > 0 ? Math.abs(sysRev - excelRev) : 0;
                 const costDiff = excelCost > 0 ? Math.abs(sysCost - excelCost) : 0;
-                const revMatch = excelRev > 0 ? revDiff <= 5 : true;
-                const costMatch = excelCost > 0 ? costDiff <= 5 : true;
+                const revMatch = excelRev > 0 ? revDiff <= 50 : true;
+                const costMatch = excelCost > 0 ? costDiff <= 50 : true;
 
                 comparisons.push({
                     osId,
@@ -923,6 +923,12 @@ const ExecutiveDashboard: React.FC<Props> = ({ missions, isDirector, clientTable
                     const matched = excelComparison.filter(c => c.found && c.revMatch && c.costMatch && !adjustedOsIds.has(c.osId)).length;
                     const divergent = excelComparison.filter(c => c.found && (!c.revMatch || !c.costMatch) && !adjustedOsIds.has(c.osId)).length;
                     const notFound = excelComparison.filter(c => !c.found).length;
+
+                    const foundItems = excelComparison.filter(c => c.found && !adjustedOsIds.has(c.osId));
+                    const withAnyDiff = foundItems.filter(c => c.revDiff > 0.01 || c.costDiff > 0.01);
+                    const diffBelow50 = withAnyDiff.filter(c => c.revDiff <= 50 && c.costDiff <= 50);
+                    const diffAbove50 = withAnyDiff.filter(c => c.revDiff > 50 || c.costDiff > 50);
+
                     return (
                         <div className="space-y-3">
                             <div className={`grid ${adjusted > 0 ? 'grid-cols-5' : 'grid-cols-4'} gap-2`}>
@@ -931,7 +937,7 @@ const ExecutiveDashboard: React.FC<Props> = ({ missions, isDirector, clientTable
                                     <p className="text-lg font-black text-gray-900">{total}</p>
                                 </div>
                                 <div className="bg-green-50 rounded-lg p-2.5 text-center border border-green-100">
-                                    <p className="text-[10px] font-bold text-green-600 uppercase">Conferem</p>
+                                    <p className="text-[10px] font-bold text-green-600 uppercase">Conferidos</p>
                                     <p className="text-lg font-black text-green-700">{matched}</p>
                                 </div>
                                 <div className="bg-red-50 rounded-lg p-2.5 text-center border border-red-100">
@@ -950,6 +956,47 @@ const ExecutiveDashboard: React.FC<Props> = ({ missions, isDirector, clientTable
                                 </div>
                             </div>
 
+                            {(diffBelow50.length > 0 || diffAbove50.length > 0) && (
+                                <div className="grid grid-cols-2 gap-2">
+                                    <div className="bg-emerald-50 rounded-lg p-2.5 border border-emerald-200">
+                                        <div className="flex items-center justify-between">
+                                            <div>
+                                                <p className="text-[10px] font-bold text-emerald-600 uppercase">Dif. ≤ R$ 50</p>
+                                                <p className="text-[9px] text-emerald-500">Dentro da tolerância</p>
+                                            </div>
+                                            <p className="text-lg font-black text-emerald-700">{diffBelow50.length}</p>
+                                        </div>
+                                        {diffBelow50.length > 0 && (
+                                            <div className="mt-1.5 max-h-20 overflow-y-auto scrollbar-thin">
+                                                {diffBelow50.map((c, i) => (
+                                                    <p key={i} className="text-[9px] text-emerald-600 font-mono">
+                                                        {c.osId} — {c.revDiff > 0.01 ? `Rec: ${fmtBRL(c.revDiff)}` : ''}{c.revDiff > 0.01 && c.costDiff > 0.01 ? ' | ' : ''}{c.costDiff > 0.01 ? `Cst: ${fmtBRL(c.costDiff)}` : ''}
+                                                    </p>
+                                                ))}
+                                            </div>
+                                        )}
+                                    </div>
+                                    <div className="bg-rose-50 rounded-lg p-2.5 border border-rose-200">
+                                        <div className="flex items-center justify-between">
+                                            <div>
+                                                <p className="text-[10px] font-bold text-rose-600 uppercase">Dif. &gt; R$ 50</p>
+                                                <p className="text-[9px] text-rose-500">Acima da tolerância</p>
+                                            </div>
+                                            <p className="text-lg font-black text-rose-700">{diffAbove50.length}</p>
+                                        </div>
+                                        {diffAbove50.length > 0 && (
+                                            <div className="mt-1.5 max-h-20 overflow-y-auto scrollbar-thin">
+                                                {diffAbove50.map((c, i) => (
+                                                    <p key={i} className="text-[9px] text-rose-600 font-mono">
+                                                        {c.osId} — {c.revDiff > 50 ? `Rec: ${fmtBRL(c.revDiff)}` : ''}{c.revDiff > 50 && c.costDiff > 50 ? ' | ' : ''}{c.costDiff > 50 ? `Cst: ${fmtBRL(c.costDiff)}` : ''}
+                                                    </p>
+                                                ))}
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+                            )}
+
                             {divergent > 0 && (
                                 <div className="bg-slate-50 border border-slate-200 rounded-lg p-3">
                                     <p className="text-[11px] font-black text-slate-700 uppercase mb-1.5">Resumo das Divergências</p>
@@ -965,7 +1012,7 @@ const ExecutiveDashboard: React.FC<Props> = ({ missions, isDirector, clientTable
                                                 {onlyRevDiff > 0 && <p>• {onlyRevDiff} OS com divergência apenas na <span className="text-red-600">receita</span> (diferença total: {fmtBRL(totalRevDiff)})</p>}
                                                 {onlyCostDiff > 0 && <p>• {onlyCostDiff} OS com divergência apenas no <span className="text-red-600">custo</span> (diferença total: {fmtBRL(totalCostDiff)})</p>}
                                                 {bothDiff > 0 && <p>• {bothDiff} OS com divergência em <span className="text-red-600">receita e custo</span></p>}
-                                                <p className="text-[10px] text-slate-400 pt-1">Tolerância: diferenças até R$ 5,00 são consideradas OK</p>
+                                                <p className="text-[10px] text-slate-400 pt-1">Tolerância: diferenças até R$ 50,00 são consideradas CONFERIDO</p>
                                             </>);
                                         })()}
                                     </div>
@@ -1006,16 +1053,16 @@ const ExecutiveDashboard: React.FC<Props> = ({ missions, isDirector, clientTable
                                                     <td className="px-3 py-2 font-bold text-gray-600 truncate max-w-[120px]">{(c.client || '').substring(0, 20)}</td>
                                                     <td className={`px-3 py-2 text-right font-bold ${!c.revMatch && !isAdjusted ? 'text-red-600' : isAdjusted ? 'text-blue-700' : 'text-gray-700'}`}>{c.excelRev > 0 ? fmtBRL(c.excelRev) : '-'}</td>
                                                     <td className={`px-3 py-2 text-right font-bold ${!c.revMatch && !isAdjusted ? 'text-red-600' : isAdjusted ? 'text-blue-700' : 'text-gray-700'}`}>{c.found ? fmtBRL(c.sysRev) : '-'}</td>
-                                                    <td className={`px-3 py-2 text-right font-bold ${c.revDiff > 5 && !isAdjusted ? 'text-red-600' : isAdjusted ? 'text-blue-600' : 'text-gray-400'}`}>{c.found && c.excelRev > 0 ? (c.revDiff > 0.01 ? fmtBRL(c.revDiff) : '-') : '-'}</td>
+                                                    <td className={`px-3 py-2 text-right font-bold ${c.revDiff > 50 && !isAdjusted ? 'text-red-600' : c.revDiff > 0.01 && !isAdjusted ? 'text-emerald-600' : isAdjusted ? 'text-blue-600' : 'text-gray-400'}`}>{c.found && c.excelRev > 0 ? (c.revDiff > 0.01 ? fmtBRL(c.revDiff) : '-') : '-'}</td>
                                                     <td className={`px-3 py-2 text-right font-bold ${!c.costMatch && !isAdjusted ? 'text-red-600' : isAdjusted ? 'text-blue-700' : 'text-gray-700'}`}>{c.excelCost > 0 ? fmtBRL(c.excelCost) : '-'}</td>
                                                     <td className={`px-3 py-2 text-right font-bold ${!c.costMatch && !isAdjusted ? 'text-red-600' : isAdjusted ? 'text-blue-700' : 'text-gray-700'}`}>{c.found ? fmtBRL(c.sysCost) : '-'}</td>
-                                                    <td className={`px-3 py-2 text-right font-bold ${c.costDiff > 5 && !isAdjusted ? 'text-red-600' : isAdjusted ? 'text-blue-600' : 'text-gray-400'}`}>{c.found && c.excelCost > 0 ? (c.costDiff > 0.01 ? fmtBRL(c.costDiff) : '-') : '-'}</td>
+                                                    <td className={`px-3 py-2 text-right font-bold ${c.costDiff > 50 && !isAdjusted ? 'text-red-600' : c.costDiff > 0.01 && !isAdjusted ? 'text-emerald-600' : isAdjusted ? 'text-blue-600' : 'text-gray-400'}`}>{c.found && c.excelCost > 0 ? (c.costDiff > 0.01 ? fmtBRL(c.costDiff) : '-') : '-'}</td>
                                                     <td className="px-3 py-2 text-center">
                                                         {!c.found ? <span className="text-[9px] font-black bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full">NÃO ENCONTRADA</span> :
                                                          isAdjusted && c.revMatch && c.costMatch ? <span className="text-[9px] font-black bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full flex items-center justify-center gap-1"><CheckCircle size={10} /> AJUSTADO</span> :
                                                          isAdjusted ? <span className="text-[9px] font-black bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full flex items-center justify-center gap-1"><Edit2 size={10} /> ALTERADO</span> :
                                                          hasIssue ? <span className="text-[9px] font-black bg-red-100 text-red-700 px-2 py-0.5 rounded-full flex items-center justify-center gap-1"><XOctagon size={10} /> DIVERGENTE</span> :
-                                                         <span className="text-[9px] font-black bg-green-100 text-green-700 px-2 py-0.5 rounded-full flex items-center justify-center gap-1"><CheckCircle size={10} /> OK</span>}
+                                                         <span className="text-[9px] font-black bg-green-100 text-green-700 px-2 py-0.5 rounded-full flex items-center justify-center gap-1"><CheckCircle size={10} /> CONFERIDO</span>}
                                                     </td>
                                                 </tr>
                                             );
