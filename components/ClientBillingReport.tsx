@@ -2,15 +2,15 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { supabase } from '../lib/supabase';
 import { Mission, Client, ClientPriceTable, ProviderCostTable } from '../types';
-import { FileText, Search, Printer, Loader2, FileSpreadsheet, BarChart3, Users, Building2, ChevronDown, ChevronRight, List, Save, Pencil } from 'lucide-react';
+import { FileText, Search, Printer, Loader2, FileSpreadsheet, BarChart3, Users, Building2, ChevronDown, ChevronRight, List, ExternalLink } from 'lucide-react';
 import { calculateMissionFinancials, extractCityFromAddress } from '../lib/financialUtils';
 import {
     BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, LabelList
 } from 'recharts';
 import * as XLSX from 'xlsx';
 
-interface ClientBillingReportProps { onNavigate?: (screen: string) => void; }
-const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate }) => {
+interface ClientBillingReportProps { onNavigate?: (screen: string) => void; onOpenMission?: (missionId: string) => void; }
+const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, onOpenMission }) => {
     const [clients, setClients] = useState<Client[]>([]);
     const [selectedClient, setSelectedClient] = useState('');
     const [startDate, setStartDate] = useState('');
@@ -149,58 +149,9 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate })
     const [expandedProvider, setExpandedProvider] = useState<string | null>(null);
     const [sortMode, setSortMode] = useState<'valor' | 'pct'>('valor');
     const [chartTab, setChartTab] = useState<'clientes' | 'fornecedores' | 'geral'>('clientes');
-    const [editingMission, setEditingMission] = useState<string | null>(null);
-    const [editRevenue, setEditRevenue] = useState('');
-    const [editCost, setEditCost] = useState('');
-    const [savingMission, setSavingMission] = useState(false);
-
-    const handleStartEdit = (m: MissionDetail, e: React.MouseEvent) => {
+    const handleOpenOS = (missionId: string, e: React.MouseEvent) => {
         e.stopPropagation();
-        setEditingMission(m.id);
-        setEditRevenue(m.revenue.toFixed(2).replace('.', ','));
-        setEditCost(m.cost.toFixed(2).replace('.', ','));
-    };
-
-    const handleSaveEdit = async (missionId: string, e: React.MouseEvent) => {
-        e.stopPropagation();
-        setSavingMission(true);
-        try {
-            const parseVal = (v: string) => parseFloat(v.replace(/\./g, '').replace(',', '.')) || 0;
-            const newRevTotal = parseVal(editRevenue);
-            const newCostTotal = parseVal(editCost);
-
-            const mission = allPeriodMissions.find(m => m.id === missionId);
-            const toll = mission?.toll_value || 0;
-            const tollProv = mission?.toll_value_provider != null ? mission.toll_value_provider : toll;
-
-            const revServiceOnly = newRevTotal - toll;
-            const costServiceOnly = newCostTotal - tollProv;
-
-            const { error } = await supabase.from('missions').update({
-                revenue_value: revServiceOnly,
-                cost_value: costServiceOnly,
-                last_update: new Date().toISOString()
-            }).eq('id', missionId);
-            if (error) throw error;
-
-            const idx = allPeriodMissions.findIndex(m => m.id === missionId);
-            if (idx >= 0) {
-                const updated = [...allPeriodMissions];
-                updated[idx] = { ...updated[idx], revenue_value: revServiceOnly, cost_value: costServiceOnly };
-                setAllPeriodMissions(updated);
-            }
-            setEditingMission(null);
-        } catch (err) {
-            console.error(err);
-            alert('Erro ao salvar valores.');
-        } finally {
-            setSavingMission(false);
-        }
-    };
-
-    const handleCancelEdit = (e: React.MouseEvent) => {
-        e.stopPropagation();
-        setEditingMission(null);
+        if (onOpenMission) onOpenMission(missionId);
     };
 
     const chartComputedData = useMemo(() => {
@@ -767,28 +718,12 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate })
                                                                 <td className="px-2 py-1 text-gray-600 font-bold truncate max-w-[120px]" title={m.route}>{m.route}</td>
                                                                 <td className="px-2 py-1 text-gray-600 font-bold truncate max-w-[100px]" title={m.provider}>{m.provider}</td>
                                                                 <td className="px-2 py-1 text-right text-gray-600 font-bold">{m.km > 0 ? Math.round(m.km) : '-'}</td>
-                                                                {editingMission === m.id ? (
-                                                                    <>
-                                                                        <td className="px-1 py-0.5"><input type="text" value={editRevenue} onChange={e => setEditRevenue(e.target.value)} onClick={e => e.stopPropagation()} className="w-full text-[10px] font-bold text-blue-700 text-right border border-blue-300 rounded px-1 py-0.5 bg-blue-50 outline-none focus:ring-1 focus:ring-blue-400" /></td>
-                                                                        <td className="px-1 py-0.5"><input type="text" value={editCost} onChange={e => setEditCost(e.target.value)} onClick={e => e.stopPropagation()} className="w-full text-[10px] font-bold text-red-600 text-right border border-red-300 rounded px-1 py-0.5 bg-red-50 outline-none focus:ring-1 focus:ring-red-400" /></td>
-                                                                    </>
-                                                                ) : (
-                                                                    <>
-                                                                        <td className="px-2 py-1 text-right font-bold text-blue-700">{fmtBRL(m.revenue)}</td>
-                                                                        <td className="px-2 py-1 text-right font-bold text-red-600">{fmtBRL(m.cost)}</td>
-                                                                    </>
-                                                                )}
+                                                                <td className="px-2 py-1 text-right font-bold text-blue-700">{fmtBRL(m.revenue)}</td>
+                                                                <td className="px-2 py-1 text-right font-bold text-red-600">{fmtBRL(m.cost)}</td>
                                                                 <td className={`px-2 py-1 text-right font-black ${m.lucro >= 0 ? 'text-emerald-600' : 'text-red-700'}`}>{fmtBRL(m.lucro)}</td>
                                                                 <td className={`px-2 py-1 text-right font-black ${m.pct >= 0 ? 'text-emerald-600' : 'text-red-700'}`}>{m.pct}%</td>
                                                                 <td className="px-1 py-1 text-center">
-                                                                    {editingMission === m.id ? (
-                                                                        <div className="flex gap-0.5">
-                                                                            <button onClick={(e) => handleSaveEdit(m.id, e)} disabled={savingMission} className="text-emerald-600 hover:text-emerald-800" title="Salvar"><Save size={11} /></button>
-                                                                            <button onClick={handleCancelEdit} className="text-gray-400 hover:text-gray-600" title="Cancelar">&times;</button>
-                                                                        </div>
-                                                                    ) : (
-                                                                        <button onClick={(e) => handleStartEdit(m, e)} className="p-1.5 rounded bg-emerald-50 text-emerald-600 hover:bg-emerald-100 hover:text-emerald-800 transition-colors border border-emerald-200" title="Editar valores"><Pencil size={12} /></button>
-                                                                    )}
+                                                                    <button onClick={(e) => handleOpenOS(m.id, e)} className="p-1.5 rounded bg-emerald-50 text-emerald-600 hover:bg-emerald-100 hover:text-emerald-800 transition-colors border border-emerald-200" title="Abrir conferência"><ExternalLink size={12} /></button>
                                                                 </td>
                                                             </tr>
                                                         ))}
@@ -869,28 +804,12 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate })
                                                                 <td className="px-2 py-1 text-gray-600 font-bold truncate max-w-[120px]" title={m.route}>{m.route}</td>
                                                                 <td className="px-2 py-1 text-gray-600 font-bold truncate max-w-[100px]" title={m.client}>{m.client}</td>
                                                                 <td className="px-2 py-1 text-right text-gray-600 font-bold">{m.km > 0 ? Math.round(m.km) : '-'}</td>
-                                                                {editingMission === m.id ? (
-                                                                    <>
-                                                                        <td className="px-1 py-0.5"><input type="text" value={editRevenue} onChange={e => setEditRevenue(e.target.value)} onClick={e => e.stopPropagation()} className="w-full text-[10px] font-bold text-blue-700 text-right border border-blue-300 rounded px-1 py-0.5 bg-blue-50 outline-none focus:ring-1 focus:ring-blue-400" /></td>
-                                                                        <td className="px-1 py-0.5"><input type="text" value={editCost} onChange={e => setEditCost(e.target.value)} onClick={e => e.stopPropagation()} className="w-full text-[10px] font-bold text-red-600 text-right border border-red-300 rounded px-1 py-0.5 bg-red-50 outline-none focus:ring-1 focus:ring-red-400" /></td>
-                                                                    </>
-                                                                ) : (
-                                                                    <>
-                                                                        <td className="px-2 py-1 text-right font-bold text-blue-700">{fmtBRL(m.revenue)}</td>
-                                                                        <td className="px-2 py-1 text-right font-bold text-red-600">{fmtBRL(m.cost)}</td>
-                                                                    </>
-                                                                )}
+                                                                <td className="px-2 py-1 text-right font-bold text-blue-700">{fmtBRL(m.revenue)}</td>
+                                                                <td className="px-2 py-1 text-right font-bold text-red-600">{fmtBRL(m.cost)}</td>
                                                                 <td className={`px-2 py-1 text-right font-black ${m.lucro >= 0 ? 'text-emerald-600' : 'text-red-700'}`}>{fmtBRL(m.lucro)}</td>
                                                                 <td className={`px-2 py-1 text-right font-black ${m.pct >= 0 ? 'text-emerald-600' : 'text-red-700'}`}>{m.pct}%</td>
                                                                 <td className="px-1 py-1 text-center">
-                                                                    {editingMission === m.id ? (
-                                                                        <div className="flex gap-0.5">
-                                                                            <button onClick={(e) => handleSaveEdit(m.id, e)} disabled={savingMission} className="text-emerald-600 hover:text-emerald-800" title="Salvar"><Save size={11} /></button>
-                                                                            <button onClick={handleCancelEdit} className="text-gray-400 hover:text-gray-600" title="Cancelar">&times;</button>
-                                                                        </div>
-                                                                    ) : (
-                                                                        <button onClick={(e) => handleStartEdit(m, e)} className="p-1.5 rounded bg-emerald-50 text-emerald-600 hover:bg-emerald-100 hover:text-emerald-800 transition-colors border border-emerald-200" title="Editar valores"><Pencil size={12} /></button>
-                                                                    )}
+                                                                    <button onClick={(e) => handleOpenOS(m.id, e)} className="p-1.5 rounded bg-emerald-50 text-emerald-600 hover:bg-emerald-100 hover:text-emerald-800 transition-colors border border-emerald-200" title="Abrir conferência"><ExternalLink size={12} /></button>
                                                                 </td>
                                                             </tr>
                                                         ))}
@@ -946,28 +865,12 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate })
                                                 <td className="px-2 py-1 text-gray-600 font-bold truncate max-w-[100px]" title={m.provider}>{m.provider}</td>
                                                 <td className="px-2 py-1 text-gray-600 font-bold truncate max-w-[120px]" title={m.route}>{m.route}</td>
                                                 <td className="px-2 py-1 text-right text-gray-600 font-bold">{m.km > 0 ? Math.round(m.km) : '-'}</td>
-                                                {editingMission === m.id ? (
-                                                    <>
-                                                        <td className="px-1 py-0.5"><input type="text" value={editRevenue} onChange={e => setEditRevenue(e.target.value)} onClick={e => e.stopPropagation()} className="w-full text-[10px] font-bold text-blue-700 text-right border border-blue-300 rounded px-1 py-0.5 bg-blue-50 outline-none focus:ring-1 focus:ring-blue-400" data-testid={`edit-revenue-${m.id}`} /></td>
-                                                        <td className="px-1 py-0.5"><input type="text" value={editCost} onChange={e => setEditCost(e.target.value)} onClick={e => e.stopPropagation()} className="w-full text-[10px] font-bold text-red-600 text-right border border-red-300 rounded px-1 py-0.5 bg-red-50 outline-none focus:ring-1 focus:ring-red-400" data-testid={`edit-cost-${m.id}`} /></td>
-                                                    </>
-                                                ) : (
-                                                    <>
-                                                        <td className="px-2 py-1 text-right font-bold text-blue-700">{fmtBRL(m.revenue)}</td>
-                                                        <td className="px-2 py-1 text-right font-bold text-red-600">{fmtBRL(m.cost)}</td>
-                                                    </>
-                                                )}
+                                                <td className="px-2 py-1 text-right font-bold text-blue-700">{fmtBRL(m.revenue)}</td>
+                                                <td className="px-2 py-1 text-right font-bold text-red-600">{fmtBRL(m.cost)}</td>
                                                 <td className={`px-2 py-1 text-right font-black ${m.lucro >= 0 ? 'text-emerald-600' : 'text-red-700'}`}>{fmtBRL(m.lucro)}</td>
                                                 <td className={`px-2 py-1 text-right font-black ${m.pct >= 0 ? 'text-emerald-600' : 'text-red-700'}`}>{m.pct}%</td>
                                                 <td className="px-1 py-1 text-center">
-                                                    {editingMission === m.id ? (
-                                                        <div className="flex gap-0.5">
-                                                            <button onClick={(e) => handleSaveEdit(m.id, e)} disabled={savingMission} className="text-emerald-600 hover:text-emerald-800" title="Salvar" data-testid={`save-edit-${m.id}`}><Save size={11} /></button>
-                                                            <button onClick={handleCancelEdit} className="text-gray-400 hover:text-gray-600" title="Cancelar">&times;</button>
-                                                        </div>
-                                                    ) : (
-                                                        <button onClick={(e) => handleStartEdit(m, e)} className="p-1.5 rounded bg-emerald-50 text-emerald-600 hover:bg-emerald-100 hover:text-emerald-800 transition-colors border border-emerald-200" title="Editar valores" data-testid={`edit-btn-${m.id}`}><Pencil size={12} /></button>
-                                                    )}
+                                                    <button onClick={(e) => handleOpenOS(m.id, e)} className="p-1.5 rounded bg-emerald-50 text-emerald-600 hover:bg-emerald-100 hover:text-emerald-800 transition-colors border border-emerald-200" title="Abrir conferência" data-testid={`open-os-${m.id}`}><ExternalLink size={12} /></button>
                                                 </td>
                                             </tr>
                                         ))}

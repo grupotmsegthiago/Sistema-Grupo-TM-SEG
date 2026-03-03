@@ -26,6 +26,8 @@ import UserForm from './components/UserForm';
 import ChangePasswordModal from './components/ChangePasswordModal';
 import ProfileSettingsModal from './components/ProfileSettingsModal';
 
+import MissionFinancialModal from './components/MissionFinancialModal';
+
 // Outros Componentes
 import ClientRouteList from './components/ClientRouteList';
 import ClientRouteForm from './components/ClientRouteForm';
@@ -82,6 +84,8 @@ const App: React.FC = () => {
   
   const [rebootCountdown, setRebootCountdown] = useState<number | null>(null);
   const [isCevaClient, setIsCevaClient] = useState(false);
+  const [billingMissionId, setBillingMissionId] = useState<string | null>(null);
+  const [billingMission, setBillingMission] = useState<any>(null);
 
   const normalizedPath = window.location.pathname.toLowerCase().replace(/\/$/, '');
   const isPublicRoute = normalizedPath === '/cadastro-operacional';
@@ -160,6 +164,39 @@ const App: React.FC = () => {
 
   const toggleSidebar = () => setIsSidebarOpen(!isSidebarOpen);
   const handleLogin = () => { setIsAuthenticated(true); verifySessionInDatabase(); };
+
+  const handleOpenBillingMission = async (missionId: string) => {
+      try {
+          const { data, error } = await supabase.from('missions').select('*').eq('id', missionId).single();
+          if (error || !data) { alert(`OS ${missionId} não encontrada.`); return; }
+          const m: any = data;
+          const mapped = {
+              ...m,
+              createdAt: m.created_at,
+              lastUpdate: m.last_update,
+              startTime: m.start_time,
+              endTime: m.end_time,
+              startKm: m.start_km,
+              endKm: m.end_km,
+              totalDistance: m.total_distance,
+              traveledDistance: m.traveled_distance,
+              mapLink: m.map_link,
+              estimatedTime: m.estimated_time,
+              currentLocation: m.current_location,
+              vehicleId: m.vehicle_id,
+              revenue_value: m.revenue_value,
+              cost_value: m.cost_value,
+              toll_value: m.toll_value,
+              toll_value_provider: m.toll_value_provider,
+              billing_approved: m.billing_approved,
+              billing_verified_by: m.billing_verified_by,
+              mission_type: m.mission_type || 'Caracterizada',
+              originalClientName: m.client,
+          };
+          setBillingMission(mapped);
+          setBillingMissionId(missionId);
+      } catch (err) { console.error(err); }
+  };
   const handlePasswordChanged = () => {
     const storedUser = localStorage.getItem('userData');
     if (storedUser) { try { const user = JSON.parse(storedUser); user.force_password_change = false; localStorage.setItem('userData', JSON.stringify(user)); } catch (e) { console.error(e); } }
@@ -189,7 +226,7 @@ const App: React.FC = () => {
       case 'fin-accounts': return <FinancialAccountManager />;
       case 'fin-categories': return <FinancialCategoryManager />;
       case 'fin-report': return <FinancialReport />; 
-      case 'fin-billing': return <ClientBillingReport onNavigate={navigateTo} />;
+      case 'fin-billing': return <ClientBillingReport onNavigate={navigateTo} onOpenMission={handleOpenBillingMission} />;
       case 'fin-daily-movement': return <DailyCashMovement />;
       case 'fin-billing-control': return <BillingControlCenter />;
       case 'clients': return <ClientList onAddClient={() => navigateTo('client-form')} onEdit={(id) => handleEdit('client-form', id)} />;
@@ -251,6 +288,7 @@ const App: React.FC = () => {
             </main>
         </div>
         {isProfileSettingsOpen && ( <ProfileSettingsModal onClose={() => setIsProfileSettingsOpen(false)} onSuccess={() => { setIsProfileSettingsOpen(false); alert("Dados atualizados com sucesso! Por segurança, por favor, faça login novamente."); handleLogout(); }} /> )}
+        {billingMissionId && billingMission && ( <MissionFinancialModal isOpen={true} onClose={() => { setBillingMissionId(null); setBillingMission(null); }} mission={billingMission} onUpdate={() => {}} /> )}
         </div>
     </NotificationProvider>
   );
