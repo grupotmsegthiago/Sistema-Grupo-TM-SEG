@@ -9,7 +9,7 @@ import {
     Activity, TrendingUp, TrendingDown, Wallet, Percent, Truck, Target,
     DollarSign, Calendar, CheckCircle2, XCircle, AlertTriangle,
     Trophy, Briefcase, Shield, PieChart as PieChartIcon, Lock, RefreshCw,
-    Upload, FileSpreadsheet, Loader2, Search, CheckCircle, XOctagon, Edit2, Download
+    Upload, FileSpreadsheet, Loader2, Search, CheckCircle, XOctagon, Edit2, Download, Calculator
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 
@@ -112,6 +112,8 @@ const ExecutiveDashboard: React.FC<Props> = ({ missions, isDirector, clientTable
     const prevMissionFinancialsRef = useRef<any[] | null>(null);
 
     const [isRefreshingExcel, setIsRefreshingExcel] = useState(false);
+    const [isRecalculating, setIsRecalculating] = useState(false);
+    const [recalcResults, setRecalcResults] = useState<any>(null);
 
     const handleRefresh = useCallback(() => {
         setRefreshKey(k => k + 1);
@@ -130,6 +132,26 @@ const ExecutiveDashboard: React.FC<Props> = ({ missions, isDirector, clientTable
         } else {
             setRefreshKey(k => k + 1);
             setLastUpdate(new Date());
+        }
+    }, [onRefreshMissions]);
+
+    const handleBatchRecalculate = useCallback(async (dryRun: boolean) => {
+        setIsRecalculating(true);
+        setRecalcResults(null);
+        try {
+            const resp = await fetch('/api/billing/recalculate-all', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ dryRun }),
+            });
+            const data = await resp.json();
+            if (!resp.ok) throw new Error(data.error || 'Erro ao recalcular');
+            setRecalcResults(data);
+            if (!dryRun && onRefreshMissions) onRefreshMissions();
+        } catch (e: any) {
+            alert('Erro: ' + e.message);
+        } finally {
+            setIsRecalculating(false);
         }
     }, [onRefreshMissions]);
 
@@ -914,8 +936,144 @@ const ExecutiveDashboard: React.FC<Props> = ({ missions, isDirector, clientTable
                             {isExcelLoading ? <Loader2 size={13} className="animate-spin" /> : <Upload size={13} />}
                             {isExcelLoading ? 'Processando...' : 'Importar Planilha'}
                         </button>
+                        <button onClick={() => handleBatchRecalculate(true)} disabled={isRecalculating}
+                            className="flex items-center gap-2 px-4 py-2 bg-amber-600 text-white rounded-lg text-[11px] font-black uppercase tracking-wide hover:bg-amber-700 transition-all active:scale-95 disabled:opacity-50" data-testid="button-batch-recalculate">
+                            {isRecalculating ? <Loader2 size={13} className="animate-spin" /> : <Calculator size={13} />}
+                            {isRecalculating ? 'Analisando...' : 'Auditar Todas OS'}
+                        </button>
                     </div>
                 </div>
+
+                {recalcResults && (
+                    <div className="bg-white border border-gray-200 rounded-xl p-4 shadow-sm space-y-3">
+                        <div className="flex items-center justify-between">
+                            <h4 className="text-sm font-black text-gray-800 uppercase tracking-wide">
+                                {recalcResults.dryRun ? 'Auditoria Geral — Simulação' : 'Auditoria Geral — Correção Aplicada'}
+                            </h4>
+                            <button onClick={() => setRecalcResults(null)} className="text-gray-400 hover:text-gray-600">
+                                <XCircle size={16} />
+                            </button>
+                        </div>
+
+                        <div className="grid grid-cols-4 gap-2">
+                            <div className="bg-gray-50 rounded-lg p-2.5 text-center border border-gray-100">
+                                <p className="text-[10px] font-bold text-gray-400 uppercase">Total OS</p>
+                                <p className="text-lg font-black text-gray-900">{recalcResults.total}</p>
+                            </div>
+                            <div className="bg-red-50 rounded-lg p-2.5 text-center border border-red-100">
+                                <p className="text-[10px] font-bold text-red-600 uppercase">Divergentes</p>
+                                <p className="text-lg font-black text-red-700">{recalcResults.divergent}</p>
+                            </div>
+                            <div className="bg-green-50 rounded-lg p-2.5 text-center border border-green-100">
+                                <p className="text-[10px] font-bold text-green-600 uppercase">Corretas</p>
+                                <p className="text-lg font-black text-green-700">{recalcResults.skipped}</p>
+                            </div>
+                            <div className="bg-amber-50 rounded-lg p-2.5 text-center border border-amber-100">
+                                <p className="text-[10px] font-bold text-amber-600 uppercase">Erros</p>
+                                <p className="text-lg font-black text-amber-700">{recalcResults.errors}</p>
+                            </div>
+                        </div>
+
+                        {recalcResults.results?.length > 0 && (
+                            <>
+                                <div className="max-h-60 overflow-y-auto border border-gray-200 rounded-lg scrollbar-thin">
+                                    <table className="w-full text-[11px]">
+                                        <thead className="bg-gray-50 sticky top-0 z-10">
+                                            <tr>
+                                                <th className="text-left px-3 py-2 font-black text-gray-600 uppercase">OS</th>
+                                                <th className="text-left px-3 py-2 font-black text-gray-600 uppercase">Cliente</th>
+                                                <th className="text-left px-3 py-2 font-black text-gray-600 uppercase">Fornecedor</th>
+                                                <th className="text-right px-3 py-2 font-black text-gray-600 uppercase">Receita Salva</th>
+                                                <th className="text-right px-3 py-2 font-black text-gray-600 uppercase">Receita Calc.</th>
+                                                <th className="text-right px-3 py-2 font-black text-gray-600 uppercase">Diff. Rec.</th>
+                                                <th className="text-right px-3 py-2 font-black text-gray-600 uppercase">Custo Salvo</th>
+                                                <th className="text-right px-3 py-2 font-black text-gray-600 uppercase">Custo Calc.</th>
+                                                <th className="text-right px-3 py-2 font-black text-gray-600 uppercase">Diff. Cst.</th>
+                                                <th className="text-center px-3 py-2 font-black text-gray-600 uppercase">Status</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {recalcResults.results.map((r: any, i: number) => (
+                                                <tr key={i} className="border-t border-gray-100 hover:bg-red-50/30"
+                                                    onClick={() => {
+                                                        if (onOpenMission) {
+                                                            const mission = missions.find(m => String(m.id).toUpperCase().replace('GTM-', '') === String(r.osId).replace('GTM-', ''));
+                                                            if (mission) onOpenMission(mission as any);
+                                                        }
+                                                    }}
+                                                    style={{ cursor: 'pointer' }}
+                                                >
+                                                    <td className="px-3 py-2 font-black text-blue-600">{r.osId}</td>
+                                                    <td className="px-3 py-2 font-bold text-gray-600 truncate max-w-[100px]">{(r.client || '').substring(0, 18)}</td>
+                                                    <td className="px-3 py-2 font-bold text-gray-600 truncate max-w-[100px]">{(r.provider || '').substring(0, 18)}</td>
+                                                    <td className="px-3 py-2 text-right font-bold text-gray-700">{fmtBRL(r.storedRev)}</td>
+                                                    <td className="px-3 py-2 text-right font-bold text-green-700">{fmtBRL(r.calcRev)}</td>
+                                                    <td className={`px-3 py-2 text-right font-bold ${r.revDiff > 50 ? 'text-red-600' : 'text-amber-600'}`}>{fmtBRL(r.revDiff)}</td>
+                                                    <td className="px-3 py-2 text-right font-bold text-gray-700">{fmtBRL(r.storedCost)}</td>
+                                                    <td className="px-3 py-2 text-right font-bold text-green-700">{fmtBRL(r.calcCost)}</td>
+                                                    <td className={`px-3 py-2 text-right font-bold ${r.costDiff > 50 ? 'text-red-600' : 'text-amber-600'}`}>{fmtBRL(r.costDiff)}</td>
+                                                    <td className="px-3 py-2 text-center">
+                                                        {r.error ? <span className="text-[9px] font-black bg-red-100 text-red-700 px-2 py-0.5 rounded-full">{r.error}</span> :
+                                                         r.updated ? <span className="text-[9px] font-black bg-green-100 text-green-700 px-2 py-0.5 rounded-full">CORRIGIDA</span> :
+                                                         r.approved ? <span className="text-[9px] font-black bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full">APROVADA</span> :
+                                                         <span className="text-[9px] font-black bg-red-100 text-red-700 px-2 py-0.5 rounded-full">DIVERGENTE</span>}
+                                                    </td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                </div>
+
+                                <div className="flex items-center justify-between">
+                                    <p className="text-[10px] text-gray-400 font-bold">
+                                        {recalcResults.dryRun ? 'Simulação: nenhum valor foi alterado. Clique "Aplicar Correções" para corrigir.' : `${recalcResults.corrected} OS corrigidas no banco de dados.`}
+                                    </p>
+                                    <div className="flex gap-2">
+                                        <button onClick={() => {
+                                            const mapRow = (r: any) => ({
+                                                'OS': r.osId, 'Cliente': r.client, 'Fornecedor': r.provider,
+                                                'Receita Salva': r.storedRev, 'Receita Calculada': r.calcRev, 'Diff. Receita': r.revDiff,
+                                                'Custo Salvo': r.storedCost, 'Custo Calculado': r.calcCost, 'Diff. Custo': r.costDiff,
+                                                'Status OS': r.status, 'Aprovada': r.approved ? 'Sim' : 'Não',
+                                            });
+                                            const wb = XLSX.utils.book_new();
+                                            const ws = XLSX.utils.json_to_sheet(recalcResults.results.map(mapRow));
+                                            XLSX.utils.book_append_sheet(wb, ws, 'Divergências');
+                                            XLSX.writeFile(wb, `Auditoria_Geral_${new Date().toISOString().slice(0,10)}.xlsx`);
+                                        }}
+                                            className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white text-[10px] font-bold rounded-lg transition-colors"
+                                            data-testid="btn-export-audit"
+                                        >
+                                            <Download size={12} /> Exportar
+                                        </button>
+                                        {recalcResults.dryRun && recalcResults.divergent > 0 && (
+                                            <button onClick={() => {
+                                                if (confirm(`Tem certeza? Isso vai corrigir ${recalcResults.divergent} OS no banco de dados.`)) {
+                                                    handleBatchRecalculate(false);
+                                                }
+                                            }}
+                                                disabled={isRecalculating}
+                                                className="flex items-center gap-1.5 px-4 py-1.5 bg-red-600 hover:bg-red-700 text-white text-[10px] font-bold rounded-lg transition-colors disabled:opacity-50"
+                                                data-testid="btn-apply-corrections"
+                                            >
+                                                {isRecalculating ? <Loader2 size={12} className="animate-spin" /> : <CheckCircle size={12} />}
+                                                Aplicar Correções ({recalcResults.divergent} OS)
+                                            </button>
+                                        )}
+                                    </div>
+                                </div>
+                            </>
+                        )}
+
+                        {recalcResults.results?.length === 0 && (
+                            <div className="bg-green-50 border border-green-200 rounded-lg p-4 text-center">
+                                <CheckCircle className="mx-auto text-green-600 mb-2" size={24} />
+                                <p className="text-sm font-black text-green-700">Todas as OS estão com valores corretos!</p>
+                                <p className="text-[10px] text-green-500 mt-1">Nenhuma divergência encontrada (tolerância: R$ 5,00)</p>
+                            </div>
+                        )}
+                    </div>
+                )}
 
                 {showExcelPanel && excelComparison && (() => {
                     const total = excelComparison.length;

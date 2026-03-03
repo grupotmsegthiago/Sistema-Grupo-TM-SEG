@@ -5,6 +5,7 @@ import { GoogleGenAI } from "@google/genai";
 import { createClient } from "@supabase/supabase-js";
 import pg from "pg";
 import { Resend } from "resend";
+import { calculateMissionFinancials } from "../lib/financialUtils";
 
 const resend = new Resend(process.env.RESEND_API_KEY);
 const verificationCodes = new Map<string, { code: string; expiresAt: number; email: string }>();
@@ -985,6 +986,127 @@ export async function registerRoutes(
       res.json({ verified: true });
     } catch (e: any) {
       res.status(500).json({ verified: false, error: e.message });
+    }
+  });
+
+  app.post("/api/billing/recalculate-all", async (req: Request, res: Response) => {
+    try {
+      const { dryRun = true } = req.body;
+
+      const { data: missions, error: mErr } = await supabaseAdmin.from('missions').select('*');
+      if (mErr) throw mErr;
+
+      const { data: clientTables, error: ctErr } = await supabaseAdmin.from('client_price_tables').select('*');
+      if (ctErr) throw ctErr;
+
+      const { data: providerTables, error: ptErr } = await supabaseAdmin.from('provider_cost_tables').select('*');
+      if (ptErr) throw ptErr;
+
+      const { data: clients, error: clErr } = await supabaseAdmin.from('clients').select('*');
+      if (clErr) throw clErr;
+
+      const now = new Date();
+      const results: any[] = [];
+      let corrected = 0;
+      let skipped = 0;
+      let errors = 0;
+
+      for (const raw of (missions || [])) {
+        try {
+          const m: any = {
+            ...raw,
+            createdAt: raw.created_at,
+            lastUpdate: raw.last_update,
+            startTime: raw.start_time,
+            endTime: raw.end_time,
+            startKm: raw.start_km,
+            endKm: raw.end_km,
+            totalDistance: raw.total_distance,
+            traveledDistance: raw.traveled_distance,
+            mapLink: raw.map_link,
+            estimatedTime: raw.estimated_time,
+            currentLocation: raw.current_location,
+            vehicleId: raw.vehicle_id,
+            revenue_value: raw.revenue_value,
+            cost_value: raw.cost_value,
+            toll_value: raw.toll_value,
+            toll_value_provider: raw.toll_value_provider,
+            billing_approved: raw.billing_approved,
+            mission_type: raw.mission_type || 'Caracterizada',
+          };
+
+          const clientData = (clients || []).find((c: any) => c.name?.toUpperCase() === (m.client || '').toUpperCase()) || null;
+
+          const calc = calculateMissionFinancials(m, clientTables || [], providerTables || [], clientData, now);
+          if (!calc) { skipped++; continue; }
+
+          const storedRev = Number(raw.revenue_value) || 0;
+          const storedCost = Number(raw.cost_value) || 0;
+          const storedToll = Number(raw.toll_value) || 0;
+          const storedTollProv = Number(raw.toll_value_provider) || storedToll;
+
+          const calcRevService = calc.clientTotal - storedToll;
+          const calcCostService = calc.providerTotal - storedTollProv;
+
+          const revDiff = Math.abs(storedRev - calcRevService);
+          const costDiff = Math.abs(storedCost - calcCostService);
+
+          if (revDiff > 5 || costDiff > 5) {
+            const entry: any = {
+              osId: raw.id,
+              client: raw.client || '-',
+              provider: raw.provider || '-',
+              storedRev,
+              calcRev: calcRevService,
+              revDiff: Math.round(revDiff * 100) / 100,
+              storedCost,
+              calcCost: calcCostService,
+              costDiff: Math.round(costDiff * 100) / 100,
+              status: raw.status,
+              approved: raw.billing_approved || false,
+            };
+
+            if (!dryRun) {
+              const updatePayload: any = {
+                revenue_value: calcRevService,
+                cost_value: calcCostService,
+                last_update: now.toISOString(),
+              };
+
+              let { error: upErr } = await supabaseAdmin.from('missions').update(updatePayload).eq('id', raw.id);
+              if (upErr) {
+                entry.updateError = upErr.message;
+                errors++;
+              } else {
+                entry.updated = true;
+                corrected++;
+              }
+            } else {
+              entry.wouldUpdate = true;
+              corrected++;
+            }
+
+            results.push(entry);
+          } else {
+            skipped++;
+          }
+        } catch (calcErr: any) {
+          errors++;
+          results.push({ osId: raw.id, error: calcErr.message });
+        }
+      }
+
+      res.json({
+        total: (missions || []).length,
+        divergent: results.length,
+        corrected,
+        skipped,
+        errors,
+        dryRun,
+        results,
+      });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
     }
   });
 
