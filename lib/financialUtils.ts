@@ -26,6 +26,8 @@ export interface CalculatedFinancials {
       excessHours: number;
       unitPriceKm: number;
       unitPriceHour: number;
+      franchiseKm: number;
+      franchiseHours: number;
       usedSpecialRule: boolean;
       tableName?: string;
       tableId?: string;
@@ -40,6 +42,8 @@ export interface CalculatedFinancials {
       excessHours: number;
       unitCostKm: number;
       unitCostHour: number;
+      franchiseKm: number;
+      franchiseHours: number;
       tableName?: string;
       tableId?: string;
       usedSpecialRule?: boolean;
@@ -719,7 +723,7 @@ export const calculateMissionFinancials = (
 
     const round2 = (v: number) => Math.round(v * 100) / 100;
 
-    const isMinimumActivationRule = !isZeroValueMission && distanceForCalculation <= 200 && durationHours <= 2;
+    const isMinimumActivationRule = !isZeroValueMission && distanceForCalculation <= 200 && durationHours <= 2 && cFranchiseKm >= 200 && pFranchiseKm >= 200;
     if (isMinimumActivationRule) {
         cExcessKm = 0;
         cExcessHr = 0;
@@ -762,6 +766,8 @@ export const calculateMissionFinancials = (
             excessHours: cExcessHr,
             unitPriceKm: cUnitPriceKm,
             unitPriceHour: cUnitPriceHour,
+            franchiseKm: cFranchiseKm,
+            franchiseHours: cFranchiseHr,
             usedSpecialRule: isFixedDistanceClientRule || isFixedHoursClientRule, 
             tableName: appliedClientTable?.operation_type, 
             tableId: appliedClientTable?.id.toString(),
@@ -773,6 +779,8 @@ export const calculateMissionFinancials = (
             excessHours: pExcessHr,
             unitCostKm: pUnitCostKm,
             unitCostHour: pUnitCostHour,
+            franchiseKm: pFranchiseKm,
+            franchiseHours: pFranchiseHr,
             tableName: appliedProviderTable?.operation_type, 
             tableId: appliedProviderTable?.id.toString(),
             usedSpecialRule: isFixedDistanceProviderRule || isFixedHoursProviderRule,

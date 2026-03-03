@@ -772,6 +772,33 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                 </div>
                             )}
 
+                            <div className="bg-blue-50/50 p-3 rounded-xl border border-blue-100 mb-4">
+                                <div className="grid grid-cols-3 gap-2 text-center">
+                                    <div>
+                                        <p className="text-[8px] font-black text-blue-400 uppercase">Acionamento</p>
+                                        <p className="text-sm font-black text-blue-700">{formatCurrency(financialData.client.base)}</p>
+                                    </div>
+                                    <div className="border-l border-blue-200">
+                                        <p className="text-[8px] font-black text-blue-400 uppercase">Franquia KM</p>
+                                        <p className="text-sm font-black text-blue-700">{financialData.client.franchiseKm} km</p>
+                                    </div>
+                                    <div className="border-l border-blue-200">
+                                        <p className="text-[8px] font-black text-blue-400 uppercase">Hora Franquia</p>
+                                        <p className="text-sm font-black text-blue-700">{financialData.client.franchiseHours}h</p>
+                                    </div>
+                                </div>
+                                <div className="grid grid-cols-2 gap-2 mt-2 pt-2 border-t border-blue-200 text-center">
+                                    <div>
+                                        <p className="text-[8px] font-black text-blue-400 uppercase">Km Excedente</p>
+                                        <p className="text-xs font-black text-blue-700">R$ {financialData.client.unitPriceKm.toFixed(2)}</p>
+                                    </div>
+                                    <div className="border-l border-blue-200">
+                                        <p className="text-[8px] font-black text-blue-400 uppercase">Hora Excedente</p>
+                                        <p className="text-xs font-black text-blue-700">R$ {financialData.client.unitPriceHour.toFixed(2)}</p>
+                                    </div>
+                                </div>
+                            </div>
+
                             <div className="bg-gray-50 p-3 rounded-xl border border-gray-100 grid grid-cols-3 gap-2 mb-4">
                                 <div>
                                     <p className="text-[8px] font-black text-gray-400 uppercase">Base (Saída)</p>
@@ -895,6 +922,33 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                     👉 Por favor, selecione a tabela manualmente no campo acima ou clique no botão <strong>(+)</strong> para cadastrar.
                                 </div>
                             )}
+
+                            <div className="bg-red-50/50 p-3 rounded-xl border border-red-100 mb-4">
+                                <div className="grid grid-cols-3 gap-2 text-center">
+                                    <div>
+                                        <p className="text-[8px] font-black text-red-400 uppercase">Acionamento</p>
+                                        <p className="text-sm font-black text-red-700">{formatCurrency(financialData.provider.base)}</p>
+                                    </div>
+                                    <div className="border-l border-red-200">
+                                        <p className="text-[8px] font-black text-red-400 uppercase">Franquia KM</p>
+                                        <p className="text-sm font-black text-red-700">{financialData.provider.franchiseKm} km</p>
+                                    </div>
+                                    <div className="border-l border-red-200">
+                                        <p className="text-[8px] font-black text-red-400 uppercase">Hora Franquia</p>
+                                        <p className="text-sm font-black text-red-700">{financialData.provider.franchiseHours}h</p>
+                                    </div>
+                                </div>
+                                <div className="grid grid-cols-2 gap-2 mt-2 pt-2 border-t border-red-200 text-center">
+                                    <div>
+                                        <p className="text-[8px] font-black text-red-400 uppercase">Km Excedente</p>
+                                        <p className="text-xs font-black text-red-700">R$ {financialData.provider.unitCostKm.toFixed(2)}</p>
+                                    </div>
+                                    <div className="border-l border-red-200">
+                                        <p className="text-[8px] font-black text-red-400 uppercase">Hora Excedente</p>
+                                        <p className="text-xs font-black text-red-700">R$ {financialData.provider.unitCostHour.toFixed(2)}</p>
+                                    </div>
+                                </div>
+                            </div>
 
                             <div className="bg-gray-50 p-3 rounded-xl border border-gray-100 grid grid-cols-3 gap-2 mb-4">
                                 <div>
