@@ -111,10 +111,9 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate })
             const { data: missionData, error } = await supabase
                 .from('missions')
                 .select('*')
-                .eq('billing_approved', true)
                 .gte('created_at', `${startDate}T00:00:00`)
                 .lte('created_at', `${endDate}T23:59:59`)
-                .neq('status', 'Cancelada')
+                .neq('status', 'Recusada')
                 .order('created_at', { ascending: true });
             if (error) throw error;
 
@@ -153,9 +152,22 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate })
             const clientObj = clients.find(c => c.name === clientName);
             const displayClient = clientObj?.trading_name || clientName;
 
-            const tollProv = m.toll_value_provider != null ? m.toll_value_provider : (m.toll_value || 0);
-            const revenue = (m.revenue_value || 0) + (m.toll_value || 0);
-            const cost = (m.cost_value || 0) + tollProv;
+            const hasStoredRevenue = m.revenue_value != null && m.revenue_value > 0;
+            const hasStoredCost = m.cost_value != null && m.cost_value > 0;
+
+            let revenue: number;
+            let cost: number;
+
+            if (hasStoredRevenue || hasStoredCost) {
+                revenue = (m.revenue_value || 0) + (m.toll_value || 0);
+                const tollProv = m.toll_value_provider != null ? m.toll_value_provider : (m.toll_value || 0);
+                cost = (m.cost_value || 0) + tollProv;
+            } else {
+                const clientTablesForM = allClientTables.filter(t => t.client === clientName);
+                const fin = calculateMissionFinancials(m, clientTablesForM, allProviderTables, clientObj);
+                revenue = fin.client.total || 0;
+                cost = fin.provider.total || 0;
+            }
             const mLucro = revenue - cost;
             const mPct = revenue > 0 ? Math.round((mLucro / revenue) * 100) : 0;
 
