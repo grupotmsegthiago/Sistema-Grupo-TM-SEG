@@ -188,7 +188,11 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
   }, [currentUser]);
   
   const isCommercial = useMemo(() => {
-      return (currentUser?.role || '').toLowerCase() === 'comercial';
+      if (!currentUser) return false;
+      const roleLower = (currentUser.role || '').toLowerCase();
+      if (roleLower !== 'comercial') return false;
+      const hasClientViewPerms = currentUser.permissions?.some((p: string) => p.startsWith('client_view:'));
+      return !!hasClientViewPerms;
   }, [currentUser]);
 
   const canEditMission = useMemo(() => {
