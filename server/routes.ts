@@ -300,6 +300,156 @@ export async function registerRoutes(
     }
   });
 
+  app.get("/api/platform/costs", async (_req: Request, res: Response) => {
+    try {
+      const BRL_RATE = Number(process.env.USD_TO_BRL || 5.80);
+
+      const replitPlan = process.env.REPLIT_PLAN || 'Hacker';
+      const replitPlanCosts: Record<string, { usd: number, label: string }> = {
+        'Free': { usd: 0, label: 'Free' },
+        'Hacker': { usd: 7, label: 'Hacker ($7/mês)' },
+        'Pro': { usd: 20, label: 'Pro ($20/mês)' },
+        'Teams': { usd: 25, label: 'Teams ($25/mês)' },
+      };
+      const replitBase = replitPlanCosts[replitPlan] || replitPlanCosts['Hacker'];
+
+      const supabasePlan = process.env.SUPABASE_PLAN || 'Free';
+      const supabasePlanCosts: Record<string, { usd: number, label: string }> = {
+        'Free': { usd: 0, label: 'Free Tier' },
+        'Pro': { usd: 25, label: 'Pro ($25/mês)' },
+        'Team': { usd: 599, label: 'Team ($599/mês)' },
+      };
+      const supabaseBase = supabasePlanCosts[supabasePlan] || supabasePlanCosts['Free'];
+
+      const replitExtraEgress = Number(process.env.REPLIT_EXTRA_EGRESS_USD || 0);
+      const replitExtraCompute = Number(process.env.REPLIT_EXTRA_COMPUTE_USD || 0);
+      const replitExtraStorage = Number(process.env.REPLIT_EXTRA_STORAGE_USD || 0);
+      const supabaseExtraDb = Number(process.env.SUPABASE_EXTRA_DB_USD || 0);
+      const supabaseExtraBandwidth = Number(process.env.SUPABASE_EXTRA_BANDWIDTH_USD || 0);
+      const supabaseExtraStorage = Number(process.env.SUPABASE_EXTRA_STORAGE_USD || 0);
+
+      const googleMapsEstimate = Number(process.env.GOOGLE_MAPS_MONTHLY_USD || 0);
+      const resendEstimate = Number(process.env.RESEND_MONTHLY_USD || 0);
+      const otherCosts = Number(process.env.OTHER_MONTHLY_COSTS_USD || 0);
+
+      const replitTotalUsd = replitBase.usd + replitExtraEgress + replitExtraCompute + replitExtraStorage;
+      const supabaseTotalUsd = supabaseBase.usd + supabaseExtraDb + supabaseExtraBandwidth + supabaseExtraStorage;
+      const apiTotalUsd = googleMapsEstimate + resendEstimate + otherCosts;
+      const grandTotalUsd = replitTotalUsd + supabaseTotalUsd + apiTotalUsd;
+
+      const toR = (v: number) => +(v * BRL_RATE).toFixed(2);
+
+      const DB_CAPACITY_GB = Number(process.env.DB_CAPACITY_GB || 0.5);
+      let dbUsedMb = 0;
+      try {
+        const { data: capData } = await supabaseAdmin.from('missions').select('*', { count: 'exact', head: true });
+        const missionsCount = (capData as any)?.length || 0;
+        dbUsedMb = missionsCount * 0.001;
+      } catch {}
+
+      const savingTips = [];
+
+      if (supabasePlan === 'Free') {
+        savingTips.push({
+          area: 'Supabase',
+          tip: 'Limpe registros antigos de system_logs periodicamente para economizar espaço no banco Free Tier (500MB).',
+          impact: 'Médio',
+          action: 'DELETE FROM system_logs WHERE created_at < NOW() - INTERVAL \'90 days\''
+        });
+        savingTips.push({
+          area: 'Supabase',
+          tip: 'Comprima imagens antes de fazer upload no Storage para reduzir os 1GB gratuitos.',
+          impact: 'Baixo',
+          action: 'Use ferramentas como TinyPNG ou compressão no frontend antes do upload.'
+        });
+      }
+
+      savingTips.push({
+        area: 'Replit',
+        tip: 'Configure o Repl para hibernar após inatividade. O Always-On consome créditos mesmo sem tráfego.',
+        impact: 'Alto',
+        action: 'Desative Always-On se o sistema não precisa estar 24/7 disponível.'
+      });
+
+      savingTips.push({
+        area: 'Google Maps',
+        tip: 'Cache rotas calculadas localmente. Cada chamada de Directions API custa ~$0.005-$0.01.',
+        impact: 'Alto',
+        action: 'Salve totalDistance e estimatedTime na missão ao calcular a rota pela primeira vez.'
+      });
+
+      savingTips.push({
+        area: 'Gemini AI',
+        tip: 'As chamadas AI via Replit Integrations são gratuitas. Aproveite para chatbot, auditoria e análises.',
+        impact: 'Info',
+        action: 'Continue usando o Gemini via Replit AI Integrations (sem custo adicional).'
+      });
+
+      savingTips.push({
+        area: 'Supabase',
+        tip: 'Adicione índices nas colunas mais consultadas (client, status, created_at) para reduzir tempo de query.',
+        impact: 'Médio',
+        action: 'CREATE INDEX idx_missions_client ON missions(client); CREATE INDEX idx_missions_status ON missions(status);'
+      });
+
+      savingTips.push({
+        area: 'Replit',
+        tip: 'Use variáveis de ambiente ao invés de hardcode para trocar de plano sem alterar código.',
+        impact: 'Baixo',
+        action: 'Defina REPLIT_PLAN, SUPABASE_PLAN, DB_CAPACITY_GB no painel de Secrets.'
+      });
+
+      savingTips.push({
+        area: 'Geral',
+        tip: 'Monitore o consumo mensal de bandwidth do Supabase. O Free Tier tem 2GB/mês de transferência.',
+        impact: 'Médio',
+        action: 'Verifique o dashboard do Supabase em Usage > Bandwidth mensalmente.'
+      });
+
+      res.json({
+        currency_rate: BRL_RATE,
+        replit: {
+          plan: replitBase.label,
+          base_usd: replitBase.usd,
+          base_brl: toR(replitBase.usd),
+          extras: {
+            egress: { usd: replitExtraEgress, brl: toR(replitExtraEgress) },
+            compute: { usd: replitExtraCompute, brl: toR(replitExtraCompute) },
+            storage: { usd: replitExtraStorage, brl: toR(replitExtraStorage) },
+          },
+          total_usd: replitTotalUsd,
+          total_brl: toR(replitTotalUsd),
+        },
+        supabase: {
+          plan: supabaseBase.label,
+          base_usd: supabaseBase.usd,
+          base_brl: toR(supabaseBase.usd),
+          extras: {
+            db: { usd: supabaseExtraDb, brl: toR(supabaseExtraDb) },
+            bandwidth: { usd: supabaseExtraBandwidth, brl: toR(supabaseExtraBandwidth) },
+            storage: { usd: supabaseExtraStorage, brl: toR(supabaseExtraStorage) },
+          },
+          total_usd: supabaseTotalUsd,
+          total_brl: toR(supabaseTotalUsd),
+          db_capacity_gb: DB_CAPACITY_GB,
+        },
+        apis: {
+          google_maps: { usd: googleMapsEstimate, brl: toR(googleMapsEstimate) },
+          resend: { usd: resendEstimate, brl: toR(resendEstimate) },
+          other: { usd: otherCosts, brl: toR(otherCosts) },
+          total_usd: apiTotalUsd,
+          total_brl: toR(apiTotalUsd),
+        },
+        total_usd: grandTotalUsd,
+        total_brl: toR(grandTotalUsd),
+        saving_tips: savingTips,
+        updated_at: new Date().toISOString(),
+      });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
   app.get("/api/supabase/billing-links", (_req: Request, res: Response) => {
     const projectRef = 'ajhmmjuewdsukecaimik';
     res.json({

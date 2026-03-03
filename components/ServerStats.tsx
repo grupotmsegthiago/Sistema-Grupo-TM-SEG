@@ -100,8 +100,9 @@ const ServerStats: React.FC = () => {
   const [billingLinks, setBillingLinks] = useState<BillingLinks | null>(null);
   const [monitorLoading, setMonitorLoading] = useState(false);
   const [showAllTables, setShowAllTables] = useState(false);
-  const [activeMonitorTab, setActiveMonitorTab] = useState<'overview' | 'database' | 'storage' | 'links'>('overview');
+  const [activeMonitorTab, setActiveMonitorTab] = useState<'overview' | 'database' | 'storage' | 'links' | 'costs'>('overview');
   const [dbCapacity, setDbCapacity] = useState<any>(null);
+  const [platformCosts, setPlatformCosts] = useState<any>(null);
 
   useEffect(() => {
       runFullDiagnostic();
@@ -127,6 +128,10 @@ const ServerStats: React.FC = () => {
           if (healthRes.status === 'fulfilled') setHealthCheck(healthRes.value);
           if (linksRes.status === 'fulfilled') setBillingLinks(linksRes.value);
           if (capRes.status === 'fulfilled') setDbCapacity(capRes.value);
+          try {
+              const costsResp = await fetch('/api/platform/costs');
+              if (costsResp.ok) setPlatformCosts(await costsResp.json());
+          } catch {}
       } catch (err) {
           console.error('Monitor fetch error:', err);
       } finally {
@@ -408,7 +413,7 @@ const ServerStats: React.FC = () => {
             </div>
 
             <div className="flex gap-1 mb-6 bg-slate-800/50 p-1 rounded-xl">
-                {(['overview', 'database', 'storage', 'links'] as const).map(tab => (
+                {(['overview', 'database', 'storage', 'costs', 'links'] as const).map(tab => (
                     <button
                         key={tab}
                         onClick={() => setActiveMonitorTab(tab)}
@@ -416,7 +421,7 @@ const ServerStats: React.FC = () => {
                             activeMonitorTab === tab ? 'bg-blue-600 text-white shadow-lg' : 'text-slate-400 hover:text-white hover:bg-slate-700'
                         }`}
                     >
-                        {tab === 'overview' ? 'Visão Geral' : tab === 'database' ? 'Banco de Dados' : tab === 'storage' ? 'Storage' : 'Links Úteis'}
+                        {tab === 'overview' ? 'Visão Geral' : tab === 'database' ? 'Banco de Dados' : tab === 'storage' ? 'Storage' : tab === 'costs' ? 'Custos' : 'Links Úteis'}
                     </button>
                 ))}
             </div>
@@ -677,6 +682,199 @@ const ServerStats: React.FC = () => {
                             <p className="text-sm font-bold text-slate-400">
                                 {monitorLoading ? 'Carregando dados do Storage...' : 'Nenhum bucket encontrado ou sem permissão de acesso'}
                             </p>
+                        </div>
+                    )}
+                </div>
+            )}
+
+            {activeMonitorTab === 'costs' && (
+                <div className="space-y-6">
+                    {platformCosts ? (() => {
+                        const c = platformCosts;
+                        const fmtR = (v: number) => `R$ ${v.toFixed(2).replace('.', ',')}`;
+                        const fmtU = (v: number) => `$ ${v.toFixed(2)}`;
+
+                        const pieData = [
+                            { name: 'Replit', value: c.replit.total_brl, color: '#3b82f6' },
+                            { name: 'Supabase', value: c.supabase.total_brl, color: '#22c55e' },
+                            { name: 'APIs', value: c.apis.total_brl, color: '#f59e0b' },
+                        ].filter(d => d.value > 0);
+
+                        return (
+                            <div className="space-y-6">
+                                <div className="bg-gradient-to-r from-slate-800 to-slate-900 rounded-2xl border border-slate-700 p-6">
+                                    <div className="flex items-center justify-between mb-4">
+                                        <h3 className="text-sm font-black text-white uppercase tracking-widest flex items-center gap-2">
+                                            <DollarSign size={16} className="text-emerald-400" /> Custo Mensal Total
+                                        </h3>
+                                        <span className="text-[9px] text-slate-500">Câmbio: {fmtR(c.currency_rate)}/USD</span>
+                                    </div>
+                                    <div className="flex items-end gap-3 mb-2">
+                                        <p className="text-5xl font-black text-emerald-400 font-mono tracking-tighter">{fmtR(c.total_brl)}</p>
+                                        <p className="text-lg font-bold text-slate-500 pb-1">{fmtU(c.total_usd)}</p>
+                                    </div>
+                                    <p className="text-[10px] text-slate-500">Estimativa mensal baseada nos planos e excedentes configurados</p>
+                                </div>
+
+                                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                    <div className="bg-slate-800/50 rounded-xl border border-blue-700/30 p-5">
+                                        <div className="flex items-center gap-2 mb-4">
+                                            <div className="w-8 h-8 bg-blue-600/20 rounded-lg flex items-center justify-center">
+                                                <Server size={16} className="text-blue-400" />
+                                            </div>
+                                            <div>
+                                                <p className="text-[10px] font-black text-blue-400 uppercase">Replit</p>
+                                                <p className="text-[9px] text-slate-500">{c.replit.plan}</p>
+                                            </div>
+                                        </div>
+                                        <p className="text-2xl font-black text-white font-mono mb-3">{fmtR(c.replit.total_brl)}</p>
+                                        <div className="space-y-1.5 border-t border-slate-700 pt-3">
+                                            <div className="flex justify-between text-[10px]">
+                                                <span className="text-slate-400">Plano Base</span>
+                                                <span className="text-white font-bold">{fmtR(c.replit.base_brl)}</span>
+                                            </div>
+                                            {c.replit.extras.egress.brl > 0 && (
+                                                <div className="flex justify-between text-[10px]">
+                                                    <span className="text-slate-400">Egress Extra</span>
+                                                    <span className="text-amber-400 font-bold">{fmtR(c.replit.extras.egress.brl)}</span>
+                                                </div>
+                                            )}
+                                            {c.replit.extras.compute.brl > 0 && (
+                                                <div className="flex justify-between text-[10px]">
+                                                    <span className="text-slate-400">Compute Extra</span>
+                                                    <span className="text-amber-400 font-bold">{fmtR(c.replit.extras.compute.brl)}</span>
+                                                </div>
+                                            )}
+                                            {c.replit.extras.storage.brl > 0 && (
+                                                <div className="flex justify-between text-[10px]">
+                                                    <span className="text-slate-400">Storage Extra</span>
+                                                    <span className="text-amber-400 font-bold">{fmtR(c.replit.extras.storage.brl)}</span>
+                                                </div>
+                                            )}
+                                        </div>
+                                    </div>
+
+                                    <div className="bg-slate-800/50 rounded-xl border border-emerald-700/30 p-5">
+                                        <div className="flex items-center gap-2 mb-4">
+                                            <div className="w-8 h-8 bg-emerald-600/20 rounded-lg flex items-center justify-center">
+                                                <Database size={16} className="text-emerald-400" />
+                                            </div>
+                                            <div>
+                                                <p className="text-[10px] font-black text-emerald-400 uppercase">Supabase</p>
+                                                <p className="text-[9px] text-slate-500">{c.supabase.plan}</p>
+                                            </div>
+                                        </div>
+                                        <p className="text-2xl font-black text-white font-mono mb-3">{fmtR(c.supabase.total_brl)}</p>
+                                        <div className="space-y-1.5 border-t border-slate-700 pt-3">
+                                            <div className="flex justify-between text-[10px]">
+                                                <span className="text-slate-400">Plano Base</span>
+                                                <span className="text-white font-bold">{fmtR(c.supabase.base_brl)}</span>
+                                            </div>
+                                            <div className="flex justify-between text-[10px]">
+                                                <span className="text-slate-400">DB Capacity</span>
+                                                <span className="text-slate-300 font-bold">{c.supabase.db_capacity_gb} GB</span>
+                                            </div>
+                                            {c.supabase.extras.db.brl > 0 && (
+                                                <div className="flex justify-between text-[10px]">
+                                                    <span className="text-slate-400">DB Extra</span>
+                                                    <span className="text-amber-400 font-bold">{fmtR(c.supabase.extras.db.brl)}</span>
+                                                </div>
+                                            )}
+                                            {c.supabase.extras.bandwidth.brl > 0 && (
+                                                <div className="flex justify-between text-[10px]">
+                                                    <span className="text-slate-400">Bandwidth Extra</span>
+                                                    <span className="text-amber-400 font-bold">{fmtR(c.supabase.extras.bandwidth.brl)}</span>
+                                                </div>
+                                            )}
+                                            {c.supabase.extras.storage.brl > 0 && (
+                                                <div className="flex justify-between text-[10px]">
+                                                    <span className="text-slate-400">Storage Extra</span>
+                                                    <span className="text-amber-400 font-bold">{fmtR(c.supabase.extras.storage.brl)}</span>
+                                                </div>
+                                            )}
+                                        </div>
+                                    </div>
+
+                                    <div className="bg-slate-800/50 rounded-xl border border-amber-700/30 p-5">
+                                        <div className="flex items-center gap-2 mb-4">
+                                            <div className="w-8 h-8 bg-amber-600/20 rounded-lg flex items-center justify-center">
+                                                <Globe size={16} className="text-amber-400" />
+                                            </div>
+                                            <div>
+                                                <p className="text-[10px] font-black text-amber-400 uppercase">APIs Externas</p>
+                                                <p className="text-[9px] text-slate-500">Google, Resend, etc.</p>
+                                            </div>
+                                        </div>
+                                        <p className="text-2xl font-black text-white font-mono mb-3">{fmtR(c.apis.total_brl)}</p>
+                                        <div className="space-y-1.5 border-t border-slate-700 pt-3">
+                                            <div className="flex justify-between text-[10px]">
+                                                <span className="text-slate-400">Google Maps</span>
+                                                <span className="text-white font-bold">{fmtR(c.apis.google_maps.brl)}</span>
+                                            </div>
+                                            <div className="flex justify-between text-[10px]">
+                                                <span className="text-slate-400">Resend (Email)</span>
+                                                <span className="text-white font-bold">{fmtR(c.apis.resend.brl)}</span>
+                                            </div>
+                                            {c.apis.other.brl > 0 && (
+                                                <div className="flex justify-between text-[10px]">
+                                                    <span className="text-slate-400">Outros</span>
+                                                    <span className="text-white font-bold">{fmtR(c.apis.other.brl)}</span>
+                                                </div>
+                                            )}
+                                            <div className="flex justify-between text-[10px] pt-1">
+                                                <span className="text-slate-400">Gemini AI</span>
+                                                <span className="text-emerald-400 font-bold">Gratuito (Replit)</span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {c.saving_tips && c.saving_tips.length > 0 && (
+                                    <div className="bg-slate-800/50 rounded-xl border border-slate-700 p-5">
+                                        <h3 className="text-xs font-black text-white uppercase tracking-widest flex items-center gap-2 mb-4">
+                                            <Sparkles size={14} className="text-yellow-400" /> Dicas de Economia
+                                        </h3>
+                                        <div className="space-y-3">
+                                            {c.saving_tips.map((tip: any, i: number) => {
+                                                const impactColor = tip.impact === 'Alto' ? 'bg-red-900/40 text-red-400 border-red-800/50' :
+                                                    tip.impact === 'Médio' ? 'bg-amber-900/40 text-amber-400 border-amber-800/50' :
+                                                    tip.impact === 'Info' ? 'bg-blue-900/40 text-blue-400 border-blue-800/50' :
+                                                    'bg-slate-700/40 text-slate-400 border-slate-600/50';
+                                                const areaColor = tip.area === 'Replit' ? 'text-blue-400' :
+                                                    tip.area === 'Supabase' ? 'text-emerald-400' :
+                                                    tip.area === 'Google Maps' ? 'text-red-400' :
+                                                    tip.area === 'Gemini AI' ? 'text-purple-400' : 'text-slate-300';
+                                                return (
+                                                    <div key={i} className="bg-slate-900/50 rounded-lg p-3.5 border border-slate-700/50">
+                                                        <div className="flex items-center justify-between mb-1.5">
+                                                            <span className={`text-[10px] font-black uppercase ${areaColor}`}>{tip.area}</span>
+                                                            <span className={`text-[8px] font-black uppercase px-2 py-0.5 rounded-full border ${impactColor}`}>
+                                                                {tip.impact === 'Alto' ? 'IMPACTO ALTO' : tip.impact === 'Médio' ? 'IMPACTO MÉDIO' : tip.impact === 'Info' ? 'INFORMATIVO' : 'IMPACTO BAIXO'}
+                                                            </span>
+                                                        </div>
+                                                        <p className="text-[11px] text-slate-300 font-bold mb-1">{tip.tip}</p>
+                                                        <p className="text-[9px] text-slate-500 font-mono bg-slate-800/50 rounded px-2 py-1 mt-1.5">{tip.action}</p>
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
+                                    </div>
+                                )}
+
+                                <div className="bg-slate-800/30 rounded-xl border border-slate-700/50 p-4">
+                                    <p className="text-[10px] text-slate-500 font-bold">
+                                        Os valores são estimativas baseadas nos planos configurados. Para valores exatos, verifique o billing do
+                                        <a href="https://replit.com/account" target="_blank" rel="noreferrer" className="text-blue-400 ml-1">Replit</a> e do
+                                        <a href="https://supabase.com/dashboard/org/_/billing" target="_blank" rel="noreferrer" className="text-emerald-400 ml-1">Supabase</a>.
+                                        Configure os excedentes reais via variáveis de ambiente (REPLIT_EXTRA_*, SUPABASE_EXTRA_*, GOOGLE_MAPS_MONTHLY_USD).
+                                    </p>
+                                </div>
+                            </div>
+                        );
+                    })() : (
+                        <div className="flex items-center justify-center py-12">
+                            <Loader2 size={24} className="animate-spin text-blue-400 mr-3" />
+                            <p className="text-sm font-bold text-slate-400">Carregando dados de custos...</p>
                         </div>
                     )}
                 </div>
