@@ -89,7 +89,8 @@ const FinancialAccountManager: React.FC<Props> = ({ onClose }) => {
                 fetch(`/api/investment/snapshots-all?days=${days}`).then(r => r.json()),
             ]);
 
-            const accData = accRes.data || [];
+            const EXCLUDED_ACCOUNTS = ['TM GESTÃO', 'TM SECURITY', 'TM SEGURANÇA'];
+            const accData = (accRes.data || []).filter((acc: any) => !EXCLUDED_ACCOUNTS.includes((acc.name || '').toUpperCase().trim()));
             setCategories((catRes.data || []) as any);
 
             const snapshots: BalanceSnapshot[] = (snapRes || []).map((s: any) => ({ ...s, balance: parseFloat(s.balance) }));
