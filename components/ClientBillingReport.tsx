@@ -138,6 +138,7 @@ const ClientBillingReport: React.FC = () => {
 
     const [expandedClient, setExpandedClient] = useState<string | null>(null);
     const [expandedProvider, setExpandedProvider] = useState<string | null>(null);
+    const [sortMode, setSortMode] = useState<'valor' | 'pct'>('valor');
 
     const chartComputedData = useMemo(() => {
         if (!chartsGenerated || allPeriodMissions.length === 0) return { clientData: [] as ChartItem[], providerData: [] as ChartItem[] };
@@ -652,6 +653,11 @@ const ClientBillingReport: React.FC = () => {
                                         </div>
                                         {isExpanded && (
                                             <div className="ml-4 mr-1 mt-1 mb-2 border border-blue-100 rounded-lg overflow-hidden animate-fade-in">
+                                                <div className="flex items-center gap-1 px-2 py-1.5 bg-blue-50/80 border-b border-blue-100">
+                                                    <span className="text-[9px] font-bold text-blue-600 mr-1">Ordenar:</span>
+                                                    <button onClick={(e) => { e.stopPropagation(); setSortMode('valor'); }} className={`text-[9px] font-black px-2 py-0.5 rounded transition-all ${sortMode === 'valor' ? 'bg-blue-600 text-white' : 'bg-white text-blue-600 border border-blue-200 hover:bg-blue-50'}`} data-testid="sort-valor-client">R$ Valor</button>
+                                                    <button onClick={(e) => { e.stopPropagation(); setSortMode('pct'); }} className={`text-[9px] font-black px-2 py-0.5 rounded transition-all ${sortMode === 'pct' ? 'bg-blue-600 text-white' : 'bg-white text-blue-600 border border-blue-200 hover:bg-blue-50'}`} data-testid="sort-pct-client">% Margem</button>
+                                                </div>
                                                 <table className="w-full text-[10px]">
                                                     <thead>
                                                         <tr className="bg-blue-50">
@@ -667,7 +673,7 @@ const ClientBillingReport: React.FC = () => {
                                                         </tr>
                                                     </thead>
                                                     <tbody>
-                                                        {item.missions.map((m, mi) => (
+                                                        {[...item.missions].sort((a, b) => sortMode === 'valor' ? a.lucro - b.lucro : a.pct - b.pct).map((m, mi) => (
                                                             <tr key={mi} className={`border-t border-blue-50 ${m.lucro < 0 ? 'bg-red-50' : mi % 2 === 0 ? 'bg-white' : 'bg-gray-50/50'}`}>
                                                                 <td className="px-2 py-1 font-black text-gray-800">{m.id.replace('GTM-', '')}</td>
                                                                 <td className="px-2 py-1 text-gray-600 font-bold">{m.date}</td>
@@ -727,6 +733,11 @@ const ClientBillingReport: React.FC = () => {
                                         </div>
                                         {isExpanded && (
                                             <div className="ml-4 mr-1 mt-1 mb-2 border border-red-100 rounded-lg overflow-hidden animate-fade-in">
+                                                <div className="flex items-center gap-1 px-2 py-1.5 bg-red-50/80 border-b border-red-100">
+                                                    <span className="text-[9px] font-bold text-red-600 mr-1">Ordenar:</span>
+                                                    <button onClick={(e) => { e.stopPropagation(); setSortMode('valor'); }} className={`text-[9px] font-black px-2 py-0.5 rounded transition-all ${sortMode === 'valor' ? 'bg-red-600 text-white' : 'bg-white text-red-600 border border-red-200 hover:bg-red-50'}`} data-testid="sort-valor-provider">R$ Valor</button>
+                                                    <button onClick={(e) => { e.stopPropagation(); setSortMode('pct'); }} className={`text-[9px] font-black px-2 py-0.5 rounded transition-all ${sortMode === 'pct' ? 'bg-red-600 text-white' : 'bg-white text-red-600 border border-red-200 hover:bg-red-50'}`} data-testid="sort-pct-provider">% Margem</button>
+                                                </div>
                                                 <table className="w-full text-[10px]">
                                                     <thead>
                                                         <tr className="bg-red-50">
@@ -742,7 +753,7 @@ const ClientBillingReport: React.FC = () => {
                                                         </tr>
                                                     </thead>
                                                     <tbody>
-                                                        {item.missions.map((m, mi) => (
+                                                        {[...item.missions].sort((a, b) => sortMode === 'valor' ? a.lucro - b.lucro : a.pct - b.pct).map((m, mi) => (
                                                             <tr key={mi} className={`border-t border-red-50 ${m.lucro < 0 ? 'bg-red-50' : mi % 2 === 0 ? 'bg-white' : 'bg-gray-50/50'}`}>
                                                                 <td className="px-2 py-1 font-black text-gray-800">{m.id.replace('GTM-', '')}</td>
                                                                 <td className="px-2 py-1 text-gray-600 font-bold">{m.date}</td>
