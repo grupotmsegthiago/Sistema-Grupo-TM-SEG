@@ -73,6 +73,7 @@ interface Props {
     clientsData: Client[];
     currentTime: Date;
     onOpenMission?: (mission: Mission) => void;
+    onRefreshMissions?: () => void;
     viewPeriod?: string;
     customStartDate?: string;
     customEndDate?: string;
@@ -88,7 +89,7 @@ const mapViewPeriodToDash = (vp?: string): DashPeriod => {
     return map[vp] || 'MONTH';
 };
 
-const ExecutiveDashboard: React.FC<Props> = ({ missions, isDirector, clientTables, providerTables, clientsData, onOpenMission, viewPeriod: parentPeriod, customStartDate: parentStartDate, customEndDate: parentEndDate }) => {
+const ExecutiveDashboard: React.FC<Props> = ({ missions, isDirector, clientTables, providerTables, clientsData, onOpenMission, onRefreshMissions, viewPeriod: parentPeriod, customStartDate: parentStartDate, customEndDate: parentEndDate }) => {
 
     const [refreshKey, setRefreshKey] = useState(0);
     const [lastUpdate, setLastUpdate] = useState(new Date());
@@ -110,10 +111,27 @@ const ExecutiveDashboard: React.FC<Props> = ({ missions, isDirector, clientTable
     const [adjustedOsIds, setAdjustedOsIds] = useState<Set<string>>(new Set());
     const prevMissionFinancialsRef = useRef<any[] | null>(null);
 
+    const [isRefreshingExcel, setIsRefreshingExcel] = useState(false);
+
     const handleRefresh = useCallback(() => {
         setRefreshKey(k => k + 1);
         setLastUpdate(new Date());
     }, []);
+
+    const handleRefreshExcelComparison = useCallback(() => {
+        if (onRefreshMissions) {
+            setIsRefreshingExcel(true);
+            onRefreshMissions();
+            setTimeout(() => {
+                setRefreshKey(k => k + 1);
+                setLastUpdate(new Date());
+                setIsRefreshingExcel(false);
+            }, 2000);
+        } else {
+            setRefreshKey(k => k + 1);
+            setLastUpdate(new Date());
+        }
+    }, [onRefreshMissions]);
 
     const filteredMissions = useMemo(() => {
         const [start, end] = getDateRange(period, customStart, customEnd);
@@ -879,10 +897,16 @@ const ExecutiveDashboard: React.FC<Props> = ({ missions, isDirector, clientTable
                     </div>
                     <div className="flex items-center gap-2">
                         {excelComparison && (
+                            <>
+                            <button onClick={handleRefreshExcelComparison} disabled={isRefreshingExcel}
+                                className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-50 text-emerald-700 rounded-lg text-[10px] font-black uppercase hover:bg-emerald-100 transition-all disabled:opacity-50" data-testid="button-refresh-excel">
+                                <RefreshCw size={11} className={isRefreshingExcel ? 'animate-spin' : ''} /> {isRefreshingExcel ? 'Atualizando...' : 'Atualizar'}
+                            </button>
                             <button onClick={() => { setExcelComparison(null); setExcelAiAnalysis(null); setShowExcelPanel(false); setAdjustedOsIds(new Set()); }}
                                 className="px-3 py-1.5 bg-gray-100 text-gray-600 rounded-lg text-[10px] font-black uppercase hover:bg-gray-200 transition-all" data-testid="button-clear-excel">
                                 Limpar
                             </button>
+                            </>
                         )}
                         <input type="file" ref={fileInputRef} accept=".xlsx,.xls,.xlsb,.csv" onChange={handleExcelUpload} className="hidden" data-testid="input-excel-upload" />
                         <button onClick={() => fileInputRef.current?.click()} disabled={isExcelLoading}

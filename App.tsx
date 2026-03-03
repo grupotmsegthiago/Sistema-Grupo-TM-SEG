@@ -288,7 +288,7 @@ const App: React.FC = () => {
             </main>
         </div>
         {isProfileSettingsOpen && ( <ProfileSettingsModal onClose={() => setIsProfileSettingsOpen(false)} onSuccess={() => { setIsProfileSettingsOpen(false); alert("Dados atualizados com sucesso! Por segurança, por favor, faça login novamente."); handleLogout(); }} /> )}
-        {billingMissionId && billingMission && ( <MissionFinancialModal isOpen={true} onClose={() => { setBillingMissionId(null); setBillingMission(null); }} mission={billingMission} onUpdate={() => {}} /> )}
+        {billingMissionId && billingMission && ( <MissionFinancialModal isOpen={true} onClose={() => { setBillingMissionId(null); setBillingMission(null); }} mission={billingMission} onUpdate={() => { setBillingMissionId(null); setBillingMission(null); window.dispatchEvent(new CustomEvent('refreshMissions')); }} /> )}
         </div>
     </NotificationProvider>
   );

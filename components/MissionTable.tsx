@@ -370,10 +370,13 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
             })
             .subscribe();
           const interval = setInterval(() => fetchMissions(true), 120000);
+          const handleExternalRefresh = () => fetchMissions(true);
+          window.addEventListener('refreshMissions', handleExternalRefresh);
           return () => {
             supabase.removeChannel(channel);
             supabase.removeChannel(broadcastChannel);
             clearInterval(interval);
+            window.removeEventListener('refreshMissions', handleExternalRefresh);
           };
       }
     }, [fetchMissions, currentUser, showNotification]);
@@ -743,6 +746,7 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
                 clientsData={clientsData}
                 currentTime={currentTime}
                 onOpenMission={handleOpenFinancialModal}
+                onRefreshMissions={() => fetchMissions(true)}
                 viewPeriod={viewPeriod}
                 customStartDate={customStartDate}
                 customEndDate={customEndDate}
