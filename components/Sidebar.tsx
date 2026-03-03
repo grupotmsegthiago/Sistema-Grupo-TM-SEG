@@ -93,7 +93,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, activeScreen, onNavigate, onL
     if (role === 'comercial') {
         const allowedItems = [
             'dashboard', 'missions', 'clients-group', 'clients', 'client-routes', 
-            'client-vehicles', 'quotes', 'ai-support', 'reports'
+            'client-vehicles', 'quotes', 'reports'
         ];
         // Bloqueia grupos inteiros que não são comerciais
         const forbiddenGroups = ['finance-group', 'providers-group', 'settings-group', 'support-network'];
@@ -126,7 +126,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, activeScreen, onNavigate, onL
         const avancadoAllowed = [
             'dashboard', 'missions', 'clients-group', 'clients', 'client-routes',
             'client-vehicles', 'quotes', 'providers-group', 'providers', 'provider-agents',
-            'alvara-control', 'ai-support', 'support-network', 'reports'
+            'alvara-control', 'support-network', 'reports'
         ];
         return avancadoAllowed.includes(itemId) || userPermissions.includes(itemId);
     }

@@ -220,12 +220,11 @@ const ClientForm: React.FC<ClientFormProps> = ({
       }
   };
 
-  const isFinanceAdmin = currentUser && (
-      currentUser.role === 'Diretoria' || 
-      currentUser.role === 'Administrador' || 
-      currentUser.role === 'Comercial' ||
-      (currentUser.permissions && currentUser.permissions.includes('*'))
-  );
+  const isFinanceAdmin = currentUser && (() => {
+      const r = (currentUser.role || '').toLowerCase();
+      return r === 'diretoria' || r === 'administrador' || r === 'comercial' ||
+             (currentUser.permissions && currentUser.permissions.includes('*'));
+  })();
 
   const fetchPriceTables = async (clientName: string) => {
       const { data } = await supabase.from('client_price_tables').select('*').eq('client', clientName).order('franchise_km', { ascending: true });

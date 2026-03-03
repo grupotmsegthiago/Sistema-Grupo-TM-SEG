@@ -217,7 +217,7 @@ const App: React.FC = () => {
       case 'dashboard': return <Dashboard />; 
       case 'missions': return <MissionTable onNewMission={() => navigateTo('new-mission')} />;
       case 'new-mission': return <MissionForm onBack={() => navigateTo('missions')} onSaveAndContinue={handleSaveAndContinue} onAddClient={() => navigateTo('client-form')} />;
-      case 'ai-support': return <AIChatbot />;
+      case 'ai-support': return null;
       case 'cost-optimization': return <CostOptimizationDashboard />;
       case 'db-maintenance': return <MaintenanceDashboard />;
       case 'fin-dashboard': return <FinancialDashboard />;
