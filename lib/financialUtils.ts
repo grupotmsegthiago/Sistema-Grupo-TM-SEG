@@ -273,14 +273,12 @@ export const calculateMissionFinancials = (
 
     let endDateObj = currentTime;
     
-    if (isTerminalStatus) {
-        const dbEndTime = parseSafeDate(mission.endTime || (mission as any).end_time);
-        if (dbEndTime) {
-            endDateObj = dbEndTime;
-        } else {
-            const lastUpdateDate = parseSafeDate(mission.lastUpdate);
-            endDateObj = lastUpdateDate || currentTime;
-        }
+    const dbEndTime = parseSafeDate(mission.endTime || (mission as any).end_time);
+    if (dbEndTime) {
+        endDateObj = dbEndTime;
+    } else if (isTerminalStatus) {
+        const lastUpdateDate = parseSafeDate(mission.lastUpdate);
+        endDateObj = lastUpdateDate || currentTime;
     } else if (isPending) {
         const lastUpdateDate = parseSafeDate(mission.lastUpdate);
         endDateObj = lastUpdateDate || currentTime;
