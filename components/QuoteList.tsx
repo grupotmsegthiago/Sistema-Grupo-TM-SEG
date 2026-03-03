@@ -63,7 +63,7 @@ const QuoteList: React.FC<Props> = ({ onAdd, onEdit, clientName, embedded = fals
         
         if (clientName) {
             quoteQuery = quoteQuery.eq('client_name', clientName);
-        } else if (isCommercial) {
+        } else if (isCommercial && user?.permissions?.some((p: string) => p.startsWith('client_view:'))) {
             const allowedIds = user?.permissions?.filter((p: string) => p.startsWith('client_view:')).map((p: string) => p.split(':')[1]) || [];
             if (allowedIds.length > 0) {
                 quoteQuery = quoteQuery.or(`created_by.eq."${user?.name}",client_id.in.(${allowedIds.join(',')})`);

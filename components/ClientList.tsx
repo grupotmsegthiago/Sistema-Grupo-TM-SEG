@@ -74,7 +74,7 @@ const ClientList: React.FC<ClientListProps> = ({ onAddClient, onEdit }) => {
 
       if (lockedClientId) {
           query = query.eq('id', lockedClientId);
-      } else if (isCommercial) {
+      } else if (isCommercial && currentUser?.permissions?.some((p: string) => p.startsWith('client_view:'))) {
           const allowedIds = currentUser?.permissions?.filter((p: string) => p.startsWith('client_view:')).map((p: string) => p.split(':')[1]) || [];
           if (allowedIds.length > 0) {
               query = query.or(`created_by.eq."${currentUser?.name}",id.in.(${allowedIds.join(',')})`);

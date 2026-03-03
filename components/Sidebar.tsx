@@ -104,9 +104,8 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, activeScreen, onNavigate, onL
         if (itemId === 'clients') return false;
     }
 
-    // REGRA DE OURO PARA ALVARÁ: Apenas Administrador ou Avançado
     if (itemId === 'alvara-control') {
-        const isAuthorized = role === 'administrador' || role === 'avançado' || role === 'avancado' || role === 'diretoria';
+        const isAuthorized = role === 'administrador' || role === 'avançado' || role === 'avancado' || role === 'diretoria' || userPermissions.includes('alvara-control');
         if (!isAuthorized) return false;
     }
 
