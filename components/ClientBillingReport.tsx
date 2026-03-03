@@ -2,8 +2,11 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { supabase } from '../lib/supabase';
 import { Mission, Client, ClientPriceTable, ProviderCostTable } from '../types';
-import { FileText, Search, Printer, Loader2, FileSpreadsheet } from 'lucide-react';
+import { FileText, Search, Printer, Loader2, FileSpreadsheet, BarChart3, Users, Building2 } from 'lucide-react';
 import { calculateMissionFinancials, extractCityFromAddress } from '../lib/financialUtils';
+import {
+    BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, LabelList
+} from 'recharts';
 import * as XLSX from 'xlsx';
 
 const ClientBillingReport: React.FC = () => {
@@ -16,6 +19,11 @@ const ClientBillingReport: React.FC = () => {
     const [providerTables, setProviderTables] = useState<ProviderCostTable[]>([]);
     const [isLoading, setIsLoading] = useState(false);
     const [reportGenerated, setReportGenerated] = useState(false);
+    const [allPeriodMissions, setAllPeriodMissions] = useState<any[]>([]);
+    const [allClientTables, setAllClientTables] = useState<ClientPriceTable[]>([]);
+    const [allProviderTables, setAllProviderTables] = useState<ProviderCostTable[]>([]);
+    const [chartsLoading, setChartsLoading] = useState(false);
+    const [chartsGenerated, setChartsGenerated] = useState(false);
 
     useEffect(() => {
         fetchClients();
@@ -92,6 +100,78 @@ const ClientBillingReport: React.FC = () => {
         } finally {
             setIsLoading(false);
         }
+    };
+
+    const handleFetchCharts = async () => {
+        if (!startDate || !endDate) { alert("Selecione o período."); return; }
+        setChartsLoading(true);
+        setChartsGenerated(false);
+        try {
+            const { data: missionData, error } = await supabase
+                .from('missions')
+                .select('*')
+                .eq('billing_approved', true)
+                .gte('created_at', `${startDate}T00:00:00`)
+                .lte('created_at', `${endDate}T23:59:59`)
+                .neq('status', 'Cancelada')
+                .order('created_at', { ascending: true });
+            if (error) throw error;
+
+            const [ptRes, pctRes] = await Promise.all([
+                supabase.from('client_price_tables').select('*'),
+                supabase.from('provider_cost_tables').select('*')
+            ]);
+            setAllClientTables(ptRes.data as ClientPriceTable[] || []);
+            setAllProviderTables(pctRes.data as any || []);
+            setAllPeriodMissions(missionData || []);
+            setChartsGenerated(true);
+        } catch (err) {
+            console.error(err);
+            alert("Erro ao carregar dados dos gráficos.");
+        } finally {
+            setChartsLoading(false);
+        }
+    };
+
+    const clientChartData = useMemo(() => {
+        if (!chartsGenerated || allPeriodMissions.length === 0) return [];
+        const totals: Record<string, number> = {};
+        allPeriodMissions.forEach(m => {
+            const name = m.client || 'Sem Cliente';
+            const clientObj = clients.find(c => c.name === name);
+            const displayName = clientObj?.trading_name || name;
+            const revenue = (m.revenue_value || 0) + (m.toll_value || 0);
+            totals[displayName] = (totals[displayName] || 0) + revenue;
+        });
+        return Object.entries(totals)
+            .sort((a, b) => b[1] - a[1])
+            .map(([nome, valor]) => ({ nome: nome.length > 20 ? nome.substring(0, 20) + '…' : nome, valor: Math.round(valor * 100) / 100, fullName: nome }));
+    }, [chartsGenerated, allPeriodMissions, clients]);
+
+    const providerChartData = useMemo(() => {
+        if (!chartsGenerated || allPeriodMissions.length === 0) return [];
+        const totals: Record<string, number> = {};
+        allPeriodMissions.forEach(m => {
+            const name = m.provider || 'Sem Fornecedor';
+            const cost = (m.cost_value || 0) + (m.toll_value_provider || m.toll_value || 0);
+            totals[name] = (totals[name] || 0) + cost;
+        });
+        return Object.entries(totals)
+            .sort((a, b) => b[1] - a[1])
+            .map(([nome, valor]) => ({ nome: nome.length > 20 ? nome.substring(0, 20) + '…' : nome, valor: Math.round(valor * 100) / 100, fullName: nome }));
+    }, [chartsGenerated, allPeriodMissions]);
+
+    const CHART_COLORS_CLIENT = ['#1e40af', '#2563eb', '#3b82f6', '#60a5fa', '#93c5fd', '#bfdbfe', '#1e3a5f', '#0c4a6e', '#0369a1', '#0284c7'];
+    const CHART_COLORS_PROVIDER = ['#991b1b', '#b91c1c', '#dc2626', '#ef4444', '#f87171', '#fca5a5', '#7f1d1d', '#9a3412', '#c2410c', '#ea580c'];
+
+    const ChartTooltip = ({ active, payload, label }: any) => {
+        if (!active || !payload?.[0]) return null;
+        return (
+            <div className="bg-gray-900 text-white px-4 py-3 rounded-xl shadow-2xl border border-gray-700 max-w-xs">
+                <p className="font-black text-gray-300 uppercase tracking-wider mb-1 text-[11px] border-b border-gray-700 pb-1">{payload[0].payload.fullName || label}</p>
+                <p className="font-bold text-[13px]">{fmtBRL(payload[0].value)}</p>
+            </div>
+        );
     };
 
     const handlePrint = () => { window.print(); };
@@ -443,9 +523,12 @@ const ClientBillingReport: React.FC = () => {
                                 <input type="date" className="w-full p-2.5 border border-gray-300 rounded-lg text-sm bg-white" value={endDate} onChange={e => setEndDate(e.target.value)} />
                             </div>
                         </div>
-                        <div className="flex gap-2">
+                        <div className="flex gap-2 flex-wrap">
                             <button onClick={handleGenerate} disabled={isLoading} className="flex-1 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2.5 rounded-lg text-sm font-bold shadow-sm flex items-center justify-center gap-2">
                                 {isLoading ? <Loader2 size={18} className="animate-spin" /> : <Search size={18} />} Gerar
+                            </button>
+                            <button onClick={handleFetchCharts} disabled={chartsLoading} className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2.5 rounded-lg text-sm font-bold shadow-sm flex items-center justify-center gap-2" data-testid="button-generate-charts">
+                                {chartsLoading ? <Loader2 size={18} className="animate-spin" /> : <BarChart3 size={18} />} Gráficos
                             </button>
                             {reportGenerated && (
                                 <>
@@ -461,6 +544,58 @@ const ClientBillingReport: React.FC = () => {
                     </div>
                 </div>
             </div>
+
+            {chartsGenerated && (clientChartData.length > 0 || providerChartData.length > 0) && (
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 no-print" data-testid="billing-charts-section">
+                    <div className="bg-white p-5 rounded-xl shadow-sm border border-gray-200">
+                        <div className="flex items-center gap-2.5 mb-4 pb-3 border-b border-gray-100">
+                            <div className="p-2 bg-blue-700 text-white rounded-lg"><Users size={14} /></div>
+                            <div>
+                                <h4 className="text-xs font-black text-gray-700 uppercase tracking-widest">Faturamento por Cliente</h4>
+                                <p className="text-[10px] text-gray-400 font-bold mt-0.5">{allPeriodMissions.length} missões no período &middot; {fmtBRL(clientChartData.reduce((s, d) => s + d.valor, 0))}</p>
+                            </div>
+                        </div>
+                        <ResponsiveContainer width="100%" height={Math.max(280, clientChartData.length * 38)}>
+                            <BarChart data={clientChartData} layout="vertical" margin={{ top: 5, right: 80, left: 5, bottom: 5 }}>
+                                <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                                <XAxis type="number" tick={{ fontSize: 10, fontWeight: 700, fill: '#64748b' }} tickFormatter={(v: number) => `R$ ${(v / 1000).toFixed(0)}k`} />
+                                <YAxis dataKey="nome" type="category" tick={{ fontSize: 10, fontWeight: 800, fill: '#475569' }} width={150} />
+                                <Tooltip content={<ChartTooltip />} />
+                                <Bar dataKey="valor" name="Faturamento" radius={[0, 6, 6, 0]} barSize={22}>
+                                    {clientChartData.map((_, i) => (
+                                        <Cell key={i} fill={CHART_COLORS_CLIENT[i % CHART_COLORS_CLIENT.length]} />
+                                    ))}
+                                    <LabelList dataKey="valor" position="right" style={{ fontSize: 10, fontWeight: 900, fill: '#1e293b' }} formatter={(v: number) => fmtBRL(v)} />
+                                </Bar>
+                            </BarChart>
+                        </ResponsiveContainer>
+                    </div>
+
+                    <div className="bg-white p-5 rounded-xl shadow-sm border border-gray-200">
+                        <div className="flex items-center gap-2.5 mb-4 pb-3 border-b border-gray-100">
+                            <div className="p-2 bg-red-700 text-white rounded-lg"><Building2 size={14} /></div>
+                            <div>
+                                <h4 className="text-xs font-black text-gray-700 uppercase tracking-widest">Custo por Fornecedor</h4>
+                                <p className="text-[10px] text-gray-400 font-bold mt-0.5">{allPeriodMissions.length} missões no período &middot; {fmtBRL(providerChartData.reduce((s, d) => s + d.valor, 0))}</p>
+                            </div>
+                        </div>
+                        <ResponsiveContainer width="100%" height={Math.max(280, providerChartData.length * 38)}>
+                            <BarChart data={providerChartData} layout="vertical" margin={{ top: 5, right: 80, left: 5, bottom: 5 }}>
+                                <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                                <XAxis type="number" tick={{ fontSize: 10, fontWeight: 700, fill: '#64748b' }} tickFormatter={(v: number) => `R$ ${(v / 1000).toFixed(0)}k`} />
+                                <YAxis dataKey="nome" type="category" tick={{ fontSize: 10, fontWeight: 800, fill: '#475569' }} width={150} />
+                                <Tooltip content={<ChartTooltip />} />
+                                <Bar dataKey="valor" name="Custo" radius={[0, 6, 6, 0]} barSize={22}>
+                                    {providerChartData.map((_, i) => (
+                                        <Cell key={i} fill={CHART_COLORS_PROVIDER[i % CHART_COLORS_PROVIDER.length]} />
+                                    ))}
+                                    <LabelList dataKey="valor" position="right" style={{ fontSize: 10, fontWeight: 900, fill: '#1e293b' }} formatter={(v: number) => fmtBRL(v)} />
+                                </Bar>
+                            </BarChart>
+                        </ResponsiveContainer>
+                    </div>
+                </div>
+            )}
 
             {reportGenerated && (
                 <div id="print-area" className="bg-white p-2 w-full border border-gray-200 rounded-lg">
