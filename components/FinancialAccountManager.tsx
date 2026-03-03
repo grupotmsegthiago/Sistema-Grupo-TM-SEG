@@ -89,8 +89,7 @@ const FinancialAccountManager: React.FC<Props> = ({ onClose }) => {
                 fetch(`/api/investment/snapshots-all?days=${days}`).then(r => r.json()),
             ]);
 
-            const EXCLUDED_ACCOUNTS = ['TM GESTÃO', 'TM SECURITY', 'TM SEGURANÇA'];
-            const accData = (accRes.data || []).filter((acc: any) => !EXCLUDED_ACCOUNTS.includes((acc.name || '').toUpperCase().trim()));
+            const accData = accRes.data || [];
             setCategories((catRes.data || []) as any);
 
             const snapshots: BalanceSnapshot[] = (snapRes || []).map((s: any) => ({ ...s, balance: parseFloat(s.balance) }));
@@ -278,9 +277,14 @@ Responda de forma concisa e profissional, em português, formatado com markdown.
         } finally { setIsAnalyzing(false); }
     };
 
+    const OPERATIONAL_ACCOUNTS = ['TM GESTÃO', 'TM SECURITY', 'TM SEGURANÇA'];
+    const isInvestmentAccount = (a: EnrichedAccount) => !OPERATIONAL_ACCOUNTS.includes((a.name || '').toUpperCase().trim());
+
     const totalInvestido = useMemo(() => accounts.reduce((s, a) => s + a.current_calculated_balance, 0), [accounts]);
-    const totalInitial = useMemo(() => accounts.reduce((s, a) => s + a.initial_balance, 0), [accounts]);
-    const totalChange = totalInvestido - totalInitial;
+    const investmentAccounts = useMemo(() => accounts.filter(isInvestmentAccount), [accounts]);
+    const totalInitial = useMemo(() => investmentAccounts.reduce((s, a) => s + a.initial_balance, 0), [investmentAccounts]);
+    const totalInvestmentBalance = useMemo(() => investmentAccounts.reduce((s, a) => s + a.current_calculated_balance, 0), [investmentAccounts]);
+    const totalChange = totalInvestmentBalance - totalInitial;
     const totalChangePct = totalInitial !== 0 ? (totalChange / totalInitial) * 100 : 0;
 
     const selectedAccount = useMemo(() => accounts.find(a => a.id === selectedAccountId), [accounts, selectedAccountId]);
@@ -599,8 +603,8 @@ Responda de forma concisa e profissional, em português, formatado com markdown.
                 </div>
                 <div className="bg-purple-50 border border-purple-200 p-4 rounded-xl shadow-sm">
                     <p className="text-[10px] font-bold uppercase text-gray-500 tracking-widest">Melhor Performance Mês</p>
-                    {accounts.filter(a => a.snapshots.length > 0).length > 0 ? (() => {
-                        const best = [...accounts].sort((a, b) => b.monthlyChangePercent - a.monthlyChangePercent)[0];
+                    {investmentAccounts.filter(a => a.snapshots.length > 0).length > 0 ? (() => {
+                        const best = [...investmentAccounts].filter(a => a.snapshots.length > 0).sort((a, b) => b.monthlyChangePercent - a.monthlyChangePercent)[0];
                         return (<><p className={`text-lg font-black mt-1 ${best.monthlyChangePercent >= 0 ? 'text-green-700' : 'text-red-700'}`}>{formatPct(best.monthlyChangePercent)}</p><p className="text-[10px] text-purple-600 font-bold truncate">{best.name}</p></>);
                     })() : <p className="text-gray-400 mt-1">-</p>}
                 </div>
