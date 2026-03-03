@@ -183,7 +183,7 @@ const MissionCardComponent: React.FC<MissionCardProps> = ({
     }, [mission, clientTables, providerTables, clientsData, isDirector, isTerminal]);
 
     const displayRevenue = useMemo(() => {
-        const dbToll = mission.toll_value || 0;
+        const dbToll = Math.max(0, mission.toll_value || 0);
         const storedValue = (mission.revenue_value || 0) + dbToll;
         const hasStoredRevenue = (mission.revenue_value != null && mission.revenue_value > 0);
         
@@ -199,7 +199,7 @@ const MissionCardComponent: React.FC<MissionCardProps> = ({
     }, [mission.revenue_value, mission.toll_value, financials]);
 
     const displayCost = useMemo(() => {
-        const tollProv = mission.toll_value_provider != null ? mission.toll_value_provider : (mission.toll_value || 0);
+        const tollProv = Math.max(0, mission.toll_value_provider != null ? mission.toll_value_provider : (mission.toll_value || 0));
         const storedValue = (mission.cost_value || 0) + tollProv;
         const hasStoredCost = (mission.cost_value != null && mission.cost_value > 0);
         

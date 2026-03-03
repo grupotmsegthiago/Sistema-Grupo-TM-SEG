@@ -112,8 +112,8 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
   const fetchHistoricalPatterns = async (currentMission: Mission, allProviderTables?: ProviderCostTable[]) => {
       if (!currentMission.client || !currentMission.origin) return;
       try {
-          const dbToll = currentMission.toll_value ?? 0;
-          const dbTollProv = currentMission.toll_value_provider != null ? currentMission.toll_value_provider : dbToll;
+          const dbToll = Math.max(0, currentMission.toll_value ?? 0);
+          const dbTollProv = Math.max(0, currentMission.toll_value_provider != null ? currentMission.toll_value_provider : dbToll);
           const hasRevenue = currentMission.revenue_value != null && currentMission.revenue_value > 0;
           if (currentMission.billing_approved && currentMission.toll_value !== null && currentMission.toll_value !== undefined) {
              setSuggestedToll(dbToll);
@@ -207,8 +207,8 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
               setEditEndTime(et ? `${et.toLocaleDateString('en-CA')}T${et.toLocaleTimeString('pt-BR', { hour:'2-digit', minute:'2-digit' })}` : '');
               setIsEditingOpsData(false);
 
-              const dbToll = mRes.data.toll_value || 0;
-              const dbTollProvider = mRes.data.toll_value_provider != null ? mRes.data.toll_value_provider : dbToll;
+              const dbToll = Math.max(0, mRes.data.toll_value || 0);
+              const dbTollProvider = Math.max(0, mRes.data.toll_value_provider != null ? mRes.data.toll_value_provider : dbToll);
               const savedRev = safeNumber(mRes.data.revenue_value);
               const savedCost = safeNumber(mRes.data.cost_value);
               if (mRes.data.billing_approved) {

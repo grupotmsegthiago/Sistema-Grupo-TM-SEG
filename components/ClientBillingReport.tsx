@@ -172,8 +172,8 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
             let cost: number;
 
             if (hasStoredRevenue || hasStoredCost) {
-                revenue = (m.revenue_value || 0) + (m.toll_value || 0);
-                const tollProv = m.toll_value_provider != null ? m.toll_value_provider : (m.toll_value || 0);
+                revenue = (m.revenue_value || 0) + Math.max(0, m.toll_value || 0);
+                const tollProv = Math.max(0, m.toll_value_provider != null ? m.toll_value_provider : (m.toll_value || 0));
                 cost = (m.cost_value || 0) + tollProv;
             } else {
                 const clientTablesForM = allClientTables.filter(t => t.client === clientName);
@@ -331,7 +331,7 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
             const hrExtraQtd = fin.client.excessHours;
             const hrExtraTotal = fin.client.extraHrVal;
             const durationHours = fin.durationHours;
-            const tollVal = m.toll_value || 0;
+            const tollVal = Math.max(0, m.toll_value || 0);
             const totalGeral = (m.revenue_value || 0) + tollVal;
 
             const cargoPlate = m._clientVehicle?.plate || '-';
