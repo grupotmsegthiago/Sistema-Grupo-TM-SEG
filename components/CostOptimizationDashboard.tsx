@@ -20,7 +20,8 @@ const CostOptimizationDashboard: React.FC = () => {
     const [aiRecommendation, setAiRecommendation] = useState<string | null>(null);
     const [connectionStatus, setConnectionStatus] = useState<'CHECKING' | 'READY' | 'NEED_KEY' | 'ERROR'>('CHECKING');
     
-    // Estados de Economia
+    const [platformCosts, setPlatformCosts] = useState<any>(null);
+
     const [achievedSavings, setAchievedSavings] = useState(0);
     const [optimizationHistory, setOptimizationHistory] = useState<any[]>([]);
 
@@ -47,6 +48,7 @@ const CostOptimizationDashboard: React.FC = () => {
                     setIsDirector(true);
                     await fetchUsageStats();
                     await fetchSavingsHistory();
+                    await fetchPlatformCosts();
                     checkAIHealth();
                 } else {
                     setIsLoading(false);
@@ -73,6 +75,15 @@ const CostOptimizationDashboard: React.FC = () => {
                 return acc + (match ? parseFloat(match[1].replace(',', '.')) : 0);
             }, 0);
             setAchievedSavings(totalSaved);
+        }
+    };
+
+    const fetchPlatformCosts = async () => {
+        try {
+            const resp = await fetch('/api/platform/costs');
+            if (resp.ok) setPlatformCosts(await resp.json());
+        } catch (e) {
+            console.error('Erro ao buscar custos de plataforma:', e);
         }
     };
 
@@ -233,6 +244,156 @@ const CostOptimizationDashboard: React.FC = () => {
                 )}
             </div>
 
+            {platformCosts && (
+                <div className="bg-white rounded-[32px] shadow-xl border border-gray-200 overflow-hidden" data-testid="platform-costs-section">
+                    <div className="bg-gradient-to-r from-slate-900 via-slate-800 to-slate-900 p-8 text-white relative overflow-hidden">
+                        <div className="absolute top-0 right-0 p-8 opacity-5"><Wallet size={160} /></div>
+                        <div className="relative z-10">
+                            <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
+                                <div>
+                                    <h2 className="text-2xl font-black uppercase tracking-tighter flex items-center gap-3">
+                                        <Server className="text-blue-400" /> Custos de Plataforma
+                                    </h2>
+                                    <p className="text-xs text-slate-400 font-bold uppercase tracking-[0.3em] mt-2">Replit + Supabase + APIs Externas — Estimativa Mensal</p>
+                                </div>
+                                <div className="bg-slate-800 p-6 rounded-[24px] border border-slate-700 flex flex-col items-end min-w-[200px]">
+                                    <span className="text-[10px] font-black text-slate-500 uppercase mb-1 tracking-widest">Total Mensal</span>
+                                    <span className="text-4xl font-black text-emerald-400 font-mono tracking-tighter" data-testid="text-total-mensal">
+                                        {formatCurrency(platformCosts.total_brl)}
+                                    </span>
+                                    <span className="text-[10px] text-slate-500 font-mono mt-1">$ {platformCosts.total_usd.toFixed(2)} USD (câmbio R$ {platformCosts.currency_rate})</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div className="p-8 grid grid-cols-1 md:grid-cols-3 gap-6">
+                        <div className="bg-blue-50 rounded-2xl border border-blue-100 p-6" data-testid="card-cost-replit">
+                            <div className="flex items-center gap-3 mb-4">
+                                <div className="p-2.5 bg-blue-600 text-white rounded-xl shadow-lg"><Server size={18} /></div>
+                                <div>
+                                    <h4 className="text-sm font-black text-blue-900 uppercase tracking-tight">Replit</h4>
+                                    <p className="text-[10px] text-blue-600 font-bold">{platformCosts.replit.plan}</p>
+                                </div>
+                            </div>
+                            <p className="text-3xl font-black text-blue-900 font-mono tracking-tighter mb-4" data-testid="text-replit-cost">{formatCurrency(platformCosts.replit.total_brl)}</p>
+                            <div className="space-y-2 border-t border-blue-200 pt-3">
+                                <div className="flex justify-between text-xs">
+                                    <span className="text-blue-600 font-bold">Plano Base</span>
+                                    <span className="text-blue-900 font-mono font-black">{formatCurrency(platformCosts.replit.base_brl)}</span>
+                                </div>
+                                {platformCosts.replit.extras.egress.brl > 0 && (
+                                    <div className="flex justify-between text-xs">
+                                        <span className="text-blue-600 font-bold">Egress Extra</span>
+                                        <span className="text-amber-700 font-mono font-black">{formatCurrency(platformCosts.replit.extras.egress.brl)}</span>
+                                    </div>
+                                )}
+                                {platformCosts.replit.extras.compute.brl > 0 && (
+                                    <div className="flex justify-between text-xs">
+                                        <span className="text-blue-600 font-bold">Compute Extra</span>
+                                        <span className="text-amber-700 font-mono font-black">{formatCurrency(platformCosts.replit.extras.compute.brl)}</span>
+                                    </div>
+                                )}
+                                {platformCosts.replit.extras.storage.brl > 0 && (
+                                    <div className="flex justify-between text-xs">
+                                        <span className="text-blue-600 font-bold">Storage Extra</span>
+                                        <span className="text-amber-700 font-mono font-black">{formatCurrency(platformCosts.replit.extras.storage.brl)}</span>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+
+                        <div className="bg-emerald-50 rounded-2xl border border-emerald-100 p-6" data-testid="card-cost-supabase">
+                            <div className="flex items-center gap-3 mb-4">
+                                <div className="p-2.5 bg-emerald-600 text-white rounded-xl shadow-lg"><Database size={18} /></div>
+                                <div>
+                                    <h4 className="text-sm font-black text-emerald-900 uppercase tracking-tight">Supabase</h4>
+                                    <p className="text-[10px] text-emerald-600 font-bold">{platformCosts.supabase.plan}</p>
+                                </div>
+                            </div>
+                            <p className="text-3xl font-black text-emerald-900 font-mono tracking-tighter mb-4" data-testid="text-supabase-cost">{formatCurrency(platformCosts.supabase.total_brl)}</p>
+                            <div className="space-y-2 border-t border-emerald-200 pt-3">
+                                <div className="flex justify-between text-xs">
+                                    <span className="text-emerald-600 font-bold">Plano Base</span>
+                                    <span className="text-emerald-900 font-mono font-black">{formatCurrency(platformCosts.supabase.base_brl)}</span>
+                                </div>
+                                <div className="flex justify-between text-xs">
+                                    <span className="text-emerald-600 font-bold">Capacidade DB</span>
+                                    <span className="text-emerald-900 font-mono font-black">{platformCosts.supabase.db_capacity_gb} GB</span>
+                                </div>
+                                {platformCosts.supabase.extras.db.brl > 0 && (
+                                    <div className="flex justify-between text-xs">
+                                        <span className="text-emerald-600 font-bold">DB Extra</span>
+                                        <span className="text-amber-700 font-mono font-black">{formatCurrency(platformCosts.supabase.extras.db.brl)}</span>
+                                    </div>
+                                )}
+                                {platformCosts.supabase.extras.bandwidth.brl > 0 && (
+                                    <div className="flex justify-between text-xs">
+                                        <span className="text-emerald-600 font-bold">Bandwidth Extra</span>
+                                        <span className="text-amber-700 font-mono font-black">{formatCurrency(platformCosts.supabase.extras.bandwidth.brl)}</span>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+
+                        <div className="bg-amber-50 rounded-2xl border border-amber-100 p-6" data-testid="card-cost-apis">
+                            <div className="flex items-center gap-3 mb-4">
+                                <div className="p-2.5 bg-amber-600 text-white rounded-xl shadow-lg"><Globe size={18} /></div>
+                                <div>
+                                    <h4 className="text-sm font-black text-amber-900 uppercase tracking-tight">APIs Externas</h4>
+                                    <p className="text-[10px] text-amber-600 font-bold">Google Maps, Resend, etc.</p>
+                                </div>
+                            </div>
+                            <p className="text-3xl font-black text-amber-900 font-mono tracking-tighter mb-4" data-testid="text-apis-cost">{formatCurrency(platformCosts.apis.total_brl)}</p>
+                            <div className="space-y-2 border-t border-amber-200 pt-3">
+                                <div className="flex justify-between text-xs">
+                                    <span className="text-amber-600 font-bold">Google Maps</span>
+                                    <span className="text-amber-900 font-mono font-black">{formatCurrency(platformCosts.apis.google_maps.brl)}</span>
+                                </div>
+                                <div className="flex justify-between text-xs">
+                                    <span className="text-amber-600 font-bold">Resend (Email)</span>
+                                    <span className="text-amber-900 font-mono font-black">{formatCurrency(platformCosts.apis.resend.brl)}</span>
+                                </div>
+                                <div className="flex justify-between text-xs">
+                                    <span className="text-amber-600 font-bold">Gemini AI</span>
+                                    <span className="text-emerald-600 font-mono font-black">Gratuito</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    {platformCosts.saving_tips && platformCosts.saving_tips.length > 0 && (
+                        <div className="px-8 pb-8">
+                            <h4 className="text-xs font-black text-gray-400 uppercase tracking-widest flex items-center gap-2 mb-4">
+                                <Lightbulb size={16} className="text-yellow-500" /> Dicas de Economia da Plataforma
+                            </h4>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                {platformCosts.saving_tips.map((tip: any, i: number) => {
+                                    const impactBg = tip.impact === 'Alto' ? 'bg-red-50 border-red-200' :
+                                        tip.impact === 'Médio' ? 'bg-amber-50 border-amber-200' :
+                                        tip.impact === 'Info' ? 'bg-blue-50 border-blue-200' : 'bg-gray-50 border-gray-200';
+                                    const impactText = tip.impact === 'Alto' ? 'text-red-700 bg-red-100' :
+                                        tip.impact === 'Médio' ? 'text-amber-700 bg-amber-100' :
+                                        tip.impact === 'Info' ? 'text-blue-700 bg-blue-100' : 'text-gray-700 bg-gray-100';
+                                    return (
+                                        <div key={i} className={`p-4 rounded-xl border ${impactBg}`}>
+                                            <div className="flex items-center justify-between mb-2">
+                                                <span className="text-[10px] font-black text-gray-600 uppercase">{tip.area}</span>
+                                                <span className={`text-[8px] font-black uppercase px-2 py-0.5 rounded-full ${impactText}`}>
+                                                    {tip.impact === 'Alto' ? 'IMPACTO ALTO' : tip.impact === 'Médio' ? 'IMPACTO MÉDIO' : tip.impact === 'Info' ? 'INFO' : 'BAIXO'}
+                                                </span>
+                                            </div>
+                                            <p className="text-[11px] text-gray-700 font-bold mb-1">{tip.tip}</p>
+                                            <p className="text-[9px] text-gray-500 font-mono bg-white/60 rounded px-2 py-1 mt-1.5">{tip.action}</p>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        </div>
+                    )}
+                </div>
+            )}
+
             {/* PAINEL DE GASTOS ESTILO GOOGLE CLOUD BILLING */}
             <div className="bg-white rounded-[32px] shadow-xl border border-gray-200 overflow-hidden">
                 <div className="bg-slate-900 p-8 text-white relative overflow-hidden">
@@ -243,7 +404,7 @@ const CostOptimizationDashboard: React.FC = () => {
                                 <h2 className="text-2xl font-black uppercase tracking-tighter flex items-center gap-3">
                                     <Activity className="text-red-500" /> Cloud Billing Control
                                 </h2>
-                                <p className="text-xs text-slate-400 font-bold uppercase tracking-[0.3em] mt-2">Visibilidade de Faturas de API (Ciclo Jan/2026)</p>
+                                <p className="text-xs text-slate-400 font-bold uppercase tracking-[0.3em] mt-2">Visibilidade de Faturas de API (Ciclo Atual)</p>
                             </div>
                             
                             <div className="flex gap-4">
