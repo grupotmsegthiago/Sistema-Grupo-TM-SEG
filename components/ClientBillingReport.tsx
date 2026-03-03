@@ -2,14 +2,15 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { supabase } from '../lib/supabase';
 import { Mission, Client, ClientPriceTable, ProviderCostTable } from '../types';
-import { FileText, Search, Printer, Loader2, FileSpreadsheet, BarChart3, Users, Building2, ChevronDown, ChevronRight } from 'lucide-react';
+import { FileText, Search, Printer, Loader2, FileSpreadsheet, BarChart3, Users, Building2, ChevronDown, ChevronRight, ArrowRight, List } from 'lucide-react';
 import { calculateMissionFinancials, extractCityFromAddress } from '../lib/financialUtils';
 import {
     BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, LabelList
 } from 'recharts';
 import * as XLSX from 'xlsx';
 
-const ClientBillingReport: React.FC = () => {
+interface ClientBillingReportProps { onNavigate?: (screen: string) => void; }
+const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate }) => {
     const [clients, setClients] = useState<Client[]>([]);
     const [selectedClient, setSelectedClient] = useState('');
     const [startDate, setStartDate] = useState('');
@@ -139,6 +140,7 @@ const ClientBillingReport: React.FC = () => {
     const [expandedClient, setExpandedClient] = useState<string | null>(null);
     const [expandedProvider, setExpandedProvider] = useState<string | null>(null);
     const [sortMode, setSortMode] = useState<'valor' | 'pct'>('valor');
+    const [chartTab, setChartTab] = useState<'clientes' | 'fornecedores' | 'geral'>('clientes');
 
     const chartComputedData = useMemo(() => {
         if (!chartsGenerated || allPeriodMissions.length === 0) return { clientData: [] as ChartItem[], providerData: [] as ChartItem[] };
@@ -207,11 +209,15 @@ const ClientBillingReport: React.FC = () => {
                 return { nome, valor: Math.round(d.cost * 100) / 100, receita: Math.round(d.revenue * 100) / 100, custo: Math.round(d.cost * 100) / 100, lucro: Math.round(lucro * 100) / 100, pct, count: d.count, fullName: nome, missions: sortedMissions };
             });
 
-        return { clientData, providerData };
+        const allMissions: MissionDetail[] = [];
+        Object.values(clientTotals).forEach(ct => allMissions.push(...ct.missions));
+
+        return { clientData, providerData, allMissions };
     }, [chartsGenerated, allPeriodMissions, clients, allClientTables, allProviderTables]);
 
     const clientChartData = chartComputedData.clientData;
     const providerChartData = chartComputedData.providerData;
+    const allMissionsGeneral = chartComputedData.allMissions || [];
 
     const CHART_COLORS_CLIENT = ['#1e40af', '#2563eb', '#3b82f6', '#60a5fa', '#93c5fd', '#bfdbfe', '#1e3a5f', '#0c4a6e', '#0369a1', '#0284c7'];
     const CHART_COLORS_PROVIDER = ['#991b1b', '#b91c1c', '#dc2626', '#ef4444', '#f87171', '#fca5a5', '#7f1d1d', '#9a3412', '#c2410c', '#ea580c'];
@@ -615,7 +621,20 @@ const ClientBillingReport: React.FC = () => {
             </div>
 
             {chartsGenerated && (clientChartData.length > 0 || providerChartData.length > 0) && (
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 no-print" data-testid="billing-charts-section">
+                <div className="no-print" data-testid="billing-charts-section">
+                    <div className="flex items-center gap-2 mb-4 flex-wrap">
+                        <button onClick={() => setChartTab('clientes')} className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-black transition-all ${chartTab === 'clientes' ? 'bg-blue-700 text-white shadow-md' : 'bg-white text-gray-600 border border-gray-200 hover:bg-gray-50'}`} data-testid="tab-clientes"><Users size={12} />Clientes</button>
+                        <button onClick={() => setChartTab('fornecedores')} className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-black transition-all ${chartTab === 'fornecedores' ? 'bg-red-700 text-white shadow-md' : 'bg-white text-gray-600 border border-gray-200 hover:bg-gray-50'}`} data-testid="tab-fornecedores"><Building2 size={12} />Fornecedores</button>
+                        <button onClick={() => setChartTab('geral')} className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-black transition-all ${chartTab === 'geral' ? 'bg-gray-800 text-white shadow-md' : 'bg-white text-gray-600 border border-gray-200 hover:bg-gray-50'}`} data-testid="tab-geral"><List size={12} />Geral</button>
+                        <div className="flex-1" />
+                        {onNavigate && (
+                            <button onClick={() => onNavigate('fin-billing-control')} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-black bg-amber-500 text-white hover:bg-amber-600 transition-all shadow-sm" data-testid="btn-auditoria">
+                                <Search size={12} />Auditoria de Faturamento<ArrowRight size={10} />
+                            </button>
+                        )}
+                    </div>
+
+                    {chartTab === 'clientes' && (
                     <div className="bg-white p-5 rounded-xl shadow-sm border border-gray-200">
                         <div className="flex items-center gap-2.5 mb-4 pb-3 border-b border-gray-100">
                             <div className="p-2 bg-blue-700 text-white rounded-lg"><Users size={14} /></div>
@@ -695,7 +714,9 @@ const ClientBillingReport: React.FC = () => {
                             })}
                         </div>
                     </div>
+                    )}
 
+                    {chartTab === 'fornecedores' && (
                     <div className="bg-white p-5 rounded-xl shadow-sm border border-gray-200">
                         <div className="flex items-center gap-2.5 mb-4 pb-3 border-b border-gray-100">
                             <div className="p-2 bg-red-700 text-white rounded-lg"><Building2 size={14} /></div>
@@ -775,6 +796,60 @@ const ClientBillingReport: React.FC = () => {
                             })}
                         </div>
                     </div>
+                    )}
+
+                    {chartTab === 'geral' && (
+                    <div className="bg-white p-5 rounded-xl shadow-sm border border-gray-200">
+                        <div className="flex items-center gap-2.5 mb-4 pb-3 border-b border-gray-100">
+                            <div className="p-2 bg-gray-800 text-white rounded-lg"><List size={14} /></div>
+                            <div className="flex-1">
+                                <h4 className="text-xs font-black text-gray-700 uppercase tracking-widest">Todas as OS do Período</h4>
+                                <p className="text-[10px] text-gray-400 font-bold mt-0.5">{allMissionsGeneral.length} missões &middot; Receita: {fmtBRL(allMissionsGeneral.reduce((s, m) => s + m.revenue, 0))} &middot; Custo: {fmtBRL(allMissionsGeneral.reduce((s, m) => s + m.cost, 0))} &middot; Lucro: {fmtBRL(allMissionsGeneral.reduce((s, m) => s + m.lucro, 0))}</p>
+                            </div>
+                            <div className="flex items-center gap-1">
+                                <span className="text-[9px] font-bold text-gray-500 mr-1">Ordenar:</span>
+                                <button onClick={() => setSortMode('valor')} className={`text-[9px] font-black px-2 py-0.5 rounded transition-all ${sortMode === 'valor' ? 'bg-gray-800 text-white' : 'bg-white text-gray-600 border border-gray-200 hover:bg-gray-50'}`} data-testid="sort-valor-geral">R$ Valor</button>
+                                <button onClick={() => setSortMode('pct')} className={`text-[9px] font-black px-2 py-0.5 rounded transition-all ${sortMode === 'pct' ? 'bg-gray-800 text-white' : 'bg-white text-gray-600 border border-gray-200 hover:bg-gray-50'}`} data-testid="sort-pct-geral">% Margem</button>
+                            </div>
+                        </div>
+                        <div className="border border-gray-200 rounded-lg overflow-hidden">
+                            <div style={{ maxHeight: '600px', overflowY: 'auto' }} className="scrollbar-thin">
+                                <table className="w-full text-[10px]">
+                                    <thead className="sticky top-0 z-10">
+                                        <tr className="bg-gray-100">
+                                            <th className="text-left px-2 py-1.5 font-black text-gray-800 uppercase">OS</th>
+                                            <th className="text-left px-2 py-1.5 font-black text-gray-800 uppercase">Data</th>
+                                            <th className="text-left px-2 py-1.5 font-black text-gray-800 uppercase">Cliente</th>
+                                            <th className="text-left px-2 py-1.5 font-black text-gray-800 uppercase">Fornecedor</th>
+                                            <th className="text-left px-2 py-1.5 font-black text-gray-800 uppercase">Rota</th>
+                                            <th className="text-right px-2 py-1.5 font-black text-gray-800 uppercase">KM</th>
+                                            <th className="text-right px-2 py-1.5 font-black text-gray-800 uppercase">Receita</th>
+                                            <th className="text-right px-2 py-1.5 font-black text-gray-800 uppercase">Custo</th>
+                                            <th className="text-right px-2 py-1.5 font-black text-gray-800 uppercase">Lucro</th>
+                                            <th className="text-right px-2 py-1.5 font-black text-gray-800 uppercase">%</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {[...allMissionsGeneral].sort((a, b) => sortMode === 'valor' ? a.lucro - b.lucro : a.pct - b.pct).map((m, mi) => (
+                                            <tr key={mi} className={`border-t border-gray-100 ${m.lucro < 0 ? 'bg-red-50' : mi % 2 === 0 ? 'bg-white' : 'bg-gray-50/50'}`}>
+                                                <td className="px-2 py-1 font-black text-gray-800">{m.id.replace('GTM-', '')}</td>
+                                                <td className="px-2 py-1 text-gray-600 font-bold">{m.date}</td>
+                                                <td className="px-2 py-1 text-gray-600 font-bold truncate max-w-[100px]" title={m.client}>{m.client}</td>
+                                                <td className="px-2 py-1 text-gray-600 font-bold truncate max-w-[100px]" title={m.provider}>{m.provider}</td>
+                                                <td className="px-2 py-1 text-gray-600 font-bold truncate max-w-[120px]" title={m.route}>{m.route}</td>
+                                                <td className="px-2 py-1 text-right text-gray-600 font-bold">{m.km > 0 ? Math.round(m.km) : '-'}</td>
+                                                <td className="px-2 py-1 text-right font-bold text-blue-700">{fmtBRL(m.revenue)}</td>
+                                                <td className="px-2 py-1 text-right font-bold text-red-600">{fmtBRL(m.cost)}</td>
+                                                <td className={`px-2 py-1 text-right font-black ${m.lucro >= 0 ? 'text-emerald-600' : 'text-red-700'}`}>{fmtBRL(m.lucro)}</td>
+                                                <td className={`px-2 py-1 text-right font-black ${m.pct >= 0 ? 'text-emerald-600' : 'text-red-700'}`}>{m.pct}%</td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                    )}
                 </div>
             )}
 

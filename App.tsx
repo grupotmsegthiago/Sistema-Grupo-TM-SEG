@@ -189,7 +189,7 @@ const App: React.FC = () => {
       case 'fin-accounts': return <FinancialAccountManager />;
       case 'fin-categories': return <FinancialCategoryManager />;
       case 'fin-report': return <FinancialReport />; 
-      case 'fin-billing': return <ClientBillingReport />;
+      case 'fin-billing': return <ClientBillingReport onNavigate={navigateTo} />;
       case 'fin-daily-movement': return <DailyCashMovement />;
       case 'fin-billing-control': return <BillingControlCenter />;
       case 'clients': return <ClientList onAddClient={() => navigateTo('client-form')} onEdit={(id) => handleEdit('client-form', id)} />;
