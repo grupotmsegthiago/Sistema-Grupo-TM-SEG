@@ -129,12 +129,15 @@
         window.addEventListener('orientationchange', function() { setTimeout(setVh, 100); });
 
         window.onerror = function(msg, src, line, col, err) {
-          showIosError('Erro JS Global', msg + '\nArquivo: ' + (src || '?') + '\nLinha: ' + (line || '?') + ':' + (col || '?') + '\n\n' + (err && err.stack ? err.stack : ''));
+          var msgStr = String(msg || '');
+          if (msgStr.indexOf('WebSocket') !== -1 || msgStr.indexOf('@vite') !== -1 || msgStr.indexOf('vite/client') !== -1) return false;
+          showIosError('Erro JS Global', msgStr + '\nArquivo: ' + (src || '?') + '\nLinha: ' + (line || '?') + ':' + (col || '?') + '\n\n' + (err && err.stack ? err.stack : ''));
           return false;
         };
         window.addEventListener('unhandledrejection', function(ev) {
           var reason = ev.reason;
           var detail = reason instanceof Error ? reason.message + '\n' + reason.stack : String(reason);
+          if (detail.indexOf('WebSocket') !== -1 || detail.indexOf('@vite') !== -1 || detail.indexOf('vite/client') !== -1) return;
           showIosError('Promise Rejeitada', detail);
         });
         window.showIosError = function(title, detail) {
