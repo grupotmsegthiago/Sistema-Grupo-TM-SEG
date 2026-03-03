@@ -74,6 +74,7 @@ export interface NavItem {
 export const NAV_ITEMS: NavItem[] = [
   { name: 'Página Inicial', icon: 'LayoutDashboard', id: 'dashboard' },
   { name: 'Monitoramento', icon: 'MapPin', id: 'missions' },
+  { name: 'Meta Agendada (Hoje)', icon: 'Target', id: 'daily-goal' },
   { name: 'Rede de Apoio (QRF)', icon: 'Map', id: 'support-network' },
   { name: 'Relatórios', icon: 'FileBarChart', id: 'reports' },
   {

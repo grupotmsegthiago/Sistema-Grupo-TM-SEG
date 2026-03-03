@@ -179,8 +179,19 @@ const DailyGoalThermometer: React.FC<Props> = ({ viewPeriod = 'TODAY', customSta
         };
     }, [currentRevenue]);
 
-    const isAuthorized = ['diretoria', 'administrativo', 'avançado', 'avancado', 'administrador', 'operador', 'comercial'].includes(userRole);
-    const canSeeMonetary = ['diretoria', 'administrador', 'administrativo', 'comercial'].includes(userRole);
+    const userPermissions = useMemo(() => {
+        try {
+            const storedUser = localStorage.getItem('userData');
+            if (storedUser) {
+                const user = JSON.parse(storedUser);
+                return user.permissions || [];
+            }
+        } catch (e) {}
+        return [];
+    }, []);
+
+    const isAuthorized = userRole === 'diretoria' || userRole === 'administrador' || userPermissions.includes('daily-goal') || userPermissions.includes('*');
+    const canSeeMonetary = userRole === 'diretoria' || (userPermissions.includes('*') && userRole === 'diretoria');
 
     if (!isAuthorized) return null;
 
