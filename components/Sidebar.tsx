@@ -89,17 +89,10 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, activeScreen, onNavigate, onL
   const hasAccess = (itemId: string) => {
     const role = (currentUser?.role || '').toLowerCase();
     
-    // 1. Regra para COMERCIAL: Vê Dashboard, Monitoramento, Clientes e Cotações (filtrados via código)
     if (role === 'comercial') {
-        const allowedItems = [
-            'dashboard', 'missions', 'clients-group', 'clients', 'client-routes', 
-            'client-vehicles', 'quotes', 'reports'
-        ];
-        // Bloqueia grupos inteiros que não são comerciais
-        const forbiddenGroups = ['finance-group', 'providers-group', 'settings-group', 'support-network'];
+        const forbiddenGroups = ['finance-group', 'settings-group'];
         if (forbiddenGroups.includes(itemId)) return false;
-        
-        return allowedItems.includes(itemId);
+        return userPermissions.includes(itemId);
     }
 
     // 2. Bloqueio Duro para Usuários Externos (Clientes)
