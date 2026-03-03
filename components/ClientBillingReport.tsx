@@ -787,7 +787,7 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate })
                                                                             <button onClick={handleCancelEdit} className="text-gray-400 hover:text-gray-600" title="Cancelar">&times;</button>
                                                                         </div>
                                                                     ) : (
-                                                                        <button onClick={(e) => handleStartEdit(m, e)} className="text-gray-300 hover:text-blue-600 transition-colors" title="Editar valores"><Pencil size={10} /></button>
+                                                                        <button onClick={(e) => handleStartEdit(m, e)} className="p-1.5 rounded bg-emerald-50 text-emerald-600 hover:bg-emerald-100 hover:text-emerald-800 transition-colors border border-emerald-200" title="Editar valores"><Pencil size={12} /></button>
                                                                     )}
                                                                 </td>
                                                             </tr>
@@ -889,7 +889,7 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate })
                                                                             <button onClick={handleCancelEdit} className="text-gray-400 hover:text-gray-600" title="Cancelar">&times;</button>
                                                                         </div>
                                                                     ) : (
-                                                                        <button onClick={(e) => handleStartEdit(m, e)} className="text-gray-300 hover:text-red-600 transition-colors" title="Editar valores"><Pencil size={10} /></button>
+                                                                        <button onClick={(e) => handleStartEdit(m, e)} className="p-1.5 rounded bg-emerald-50 text-emerald-600 hover:bg-emerald-100 hover:text-emerald-800 transition-colors border border-emerald-200" title="Editar valores"><Pencil size={12} /></button>
                                                                     )}
                                                                 </td>
                                                             </tr>
@@ -966,7 +966,7 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate })
                                                             <button onClick={handleCancelEdit} className="text-gray-400 hover:text-gray-600" title="Cancelar">&times;</button>
                                                         </div>
                                                     ) : (
-                                                        <button onClick={(e) => handleStartEdit(m, e)} className="text-gray-300 hover:text-gray-800 transition-colors" title="Editar valores" data-testid={`edit-btn-${m.id}`}><Pencil size={10} /></button>
+                                                        <button onClick={(e) => handleStartEdit(m, e)} className="p-1.5 rounded bg-emerald-50 text-emerald-600 hover:bg-emerald-100 hover:text-emerald-800 transition-colors border border-emerald-200" title="Editar valores" data-testid={`edit-btn-${m.id}`}><Pencil size={12} /></button>
                                                     )}
                                                 </td>
                                             </tr>
