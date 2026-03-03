@@ -120,6 +120,17 @@
     </style>
     <script>
       (function() {
+        if ('caches' in window) {
+          caches.keys().then(function(names) {
+            names.forEach(function(name) { caches.delete(name); });
+          });
+        }
+        if ('serviceWorker' in navigator) {
+          navigator.serviceWorker.getRegistrations().then(function(registrations) {
+            registrations.forEach(function(r) { r.unregister(); });
+          });
+        }
+
         function setVh() {
           var vh = window.innerHeight * 0.01;
           document.documentElement.style.setProperty('--vh', vh + 'px');
