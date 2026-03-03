@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { supabase } from '../lib/supabase';
 import { Mission, Client, ClientPriceTable, ProviderCostTable } from '../types';
-import { FileText, Search, Printer, Loader2, FileSpreadsheet, BarChart3, Users, Building2, ChevronDown, ChevronRight, ArrowRight, List } from 'lucide-react';
+import { FileText, Search, Printer, Loader2, FileSpreadsheet, BarChart3, Users, Building2, ChevronDown, ChevronRight, List, Save, Pencil } from 'lucide-react';
 import { calculateMissionFinancials, extractCityFromAddress } from '../lib/financialUtils';
 import {
     BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, LabelList
@@ -149,6 +149,59 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate })
     const [expandedProvider, setExpandedProvider] = useState<string | null>(null);
     const [sortMode, setSortMode] = useState<'valor' | 'pct'>('valor');
     const [chartTab, setChartTab] = useState<'clientes' | 'fornecedores' | 'geral'>('clientes');
+    const [editingMission, setEditingMission] = useState<string | null>(null);
+    const [editRevenue, setEditRevenue] = useState('');
+    const [editCost, setEditCost] = useState('');
+    const [savingMission, setSavingMission] = useState(false);
+
+    const handleStartEdit = (m: MissionDetail, e: React.MouseEvent) => {
+        e.stopPropagation();
+        setEditingMission(m.id);
+        setEditRevenue(m.revenue.toFixed(2).replace('.', ','));
+        setEditCost(m.cost.toFixed(2).replace('.', ','));
+    };
+
+    const handleSaveEdit = async (missionId: string, e: React.MouseEvent) => {
+        e.stopPropagation();
+        setSavingMission(true);
+        try {
+            const parseVal = (v: string) => parseFloat(v.replace(/\./g, '').replace(',', '.')) || 0;
+            const newRevTotal = parseVal(editRevenue);
+            const newCostTotal = parseVal(editCost);
+
+            const mission = allPeriodMissions.find(m => m.id === missionId);
+            const toll = mission?.toll_value || 0;
+            const tollProv = mission?.toll_value_provider != null ? mission.toll_value_provider : toll;
+
+            const revServiceOnly = newRevTotal - toll;
+            const costServiceOnly = newCostTotal - tollProv;
+
+            const { error } = await supabase.from('missions').update({
+                revenue_value: revServiceOnly,
+                cost_value: costServiceOnly,
+                last_update: new Date().toISOString()
+            }).eq('id', missionId);
+            if (error) throw error;
+
+            const idx = allPeriodMissions.findIndex(m => m.id === missionId);
+            if (idx >= 0) {
+                const updated = [...allPeriodMissions];
+                updated[idx] = { ...updated[idx], revenue_value: revServiceOnly, cost_value: costServiceOnly };
+                setAllPeriodMissions(updated);
+            }
+            setEditingMission(null);
+        } catch (err) {
+            console.error(err);
+            alert('Erro ao salvar valores.');
+        } finally {
+            setSavingMission(false);
+        }
+    };
+
+    const handleCancelEdit = (e: React.MouseEvent) => {
+        e.stopPropagation();
+        setEditingMission(null);
+    };
 
     const chartComputedData = useMemo(() => {
         if (!chartsGenerated || allPeriodMissions.length === 0) return { clientData: [] as ChartItem[], providerData: [] as ChartItem[] };
@@ -646,11 +699,11 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate })
                         <button onClick={() => setChartTab('fornecedores')} className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-black transition-all ${chartTab === 'fornecedores' ? 'bg-red-700 text-white shadow-md' : 'bg-white text-gray-600 border border-gray-200 hover:bg-gray-50'}`} data-testid="tab-fornecedores"><Building2 size={12} />Fornecedores</button>
                         <button onClick={() => setChartTab('geral')} className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-black transition-all ${chartTab === 'geral' ? 'bg-gray-800 text-white shadow-md' : 'bg-white text-gray-600 border border-gray-200 hover:bg-gray-50'}`} data-testid="tab-geral"><List size={12} />Geral</button>
                         <div className="flex-1" />
-                        {onNavigate && (
-                            <button onClick={() => onNavigate('fin-billing-control')} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-black bg-amber-500 text-white hover:bg-amber-600 transition-all shadow-sm" data-testid="btn-auditoria">
-                                <Search size={12} />Auditoria de Faturamento<ArrowRight size={10} />
-                            </button>
-                        )}
+                        <div className="flex items-center gap-1">
+                            <span className="text-[9px] font-bold text-gray-500 mr-1">Ordenar:</span>
+                            <button onClick={() => setSortMode('valor')} className={`text-[9px] font-black px-2 py-1 rounded transition-all ${sortMode === 'valor' ? 'bg-gray-800 text-white' : 'bg-white text-gray-600 border border-gray-200 hover:bg-gray-50'}`} data-testid="sort-valor-global">R$ Valor</button>
+                            <button onClick={() => setSortMode('pct')} className={`text-[9px] font-black px-2 py-1 rounded transition-all ${sortMode === 'pct' ? 'bg-gray-800 text-white' : 'bg-white text-gray-600 border border-gray-200 hover:bg-gray-50'}`} data-testid="sort-pct-global">% Margem</button>
+                        </div>
                     </div>
 
                     {chartTab === 'clientes' && (
@@ -691,11 +744,6 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate })
                                         </div>
                                         {isExpanded && (
                                             <div className="ml-4 mr-1 mt-1 mb-2 border border-blue-100 rounded-lg overflow-hidden animate-fade-in">
-                                                <div className="flex items-center gap-1 px-2 py-1.5 bg-blue-50/80 border-b border-blue-100">
-                                                    <span className="text-[9px] font-bold text-blue-600 mr-1">Ordenar:</span>
-                                                    <button onClick={(e) => { e.stopPropagation(); setSortMode('valor'); }} className={`text-[9px] font-black px-2 py-0.5 rounded transition-all ${sortMode === 'valor' ? 'bg-blue-600 text-white' : 'bg-white text-blue-600 border border-blue-200 hover:bg-blue-50'}`} data-testid="sort-valor-client">R$ Valor</button>
-                                                    <button onClick={(e) => { e.stopPropagation(); setSortMode('pct'); }} className={`text-[9px] font-black px-2 py-0.5 rounded transition-all ${sortMode === 'pct' ? 'bg-blue-600 text-white' : 'bg-white text-blue-600 border border-blue-200 hover:bg-blue-50'}`} data-testid="sort-pct-client">% Margem</button>
-                                                </div>
                                                 <table className="w-full text-[10px]">
                                                     <thead>
                                                         <tr className="bg-blue-50">
@@ -708,6 +756,7 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate })
                                                             <th className="text-right px-2 py-1.5 font-black text-blue-800 uppercase">Custo</th>
                                                             <th className="text-right px-2 py-1.5 font-black text-blue-800 uppercase">Lucro</th>
                                                             <th className="text-right px-2 py-1.5 font-black text-blue-800 uppercase">%</th>
+                                                            <th className="px-1 py-1.5 w-6"></th>
                                                         </tr>
                                                     </thead>
                                                     <tbody>
@@ -718,10 +767,29 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate })
                                                                 <td className="px-2 py-1 text-gray-600 font-bold truncate max-w-[120px]" title={m.route}>{m.route}</td>
                                                                 <td className="px-2 py-1 text-gray-600 font-bold truncate max-w-[100px]" title={m.provider}>{m.provider}</td>
                                                                 <td className="px-2 py-1 text-right text-gray-600 font-bold">{m.km > 0 ? Math.round(m.km) : '-'}</td>
-                                                                <td className="px-2 py-1 text-right font-bold text-blue-700">{fmtBRL(m.revenue)}</td>
-                                                                <td className="px-2 py-1 text-right font-bold text-red-600">{fmtBRL(m.cost)}</td>
+                                                                {editingMission === m.id ? (
+                                                                    <>
+                                                                        <td className="px-1 py-0.5"><input type="text" value={editRevenue} onChange={e => setEditRevenue(e.target.value)} onClick={e => e.stopPropagation()} className="w-full text-[10px] font-bold text-blue-700 text-right border border-blue-300 rounded px-1 py-0.5 bg-blue-50 outline-none focus:ring-1 focus:ring-blue-400" /></td>
+                                                                        <td className="px-1 py-0.5"><input type="text" value={editCost} onChange={e => setEditCost(e.target.value)} onClick={e => e.stopPropagation()} className="w-full text-[10px] font-bold text-red-600 text-right border border-red-300 rounded px-1 py-0.5 bg-red-50 outline-none focus:ring-1 focus:ring-red-400" /></td>
+                                                                    </>
+                                                                ) : (
+                                                                    <>
+                                                                        <td className="px-2 py-1 text-right font-bold text-blue-700">{fmtBRL(m.revenue)}</td>
+                                                                        <td className="px-2 py-1 text-right font-bold text-red-600">{fmtBRL(m.cost)}</td>
+                                                                    </>
+                                                                )}
                                                                 <td className={`px-2 py-1 text-right font-black ${m.lucro >= 0 ? 'text-emerald-600' : 'text-red-700'}`}>{fmtBRL(m.lucro)}</td>
                                                                 <td className={`px-2 py-1 text-right font-black ${m.pct >= 0 ? 'text-emerald-600' : 'text-red-700'}`}>{m.pct}%</td>
+                                                                <td className="px-1 py-1 text-center">
+                                                                    {editingMission === m.id ? (
+                                                                        <div className="flex gap-0.5">
+                                                                            <button onClick={(e) => handleSaveEdit(m.id, e)} disabled={savingMission} className="text-emerald-600 hover:text-emerald-800" title="Salvar"><Save size={11} /></button>
+                                                                            <button onClick={handleCancelEdit} className="text-gray-400 hover:text-gray-600" title="Cancelar">&times;</button>
+                                                                        </div>
+                                                                    ) : (
+                                                                        <button onClick={(e) => handleStartEdit(m, e)} className="text-gray-300 hover:text-blue-600 transition-colors" title="Editar valores"><Pencil size={10} /></button>
+                                                                    )}
+                                                                </td>
                                                             </tr>
                                                         ))}
                                                     </tbody>
