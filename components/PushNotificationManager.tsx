@@ -41,36 +41,24 @@ const PushNotificationManager = () => {
         doSend(title, body, tag);
     };
 
-    const doSend = (title: string, body: string, tag: string) => {
-        if (navigator.serviceWorker?.controller) {
-            navigator.serviceWorker.controller.postMessage({
-                type: 'SHOW_NOTIFICATION',
-                title,
-                body,
-                tag
-            });
-            setTestStatus('sent');
-        } else if (navigator.serviceWorker) {
-            navigator.serviceWorker.ready.then(reg => {
-                reg.showNotification(title, {
+    const doSend = async (title: string, body: string, tag: string) => {
+        try {
+            if ('serviceWorker' in navigator) {
+                const reg = await navigator.serviceWorker.ready;
+                await reg.showNotification(title, {
                     body,
                     icon: '/favicon.png',
                     badge: '/favicon.png',
                     tag,
                     vibrate: [200, 100, 200],
-                    requireInteraction: true,
                     renotify: true
                 });
                 setTestStatus('sent');
-            }).catch(() => {
-                try {
-                    new Notification(title, { body, icon: '/favicon.png', tag });
-                    setTestStatus('sent');
-                } catch {
-                    setTestStatus('no-sw');
-                }
-            });
-        } else {
+            } else {
+                new Notification(title, { body, icon: '/favicon.png', tag });
+                setTestStatus('sent');
+            }
+        } catch {
             try {
                 new Notification(title, { body, icon: '/favicon.png', tag });
                 setTestStatus('sent');

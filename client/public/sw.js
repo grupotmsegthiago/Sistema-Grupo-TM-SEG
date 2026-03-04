@@ -1,11 +1,18 @@
-const CACHE_NAME = 'tmseg-v1';
+const CACHE_NAME = 'tmseg-v2';
 
 self.addEventListener('install', (event) => {
   self.skipWaiting();
 });
 
 self.addEventListener('activate', (event) => {
-  event.waitUntil(clients.claim());
+  event.waitUntil(
+    Promise.all([
+      clients.claim(),
+      caches.keys().then(names => Promise.all(
+        names.filter(n => n !== CACHE_NAME).map(n => caches.delete(n))
+      ))
+    ])
+  );
 });
 
 self.addEventListener('notificationclick', (event) => {
@@ -24,14 +31,15 @@ self.addEventListener('notificationclick', (event) => {
 self.addEventListener('message', (event) => {
   if (event.data && event.data.type === 'SHOW_NOTIFICATION') {
     const { title, body, tag } = event.data;
-    self.registration.showNotification(title, {
-      body,
-      icon: '/favicon.png',
-      badge: '/favicon.png',
-      tag: tag || 'tmseg-notification',
-      vibrate: [200, 100, 200],
-      requireInteraction: true,
-      renotify: true
-    });
+    event.waitUntil(
+      self.registration.showNotification(title, {
+        body,
+        icon: '/favicon.png',
+        badge: '/favicon.png',
+        tag: tag || 'tmseg-notification',
+        vibrate: [200, 100, 200],
+        renotify: true
+      })
+    );
   }
 });
