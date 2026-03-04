@@ -80,14 +80,18 @@ const DailyGoalThermometer: React.FC<Props> = ({ viewPeriod = 'TODAY', customSta
             ];
 
             const activeStatuses = [MissionStatus.IN_TRANSIT, MissionStatus.ORIGIN, MissionStatus.SCHEDULED, MissionStatus.SOLICITED, MissionStatus.DOCUMENTATION];
-            if (viewPeriod === 'TODAY' || viewPeriod === 'YESTERDAY') {
+            if (viewPeriod === 'TODAY') {
                 const { data: activeMissions } = await supabase
                     .from('missions')
                     .select('*')
                     .in('status', activeStatuses);
                 if (activeMissions) {
                     const periodIds = new Set(allMissions.map((m: any) => m.id));
-                    const extra = activeMissions.filter((m: any) => !periodIds.has(m.id));
+                    const extra = activeMissions.filter((m: any) => {
+                        if (periodIds.has(m.id)) return false;
+                        const mDate = new Date(m.start_time || m.created_at);
+                        return mDate >= start && mDate <= end;
+                    });
                     allMissions = [...allMissions, ...extra];
                 }
             }

@@ -110,6 +110,8 @@ const ExecutiveDashboard: React.FC<Props> = ({ missions, isDirector, clientTable
     const fileInputRef = useRef<HTMLInputElement>(null);
     const [adjustedOsIds, setAdjustedOsIds] = useState<Set<string>>(new Set());
     const prevMissionFinancialsRef = useRef<any[] | null>(null);
+    const [showPasteArea, setShowPasteArea] = useState(false);
+    const [pastedText, setPastedText] = useState('');
 
     const [isRefreshingExcel, setIsRefreshingExcel] = useState(false);
     const [isRecalculating, setIsRecalculating] = useState(false);
@@ -637,6 +639,193 @@ const ExecutiveDashboard: React.FC<Props> = ({ missions, isDirector, clientTable
         }
     }, [missionFinancials]);
 
+    const handlePasteAnalysis = useCallback(async () => {
+        if (!pastedText.trim()) return;
+        setIsExcelLoading(true);
+        setExcelComparison(null);
+        setExcelAiAnalysis(null);
+        setAdjustedOsIds(new Set());
+
+        try {
+            const lines = pastedText.trim().split('\n').map(l => l.split('\t'));
+            if (lines.length < 2) throw new Error('Dados insuficientes. Cole ao menos cabeçalho + 1 linha.');
+
+            const headers = lines[0].map(h => h.trim().toUpperCase());
+            const findColExact = (...keywords: string[]) => headers.findIndex(h => keywords.some(k => h === k));
+            const findColContains = (...keywords: string[]) => headers.findIndex(h => keywords.some(k => h.includes(k)));
+
+            const osCol = findColExact('Nº', 'N°', 'NR', 'OS', 'NUM', 'NÚMERO', 'NUMERO', 'N', 'COD', 'CODIGO', 'CÓDIGO');
+            const clienteCol = findColExact('CLIENTE');
+            const fornecedorCol = findColExact('FORNECEDOR');
+            const rotaCol = findColExact('ROTA');
+            const operacaoCol = findColExact('OPERAÇÃO', 'OPERACAO');
+            const valorBaseCol = findColExact('VALOR BASE', 'VALOR');
+            const hrFranqCol = findColContains('HR FRANQ', 'HORA FRANQUIA', 'HORAS FRANQUIA');
+            const kmFranqCol = findColContains('KM FRANQ', 'KM FRANQUIA');
+            const hrExtraCol = findColContains('HR EXTRA', 'HORA EXTRA', 'HORAS EXTRA', 'HORAS EXTRAS');
+            const kmExtraCol = findColContains('KM EXTRA', 'KM EXCEDENTE');
+            const pedagioCol = findColContains('PEDÁGIO', 'PEDAGIO');
+            const dataInicialCol = findColContains('DATA INICIAL', 'DATA INÍCIO', 'DATA INICIO', 'DT INICIAL');
+            const horaInicioCol = findColContains('HORA INICIAL', 'HORA INÍCIO', 'HORA INICIO', 'HR INÍCIO', 'HR INICIO', 'H. INÍCIO', 'H. INICIO');
+            const dataFinalCol = findColContains('DATA FINAL', 'DATA FIM', 'DT FINAL', 'DT FIM');
+            const horaFimCol = findColContains('HORA FINAL', 'HORA FIM', 'HR FIM', 'HR FINAL', 'H. FIM', 'H. FINAL');
+            const kmInicialCol = findColExact('KM INICIAL', 'INICIAL');
+            const kmFinalCol = findColExact('KM FINAL', 'FINAL');
+            const kmTotalCol = findColContains('KM TOTAL');
+            const estacionamentoCol = findColExact('ESTACIONAMENTO', 'PERNOITE');
+
+            let revTotalCol = findColContains('VALOR TOTAL', 'TOTAL CLIENTE', 'RECEITA TOTAL', 'FATURAMENTO');
+            if (revTotalCol === -1) revTotalCol = findColExact('TOTAL');
+            let costTotalCol = findColContains('TOTAL CUSTO', 'CUSTO TOTAL', 'TOTAL FORNECEDOR', 'PAGAMENTO');
+            if (costTotalCol === -1) {
+                const lastTotal = headers.lastIndexOf('TOTAL');
+                if (lastTotal >= 0 && lastTotal !== revTotalCol) costTotalCol = lastTotal;
+            }
+
+            const parseVal = (v: string): number => {
+                if (!v || v.trim() === '' || v === '-') return 0;
+                const cleaned = v.replace(/[R$\s.]/g, '').replace(',', '.');
+                return parseFloat(cleaned) || 0;
+            };
+
+            const comparisons: any[] = [];
+            const rawPastedRows: any[] = [];
+
+            for (let i = 1; i < lines.length; i++) {
+                const row = lines[i];
+                if (row.length < 2) continue;
+
+                const osRaw = osCol >= 0 ? row[osCol]?.trim() : row[0]?.trim();
+                if (!osRaw || !osRaw.match(/\d{3,}/)) continue;
+
+                const osId = extractOsNumber(osRaw);
+                if (!osId) continue;
+
+                const getCellStr = (col: number) => col >= 0 && col < row.length ? row[col]?.trim() || '' : '';
+                const getCellNum = (col: number) => col >= 0 && col < row.length ? parseVal(row[col] || '') : 0;
+
+                const excelRev = revTotalCol >= 0 ? getCellNum(revTotalCol) : 0;
+                const excelCost = costTotalCol >= 0 ? getCellNum(costTotalCol) : 0;
+                const excelValorBase = valorBaseCol >= 0 ? getCellNum(valorBaseCol) : null;
+                const excelHrFranq = hrFranqCol >= 0 ? getCellNum(hrFranqCol) : null;
+                const excelKmFranq = kmFranqCol >= 0 ? getCellNum(kmFranqCol) : null;
+                const excelHrExtra = hrExtraCol >= 0 ? getCellNum(hrExtraCol) : null;
+                const excelKmExtra = kmExtraCol >= 0 ? getCellNum(kmExtraCol) : null;
+                const excelToll = pedagioCol >= 0 ? getCellNum(pedagioCol) : null;
+                const excelKmInicial = kmInicialCol >= 0 ? getCellNum(kmInicialCol) : null;
+                const excelKmFinal = kmFinalCol >= 0 ? getCellNum(kmFinalCol) : null;
+                const excelKmTotalVal = kmTotalCol >= 0 ? getCellNum(kmTotalCol) : null;
+                const excelKm = excelKmTotalVal || (excelKmInicial != null && excelKmFinal != null && excelKmFinal > excelKmInicial ? excelKmFinal - excelKmInicial : null);
+                const excelEstacionamento = estacionamentoCol >= 0 ? getCellNum(estacionamentoCol) : null;
+                const excelRota = getCellStr(rotaCol);
+                const excelOperacao = getCellStr(operacaoCol);
+                const excelDataInicial = getCellStr(dataInicialCol);
+                const excelHoraInicio = getCellStr(horaInicioCol);
+                const excelDataFinal = getCellStr(dataFinalCol);
+                const excelHoraFim = getCellStr(horaFimCol);
+                const clienteRaw = getCellStr(clienteCol);
+                const fornRaw = getCellStr(fornecedorCol);
+
+                const systemMission = missionFinancials.find(m => {
+                    const sysId = String(m.id || '').toUpperCase().trim();
+                    return sysId === osId || `GTM-${sysId}` === osId || sysId.replace('GTM-', '') === osId.replace('GTM-', '');
+                });
+
+                const sysRev = systemMission?.rev || 0;
+                const sysCost = systemMission?.cost || 0;
+                const sysDetails = extractSysMissionDetails(systemMission);
+
+                const revDiff = excelRev > 0 ? Math.abs(sysRev - excelRev) : 0;
+                const costDiff = excelCost > 0 ? Math.abs(sysCost - excelCost) : 0;
+                const revMatch = excelRev > 0 ? revDiff <= 50 : true;
+                const costMatch = excelCost > 0 ? costDiff <= 50 : true;
+
+                const comp = {
+                    osId, found: !!systemMission, excelRev, excelCost, sysRev, sysCost,
+                    revDiff, costDiff, revMatch, costMatch,
+                    status: systemMission?.status || 'Não encontrada',
+                    client: systemMission?.client || clienteRaw || '-',
+                    provider: systemMission?.provider || fornRaw || '-',
+                    excelRota, excelOperacao, excelValorBase, excelHrFranq, excelKmFranq,
+                    excelHrExtra, excelKmExtra, excelToll, excelDataInicial, excelHoraInicio,
+                    excelDataFinal, excelHoraFim, excelKm, excelKmInicial, excelKmFinal,
+                    excelEstacionamento,
+                    ...(sysDetails || {})
+                };
+                comparisons.push(comp);
+                rawPastedRows.push({ linha: i, colunas: row.map((c: string, idx: number) => `${headers[idx] || `Col${idx}`}: ${c}`).join(' | ') });
+            }
+
+            comparisons.sort((a, b) => {
+                if (!a.found && b.found) return -1;
+                if (a.found && !b.found) return 1;
+                if (!a.revMatch || !a.costMatch) return -1;
+                if (!b.revMatch || !b.costMatch) return 1;
+                return (b.revDiff + b.costDiff) - (a.revDiff + a.costDiff);
+            });
+
+            setExcelComparison(comparisons);
+            setShowExcelPanel(true);
+            setShowPasteArea(false);
+
+            setIsAiAnalyzing(true);
+            setIsExcelLoading(false);
+
+            try {
+                const analysisData = comparisons.slice(0, 40).map(d => {
+                    const entry: any = {
+                        os: d.osId,
+                        encontrada_no_sistema: d.found,
+                        cliente: d.client,
+                        fornecedor: d.provider || '-',
+                        status_os: d.status,
+                    };
+                    if (d.excelRota || d.sysRota) { entry.planilha_rota = d.excelRota || '-'; entry.sistema_rota = d.sysRota || '-'; }
+                    if (d.excelOperacao || d.sysOperacao) { entry.planilha_operacao = d.excelOperacao || '-'; entry.sistema_operacao = d.sysOperacao || '-'; }
+                    entry.planilha_valor_base = d.excelValorBase;
+                    entry.planilha_receita_total = d.excelRev;
+                    entry.sistema_receita_total = d.sysRev;
+                    entry.diff_receita = d.revDiff;
+                    if (d.excelCost > 0 || d.sysCost > 0) { entry.planilha_custo_total = d.excelCost; entry.sistema_custo_total = d.sysCost; entry.diff_custo = d.costDiff; }
+                    if (d.excelHrFranq != null) entry.planilha_hr_franquia = d.excelHrFranq;
+                    if (d.excelKmFranq != null) entry.planilha_km_franquia = d.excelKmFranq;
+                    if (d.excelHrExtra != null) entry.planilha_hr_extra = d.excelHrExtra;
+                    if (d.excelKmExtra != null) entry.planilha_km_extra = d.excelKmExtra;
+                    if (d.excelKm != null || d.sysKm != null) { entry.planilha_km_total = d.excelKm; entry.sistema_km_total = d.sysKm; }
+                    if (d.excelKmInicial != null || d.sysStartKm != null) { entry.planilha_km_inicial = d.excelKmInicial; entry.sistema_km_inicial = d.sysStartKm; }
+                    if (d.excelKmFinal != null || d.sysEndKm != null) { entry.planilha_km_final = d.excelKmFinal; entry.sistema_km_final = d.sysEndKm; }
+                    if (d.excelDataInicial || d.sysDataInicial) { entry.planilha_data_inicial = d.excelDataInicial || '-'; entry.sistema_data_inicial = d.sysDataInicial || '-'; }
+                    if (d.excelHoraInicio || d.sysHoraInicio) { entry.planilha_hora_inicio = d.excelHoraInicio || '-'; entry.sistema_hora_inicio = d.sysHoraInicio || '-'; }
+                    if (d.excelDataFinal || d.sysDataFinal) { entry.planilha_data_final = d.excelDataFinal || '-'; entry.sistema_data_final = d.sysDataFinal || '-'; }
+                    if (d.excelHoraFim || d.sysHoraFim) { entry.planilha_hora_fim = d.excelHoraFim || '-'; entry.sistema_hora_fim = d.sysHoraFim || '-'; }
+                    if (d.excelToll != null || d.sysToll != null) { entry.planilha_pedagio = d.excelToll; entry.sistema_pedagio = d.sysToll; }
+                    if (d.excelEstacionamento != null) entry.planilha_estacionamento = d.excelEstacionamento;
+                    entry.receita_confere = d.revMatch ? 'SIM' : 'NÃO';
+                    entry.custo_confere = d.costMatch ? 'SIM' : 'NÃO';
+                    return entry;
+                });
+
+                const divergences = comparisons.filter(c => !c.found || !c.revMatch || !c.costMatch);
+                const matched = comparisons.filter(c => c.found && c.revMatch && c.costMatch);
+
+                const res = await fetch('/api/gemini/generate', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        prompt: `Você é auditor financeiro da TM SEG (empresa de escolta armada). O usuário colou dados de uma planilha e precisa que você analise LINHA POR LINHA comparando com o sistema de gestão.\n\n## DADOS COMPARADOS (Planilha vs Sistema)\n${JSON.stringify(analysisData, null, 2)}\n\n## RESUMO RÁPIDO\n- Total de OS na planilha: ${comparisons.length}\n- OS conferidas (valores batem): ${matched.length}\n- OS com divergência: ${divergences.filter(d => d.found).length}\n- OS não encontradas no sistema: ${divergences.filter(d => !d.found).length}\n\n## INSTRUÇÕES\nPara CADA OS da planilha, diga se CONFERE ou se há DIVERGÊNCIA.\n\nPara cada OS DIVERGENTE, analise campo a campo:\n1. **Receita**: Planilha vs Sistema — se diferente, investigue valor base, KM extra, hora extra\n2. **KM**: Compare KM Total. Se diferente, verifique KM inicial/final e KM extra\n3. **Horários**: Compare hora início e fim. Se diferente, pode impactar hora extra\n4. **Pedágio**: Valores diferentes?\n5. **Custo**: Se informado, compare custo total\n\nPara cada divergência, recomende ação corretiva ESPECÍFICA.\n\nSeja DIRETO e OBJETIVO. Use português do Brasil. Valores em R$. Organize por OS.\nAo final, dê um resumo executivo com o impacto financeiro total das divergências.`,
+                        stream: false
+                    })
+                });
+                const data = await res.json();
+                setExcelAiAnalysis(data.text || data.response || 'Análise indisponível');
+            } catch { setExcelAiAnalysis('Erro ao gerar análise com IA'); }
+            finally { setIsAiAnalyzing(false); }
+        } catch (err: any) {
+            alert(`Erro ao processar dados colados: ${err.message}`);
+            setIsExcelLoading(false);
+        }
+    }, [pastedText, missionFinancials]);
+
     const totals = useMemo(() => {
         const valid = missionFinancials.filter(m => m.status !== MissionStatus.REFUSED);
         const totalRev = valid.reduce((a, m) => a + m.rev, 0);
@@ -914,7 +1103,7 @@ const ExecutiveDashboard: React.FC<Props> = ({ missions, isDirector, clientTable
                         <div className="p-2 bg-blue-600 text-white rounded-lg"><FileSpreadsheet size={14} /></div>
                         <div>
                             <h4 className="text-xs font-black text-gray-900 uppercase tracking-widest">Comparativo Planilha vs Sistema</h4>
-                            <p className="text-[10px] text-gray-400 font-bold">Importe sua planilha Excel e compare OS por OS com a IA</p>
+                            <p className="text-[10px] text-gray-400 font-bold">Cole os dados da planilha e a IA analisa linha por linha</p>
                         </div>
                     </div>
                     <div className="flex items-center gap-2">
@@ -924,17 +1113,16 @@ const ExecutiveDashboard: React.FC<Props> = ({ missions, isDirector, clientTable
                                 className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-50 text-emerald-700 rounded-lg text-[10px] font-black uppercase hover:bg-emerald-100 transition-all disabled:opacity-50" data-testid="button-refresh-excel">
                                 <RefreshCw size={11} className={isRefreshingExcel ? 'animate-spin' : ''} /> {isRefreshingExcel ? 'Atualizando...' : 'Atualizar'}
                             </button>
-                            <button onClick={() => { setExcelComparison(null); setExcelAiAnalysis(null); setShowExcelPanel(false); setAdjustedOsIds(new Set()); }}
+                            <button onClick={() => { setExcelComparison(null); setExcelAiAnalysis(null); setShowExcelPanel(false); setAdjustedOsIds(new Set()); setPastedText(''); }}
                                 className="px-3 py-1.5 bg-gray-100 text-gray-600 rounded-lg text-[10px] font-black uppercase hover:bg-gray-200 transition-all" data-testid="button-clear-excel">
                                 Limpar
                             </button>
                             </>
                         )}
-                        <input type="file" ref={fileInputRef} accept=".xlsx,.xls,.xlsb,.csv" onChange={handleExcelUpload} className="hidden" data-testid="input-excel-upload" />
-                        <button onClick={() => fileInputRef.current?.click()} disabled={isExcelLoading}
-                            className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg text-[11px] font-black uppercase tracking-wide hover:bg-blue-700 transition-all active:scale-95 disabled:opacity-50" data-testid="button-upload-excel">
-                            {isExcelLoading ? <Loader2 size={13} className="animate-spin" /> : <Upload size={13} />}
-                            {isExcelLoading ? 'Processando...' : 'Importar Planilha'}
+                        <button onClick={() => setShowPasteArea(!showPasteArea)} disabled={isExcelLoading || isAiAnalyzing}
+                            className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg text-[11px] font-black uppercase tracking-wide hover:bg-blue-700 transition-all active:scale-95 disabled:opacity-50" data-testid="button-paste-spreadsheet">
+                            {isExcelLoading ? <Loader2 size={13} className="animate-spin" /> : <FileSpreadsheet size={13} />}
+                            {isExcelLoading ? 'Processando...' : showPasteArea ? 'Fechar' : 'Colar Planilha'}
                         </button>
                         <button onClick={() => handleBatchRecalculate(true)} disabled={isRecalculating}
                             className="flex items-center gap-2 px-4 py-2 bg-amber-600 text-white rounded-lg text-[11px] font-black uppercase tracking-wide hover:bg-amber-700 transition-all active:scale-95 disabled:opacity-50" data-testid="button-batch-recalculate">
@@ -943,6 +1131,37 @@ const ExecutiveDashboard: React.FC<Props> = ({ missions, isDirector, clientTable
                         </button>
                     </div>
                 </div>
+
+                {showPasteArea && (
+                    <div className="border border-blue-200 bg-blue-50/50 rounded-lg p-4 space-y-3" data-testid="paste-area-container">
+                        <div className="flex items-center gap-2 mb-1">
+                            <FileSpreadsheet size={14} className="text-blue-600" />
+                            <p className="text-[11px] font-black text-blue-800 uppercase tracking-wide">Cole os dados da planilha abaixo</p>
+                        </div>
+                        <p className="text-[10px] text-blue-600 font-bold">Selecione as linhas na planilha Excel (incluindo o cabeçalho), copie (Ctrl+C) e cole aqui (Ctrl+V). A IA vai analisar cada OS comparando com o sistema.</p>
+                        <textarea
+                            value={pastedText}
+                            onChange={e => setPastedText(e.target.value)}
+                            placeholder={"Nº\tROTA\tCLIENTE\tFORNECEDOR\tVALOR TOTAL\tCUSTO\n3800\tSP → RJ\tCEVA\tMACOR\t2.500,00\t1.800,00\n3801\tRJ → MG\tRACER\tNOVA ERA\t1.900,00\t1.200,00"}
+                            className="w-full h-40 bg-white border border-blue-200 rounded-lg p-3 text-[11px] font-mono text-gray-800 placeholder-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-400 focus:border-transparent resize-y"
+                            data-testid="textarea-paste-spreadsheet"
+                        />
+                        <div className="flex items-center justify-between">
+                            <p className="text-[10px] text-gray-400 font-bold">
+                                {pastedText.trim() ? `${pastedText.trim().split('\n').length - 1} linhas de dados detectadas` : 'Aguardando dados...'}
+                            </p>
+                            <button
+                                onClick={handlePasteAnalysis}
+                                disabled={!pastedText.trim() || isExcelLoading || isAiAnalyzing}
+                                className="flex items-center gap-2 px-5 py-2.5 bg-blue-600 text-white rounded-lg text-[11px] font-black uppercase tracking-wide hover:bg-blue-700 transition-all active:scale-95 disabled:opacity-50"
+                                data-testid="button-analyze-pasted"
+                            >
+                                {isAiAnalyzing ? <Loader2 size={13} className="animate-spin" /> : <Search size={13} />}
+                                {isAiAnalyzing ? 'IA Analisando...' : 'Analisar com IA'}
+                            </button>
+                        </div>
+                    </div>
+                )}
 
                 {recalcResults && (
                     <div className="bg-white border border-gray-200 rounded-xl p-4 shadow-sm space-y-3">

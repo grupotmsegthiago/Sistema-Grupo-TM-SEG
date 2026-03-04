@@ -31,7 +31,7 @@ The system encompasses modules for **Missions**, **Clients**, **Providers**, **F
 -   **Toll Calculation:** Dynamically calculates toll costs for routes using external APIs.
 -   **CEVA + Jundiaí Price Table Intelligence:** Automatically adjusts price table selection for the CEVA client based on distance and location.
 -   **Mission Report:** Generates detailed, AI-powered operational reports with client-specific views and PDF export.
--   **Excel Comparison Module:** Compares uploaded Excel OS values with the system, highlighting divergences and suggesting corrections via AI.
+-   **Spreadsheet Comparison Module (AI-Powered):** Users paste spreadsheet data (Ctrl+C from Excel), and the AI analyzes each OS line by line comparing with system values, highlighting divergences and recommending corrections. Replaced the previous Excel file upload approach.
 -   **Client Portal OS Request:** Allows client users to create escort requests with specific service and incident types.
 -   **Dashboard Click-to-Filter (PowerBI-like):** Enables interactive data filtering on dashboards with visual feedback and brand-specific color schemes for CEVA clients.
 -   **Franchise Financial Calculation:** Implements strict franchise rules for extra KM and hours, with tolerance-based auditing and prioritization of user-saved values.
