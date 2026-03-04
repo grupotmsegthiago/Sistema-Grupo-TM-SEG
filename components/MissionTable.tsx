@@ -560,20 +560,39 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
         return null;
     }, [currentUser]);
 
-    const myApprovalMissions = useMemo(() => {
-        if (!myApprovalStage) return [];
-        const isDiretoria = myApprovalStage === 'diretoria';
+    const eligibleApprovalMissions = useMemo(() => {
         return allMissions.filter(m => {
             if (m.status !== MissionStatus.COMPLETED || m.billing_approved) return false;
             const mDate = new Date(m.startTime || m.createdAt).getTime();
-            if (mDate < DATE_APPROVAL_RULE) return false;
-            const stages = (approvalMap[m.id] || []).map(s => s.stage);
-            if (isDiretoria) {
-                return !stages.includes('auditor') || !stages.includes('financeiro') || !stages.includes('diretoria');
-            }
-            return !stages.includes(myApprovalStage);
+            return mDate >= DATE_APPROVAL_RULE;
         });
-    }, [allMissions, approvalMap, myApprovalStage]);
+    }, [allMissions]);
+
+    const pendingByStage = useMemo(() => {
+        const auditor: Mission[] = [];
+        const financeiro: Mission[] = [];
+        const diretoria: Mission[] = [];
+        eligibleApprovalMissions.forEach(m => {
+            const stages = (approvalMap[m.id] || []).map(s => s.stage);
+            if (!stages.includes('auditor')) auditor.push(m);
+            if (!stages.includes('financeiro')) financeiro.push(m);
+            if (!stages.includes('diretoria')) diretoria.push(m);
+        });
+        return { auditor, financeiro, diretoria };
+    }, [eligibleApprovalMissions, approvalMap]);
+
+    const myApprovalMissions = useMemo(() => {
+        if (!myApprovalStage) return [];
+        if (myApprovalStage === 'diretoria') {
+            const allIds = new Set([
+                ...pendingByStage.auditor.map(m => m.id),
+                ...pendingByStage.financeiro.map(m => m.id),
+                ...pendingByStage.diretoria.map(m => m.id),
+            ]);
+            return eligibleApprovalMissions.filter(m => allIds.has(m.id));
+        }
+        return pendingByStage[myApprovalStage] || [];
+    }, [myApprovalStage, pendingByStage, eligibleApprovalMissions]);
 
     const myApprovalCount = myApprovalMissions.length;
   
@@ -922,7 +941,7 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
                         </button>
                     )}
 
-                    {myApprovalStage && (
+                    {myApprovalStage && myApprovalStage !== 'diretoria' && (
                         <button 
                             data-testid="button-my-approvals"
                             onClick={() => setShowMyApprovalOnly(!showMyApprovalOnly)} 
@@ -939,11 +958,50 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
                                 <span className="flex items-center gap-1.5">MINHAS APROVAÇÕES <span className="text-[8px] font-black">ON</span></span>
                             ) : (
                                 <span className="flex items-center gap-1.5">
-                                    {myApprovalStage === 'diretoria' ? 'APROVAÇÕES PENDENTES' : 'MINHAS APROVAÇÕES'}
+                                    MINHAS APROVAÇÕES
                                     {myApprovalCount > 0 && <span className="ml-1 px-1.5 py-0.5 rounded-full text-[9px] bg-emerald-600 text-white font-bold">{myApprovalCount}</span>}
                                 </span>
                             )}
                         </button>
+                    )}
+
+                    {myApprovalStage === 'diretoria' && (
+                        <>
+                        <button 
+                            data-testid="button-approvals-daniel"
+                            onClick={() => setShowMyApprovalOnly(!showMyApprovalOnly)} 
+                            className={`relative flex items-center gap-2 px-4 py-2.5 rounded-lg text-xs font-black uppercase border transition-all ${
+                                showMyApprovalOnly 
+                                ? 'bg-emerald-600 text-white border-emerald-700 shadow-md scale-105 ring-2 ring-emerald-500/20' 
+                                : pendingByStage.auditor.length > 0 
+                                    ? 'bg-emerald-50 text-emerald-700 border-emerald-300 shadow-sm animate-pulse' 
+                                    : 'bg-white text-emerald-600 border-emerald-200 hover:bg-emerald-50'
+                            }`}
+                        >
+                            <ClipboardCheck size={16} />
+                            <span className="flex items-center gap-1.5">
+                                APROVAÇÕES DANIEL
+                                {pendingByStage.auditor.length > 0 && <span className="ml-1 px-1.5 py-0.5 rounded-full text-[9px] bg-emerald-600 text-white font-bold">{pendingByStage.auditor.length}</span>}
+                            </span>
+                        </button>
+                        <button 
+                            data-testid="button-approvals-barbara"
+                            onClick={() => setShowMyApprovalOnly(!showMyApprovalOnly)} 
+                            className={`relative flex items-center gap-2 px-4 py-2.5 rounded-lg text-xs font-black uppercase border transition-all ${
+                                showMyApprovalOnly 
+                                ? 'bg-amber-600 text-white border-amber-700 shadow-md scale-105 ring-2 ring-amber-500/20' 
+                                : pendingByStage.financeiro.length > 0 
+                                    ? 'bg-amber-50 text-amber-700 border-amber-300 shadow-sm animate-pulse' 
+                                    : 'bg-white text-amber-600 border-amber-200 hover:bg-amber-50'
+                            }`}
+                        >
+                            <ClipboardCheck size={16} />
+                            <span className="flex items-center gap-1.5">
+                                APROVAÇÕES BARBARA
+                                {pendingByStage.financeiro.length > 0 && <span className="ml-1 px-1.5 py-0.5 rounded-full text-[9px] bg-amber-600 text-white font-bold">{pendingByStage.financeiro.length}</span>}
+                            </span>
+                        </button>
+                        </>
                     )}
                 </div>
                 )}
