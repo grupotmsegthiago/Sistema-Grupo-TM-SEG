@@ -156,6 +156,7 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
   const [showClientRequestModal, setShowClientRequestModal] = useState(false);
   const [solicitationCount, setSolicitationCount] = useState(0);
   const [accidentCount, setAccidentCount] = useState(0);
+  const [approvalMap, setApprovalMap] = useState<Record<string, { stage: string; date: string }[]>>({});
   const [resolvedClientName, setResolvedClientName] = useState('');
 
   // Relógio para projeções
@@ -338,6 +339,27 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
             const portalMissions = mapped.filter(m => m.status === MissionStatus.SOLICITED && (m.currentLocation || '').includes('Solicitação via Portal'));
             setSolicitationCount(portalMissions.length);
             setAccidentCount(portalMissions.filter(m => (m.currentLocation || '').includes('ACIDENTE')).length);
+
+            const completedIds = mapped.filter(m => m.status === MissionStatus.COMPLETED && !m.billing_approved).map(m => m.id);
+            if (completedIds.length > 0) {
+                const { data: approvalLogs } = await supabase.from('system_logs')
+                    .select('entity_id, action_type, details, created_at')
+                    .eq('entity', 'BillingApproval')
+                    .in('entity_id', completedIds);
+                if (approvalLogs) {
+                    const map: Record<string, { stage: string; date: string }[]> = {};
+                    approvalLogs.forEach((l: any) => {
+                        if (!map[l.entity_id]) map[l.entity_id] = [];
+                        try {
+                            const parsed = JSON.parse(l.details);
+                            map[l.entity_id].push({ stage: parsed.stage || l.action_type, date: parsed.date || l.created_at });
+                        } catch {
+                            map[l.entity_id].push({ stage: l.action_type, date: l.created_at });
+                        }
+                    });
+                    setApprovalMap(map);
+                }
+            }
         }
       } catch (error: any) {
         console.error('Error fetching missions:', error.message || error);
@@ -908,6 +930,7 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
                                       clientsData={clientsData}
                                       agentPhonesMap={agentPhonesMap}
                                       currentTime={currentTime}
+                                      approvalStages={approvalMap[mission.id]}
                                   />
                               </div>
                           );

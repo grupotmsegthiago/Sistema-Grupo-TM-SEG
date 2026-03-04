@@ -40,7 +40,8 @@ interface MissionCardProps {
     providerTables: ProviderCostTable[];
     clientsData: Client[];
     agentPhonesMap?: Record<string, string>;
-    currentTime?: Date; // Prop for real-time trigger
+    currentTime?: Date;
+    approvalStages?: { stage: string; date: string }[];
 }
 
 const formatCurrency = (val: number | null | undefined) => {
@@ -138,7 +139,7 @@ const getAgentDisplayName = (fullName?: string) => {
 const MissionCardComponent: React.FC<MissionCardProps> = ({ 
     mission, canEditMission, isDirector, isRedLight, isImminent, minutesSinceUpdate, copiedId, hideProviderInfo,
     onViewMap, onUpdate, onOpenFinancials, onCopy, onCopyEmail, onDelete, onPrint, onViewHistory, onFullReport, onOperationalReport,
-    clientTables, providerTables, clientsData, agentPhonesMap, currentTime
+    clientTables, providerTables, clientsData, agentPhonesMap, currentTime, approvalStages
 }) => {
     
     const { showNotification } = useNotification();
@@ -299,7 +300,32 @@ Qualquer dúvida, estamos a disposição.
 
     const isAdjustedRevenue = mission.billing_approved || hasBeenVerified || (mission.revenue_value != null && mission.revenue_value > 0);
     const isAdjustedCost = mission.billing_approved || hasBeenVerified || (mission.cost_value != null && mission.cost_value > 0);
-    
+
+    const pendingApproval = useMemo(() => {
+        if (mission.billing_approved) return null;
+        const stages = (approvalStages || []).map(s => s.stage);
+        const hasAuditor = stages.includes('auditor');
+        const hasFinanceiro = stages.includes('financeiro');
+        const hasDiretoria = stages.includes('diretoria');
+        if (hasAuditor && hasFinanceiro && hasDiretoria) return null;
+        const missing: string[] = [];
+        if (!hasAuditor) missing.push('Daniel');
+        if (!hasFinanceiro) missing.push('Barbara');
+        if (!hasDiretoria) missing.push('Diretoria');
+        let waitingDays = 0;
+        if (approvalStages && approvalStages.length > 0) {
+            const lastDate = approvalStages.reduce((latest, s) => {
+                const d = new Date(s.date).getTime();
+                return d > latest ? d : latest;
+            }, 0);
+            waitingDays = Math.floor((Date.now() - lastDate) / (1000 * 60 * 60 * 24));
+        } else if (mission.endTime) {
+            waitingDays = Math.floor((Date.now() - new Date(mission.endTime).getTime()) / (1000 * 60 * 60 * 24));
+        }
+        const hasPartial = hasAuditor || hasFinanceiro;
+        return { missing, waitingDays, hasPartial, completedCount: (hasAuditor ? 1 : 0) + (hasFinanceiro ? 1 : 0) + (hasDiretoria ? 1 : 0) };
+    }, [mission.billing_approved, mission.endTime, approvalStages]);
+
     // Calcula o progresso visual para a barra (0 a 100)
     const progressVisual = Math.min(100, Math.max(0, mission.progress || 0));
 
@@ -560,7 +586,7 @@ Qualquer dúvida, estamos a disposição.
                                );
                            })()}
 
-                           <div className={`w-full rounded-lg border p-1 flex flex-col items-center justify-center gap-0.5 shadow-sm transition-all ${auditResult?.isInconsistent ? 'bg-amber-50 border-amber-400 ring-1 ring-amber-300' : mission.billing_approved ? 'bg-blue-50 border-blue-200' : hasBeenVerified ? 'bg-green-50 border-green-200' : 'bg-orange-50 border-orange-200'}`} title={auditResult?.isInconsistent ? auditResult.reason : ''}>
+                           <div className={`w-full rounded-lg border p-1 flex flex-col items-center justify-center gap-0.5 shadow-sm transition-all ${auditResult?.isInconsistent ? 'bg-amber-50 border-amber-400 ring-1 ring-amber-300' : mission.billing_approved ? 'bg-blue-50 border-blue-200' : pendingApproval?.hasPartial ? 'bg-gray-100 border-gray-300' : hasBeenVerified ? 'bg-green-50 border-green-200' : 'bg-orange-50 border-orange-200'}`} title={auditResult?.isInconsistent ? auditResult.reason : pendingApproval ? `Aguardando: ${pendingApproval.missing.join(', ')}` : ''}>
                               {auditResult?.isInconsistent ? (
                                   <>
                                       <AlertOctagon size={12} className="text-amber-600 animate-pulse" />
@@ -570,6 +596,12 @@ Qualquer dúvida, estamos a disposição.
                                   <>
                                       <ShieldCheck size={12} className="text-blue-600" />
                                       <span className="text-[7px] font-black text-blue-700 uppercase leading-none">Auditado</span>
+                                  </>
+                              ) : pendingApproval?.hasPartial ? (
+                                  <>
+                                      <Clock size={10} className="text-gray-500" />
+                                      <span className="text-[7px] font-black text-gray-600 uppercase leading-none truncate w-full text-center">Falta: {pendingApproval.missing.join(', ')}</span>
+                                      <span className="text-[7px] font-bold text-gray-400 leading-none">({pendingApproval.waitingDays}d)</span>
                                   </>
                               ) : hasBeenVerified ? (
                                   <>
@@ -619,8 +651,9 @@ Qualquer dúvida, estamos a disposição.
                         <button onClick={() => onUpdate(mission)} className={`w-7 h-7 flex items-center justify-center rounded-md border transition-all duration-200 hover:shadow-sm active:scale-95 ${canEditMission ? 'bg-indigo-50 text-indigo-600 border-indigo-100 hover:bg-indigo-600 hover:text-white' : 'bg-gray-50 text-gray-400 border-gray-100 hover:bg-gray-200 hover:text-gray-600'}`} title={canEditMission ? "Editar Missão" : "Visualizar Detalhes"}>{canEditMission ? <Pencil size={14}/> : <Eye size={14}/>}</button>
                         
                         {isDirector && onOpenFinancials && (
-                            <button onClick={() => onOpenFinancials(mission)} className={`w-7 h-7 flex items-center justify-center rounded-md transition-all duration-200 hover:shadow-sm active:scale-95 ${mission.billing_approved ? 'bg-blue-600 text-white border-blue-700' : 'bg-green-50 text-green-700 border-green-200 hover:bg-green-600 hover:text-white'}`} title={mission.billing_approved ? "Faturamento Aprovado - Visualizar" : "Conferência e Aprovação de Faturamento"}>
+                            <button onClick={() => onOpenFinancials(mission)} className={`flex items-center justify-center rounded-md transition-all duration-200 hover:shadow-sm active:scale-95 border ${mission.billing_approved ? 'w-7 h-7 bg-blue-600 text-white border-blue-700' : pendingApproval?.hasPartial ? 'h-7 px-1.5 gap-1 bg-gray-100 text-gray-500 border-gray-300 hover:bg-gray-200' : 'w-7 h-7 bg-green-50 text-green-700 border-green-200 hover:bg-green-600 hover:text-white'}`} title={mission.billing_approved ? "Faturamento Aprovado - Visualizar" : pendingApproval?.hasPartial ? `Aguardando: ${pendingApproval.missing.join(', ')} (${pendingApproval.waitingDays}d)` : "Conferência e Aprovação de Faturamento"}>
                                 <Calculator size={14} />
+                                {pendingApproval?.hasPartial && <span className="text-[7px] font-black text-gray-500 leading-none whitespace-nowrap">{pendingApproval.missing[0]} ({pendingApproval.waitingDays}d)</span>}
                             </button>
                         )}
                         
