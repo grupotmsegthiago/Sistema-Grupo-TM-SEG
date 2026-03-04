@@ -13,6 +13,7 @@ interface DiagResult {
     latency?: number;
     detail?: string;
     icon: any;
+    fixAction?: { label: string; action: () => Promise<string> };
 }
 
 interface Props {
@@ -49,7 +50,7 @@ const SystemDiagnostics: React.FC<Props> = ({ onClose }) => {
         setResults(prev => prev.map((r, i) => i === index ? { ...r, ...update } : r));
     };
 
-    const runTest = async (index: number, testFn: () => Promise<{ status: 'ok' | 'warning' | 'error'; latency?: number; detail: string }>) => {
+    const runTest = async (index: number, testFn: () => Promise<{ status: 'ok' | 'warning' | 'error'; latency?: number; detail: string; fixAction?: DiagResult['fixAction'] }>) => {
         try {
             const result = await testFn();
             updateResult(index, result);
@@ -58,6 +59,9 @@ const SystemDiagnostics: React.FC<Props> = ({ onClose }) => {
         }
         setProgress(prev => prev + 1);
     };
+
+    const [fixingIndex, setFixingIndex] = useState<number | null>(null);
+    const [fixResult, setFixResult] = useState<Record<number, string>>({});
 
     const measureLatency = async (fn: () => Promise<any>): Promise<number> => {
         const start = performance.now();
@@ -98,7 +102,27 @@ const SystemDiagnostics: React.FC<Props> = ({ onClose }) => {
             const avg = Math.round(pings.reduce((a, b) => a + b, 0) / pings.length);
             const jitter = Math.round(Math.max(...pings) - Math.min(...pings));
             const status = avg < 200 ? 'ok' : avg < 500 ? 'warning' : 'error';
-            return { status, latency: avg, detail: `Média: ${avg}ms | Jitter: ${jitter}ms | Pings: ${pings.join(', ')}ms` };
+            const fixAction = status !== 'ok' ? {
+                label: 'Otimizar Conexão',
+                action: async () => {
+                    if ('caches' in window) {
+                        const keys = await caches.keys();
+                        await Promise.all(keys.map(k => caches.delete(k)));
+                    }
+                    if ('serviceWorker' in navigator) {
+                        const reg = await navigator.serviceWorker.getRegistration();
+                        if (reg) await reg.update();
+                    }
+                    const newPings: number[] = [];
+                    for (let i = 0; i < 3; i++) {
+                        const lat = await measureLatency(() => fetch(`/api/health?t=${Date.now()}`, { cache: 'no-store' }).catch(() => {}));
+                        newPings.push(lat);
+                    }
+                    const newAvg = Math.round(newPings.reduce((a, b) => a + b, 0) / newPings.length);
+                    return `Cache limpo. Nova latência: ${newAvg}ms (antes: ${avg}ms)`;
+                }
+            } : undefined;
+            return { status, latency: avg, detail: `Média: ${avg}ms | Jitter: ${jitter}ms | Pings: ${pings.join(', ')}ms`, fixAction };
         });
 
         await runTest(3, async () => {
@@ -226,7 +250,30 @@ const SystemDiagnostics: React.FC<Props> = ({ onClose }) => {
                 if (!('serviceWorker' in navigator)) return { status: 'warning', detail: 'Service Worker não suportado neste navegador' };
                 const reg = await navigator.serviceWorker.getRegistration();
                 const isInstalled = window.matchMedia('(display-mode: standalone)').matches;
-                return { status: reg ? 'ok' : 'warning', detail: `SW: ${reg ? 'Registrado ✅' : 'Não registrado'} | PWA: ${isInstalled ? 'Instalada' : 'Navegador'}` };
+                const fixAction = !reg ? {
+                    label: 'Registrar Service Worker',
+                    action: async () => {
+                        try {
+                            const newReg = await navigator.serviceWorker.register('/sw.js', { scope: '/' });
+                            await newReg.update();
+                            return 'Service Worker registrado com sucesso! Recarregue a página para ativar.';
+                        } catch (e: any) {
+                            return `Falha ao registrar: ${e.message}`;
+                        }
+                    }
+                } : !isInstalled ? {
+                    label: 'Instalar como App (PWA)',
+                    action: async () => {
+                        const deferredPrompt = (window as any).__pwaInstallPrompt;
+                        if (deferredPrompt) {
+                            deferredPrompt.prompt();
+                            const result = await deferredPrompt.userChoice;
+                            return result.outcome === 'accepted' ? 'PWA instalada com sucesso!' : 'Instalação cancelada pelo usuário.';
+                        }
+                        return 'Para instalar: abra o menu do navegador (⋮) e toque em "Instalar app" ou "Adicionar à tela inicial".';
+                    }
+                } : undefined;
+                return { status: reg ? 'ok' : 'warning', detail: `SW: ${reg ? 'Registrado ✅' : 'Não registrado'} | PWA: ${isInstalled ? 'Instalada' : 'Navegador'}`, fixAction };
             } catch (err: any) {
                 return { status: 'warning', detail: `SW: ${err.message}` };
             }
@@ -265,7 +312,24 @@ const SystemDiagnostics: React.FC<Props> = ({ onClose }) => {
                         issues.push(target.name);
                     }
                 }
-                if (issues.length > 0) return { status: 'error', detail: `Bloqueio detectado: ${issues.join(', ')}` };
+                const fixAction = issues.length > 0 ? {
+                    label: 'Tentar Corrigir',
+                    action: async () => {
+                        if ('caches' in window) {
+                            const keys = await caches.keys();
+                            await Promise.all(keys.map(k => caches.delete(k)));
+                        }
+                        const retryIssues: string[] = [];
+                        for (const target of corsTargets) {
+                            try {
+                                await fetch(target.url, { mode: target.mode, cache: 'no-store', headers: target.name === 'Supabase' ? { 'apikey': 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFqaG1tanVld2RzdWtlY2FpbWlrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDQ5MTY2ODAsImV4cCI6MjA2MDQ5MjY4MH0.zNHBe-JOyJHIBOOMYBnYi_nAjd3U0iqr6_p0pJqNiYc' } : {} });
+                            } catch { retryIssues.push(target.name); }
+                        }
+                        if (retryIssues.length === 0) return 'Bloqueios resolvidos após limpar cache!';
+                        return `Ainda bloqueado: ${retryIssues.join(', ')}. Verifique firewall/antivírus corporativo.`;
+                    }
+                } : undefined;
+                if (issues.length > 0) return { status: 'error', detail: `Bloqueio detectado: ${issues.join(', ')}`, fixAction };
                 return { status: 'ok', detail: 'Nenhum bloqueio de CORS/Firewall detectado' };
             } catch (err: any) {
                 return { status: 'warning', detail: `Teste inconclusivo: ${err.message}` };
@@ -362,19 +426,49 @@ const SystemDiagnostics: React.FC<Props> = ({ onClose }) => {
                                     <span className="w-4 h-px bg-gray-200" /> {cat}
                                 </h4>
                                 <div className="space-y-1.5">
-                                    {catResults.map((r, i) => (
-                                        <div key={i} className={`flex items-center gap-3 p-3 rounded-xl border transition-all ${r.status === 'ok' ? 'bg-emerald-50/50 border-emerald-100' : r.status === 'error' ? 'bg-red-50/50 border-red-100' : r.status === 'warning' ? 'bg-amber-50/50 border-amber-100' : 'bg-gray-50 border-gray-100'}`} data-testid={`diag-${r.name.toLowerCase().replace(/\s/g, '-')}`}>
-                                            <div className="flex-shrink-0">{statusIcon(r.status)}</div>
-                                            <div className="flex-1 min-w-0">
-                                                <div className="flex items-center gap-2">
-                                                    <r.icon size={12} className="text-gray-400 flex-shrink-0" />
-                                                    <span className="text-xs font-bold text-gray-800">{r.name}</span>
-                                                    {r.latency !== undefined && <span className="text-[9px] font-mono font-bold text-gray-400 ml-auto flex-shrink-0">{r.latency}ms</span>}
+                                    {catResults.map((r, ri) => {
+                                        const globalIndex = results.indexOf(r);
+                                        return (
+                                        <div key={ri} className={`p-3 rounded-xl border transition-all ${r.status === 'ok' ? 'bg-emerald-50/50 border-emerald-100' : r.status === 'error' ? 'bg-red-50/50 border-red-100' : r.status === 'warning' ? 'bg-amber-50/50 border-amber-100' : 'bg-gray-50 border-gray-100'}`} data-testid={`diag-${r.name.toLowerCase().replace(/\s/g, '-')}`}>
+                                            <div className="flex items-center gap-3">
+                                                <div className="flex-shrink-0">{statusIcon(r.status)}</div>
+                                                <div className="flex-1 min-w-0">
+                                                    <div className="flex items-center gap-2">
+                                                        <r.icon size={12} className="text-gray-400 flex-shrink-0" />
+                                                        <span className="text-xs font-bold text-gray-800">{r.name}</span>
+                                                        {r.latency !== undefined && <span className="text-[9px] font-mono font-bold text-gray-400 ml-auto flex-shrink-0">{r.latency}ms</span>}
+                                                    </div>
+                                                    {r.detail && <p className="text-[10px] text-gray-500 mt-0.5 truncate">{r.detail}</p>}
                                                 </div>
-                                                {r.detail && <p className="text-[10px] text-gray-500 mt-0.5 truncate">{r.detail}</p>}
+                                                {r.fixAction && (
+                                                    <button
+                                                        onClick={async () => {
+                                                            setFixingIndex(globalIndex);
+                                                            try {
+                                                                const msg = await r.fixAction!.action();
+                                                                setFixResult(prev => ({ ...prev, [globalIndex]: msg }));
+                                                            } catch (e: any) {
+                                                                setFixResult(prev => ({ ...prev, [globalIndex]: `Erro: ${e.message}` }));
+                                                            }
+                                                            setFixingIndex(null);
+                                                        }}
+                                                        disabled={fixingIndex === globalIndex}
+                                                        className="flex-shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-black uppercase transition-all bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 shadow-sm"
+                                                        data-testid={`button-fix-${r.name.toLowerCase().replace(/\s/g, '-')}`}
+                                                    >
+                                                        {fixingIndex === globalIndex ? <Loader2 size={11} className="animate-spin" /> : <Zap size={11} />}
+                                                        {r.fixAction.label}
+                                                    </button>
+                                                )}
                                             </div>
+                                            {fixResult[globalIndex] && (
+                                                <div className="mt-2 ml-7 px-3 py-2 bg-blue-50 border border-blue-200 rounded-lg">
+                                                    <p className="text-[10px] font-bold text-blue-800">{fixResult[globalIndex]}</p>
+                                                </div>
+                                            )}
                                         </div>
-                                    ))}
+                                        );
+                                    })}
                                 </div>
                             </div>
                         );
