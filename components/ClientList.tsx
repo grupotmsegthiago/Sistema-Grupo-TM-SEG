@@ -70,7 +70,7 @@ const ClientList: React.FC<ClientListProps> = ({ onAddClient, onEdit }) => {
       let query = supabase
         .from('clients')
         .select('*')
-        .order('created_at', { ascending: false });
+        .order('trading_name', { ascending: true });
 
       if (lockedClientId) {
           query = query.eq('id', lockedClientId);

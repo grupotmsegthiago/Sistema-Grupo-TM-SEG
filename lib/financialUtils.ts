@@ -821,7 +821,8 @@ export const auditMissionFinancials = (
     const costDiff = Math.abs(storedCost - calculatedCost);
     
     const hasStoredValues = storedRevenue > 0 || storedCost > 0;
-    const isInconsistent = hasStoredValues && (revenueDiff > tolerance || costDiff > tolerance);
+    const userVerified = !!(mission as any).billing_verified_by;
+    const isInconsistent = hasStoredValues && !userVerified && (revenueDiff > tolerance || costDiff > tolerance);
     
     let reason = '';
     if (isInconsistent) {

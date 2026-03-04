@@ -228,7 +228,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                   setTollSource('AGUARDANDO CONFERÊNCIA');
               }
 
-              if (mRes.data.billing_approved && (savedRev > 0 || savedCost > 0)) {
+              if ((mRes.data.billing_approved || mRes.data.billing_verified_by) && (savedRev > 0 || savedCost > 0)) {
                   setUseSavedValues(true);
                   const totalRev = savedRev + dbToll;
                   const totalCost = savedCost + dbTollProvider;

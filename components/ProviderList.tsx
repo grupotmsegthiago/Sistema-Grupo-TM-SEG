@@ -70,15 +70,14 @@ const ProviderList: React.FC<ProviderListProps> = ({ onAddProvider, onEdit }) =>
       const { data: providersData, error: providersError } = await supabase
         .from('providers')
         .select('*')
-        .order('id', { ascending: false });
+        .order('name', { ascending: true });
       
       if (providersError) {
-          // Se o erro for especificamente o schema cache, tentamos selecionar colunas fixas conhecidas
           if (providersError.message?.includes('schema cache')) {
                const { data: fallbackData, error: fbError } = await supabase
                  .from('providers')
-                 .select('id, name, cnpj, type, contact_name, status')
-                 .order('id', { ascending: false });
+                 .select('id, name, trading_name, cnpj, type, contact_name, status')
+                 .order('name', { ascending: true });
                
                if (fbError) throw fbError;
                processProviders(fallbackData);
@@ -159,7 +158,12 @@ const ProviderList: React.FC<ProviderListProps> = ({ onAddProvider, onEdit }) =>
             hasCostTable: providersWithTableSet.has(item.name), 
             created_at: item.created_at,
             created_by: item.created_by
-         };
+         } as ProviderWithTableStatus;
+      });
+      mapped.sort((a, b) => {
+          const nameA = (a.trading_name || a.name || '').toUpperCase();
+          const nameB = (b.trading_name || b.name || '').toUpperCase();
+          return nameA.localeCompare(nameB, 'pt-BR');
       });
       setDbProviders(mapped);
   };
