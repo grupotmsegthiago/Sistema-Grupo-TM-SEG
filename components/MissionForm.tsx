@@ -12,6 +12,7 @@ import ProviderForm from './ProviderForm';
 import ClientRouteForm from './ClientRouteForm';
 import ClientVehicleForm from './ClientVehicleForm';
 import { formatProviderName } from '../lib/utils';
+import { extractUF, UF_TO_REGION } from '../lib/financialUtils';
 
 const INPUT_CLASS = "w-full bg-white border border-gray-200 rounded-lg outline-none focus:ring-2 focus:ring-red-500/10 focus:border-red-500 text-sm h-11 transition-all text-gray-700 pl-12 pr-4";
 const LABEL_CLASS = "text-[10px] font-black text-gray-400 uppercase mb-1.5 block tracking-widest";
@@ -283,7 +284,7 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
       return generated;
   };
 
-  const findBestTable = (tables: any[], dist: number, locationKeywords: string[], clientRuleKeyword?: string) => {
+  const findBestTable = (tables: any[], dist: number, locationKeywords: string[], clientRuleKeyword?: string, providerName?: string, originAddress?: string) => {
       if (!tables || tables.length === 0) return null;
       const normalizedTables = tables.map(t => ({ ...t, normOp: normalizeStr(t.operation_type || '') }));
 
@@ -292,18 +293,73 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
           if (ruleMatch) return { table: ruleMatch, reason: `REGRA PRIORITÁRIA: ${clientRuleKeyword}` };
       }
 
-      const regionKeyword = locationKeywords[2];
-      if (regionKeyword) {
-          const regionalSubset = normalizedTables.filter(t => t.normOp.includes(regionKeyword));
-          if (regionalSubset.length > 0) {
-              const bestInRegion = regionalSubset.sort((a,b) => a.franchise_km - b.franchise_km).find(t => t.franchise_km >= dist) || regionalSubset[regionalSubset.length - 1];
-              return { table: bestInRegion, reason: `REGRA GEOGRÁFICA: ${regionKeyword}` };
+      const providerUpper = normalizeStr(providerName || '');
+      const isSpecialProvider = providerUpper.includes('ATIVA') || providerUpper.includes('TM SEG') || providerUpper.includes('TMSEG');
+
+      const originUF = extractUF(originAddress || '') || locationKeywords[1] || '';
+      const originRegion = UF_TO_REGION[originUF] || locationKeywords[2] || '';
+      const originCity = locationKeywords[0] || '';
+
+      const scored = normalizedTables.map(t => {
+          let score = 0;
+          let reason = 'GENÉRICO';
+
+          if (isSpecialProvider) {
+              const isNivelBrasil = t.normOp.includes('NIVEL BRASIL') || t.normOp.includes('ARMADO') || t.normOp.includes('ARMADOS');
+              if (!isNivelBrasil) {
+                  score -= 1000;
+              }
           }
+
+          if (originCity.length > 3 && t.normOp.includes(originCity)) {
+              score += 3000;
+              reason = `CIDADE: ${originCity}`;
+          }
+
+          if (t.normOp.includes('EXCETO')) {
+              if (originUF === 'MG' && t.normOp.includes('EXCETO MG')) { score -= 5000; reason = 'BLOQUEADO (EXCETO MG)'; }
+              if (originUF === 'ES' && t.normOp.includes('EXCETO') && t.normOp.includes('ES')) { score -= 5000; reason = 'BLOQUEADO (EXCETO ES)'; }
+          }
+
+          if (originUF && (originUF === 'MG' || originUF === 'ES')) {
+              if (t.normOp.includes('MG') && t.normOp.includes('ES') && !t.normOp.includes('EXCETO')) {
+                  score += 2000;
+                  reason = `UF ESPECÍFICO: ${originUF}`;
+              }
+          }
+
+          if (originUF && t.normOp.includes(originUF) && !t.normOp.includes('EXCETO')) {
+              score += 1500;
+              if (reason === 'GENÉRICO') reason = `UF: ${originUF}`;
+          }
+
+          if (originRegion && t.normOp.includes(originRegion)) {
+              score += 800;
+              if (reason === 'GENÉRICO') reason = `REGIÃO: ${originRegion}`;
+          }
+
+          if (t.franchise_km >= dist) {
+              score += 50;
+          } else {
+              score -= 10;
+          }
+
+          return { ...t, score, reason };
+      });
+
+      const valid = scored.filter(t => t.score > -1000).sort((a, b) => b.score - a.score);
+      if (valid.length === 0) {
+          const fallback = normalizedTables.sort((a, b) => a.franchise_km - b.franchise_km);
+          const best = fallback.find(t => t.franchise_km >= dist) || fallback[fallback.length - 1];
+          return { table: best, reason: "FAIXA KM (FALLBACK)" };
       }
 
-      const sorted = normalizedTables.sort((a, b) => a.franchise_km - b.franchise_km);
-      const best = sorted.find(t => t.franchise_km >= dist) || sorted[sorted.length - 1];
-      return { table: best, reason: "FAIXA KM GERAL" };
+      const topScore = valid[0].score;
+      const bestGroup = valid.filter(t => t.score >= topScore - 20);
+      const sortedByKm = bestGroup.sort((a, b) => a.franchise_km - b.franchise_km);
+      const exactCover = sortedByKm.find(t => t.franchise_km >= dist);
+      const bestTable = exactCover || sortedByKm[sortedByKm.length - 1];
+      return { table: bestTable, reason: bestTable.reason || "MELHOR MATCH" };
   };
 
   const calculatePricing = useCallback(async (route: ClientRoute, providerOverride?: string, revTableId?: string, cstTableId?: string, flags?: { ceva200km: boolean, vtc02h: boolean, isSameOs: boolean }) => {
@@ -336,7 +392,7 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
               revTable = clientPriceTables.find(t => t.id.toString() === revTableId);
               if (revTable) details.push(`FAT (MANUAL): ${revTable.operation_type}`);
           } else {
-              const result = findBestTable(clientPriceTables, effectiveDist, locationKeywords, forceKeyword);
+              const result = findBestTable(clientPriceTables, effectiveDist, locationKeywords, forceKeyword, undefined, route.origin);
               if (result) { revTable = result.table; details.push(`FAT (${result.reason.split(':')[0]}): ${revTable.operation_type}`); }
           }
           if (revTable) {
@@ -358,7 +414,7 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
                       const { data } = await supabase.from('provider_cost_tables').select('*').eq('provider', providerOverride);
                       if (data) currentCostTables = data as any;
                   }
-                  const result = findBestTable(currentCostTables, effectiveDist, locationKeywords, forceKeyword);
+                  const result = findBestTable(currentCostTables, effectiveDist, locationKeywords, forceKeyword, activeProvider, route.origin);
                   if (result) { cstTable = result.table; details.push(`CUSTO (${result.reason.split(':')[0]}): ${cstTable.operation_type}`); }
               }
               if (cstTable) {
