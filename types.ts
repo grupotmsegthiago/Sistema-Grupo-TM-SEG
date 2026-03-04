@@ -180,7 +180,7 @@ export interface Agent {
   name: string;
   role: string;
   provider: string;
-  status: 'Ativo' | 'Inativo' | 'Férias';
+  status: 'Ativo' | 'Inativo' | 'Férias' | 'Bloqueado / Ação Trabalhista';
   cpf?: string;
   rg?: string; 
   phone?: string;
@@ -356,7 +356,7 @@ export interface SupportAgent {
   latitude: number;
   longitude: number;
   service_cities: string; 
-  status: 'Ativo' | 'Pendente' | 'Bloqueado';
+  status: 'Ativo' | 'Pendente' | 'Bloqueado' | 'Bloqueado / Ação Trabalhista';
   distance?: number; 
   cost_value?: number; 
   pix_key?: string; 

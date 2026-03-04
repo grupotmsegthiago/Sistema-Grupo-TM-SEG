@@ -360,6 +360,7 @@ const ProviderAgentForm: React.FC<Props> = ({ onBack, id, initialProvider, onSuc
                                     <select required className={SELECT_CLASS} value={agent.status} onChange={e => handleAgentChange(index, 'status', e.target.value)}>
                                         <option value="Ativo">Ativo</option>
                                         <option value="Inativo">Inativo (Bloqueado)</option>
+                                        <option value="Bloqueado / Ação Trabalhista">⛔ Bloqueado / Ação Trabalhista</option>
                                         <option value="Férias">Em Férias</option>
                                     </select>
                                     <div className={`absolute left-4 top-1/2 -translate-y-1/2 w-3 h-3 rounded-full pointer-events-none ${agent.status === 'Ativo' ? 'bg-green-500' : 'bg-red-500'}`}></div>

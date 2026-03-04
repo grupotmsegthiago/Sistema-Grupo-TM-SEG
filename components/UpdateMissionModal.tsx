@@ -478,7 +478,9 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
             const nameUpper = agentName.trim().toUpperCase();
             const found = allAgentsList.find(a => a.name.toUpperCase() === nameUpper);
             if (found && found.status !== 'Ativo') {
-                alert(`⛔ BLOQUEIO DE SEGURANÇA\n\nO agente "${found.name}" está com status "${found.status}" e NÃO pode ser escalado para nenhuma operação.\n\nCampo: ${fieldLabel}\n\nRemova este agente ou selecione outro com status ATIVO.`);
+                const isAcaoTrabalhista = found.status === 'Bloqueado / Ação Trabalhista';
+                const extraMsg = isAcaoTrabalhista ? '\n\n⚠️ ATENÇÃO: Este agente possui AÇÃO TRABALHISTA ativa. Qualquer escalação pode gerar implicações jurídicas para a empresa.' : '';
+                alert(`⛔ BLOQUEIO DE SEGURANÇA\n\nO agente "${found.name}" está com status "${found.status}" e NÃO pode ser escalado para nenhuma operação.\n\nCampo: ${fieldLabel}${extraMsg}\n\nRemova este agente ou selecione outro com status ATIVO.`);
                 return true;
             }
             return false;
@@ -616,7 +618,7 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
 
     const filteredProviders = providersList.filter(p => p.name.toLowerCase().includes(searchProvider.toLowerCase()));
     const filteredVehicles = vehiclesList.filter(v => v.provider === editData.provider && (v.plate.toLowerCase().includes(searchVehicle.toLowerCase()) || (v.model && v.model.toLowerCase().includes(searchVehicle.toLowerCase()))));
-    const filteredAgents = agentsList.filter(a => a.provider === editData.provider && a.name.toLowerCase().includes((activeDropdown === 'agent1' ? searchAgent1 : searchAgent2).toLowerCase()));
+    const filteredAgents = agentsList.filter(a => a.provider === editData.provider && a.status === 'Ativo' && a.name.toLowerCase().includes((activeDropdown === 'agent1' ? searchAgent1 : searchAgent2).toLowerCase()));
 
     const getBlockedAgentWarning = (agentName: string) => {
         if (!agentName || agentName.trim() === '') return null;
@@ -836,9 +838,9 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
                                 <button type="button" disabled={!editData.provider} onClick={() => setQuickModal('agent')} className="p-2.5 bg-gray-100 text-gray-600 rounded-xl hover:bg-gray-200 transition-all border border-gray-200 disabled:opacity-50"><Plus size={18}/></button>
                             </div>
                             {blockedAgent1 && (
-                                <div className="mt-1.5 flex items-center gap-1.5 px-3 py-2 bg-red-100 border border-red-300 rounded-lg">
-                                    <ShieldAlert size={12} className="text-red-600 flex-shrink-0" />
-                                    <span className="text-[10px] font-black text-red-700 uppercase">⛔ AGENTE BLOQUEADO — Status: {blockedAgent1.status}. Não é permitido escalar este agente.</span>
+                                <div className={`mt-1.5 flex items-center gap-1.5 px-3 py-2 rounded-lg ${blockedAgent1.status === 'Bloqueado / Ação Trabalhista' ? 'animate-blocked-flash-3d text-white' : 'bg-red-100 border border-red-300'}`}>
+                                    <ShieldAlert size={12} className={`flex-shrink-0 ${blockedAgent1.status === 'Bloqueado / Ação Trabalhista' ? 'text-white' : 'text-red-600'}`} />
+                                    <span className={`text-[10px] font-black uppercase ${blockedAgent1.status === 'Bloqueado / Ação Trabalhista' ? 'text-white drop-shadow-lg' : 'text-red-700'}`}>⛔ AGENTE BLOQUEADO — Status: {blockedAgent1.status}. Não é permitido escalar este agente.</span>
                                 </div>
                             )}
                         </div>
@@ -863,9 +865,9 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
                                 <button type="button" disabled={!editData.provider} onClick={() => setQuickModal('agent')} className="p-2.5 bg-gray-100 text-gray-600 rounded-xl hover:bg-gray-200 transition-all border border-gray-200 disabled:opacity-50"><Plus size={18}/></button>
                             </div>
                             {blockedAgent2 && (
-                                <div className="mt-1.5 flex items-center gap-1.5 px-3 py-2 bg-red-100 border border-red-300 rounded-lg">
-                                    <ShieldAlert size={12} className="text-red-600 flex-shrink-0" />
-                                    <span className="text-[10px] font-black text-red-700 uppercase">⛔ AGENTE BLOQUEADO — Status: {blockedAgent2.status}. Não é permitido escalar este agente.</span>
+                                <div className={`mt-1.5 flex items-center gap-1.5 px-3 py-2 rounded-lg ${blockedAgent2.status === 'Bloqueado / Ação Trabalhista' ? 'animate-blocked-flash-3d text-white' : 'bg-red-100 border border-red-300'}`}>
+                                    <ShieldAlert size={12} className={`flex-shrink-0 ${blockedAgent2.status === 'Bloqueado / Ação Trabalhista' ? 'text-white' : 'text-red-600'}`} />
+                                    <span className={`text-[10px] font-black uppercase ${blockedAgent2.status === 'Bloqueado / Ação Trabalhista' ? 'text-white drop-shadow-lg' : 'text-red-700'}`}>⛔ AGENTE BLOQUEADO — Status: {blockedAgent2.status}. Não é permitido escalar este agente.</span>
                                 </div>
                             )}
                         </div>

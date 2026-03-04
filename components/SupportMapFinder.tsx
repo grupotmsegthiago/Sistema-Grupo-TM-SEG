@@ -123,7 +123,7 @@ const SupportMapFinder: React.FC<{ onNavigate?: (s: string) => void }> = ({ onNa
         const real = agents.length - virtual;
         const active = agents.filter(a => a.status === 'Ativo').length;
         const pending = agents.filter(a => a.status === 'Pendente').length;
-        const blocked = agents.filter(a => a.status === 'Bloqueado').length;
+        const blocked = agents.filter(a => a.status === 'Bloqueado' || a.status === 'Bloqueado / Ação Trabalhista').length;
 
         const stateCounts: Record<string, number> = {};
         agents.forEach(a => {
@@ -252,7 +252,7 @@ const SupportMapFinder: React.FC<{ onNavigate?: (s: string) => void }> = ({ onNa
                                         position={{ lat: agent.latitude, lng: agent.longitude }}
                                         onClick={() => handleSelectAgent(agent)}
                                         icon={{ 
-                                            url: agent.status === 'Pendente' ? 'https://maps.google.com/mapfiles/ms/icons/yellow-dot.png' : agent.is_virtual ? 'https://maps.google.com/mapfiles/ms/icons/purple-dot.png' : agent.is_armed ? 'https://maps.google.com/mapfiles/ms/icons/red-dot.png' : 'https://maps.google.com/mapfiles/ms/icons/blue-dot.png',
+                                            url: (agent.status === 'Bloqueado' || agent.status === 'Bloqueado / Ação Trabalhista') ? 'https://maps.google.com/mapfiles/ms/icons/orange-dot.png' : agent.status === 'Pendente' ? 'https://maps.google.com/mapfiles/ms/icons/yellow-dot.png' : agent.is_virtual ? 'https://maps.google.com/mapfiles/ms/icons/purple-dot.png' : agent.is_armed ? 'https://maps.google.com/mapfiles/ms/icons/red-dot.png' : 'https://maps.google.com/mapfiles/ms/icons/blue-dot.png',
                                             scaledSize: new google.maps.Size(32, 32)
                                         }}
                                     />

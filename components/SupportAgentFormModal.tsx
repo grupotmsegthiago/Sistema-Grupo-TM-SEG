@@ -528,6 +528,7 @@ const SupportAgentFormModal: React.FC<Props> = ({ onClose, onSuccess, initialDat
                             <option value="Ativo">Ativo</option>
                             <option value="Pendente">Pendente</option>
                             <option value="Bloqueado">Bloqueado</option>
+                            <option value="Bloqueado / Ação Trabalhista">Bloqueado / Ação Trabalhista</option>
                         </select>
                     </div>
 
