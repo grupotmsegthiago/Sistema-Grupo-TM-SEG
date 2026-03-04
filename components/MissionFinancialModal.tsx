@@ -351,10 +351,8 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
     useEffect(() => {
       if (financialData && mission) {
           if (!useSavedValuesRef.current) {
-              const toll = parseNumber(tollInput);
-              const tollProv = parseNumber(tollProviderInput);
-              setRevenueInput((financialData.client.total + toll).toLocaleString('pt-BR', {minimumFractionDigits: 2}));
-              setCostInput((financialData.provider.total + tollProv).toLocaleString('pt-BR', {minimumFractionDigits: 2}));
+              setRevenueInput(financialData.client.total.toLocaleString('pt-BR', {minimumFractionDigits: 2}));
+              setCostInput(financialData.provider.total.toLocaleString('pt-BR', {minimumFractionDigits: 2}));
           }
           
           if (financialData.provider.tableId) {
@@ -409,10 +407,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
       setCustomClientBase('');
       setCustomClientKm('');
       setCustomClientHour('');
-      if (financialData) {
-          const toll = parseNumber(tollInput);
-          setRevenueInput((financialData.client.total + toll).toLocaleString('pt-BR', { minimumFractionDigits: 2 }));
-      }
+      setUseSavedValues(false);
       showNotification('Recalculado', 'Valores do cliente restaurados para a tabela original.', 'info');
   };
 
@@ -420,10 +415,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
       setCustomProviderBase('');
       setCustomProviderKm('');
       setCustomProviderHour('');
-      if (financialData) {
-          const tollProv = parseNumber(tollProviderInput);
-          setCostInput((financialData.provider.total + tollProv).toLocaleString('pt-BR', { minimumFractionDigits: 2 }));
-      }
+      setUseSavedValues(false);
       showNotification('Recalculado', 'Valores do fornecedor restaurados para a tabela original.', 'info');
   };
 
