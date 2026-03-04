@@ -323,15 +323,15 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                   autoCalculateToll(fullMission.origin, fullMission.destination, fullMission.id);
               }
 
-              if ((savedRev > 0 || savedCost > 0)) {
+              if (mRes.data.billing_approved && (savedRev > 0 || savedCost > 0)) {
                   setUseSavedValues(true);
                   const totalRev = savedRev + dbToll;
                   const totalCost = savedCost + dbTollProvider;
                   setRevenueInput(totalRev.toLocaleString('pt-BR', {minimumFractionDigits: 2}));
                   setCostInput(totalCost.toLocaleString('pt-BR', {minimumFractionDigits: 2}));
-                  if (mRes.data.billing_verified_by) {
-                      setSavedByInfo(`Salvo por ${mRes.data.billing_verified_by}`);
-                  }
+              }
+              if (mRes.data.billing_verified_by) {
+                  setSavedByInfo(`Salvo por ${mRes.data.billing_verified_by}`);
               }
               
               fetchHistoricalPatterns(fullMission, (ptRes.data || []) as ProviderCostTable[]);
