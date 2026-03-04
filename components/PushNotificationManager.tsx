@@ -75,8 +75,12 @@ const PushNotificationManager = () => {
         const body = 'Notificação push funcionando!\nCliente: TESTE\nOrigem: São Paulo - SP\nDestino: Campinas - SP';
         const tag = `test-${Date.now()}`;
 
-        try {
-            if ('serviceWorker' in navigator) {
+        setDiagMsg('Enviando notificação...');
+
+        let sent = false;
+
+        if ('serviceWorker' in navigator) {
+            try {
                 const reg = await navigator.serviceWorker.ready;
                 await reg.showNotification(title, {
                     body,
@@ -86,18 +90,50 @@ const PushNotificationManager = () => {
                     vibrate: [200, 100, 200],
                     renotify: true
                 });
+                sent = true;
                 setTestStatus('sent');
-                setDiagMsg('Notificação enviada! Verifique a central de notificações do iPhone.');
-            } else {
-                new Notification(title, { body, icon: '/favicon.png', tag });
-                setTestStatus('sent');
-                setDiagMsg('Notificação enviada via API direta.');
+                setDiagMsg('✅ Enviada via Service Worker! Deslize para baixo no topo do iPhone para ver.');
+            } catch (err1: any) {
+                setDiagMsg(`SW falhou: ${err1?.message || err1}. Tentando método alternativo...`);
             }
-        } catch (err: any) {
-            setTestStatus('error');
-            setDiagMsg(`Erro: ${err?.message || String(err)}`);
         }
-        setTimeout(() => setTestStatus('idle'), 5000);
+
+        if (!sent) {
+            try {
+                const n = new Notification(title, { body, icon: '/favicon.png', tag });
+                n.onclick = () => window.focus();
+                sent = true;
+                setTestStatus('sent');
+                setDiagMsg('✅ Enviada via Notification API! Verifique a central de notificações.');
+            } catch (err2: any) {
+                setDiagMsg(`Notification API falhou: ${err2?.message || err2}.`);
+            }
+        }
+
+        if (!sent) {
+            if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
+                try {
+                    navigator.serviceWorker.controller.postMessage({
+                        type: 'SHOW_NOTIFICATION',
+                        title,
+                        body,
+                        tag
+                    });
+                    sent = true;
+                    setTestStatus('sent');
+                    setDiagMsg('✅ Enviada via postMessage! Verifique a central de notificações.');
+                } catch (err3: any) {
+                    setDiagMsg(`postMessage falhou: ${err3?.message || err3}.`);
+                }
+            }
+        }
+
+        if (!sent) {
+            setTestStatus('error');
+            setDiagMsg('❌ Nenhum método de notificação funcionou. Tente fechar o app completamente e reabrir.');
+        }
+
+        setTimeout(() => setTestStatus('idle'), 8000);
     };
 
     useEffect(() => {
