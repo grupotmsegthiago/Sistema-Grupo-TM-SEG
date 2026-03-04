@@ -168,23 +168,57 @@ const MissionCardComponent: React.FC<MissionCardProps> = ({
     
     const { showNotification } = useNotification();
     const [showEvidenceModal, setShowEvidenceModal] = useState(false);
+    const [showUploadModal, setShowUploadModal] = useState(false);
     const [isUploading, setIsUploading] = useState(false);
-    const fileInputRef = useRef<HTMLInputElement>(null);
+    const [pendingFiles, setPendingFiles] = useState<{ file: File; preview: string }[]>([]);
+    const uploadFileInputRef = useRef<HTMLInputElement>(null);
     const hasEvidence = evidenceList && evidenceList.length > 0;
     const missionCreatedAt = mission.createdAt ? new Date(mission.createdAt) : null;
     const requiresEvidence = missionCreatedAt ? missionCreatedAt >= EVIDENCE_REQUIRED_DATE : false;
 
-    const handleEvidenceUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const handlePasteInModal = (e: React.ClipboardEvent) => {
+        const items = e.clipboardData?.items;
+        if (!items) return;
+        for (let i = 0; i < items.length; i++) {
+            if (items[i].type.startsWith('image/')) {
+                const file = items[i].getAsFile();
+                if (file) {
+                    const preview = URL.createObjectURL(file);
+                    setPendingFiles(prev => [...prev, { file, preview }]);
+                }
+                break;
+            }
+        }
+    };
+
+    const handleFileSelectInModal = (e: React.ChangeEvent<HTMLInputElement>) => {
         const files = e.target.files;
-        if (!files || files.length === 0) return;
+        if (!files) return;
+        Array.from(files).forEach(f => {
+            if (f.type.startsWith('image/')) {
+                const preview = URL.createObjectURL(f);
+                setPendingFiles(prev => [...prev, { file: f, preview }]);
+            }
+        });
+        if (uploadFileInputRef.current) uploadFileInputRef.current.value = '';
+    };
+
+    const removePendingFile = (idx: number) => {
+        setPendingFiles(prev => {
+            URL.revokeObjectURL(prev[idx].preview);
+            return prev.filter((_, i) => i !== idx);
+        });
+    };
+
+    const handleConfirmUpload = async () => {
+        if (pendingFiles.length === 0) return;
         setIsUploading(true);
         try {
             const userData = JSON.parse(localStorage.getItem('userData') || '{}');
-            for (let i = 0; i < files.length; i++) {
-                const file = files[i];
+            for (let i = 0; i < pendingFiles.length; i++) {
+                const { file } = pendingFiles[i];
                 const compressed = await compressImage(file);
-                const ext = 'jpg';
-                const path = `${mission.id}/${Date.now()}_${i}.${ext}`;
+                const path = `${mission.id}/${Date.now()}_${i}.jpg`;
                 const { error: uploadError } = await supabase.storage.from('mission-evidence').upload(path, compressed, { contentType: 'image/jpeg', upsert: false });
                 if (uploadError) {
                     if (uploadError.message?.includes('not found') || uploadError.message?.includes('does not exist')) {
@@ -203,13 +237,15 @@ const MissionCardComponent: React.FC<MissionCardProps> = ({
                     created_at: new Date().toISOString()
                 });
             }
-            showNotification('Sucesso', `${files.length} evidência(s) anexada(s) com sucesso!`, 'success');
+            showNotification('Sucesso', `${pendingFiles.length} evidência(s) anexada(s)!`, 'success');
+            pendingFiles.forEach(f => URL.revokeObjectURL(f.preview));
+            setPendingFiles([]);
+            setShowUploadModal(false);
             if (onEvidenceUploaded) onEvidenceUploaded();
         } catch (err: any) {
-            showNotification('Erro', 'Falha ao anexar evidência: ' + (err.message || err), 'error');
+            showNotification('Erro', 'Falha ao anexar: ' + (err.message || err), 'error');
         } finally {
             setIsUploading(false);
-            if (fileInputRef.current) fileInputRef.current.value = '';
         }
     };
 
@@ -739,12 +775,9 @@ Qualquer dúvida, estamos a disposição.
                         <button onClick={() => onCopy(mission)} className={`w-7 h-7 flex items-center justify-center rounded-md border transition-all duration-200 hover:shadow-sm active:scale-95 ${copiedId === mission.id ? 'bg-green-100 text-green-700 border-green-200' : 'bg-[#25D366]/10 text-[#25D366] border-[#25D366]/20 hover:bg-[#25D366] hover:text-white'}`} title="Copiar Relatório WhatsApp">{copiedId === mission.id ? <Check size={14} strokeWidth={3}/> : <WhatsAppIcon size={14}/>}</button>
                         {onViewHistory && isDirector && (<button onClick={(e) => { e.stopPropagation(); onViewHistory(mission); }} className="w-7 h-7 flex items-center justify-center rounded-md bg-purple-50 text-purple-600 border border-purple-200 transition-all duration-200 hover:bg-purple-600 hover:text-white hover:shadow-sm active:scale-95" title="Histórico Detalhado (Auditoria)"><FileSearch size={14} /></button>)}</>)}
                         {!hideProviderInfo && (
-                            <>
-                                <input ref={fileInputRef} type="file" accept="image/*" multiple className="hidden" onChange={handleEvidenceUpload} data-testid={`input-evidence-upload-${mission.id}`} />
-                                <button onClick={() => fileInputRef.current?.click()} disabled={isUploading} className={`w-7 h-7 flex items-center justify-center rounded-md border transition-all duration-200 hover:shadow-sm active:scale-95 ${isUploading ? 'bg-yellow-100 text-yellow-600 border-yellow-300 animate-pulse' : hasEvidence ? 'bg-emerald-50 text-emerald-600 border-emerald-200 hover:bg-emerald-600 hover:text-white' : requiresEvidence ? 'bg-red-50 text-red-600 border-red-200 hover:bg-red-600 hover:text-white animate-pulse' : 'bg-cyan-50 text-cyan-600 border-cyan-200 hover:bg-cyan-600 hover:text-white'}`} title={isUploading ? 'Enviando...' : 'Anexar Print / Evidência'} data-testid={`button-upload-evidence-${mission.id}`}>
-                                    {isUploading ? <Loader2 size={14} className="animate-spin" /> : <Camera size={14} />}
-                                </button>
-                            </>
+                            <button onClick={() => setShowUploadModal(true)} className={`w-7 h-7 flex items-center justify-center rounded-md border transition-all duration-200 hover:shadow-sm active:scale-95 ${hasEvidence ? 'bg-emerald-50 text-emerald-600 border-emerald-200 hover:bg-emerald-600 hover:text-white' : requiresEvidence ? 'bg-red-50 text-red-600 border-red-200 hover:bg-red-600 hover:text-white animate-pulse' : 'bg-cyan-50 text-cyan-600 border-cyan-200 hover:bg-cyan-600 hover:text-white'}`} title="Anexar Print / Evidência (Ctrl+V para colar)" data-testid={`button-upload-evidence-${mission.id}`}>
+                                <Camera size={14} />
+                            </button>
                         )}
                         {onPrint && (<button onClick={handlePrintClick} className="w-7 h-7 flex items-center justify-center rounded-md bg-gray-50 text-gray-700 border border-gray-200 transition-all duration-200 hover:bg-gray-700 hover:text-white hover:shadow-sm active:scale-95" title="Imprimir Folha de Missão (PDF) e Copiar Texto"><Printer size={14} /></button>)}
                         {onFullReport && (<button onClick={() => onFullReport(mission)} className="w-7 h-7 flex items-center justify-center rounded-md bg-amber-50 text-amber-700 border border-amber-200 transition-all duration-200 hover:bg-amber-600 hover:text-white hover:shadow-sm active:scale-95" title="Relatório Completo PDF (Timeline + Auditoria)"><FileText size={14} /></button>)}
@@ -754,6 +787,52 @@ Qualquer dúvida, estamos a disposição.
                 </div>
             </div>
         </div>
+
+        {showUploadModal && (
+            <div className="fixed inset-0 z-[200] bg-black/70 flex items-center justify-center p-4 animate-in fade-in" onClick={() => { setShowUploadModal(false); pendingFiles.forEach(f => URL.revokeObjectURL(f.preview)); setPendingFiles([]); }}>
+                <div className="bg-white rounded-2xl max-w-lg w-full max-h-[85vh] overflow-y-auto shadow-2xl" onClick={e => e.stopPropagation()} onPaste={handlePasteInModal} tabIndex={0} data-testid={`upload-modal-${mission.id}`}>
+                    <div className="p-4 border-b border-gray-100 flex items-center justify-between bg-gray-50 rounded-t-2xl">
+                        <div className="flex items-center gap-3">
+                            <div className="p-2 bg-cyan-100 rounded-xl text-cyan-600"><Camera size={18} /></div>
+                            <div>
+                                <h3 className="text-sm font-black text-gray-900 uppercase">Anexar Evidência</h3>
+                                <p className="text-[10px] font-bold text-gray-400">{mission.id} — {mission.client}</p>
+                            </div>
+                        </div>
+                        <button onClick={() => { setShowUploadModal(false); pendingFiles.forEach(f => URL.revokeObjectURL(f.preview)); setPendingFiles([]); }} className="p-2 hover:bg-gray-200 rounded-full transition-all" data-testid="button-close-upload-modal"><X size={18} /></button>
+                    </div>
+                    <div className="p-4 space-y-4">
+                        <div className="border-2 border-dashed border-gray-300 rounded-xl p-6 text-center bg-gray-50/50 focus-within:border-cyan-400 transition-colors" onPaste={handlePasteInModal}>
+                            <Camera size={32} className="mx-auto text-gray-400 mb-2" />
+                            <p className="text-sm font-bold text-gray-700">Cole o print aqui (Ctrl+V)</p>
+                            <p className="text-[10px] text-gray-400 mt-1">ou selecione um arquivo abaixo</p>
+                        </div>
+                        <div className="flex gap-2">
+                            <input ref={uploadFileInputRef} type="file" accept="image/*" multiple className="hidden" onChange={handleFileSelectInModal} data-testid={`input-evidence-file-${mission.id}`} />
+                            <button onClick={() => uploadFileInputRef.current?.click()} className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 bg-gray-100 hover:bg-gray-200 border border-gray-300 rounded-lg text-xs font-bold text-gray-700 transition-all" data-testid={`button-select-file-${mission.id}`}>
+                                <Upload size={14} /> Selecionar Arquivo
+                            </button>
+                        </div>
+                        {pendingFiles.length > 0 && (
+                            <div className="space-y-2">
+                                <p className="text-[10px] font-black text-gray-500 uppercase">{pendingFiles.length} imagem(ns) pronta(s)</p>
+                                <div className="grid grid-cols-3 gap-2">
+                                    {pendingFiles.map((pf, idx) => (
+                                        <div key={idx} className="relative group rounded-lg overflow-hidden border border-gray-200 shadow-sm">
+                                            <img src={pf.preview} alt={`Preview ${idx + 1}`} className="w-full h-24 object-cover" />
+                                            <button onClick={() => removePendingFile(idx)} className="absolute top-1 right-1 p-1 bg-red-600 text-white rounded-full opacity-0 group-hover:opacity-100 transition-opacity" data-testid={`button-remove-pending-${idx}`}><X size={10} /></button>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+                        <button onClick={handleConfirmUpload} disabled={pendingFiles.length === 0 || isUploading} className={`w-full py-3 rounded-xl text-sm font-black uppercase transition-all ${pendingFiles.length > 0 && !isUploading ? 'bg-emerald-600 text-white hover:bg-emerald-700 shadow-lg' : 'bg-gray-200 text-gray-400 cursor-not-allowed'}`} data-testid={`button-confirm-upload-${mission.id}`}>
+                            {isUploading ? <span className="flex items-center justify-center gap-2"><Loader2 size={16} className="animate-spin" /> Enviando...</span> : `Enviar ${pendingFiles.length > 0 ? pendingFiles.length + ' Evidência(s)' : ''}`}
+                        </button>
+                    </div>
+                </div>
+            </div>
+        )}
 
         {showEvidenceModal && hasEvidence && (
             <div className="fixed inset-0 z-[200] bg-black/90 flex items-center justify-center p-4 animate-in fade-in" onClick={() => setShowEvidenceModal(false)} data-testid={`evidence-modal-${mission.id}`}>

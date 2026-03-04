@@ -176,7 +176,7 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
       for (let i = 0; i < evidenceFiles.length; i++) {
           const { file } = evidenceFiles[i];
           const ext = file.name.split('.').pop() || 'png';
-          const filePath = `mission-evidence/${missionId}/${Date.now()}_${i}.${ext}`;
+          const filePath = `${missionId}/${Date.now()}_${i}.${ext}`;
           const { error: uploadError } = await supabase.storage.from('mission-evidence').upload(filePath, file, { contentType: file.type, upsert: false });
           if (uploadError) {
               if (uploadError.message?.includes('Bucket not found') || uploadError.message?.includes('not found')) {

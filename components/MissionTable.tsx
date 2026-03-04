@@ -901,7 +901,7 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
             </div>
         )}
 
-        {loadError && (
+        {loadError && !isRestrictedClientView && (
             <div className="bg-red-50 p-6 rounded-2xl border border-red-200 text-red-700 flex flex-col md:flex-row items-center gap-6 mb-6 animate-in zoom-in-95">
                 <div className="p-4 bg-white rounded-full shadow-md text-red-600"><AlertTriangle size={32} /></div>
                 <div className="flex-1">
@@ -931,7 +931,7 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
                 </div>
           
                 {!isRestrictedClientView && (
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 flex-wrap">
                     {(isDanielPinto || isDirector) && (
                         <button 
                         onClick={() => setShowTomorrowOnly(!showTomorrowOnly)} 
