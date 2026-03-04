@@ -116,81 +116,12 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
   const tollCalcMissionRef = React.useRef<string | null>(null);
   
   const autoCalculateToll = async (origin: string, destination: string, missionId?: string) => {
-    if (!origin?.trim() || !destination?.trim()) {
-      setTollSource('INSERIR MANUAL');
-      setTollConfirmed(false);
-      return;
-    }
-    const calcId = missionId || mission?.id || '';
-    tollCalcMissionRef.current = calcId;
-    try {
-      setIsCalculatingToll(true);
-      setTollSource('CALCULANDO VIA API...');
-
-      const originNorm = origin.trim().toUpperCase();
-      const destNorm = destination.trim().toUpperCase();
-      
-      const { data: lastMission } = await supabase
-        .from('missions')
-        .select('toll_value')
-        .eq('origin', originNorm)
-        .eq('destination', destNorm)
-        .eq('status', 'Concluída')
-        .gt('toll_value', 0)
-        .order('created_at', { ascending: false })
-        .limit(1)
-        .maybeSingle();
-
-      if (tollCalcMissionRef.current !== calcId) return;
-
-      if (lastMission && lastMission.toll_value > 0) {
-        const histToll = lastMission.toll_value;
-        setTollInput(histToll.toLocaleString('pt-BR', { minimumFractionDigits: 2 }));
-        setTollProviderInput(histToll.toLocaleString('pt-BR', { minimumFractionDigits: 2 }));
-        setSuggestedToll(histToll);
-        setTollSource('HISTÓRICO (Rota Anterior)');
-        setTollConfirmed(false);
-        setIsCalculatingToll(false);
-        return;
-      }
-
-      const resp = await fetch('/api/toll/calculate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ origin, destination }),
-      });
-
-      if (tollCalcMissionRef.current !== calcId) return;
-
-      if (resp.ok) {
-        const data = await resp.json();
-        if (data.success && data.tollValue > 0) {
-          const apiToll = data.tollValue;
-          setTollInput(apiToll.toLocaleString('pt-BR', { minimumFractionDigits: 2 }));
-          setTollProviderInput(apiToll.toLocaleString('pt-BR', { minimumFractionDigits: 2 }));
-          setSuggestedToll(apiToll);
-          setTollSource(`API ${data.provider || 'Rotas Brasil'}`);
-          setTollConfirmed(false);
-          showNotification('Pedágio Calculado', `R$ ${apiToll.toFixed(2)} via ${data.provider || 'API'}. Confirme o valor.`, 'info');
-        } else {
-          setTollSource(data.apiError ? 'API INDISPONÍVEL - INSERIR MANUAL' : 'API: SEM PEDÁGIO NA ROTA');
-          setTollConfirmed(false);
-        }
-      } else {
-        setTollSource('ERRO API - INSERIR MANUAL');
-        setTollConfirmed(false);
-      }
-    } catch (e) {
-      console.error('Erro ao calcular pedágio:', e);
-      if (tollCalcMissionRef.current === calcId) {
-        setTollSource('ERRO API - INSERIR MANUAL');
-        setTollConfirmed(false);
-      }
-    } finally {
-      if (tollCalcMissionRef.current === calcId) {
-        setIsCalculatingToll(false);
-      }
-    }
+    setTollInput('0,00');
+    setTollProviderInput('0,00');
+    setSuggestedToll(0);
+    setTollSource('INSERIR MANUAL');
+    setTollConfirmed(false);
+    setIsCalculatingToll(false);
   };
 
   useEffect(() => {
@@ -1409,17 +1340,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                 </div>
                             </div>
                         </div>
-                        {!mission?.billing_approved && mission?.origin && mission?.destination && (
-                            <button 
-                                onClick={() => autoCalculateToll(mission.origin, mission.destination)}
-                                disabled={isCalculatingToll}
-                                className="mt-2 flex items-center gap-1.5 text-[10px] font-black text-indigo-600 hover:text-indigo-800 uppercase transition-colors disabled:opacity-50"
-                                data-testid="button-recalculate-toll"
-                            >
-                                {isCalculatingToll ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} />}
-                                {isCalculatingToll ? 'Calculando...' : 'Recalcular Pedágio via API'}
-                            </button>
-                        )}
+                        
                     </div>
 
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">

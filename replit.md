@@ -28,7 +28,7 @@ The system encompasses modules for **Missions**, **Clients**, **Providers**, **F
 **Specific Features:**
 -   **Investment Dashboard:** Manages investment accounts with analytics and AI analysis.
 -   **Supabase Monitor:** Provides real-time health checks and database metrics.
--   **Toll Calculation:** Dynamically calculates toll costs for routes using external APIs.
+-   **Toll Calculation:** Toll values are entered manually by the user in the financial modal. When a mission has no saved toll, it defaults to R$ 0,00 with "INSERIR MANUAL" label. Saved toll values are preserved across sessions.
 -   **CEVA + Jundiaí Price Table Intelligence:** Automatically adjusts price table selection for the CEVA client based on distance and location.
 -   **Mission Report:** Generates detailed, AI-powered operational reports with client-specific views and PDF export.
 -   **Spreadsheet Comparison Module (AI-Powered):** Users paste spreadsheet data (Ctrl+C from Excel), and the AI analyzes each OS line by line comparing with system values, highlighting divergences and recommending corrections. Replaced the previous Excel file upload approach.
