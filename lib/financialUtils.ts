@@ -642,7 +642,8 @@ export const calculateMissionFinancials = (
     const missionDest = (mission.destination || '').toUpperCase();
 
     const hasAtePrefix = (name: string) => name.includes('ATÉ') || name.includes('ATE') || name.includes('FAIXA');
-    const isFixedDistanceClientRule = (!hasAtePrefix(appliedTableName)) && (
+    const clientHasExtraKmPrice = (appliedClientTable?.price_per_extra_km || 0) > 0;
+    const isFixedDistanceClientRule = (!hasAtePrefix(appliedTableName)) && !clientHasExtraKmPrice && (
                                       appliedTableName.includes('200KM') || 
                                       appliedTableName.includes('200 KM') || 
                                       appliedTableName.includes('100KM') || 
@@ -666,7 +667,8 @@ export const calculateMissionFinancials = (
     cExcessHr = Math.max(0, durationHours - cFranchiseHr);
 
     const providerTableName = (appliedProviderTable?.operation_type || '').toUpperCase();
-    const isFixedDistanceProviderRule = (!hasAtePrefix(providerTableName)) && (
+    const providerHasExtraKmCost = (appliedProviderTable?.cost_per_extra_km || 0) > 0;
+    const isFixedDistanceProviderRule = (!hasAtePrefix(providerTableName)) && !providerHasExtraKmCost && (
                                         providerTableName.includes('200KM') || 
                                         providerTableName.includes('200 KM') || 
                                         providerTableName.includes('100KM') || 
