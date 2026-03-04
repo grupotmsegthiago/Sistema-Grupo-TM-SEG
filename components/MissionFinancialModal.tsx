@@ -87,6 +87,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
   const [editClientTableId, setEditClientTableId] = useState<string | null>(null);
   const [memoryLoaded, setMemoryLoaded] = useState(false);
   const [tollConfirmed, setTollConfirmed] = useState(false);
+  const [isCalculatingToll, setIsCalculatingToll] = useState(false);
   const [approvalLog, setApprovalLog] = useState<Array<{user: string; role: string; stage: string; date: string}>>([]);
   const [useSavedValues, _setUseSavedValues] = useState(false);
   const useSavedValuesRef = React.useRef(false);
@@ -112,6 +113,86 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
   }, []);
   
 
+  const tollCalcMissionRef = React.useRef<string | null>(null);
+  
+  const autoCalculateToll = async (origin: string, destination: string, missionId?: string) => {
+    if (!origin?.trim() || !destination?.trim()) {
+      setTollSource('INSERIR MANUAL');
+      setTollConfirmed(false);
+      return;
+    }
+    const calcId = missionId || mission?.id || '';
+    tollCalcMissionRef.current = calcId;
+    try {
+      setIsCalculatingToll(true);
+      setTollSource('CALCULANDO VIA API...');
+
+      const originNorm = origin.trim().toUpperCase();
+      const destNorm = destination.trim().toUpperCase();
+      
+      const { data: lastMission } = await supabase
+        .from('missions')
+        .select('toll_value')
+        .eq('origin', originNorm)
+        .eq('destination', destNorm)
+        .eq('status', 'Concluída')
+        .gt('toll_value', 0)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (tollCalcMissionRef.current !== calcId) return;
+
+      if (lastMission && lastMission.toll_value > 0) {
+        const histToll = lastMission.toll_value;
+        setTollInput(histToll.toLocaleString('pt-BR', { minimumFractionDigits: 2 }));
+        setTollProviderInput(histToll.toLocaleString('pt-BR', { minimumFractionDigits: 2 }));
+        setSuggestedToll(histToll);
+        setTollSource('HISTÓRICO (Rota Anterior)');
+        setTollConfirmed(false);
+        setIsCalculatingToll(false);
+        return;
+      }
+
+      const resp = await fetch('/api/toll/calculate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ origin, destination }),
+      });
+
+      if (tollCalcMissionRef.current !== calcId) return;
+
+      if (resp.ok) {
+        const data = await resp.json();
+        if (data.success && data.tollValue > 0) {
+          const apiToll = data.tollValue;
+          setTollInput(apiToll.toLocaleString('pt-BR', { minimumFractionDigits: 2 }));
+          setTollProviderInput(apiToll.toLocaleString('pt-BR', { minimumFractionDigits: 2 }));
+          setSuggestedToll(apiToll);
+          setTollSource(`API ${data.provider || 'Rotas Brasil'}`);
+          setTollConfirmed(false);
+          showNotification('Pedágio Calculado', `R$ ${apiToll.toFixed(2)} via ${data.provider || 'API'}. Confirme o valor.`, 'info');
+        } else {
+          setTollSource(data.apiError ? 'API INDISPONÍVEL - INSERIR MANUAL' : 'API: SEM PEDÁGIO NA ROTA');
+          setTollConfirmed(false);
+        }
+      } else {
+        setTollSource('ERRO API - INSERIR MANUAL');
+        setTollConfirmed(false);
+      }
+    } catch (e) {
+      console.error('Erro ao calcular pedágio:', e);
+      if (tollCalcMissionRef.current === calcId) {
+        setTollSource('ERRO API - INSERIR MANUAL');
+        setTollConfirmed(false);
+      }
+    } finally {
+      if (tollCalcMissionRef.current === calcId) {
+        setIsCalculatingToll(false);
+      }
+    }
+  };
+
   useEffect(() => {
     const timer = setInterval(() => setCurrentTime(new Date()), 1000); 
     return () => clearInterval(timer);
@@ -120,7 +201,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
   // Busca Inteligente de Padrões (Memória Evolutiva)
   // BLINDAGEM: Pedágio NUNCA é herdado de outras missões (IDs diferentes).
   // Se a missão atual tem toll_value salvo no banco, usa esse valor.
-  // Se não tem, inicia como ZERO e exige conferência humana.
+  // Se não tem, busca via API ou histórico automaticamente.
   const fetchHistoricalPatterns = async (currentMission: Mission, allProviderTables?: ProviderCostTable[]) => {
       if (!currentMission.client || !currentMission.origin) return;
       try {
@@ -141,10 +222,11 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
              setTollConfirmed(true);
           } else {
              setSuggestedToll(0);
-             setTollSource('AGUARDANDO CONFERÊNCIA');
              setTollInput('0,00');
              setTollProviderInput('0,00');
              setTollConfirmed(false);
+             setTollSource('CALCULANDO...');
+             autoCalculateToll(currentMission.origin, currentMission.destination, currentMission.id);
           }
 
           setAiMaturity(0);
@@ -237,7 +319,8 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                   setTollInput('0,00');
                   setTollProviderInput('0,00');
                   setTollConfirmed(false);
-                  setTollSource('AGUARDANDO CONFERÊNCIA');
+                  setTollSource('CALCULANDO...');
+                  autoCalculateToll(fullMission.origin, fullMission.destination, fullMission.id);
               }
 
               if ((mRes.data.billing_approved || mRes.data.billing_verified_by) && (savedRev > 0 || savedCost > 0)) {
@@ -1246,12 +1329,17 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                         </div>
                                     </div>
                                 )}
-                                {tollConfirmed && (
+                                {isCalculatingToll && (
+                                    <div className="flex items-center gap-1.5 text-[10px] font-black text-white bg-indigo-600 px-2 py-1 rounded-lg border border-indigo-700">
+                                        <Loader2 size={12} className="animate-spin"/> CALCULANDO...
+                                    </div>
+                                )}
+                                {!isCalculatingToll && tollConfirmed && (
                                     <div className="flex items-center gap-1.5 text-[10px] font-black text-white bg-green-600 px-2 py-1 rounded-lg border border-green-700">
                                         <CheckCircle2 size={12}/> {tollSource || 'CONFIRMADO'}
                                     </div>
                                 )}
-                                {!tollConfirmed && (
+                                {!isCalculatingToll && !tollConfirmed && (
                                     <button 
                                         onClick={() => { setTollConfirmed(true); setTollSource(`CONFERIDO (R$ ${tollInput})`); }}
                                         className="flex items-center gap-1.5 text-[10px] font-black text-white bg-orange-500 hover:bg-orange-600 px-3 py-1.5 rounded-lg border border-orange-600 animate-pulse cursor-pointer transition-colors"
@@ -1292,6 +1380,17 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                 </div>
                             </div>
                         </div>
+                        {!mission?.billing_approved && mission?.origin && mission?.destination && (
+                            <button 
+                                onClick={() => autoCalculateToll(mission.origin, mission.destination)}
+                                disabled={isCalculatingToll}
+                                className="mt-2 flex items-center gap-1.5 text-[10px] font-black text-indigo-600 hover:text-indigo-800 uppercase transition-colors disabled:opacity-50"
+                                data-testid="button-recalculate-toll"
+                            >
+                                {isCalculatingToll ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} />}
+                                {isCalculatingToll ? 'Calculando...' : 'Recalcular Pedágio via API'}
+                            </button>
+                        )}
                     </div>
 
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
