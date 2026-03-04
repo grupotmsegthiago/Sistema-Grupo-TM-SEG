@@ -323,12 +323,15 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                   autoCalculateToll(fullMission.origin, fullMission.destination, fullMission.id);
               }
 
-              if ((mRes.data.billing_approved || mRes.data.billing_verified_by) && (savedRev > 0 || savedCost > 0)) {
+              if ((savedRev > 0 || savedCost > 0)) {
                   setUseSavedValues(true);
                   const totalRev = savedRev + dbToll;
                   const totalCost = savedCost + dbTollProvider;
                   setRevenueInput(totalRev.toLocaleString('pt-BR', {minimumFractionDigits: 2}));
                   setCostInput(totalCost.toLocaleString('pt-BR', {minimumFractionDigits: 2}));
+                  if (mRes.data.billing_verified_by) {
+                      setSavedByInfo(`Salvo por ${mRes.data.billing_verified_by}`);
+                  }
               }
               
               fetchHistoricalPatterns(fullMission, (ptRes.data || []) as ProviderCostTable[]);
@@ -396,13 +399,35 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
           updatePayload.last_update = new Date().toISOString();
           updatePayload.updated_by = JSON.parse(localStorage.getItem('userData') || '{}').name;
 
+          const hasEndKm = updatePayload.end_km && updatePayload.end_km > 0;
+          const hasEndTime = updatePayload.end_time;
+          const currentStatus = mission.status;
+          const pendingStatuses = ['Pendente', 'Em Trânsito', 'Em trânsito', 'Na Origem'];
+          if (hasEndKm && hasEndTime && pendingStatuses.includes(currentStatus)) {
+              updatePayload.status = 'Concluída';
+          }
+
           const { error } = await supabase.from('missions').update(updatePayload).eq('id', mission.id);
           if (error) throw error;
 
-          const updated = { ...mission, ...updatePayload, startKm: updatePayload.start_km, endKm: updatePayload.end_km, startTime: updatePayload.start_time, endTime: updatePayload.end_time, lastUpdate: updatePayload.last_update };
+          await supabase.from('system_logs').insert([{
+              user_name: updatePayload.updated_by || 'Usuário',
+              action_type: 'OPS_UPDATE',
+              entity: 'Mission',
+              entity_id: mission.id,
+              details: JSON.stringify({
+                  start_km: updatePayload.start_km || null,
+                  end_km: updatePayload.end_km || null,
+                  start_time: updatePayload.start_time || null,
+                  end_time: updatePayload.end_time || null,
+                  status_changed: updatePayload.status ? `${currentStatus} → ${updatePayload.status}` : null
+              })
+          }]);
+
+          const updated = { ...mission, ...updatePayload, startKm: updatePayload.start_km, endKm: updatePayload.end_km, startTime: updatePayload.start_time, endTime: updatePayload.end_time, lastUpdate: updatePayload.last_update, status: updatePayload.status || mission.status };
           setMission(updated);
           setIsEditingOpsData(false);
-          showNotification('Salvo', 'Dados operacionais atualizados com sucesso.', 'success');
+          showNotification('Salvo', updatePayload.status === 'Concluída' ? 'Dados salvos e missão concluída automaticamente.' : 'Dados operacionais atualizados com sucesso.', 'success');
           if (onUpdate) onUpdate();
       } catch (e: any) {
           showNotification('Erro', e.message || 'Falha ao salvar dados operacionais.', 'error');

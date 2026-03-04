@@ -904,6 +904,8 @@ export async function registerRoutes(
         try {
           if (m.status === 'REFUSED' || m.status === 'Recusada') { skipped++; continue; }
           if (!TERMINAL_STATUSES.includes(m.status)) { skipped++; continue; }
+          if (m.billing_approved || m.billing_verified_by) { skipped++; continue; }
+          if (m.revenue_value > 0 || m.cost_value > 0) { skipped++; continue; }
 
           const missionObj = {
             ...m,
@@ -1453,6 +1455,9 @@ export async function registerRoutes(
           };
 
           const clientData = (clients || []).find((c: any) => c.name?.toUpperCase() === (m.client || '').toUpperCase()) || null;
+
+          if (raw.billing_approved || raw.billing_verified_by) { skipped++; continue; }
+          if ((Number(raw.revenue_value) || 0) > 0 || (Number(raw.cost_value) || 0) > 0) { skipped++; continue; }
 
           const calc = calculateMissionFinancials(m, clientTables || [], providerTables || [], clientData, now);
           if (!calc) { skipped++; continue; }

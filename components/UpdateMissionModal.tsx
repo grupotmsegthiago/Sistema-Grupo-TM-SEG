@@ -558,6 +558,24 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
 
             const { error } = await supabase.from('missions').update(updateData).eq('id', mission.id);
             if (error) throw error;
+
+            await supabase.from('system_logs').insert([{
+                user_name: currentUser.name || 'Usuário',
+                action_type: 'MISSION_UPDATE',
+                entity: 'Mission',
+                entity_id: mission.id,
+                details: JSON.stringify({
+                    status: finalStatus,
+                    previous_status: mission.status,
+                    provider: editData.provider,
+                    agent1: editData.agent1,
+                    agent2: editData.agent2,
+                    start_km: sKm || null,
+                    end_km: eKm || null,
+                    origin: editData.origin,
+                    destination: editData.destination
+                })
+            }]);
             
             const dateObj = new Date(startIso);
             const dateStr = dateObj.toLocaleDateString('pt-BR');
