@@ -236,6 +236,29 @@ const ExecutiveDashboard: React.FC<Props> = ({ missions, isDirector, clientTable
         return { ...fullMission, rev, cost, profit: rev - cost };
     }, [missionFinancials, missions, clientTables, providerTables, clientsData]);
 
+    const findSystemMissionForComparison = useCallback((osId: string) => {
+        const matchId = (m: any) => {
+            const sysId = String(m.id || '').toUpperCase().trim();
+            return sysId === osId || `GTM-${sysId}` === osId || sysId.replace('GTM-', '') === osId.replace('GTM-', '');
+        };
+        const fullMission = missions.find(matchId) || missionFinancials.find(matchId);
+        if (!fullMission) return null;
+        let rev = 0, cost = 0;
+        if (fullMission.billing_approved && ((fullMission.revenue_value != null && fullMission.revenue_value > 0) || (fullMission.cost_value != null && fullMission.cost_value > 0))) {
+            rev = (fullMission.revenue_value || 0) + Math.max(0, fullMission.toll_value || 0);
+            const tollProv = Math.max(0, fullMission.toll_value_provider != null ? fullMission.toll_value_provider : (fullMission.toll_value || 0));
+            cost = (fullMission.cost_value || 0) + tollProv;
+        } else {
+            const missionObj: Mission = { ...fullMission, startKm: fullMission.startKm ?? fullMission.start_km, endKm: fullMission.endKm ?? fullMission.end_km, startTime: fullMission.startTime ?? fullMission.start_time, endTime: fullMission.endTime ?? fullMission.end_time };
+            const clientName = (fullMission.originalClientName || fullMission.client || '').trim();
+            const matchedClient = clientsData.find((c: any) => c.name === clientName);
+            const financials = calculateMissionFinancials(missionObj, clientTables, providerTables, matchedClient, new Date());
+            rev = financials.client.total || 0;
+            cost = financials.provider.total || 0;
+        }
+        return { ...fullMission, rev, cost, profit: rev - cost };
+    }, [missionFinancials, missions, clientTables, providerTables, clientsData]);
+
     useEffect(() => {
         if (!excelComparison || excelComparison.length === 0) {
             prevMissionFinancialsRef.current = missionFinancials;
@@ -249,7 +272,7 @@ const ExecutiveDashboard: React.FC<Props> = ({ missions, isDirector, clientTable
         const newAdjustedIds = new Set(adjustedOsIds);
         const updated = excelComparison.map(c => {
             if (!c.found) return c;
-            const systemMission = findSystemMission(c.osId);
+            const systemMission = findSystemMissionForComparison(c.osId);
             if (!systemMission) return c;
             const newSysRev = systemMission.rev || 0;
             const newSysCost = systemMission.cost || 0;
@@ -477,7 +500,7 @@ const ExecutiveDashboard: React.FC<Props> = ({ missions, isDirector, clientTable
                     const excelHoraFim = horaFimKey ? parseExcelTime(row[horaFimKey]) : '';
                     const excelAcionamento = acionKey ? parseExcelValue(row[acionKey]) : null;
                     const excelToll = tollKey ? parseExcelValue(row[tollKey]) : null;
-                    const systemMission = findSystemMission(osId);
+                    const systemMission = findSystemMissionForComparison(osId);
                     const sysRev = systemMission?.rev || 0;
                     const sysCost = systemMission?.cost || 0;
                     const sysDetails = extractSysMissionDetails(systemMission);
@@ -528,7 +551,7 @@ const ExecutiveDashboard: React.FC<Props> = ({ missions, isDirector, clientTable
                 const excelEstacionamento = estacionamentoCol >= 0 ? parseExcelValue(getCell(r, estacionamentoCol)) : null;
                 const excelTotalFinal = totalFinalCol >= 0 && totalFinalCol !== revTotalCol ? parseExcelValue(getCell(r, totalFinalCol)) : null;
 
-                const systemMission = findSystemMission(osId);
+                const systemMission = findSystemMissionForComparison(osId);
 
                 const sysRev = systemMission?.rev || 0;
                 const sysCost = systemMission?.cost || 0;
@@ -781,7 +804,7 @@ const ExecutiveDashboard: React.FC<Props> = ({ missions, isDirector, clientTable
                 const clienteRaw = getCellStr(clienteCol);
                 const fornRaw = getCellStr(fornecedorCol);
 
-                const systemMission = findSystemMission(osId);
+                const systemMission = findSystemMissionForComparison(osId);
 
                 const sysRev = systemMission?.rev || 0;
                 const sysCost = systemMission?.cost || 0;
