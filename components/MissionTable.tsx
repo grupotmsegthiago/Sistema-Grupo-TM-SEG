@@ -157,6 +157,7 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
   const [solicitationCount, setSolicitationCount] = useState(0);
   const [accidentCount, setAccidentCount] = useState(0);
   const [approvalMap, setApprovalMap] = useState<Record<string, { stage: string; date: string }[]>>({});
+  const [evidenceMap, setEvidenceMap] = useState<Record<string, { url: string; uploadedBy: string; uploadedAt: string }[]>>({});
   const [resolvedClientName, setResolvedClientName] = useState('');
   const [showMyApprovalOnly, setShowMyApprovalOnly] = useState(false);
 
@@ -360,6 +361,29 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
                     });
                     setApprovalMap(map);
                 }
+            }
+
+            const allIds = mapped.map(m => m.id);
+            if (allIds.length > 0) {
+                const batchSize = 200;
+                const evMap: Record<string, { url: string; uploadedBy: string; uploadedAt: string }[]> = {};
+                for (let i = 0; i < allIds.length; i += batchSize) {
+                    const batch = allIds.slice(i, i + batchSize);
+                    const { data: evidenceLogs } = await supabase.from('system_logs')
+                        .select('entity_id, details')
+                        .eq('entity', 'MissionEvidence')
+                        .in('entity_id', batch);
+                    if (evidenceLogs) {
+                        evidenceLogs.forEach((l: any) => {
+                            if (!evMap[l.entity_id]) evMap[l.entity_id] = [];
+                            try {
+                                const parsed = JSON.parse(l.details);
+                                evMap[l.entity_id].push({ url: parsed.publicUrl || '', uploadedBy: parsed.uploadedBy || '', uploadedAt: parsed.uploadedAt || '' });
+                            } catch {}
+                        });
+                    }
+                }
+                setEvidenceMap(evMap);
             }
         }
       } catch (error: any) {
@@ -1048,6 +1072,7 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
                                       agentPhonesMap={agentPhonesMap}
                                       currentTime={currentTime}
                                       approvalStages={approvalMap[mission.id]}
+                                      evidenceList={evidenceMap[mission.id]}
                                   />
                               </div>
                           );

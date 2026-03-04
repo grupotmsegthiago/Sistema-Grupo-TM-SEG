@@ -1,9 +1,9 @@
 
-import React, { memo, useMemo } from 'react';
+import React, { memo, useMemo, useState } from 'react';
 import { Mission, MissionStatus, ClientPriceTable, ProviderCostTable, Client } from '../types';
 import { 
   Truck, User, Phone, EyeOff, ShieldCheck, UserCheck, CarFront, 
-  Map, Pencil, Eye, Check, Trash2, FileText, Clock, Building2, Navigation, Hourglass, History, Mail, MapPin, AlertOctagon, Printer, FileSearch, TrendingUp, TrendingDown, DollarSign, Layers, Calculator, Flag, Activity, Briefcase, Shield, MessageCircle
+  Map, Pencil, Eye, Check, Trash2, FileText, Clock, Building2, Navigation, Hourglass, History, Mail, MapPin, AlertOctagon, Printer, FileSearch, TrendingUp, TrendingDown, DollarSign, Layers, Calculator, Flag, Activity, Briefcase, Shield, MessageCircle, ImageOff, Image, X
 } from 'lucide-react';
 
 const WhatsAppIcon = ({ size = 14 }: { size?: number }) => (
@@ -42,6 +42,7 @@ interface MissionCardProps {
     agentPhonesMap?: Record<string, string>;
     currentTime?: Date;
     approvalStages?: { stage: string; date: string }[];
+    evidenceList?: { url: string; uploadedBy: string; uploadedAt: string }[];
 }
 
 const formatCurrency = (val: number | null | undefined) => {
@@ -139,10 +140,12 @@ const getAgentDisplayName = (fullName?: string) => {
 const MissionCardComponent: React.FC<MissionCardProps> = ({ 
     mission, canEditMission, isDirector, isRedLight, isImminent, minutesSinceUpdate, copiedId, hideProviderInfo,
     onViewMap, onUpdate, onOpenFinancials, onCopy, onCopyEmail, onDelete, onPrint, onViewHistory, onFullReport, onOperationalReport,
-    clientTables, providerTables, clientsData, agentPhonesMap, currentTime, approvalStages
+    clientTables, providerTables, clientsData, agentPhonesMap, currentTime, approvalStages, evidenceList
 }) => {
     
     const { showNotification } = useNotification();
+    const [showEvidenceModal, setShowEvidenceModal] = useState(false);
+    const hasEvidence = evidenceList && evidenceList.length > 0;
 
     const isTerminal = useMemo(() => {
         return [MissionStatus.COMPLETED, MissionStatus.CANCELLED, MissionStatus.REFUSED].includes(mission.status);
@@ -329,7 +332,7 @@ Qualquer dúvida, estamos a disposição.
     // Calcula o progresso visual para a barra (0 a 100)
     const progressVisual = Math.min(100, Math.max(0, mission.progress || 0));
 
-    return (
+    return (<>
         <div 
           className={`group relative rounded-xl border bg-white transition-all duration-300 hover:-translate-y-1 hover:shadow-[0_20px_50px_rgba(8,_112,_184,_0.07)] shadow-sm ${
               isRedLight ? 'border-red-200 ring-1 ring-red-100' : isImminent ? 'border-amber-200 ring-1 ring-amber-100' : 'border-gray-200 hover:border-blue-200'
@@ -370,6 +373,15 @@ Qualquer dúvida, estamos a disposição.
                         <span className={`px-1.5 py-0.5 rounded text-[9px] font-extrabold uppercase border tracking-wider ${isPendingKm ? 'bg-amber-100 text-amber-800 border-amber-300' : getStatusBadgeClass(mission.status)}`}>
                             {isPendingKm ? 'PENDENTE KM' : mission.status}
                         </span>
+                        {hasEvidence ? (
+                            <button onClick={() => setShowEvidenceModal(true)} className="px-1.5 py-0.5 rounded text-[8px] font-black uppercase border bg-emerald-50 text-emerald-700 border-emerald-300 flex items-center gap-1 hover:bg-emerald-100 transition-all cursor-pointer shadow-sm" data-testid={`badge-evidence-${mission.id}`} title="Evidência anexada - clique para ver">
+                                <Image size={10} /> EVIDÊNCIA
+                            </button>
+                        ) : (
+                            <span className="px-1.5 py-0.5 rounded text-[8px] font-black uppercase flex items-center gap-1 bg-red-100 text-red-700 border border-red-300 shadow-[0_2px_8px_rgba(239,68,68,0.25)] animate-pulse" title="Sem evidência de solicitação">
+                                <ImageOff size={10} /> SEM EVIDÊNCIA
+                            </span>
+                        )}
                     </div>
                     <div className="flex flex-col gap-1.5 mt-1">
                         <div className="flex items-center gap-2"><div className="p-0.5 bg-blue-50 rounded text-blue-600 shrink-0"><FileText size={10} /></div><div className="flex items-center gap-1.5"><span className="text-[9px] font-bold text-gray-400 uppercase tracking-wider">Criação</span><span className="text-[10px] font-bold text-gray-800">{formatDateTime(mission.createdAt)}</span></div></div>
@@ -668,6 +680,49 @@ Qualquer dúvida, estamos a disposição.
                 </div>
             </div>
         </div>
+
+        {showEvidenceModal && hasEvidence && (
+            <div className="fixed inset-0 z-[200] bg-black/90 flex items-center justify-center p-4 animate-in fade-in" onClick={() => setShowEvidenceModal(false)} data-testid={`evidence-modal-${mission.id}`}>
+                <div className="bg-white rounded-2xl max-w-3xl w-full max-h-[90vh] overflow-y-auto shadow-2xl" onClick={e => e.stopPropagation()}>
+                    <div className="p-4 border-b border-gray-100 flex items-center justify-between bg-gray-50 rounded-t-2xl">
+                        <div className="flex items-center gap-3">
+                            <div className="p-2 bg-emerald-100 rounded-xl text-emerald-600"><Image size={18} /></div>
+                            <div>
+                                <h3 className="text-sm font-black text-gray-900 uppercase">Evidência da Solicitação</h3>
+                                <p className="text-[10px] font-bold text-gray-400">{mission.id} — {mission.client}</p>
+                            </div>
+                        </div>
+                        <button onClick={() => setShowEvidenceModal(false)} className="p-2 hover:bg-gray-200 rounded-full transition-all" data-testid="button-close-evidence-modal"><X size={18} /></button>
+                    </div>
+                    <div className="p-4 space-y-4">
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-[10px]">
+                            <div className="bg-blue-50 p-3 rounded-xl border border-blue-100">
+                                <span className="font-black text-blue-400 uppercase tracking-widest block mb-1">Solicitação</span>
+                                <span className="font-black text-blue-900">{formatDateTime(mission.createdAt)}</span>
+                            </div>
+                            <div className="bg-green-50 p-3 rounded-xl border border-green-100">
+                                <span className="font-black text-green-400 uppercase tracking-widest block mb-1">KM Inicial</span>
+                                <span className="font-black text-green-900 font-mono">{mission.startKm ? mission.startKm.toLocaleString('pt-BR') : '---'}</span>
+                            </div>
+                            <div className="bg-red-50 p-3 rounded-xl border border-red-100">
+                                <span className="font-black text-red-400 uppercase tracking-widest block mb-1">KM Final</span>
+                                <span className="font-black text-red-900 font-mono">{mission.endKm ? mission.endKm.toLocaleString('pt-BR') : '---'}</span>
+                            </div>
+                        </div>
+                        {evidenceList!.map((ev, idx) => (
+                            <div key={idx} className="border border-gray-200 rounded-xl overflow-hidden shadow-sm">
+                                <img src={ev.url} alt={`Evidência ${idx + 1}`} className="w-full object-contain max-h-[60vh] bg-gray-100" />
+                                <div className="p-2 bg-gray-50 flex items-center justify-between text-[9px]">
+                                    <span className="font-bold text-gray-500">Enviado por <span className="text-gray-800 font-black">{ev.uploadedBy}</span></span>
+                                    <span className="font-bold text-gray-400">{formatDateTime(ev.uploadedAt)}</span>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            </div>
+        )}
+        </>
     );
 };
 
