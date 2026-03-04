@@ -669,9 +669,40 @@ const ExecutiveDashboard: React.FC<Props> = ({ missions, isDirector, clientTable
             const lines = pastedText.trim().split('\n').map(l => l.split('\t'));
             if (lines.length < 2) throw new Error('Dados insuficientes. Cole ao menos cabeçalho + 1 linha.');
 
-            const headers = lines[0].map(h => h.trim().toUpperCase());
+            const rawHeaders = lines[0].map(h => h.trim().toUpperCase());
+            const dataRowLen = lines.length > 1 ? lines[1].length : rawHeaders.length;
+            let headers = rawHeaders;
+            let headerColMap: number[] = rawHeaders.map((_, i) => i);
+            if (rawHeaders.length > dataRowLen && dataRowLen > 10) {
+                const nonEmptyIndices: number[] = [];
+                const emptyIndices: number[] = [];
+                rawHeaders.forEach((h, i) => { if (h !== '') nonEmptyIndices.push(i); else emptyIndices.push(i); });
+                const excess = rawHeaders.length - dataRowLen;
+                if (excess <= emptyIndices.length) {
+                    const emptyToRemove = new Set<number>();
+                    for (let k = emptyIndices.length - 1; k >= 0 && emptyToRemove.size < excess; k--) {
+                        const idx = emptyIndices[k];
+                        if (idx > 0 && rawHeaders[idx - 1] === '') {
+                            emptyToRemove.add(idx);
+                        }
+                    }
+                    if (emptyToRemove.size < excess) {
+                        for (let k = emptyIndices.length - 1; k >= 0 && emptyToRemove.size < excess; k--) {
+                            emptyToRemove.add(emptyIndices[k]);
+                        }
+                    }
+                    const compressed: string[] = [];
+                    const compMap: number[] = [];
+                    rawHeaders.forEach((h, i) => {
+                        if (!emptyToRemove.has(i)) { compressed.push(h); compMap.push(i); }
+                    });
+                    headers = compressed;
+                    headerColMap = compMap;
+                }
+            }
             const findColExact = (...keywords: string[]) => headers.findIndex(h => keywords.some(k => h === k));
             const findColContains = (...keywords: string[]) => headers.findIndex(h => keywords.some(k => h.includes(k)));
+            const findColContainsLast = (...keywords: string[]) => { for (let i = headers.length - 1; i >= 0; i--) { if (keywords.some(k => headers[i].includes(k))) return i; } return -1; };
 
             const osCol = findColExact('Nº', 'N°', 'NR', 'OS', 'NUM', 'NÚMERO', 'NUMERO', 'N', 'COD', 'CODIGO', 'CÓDIGO');
             const clienteCol = findColExact('CLIENTE');
@@ -693,9 +724,9 @@ const ExecutiveDashboard: React.FC<Props> = ({ missions, isDirector, clientTable
             const kmTotalCol = findColContains('KM TOTAL');
             const estacionamentoCol = findColExact('ESTACIONAMENTO', 'PERNOITE');
 
-            let revTotalCol = findColContains('VALOR TOTAL', 'TOTAL CLIENTE', 'RECEITA TOTAL', 'FATURAMENTO');
+            let revTotalCol = findColContains('TOTAL CLIENTE', 'VALOR TOTAL', 'RECEITA TOTAL', 'FATURAMENTO');
             if (revTotalCol === -1) revTotalCol = findColExact('TOTAL');
-            let costTotalCol = findColContains('TOTAL CUSTO', 'CUSTO TOTAL', 'TOTAL FORNECEDOR', 'PAGAMENTO');
+            let costTotalCol = findColContainsLast('TOTAL FORNECEDOR', 'TOTAL CUSTO', 'CUSTO TOTAL', 'PAGAMENTO');
             if (costTotalCol === -1) {
                 const lastTotal = headers.lastIndexOf('TOTAL');
                 if (lastTotal >= 0 && lastTotal !== revTotalCol) costTotalCol = lastTotal;
