@@ -236,47 +236,23 @@ const ExecutiveDashboard: React.FC<Props> = ({ missions, isDirector, clientTable
         return { ...fullMission, rev, cost, profit: rev - cost };
     }, [missionFinancials, missions, clientTables, providerTables, clientsData]);
 
-    const findSystemMissionForComparison = useCallback((osId: string, excelRev?: number, excelCost?: number) => {
-        const matchId = (m: any) => {
-            const sysId = String(m.id || '').toUpperCase().trim();
-            return sysId === osId || `GTM-${sysId}` === osId || sysId.replace('GTM-', '') === osId.replace('GTM-', '');
-        };
-        const fullMission = missions.find(matchId) || missionFinancials.find(matchId);
-        if (!fullMission) return null;
-        const hasStoredRev = (fullMission.revenue_value != null && fullMission.revenue_value > 0);
-        const hasStoredCost = (fullMission.cost_value != null && fullMission.cost_value > 0);
-        let savedRev = 0, savedCost = 0;
-        if ((fullMission.billing_approved || fullMission.billing_verified_by) && (hasStoredRev || hasStoredCost)) {
-            savedRev = (fullMission.revenue_value || 0) + Math.max(0, fullMission.toll_value || 0);
-            const tollProv = Math.max(0, fullMission.toll_value_provider != null ? fullMission.toll_value_provider : (fullMission.toll_value || 0));
-            savedCost = (fullMission.cost_value || 0) + tollProv;
-        }
-        const missionObj: Mission = { ...fullMission, startKm: fullMission.startKm ?? fullMission.start_km, endKm: fullMission.endKm ?? fullMission.end_km, startTime: fullMission.startTime ?? fullMission.start_time, endTime: fullMission.endTime ?? fullMission.end_time };
-        const clientName = (fullMission.originalClientName || fullMission.client || '').trim();
-        const matchedClient = clientsData.find((c: any) => c.name === clientName);
-        const financials = calculateMissionFinancials(missionObj, clientTables, providerTables, matchedClient, new Date());
-        const calcRev = financials.client.total || 0;
-        const calcCost = financials.provider.total || 0;
-        if (fullMission.billing_approved) {
-            return { ...fullMission, rev: savedRev || calcRev, cost: savedCost || calcCost, profit: (savedRev || calcRev) - (savedCost || calcCost) };
-        }
-        let rev = calcRev, cost = calcCost;
-        if (savedRev > 0 && excelRev != null && excelRev > 0) {
-            const savedDiff = Math.abs(savedRev - excelRev);
-            const calcDiff = Math.abs(calcRev - excelRev);
-            rev = savedDiff <= calcDiff ? savedRev : calcRev;
-        } else if (savedRev > 0) {
-            rev = savedRev;
-        }
-        if (savedCost > 0 && excelCost != null && excelCost > 0) {
-            const savedDiff = Math.abs(savedCost - excelCost);
-            const calcDiff = Math.abs(calcCost - excelCost);
-            cost = savedDiff <= calcDiff ? savedCost : calcCost;
-        } else if (savedCost > 0) {
-            cost = savedCost;
-        }
-        return { ...fullMission, rev, cost, profit: rev - cost };
-    }, [missionFinancials, missions, clientTables, providerTables, clientsData]);
+    const checkComparisonMatch = useCallback((systemMission: any, excelRev: number, excelCost: number, excelAcionamento?: number | null, excelToll?: number | null) => {
+        const isSameOs = systemMission?.is_same_os === true;
+        const isApproved = systemMission?.billing_approved === true;
+        const sysRev = systemMission?.rev || 0;
+        const sysCost = systemMission?.cost || 0;
+        const revDiff = excelRev > 0 ? Math.abs(sysRev - excelRev) : 0;
+        const costDiff = excelCost > 0 && !isSameOs ? Math.abs(sysCost - excelCost) : 0;
+        if (isSameOs) return { revDiff, costDiff, revMatch: true, costMatch: true };
+        if (isApproved) return { revDiff, costDiff, revMatch: true, costMatch: true };
+        const sysStoredRevBase = (systemMission?.revenue_value || 0) + Math.max(0, systemMission?.toll_value || 0);
+        const revBaseMatchesAcion = excelAcionamento != null && excelAcionamento > 0 && sysStoredRevBase > 0 && Math.abs(sysStoredRevBase - ((excelAcionamento || 0) + (excelToll || 0))) <= 10;
+        const sysStoredCostBase = (systemMission?.cost_value || 0) + Math.max(0, systemMission?.toll_value_provider != null ? systemMission.toll_value_provider : (systemMission?.toll_value || 0));
+        const costDiffExplainedByExtras = costDiff > 10 && sysStoredCostBase > 0 && excelCost > sysStoredCostBase && Math.abs(sysCost - sysStoredCostBase) <= 1;
+        const revMatch = excelRev > 0 ? (revDiff <= 10 || revBaseMatchesAcion) : true;
+        const costMatch = excelCost > 0 ? (costDiff <= 10 || costDiffExplainedByExtras) : true;
+        return { revDiff, costDiff, revMatch, costMatch };
+    }, []);
 
     useEffect(() => {
         if (!excelComparison || excelComparison.length === 0) {
@@ -291,7 +267,7 @@ const ExecutiveDashboard: React.FC<Props> = ({ missions, isDirector, clientTable
         const newAdjustedIds = new Set(adjustedOsIds);
         const updated = excelComparison.map(c => {
             if (!c.found) return c;
-            const systemMission = findSystemMissionForComparison(c.osId);
+            const systemMission = findSystemMission(c.osId);
             if (!systemMission) return c;
             const newSysRev = systemMission.rev || 0;
             const newSysCost = systemMission.cost || 0;
@@ -299,11 +275,8 @@ const ExecutiveDashboard: React.FC<Props> = ({ missions, isDirector, clientTable
             hasChanges = true;
             newAdjustedIds.add(c.osId);
             const isSameOs = systemMission?.is_same_os === true;
-            const revDiff = c.excelRev > 0 ? Math.abs(newSysRev - c.excelRev) : 0;
-            const costDiff = c.excelCost > 0 && !isSameOs ? Math.abs(newSysCost - c.excelCost) : 0;
-            const revMatch = c.excelRev > 0 ? revDiff <= 10 : true;
-            const costMatch = isSameOs ? true : (c.excelCost > 0 ? costDiff <= 10 : true);
-            return { ...c, sysRev: newSysRev, sysCost: newSysCost, revDiff, costDiff, revMatch, costMatch, isSameOs };
+            const match = checkComparisonMatch(systemMission, c.excelRev, c.excelCost, c.excelAcionamento, c.excelToll);
+            return { ...c, sysRev: newSysRev, sysCost: newSysCost, revDiff: match.revDiff, costDiff: match.costDiff, revMatch: match.revMatch, costMatch: match.costMatch, isSameOs };
         });
         if (hasChanges) {
             setAdjustedOsIds(newAdjustedIds);
@@ -519,16 +492,17 @@ const ExecutiveDashboard: React.FC<Props> = ({ missions, isDirector, clientTable
                     const excelHoraFim = horaFimKey ? parseExcelTime(row[horaFimKey]) : '';
                     const excelAcionamento = acionKey ? parseExcelValue(row[acionKey]) : null;
                     const excelToll = tollKey ? parseExcelValue(row[tollKey]) : null;
-                    const systemMission = findSystemMissionForComparison(osId, excelRev, excelCost);
+                    const systemMission = findSystemMission(osId);
                     const sysRev = systemMission?.rev || 0;
                     const sysCost = systemMission?.cost || 0;
                     const sysDetails = extractSysMissionDetails(systemMission);
                     const isApproved = systemMission?.billing_approved === true;
                     const isSameOs = systemMission?.is_same_os === true;
-                    const revDiff = excelRev > 0 ? Math.abs(sysRev - excelRev) : 0;
-                    const costDiff = excelCost > 0 && !isSameOs ? Math.abs(sysCost - excelCost) : 0;
-                    const revMatch = excelRev > 0 ? (revDiff <= 10 || isApproved) : true;
-                    const costMatch = isSameOs ? true : (excelCost > 0 ? (costDiff <= 10 || isApproved) : true);
+                    const matchResult = checkComparisonMatch(systemMission, excelRev, excelCost, excelAcionamento, excelToll);
+                    const revDiff = matchResult.revDiff;
+                    const costDiff = matchResult.costDiff;
+                    const revMatch = matchResult.revMatch;
+                    const costMatch = matchResult.costMatch;
                     comparisons.push({ osId, found: !!systemMission, excelRev, excelCost, sysRev, sysCost, revDiff, costDiff, revMatch, costMatch, isApproved, isSameOs, status: systemMission?.status || 'Não encontrada', client: systemMission?.client || '-', excelKm, excelHoraInicio, excelHoraFim, excelAcionamento, excelToll, ...(sysDetails || {}) });
                 }
                 comparisons.sort((a, b) => (!a.found ? -1 : !b.found ? 1 : (!a.revMatch||!a.costMatch) ? -1 : (!b.revMatch||!b.costMatch) ? 1 : (b.revDiff+b.costDiff)-(a.revDiff+a.costDiff)));
@@ -570,7 +544,7 @@ const ExecutiveDashboard: React.FC<Props> = ({ missions, isDirector, clientTable
                 const excelEstacionamento = estacionamentoCol >= 0 ? parseExcelValue(getCell(r, estacionamentoCol)) : null;
                 const excelTotalFinal = totalFinalCol >= 0 && totalFinalCol !== revTotalCol ? parseExcelValue(getCell(r, totalFinalCol)) : null;
 
-                const systemMission = findSystemMissionForComparison(osId);
+                const systemMission = findSystemMission(osId);
 
                 const sysRev = systemMission?.rev || 0;
                 const sysCost = systemMission?.cost || 0;
@@ -578,10 +552,11 @@ const ExecutiveDashboard: React.FC<Props> = ({ missions, isDirector, clientTable
                 const isApproved = systemMission?.billing_approved === true;
                 const isSameOs = systemMission?.is_same_os === true;
 
-                const revDiff = excelRev > 0 ? Math.abs(sysRev - excelRev) : 0;
-                const costDiff = excelCost > 0 && !isSameOs ? Math.abs(sysCost - excelCost) : 0;
-                const revMatch = excelRev > 0 ? (revDiff <= 10 || isApproved) : true;
-                const costMatch = isSameOs ? true : (excelCost > 0 ? (costDiff <= 10 || isApproved) : true);
+                const matchResult3 = checkComparisonMatch(systemMission, excelRev, excelCost, excelValorBase, excelToll);
+                const revDiff = matchResult3.revDiff;
+                const costDiff = matchResult3.costDiff;
+                const revMatch = matchResult3.revMatch;
+                const costMatch = matchResult3.costMatch;
 
                 comparisons.push({
                     osId,
@@ -823,7 +798,7 @@ const ExecutiveDashboard: React.FC<Props> = ({ missions, isDirector, clientTable
                 const clienteRaw = getCellStr(clienteCol);
                 const fornRaw = getCellStr(fornecedorCol);
 
-                const systemMission = findSystemMissionForComparison(osId);
+                const systemMission = findSystemMission(osId);
 
                 const sysRev = systemMission?.rev || 0;
                 const sysCost = systemMission?.cost || 0;
@@ -831,10 +806,11 @@ const ExecutiveDashboard: React.FC<Props> = ({ missions, isDirector, clientTable
                 const isApproved = systemMission?.billing_approved === true;
                 const isSameOs = systemMission?.is_same_os === true;
 
-                const revDiff = excelRev > 0 ? Math.abs(sysRev - excelRev) : 0;
-                const costDiff = excelCost > 0 && !isSameOs ? Math.abs(sysCost - excelCost) : 0;
-                const revMatch = excelRev > 0 ? (revDiff <= 10 || isApproved) : true;
-                const costMatch = isSameOs ? true : (excelCost > 0 ? (costDiff <= 10 || isApproved) : true);
+                const matchResult4 = checkComparisonMatch(systemMission, excelRev, excelCost, excelValorBase, excelToll);
+                const revDiff = matchResult4.revDiff;
+                const costDiff = matchResult4.costDiff;
+                const revMatch = matchResult4.revMatch;
+                const costMatch = matchResult4.costMatch;
 
                 const comp = {
                     osId, found: !!systemMission, excelRev, excelCost, sysRev, sysCost,
