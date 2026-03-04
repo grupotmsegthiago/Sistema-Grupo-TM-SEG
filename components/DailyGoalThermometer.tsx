@@ -190,10 +190,7 @@ const DailyGoalThermometer: React.FC<Props> = ({ viewPeriod = 'TODAY', customSta
         return [];
     }, []);
 
-    const isAuthorized = userRole === 'diretoria' || userRole === 'administrador' || userPermissions.includes('daily-goal') || userPermissions.includes('*');
-    const canSeeMonetary = userRole === 'diretoria' || (userPermissions.includes('*') && userRole === 'diretoria');
-
-    if (!isAuthorized) return null;
+    const canSeeMonetary = userRole === 'diretoria';
 
     const labelText = viewPeriod === 'TODAY' ? 'Meta Agendada (Hoje)' : 
                       viewPeriod === 'YESTERDAY' ? 'Meta Agendada (Ontem)' :
