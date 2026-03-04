@@ -233,8 +233,8 @@ const ExecutiveDashboard: React.FC<Props> = ({ missions, isDirector, clientTable
             newAdjustedIds.add(c.osId);
             const revDiff = c.excelRev > 0 ? Math.abs(newSysRev - c.excelRev) : 0;
             const costDiff = c.excelCost > 0 ? Math.abs(newSysCost - c.excelCost) : 0;
-            const revMatch = c.excelRev > 0 ? revDiff <= 50 : true;
-            const costMatch = c.excelCost > 0 ? costDiff <= 50 : true;
+            const revMatch = c.excelRev > 0 ? revDiff <= 10 : true;
+            const costMatch = c.excelCost > 0 ? costDiff <= 10 : true;
             return { ...c, sysRev: newSysRev, sysCost: newSysCost, revDiff, costDiff, revMatch, costMatch };
         });
         if (hasChanges) {
@@ -259,6 +259,26 @@ const ExecutiveDashboard: React.FC<Props> = ({ missions, isDirector, clientTable
         const numOnly = str.replace(/\D/g, '');
         if (numOnly.length >= 3) return `GTM-${numOnly}`;
         return str;
+    };
+
+    const extractSysMissionDetails = (sm: any) => {
+        if (!sm) return null;
+        const startKm = sm.startKm ?? sm.start_km ?? null;
+        const endKm = sm.endKm ?? sm.end_km ?? null;
+        const sysKm = (startKm != null && endKm != null && endKm > startKm) ? endKm - startKm : (sm.traveled_km ?? sm.traveledKm ?? null);
+        const st = sm.startTime ?? sm.start_time;
+        const et = sm.endTime ?? sm.end_time;
+        const sysHoraInicio = st ? new Date(st).toLocaleTimeString('pt-BR', { hour:'2-digit', minute:'2-digit' }) : '';
+        const sysHoraFim = et ? new Date(et).toLocaleTimeString('pt-BR', { hour:'2-digit', minute:'2-digit' }) : '';
+        const sysDataInicial = st ? new Date(st).toLocaleDateString('pt-BR') : '';
+        const sysDataFinal = et ? new Date(et).toLocaleDateString('pt-BR') : '';
+        const sysToll = Math.max(0, sm.toll_value || 0);
+        const sysActivation = sm.revenue_value || 0;
+        const sysStartKm = startKm;
+        const sysEndKm = endKm;
+        const sysRota = sm.origin && sm.destination ? `${sm.origin} → ${sm.destination}` : (sm.origin || sm.destination || '');
+        const sysOperacao = sm.operation_type || '';
+        return { sysKm, sysStartKm, sysEndKm, sysHoraInicio, sysHoraFim, sysDataInicial, sysDataFinal, sysToll, sysActivation, sysRota, sysOperacao };
     };
 
     const detectSheetLayout = (ws: XLSX.WorkSheet) => {
@@ -407,26 +427,6 @@ const ExecutiveDashboard: React.FC<Props> = ({ missions, isDirector, clientTable
                 return String(val).trim();
             };
 
-            const extractSysMissionDetails = (sm: any) => {
-                if (!sm) return null;
-                const startKm = sm.startKm ?? sm.start_km ?? null;
-                const endKm = sm.endKm ?? sm.end_km ?? null;
-                const sysKm = (startKm != null && endKm != null && endKm > startKm) ? endKm - startKm : (sm.traveled_km ?? sm.traveledKm ?? null);
-                const st = sm.startTime ?? sm.start_time;
-                const et = sm.endTime ?? sm.end_time;
-                const sysHoraInicio = st ? new Date(st).toLocaleTimeString('pt-BR', { hour:'2-digit', minute:'2-digit' }) : '';
-                const sysHoraFim = et ? new Date(et).toLocaleTimeString('pt-BR', { hour:'2-digit', minute:'2-digit' }) : '';
-                const sysDataInicial = st ? new Date(st).toLocaleDateString('pt-BR') : '';
-                const sysDataFinal = et ? new Date(et).toLocaleDateString('pt-BR') : '';
-                const sysToll = Math.max(0, sm.toll_value || 0);
-                const sysActivation = sm.revenue_value || 0;
-                const sysStartKm = startKm;
-                const sysEndKm = endKm;
-                const sysRota = sm.origin && sm.destination ? `${sm.origin} → ${sm.destination}` : (sm.origin || sm.destination || '');
-                const sysOperacao = sm.operation_type || '';
-                return { sysKm, sysStartKm, sysEndKm, sysHoraInicio, sysHoraFim, sysDataInicial, sysDataFinal, sysToll, sysActivation, sysRota, sysOperacao };
-            };
-
             if (headerRow === -1) {
                 const rows: any[] = XLSX.utils.sheet_to_json(ws, { defval: '' });
                 const keys = Object.keys(rows[0] || {});
@@ -460,8 +460,8 @@ const ExecutiveDashboard: React.FC<Props> = ({ missions, isDirector, clientTable
                     const sysDetails = extractSysMissionDetails(systemMission);
                     const revDiff = excelRev > 0 ? Math.abs(sysRev - excelRev) : 0;
                     const costDiff = excelCost > 0 ? Math.abs(sysCost - excelCost) : 0;
-                    const revMatch = excelRev > 0 ? revDiff <= 50 : true;
-                    const costMatch = excelCost > 0 ? costDiff <= 50 : true;
+                    const revMatch = excelRev > 0 ? revDiff <= 10 : true;
+                    const costMatch = excelCost > 0 ? costDiff <= 10 : true;
                     comparisons.push({ osId, found: !!systemMission, excelRev, excelCost, sysRev, sysCost, revDiff, costDiff, revMatch, costMatch, status: systemMission?.status || 'Não encontrada', client: systemMission?.client || '-', excelKm, excelHoraInicio, excelHoraFim, excelAcionamento, excelToll, ...(sysDetails || {}) });
                 }
                 comparisons.sort((a, b) => (!a.found ? -1 : !b.found ? 1 : (!a.revMatch||!a.costMatch) ? -1 : (!b.revMatch||!b.costMatch) ? 1 : (b.revDiff+b.costDiff)-(a.revDiff+a.costDiff)));
@@ -514,8 +514,8 @@ const ExecutiveDashboard: React.FC<Props> = ({ missions, isDirector, clientTable
 
                 const revDiff = excelRev > 0 ? Math.abs(sysRev - excelRev) : 0;
                 const costDiff = excelCost > 0 ? Math.abs(sysCost - excelCost) : 0;
-                const revMatch = excelRev > 0 ? revDiff <= 50 : true;
-                const costMatch = excelCost > 0 ? costDiff <= 50 : true;
+                const revMatch = excelRev > 0 ? revDiff <= 10 : true;
+                const costMatch = excelCost > 0 ? costDiff <= 10 : true;
 
                 comparisons.push({
                     osId,
@@ -737,8 +737,8 @@ const ExecutiveDashboard: React.FC<Props> = ({ missions, isDirector, clientTable
 
                 const revDiff = excelRev > 0 ? Math.abs(sysRev - excelRev) : 0;
                 const costDiff = excelCost > 0 ? Math.abs(sysCost - excelCost) : 0;
-                const revMatch = excelRev > 0 ? revDiff <= 50 : true;
-                const costMatch = excelCost > 0 ? costDiff <= 50 : true;
+                const revMatch = excelRev > 0 ? revDiff <= 10 : true;
+                const costMatch = excelCost > 0 ? costDiff <= 10 : true;
 
                 const comp = {
                     osId, found: !!systemMission, excelRev, excelCost, sysRev, sysCost,
@@ -1227,10 +1227,10 @@ const ExecutiveDashboard: React.FC<Props> = ({ missions, isDirector, clientTable
                                                     <td className="px-3 py-2 font-bold text-gray-600 truncate max-w-[100px]">{(r.provider || '').substring(0, 18)}</td>
                                                     <td className="px-3 py-2 text-right font-bold text-gray-700">{fmtBRL(r.storedRev)}</td>
                                                     <td className="px-3 py-2 text-right font-bold text-green-700">{fmtBRL(r.calcRev)}</td>
-                                                    <td className={`px-3 py-2 text-right font-bold ${r.revDiff > 50 ? 'text-red-600' : 'text-amber-600'}`}>{fmtBRL(r.revDiff)}</td>
+                                                    <td className={`px-3 py-2 text-right font-bold ${r.revDiff > 10 ? 'text-red-600' : 'text-amber-600'}`}>{fmtBRL(r.revDiff)}</td>
                                                     <td className="px-3 py-2 text-right font-bold text-gray-700">{fmtBRL(r.storedCost)}</td>
                                                     <td className="px-3 py-2 text-right font-bold text-green-700">{fmtBRL(r.calcCost)}</td>
-                                                    <td className={`px-3 py-2 text-right font-bold ${r.costDiff > 50 ? 'text-red-600' : 'text-amber-600'}`}>{fmtBRL(r.costDiff)}</td>
+                                                    <td className={`px-3 py-2 text-right font-bold ${r.costDiff > 10 ? 'text-red-600' : 'text-amber-600'}`}>{fmtBRL(r.costDiff)}</td>
                                                     <td className="px-3 py-2 text-center">
                                                         {r.error ? <span className="text-[9px] font-black bg-red-100 text-red-700 px-2 py-0.5 rounded-full">{r.error}</span> :
                                                          r.updated ? <span className="text-[9px] font-black bg-green-100 text-green-700 px-2 py-0.5 rounded-full">CORRIGIDA</span> :
@@ -1288,7 +1288,7 @@ const ExecutiveDashboard: React.FC<Props> = ({ missions, isDirector, clientTable
                             <div className="bg-green-50 border border-green-200 rounded-lg p-4 text-center">
                                 <CheckCircle className="mx-auto text-green-600 mb-2" size={24} />
                                 <p className="text-sm font-black text-green-700">Todas as OS estão com valores corretos!</p>
-                                <p className="text-[10px] text-green-500 mt-1">Nenhuma divergência encontrada (tolerância: R$ 5,00)</p>
+                                <p className="text-[10px] text-green-500 mt-1">Nenhuma divergência encontrada (tolerância: R$ 10,00)</p>
                             </div>
                         )}
                     </div>
@@ -1382,7 +1382,7 @@ const ExecutiveDashboard: React.FC<Props> = ({ missions, isDirector, clientTable
                                             {onlyCostDiff > 0 && <p>• {onlyCostDiff} OS com divergência apenas no <span className="text-red-600">custo</span> (diferença total: {fmtBRL(totalCostDiff)})</p>}
                                             {bothDiff > 0 && <p>• {bothDiff} OS com divergência em <span className="text-red-600">receita e custo</span></p>}
                                             {divergent === 0 && <p className="text-green-600">Todas as OS estão conferidas!</p>}
-                                            <p className="text-[10px] text-slate-400 pt-1">Tolerância: diferenças até R$ 50,00 são consideradas CONFERIDO</p>
+                                            <p className="text-[10px] text-slate-400 pt-1">Tolerância: diferenças até R$ 10,00 são consideradas CONFERIDO</p>
                                         </>);
                                     })()}
                                 </div>
@@ -1422,10 +1422,10 @@ const ExecutiveDashboard: React.FC<Props> = ({ missions, isDirector, clientTable
                                                     <td className="px-3 py-2 font-bold text-gray-600 truncate max-w-[120px]">{(c.client || '').substring(0, 20)}</td>
                                                     <td className={`px-3 py-2 text-right font-bold ${!c.revMatch && !isAdjusted ? 'text-red-600' : isAdjusted ? 'text-blue-700' : 'text-gray-700'}`}>{c.excelRev > 0 ? fmtBRL(c.excelRev) : '-'}</td>
                                                     <td className={`px-3 py-2 text-right font-bold ${!c.revMatch && !isAdjusted ? 'text-red-600' : isAdjusted ? 'text-blue-700' : 'text-gray-700'}`}>{c.found ? fmtBRL(c.sysRev) : '-'}</td>
-                                                    <td className={`px-3 py-2 text-right font-bold ${c.revDiff > 50 && !isAdjusted ? 'text-red-600' : c.revDiff > 0.01 && !isAdjusted ? 'text-emerald-600' : isAdjusted ? 'text-blue-600' : 'text-gray-400'}`}>{c.found && c.excelRev > 0 ? (c.revDiff > 0.01 ? fmtBRL(c.revDiff) : '-') : '-'}</td>
+                                                    <td className={`px-3 py-2 text-right font-bold ${c.revDiff > 10 && !isAdjusted ? 'text-red-600' : c.revDiff > 0.01 && !isAdjusted ? 'text-emerald-600' : isAdjusted ? 'text-blue-600' : 'text-gray-400'}`}>{c.found && c.excelRev > 0 ? (c.revDiff > 0.01 ? fmtBRL(c.revDiff) : '-') : '-'}</td>
                                                     <td className={`px-3 py-2 text-right font-bold ${!c.costMatch && !isAdjusted ? 'text-red-600' : isAdjusted ? 'text-blue-700' : 'text-gray-700'}`}>{c.excelCost > 0 ? fmtBRL(c.excelCost) : '-'}</td>
                                                     <td className={`px-3 py-2 text-right font-bold ${!c.costMatch && !isAdjusted ? 'text-red-600' : isAdjusted ? 'text-blue-700' : 'text-gray-700'}`}>{c.found ? fmtBRL(c.sysCost) : '-'}</td>
-                                                    <td className={`px-3 py-2 text-right font-bold ${c.costDiff > 50 && !isAdjusted ? 'text-red-600' : c.costDiff > 0.01 && !isAdjusted ? 'text-emerald-600' : isAdjusted ? 'text-blue-600' : 'text-gray-400'}`}>{c.found && c.excelCost > 0 ? (c.costDiff > 0.01 ? fmtBRL(c.costDiff) : '-') : '-'}</td>
+                                                    <td className={`px-3 py-2 text-right font-bold ${c.costDiff > 10 && !isAdjusted ? 'text-red-600' : c.costDiff > 0.01 && !isAdjusted ? 'text-emerald-600' : isAdjusted ? 'text-blue-600' : 'text-gray-400'}`}>{c.found && c.excelCost > 0 ? (c.costDiff > 0.01 ? fmtBRL(c.costDiff) : '-') : '-'}</td>
                                                     <td className="px-3 py-2 text-center">
                                                         {!c.found ? <span className="text-[9px] font-black bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full">NÃO ENCONTRADA</span> :
                                                          isAdjusted && c.revMatch && c.costMatch ? <span className="text-[9px] font-black bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full flex items-center justify-center gap-1"><CheckCircle size={10} /> AJUSTADO</span> :
