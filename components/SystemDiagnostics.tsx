@@ -128,12 +128,12 @@ const SystemDiagnostics: React.FC<Props> = ({ onClose }) => {
         await runTest(5, async () => {
             try {
                 const lat = await measureLatency(async () => {
-                    const res = await fetch('https://ajhmmjuewdsukecaimik.supabase.co/auth/v1/settings', { headers: { 'apikey': 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFqaG1tanVld2RzdWtlY2FpbWlrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDQ5MTY2ODAsImV4cCI6MjA2MDQ5MjY4MH0.zNHBe-JOyJHIBOOMYBnYi_nAjd3U0iqr6_p0pJqNiYc' } });
-                    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                    const { data, error } = await supabase.from('system_users').select('id', { count: 'exact', head: true });
+                    if (error) throw error;
                 });
-                return { status: 'ok', latency: lat, detail: `Auth service ativo: ${lat}ms` };
+                return { status: 'ok', latency: lat, detail: `Auth + tabela de usuários acessível: ${lat}ms` };
             } catch (err: any) {
-                return { status: 'error', detail: `Auth inacessível: ${err.message}` };
+                return { status: 'error', detail: `Auth/Usuários inacessível: ${err.message}` };
             }
         });
 
