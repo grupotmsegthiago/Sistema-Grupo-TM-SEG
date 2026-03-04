@@ -1,7 +1,8 @@
 
 import React, { useState, useEffect, useRef } from 'react';
-import { Menu, Bell, User, Clock, Settings, LogOut, ChevronDown, Volume2, VolumeX, Eraser, BellRing } from 'lucide-react';
+import { Menu, Bell, User, Clock, Settings, LogOut, ChevronDown, Volume2, VolumeX, Eraser, BellRing, Activity } from 'lucide-react';
 import { useNotification } from '../lib/NotificationContext';
+import SystemDiagnostics from './SystemDiagnostics';
 
 interface HeaderProps {
   onMenuClick: () => void;
@@ -13,6 +14,7 @@ const Header: React.FC<HeaderProps> = ({ onMenuClick, onProfileSettingsClick, is
   const [time, setTime] = useState(new Date());
   const [user, setUser] = useState<any>(null);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const [showDiagnostics, setShowDiagnostics] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
   
   const { isSoundEnabled, toggleSound, requestPermission, permission, showNotification } = useNotification();
@@ -112,6 +114,14 @@ const Header: React.FC<HeaderProps> = ({ onMenuClick, onProfileSettingsClick, is
                   <Settings size={16} className="text-gray-400"/>
                   Minha Conta
                 </button>
+                <button
+                  onClick={() => { setShowDiagnostics(true); setIsMenuOpen(false); }}
+                  className="w-full flex items-center gap-3 px-3 py-2 text-sm font-bold text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
+                  data-testid="button-diagnostics"
+                >
+                  <Activity size={16} className="text-blue-500"/>
+                  Diagnóstico do Sistema
+                </button>
                 <div className="border-t border-gray-100 my-1"></div>
                 <button
                   onClick={handleClearCache}
@@ -125,6 +135,7 @@ const Header: React.FC<HeaderProps> = ({ onMenuClick, onProfileSettingsClick, is
           )}
         </div>
       </div>
+      {showDiagnostics && <SystemDiagnostics onClose={() => setShowDiagnostics(false)} />}
     </header>
   );
 };

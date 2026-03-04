@@ -34,6 +34,10 @@ export async function registerRoutes(
   app: Express
 ): Promise<Server> {
 
+  app.get('/api/health', (_req: Request, res: Response) => {
+    res.json({ status: 'ok', timestamp: Date.now(), uptime: process.uptime() });
+  });
+
   app.get('/sw.js', (_req: Request, res: Response) => {
     const swPath = path.resolve(process.cwd(), 'client', 'public', 'sw.js');
     if (fs.existsSync(swPath)) {
