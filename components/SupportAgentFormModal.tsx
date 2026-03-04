@@ -48,6 +48,9 @@ const SupportAgentFormModal: React.FC<Props> = ({ onClose, onSuccess, initialDat
   const [isSaving, setIsSaving] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [canViewFinancial, setCanViewFinancial] = useState(false);
+  const [userRole, setUserRole] = useState('');
+  const [showDirectoriaAuth, setShowDirectoriaAuth] = useState(false);
+  const [directoriaPassword, setDirectoriaPassword] = useState('');
   
   const [phoneError, setPhoneError] = useState('');
   const [checkingPhone, setCheckingPhone] = useState(false);
@@ -62,7 +65,7 @@ const SupportAgentFormModal: React.FC<Props> = ({ onClose, onSuccess, initialDat
           try {
               const user = JSON.parse(storedUser);
               const role = (user.role || '').toLowerCase();
-              // STRICT CHECK: Only Directors/Admins
+              setUserRole(role);
               if (['diretoria', 'administrador'].includes(role) || user.permissions?.includes('*')) {
                   setCanViewFinancial(true);
               }
@@ -260,6 +263,11 @@ const SupportAgentFormModal: React.FC<Props> = ({ onClose, onSuccess, initialDat
           return;
       }
 
+      if (initialData?.status === 'Bloqueado / Ação Trabalhista' && formData.status !== 'Bloqueado / Ação Trabalhista' && userRole !== 'diretoria') {
+          alert('⛔ ACESSO NEGADO\n\nSomente a DIRETORIA pode alterar o status de agentes com Ação Trabalhista.');
+          return;
+      }
+
       setIsSaving(true);
 
       try {
@@ -354,7 +362,7 @@ const SupportAgentFormModal: React.FC<Props> = ({ onClose, onSuccess, initialDat
       }
   };
 
-  return (
+  return (<>
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in">
         <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto flex flex-col">
             
@@ -520,16 +528,28 @@ const SupportAgentFormModal: React.FC<Props> = ({ onClose, onSuccess, initialDat
 
                     <div>
                         <label className={LABEL_CLASS}>Status</label>
-                        <select 
-                            className={INPUT_CLASS}
-                            value={formData.status}
-                            onChange={e => setFormData({...formData, status: e.target.value as any})}
-                        >
-                            <option value="Ativo">Ativo</option>
-                            <option value="Pendente">Pendente</option>
-                            <option value="Bloqueado">Bloqueado</option>
-                            <option value="Bloqueado / Ação Trabalhista">Bloqueado / Ação Trabalhista</option>
-                        </select>
+                        {initialData?.status === 'Bloqueado / Ação Trabalhista' && formData.status === 'Bloqueado / Ação Trabalhista' ? (
+                            <div>
+                                <div className="animate-blocked-flash-3d text-white px-4 py-3 rounded-lg flex items-center justify-between">
+                                    <span className="text-[11px] font-black uppercase drop-shadow-lg">⛔ BLOQUEADO / AÇÃO TRABALHISTA</span>
+                                    {userRole === 'diretoria' && (
+                                        <button type="button" onClick={() => setShowDirectoriaAuth(true)} className="bg-white/20 hover:bg-white/30 text-white text-[9px] font-black uppercase px-3 py-1.5 rounded-md transition-all backdrop-blur-sm border border-white/30">DESBLOQUEAR</button>
+                                    )}
+                                </div>
+                                {userRole !== 'diretoria' && <p className="text-[9px] text-red-500 font-bold mt-1 uppercase">Somente a DIRETORIA pode alterar este status.</p>}
+                            </div>
+                        ) : (
+                            <select 
+                                className={INPUT_CLASS}
+                                value={formData.status}
+                                onChange={e => setFormData({...formData, status: e.target.value as any})}
+                            >
+                                <option value="Ativo">Ativo</option>
+                                <option value="Pendente">Pendente</option>
+                                <option value="Bloqueado">Bloqueado</option>
+                                <option value="Bloqueado / Ação Trabalhista">Bloqueado / Ação Trabalhista</option>
+                            </select>
+                        )}
                     </div>
 
                     {canViewFinancial && (
@@ -606,7 +626,55 @@ const SupportAgentFormModal: React.FC<Props> = ({ onClose, onSuccess, initialDat
             </div>
         </div>
     </div>
-  );
+
+    {showDirectoriaAuth && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[200]" onClick={() => { setShowDirectoriaAuth(false); setDirectoriaPassword(''); }}>
+            <div className="bg-white rounded-2xl shadow-2xl p-8 w-[420px] max-w-[95vw]" onClick={e => e.stopPropagation()}>
+                <div className="animate-blocked-flash-3d text-white px-4 py-3 rounded-xl mb-6 text-center">
+                    <span className="text-[13px] font-black uppercase drop-shadow-lg">⛔ DESBLOQUEIO POR AÇÃO TRABALHISTA</span>
+                </div>
+                <p className="text-sm text-gray-700 font-medium mb-4 text-center">
+                    Para liberar este agente, confirme a <strong>senha da Diretoria</strong>.
+                </p>
+                <input 
+                    type="password" 
+                    className="w-full px-4 py-3 border-2 border-gray-300 rounded-xl text-center text-lg font-bold tracking-widest focus:border-red-500 focus:ring-2 focus:ring-red-500/20 outline-none mb-4"
+                    placeholder="••••••••"
+                    value={directoriaPassword}
+                    onChange={e => setDirectoriaPassword(e.target.value)}
+                    onKeyDown={e => {
+                        if (e.key === 'Enter') {
+                            if (directoriaPassword === 'DIR2025TM') {
+                                setFormData({...formData, status: 'Ativo'});
+                                setShowDirectoriaAuth(false);
+                                setDirectoriaPassword('');
+                                alert('✅ Agente desbloqueado com sucesso pela Diretoria.\n\nO status foi alterado para ATIVO. Salve para confirmar.');
+                            } else {
+                                alert('❌ Senha incorreta. Acesso negado.');
+                                setDirectoriaPassword('');
+                            }
+                        }
+                    }}
+                    autoFocus
+                />
+                <div className="flex gap-3">
+                    <button type="button" onClick={() => { setShowDirectoriaAuth(false); setDirectoriaPassword(''); }} className="flex-1 px-4 py-2.5 border border-gray-300 rounded-xl text-sm font-bold text-gray-600 hover:bg-gray-50 transition-colors">Cancelar</button>
+                    <button type="button" onClick={() => {
+                        if (directoriaPassword === 'DIR2025TM') {
+                            setFormData({...formData, status: 'Ativo'});
+                            setShowDirectoriaAuth(false);
+                            setDirectoriaPassword('');
+                            alert('✅ Agente desbloqueado com sucesso pela Diretoria.\n\nO status foi alterado para ATIVO. Salve para confirmar.');
+                        } else {
+                            alert('❌ Senha incorreta. Acesso negado.');
+                            setDirectoriaPassword('');
+                        }
+                    }} className="flex-1 px-4 py-2.5 bg-red-600 hover:bg-red-700 text-white rounded-xl text-sm font-black uppercase shadow-lg transition-all">Confirmar</button>
+                </div>
+            </div>
+        </div>
+    )}
+  </>);
 };
 
 export default SupportAgentFormModal;

@@ -80,6 +80,21 @@ const ProviderAgentForm: React.FC<Props> = ({ onBack, id, initialProvider, onSuc
   };
 
   const handleAgentChange = (index: number, field: keyof Agent, value: string) => {
+    if (field === 'status' && agents[index]?.status === 'Bloqueado / Ação Trabalhista' && value !== 'Bloqueado / Ação Trabalhista') {
+        const storedUser = localStorage.getItem('userData');
+        let role = '';
+        if (storedUser) { try { role = (JSON.parse(storedUser).role || '').toLowerCase(); } catch(e) {} }
+        if (role !== 'diretoria') {
+            alert('⛔ ACESSO NEGADO\n\nSomente a DIRETORIA pode alterar o status de agentes com Ação Trabalhista.');
+            return;
+        }
+        const pwd = prompt('🔐 AUTENTICAÇÃO DA DIRETORIA\n\nDigite a senha para desbloquear este agente:');
+        if (pwd !== 'DIR2025TM') {
+            alert('❌ Senha incorreta. Acesso negado.');
+            return;
+        }
+        alert('✅ Agente desbloqueado com sucesso pela Diretoria.');
+    }
     const updatedAgents = [...agents];
     updatedAgents[index] = { ...updatedAgents[index], [field]: value };
     setAgents(updatedAgents);
