@@ -54,6 +54,10 @@ The system encompasses modules for **Missions**, **Clients**, **Providers**, **F
 -   **PWA:** The app is configured as a Progressive Web App with `manifest.json` and `sw.js` in `client/public/`. Users can install it on mobile via "Add to Home Screen".
 -   **Push Notifications:** Uses Supabase Realtime to listen for new mission INSERTs on the `missions` table. When a new OS is created, a browser push notification is shown via the Service Worker. The `PushNotificationManager` component in `App.tsx` handles this. Requires Supabase Realtime to be enabled for the `missions` table.
 -   **Evidence Upload:** Uses `mission-evidence` bucket in Supabase Storage. Evidence logs are stored in `system_logs` table with `entity='MissionEvidence'`. The `created_by` column does NOT exist in `system_logs`.
+-   **Mobile/Scroll:** App uses `min-h-screen-ios` with `overflow-y-auto` for mobile compatibility. Scrollbars are thin and visible (not hidden). Login page uses `100dvh` for iOS safe area.
+-   **Client View Restrictions:** `isRestrictedClientView` hides: Pendente status cards, Pendente/Unapproved toggles, internal alerts (KM PENDENTE banners), Eficiência KPI, provider data. `hideProviderInfo` prop on MissionCard controls visibility.
+-   **Client OS Creation:** `ClientMissionRequest.tsx` allows clients to create missions with status "Solicitada". Internal users get toast notifications via Supabase Realtime when new solicitations arrive.
+-   **Dashboard Click-to-Filter:** `ClientExecutiveDashboard.tsx` supports PowerBI-style click-to-filter on all charts (day, status, type, route, vehicle, distance, weekday, hour, month). Uses `toggleChartFilter` with visual dimming of unselected items.
 
 ### Deployment
 -   **Vercel:** Used for frontend deployment, configured with SPA rewrites and cache headers.

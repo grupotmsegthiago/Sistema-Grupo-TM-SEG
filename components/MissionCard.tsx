@@ -467,7 +467,7 @@ Qualquer dúvida, estamos a disposição.
                     <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/10 to-transparent animate-pulse pointer-events-none"></div>
                 </div>
             )}
-            {(missingInfo.length > 0 || isPendingKm) && (
+            {!hideProviderInfo && (missingInfo.length > 0 || isPendingKm) && (
                 <div className={`bg-red-600 text-white text-[10px] font-bold uppercase py-1.5 px-3 flex items-center justify-center gap-2 animate-pulse ${isExtraHourActive ? '' : 'rounded-t-xl'}`}>
                     <AlertOctagon size={12} strokeWidth={3} /> PENDENTE: {isPendingKm ? ['KM FINAL', ...missingInfo].join(' • ') : missingInfo.join(' • ')}
                 </div>
@@ -482,8 +482,8 @@ Qualquer dúvida, estamos a disposição.
                                 <Layers size={10} /> MESMA OS
                             </span>
                         )}
-                        <span className={`px-1.5 py-0.5 rounded text-[9px] font-extrabold uppercase border tracking-wider ${isPendingKm ? 'bg-amber-100 text-amber-800 border-amber-300' : getStatusBadgeClass(mission.status)}`}>
-                            {isPendingKm ? 'PENDENTE KM' : mission.status}
+                        <span className={`px-1.5 py-0.5 rounded text-[9px] font-extrabold uppercase border tracking-wider ${isPendingKm && !hideProviderInfo ? 'bg-amber-100 text-amber-800 border-amber-300' : getStatusBadgeClass(mission.status)}`}>
+                            {isPendingKm && !hideProviderInfo ? 'PENDENTE KM' : mission.status}
                         </span>
                         {hasEvidence ? (
                             <button onClick={() => setShowEvidenceModal(true)} className="px-1.5 py-0.5 rounded text-[8px] font-black uppercase border bg-emerald-50 text-emerald-700 border-emerald-300 flex items-center gap-1 hover:bg-emerald-100 transition-all cursor-pointer shadow-sm" data-testid={`badge-evidence-${mission.id}`} title="Evidência anexada - clique para ver">
@@ -499,8 +499,8 @@ Qualquer dúvida, estamos a disposição.
                         <div className="flex items-center gap-2"><div className="p-0.5 bg-blue-50 rounded text-blue-600 shrink-0"><FileText size={10} /></div><div className="flex items-center gap-1.5"><span className="text-[9px] font-bold text-gray-400 uppercase tracking-wider">Criação</span><span className="text-[10px] font-bold text-gray-800">{formatDateTime(mission.createdAt)}</span></div></div>
                         <div className="flex items-center gap-2"><div className="p-0.5 bg-orange-50 rounded text-orange-600 shrink-0"><Clock size={10} /></div><div className="flex items-center gap-1.5"><span className="text-[9px] font-bold text-gray-400 uppercase tracking-wider">Agendamento</span><span className="text-[10px] font-bold text-gray-800">{mission.startTime ? formatDateTime(mission.startTime) : 'Imediato'}</span></div></div>
                     </div>
-                    <MissionTimer status={isPendingKm ? MissionStatus.PENDING : mission.status} startTime={mission.startTime} createdAt={mission.createdAt} />
-                    <div className="w-full">{isActive && !isPendingKm ? (<AgingTimelineBar minutes={minutesSinceUpdate} status={mission.status} />) : (<div className="h-6 w-full text-center text-[10px] text-gray-400 font-bold uppercase tracking-wider opacity-50">{isPendingKm ? 'KM PENDENTE' : '-'}</div>)}</div>
+                    <MissionTimer status={isPendingKm && !hideProviderInfo ? MissionStatus.PENDING : mission.status} startTime={mission.startTime} createdAt={mission.createdAt} />
+                    <div className="w-full">{isActive && !(isPendingKm && !hideProviderInfo) ? (<AgingTimelineBar minutes={minutesSinceUpdate} status={mission.status} />) : (<div className="h-6 w-full text-center text-[10px] text-gray-400 font-bold uppercase tracking-wider opacity-50">{isPendingKm && !hideProviderInfo ? 'KM PENDENTE' : '-'}</div>)}</div>
                 </div>
                 
                 <div className="lg:col-span-3 p-3 flex flex-col justify-center bg-gray-50/20 border-r border-gray-100">

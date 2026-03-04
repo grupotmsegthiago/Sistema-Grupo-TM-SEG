@@ -405,7 +405,16 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
             .on(
               'postgres_changes',
               { event: '*', schema: 'public', table: 'missions' },
-              () => {
+              (payload: any) => {
+                if (payload.eventType === 'INSERT' && payload.new && payload.new.status === 'Solicitada' && !isRestrictedClientView) {
+                  const location = payload.new.current_location || '';
+                  const isAccident = location.includes('ACIDENTE');
+                  showNotification(
+                    isAccident ? 'ACIDENTE - Nova Solicitação!' : 'Nova Solicitação de Cliente!',
+                    `OS ${payload.new.id} - ${payload.new.client}`,
+                    isAccident ? 'error' : 'info'
+                  );
+                }
                 fetchMissions(true);
               }
             )
@@ -432,7 +441,7 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
             window.removeEventListener('refreshMissions', handleExternalRefresh);
           };
       }
-    }, [fetchMissions, currentUser, showNotification]);
+    }, [fetchMissions, currentUser, showNotification, isRestrictedClientView]);
   
     const periodMissions = useMemo(() => {
         const todayStart = new Date();

@@ -2,7 +2,7 @@ import React, { useMemo, useState, useCallback } from 'react';
 import { Mission, MissionStatus } from '../types';
 import {
     BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
-    PieChart, Pie, Cell, AreaChart, Area, ComposedChart, Line, Legend, LabelList
+    PieChart, Pie, Cell, ComposedChart, Line, LabelList
 } from 'recharts';
 import {
     Activity, Truck, CheckCircle2, XCircle, Calendar, Clock, Shield,
@@ -120,6 +120,15 @@ const ClientExecutiveDashboard: React.FC<Props> = ({ missions }) => {
                 const dayStr = `${d.getDate().toString().padStart(2, '0')}/${(d.getMonth() + 1).toString().padStart(2, '0')}`;
                 return dayStr === chartFilter.value;
             }
+            if (chartFilter.type === 'month') {
+                const d = new Date(m.startTime || m.createdAt);
+                const monthStr = `${(d.getMonth() + 1).toString().padStart(2, '0')}/${d.getFullYear().toString().slice(2)}`;
+                return monthStr === chartFilter.value;
+            }
+            if (chartFilter.type === 'hour') {
+                const d = new Date(m.startTime || m.createdAt);
+                return `${d.getHours().toString().padStart(2, '0')}h` === chartFilter.value;
+            }
             return true;
         });
     }, [periodFiltered, chartFilter]);
@@ -132,9 +141,8 @@ const ClientExecutiveDashboard: React.FC<Props> = ({ missions }) => {
         const cancelled = filtered.filter(m => m.status === MissionStatus.CANCELLED).length;
         const refused = filtered.filter(m => m.status === MissionStatus.REFUSED).length;
         const active = filtered.filter(m => ![MissionStatus.COMPLETED, MissionStatus.CANCELLED, MissionStatus.REFUSED].includes(m.status as MissionStatus)).length;
-        const efficiency = total > 0 ? Math.round((completed / Math.max(1, total - refused)) * 100) : 0;
         const totalKm = filtered.reduce((s, m) => s + (m.totalDistance || 0), 0);
-        return { total, completed, inTransit, scheduled, cancelled, refused, active, efficiency, totalKm };
+        return { total, completed, inTransit, scheduled, cancelled, refused, active, totalKm };
     }, [filtered]);
 
     const dailyData = useMemo(() => {
@@ -509,32 +517,40 @@ const ClientExecutiveDashboard: React.FC<Props> = ({ missions }) => {
                     </ResponsiveContainer>
                 </ChartCard>
 
-                <ChartCard title="Horário de Pico (Agendamento)" icon={Clock}>
+                <ChartCard title="Horário de Pico (Agendamento)" icon={Clock} filterType="hour">
                     <ResponsiveContainer width="100%" height={260}>
-                        <AreaChart data={hourData} margin={{ top: 10, right: 15, left: -10, bottom: 5 }}>
+                        <BarChart data={hourData} margin={{ top: 25, right: 15, left: -10, bottom: 5 }} onClick={(e: any) => e?.activePayload?.[0]?.payload && toggleChartFilter('hour', e.activePayload[0].payload.hora)}>
                             <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
                             <XAxis dataKey="hora" tick={TICK_SM} interval={2} />
                             <YAxis tick={TICK} allowDecimals={false} />
                             <Tooltip content={<CustomTooltip />} />
-                            <defs>
-                                <linearGradient id="gradHour" x1="0" y1="0" x2="0" y2="1">
-                                    <stop offset="5%" stopColor={CEVA_NAVY} stopOpacity={0.3} />
-                                    <stop offset="95%" stopColor={CEVA_NAVY} stopOpacity={0.03} />
-                                </linearGradient>
-                            </defs>
-                            <Area type="monotone" dataKey="missoes" name="Missões" stroke={CEVA_NAVY} strokeWidth={3} fill="url(#gradHour)" />
-                        </AreaChart>
+                            <Bar dataKey="missoes" name="Missões" radius={[4, 4, 0, 0]} barSize={12} className="cursor-pointer">
+                                {hourData.map((entry, i) => {
+                                    const isSelected = chartFilter?.type === 'hour' && chartFilter.value === entry.hora;
+                                    const isSiblingDimmed = chartFilter?.type === 'hour' && !isSelected;
+                                    const isGlobalDimmed = chartFilter && chartFilter.type !== 'hour';
+                                    return <Cell key={i} fill={CEVA_NAVY} fillOpacity={isSiblingDimmed ? 0.2 : isGlobalDimmed ? 0.5 : 1} />;
+                                })}
+                                <LabelList dataKey="missoes" position="top" style={{ fontSize: 10, fontWeight: 900, fill: '#334155' }} formatter={(v: number) => v > 0 ? v : ''} />
+                            </Bar>
+                        </BarChart>
                     </ResponsiveContainer>
                 </ChartCard>
 
-                <ChartCard title="Evolução Mensal (6 Meses)" icon={TrendingUp}>
+                <ChartCard title="Evolução Mensal (6 Meses)" icon={TrendingUp} filterType="month">
                     <ResponsiveContainer width="100%" height={260}>
-                        <ComposedChart data={monthlyTrend} margin={{ top: 25, right: 15, left: -10, bottom: 5 }}>
+                        <ComposedChart data={monthlyTrend} margin={{ top: 25, right: 15, left: -10, bottom: 5 }} onClick={(e: any) => e?.activePayload?.[0]?.payload && toggleChartFilter('month', e.activePayload[0].payload.mes)}>
                             <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
                             <XAxis dataKey="mes" tick={TICK} />
                             <YAxis tick={TICK} allowDecimals={false} />
                             <Tooltip content={<CustomTooltip />} />
-                            <Bar dataKey="missoes" name="Missões" fill={CEVA_PRIMARY} radius={[4, 4, 0, 0]} barSize={30}>
+                            <Bar dataKey="missoes" name="Missões" radius={[4, 4, 0, 0]} barSize={30} className="cursor-pointer">
+                                {monthlyTrend.map((entry, i) => {
+                                    const isSelected = chartFilter?.type === 'month' && chartFilter.value === entry.mes;
+                                    const isSiblingDimmed = chartFilter?.type === 'month' && !isSelected;
+                                    const isGlobalDimmed = chartFilter && chartFilter.type !== 'month';
+                                    return <Cell key={i} fill={CEVA_PRIMARY} fillOpacity={isSiblingDimmed ? 0.2 : isGlobalDimmed ? 0.5 : 1} />;
+                                })}
                                 <LabelList dataKey="missoes" position="top" style={{ fontSize: 12, fontWeight: 900, fill: '#334155' }} />
                             </Bar>
                             <Line type="monotone" dataKey="missoes" stroke={CEVA_NAVY} strokeWidth={2} dot={{ r: 4, fill: CEVA_NAVY }} />
