@@ -1,13 +1,92 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { supabase } from '../lib/supabase';
+import { Bell, BellRing } from 'lucide-react';
 
 const PushNotificationManager = () => {
     const permissionGranted = useRef(false);
     const channelRef = useRef<any>(null);
+    const [showTestBtn, setShowTestBtn] = useState(false);
+    const [testStatus, setTestStatus] = useState<'idle' | 'sent' | 'denied' | 'no-sw'>('idle');
+
+    const sendTestNotification = () => {
+        const title = '🔔 Teste TMSEG';
+        const body = 'Notificação push funcionando!\nCliente: TESTE\nOrigem: São Paulo - SP\nDestino: Campinas - SP';
+        const tag = `test-${Date.now()}`;
+
+        if (!('Notification' in window)) {
+            setTestStatus('denied');
+            setTimeout(() => setTestStatus('idle'), 3000);
+            return;
+        }
+
+        if (Notification.permission === 'default') {
+            Notification.requestPermission().then(p => {
+                if (p === 'granted') {
+                    permissionGranted.current = true;
+                    doSend(title, body, tag);
+                } else {
+                    setTestStatus('denied');
+                    setTimeout(() => setTestStatus('idle'), 3000);
+                }
+            });
+            return;
+        }
+
+        if (Notification.permission !== 'granted') {
+            setTestStatus('denied');
+            setTimeout(() => setTestStatus('idle'), 3000);
+            return;
+        }
+
+        doSend(title, body, tag);
+    };
+
+    const doSend = (title: string, body: string, tag: string) => {
+        if (navigator.serviceWorker?.controller) {
+            navigator.serviceWorker.controller.postMessage({
+                type: 'SHOW_NOTIFICATION',
+                title,
+                body,
+                tag
+            });
+            setTestStatus('sent');
+        } else if (navigator.serviceWorker) {
+            navigator.serviceWorker.ready.then(reg => {
+                reg.showNotification(title, {
+                    body,
+                    icon: '/favicon.png',
+                    badge: '/favicon.png',
+                    tag,
+                    vibrate: [200, 100, 200],
+                    requireInteraction: true,
+                    renotify: true
+                });
+                setTestStatus('sent');
+            }).catch(() => {
+                try {
+                    new Notification(title, { body, icon: '/favicon.png', tag });
+                    setTestStatus('sent');
+                } catch {
+                    setTestStatus('no-sw');
+                }
+            });
+        } else {
+            try {
+                new Notification(title, { body, icon: '/favicon.png', tag });
+                setTestStatus('sent');
+            } catch {
+                setTestStatus('no-sw');
+            }
+        }
+        setTimeout(() => setTestStatus('idle'), 3000);
+    };
 
     useEffect(() => {
         const userData = JSON.parse(localStorage.getItem('userData') || '{}');
         if (!userData.name) return;
+
+        const isAdmin = (userData.role || '').toLowerCase() === 'administrador' || (userData.role || '').toLowerCase() === 'diretoria';
+        setShowTestBtn(true);
 
         const isClientUser = userData.clientId || (userData.permissions || []).some((p: string) => p.startsWith('client_view:'));
         if (isClientUser) return;
@@ -72,7 +151,30 @@ const PushNotificationManager = () => {
         };
     }, []);
 
-    return null;
+    if (!showTestBtn) return null;
+
+    return (
+        <div className="fixed bottom-4 right-4 z-[9999]">
+            <button
+                onClick={sendTestNotification}
+                data-testid="button-test-push"
+                className="flex items-center gap-2 px-4 py-3 rounded-full shadow-lg text-white text-xs font-bold transition-all active:scale-95"
+                style={{
+                    background: testStatus === 'sent' ? '#16a34a' : testStatus === 'denied' ? '#dc2626' : '#1e40af',
+                }}
+            >
+                {testStatus === 'sent' ? (
+                    <><BellRing size={16} className="animate-bounce" /> Enviada!</>
+                ) : testStatus === 'denied' ? (
+                    <><Bell size={16} /> Permissão negada</>
+                ) : testStatus === 'no-sw' ? (
+                    <><Bell size={16} /> Instale como PWA</>
+                ) : (
+                    <><Bell size={16} /> Testar Push</>
+                )}
+            </button>
+        </div>
+    );
 };
 
 export default PushNotificationManager;
