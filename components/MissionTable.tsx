@@ -7,7 +7,7 @@ import {
   Plus, Loader2, Activity, Search, Database, AlertTriangle, Check, Trash2, Lock, Share2, X, Eye, EyeOff, Layers, PlayCircle, CheckCircle2,
   ClipboardList, FileSearch, CalendarClock, MapPin, Truck, Flag, XCircle, UserX, AlertOctagon, ToggleLeft, ToggleRight, Calendar,
   BarChart4, Globe, Building2, LayoutDashboard, User, ExternalLink, RefreshCw,
-  Target, Clock, History, CalendarPlus, ShieldAlert, Mail, MessageCircle
+  Target, Clock, History, CalendarPlus, ShieldAlert, Mail, MessageCircle, ClipboardCheck
 } from 'lucide-react';
 import { GoogleMap, useLoadScript, Marker, InfoWindow } from '@react-google-maps/api';
 import { googleMapsLoadConfig } from '../lib/maps';
@@ -158,6 +158,7 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
   const [accidentCount, setAccidentCount] = useState(0);
   const [approvalMap, setApprovalMap] = useState<Record<string, { stage: string; date: string }[]>>({});
   const [resolvedClientName, setResolvedClientName] = useState('');
+  const [showMyApprovalOnly, setShowMyApprovalOnly] = useState(false);
 
   // Relógio para projeções
   const [currentTime, setCurrentTime] = useState(new Date());
@@ -546,17 +547,51 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
             return isFutureDate && isInitialStatus;
         }).length;
     }, [allMissions]);
+
+    const DATE_APPROVAL_RULE = new Date('2026-03-03T00:00:00').getTime();
+
+    const myApprovalStage = useMemo(() => {
+        if (!currentUser) return null;
+        const nameLower = (currentUser.name || '').toLowerCase();
+        const roleLower = (currentUser.role || '').toLowerCase();
+        if (nameLower.includes('daniel')) return 'auditor';
+        if (nameLower.includes('barbara') || nameLower.includes('bárbara') || roleLower === 'administrador') return 'financeiro';
+        if (nameLower.includes('thiago') || roleLower === 'diretoria') return 'diretoria';
+        return null;
+    }, [currentUser]);
+
+    const myApprovalMissions = useMemo(() => {
+        if (!myApprovalStage) return [];
+        const isDiretoria = myApprovalStage === 'diretoria';
+        return allMissions.filter(m => {
+            if (m.status !== MissionStatus.COMPLETED || m.billing_approved) return false;
+            const mDate = new Date(m.startTime || m.createdAt).getTime();
+            if (mDate < DATE_APPROVAL_RULE) return false;
+            const stages = (approvalMap[m.id] || []).map(s => s.stage);
+            if (isDiretoria) {
+                return !stages.includes('auditor') || !stages.includes('financeiro') || !stages.includes('diretoria');
+            }
+            return !stages.includes(myApprovalStage);
+        });
+    }, [allMissions, approvalMap, myApprovalStage]);
+
+    const myApprovalCount = myApprovalMissions.length;
   
     // Final List: Apply Status Tab Filter on top of special criteria
     const filteredMissions = useMemo(() => {
         const isSearching = searchTerm && searchTerm.trim().length > 0;
-        const hasActiveSpecialFilters = showPendingOnly || showUnapprovedOnly || showTomorrowOnly;
+        const hasActiveSpecialFilters = showPendingOnly || showUnapprovedOnly || showTomorrowOnly || showMyApprovalOnly;
 
-        return filteredBySpecialCriteria.filter(mission => {
+        let baseList = filteredBySpecialCriteria;
+        if (showMyApprovalOnly && myApprovalMissions.length > 0) {
+            const myIds = new Set(myApprovalMissions.map(m => m.id));
+            baseList = baseList.filter(m => myIds.has(m.id));
+        }
+
+        return baseList.filter(mission => {
             if (filterStatus !== 'ALL') {
                 return mission.status === filterStatus;
             } else {
-                // Default ALL view: Hide terminal statuses AND PENDING unless searching or special filter active
                 if (!isSearching && !hasActiveSpecialFilters) {
                      const hiddenStatuses = [
                          MissionStatus.COMPLETED, 
@@ -569,7 +604,7 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
             }
             return true;
         });
-    }, [filteredBySpecialCriteria, filterStatus, searchTerm, showPendingOnly, showUnapprovedOnly, showTomorrowOnly]);
+    }, [filteredBySpecialCriteria, filterStatus, searchTerm, showPendingOnly, showUnapprovedOnly, showTomorrowOnly, showMyApprovalOnly, myApprovalMissions]);
   
     const activeMapMissions = useMemo(() => {
         return allMissions.filter(m => {
@@ -840,7 +875,7 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
   
         <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-10 gap-1.5">
             {/* BOX TOTAL: Reflete o volume absoluto do período conforme solicitado */}
-            <StatCard icon={Activity} title="Total" value={totalVolumeCount} bgColor="bg-gray-800" loading={isLoading} isActive={filterStatus === 'ALL' && !showPendingOnly && !showTomorrowOnly && !showUnapprovedOnly} onClick={() => { setFilterStatus('ALL'); setShowPendingOnly(false); setShowTomorrowOnly(false); setShowUnapprovedOnly(false); }} />
+            <StatCard icon={Activity} title="Total" value={totalVolumeCount} bgColor="bg-gray-800" loading={isLoading} isActive={filterStatus === 'ALL' && !showPendingOnly && !showTomorrowOnly && !showUnapprovedOnly && !showMyApprovalOnly} onClick={() => { setFilterStatus('ALL'); setShowPendingOnly(false); setShowTomorrowOnly(false); setShowUnapprovedOnly(false); setShowMyApprovalOnly(false); }} />
             {STATUS_CONFIG.filter(s => isRestrictedClientView ? s.id !== MissionStatus.PENDING : true).map((status) => ( <StatCard key={status.id} icon={status.icon} title={status.label} value={statusCounts[status.id] || 0} bgColor={status.color} loading={isLoading} isActive={filterStatus === status.id} onClick={() => { setFilterStatus(status.id); }} /> ))}
         </div>
   
@@ -884,6 +919,30 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
                             <ShieldAlert size={16} className={showUnapprovedOnly ? "text-blue-800" : "text-blue-600"} />
                             {showUnapprovedOnly ? 'Não Auditadas (ON)' : 'Sem Aprovação'}
                             {unapprovedCount > 0 && <span className="ml-1 px-1.5 py-0.5 rounded-full text-[9px] bg-blue-600 text-white font-bold">{unapprovedCount}</span>}
+                        </button>
+                    )}
+
+                    {myApprovalStage && (
+                        <button 
+                            data-testid="button-my-approvals"
+                            onClick={() => setShowMyApprovalOnly(!showMyApprovalOnly)} 
+                            className={`relative flex items-center gap-2 px-4 py-2.5 rounded-lg text-xs font-black uppercase border transition-all ${
+                                showMyApprovalOnly 
+                                ? 'bg-emerald-600 text-white border-emerald-700 shadow-md scale-105 ring-2 ring-emerald-500/20' 
+                                : myApprovalCount > 0 
+                                    ? 'bg-emerald-50 text-emerald-700 border-emerald-300 shadow-sm animate-pulse' 
+                                    : 'bg-white text-emerald-600 border-emerald-200 hover:bg-emerald-50'
+                            }`}
+                        >
+                            <ClipboardCheck size={16} />
+                            {showMyApprovalOnly ? (
+                                <span className="flex items-center gap-1.5">MINHAS APROVAÇÕES <span className="text-[8px] font-black">ON</span></span>
+                            ) : (
+                                <span className="flex items-center gap-1.5">
+                                    {myApprovalStage === 'diretoria' ? 'APROVAÇÕES PENDENTES' : 'MINHAS APROVAÇÕES'}
+                                    {myApprovalCount > 0 && <span className="ml-1 px-1.5 py-0.5 rounded-full text-[9px] bg-emerald-600 text-white font-bold">{myApprovalCount}</span>}
+                                </span>
+                            )}
                         </button>
                     )}
                 </div>
