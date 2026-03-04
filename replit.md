@@ -50,5 +50,10 @@ The system encompasses modules for **Missions**, **Clients**, **Providers**, **F
 -   **Z-API (WhatsApp):** Integrates WhatsApp messaging capabilities.
 -   **Resend API:** Used for sending email verification codes during user creation.
 
+### PWA & Push Notifications
+-   **PWA:** The app is configured as a Progressive Web App with `manifest.json` and `sw.js` in `client/public/`. Users can install it on mobile via "Add to Home Screen".
+-   **Push Notifications:** Uses Supabase Realtime to listen for new mission INSERTs on the `missions` table. When a new OS is created, a browser push notification is shown via the Service Worker. The `PushNotificationManager` component in `App.tsx` handles this. Requires Supabase Realtime to be enabled for the `missions` table.
+-   **Evidence Upload:** Uses `mission-evidence` bucket in Supabase Storage. Evidence logs are stored in `system_logs` table with `entity='MissionEvidence'`. The `created_by` column does NOT exist in `system_logs`.
+
 ### Deployment
 -   **Vercel:** Used for frontend deployment, configured with SPA rewrites and cache headers.

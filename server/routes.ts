@@ -6,6 +6,8 @@ import { createClient } from "@supabase/supabase-js";
 import pg from "pg";
 import { Resend } from "resend";
 import { calculateMissionFinancials } from "../lib/financialUtils";
+import fs from "fs";
+import path from "path";
 
 const resend = new Resend(process.env.RESEND_API_KEY);
 const verificationCodes = new Map<string, { code: string; expiresAt: number; email: string }>();
@@ -22,6 +24,28 @@ export async function registerRoutes(
   httpServer: Server,
   app: Express
 ): Promise<Server> {
+
+  app.get('/sw.js', (_req: Request, res: Response) => {
+    const swPath = path.resolve(process.cwd(), 'client', 'public', 'sw.js');
+    if (fs.existsSync(swPath)) {
+      res.setHeader('Content-Type', 'application/javascript');
+      res.setHeader('Service-Worker-Allowed', '/');
+      res.setHeader('Cache-Control', 'no-cache');
+      res.sendFile(swPath);
+    } else {
+      res.status(404).send('Not found');
+    }
+  });
+
+  app.get('/manifest.json', (_req: Request, res: Response) => {
+    const manifestPath = path.resolve(process.cwd(), 'client', 'public', 'manifest.json');
+    if (fs.existsSync(manifestPath)) {
+      res.setHeader('Content-Type', 'application/manifest+json');
+      res.sendFile(manifestPath);
+    } else {
+      res.status(404).send('Not found');
+    }
+  });
 
   app.post("/api/gemini/generate", async (req: Request, res: Response) => {
     try {
