@@ -597,7 +597,9 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
     if (currentUser) {
         fetchMissions();
         const interval = setInterval(() => fetchMissions(true), 30000);
-        return () => clearInterval(interval);
+        const handleRefreshEvent = () => fetchMissions(true);
+        window.addEventListener('refreshMissions', handleRefreshEvent);
+        return () => { clearInterval(interval); window.removeEventListener('refreshMissions', handleRefreshEvent); };
     }
   }, [fetchMissions, currentUser]);
 

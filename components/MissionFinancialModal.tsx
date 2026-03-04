@@ -655,6 +655,17 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
           
           setUseSavedValues(true);
 
+          setMission(prev => prev ? {
+              ...prev,
+              revenue_value: revServiceOnly,
+              cost_value: costServiceOnly,
+              toll_value: toll,
+              toll_value_provider: tollProv,
+              billing_approved: isFullyApproved,
+              billing_verified_by: userName,
+              last_update: basePayload.last_update
+          } : prev);
+
           if (approve) {
               showNotification('Sucesso', isFullyApproved ? 'Faturamento 100% Aprovado! (Auditor + Financeiro + Diretoria)' : `${label} — Aguardando demais aprovações`, 'success');
           } else {
@@ -662,6 +673,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
           }
           
           if (onUpdate) onUpdate();
+          window.dispatchEvent(new CustomEvent('refreshMissions'));
           if (!approve || isFullyApproved) onClose();
       } catch (e: any) { alert(e.message); } finally { setIsUpdating(false); isSavingRef.current = false; }
   };
