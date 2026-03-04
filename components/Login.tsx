@@ -167,7 +167,7 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
         </div>
       </div>
 
-      <div className="relative z-10 flex items-center w-full lg:w-[45%] h-screen-ios">
+      <div className="relative z-10 flex items-center w-full lg:w-[45%] min-h-full">
         <div className="w-full max-w-md mx-auto px-8 md:px-12 py-12">
 
           <div className="mb-10">
