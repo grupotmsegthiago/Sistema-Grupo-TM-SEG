@@ -372,8 +372,17 @@ Qualquer dúvida, estamos a disposição.
                         </span>
                     </div>
                     <div className="flex flex-col gap-1.5 mt-1">
-                        <div className="flex items-center gap-2"><div className="p-0.5 bg-blue-50 rounded text-blue-600 shrink-0"><FileText size={10} /></div><div className="flex items-center gap-1.5"><span className="text-[9px] font-bold text-gray-400 uppercase tracking-wider">Criação</span><span className="text-[10px] font-bold text-gray-800">{formatDateTime(mission.createdAt)}</span></div></div>
+                        <div className="flex items-center gap-2"><div className="p-0.5 bg-blue-50 rounded text-blue-600 shrink-0"><FileText size={10} /></div><div className="flex items-center gap-1.5"><span className="text-[9px] font-bold text-gray-400 uppercase tracking-wider">Solicitação</span><span className="text-[10px] font-bold text-gray-800">{formatDateTime(mission.createdAt)}</span></div></div>
                         <div className="flex items-center gap-2"><div className="p-0.5 bg-orange-50 rounded text-orange-600 shrink-0"><Clock size={10} /></div><div className="flex items-center gap-1.5"><span className="text-[9px] font-bold text-gray-400 uppercase tracking-wider">Agendamento</span><span className="text-[10px] font-bold text-gray-800">{mission.startTime ? formatDateTime(mission.startTime) : 'Imediato'}</span></div></div>
+                        <div className="flex items-center gap-2">
+                            <div className="p-0.5 bg-green-50 rounded text-green-600 shrink-0"><Navigation size={10} /></div>
+                            <div className="flex items-center gap-1.5">
+                                <span className="text-[9px] font-bold text-gray-400 uppercase tracking-wider">KM</span>
+                                <span className="text-[10px] font-bold text-gray-800 font-mono">{mission.startKm ? mission.startKm.toLocaleString('pt-BR') : '---'}</span>
+                                <span className="text-[9px] text-gray-300 font-black">→</span>
+                                <span className="text-[10px] font-bold text-gray-800 font-mono">{mission.endKm ? mission.endKm.toLocaleString('pt-BR') : '---'}</span>
+                            </div>
+                        </div>
                     </div>
                     <MissionTimer status={isPendingKm ? MissionStatus.PENDING : mission.status} startTime={mission.startTime} createdAt={mission.createdAt} />
                     <div className="w-full">{isActive && !isPendingKm ? (<AgingTimelineBar minutes={minutesSinceUpdate} status={mission.status} />) : (<div className="h-6 w-full text-center text-[10px] text-gray-400 font-bold uppercase tracking-wider opacity-50">{isPendingKm ? 'KM PENDENTE' : '-'}</div>)}</div>
