@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { ArrowLeft, Save, MapPin, Flag, FileText, Building2, Ruler, Loader2, Plus, X, Navigation, Calendar, ShieldCheck, DollarSign, Calculator, Briefcase, TrendingUp, TrendingDown, ArrowRight, Check, ChevronDown, Package, Info, Siren, Clock, Tag, Layers, Truck, Search, User, Phone, AlertCircle, CheckCircle2, Zap, Shield, ShieldAlert } from 'lucide-react';
+import { ArrowLeft, Save, MapPin, Flag, FileText, Building2, Ruler, Loader2, Plus, X, Navigation, Calendar, ShieldCheck, DollarSign, Calculator, Briefcase, TrendingUp, TrendingDown, ArrowRight, Check, ChevronDown, Package, Info, Siren, Clock, Tag, Layers, Truck, Search, User, Phone, AlertCircle, CheckCircle2, Zap, Shield, ShieldAlert, Paperclip, Image, Trash2, Clipboard } from 'lucide-react';
 import { MissionStatus, Client, ClientRoute, ClientPriceTable, ProviderData, ProviderCostTable, ClientVehicleDB } from '../types';
 import { supabase } from '../lib/supabase';
 import { logAction } from '../lib/logger';
@@ -101,6 +101,9 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
   const [isRouteModalOpen, setIsRouteModalOpen] = useState(false);
   const [isVehicleModalOpen, setIsVehicleModalOpen] = useState(false);
 
+  const [evidenceFiles, setEvidenceFiles] = useState<{ file: File; preview: string }[]>([]);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
   // Inteligência de Software: Restrição IBL/Sorocaba
   const [iblWarning, setIblWarning] = useState('');
 
@@ -124,8 +127,81 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
         }
     };
     document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
+
+    const handlePaste = (e: ClipboardEvent) => {
+        const items = e.clipboardData?.items;
+        if (!items) return;
+        for (let i = 0; i < items.length; i++) {
+            if (items[i].type.startsWith('image/')) {
+                const file = items[i].getAsFile();
+                if (file) {
+                    const preview = URL.createObjectURL(file);
+                    setEvidenceFiles(prev => [...prev, { file, preview }]);
+                }
+                break;
+            }
+        }
+    };
+    document.addEventListener('paste', handlePaste);
+
+    return () => {
+        document.removeEventListener('mousedown', handleClickOutside);
+        document.removeEventListener('paste', handlePaste);
+    };
   }, []);
+
+  const handleEvidenceFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+      const files = e.target.files;
+      if (!files) return;
+      Array.from(files).forEach(file => {
+          if (file.type.startsWith('image/')) {
+              const preview = URL.createObjectURL(file);
+              setEvidenceFiles(prev => [...prev, { file, preview }]);
+          }
+      });
+      if (fileInputRef.current) fileInputRef.current.value = '';
+  };
+
+  const removeEvidence = (index: number) => {
+      setEvidenceFiles(prev => {
+          URL.revokeObjectURL(prev[index].preview);
+          return prev.filter((_, i) => i !== index);
+      });
+  };
+
+  const uploadEvidences = async (missionId: string) => {
+      if (evidenceFiles.length === 0) return;
+      const userData = JSON.parse(localStorage.getItem('userData') || '{}');
+      for (let i = 0; i < evidenceFiles.length; i++) {
+          const { file } = evidenceFiles[i];
+          const ext = file.name.split('.').pop() || 'png';
+          const filePath = `mission-evidence/${missionId}/${Date.now()}_${i}.${ext}`;
+          const { error: uploadError } = await supabase.storage.from('mission-evidence').upload(filePath, file, { contentType: file.type, upsert: false });
+          if (uploadError) {
+              if (uploadError.message?.includes('Bucket not found') || uploadError.message?.includes('not found')) {
+                  console.error('Bucket mission-evidence não existe. Crie no painel Supabase.');
+              } else {
+                  console.error('Erro upload evidência:', uploadError.message);
+              }
+              continue;
+          }
+          const { data: urlData } = supabase.storage.from('mission-evidence').getPublicUrl(filePath);
+          await supabase.from('system_logs').insert({
+              entity: 'MissionEvidence',
+              entity_id: missionId,
+              action_type: 'evidence_upload',
+              details: JSON.stringify({
+                  fileName: file.name,
+                  filePath,
+                  publicUrl: urlData?.publicUrl || '',
+                  uploadedBy: userData.name || 'Sistema',
+                  uploadedAt: new Date().toISOString(),
+                  context: 'Criação da OS - Evidência de solicitação do cliente'
+              }),
+              created_at: new Date().toISOString()
+          });
+      }
+  };
 
   // Inteligência: Monitorar Cliente IBL e Origem Sorocaba
   useEffect(() => {
@@ -490,6 +566,7 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
             }]);
             if (!error) saved = true; else if (error.code === '23505') attempts++; else throw error;
         }
+        await uploadEvidences(finalId);
         onSaveAndContinue(finalId);
     } catch (e: any) { alert("Erro ao salvar: " + e.message); } finally { setIsSaving(false); }
   };
@@ -853,7 +930,57 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
                 </div>
               </div>
 
-              <div className="flex justify-end gap-3 pt-6 border-t border-gray-100"><button type="button" onClick={onBack} className="px-8 py-3 bg-white text-gray-500 rounded-xl font-bold uppercase text-xs hover:bg-gray-100 border border-gray-200 transition-all">Cancelar</button><button type="submit" disabled={isSaving} className="px-10 py-3 bg-orange-500 text-black rounded-xl font-black uppercase text-sm shadow-lg hover:bg-orange-600 flex items-center gap-2 transition-all active:scale-95">{isSaving ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />} Gerar Ordem de Serviço</button></div>
+              <div className="pt-6 border-t border-gray-100 space-y-4">
+                <div>
+                    <div className="flex items-center gap-2 mb-3">
+                        <Paperclip size={16} className="text-gray-500" />
+                        <span className={LABEL_CLASS + " mb-0"}>Evidência da Solicitação (Print / Imagem)</span>
+                    </div>
+                    <div 
+                        className="border-2 border-dashed border-gray-200 rounded-xl p-4 bg-gray-50/50 hover:border-red-300 hover:bg-red-50/20 transition-all cursor-pointer"
+                        onClick={() => fileInputRef.current?.click()}
+                        data-testid="evidence-drop-zone"
+                    >
+                        <input 
+                            ref={fileInputRef} 
+                            type="file" 
+                            accept="image/*" 
+                            multiple 
+                            className="hidden" 
+                            onChange={handleEvidenceFileSelect} 
+                        />
+                        <div className="flex flex-col items-center gap-2 text-gray-400">
+                            <div className="flex items-center gap-3">
+                                <Image size={20} />
+                                <span className="text-xs font-bold uppercase">Clique para selecionar ou use Ctrl+V para colar um print</span>
+                                <Clipboard size={16} />
+                            </div>
+                            <span className="text-[10px] text-gray-300">PNG, JPG — Evidencie que o cliente solicitou esta demanda</span>
+                        </div>
+                    </div>
+                    {evidenceFiles.length > 0 && (
+                        <div className="mt-3 grid grid-cols-2 md:grid-cols-4 gap-3">
+                            {evidenceFiles.map((ev, idx) => (
+                                <div key={idx} className="relative group rounded-lg overflow-hidden border border-gray-200 shadow-sm">
+                                    <img src={ev.preview} alt={`Evidência ${idx + 1}`} className="w-full h-32 object-cover" />
+                                    <button 
+                                        type="button"
+                                        onClick={(e) => { e.stopPropagation(); removeEvidence(idx); }}
+                                        className="absolute top-1 right-1 p-1 bg-red-600 text-white rounded-full opacity-0 group-hover:opacity-100 transition-opacity shadow-lg"
+                                        data-testid={`button-remove-evidence-${idx}`}
+                                    >
+                                        <Trash2 size={12} />
+                                    </button>
+                                    <div className="absolute bottom-0 left-0 right-0 bg-black/60 px-2 py-1">
+                                        <span className="text-[9px] text-white font-bold">EVIDÊNCIA {idx + 1}</span>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    )}
+                </div>
+                <div className="flex justify-end gap-3"><button type="button" onClick={onBack} className="px-8 py-3 bg-white text-gray-500 rounded-xl font-bold uppercase text-xs hover:bg-gray-100 border border-gray-200 transition-all">Cancelar</button><button type="submit" disabled={isSaving} className="px-10 py-3 bg-orange-500 text-black rounded-xl font-black uppercase text-sm shadow-lg hover:bg-orange-600 flex items-center gap-2 transition-all active:scale-95">{isSaving ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />} Gerar Ordem de Serviço</button></div>
+              </div>
           </form>
       </div>
     </div>
