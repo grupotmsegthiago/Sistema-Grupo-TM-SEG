@@ -69,7 +69,7 @@ The system encompasses modules for **Missions**, **Clients**, **Providers**, **F
 -   **Auto-Complete Status:** When end_km and end_time are saved on a Pendente/Em Trânsito/Na Origem mission, status auto-updates to "Concluída" (in both MissionFinancialModal and UpdateMissionModal).
 -   **Mobile/Scroll:** App uses `min-h-screen-ios` with `overflow-y-auto` for mobile compatibility. Scrollbars are thin and visible (not hidden). Login page uses `100dvh` for iOS safe area.
 -   **Client View Restrictions:** `isRestrictedClientView` hides: Pendente status cards, Pendente/Unapproved toggles, internal alerts (KM PENDENTE banners), Eficiência KPI, provider data. `hideProviderInfo` prop on MissionCard controls visibility.
--   **Client OS Creation:** `ClientMissionRequest.tsx` allows clients to create missions with status "Solicitada". Internal users get toast notifications via Supabase Realtime when new solicitations arrive.
+-   **Client OS Creation:** `ClientMissionRequest.tsx` allows clients to create missions with status "Solicitada". Internal users get toast notifications via Supabase Realtime when new solicitations arrive. The "Solicitada" StatCard in MissionTable blinks with a red badge for internal users when there are pending solicitations.
 -   **Dashboard Click-to-Filter:** `ClientExecutiveDashboard.tsx` supports PowerBI-style click-to-filter on all charts (day, status, type, route, vehicle, distance, weekday, hour, month). Uses `toggleChartFilter` with visual dimming of unselected items.
 
 ### Deployment

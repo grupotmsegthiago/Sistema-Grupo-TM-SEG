@@ -18,6 +18,7 @@ import MissionCard from './MissionCard';
 import MissionPrintModal from './MissionPrintModal';
 import MissionHistoryModal from './MissionHistoryModal';
 import MissionFinancialModal from './MissionFinancialModal';
+import ClientMissionRequest from './ClientMissionRequest';
 
 interface MissionTableProps {
   onNewMission?: () => void;
@@ -453,6 +454,8 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
   
   const [isFinancialModalOpen, setIsFinancialModalOpen] = useState(false);
   const [missionForFinancials, setMissionForFinancials] = useState<Mission | null>(null);
+  const [showClientRequest, setShowClientRequest] = useState(false);
+  const [clientNameForRequest, setClientNameForRequest] = useState('');
 
   useEffect(() => {
     const storedUser = localStorage.getItem('userData');
@@ -480,6 +483,25 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
       }
       return false;
   }, [currentUser]);
+
+  useEffect(() => {
+      if (!currentUser?.clientId) return;
+      supabase.from('clients').select('name').eq('id', currentUser.clientId).single().then(({ data }) => {
+          setClientNameForRequest(data?.name || currentUser.name || 'Cliente');
+      });
+  }, [currentUser]);
+
+  useEffect(() => {
+      if (isRestrictedClientView) return;
+      if (!currentUser) return;
+      const channel = supabase.channel('solicitation_alerts')
+          .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'missions', filter: 'status=eq.Solicitada' }, (payload: any) => {
+              const m = payload.new;
+              showNotification('Nova Solicitação', `${m.client || 'Cliente'} criou OS ${m.id}`, 'info');
+          })
+          .subscribe();
+      return () => { supabase.removeChannel(channel); };
+  }, [isRestrictedClientView, currentUser, showNotification]);
 
   const fetchMissions = useCallback(async (silent = false) => {
     if (!silent) setIsLoading(true);
@@ -834,12 +856,21 @@ Grupo TMSEG`;
                 </button>
             )}
             {isRestrictedClientView && (
-                <button
-                    onClick={() => setShowClientDash(!showClientDash)}
-                    className={`flex items-center gap-2 px-4 py-2.5 rounded-lg text-xs font-bold uppercase transition-all border ${showClientDash ? 'bg-blue-600 text-white border-blue-700 shadow-md' : 'bg-white text-gray-600 border-gray-300 hover:bg-gray-50'}`}
-                >
-                    <BarChart4 size={16} /> Painel de Indicadores
-                </button>
+                <>
+                    <button
+                        onClick={() => setShowClientDash(!showClientDash)}
+                        className={`flex items-center gap-2 px-4 py-2.5 rounded-lg text-xs font-bold uppercase transition-all border ${showClientDash ? 'bg-blue-600 text-white border-blue-700 shadow-md' : 'bg-white text-gray-600 border-gray-300 hover:bg-gray-50'}`}
+                    >
+                        <BarChart4 size={16} /> Painel de Indicadores
+                    </button>
+                    <button
+                        onClick={() => setShowClientRequest(true)}
+                        className="flex items-center gap-2 bg-red-700 hover:bg-red-800 text-white px-5 py-2.5 rounded-lg text-xs font-bold uppercase transition-all shadow-md"
+                        data-testid="button-new-solicitation"
+                    >
+                        <Plus size={16} /> Nova Solicitação
+                    </button>
+                </>
             )}
             <div className="flex items-center gap-2 bg-gray-50 p-1.5 rounded-lg border border-gray-200 mr-2">
                 <Calendar size={16} className="text-gray-500 ml-1" />
@@ -902,9 +933,19 @@ Grupo TMSEG`;
 
       <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 lg:grid-cols-9 gap-2">
         <StatCard icon={Activity} title="Total Geral" value={periodMissions.length} bgColor="bg-gray-700" loading={isLoading} isActive={filterStatus === 'ALL' && !showPendingOnly} onClick={() => { setFilterStatus('ALL'); setShowPendingOnly(false); }} />
-        {STATUS_CONFIG.map((status) => (
-            <StatCard key={status.id} icon={status.icon} title={status.label} value={statusCounts[status.id] || 0} bgColor={status.color} loading={isLoading} isActive={filterStatus === status.id && !showPendingOnly} onClick={() => { setFilterStatus(status.id); setShowPendingOnly(false); }} />
-        ))}
+        {STATUS_CONFIG.map((status) => {
+            const count = statusCounts[status.id] || 0;
+            const isSolicited = status.id === MissionStatus.SOLICITED;
+            const shouldBlink = isSolicited && !isRestrictedClientView && count > 0;
+            return (
+                <div key={status.id} className={`relative ${shouldBlink ? 'animate-pulse' : ''}`}>
+                    <StatCard icon={status.icon} title={status.label} value={count} bgColor={status.color} loading={isLoading} isActive={filterStatus === status.id && !showPendingOnly} onClick={() => { setFilterStatus(status.id); setShowPendingOnly(false); }} />
+                    {shouldBlink && (
+                        <span className="absolute -top-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full bg-red-600 text-[8px] font-black text-white ring-2 ring-white z-10">{count}</span>
+                    )}
+                </div>
+            );
+        })}
       </div>
 
       <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden sticky top-0 z-20">
@@ -914,11 +955,13 @@ Grupo TMSEG`;
                 <input type="text" placeholder="Buscar OS, Cliente, Placa, Motorista..." className="w-full pl-10 pr-4 py-2.5 bg-white border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-red-500/20 focus:border-red-500 outline-none transition-all shadow-sm" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} />
                 <Search size={18} className="absolute left-3.5 top-3 text-gray-400" />
               </div>
-              <button onClick={() => setShowPendingOnly(!showPendingOnly)} className={`relative flex items-center gap-2 px-4 py-2.5 rounded-lg text-xs font-bold uppercase transition-all border ${showPendingOnly ? 'bg-orange-500 text-black border-orange-600 shadow-md ring-2 orange-500/30' : pendingCount > 0 ? 'bg-orange-500 text-black border-orange-600 shadow-sm animate-pulse' : 'bg-white text-gray-600 border-gray-300 hover:bg-gray-50 hover:border-gray-400'}`}>
-                  {pendingCount > 0 ? ( <AlertTriangle size={16} className="text-black" /> ) : ( showPendingOnly ? <ToggleRight size={16} /> : <ToggleLeft size={16} /> )}
-                  {showPendingOnly ? 'Exibindo Pendências (Global)' : 'Filtrar Pendências'}
-                  {pendingCount > 0 && ( <span className="ml-1 px-1.5 py-0.5 rounded-full text-[9px] bg-white text-orange-700 font-bold">{pendingCount}</span> )}
-              </button>
+              {!isRestrictedClientView && (
+                  <button onClick={() => setShowPendingOnly(!showPendingOnly)} className={`relative flex items-center gap-2 px-4 py-2.5 rounded-lg text-xs font-bold uppercase transition-all border ${showPendingOnly ? 'bg-orange-500 text-black border-orange-600 shadow-md ring-2 orange-500/30' : pendingCount > 0 ? 'bg-orange-500 text-black border-orange-600 shadow-sm animate-pulse' : 'bg-white text-gray-600 border-gray-300 hover:bg-gray-50 hover:border-gray-400'}`}>
+                      {pendingCount > 0 ? ( <AlertTriangle size={16} className="text-black" /> ) : ( showPendingOnly ? <ToggleRight size={16} /> : <ToggleLeft size={16} /> )}
+                      {showPendingOnly ? 'Exibindo Pendências (Global)' : 'Filtrar Pendências'}
+                      {pendingCount > 0 && ( <span className="ml-1 px-1.5 py-0.5 rounded-full text-[9px] bg-white text-orange-700 font-bold">{pendingCount}</span> )}
+                  </button>
+              )}
           </div>
           <div className="flex items-center gap-2 text-xs text-gray-500"><span className="hidden md:inline">Exibindo:</span><span className="font-bold text-gray-800 bg-gray-200 px-2 py-1 rounded">{filteredMissions.length}</span></div>
         </div>
@@ -980,6 +1023,13 @@ Grupo TMSEG`;
                   <div className="p-4 bg-gray-50 flex justify-end gap-3 border-t border-gray-100"><button onClick={() => setIsDeleteModalOpen(false)} className="px-4 py-2 bg-white border border-gray-300 rounded-lg text-sm font-bold text-gray-700 hover:bg-gray-100">Cancelar</button><button onClick={confirmDelete} disabled={isDeleting || (!isDirector && !deletePassword)} className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg text-sm font-bold flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed">{isDeleting ? <Loader2 size={16} className="animate-spin" /> : <Trash2 size={16} />} Confirmar Exclusão</button></div>
               </div>
           </div>
+      )}
+      {showClientRequest && clientNameForRequest && (
+          <ClientMissionRequest
+              clientName={clientNameForRequest}
+              onClose={() => setShowClientRequest(false)}
+              onSuccess={() => { fetchMissions(true); showNotification('Sucesso', 'Solicitação criada com sucesso!', 'success'); }}
+          />
       )}
     </div>
   );

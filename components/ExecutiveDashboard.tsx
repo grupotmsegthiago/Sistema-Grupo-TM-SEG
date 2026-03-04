@@ -245,12 +245,17 @@ const ExecutiveDashboard: React.FC<Props> = ({ missions, isDirector, clientTable
         const costDiff = excelCost > 0 && !isSameOs ? Math.abs(sysCost - excelCost) : 0;
         if (isSameOs) return { revDiff, costDiff, revMatch: true, costMatch: true };
         if (isApproved) return { revDiff, costDiff, revMatch: true, costMatch: true };
+        const toll = excelToll || 0;
         const sysStoredRevBase = (systemMission?.revenue_value || 0) + Math.max(0, systemMission?.toll_value || 0);
-        const revBaseMatchesAcion = excelAcionamento != null && excelAcionamento > 0 && sysStoredRevBase > 0 && Math.abs(sysStoredRevBase - ((excelAcionamento || 0) + (excelToll || 0))) <= 10;
+        const revBaseMatchesAcion = excelAcionamento != null && excelAcionamento > 0 && sysStoredRevBase > 0 && Math.abs(sysStoredRevBase - (excelAcionamento + toll)) <= 10;
+        const revDiffIsToll = toll > 0 && Math.abs(revDiff - toll) <= 10;
+        const revDiffWithToll = toll > 0 && Math.abs((sysRev + toll) - excelRev) <= 10;
         const sysStoredCostBase = (systemMission?.cost_value || 0) + Math.max(0, systemMission?.toll_value_provider != null ? systemMission.toll_value_provider : (systemMission?.toll_value || 0));
         const costDiffExplainedByExtras = costDiff > 10 && sysStoredCostBase > 0 && excelCost > sysStoredCostBase && Math.abs(sysCost - sysStoredCostBase) <= 1;
-        const revMatch = excelRev > 0 ? (revDiff <= 10 || revBaseMatchesAcion) : true;
-        const costMatch = excelCost > 0 ? (costDiff <= 10 || costDiffExplainedByExtras) : true;
+        const costDiffIsToll = toll > 0 && Math.abs(costDiff - toll) <= 10;
+        const costDiffWithToll = toll > 0 && Math.abs((sysCost + toll) - excelCost) <= 10;
+        const revMatch = excelRev > 0 ? (revDiff <= 10 || revBaseMatchesAcion || revDiffIsToll || revDiffWithToll) : true;
+        const costMatch = excelCost > 0 ? (costDiff <= 10 || costDiffExplainedByExtras || costDiffIsToll || costDiffWithToll) : true;
         return { revDiff, costDiff, revMatch, costMatch };
     }, []);
 
