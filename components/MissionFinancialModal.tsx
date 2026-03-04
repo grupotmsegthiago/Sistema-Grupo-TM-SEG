@@ -4,7 +4,7 @@ import { Mission, ClientPriceTable, ProviderCostTable, MissionStatus, Client } f
 import { supabase } from '../lib/supabase';
 import { useNotification } from '../lib/NotificationContext';
 import { calculateMissionFinancials, auditMissionFinancials } from '../lib/financialUtils';
-import { X, Calculator, Loader2, Save, CheckCircle2, TrendingUp, Landmark, Zap, RotateCcw, Building2, Briefcase, Plus, Users, MapPin, ArrowRight, BrainCircuit, AlertTriangle, AlertCircle, Edit2, Info, RefreshCw } from 'lucide-react';
+import { X, Calculator, Loader2, Save, CheckCircle2, TrendingUp, Landmark, Zap, RotateCcw, Building2, Briefcase, Plus, Users, MapPin, ArrowRight, BrainCircuit, AlertTriangle, AlertCircle, Edit2, Info, RefreshCw, Clock } from 'lucide-react';
 import ProviderCostForm from './ProviderCostForm';
 import ClientPriceForm from './ClientPriceForm';
 import { formatProviderName } from '../lib/utils';
@@ -1378,23 +1378,23 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                 <button 
                                     onClick={() => handleUpdate(true)} 
                                     disabled={isUpdating || isZeroCostError || !tollConfirmed || mission?.status === MissionStatus.PENDING || currentApprovalStatus.blockedForCurrentUser} 
-                                    className={`px-8 py-3 rounded-xl font-black uppercase text-xs shadow-lg flex flex-col items-center justify-center gap-1 transition-all active:scale-95 min-h-[48px] ${(isZeroCostError || !tollConfirmed || mission?.status === MissionStatus.PENDING || currentApprovalStatus.blockedForCurrentUser) ? 'bg-gray-400 cursor-not-allowed text-gray-200' : currentApprovalStatus.hasPartial ? 'bg-gray-300 text-gray-600 border border-gray-400 cursor-pointer hover:bg-gray-400' : 'bg-blue-600 hover:bg-blue-700 text-white shadow-blue-200'}`}
+                                    className={`px-8 py-3 rounded-xl font-black uppercase text-xs shadow-lg flex flex-col items-center justify-center gap-1 transition-all active:scale-95 min-h-[48px] ${(isZeroCostError || !tollConfirmed || mission?.status === MissionStatus.PENDING) ? 'bg-gray-400 cursor-not-allowed text-gray-200' : currentApprovalStatus.blockedForCurrentUser ? 'bg-amber-50 border-2 border-amber-400 text-amber-800 cursor-not-allowed shadow-amber-100' : currentApprovalStatus.hasPartial ? 'bg-gray-300 text-gray-600 border border-gray-400 cursor-pointer hover:bg-gray-400' : 'bg-blue-600 hover:bg-blue-700 text-white shadow-blue-200'}`}
                                     data-testid="button-approve-billing"
                                 >
                                     <span className="flex items-center gap-2">
-                                        {isUpdating ? <Loader2 size={16} className="animate-spin" /> : <CheckCircle2 size={16} />} 
+                                        {isUpdating ? <Loader2 size={16} className="animate-spin" /> : currentApprovalStatus.blockedForCurrentUser ? <Clock size={16} className="text-amber-600" /> : <CheckCircle2 size={16} />} 
                                         {mission?.status === MissionStatus.PENDING 
                                             ? 'OS Pendente — Não Aprovável' 
                                             : !tollConfirmed 
                                                 ? 'Confirme o Pedágio' 
                                                 : currentApprovalStatus.blockedForCurrentUser
-                                                    ? 'Aprovar Faturamento'
+                                                    ? 'Aprovação Pendente'
                                                     : currentApprovalStatus.isFullyApproved 
                                                         ? 'Já Aprovado (Completo)' 
                                                         : 'Aprovar Faturamento'}
                                     </span>
                                     {currentApprovalStatus.blockedForCurrentUser && !isZeroCostError && tollConfirmed && mission?.status !== MissionStatus.PENDING && (
-                                        <span className="text-[9px] font-bold text-gray-500 normal-case">
+                                        <span className="text-[9px] font-bold text-amber-600 normal-case">
                                             {currentApprovalStatus.blockedMessage}
                                         </span>
                                     )}
