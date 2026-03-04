@@ -122,12 +122,11 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
         return [
             MissionStatus.ORIGIN, 
             MissionStatus.IN_TRANSIT, 
-            MissionStatus.COMPLETED, 
-            MissionStatus.REFUSED
+            MissionStatus.COMPLETED
         ].includes(editData.status as MissionStatus);
     }, [editData.status]);
 
-    const isOccurrenceRequired = isRequirementActive;
+    const isOccurrenceRequired = isRequirementActive || editData.status === MissionStatus.REFUSED;
     const isGoogleLinkRequired = isRequirementActive;
 
     // Efeito para Relógio em Tempo Real nos campos de Fim de Viagem
