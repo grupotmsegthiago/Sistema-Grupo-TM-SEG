@@ -91,6 +91,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
   const [useSavedValues, _setUseSavedValues] = useState(false);
   const useSavedValuesRef = React.useRef(false);
   const setUseSavedValues = (val: boolean) => { useSavedValuesRef.current = val; _setUseSavedValues(val); };
+  const [savedByInfo, setSavedByInfo] = useState<string | null>(null);
 
   const [editStartKm, setEditStartKm] = useState('');
   const [editEndKm, setEditEndKm] = useState('');
@@ -245,15 +246,42 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
               
               fetchHistoricalPatterns(fullMission, (ptRes.data || []) as ProviderCostTable[]);
 
-              const { data: logData } = await supabase.from('system_logs')
-                  .select('*')
-                  .eq('entity', 'BillingApproval')
-                  .eq('entity_id', initialMission.id)
-                  .order('created_at', { ascending: true });
+              const [approvalRes, adjustmentRes] = await Promise.all([
+                  supabase.from('system_logs').select('*').eq('entity', 'BillingApproval').eq('entity_id', initialMission.id).order('created_at', { ascending: true }),
+                  supabase.from('system_logs').select('*').eq('entity', 'BillingAdjustment').eq('entity_id', initialMission.id).order('created_at', { ascending: false }).limit(1)
+              ]);
+
+              const logData = approvalRes.data;
               if (logData && logData.length > 0) {
                   setApprovalLog(logData.map((l: any) => {
                       try { return JSON.parse(l.details); } catch { return { user: l.user_name, role: '', stage: l.action_type, date: l.created_at }; }
                   }));
+              }
+
+              if (adjustmentRes.data && adjustmentRes.data.length > 0) {
+                  const adj = adjustmentRes.data[0];
+                  try {
+                      const details = JSON.parse(adj.details);
+                      if (details.clientTableId) setManualClientTableId(details.clientTableId);
+                      if (details.providerTableId) setManualProviderTableId(details.providerTableId);
+                      if (details.customClientBase) setCustomClientBase(details.customClientBase);
+                      if (details.customClientKm) setCustomClientKm(details.customClientKm);
+                      if (details.customClientHour) setCustomClientHour(details.customClientHour);
+                      if (details.customProviderBase) setCustomProviderBase(details.customProviderBase);
+                      if (details.customProviderKm) setCustomProviderKm(details.customProviderKm);
+                      if (details.customProviderHour) setCustomProviderHour(details.customProviderHour);
+                      if (details.iblEnabled !== undefined) setIblEnabled(details.iblEnabled);
+
+                      if (details.revenueTotal > 0 || details.costTotal > 0) {
+                          setUseSavedValues(true);
+                          setRevenueInput(details.revenueTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2 }));
+                          setCostInput(details.costTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2 }));
+                      }
+
+                      const savedDate = new Date(adj.created_at);
+                      const dateStr = savedDate.toLocaleDateString('pt-BR') + ' ' + savedDate.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+                      setSavedByInfo(`${adj.user_name} (${dateStr})`);
+                  } catch (e) { console.error('Erro ao restaurar ajustes:', e); }
               }
           }
           if (ctRes.data) setClientTables(ctRes.data as any);
@@ -510,12 +538,42 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
               }]);
           }
 
+          const adjustmentDetails = JSON.stringify({
+              clientTableId: manualClientTableId || null,
+              providerTableId: manualProviderTableId || null,
+              customClientBase: customClientBase || null,
+              customClientKm: customClientKm || null,
+              customClientHour: customClientHour || null,
+              customProviderBase: customProviderBase || null,
+              customProviderKm: customProviderKm || null,
+              customProviderHour: customProviderHour || null,
+              iblEnabled: iblEnabled,
+              revenueTotal: revTotal,
+              costTotal: costTotal,
+              tollValue: toll,
+              tollProviderValue: tollProv
+          });
+
+          await supabase.from('system_logs').delete().eq('entity', 'BillingAdjustment').eq('entity_id', mission.id);
+          await supabase.from('system_logs').insert([{
+              user_name: userName,
+              action_type: approve ? 'APPROVE_SAVE' : 'MANUAL_SAVE',
+              entity: 'BillingAdjustment',
+              entity_id: mission.id,
+              details: adjustmentDetails
+          }]);
+
+          const now = new Date();
+          const dateStr = now.toLocaleDateString('pt-BR') + ' ' + now.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+          const verifiedLabel = `${userName} (${dateStr})`;
+          setSavedByInfo(verifiedLabel);
+
           setApprovalLog(newLog);
           
           if (approve) {
               showNotification('Sucesso', isFullyApproved ? 'Faturamento 100% Aprovado! (Auditor + Financeiro + Diretoria)' : `${label} — Aguardando demais aprovações`, 'success');
           } else {
-              showNotification('Sucesso', 'Ajustes Salvos', 'success');
+              showNotification('Sucesso', `Ajustes Salvos por ${userName}`, 'success');
           }
           
           if (onUpdate) onUpdate();
@@ -1285,7 +1343,14 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                     </div>
                                 )}
                             </div>
-                            <div className="flex gap-3 w-full md:w-auto shrink-0">
+                            <div className="flex flex-col gap-1.5 w-full md:w-auto shrink-0">
+                                {savedByInfo && (
+                                    <div className="flex items-center justify-center gap-2 bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-1.5" data-testid="saved-by-indicator">
+                                        <Save size={11} className="text-emerald-600" />
+                                        <span className="text-[10px] font-black text-emerald-700 uppercase tracking-wide">Salvo por {savedByInfo}</span>
+                                    </div>
+                                )}
+                                <div className="flex gap-3">
                                 <button onClick={() => handleUpdate(false)} disabled={isUpdating} className="px-6 py-3 bg-white text-slate-900 border border-slate-200 hover:bg-slate-50 rounded-xl text-xs font-black uppercase flex items-center justify-center gap-2 transition-all shadow-sm active:scale-95 h-12" data-testid="button-save-adjustments">
                                     {isUpdating ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />} Salvar Ajustes
                                 </button>
@@ -1311,6 +1376,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                         </span>
                                     )}
                                 </button>
+                                </div>
                             </div>
                         </div>
                     </div>
