@@ -1283,6 +1283,7 @@ const ExecutiveDashboard: React.FC<Props> = ({ missions, isDirector, clientTable
                                                         {r.error ? <span className="text-[9px] font-black bg-red-100 text-red-700 px-2 py-0.5 rounded-full">{r.error}</span> :
                                                          r.updated ? <span className="text-[9px] font-black bg-green-100 text-green-700 px-2 py-0.5 rounded-full">CORRIGIDA</span> :
                                                          r.approved ? <span className="text-[9px] font-black bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full">APROVADA</span> :
+                                                         (r.revDiff <= 10 && r.costDiff <= 10) ? <span className="text-[9px] font-black bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-full">CONFERIDO</span> :
                                                          <span className="text-[9px] font-black bg-red-100 text-red-700 px-2 py-0.5 rounded-full">DIVERGENTE</span>}
                                                     </td>
                                                 </tr>
