@@ -351,8 +351,10 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
     useEffect(() => {
       if (financialData && mission) {
           if (!useSavedValuesRef.current) {
-              setRevenueInput(financialData.client.total.toLocaleString('pt-BR', {minimumFractionDigits: 2}));
-              setCostInput(financialData.provider.total.toLocaleString('pt-BR', {minimumFractionDigits: 2}));
+              const toll = parseNumber(tollInput);
+              const tollProv = parseNumber(tollProviderInput);
+              setRevenueInput((financialData.client.total + toll).toLocaleString('pt-BR', {minimumFractionDigits: 2}));
+              setCostInput((financialData.provider.total + tollProv).toLocaleString('pt-BR', {minimumFractionDigits: 2}));
           }
           
           if (financialData.provider.tableId) {
@@ -408,7 +410,8 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
       setCustomClientKm('');
       setCustomClientHour('');
       if (financialData) {
-          setRevenueInput(financialData.client.total.toLocaleString('pt-BR', { minimumFractionDigits: 2 }));
+          const toll = parseNumber(tollInput);
+          setRevenueInput((financialData.client.total + toll).toLocaleString('pt-BR', { minimumFractionDigits: 2 }));
       }
       showNotification('Recalculado', 'Valores do cliente restaurados para a tabela original.', 'info');
   };
@@ -418,7 +421,8 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
       setCustomProviderKm('');
       setCustomProviderHour('');
       if (financialData) {
-          setCostInput(financialData.provider.total.toLocaleString('pt-BR', { minimumFractionDigits: 2 }));
+          const tollProv = parseNumber(tollProviderInput);
+          setCostInput((financialData.provider.total + tollProv).toLocaleString('pt-BR', { minimumFractionDigits: 2 }));
       }
       showNotification('Recalculado', 'Valores do fornecedor restaurados para a tabela original.', 'info');
   };
