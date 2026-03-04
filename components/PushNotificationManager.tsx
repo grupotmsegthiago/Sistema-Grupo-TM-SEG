@@ -4,6 +4,41 @@ import { Bell, BellRing, X, AlertTriangle } from 'lucide-react';
 
 type DiagStatus = 'idle' | 'sent' | 'denied' | 'no-api' | 'error';
 
+const sendPushNotification = async (title: string, body: string, tag: string) => {
+    if ('serviceWorker' in navigator) {
+        try {
+            const regPromise = navigator.serviceWorker.ready;
+            const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 3000));
+            const reg = await Promise.race([regPromise, timeoutPromise]) as ServiceWorkerRegistration;
+            await reg.showNotification(title, {
+                body,
+                icon: '/favicon.png',
+                badge: '/favicon.png',
+                tag,
+                vibrate: [200, 100, 200],
+                renotify: true
+            });
+            return 'sw';
+        } catch {}
+    }
+
+    try {
+        new Notification(title, { body, icon: '/favicon.png', tag });
+        return 'api';
+    } catch {}
+
+    if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
+        try {
+            navigator.serviceWorker.controller.postMessage({
+                type: 'SHOW_NOTIFICATION', title, body, tag
+            });
+            return 'postmsg';
+        } catch {}
+    }
+
+    return null;
+};
+
 const PushNotificationManager = () => {
     const permissionGranted = useRef(false);
     const channelRef = useRef<any>(null);
@@ -71,68 +106,20 @@ const PushNotificationManager = () => {
             return;
         }
 
-        const title = '🔔 Teste TMSEG';
-        const body = 'Notificação push funcionando!\nCliente: TESTE\nOrigem: São Paulo - SP\nDestino: Campinas - SP';
+        const title = 'OS - Criada Nº TESTE-001 - Cliente: EXEMPLO LTDA';
+        const body = 'Origem: São Paulo - SP → Destino: Campinas - SP\nFornecedor: ATIVA SEGURANÇA';
         const tag = `test-${Date.now()}`;
 
         setDiagMsg('Enviando notificação...');
 
-        let sent = false;
+        const result = await sendPushNotification(title, body, tag);
 
-        if ('serviceWorker' in navigator) {
-            try {
-                const regPromise = navigator.serviceWorker.ready;
-                const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 3000));
-                const reg = await Promise.race([regPromise, timeoutPromise]) as ServiceWorkerRegistration;
-                await reg.showNotification(title, {
-                    body,
-                    icon: '/favicon.png',
-                    badge: '/favicon.png',
-                    tag,
-                    vibrate: [200, 100, 200],
-                    renotify: true
-                });
-                sent = true;
-                setTestStatus('sent');
-                setDiagMsg('✅ Enviada via Service Worker! Deslize para baixo no topo do iPhone para ver.');
-            } catch (err1: any) {
-                setDiagMsg(`SW: ${err1?.message || err1}. Tentando alternativa...`);
-            }
-        }
-
-        if (!sent) {
-            try {
-                const n = new Notification(title, { body, icon: '/favicon.png', tag });
-                n.onclick = () => window.focus();
-                sent = true;
-                setTestStatus('sent');
-                setDiagMsg('✅ Enviada via Notification API! Verifique a central de notificações.');
-            } catch (err2: any) {
-                setDiagMsg(`Notification API falhou: ${err2?.message || err2}.`);
-            }
-        }
-
-        if (!sent) {
-            if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
-                try {
-                    navigator.serviceWorker.controller.postMessage({
-                        type: 'SHOW_NOTIFICATION',
-                        title,
-                        body,
-                        tag
-                    });
-                    sent = true;
-                    setTestStatus('sent');
-                    setDiagMsg('✅ Enviada via postMessage! Verifique a central de notificações.');
-                } catch (err3: any) {
-                    setDiagMsg(`postMessage falhou: ${err3?.message || err3}.`);
-                }
-            }
-        }
-
-        if (!sent) {
+        if (result) {
+            setTestStatus('sent');
+            setDiagMsg('✅ Notificação enviada! Deslize para baixo no topo da tela para ver.');
+        } else {
             setTestStatus('error');
-            setDiagMsg('❌ Nenhum método de notificação funcionou. Tente fechar o app completamente e reabrir.');
+            setDiagMsg('❌ Nenhum método funcionou. Tente fechar o app e reabrir.');
         }
 
         setTimeout(() => setTestStatus('idle'), 8000);
@@ -165,28 +152,20 @@ const PushNotificationManager = () => {
                 const mission = payload.new;
                 if (!mission) return;
 
+                const osId = mission.id || 'N/A';
+                const client = mission.client || 'N/A';
+                const origin = mission.origin || 'N/A';
+                const destination = mission.destination || 'N/A';
+                const provider = mission.provider || 'N/A';
                 const isAccident = (mission.current_location || '').includes('ACIDENTE');
-                const title = isAccident
-                    ? `🚨 ACIDENTE - Nova OS ${mission.id}`
-                    : `📋 Nova OS Criada: ${mission.id}`;
-                const body = `Cliente: ${mission.client || 'N/A'}\nOrigem: ${mission.origin || 'N/A'}\nDestino: ${mission.destination || 'N/A'}`;
 
-                if (permissionGranted.current && navigator.serviceWorker?.controller) {
-                    navigator.serviceWorker.controller.postMessage({
-                        type: 'SHOW_NOTIFICATION',
-                        title,
-                        body,
-                        tag: `mission-${mission.id}`
-                    });
-                } else if (permissionGranted.current) {
-                    try {
-                        new Notification(title, {
-                            body,
-                            icon: '/favicon.png',
-                            tag: `mission-${mission.id}`,
-                            requireInteraction: true
-                        });
-                    } catch {}
+                const title = isAccident
+                    ? `🚨 ACIDENTE - OS Nº ${osId} - ${client}`
+                    : `OS - Criada Nº ${osId} - Cliente: ${client}`;
+                const body = `Origem: ${origin} → Destino: ${destination}\nFornecedor: ${provider}`;
+
+                if (permissionGranted.current) {
+                    sendPushNotification(title, body, `mission-${osId}`);
                 }
 
                 if (isAccident) {
