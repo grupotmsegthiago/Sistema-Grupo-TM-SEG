@@ -241,7 +241,12 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
               const savedRev = safeNumber(mRes.data.revenue_value);
               const savedCost = safeNumber(mRes.data.cost_value);
               const hasSavedData = mRes.data.billing_approved || mRes.data.billing_verified_by || savedRev > 0 || savedCost > 0;
-              if (mRes.data.billing_approved) {
+              if (mRes.data.is_same_os) {
+                  setTollInput(dbToll.toLocaleString('pt-BR', {minimumFractionDigits: 2}));
+                  setTollProviderInput('0,00');
+                  setTollConfirmed(true);
+                  setTollSource(dbToll === 0 ? 'MESMA OS (R$ 0,00)' : 'MESMA OS');
+              } else if (mRes.data.billing_approved) {
                   setTollInput(dbToll.toLocaleString('pt-BR', {minimumFractionDigits: 2}));
                   setTollProviderInput(dbTollProvider.toLocaleString('pt-BR', {minimumFractionDigits: 2}));
                   setTollConfirmed(true);

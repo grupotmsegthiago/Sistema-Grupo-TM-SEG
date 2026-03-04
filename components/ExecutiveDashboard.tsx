@@ -256,11 +256,12 @@ const ExecutiveDashboard: React.FC<Props> = ({ missions, isDirector, clientTable
             if (Math.abs(newSysRev - c.sysRev) < 0.01 && Math.abs(newSysCost - c.sysCost) < 0.01) return c;
             hasChanges = true;
             newAdjustedIds.add(c.osId);
+            const isSameOs = systemMission?.is_same_os === true;
             const revDiff = c.excelRev > 0 ? Math.abs(newSysRev - c.excelRev) : 0;
-            const costDiff = c.excelCost > 0 ? Math.abs(newSysCost - c.excelCost) : 0;
+            const costDiff = c.excelCost > 0 && !isSameOs ? Math.abs(newSysCost - c.excelCost) : 0;
             const revMatch = c.excelRev > 0 ? revDiff <= 10 : true;
-            const costMatch = c.excelCost > 0 ? costDiff <= 10 : true;
-            return { ...c, sysRev: newSysRev, sysCost: newSysCost, revDiff, costDiff, revMatch, costMatch };
+            const costMatch = isSameOs ? true : (c.excelCost > 0 ? costDiff <= 10 : true);
+            return { ...c, sysRev: newSysRev, sysCost: newSysCost, revDiff, costDiff, revMatch, costMatch, isSameOs };
         });
         if (hasChanges) {
             setAdjustedOsIds(newAdjustedIds);
@@ -481,11 +482,12 @@ const ExecutiveDashboard: React.FC<Props> = ({ missions, isDirector, clientTable
                     const sysCost = systemMission?.cost || 0;
                     const sysDetails = extractSysMissionDetails(systemMission);
                     const isApproved = systemMission?.billing_approved === true;
+                    const isSameOs = systemMission?.is_same_os === true;
                     const revDiff = excelRev > 0 ? Math.abs(sysRev - excelRev) : 0;
-                    const costDiff = excelCost > 0 ? Math.abs(sysCost - excelCost) : 0;
+                    const costDiff = excelCost > 0 && !isSameOs ? Math.abs(sysCost - excelCost) : 0;
                     const revMatch = excelRev > 0 ? (revDiff <= 10 || isApproved) : true;
-                    const costMatch = excelCost > 0 ? (costDiff <= 10 || isApproved) : true;
-                    comparisons.push({ osId, found: !!systemMission, excelRev, excelCost, sysRev, sysCost, revDiff, costDiff, revMatch, costMatch, isApproved, status: systemMission?.status || 'Não encontrada', client: systemMission?.client || '-', excelKm, excelHoraInicio, excelHoraFim, excelAcionamento, excelToll, ...(sysDetails || {}) });
+                    const costMatch = isSameOs ? true : (excelCost > 0 ? (costDiff <= 10 || isApproved) : true);
+                    comparisons.push({ osId, found: !!systemMission, excelRev, excelCost, sysRev, sysCost, revDiff, costDiff, revMatch, costMatch, isApproved, isSameOs, status: systemMission?.status || 'Não encontrada', client: systemMission?.client || '-', excelKm, excelHoraInicio, excelHoraFim, excelAcionamento, excelToll, ...(sysDetails || {}) });
                 }
                 comparisons.sort((a, b) => (!a.found ? -1 : !b.found ? 1 : (!a.revMatch||!a.costMatch) ? -1 : (!b.revMatch||!b.costMatch) ? 1 : (b.revDiff+b.costDiff)-(a.revDiff+a.costDiff)));
                 setExcelComparison(comparisons);
@@ -532,11 +534,12 @@ const ExecutiveDashboard: React.FC<Props> = ({ missions, isDirector, clientTable
                 const sysCost = systemMission?.cost || 0;
                 const sysDetails = extractSysMissionDetails(systemMission);
                 const isApproved = systemMission?.billing_approved === true;
+                const isSameOs = systemMission?.is_same_os === true;
 
                 const revDiff = excelRev > 0 ? Math.abs(sysRev - excelRev) : 0;
-                const costDiff = excelCost > 0 ? Math.abs(sysCost - excelCost) : 0;
+                const costDiff = excelCost > 0 && !isSameOs ? Math.abs(sysCost - excelCost) : 0;
                 const revMatch = excelRev > 0 ? (revDiff <= 10 || isApproved) : true;
-                const costMatch = excelCost > 0 ? (costDiff <= 10 || isApproved) : true;
+                const costMatch = isSameOs ? true : (excelCost > 0 ? (costDiff <= 10 || isApproved) : true);
 
                 comparisons.push({
                     osId,
@@ -544,7 +547,7 @@ const ExecutiveDashboard: React.FC<Props> = ({ missions, isDirector, clientTable
                     excelRev, excelCost,
                     sysRev, sysCost,
                     revDiff, costDiff,
-                    revMatch, costMatch, isApproved,
+                    revMatch, costMatch, isApproved, isSameOs,
                     status: systemMission?.status || 'Não encontrada',
                     client: systemMission?.client || clienteRaw || '-',
                     provider: systemMission?.provider || fornRaw || '-',
@@ -784,15 +787,16 @@ const ExecutiveDashboard: React.FC<Props> = ({ missions, isDirector, clientTable
                 const sysCost = systemMission?.cost || 0;
                 const sysDetails = extractSysMissionDetails(systemMission);
                 const isApproved = systemMission?.billing_approved === true;
+                const isSameOs = systemMission?.is_same_os === true;
 
                 const revDiff = excelRev > 0 ? Math.abs(sysRev - excelRev) : 0;
-                const costDiff = excelCost > 0 ? Math.abs(sysCost - excelCost) : 0;
+                const costDiff = excelCost > 0 && !isSameOs ? Math.abs(sysCost - excelCost) : 0;
                 const revMatch = excelRev > 0 ? (revDiff <= 10 || isApproved) : true;
-                const costMatch = excelCost > 0 ? (costDiff <= 10 || isApproved) : true;
+                const costMatch = isSameOs ? true : (excelCost > 0 ? (costDiff <= 10 || isApproved) : true);
 
                 const comp = {
                     osId, found: !!systemMission, excelRev, excelCost, sysRev, sysCost,
-                    revDiff, costDiff, revMatch, costMatch, isApproved,
+                    revDiff, costDiff, revMatch, costMatch, isApproved, isSameOs,
                     status: systemMission?.status || 'Não encontrada',
                     client: systemMission?.client || clienteRaw || '-',
                     provider: systemMission?.provider || fornRaw || '-',
@@ -1477,9 +1481,9 @@ const ExecutiveDashboard: React.FC<Props> = ({ missions, isDirector, clientTable
                                                         {c.found && c.excelRev > 0 ? (c.revDiff > 0.01 ? <span className="flex items-center justify-end gap-1">{fmtBRL(c.revDiff)} {c.revMatch && !isAdjusted && <span className="text-[8px] font-black bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded-full whitespace-nowrap">CONFERIDO</span>}</span> : '-') : '-'}
                                                     </td>
                                                     <td className={`px-3 py-2 text-right font-bold ${!c.costMatch && !isAdjusted ? 'text-red-600' : isAdjusted ? 'text-blue-700' : 'text-gray-700'}`}>{c.excelCost > 0 ? fmtBRL(c.excelCost) : '-'}</td>
-                                                    <td className={`px-3 py-2 text-right font-bold ${!c.costMatch && !isAdjusted ? 'text-red-600' : isAdjusted ? 'text-blue-700' : 'text-gray-700'}`}>{c.found ? fmtBRL(c.sysCost) : '-'}</td>
-                                                    <td className={`px-3 py-2 text-right font-bold ${c.costDiff > 10 && !isAdjusted ? 'text-red-600' : c.costDiff > 0.01 && !isAdjusted ? 'text-emerald-600' : isAdjusted ? 'text-blue-600' : 'text-gray-400'}`}>
-                                                        {c.found && c.excelCost > 0 ? (c.costDiff > 0.01 ? <span className="flex items-center justify-end gap-1">{fmtBRL(c.costDiff)} {c.costMatch && !isAdjusted && <span className="text-[8px] font-black bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded-full whitespace-nowrap">CONFERIDO</span>}</span> : '-') : '-'}
+                                                    <td className={`px-3 py-2 text-right font-bold ${c.isSameOs ? 'text-gray-400' : !c.costMatch && !isAdjusted ? 'text-red-600' : isAdjusted ? 'text-blue-700' : 'text-gray-700'}`}>{c.found ? (c.isSameOs ? <span className="flex items-center justify-end gap-1">{fmtBRL(c.sysCost)} <span className="text-[8px] font-black bg-gray-200 text-gray-600 px-1.5 py-0.5 rounded-full whitespace-nowrap">MESMA OS</span></span> : fmtBRL(c.sysCost)) : '-'}</td>
+                                                    <td className={`px-3 py-2 text-right font-bold ${c.isSameOs ? 'text-gray-400' : c.costDiff > 10 && !isAdjusted ? 'text-red-600' : c.costDiff > 0.01 && !isAdjusted ? 'text-emerald-600' : isAdjusted ? 'text-blue-600' : 'text-gray-400'}`}>
+                                                        {c.isSameOs ? <span className="text-[8px] font-black bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded-full whitespace-nowrap">CONFERIDO</span> : c.found && c.excelCost > 0 ? (c.costDiff > 0.01 ? <span className="flex items-center justify-end gap-1">{fmtBRL(c.costDiff)} {c.costMatch && !isAdjusted && <span className="text-[8px] font-black bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded-full whitespace-nowrap">CONFERIDO</span>}</span> : '-') : '-'}
                                                     </td>
                                                     <td className="px-3 py-2 text-center">
                                                         {!c.found ? <span className="text-[9px] font-black bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full">NÃO ENCONTRADA</span> :
