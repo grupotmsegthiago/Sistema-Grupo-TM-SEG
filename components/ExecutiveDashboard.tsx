@@ -1401,6 +1401,7 @@ const ExecutiveDashboard: React.FC<Props> = ({ missions, isDirector, clientTable
                                             <th className="text-right px-3 py-2 font-black text-gray-600 uppercase">Sistema Custo</th>
                                             <th className="text-right px-3 py-2 font-black text-gray-600 uppercase">Diff. Custo</th>
                                             <th className="text-center px-3 py-2 font-black text-gray-600 uppercase">Status</th>
+                                            <th className="text-center px-3 py-2 font-black text-gray-600 uppercase">Ação</th>
                                         </tr>
                                     </thead>
                                     <tbody>
@@ -1408,14 +1409,13 @@ const ExecutiveDashboard: React.FC<Props> = ({ missions, isDirector, clientTable
                                             const hasIssue = !c.found || !c.revMatch || !c.costMatch;
                                             const isAdjusted = adjustedOsIds.has(c.osId);
                                             return (
-                                                <tr key={i} className={`border-t border-gray-100 ${isAdjusted ? 'bg-blue-50/50' : hasIssue ? 'bg-red-50/50' : 'hover:bg-gray-50'}`}
+                                                <tr key={i} className={`border-t border-gray-100 ${isAdjusted ? 'bg-blue-50/50' : hasIssue ? 'bg-red-50/50' : 'hover:bg-gray-50'} cursor-pointer`}
                                                     onClick={() => {
                                                         if (c.found && onOpenMission) {
-                                                            const mission = filteredMissions.find(m => String(m.id).toUpperCase().replace('GTM-', '') === c.osId.replace('GTM-', ''));
+                                                            const mission = missions.find(m => String(m.id).toUpperCase().replace('GTM-', '') === c.osId.replace('GTM-', ''));
                                                             if (mission) onOpenMission(mission as Mission);
                                                         }
                                                     }}
-                                                    style={{ cursor: c.found ? 'pointer' : 'default' }}
                                                     data-testid={`excel-row-${c.osId}`}
                                                 >
                                                     <td className="px-3 py-2 font-black text-blue-600">{c.osId}</td>
@@ -1432,6 +1432,23 @@ const ExecutiveDashboard: React.FC<Props> = ({ missions, isDirector, clientTable
                                                          isAdjusted ? <span className="text-[9px] font-black bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full flex items-center justify-center gap-1"><Edit2 size={10} /> ALTERADO</span> :
                                                          hasIssue ? <span className="text-[9px] font-black bg-red-100 text-red-700 px-2 py-0.5 rounded-full flex items-center justify-center gap-1"><XOctagon size={10} /> DIVERGENTE</span> :
                                                          <span className="text-[9px] font-black bg-green-100 text-green-700 px-2 py-0.5 rounded-full flex items-center justify-center gap-1"><CheckCircle size={10} /> CONFERIDO</span>}
+                                                    </td>
+                                                    <td className="px-3 py-1.5 text-center">
+                                                        {c.found && (
+                                                            <button
+                                                                onClick={(e) => {
+                                                                    e.stopPropagation();
+                                                                    if (onOpenMission) {
+                                                                        const mission = missions.find(m => String(m.id).toUpperCase().replace('GTM-', '') === c.osId.replace('GTM-', ''));
+                                                                        if (mission) onOpenMission(mission as Mission);
+                                                                    }
+                                                                }}
+                                                                className="flex items-center gap-1 px-2.5 py-1 bg-emerald-600 text-white rounded-md text-[9px] font-black uppercase hover:bg-emerald-700 transition-all active:scale-95 whitespace-nowrap"
+                                                                data-testid={`btn-review-${c.osId}`}
+                                                            >
+                                                                <DollarSign size={10} /> Conferir
+                                                            </button>
+                                                        )}
                                                     </td>
                                                 </tr>
                                             );
