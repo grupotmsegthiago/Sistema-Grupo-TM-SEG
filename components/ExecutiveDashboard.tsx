@@ -213,13 +213,15 @@ const ExecutiveDashboard: React.FC<Props> = ({ missions, isDirector, clientTable
             const sysId = String(m.id || '').toUpperCase().trim();
             return sysId === osId || `GTM-${sysId}` === osId || sysId.replace('GTM-', '') === osId.replace('GTM-', '');
         };
+        let found = missionFinancials.find(matchId);
+        if (found) return found;
         const fullMission = missions.find(matchId);
-        if (!fullMission) {
-            const found = missionFinancials.find(matchId);
-            return found || null;
-        }
+        if (!fullMission) return null;
+        const hasStoredRev = (fullMission.revenue_value != null && fullMission.revenue_value > 0);
+        const hasStoredCost = (fullMission.cost_value != null && fullMission.cost_value > 0);
         let rev = 0, cost = 0;
-        if (fullMission.billing_approved && ((fullMission.revenue_value != null && fullMission.revenue_value > 0) || (fullMission.cost_value != null && fullMission.cost_value > 0))) {
+        const hasSaved = (fullMission.billing_approved || fullMission.billing_verified_by) && (hasStoredRev || hasStoredCost);
+        if (hasSaved) {
             rev = (fullMission.revenue_value || 0) + Math.max(0, fullMission.toll_value || 0);
             const tollProv = Math.max(0, fullMission.toll_value_provider != null ? fullMission.toll_value_provider : (fullMission.toll_value || 0));
             cost = (fullMission.cost_value || 0) + tollProv;
