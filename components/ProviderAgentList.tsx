@@ -43,17 +43,13 @@ const ProviderAgentList: React.FC<Props> = ({ onAdd, onEdit }) => {
   };
 
   const handleDelete = async (id: string) => {
-    if(!confirm('Deseja excluir este agente?')) return;
+    if(!confirm('Deseja inativar este agente?\n\nO registro será mantido no banco de dados mas ficará com status INATIVO.')) return;
     setIsDeleting(id);
     try {
-        const { data, error } = await supabase.from('agents').delete().eq('id', id).select();
+        const { error } = await supabase.from('agents').update({ status: 'Inativo' }).eq('id', id);
         if(error) throw error;
-        
-        if (!data || data.length === 0) {
-            throw new Error("Erro de permissão: O banco de dados recusou a exclusão.");
-        }
-        
         fetchAgents();
+        alert('Agente inativado com sucesso.');
     } catch (e: any) { alert(e.message) }
     finally { setIsDeleting(null) }
   };

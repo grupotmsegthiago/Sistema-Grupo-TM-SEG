@@ -94,17 +94,13 @@ const ClientVehicleList: React.FC<Props> = ({ onAddVehicle, onEdit, onSelect, cl
   };
 
   const handleDelete = async (id: string, plate: string) => {
-    if (!confirm(`TEM CERTEZA? Excluir o veículo placa ${plate}?`)) return;
+    if (!confirm(`TEM CERTEZA? Inativar o veículo placa ${plate}?\n\nO registro será mantido no banco de dados mas ficará com status INATIVO.`)) return;
     setIsDeleting(id);
     try {
-        const { data, error } = await supabase.from('client_vehicles').delete().eq('id', id).select();
+        const { error } = await supabase.from('client_vehicles').update({ status: 'Inativo' }).eq('id', id);
         if (error) throw error;
-        
-        if (!data || data.length === 0) {
-            throw new Error("Erro de permissão: O banco de dados recusou a exclusão.");
-        }
-        
         fetchVehicles();
+        alert('Veículo inativado com sucesso.');
     } catch (e: any) { alert(e.message); }
     finally { setIsDeleting(null); }
   };

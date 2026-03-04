@@ -198,6 +198,8 @@ export interface ClientVehicleDB {
   year: string;
   color: string;
   client: string;
+  status?: 'Ativo' | 'Inativo';
+  client_id?: number;
 }
 
 export interface ClientRoute {

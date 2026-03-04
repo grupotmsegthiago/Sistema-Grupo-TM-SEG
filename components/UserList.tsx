@@ -190,17 +190,16 @@ const UserList: React.FC<UserListProps> = ({ onAddUser, onEdit, userType }) => {
   };
 
   const handleDelete = async (id: string, name: string) => {
-      if (!confirm(`TEM CERTEZA? \n\nVocê está prestes a excluir permanentemente o usuário: ${name}.\nIsso removerá o acesso dele ao sistema.`)) return;
+      if (!confirm(`TEM CERTEZA? \n\nO usuário "${name}" será INATIVADO.\nO acesso dele ao sistema será bloqueado mas o registro permanece no banco.`)) return;
       
       setIsDeleting(id);
       try {
-          const { data, error } = await supabase.from('system_users').delete().eq('id', id).select();
+          const { error } = await supabase.from('system_users').update({ status: 'Inativo' }).eq('id', id);
           if (error) throw error;
-          if (!data || data.length === 0) throw new Error("O banco de dados não permitiu a exclusão.");
-          alert('Usuário excluído com sucesso.');
-          setUsers(prev => prev.filter(u => u.id !== id));
+          alert('Usuário inativado com sucesso. O registro permanece no banco de dados.');
+          setUsers(prev => prev.map(u => u.id === id ? { ...u, status: 'Inativo' } : u));
       } catch (error: any) {
-          alert('Erro ao excluir: ' + error.message);
+          alert('Erro ao inativar: ' + error.message);
       } finally {
           setIsDeleting(null);
       }

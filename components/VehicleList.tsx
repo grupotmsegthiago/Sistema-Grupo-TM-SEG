@@ -44,24 +44,19 @@ const VehicleList: React.FC<VehicleListProps> = ({ onAddVehicle, onEdit }) => {
   };
 
   const handleDelete = async (id: string, plate: string) => {
-    if (!confirm(`TEM CERTEZA? Excluir a viatura placa ${plate}?`)) return;
+    if (!confirm(`TEM CERTEZA? Inativar a viatura placa ${plate}?\n\nO registro será mantido no banco de dados mas ficará com status INATIVO.`)) return;
     setIsDeleting(id);
     try {
-        const { error } = await supabase.from('vehicles').delete().eq('id', id);
+        const { error } = await supabase.from('vehicles').update({ status: 'Inativo' }).eq('id', id);
         
         if (error) throw error;
 
         await fetchVehicles();
-        alert('Viatura excluída com sucesso.');
+        alert('Viatura inativada com sucesso. O registro permanece no banco de dados.');
     } catch (e: any) { 
         console.error(e);
-        if (e.message?.includes('foreign key') || e.code === '23503') {
-             alert('Não é possível excluir esta viatura pois ela está vinculada a missões ou históricos. Tente inativá-la.');
-        } else {
-             alert('Erro ao excluir: ' + (e.message || "Erro desconhecido"));
-        }
-    }
-    finally { setIsDeleting(null); }
+        alert('Erro ao inativar: ' + (e.message || "Erro desconhecido"));
+    } finally { setIsDeleting(null); }
   };
 
   const getStatusBadge = (status: VehicleStatus) => {

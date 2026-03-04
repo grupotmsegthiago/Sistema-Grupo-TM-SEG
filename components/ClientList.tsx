@@ -174,15 +174,15 @@ const ClientList: React.FC<ClientListProps> = ({ onAddClient, onEdit }) => {
   };
 
   const handleDelete = async (id: string, name: string) => {
-    if (!window.confirm(`TEM CERTEZA? Você está prestes a excluir DEFINITIVAMENTE o cadastro do cliente "${name}".\n\nEsta ação não pode ser desfeita.`)) return;
+    if (!window.confirm(`TEM CERTEZA? O cliente "${name}" será INATIVADO.\n\nO registro será mantido no banco de dados mas ficará com status INATIVO.`)) return;
     setIsDeleting(id);
     try {
-        const { error } = await supabase.from('clients').delete().eq('id', id);
+        const { error } = await supabase.from('clients').update({ status: 'Inativo' }).eq('id', id);
         if (error) throw error;
-        alert('Cliente excluído com sucesso.');
-        setDbClients(prev => prev.filter(c => c.id !== id));
+        alert('Cliente inativado com sucesso. O registro permanece no banco de dados.');
+        setDbClients(prev => prev.map(c => c.id === id ? { ...c, status: 'Inativo' as any } : c));
     } catch (error: any) {
-        alert('Erro ao excluir: ' + error.message);
+        alert('Erro ao inativar: ' + error.message);
     } finally {
         setIsDeleting(null);
     }

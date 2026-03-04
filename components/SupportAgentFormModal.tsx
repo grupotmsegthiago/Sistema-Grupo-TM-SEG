@@ -234,17 +234,17 @@ const SupportAgentFormModal: React.FC<Props> = ({ onClose, onSuccess, initialDat
 
   const handleDelete = async () => {
       if (!initialData) return;
-      if (!confirm(`TEM CERTEZA? Excluir o agente ${initialData.name}?`)) return;
+      if (!confirm(`TEM CERTEZA? Inativar o agente ${initialData.name}?\n\nO registro será mantido no banco de dados mas ficará com status BLOQUEADO.`)) return;
       setIsDeleting(true);
       try {
-          const { error } = await supabase.from('support_agents').delete().eq('id', initialData.id);
+          const { error } = await supabase.from('support_agents').update({ status: 'Bloqueado' }).eq('id', initialData.id);
           if (error) throw error;
-          try { await supabase.from('support_agents').delete().eq('parent_agent_id', initialData.id); } catch(ignore) {}
-          alert('Agente e vínculos removidos com sucesso.');
+          try { await supabase.from('support_agents').update({ status: 'Bloqueado' }).eq('parent_agent_id', initialData.id); } catch(ignore) {}
+          alert('Agente bloqueado com sucesso. O registro permanece no banco de dados.');
           onSuccess();
           onClose();
       } catch (e: any) {
-          alert("Erro ao excluir: " + e.message);
+          alert("Erro ao bloquear: " + e.message);
       } finally {
           setIsDeleting(false);
       }
