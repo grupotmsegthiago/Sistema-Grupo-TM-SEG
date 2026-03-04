@@ -225,10 +225,14 @@ const MissionCardComponent: React.FC<MissionCardProps> = ({
                         showNotification('Erro', 'Bucket mission-evidence não existe. Crie no painel Supabase.', 'error');
                         return;
                     }
+                    if (uploadError.message?.includes('security') || uploadError.message?.includes('policy')) {
+                        showNotification('Erro', 'RLS do Storage: Crie policy INSERT no bucket mission-evidence (Supabase → Storage → Policies).', 'error');
+                        return;
+                    }
                     throw uploadError;
                 }
                 const { data: urlData } = supabase.storage.from('mission-evidence').getPublicUrl(path);
-                await supabase.from('system_logs').insert({
+                const { error: logError } = await supabase.from('system_logs').insert({
                     entity: 'MissionEvidence',
                     entity_id: mission.id,
                     action_type: 'evidence_upload',
@@ -236,6 +240,13 @@ const MissionCardComponent: React.FC<MissionCardProps> = ({
                     created_by: userData.name || 'Sistema',
                     created_at: new Date().toISOString()
                 });
+                if (logError) {
+                    console.error('Erro ao salvar log:', logError.message);
+                    if (logError.message?.includes('security') || logError.message?.includes('policy')) {
+                        showNotification('Erro', 'RLS da tabela system_logs: Crie policy INSERT (Supabase → Table Editor → system_logs → RLS Policies).', 'error');
+                        return;
+                    }
+                }
             }
             showNotification('Sucesso', `${pendingFiles.length} evidência(s) anexada(s)!`, 'success');
             pendingFiles.forEach(f => URL.revokeObjectURL(f.preview));
