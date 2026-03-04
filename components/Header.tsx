@@ -79,28 +79,12 @@ const Header: React.FC<HeaderProps> = ({ onMenuClick, onProfileSettingsClick, is
           </span>
         </div>
 
-        {/* Botão de Solicitar Notificações Push (Ativa apenas se necessário) */}
-        {permission === 'default' && (
-          <button 
-            onClick={requestPermission}
-            className="p-2 rounded-lg bg-red-50 text-red-600 border border-red-100 animate-pulse transition-all hover:bg-red-600 hover:text-white"
-            title="Ativar Alertas de Monitoramento no Desktop"
-          >
-             <BellRing size={20} />
-          </button>
-        )}
-        
         <button 
           onClick={toggleSound}
           className={`p-2 rounded-full transition-colors ${isSoundEnabled ? 'text-gray-500 hover:bg-gray-100' : 'text-red-600 bg-red-50 hover:bg-red-100'}`}
           title={isSoundEnabled ? "Silenciar" : "Ativar Som"}
         >
            {isSoundEnabled ? <Volume2 size={20} /> : <VolumeX size={20} />}
-        </button>
-
-        <button className="relative p-2 text-gray-500 hover:text-red-700 rounded-full hover:bg-red-50">
-          <Bell size={20} />
-          <span className="absolute top-1.5 right-2 h-2 w-2 rounded-full bg-red-600 border border-white"></span>
         </button>
 
         <div className="relative" ref={menuRef}>
