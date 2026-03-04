@@ -51,3 +51,5 @@ integrations = ["javascript_gemini_ai_integrations:2.0.0"]
 
 [userenv.shared]
 VITE_SUPABASE_URL = "https://ajhmmjuewdsukecaimik.supabase.co"
+VAPID_PUBLIC_KEY = "BJ32tbxqb-CD-TyivlxMx8QmVwNqug0F3GXdFX6dqXEkqLAV8JnhGg57SsSkckY1YC03_XvuuOr0PW0IDtjzOYo"
+VAPID_PRIVATE_KEY = "NQz566P5YoibgXSYBNKe2j544tKLAbRfPdBNW7FlukU"

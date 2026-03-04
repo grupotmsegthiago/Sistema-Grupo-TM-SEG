@@ -1,4 +1,4 @@
-const CACHE_NAME = 'tmseg-v2';
+const CACHE_NAME = 'tmseg-v3';
 
 self.addEventListener('install', (event) => {
   self.skipWaiting();
@@ -12,6 +12,31 @@ self.addEventListener('activate', (event) => {
         names.filter(n => n !== CACHE_NAME).map(n => caches.delete(n))
       ))
     ])
+  );
+});
+
+self.addEventListener('push', (event) => {
+  let data = { title: 'TMSEG', body: '', tag: 'tmseg', icon: '/favicon.png' };
+  try {
+    if (event.data) {
+      data = { ...data, ...event.data.json() };
+    }
+  } catch (e) {
+    if (event.data) {
+      data.body = event.data.text();
+    }
+  }
+
+  event.waitUntil(
+    self.registration.showNotification(data.title, {
+      body: data.body,
+      icon: data.icon || '/favicon.png',
+      badge: '/favicon.png',
+      tag: data.tag || 'tmseg',
+      vibrate: [200, 100, 200],
+      renotify: true,
+      data: data
+    })
   );
 });
 

@@ -5,11 +5,20 @@ import { GoogleGenAI } from "@google/genai";
 import { createClient } from "@supabase/supabase-js";
 import pg from "pg";
 import { Resend } from "resend";
+import webpush from "web-push";
 import { calculateMissionFinancials } from "../lib/financialUtils";
 import fs from "fs";
 import path from "path";
 
 const resend = new Resend(process.env.RESEND_API_KEY);
+
+const VAPID_PUBLIC = process.env.VAPID_PUBLIC_KEY || '';
+const VAPID_PRIVATE = process.env.VAPID_PRIVATE_KEY || '';
+if (VAPID_PUBLIC && VAPID_PRIVATE) {
+  webpush.setVapidDetails('mailto:contato@grupotmseg.com.br', VAPID_PUBLIC, VAPID_PRIVATE);
+}
+
+const pushSubscriptions = new Map<string, any>();
 const verificationCodes = new Map<string, { code: string; expiresAt: number; email: string }>();
 
 const ai = new GoogleGenAI({
@@ -46,6 +55,127 @@ export async function registerRoutes(
       res.status(404).send('Not found');
     }
   });
+
+  app.get('/api/push/vapid-key', (_req: Request, res: Response) => {
+    res.json({ publicKey: VAPID_PUBLIC });
+  });
+
+  app.post('/api/push/subscribe', (req: Request, res: Response) => {
+    try {
+      const { subscription, userId } = req.body;
+      if (!subscription || !subscription.endpoint) {
+        return res.status(400).json({ error: 'Subscription inválida' });
+      }
+      const key = userId || subscription.endpoint;
+      pushSubscriptions.set(key, subscription);
+      console.log(`[Push] Subscription registrada: ${key.substring(0, 30)}... (total: ${pushSubscriptions.size})`);
+      res.json({ success: true });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.post('/api/push/unsubscribe', (req: Request, res: Response) => {
+    try {
+      const { userId, endpoint } = req.body;
+      const key = userId || endpoint;
+      pushSubscriptions.delete(key);
+      res.json({ success: true });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.post('/api/push/send', async (req: Request, res: Response) => {
+    try {
+      const { title, body, tag } = req.body;
+      if (!title) return res.status(400).json({ error: 'Título obrigatório' });
+
+      const payload = JSON.stringify({ title, body: body || '', tag: tag || 'tmseg', icon: '/favicon.png' });
+      const results: any[] = [];
+      const failed: string[] = [];
+
+      for (const [key, sub] of pushSubscriptions.entries()) {
+        try {
+          await webpush.sendNotification(sub, payload);
+          results.push({ key: key.substring(0, 20), status: 'ok' });
+        } catch (err: any) {
+          if (err.statusCode === 410 || err.statusCode === 404) {
+            pushSubscriptions.delete(key);
+            failed.push(key.substring(0, 20));
+          } else {
+            results.push({ key: key.substring(0, 20), status: 'error', msg: err.message });
+          }
+        }
+      }
+
+      res.json({ sent: results.length, failed: failed.length, total: pushSubscriptions.size });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.post('/api/push/test', async (req: Request, res: Response) => {
+    try {
+      const { subscription } = req.body;
+      if (!subscription) return res.status(400).json({ error: 'Subscription obrigatória' });
+
+      const payload = JSON.stringify({
+        title: 'OS - Criada Nº TESTE-001 - Cliente: EXEMPLO LTDA',
+        body: 'Origem: São Paulo - SP → Destino: Campinas - SP\nFornecedor: ATIVA SEGURANÇA',
+        tag: `test-${Date.now()}`,
+        icon: '/favicon.png'
+      });
+
+      await webpush.sendNotification(subscription, payload);
+      res.json({ success: true });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message, statusCode: e.statusCode });
+    }
+  });
+
+  // Supabase Realtime listener for push notifications
+  const supabaseForPush = createClient(
+    'https://ajhmmjuewdsukecaimik.supabase.co',
+    'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFqaG1tanVld2RzdWtlY2FpbWlrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjQxNzUxMjEsImV4cCI6MjA3OTc1MTEyMX0.5bXRWTyb1HxLimt3lqJTBfjzDoumux7TXlW4lycXrPk'
+  );
+
+  supabaseForPush
+    .channel('server-push-missions')
+    .on('postgres_changes', {
+      event: 'INSERT',
+      schema: 'public',
+      table: 'missions'
+    }, async (payload: any) => {
+      const mission = payload.new;
+      if (!mission || pushSubscriptions.size === 0) return;
+
+      const osId = mission.id || 'N/A';
+      const client = mission.client || 'N/A';
+      const origin = mission.origin || 'N/A';
+      const destination = mission.destination || 'N/A';
+      const provider = mission.provider || 'N/A';
+      const isAccident = (mission.current_location || '').includes('ACIDENTE');
+
+      const title = isAccident
+        ? `🚨 ACIDENTE - OS Nº ${osId} - ${client}`
+        : `OS - Criada Nº ${osId} - Cliente: ${client}`;
+      const body = `Origem: ${origin} → Destino: ${destination}\nFornecedor: ${provider}`;
+
+      const pushPayload = JSON.stringify({ title, body, tag: `mission-${osId}`, icon: '/favicon.png' });
+
+      for (const [key, sub] of pushSubscriptions.entries()) {
+        try {
+          await webpush.sendNotification(sub, pushPayload);
+        } catch (err: any) {
+          if (err.statusCode === 410 || err.statusCode === 404) {
+            pushSubscriptions.delete(key);
+          }
+        }
+      }
+      console.log(`[Push] Notificação enviada para ${pushSubscriptions.size} dispositivos: OS ${osId}`);
+    })
+    .subscribe();
 
   app.post("/api/gemini/generate", async (req: Request, res: Response) => {
     try {

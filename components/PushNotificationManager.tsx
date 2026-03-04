@@ -1,66 +1,78 @@
 import { useEffect, useRef, useState } from 'react';
-import { supabase } from '../lib/supabase';
 import { Bell, BellRing, X, AlertTriangle } from 'lucide-react';
 
 type DiagStatus = 'idle' | 'sent' | 'denied' | 'no-api' | 'error';
 
-const sendPushNotification = async (title: string, body: string, tag: string) => {
-    if ('serviceWorker' in navigator) {
-        try {
-            const regPromise = navigator.serviceWorker.ready;
-            const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 3000));
-            const reg = await Promise.race([regPromise, timeoutPromise]) as ServiceWorkerRegistration;
-            await reg.showNotification(title, {
-                body,
-                icon: '/favicon.png',
-                badge: '/favicon.png',
-                tag,
-                vibrate: [200, 100, 200],
-                renotify: true
-            });
-            return 'sw';
-        } catch {}
+function urlBase64ToUint8Array(base64String: string) {
+    const padding = '='.repeat((4 - base64String.length % 4) % 4);
+    const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+    const rawData = window.atob(base64);
+    const outputArray = new Uint8Array(rawData.length);
+    for (let i = 0; i < rawData.length; ++i) {
+        outputArray[i] = rawData.charCodeAt(i);
     }
-
-    try {
-        new Notification(title, { body, icon: '/favicon.png', tag });
-        return 'api';
-    } catch {}
-
-    if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
-        try {
-            navigator.serviceWorker.controller.postMessage({
-                type: 'SHOW_NOTIFICATION', title, body, tag
-            });
-            return 'postmsg';
-        } catch {}
-    }
-
-    return null;
-};
+    return outputArray;
+}
 
 const PushNotificationManager = () => {
-    const permissionGranted = useRef(false);
-    const channelRef = useRef<any>(null);
     const [showTestBtn, setShowTestBtn] = useState(false);
     const [testStatus, setTestStatus] = useState<DiagStatus>('idle');
     const [diagMsg, setDiagMsg] = useState('');
     const [showDiagPanel, setShowDiagPanel] = useState(false);
+    const subscriptionRef = useRef<PushSubscription | null>(null);
+    const subscribedRef = useRef(false);
 
     const getDiagnostics = () => {
         const lines: string[] = [];
         const isStandalone = window.matchMedia('(display-mode: standalone)').matches || (navigator as any).standalone === true;
-        lines.push(`PWA instalado: ${isStandalone ? 'SIM ✅' : 'NÃO ❌ (abra pelo ícone na tela inicial)'}`);
+        lines.push(`PWA instalado: ${isStandalone ? 'SIM ✅' : 'NÃO ❌'}`);
         lines.push(`API Notification: ${'Notification' in window ? 'SIM ✅' : 'NÃO ❌'}`);
         if ('Notification' in window) {
             lines.push(`Permissão: ${Notification.permission}`);
         }
         lines.push(`Service Worker: ${'serviceWorker' in navigator ? 'SIM ✅' : 'NÃO ❌'}`);
+        lines.push(`PushManager: ${('PushManager' in window) ? 'SIM ✅' : 'NÃO ❌'}`);
+        lines.push(`Subscription ativa: ${subscriptionRef.current ? 'SIM ✅' : 'NÃO ❌'}`);
         const ua = navigator.userAgent;
         const isIOS = /iPad|iPhone|iPod/.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
         lines.push(`iOS: ${isIOS ? 'SIM' : 'NÃO'}`);
         lines.push(`User Agent: ${ua.substring(0, 80)}...`);
         return lines;
+    };
+
+    const subscribeToPush = async () => {
+        if (subscribedRef.current) return subscriptionRef.current;
+        if (!('serviceWorker' in navigator) || !('PushManager' in window)) return null;
+
+        try {
+            const vapidRes = await fetch('/api/push/vapid-key');
+            const { publicKey } = await vapidRes.json();
+            if (!publicKey) return null;
+
+            const reg = await navigator.serviceWorker.ready;
+            let sub = await reg.pushManager.getSubscription();
+
+            if (!sub) {
+                sub = await reg.pushManager.subscribe({
+                    userVisibleOnly: true,
+                    applicationServerKey: urlBase64ToUint8Array(publicKey)
+                });
+            }
+
+            const userData = JSON.parse(localStorage.getItem('userData') || '{}');
+            await fetch('/api/push/subscribe', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ subscription: sub.toJSON(), userId: userData.name || sub.endpoint })
+            });
+
+            subscriptionRef.current = sub;
+            subscribedRef.current = true;
+            return sub;
+        } catch (err) {
+            console.error('[Push] Erro ao se inscrever:', err);
+            return null;
+        }
     };
 
     const sendTestNotification = async () => {
@@ -69,21 +81,17 @@ const PushNotificationManager = () => {
         if (!('Notification' in window)) {
             setTestStatus('no-api');
             const isStandalone = window.matchMedia('(display-mode: standalone)').matches || (navigator as any).standalone === true;
-            if (!isStandalone) {
-                setDiagMsg('O app precisa ser instalado na tela inicial para notificações funcionarem no iPhone.');
-            } else {
-                setDiagMsg('Seu navegador não suporta notificações push.');
-            }
+            setDiagMsg(isStandalone
+                ? 'Seu navegador não suporta notificações push.'
+                : 'Instale o app na tela inicial para notificações funcionarem no iPhone.');
             setTimeout(() => setTestStatus('idle'), 5000);
             return;
         }
 
         let permission = Notification.permission;
-
         if (permission === 'default') {
             try {
                 permission = await Notification.requestPermission();
-                permissionGranted.current = permission === 'granted';
             } catch {
                 setTestStatus('error');
                 setDiagMsg('Erro ao pedir permissão.');
@@ -92,34 +100,43 @@ const PushNotificationManager = () => {
             }
         }
 
-        if (permission === 'denied') {
+        if (permission !== 'granted') {
             setTestStatus('denied');
-            setDiagMsg('Permissão negada. No iPhone: Ajustes > TMSEG > Notificações > Permitir. Depois feche e reabra o app.');
+            setDiagMsg('Permissão negada. No iPhone: Ajustes > TMSEG > Notificações > Permitir. Feche e reabra o app.');
             setTimeout(() => setTestStatus('idle'), 8000);
             return;
         }
 
-        if (permission !== 'granted') {
-            setTestStatus('denied');
-            setDiagMsg(`Estado da permissão: "${permission}". Tente fechar e reabrir o app.`);
+        setDiagMsg('Inscrevendo no push...');
+
+        const sub = await subscribeToPush();
+        if (!sub) {
+            setTestStatus('error');
+            setDiagMsg('❌ Não foi possível se inscrever no push. Verifique se está usando a PWA instalada.');
             setTimeout(() => setTestStatus('idle'), 5000);
             return;
         }
 
-        const title = 'OS - Criada Nº TESTE-001 - Cliente: EXEMPLO LTDA';
-        const body = 'Origem: São Paulo - SP → Destino: Campinas - SP\nFornecedor: ATIVA SEGURANÇA';
-        const tag = `test-${Date.now()}`;
+        setDiagMsg('Enviando notificação pelo servidor...');
 
-        setDiagMsg('Enviando notificação...');
+        try {
+            const res = await fetch('/api/push/test', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ subscription: sub.toJSON() })
+            });
+            const data = await res.json();
 
-        const result = await sendPushNotification(title, body, tag);
-
-        if (result) {
-            setTestStatus('sent');
-            setDiagMsg('✅ Notificação enviada! Deslize para baixo no topo da tela para ver.');
-        } else {
+            if (data.success) {
+                setTestStatus('sent');
+                setDiagMsg('✅ Notificação enviada pelo servidor! Verifique a tela de bloqueio / central de notificações.');
+            } else {
+                setTestStatus('error');
+                setDiagMsg(`❌ Erro do servidor: ${data.error || 'desconhecido'}`);
+            }
+        } catch (err: any) {
             setTestStatus('error');
-            setDiagMsg('❌ Nenhum método funcionou. Tente fechar o app e reabrir.');
+            setDiagMsg(`❌ Erro na requisição: ${err?.message || err}`);
         }
 
         setTimeout(() => setTestStatus('idle'), 8000);
@@ -131,59 +148,9 @@ const PushNotificationManager = () => {
 
         setShowTestBtn(true);
 
-        const isClientUser = userData.clientId || (userData.permissions || []).some((p: string) => p.startsWith('client_view:'));
-        if (isClientUser) return;
-
-        if ('Notification' in window && Notification.permission === 'default') {
-            Notification.requestPermission().then(p => {
-                permissionGranted.current = p === 'granted';
-            });
-        } else if ('Notification' in window && Notification.permission === 'granted') {
-            permissionGranted.current = true;
+        if ('Notification' in window && Notification.permission === 'granted') {
+            subscribeToPush();
         }
-
-        const channel = supabase
-            .channel('new-missions')
-            .on('postgres_changes', {
-                event: 'INSERT',
-                schema: 'public',
-                table: 'missions'
-            }, (payload: any) => {
-                const mission = payload.new;
-                if (!mission) return;
-
-                const osId = mission.id || 'N/A';
-                const client = mission.client || 'N/A';
-                const origin = mission.origin || 'N/A';
-                const destination = mission.destination || 'N/A';
-                const provider = mission.provider || 'N/A';
-                const isAccident = (mission.current_location || '').includes('ACIDENTE');
-
-                const title = isAccident
-                    ? `🚨 ACIDENTE - OS Nº ${osId} - ${client}`
-                    : `OS - Criada Nº ${osId} - Cliente: ${client}`;
-                const body = `Origem: ${origin} → Destino: ${destination}\nFornecedor: ${provider}`;
-
-                if (permissionGranted.current) {
-                    sendPushNotification(title, body, `mission-${osId}`);
-                }
-
-                if (isAccident) {
-                    try {
-                        const audio = new Audio('data:audio/wav;base64,UklGRnoGAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQoGAACBhYqFbF1fdJivrJBhNjVgkKuumoFdT1qFpq6ij2BJSV+Cn6yljmRGR1uBnKujkWZMSVt/mqqhkWlQTVl8lqiekm1UUld4k6WckXBYVlVzj6GZkXNcWlNviqCXknZgXlBqhp2UkXljYU5mgo+TjnpmZUxig4yOinhqaEtffoiKdnJwaUlceoSGcXRzaktYdoCDbnZ3b0pTcn2Bcnh5cUxPbnp+cHt7c09Oa3d7cH18dVBMaHR5cYB+eFJKZXF2c4OBe1RIYm5zcYaCfVZGX2twcoiEgFhEXGhtc4qGg1pCWWVqc4yIhV0/VmJoc46KiF9AVGBmdI+LiWE+UF5kdJCNi2M8TV1jdJGOjGU7Slpic5KPjWc5R1hgcpOQj2k3RVZecJSRkGs1QlRcb5WSkW0zP1Fab5aTk281PVBYbZeVlHA7OlFXa5iWlXI5N09VapmXl3Q3NE1TaJqYmHY1Mk1SZpuZmXgzMEtQZZyamns0LklOZJ2bm308K0dNYp6cnX47KUZMYp+dnoBEJkVLYJ+eoIJDJERKX6CeoYRCI0JJXqGfo4ZBIUNIX6KgpIhAIEJHXaOhpYo/HkBGXKSippE+HUBFX6SipZM9HT9EXaWhpZQ9HD5DXKagppc8Gz1CW6ahp5g8GzxBWqehqJk7GjtAWaihqZs6GTo/WKmiqps5GTk+V6mjq506GDg9VqqkrJ43Fzc8Vaqlrp82Fjc7VKumr6A1FTY6U6ynr6E0FTU5UqsmsKIzFDQ5UawnseIyEzM4UKsoseMxEjI3T6sotOQwETI2TqsptecvEDE1TasqtugvDzA0TKsrtu0uDy8zS6sstewuDi4ySquttvAsDi4xSaqut/IrDS0wSKqvuPMqDSwvR6mwufQpDCsuRqmxuvYoDCotRamyuvgmCyksRKmzuvomCygrQ6m0u/wlCicqQqm1vP4kCiYpQam2vf8kCSUnP6m3vgAkCCQmPqq4vwIjByMlPaq5wAMjBiIkO6q6wQQiACEjOqq7wgYfACAhOaq8wwcfAB4gN6q9xAkdABwfNau+xAodABseNKy/xgsaABodM6zA');
-                        audio.play().catch(() => {});
-                    } catch {}
-                }
-            })
-            .subscribe();
-
-        channelRef.current = channel;
-
-        return () => {
-            if (channelRef.current) {
-                supabase.removeChannel(channelRef.current);
-            }
-        };
     }, []);
 
     if (!showTestBtn) return null;
@@ -227,7 +194,7 @@ const PushNotificationManager = () => {
                     {testStatus === 'sent' ? (
                         <><BellRing size={16} className="animate-bounce" /> Enviada!</>
                     ) : testStatus === 'denied' ? (
-                        <><Bell size={16} /> Negada - veja instrução</>
+                        <><Bell size={16} /> Negada</>
                     ) : testStatus === 'no-api' ? (
                         <><Bell size={16} /> Não suportado</>
                     ) : testStatus === 'error' ? (
