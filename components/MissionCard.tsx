@@ -784,11 +784,9 @@ Qualquer dúvida, estamos a disposição.
                         <button onClick={() => onCopyEmail(mission)} className="w-7 h-7 flex items-center justify-center rounded-md bg-slate-50 text-slate-600 border border-slate-200 transition-all duration-200 hover:bg-slate-600 hover:text-white hover:shadow-sm active:scale-95" title="Copiar Template de E-mail"><Mail size={14} /></button>
                         <button onClick={() => onCopy(mission)} className={`w-7 h-7 flex items-center justify-center rounded-md border transition-all duration-200 hover:shadow-sm active:scale-95 ${copiedId === mission.id ? 'bg-green-100 text-green-700 border-green-200' : 'bg-[#25D366]/10 text-[#25D366] border-[#25D366]/20 hover:bg-[#25D366] hover:text-white'}`} title="Copiar Relatório WhatsApp">{copiedId === mission.id ? <Check size={14} strokeWidth={3}/> : <WhatsAppIcon size={14}/>}</button>
                         {onViewHistory && isDirector && (<button onClick={(e) => { e.stopPropagation(); onViewHistory(mission); }} className="w-7 h-7 flex items-center justify-center rounded-md bg-purple-50 text-purple-600 border border-purple-200 transition-all duration-200 hover:bg-purple-600 hover:text-white hover:shadow-sm active:scale-95" title="Histórico Detalhado (Auditoria)"><FileSearch size={14} /></button>)}</>)}
-                        {!hideProviderInfo && (
-                            <button onClick={() => setShowUploadModal(true)} className={`w-7 h-7 flex items-center justify-center rounded-md border transition-all duration-200 hover:shadow-sm active:scale-95 ${hasEvidence ? 'bg-emerald-50 text-emerald-600 border-emerald-200 hover:bg-emerald-600 hover:text-white' : requiresEvidence ? 'bg-red-50 text-red-600 border-red-200 hover:bg-red-600 hover:text-white animate-pulse' : 'bg-cyan-50 text-cyan-600 border-cyan-200 hover:bg-cyan-600 hover:text-white'}`} title="Anexar Print / Evidência (Ctrl+V para colar)" data-testid={`button-upload-evidence-${mission.id}`}>
-                                <Camera size={14} />
-                            </button>
-                        )}
+                        <button onClick={() => hasEvidence ? setShowEvidenceModal(true) : setShowUploadModal(true)} className={`w-7 h-7 flex items-center justify-center rounded-md border transition-all duration-200 hover:shadow-sm active:scale-95 ${hasEvidence ? 'bg-emerald-50 text-emerald-600 border-emerald-200 hover:bg-emerald-600 hover:text-white' : requiresEvidence ? 'bg-red-50 text-red-600 border-red-200 hover:bg-red-600 hover:text-white animate-pulse' : 'bg-cyan-50 text-cyan-600 border-cyan-200 hover:bg-cyan-600 hover:text-white'}`} title={hasEvidence ? 'Ver Evidência' : 'Anexar Print / Evidência (Ctrl+V para colar)'} data-testid={`button-upload-evidence-${mission.id}`}>
+                            {hasEvidence ? <Image size={14} /> : <Camera size={14} />}
+                        </button>
                         {onPrint && (<button onClick={handlePrintClick} className="w-7 h-7 flex items-center justify-center rounded-md bg-gray-50 text-gray-700 border border-gray-200 transition-all duration-200 hover:bg-gray-700 hover:text-white hover:shadow-sm active:scale-95" title="Imprimir Folha de Missão (PDF) e Copiar Texto"><Printer size={14} /></button>)}
                         {onFullReport && (<button onClick={() => onFullReport(mission)} className="w-7 h-7 flex items-center justify-center rounded-md bg-amber-50 text-amber-700 border border-amber-200 transition-all duration-200 hover:bg-amber-600 hover:text-white hover:shadow-sm active:scale-95" title="Relatório Completo PDF (Timeline + Auditoria)"><FileText size={14} /></button>)}
                         {onOperationalReport && (<button onClick={() => onOperationalReport(mission)} className="w-7 h-7 flex items-center justify-center rounded-md bg-red-50 text-red-700 border border-red-200 transition-all duration-200 hover:bg-red-700 hover:text-white hover:shadow-sm active:scale-95" title="Relatório Operacional" data-testid={`button-op-report-${mission.id}`}><Briefcase size={14} /></button>)}
@@ -812,7 +810,7 @@ Qualquer dúvida, estamos a disposição.
                         <button onClick={() => { setShowUploadModal(false); pendingFiles.forEach(f => URL.revokeObjectURL(f.preview)); setPendingFiles([]); }} className="p-2 hover:bg-gray-200 rounded-full transition-all" data-testid="button-close-upload-modal"><X size={18} /></button>
                     </div>
                     <div className="p-4 space-y-4">
-                        <div className="border-2 border-dashed border-gray-300 rounded-xl p-6 text-center bg-gray-50/50 focus-within:border-cyan-400 transition-colors" onPaste={handlePasteInModal}>
+                        <div className="border-2 border-dashed border-gray-300 rounded-xl p-6 text-center bg-gray-50/50 focus-within:border-cyan-400 transition-colors">
                             <Camera size={32} className="mx-auto text-gray-400 mb-2" />
                             <p className="text-sm font-bold text-gray-700">Cole o print aqui (Ctrl+V)</p>
                             <p className="text-[10px] text-gray-400 mt-1">ou selecione um arquivo abaixo</p>
@@ -855,7 +853,12 @@ Qualquer dúvida, estamos a disposição.
                                 <p className="text-[10px] font-bold text-gray-400">{mission.id} — {mission.client}</p>
                             </div>
                         </div>
-                        <button onClick={() => setShowEvidenceModal(false)} className="p-2 hover:bg-gray-200 rounded-full transition-all" data-testid="button-close-evidence-modal"><X size={18} /></button>
+                        <div className="flex items-center gap-2">
+                            {!hideProviderInfo && (
+                                <button onClick={() => { setShowEvidenceModal(false); setShowUploadModal(true); }} className="px-3 py-1.5 bg-cyan-100 text-cyan-700 rounded-lg text-[10px] font-black uppercase hover:bg-cyan-200 transition-all flex items-center gap-1.5" data-testid="button-add-more-evidence"><Camera size={12} /> Adicionar</button>
+                            )}
+                            <button onClick={() => setShowEvidenceModal(false)} className="p-2 hover:bg-gray-200 rounded-full transition-all" data-testid="button-close-evidence-modal"><X size={18} /></button>
+                        </div>
                     </div>
                     <div className="p-4 space-y-4">
                         <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-[10px]">
@@ -873,7 +876,7 @@ Qualquer dúvida, estamos a disposição.
                             </div>
                         </div>
                         {evidenceList!.map((ev, idx) => (
-                            <div key={idx} className="border border-gray-200 rounded-xl overflow-hidden shadow-sm">
+                            <div key={idx} className="border border-gray-200 rounded-xl overflow-hidden shadow-sm cursor-pointer" onClick={() => window.open(ev.url, '_blank')}>
                                 <img src={ev.url} alt={`Evidência ${idx + 1}`} className="w-full object-contain max-h-[60vh] bg-gray-100" />
                                 <div className="p-2 bg-gray-50 flex items-center justify-between text-[9px]">
                                     <span className="font-bold text-gray-500">Enviado por <span className="text-gray-800 font-black">{ev.uploadedBy}</span></span>
