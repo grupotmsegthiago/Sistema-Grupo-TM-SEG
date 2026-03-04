@@ -102,6 +102,7 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
   const [isVehicleModalOpen, setIsVehicleModalOpen] = useState(false);
 
   const [evidenceFiles, setEvidenceFiles] = useState<{ file: File; preview: string }[]>([]);
+  const [expandedEvidence, setExpandedEvidence] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Inteligência de Software: Restrição IBL/Sorocaba
@@ -961,7 +962,7 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
                     {evidenceFiles.length > 0 && (
                         <div className="mt-3 grid grid-cols-2 md:grid-cols-4 gap-3">
                             {evidenceFiles.map((ev, idx) => (
-                                <div key={idx} className="relative group rounded-lg overflow-hidden border border-gray-200 shadow-sm">
+                                <div key={idx} className="relative group rounded-lg overflow-hidden border border-gray-200 shadow-sm cursor-pointer" onClick={() => setExpandedEvidence(ev.preview)} data-testid={`evidence-thumbnail-${idx}`}>
                                     <img src={ev.preview} alt={`Evidência ${idx + 1}`} className="w-full h-32 object-cover" />
                                     <button 
                                         type="button"
@@ -971,11 +972,20 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
                                     >
                                         <Trash2 size={12} />
                                     </button>
-                                    <div className="absolute bottom-0 left-0 right-0 bg-black/60 px-2 py-1">
+                                    <div className="absolute bottom-0 left-0 right-0 bg-black/60 px-2 py-1 flex items-center justify-between">
                                         <span className="text-[9px] text-white font-bold">EVIDÊNCIA {idx + 1}</span>
+                                        <span className="text-[8px] text-white/70">Clique para ampliar</span>
                                     </div>
                                 </div>
                             ))}
+                        </div>
+                    )}
+                    {expandedEvidence && (
+                        <div className="fixed inset-0 z-[200] bg-black/90 flex items-center justify-center p-4 animate-in fade-in" onClick={() => setExpandedEvidence(null)} data-testid="evidence-fullscreen-modal">
+                            <button type="button" onClick={() => setExpandedEvidence(null)} className="absolute top-4 right-4 p-2 bg-white/10 hover:bg-white/20 text-white rounded-full transition-all z-10" data-testid="button-close-evidence">
+                                <X size={24} />
+                            </button>
+                            <img src={expandedEvidence} alt="Evidência ampliada" className="max-w-full max-h-full object-contain rounded-lg shadow-2xl" onClick={(e) => e.stopPropagation()} />
                         </div>
                     )}
                 </div>
