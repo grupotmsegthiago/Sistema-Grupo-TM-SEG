@@ -272,12 +272,6 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                       if (details.customProviderHour) setCustomProviderHour(details.customProviderHour);
                       if (details.iblEnabled !== undefined) setIblEnabled(details.iblEnabled);
 
-                      if (details.revenueTotal > 0 || details.costTotal > 0) {
-                          setUseSavedValues(true);
-                          setRevenueInput(details.revenueTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2 }));
-                          setCostInput(details.costTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2 }));
-                      }
-
                       const savedDate = new Date(adj.created_at);
                       const dateStr = savedDate.toLocaleDateString('pt-BR') + ' ' + savedDate.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
                       setSavedByInfo(`${adj.user_name} (${dateStr})`);
