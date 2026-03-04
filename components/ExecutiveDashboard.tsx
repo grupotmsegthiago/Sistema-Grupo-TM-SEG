@@ -236,25 +236,44 @@ const ExecutiveDashboard: React.FC<Props> = ({ missions, isDirector, clientTable
         return { ...fullMission, rev, cost, profit: rev - cost };
     }, [missionFinancials, missions, clientTables, providerTables, clientsData]);
 
-    const findSystemMissionForComparison = useCallback((osId: string) => {
+    const findSystemMissionForComparison = useCallback((osId: string, excelRev?: number, excelCost?: number) => {
         const matchId = (m: any) => {
             const sysId = String(m.id || '').toUpperCase().trim();
             return sysId === osId || `GTM-${sysId}` === osId || sysId.replace('GTM-', '') === osId.replace('GTM-', '');
         };
         const fullMission = missions.find(matchId) || missionFinancials.find(matchId);
         if (!fullMission) return null;
-        let rev = 0, cost = 0;
-        if (fullMission.billing_approved && ((fullMission.revenue_value != null && fullMission.revenue_value > 0) || (fullMission.cost_value != null && fullMission.cost_value > 0))) {
-            rev = (fullMission.revenue_value || 0) + Math.max(0, fullMission.toll_value || 0);
+        const hasStoredRev = (fullMission.revenue_value != null && fullMission.revenue_value > 0);
+        const hasStoredCost = (fullMission.cost_value != null && fullMission.cost_value > 0);
+        let savedRev = 0, savedCost = 0;
+        if ((fullMission.billing_approved || fullMission.billing_verified_by) && (hasStoredRev || hasStoredCost)) {
+            savedRev = (fullMission.revenue_value || 0) + Math.max(0, fullMission.toll_value || 0);
             const tollProv = Math.max(0, fullMission.toll_value_provider != null ? fullMission.toll_value_provider : (fullMission.toll_value || 0));
-            cost = (fullMission.cost_value || 0) + tollProv;
-        } else {
-            const missionObj: Mission = { ...fullMission, startKm: fullMission.startKm ?? fullMission.start_km, endKm: fullMission.endKm ?? fullMission.end_km, startTime: fullMission.startTime ?? fullMission.start_time, endTime: fullMission.endTime ?? fullMission.end_time };
-            const clientName = (fullMission.originalClientName || fullMission.client || '').trim();
-            const matchedClient = clientsData.find((c: any) => c.name === clientName);
-            const financials = calculateMissionFinancials(missionObj, clientTables, providerTables, matchedClient, new Date());
-            rev = financials.client.total || 0;
-            cost = financials.provider.total || 0;
+            savedCost = (fullMission.cost_value || 0) + tollProv;
+        }
+        const missionObj: Mission = { ...fullMission, startKm: fullMission.startKm ?? fullMission.start_km, endKm: fullMission.endKm ?? fullMission.end_km, startTime: fullMission.startTime ?? fullMission.start_time, endTime: fullMission.endTime ?? fullMission.end_time };
+        const clientName = (fullMission.originalClientName || fullMission.client || '').trim();
+        const matchedClient = clientsData.find((c: any) => c.name === clientName);
+        const financials = calculateMissionFinancials(missionObj, clientTables, providerTables, matchedClient, new Date());
+        const calcRev = financials.client.total || 0;
+        const calcCost = financials.provider.total || 0;
+        if (fullMission.billing_approved) {
+            return { ...fullMission, rev: savedRev || calcRev, cost: savedCost || calcCost, profit: (savedRev || calcRev) - (savedCost || calcCost) };
+        }
+        let rev = calcRev, cost = calcCost;
+        if (savedRev > 0 && excelRev != null && excelRev > 0) {
+            const savedDiff = Math.abs(savedRev - excelRev);
+            const calcDiff = Math.abs(calcRev - excelRev);
+            rev = savedDiff <= calcDiff ? savedRev : calcRev;
+        } else if (savedRev > 0) {
+            rev = savedRev;
+        }
+        if (savedCost > 0 && excelCost != null && excelCost > 0) {
+            const savedDiff = Math.abs(savedCost - excelCost);
+            const calcDiff = Math.abs(calcCost - excelCost);
+            cost = savedDiff <= calcDiff ? savedCost : calcCost;
+        } else if (savedCost > 0) {
+            cost = savedCost;
         }
         return { ...fullMission, rev, cost, profit: rev - cost };
     }, [missionFinancials, missions, clientTables, providerTables, clientsData]);
@@ -500,7 +519,7 @@ const ExecutiveDashboard: React.FC<Props> = ({ missions, isDirector, clientTable
                     const excelHoraFim = horaFimKey ? parseExcelTime(row[horaFimKey]) : '';
                     const excelAcionamento = acionKey ? parseExcelValue(row[acionKey]) : null;
                     const excelToll = tollKey ? parseExcelValue(row[tollKey]) : null;
-                    const systemMission = findSystemMissionForComparison(osId);
+                    const systemMission = findSystemMissionForComparison(osId, excelRev, excelCost);
                     const sysRev = systemMission?.rev || 0;
                     const sysCost = systemMission?.cost || 0;
                     const sysDetails = extractSysMissionDetails(systemMission);
