@@ -799,67 +799,51 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                 </div>
                             </div>
 
-                            <div className="bg-gray-50 p-4 rounded-xl border border-gray-100 grid grid-cols-3 gap-3 mb-4">
-                                <div>
-                                    <p className="text-[11px] font-black text-gray-500 uppercase tracking-wide mb-1">Base (Saída)</p>
-                                    <div className="flex items-center gap-1">
-                                        <span className="text-[11px] text-gray-400 font-semibold">R$</span>
-                                        <input 
-                                            type="text" 
-                                            className="w-24 bg-transparent border-b-2 border-gray-300 text-base font-bold text-gray-800 focus:border-blue-500 outline-none"
-                                            placeholder={financialData.client.base.toFixed(2)}
-                                            value={customClientBase}
-                                            onChange={e => handleManualInput(setCustomClientBase, e.target.value)}
-                                        />
-                                        {customClientBase && <span className="text-[9px] text-blue-600 font-bold bg-blue-50 px-1.5 py-0.5 rounded uppercase">Ajustado</span>}
+                            <div className="grid grid-cols-3 gap-0 mb-4 rounded-xl border border-gray-200 overflow-hidden">
+                                <div className="bg-gray-50 p-3 flex flex-col justify-between">
+                                    <div>
+                                        <p className="text-[10px] font-black text-gray-400 uppercase tracking-wider">Base (Saída)</p>
+                                        <p className="text-lg font-black text-gray-800 mt-1">
+                                            <span className="text-[10px] font-semibold text-gray-400 mr-0.5">R$</span>
+                                            {financialData.client.base.toLocaleString('pt-BR', {minimumFractionDigits: 2})}
+                                        </p>
+                                    </div>
+                                    <div className="flex items-center gap-1 mt-2 pt-2 border-t border-gray-200">
+                                        <span className="text-[10px] text-gray-400">R$</span>
+                                        <input type="text" className="w-full bg-white border border-gray-200 rounded px-2 py-1 text-xs font-bold text-gray-700 focus:border-blue-500 focus:ring-1 focus:ring-blue-200 outline-none" placeholder={financialData.client.base.toFixed(2)} value={customClientBase} onChange={e => handleManualInput(setCustomClientBase, e.target.value)} />
+                                        {customClientBase && <span className="text-[8px] text-blue-600 font-bold bg-blue-50 px-1 py-0.5 rounded shrink-0">AJUST</span>}
                                     </div>
                                 </div>
-                                <div className="border-l border-gray-200 pl-3">
-                                    <p className="text-[11px] font-black text-gray-500 uppercase tracking-wide mb-1">Extra KM</p>
-                                    <div className="flex flex-col">
-                                        <span className={`text-sm font-bold ${financialData.client.extraKmVal > 0 ? 'text-green-600' : 'text-gray-400'}`}>
+                                <div className="bg-gray-50 p-3 border-l border-gray-200 flex flex-col justify-between">
+                                    <div>
+                                        <p className="text-[10px] font-black text-gray-400 uppercase tracking-wider">Extra KM</p>
+                                        <p className={`text-lg font-black mt-1 ${financialData.client.extraKmVal > 0 ? 'text-green-600' : 'text-gray-300'}`}>
                                             +{formatCurrency(financialData.client.extraKmVal)}
-                                        </span>
-                                        {financialData.client.extraKmVal > 0 && (
-                                            <span className="text-[9px] text-gray-500 font-mono">
-                                                {financialData.client.excessKm.toFixed(1)}km × R${financialData.client.unitPriceKm.toFixed(2)}
-                                            </span>
-                                        )}
-                                        <div className="flex items-center gap-1 mt-1">
-                                            <span className="text-[11px] text-gray-400 font-semibold">R$</span>
-                                            <input 
-                                                type="text" 
-                                                className="w-20 bg-transparent border-b-2 border-gray-300 text-xs font-bold text-gray-600 focus:border-blue-500 outline-none"
-                                                placeholder={financialData.client.unitPriceKm.toFixed(2)}
-                                                value={customClientKm}
-                                                onChange={e => handleManualInput(setCustomClientKm, e.target.value)}
-                                            />
-                                            {customClientKm && <span className="text-[9px] text-blue-600 font-bold">Ajust</span>}
-                                        </div>
+                                        </p>
+                                        <p className="text-[9px] text-gray-400 font-mono leading-tight mt-0.5">
+                                            {financialData.client.excessKm.toFixed(1)}km × R${financialData.client.unitPriceKm.toFixed(2)}
+                                        </p>
+                                    </div>
+                                    <div className="flex items-center gap-1 mt-2 pt-2 border-t border-gray-200">
+                                        <span className="text-[10px] text-gray-400">R$</span>
+                                        <input type="text" className="w-full bg-white border border-gray-200 rounded px-2 py-1 text-xs font-bold text-gray-700 focus:border-blue-500 focus:ring-1 focus:ring-blue-200 outline-none" placeholder={financialData.client.unitPriceKm.toFixed(2)} value={customClientKm} onChange={e => handleManualInput(setCustomClientKm, e.target.value)} />
+                                        {customClientKm && <span className="text-[8px] text-blue-600 font-bold shrink-0">AJUST</span>}
                                     </div>
                                 </div>
-                                <div className="border-l border-gray-200 pl-3">
-                                    <p className="text-[11px] font-black text-gray-500 uppercase tracking-wide mb-1">Extra Hora</p>
-                                    <div className="flex flex-col">
-                                        <span className={`text-sm font-bold ${financialData.client.extraHrVal > 0 ? 'text-green-600' : 'text-gray-400'}`}>
+                                <div className="bg-gray-50 p-3 border-l border-gray-200 flex flex-col justify-between">
+                                    <div>
+                                        <p className="text-[10px] font-black text-gray-400 uppercase tracking-wider">Extra Hora</p>
+                                        <p className={`text-lg font-black mt-1 ${financialData.client.extraHrVal > 0 ? 'text-green-600' : 'text-gray-300'}`}>
                                             +{formatCurrency(financialData.client.extraHrVal)}
-                                        </span>
-                                        {financialData.client.extraHrVal > 0 && (
-                                            <span className="text-[9px] text-gray-500 font-mono">
-                                                {financialData.client.excessHours.toFixed(4)}h × R${financialData.client.unitPriceHour.toFixed(2)}
-                                            </span>
-                                        )}
-                                        <div className="flex items-center gap-1 mt-1">
-                                            <span className="text-[11px] text-gray-400 font-semibold">R$</span>
-                                            <input 
-                                                type="text" 
-                                                className="w-20 bg-transparent border-b-2 border-gray-300 text-xs font-bold text-gray-600 focus:border-blue-500 outline-none"
-                                                placeholder={financialData.client.unitPriceHour.toFixed(2)}
-                                                value={customClientHour}
-                                                onChange={e => handleManualInput(setCustomClientHour, e.target.value)}
-                                            />
-                                            {customClientHour && <span className="text-[9px] text-blue-600 font-bold">Ajust</span>}
-                                        </div>
+                                        </p>
+                                        <p className="text-[9px] text-gray-400 font-mono leading-tight mt-0.5">
+                                            {financialData.client.excessHours.toFixed(4)}h × R${financialData.client.unitPriceHour.toFixed(2)}
+                                        </p>
+                                    </div>
+                                    <div className="flex items-center gap-1 mt-2 pt-2 border-t border-gray-200">
+                                        <span className="text-[10px] text-gray-400">R$</span>
+                                        <input type="text" className="w-full bg-white border border-gray-200 rounded px-2 py-1 text-xs font-bold text-gray-700 focus:border-blue-500 focus:ring-1 focus:ring-blue-200 outline-none" placeholder={financialData.client.unitPriceHour.toFixed(2)} value={customClientHour} onChange={e => handleManualInput(setCustomClientHour, e.target.value)} />
+                                        {customClientHour && <span className="text-[8px] text-blue-600 font-bold shrink-0">AJUST</span>}
                                     </div>
                                 </div>
                             </div>
@@ -950,68 +934,52 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                 </div>
                             </div>
 
-                            <div className="bg-gray-50 p-4 rounded-xl border border-gray-100 grid grid-cols-3 gap-3 mb-4">
-                                <div>
-                                    <p className="text-[11px] font-black text-gray-500 uppercase tracking-wide mb-1">Custo Base</p>
-                                    <div className="flex items-center gap-1">
-                                        <span className="text-[11px] text-gray-400 font-semibold">R$</span>
-                                        <input 
-                                            type="text" 
-                                            className={`w-24 bg-transparent border-b-2 border-gray-300 text-base font-bold ${financialData.provider.base === 0 && !mission.is_same_os ? 'text-red-500' : 'text-gray-800'} focus:border-red-500 outline-none`}
-                                            placeholder={financialData.provider.base.toFixed(2)}
-                                            value={customProviderBase}
-                                            onChange={e => handleManualInput(setCustomProviderBase, e.target.value)}
-                                        />
-                                        {customProviderBase && <span className="text-[9px] text-red-600 font-bold bg-red-50 px-1.5 py-0.5 rounded uppercase">Ajust</span>}
+                            <div className="grid grid-cols-3 gap-0 mb-4 rounded-xl border border-gray-200 overflow-hidden">
+                                <div className="bg-gray-50 p-3 flex flex-col justify-between">
+                                    <div>
+                                        <p className="text-[10px] font-black text-gray-400 uppercase tracking-wider">Custo Base</p>
+                                        <p className={`text-lg font-black mt-1 ${financialData.provider.base === 0 && !mission.is_same_os ? 'text-red-500' : 'text-gray-800'}`}>
+                                            <span className="text-[10px] font-semibold text-gray-400 mr-0.5">R$</span>
+                                            {financialData.provider.base.toLocaleString('pt-BR', {minimumFractionDigits: 2})}
+                                        </p>
+                                        {financialData.providerMult > 1 && <p className="text-[9px] text-red-500 font-bold font-mono mt-0.5">(x{financialData.providerMult})</p>}
                                     </div>
-                                    {financialData.providerMult > 1 && <p className="text-[9px] text-red-500 font-bold font-mono">(Aplicado x{financialData.providerMult})</p>}
+                                    <div className="flex items-center gap-1 mt-2 pt-2 border-t border-gray-200">
+                                        <span className="text-[10px] text-gray-400">R$</span>
+                                        <input type="text" className="w-full bg-white border border-gray-200 rounded px-2 py-1 text-xs font-bold text-gray-700 focus:border-red-500 focus:ring-1 focus:ring-red-200 outline-none" placeholder={financialData.provider.base.toFixed(2)} value={customProviderBase} onChange={e => handleManualInput(setCustomProviderBase, e.target.value)} />
+                                        {customProviderBase && <span className="text-[8px] text-red-600 font-bold bg-red-50 px-1 py-0.5 rounded shrink-0">AJUST</span>}
+                                    </div>
                                 </div>
-                                <div className="border-l border-gray-200 pl-3">
-                                    <p className="text-[11px] font-black text-gray-500 uppercase tracking-wide mb-1">Custo KM+</p>
-                                    <div className="flex flex-col">
-                                        <span className={`text-sm font-bold ${financialData.provider.extraKmVal > 0 ? 'text-red-600' : 'text-gray-400'}`}>
+                                <div className="bg-gray-50 p-3 border-l border-gray-200 flex flex-col justify-between">
+                                    <div>
+                                        <p className="text-[10px] font-black text-gray-400 uppercase tracking-wider">Custo KM+</p>
+                                        <p className={`text-lg font-black mt-1 ${financialData.provider.extraKmVal > 0 ? 'text-red-600' : 'text-gray-300'}`}>
                                             +{formatCurrency(financialData.provider.extraKmVal)}
-                                        </span>
-                                        {financialData.provider.extraKmVal > 0 && (
-                                            <span className="text-[9px] text-gray-500 font-mono">
-                                                {financialData.provider.excessKm.toFixed(1)}km × R${financialData.provider.unitCostKm.toFixed(2)}
-                                            </span>
-                                        )}
-                                        <div className="flex items-center gap-1 mt-1">
-                                            <span className="text-[11px] text-gray-400 font-semibold">R$</span>
-                                            <input 
-                                                type="text" 
-                                                className="w-20 bg-transparent border-b-2 border-gray-300 text-xs font-bold text-gray-600 focus:border-red-500 outline-none"
-                                                placeholder={financialData.provider.unitCostKm.toFixed(2)}
-                                                value={customProviderKm}
-                                                onChange={e => handleManualInput(setCustomProviderKm, e.target.value)}
-                                            />
-                                            {customProviderKm && <span className="text-[9px] text-red-600 font-bold">Ajust</span>}
-                                        </div>
+                                        </p>
+                                        <p className="text-[9px] text-gray-400 font-mono leading-tight mt-0.5">
+                                            {financialData.provider.excessKm.toFixed(1)}km × R${financialData.provider.unitCostKm.toFixed(2)}
+                                        </p>
+                                    </div>
+                                    <div className="flex items-center gap-1 mt-2 pt-2 border-t border-gray-200">
+                                        <span className="text-[10px] text-gray-400">R$</span>
+                                        <input type="text" className="w-full bg-white border border-gray-200 rounded px-2 py-1 text-xs font-bold text-gray-700 focus:border-red-500 focus:ring-1 focus:ring-red-200 outline-none" placeholder={financialData.provider.unitCostKm.toFixed(2)} value={customProviderKm} onChange={e => handleManualInput(setCustomProviderKm, e.target.value)} />
+                                        {customProviderKm && <span className="text-[8px] text-red-600 font-bold shrink-0">AJUST</span>}
                                     </div>
                                 </div>
-                                <div className="border-l border-gray-200 pl-3">
-                                    <p className="text-[11px] font-black text-gray-500 uppercase tracking-wide mb-1">Custo HR+</p>
-                                    <div className="flex flex-col">
-                                        <span className={`text-sm font-bold ${financialData.provider.extraHrVal > 0 ? 'text-red-600' : 'text-gray-400'}`}>
+                                <div className="bg-gray-50 p-3 border-l border-gray-200 flex flex-col justify-between">
+                                    <div>
+                                        <p className="text-[10px] font-black text-gray-400 uppercase tracking-wider">Custo HR+</p>
+                                        <p className={`text-lg font-black mt-1 ${financialData.provider.extraHrVal > 0 ? 'text-red-600' : 'text-gray-300'}`}>
                                             +{formatCurrency(financialData.provider.extraHrVal)}
-                                        </span>
-                                        {financialData.provider.extraHrVal > 0 && (
-                                            <span className="text-[9px] text-gray-500 font-mono">
-                                                {financialData.provider.excessHours.toFixed(4)}h × R${financialData.provider.unitCostHour.toFixed(2)}
-                                            </span>
-                                        )}
-                                        <div className="flex items-center gap-1 mt-1">
-                                            <span className="text-[11px] text-gray-400 font-semibold">R$</span>
-                                            <input 
-                                                type="text" 
-                                                className="w-20 bg-transparent border-b-2 border-gray-300 text-xs font-bold text-gray-600 focus:border-red-500 outline-none"
-                                                placeholder={financialData.provider.unitCostHour.toFixed(2)}
-                                                value={customProviderHour}
-                                                onChange={e => handleManualInput(setCustomProviderHour, e.target.value)}
-                                            />
-                                            {customProviderHour && <span className="text-[7px] text-red-600 font-bold">Ajust</span>}
-                                        </div>
+                                        </p>
+                                        <p className="text-[9px] text-gray-400 font-mono leading-tight mt-0.5">
+                                            {financialData.provider.excessHours.toFixed(4)}h × R${financialData.provider.unitCostHour.toFixed(2)}
+                                        </p>
+                                    </div>
+                                    <div className="flex items-center gap-1 mt-2 pt-2 border-t border-gray-200">
+                                        <span className="text-[10px] text-gray-400">R$</span>
+                                        <input type="text" className="w-full bg-white border border-gray-200 rounded px-2 py-1 text-xs font-bold text-gray-700 focus:border-red-500 focus:ring-1 focus:ring-red-200 outline-none" placeholder={financialData.provider.unitCostHour.toFixed(2)} value={customProviderHour} onChange={e => handleManualInput(setCustomProviderHour, e.target.value)} />
+                                        {customProviderHour && <span className="text-[8px] text-red-600 font-bold shrink-0">AJUST</span>}
                                     </div>
                                 </div>
                             </div>
