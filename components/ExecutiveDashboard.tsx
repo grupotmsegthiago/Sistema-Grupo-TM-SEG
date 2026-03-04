@@ -207,6 +207,33 @@ const ExecutiveDashboard: React.FC<Props> = ({ missions, isDirector, clientTable
         });
     }, [filteredMissions, clientTables, providerTables, clientsData, refreshKey]);
 
+    const findSystemMission = useCallback((osId: string) => {
+        const matchId = (m: any) => {
+            const sysId = String(m.id || '').toUpperCase().trim();
+            return sysId === osId || `GTM-${sysId}` === osId || sysId.replace('GTM-', '') === osId.replace('GTM-', '');
+        };
+        let found = missionFinancials.find(matchId);
+        if (found) return found;
+        const fullMission = missions.find(matchId);
+        if (!fullMission) return null;
+        const hasStoredRev = (fullMission.revenue_value != null && fullMission.revenue_value > 0);
+        const hasStoredCost = (fullMission.cost_value != null && fullMission.cost_value > 0);
+        let rev = 0, cost = 0;
+        if (hasStoredRev || hasStoredCost) {
+            rev = (fullMission.revenue_value || 0) + Math.max(0, fullMission.toll_value || 0);
+            const tollProv = Math.max(0, fullMission.toll_value_provider != null ? fullMission.toll_value_provider : (fullMission.toll_value || 0));
+            cost = (fullMission.cost_value || 0) + tollProv;
+        } else {
+            const missionObj: Mission = { ...fullMission, startKm: fullMission.startKm ?? fullMission.start_km, endKm: fullMission.endKm ?? fullMission.end_km, startTime: fullMission.startTime ?? fullMission.start_time, endTime: fullMission.endTime ?? fullMission.end_time };
+            const clientName = (fullMission.originalClientName || fullMission.client || '').trim();
+            const matchedClient = clientsData.find((c: any) => c.name === clientName);
+            const financials = calculateMissionFinancials(missionObj, clientTables, providerTables, matchedClient, new Date());
+            rev = financials.client.total || 0;
+            cost = financials.provider.total || 0;
+        }
+        return { ...fullMission, rev, cost, profit: rev - cost };
+    }, [missionFinancials, missions, clientTables, providerTables, clientsData]);
+
     useEffect(() => {
         if (!excelComparison || excelComparison.length === 0) {
             prevMissionFinancialsRef.current = missionFinancials;
@@ -220,11 +247,7 @@ const ExecutiveDashboard: React.FC<Props> = ({ missions, isDirector, clientTable
         const newAdjustedIds = new Set(adjustedOsIds);
         const updated = excelComparison.map(c => {
             if (!c.found) return c;
-            const systemMission = missionFinancials.find((m: any) => {
-                const sysId = String(m.id || '').toUpperCase().trim();
-                const cId = c.osId.replace('GTM-', '');
-                return sysId === c.osId || `GTM-${sysId}` === c.osId || sysId.replace('GTM-', '') === cId;
-            });
+            const systemMission = findSystemMission(c.osId);
             if (!systemMission) return c;
             const newSysRev = systemMission.rev || 0;
             const newSysCost = systemMission.cost || 0;
@@ -451,18 +474,16 @@ const ExecutiveDashboard: React.FC<Props> = ({ missions, isDirector, clientTable
                     const excelHoraFim = horaFimKey ? parseExcelTime(row[horaFimKey]) : '';
                     const excelAcionamento = acionKey ? parseExcelValue(row[acionKey]) : null;
                     const excelToll = tollKey ? parseExcelValue(row[tollKey]) : null;
-                    const systemMission = missionFinancials.find(m => {
-                        const sysId = String(m.id || '').toUpperCase().trim();
-                        return sysId === osId || `GTM-${sysId}` === osId || sysId.replace('GTM-', '') === osId.replace('GTM-', '');
-                    });
+                    const systemMission = findSystemMission(osId);
                     const sysRev = systemMission?.rev || 0;
                     const sysCost = systemMission?.cost || 0;
                     const sysDetails = extractSysMissionDetails(systemMission);
+                    const isApproved = systemMission?.billing_approved === true;
                     const revDiff = excelRev > 0 ? Math.abs(sysRev - excelRev) : 0;
                     const costDiff = excelCost > 0 ? Math.abs(sysCost - excelCost) : 0;
-                    const revMatch = excelRev > 0 ? revDiff <= 10 : true;
-                    const costMatch = excelCost > 0 ? costDiff <= 10 : true;
-                    comparisons.push({ osId, found: !!systemMission, excelRev, excelCost, sysRev, sysCost, revDiff, costDiff, revMatch, costMatch, status: systemMission?.status || 'Não encontrada', client: systemMission?.client || '-', excelKm, excelHoraInicio, excelHoraFim, excelAcionamento, excelToll, ...(sysDetails || {}) });
+                    const revMatch = excelRev > 0 ? (revDiff <= 10 || isApproved) : true;
+                    const costMatch = excelCost > 0 ? (costDiff <= 10 || isApproved) : true;
+                    comparisons.push({ osId, found: !!systemMission, excelRev, excelCost, sysRev, sysCost, revDiff, costDiff, revMatch, costMatch, isApproved, status: systemMission?.status || 'Não encontrada', client: systemMission?.client || '-', excelKm, excelHoraInicio, excelHoraFim, excelAcionamento, excelToll, ...(sysDetails || {}) });
                 }
                 comparisons.sort((a, b) => (!a.found ? -1 : !b.found ? 1 : (!a.revMatch||!a.costMatch) ? -1 : (!b.revMatch||!b.costMatch) ? 1 : (b.revDiff+b.costDiff)-(a.revDiff+a.costDiff)));
                 setExcelComparison(comparisons);
@@ -503,19 +524,17 @@ const ExecutiveDashboard: React.FC<Props> = ({ missions, isDirector, clientTable
                 const excelEstacionamento = estacionamentoCol >= 0 ? parseExcelValue(getCell(r, estacionamentoCol)) : null;
                 const excelTotalFinal = totalFinalCol >= 0 && totalFinalCol !== revTotalCol ? parseExcelValue(getCell(r, totalFinalCol)) : null;
 
-                const systemMission = missionFinancials.find(m => {
-                    const sysId = String(m.id || '').toUpperCase().trim();
-                    return sysId === osId || `GTM-${sysId}` === osId || sysId.replace('GTM-', '') === osId.replace('GTM-', '');
-                });
+                const systemMission = findSystemMission(osId);
 
                 const sysRev = systemMission?.rev || 0;
                 const sysCost = systemMission?.cost || 0;
                 const sysDetails = extractSysMissionDetails(systemMission);
+                const isApproved = systemMission?.billing_approved === true;
 
                 const revDiff = excelRev > 0 ? Math.abs(sysRev - excelRev) : 0;
                 const costDiff = excelCost > 0 ? Math.abs(sysCost - excelCost) : 0;
-                const revMatch = excelRev > 0 ? revDiff <= 10 : true;
-                const costMatch = excelCost > 0 ? costDiff <= 10 : true;
+                const revMatch = excelRev > 0 ? (revDiff <= 10 || isApproved) : true;
+                const costMatch = excelCost > 0 ? (costDiff <= 10 || isApproved) : true;
 
                 comparisons.push({
                     osId,
@@ -523,7 +542,7 @@ const ExecutiveDashboard: React.FC<Props> = ({ missions, isDirector, clientTable
                     excelRev, excelCost,
                     sysRev, sysCost,
                     revDiff, costDiff,
-                    revMatch, costMatch,
+                    revMatch, costMatch, isApproved,
                     status: systemMission?.status || 'Não encontrada',
                     client: systemMission?.client || clienteRaw || '-',
                     provider: systemMission?.provider || fornRaw || '-',
@@ -726,23 +745,21 @@ const ExecutiveDashboard: React.FC<Props> = ({ missions, isDirector, clientTable
                 const clienteRaw = getCellStr(clienteCol);
                 const fornRaw = getCellStr(fornecedorCol);
 
-                const systemMission = missionFinancials.find(m => {
-                    const sysId = String(m.id || '').toUpperCase().trim();
-                    return sysId === osId || `GTM-${sysId}` === osId || sysId.replace('GTM-', '') === osId.replace('GTM-', '');
-                });
+                const systemMission = findSystemMission(osId);
 
                 const sysRev = systemMission?.rev || 0;
                 const sysCost = systemMission?.cost || 0;
                 const sysDetails = extractSysMissionDetails(systemMission);
+                const isApproved = systemMission?.billing_approved === true;
 
                 const revDiff = excelRev > 0 ? Math.abs(sysRev - excelRev) : 0;
                 const costDiff = excelCost > 0 ? Math.abs(sysCost - excelCost) : 0;
-                const revMatch = excelRev > 0 ? revDiff <= 10 : true;
-                const costMatch = excelCost > 0 ? costDiff <= 10 : true;
+                const revMatch = excelRev > 0 ? (revDiff <= 10 || isApproved) : true;
+                const costMatch = excelCost > 0 ? (costDiff <= 10 || isApproved) : true;
 
                 const comp = {
                     osId, found: !!systemMission, excelRev, excelCost, sysRev, sysCost,
-                    revDiff, costDiff, revMatch, costMatch,
+                    revDiff, costDiff, revMatch, costMatch, isApproved,
                     status: systemMission?.status || 'Não encontrada',
                     client: systemMission?.client || clienteRaw || '-',
                     provider: systemMission?.provider || fornRaw || '-',
@@ -1360,7 +1377,7 @@ const ExecutiveDashboard: React.FC<Props> = ({ missions, isDirector, clientTable
                                                 const wsNE = XLSX.utils.json_to_sheet(naoEncontradas.map(c => mapRow(c, 'NÃO ENCONTRADA')));
                                                 XLSX.utils.book_append_sheet(wb, wsNE, `Não Encontradas (${naoEncontradas.length})`);
                                             }
-                                            const wsAll = XLSX.utils.json_to_sheet(excelComparison.map(c => mapRow(c, c.found ? (c.revMatch && c.costMatch ? 'CONFERIDO' : 'DIVERGENTE') : 'NÃO ENCONTRADA')));
+                                            const wsAll = XLSX.utils.json_to_sheet(excelComparison.map(c => mapRow(c, c.found ? (c.isApproved ? 'APROVADA' : (c.revMatch && c.costMatch ? 'CONFERIDO' : 'DIVERGENTE')) : 'NÃO ENCONTRADA')));
                                             XLSX.utils.book_append_sheet(wb, wsAll, 'Todas as OS');
                                             XLSX.writeFile(wb, `Relatorio_Comparativo_${new Date().toISOString().slice(0,10)}.xlsx`);
                                         }}
@@ -1382,7 +1399,7 @@ const ExecutiveDashboard: React.FC<Props> = ({ missions, isDirector, clientTable
                                             {onlyCostDiff > 0 && <p>• {onlyCostDiff} OS com divergência apenas no <span className="text-red-600">custo</span> (diferença total: {fmtBRL(totalCostDiff)})</p>}
                                             {bothDiff > 0 && <p>• {bothDiff} OS com divergência em <span className="text-red-600">receita e custo</span></p>}
                                             {divergent === 0 && <p className="text-green-600">Todas as OS estão conferidas!</p>}
-                                            <p className="text-[10px] text-slate-400 pt-1">Tolerância: diferenças até R$ 10,00 são consideradas CONFERIDO</p>
+                                            <p className="text-[10px] text-slate-400 pt-1">Tolerância: diferenças até R$ 10,00 são consideradas CONFERIDO. OS já aprovadas no faturamento são marcadas como APROVADA.</p>
                                         </>);
                                     })()}
                                 </div>
@@ -1428,6 +1445,7 @@ const ExecutiveDashboard: React.FC<Props> = ({ missions, isDirector, clientTable
                                                     <td className={`px-3 py-2 text-right font-bold ${c.costDiff > 10 && !isAdjusted ? 'text-red-600' : c.costDiff > 0.01 && !isAdjusted ? 'text-emerald-600' : isAdjusted ? 'text-blue-600' : 'text-gray-400'}`}>{c.found && c.excelCost > 0 ? (c.costDiff > 0.01 ? fmtBRL(c.costDiff) : '-') : '-'}</td>
                                                     <td className="px-3 py-2 text-center">
                                                         {!c.found ? <span className="text-[9px] font-black bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full">NÃO ENCONTRADA</span> :
+                                                         c.isApproved ? <span className="text-[9px] font-black bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-full flex items-center justify-center gap-1"><CheckCircle size={10} /> APROVADA</span> :
                                                          isAdjusted && c.revMatch && c.costMatch ? <span className="text-[9px] font-black bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full flex items-center justify-center gap-1"><CheckCircle size={10} /> AJUSTADO</span> :
                                                          isAdjusted ? <span className="text-[9px] font-black bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full flex items-center justify-center gap-1"><Edit2 size={10} /> ALTERADO</span> :
                                                          hasIssue ? <span className="text-[9px] font-black bg-red-100 text-red-700 px-2 py-0.5 rounded-full flex items-center justify-center gap-1"><XOctagon size={10} /> DIVERGENTE</span> :
