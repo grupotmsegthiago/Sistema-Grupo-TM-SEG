@@ -81,6 +81,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
   const [editClientTableId, setEditClientTableId] = useState<string | null>(null);
   const [memoryLoaded, setMemoryLoaded] = useState(false);
   const [tollConfirmed, setTollConfirmed] = useState(false);
+  const [approvalLog, setApprovalLog] = useState<Array<{user: string; role: string; stage: string; date: string}>>([]);
   const [useSavedValues, _setUseSavedValues] = useState(false);
   const useSavedValuesRef = React.useRef(false);
   const setUseSavedValues = (val: boolean) => { useSavedValuesRef.current = val; _setUseSavedValues(val); };
@@ -237,6 +238,17 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
               }
               
               fetchHistoricalPatterns(fullMission, (ptRes.data || []) as ProviderCostTable[]);
+
+              const { data: logData } = await supabase.from('system_logs')
+                  .select('*')
+                  .eq('entity', 'BillingApproval')
+                  .eq('entity_id', initialMission.id)
+                  .order('created_at', { ascending: true });
+              if (logData && logData.length > 0) {
+                  setApprovalLog(logData.map((l: any) => {
+                      try { return JSON.parse(l.details); } catch { return { user: l.user_name, role: '', stage: l.action_type, date: l.created_at }; }
+                  }));
+              }
           }
           if (ctRes.data) setClientTables(ctRes.data as any);
           if (ptRes.data) setProviderTables(ptRes.data as any);
@@ -377,10 +389,30 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
       showNotification('Recalculado', 'Valores do fornecedor restaurados para a tabela original.', 'info');
   };
 
+  const getApprovalStage = (userName: string, userRole: string): { stage: string; label: string } => {
+      const nameLower = (userName || '').toLowerCase();
+      const roleLower = (userRole || '').toLowerCase();
+      if (nameLower.includes('daniel')) return { stage: 'auditor', label: 'Aprovado pelo Auditor' };
+      if (roleLower === 'administrador' || nameLower.includes('barbara') || nameLower.includes('bárbara')) return { stage: 'financeiro', label: 'Aprovado pelo Financeiro' };
+      if (roleLower === 'diretoria' || nameLower.includes('thiago')) return { stage: 'diretoria', label: 'Aprovado pela Diretoria' };
+      return { stage: 'operacional', label: `Aprovado por ${userName}` };
+  };
+
+  const currentApprovalStatus = useMemo(() => {
+      const stages = approvalLog.map(l => l.stage);
+      const hasAuditor = stages.includes('auditor');
+      const hasFinanceiro = stages.includes('financeiro');
+      const hasDiretoria = stages.includes('diretoria');
+      return { hasAuditor, hasFinanceiro, hasDiretoria, isFullyApproved: hasAuditor && hasFinanceiro && hasDiretoria };
+  }, [approvalLog]);
+
   const handleUpdate = async (approve: boolean) => {
       if (!mission) return;
       setIsUpdating(true);
       try {
+          const userData = JSON.parse(localStorage.getItem('userData') || '{}');
+          const userName = userData.name || 'Usuário';
+          const userRole = userData.role || '';
           const toll = parseNumber(tollInput);
           const tollProv = parseNumber(tollProviderInput);
           const revTotal = parseNumber(revenueInput);
@@ -389,12 +421,34 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
           const revServiceOnly = revTotal - toll; 
           const costServiceOnly = costTotal - tollProv;
           
+          const { stage, label } = getApprovalStage(userName, userRole);
+          
+          const newLog = [...approvalLog];
+          if (approve) {
+              const alreadyApproved = newLog.some(l => l.stage === stage);
+              if (!alreadyApproved) {
+                  const logEntry = { user: userName, role: userRole, stage, date: new Date().toISOString() };
+                  newLog.push(logEntry);
+                  
+                  await supabase.from('system_logs').insert([{
+                      user_name: userName,
+                      action_type: stage,
+                      entity: 'BillingApproval',
+                      entity_id: mission.id,
+                      details: JSON.stringify(logEntry)
+                  }]);
+              }
+          }
+          
+          const updatedStages = newLog.map(l => l.stage);
+          const isFullyApproved = updatedStages.includes('auditor') && updatedStages.includes('financeiro') && updatedStages.includes('diretoria');
+          
           const basePayload = {
               revenue_value: revServiceOnly,
               cost_value: costServiceOnly,
               toll_value: toll,
-              billing_approved: approve,
-              billing_verified_by: JSON.parse(localStorage.getItem('userData') || '{}').name,
+              billing_approved: isFullyApproved,
+              billing_verified_by: userName,
               last_update: new Date().toISOString()
           };
 
@@ -405,7 +459,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
           }
           if (error) throw error;
           
-          if (approve && manualClientTableId) {
+          if (isFullyApproved && manualClientTableId) {
               const routeKey = `${mission.client}|${mission.origin}|${mission.destination}`.toUpperCase();
               const details = JSON.stringify({
                   clientTableId: manualClientTableId,
@@ -425,10 +479,16 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
               }]);
           }
 
-          showNotification('Sucesso', approve ? 'Faturamento Aprovado e Memória Atualizada!' : 'Ajustes Salvos', 'success');
+          setApprovalLog(newLog);
+          
+          if (approve) {
+              showNotification('Sucesso', isFullyApproved ? 'Faturamento 100% Aprovado! (Auditor + Financeiro + Diretoria)' : `${label} — Aguardando demais aprovações`, 'success');
+          } else {
+              showNotification('Sucesso', 'Ajustes Salvos', 'success');
+          }
           
           if (onUpdate) onUpdate();
-          onClose();
+          if (!approve || isFullyApproved) onClose();
       } catch (e: any) { alert(e.message); } finally { setIsUpdating(false); }
   };
 
@@ -1140,6 +1200,34 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                         </div>
                     </div>
 
+                    {approvalLog.length > 0 && (
+                        <div className="mx-4 mb-4 p-3 bg-gradient-to-r from-emerald-50 to-blue-50 rounded-xl border border-emerald-200">
+                            <p className="text-[10px] font-black text-emerald-700 uppercase tracking-widest mb-2">Histórico de Aprovações</p>
+                            <div className="flex flex-wrap gap-2">
+                                {approvalLog.map((log, i) => (
+                                    <div key={i} className="flex items-center gap-2 bg-white px-3 py-1.5 rounded-lg border border-emerald-200 shadow-sm" data-testid={`approval-log-${i}`}>
+                                        <CheckCircle2 size={12} className={log.stage === 'auditor' ? 'text-amber-500' : log.stage === 'financeiro' ? 'text-blue-500' : 'text-emerald-600'} />
+                                        <div>
+                                            <span className="text-[10px] font-black text-gray-800">
+                                                {log.stage === 'auditor' ? 'Auditor' : log.stage === 'financeiro' ? 'Financeiro' : log.stage === 'diretoria' ? 'Diretoria' : log.stage}
+                                            </span>
+                                            <span className="text-[9px] text-gray-500 ml-1">({log.user})</span>
+                                            <p className="text-[8px] text-gray-400 font-mono">{new Date(log.date).toLocaleString('pt-BR')}</p>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                            <div className="flex gap-1.5 mt-2">
+                                <div className={`h-1.5 flex-1 rounded-full ${currentApprovalStatus.hasAuditor ? 'bg-amber-400' : 'bg-gray-200'}`} title="Auditor" />
+                                <div className={`h-1.5 flex-1 rounded-full ${currentApprovalStatus.hasFinanceiro ? 'bg-blue-400' : 'bg-gray-200'}`} title="Financeiro" />
+                                <div className={`h-1.5 flex-1 rounded-full ${currentApprovalStatus.hasDiretoria ? 'bg-emerald-500' : 'bg-gray-200'}`} title="Diretoria" />
+                            </div>
+                            {currentApprovalStatus.isFullyApproved && (
+                                <p className="text-[9px] font-black text-emerald-600 uppercase mt-1.5 tracking-wider">Faturamento 100% Aprovado</p>
+                            )}
+                        </div>
+                    )}
+
                     <div className="fixed bottom-0 left-0 right-0 p-4 bg-white/90 backdrop-blur-md border-t border-gray-200 z-[100] shadow-[0_-10px_40px_rgba(0,0,0,0.1)]">
                         <div className="max-w-5xl mx-auto flex flex-col md:flex-row justify-between items-center gap-6">
                             <div className="flex gap-12 items-center">
@@ -1155,13 +1243,35 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                         {financialData.marginPercent.toFixed(1)}%
                                     </h3>
                                 </div>
+                                {!currentApprovalStatus.isFullyApproved && approvalLog.length > 0 && (
+                                    <div className="border-l border-gray-200 pl-6 hidden md:block">
+                                        <p className="text-[10px] font-black text-amber-600 uppercase mb-0.5 tracking-widest">Aprovações</p>
+                                        <div className="flex gap-1.5">
+                                            <span className={`text-[9px] font-black px-1.5 py-0.5 rounded ${currentApprovalStatus.hasAuditor ? 'bg-amber-100 text-amber-700' : 'bg-gray-100 text-gray-400'}`}>AUD</span>
+                                            <span className={`text-[9px] font-black px-1.5 py-0.5 rounded ${currentApprovalStatus.hasFinanceiro ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-400'}`}>FIN</span>
+                                            <span className={`text-[9px] font-black px-1.5 py-0.5 rounded ${currentApprovalStatus.hasDiretoria ? 'bg-emerald-100 text-emerald-700' : 'bg-gray-100 text-gray-400'}`}>DIR</span>
+                                        </div>
+                                    </div>
+                                )}
                             </div>
                             <div className="flex gap-3 w-full md:w-auto shrink-0">
-                                <button onClick={() => handleUpdate(false)} disabled={isUpdating} className="px-6 py-3 bg-white text-slate-900 border border-slate-200 hover:bg-slate-50 rounded-xl text-xs font-black uppercase flex items-center justify-center gap-2 transition-all shadow-sm active:scale-95 h-12">
+                                <button onClick={() => handleUpdate(false)} disabled={isUpdating} className="px-6 py-3 bg-white text-slate-900 border border-slate-200 hover:bg-slate-50 rounded-xl text-xs font-black uppercase flex items-center justify-center gap-2 transition-all shadow-sm active:scale-95 h-12" data-testid="button-save-adjustments">
                                     {isUpdating ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />} Salvar Ajustes
                                 </button>
-                                <button onClick={() => handleUpdate(true)} disabled={isUpdating || isZeroCostError || !tollConfirmed} className={`px-8 py-3 rounded-xl font-black uppercase text-xs shadow-lg flex items-center justify-center gap-2 transition-all active:scale-95 h-12 ${(isZeroCostError || !tollConfirmed) ? 'bg-gray-400 cursor-not-allowed text-gray-200' : 'bg-blue-600 hover:bg-blue-700 text-white shadow-blue-200'}`}>
-                                    {isUpdating ? <Loader2 size={16} className="animate-spin" /> : <CheckCircle2 size={16} />} {!tollConfirmed ? 'Confirme o Pedágio' : 'Finalizar & Aprovar Faturamento'}
+                                <button 
+                                    onClick={() => handleUpdate(true)} 
+                                    disabled={isUpdating || isZeroCostError || !tollConfirmed || mission?.status === MissionStatus.PENDING} 
+                                    className={`px-8 py-3 rounded-xl font-black uppercase text-xs shadow-lg flex items-center justify-center gap-2 transition-all active:scale-95 h-12 ${(isZeroCostError || !tollConfirmed || mission?.status === MissionStatus.PENDING) ? 'bg-gray-400 cursor-not-allowed text-gray-200' : 'bg-blue-600 hover:bg-blue-700 text-white shadow-blue-200'}`}
+                                    data-testid="button-approve-billing"
+                                >
+                                    {isUpdating ? <Loader2 size={16} className="animate-spin" /> : <CheckCircle2 size={16} />} 
+                                    {mission?.status === MissionStatus.PENDING 
+                                        ? 'OS Pendente — Não Aprovável' 
+                                        : !tollConfirmed 
+                                            ? 'Confirme o Pedágio' 
+                                            : currentApprovalStatus.isFullyApproved 
+                                                ? 'Já Aprovado (Completo)' 
+                                                : 'Aprovar Faturamento'}
                                 </button>
                             </div>
                         </div>

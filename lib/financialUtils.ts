@@ -436,8 +436,13 @@ export const calculateMissionFinancials = (
     const isIblClient = missionClientName.includes('IBL') || missionClientName.includes('INTERMODAL BRASIL');
 
     let clientTablesFiltered = allClientTablesForThisClient;
-    if (isIblClient && !isProviderMacor) {
+    if (!isProviderMacor) {
         clientTablesFiltered = allClientTablesForThisClient.filter(t => !normalize(t.operation_type || '').includes('MACOR'));
+    } else {
+        const macorTables = allClientTablesForThisClient.filter(t => normalize(t.operation_type || '').includes('MACOR'));
+        if (macorTables.length > 0) {
+            clientTablesFiltered = macorTables;
+        }
     }
 
     if (manualTableOverrides?.clientTableId) {
