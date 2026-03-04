@@ -113,7 +113,7 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
 
     const operationalStatuses = [
         MissionStatus.SOLICITED, MissionStatus.DOCUMENTATION, MissionStatus.SCHEDULED, 
-        MissionStatus.ORIGIN, MissionStatus.IN_TRANSIT, MissionStatus.PENDING, MissionStatus.COMPLETED
+        MissionStatus.ORIGIN, MissionStatus.IN_TRANSIT, MissionStatus.COMPLETED
     ];
 
     const restrictedStatuses = [MissionStatus.CANCELLED, MissionStatus.REFUSED];
@@ -132,7 +132,7 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
 
     // Efeito para Relógio em Tempo Real nos campos de Fim de Viagem
     useEffect(() => {
-        if (!isOpen || isEndTimeLocked || (mission && [MissionStatus.COMPLETED, MissionStatus.CANCELLED, MissionStatus.REFUSED].includes(mission.status as MissionStatus) && mission.endTime)) return;
+        if (!isOpen || isEndTimeLocked || (mission && [MissionStatus.COMPLETED, MissionStatus.CANCELLED, MissionStatus.REFUSED, MissionStatus.PENDING].includes(mission.status as MissionStatus) && mission.endTime)) return;
 
         // VERIFICAÇÃO DE AGENDAMENTO FUTURO
         // Se a data de início estiver no futuro, NÃO ativa o relógio de Tempo Real
@@ -258,7 +258,7 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
                 time: new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' }) 
             });
 
-            if ([MissionStatus.COMPLETED, MissionStatus.CANCELLED, MissionStatus.REFUSED].includes(m.status as MissionStatus)) {
+            if ([MissionStatus.COMPLETED, MissionStatus.CANCELLED, MissionStatus.REFUSED, MissionStatus.PENDING].includes(m.status as MissionStatus)) {
                 setIsEndTimeLocked(true);
             } else {
                 setIsEndTimeLocked(false);
@@ -510,6 +510,16 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
             if ((isCurrentPending || isCurrentInFlight) && hasStart && hasEnd) {
                 finalStatus = MissionStatus.COMPLETED;
                 showNotification('IA Operacional', 'Detectamos todos os dados necessários. OS concluída automaticamente.', 'success');
+            }
+
+            if (finalStatus === MissionStatus.COMPLETED && (!hasStart || !hasEnd)) {
+                finalStatus = MissionStatus.PENDING;
+                const missing = [];
+                if (!editData.startDate || !editData.startTime) missing.push('Hora Inicial');
+                if (!editData.endDate || !editData.endTime) missing.push('Hora Final');
+                if (sKm <= 0) missing.push('KM Inicial');
+                if (eKm <= 0 || eKm < sKm) missing.push('KM Final');
+                showNotification('Status Pendente', `Faltam dados obrigatórios: ${missing.join(', ')}. A OS ficará como PENDENTE até o preenchimento completo.`, 'warning');
             }
 
             const progressValue = finalStatus === MissionStatus.COMPLETED ? 100 : editData.manualProgress;
