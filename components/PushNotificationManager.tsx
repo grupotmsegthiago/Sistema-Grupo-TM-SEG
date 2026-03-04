@@ -81,7 +81,9 @@ const PushNotificationManager = () => {
 
         if ('serviceWorker' in navigator) {
             try {
-                const reg = await navigator.serviceWorker.ready;
+                const regPromise = navigator.serviceWorker.ready;
+                const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 3000));
+                const reg = await Promise.race([regPromise, timeoutPromise]) as ServiceWorkerRegistration;
                 await reg.showNotification(title, {
                     body,
                     icon: '/favicon.png',
@@ -94,7 +96,7 @@ const PushNotificationManager = () => {
                 setTestStatus('sent');
                 setDiagMsg('✅ Enviada via Service Worker! Deslize para baixo no topo do iPhone para ver.');
             } catch (err1: any) {
-                setDiagMsg(`SW falhou: ${err1?.message || err1}. Tentando método alternativo...`);
+                setDiagMsg(`SW: ${err1?.message || err1}. Tentando alternativa...`);
             }
         }
 
