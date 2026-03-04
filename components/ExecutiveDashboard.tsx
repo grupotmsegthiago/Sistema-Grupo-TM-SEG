@@ -175,7 +175,7 @@ const ExecutiveDashboard: React.FC<Props> = ({ missions, isDirector, clientTable
             const hasStoredRevenue = (m.revenue_value != null && m.revenue_value > 0);
             const hasStoredCost = (m.cost_value != null && m.cost_value > 0);
 
-            if (hasStoredRevenue || hasStoredCost) {
+            if (m.billing_approved && (hasStoredRevenue || hasStoredCost)) {
                 const rev = (m.revenue_value || 0) + Math.max(0, m.toll_value || 0);
                 const tollProv = Math.max(0, m.toll_value_provider != null ? m.toll_value_provider : (m.toll_value || 0));
                 const cost = (m.cost_value || 0) + tollProv;
@@ -219,7 +219,7 @@ const ExecutiveDashboard: React.FC<Props> = ({ missions, isDirector, clientTable
         const hasStoredRev = (fullMission.revenue_value != null && fullMission.revenue_value > 0);
         const hasStoredCost = (fullMission.cost_value != null && fullMission.cost_value > 0);
         let rev = 0, cost = 0;
-        if (hasStoredRev || hasStoredCost) {
+        if (fullMission.billing_approved && (hasStoredRev || hasStoredCost)) {
             rev = (fullMission.revenue_value || 0) + Math.max(0, fullMission.toll_value || 0);
             const tollProv = Math.max(0, fullMission.toll_value_provider != null ? fullMission.toll_value_provider : (fullMission.toll_value || 0));
             cost = (fullMission.cost_value || 0) + tollProv;
