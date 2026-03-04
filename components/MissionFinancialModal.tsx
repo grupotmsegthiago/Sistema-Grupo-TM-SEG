@@ -443,7 +443,33 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
           waitingDays = Math.floor((Date.now() - new Date(mission.endTime).getTime()) / (1000 * 60 * 60 * 24));
       }
       const hasPartial = (hasAuditor || hasFinanceiro) && !isFullyApproved;
-      return { hasAuditor, hasFinanceiro, hasDiretoria, isFullyApproved, missing, waitingDays, hasPartial };
+
+      let currentUserStage = '';
+      try {
+          const u = JSON.parse(localStorage.getItem('userData') || '{}');
+          const uName = (u.name || '').toLowerCase();
+          const uRole = (u.role || '').toLowerCase();
+          if (uName.includes('daniel')) currentUserStage = 'auditor';
+          else if (uRole === 'administrador' || uName.includes('barbara') || uName.includes('bárbara')) currentUserStage = 'financeiro';
+          else if (uRole === 'diretoria' || uName.includes('thiago')) currentUserStage = 'diretoria';
+      } catch {}
+
+      let blockedForCurrentUser = false;
+      let blockedMessage = '';
+      if (currentUserStage === 'financeiro' && !hasAuditor) {
+          blockedForCurrentUser = true;
+          blockedMessage = 'Aguardando aprovação: Daniel (Auditor)';
+      } else if (currentUserStage === 'diretoria') {
+          const pendingNames: string[] = [];
+          if (!hasAuditor) pendingNames.push('Daniel (Auditor)');
+          if (!hasFinanceiro) pendingNames.push('Barbara (Financeiro)');
+          if (pendingNames.length > 0) {
+              blockedForCurrentUser = true;
+              blockedMessage = `Aguardando: ${pendingNames.join(' e ')}`;
+          }
+      }
+
+      return { hasAuditor, hasFinanceiro, hasDiretoria, isFullyApproved, missing, waitingDays, hasPartial, blockedForCurrentUser, blockedMessage, currentUserStage };
   }, [approvalLog, mission?.endTime]);
 
   const handleUpdate = async (approve: boolean) => {
@@ -466,6 +492,11 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
           const newLog = [...approvalLog];
           if (approve) {
               const existingStages = newLog.map(l => l.stage);
+              if (stage === 'financeiro' && !existingStages.includes('auditor')) {
+                  showNotification('Bloqueado', 'Aguardando aprovação: Auditor (Daniel)', 'error');
+                  setIsUpdating(false);
+                  return;
+              }
               if (stage === 'diretoria' && (!existingStages.includes('auditor') || !existingStages.includes('financeiro'))) {
                   const missing = [];
                   if (!existingStages.includes('auditor')) missing.push('Auditor (Daniel)');
@@ -1322,7 +1353,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                         {financialData.marginPercent.toFixed(1)}%
                                     </h3>
                                 </div>
-                                {!currentApprovalStatus.isFullyApproved && approvalLog.length > 0 && (
+                                {!currentApprovalStatus.isFullyApproved && (
                                     <div className="border-l border-gray-200 pl-6 hidden md:block">
                                         <p className="text-[10px] font-black text-amber-600 uppercase mb-0.5 tracking-widest">Aprovações</p>
                                         <div className="flex gap-1.5">
@@ -1346,8 +1377,8 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                 </button>
                                 <button 
                                     onClick={() => handleUpdate(true)} 
-                                    disabled={isUpdating || isZeroCostError || !tollConfirmed || mission?.status === MissionStatus.PENDING} 
-                                    className={`px-8 py-3 rounded-xl font-black uppercase text-xs shadow-lg flex flex-col items-center justify-center gap-1 transition-all active:scale-95 min-h-[48px] ${(isZeroCostError || !tollConfirmed || mission?.status === MissionStatus.PENDING) ? 'bg-gray-400 cursor-not-allowed text-gray-200' : currentApprovalStatus.hasPartial ? 'bg-gray-300 text-gray-600 border border-gray-400 cursor-pointer hover:bg-gray-400' : 'bg-blue-600 hover:bg-blue-700 text-white shadow-blue-200'}`}
+                                    disabled={isUpdating || isZeroCostError || !tollConfirmed || mission?.status === MissionStatus.PENDING || currentApprovalStatus.blockedForCurrentUser} 
+                                    className={`px-8 py-3 rounded-xl font-black uppercase text-xs shadow-lg flex flex-col items-center justify-center gap-1 transition-all active:scale-95 min-h-[48px] ${(isZeroCostError || !tollConfirmed || mission?.status === MissionStatus.PENDING || currentApprovalStatus.blockedForCurrentUser) ? 'bg-gray-400 cursor-not-allowed text-gray-200' : currentApprovalStatus.hasPartial ? 'bg-gray-300 text-gray-600 border border-gray-400 cursor-pointer hover:bg-gray-400' : 'bg-blue-600 hover:bg-blue-700 text-white shadow-blue-200'}`}
                                     data-testid="button-approve-billing"
                                 >
                                     <span className="flex items-center gap-2">
@@ -1356,11 +1387,18 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                             ? 'OS Pendente — Não Aprovável' 
                                             : !tollConfirmed 
                                                 ? 'Confirme o Pedágio' 
-                                                : currentApprovalStatus.isFullyApproved 
-                                                    ? 'Já Aprovado (Completo)' 
-                                                    : 'Aprovar Faturamento'}
+                                                : currentApprovalStatus.blockedForCurrentUser
+                                                    ? 'Aprovar Faturamento'
+                                                    : currentApprovalStatus.isFullyApproved 
+                                                        ? 'Já Aprovado (Completo)' 
+                                                        : 'Aprovar Faturamento'}
                                     </span>
-                                    {currentApprovalStatus.hasPartial && !isZeroCostError && tollConfirmed && mission?.status !== MissionStatus.PENDING && (
+                                    {currentApprovalStatus.blockedForCurrentUser && !isZeroCostError && tollConfirmed && mission?.status !== MissionStatus.PENDING && (
+                                        <span className="text-[9px] font-bold text-gray-500 normal-case">
+                                            {currentApprovalStatus.blockedMessage}
+                                        </span>
+                                    )}
+                                    {!currentApprovalStatus.blockedForCurrentUser && currentApprovalStatus.hasPartial && !isZeroCostError && tollConfirmed && mission?.status !== MissionStatus.PENDING && (
                                         <span className="text-[9px] font-bold text-gray-500 normal-case">
                                             Aguardando: {currentApprovalStatus.missing.join(', ')} ({currentApprovalStatus.waitingDays}d)
                                         </span>
