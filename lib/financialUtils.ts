@@ -651,10 +651,12 @@ export const calculateMissionFinancials = (
                                       appliedTableName.includes('LOGITECH') ||
                                       missionDest.includes('200KM'));
 
-    const isFixedHoursClientRule = appliedTableName.includes('02H') || 
+    const clientHasExtraHrPrice = (appliedClientTable?.price_per_extra_hour || 0) > 0;
+    const isFixedHoursClientRule = !clientHasExtraHrPrice && (
+                                   appliedTableName.includes('02H') || 
                                    appliedTableName.includes('02 HORAS') ||
                                    missionDest.includes('02 HORAS') ||
-                                   missionDest.includes('02H');
+                                   missionDest.includes('02H'));
 
     if (isFixedDistanceClientRule && !isZeroValueMission) {
         distanceForCalculation = Math.min(distanceForCalculation, cFranchiseKm);
@@ -675,8 +677,10 @@ export const calculateMissionFinancials = (
                                         providerTableName.includes('100 KM') || 
                                         providerTableName.includes('LOGITECH'));
 
-    const isFixedHoursProviderRule = providerTableName.includes('02H') || 
-                                     providerTableName.includes('02 HORAS');
+    const providerHasExtraHrCost = (appliedProviderTable?.cost_per_extra_hour || 0) > 0;
+    const isFixedHoursProviderRule = !providerHasExtraHrCost && (
+                                     providerTableName.includes('02H') || 
+                                     providerTableName.includes('02 HORAS'));
 
     let providerDistForCalc = distanceForCalculation;
     let providerDurationForCalc = durationHours;
