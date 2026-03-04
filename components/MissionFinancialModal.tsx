@@ -208,13 +208,16 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
           const dbToll = Math.max(0, currentMission.toll_value ?? 0);
           const dbTollProv = Math.max(0, currentMission.toll_value_provider != null ? currentMission.toll_value_provider : dbToll);
           const hasRevenue = currentMission.revenue_value != null && currentMission.revenue_value > 0;
+          const hasCost = currentMission.cost_value != null && currentMission.cost_value > 0;
+          const hasVerifiedBy = !!currentMission.billing_verified_by;
+          const hasSavedData = hasRevenue || hasCost || hasVerifiedBy;
           if (currentMission.billing_approved && currentMission.toll_value !== null && currentMission.toll_value !== undefined) {
              setSuggestedToll(dbToll);
              setTollSource(dbToll === 0 ? 'APROVADO (R$ 0,00)' : 'VALOR APROVADO');
              setTollInput(dbToll.toLocaleString('pt-BR', { minimumFractionDigits: 2 }));
              setTollProviderInput(dbTollProv.toLocaleString('pt-BR', { minimumFractionDigits: 2 }));
              setTollConfirmed(true);
-          } else if (dbToll > 0 || hasRevenue) {
+          } else if (dbToll > 0 || hasSavedData) {
              setSuggestedToll(dbToll);
              setTollSource(dbToll === 0 ? 'VALOR SALVO (R$ 0,00)' : 'VALOR SALVO');
              setTollInput(dbToll.toLocaleString('pt-BR', { minimumFractionDigits: 2 }));
@@ -257,7 +260,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                          setManualProviderTableId(details.providerTableId);
                      }
                  }
-                 if (details.tollValue !== undefined && details.tollValue !== null && !currentMission.billing_approved && !(dbToll > 0 || hasRevenue)) {
+                 if (details.tollValue !== undefined && details.tollValue !== null && !currentMission.billing_approved && !(dbToll > 0 || hasSavedData)) {
                      const memToll = Number(details.tollValue);
                      setTollInput(memToll.toLocaleString('pt-BR', { minimumFractionDigits: 2 }));
                      setSuggestedToll(memToll);
@@ -305,12 +308,13 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
               const dbTollProvider = Math.max(0, mRes.data.toll_value_provider != null ? mRes.data.toll_value_provider : dbToll);
               const savedRev = safeNumber(mRes.data.revenue_value);
               const savedCost = safeNumber(mRes.data.cost_value);
+              const hasSavedData = mRes.data.billing_approved || mRes.data.billing_verified_by || savedRev > 0 || savedCost > 0;
               if (mRes.data.billing_approved) {
                   setTollInput(dbToll.toLocaleString('pt-BR', {minimumFractionDigits: 2}));
                   setTollProviderInput(dbTollProvider.toLocaleString('pt-BR', {minimumFractionDigits: 2}));
                   setTollConfirmed(true);
                   setTollSource(dbToll === 0 ? 'APROVADO (R$ 0,00)' : 'VALOR APROVADO');
-              } else if (dbToll > 0 || savedRev > 0) {
+              } else if (hasSavedData || dbToll > 0) {
                   setTollInput(dbToll.toLocaleString('pt-BR', {minimumFractionDigits: 2}));
                   setTollProviderInput(dbTollProvider.toLocaleString('pt-BR', {minimumFractionDigits: 2}));
                   setTollConfirmed(true);
