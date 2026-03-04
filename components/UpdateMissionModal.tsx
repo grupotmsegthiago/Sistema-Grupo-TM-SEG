@@ -618,7 +618,7 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
 
     const filteredProviders = providersList.filter(p => p.name.toLowerCase().includes(searchProvider.toLowerCase()));
     const filteredVehicles = vehiclesList.filter(v => v.provider === editData.provider && (v.plate.toLowerCase().includes(searchVehicle.toLowerCase()) || (v.model && v.model.toLowerCase().includes(searchVehicle.toLowerCase()))));
-    const filteredAgents = agentsList.filter(a => a.provider === editData.provider && a.status === 'Ativo' && a.name.toLowerCase().includes((activeDropdown === 'agent1' ? searchAgent1 : searchAgent2).toLowerCase()));
+    const filteredAgents = agentsList.filter(a => a.provider === editData.provider && a.name.toLowerCase().includes((activeDropdown === 'agent1' ? searchAgent1 : searchAgent2).toLowerCase()));
 
     const getBlockedAgentWarning = (agentName: string) => {
         if (!agentName || agentName.trim() === '') return null;
@@ -826,12 +826,20 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
                                     {blockedAgent1 ? <ShieldAlert size={14} className="absolute right-3 top-3 text-red-500" /> : <UserCheck size={14} className="absolute right-3 top-3 text-gray-300" />}
                                     {activeDropdown === 'agent1' && editData.provider && (
                                         <div className="absolute z-[100] left-0 right-0 mt-1 bg-white border border-gray-200 rounded-xl shadow-2xl max-h-48 overflow-y-auto">
-                                            {filteredAgents.map(a => (
-                                                <button key={a.id} type="button" onClick={() => { setEditData({...editData, agent1: a.name}); setSearchAgent1(a.name); setActiveDropdown(null); }} className={DROPDOWN_ITEM_CLASS}>
-                                                    <span>{a.name}</span>
-                                                    <span className="bg-green-600 text-white px-2 py-1 rounded-[6px] text-[8px] font-black flex items-center gap-1 shadow-sm"><Check size={10} /> SELECIONAR</span>
-                                                </button>
-                                            ))}
+                                            {filteredAgents.map(a => {
+                                                const isBlocked = a.status !== 'Ativo';
+                                                const isAcaoTrab = a.status === 'Bloqueado / Ação Trabalhista';
+                                                return (
+                                                    <button key={a.id} type="button" disabled={isBlocked} onClick={() => { if (!isBlocked) { setEditData({...editData, agent1: a.name}); setSearchAgent1(a.name); setActiveDropdown(null); }}} className={`${DROPDOWN_ITEM_CLASS} ${isBlocked ? '!opacity-100 !cursor-not-allowed !bg-red-50' : ''}`}>
+                                                        <div className="flex flex-col items-start">
+                                                            <span className={isBlocked ? 'text-red-400 line-through' : ''}>{a.name}</span>
+                                                            {isAcaoTrab && <span className="text-[8px] font-black text-red-600 uppercase animate-pulse">⛔ AÇÃO TRABALHISTA — BLOQUEADO</span>}
+                                                            {isBlocked && !isAcaoTrab && <span className="text-[8px] font-bold text-red-400 uppercase">BLOQUEADO</span>}
+                                                        </div>
+                                                        {isBlocked ? <span className="bg-red-600 text-white px-2 py-1 rounded-[6px] text-[8px] font-black flex items-center gap-1 shadow-sm"><ShieldAlert size={10} /> BLOQUEADO</span> : <span className="bg-green-600 text-white px-2 py-1 rounded-[6px] text-[8px] font-black flex items-center gap-1 shadow-sm"><Check size={10} /> SELECIONAR</span>}
+                                                    </button>
+                                                );
+                                            })}
                                         </div>
                                     )}
                                 </div>
@@ -853,12 +861,20 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
                                     {blockedAgent2 ? <ShieldAlert size={14} className="absolute right-3 top-3 text-red-500" /> : <UserCheck size={14} className="absolute right-3 top-3 text-gray-300" />}
                                     {activeDropdown === 'agent2' && editData.provider && (
                                         <div className="absolute z-[100] left-0 right-0 mt-1 bg-white border border-gray-200 rounded-xl shadow-2xl max-h-48 overflow-y-auto">
-                                            {filteredAgents.map(a => (
-                                                <button key={a.id} type="button" onClick={() => { setEditData({...editData, agent2: a.name}); setSearchAgent2(a.name); setActiveDropdown(null); }} className={DROPDOWN_ITEM_CLASS}>
-                                                    <span>{a.name}</span>
-                                                    <span className="bg-green-600 text-white px-2 py-1 rounded-[6px] text-[8px] font-black flex items-center gap-1 shadow-sm"><Check size={10} /> SELECIONAR</span>
-                                                </button>
-                                            ))}
+                                            {filteredAgents.map(a => {
+                                                const isBlocked = a.status !== 'Ativo';
+                                                const isAcaoTrab = a.status === 'Bloqueado / Ação Trabalhista';
+                                                return (
+                                                    <button key={a.id} type="button" disabled={isBlocked} onClick={() => { if (!isBlocked) { setEditData({...editData, agent2: a.name}); setSearchAgent2(a.name); setActiveDropdown(null); }}} className={`${DROPDOWN_ITEM_CLASS} ${isBlocked ? '!opacity-100 !cursor-not-allowed !bg-red-50' : ''}`}>
+                                                        <div className="flex flex-col items-start">
+                                                            <span className={isBlocked ? 'text-red-400 line-through' : ''}>{a.name}</span>
+                                                            {isAcaoTrab && <span className="text-[8px] font-black text-red-600 uppercase animate-pulse">⛔ AÇÃO TRABALHISTA — BLOQUEADO</span>}
+                                                            {isBlocked && !isAcaoTrab && <span className="text-[8px] font-bold text-red-400 uppercase">BLOQUEADO</span>}
+                                                        </div>
+                                                        {isBlocked ? <span className="bg-red-600 text-white px-2 py-1 rounded-[6px] text-[8px] font-black flex items-center gap-1 shadow-sm"><ShieldAlert size={10} /> BLOQUEADO</span> : <span className="bg-green-600 text-white px-2 py-1 rounded-[6px] text-[8px] font-black flex items-center gap-1 shadow-sm"><Check size={10} /> SELECIONAR</span>}
+                                                    </button>
+                                                );
+                                            })}
                                         </div>
                                     )}
                                 </div>
