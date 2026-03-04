@@ -67,6 +67,7 @@ const MissionOperationalReport: React.FC<Props> = ({ mission, onClose, isClientV
     const [sectionAiInstruction, setSectionAiInstruction] = useState('');
     const [isSectionAiLoading, setIsSectionAiLoading] = useState(false);
     const [missionLogs, setMissionLogs] = useState<any[]>([]);
+    const [evidenceUrls, setEvidenceUrls] = useState<{ url: string; uploadedBy: string; uploadedAt: string }[]>([]);
     const reportRef = useRef<HTMLDivElement>(null);
 
     const [kmInicialPreview, setKmInicialPreview] = useState<string | null>(null);
@@ -94,7 +95,16 @@ const MissionOperationalReport: React.FC<Props> = ({ mission, onClose, isClientV
 
     useEffect(() => {
         const fetchData = async () => {
-            const logsRes = await supabase.from('mission_logs').select('*').eq('mission_id', mission.id).order('created_at', { ascending: true });
+            const [logsRes, evRes] = await Promise.all([
+                supabase.from('mission_logs').select('*').eq('mission_id', mission.id).order('created_at', { ascending: true }),
+                supabase.from('system_logs').select('details').eq('entity', 'MissionEvidence').eq('entity_id', mission.id)
+            ]);
+            if (evRes.data) {
+                const evList = evRes.data.map((e: any) => {
+                    try { const p = JSON.parse(e.details); return { url: p.publicUrl || '', uploadedBy: p.uploadedBy || '', uploadedAt: p.uploadedAt || '' }; } catch { return null; }
+                }).filter(Boolean);
+                setEvidenceUrls(evList);
+            }
             setMissionLogs(logsRes.data || []);
 
             try {
@@ -728,7 +738,7 @@ Retorne APENAS HTML com sections: SÍNTESE OPERACIONAL, DILIGÊNCIA E CONSTATAÇ
                 </div>
             )}
 
-            {allPhotos.length > 0 && (
+            {(allPhotos.length > 0 || evidenceUrls.length > 0) && (
                 <div data-pdf-section="fotos" className="bg-white px-8 pt-2 pb-5">
                     <div className="flex items-center gap-2 mb-4">
                         <div className="w-[3px] h-5 rounded-full" style={{ backgroundColor: accentColor }} />
@@ -768,6 +778,28 @@ Retorne APENAS HTML com sections: SÍNTESE OPERACIONAL, DILIGÊNCIA E CONSTATAÇ
                                 </div>
                             ))}
                         </div>
+                    )}
+                    {evidenceUrls.length > 0 && (
+                        <>
+                            <div className="flex items-center gap-2 mt-4 mb-3">
+                                <div className="w-[3px] h-4 rounded-full bg-emerald-500" />
+                                <h3 className="text-[10px] font-black uppercase tracking-[0.15em] text-emerald-700">Evidências da Solicitação</h3>
+                            </div>
+                            <div className="grid grid-cols-2 gap-3">
+                                {evidenceUrls.map((ev, i) => (
+                                    <div key={i} className="rounded-xl overflow-hidden border border-gray-200" style={{ boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
+                                        <img src={ev.url} alt={`Evidência ${i + 1}`} className="w-full h-44 object-contain bg-gray-50" crossOrigin="anonymous" />
+                                        <div className="px-3 py-1.5 bg-gray-50 flex items-center justify-between border-t border-gray-100">
+                                            <div className="flex items-center gap-1.5">
+                                                <ImageIcon size={10} className="text-emerald-500" />
+                                                <p className="text-[9px] font-black text-gray-500 uppercase tracking-wider">Evidência {i + 1}</p>
+                                            </div>
+                                            <p className="text-[8px] text-gray-400 font-bold">{ev.uploadedBy}</p>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        </>
                     )}
                 </div>
             )}

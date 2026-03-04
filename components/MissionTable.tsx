@@ -1073,6 +1073,7 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
                                       currentTime={currentTime}
                                       approvalStages={approvalMap[mission.id]}
                                       evidenceList={evidenceMap[mission.id]}
+                                      onEvidenceUploaded={() => fetchMissions(true)}
                                   />
                               </div>
                           );

@@ -1,10 +1,10 @@
 
-import React, { memo, useMemo, useState, useRef, useCallback } from 'react';
+import React, { memo, useMemo, useState, useRef } from 'react';
 import { Mission, MissionStatus, ClientPriceTable, ProviderCostTable, Client } from '../types';
 import { supabase } from '../lib/supabase';
 import { 
   Truck, User, Phone, EyeOff, ShieldCheck, UserCheck, CarFront, 
-  Map, Pencil, Eye, Check, Trash2, FileText, Clock, Building2, Navigation, Hourglass, History, Mail, MapPin, AlertOctagon, Printer, FileSearch, TrendingUp, TrendingDown, DollarSign, Layers, Calculator, Flag, Activity, Briefcase, Shield, MessageCircle, ImageOff, Image, X, Upload, Loader2
+  Map, Pencil, Eye, Check, Trash2, FileText, Clock, Building2, Navigation, Hourglass, History, Mail, MapPin, AlertOctagon, Printer, FileSearch, TrendingUp, TrendingDown, DollarSign, Layers, Calculator, Flag, Activity, Briefcase, Shield, MessageCircle, ImageOff, Image, X, Upload, Loader2, Camera
 } from 'lucide-react';
 
 const WhatsAppIcon = ({ size = 14 }: { size?: number }) => (
@@ -37,6 +37,7 @@ interface MissionCardProps {
     onViewHistory?: (m: Mission) => void;
     onFullReport?: (m: Mission) => void;
     onOperationalReport?: (m: Mission) => void;
+    onEvidenceUploaded?: () => void;
     clientTables: ClientPriceTable[];
     providerTables: ProviderCostTable[];
     clientsData: Client[];
@@ -138,15 +139,79 @@ const getAgentDisplayName = (fullName?: string) => {
     return fullName.trim().toUpperCase();
 };
 
+const EVIDENCE_REQUIRED_DATE = new Date('2026-03-04T00:00:00');
+
+const compressImage = (file: File, maxWidth = 1200, quality = 0.7): Promise<Blob> => {
+    return new Promise((resolve, reject) => {
+        const img = new window.Image();
+        img.onload = () => {
+            const canvas = document.createElement('canvas');
+            let w = img.width, h = img.height;
+            if (w > maxWidth) { h = (maxWidth / w) * h; w = maxWidth; }
+            canvas.width = w;
+            canvas.height = h;
+            const ctx = canvas.getContext('2d');
+            if (!ctx) return reject(new Error('Canvas error'));
+            ctx.drawImage(img, 0, 0, w, h);
+            canvas.toBlob(blob => blob ? resolve(blob) : reject(new Error('Compress error')), 'image/jpeg', quality);
+        };
+        img.onerror = reject;
+        img.src = URL.createObjectURL(file);
+    });
+};
+
 const MissionCardComponent: React.FC<MissionCardProps> = ({ 
     mission, canEditMission, isDirector, isRedLight, isImminent, minutesSinceUpdate, copiedId, hideProviderInfo,
-    onViewMap, onUpdate, onOpenFinancials, onCopy, onCopyEmail, onDelete, onPrint, onViewHistory, onFullReport, onOperationalReport,
+    onViewMap, onUpdate, onOpenFinancials, onCopy, onCopyEmail, onDelete, onPrint, onViewHistory, onFullReport, onOperationalReport, onEvidenceUploaded,
     clientTables, providerTables, clientsData, agentPhonesMap, currentTime, approvalStages, evidenceList
 }) => {
     
     const { showNotification } = useNotification();
     const [showEvidenceModal, setShowEvidenceModal] = useState(false);
+    const [isUploading, setIsUploading] = useState(false);
+    const fileInputRef = useRef<HTMLInputElement>(null);
     const hasEvidence = evidenceList && evidenceList.length > 0;
+    const missionCreatedAt = mission.createdAt ? new Date(mission.createdAt) : null;
+    const requiresEvidence = missionCreatedAt ? missionCreatedAt >= EVIDENCE_REQUIRED_DATE : false;
+
+    const handleEvidenceUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const files = e.target.files;
+        if (!files || files.length === 0) return;
+        setIsUploading(true);
+        try {
+            const userData = JSON.parse(localStorage.getItem('userData') || '{}');
+            for (let i = 0; i < files.length; i++) {
+                const file = files[i];
+                const compressed = await compressImage(file);
+                const ext = 'jpg';
+                const path = `${mission.id}/${Date.now()}_${i}.${ext}`;
+                const { error: uploadError } = await supabase.storage.from('mission-evidence').upload(path, compressed, { contentType: 'image/jpeg', upsert: false });
+                if (uploadError) {
+                    if (uploadError.message?.includes('not found') || uploadError.message?.includes('does not exist')) {
+                        showNotification('Erro', 'Bucket mission-evidence não existe. Crie no painel Supabase.', 'error');
+                        return;
+                    }
+                    throw uploadError;
+                }
+                const { data: urlData } = supabase.storage.from('mission-evidence').getPublicUrl(path);
+                await supabase.from('system_logs').insert({
+                    entity: 'MissionEvidence',
+                    entity_id: mission.id,
+                    action_type: 'evidence_upload',
+                    details: JSON.stringify({ publicUrl: urlData.publicUrl, uploadedBy: userData.name || 'Sistema', uploadedAt: new Date().toISOString(), fileName: file.name }),
+                    created_by: userData.name || 'Sistema',
+                    created_at: new Date().toISOString()
+                });
+            }
+            showNotification('Sucesso', `${files.length} evidência(s) anexada(s) com sucesso!`, 'success');
+            if (onEvidenceUploaded) onEvidenceUploaded();
+        } catch (err: any) {
+            showNotification('Erro', 'Falha ao anexar evidência: ' + (err.message || err), 'error');
+        } finally {
+            setIsUploading(false);
+            if (fileInputRef.current) fileInputRef.current.value = '';
+        }
+    };
 
     const isTerminal = useMemo(() => {
         return [MissionStatus.COMPLETED, MissionStatus.CANCELLED, MissionStatus.REFUSED].includes(mission.status);
@@ -378,11 +443,11 @@ Qualquer dúvida, estamos a disposição.
                             <button onClick={() => setShowEvidenceModal(true)} className="px-1.5 py-0.5 rounded text-[8px] font-black uppercase border bg-emerald-50 text-emerald-700 border-emerald-300 flex items-center gap-1 hover:bg-emerald-100 transition-all cursor-pointer shadow-sm" data-testid={`badge-evidence-${mission.id}`} title="Evidência anexada - clique para ver">
                                 <Image size={10} /> EVIDÊNCIA
                             </button>
-                        ) : (
+                        ) : requiresEvidence ? (
                             <span className="px-1.5 py-0.5 rounded text-[8px] font-black uppercase flex items-center gap-1 bg-red-100 text-red-700 border border-red-300 shadow-[0_2px_8px_rgba(239,68,68,0.25)] animate-pulse" title="Sem evidência de solicitação">
                                 <ImageOff size={10} /> SEM EVIDÊNCIA
                             </span>
-                        )}
+                        ) : null}
                     </div>
                     <div className="flex flex-col gap-1.5 mt-1">
                         <div className="flex items-center gap-2"><div className="p-0.5 bg-blue-50 rounded text-blue-600 shrink-0"><FileText size={10} /></div><div className="flex items-center gap-1.5"><span className="text-[9px] font-bold text-gray-400 uppercase tracking-wider">Criação</span><span className="text-[10px] font-bold text-gray-800">{formatDateTime(mission.createdAt)}</span></div></div>
@@ -673,6 +738,14 @@ Qualquer dúvida, estamos a disposição.
                         <button onClick={() => onCopyEmail(mission)} className="w-7 h-7 flex items-center justify-center rounded-md bg-slate-50 text-slate-600 border border-slate-200 transition-all duration-200 hover:bg-slate-600 hover:text-white hover:shadow-sm active:scale-95" title="Copiar Template de E-mail"><Mail size={14} /></button>
                         <button onClick={() => onCopy(mission)} className={`w-7 h-7 flex items-center justify-center rounded-md border transition-all duration-200 hover:shadow-sm active:scale-95 ${copiedId === mission.id ? 'bg-green-100 text-green-700 border-green-200' : 'bg-[#25D366]/10 text-[#25D366] border-[#25D366]/20 hover:bg-[#25D366] hover:text-white'}`} title="Copiar Relatório WhatsApp">{copiedId === mission.id ? <Check size={14} strokeWidth={3}/> : <WhatsAppIcon size={14}/>}</button>
                         {onViewHistory && isDirector && (<button onClick={(e) => { e.stopPropagation(); onViewHistory(mission); }} className="w-7 h-7 flex items-center justify-center rounded-md bg-purple-50 text-purple-600 border border-purple-200 transition-all duration-200 hover:bg-purple-600 hover:text-white hover:shadow-sm active:scale-95" title="Histórico Detalhado (Auditoria)"><FileSearch size={14} /></button>)}</>)}
+                        {!hideProviderInfo && (
+                            <>
+                                <input ref={fileInputRef} type="file" accept="image/*" multiple className="hidden" onChange={handleEvidenceUpload} data-testid={`input-evidence-upload-${mission.id}`} />
+                                <button onClick={() => fileInputRef.current?.click()} disabled={isUploading} className={`w-7 h-7 flex items-center justify-center rounded-md border transition-all duration-200 hover:shadow-sm active:scale-95 ${isUploading ? 'bg-yellow-100 text-yellow-600 border-yellow-300 animate-pulse' : hasEvidence ? 'bg-emerald-50 text-emerald-600 border-emerald-200 hover:bg-emerald-600 hover:text-white' : requiresEvidence ? 'bg-red-50 text-red-600 border-red-200 hover:bg-red-600 hover:text-white animate-pulse' : 'bg-cyan-50 text-cyan-600 border-cyan-200 hover:bg-cyan-600 hover:text-white'}`} title={isUploading ? 'Enviando...' : 'Anexar Print / Evidência'} data-testid={`button-upload-evidence-${mission.id}`}>
+                                    {isUploading ? <Loader2 size={14} className="animate-spin" /> : <Camera size={14} />}
+                                </button>
+                            </>
+                        )}
                         {onPrint && (<button onClick={handlePrintClick} className="w-7 h-7 flex items-center justify-center rounded-md bg-gray-50 text-gray-700 border border-gray-200 transition-all duration-200 hover:bg-gray-700 hover:text-white hover:shadow-sm active:scale-95" title="Imprimir Folha de Missão (PDF) e Copiar Texto"><Printer size={14} /></button>)}
                         {onFullReport && (<button onClick={() => onFullReport(mission)} className="w-7 h-7 flex items-center justify-center rounded-md bg-amber-50 text-amber-700 border border-amber-200 transition-all duration-200 hover:bg-amber-600 hover:text-white hover:shadow-sm active:scale-95" title="Relatório Completo PDF (Timeline + Auditoria)"><FileText size={14} /></button>)}
                         {onOperationalReport && (<button onClick={() => onOperationalReport(mission)} className="w-7 h-7 flex items-center justify-center rounded-md bg-red-50 text-red-700 border border-red-200 transition-all duration-200 hover:bg-red-700 hover:text-white hover:shadow-sm active:scale-95" title="Relatório Operacional" data-testid={`button-op-report-${mission.id}`}><Briefcase size={14} /></button>)}

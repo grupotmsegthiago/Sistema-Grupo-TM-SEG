@@ -40,6 +40,7 @@ const MissionFullReportModal: React.FC<Props> = ({ mission, onClose, hideProvide
     const [vehicle, setVehicle] = useState<Vehicle | null>(null);
     const [isLoading, setIsLoading] = useState(true);
     const [isOpening, setIsOpening] = useState(false);
+    const [evidenceUrls, setEvidenceUrls] = useState<{ url: string; uploadedBy: string; uploadedAt: string }[]>([]);
 
     useEffect(() => {
         fetchAllData();
@@ -48,7 +49,7 @@ const MissionFullReportModal: React.FC<Props> = ({ mission, onClose, hideProvide
     const fetchAllData = async () => {
         setIsLoading(true);
         try {
-            const [logsRes, historyRes, agentsRes, vehicleRes, clientsRes] = await Promise.all([
+            const [logsRes, historyRes, agentsRes, vehicleRes, clientsRes, evidenceRes] = await Promise.all([
                 supabase.from('mission_logs').select('*').eq('mission_id', mission.id).order('created_at', { ascending: true }),
                 supabase.from('mission_history').select('*').eq('mission_id', mission.id).order('changed_at', { ascending: true }),
                 supabase.from('agents').select('*').in('name', [mission.agent1, mission.agent2].filter(Boolean)),
@@ -57,7 +58,8 @@ const MissionFullReportModal: React.FC<Props> = ({ mission, onClose, hideProvide
                         ? supabase.from('vehicles').select('*').eq('id', mission.vehicleId).maybeSingle()
                         : supabase.from('vehicles').select('*').eq('plate', mission.vehicleId).maybeSingle())
                     : Promise.resolve({ data: null }),
-                supabase.from('clients').select('*').eq('name', mission.client)
+                supabase.from('clients').select('*').eq('name', mission.client),
+                supabase.from('system_logs').select('details').eq('entity', 'MissionEvidence').eq('entity_id', mission.id)
             ]);
 
             if (logsRes.data) setLogs(logsRes.data);
@@ -65,6 +67,12 @@ const MissionFullReportModal: React.FC<Props> = ({ mission, onClose, hideProvide
             if (agentsRes.data) setAgents(agentsRes.data as Agent[]);
             if (vehicleRes.data) setVehicle(vehicleRes.data as Vehicle);
             if (clientsRes.data) setClients(clientsRes.data as Client[]);
+            if (evidenceRes.data) {
+                const evList = evidenceRes.data.map((e: any) => {
+                    try { const p = JSON.parse(e.details); return { url: p.publicUrl || '', uploadedBy: p.uploadedBy || '', uploadedAt: p.uploadedAt || '' }; } catch { return null; }
+                }).filter(Boolean);
+                setEvidenceUrls(evList);
+            }
         } catch (err) {
             console.error('Erro ao carregar dados do relatório:', err);
         } finally {
@@ -693,6 +701,23 @@ const MissionFullReportModal: React.FC<Props> = ({ mission, onClose, hideProvide
                     : `<div style="padding:40px;text-align:center;color:#94A3B8;">Sem cidades de origem/destino para exibir o mapa.</div>`
                 }
             </div>
+
+            ${evidenceUrls.length > 0 ? `
+            <div class="section-header">EVIDÊNCIAS DA SOLICITAÇÃO</div>
+            <div style="border:1px solid #E2E8F0;border-top:none;border-radius:0 0 6px 6px;padding:16px;margin-bottom:24px;background:#FAFAFA;">
+                <div style="display:grid;grid-template-columns:repeat(auto-fill, minmax(280px, 1fr));gap:12px;">
+                    ${evidenceUrls.map((ev, i) => `
+                        <div style="border:1px solid #E2E8F0;border-radius:8px;overflow:hidden;background:#fff;">
+                            <img src="${ev.url}" alt="Evidência ${i + 1}" style="width:100%;max-height:300px;object-fit:contain;background:#f1f5f9;" crossorigin="anonymous" />
+                            <div style="padding:6px 10px;background:#F8FAFC;border-top:1px solid #E2E8F0;font-size:10px;color:#64748B;display:flex;justify-content:space-between;">
+                                <span><strong>${ev.uploadedBy}</strong></span>
+                                <span>${formatDateTime(ev.uploadedAt)}</span>
+                            </div>
+                        </div>
+                    `).join('')}
+                </div>
+            </div>
+            ` : ''}
         </div>
 
         <div class="footer">
@@ -773,7 +798,7 @@ const MissionFullReportModal: React.FC<Props> = ({ mission, onClose, hideProvide
                                         { ok: logs.length > 0, text: `Timeline (${logs.length} eventos)` },
                                         { ok: history.length > 0, text: `Auditoria (${history.length} alt.)` },
                                         { ok: !!mission.mapLink || !!mission.origin, text: 'Mapa Interativo' },
-                                        { ok: true, text: 'Links Clicáveis' }
+                                        { ok: evidenceUrls.length > 0, text: `Evidências (${evidenceUrls.length})` }
                                     ].map((item, i) => (
                                         <div key={i} className="flex items-center gap-2">
                                             <div className={`w-2 h-2 rounded-full ${item.ok ? 'bg-green-500' : 'bg-gray-300'}`}></div>
