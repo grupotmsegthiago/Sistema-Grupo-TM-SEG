@@ -556,8 +556,9 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
                 destination: finalDestination.toUpperCase()
             };
 
-            const { error } = await supabase.from('missions').update(updateData).eq('id', mission.id);
+            const { error, data: updatedRow } = await supabase.from('missions').update(updateData).eq('id', mission.id).select('id, last_update').single();
             if (error) throw error;
+            if (!updatedRow) throw new Error('Falha na persistência: registro não retornado após UPDATE');
 
             await supabase.from('system_logs').insert([{
                 user_name: currentUser.name || 'Usuário',

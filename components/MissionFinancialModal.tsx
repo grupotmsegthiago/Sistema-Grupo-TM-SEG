@@ -92,6 +92,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
   const [useSavedValues, _setUseSavedValues] = useState(false);
   const useSavedValuesRef = React.useRef(false);
   const setUseSavedValues = (val: boolean) => { useSavedValuesRef.current = val; _setUseSavedValues(val); };
+  const isSavingRef = React.useRef(false);
   const [savedByInfo, setSavedByInfo] = useState<string | null>(null);
 
   const [editStartKm, setEditStartKm] = useState('');
@@ -134,7 +135,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
   // Se a missão atual tem toll_value salvo no banco, usa esse valor.
   // Se não tem, busca via API ou histórico automaticamente.
   const fetchHistoricalPatterns = async (currentMission: Mission, allProviderTables?: ProviderCostTable[]) => {
-      if (!currentMission.client || !currentMission.origin) return;
+      if (!currentMission.client || !currentMission.origin || isSavingRef.current) return;
       try {
           const dbToll = Math.max(0, currentMission.toll_value ?? 0);
           const dbTollProv = Math.max(0, currentMission.toll_value_provider != null ? currentMission.toll_value_provider : dbToll);
@@ -206,7 +207,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
   };
 
   const loadData = async () => {
-      if (!initialMission?.id) return;
+      if (!initialMission?.id || isSavingRef.current) return;
       setIsLoading(true);
       try {
           const clientName = initialMission.originalClientName || initialMission.client;
@@ -258,7 +259,8 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                   autoCalculateToll(fullMission.origin, fullMission.destination, fullMission.id);
               }
 
-              if (mRes.data.billing_approved && (savedRev > 0 || savedCost > 0)) {
+              const hasVerifiedOrApproved = mRes.data.billing_approved || mRes.data.billing_verified_by;
+              if (hasVerifiedOrApproved && (savedRev > 0 || savedCost > 0)) {
                   setUseSavedValues(true);
                   const totalRev = savedRev + dbToll;
                   const totalCost = savedCost + dbTollProvider;
@@ -325,6 +327,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
   const handleSaveOpsData = async () => {
       if (!mission) return;
       setIsUpdating(true);
+      isSavingRef.current = true;
       try {
           const updatePayload: any = {};
           if (editStartKm) updatePayload.start_km = parseFloat(editStartKm) || null;
@@ -342,8 +345,9 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
               updatePayload.status = 'Concluída';
           }
 
-          const { error } = await supabase.from('missions').update(updatePayload).eq('id', mission.id);
+          const { error, data: confirmedRow } = await supabase.from('missions').update(updatePayload).eq('id', mission.id).select('id, start_km, end_km, status, last_update').single();
           if (error) throw error;
+          if (!confirmedRow) throw new Error('Falha na persistência: registro não retornado após UPDATE');
 
           await supabase.from('system_logs').insert([{
               user_name: updatePayload.updated_by || 'Usuário',
@@ -366,7 +370,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
           if (onUpdate) onUpdate();
       } catch (e: any) {
           showNotification('Erro', e.message || 'Falha ao salvar dados operacionais.', 'error');
-      } finally { setIsUpdating(false); }
+      } finally { setIsUpdating(false); isSavingRef.current = false; }
   };
 
   useEffect(() => { if (isOpen) loadData(); }, [isOpen]);
@@ -391,7 +395,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
 
     useEffect(() => {
       if (financialData && mission) {
-          if (!useSavedValuesRef.current) {
+          if (!useSavedValuesRef.current && !isSavingRef.current) {
               setRevenueInput(financialData.client.total.toLocaleString('pt-BR', {minimumFractionDigits: 2}));
               setCostInput(financialData.provider.total.toLocaleString('pt-BR', {minimumFractionDigits: 2}));
           }
@@ -522,6 +526,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
   const handleUpdate = async (approve: boolean) => {
       if (!mission) return;
       setIsUpdating(true);
+      isSavingRef.current = true;
       try {
           const userData = JSON.parse(localStorage.getItem('userData') || '{}');
           const userName = userData.name || 'Usuário';
@@ -579,12 +584,18 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
               last_update: new Date().toISOString()
           };
 
-          let { error } = await supabase.from('missions').update({ ...basePayload, toll_value_provider: tollProv }).eq('id', mission.id);
-          if (error && error.message?.includes('toll_value_provider')) {
-              const fallback = await supabase.from('missions').update(basePayload).eq('id', mission.id);
-              error = fallback.error;
+          let result = await supabase.from('missions').update({ ...basePayload, toll_value_provider: tollProv }).eq('id', mission.id).select('id, revenue_value, cost_value, toll_value, last_update').single();
+          if (result.error && result.error.message?.includes('toll_value_provider')) {
+              result = await supabase.from('missions').update(basePayload).eq('id', mission.id).select('id, revenue_value, cost_value, toll_value, last_update').single();
           }
-          if (error) throw error;
+          if (result.error) throw result.error;
+          if (!result.data) throw new Error('Falha na persistência: registro não retornado após UPDATE');
+          
+          const savedRevCheck = safeNumber(result.data.revenue_value);
+          const savedTollCheck = safeNumber(result.data.toll_value);
+          if (Math.abs(savedRevCheck - revServiceOnly) > 0.01 || Math.abs(savedTollCheck - toll) > 0.01) {
+              console.error('[AUDIT] Divergência pós-salvamento detectada!', { esperado: { rev: revServiceOnly, toll }, banco: { rev: savedRevCheck, toll: savedTollCheck } });
+          }
           
           if (isFullyApproved && manualClientTableId) {
               const routeKey = `${mission.client}|${mission.origin}|${mission.destination}`.toUpperCase();
@@ -638,6 +649,8 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
 
           setApprovalLog(newLog);
           
+          setUseSavedValues(true);
+
           if (approve) {
               showNotification('Sucesso', isFullyApproved ? 'Faturamento 100% Aprovado! (Auditor + Financeiro + Diretoria)' : `${label} — Aguardando demais aprovações`, 'success');
           } else {
@@ -646,7 +659,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
           
           if (onUpdate) onUpdate();
           if (!approve || isFullyApproved) onClose();
-      } catch (e: any) { alert(e.message); } finally { setIsUpdating(false); }
+      } catch (e: any) { alert(e.message); } finally { setIsUpdating(false); isSavingRef.current = false; }
   };
 
   const filteredProviderTables = useMemo(() => {
@@ -772,7 +785,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                                 origin: editOrigin.trim(), 
                                                 destination: editDestination.trim(),
                                                 last_update: new Date().toISOString()
-                                            }).eq('id', mission.id);
+                                            }).eq('id', mission.id).select('id').single();
                                             if (error) throw error;
                                             const userData = JSON.parse(localStorage.getItem('userData') || '{}');
                                             await supabase.from('system_logs').insert([{
