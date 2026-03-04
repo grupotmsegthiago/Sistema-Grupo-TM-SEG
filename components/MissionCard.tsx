@@ -237,7 +237,6 @@ const MissionCardComponent: React.FC<MissionCardProps> = ({
                     entity_id: mission.id,
                     action_type: 'evidence_upload',
                     details: JSON.stringify({ publicUrl: urlData.publicUrl, uploadedBy: userData.name || 'Sistema', uploadedAt: new Date().toISOString(), fileName: file.name }),
-                    created_by: userData.name || 'Sistema',
                     created_at: new Date().toISOString()
                 });
                 if (logError) {
