@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
-import { ArrowLeft, Save, UserCog, Building2, Shield, Info, Loader2, Key, RefreshCw, Eye, EyeOff, Copy, Briefcase, AlertTriangle, CheckSquare, Square, Mail, LayoutDashboard, MapPin, Truck, Route, Users, FileText, BarChart3, Bell, FileBarChart } from 'lucide-react';
+import { ArrowLeft, Save, UserCog, Building2, Shield, Info, Loader2, Key, RefreshCw, Eye, EyeOff, Copy, Briefcase, AlertTriangle, CheckSquare, Square, Mail, LayoutDashboard, MapPin, Truck, Route, Users, FileText, BarChart3, Bell, FileBarChart, CheckCircle2, MessageCircle, X } from 'lucide-react';
 import { Client, AccessProfile, ProviderData } from '../types';
 import { supabase } from '../lib/supabase';
 import { logAction } from '../lib/logger';
@@ -49,6 +49,8 @@ const UserForm: React.FC<UserFormProps> = ({ onBack, userType, id }) => {
   const [showPassword, setShowPassword] = useState(false);
   const [emailError, setEmailError] = useState('');
   const [generatedPass, setGeneratedPass] = useState('');
+  const [createdCredentials, setCreatedCredentials] = useState<{ name: string; email: string; password: string; type: string } | null>(null);
+  const [credentialsCopied, setCredentialsCopied] = useState(false);
   const [selectedPermissions, setSelectedPermissions] = useState<string[]>(
     CLIENT_PERMISSION_OPTIONS.filter(p => p.default).map(p => p.id)
   );
@@ -179,6 +181,14 @@ const UserForm: React.FC<UserFormProps> = ({ onBack, userType, id }) => {
                   await logAction('CREATE', 'User', data[0].id, `Novo usuário: ${payload.name}`);
               }
               showNotification('Sucesso', 'Usuário criado com sucesso.', 'success');
+              setCreatedCredentials({
+                  name: payload.name,
+                  email: payload.email,
+                  password: payload.password,
+                  type: userType === 'client' ? 'Cliente' : userType === 'provider' ? 'Fornecedor' : 'Interno'
+              });
+              setCredentialsCopied(false);
+              return;
           }
           onBack();
       } catch (e: any) {
@@ -372,6 +382,78 @@ const UserForm: React.FC<UserFormProps> = ({ onBack, userType, id }) => {
               </button>
           </div>
       </form>
+
+      {createdCredentials && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4" data-testid="modal-credentials">
+              <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full overflow-hidden animate-in zoom-in-95">
+                  <div className="bg-gradient-to-r from-emerald-600 to-emerald-700 p-6 text-white">
+                      <div className="flex items-center gap-3">
+                          <div className="p-2 bg-white/20 rounded-xl"><CheckCircle2 size={24} /></div>
+                          <div>
+                              <h3 className="text-lg font-black uppercase tracking-tight">Usuário Criado com Sucesso</h3>
+                              <p className="text-emerald-100 text-xs font-medium mt-0.5">Copie as credenciais abaixo para enviar ao usuário</p>
+                          </div>
+                      </div>
+                  </div>
+                  <div className="p-6 space-y-4">
+                      <div className="bg-gray-50 rounded-xl p-4 border border-gray-200 space-y-3">
+                          <div className="flex items-center gap-2 text-xs font-bold text-gray-400 uppercase tracking-wider"><UserCog size={14} /> Dados do Acesso</div>
+                          <div className="space-y-2">
+                              <div className="flex justify-between items-center"><span className="text-xs font-bold text-gray-500">Nome:</span><span className="text-sm font-black text-gray-900">{createdCredentials.name}</span></div>
+                              <div className="flex justify-between items-center"><span className="text-xs font-bold text-gray-500">E-mail:</span><span className="text-sm font-bold text-gray-900 font-mono">{createdCredentials.email}</span></div>
+                              <div className="flex justify-between items-center"><span className="text-xs font-bold text-gray-500">Senha:</span><span className="text-sm font-black text-gray-900 font-mono tracking-wider">{createdCredentials.password}</span></div>
+                              <div className="flex justify-between items-center"><span className="text-xs font-bold text-gray-500">Tipo:</span><span className="text-sm font-bold text-gray-900">{createdCredentials.type}</span></div>
+                          </div>
+                      </div>
+
+                      <div className="bg-amber-50 rounded-xl p-3 border border-amber-200 flex items-start gap-2">
+                          <AlertTriangle size={14} className="text-amber-600 mt-0.5 flex-shrink-0" />
+                          <p className="text-[11px] font-medium text-amber-800">No primeiro acesso, o sistema solicitará a troca de senha por segurança.</p>
+                      </div>
+
+                      <div className="bg-gray-900 rounded-xl p-4 text-white font-mono text-xs leading-relaxed whitespace-pre-wrap select-all" data-testid="text-credentials-message">
+{`🔐 *GRUPO TMSEG — Acesso ao Sistema*
+
+Olá *${createdCredentials.name}*,
+
+Seu acesso ao sistema foi criado com sucesso.
+
+📧 *Login:* ${createdCredentials.email}
+🔑 *Senha:* ${createdCredentials.password}
+🌐 *Link:* ${window.location.origin}
+
+⚠️ No primeiro acesso, você deverá trocar sua senha por segurança.
+
+Em caso de dúvidas, entre em contato com o suporte.
+
+_Grupo TMSEG — Gestão Operacional_`}
+                      </div>
+
+                      <div className="flex gap-3">
+                          <button
+                              data-testid="button-copy-credentials"
+                              onClick={() => {
+                                  const msg = `🔐 *GRUPO TMSEG — Acesso ao Sistema*\n\nOlá *${createdCredentials.name}*,\n\nSeu acesso ao sistema foi criado com sucesso.\n\n📧 *Login:* ${createdCredentials.email}\n🔑 *Senha:* ${createdCredentials.password}\n🌐 *Link:* ${window.location.origin}\n\n⚠️ No primeiro acesso, você deverá trocar sua senha por segurança.\n\nEm caso de dúvidas, entre em contato com o suporte.\n\n_Grupo TMSEG — Gestão Operacional_`;
+                                  navigator.clipboard.writeText(msg);
+                                  setCredentialsCopied(true);
+                                  setTimeout(() => setCredentialsCopied(false), 3000);
+                              }}
+                              className={`flex-1 flex items-center justify-center gap-2 px-4 py-3 rounded-xl text-sm font-black uppercase transition-all ${credentialsCopied ? 'bg-emerald-600 text-white' : 'bg-gray-900 text-white hover:bg-gray-800'}`}
+                          >
+                              {credentialsCopied ? <><CheckCircle2 size={16} /> Copiado!</> : <><Copy size={16} /> Copiar Mensagem</>}
+                          </button>
+                          <button
+                              data-testid="button-close-credentials"
+                              onClick={() => { setCreatedCredentials(null); onBack(); }}
+                              className="px-6 py-3 border border-gray-300 rounded-xl text-sm font-bold text-gray-600 uppercase hover:bg-gray-50 transition-all"
+                          >
+                              Fechar
+                          </button>
+                      </div>
+                  </div>
+              </div>
+          </div>
+      )}
     </div>
   );
 };
