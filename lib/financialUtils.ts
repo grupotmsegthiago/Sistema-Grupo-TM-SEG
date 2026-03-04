@@ -322,13 +322,21 @@ export const calculateMissionFinancials = (
         const normalizedOriginAddr = normalize(originAddress);
         const ufCode = (originUFCode || '').toUpperCase();
 
+        const hasTypeSpecificTables = candidateTables.some(t => {
+            const op = normalize(t.operation_type || '');
+            return op.includes('VELADA') || op.includes('CARACTERIZADA');
+        });
+
         const scoredTables = candidateTables.map(t => {
             const tableOp = normalize(t.operation_type || '');
             let score = 0;
             let matchType = 'Genérico';
 
-            if (normalizedType && !tableOp.includes(normalizedType)) {
-                 score -= 500; 
+            if (hasTypeSpecificTables && normalizedType && !tableOp.includes(normalizedType)) {
+                if (tableOp.includes('VELADA') || tableOp.includes('CARACTERIZADA')) {
+                    score -= 5000;
+                    matchType = `Tipo Incompatível`;
+                }
             }
             
             if (agentAware && agentAware.isSpecial) {
@@ -371,39 +379,63 @@ export const calculateMissionFinancials = (
                 }
             }
 
-            if (score < 2000) {
-                if (normalizedRegion && tableOp.includes(normalizedRegion)) {
-                    score += 500;
-                    if (matchType === 'Genérico') matchType = `Região (${region})`;
-                }
-                else if (normalizedRegion === 'SUDESTE' && (tableOp.includes('SP') || tableOp.includes('SAO PAULO'))) {
-                    score += 250;
-                    if (matchType === 'Genérico') matchType = 'Estado (SP)';
-                }
-            }
-
             if (tableOp.includes('EXCETO')) {
                 if (ufCode === 'MG' && tableOp.includes('EXCETO MG')) {
-                    score -= 3000;
+                    score -= 5000;
                     matchType = 'Bloqueado (EXCETO MG)';
-                }
-                if (ufCode === 'ES' && (tableOp.includes('EXCETO') && tableOp.includes('ES'))) {
-                    score -= 3000;
-                    matchType = 'Bloqueado (EXCETO ES)';
+                } else if (ufCode === 'ES') {
+                    const excetoIdx = tableOp.indexOf('EXCETO');
+                    const afterExceto = tableOp.substring(excetoIdx);
+                    if (afterExceto.includes('MG') && afterExceto.includes('ES')) {
+                        score -= 5000;
+                        matchType = 'Bloqueado (EXCETO ES)';
+                    }
                 }
             }
 
             if (ufCode && (ufCode === 'MG' || ufCode === 'ES')) {
                 if (tableOp.includes('MG') && tableOp.includes('ES') && !tableOp.includes('EXCETO')) {
-                    score += 800;
-                    matchType = `UF Específico (${ufCode})`;
+                    score += 1500;
+                    matchType = `UF Específico MG/ES (${ufCode})`;
                 }
             }
 
+            if (score < 2000) {
+                if (ufCode && ufCode.length === 2) {
+                    const ufInOp = tableOp.match(/\b(SP|RJ|MG|ES|PR|SC|RS|BA|PE|CE|RN|PB|AL|SE|PI|MA|AM|PA|AC|RO|RR|AP|TO|DF|GO|MT|MS)\b/g);
+                    if (ufInOp && ufInOp.includes(ufCode) && !tableOp.includes('EXCETO')) {
+                        score += 1200;
+                        if (matchType === 'Genérico') matchType = `UF (${ufCode})`;
+                    }
+                }
+
+                if (normalizedRegion && tableOp.includes(normalizedRegion)) {
+                    if (!tableOp.includes('EXCETO')) {
+                        score += 800;
+                        if (matchType === 'Genérico') matchType = `Região (${region})`;
+                    }
+                }
+                else if (normalizedRegion === 'SUDESTE') {
+                    if (ufCode === 'SP' && (tableOp.includes('SP') || tableOp.includes('SAO PAULO'))) {
+                        score += 600;
+                        if (matchType === 'Genérico') matchType = 'Estado (SP)';
+                    } else if (ufCode === 'RJ' && (tableOp.includes('RJ') || tableOp.includes('RIO DE JANEIRO'))) {
+                        score += 600;
+                        if (matchType === 'Genérico') matchType = 'Estado (RJ)';
+                    }
+                }
+            }
+
+            const isNivelBrasil = tableOp.includes('NIVEL BRASIL') || tableOp.includes('BRASIL');
+            const isRegionalTable = tableOp.includes('SUDESTE') || tableOp.includes('SUL') || tableOp.includes('CENTRO') || tableOp.includes('NORDESTE') || tableOp.includes('NORTE');
+            if (isRegionalTable && score >= 800 && isNivelBrasil) {
+                score -= 100;
+            }
+
             if (t.franchise_km >= dist) {
-                score += 10;
+                score += 50;
             } else {
-                score -= 5;
+                score -= 10;
             }
 
             return { ...t, score, matchType };
