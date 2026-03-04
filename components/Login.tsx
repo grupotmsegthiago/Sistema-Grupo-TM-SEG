@@ -136,7 +136,7 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
   };
 
   return (
-    <div className="flex font-sans overflow-y-auto relative h-screen-ios">
+    <div className="flex font-sans overflow-y-auto relative min-h-screen min-h-[100dvh]">
 
       <div className="absolute inset-0 z-0">
         {bgImages.map((img, idx) => (
@@ -167,8 +167,8 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
         </div>
       </div>
 
-      <div className="relative z-10 flex items-center w-full lg:w-[45%] min-h-full">
-        <div className="w-full max-w-md mx-auto px-8 md:px-12 py-12">
+      <div className="relative z-10 flex items-center w-full lg:w-[45%] min-h-full py-safe">
+        <div className="w-full max-w-md mx-auto px-6 sm:px-8 md:px-12 py-8 sm:py-12">
 
           <div className="mb-10">
             <div className="flex items-center gap-4 mb-8">
@@ -302,7 +302,7 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
             </div>
           </div>
 
-          <div className="mt-6 grid grid-cols-3 gap-3">
+          <div className="mt-6 grid grid-cols-3 gap-2 sm:gap-3">
             {[
               { label: 'Intermediação de Escolta', icon: Shield },
               { label: 'Gestão Operacional', icon: Radio },

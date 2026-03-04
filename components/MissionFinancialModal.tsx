@@ -4,7 +4,7 @@ import { Mission, ClientPriceTable, ProviderCostTable, MissionStatus, Client } f
 import { supabase } from '../lib/supabase';
 import { useNotification } from '../lib/NotificationContext';
 import { calculateMissionFinancials, auditMissionFinancials } from '../lib/financialUtils';
-import { X, Calculator, Loader2, Save, CheckCircle2, TrendingUp, Landmark, Zap, RotateCcw, Building2, Briefcase, Plus, Users, MapPin, ArrowRight, BrainCircuit, AlertTriangle, AlertCircle, Edit2, Info, RefreshCw, Clock } from 'lucide-react';
+import { X, Calculator, Loader2, Save, CheckCircle2, TrendingUp, Landmark, Zap, RotateCcw, Building2, Briefcase, Plus, Users, MapPin, ArrowRight, BrainCircuit, AlertTriangle, AlertCircle, Edit2, Info, RefreshCw, Clock, Pencil } from 'lucide-react';
 import ProviderCostForm from './ProviderCostForm';
 import ClientPriceForm from './ClientPriceForm';
 import { formatProviderName } from '../lib/utils';
@@ -98,12 +98,16 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
   const [editStartTime, setEditStartTime] = useState('');
   const [editEndTime, setEditEndTime] = useState('');
   const [isEditingOpsData, setIsEditingOpsData] = useState(false);
+  const [editOrigin, setEditOrigin] = useState('');
+  const [editDestination, setEditDestination] = useState('');
+  const [isEditingRoute, setIsEditingRoute] = useState(false);
+  const [isSavingRoute, setIsSavingRoute] = useState(false);
 
   const canEditOpsData = useMemo(() => {
     try {
       const u = JSON.parse(localStorage.getItem('userData') || '{}');
       const roleLower = (u.role || '').toLowerCase();
-      return ['diretoria', 'administrador'].includes(roleLower) || u.permissions?.includes('*');
+      return ['diretoria', 'administrador', 'avançado', 'avancado'].includes(roleLower) || u.permissions?.includes('*');
     } catch { return false; }
   }, []);
   
@@ -697,9 +701,83 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                     </div>
                     <div className="flex items-center gap-2 text-[10px] font-bold text-gray-400 uppercase min-w-0 flex-1 overflow-hidden">
                         <MapPin size={10} className="text-red-500 shrink-0" /> 
-                        <span className="truncate flex-1 min-w-0">{mission.origin}</span>
-                        <ArrowRight size={10} className="shrink-0" />
-                        <span className="truncate flex-1 min-w-0">{mission.destination}</span>
+                        {isEditingRoute ? (
+                            <>
+                                <input 
+                                    type="text" 
+                                    value={editOrigin} 
+                                    onChange={e => setEditOrigin(e.target.value.toUpperCase())}
+                                    className="bg-white/10 border border-white/30 rounded px-2 py-1 text-[10px] font-bold text-white uppercase flex-1 min-w-0 outline-none focus:border-red-400"
+                                    placeholder="Origem"
+                                    data-testid="input-edit-origin"
+                                />
+                                <ArrowRight size={10} className="shrink-0" />
+                                <input 
+                                    type="text" 
+                                    value={editDestination} 
+                                    onChange={e => setEditDestination(e.target.value.toUpperCase())}
+                                    className="bg-white/10 border border-white/30 rounded px-2 py-1 text-[10px] font-bold text-white uppercase flex-1 min-w-0 outline-none focus:border-red-400"
+                                    placeholder="Destino"
+                                    data-testid="input-edit-destination"
+                                />
+                                <button 
+                                    onClick={async () => {
+                                        if (!editOrigin.trim() || !editDestination.trim()) return;
+                                        setIsSavingRoute(true);
+                                        try {
+                                            const { error } = await supabase.from('missions').update({ 
+                                                origin: editOrigin.trim(), 
+                                                destination: editDestination.trim(),
+                                                last_update: new Date().toISOString()
+                                            }).eq('id', mission.id);
+                                            if (error) throw error;
+                                            const userData = JSON.parse(localStorage.getItem('userData') || '{}');
+                                            await supabase.from('system_logs').insert([{
+                                                user_name: userData.name || 'Sistema',
+                                                action_type: 'UPDATE',
+                                                entity: 'Mission',
+                                                entity_id: mission.id,
+                                                details: JSON.stringify({ field: 'route', oldOrigin: mission.origin, newOrigin: editOrigin.trim(), oldDestination: mission.destination, newDestination: editDestination.trim() })
+                                            }]);
+                                            mission.origin = editOrigin.trim();
+                                            mission.destination = editDestination.trim();
+                                            setIsEditingRoute(false);
+                                            showNotification('Rota Atualizada', `${editOrigin.trim()} → ${editDestination.trim()}`, 'success');
+                                        } catch (err: any) {
+                                            showNotification('Erro', err.message, 'error');
+                                        }
+                                        setIsSavingRoute(false);
+                                    }}
+                                    disabled={isSavingRoute}
+                                    className="flex items-center gap-1 px-2 py-1 bg-emerald-600 text-white rounded text-[9px] font-black hover:bg-emerald-700 shrink-0"
+                                    data-testid="button-save-route"
+                                >
+                                    {isSavingRoute ? <Loader2 size={10} className="animate-spin" /> : <Save size={10} />} OK
+                                </button>
+                                <button 
+                                    onClick={() => setIsEditingRoute(false)}
+                                    className="p-1 text-gray-400 hover:text-white shrink-0"
+                                >
+                                    <X size={12} />
+                                </button>
+                            </>
+                        ) : (
+                            <>
+                                <span className="truncate flex-1 min-w-0">{mission.origin}</span>
+                                <ArrowRight size={10} className="shrink-0" />
+                                <span className="truncate flex-1 min-w-0">{mission.destination}</span>
+                                {canEditOpsData && (
+                                    <button 
+                                        onClick={() => { setEditOrigin(mission.origin || ''); setEditDestination(mission.destination || ''); setIsEditingRoute(true); }}
+                                        className="p-1 text-gray-500 hover:text-white transition-colors shrink-0"
+                                        title="Editar Origem e Destino"
+                                        data-testid="button-edit-route"
+                                    >
+                                        <Pencil size={10} />
+                                    </button>
+                                )}
+                            </>
+                        )}
                     </div>
                 </div>
             </div>
