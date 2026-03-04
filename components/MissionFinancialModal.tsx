@@ -42,6 +42,12 @@ const parseNumber = (val: string | number | undefined | null): number => {
     return isNaN(parsed) ? 0 : parsed;
 };
 
+const formatHoursHHMM = (decimalHours: number): string => {
+    const h = Math.floor(decimalHours);
+    const m = Math.round((decimalHours - h) * 60);
+    return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}`;
+};
+
 const LABEL_CLASS = "text-[10px] font-black text-gray-400 uppercase mb-1.5 block tracking-widest";
 
 const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: initialMission, onUpdate }) => {
@@ -425,6 +431,15 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
           
           const newLog = [...approvalLog];
           if (approve) {
+              const existingStages = newLog.map(l => l.stage);
+              if (stage === 'diretoria' && (!existingStages.includes('auditor') || !existingStages.includes('financeiro'))) {
+                  const missing = [];
+                  if (!existingStages.includes('auditor')) missing.push('Auditor (Daniel)');
+                  if (!existingStages.includes('financeiro')) missing.push('Financeiro (Barbara)');
+                  showNotification('Bloqueado', `Aguardando aprovação: ${missing.join(' e ')}`, 'error');
+                  setIsUpdating(false);
+                  return;
+              }
               const alreadyApproved = newLog.some(l => l.stage === stage);
               if (!alreadyApproved) {
                   const logEntry = { user: userName, role: userRole, stage, date: new Date().toISOString() };
@@ -897,7 +912,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                             +{formatCurrency(financialData.client.extraHrVal)}
                                         </p>
                                         <p className="text-[9px] text-gray-400 font-mono leading-tight mt-0.5">
-                                            {financialData.client.excessHours.toFixed(4)}h × R${financialData.client.unitPriceHour.toFixed(2)}
+                                            {formatHoursHHMM(financialData.client.excessHours)} × R${financialData.client.unitPriceHour.toFixed(2)}
                                         </p>
                                     </div>
                                     <div className="flex items-center gap-1 mt-2 pt-2 border-t border-gray-200">
@@ -1033,7 +1048,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                             +{formatCurrency(financialData.provider.extraHrVal)}
                                         </p>
                                         <p className="text-[9px] text-gray-400 font-mono leading-tight mt-0.5">
-                                            {financialData.provider.excessHours.toFixed(4)}h × R${financialData.provider.unitCostHour.toFixed(2)}
+                                            {formatHoursHHMM(financialData.provider.excessHours)} × R${financialData.provider.unitCostHour.toFixed(2)}
                                         </p>
                                     </div>
                                     <div className="flex items-center gap-1 mt-2 pt-2 border-t border-gray-200">
@@ -1124,7 +1139,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                         <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5">
                                             <span>{formatCurrency(financialData.client.base)} <span className={isDivergent ? 'text-amber-400' : 'text-green-400'}>(base)</span></span>
                                             <span>+ {formatCurrency(financialData.client.extraKmVal)} <span className={isDivergent ? 'text-amber-400' : 'text-green-400'}>(km{financialData.client.excessKm > 0 ? `: ${financialData.client.excessKm.toFixed(1)}×R$${financialData.client.unitPriceKm.toFixed(2)}` : ''})</span></span>
-                                            <span>+ {formatCurrency(financialData.client.extraHrVal)} <span className={isDivergent ? 'text-amber-400' : 'text-green-400'}>(hora{financialData.client.excessHours > 0 ? `: ${financialData.client.excessHours.toFixed(4)}h×R$${financialData.client.unitPriceHour.toFixed(2)}` : ''})</span></span>
+                                            <span>+ {formatCurrency(financialData.client.extraHrVal)} <span className={isDivergent ? 'text-amber-400' : 'text-green-400'}>(hora{financialData.client.excessHours > 0 ? `: ${formatHoursHHMM(financialData.client.excessHours)}×R$${financialData.client.unitPriceHour.toFixed(2)}` : ''})</span></span>
                                             {ibl > 0 && <span>+ {formatCurrency(ibl)} <span className={isDivergent ? 'text-amber-400' : 'text-green-400'}>(IBL 12%)</span></span>}
                                             <span>+ {formatCurrency(parseNumber(tollInput))} <span className={isDivergent ? 'text-amber-400' : 'text-green-400'}>(pedágio)</span></span>
                                             <span className="font-black">= {formatCurrency(calcTotal)}</span>
@@ -1176,7 +1191,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                         <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5">
                                             <span>{formatCurrency(financialData.provider.base)} <span className={isDivergent ? 'text-amber-400' : 'text-blue-400'}>(base)</span></span>
                                             <span>+ {formatCurrency(financialData.provider.extraKmVal)} <span className={isDivergent ? 'text-amber-400' : 'text-blue-400'}>(km{financialData.provider.excessKm > 0 ? `: ${financialData.provider.excessKm.toFixed(1)}×R$${financialData.provider.unitCostKm.toFixed(2)}` : ''})</span></span>
-                                            <span>+ {formatCurrency(financialData.provider.extraHrVal)} <span className={isDivergent ? 'text-amber-400' : 'text-blue-400'}>(hora{financialData.provider.excessHours > 0 ? `: ${financialData.provider.excessHours.toFixed(4)}h×R$${financialData.provider.unitCostHour.toFixed(2)}` : ''})</span></span>
+                                            <span>+ {formatCurrency(financialData.provider.extraHrVal)} <span className={isDivergent ? 'text-amber-400' : 'text-blue-400'}>(hora{financialData.provider.excessHours > 0 ? `: ${formatHoursHHMM(financialData.provider.excessHours)}×R$${financialData.provider.unitCostHour.toFixed(2)}` : ''})</span></span>
                                             <span>+ {formatCurrency(parseNumber(tollProviderInput))} <span className={isDivergent ? 'text-amber-400' : 'text-blue-400'}>(pedágio)</span></span>
                                             <span className="font-black">= {formatCurrency(calcTotal)}</span>
                                         </div>
