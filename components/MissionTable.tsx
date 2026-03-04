@@ -500,9 +500,8 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
     
     const filteredBySpecialCriteria = useMemo(() => {
         const isSearching = searchTerm && searchTerm.trim().length > 0;
-        const hasActiveSpecialFilters = showPendingOnly || showUnapprovedOnly || showTomorrowOnly;
+        const hasActiveSpecialFilters = showPendingOnly || showUnapprovedOnly || showTomorrowOnly || showMyApprovalOnly;
 
-        // If any special filter or search is active, look at ALL missions, not just period
         const sourceMissions = (isSearching || hasActiveSpecialFilters) ? allMissions : periodMissions;
 
         return sourceMissions.filter(mission => {
@@ -540,7 +539,7 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
 
             return true;
         });
-    }, [allMissions, periodMissions, searchTerm, showPendingOnly, showUnapprovedOnly, showTomorrowOnly]);
+    }, [allMissions, periodMissions, searchTerm, showPendingOnly, showUnapprovedOnly, showTomorrowOnly, showMyApprovalOnly]);
 
     // Status Counts based on the FILTERED set (to sync counters with visible criteria)
     const statusCounts = useMemo(() => {
@@ -622,16 +621,15 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
 
     const myApprovalCount = myApprovalMissions.length;
   
-    // Final List: Apply Status Tab Filter on top of special criteria
     const filteredMissions = useMemo(() => {
         const isSearching = searchTerm && searchTerm.trim().length > 0;
         const hasActiveSpecialFilters = showPendingOnly || showUnapprovedOnly || showTomorrowOnly || showMyApprovalOnly;
 
-        let baseList = filteredBySpecialCriteria;
         if (showMyApprovalOnly && myApprovalMissions.length > 0) {
-            const myIds = new Set(myApprovalMissions.map(m => m.id));
-            baseList = baseList.filter(m => myIds.has(m.id));
+            return myApprovalMissions;
         }
+
+        let baseList = filteredBySpecialCriteria;
 
         return baseList.filter(mission => {
             if (filterStatus !== 'ALL') {
