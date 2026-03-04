@@ -264,8 +264,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                   autoCalculateToll(fullMission.origin, fullMission.destination, fullMission.id);
               }
 
-              const hasVerifiedOrApproved = mRes.data.billing_approved || mRes.data.billing_verified_by;
-              if (hasVerifiedOrApproved && (savedRev > 0 || savedCost > 0)) {
+              if (mRes.data.billing_approved && (savedRev > 0 || savedCost > 0)) {
                   setUseSavedValues(true);
                   const totalRev = savedRev + dbToll;
                   const totalCost = savedCost + dbTollProvider;
