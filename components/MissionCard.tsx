@@ -1,9 +1,10 @@
 
-import React, { memo, useMemo, useState } from 'react';
+import React, { memo, useMemo, useState, useRef, useCallback } from 'react';
 import { Mission, MissionStatus, ClientPriceTable, ProviderCostTable, Client } from '../types';
+import { supabase } from '../lib/supabase';
 import { 
   Truck, User, Phone, EyeOff, ShieldCheck, UserCheck, CarFront, 
-  Map, Pencil, Eye, Check, Trash2, FileText, Clock, Building2, Navigation, Hourglass, History, Mail, MapPin, AlertOctagon, Printer, FileSearch, TrendingUp, TrendingDown, DollarSign, Layers, Calculator, Flag, Activity, Briefcase, Shield, MessageCircle, ImageOff, Image, X
+  Map, Pencil, Eye, Check, Trash2, FileText, Clock, Building2, Navigation, Hourglass, History, Mail, MapPin, AlertOctagon, Printer, FileSearch, TrendingUp, TrendingDown, DollarSign, Layers, Calculator, Flag, Activity, Briefcase, Shield, MessageCircle, ImageOff, Image, X, Upload, Loader2
 } from 'lucide-react';
 
 const WhatsAppIcon = ({ size = 14 }: { size?: number }) => (
