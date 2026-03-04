@@ -409,8 +409,24 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
       const hasAuditor = stages.includes('auditor');
       const hasFinanceiro = stages.includes('financeiro');
       const hasDiretoria = stages.includes('diretoria');
-      return { hasAuditor, hasFinanceiro, hasDiretoria, isFullyApproved: hasAuditor && hasFinanceiro && hasDiretoria };
-  }, [approvalLog]);
+      const isFullyApproved = hasAuditor && hasFinanceiro && hasDiretoria;
+      const missing: string[] = [];
+      if (!hasAuditor) missing.push('Daniel');
+      if (!hasFinanceiro) missing.push('Barbara');
+      if (!hasDiretoria) missing.push('Diretoria');
+      let waitingDays = 0;
+      if (approvalLog.length > 0) {
+          const lastDate = approvalLog.reduce((latest, l) => {
+              const d = new Date(l.date).getTime();
+              return d > latest ? d : latest;
+          }, 0);
+          waitingDays = Math.floor((Date.now() - lastDate) / (1000 * 60 * 60 * 24));
+      } else if (mission?.endTime) {
+          waitingDays = Math.floor((Date.now() - new Date(mission.endTime).getTime()) / (1000 * 60 * 60 * 24));
+      }
+      const hasPartial = (hasAuditor || hasFinanceiro) && !isFullyApproved;
+      return { hasAuditor, hasFinanceiro, hasDiretoria, isFullyApproved, missing, waitingDays, hasPartial };
+  }, [approvalLog, mission?.endTime]);
 
   const handleUpdate = async (approve: boolean) => {
       if (!mission) return;
@@ -1276,17 +1292,24 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                 <button 
                                     onClick={() => handleUpdate(true)} 
                                     disabled={isUpdating || isZeroCostError || !tollConfirmed || mission?.status === MissionStatus.PENDING} 
-                                    className={`px-8 py-3 rounded-xl font-black uppercase text-xs shadow-lg flex items-center justify-center gap-2 transition-all active:scale-95 h-12 ${(isZeroCostError || !tollConfirmed || mission?.status === MissionStatus.PENDING) ? 'bg-gray-400 cursor-not-allowed text-gray-200' : 'bg-blue-600 hover:bg-blue-700 text-white shadow-blue-200'}`}
+                                    className={`px-8 py-3 rounded-xl font-black uppercase text-xs shadow-lg flex flex-col items-center justify-center gap-1 transition-all active:scale-95 min-h-[48px] ${(isZeroCostError || !tollConfirmed || mission?.status === MissionStatus.PENDING) ? 'bg-gray-400 cursor-not-allowed text-gray-200' : currentApprovalStatus.hasPartial ? 'bg-gray-300 text-gray-600 border border-gray-400 cursor-pointer hover:bg-gray-400' : 'bg-blue-600 hover:bg-blue-700 text-white shadow-blue-200'}`}
                                     data-testid="button-approve-billing"
                                 >
-                                    {isUpdating ? <Loader2 size={16} className="animate-spin" /> : <CheckCircle2 size={16} />} 
-                                    {mission?.status === MissionStatus.PENDING 
-                                        ? 'OS Pendente — Não Aprovável' 
-                                        : !tollConfirmed 
-                                            ? 'Confirme o Pedágio' 
-                                            : currentApprovalStatus.isFullyApproved 
-                                                ? 'Já Aprovado (Completo)' 
-                                                : 'Aprovar Faturamento'}
+                                    <span className="flex items-center gap-2">
+                                        {isUpdating ? <Loader2 size={16} className="animate-spin" /> : <CheckCircle2 size={16} />} 
+                                        {mission?.status === MissionStatus.PENDING 
+                                            ? 'OS Pendente — Não Aprovável' 
+                                            : !tollConfirmed 
+                                                ? 'Confirme o Pedágio' 
+                                                : currentApprovalStatus.isFullyApproved 
+                                                    ? 'Já Aprovado (Completo)' 
+                                                    : 'Aprovar Faturamento'}
+                                    </span>
+                                    {currentApprovalStatus.hasPartial && !isZeroCostError && tollConfirmed && mission?.status !== MissionStatus.PENDING && (
+                                        <span className="text-[9px] font-bold text-gray-500 normal-case">
+                                            Aguardando: {currentApprovalStatus.missing.join(', ')} ({currentApprovalStatus.waitingDays}d)
+                                        </span>
+                                    )}
                                 </button>
                             </div>
                         </div>
