@@ -153,59 +153,7 @@ const PushNotificationManager = () => {
         }
     }, []);
 
-    if (!showTestBtn) return null;
-
-    const btnBg = testStatus === 'sent' ? '#16a34a' : testStatus === 'denied' || testStatus === 'no-api' ? '#dc2626' : testStatus === 'error' ? '#d97706' : '#1e40af';
-
-    return (
-        <div className="fixed bottom-4 right-4 z-[9999] flex flex-col items-end gap-2" style={{ maxWidth: '90vw' }}>
-            {diagMsg && (
-                <div className="bg-gray-900 text-white text-[11px] p-3 rounded-lg shadow-xl max-w-[280px] leading-relaxed">
-                    {diagMsg}
-                </div>
-            )}
-
-            {showDiagPanel && (
-                <div className="bg-gray-900 text-white text-[10px] p-3 rounded-lg shadow-xl max-w-[300px] leading-relaxed">
-                    <div className="flex justify-between items-center mb-2">
-                        <span className="font-bold text-xs">Diagnóstico Push</span>
-                        <button onClick={() => setShowDiagPanel(false)}><X size={14} /></button>
-                    </div>
-                    {getDiagnostics().map((line, i) => (
-                        <div key={i} className="py-0.5 border-b border-gray-700 last:border-0">{line}</div>
-                    ))}
-                </div>
-            )}
-
-            <div className="flex items-center gap-2">
-                <button
-                    onClick={() => setShowDiagPanel(!showDiagPanel)}
-                    className="p-2.5 rounded-full shadow-lg bg-gray-700 text-white active:scale-95 transition-all"
-                    data-testid="button-push-diag"
-                >
-                    <AlertTriangle size={14} />
-                </button>
-                <button
-                    onClick={sendTestNotification}
-                    data-testid="button-test-push"
-                    className="flex items-center gap-2 px-4 py-3 rounded-full shadow-lg text-white text-xs font-bold transition-all active:scale-95"
-                    style={{ background: btnBg }}
-                >
-                    {testStatus === 'sent' ? (
-                        <><BellRing size={16} className="animate-bounce" /> Enviada!</>
-                    ) : testStatus === 'denied' ? (
-                        <><Bell size={16} /> Negada</>
-                    ) : testStatus === 'no-api' ? (
-                        <><Bell size={16} /> Não suportado</>
-                    ) : testStatus === 'error' ? (
-                        <><Bell size={16} /> Erro</>
-                    ) : (
-                        <><Bell size={16} /> Testar Push</>
-                    )}
-                </button>
-            </div>
-        </div>
-    );
+    return null;
 };
 
 export default PushNotificationManager;
