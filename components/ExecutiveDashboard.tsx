@@ -255,8 +255,9 @@ const ExecutiveDashboard: React.FC<Props> = ({ missions, isDirector, clientTable
 
             const hasStoredRevenue = (m.revenue_value != null && m.revenue_value > 0);
             const hasStoredCost = (m.cost_value != null && m.cost_value > 0);
+            const isVerified = !!(m.billing_approved || m.billing_verified_by);
 
-            const hasSavedValues = (m.billing_approved || m.billing_verified_by) && (hasStoredRevenue || hasStoredCost);
+            const hasSavedValues = isVerified && (hasStoredRevenue || hasStoredCost || m.revenue_value === 0 || m.cost_value === 0);
             if (hasSavedValues) {
                 const rev = (m.revenue_value || 0) + Math.max(0, m.toll_value || 0);
                 const tollProv = Math.max(0, m.toll_value_provider != null ? m.toll_value_provider : (m.toll_value || 0));
@@ -301,7 +302,8 @@ const ExecutiveDashboard: React.FC<Props> = ({ missions, isDirector, clientTable
         const hasStoredRev = (fullMission.revenue_value != null && fullMission.revenue_value > 0);
         const hasStoredCost = (fullMission.cost_value != null && fullMission.cost_value > 0);
         let rev = 0, cost = 0;
-        const hasSaved = (fullMission.billing_approved || fullMission.billing_verified_by) && (hasStoredRev || hasStoredCost);
+        const isVerifiedFull = !!(fullMission.billing_approved || fullMission.billing_verified_by);
+        const hasSaved = isVerifiedFull && (hasStoredRev || hasStoredCost || fullMission.revenue_value === 0 || fullMission.cost_value === 0);
         if (hasSaved) {
             rev = (fullMission.revenue_value || 0) + Math.max(0, fullMission.toll_value || 0);
             const tollProv = Math.max(0, fullMission.toll_value_provider != null ? fullMission.toll_value_provider : (fullMission.toll_value || 0));

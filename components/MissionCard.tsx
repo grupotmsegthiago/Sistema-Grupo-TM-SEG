@@ -302,8 +302,9 @@ const MissionCardComponent: React.FC<MissionCardProps> = ({
         const dbToll = Math.max(0, mission.toll_value || 0);
         const storedValue = (mission.revenue_value || 0) + dbToll;
         const hasStoredRevenue = (mission.revenue_value != null && mission.revenue_value > 0);
+        const isVerifiedZeroRevenue = (mission.revenue_value === 0 || mission.revenue_value === null) && (mission.billing_approved || (mission as any).billing_verified_by);
         
-        if (hasStoredRevenue) {
+        if (hasStoredRevenue || isVerifiedZeroRevenue) {
             return storedValue;
         }
         
@@ -312,14 +313,15 @@ const MissionCardComponent: React.FC<MissionCardProps> = ({
         }
 
         return storedValue;
-    }, [mission.revenue_value, mission.toll_value, financials]);
+    }, [mission.revenue_value, mission.toll_value, mission.billing_approved, financials]);
 
     const displayCost = useMemo(() => {
         const tollProv = Math.max(0, mission.toll_value_provider != null ? mission.toll_value_provider : (mission.toll_value || 0));
         const storedValue = (mission.cost_value || 0) + tollProv;
         const hasStoredCost = (mission.cost_value != null && mission.cost_value > 0);
+        const isVerifiedZeroCost = (mission.cost_value === 0 || mission.cost_value === null) && (mission.billing_approved || (mission as any).billing_verified_by);
         
-        if (hasStoredCost) {
+        if (hasStoredCost || isVerifiedZeroCost) {
             return storedValue;
         }
 
@@ -328,7 +330,7 @@ const MissionCardComponent: React.FC<MissionCardProps> = ({
         }
         
         return storedValue;
-    }, [mission.cost_value, mission.toll_value, mission.toll_value_provider, financials]);
+    }, [mission.cost_value, mission.toll_value, mission.toll_value_provider, mission.billing_approved, financials]);
 
     const isActive = !isTerminal;
 
