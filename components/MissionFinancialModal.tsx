@@ -166,52 +166,31 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
 
           setAiMaturity(0);
 
-          const providerNorm = (currentMission.provider || '').toUpperCase().trim();
-          const routeKeyFull = `${currentMission.client}|${providerNorm}|${currentMission.origin}|${currentMission.destination}`.toUpperCase();
-          const routeKeyBase = `${currentMission.client}|${currentMission.origin}|${currentMission.destination}`.toUpperCase();
-
-          const { data: memLogsFull } = await supabase
+          const routeKey = `${currentMission.client}|${currentMission.origin}|${currentMission.destination}`.toUpperCase();
+          const { data: memLogs } = await supabase
             .from('system_logs')
             .select('details')
             .eq('entity', 'BillingPattern')
-            .ilike('details', `%${routeKeyFull}%`)
+            .ilike('details', `%${routeKey}%`)
             .order('created_at', { ascending: false })
             .limit(1);
-
-          let memLogs = memLogsFull;
-          let memorySource = 'EXATA';
-          if (!memLogs || memLogs.length === 0) {
-              const { data: memLogsFallback } = await supabase
-                .from('system_logs')
-                .select('details')
-                .eq('entity', 'BillingPattern')
-                .ilike('details', `%${routeKeyBase}%`)
-                .order('created_at', { ascending: false })
-                .limit(1);
-              memLogs = memLogsFallback;
-              memorySource = 'ROTA';
-          }
 
           if (memLogs && memLogs.length > 0) {
              try {
                  const details = JSON.parse(memLogs[0].details);
                  if (details.clientTableId) {
                      setManualClientTableId(details.clientTableId);
+                     showNotification('Memória Evolutiva', 'Tabela aplicada com base em aprovação anterior.', 'success');
                  }
                  if (details.providerTableId) {
                      const tablesToCheck = allProviderTables || providerTables;
                      const memProvTable = tablesToCheck.find(t => t.id === details.providerTableId);
+                     const missionProvNorm = (currentMission.provider || '').toUpperCase().trim();
                      const memProvNorm = (memProvTable?.provider || '').toUpperCase().trim();
-                     if (memProvTable && memProvNorm === providerNorm) {
+                     if (memProvTable && memProvNorm === missionProvNorm) {
                          setManualProviderTableId(details.providerTableId);
                      }
                  }
-                 if (details.customClientBase) setCustomClientBase(details.customClientBase);
-                 if (details.customClientKm) setCustomClientKm(details.customClientKm);
-                 if (details.customClientHour) setCustomClientHour(details.customClientHour);
-                 if (details.customProviderBase) setCustomProviderBase(details.customProviderBase);
-                 if (details.customProviderKm) setCustomProviderKm(details.customProviderKm);
-                 if (details.customProviderHour) setCustomProviderHour(details.customProviderHour);
                  if (details.tollValue !== undefined && details.tollValue !== null && !currentMission.billing_approved && !(dbToll > 0 || hasSavedData)) {
                      const memToll = Number(details.tollValue);
                      setTollInput(memToll.toLocaleString('pt-BR', { minimumFractionDigits: 2 }));
@@ -219,13 +198,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                      setTollSource('MEMÓRIA (Rota Anterior)');
                      setTollConfirmed(false);
                  }
-                 if (details.tollProviderValue !== undefined && details.tollProviderValue !== null && !currentMission.billing_approved && !(dbToll > 0 || hasSavedData)) {
-                     const memTollProv = Number(details.tollProviderValue);
-                     setTollProviderInput(memTollProv.toLocaleString('pt-BR', { minimumFractionDigits: 2 }));
-                 }
                  setMemoryLoaded(true);
-                 const hasCustomValues = details.customClientBase || details.customProviderBase;
-                 showNotification('Memória Evolutiva', `Tabela${hasCustomValues ? ' e valores' : ''} aplicados (${memorySource === 'EXATA' ? 'mesmo fornecedor' : 'mesma rota'}).`, 'success');
              } catch (e) { console.error("Erro ao ler memória:", e); }
           }
           
@@ -614,27 +587,15 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
           }
           
           if (isFullyApproved && manualClientTableId) {
-              const missionProvNorm = (mission.provider || '').toUpperCase().trim();
-              const routeKeyFull = `${mission.client}|${missionProvNorm}|${mission.origin}|${mission.destination}`.toUpperCase();
-              const routeKeyBase = `${mission.client}|${mission.origin}|${mission.destination}`.toUpperCase();
+              const routeKey = `${mission.client}|${mission.origin}|${mission.destination}`.toUpperCase();
               const details = JSON.stringify({
                   clientTableId: manualClientTableId,
                   providerTableId: manualProviderTableId || null,
                   tollValue: toll,
-                  tollProviderValue: tollProv,
-                  customClientBase: customClientBase || null,
-                  customClientKm: customClientKm || null,
-                  customClientHour: customClientHour || null,
-                  customProviderBase: customProviderBase || null,
-                  customProviderKm: customProviderKm || null,
-                  customProviderHour: customProviderHour || null,
-                  provider: missionProvNorm,
-                  routeKeyFull,
-                  routeKey: routeKeyBase
+                  routeKey
               });
               
-              await supabase.from('system_logs').delete().eq('entity', 'BillingPattern').ilike('details', `%${routeKeyFull}%`);
-              await supabase.from('system_logs').delete().eq('entity', 'BillingPattern').ilike('details', `%${routeKeyBase}%`);
+              await supabase.from('system_logs').delete().eq('entity', 'BillingPattern').ilike('details', `%${routeKey}%`);
               
               await supabase.from('system_logs').insert([{
                   user_name: 'IA_MEMORY',
