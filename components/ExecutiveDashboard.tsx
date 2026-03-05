@@ -12,6 +12,7 @@ import {
     Upload, FileSpreadsheet, Loader2, Search, CheckCircle, XOctagon, Edit2, Download, Calculator
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
+import { supabase } from '../lib/supabase';
 
 const COLORS = ['#dc2626', '#059669', '#2563eb', '#d97706', '#7c3aed', '#ec4899', '#0891b2', '#84cc16'];
 const STATUS_COLORS: Record<string, string> = {
@@ -116,6 +117,8 @@ const ExecutiveDashboard: React.FC<Props> = ({ missions, isDirector, clientTable
     const [isRefreshingExcel, setIsRefreshingExcel] = useState(false);
     const [isRecalculating, setIsRecalculating] = useState(false);
     const [recalcResults, setRecalcResults] = useState<any>(null);
+    const [isBatchApproving, setIsBatchApproving] = useState(false);
+    const [batchApprovalResult, setBatchApprovalResult] = useState<{ success: number; failed: number } | null>(null);
 
     const handleRefresh = useCallback(() => {
         setRefreshKey(k => k + 1);
@@ -136,6 +139,76 @@ const ExecutiveDashboard: React.FC<Props> = ({ missions, isDirector, clientTable
             setLastUpdate(new Date());
         }
     }, [onRefreshMissions]);
+
+    const handleBatchApproveConferidas = useCallback(async () => {
+        if (!excelComparison) return;
+        const userData = JSON.parse(localStorage.getItem('userData') || '{}');
+        const userName = (userData.name || '').toLowerCase();
+        const userRole = (userData.role || '').toLowerCase();
+        const isAllowed = userName.includes('daniel') || userName.includes('barbara') || userName.includes('bárbara') || userRole === 'administrador' || userRole === 'diretoria' || userName.includes('thiago');
+        if (!isAllowed) return;
+
+        let stage = 'operacional';
+        if (userName.includes('daniel')) stage = 'auditor';
+        else if (userName.includes('barbara') || userName.includes('bárbara') || userRole === 'administrador') stage = 'financeiro';
+        else if (userName.includes('thiago') || userRole === 'diretoria') stage = 'diretoria';
+
+        const conferidas = excelComparison.filter(c => c.found && c.revMatch && c.costMatch && !c.isApproved && !adjustedOsIds.has(c.osId));
+        if (conferidas.length === 0) return;
+
+        const confirmed = window.confirm(`Aprovar ${conferidas.length} OS conferidas como "${stage.toUpperCase()}"?\n\nEssa ação registra sua aprovação em todas as OS conferidas.`);
+        if (!confirmed) return;
+
+        setIsBatchApproving(true);
+        setBatchApprovalResult(null);
+        let success = 0;
+        let failed = 0;
+        const displayName = userData.name || 'Usuário';
+
+        for (const c of conferidas) {
+            try {
+                const missionId = c.osId;
+                const mission = missions.find(m => String(m.id).toUpperCase().replace('GTM-', '') === missionId.replace('GTM-', ''));
+                if (!mission) { failed++; continue; }
+
+                const { data: existingLogs } = await supabase.from('system_logs').select('details').eq('entity', 'BillingApproval').eq('entity_id', mission.id);
+                const existingStages = (existingLogs || []).map((l: any) => { try { return JSON.parse(l.details).stage; } catch { return ''; } });
+
+                if (existingStages.includes(stage)) { success++; continue; }
+
+                const logEntry = { user: displayName, role: userData.role || '', stage, date: new Date().toISOString() };
+                await supabase.from('system_logs').insert([{
+                    user_name: displayName,
+                    action_type: stage,
+                    entity: 'BillingApproval',
+                    entity_id: mission.id,
+                    details: JSON.stringify(logEntry)
+                }]);
+
+                const allStages = [...existingStages, stage];
+                const isFullyApproved = allStages.includes('diretoria') || (allStages.includes('auditor') && allStages.includes('financeiro') && allStages.includes('diretoria'));
+
+                if (isFullyApproved) {
+                    await supabase.from('missions').update({
+                        billing_approved: true,
+                        billing_verified_by: displayName,
+                        last_update: new Date().toISOString()
+                    }).eq('id', mission.id);
+                }
+
+                success++;
+            } catch (e) {
+                console.error('Erro ao aprovar OS:', c.osId, e);
+                failed++;
+            }
+        }
+
+        setBatchApprovalResult({ success, failed });
+        setIsBatchApproving(false);
+        if (onRefreshMissions) onRefreshMissions();
+        window.dispatchEvent(new CustomEvent('refreshMissions'));
+        setTimeout(() => setBatchApprovalResult(null), 5000);
+    }, [excelComparison, missions, adjustedOsIds, onRefreshMissions]);
 
     const handleBatchRecalculate = useCallback(async (dryRun: boolean) => {
         setIsRecalculating(true);
@@ -1405,6 +1478,37 @@ const ExecutiveDashboard: React.FC<Props> = ({ missions, isDirector, clientTable
                                     <p className="text-lg font-black text-amber-700">{notFound}</p>
                                 </div>
                             </div>
+
+                            {(() => {
+                                const userData = JSON.parse(localStorage.getItem('userData') || '{}');
+                                const uName = (userData.name || '').toLowerCase();
+                                const uRole = (userData.role || '').toLowerCase();
+                                const canApprove = uName.includes('daniel') || uName.includes('barbara') || uName.includes('bárbara') || uRole === 'administrador' || uRole === 'diretoria' || uName.includes('thiago');
+                                const conferidasCount = excelComparison!.filter(c => c.found && c.revMatch && c.costMatch && !c.isApproved && !adjustedOsIds.has(c.osId)).length;
+                                if (!canApprove || conferidasCount === 0) return null;
+                                let stageLabel = 'Aprovador';
+                                if (uName.includes('daniel')) stageLabel = 'Auditor';
+                                else if (uName.includes('barbara') || uName.includes('bárbara') || uRole === 'administrador') stageLabel = 'Financeiro';
+                                else if (uName.includes('thiago') || uRole === 'diretoria') stageLabel = 'Diretoria';
+                                return (
+                                    <div className="flex items-center gap-3">
+                                        <button
+                                            data-testid="btn-batch-approve-conferidas"
+                                            onClick={handleBatchApproveConferidas}
+                                            disabled={isBatchApproving}
+                                            className="flex items-center gap-2 px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-black uppercase transition-all shadow-md disabled:opacity-50 disabled:cursor-not-allowed active:scale-95"
+                                        >
+                                            {isBatchApproving ? <Loader2 size={16} className="animate-spin" /> : <CheckCircle2 size={16} />}
+                                            {isBatchApproving ? 'Aprovando...' : `Aprovar ${conferidasCount} Conferidas (${stageLabel})`}
+                                        </button>
+                                        {batchApprovalResult && (
+                                            <span className="text-xs font-bold text-emerald-700 bg-emerald-50 px-3 py-1.5 rounded-lg border border-emerald-200">
+                                                {batchApprovalResult.success} aprovadas{batchApprovalResult.failed > 0 ? `, ${batchApprovalResult.failed} falharam` : ''}
+                                            </span>
+                                        )}
+                                    </div>
+                                );
+                            })()}
 
                             <div className="bg-slate-50 border border-slate-200 rounded-lg p-3">
                                 <div className="flex items-center justify-between mb-1.5">
