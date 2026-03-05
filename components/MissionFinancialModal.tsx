@@ -460,10 +460,10 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
       setTollInput(val);
       setTollSource('MANUAL (Editando...)');
       setTollConfirmed(true);
-      if (useSavedValuesRef.current) {
-          const currentRev = parseNumber(revenueInput);
-          setRevenueInput((currentRev - oldToll + newToll).toLocaleString('pt-BR', { minimumFractionDigits: 2 }));
-      }
+      const currentRev = parseNumber(revenueInput);
+      const updatedRev = currentRev - oldToll + newToll;
+      setRevenueInput(updatedRev.toLocaleString('pt-BR', { minimumFractionDigits: 2 }));
+      setUseSavedValues(true);
   };
 
   const handleTollProviderChange = (val: string) => {
@@ -472,10 +472,10 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
       setTollProviderInput(val);
       setTollSource('MANUAL (Editando...)');
       setTollConfirmed(true);
-      if (useSavedValuesRef.current) {
-          const currentCost = parseNumber(costInput);
-          setCostInput((currentCost - oldTollProv + newTollProv).toLocaleString('pt-BR', { minimumFractionDigits: 2 }));
-      }
+      const currentCost = parseNumber(costInput);
+      const updatedCost = currentCost - oldTollProv + newTollProv;
+      setCostInput(updatedCost.toLocaleString('pt-BR', { minimumFractionDigits: 2 }));
+      setUseSavedValues(true);
   };
 
   const handleManualInput = (setter: any, val: string) => {
