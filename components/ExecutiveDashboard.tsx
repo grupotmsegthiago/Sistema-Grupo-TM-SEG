@@ -205,6 +205,14 @@ const ExecutiveDashboard: React.FC<Props> = ({ missions, isDirector, clientTable
 
         setBatchApprovalResult({ success, failed });
         setIsBatchApproving(false);
+
+        if (excelComparison) {
+            const approvedOsIds = new Set(conferidas.map(c => c.osId));
+            setExcelComparison(excelComparison.map(c => 
+                approvedOsIds.has(c.osId) ? { ...c, isApproved: true } : c
+            ));
+        }
+
         if (onRefreshMissions) onRefreshMissions();
         window.dispatchEvent(new CustomEvent('refreshMissions'));
         setTimeout(() => setBatchApprovalResult(null), 5000);
@@ -349,12 +357,15 @@ const ExecutiveDashboard: React.FC<Props> = ({ missions, isDirector, clientTable
             if (!systemMission) return c;
             const newSysRev = systemMission.rev || 0;
             const newSysCost = systemMission.cost || 0;
-            if (Math.abs(newSysRev - c.sysRev) < 0.01 && Math.abs(newSysCost - c.sysCost) < 0.01) return c;
+            const newIsApproved = systemMission.billing_approved === true;
+            const valuesChanged = Math.abs(newSysRev - c.sysRev) >= 0.01 || Math.abs(newSysCost - c.sysCost) >= 0.01;
+            const approvalChanged = newIsApproved !== !!c.isApproved;
+            if (!valuesChanged && !approvalChanged) return c;
             hasChanges = true;
-            newAdjustedIds.add(c.osId);
+            if (valuesChanged) newAdjustedIds.add(c.osId);
             const isSameOs = systemMission?.is_same_os === true;
             const match = checkComparisonMatch(systemMission, c.excelRev, c.excelCost, c.excelAcionamento, c.excelToll);
-            return { ...c, sysRev: newSysRev, sysCost: newSysCost, revDiff: match.revDiff, costDiff: match.costDiff, revMatch: match.revMatch, costMatch: match.costMatch, isSameOs };
+            return { ...c, sysRev: newSysRev, sysCost: newSysCost, revDiff: match.revDiff, costDiff: match.costDiff, revMatch: match.revMatch, costMatch: match.costMatch, isSameOs, isApproved: newIsApproved };
         });
         if (hasChanges) {
             setAdjustedOsIds(newAdjustedIds);
