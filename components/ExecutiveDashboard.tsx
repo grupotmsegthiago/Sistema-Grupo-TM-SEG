@@ -94,15 +94,9 @@ const ExecutiveDashboard: React.FC<Props> = ({ missions, isDirector, clientTable
 
     const [refreshKey, setRefreshKey] = useState(0);
     const [lastUpdate, setLastUpdate] = useState(new Date());
-    const [period, setPeriod] = useState<DashPeriod>(mapViewPeriodToDash(parentPeriod));
-    const [customStart, setCustomStart] = useState(parentStartDate || '');
-    const [customEnd, setCustomEnd] = useState(parentEndDate || '');
-    
-    useEffect(() => {
-        setPeriod(mapViewPeriodToDash(parentPeriod));
-        if (parentStartDate) setCustomStart(parentStartDate);
-        if (parentEndDate) setCustomEnd(parentEndDate);
-    }, [parentPeriod, parentStartDate, parentEndDate]);
+    const period = mapViewPeriodToDash(parentPeriod);
+    const customStart = parentStartDate || '';
+    const customEnd = parentEndDate || '';
     const [excelComparison, setExcelComparison] = useState<any[] | null>(null);
     const [excelAiAnalysis, setExcelAiAnalysis] = useState<string | null>(null);
     const [isExcelLoading, setIsExcelLoading] = useState(false);
@@ -1181,21 +1175,9 @@ const ExecutiveDashboard: React.FC<Props> = ({ missions, isDirector, clientTable
                     </div>
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
-                    <div className="flex bg-gray-100 rounded-lg border border-gray-200 p-0.5">
-                        {(Object.keys(PERIOD_LABELS) as DashPeriod[]).map(p => (
-                            <button key={p} onClick={() => setPeriod(p)}
-                                className={`px-3 py-2 rounded-md text-[11px] font-black uppercase tracking-wide transition-all ${period === p ? 'bg-gray-900 text-white shadow-sm' : 'text-gray-500 hover:text-gray-900'}`}
-                                data-testid={`filter-${p.toLowerCase()}`}
-                            >{PERIOD_LABELS[p]}</button>
-                        ))}
+                    <div className="flex bg-gray-100 rounded-lg border border-gray-200 px-3 py-2">
+                        <span className="text-[11px] font-black uppercase tracking-wide text-gray-700">{periodLabel}</span>
                     </div>
-                    {period === 'CUSTOM' && (
-                        <div className="flex items-center gap-2 bg-gray-50 p-1.5 rounded-lg border border-gray-200">
-                            <input type="date" className="bg-transparent text-xs font-bold text-gray-700 outline-none" value={customStart} onChange={e => setCustomStart(e.target.value)} />
-                            <span className="text-gray-400 text-xs font-bold">a</span>
-                            <input type="date" className="bg-transparent text-xs font-bold text-gray-700 outline-none" value={customEnd} onChange={e => setCustomEnd(e.target.value)} />
-                        </div>
-                    )}
                     <button onClick={handleRefresh} className="flex items-center gap-2 px-4 py-2 bg-gray-900 text-white rounded-lg text-[11px] font-black uppercase tracking-wide hover:bg-gray-800 transition-all active:scale-95" data-testid="button-refresh-dashboard">
                         <RefreshCw size={13} /> Atualizar
                     </button>
