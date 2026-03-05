@@ -72,10 +72,7 @@ const DailyGoalThermometer: React.FC<Props> = ({ viewPeriod = 'TODAY', customSta
     const filteredMissions = useMemo(() => {
         if (!parentMissions || parentMissions.length === 0) return [];
         const [start, end] = getDateRange(viewPeriod, customStartDate, customEndDate);
-        const activeStatuses = [MissionStatus.IN_TRANSIT, MissionStatus.ORIGIN, MissionStatus.SCHEDULED, MissionStatus.SOLICITED, MissionStatus.DOCUMENTATION];
         return parentMissions.filter(m => {
-            const isActive = activeStatuses.includes(m.status as MissionStatus);
-            if (viewPeriod === 'TODAY' && isActive) return true;
             const d = new Date(m.startTime || m.start_time || m.createdAt || m.created_at);
             return d >= start && d <= end;
         });
