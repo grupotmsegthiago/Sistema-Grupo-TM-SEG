@@ -117,7 +117,8 @@ const ExecutiveDashboard: React.FC<Props> = ({ missions, isDirector, clientTable
     const handleRefresh = useCallback(() => {
         setRefreshKey(k => k + 1);
         setLastUpdate(new Date());
-    }, []);
+        if (onRefreshMissions) onRefreshMissions();
+    }, [onRefreshMissions]);
 
     const handleRefreshExcelComparison = useCallback(() => {
         if (onRefreshMissions) {
