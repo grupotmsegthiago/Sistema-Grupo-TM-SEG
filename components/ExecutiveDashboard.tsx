@@ -1483,7 +1483,10 @@ const ExecutiveDashboard: React.FC<Props> = ({ missions, isDirector, clientTable
                                         </tr>
                                     </thead>
                                     <tbody>
-                                        {excelComparison.map((c, i) => {
+                                        {excelComparison.filter(c => {
+                                            const isOk = c.found && c.revMatch && c.costMatch && !adjustedOsIds.has(c.osId);
+                                            return !isOk;
+                                        }).map((c, i) => {
                                             const hasIssue = !c.found || !c.revMatch || !c.costMatch;
                                             const isAdjusted = adjustedOsIds.has(c.osId);
                                             return (
