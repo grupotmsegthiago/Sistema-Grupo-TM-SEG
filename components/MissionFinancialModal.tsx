@@ -346,10 +346,14 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
       const { data } = await supabase.from('provider_cost_tables').select('*');
       if (data) {
           setProviderTables(data as any);
+          setCustomProviderBase('');
+          setCustomProviderKm('');
+          setCustomProviderHour('');
+          setUseSavedValues(false);
           if (newTableId) {
               setManualProviderTableId(newTableId);
-              showNotification('Atualizado', 'Nova tabela selecionada automaticamente.', 'success');
           }
+          showNotification('Atualizado', 'Tabela de custo atualizada. Valores recalculados.', 'success');
       }
       setIsAddCostModalOpen(false);
   };
@@ -736,10 +740,14 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                           const { data } = await supabase.from('client_price_tables').select('*');
                           if (data) {
                               setClientTables(data as any);
+                              setCustomClientBase('');
+                              setCustomClientKm('');
+                              setCustomClientHour('');
+                              setUseSavedValues(false);
                               if (newTableId) {
                                   setManualClientTableId(newTableId);
-                                  showNotification('Atualizado', 'Tabela de preço salva e selecionada.', 'success');
                               }
+                              showNotification('Atualizado', 'Tabela de preço atualizada. Valores recalculados.', 'success');
                           }
                           setIsEditClientTableOpen(false);
                           setEditClientTableId(null);
@@ -1075,7 +1083,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                     <select 
                                         className="w-full p-2 bg-gray-50 border border-gray-200 rounded-lg text-xs font-bold text-gray-700 uppercase outline-none focus:border-blue-500"
                                         value={manualClientTableId || ''}
-                                        onChange={(e) => { setManualClientTableId(e.target.value); setUseSavedValues(false); }}
+                                        onChange={(e) => { setManualClientTableId(e.target.value); setCustomClientBase(''); setCustomClientKm(''); setCustomClientHour(''); setUseSavedValues(false); }}
                                     >
                                         <option value="">Automático (IA Detectando)</option>
                                         {[...clientTables].sort((a, b) => (a.operation_type || '').localeCompare(b.operation_type || '')).map(t => (
@@ -1206,7 +1214,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                     <select 
                                         className={`w-full p-2 bg-gray-50 border rounded-lg text-xs font-bold text-gray-700 uppercase outline-none focus:border-red-500 ${isZeroCostError ? 'border-red-300 bg-red-50 text-red-900 animate-pulse' : 'border-gray-200'}`}
                                         value={manualProviderTableId || ''}
-                                        onChange={(e) => { setManualProviderTableId(e.target.value); setUseSavedValues(false); }}
+                                        onChange={(e) => { setManualProviderTableId(e.target.value); setCustomProviderBase(''); setCustomProviderKm(''); setCustomProviderHour(''); setUseSavedValues(false); }}
                                         disabled={mission.is_same_os}
                                     >
                                         <option value="">{mission.is_same_os ? 'Custo Zero (Mesma OS)' : 'IA Detectando Melhor Custo...'}</option>
