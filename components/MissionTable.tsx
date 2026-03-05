@@ -811,7 +811,12 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
              <DailyGoalThermometer 
                 viewPeriod={viewPeriod} 
                 customStartDate={customStartDate} 
-                customEndDate={customEndDate} 
+                customEndDate={customEndDate}
+                missions={allMissions}
+                clientTables={clientTables}
+                providerTables={providerTables}
+                clientsData={clientsData}
+                onRefreshMissions={() => fetchMissions(true)}
              />
           </div>
           )}

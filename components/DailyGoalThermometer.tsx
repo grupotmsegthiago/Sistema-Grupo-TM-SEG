@@ -10,100 +10,54 @@ interface Props {
     viewPeriod?: string;
     customStartDate?: string;
     customEndDate?: string;
+    missions?: any[];
+    clientTables?: ClientPriceTable[];
+    providerTables?: ProviderCostTable[];
+    clientsData?: Client[];
+    onRefreshMissions?: () => void;
 }
 
 const formatCurrency = (val: number) => {
     return val.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 };
 
-const DailyGoalThermometer: React.FC<Props> = ({ viewPeriod = 'TODAY', customStartDate, customEndDate }) => {
-    const [missions, setMissions] = useState<any[]>([]);
-    const [isLoading, setIsLoading] = useState(true);
+function getDateRange(viewPeriod: string, customStartDate?: string, customEndDate?: string): [Date, Date] {
+    const now = new Date();
+    let start = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
+    let end = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
+
+    if (viewPeriod === 'YESTERDAY') {
+        start.setDate(start.getDate() - 1);
+        end.setDate(end.getDate() - 1);
+    } else if (viewPeriod === 'WEEK') {
+        start.setDate(start.getDate() - 7);
+    } else if (viewPeriod === 'MONTH') {
+        start = new Date(now.getFullYear(), now.getMonth(), 1);
+        end = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
+    } else if (viewPeriod === 'YEAR') {
+        start = new Date(now.getFullYear(), 0, 1);
+        end = new Date(now.getFullYear(), 11, 31, 23, 59, 59, 999);
+    } else if (viewPeriod === 'CUSTOM' && customStartDate && customEndDate) {
+        start = new Date(customStartDate + 'T00:00:00');
+        end = new Date(customEndDate + 'T23:59:59');
+    } else if (viewPeriod === 'ALL') {
+        start = new Date(2000, 0, 1);
+        end = new Date(2100, 0, 1);
+    }
+
+    return [start, end];
+}
+
+const DailyGoalThermometer: React.FC<Props> = ({ viewPeriod = 'TODAY', customStartDate, customEndDate, missions: parentMissions, clientTables: parentClientTables, providerTables: parentProviderTables, clientsData: parentClientsData, onRefreshMissions }) => {
+    const [isLoading, setIsLoading] = useState(false);
     const [userRole, setUserRole] = useState<string>('');
-    const [priceTables, setPriceTables] = useState<ClientPriceTable[]>([]);
-    const [providerTables, setProviderTables] = useState<ProviderCostTable[]>([]);
-    const [clientsData, setClientsData] = useState<Client[]>([]);
     const [currentTime, setCurrentTime] = useState(new Date());
     const [isRefreshing, setIsRefreshing] = useState(false);
 
     useEffect(() => {
-        const timer = setInterval(() => setCurrentTime(new Date()), 1000);
+        const timer = setInterval(() => setCurrentTime(new Date()), 60000);
         return () => clearInterval(timer);
     }, []);
-
-    const fetchPeriodData = useCallback(async (silent = false) => {
-        if (!silent) setIsLoading(true);
-        try {
-            const now = new Date();
-            let start = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
-            let end = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
-
-            if (viewPeriod === 'YESTERDAY') {
-                start.setDate(start.getDate() - 1);
-                end.setDate(end.getDate() - 1);
-            } else if (viewPeriod === 'WEEK') {
-                start.setDate(start.getDate() - 7);
-            } else if (viewPeriod === 'MONTH') {
-                start = new Date(now.getFullYear(), now.getMonth(), 1);
-                end = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
-            } else if (viewPeriod === 'YEAR') {
-                start = new Date(now.getFullYear(), 0, 1);
-                end = new Date(now.getFullYear(), 11, 31, 23, 59, 59, 999);
-            } else if (viewPeriod === 'CUSTOM' && customStartDate && customEndDate) {
-                start = new Date(customStartDate + 'T00:00:00');
-                end = new Date(customEndDate + 'T23:59:59');
-            } else if (viewPeriod === 'ALL') {
-                start = new Date(2000, 0, 1);
-                end = new Date(2100, 0, 1);
-            }
-
-            if (priceTables.length === 0) {
-                const [pTablesRes, prTablesRes, clRes] = await Promise.all([
-                    supabase.from('client_price_tables').select('*'),
-                    supabase.from('provider_cost_tables').select('*'),
-                    supabase.from('clients').select('id,name,full_extra_hour_after_16_min')
-                ]);
-                if (pTablesRes.data) setPriceTables(pTablesRes.data as any);
-                if (prTablesRes.data) setProviderTables(prTablesRes.data as any);
-                if (clRes.data) setClientsData(clRes.data as Client[]);
-            }
-
-            const [byStartTime, byCreatedAt] = await Promise.all([
-                supabase.from('missions').select('*').gte('start_time', start.toISOString()).lte('start_time', end.toISOString()),
-                supabase.from('missions').select('*').is('start_time', null).gte('created_at', start.toISOString()).lte('created_at', end.toISOString())
-            ]);
-
-            if (byStartTime.error) throw byStartTime.error;
-            const idSet = new Set((byStartTime.data || []).map((m: any) => m.id));
-            let allMissions = [
-                ...(byStartTime.data || []),
-                ...(byCreatedAt.data || []).filter((m: any) => !idSet.has(m.id))
-            ];
-
-            const activeStatuses = [MissionStatus.IN_TRANSIT, MissionStatus.ORIGIN, MissionStatus.SCHEDULED, MissionStatus.SOLICITED, MissionStatus.DOCUMENTATION];
-            if (viewPeriod === 'TODAY') {
-                const { data: activeMissions } = await supabase
-                    .from('missions')
-                    .select('*')
-                    .in('status', activeStatuses);
-                if (activeMissions) {
-                    const periodIds = new Set(allMissions.map((m: any) => m.id));
-                    const extra = activeMissions.filter((m: any) => {
-                        if (periodIds.has(m.id)) return false;
-                        const mDate = new Date(m.start_time || m.created_at);
-                        return mDate >= start && mDate <= end;
-                    });
-                    allMissions = [...allMissions, ...extra];
-                }
-            }
-
-            setMissions(allMissions);
-        } catch (error) {
-            console.error("Erro ao sincronizar meta diária:", error);
-        } finally {
-            setIsLoading(false);
-        }
-    }, [viewPeriod, customStartDate, customEndDate, priceTables.length]);
 
     useEffect(() => {
         const storedUser = localStorage.getItem('userData');
@@ -113,52 +67,62 @@ const DailyGoalThermometer: React.FC<Props> = ({ viewPeriod = 'TODAY', customSta
                 setUserRole((user.role || '').toLowerCase());
             } catch (e) { console.error(e); }
         }
-        
-        fetchPeriodData();
+    }, []);
 
-        const channel = supabase
-            .channel('daily-goal-sync')
-            .on('postgres_changes', { event: '*', schema: 'public', table: 'missions' }, () => fetchPeriodData(true))
-            .subscribe();
-
-        return () => { 
-            supabase.removeChannel(channel);
-        };
-    }, [fetchPeriodData]);
+    const filteredMissions = useMemo(() => {
+        if (!parentMissions || parentMissions.length === 0) return [];
+        const [start, end] = getDateRange(viewPeriod, customStartDate, customEndDate);
+        const activeStatuses = [MissionStatus.IN_TRANSIT, MissionStatus.ORIGIN, MissionStatus.SCHEDULED, MissionStatus.SOLICITED, MissionStatus.DOCUMENTATION];
+        return parentMissions.filter(m => {
+            const isActive = activeStatuses.includes(m.status as MissionStatus);
+            if (viewPeriod === 'TODAY' && isActive) return true;
+            const d = new Date(m.startTime || m.start_time || m.createdAt || m.created_at);
+            return d >= start && d <= end;
+        });
+    }, [parentMissions, viewPeriod, customStartDate, customEndDate]);
 
     const currentRevenue = useMemo(() => {
-        return missions.reduce((acc, m) => {
+        if (!parentClientTables || !parentProviderTables || !parentClientsData) return 0;
+        return filteredMissions.reduce((acc, m) => {
             if (m.status === MissionStatus.REFUSED) return acc;
 
             const hasStoredRevenue = (m.revenue_value != null && m.revenue_value > 0);
+            const hasStoredCost = (m.cost_value != null && m.cost_value > 0);
+            const isVerified = !!(m.billing_approved || m.billing_verified_by);
+            const hasSavedValues = isVerified && (hasStoredRevenue || hasStoredCost || m.revenue_value === 0 || m.cost_value === 0);
+
+            if (hasSavedValues) {
+                 const storedVal = (m.revenue_value || 0) + Math.max(0, m.toll_value || 0);
+                 return acc + storedVal;
+            }
 
             if (hasStoredRevenue) {
-                 const storedVal = (m.revenue_value || 0) + (m.toll_value || 0);
+                 const storedVal = (m.revenue_value || 0) + Math.max(0, m.toll_value || 0);
                  return acc + storedVal;
             }
 
             const isCancelled = m.status === MissionStatus.CANCELLED;
             const missionObj: Mission = {
                 ...m,
-                startKm: m.start_km,
-                endKm: m.end_km,
-                startTime: m.start_time,
-                endTime: m.end_time,
+                startKm: m.startKm ?? m.start_km,
+                endKm: m.endKm ?? m.end_km,
+                startTime: m.startTime ?? m.start_time,
+                endTime: m.endTime ?? m.end_time,
                 ...(isCancelled ? { status: MissionStatus.COMPLETED } : {})
             };
             const clientName = (m.originalClientName || m.client || '').trim();
-            const matchedClient = clientsData.find(c => c.name === clientName);
+            const matchedClient = parentClientsData.find(c => c.name === clientName);
             const financials = calculateMissionFinancials(
                 missionObj, 
-                priceTables, 
-                providerTables, 
+                parentClientTables, 
+                parentProviderTables, 
                 matchedClient, 
                 currentTime 
             );
             return acc + (financials.client.total || 0);
 
         }, 0);
-    }, [missions, priceTables, providerTables, clientsData, currentTime]);
+    }, [filteredMissions, parentClientTables, parentProviderTables, parentClientsData, currentTime]);
 
     const stats = useMemo(() => {
         const percentage = Math.min(100, (currentRevenue / DAILY_GOAL) * 100);
@@ -199,10 +163,9 @@ const DailyGoalThermometer: React.FC<Props> = ({ viewPeriod = 'TODAY', customSta
 
     const handleManualRefresh = useCallback(async () => {
         setIsRefreshing(true);
-        setPriceTables([]);
-        await fetchPeriodData();
-        setIsRefreshing(false);
-    }, [fetchPeriodData]);
+        if (onRefreshMissions) onRefreshMissions();
+        setTimeout(() => setIsRefreshing(false), 1000);
+    }, [onRefreshMissions]);
 
     const labelText = viewPeriod === 'TODAY' ? 'Meta Agendada (Hoje)' : 
                       viewPeriod === 'YESTERDAY' ? 'Meta Agendada (Ontem)' :
