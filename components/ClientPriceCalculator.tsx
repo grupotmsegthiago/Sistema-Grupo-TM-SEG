@@ -371,6 +371,7 @@ const ClientPriceCalculator: React.FC<Props> = ({ clientName, clientId, priceTab
                         total_value: currentTotal, status: 'Rascunho', created_at: '', created_by: '',
                         contract_details: `Simulação de KM: ${manualKmRate}\nSimulação Hora Extra: ${manualHourRate}${waypoints.filter(w => w.trim()).length > 0 ? `\nParadas: ${waypoints.filter(w => w.trim()).join(' → ')}` : ''}\nValidade da Proposta: ${validityDays} dias.`
                     }} 
+                    waypoints={waypoints.filter(w => w.trim())}
                     onClose={() => setShowPrintModal(false)} 
                 />
             )}

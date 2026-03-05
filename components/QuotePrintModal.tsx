@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
-import { X, Printer, Download, ShieldCheck, MapPin, Flag, Navigation, Clock, DollarSign, Calendar, Fingerprint, Building2, Loader2, FileDown } from 'lucide-react';
+import { X, Printer, Download, ShieldCheck, MapPin, Flag, Navigation, Clock, DollarSign, Calendar, Fingerprint, Building2, Loader2, FileDown, CircleDot } from 'lucide-react';
 import { Quote } from '../types';
 import { supabase } from '../lib/supabase';
 import html2canvas from 'html2canvas';
@@ -9,9 +9,10 @@ import { jsPDF } from 'jspdf';
 interface Props {
   quote: Quote;
   onClose: () => void;
+  waypoints?: string[];
 }
 
-const QuotePrintModal: React.FC<Props> = ({ quote, onClose }) => {
+const QuotePrintModal: React.FC<Props> = ({ quote, onClose, waypoints = [] }) => {
   const [clientCnpj, setClientCnpj] = useState<string>('');
   const [clientTradingName, setClientTradingName] = useState<string>('');
   const [isExporting, setIsExporting] = useState(false);
@@ -282,6 +283,15 @@ const QuotePrintModal: React.FC<Props> = ({ quote, onClose }) => {
                                     <p className="text-xs font-bold text-slate-800 uppercase">{quote.origin}</p>
                                 </div>
                             </div>
+                            {waypoints.filter(w => w.trim()).map((wp, idx) => (
+                                <div key={idx} className="flex items-start gap-3">
+                                    <div className="p-1.5 bg-amber-50 text-amber-600 rounded-lg shrink-0 mt-1"><CircleDot size={14}/></div>
+                                    <div>
+                                        <p className="text-[9px] font-black text-gray-400 uppercase">Parada {idx + 1}</p>
+                                        <p className="text-xs font-bold text-slate-800 uppercase">{wp}</p>
+                                    </div>
+                                </div>
+                            ))}
                             <div className="flex items-start gap-3">
                                 <div className="p-1.5 bg-red-50 text-red-600 rounded-lg shrink-0 mt-1"><Flag size={14}/></div>
                                 <div>
