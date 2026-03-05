@@ -1,6 +1,6 @@
 
 import React, { useState, useRef, useEffect, useMemo } from 'react';
-import { MapPin, Flag, Calculator, Loader2, DollarSign, Info, Navigation, Ruler, Save, Clock, Printer, AlertTriangle, FileDown, RefreshCw, Plus, CheckCircle2, Zap, TrendingUp, RotateCcw } from 'lucide-react';
+import { MapPin, Flag, Calculator, Loader2, DollarSign, Info, Navigation, Ruler, Save, Clock, Printer, AlertTriangle, FileDown, RefreshCw, Plus, CheckCircle2, Zap, TrendingUp, RotateCcw, X, CircleDot } from 'lucide-react';
 import { ClientPriceTable, Quote } from '../types';
 import { useLoadScript, Autocomplete, GoogleMap, DirectionsRenderer } from '@react-google-maps/api';
 import { googleMapsLoadConfig } from '../lib/maps';
@@ -68,9 +68,11 @@ const ClientPriceCalculator: React.FC<Props> = ({ clientName, clientId, priceTab
     const [manualHourRate, setManualHourRate] = useState<string>('');
     
     const [directionsResponse, setDirectionsResponse] = useState<any>(null);
+    const [waypoints, setWaypoints] = useState<string[]>([]);
 
     const originAutocompleteRef = useRef<any>(null);
     const destAutocompleteRef = useRef<any>(null);
+    const waypointAutocompleteRefs = useRef<any[]>([]);
 
     const currentTotal = useMemo(() => {
         if (!calculation) return 0;
@@ -83,26 +85,34 @@ const ClientPriceCalculator: React.FC<Props> = ({ clientName, clientId, priceTab
         return distance * kmRate;
     }, [calculation, manualKmRate, distance]);
 
-    const calculateRoute = async (originAddr?: string, destAddr?: string) => {
+    const calculateRoute = async (originAddr?: string, destAddr?: string, waypointAddrs?: string[]) => {
         const start = originAddr || origin;
         const end = destAddr || destination;
+        const currentWaypoints = waypointAddrs || waypoints;
 
         if (!start || !end || !isLoaded) return;
         
         setIsCalculating(true);
         try {
             const directionsService = new google.maps.DirectionsService();
+            const validWaypoints = currentWaypoints.filter(w => w.trim() !== '');
             const result = await directionsService.route({
                 origin: start,
                 destination: end,
+                waypoints: validWaypoints.map(w => ({ location: w, stopover: true })),
+                optimizeWaypoints: false,
                 travelMode: google.maps.TravelMode.DRIVING,
             });
 
             if (result.status === 'OK') {
                 setDirectionsResponse(result);
-                const route = result.routes[0].legs[0];
-                const km = route.distance.value / 1000;
-                const hours = route.duration.value / 3600;
+                let km = 0;
+                let totalSeconds = 0;
+                for (const leg of result.routes[0].legs) {
+                    km += leg.distance.value / 1000;
+                    totalSeconds += leg.duration.value;
+                }
+                const hours = totalSeconds / 3600;
                 
                 setDistance(km);
                 setDurationHours(hours);
@@ -117,9 +127,9 @@ const ClientPriceCalculator: React.FC<Props> = ({ clientName, clientId, priceTab
                 const destUf = extractUF(end);
                 const region = UF_TO_REGION[startUf] || 'NÍVEL BRASIL';
 
-                // Extração inteligente de cidades
                 const originCity = extractCityFromAddress(start).toUpperCase();
                 const destCity = extractCityFromAddress(end).toUpperCase();
+                const waypointCities = currentWaypoints.filter(w => w.trim()).map(w => extractCityFromAddress(w).toUpperCase());
 
                 // LÓGICA DE BUSCA INTELIGENTE DE TABELA (REGIONAL)
                 // Pontua as tabelas baseado na coincidência de termos (UF, Região, Cidades)
@@ -161,8 +171,8 @@ const ClientPriceCalculator: React.FC<Props> = ({ clientName, clientId, priceTab
                 if (bestMatch && bestMatch.table) {
                     const table = bestMatch.table;
                     
-                    // NOME SUGERIDO: (REGIÃO) - ORIGEM X DESTINO
-                    const suggestedName = `${region} - ${originCity} X ${destCity}`.toUpperCase();
+                    const routeCities = [originCity, ...waypointCities, destCity];
+                    const suggestedName = `${region} - ${routeCities.join(' X ')}`.toUpperCase();
 
                     setCalculation({
                         base: table.activation_fee,
@@ -184,7 +194,8 @@ const ClientPriceCalculator: React.FC<Props> = ({ clientName, clientId, priceTab
                 } else {
                     showNotification('Aviso', 'Nenhuma tabela compatível encontrada. Usando valores zerados.', 'warning');
                     
-                    const suggestedName = `${region} - ${originCity} X ${destCity}`.toUpperCase();
+                    const routeCitiesFb = [originCity, ...waypointCities, destCity];
+                    const suggestedName = `${region} - ${routeCitiesFb.join(' X ')}`.toUpperCase();
 
                     setCalculation({
                         base: 0, 
@@ -205,7 +216,18 @@ const ClientPriceCalculator: React.FC<Props> = ({ clientName, clientId, priceTab
         }
     };
 
-    const handlePlaceSelect = (type: 'origin' | 'destination') => {
+    const handlePlaceSelect = (type: 'origin' | 'destination' | number) => {
+        if (typeof type === 'number') {
+            const autocomplete = waypointAutocompleteRefs.current[type];
+            const place = autocomplete?.getPlace();
+            if (place && place.formatted_address) {
+                const newWaypoints = [...waypoints];
+                newWaypoints[type] = place.formatted_address;
+                setWaypoints(newWaypoints);
+                if (origin && destination) calculateRoute(origin, destination, newWaypoints);
+            }
+            return;
+        }
         const autocomplete = type === 'origin' ? originAutocompleteRef.current : destAutocompleteRef.current;
         const place = autocomplete?.getPlace();
         
@@ -218,6 +240,19 @@ const ClientPriceCalculator: React.FC<Props> = ({ clientName, clientId, priceTab
                 setDestination(addr);
                 if (origin) calculateRoute(origin, addr);
             }
+        }
+    };
+
+    const addWaypoint = () => {
+        setWaypoints(prev => [...prev, '']);
+    };
+
+    const removeWaypoint = (index: number) => {
+        const newWaypoints = waypoints.filter((_, i) => i !== index);
+        setWaypoints(newWaypoints);
+        waypointAutocompleteRefs.current = waypointAutocompleteRefs.current.filter((_, i) => i !== index);
+        if (origin && destination) {
+            setTimeout(() => calculateRoute(origin, destination, newWaypoints), 100);
         }
     };
 
@@ -239,7 +274,7 @@ const ClientPriceCalculator: React.FC<Props> = ({ clientName, clientId, priceTab
                 total_value: currentTotal,
                 status: 'Rascunho',
                 created_by: user.name || 'SISTEMA',
-                contract_details: `Simulação Comercial.\nValidade: ${validityDays} dias.\nBase Contratual: ${calculation.suggestedName || calculation.tableName}\nKM Extra Aplicado: ${formatCurrency(kmRate)}\nHora Extra Aplicada: ${formatCurrency(hrRate)}`
+                contract_details: `Simulação Comercial.\nValidade: ${validityDays} dias.\nBase Contratual: ${calculation.suggestedName || calculation.tableName}${waypoints.filter(w => w.trim()).length > 0 ? `\nParadas: ${waypoints.filter(w => w.trim()).join(' → ')}` : ''}\nKM Extra Aplicado: ${formatCurrency(kmRate)}\nHora Extra Aplicada: ${formatCurrency(hrRate)}`
             }]);
             if (error) throw error;
             showNotification('Sucesso', 'Cotação arquivada!', 'success');
@@ -256,12 +291,13 @@ const ClientPriceCalculator: React.FC<Props> = ({ clientName, clientId, priceTab
         const kmRate = parseCurrencyInput(manualKmRate);
         const hrRate = parseCurrencyInput(manualHourRate);
 
-        // GARANTIR O FORMATO: REGIAO - ORIGEM X DESTINO
         const startUf = extractUF(origin);
         const region = UF_TO_REGION[startUf] || 'NÍVEL BRASIL';
         const originCity = extractCityFromAddress(origin).toUpperCase();
         const destCity = extractCityFromAddress(destination).toUpperCase();
-        const finalName = `${region} - ${originCity} X ${destCity}`.toUpperCase();
+        const waypointCities = waypoints.filter(w => w.trim()).map(w => extractCityFromAddress(w).toUpperCase());
+        const routeCities = [originCity, ...waypointCities, destCity];
+        const finalName = `${region} - ${routeCities.join(' X ')}`.toUpperCase();
 
         const confirmMsg = `Deseja incluir esta rota fixa na tabela de preços do cliente?\n\nNome: ${finalName}\nValor Base: R$ ${currentTotal.toFixed(2)}\nFranquia: ${calculation.franchiseHours} Horas (KM/40)\nKM Extra: ${formatCurrency(kmRate)}\nHora Extra: ${formatCurrency(hrRate)}`;
         if (!confirm(confirmMsg)) return;
@@ -333,7 +369,7 @@ const ClientPriceCalculator: React.FC<Props> = ({ clientName, clientId, priceTab
                         id: 'SIMULAÇÃO', client_id: parseInt(clientId), client_name: clientName,
                         origin, destination, total_km: distance, total_hours: calculation.franchiseHours,
                         total_value: currentTotal, status: 'Rascunho', created_at: '', created_by: '',
-                        contract_details: `Simulação de KM: ${manualKmRate}\nSimulação Hora Extra: ${manualHourRate}\nValidade da Proposta: ${validityDays} dias.`
+                        contract_details: `Simulação de KM: ${manualKmRate}\nSimulação Hora Extra: ${manualHourRate}${waypoints.filter(w => w.trim()).length > 0 ? `\nParadas: ${waypoints.filter(w => w.trim()).join(' → ')}` : ''}\nValidade da Proposta: ${validityDays} dias.`
                     }} 
                     onClose={() => setShowPrintModal(false)} 
                 />
@@ -380,6 +416,48 @@ const ClientPriceCalculator: React.FC<Props> = ({ clientName, clientId, priceTab
                                 <MapPin size={20} className="absolute left-4 top-11 text-blue-500" />
                             </div>
 
+                            {waypoints.map((wp, idx) => (
+                                <div key={idx} className="relative animate-in slide-in-from-top-2">
+                                    <label className={LABEL_CLASS}>Parada {idx + 1}</label>
+                                    <div className="flex gap-2">
+                                        {isLoaded ? (
+                                            <Autocomplete 
+                                                onLoad={ref => { waypointAutocompleteRefs.current[idx] = ref; }}
+                                                onPlaceChanged={() => handlePlaceSelect(idx)}
+                                            >
+                                                <input 
+                                                    type="text" 
+                                                    className="w-full bg-slate-800/50 border border-amber-600/40 rounded-2xl px-5 py-4 text-sm outline-none focus:ring-2 focus:ring-amber-500/40 transition-all pl-12 text-white font-bold" 
+                                                    placeholder={`Cidade intermediária ${idx + 1}...`}
+                                                    value={wp} 
+                                                    onChange={e => {
+                                                        const newWp = [...waypoints];
+                                                        newWp[idx] = e.target.value;
+                                                        setWaypoints(newWp);
+                                                    }} 
+                                                />
+                                            </Autocomplete>
+                                        ) : <div className="h-14 bg-slate-800 rounded-2xl animate-pulse flex-1"></div>}
+                                        <button 
+                                            onClick={() => removeWaypoint(idx)}
+                                            className="p-3 bg-red-600/20 border border-red-500/30 rounded-2xl text-red-400 hover:bg-red-600/40 transition-all active:scale-95 shrink-0"
+                                            title="Remover parada"
+                                        >
+                                            <X size={18} />
+                                        </button>
+                                    </div>
+                                    <CircleDot size={18} className="absolute left-4 top-11 text-amber-500" />
+                                </div>
+                            ))}
+
+                            <button 
+                                onClick={addWaypoint}
+                                className="w-full py-3 border-2 border-dashed border-slate-700 hover:border-amber-500/50 rounded-2xl text-xs font-black text-slate-500 hover:text-amber-400 uppercase tracking-widest flex items-center justify-center gap-2 transition-all active:scale-[0.98]"
+                                data-testid="button-add-waypoint"
+                            >
+                                <Plus size={16} /> Incluir Cidade
+                            </button>
+
                             <div className="relative">
                                 <label className={LABEL_CLASS}>Chegada (Destino)</label>
                                 {isLoaded ? (
@@ -393,7 +471,7 @@ const ClientPriceCalculator: React.FC<Props> = ({ clientName, clientId, priceTab
 
                         {calculation && (
                             <div className="bg-slate-950/60 rounded-3xl p-6 border border-slate-800 animate-in slide-in-from-bottom-4 space-y-6 shadow-2xl">
-                                <div className="grid grid-cols-2 gap-4">
+                                <div className={`grid ${waypoints.filter(w => w.trim()).length > 0 ? 'grid-cols-3' : 'grid-cols-2'} gap-4`}>
                                     <div className="bg-slate-900 p-3 rounded-xl border border-slate-800">
                                         <p className="text-[9px] font-bold text-slate-500 uppercase mb-1">Distância Real</p>
                                         <p className="text-base font-black text-white font-mono">{distance.toFixed(1)} KM</p>
@@ -403,6 +481,13 @@ const ClientPriceCalculator: React.FC<Props> = ({ clientName, clientId, priceTab
                                         <p className="text-base font-black text-white font-mono">{calculation.franchiseHours} H</p>
                                         <p className="text-[7px] text-slate-600 mt-1 uppercase">Cálculo: KM / 40</p>
                                     </div>
+                                    {waypoints.filter(w => w.trim()).length > 0 && (
+                                        <div className="bg-slate-900 p-3 rounded-xl border border-amber-600/30">
+                                            <p className="text-[9px] font-bold text-amber-500 uppercase mb-1">Paradas</p>
+                                            <p className="text-base font-black text-amber-400 font-mono">{waypoints.filter(w => w.trim()).length}</p>
+                                            <p className="text-[7px] text-slate-600 mt-1 uppercase">Cidades</p>
+                                        </div>
+                                    )}
                                 </div>
 
                                 {/* EDITÁVEIS - VALOR KM E HORA */}
