@@ -97,6 +97,11 @@ const ExecutiveDashboard: React.FC<Props> = ({ missions, isDirector, clientTable
     const period = mapViewPeriodToDash(parentPeriod);
     const customStart = parentStartDate || '';
     const customEnd = parentEndDate || '';
+
+    useEffect(() => {
+        setLastUpdate(new Date());
+    }, [period, customStart, customEnd]);
+
     const [excelComparison, setExcelComparison] = useState<any[] | null>(null);
     const [excelAiAnalysis, setExcelAiAnalysis] = useState<string | null>(null);
     const [isExcelLoading, setIsExcelLoading] = useState(false);
@@ -239,7 +244,7 @@ const ExecutiveDashboard: React.FC<Props> = ({ missions, isDirector, clientTable
             const activeStatuses = [MissionStatus.IN_TRANSIT, MissionStatus.ORIGIN, MissionStatus.SCHEDULED, MissionStatus.SOLICITED, MissionStatus.DOCUMENTATION];
             const isActive = activeStatuses.includes(m.status as MissionStatus);
             if (period === 'TODAY' && isActive) return true;
-            const d = new Date(m.startTime || m.createdAt);
+            const d = new Date(m.startTime || m.start_time || m.createdAt || m.created_at);
             return d >= start && d <= end;
         });
     }, [missions, period, customStart, customEnd, refreshKey]);
@@ -1049,7 +1054,7 @@ const ExecutiveDashboard: React.FC<Props> = ({ missions, isDirector, clientTable
             current.setDate(current.getDate() + 1);
         }
         missionFinancials.filter(m => m.status !== MissionStatus.REFUSED).forEach(m => {
-            const date = new Date(m.startTime || m.createdAt);
+            const date = new Date(m.startTime || m.start_time || m.createdAt || m.created_at);
             const key = `${date.getDate().toString().padStart(2, '0')}/${(date.getMonth() + 1).toString().padStart(2, '0')}`;
             if (days[key]) { days[key].missoes++; days[key].faturamento += m.rev; days[key].custo += m.cost; days[key].lucro += m.profit; }
         });
