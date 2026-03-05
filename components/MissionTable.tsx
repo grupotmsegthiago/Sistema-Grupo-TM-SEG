@@ -802,7 +802,7 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
               <span className={`w-1.5 h-6 rounded-full ${isCevaClient ? 'bg-[#e81818]' : 'bg-red-700'}`}></span>
               <h2 className={`text-xl font-bold ${isCevaClient ? 'text-white' : 'text-gray-900'}`}>Monitoramento de Missões</h2>
             </div>
-            {dbStatus === 'ok' && ( <div className={`flex items-center gap-2 text-[10px] font-bold px-2 py-1 rounded w-fit border mt-2 ml-4.5 ${isCevaClient ? 'text-green-300 bg-green-900/30 border-green-700' : 'text-green-700 bg-green-50 border-green-200'}`}><Database size={12} /> Realtime Sync</div> )}
+            {dbStatus === 'ok' && !isRestrictedClientView && ( <div className={`flex items-center gap-2 text-[10px] font-bold px-2 py-1 rounded w-fit border mt-2 ml-4.5 ${isCevaClient ? 'text-green-300 bg-green-900/30 border-green-700' : 'text-green-700 bg-green-50 border-green-200'}`}><Database size={12} /> Realtime Sync</div> )}
           </div>
 
 

@@ -282,7 +282,7 @@ const App: React.FC = () => {
         <div className="flex-1 flex flex-col min-h-0 relative z-10 overflow-x-hidden lg:pl-20">
             {isSidebarOpen && <div className="fixed inset-0 bg-black/50 z-40 lg:hidden" onClick={() => setIsSidebarOpen(false)}></div>}
             <Header onMenuClick={toggleSidebar} onProfileSettingsClick={() => setIsProfileSettingsOpen(true)} isCevaClient={isCevaClient} />
-            <main className="flex-1 overflow-y-auto p-4 md:p-6 scrollbar-thin">
+            <main className="flex-1 overflow-y-auto p-4 md:p-6 scrollbar-thin" style={{ WebkitOverflowScrolling: 'touch' }}>
             <div className="w-full mx-auto relative">
                 {renderContent()}
                 <footer className="mt-8 text-center text-[10px] text-gray-400 pb-4 uppercase">&copy; {new Date().getFullYear()} Grupo TMSEG.</footer>
