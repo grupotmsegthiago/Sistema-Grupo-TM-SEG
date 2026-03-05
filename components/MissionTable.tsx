@@ -531,11 +531,12 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
                 return false;
             }
 
-            // Filter 3: Future (Toggle)
             if (showTomorrowOnly) {
-                const now = new Date().getTime();
+                const tomorrow = new Date();
+                tomorrow.setDate(tomorrow.getDate() + 1);
+                tomorrow.setHours(0, 0, 0, 0);
                 const mDate = new Date(mission.startTime || mission.createdAt).getTime();
-                if (mDate <= now) return false;
+                if (mDate < tomorrow.getTime()) return false;
             }
 
             return true;
@@ -558,10 +559,13 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
     // Counts for Badge Indicators (Global context)
     const pendingCount = useMemo(() => allMissions.filter(m => isMissionPending(m)).length, [allMissions]);
     const tomorrowCount = useMemo(() => {
-        const now = new Date().getTime();
+        const tomorrow = new Date();
+        tomorrow.setDate(tomorrow.getDate() + 1);
+        tomorrow.setHours(0, 0, 0, 0);
+        const tomorrowTs = tomorrow.getTime();
         return allMissions.filter(m => {
             const mDate = new Date(m.startTime || m.createdAt).getTime();
-            const isFutureDate = mDate > now;
+            const isFutureDate = mDate >= tomorrowTs;
             const isInitialStatus = [MissionStatus.SCHEDULED, MissionStatus.SOLICITED, MissionStatus.DOCUMENTATION].includes(m.status as MissionStatus);
             return isFutureDate && isInitialStatus;
         }).length;
