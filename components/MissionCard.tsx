@@ -422,11 +422,13 @@ Qualquer dúvida, estamos a disposição.
         const hasAuditor = stages.includes('auditor');
         const hasFinanceiro = stages.includes('financeiro');
         const hasDiretoria = stages.includes('diretoria');
-        if (hasAuditor && hasFinanceiro && hasDiretoria) return null;
+        if (hasDiretoria || (hasAuditor && hasFinanceiro && hasDiretoria)) return null;
         const missing: string[] = [];
-        if (!hasAuditor) missing.push('Daniel');
-        if (!hasFinanceiro) missing.push('Barbara');
-        if (!hasDiretoria) missing.push('Diretoria');
+        if (!hasDiretoria) {
+            if (!hasAuditor) missing.push('Daniel');
+            if (!hasFinanceiro) missing.push('Barbara');
+            missing.push('Diretoria');
+        }
         let waitingDays = 0;
         if (approvalStages && approvalStages.length > 0) {
             const lastDate = approvalStages.reduce((latest, s) => {

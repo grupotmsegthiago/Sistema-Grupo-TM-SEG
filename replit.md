@@ -36,7 +36,7 @@ The system encompasses modules for **Missions**, **Clients**, **Providers**, **F
 -   **Dashboard Click-to-Filter (PowerBI-like):** Enables interactive data filtering on dashboards with visual feedback and brand-specific color schemes for CEVA clients.
 -   **Franchise Financial Calculation:** Implements strict franchise rules for extra KM and hours, with tolerance-based auditing and prioritization of user-saved values.
 -   **Provider-Specific Sorting & Filtering:** Client and provider lists are sorted alphabetically, and specific business logic filters client tables for providers like MACOR.
--   **3-Step Billing Approval Flow:** Implements a three-stage approval process (Auditor → Financeiro → Diretoria) for mission billing, with detailed logging and progress visualization. Missions with "Pendente" status cannot be approved.
+-   **3-Step Billing Approval Flow:** Implements a three-stage approval process (Auditor → Financeiro → Diretoria) for mission billing, with detailed logging and progress visualization. Missions with "Pendente" status cannot be approved. **Diretoria (Thiago) has maximum authority** and can approve without needing Auditor or Financeiro approval first — Diretoria approval alone = fully approved (`billing_approved=true`). The "Sem Aprovação" filter button was removed from the mission list.
 -   **Client Billing Visibility:** Mission cards for clients display "Faturamento Cliente" (revenue) and breakdown of extra hours/KM, without exposing provider data.
 
 ## External Dependencies

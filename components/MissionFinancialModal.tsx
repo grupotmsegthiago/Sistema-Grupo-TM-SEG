@@ -482,11 +482,13 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
       const hasAuditor = stages.includes('auditor');
       const hasFinanceiro = stages.includes('financeiro');
       const hasDiretoria = stages.includes('diretoria');
-      const isFullyApproved = hasAuditor && hasFinanceiro && hasDiretoria;
+      const isFullyApproved = hasDiretoria || (hasAuditor && hasFinanceiro && hasDiretoria);
       const missing: string[] = [];
-      if (!hasAuditor) missing.push('Daniel');
-      if (!hasFinanceiro) missing.push('Barbara');
-      if (!hasDiretoria) missing.push('Diretoria');
+      if (!hasDiretoria) {
+          if (!hasAuditor) missing.push('Daniel');
+          if (!hasFinanceiro) missing.push('Barbara');
+          missing.push('Diretoria');
+      }
       let waitingDays = 0;
       if (approvalLog.length > 0) {
           const lastDate = approvalLog.reduce((latest, l) => {
@@ -514,14 +516,6 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
       if (currentUserStage === 'financeiro' && !hasAuditor) {
           blockedForCurrentUser = true;
           blockedMessage = 'Aguardando aprovação: Daniel (Auditor)';
-      } else if (currentUserStage === 'diretoria') {
-          const pendingNames: string[] = [];
-          if (!hasAuditor) pendingNames.push('Daniel (Auditor)');
-          if (!hasFinanceiro) pendingNames.push('Barbara (Financeiro)');
-          if (pendingNames.length > 0) {
-              blockedForCurrentUser = true;
-              blockedMessage = `Aguardando: ${pendingNames.join(' e ')}`;
-          }
       }
 
       return { hasAuditor, hasFinanceiro, hasDiretoria, isFullyApproved, missing, waitingDays, hasPartial, blockedForCurrentUser, blockedMessage, currentUserStage };
@@ -553,14 +547,6 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                   setIsUpdating(false);
                   return;
               }
-              if (stage === 'diretoria' && (!existingStages.includes('auditor') || !existingStages.includes('financeiro'))) {
-                  const missing = [];
-                  if (!existingStages.includes('auditor')) missing.push('Auditor (Daniel)');
-                  if (!existingStages.includes('financeiro')) missing.push('Financeiro (Barbara)');
-                  showNotification('Bloqueado', `Aguardando aprovação: ${missing.join(' e ')}`, 'error');
-                  setIsUpdating(false);
-                  return;
-              }
               const alreadyApproved = newLog.some(l => l.stage === stage);
               if (!alreadyApproved) {
                   const logEntry = { user: userName, role: userRole, stage, date: new Date().toISOString() };
@@ -577,7 +563,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
           }
           
           const updatedStages = newLog.map(l => l.stage);
-          const isFullyApproved = updatedStages.includes('auditor') && updatedStages.includes('financeiro') && updatedStages.includes('diretoria');
+          const isFullyApproved = updatedStages.includes('diretoria') || (updatedStages.includes('auditor') && updatedStages.includes('financeiro') && updatedStages.includes('diretoria'));
           
           const basePayload = {
               revenue_value: revServiceOnly,

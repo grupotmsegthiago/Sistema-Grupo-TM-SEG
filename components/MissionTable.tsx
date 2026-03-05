@@ -114,7 +114,6 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
   
   // Toggle Filters
   const [showPendingOnly, setShowPendingOnly] = useState(false);
-  const [showUnapprovedOnly, setShowUnapprovedOnly] = useState(false);
   const [showTomorrowOnly, setShowTomorrowOnly] = useState(false); 
   
   const [searchHistoryId, setSearchHistoryId] = useState('');
@@ -509,7 +508,7 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
     
     const filteredBySpecialCriteria = useMemo(() => {
         const isSearching = searchTerm && searchTerm.trim().length > 0;
-        const hasActiveSpecialFilters = showPendingOnly || showUnapprovedOnly || showTomorrowOnly || showMyApprovalOnly;
+        const hasActiveSpecialFilters = showPendingOnly || showTomorrowOnly || showMyApprovalOnly;
 
         const sourceMissions = (isSearching || hasActiveSpecialFilters) ? allMissions : periodMissions;
 
@@ -532,13 +531,6 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
                 return false;
             }
 
-            // Filter 2: Unapproved (Toggle)
-            if (showUnapprovedOnly) {
-                const mDate = new Date(mission.startTime || mission.createdAt).getTime();
-                const isUnapproved = mission.status === MissionStatus.COMPLETED && !mission.billing_approved && mDate >= DATE_THRESHOLD_2026;
-                if (!isUnapproved) return false;
-            }
-
             // Filter 3: Future (Toggle)
             if (showTomorrowOnly) {
                 const now = new Date().getTime();
@@ -548,7 +540,7 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
 
             return true;
         });
-    }, [allMissions, periodMissions, searchTerm, showPendingOnly, showUnapprovedOnly, showTomorrowOnly, showMyApprovalOnly]);
+    }, [allMissions, periodMissions, searchTerm, showPendingOnly, showTomorrowOnly, showMyApprovalOnly]);
 
     // Status Counts based on the FILTERED set (to sync counters with visible criteria)
     const statusCounts = useMemo(() => {
@@ -565,13 +557,6 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
   
     // Counts for Badge Indicators (Global context)
     const pendingCount = useMemo(() => allMissions.filter(m => isMissionPending(m)).length, [allMissions]);
-    const unapprovedCount = useMemo(() => 
-        allMissions.filter(m => 
-            m.status === MissionStatus.COMPLETED && 
-            !m.billing_approved && 
-            new Date(m.startTime || m.createdAt).getTime() >= DATE_THRESHOLD_2026
-        ).length, 
-    [allMissions]);
     const tomorrowCount = useMemo(() => {
         const now = new Date().getTime();
         return allMissions.filter(m => {
@@ -632,7 +617,7 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
   
     const filteredMissions = useMemo(() => {
         const isSearching = searchTerm && searchTerm.trim().length > 0;
-        const hasActiveSpecialFilters = showPendingOnly || showUnapprovedOnly || showTomorrowOnly || showMyApprovalOnly;
+        const hasActiveSpecialFilters = showPendingOnly || showTomorrowOnly || showMyApprovalOnly;
 
         if (showMyApprovalOnly && myApprovalMissions.length > 0) {
             return myApprovalMissions;
@@ -656,7 +641,7 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
             }
             return true;
         });
-    }, [filteredBySpecialCriteria, filterStatus, searchTerm, showPendingOnly, showUnapprovedOnly, showTomorrowOnly, showMyApprovalOnly, myApprovalMissions]);
+    }, [filteredBySpecialCriteria, filterStatus, searchTerm, showPendingOnly, showTomorrowOnly, showMyApprovalOnly, myApprovalMissions]);
   
     const activeMapMissions = useMemo(() => {
         return allMissions.filter(m => {
@@ -931,7 +916,7 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
   
         <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-10 gap-1.5">
             {/* BOX TOTAL: Reflete o volume absoluto do período conforme solicitado */}
-            <StatCard icon={Activity} title="Total" value={totalVolumeCount} bgColor="bg-gray-800" loading={isLoading} isActive={filterStatus === 'ALL' && !showPendingOnly && !showTomorrowOnly && !showUnapprovedOnly && !showMyApprovalOnly} onClick={() => { setFilterStatus('ALL'); setShowPendingOnly(false); setShowTomorrowOnly(false); setShowUnapprovedOnly(false); setShowMyApprovalOnly(false); }} />
+            <StatCard icon={Activity} title="Total" value={totalVolumeCount} bgColor="bg-gray-800" loading={isLoading} isActive={filterStatus === 'ALL' && !showPendingOnly && !showTomorrowOnly && !showMyApprovalOnly} onClick={() => { setFilterStatus('ALL'); setShowPendingOnly(false); setShowTomorrowOnly(false); setShowMyApprovalOnly(false); }} />
             {STATUS_CONFIG.filter(s => isRestrictedClientView ? s.id !== MissionStatus.PENDING : true).map((status) => ( <StatCard key={status.id} icon={status.icon} title={status.label} value={statusCounts[status.id] || 0} bgColor={status.color} loading={isLoading} isActive={filterStatus === status.id} onClick={() => { setFilterStatus(status.id); }} /> ))}
         </div>
   
@@ -967,16 +952,6 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
 
                     <button onClick={() => setShowPendingOnly(!showPendingOnly)} className={`relative flex items-center gap-2 px-4 py-2.5 rounded-lg text-xs font-bold uppercase border transition-all ${showPendingOnly ? 'bg-orange-50 text-black border-orange-600 shadow-md' : pendingCount > 0 ? 'bg-orange-50 text-black border-orange-600 shadow-sm' : 'bg-white text-gray-600 border-gray-300 hover:bg-gray-50'}`}>{pendingCount > 0 ? ( <AlertTriangle size={16} className="text-black" /> ) : ( showPendingOnly ? <ToggleRight size={16} /> : <ToggleLeft size={16} /> )}{showPendingOnly ? 'Exibindo Pendências' : 'Filtrar Pendências'}{pendingCount > 0 && ( <span className="ml-1 px-1.5 py-0.5 rounded-full text-[9px] bg-white text-orange-700 font-bold">{pendingCount}</span> )}</button>
                     
-                    {(isDirector || isAdmin || canEditMission) && (
-                        <button 
-                            onClick={() => setShowUnapprovedOnly(!showUnapprovedOnly)} 
-                            className={`relative flex items-center gap-2 px-4 py-2.5 rounded-lg text-xs font-bold uppercase border transition-all ${showUnapprovedOnly ? 'bg-blue-50 text-blue-800 border-blue-600 shadow-md' : unapprovedCount > 0 ? 'bg-blue-50 text-blue-700 border-blue-200' : 'bg-white text-gray-600 border-gray-300 hover:bg-gray-50'}`}
-                        >
-                            <ShieldAlert size={16} className={showUnapprovedOnly ? "text-blue-800" : "text-blue-600"} />
-                            {showUnapprovedOnly ? 'Não Auditadas (ON)' : 'Sem Aprovação'}
-                            {unapprovedCount > 0 && <span className="ml-1 px-1.5 py-0.5 rounded-full text-[9px] bg-blue-600 text-white font-bold">{unapprovedCount}</span>}
-                        </button>
-                    )}
 
                     {myApprovalStage && myApprovalStage !== 'diretoria' && (
                         <button 
