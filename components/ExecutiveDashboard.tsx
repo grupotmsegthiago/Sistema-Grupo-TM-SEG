@@ -1866,5 +1866,8 @@ export default React.memo(ExecutiveDashboard, (prev, next) => {
            prev.isDirector === next.isDirector &&
            prev.clientTables === next.clientTables &&
            prev.providerTables === next.providerTables &&
-           prev.clientsData === next.clientsData;
+           prev.clientsData === next.clientsData &&
+           prev.viewPeriod === next.viewPeriod &&
+           prev.customStartDate === next.customStartDate &&
+           prev.customEndDate === next.customEndDate;
 });
