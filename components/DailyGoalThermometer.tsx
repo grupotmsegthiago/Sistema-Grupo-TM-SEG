@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { supabase } from '../lib/supabase';
-import { Target, Loader2, Trophy, Zap, Clock } from 'lucide-react';
+import { Target, Loader2, Trophy, Zap, Clock, RefreshCw } from 'lucide-react';
 import { calculateMissionFinancials } from '../lib/financialUtils';
 import { Mission, ClientPriceTable, ProviderCostTable, MissionStatus, Client } from '../types';
 
@@ -24,6 +24,7 @@ const DailyGoalThermometer: React.FC<Props> = ({ viewPeriod = 'TODAY', customSta
     const [providerTables, setProviderTables] = useState<ProviderCostTable[]>([]);
     const [clientsData, setClientsData] = useState<Client[]>([]);
     const [currentTime, setCurrentTime] = useState(new Date());
+    const [isRefreshing, setIsRefreshing] = useState(false);
 
     useEffect(() => {
         const timer = setInterval(() => setCurrentTime(new Date()), 1000);
@@ -196,6 +197,13 @@ const DailyGoalThermometer: React.FC<Props> = ({ viewPeriod = 'TODAY', customSta
 
     const canSeeMonetary = userRole === 'diretoria';
 
+    const handleManualRefresh = useCallback(async () => {
+        setIsRefreshing(true);
+        setPriceTables([]);
+        await fetchPeriodData();
+        setIsRefreshing(false);
+    }, [fetchPeriodData]);
+
     const labelText = viewPeriod === 'TODAY' ? 'Meta Agendada (Hoje)' : 
                       viewPeriod === 'YESTERDAY' ? 'Meta Agendada (Ontem)' :
                       viewPeriod === 'MONTH' ? 'Meta Mensal' : 'Faturamento Período';
@@ -228,7 +236,7 @@ const DailyGoalThermometer: React.FC<Props> = ({ viewPeriod = 'TODAY', customSta
                         </div>
                     </div>
                     {canSeeMonetary && (
-                        <div className="text-right shrink-0">
+                        <div className="flex items-center gap-2 shrink-0">
                             <p className={`text-sm md:text-base font-black font-mono tracking-tighter whitespace-nowrap transition-colors duration-500 ${stats.textClass}`}>
                                 {isLoading ? (
                                     <Loader2 size={14} className="animate-spin inline text-red-500" />
@@ -236,6 +244,15 @@ const DailyGoalThermometer: React.FC<Props> = ({ viewPeriod = 'TODAY', customSta
                                     formatCurrency(currentRevenue)
                                 )}
                             </p>
+                            <button
+                                onClick={handleManualRefresh}
+                                disabled={isRefreshing || isLoading}
+                                className="p-1.5 rounded-xl bg-gray-100 hover:bg-gray-200 border border-gray-200 text-gray-500 hover:text-gray-700 transition-all disabled:opacity-40 disabled:cursor-not-allowed active:scale-90"
+                                title="Atualizar Meta"
+                                data-testid="button-refresh-goal"
+                            >
+                                <RefreshCw size={13} className={isRefreshing ? 'animate-spin' : ''} />
+                            </button>
                         </div>
                     )}
                 </div>
