@@ -1645,6 +1645,32 @@ const ExecutiveDashboard: React.FC<Props> = ({ missions, isDirector, clientTable
                                             );
                                         })}
                                     </tbody>
+                                    <tfoot className="bg-gray-100 border-t-2 border-gray-300 sticky bottom-0">
+                                        {(() => {
+                                            const rows = excelComparison.filter(c => {
+                                                const isOk = c.found && c.revMatch && c.costMatch && !adjustedOsIds.has(c.osId);
+                                                return !isOk;
+                                            });
+                                            const totalExcelRev = rows.reduce((s, c) => s + (c.excelRev || 0), 0);
+                                            const totalSysRev = rows.reduce((s, c) => s + (c.found ? (c.sysRev || 0) : 0), 0);
+                                            const totalDiffRev = Math.abs(totalExcelRev - totalSysRev);
+                                            const totalExcelCost = rows.reduce((s, c) => s + (c.excelCost || 0), 0);
+                                            const totalSysCost = rows.reduce((s, c) => s + (c.found ? (c.sysCost || 0) : 0), 0);
+                                            const totalDiffCost = Math.abs(totalExcelCost - totalSysCost);
+                                            return (
+                                                <tr>
+                                                    <td className="px-3 py-2.5 font-black text-gray-900 uppercase text-[10px]" colSpan={2}>Total ({rows.length} OS)</td>
+                                                    <td className="px-3 py-2.5 text-right font-black text-gray-900">{fmtBRL(totalExcelRev)}</td>
+                                                    <td className="px-3 py-2.5 text-right font-black text-gray-900">{fmtBRL(totalSysRev)}</td>
+                                                    <td className={`px-3 py-2.5 text-right font-black ${totalDiffRev > 10 ? 'text-red-600' : 'text-gray-500'}`}>{totalDiffRev > 0.01 ? fmtBRL(totalDiffRev) : '-'}</td>
+                                                    <td className="px-3 py-2.5 text-right font-black text-gray-900">{fmtBRL(totalExcelCost)}</td>
+                                                    <td className="px-3 py-2.5 text-right font-black text-gray-900">{fmtBRL(totalSysCost)}</td>
+                                                    <td className={`px-3 py-2.5 text-right font-black ${totalDiffCost > 10 ? 'text-red-600' : 'text-gray-500'}`}>{totalDiffCost > 0.01 ? fmtBRL(totalDiffCost) : '-'}</td>
+                                                    <td colSpan={2}></td>
+                                                </tr>
+                                            );
+                                        })()}
+                                    </tfoot>
                                 </table>
                             </div>
 
