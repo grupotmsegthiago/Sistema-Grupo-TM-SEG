@@ -1410,6 +1410,9 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                 {tollEmbeddedInCost && (
                                     <span className="text-[8px] font-bold text-amber-600 mt-1 block">⚠ PEDÁGIO JÁ INCLUSO NO CUSTO SALVO</span>
                                 )}
+                                {!tollEmbeddedInCost && useSavedValues && (
+                                    <span className="text-[8px] font-bold text-amber-600 mt-1 block">⚠ PEDÁGIO SALVO NA MEMÓRIA</span>
+                                )}
                             </div>
                         </div>
                         
