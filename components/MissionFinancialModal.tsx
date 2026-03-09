@@ -333,7 +333,17 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                   const adj = adjustmentRes.data[0];
                   try {
                       const details = JSON.parse(adj.details);
-                      if (details.clientTableId) setManualClientTableId(details.clientTableId);
+                      if (details.clientTableId) {
+                          const adjClientTable = (ctRes.data || []).find((t: any) => t.id.toString() === details.clientTableId);
+                          const adjTableOp = (adjClientTable?.operation_type || '').toUpperCase();
+                          const adjOriginUF = extractUF(fullMission.origin || '');
+                          const adjOriginRegion = (UF_TO_REGION[adjOriginUF] || '').toUpperCase();
+                          const adjTableRegions = ['SUDESTE', 'SUL', 'CENTRO-OESTE', 'NORDESTE', 'NORTE'];
+                          const adjTableRegion = adjTableRegions.find(r => adjTableOp.includes(r)) || '';
+                          if (!adjTableRegion || !adjOriginRegion || adjTableRegion === adjOriginRegion) {
+                              setManualClientTableId(details.clientTableId);
+                          }
+                      }
                       if (details.providerTableId) setManualProviderTableId(details.providerTableId);
                       if (details.customClientBase) setCustomClientBase(details.customClientBase);
                       if (details.customClientKm) setCustomClientKm(details.customClientKm);

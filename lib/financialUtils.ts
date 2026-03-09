@@ -479,15 +479,24 @@ export const calculateMissionFinancials = (
     }
 
     if (manualTableOverrides?.clientTableId) {
-        appliedClientTable = clientTables.find(t => t.id.toString() === manualTableOverrides.clientTableId);
-        clientLog = 'Seleção Manual / Memória';
-    } else if (isCancelled && clientTablesFiltered.length > 0) {
+        const manualTable = clientTables.find(t => t.id.toString() === manualTableOverrides.clientTableId);
+        const manualTableOp = (manualTable?.operation_type || '').toUpperCase();
+        const regionNames = ['SUDESTE', 'SUL', 'CENTRO-OESTE', 'NORDESTE', 'NORTE'];
+        const manualTableRegion = regionNames.find(r => manualTableOp.includes(r)) || '';
+        const regionOk = !manualTableRegion || !detectedRegion || manualTableRegion === detectedRegion.toUpperCase();
+        if (regionOk) {
+            appliedClientTable = manualTable;
+            clientLog = 'Seleção Manual / Memória';
+        }
+    }
+    if (!appliedClientTable && isCancelled && clientTablesFiltered.length > 0) {
         const sorted = [...clientTablesFiltered]
             .filter(t => (t.activation_fee || 0) > 0)
             .sort((a, b) => (a.activation_fee || 0) - (b.activation_fee || 0));
         appliedClientTable = sorted.length > 0 ? sorted[0] : clientTablesFiltered[0];
         clientLog = `Cancelada → Menor Acionamento (${appliedClientTable?.operation_type})`;
-    } else {
+    }
+    if (!appliedClientTable) {
         const clientDistReference = Math.max(totalDistance, distanceForCalculation);
         const result = selectStrictTable(
             clientTablesFiltered, 
