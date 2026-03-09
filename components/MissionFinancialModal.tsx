@@ -88,6 +88,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
   const [memoryLoaded, setMemoryLoaded] = useState(false);
   const [tollConfirmed, setTollConfirmed] = useState(false);
   const [isCalculatingToll, setIsCalculatingToll] = useState(false);
+  const [tollEmbeddedInCost, setTollEmbeddedInCost] = useState(false);
   const [approvalLog, setApprovalLog] = useState<Array<{user: string; role: string; stage: string; date: string}>>([]);
   const [useSavedValues, _setUseSavedValues] = useState(false);
   const useSavedValuesRef = React.useRef(false);
@@ -295,6 +296,9 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                   const totalRev = savedRev + dbToll;
                   const hasSeparateTollProvider = mRes.data.toll_value_provider != null;
                   const totalCost = hasSeparateTollProvider ? savedCost + dbTollProvider : savedCost;
+                  if (!hasSeparateTollProvider && savedCost > 0) {
+                      setTollEmbeddedInCost(true);
+                  }
                   setRevenueInput(totalRev.toLocaleString('pt-BR', {minimumFractionDigits: 2}));
                   setCostInput(totalCost.toLocaleString('pt-BR', {minimumFractionDigits: 2}));
               }
@@ -1386,6 +1390,9 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                     />
                                     <Building2 size={16} className="text-green-300 ml-2" />
                                 </div>
+                                {useSavedValues && parseNumber(tollInput) > 0 && (
+                                    <span className="text-[8px] font-bold text-amber-600 mt-1 block">⚠ PEDÁGIO SALVO NA MEMÓRIA</span>
+                                )}
                             </div>
                             <div>
                                 <label className="text-[9px] font-black text-blue-700 uppercase mb-1 block">Pedágio Fornecedor</label>
@@ -1400,6 +1407,9 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                     />
                                     <Briefcase size={16} className="text-blue-300 ml-2" />
                                 </div>
+                                {tollEmbeddedInCost && (
+                                    <span className="text-[8px] font-bold text-amber-600 mt-1 block">⚠ PEDÁGIO JÁ INCLUSO NO CUSTO SALVO</span>
+                                )}
                             </div>
                         </div>
                         
