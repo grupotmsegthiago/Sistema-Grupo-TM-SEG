@@ -585,6 +585,16 @@ Qualquer dúvida, estamos a disposição.
                             </div>
                         </div>
 
+                        <div className="flex items-center gap-2 bg-blue-50/50 rounded-lg px-2 py-1 border border-blue-100">
+                            <Clock size={10} className="text-blue-500 shrink-0" />
+                            <div className="min-w-0">
+                                <span className="text-[8px] font-black text-blue-400 uppercase tracking-widest block leading-none">Última Atualização</span>
+                                <span className="text-[10px] font-bold text-blue-800 block">
+                                    {mission.lastUpdate ? new Date(mission.lastUpdate).toLocaleDateString('pt-BR') + ' ' + new Date(mission.lastUpdate).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) : '---'}
+                                </span>
+                            </div>
+                        </div>
+
                         <div className="flex items-center gap-2.5">
                             <div className="p-1.5 bg-white rounded-lg text-blue-600 border border-gray-100 shadow-sm"><ShieldCheck size={12}/></div>
                             <div className="flex-1 min-w-0 flex flex-col gap-1.5">
@@ -633,18 +643,6 @@ Qualquer dúvida, estamos a disposição.
                             <div className="text-[9px] min-w-0 flex-1">
                                 <span className="font-black text-gray-400 uppercase tracking-widest block leading-none mb-1">Ponto A (Origem)</span>
                                 <span className="font-black text-gray-900 uppercase truncate block" title={mission.origin}>{mission.origin || '---'}</span>
-                            </div>
-                        </div>
-
-                        <div className="relative flex items-center gap-3 z-10 my-1">
-                            <div className="w-4 h-4 rounded-full bg-blue-600 shadow-md flex items-center justify-center ring-4 ring-white shrink-0">
-                                <Clock size={8} className="text-white" />
-                            </div>
-                            <div className="text-[9px] min-w-0 flex-1">
-                                <span className="font-black text-gray-400 uppercase tracking-widest block leading-none mb-1">Última Atualização</span>
-                                <span className="font-black text-gray-900 uppercase truncate block">
-                                    {mission.lastUpdate ? new Date(mission.lastUpdate).toLocaleDateString('pt-BR') + ' ' + new Date(mission.lastUpdate).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) : '---'}
-                                </span>
                             </div>
                         </div>
 
