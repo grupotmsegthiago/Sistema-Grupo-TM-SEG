@@ -638,12 +638,12 @@ Qualquer dúvida, estamos a disposição.
 
                         <div className="relative flex items-center gap-3 z-10 my-1">
                             <div className="w-4 h-4 rounded-full bg-blue-600 shadow-md flex items-center justify-center ring-4 ring-white shrink-0">
-                                <Navigation size={8} className="text-white" />
+                                <Clock size={8} className="text-white" />
                             </div>
                             <div className="text-[9px] min-w-0 flex-1">
-                                <span className="font-black text-gray-400 uppercase tracking-widest block leading-none mb-1">Ponto B (Local Atual)</span>
-                                <span className="font-black text-gray-900 uppercase truncate block" title={locationParsed.fullAddress}>
-                                    {locationParsed.fullAddress || 'AGUARDANDO INÍCIO'}
+                                <span className="font-black text-gray-400 uppercase tracking-widest block leading-none mb-1">Última Atualização</span>
+                                <span className="font-black text-gray-900 uppercase truncate block">
+                                    {mission.lastUpdate ? new Date(mission.lastUpdate).toLocaleDateString('pt-BR') + ' ' + new Date(mission.lastUpdate).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) : '---'}
                                 </span>
                             </div>
                         </div>
