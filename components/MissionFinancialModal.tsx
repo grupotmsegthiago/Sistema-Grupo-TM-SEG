@@ -3,7 +3,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { Mission, ClientPriceTable, ProviderCostTable, MissionStatus, Client } from '../types';
 import { supabase } from '../lib/supabase';
 import { useNotification } from '../lib/NotificationContext';
-import { calculateMissionFinancials, auditMissionFinancials } from '../lib/financialUtils';
+import { calculateMissionFinancials, auditMissionFinancials, extractUF, UF_TO_REGION } from '../lib/financialUtils';
 import { X, Calculator, Loader2, Save, CheckCircle2, TrendingUp, Landmark, Zap, RotateCcw, Building2, Briefcase, Plus, Users, MapPin, ArrowRight, BrainCircuit, AlertTriangle, AlertCircle, Edit2, Info, RefreshCw, Clock, Pencil, Lock } from 'lucide-react';
 import ProviderCostForm from './ProviderCostForm';
 import ClientPriceForm from './ClientPriceForm';
@@ -197,7 +197,16 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
              try {
                  const details = JSON.parse(memLogs[0].details);
                  if (details.clientTableId) {
-                     setManualClientTableId(details.clientTableId);
+                     const memClientTable = clientTables.find(t => t.id.toString() === details.clientTableId);
+                     const originUF = extractUF(currentMission.origin || '');
+                     const originRegion = (UF_TO_REGION[originUF] || '').toUpperCase();
+                     const tableOp = (memClientTable?.operation_type || '').toUpperCase();
+                     const tableRegions = ['SUDESTE', 'SUL', 'CENTRO-OESTE', 'NORDESTE', 'NORTE'];
+                     const tableRegion = tableRegions.find(r => tableOp.includes(r)) || '';
+                     const regionCompatible = !tableRegion || !originRegion || tableRegion === originRegion;
+                     if (regionCompatible) {
+                         setManualClientTableId(details.clientTableId);
+                     }
                  }
                  if (details.providerTableId) {
                      const tablesToCheck = allProviderTables || providerTables;
