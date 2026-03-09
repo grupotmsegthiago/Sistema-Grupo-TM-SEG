@@ -289,7 +289,8 @@ export const calculateMissionFinancials = (
     const diffMs = endDateObj.getTime() - effectiveStartDate.getTime();
     let durationHours = Math.max(0, diffMs / (1000 * 60 * 60));
 
-    if (isZeroValueMission) {
+    const cancelledWithHours = isCancelled && durationHours > 0 && !!parseSafeDate(mission.endTime || (mission as any).end_time);
+    if (isZeroValueMission && !cancelledWithHours) {
         durationHours = 0;
     }
 
