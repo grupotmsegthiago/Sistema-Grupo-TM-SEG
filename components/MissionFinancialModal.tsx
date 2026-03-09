@@ -4,7 +4,7 @@ import { Mission, ClientPriceTable, ProviderCostTable, MissionStatus, Client } f
 import { supabase } from '../lib/supabase';
 import { useNotification } from '../lib/NotificationContext';
 import { calculateMissionFinancials, auditMissionFinancials } from '../lib/financialUtils';
-import { X, Calculator, Loader2, Save, CheckCircle2, TrendingUp, Landmark, Zap, RotateCcw, Building2, Briefcase, Plus, Users, MapPin, ArrowRight, BrainCircuit, AlertTriangle, AlertCircle, Edit2, Info, RefreshCw, Clock, Pencil } from 'lucide-react';
+import { X, Calculator, Loader2, Save, CheckCircle2, TrendingUp, Landmark, Zap, RotateCcw, Building2, Briefcase, Plus, Users, MapPin, ArrowRight, BrainCircuit, AlertTriangle, AlertCircle, Edit2, Info, RefreshCw, Clock, Pencil, Lock } from 'lucide-react';
 import ProviderCostForm from './ProviderCostForm';
 import ClientPriceForm from './ClientPriceForm';
 import { formatProviderName } from '../lib/utils';
@@ -553,11 +553,17 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
           blockedMessage = 'Aguardando aprovação: Daniel (Auditor)';
       }
 
-      return { hasAuditor, hasFinanceiro, hasDiretoria, isFullyApproved, missing, waitingDays, hasPartial, blockedForCurrentUser, blockedMessage, currentUserStage };
+      const lockedByDiretoria = hasDiretoria && currentUserStage !== 'diretoria';
+
+      return { hasAuditor, hasFinanceiro, hasDiretoria, isFullyApproved, missing, waitingDays, hasPartial, blockedForCurrentUser, blockedMessage, currentUserStage, lockedByDiretoria };
   }, [approvalLog, mission?.endTime]);
 
   const handleUpdate = async (approve: boolean) => {
       if (!mission) return;
+      if (currentApprovalStatus.lockedByDiretoria) {
+          showNotification('Bloqueado', 'Esta OS foi aprovada pela Diretoria. Somente a Diretoria pode editar.', 'error');
+          return;
+      }
       setIsUpdating(true);
       isSavingRef.current = true;
       try {
@@ -1574,26 +1580,28 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                     </div>
                                 )}
                                 <div className="flex gap-3">
-                                <button onClick={() => handleUpdate(false)} disabled={isUpdating} className="px-6 py-3 bg-white text-slate-900 border border-slate-200 hover:bg-slate-50 rounded-xl text-xs font-black uppercase flex items-center justify-center gap-2 transition-all shadow-sm active:scale-95 h-12" data-testid="button-save-adjustments">
-                                    {isUpdating ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />} Salvar Ajustes
+                                <button onClick={() => handleUpdate(false)} disabled={isUpdating || currentApprovalStatus.lockedByDiretoria} className={`px-6 py-3 rounded-xl text-xs font-black uppercase flex items-center justify-center gap-2 transition-all shadow-sm active:scale-95 h-12 ${currentApprovalStatus.lockedByDiretoria ? 'bg-gray-200 text-gray-400 border border-gray-300 cursor-not-allowed' : 'bg-white text-slate-900 border border-slate-200 hover:bg-slate-50'}`} data-testid="button-save-adjustments">
+                                    {isUpdating ? <Loader2 size={16} className="animate-spin" /> : currentApprovalStatus.lockedByDiretoria ? <Lock size={16} /> : <Save size={16} />} {currentApprovalStatus.lockedByDiretoria ? 'Bloqueado (Diretoria)' : 'Salvar Ajustes'}
                                 </button>
                                 <button 
                                     onClick={() => handleUpdate(true)} 
-                                    disabled={isUpdating || isZeroCostError || !tollConfirmed || mission?.status === MissionStatus.PENDING || currentApprovalStatus.blockedForCurrentUser} 
-                                    className={`px-8 py-3 rounded-xl font-black uppercase text-xs shadow-lg flex flex-col items-center justify-center gap-1 transition-all active:scale-95 min-h-[48px] ${(isZeroCostError || !tollConfirmed || mission?.status === MissionStatus.PENDING) ? 'bg-gray-400 cursor-not-allowed text-gray-200' : currentApprovalStatus.blockedForCurrentUser ? 'bg-amber-50 border-2 border-amber-400 text-amber-800 cursor-not-allowed shadow-amber-100' : currentApprovalStatus.hasPartial ? 'bg-gray-300 text-gray-600 border border-gray-400 cursor-pointer hover:bg-gray-400' : 'bg-blue-600 hover:bg-blue-700 text-white shadow-blue-200'}`}
+                                    disabled={isUpdating || isZeroCostError || !tollConfirmed || mission?.status === MissionStatus.PENDING || currentApprovalStatus.blockedForCurrentUser || currentApprovalStatus.lockedByDiretoria} 
+                                    className={`px-8 py-3 rounded-xl font-black uppercase text-xs shadow-lg flex flex-col items-center justify-center gap-1 transition-all active:scale-95 min-h-[48px] ${(isZeroCostError || !tollConfirmed || mission?.status === MissionStatus.PENDING) ? 'bg-gray-400 cursor-not-allowed text-gray-200' : (currentApprovalStatus.blockedForCurrentUser || currentApprovalStatus.lockedByDiretoria) ? 'bg-amber-50 border-2 border-amber-400 text-amber-800 cursor-not-allowed shadow-amber-100' : currentApprovalStatus.hasPartial ? 'bg-gray-300 text-gray-600 border border-gray-400 cursor-pointer hover:bg-gray-400' : 'bg-blue-600 hover:bg-blue-700 text-white shadow-blue-200'}`}
                                     data-testid="button-approve-billing"
                                 >
                                     <span className="flex items-center gap-2">
-                                        {isUpdating ? <Loader2 size={16} className="animate-spin" /> : currentApprovalStatus.blockedForCurrentUser ? <Clock size={16} className="text-amber-600" /> : <CheckCircle2 size={16} />} 
+                                        {isUpdating ? <Loader2 size={16} className="animate-spin" /> : (currentApprovalStatus.blockedForCurrentUser || currentApprovalStatus.lockedByDiretoria) ? <Lock size={16} className="text-amber-600" /> : <CheckCircle2 size={16} />} 
                                         {mission?.status === MissionStatus.PENDING 
                                             ? 'OS Pendente — Não Aprovável' 
                                             : !tollConfirmed 
                                                 ? 'Confirme o Pedágio' 
-                                                : currentApprovalStatus.blockedForCurrentUser
-                                                    ? 'Aprovação Pendente'
-                                                    : currentApprovalStatus.isFullyApproved 
-                                                        ? 'Já Aprovado (Completo)' 
-                                                        : 'Aprovar Faturamento'}
+                                                : currentApprovalStatus.lockedByDiretoria
+                                                    ? 'Bloqueado — Somente Diretoria'
+                                                    : currentApprovalStatus.blockedForCurrentUser
+                                                        ? 'Aprovação Pendente'
+                                                        : currentApprovalStatus.isFullyApproved 
+                                                            ? 'Já Aprovado (Completo)' 
+                                                            : 'Aprovar Faturamento'}
                                     </span>
                                     {currentApprovalStatus.blockedForCurrentUser && !isZeroCostError && tollConfirmed && mission?.status !== MissionStatus.PENDING && (
                                         <span className="text-[9px] font-bold text-amber-600 normal-case">
