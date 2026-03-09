@@ -293,7 +293,8 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
               if (mRes.data.billing_approved && (savedRev > 0 || savedCost > 0)) {
                   setUseSavedValues(true);
                   const totalRev = savedRev + dbToll;
-                  const totalCost = savedCost + dbTollProvider;
+                  const hasSeparateTollProvider = mRes.data.toll_value_provider != null;
+                  const totalCost = hasSeparateTollProvider ? savedCost + dbTollProvider : savedCost;
                   setRevenueInput(totalRev.toLocaleString('pt-BR', {minimumFractionDigits: 2}));
                   setCostInput(totalCost.toLocaleString('pt-BR', {minimumFractionDigits: 2}));
               }
