@@ -164,7 +164,7 @@ const MissionPrintModal: React.FC<Props> = ({ mission, onClose }) => {
       {/* CSS Específico para Impressão Limpa */}
       <style>{`
         @media print {
-          @page { margin: 0; size: auto; }
+          @page { margin: 10mm; size: A4; }
           body {
             -webkit-print-color-adjust: exact !important;
             print-color-adjust: exact !important;
@@ -176,13 +176,13 @@ const MissionPrintModal: React.FC<Props> = ({ mission, onClose }) => {
             visibility: visible;
           }
           #print-content {
-            position: absolute;
+            position: fixed;
             left: 0;
             top: 0;
             width: 100%;
-            height: 100%;
+            height: auto;
             margin: 0;
-            padding: 20px;
+            padding: 10px;
             background: white;
             z-index: 9999;
             box-shadow: none;
@@ -190,7 +190,6 @@ const MissionPrintModal: React.FC<Props> = ({ mission, onClose }) => {
             -webkit-print-color-adjust: exact !important;
             print-color-adjust: exact !important;
           }
-          /* Esconder botões e overlays na impressão */
           .no-print { display: none !important; }
         }
       `}</style>
@@ -215,7 +214,7 @@ const MissionPrintModal: React.FC<Props> = ({ mission, onClose }) => {
 
         {/* Conteúdo da Folha (A4 Like) - ID usado pelo CSS de impressão */}
         <div className="overflow-y-auto flex-1 bg-gray-100 p-8 flex justify-center">
-            <div id="print-content" className="bg-white w-[210mm] min-h-[297mm] p-8 shadow-sm text-black font-sans box-border relative">
+            <div id="print-content" className="bg-white w-[210mm] print:w-full min-h-[297mm] print:min-h-0 p-8 print:p-0 shadow-sm print:shadow-none text-black font-sans box-border relative">
                 
                 {loading ? (
                     <div className="flex justify-center items-center h-64">
