@@ -39,7 +39,7 @@ export const API_BRASIL_CONFIG = {
 // ==========================================
 export const TOLL_API_CONFIG = {
     BASE_URL: '/api/toll',
-    RAPIDAPI_HOST: 'pedagio1.p.rapidapi.com',
+    RAPIDAPI_HOST: 'territorial-pedagio-v1.p.rapidapi.com',
     PROVIDER: 'RapidAPI Pedágio'
 };
 

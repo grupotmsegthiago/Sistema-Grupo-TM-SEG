@@ -1380,34 +1380,42 @@ export async function registerRoutes(
   });
 
   // ==========================================
-  // TOLL API (RapidAPI - territorial/pedagio)
+  // TOLL API (RapidAPI - territorial/pedagio v1)
   // ==========================================
   const RAPIDAPI_TOLL_KEY = process.env.RAPIDAPI_TOLL_KEY || '';
-  const RAPIDAPI_TOLL_HOST = 'pedagio1.p.rapidapi.com';
+  const RAPIDAPI_TOLL_HOST = 'territorial-pedagio-v1.p.rapidapi.com';
+
+  const callTollAPI = async (fromCoord: string, toCoord: string) => {
+    const response = await fetch(`https://${RAPIDAPI_TOLL_HOST}/json/`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'x-rapidapi-key': RAPIDAPI_TOLL_KEY,
+        'x-rapidapi-host': RAPIDAPI_TOLL_HOST,
+      },
+      body: JSON.stringify({
+        jsonrpc: '2.0',
+        method: 'tollbooth.route',
+        params: {
+          from_coord: fromCoord,
+          to_coord: toCoord,
+        },
+      }),
+    });
+    return response;
+  };
 
   app.get('/api/toll/status', async (_req: Request, res: Response) => {
     try {
       if (!RAPIDAPI_TOLL_KEY) {
         return res.status(400).json({ success: false, error: 'RAPIDAPI_TOLL_KEY não configurada' });
       }
-      const response = await fetch(`https://${RAPIDAPI_TOLL_HOST}/flow`, {
-        method: 'POST',
-        headers: {
-          'content-type': 'application/json',
-          'x-rapidapi-key': RAPIDAPI_TOLL_KEY,
-          'x-rapidapi-host': RAPIDAPI_TOLL_HOST,
-        },
-        body: JSON.stringify({
-          data: [
-            { lat: -23.5505, lng: -46.6333 },
-            { lat: -23.5600, lng: -46.6500 },
-          ],
-        }),
-      });
+      const response = await callTollAPI('-23.5505,-46.6333', '-22.9068,-43.1729');
       if (response.ok) {
         return res.json({ success: true });
       }
-      return res.status(response.status).json({ success: false, error: `RapidAPI retornou ${response.status}` });
+      const errorBody = await response.text();
+      return res.status(response.status).json({ success: false, error: `RapidAPI retornou ${response.status}: ${errorBody}` });
     } catch (e: any) {
       return res.status(500).json({ success: false, error: e.message });
     }
@@ -1421,13 +1429,12 @@ export async function registerRoutes(
 
       const { origin, destination, originCoords, destinationCoords } = req.body;
 
-      let waypoints: { lat: number; lng: number }[] = [];
+      let fromCoord = '';
+      let toCoord = '';
 
       if (originCoords && destinationCoords) {
-        waypoints = [
-          { lat: originCoords.lat, lng: originCoords.lng },
-          { lat: destinationCoords.lat, lng: destinationCoords.lng },
-        ];
+        fromCoord = `${originCoords.lat},${originCoords.lng}`;
+        toCoord = `${destinationCoords.lat},${destinationCoords.lng}`;
       } else if (origin && destination) {
         const geocode = async (address: string) => {
           const url = `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(address)}&key=${process.env.GOOGLE_MAPS_API_KEY || ''}`;
@@ -1443,25 +1450,17 @@ export async function registerRoutes(
         if (!orig || !dest) {
           return res.json({ success: false, apiError: 'Não foi possível geocodificar origem/destino' });
         }
-        waypoints = [
-          { lat: orig.lat, lng: orig.lng },
-          { lat: dest.lat, lng: dest.lng },
-        ];
+        fromCoord = `${orig.lat},${orig.lng}`;
+        toCoord = `${dest.lat},${dest.lng}`;
       } else {
         return res.json({ success: false, apiError: 'Origem e destino são obrigatórios' });
       }
 
-      const response = await fetch(`https://${RAPIDAPI_TOLL_HOST}/flow`, {
-        method: 'POST',
-        headers: {
-          'content-type': 'application/json',
-          'x-rapidapi-key': RAPIDAPI_TOLL_KEY,
-          'x-rapidapi-host': RAPIDAPI_TOLL_HOST,
-        },
-        body: JSON.stringify({ data: waypoints }),
-      });
+      const response = await callTollAPI(fromCoord, toCoord);
 
       if (!response.ok) {
+        const errText = await response.text();
+        console.error('RapidAPI Pedágio error:', response.status, errText);
         return res.json({ success: false, apiError: `API de pedágio retornou erro ${response.status}` });
       }
 
@@ -1470,23 +1469,30 @@ export async function registerRoutes(
       let tolls: { name: string; value: number; road?: string }[] = [];
       let tollValue = 0;
 
-      if (Array.isArray(tollData)) {
-        tolls = tollData.map((t: any) => ({
-          name: t.concessionaria || t.praca || t.nome || 'Praça de Pedágio',
-          value: parseFloat(t.valor) || 0,
-          road: t.rodovia || t.estrada || '',
+      const extractTolls = (data: any) => {
+        if (data.result && Array.isArray(data.result)) {
+          return data.result;
+        }
+        if (Array.isArray(data)) return data;
+        if (data.pedagios && Array.isArray(data.pedagios)) return data.pedagios;
+        if (data.tolls && Array.isArray(data.tolls)) return data.tolls;
+        return null;
+      };
+
+      const tollArray = extractTolls(tollData);
+
+      if (tollArray) {
+        tolls = tollArray.map((t: any) => ({
+          name: t.concessionaria || t.concessionária || t.praca || t.praça || t.nome || t.name || 'Praça de Pedágio',
+          value: parseFloat(t.valor || t.value || t.tarifa || t.price || 0),
+          road: t.rodovia || t.estrada || t.road || t.highway || '',
         }));
         tollValue = tolls.reduce((sum, t) => sum + t.value, 0);
-      } else if (tollData && typeof tollData === 'object') {
-        if (tollData.pedagios && Array.isArray(tollData.pedagios)) {
-          tolls = tollData.pedagios.map((t: any) => ({
-            name: t.concessionaria || t.praca || t.nome || 'Praça de Pedágio',
-            value: parseFloat(t.valor) || 0,
-            road: t.rodovia || t.estrada || '',
-          }));
-          tollValue = tolls.reduce((sum, t) => sum + t.value, 0);
-        } else if (tollData.valor_total !== undefined) {
-          tollValue = parseFloat(tollData.valor_total) || 0;
+      } else if (tollData.result && typeof tollData.result === 'object') {
+        if (tollData.result.valor_total !== undefined) {
+          tollValue = parseFloat(tollData.result.valor_total) || 0;
+        } else if (tollData.result.total !== undefined) {
+          tollValue = parseFloat(tollData.result.total) || 0;
         }
       }
 
