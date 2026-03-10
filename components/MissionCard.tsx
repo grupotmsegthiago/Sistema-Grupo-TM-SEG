@@ -552,7 +552,8 @@ Qualquer dúvida, estamos a disposição.
                                     {(() => {
                                         const dt = lastLog ? new Date(lastLog.created_at) : mission.lastUpdate ? new Date(mission.lastUpdate) : null;
                                         const dateStr = dt ? dt.toLocaleDateString('pt-BR') + ' ' + dt.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) : '---';
-                                        const occurrence = lastLog?.description || mission.currentLocation || '';
+                                        const rawOccurrence = lastLog?.description || mission.currentLocation || '';
+                                        const occurrence = rawOccurrence.includes('|') ? rawOccurrence.split('|')[0].trim() : rawOccurrence;
                                         return occurrence ? dateStr + ' - ' + occurrence : dateStr;
                                     })()}
                                 </p>
