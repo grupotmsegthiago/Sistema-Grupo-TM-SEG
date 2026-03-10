@@ -214,15 +214,27 @@ const ServerStats: React.FC = () => {
   const testMaps = async () => {
     setMaps({ ...maps, status: 'TESTING', result: null, errorDetails: null });
     try {
-        const url = `https://maps.googleapis.com/maps/api/geocode/json?address=Sao+Paulo&key=${googleMapsApiKey}`;
-        const response = await fetch(url);
-        const data = await response.json();
-        if (data.status === 'OK') {
-            setMaps({ ...maps, status: 'SUCCESS', result: 'Maps & Geocoding OK', errorDetails: null, showHelp: false });
+        if (!googleMapsApiKey) {
+            setMaps({ status: 'ERROR', result: 'Chave não configurada', showHelp: true, errorDetails: { code: 'NO_KEY', steps: ["Configure VITE_GOOGLE_MAPS_API_KEY nas variáveis de ambiente"], link: "https://console.cloud.google.com/google/maps-apis/credentials" } });
+            return;
+        }
+        const testUrl = `https://maps.googleapis.com/maps/api/js?key=${googleMapsApiKey}&libraries=places&callback=__gmTestCb__`;
+        const result = await new Promise<{ok: boolean, error?: string}>((resolve) => {
+            const timeout = setTimeout(() => resolve({ ok: false, error: 'TIMEOUT' }), 10000);
+            (window as any).__gmTestCb__ = () => { clearTimeout(timeout); resolve({ ok: true }); };
+            const script = document.createElement('script');
+            script.src = testUrl;
+            script.onerror = () => { clearTimeout(timeout); resolve({ ok: false, error: 'LOAD_ERR' }); };
+            document.head.appendChild(script);
+            setTimeout(() => { try { document.head.removeChild(script); } catch(_){} }, 12000);
+        });
+        delete (window as any).__gmTestCb__;
+        if (result.ok) {
+            setMaps({ ...maps, status: 'SUCCESS', result: 'Maps JavaScript API OK', errorDetails: null, showHelp: false });
         } else {
             setMaps({ 
-                status: 'ERROR', result: data.status, showHelp: true,
-                errorDetails: { code: data.status, steps: ["Acesse o Google Cloud Console", "Verifique se o faturamento (Billing) está ativo", "Certifique-se que as APIs 'Maps JavaScript' e 'Geocoding' estão habilitadas"], link: "https://console.cloud.google.com/google/maps-apis/credentials" }
+                status: 'ERROR', result: result.error || 'Falha ao carregar', showHelp: true,
+                errorDetails: { code: result.error || 'LOAD_ERR', steps: ["Acesse o Google Cloud Console", "Verifique se o faturamento (Billing) está ativo", "Certifique-se que a API 'Maps JavaScript' está habilitada"], link: "https://console.cloud.google.com/google/maps-apis/credentials" }
             });
         }
     } catch (e) {
