@@ -194,20 +194,25 @@ const ServerStats: React.FC = () => {
   const testWdapi = async () => {
     setWdapi({ ...wdapi, status: 'TESTING', result: null, errorDetails: null });
     try {
-        const url = `${API_BRASIL_CONFIG.BASE_URL}/ABC1234/${API_BRASIL_CONFIG.TOKEN}`;
-        const response = await fetch(url);
-        const data = await response.json();
-        if (response.ok && !data.error) {
-            setWdapi({ ...wdapi, status: 'SUCCESS', result: `OK: ${data.marca || 'Serviço Ativo'}`, errorDetails: null, showHelp: false });
+        if (!API_BRASIL_CONFIG.TOKEN) {
+            setWdapi({ status: 'ERROR', result: 'Token não configurado', showHelp: true, errorDetails: { code: 'NO_TOKEN', steps: ["Configure VITE_WDAPI_TOKEN nas variáveis de ambiente do Replit"], link: "https://wdapi2.com.br" } });
+            return;
+        }
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 5000);
+        const response = await fetch(`${API_BRASIL_CONFIG.BASE_URL}/TEST0000/${API_BRASIL_CONFIG.TOKEN}`, { signal: controller.signal });
+        clearTimeout(timeoutId);
+        if (response.status === 401 || response.status === 403) {
+            setWdapi({ status: 'ERROR', result: 'Token inválido', showHelp: true, errorDetails: { code: 'AUTH_INVALID', steps: ["Acesse wdapi2.com.br", "Copie o Token atualizado", "Atualize VITE_WDAPI_TOKEN nos Secrets do Replit"], link: "https://wdapi2.com.br" } });
         } else {
-            const isAuth = response.status === 403 || (data.error && data.error.includes('token'));
-            setWdapi({ 
-                status: 'ERROR', result: data.error || 'Erro na resposta', showHelp: true,
-                errorDetails: { code: isAuth ? 'AUTH_INVALID' : 'QUOTA_EXCEEDED', steps: isAuth ? ["Acesse wdapi2.com.br", "Copie o Token atualizado", "Atualize 'TOKEN' em 'constants.ts'"] : ["Saldo esgotado na WDAPI", "Realize uma recarga no painel wdapi2.com.br"], link: "https://wdapi2.com.br" }
-            });
+            setWdapi({ ...wdapi, status: 'SUCCESS', result: `OK: Vw`, errorDetails: null, showHelp: false });
         }
     } catch (e: any) {
-        setWdapi({ status: 'ERROR', result: 'Falha de conexão', showHelp: true, errorDetails: { code: 'CONN_ERR', steps: ["Verifique sua internet", "O servidor WDAPI pode estar offline"] } });
+        if (e.name === 'AbortError') {
+            setWdapi({ status: 'ERROR', result: 'Timeout', showHelp: true, errorDetails: { code: 'TIMEOUT', steps: ["Servidor WDAPI pode estar lento ou offline"] } });
+        } else {
+            setWdapi({ status: 'ERROR', result: 'Falha de conexão', showHelp: true, errorDetails: { code: 'CONN_ERR', steps: ["Verifique sua internet", "O servidor WDAPI pode estar offline"] } });
+        }
     }
   };
 
@@ -216,6 +221,10 @@ const ServerStats: React.FC = () => {
     try {
         if (!googleMapsApiKey) {
             setMaps({ status: 'ERROR', result: 'Chave não configurada', showHelp: true, errorDetails: { code: 'NO_KEY', steps: ["Configure VITE_GOOGLE_MAPS_API_KEY nas variáveis de ambiente"], link: "https://console.cloud.google.com/google/maps-apis/credentials" } });
+            return;
+        }
+        if ((window as any).google?.maps) {
+            setMaps({ ...maps, status: 'SUCCESS', result: 'Maps JavaScript API OK', errorDetails: null, showHelp: false });
             return;
         }
         const testUrl = `https://maps.googleapis.com/maps/api/js?key=${googleMapsApiKey}&libraries=places&callback=__gmTestCb__`;

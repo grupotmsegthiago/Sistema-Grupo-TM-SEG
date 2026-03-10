@@ -130,6 +130,35 @@ const VehicleForm: React.FC<VehicleFormProps> = ({ onBack, id, initialProvider, 
     
     setIsSearching(true);
     try {
+        const { data: existingVehicle } = await supabase
+            .from('vehicles')
+            .select('id, plate, brand, model, color, year, state, chassi')
+            .eq('plate', cleanPlate)
+            .maybeSingle();
+
+        const { data: existingClientVehicle } = await supabase
+            .from('client_vehicles')
+            .select('id, plate, brand, model, color, year, state, chassi')
+            .eq('plate', cleanPlate)
+            .maybeSingle();
+
+        const cached = existingVehicle || existingClientVehicle;
+        if (cached) {
+            setFormData(prev => ({
+                ...prev,
+                plate: cached.plate || cleanPlate,
+                brand: cached.brand || prev.brand,
+                model: cached.model || prev.model,
+                color: cached.color || prev.color,
+                year: cached.year || prev.year,
+                state: cached.state || prev.state,
+                chassi: cached.chassi || prev.chassi
+            }));
+            showNotification('Dados Locais', 'Placa encontrada no banco de dados. API não consumida.', 'success');
+            setIsSearching(false);
+            return;
+        }
+
         const url = `${API_BRASIL_CONFIG.BASE_URL}/${cleanPlate}/${API_BRASIL_CONFIG.TOKEN}`;
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), 8000); 
@@ -154,7 +183,7 @@ const VehicleForm: React.FC<VehicleFormProps> = ({ onBack, id, initialProvider, 
         
         await supabase.from('api_usage_logs').insert({ service: 'wdapi', plate: cleanPlate });
         setApiUsage(prev => prev + 1);
-        showNotification('Sucesso', 'Dados do veículo importados.', 'success');
+        showNotification('Sucesso', 'Dados do veículo importados via API.', 'success');
     } catch (error: any) { 
         console.error("Plate Lookup Error:", error);
         showNotification('Aviso', `Consulta de Placa: ${error.message}. Preencha manualmente.`, 'warning'); 

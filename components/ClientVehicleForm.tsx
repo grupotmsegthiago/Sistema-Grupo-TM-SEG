@@ -105,6 +105,35 @@ const ClientVehicleForm: React.FC<Props> = ({ onBack, id, initialClientId, onSuc
     setIsSearching(true);
 
     try {
+        const { data: existingClientVehicle } = await supabase
+            .from('client_vehicles')
+            .select('id, plate, brand, model, color, year, state, chassi')
+            .eq('plate', cleanPlate)
+            .maybeSingle();
+
+        const { data: existingVehicle } = await supabase
+            .from('vehicles')
+            .select('id, plate, brand, model, color, year, state, chassi')
+            .eq('plate', cleanPlate)
+            .maybeSingle();
+
+        const cached = existingClientVehicle || existingVehicle;
+        if (cached) {
+            setFormData(prev => ({
+                ...prev,
+                plate: cached.plate || cleanPlate,
+                brand: cached.brand || prev.brand,
+                model: cached.model || prev.model,
+                color: cached.color || prev.color,
+                year: cached.year || prev.year || '',
+                state: cached.state || prev.state || '',
+                chassi: cached.chassi || ''
+            }));
+            showNotification('Dados Locais', 'Placa encontrada no banco de dados. API não consumida.', 'success');
+            setIsSearching(false);
+            return;
+        }
+
         const url = `${API_BRASIL_CONFIG.BASE_URL}/${cleanPlate}/${API_BRASIL_CONFIG.TOKEN}`;
         const response = await fetch(url, { method: 'GET' });
         const data = await response.json();
@@ -138,6 +167,7 @@ const ClientVehicleForm: React.FC<Props> = ({ onBack, id, initialClientId, onSuc
             logo: data.logo || ''
         }));
 
+        showNotification('Sucesso', 'Dados do veículo importados via API.', 'success');
     } catch (error: any) {
         console.error(error);
         showNotification('Aviso de Consulta', `${error.message}. Por favor, preencha manualmente.`, 'warning');
