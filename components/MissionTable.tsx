@@ -159,6 +159,7 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
   const [accidentCount, setAccidentCount] = useState(0);
   const [approvalMap, setApprovalMap] = useState<Record<string, { stage: string; date: string }[]>>({});
   const [evidenceMap, setEvidenceMap] = useState<Record<string, { url: string; uploadedBy: string; uploadedAt: string }[]>>({});
+  const [lastLogMap, setLastLogMap] = useState<Record<string, MissionLog>>({});
   const [resolvedClientName, setResolvedClientName] = useState('');
   const [showMyApprovalOnly, setShowMyApprovalOnly] = useState(false);
 
@@ -386,6 +387,22 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
                 }
                 setEvidenceMap(evMap);
             }
+
+            const logMap: Record<string, MissionLog> = {};
+            for (let i = 0; i < allIds.length; i += batchSize) {
+                const batch = allIds.slice(i, i + batchSize);
+                const { data: lastLogs } = await supabase
+                    .from('mission_logs')
+                    .select('*')
+                    .in('mission_id', batch)
+                    .order('created_at', { ascending: false });
+                if (lastLogs) {
+                    lastLogs.forEach((l: any) => {
+                        if (!logMap[l.mission_id]) logMap[l.mission_id] = l as MissionLog;
+                    });
+                }
+            }
+            setLastLogMap(logMap);
         }
       } catch (error: any) {
         console.error('Error fetching missions:', error.message || error);
@@ -1070,6 +1087,7 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
                                       currentTime={currentTime}
                                       approvalStages={approvalMap[mission.id]}
                                       evidenceList={evidenceMap[mission.id]}
+                                      lastLog={lastLogMap[mission.id]}
                                       onEvidenceUploaded={() => fetchMissions(true)}
                                   />
                               </div>
