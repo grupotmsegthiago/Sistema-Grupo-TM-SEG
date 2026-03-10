@@ -414,22 +414,6 @@ const MissionPrintModal: React.FC<Props> = ({ mission, onClose }) => {
                             </tbody>
                         </table>
 
-                        {evidenceUrls.length > 0 && (
-                            <div className="mt-6 print:break-inside-avoid">
-                                <div className="bg-gray-900 text-white text-[10px] font-black uppercase tracking-widest px-3 py-2 rounded-t">EVIDÊNCIAS DA SOLICITAÇÃO</div>
-                                <div className="border border-gray-300 border-t-0 rounded-b p-3 grid grid-cols-2 gap-3">
-                                    {evidenceUrls.map((ev, i) => (
-                                        <div key={i} className="border border-gray-200 rounded overflow-hidden">
-                                            <img src={ev.url} alt={`Evidência ${i + 1}`} className="w-full max-h-[200px] object-contain bg-gray-50" />
-                                            <div className="px-2 py-1 bg-gray-50 text-[8px] text-gray-500 flex justify-between">
-                                                <span className="font-bold">{ev.uploadedBy}</span>
-                                                <span>{ev.uploadedAt ? new Date(ev.uploadedAt).toLocaleString('pt-BR') : ''}</span>
-                                            </div>
-                                        </div>
-                                    ))}
-                                </div>
-                            </div>
-                        )}
 
                         {/* RODAPÉ */}
                         <div className="mt-8 text-center text-[10px] uppercase text-gray-500 font-bold border-t border-gray-300 pt-2">
