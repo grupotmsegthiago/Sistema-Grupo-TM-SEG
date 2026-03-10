@@ -251,14 +251,14 @@ const ServerStats: React.FC = () => {
   const testToll = async () => {
     setToll({ ...toll, status: 'TESTING', result: null, errorDetails: null });
     try {
-        const url = `${TOLL_API_CONFIG.BASE_URL}/status?key=${TOLL_API_CONFIG.API_KEY}`;
-        const response = await fetch(url);
-        if (response.ok) {
-            setToll({ ...toll, status: 'SUCCESS', result: 'Serviço de Pedágio OK', errorDetails: null, showHelp: false });
+        const response = await fetch(`${TOLL_API_CONFIG.BASE_URL}/status`);
+        const data = await response.json();
+        if (response.ok && data.success) {
+            setToll({ ...toll, status: 'SUCCESS', result: `Serviço de Pedágio OK (${TOLL_API_CONFIG.PROVIDER})`, errorDetails: null, showHelp: false });
         } else {
             setToll({ 
-                status: 'ERROR', result: 'Chave Inválida', showHelp: true,
-                errorDetails: { code: 'TOLL_AUTH', steps: ["Verifique sua assinatura em calcularpedagio.com.br", "POR QUE NÃO CALCULA?: O Pedágio depende de uma ROTA válida do Google Maps. Se o card de 'Google Maps' estiver com erro, o Pedágio não conseguirá calcular valores na tela de missão.", "Certifique-se que a API_KEY em 'constants.ts' é a versão v2"], link: "https://www.calcularpedagio.com.br" }
+                status: 'ERROR', result: data.error || 'Chave Inválida', showHelp: true,
+                errorDetails: { code: 'TOLL_AUTH', steps: ["Verifique se a chave RAPIDAPI_TOLL_KEY está configurada nos Secrets do Replit", "POR QUE NÃO CALCULA?: O Pedágio depende de uma ROTA válida. Se o card de 'Google Maps' estiver com erro, o Pedágio não conseguirá calcular valores na tela de missão.", "Verifique sua assinatura no RapidAPI para a API 'Pedagio'"], link: "https://rapidapi.com/territorial/api/pedagio" }
             });
         }
     } catch (e) {

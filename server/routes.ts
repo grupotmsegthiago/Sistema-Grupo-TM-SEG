@@ -1379,5 +1379,129 @@ export async function registerRoutes(
     }
   });
 
+  // ==========================================
+  // TOLL API (RapidAPI - territorial/pedagio)
+  // ==========================================
+  const RAPIDAPI_TOLL_KEY = process.env.RAPIDAPI_TOLL_KEY || '';
+  const RAPIDAPI_TOLL_HOST = 'pedagio1.p.rapidapi.com';
+
+  app.get('/api/toll/status', async (_req: Request, res: Response) => {
+    try {
+      if (!RAPIDAPI_TOLL_KEY) {
+        return res.status(400).json({ success: false, error: 'RAPIDAPI_TOLL_KEY não configurada' });
+      }
+      const response = await fetch(`https://${RAPIDAPI_TOLL_HOST}/flow`, {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'x-rapidapi-key': RAPIDAPI_TOLL_KEY,
+          'x-rapidapi-host': RAPIDAPI_TOLL_HOST,
+        },
+        body: JSON.stringify({
+          data: [
+            { lat: -23.5505, lng: -46.6333 },
+            { lat: -23.5600, lng: -46.6500 },
+          ],
+        }),
+      });
+      if (response.ok) {
+        return res.json({ success: true });
+      }
+      return res.status(response.status).json({ success: false, error: `RapidAPI retornou ${response.status}` });
+    } catch (e: any) {
+      return res.status(500).json({ success: false, error: e.message });
+    }
+  });
+
+  app.post('/api/toll/calculate', async (req: Request, res: Response) => {
+    try {
+      if (!RAPIDAPI_TOLL_KEY) {
+        return res.json({ success: false, apiError: 'RAPIDAPI_TOLL_KEY não configurada no servidor' });
+      }
+
+      const { origin, destination, originCoords, destinationCoords } = req.body;
+
+      let waypoints: { lat: number; lng: number }[] = [];
+
+      if (originCoords && destinationCoords) {
+        waypoints = [
+          { lat: originCoords.lat, lng: originCoords.lng },
+          { lat: destinationCoords.lat, lng: destinationCoords.lng },
+        ];
+      } else if (origin && destination) {
+        const geocode = async (address: string) => {
+          const url = `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(address)}&key=${process.env.GOOGLE_MAPS_API_KEY || ''}`;
+          const resp = await fetch(url);
+          const data = await resp.json();
+          if (data.results && data.results.length > 0) {
+            return data.results[0].geometry.location;
+          }
+          return null;
+        };
+
+        const [orig, dest] = await Promise.all([geocode(origin), geocode(destination)]);
+        if (!orig || !dest) {
+          return res.json({ success: false, apiError: 'Não foi possível geocodificar origem/destino' });
+        }
+        waypoints = [
+          { lat: orig.lat, lng: orig.lng },
+          { lat: dest.lat, lng: dest.lng },
+        ];
+      } else {
+        return res.json({ success: false, apiError: 'Origem e destino são obrigatórios' });
+      }
+
+      const response = await fetch(`https://${RAPIDAPI_TOLL_HOST}/flow`, {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'x-rapidapi-key': RAPIDAPI_TOLL_KEY,
+          'x-rapidapi-host': RAPIDAPI_TOLL_HOST,
+        },
+        body: JSON.stringify({ data: waypoints }),
+      });
+
+      if (!response.ok) {
+        return res.json({ success: false, apiError: `API de pedágio retornou erro ${response.status}` });
+      }
+
+      const tollData = await response.json();
+
+      let tolls: { name: string; value: number; road?: string }[] = [];
+      let tollValue = 0;
+
+      if (Array.isArray(tollData)) {
+        tolls = tollData.map((t: any) => ({
+          name: t.concessionaria || t.praca || t.nome || 'Praça de Pedágio',
+          value: parseFloat(t.valor) || 0,
+          road: t.rodovia || t.estrada || '',
+        }));
+        tollValue = tolls.reduce((sum, t) => sum + t.value, 0);
+      } else if (tollData && typeof tollData === 'object') {
+        if (tollData.pedagios && Array.isArray(tollData.pedagios)) {
+          tolls = tollData.pedagios.map((t: any) => ({
+            name: t.concessionaria || t.praca || t.nome || 'Praça de Pedágio',
+            value: parseFloat(t.valor) || 0,
+            road: t.rodovia || t.estrada || '',
+          }));
+          tollValue = tolls.reduce((sum, t) => sum + t.value, 0);
+        } else if (tollData.valor_total !== undefined) {
+          tollValue = parseFloat(tollData.valor_total) || 0;
+        }
+      }
+
+      return res.json({
+        success: tollValue > 0,
+        tollValue: parseFloat(tollValue.toFixed(2)),
+        tollCount: tolls.length,
+        tolls,
+        provider: 'rapidapi-pedagio',
+      });
+    } catch (e: any) {
+      console.error('Erro ao consultar RapidAPI Pedágio:', e);
+      return res.json({ success: false, apiError: `Erro interno: ${e.message}` });
+    }
+  });
+
   return httpServer;
 }

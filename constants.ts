@@ -35,11 +35,12 @@ export const API_BRASIL_CONFIG = {
 };
 
 // ==========================================
-// CONFIGURAÇÃO API PEDÁGIO
+// CONFIGURAÇÃO API PEDÁGIO (RapidAPI - territorial/pedagio)
 // ==========================================
 export const TOLL_API_CONFIG = {
-    BASE_URL: 'https://www.calcularpedagio.com.br/api',
-    API_KEY: import.meta.env.VITE_TOLL_API_KEY ?? ''
+    BASE_URL: '/api/toll',
+    RAPIDAPI_HOST: 'pedagio1.p.rapidapi.com',
+    PROVIDER: 'RapidAPI Pedágio'
 };
 
 // ==========================================
