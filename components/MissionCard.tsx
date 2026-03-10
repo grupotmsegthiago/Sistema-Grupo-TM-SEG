@@ -545,9 +545,9 @@ Qualquer dúvida, estamos a disposição.
                                     )}
                                 </div>
                             </div>
-                            <div className="flex items-center gap-1.5 bg-blue-50/50 rounded-md px-1.5 py-0.5 border border-blue-100 mt-1.5" title={mission.currentLocation || lastLog?.description || ''} data-testid={`last-log-${mission.id}`}>
-                                <Clock size={8} className="text-blue-400 shrink-0" />
-                                <p className="text-[8px] font-bold text-blue-700 truncate min-w-0">
+                            <div className="flex items-center gap-2 bg-blue-50/50 rounded-lg px-2 py-1 border border-blue-100 mt-2" title={mission.currentLocation || lastLog?.description || ''} data-testid={`last-log-${mission.id}`}>
+                                <Clock size={10} className="text-blue-500 shrink-0" />
+                                <p className="text-[9px] font-bold text-blue-800 truncate min-w-0">
                                     <span className="font-black text-blue-400 uppercase tracking-wider">Última Atualização: </span>
                                     {(() => {
                                         const dt = lastLog ? new Date(lastLog.created_at) : mission.lastUpdate ? new Date(mission.lastUpdate) : null;
