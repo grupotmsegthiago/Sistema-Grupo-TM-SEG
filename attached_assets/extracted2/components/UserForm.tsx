@@ -145,9 +145,9 @@ const UserForm: React.FC<UserFormProps> = ({ onBack, userType, id }) => {
                   
                   // Tenta enviar email de boas-vindas
                   try {
-                      // Fix: Casting import.meta to any to avoid TypeScript error and providing fallback values
-                      const sbUrl = (import.meta as any).env.VITE_SUPABASE_URL || 'https://ajhmmjuewdsukecaimik.supabase.co';
-                      const sbKey = (import.meta as any).env.VITE_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFqaG1tanVld2RzdWtlY2FpbWlrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjQxNzUxMjEsImV4cCI6MjA3OTc1MTEyMX0.5bXRWTyb1HxLimt3lqJTBfjzDoumux7TXlW4lycXrPk';
+                      const sbUrl = (import.meta as any).env.VITE_SUPABASE_URL;
+                      const sbKey = (import.meta as any).env.VITE_SUPABASE_ANON_KEY;
+                      if (!sbUrl || !sbKey) throw new Error('Supabase environment variables are not configured.');
 
                       await fetch(`${sbUrl}/functions/v1/send-welcome-email`, {
                           method: 'POST',
