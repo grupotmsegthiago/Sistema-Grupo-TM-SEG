@@ -284,7 +284,12 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
                 startKm: m.start_km?.toString() || '', startDate: startDT.date, startTime: startDT.time, 
                 endKm: m.end_km?.toString() || '', endDate: endDT.date, endTime: endDT.time, 
                 manualProgress: m.progress || 0,
-                mapLink: m.map_link || '', description: '', status: m.status,
+                mapLink: (() => {
+                    const raw = m.map_link || '';
+                    if (!raw) return '';
+                    const c = extractCoordinates(raw);
+                    return c ? `https://www.google.com/maps?q=${c.lat},${c.lng}&z=17&hl=pt-BR` : raw;
+                })(), description: '', status: m.status,
                 origin: m.origin || '', destination: m.destination || '',
                 missionType: m.mission_type || 'Caracterizada',
                 revenueValue: m.revenue_value?.toString() || '',
@@ -422,11 +427,12 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
         setEditData(prev => ({ ...prev, currentLocationName: val }));
         const coords = extractCoordinates(val);
         if (coords) {
+            const standardLink = `https://www.google.com/maps?q=${coords.lat},${coords.lng}&z=17&hl=pt-BR`;
             setCurrentPreviewCoords(coords);
-            setEditData(prev => ({ ...prev, mapLink: val }));
+            setEditData(prev => ({ ...prev, mapLink: standardLink }));
             reverseGeocode(coords.lat, coords.lng);
             calculateProgressFromCoords(coords.lat, coords.lng);
-            showNotification('GPS Identificado', 'Sincronizando coordenadas e calculando progresso...', 'success');
+            showNotification('GPS Identificado', 'Link convertido para formato padrão e coordenadas sincronizadas.', 'success');
         }
     };
 
