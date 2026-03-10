@@ -389,8 +389,9 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
             }
 
             const logMap: Record<string, MissionLog> = {};
-            for (let i = 0; i < allIds.length; i += batchSize) {
-                const batch = allIds.slice(i, i + batchSize);
+            const logBatchSize = 200;
+            for (let i = 0; i < allIds.length; i += logBatchSize) {
+                const batch = allIds.slice(i, i + logBatchSize);
                 const { data: lastLogs } = await supabase
                     .from('mission_logs')
                     .select('*')

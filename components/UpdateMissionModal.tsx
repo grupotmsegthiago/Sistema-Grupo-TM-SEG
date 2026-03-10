@@ -7,7 +7,7 @@ import { useNotification } from '../lib/NotificationContext';
 import { 
   X, Activity, MapPin, Flag, Truck, Plus, Save, 
   Layers, Navigation, History, 
-  Calculator, Clock, Trash2, UserCheck, CarFront, DollarSign, AlertCircle, Info, ShieldAlert,
+  Calculator, Clock, Trash2, UserCheck, CarFront, DollarSign, AlertCircle, Info, ShieldAlert, AlertTriangle,
   Loader2, Search, ChevronDown, UserPlus, Package, ShieldCheck, Check, BadgeCheck, Sparkles,
   Milestone, Timer, Calendar, Globe, Briefcase, Zap, TrendingUp, RefreshCw, User, Phone, CheckCircle2
 } from 'lucide-react';
@@ -56,6 +56,14 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
 
     // Permissões Administrativas
     const canEditRoute = useMemo(() => {
+        if (!currentUser) return false;
+        const role = (currentUser.role || '').toLowerCase();
+        return ['diretoria', 'administrador', 'avançado', 'avancado'].includes(role) || (currentUser.permissions && currentUser.permissions.includes('*'));
+    }, [currentUser]);
+
+    const isCompletedMission = mission?.status === MissionStatus.COMPLETED;
+    const isBillingApproved = !!mission?.billing_approved;
+    const canRevertStatus = useMemo(() => {
         if (!currentUser) return false;
         const role = (currentUser.role || '').toLowerCase();
         return ['diretoria', 'administrador', 'avançado', 'avancado'].includes(role) || (currentUser.permissions && currentUser.permissions.includes('*'));
@@ -438,6 +446,21 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
         e.preventDefault();
         if (!mission || !currentUser) return;
 
+        if (isCompletedMission && isBillingApproved) {
+            showNotification('Bloqueado', 'Esta OS já foi aprovada pela Diretoria. Nenhuma alteração de status é permitida.', 'error');
+            return;
+        }
+
+        if (isCompletedMission && editData.status !== MissionStatus.COMPLETED && !canRevertStatus) {
+            showNotification('Sem Permissão', 'Apenas perfis Avançado, Administrador ou Diretoria podem reverter uma OS concluída.', 'error');
+            return;
+        }
+
+        if (isCompletedMission && canRevertStatus && editData.status !== MissionStatus.COMPLETED && editData.status !== MissionStatus.IN_TRANSIT) {
+            showNotification('Status Inválido', 'Uma OS concluída só pode ser revertida para "Em Viagem".', 'error');
+            return;
+        }
+
         let startIso = new Date(`${editData.startDate}T${editData.startTime}`).toISOString();
 
         const isTransitionToInTransit = editData.status === MissionStatus.IN_TRANSIT && 
@@ -507,8 +530,9 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
 
             const isCurrentPending = finalStatus === MissionStatus.PENDING;
             const isCurrentInFlight = [MissionStatus.IN_TRANSIT, MissionStatus.ORIGIN].includes(finalStatus);
+            const isExplicitRevert = isCompletedMission && canRevertStatus && finalStatus === MissionStatus.IN_TRANSIT;
 
-            if ((isCurrentPending || isCurrentInFlight) && hasStart && hasEnd) {
+            if ((isCurrentPending || isCurrentInFlight) && hasStart && hasEnd && !isExplicitRevert) {
                 finalStatus = MissionStatus.COMPLETED;
                 showNotification('IA Operacional', 'Detectamos todos os dados necessários. OS concluída automaticamente.', 'success');
             }
@@ -560,14 +584,17 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
             if (error) throw error;
             if (!updatedRow) throw new Error('Falha na persistência: registro não retornado após UPDATE');
 
+            const isRevertFromCompleted = isCompletedMission && finalStatus === MissionStatus.IN_TRANSIT;
+            
             await supabase.from('system_logs').insert([{
                 user_name: currentUser.name || 'Usuário',
-                action_type: 'MISSION_UPDATE',
+                action_type: isRevertFromCompleted ? 'MISSION_STATUS_REVERT' : 'MISSION_UPDATE',
                 entity: 'Mission',
                 entity_id: mission.id,
                 details: JSON.stringify({
                     status: finalStatus,
                     previous_status: mission.status,
+                    ...(isRevertFromCompleted && { revert_reason: 'Reversão autorizada de Concluída para Em Viagem', reverted_by_role: currentUser.role }),
                     provider: editData.provider,
                     agent1: editData.agent1,
                     agent2: editData.agent2,
@@ -771,16 +798,43 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
                                 </label>
                             </div>
                         </div>
+                        {isCompletedMission && isBillingApproved && (
+                            <div className="flex items-center gap-2 px-4 py-3 bg-blue-50 border border-blue-200 rounded-xl mb-3" data-testid="billing-approved-lock">
+                                <ShieldCheck size={16} className="text-blue-600" />
+                                <span className="text-[10px] font-black text-blue-700 uppercase">OS aprovada pela Diretoria — status bloqueado</span>
+                            </div>
+                        )}
+                        {isCompletedMission && !isBillingApproved && canRevertStatus && (
+                            <div className="flex items-center gap-2 px-4 py-3 bg-amber-50 border border-amber-200 rounded-xl mb-3" data-testid="revert-status-info">
+                                <AlertTriangle size={16} className="text-amber-600" />
+                                <span className="text-[10px] font-black text-amber-700 uppercase">OS Concluída — você pode reverter para Em Viagem</span>
+                            </div>
+                        )}
+                        {isCompletedMission && !isBillingApproved && !canRevertStatus && (
+                            <div className="flex items-center gap-2 px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl mb-3" data-testid="no-revert-permission">
+                                <ShieldAlert size={16} className="text-gray-500" />
+                                <span className="text-[10px] font-black text-gray-500 uppercase">OS Concluída — seu perfil não permite alterar o status</span>
+                            </div>
+                        )}
                         <div className="flex flex-wrap gap-2 pb-4 border-b border-gray-100">
-                            {operationalStatuses.map(s => (
-                                <button key={s} type="button" onClick={() => setEditData({...editData, status: s})} className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase transition-all border ${editData.status === s ? 'bg-red-600 text-white border-red-600 shadow-md scale-105' : 'bg-gray-50 text-gray-400 border-gray-200 hover:border-gray-300'}`}>{s}</button>
-                            ))}
+                            {operationalStatuses.map(s => {
+                                const isDisabled = isCompletedMission && isBillingApproved ? true
+                                    : isCompletedMission && !canRevertStatus ? true
+                                    : isCompletedMission && canRevertStatus && s !== MissionStatus.IN_TRANSIT && s !== MissionStatus.COMPLETED ? true
+                                    : false;
+                                return (
+                                    <button key={s} type="button" onClick={() => !isDisabled && setEditData({...editData, status: s})} disabled={isDisabled} className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase transition-all border ${editData.status === s ? 'bg-red-600 text-white border-red-600 shadow-md scale-105' : isDisabled ? 'bg-gray-100 text-gray-300 border-gray-100 cursor-not-allowed opacity-50' : 'bg-gray-50 text-gray-400 border-gray-200 hover:border-gray-300'}`}>{s}</button>
+                                );
+                            })}
                         </div>
                         <div className="mt-4 flex flex-wrap items-end gap-6">
                             <div className="flex gap-2">
-                                {restrictedStatuses.map(s => (
-                                    <button key={s} type="button" onClick={() => setEditData({...editData, status: s})} className={`px-5 py-2 rounded-xl text-[10px] font-black uppercase transition-all border ${editData.status === s ? 'bg-gray-900 text-white border-black shadow-md' : 'bg-red-50 text-red-400 border-red-100 hover:bg-red-100'}`}>{s}</button>
-                                ))}
+                                {restrictedStatuses.map(s => {
+                                    const isDisabled = isCompletedMission && (isBillingApproved || !canRevertStatus);
+                                    return (
+                                        <button key={s} type="button" onClick={() => !isDisabled && setEditData({...editData, status: s})} disabled={isDisabled} className={`px-5 py-2 rounded-xl text-[10px] font-black uppercase transition-all border ${editData.status === s ? 'bg-gray-900 text-white border-black shadow-md' : isDisabled ? 'bg-gray-100 text-gray-300 border-gray-100 cursor-not-allowed opacity-50' : 'bg-red-50 text-red-400 border-red-100 hover:bg-red-100'}`}>{s}</button>
+                                    );
+                                })}
                             </div>
                         </div>
                     </div>
