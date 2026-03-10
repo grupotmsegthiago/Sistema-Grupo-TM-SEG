@@ -533,13 +533,6 @@ Qualquer dúvida, estamos a disposição.
                                             <Phone size={8} className="text-gray-400" />
                                             <span className="text-[9px] font-mono text-gray-400 font-medium">{mission.driver_phone || ''}</span>
                                         </div>
-                                        {lastLog && (
-                                            <div className="mt-1.5 flex items-center gap-1 bg-blue-50 border border-blue-200 rounded-md px-1.5 py-0.5 max-w-fit" title={lastLog.description} data-testid={`last-log-${mission.id}`}>
-                                                <Clock size={8} className="text-blue-600 flex-shrink-0" />
-                                                <span className="text-[8px] font-black text-blue-700 uppercase">ÚLTIMA</span>
-                                                <span className="text-[8px] font-bold text-blue-600">{new Date(lastLog.created_at).toLocaleDateString('pt-BR')} {new Date(lastLog.created_at).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}</span>
-                                            </div>
-                                        )}
                                     </div>
                                     {mission.driver_phone && (
                                         <button 
@@ -552,6 +545,15 @@ Qualquer dúvida, estamos a disposição.
                                     )}
                                 </div>
                             </div>
+                            {lastLog && (
+                                <div className="flex items-center gap-2 bg-blue-50 border border-blue-200 rounded-lg px-3 py-1.5 mt-2" title={lastLog.description} data-testid={`last-log-${mission.id}`}>
+                                    <Clock size={10} className="text-blue-500 flex-shrink-0" />
+                                    <div className="min-w-0">
+                                        <span className="text-[9px] font-black text-blue-700 uppercase block leading-tight">ÚLTIMA ATUALIZAÇÃO</span>
+                                        <span className="text-[9px] font-bold text-blue-600 block leading-tight">{new Date(lastLog.created_at).toLocaleDateString('pt-BR')} {new Date(lastLog.created_at).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}</span>
+                                    </div>
+                                </div>
+                            )}
                         </div>
                     </div>
                 </div>
