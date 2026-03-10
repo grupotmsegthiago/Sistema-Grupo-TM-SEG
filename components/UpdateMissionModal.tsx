@@ -297,7 +297,7 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
                 tollValue: m.toll_value?.toString() || '',
                 isSameOs: m.is_same_os || false,
                 applyCeva200km: (m.destination || '').includes('200KM'),
-                applyVtc02h: (m.destination || '').includes('02H') || (m.destination || '').includes('02 HORAS'),
+                applyVtc02h: ((m.destination || '').includes('02H') || (m.destination || '').includes('02 HORAS')) && (m.client || '').toUpperCase().includes('VTC'),
                 totalDistance: m.total_distance || 0, 
                 currentLocationName: '',
                 driver_name: m.driver_name || '',
@@ -524,7 +524,8 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
             const finalLocationToSave = editData.currentLocationName ? `${finalDescription} | ${editData.currentLocationName.toUpperCase()}` : finalDescription;
             
             let finalDestination = editData.destination;
-            if (editData.applyVtc02h) finalDestination = '02 HORAS DE ACOMPANHAMENTO';
+            const isVtcClient = (mission.client || '').toUpperCase().includes('VTC');
+            if (editData.applyVtc02h && isVtcClient) finalDestination = '02 HORAS DE ACOMPANHAMENTO';
             else if (editData.applyCeva200km) finalDestination = '200KM DE ACOMPANHAMENTO';
 
             let finalStatus = editData.status as MissionStatus;
