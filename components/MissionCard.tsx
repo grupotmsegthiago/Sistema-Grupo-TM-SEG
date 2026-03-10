@@ -547,12 +547,10 @@ Qualquer dúvida, estamos a disposição.
                             </div>
                             <div className="flex items-center gap-2 bg-blue-50/50 rounded-lg px-2 py-1 border border-blue-100 mt-2" title={lastLog?.description || ''} data-testid={`last-log-${mission.id}`}>
                                 <Clock size={10} className="text-blue-500 shrink-0" />
-                                <div className="min-w-0">
-                                    <span className="text-[8px] font-black text-blue-400 uppercase tracking-widest block leading-none">Última Atualização</span>
-                                    <span className="text-[10px] font-bold text-blue-800 block">
-                                        {lastLog ? new Date(lastLog.created_at).toLocaleDateString('pt-BR') + ' ' + new Date(lastLog.created_at).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) : mission.lastUpdate ? new Date(mission.lastUpdate).toLocaleDateString('pt-BR') + ' ' + new Date(mission.lastUpdate).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) : '---'}
-                                    </span>
-                                </div>
+                                <p className="text-[9px] font-bold text-blue-800 truncate min-w-0">
+                                    <span className="font-black text-blue-400 uppercase tracking-wider">Última Atualização: </span>
+                                    {lastLog ? new Date(lastLog.created_at).toLocaleDateString('pt-BR') + ' ' + new Date(lastLog.created_at).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) + ' - ' + (lastLog.description || '') : mission.lastUpdate ? new Date(mission.lastUpdate).toLocaleDateString('pt-BR') + ' ' + new Date(mission.lastUpdate).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) : '---'}
+                                </p>
                             </div>
                         </div>
                     </div>
