@@ -30,7 +30,7 @@ export const COST_ESTIMATES = {
 // ==========================================
 export const API_BRASIL_CONFIG = {
     BASE_URL: 'https://wdapi2.com.br/consulta',
-    TOKEN: 'df33776079bee01ffff73467880719dd', 
+    TOKEN: import.meta.env.VITE_WDAPI_TOKEN,
     MONTHLY_LIMIT: 20000
 };
 
@@ -39,16 +39,16 @@ export const API_BRASIL_CONFIG = {
 // ==========================================
 export const TOLL_API_CONFIG = {
     BASE_URL: 'https://www.calcularpedagio.com.br/api',
-    API_KEY: 'c584cfb5-0c6a-4816-bfdd-3519c5bc5ef7'
+    API_KEY: import.meta.env.VITE_TOLL_API_KEY
 };
 
 // ==========================================
 // CONFIGURAÇÃO API WHATSAPP (Z-API)
 // ==========================================
 export const WHATSAPP_API_CONFIG = {
-    INSTANCE_ID: '3EB855234005F2ED65D1AAB367B57754', 
-    TOKEN: '51F92C1F4006919C68164A03', 
-    CLIENT_TOKEN: 'Faf6ccbba7fea4c3c8a75288eb27f117aS',
+    INSTANCE_ID: import.meta.env.VITE_ZAPI_INSTANCE_ID,
+    TOKEN: import.meta.env.VITE_ZAPI_TOKEN,
+    CLIENT_TOKEN: import.meta.env.VITE_ZAPI_CLIENT_TOKEN,
 
     get BASE_URL() {
         return `https://api.z-api.io/instances/${this.INSTANCE_ID}/token/${this.TOKEN}/send-text`;
