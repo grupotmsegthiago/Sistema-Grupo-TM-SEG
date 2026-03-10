@@ -10,10 +10,7 @@ export const libraries: Libraries = ['places', 'geometry'];
 /**
  * Chave de API do Google Cloud (Maps JavaScript API e Places API).
  */
-const STABLE_KEY = 'AIzaSyBIs-lrtAP6hoA1z_VA4Gbx1ujA-AlJe2k';
-
-// Exportação da chave limpa
-export const googleMapsApiKey = STABLE_KEY.trim();
+export const googleMapsApiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY as string;
 
 /**
  * Configuração padrão ÚNICA para useLoadScript.
