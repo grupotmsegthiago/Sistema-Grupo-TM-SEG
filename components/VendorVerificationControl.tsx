@@ -271,13 +271,26 @@ const VendorVerificationControl: React.FC = () => {
                                 <div className="flex justify-center py-10"><Loader2 size={32} className="animate-spin text-blue-600" /></div>
                             ) : (
                                 <>
-                                    <div className="bg-gray-50 rounded-xl p-4 border border-gray-200 text-xs space-y-1">
-                                        <div className="flex justify-between"><span className="text-gray-500 font-bold">Fornecedor:</span><span className="font-black text-gray-900">{selectedMission.provider || '—'}</span></div>
-                                        <div className="flex justify-between"><span className="text-gray-500 font-bold">Cliente:</span><span className="font-black text-gray-900">{selectedMission.client || '—'}</span></div>
-                                        <div className="flex justify-between"><span className="text-gray-500 font-bold">Rota:</span><span className="font-bold text-gray-700">{selectedMission.origin} → {selectedMission.destination}</span></div>
-                                        <div className="flex justify-between">
+                                    <div className="bg-gray-50 rounded-xl p-4 border border-gray-200 text-xs space-y-2">
+                                        <div className="grid grid-cols-[100px_1fr] gap-1 items-center">
+                                            <span className="text-gray-500 font-bold">Fornecedor:</span>
+                                            <span className="font-black text-gray-900 text-right">{selectedMission.provider || '—'}</span>
+                                        </div>
+                                        <div className="grid grid-cols-[100px_1fr] gap-1 items-center">
+                                            <span className="text-gray-500 font-bold">Cliente:</span>
+                                            <span className="font-black text-gray-900 text-right">{selectedMission.client || '—'}</span>
+                                        </div>
+                                        <div className="grid grid-cols-[100px_1fr] gap-1 items-center">
+                                            <span className="text-gray-500 font-bold">Origem:</span>
+                                            <span className="font-bold text-gray-700 text-right truncate" title={selectedMission.origin}>{selectedMission.origin || '—'}</span>
+                                        </div>
+                                        <div className="grid grid-cols-[100px_1fr] gap-1 items-center">
+                                            <span className="text-gray-500 font-bold">Destino:</span>
+                                            <span className="font-bold text-gray-700 text-right truncate" title={selectedMission.destination}>{selectedMission.destination || '—'}</span>
+                                        </div>
+                                        <div className="grid grid-cols-[100px_1fr] gap-1 items-center border-t border-gray-200 pt-2 mt-1">
                                             <span className="text-gray-500 font-bold">Custo Total:</span>
-                                            <span className="font-black text-red-600">{formatCurrency((selectedMission.cost_value || 0) + Math.max(0, selectedMission.toll_value_provider ?? selectedMission.toll_value ?? 0))}</span>
+                                            <span className="font-black text-red-600 text-right">{formatCurrency((selectedMission.cost_value || 0) + Math.max(0, selectedMission.toll_value_provider ?? selectedMission.toll_value ?? 0))}</span>
                                         </div>
                                     </div>
 
@@ -461,7 +474,8 @@ const VendorVerificationControl: React.FC = () => {
                             <tr>
                                 <th className="px-4 py-3">OS</th>
                                 <th className="px-4 py-3">Fornecedor / Cliente</th>
-                                <th className="px-4 py-3">Rota</th>
+                                <th className="px-4 py-3">Origem</th>
+                                <th className="px-4 py-3">Destino</th>
                                 <th className="px-4 py-3 text-right">Custo</th>
                                 <th className="px-4 py-3 text-center">OS Forn.</th>
                                 <th className="px-4 py-3 text-center">NF</th>
@@ -472,9 +486,9 @@ const VendorVerificationControl: React.FC = () => {
                         </thead>
                         <tbody className="divide-y divide-gray-100">
                             {isLoading ? (
-                                <tr><td colSpan={9} className="p-20 text-center"><Loader2 size={40} className="animate-spin text-blue-700 mx-auto" /></td></tr>
+                                <tr><td colSpan={10} className="p-20 text-center"><Loader2 size={40} className="animate-spin text-blue-700 mx-auto" /></td></tr>
                             ) : filteredMissions.length === 0 ? (
-                                <tr><td colSpan={9} className="p-20 text-center text-gray-400 font-bold uppercase">Nenhuma missão encontrada.</td></tr>
+                                <tr><td colSpan={10} className="p-20 text-center text-gray-400 font-bold uppercase">Nenhuma missão encontrada.</td></tr>
                             ) : (
                                 filteredMissions.map(m => {
                                     const isVerified = Boolean(m.verified_by && m.verified_at);
@@ -492,7 +506,10 @@ const VendorVerificationControl: React.FC = () => {
                                                 <div className="text-[9px] font-bold text-gray-500">{m.client}</div>
                                             </td>
                                             <td className="px-4 py-3">
-                                                <div className="text-[10px] font-bold text-gray-700 max-w-[180px] truncate">{m.origin} → {m.destination}</div>
+                                                <div className="text-[10px] font-bold text-gray-700 max-w-[160px] truncate" title={m.origin}>{m.origin || '—'}</div>
+                                            </td>
+                                            <td className="px-4 py-3">
+                                                <div className="text-[10px] font-bold text-gray-700 max-w-[160px] truncate" title={m.destination}>{m.destination || '—'}</div>
                                             </td>
                                             <td className="px-4 py-3 text-right">
                                                 <span className="text-xs font-black text-red-600">{formatCurrency(totalCost)}</span>
