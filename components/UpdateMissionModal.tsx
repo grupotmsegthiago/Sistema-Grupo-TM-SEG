@@ -238,6 +238,9 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
     }, [editData, clientTables, mission]);
 
     React.useEffect(() => {
+        const isAnomaly = missionTotals.plannedKm > 0 && missionTotals.traveled > 0 && missionTotals.traveled > missionTotals.plannedKm * 5;
+        if (isAnomaly) return;
+
         if (missionTotals.traveled > 0 && missionTotals.plannedKm > 0) {
             const pct = Math.round((missionTotals.traveled / missionTotals.plannedKm) * 100);
             if (pct !== editData.manualProgress) {
@@ -579,9 +582,16 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
                 occurrenceText.includes('FINALIZADO') ||
                 occurrenceText.includes('CONCLUÍ');
 
+            const isOdometerAnomaly = plannedDist > 0 && kmRodado > 0 && kmRodado > plannedDist * 5;
+            if (isOdometerAnomaly && !isAtDestination && finalStatus !== MissionStatus.COMPLETED) {
+                showNotification('Erro de Hodômetro', `KM rodado (${kmRodado.toFixed(1)}) é ${(kmRodado / plannedDist).toFixed(1)}x maior que a distância prevista (${plannedDist.toFixed(1)} KM). Verifique os valores de KM Inicial e Final.`, 'warning');
+            }
+
             let progressValue: number;
             if (finalStatus === MissionStatus.COMPLETED || isAtDestination) {
                 progressValue = 100;
+            } else if (isOdometerAnomaly) {
+                progressValue = editData.manualProgress;
             } else if (kmRodado > 0 && plannedDist > 0) {
                 progressValue = Math.min(100, Math.round((kmRodado / plannedDist) * 100));
             } else if (plannedDist <= 0) {
@@ -1266,7 +1276,11 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
                                                   {missionTotals.traveled.toFixed(1)} / {missionTotals.plannedKm.toFixed(1)} KM
                                               </span>
                                           )}
-                                          <span className="bg-red-600/20 text-red-500 px-2 py-0.5 rounded text-[8px] border border-red-500/30 animate-pulse flex items-center gap-1"><Zap size={8}/> CÁLCULO AUTOMÁTICO</span>
+                                          {missionTotals.plannedKm > 0 && missionTotals.traveled > 0 && missionTotals.traveled > missionTotals.plannedKm * 5 && editData.status !== MissionStatus.COMPLETED ? (
+                                              <span className="bg-amber-600/20 text-amber-400 px-2 py-0.5 rounded text-[8px] border border-amber-500/30 animate-pulse flex items-center gap-1"><AlertTriangle size={8}/> HODÔMETRO INCONSISTENTE ({(missionTotals.traveled / missionTotals.plannedKm).toFixed(1)}x)</span>
+                                          ) : (
+                                              <span className="bg-red-600/20 text-red-500 px-2 py-0.5 rounded text-[8px] border border-red-500/30 animate-pulse flex items-center gap-1"><Zap size={8}/> CÁLCULO AUTOMÁTICO</span>
+                                          )}
                                       </h4>
                                   </div>
                               </div>

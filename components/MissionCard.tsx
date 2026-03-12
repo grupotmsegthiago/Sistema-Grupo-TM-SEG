@@ -446,13 +446,13 @@ Qualquer dúvida, estamos a disposição.
         return { missing, waitingDays, hasPartial, completedCount: (hasAuditor ? 1 : 0) + (hasFinanceiro ? 1 : 0) + (hasDiretoria ? 1 : 0) };
     }, [mission.billing_approved, mission.endTime, approvalStages]);
 
-    const { progressVisual, progressReal } = useMemo(() => {
+    const { progressVisual, progressReal, odometerAnomaly } = useMemo(() => {
         if (mission.status === MissionStatus.COMPLETED) {
-            return { progressVisual: 100, progressReal: 100 };
+            return { progressVisual: 100, progressReal: 100, odometerAnomaly: false };
         }
         if (mission.status === MissionStatus.CANCELLED || mission.status === MissionStatus.REFUSED) {
             const fallback = mission.progress || 0;
-            return { progressVisual: Math.min(100, Math.max(0, fallback)), progressReal: fallback };
+            return { progressVisual: Math.min(100, Math.max(0, fallback)), progressReal: fallback, odometerAnomaly: false };
         }
 
         const occurrenceUpper = (mission.currentLocation || '').toUpperCase();
@@ -463,7 +463,7 @@ Qualquer dúvida, estamos a disposição.
             occurrenceUpper.includes('FINALIZADO') ||
             occurrenceUpper.includes('CONCLUÍ');
         if (isAtDestination) {
-            return { progressVisual: 100, progressReal: 100 };
+            return { progressVisual: 100, progressReal: 100, odometerAnomaly: false };
         }
 
         const sKm = mission.startKm || 0;
@@ -478,16 +478,23 @@ Qualquer dúvida, estamos a disposição.
         if (isLogitech || destUpper.includes('200KM')) plannedKm = 200;
         else if ((destUpper.includes('02H') || destUpper.includes('02 HORAS') || destUpper.includes('100KM')) && clientUpper.includes('VTC')) plannedKm = 100;
 
+        const hasAnomaly = plannedKm > 0 && kmRodado > 0 && kmRodado > plannedKm * 5;
+
+        if (hasAnomaly) {
+            const safePct = mission.progress || 0;
+            return { progressVisual: Math.min(100, Math.max(0, safePct)), progressReal: safePct, odometerAnomaly: true };
+        }
+
         if (kmRodado > 0 && plannedKm > 0) {
             const pct = (kmRodado / plannedKm) * 100;
             if (pct >= 95) {
-                return { progressVisual: 100, progressReal: Math.round(pct) };
+                return { progressVisual: 100, progressReal: Math.round(pct), odometerAnomaly: false };
             }
-            return { progressVisual: Math.min(100, Math.max(0, Math.round(pct))), progressReal: Math.round(pct) };
+            return { progressVisual: Math.min(100, Math.max(0, Math.round(pct))), progressReal: Math.round(pct), odometerAnomaly: false };
         }
 
         const fallback = mission.progress || 0;
-        return { progressVisual: Math.min(100, Math.max(0, fallback)), progressReal: fallback };
+        return { progressVisual: Math.min(100, Math.max(0, fallback)), progressReal: fallback, odometerAnomaly: false };
     }, [mission.startKm, mission.endKm, mission.traveledDistance, mission.totalDistance, mission.destination, mission.client, mission.progress, mission.status, mission.currentLocation]);
 
     return (<>
@@ -710,7 +717,10 @@ Qualquer dúvida, estamos a disposição.
                                         {displayPlannedKm}
                                     </span>
                                 </div>
-                                <span className={`text-[9px] font-black tabular-nums px-1 rounded ${progressReal > 100 ? 'text-amber-700 bg-amber-50 animate-pulse' : 'text-red-600 bg-red-50'}`}>{progressReal}%</span>
+                                {odometerAnomaly && (
+                                    <span className="text-[7px] font-black text-amber-700 bg-amber-100 px-1 py-0.5 rounded border border-amber-300 animate-pulse" title="KM do hodômetro é muito superior à distância prevista da rota">⚠ HODÔMETRO</span>
+                                )}
+                                <span className={`text-[9px] font-black tabular-nums px-1 rounded ${odometerAnomaly ? 'text-amber-700 bg-amber-50' : progressReal > 100 ? 'text-amber-700 bg-amber-50 animate-pulse' : 'text-red-600 bg-red-50'}`}>{progressReal}%</span>
                             </div>
                             <div className="relative w-full h-2 bg-gray-200 rounded-full overflow-visible shadow-inner border border-gray-300">
                                 <div 
