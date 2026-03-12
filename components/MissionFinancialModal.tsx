@@ -614,8 +614,11 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
 
     useEffect(() => {
       if (financialData && mission) {
+          const provOpsActive = !!mission.provider_ops_edited;
           if (!useSavedValuesRef.current && !isSavingRef.current) {
               setRevenueInput(financialData.client.total.toLocaleString('pt-BR', {minimumFractionDigits: 2}));
+              setCostInput(financialData.provider.total.toLocaleString('pt-BR', {minimumFractionDigits: 2}));
+          } else if (provOpsActive && !isSavingRef.current) {
               setCostInput(financialData.provider.total.toLocaleString('pt-BR', {minimumFractionDigits: 2}));
           }
           
