@@ -67,6 +67,7 @@ const ClientForm: React.FC<ClientFormProps> = ({
     city: '',
     state: '',
     operational_email: '',
+    medicao_email: '',
     status: 'Ativo',
     whatsapp_group_id: '',
     full_extra_hour_after_16_min: false,
@@ -132,6 +133,7 @@ const ClientForm: React.FC<ClientFormProps> = ({
                     city: data.city || '',
                     state: data.state || '',
                     operational_email: data.operational_email || '',
+                    medicao_email: data.medicao_email || '',
                     status: data.status || 'Ativo',
                     whatsapp_group_id: data.whatsapp_group_id || '',
                     full_extra_hour_after_16_min: !!data.full_extra_hour_after_16_min,
@@ -314,6 +316,7 @@ const ClientForm: React.FC<ClientFormProps> = ({
         state: formData.state,
         address: fullAddress,
         operational_email: formData.operational_email?.toLowerCase() || null,
+        medicao_email: formData.medicao_email?.toLowerCase() || null,
         status: formData.status, 
         whatsapp_group_id: formData.whatsapp_group_id || null,
         full_extra_hour_after_16_min: formData.full_extra_hour_after_16_min,
@@ -640,10 +643,18 @@ const ClientForm: React.FC<ClientFormProps> = ({
                     <div className="space-y-1.5">
                         <label className={LABEL_CLASS}>E-mail Operacional (Recebe OS)</label>
                         <div className="relative">
-                            <input type="email" className={`${INPUT_CLASS} pl-10`} placeholder="operacional@cliente.com.br" value={formData.operational_email} onChange={e => setFormData({...formData, operational_email: e.target.value.toLowerCase()})} data-testid="input-operational-email" />
+                            <input type="text" className={`${INPUT_CLASS} pl-10`} placeholder="op1@cliente.com.br, op2@cliente.com.br" value={formData.operational_email} onChange={e => setFormData({...formData, operational_email: e.target.value.toLowerCase()})} data-testid="input-operational-email" />
                             <Mail className="absolute left-3 top-1/2 -translate-y-1/2 text-orange-500" size={16} />
                         </div>
-                        <p className="text-[9px] text-gray-400">Recebe notificações de novas missões</p>
+                        <p className="text-[9px] text-gray-400">Recebe notificações de missões (separe múltiplos e-mails com vírgula)</p>
+                    </div>
+                    <div className="space-y-1.5">
+                        <label className={LABEL_CLASS}>E-mail Medição Automática</label>
+                        <div className="relative">
+                            <input type="text" className={`${INPUT_CLASS} pl-10`} placeholder="medicao@cliente.com.br, financeiro@cliente.com.br" value={formData.medicao_email} onChange={e => setFormData({...formData, medicao_email: e.target.value.toLowerCase()})} data-testid="input-medicao-email" />
+                            <Mail className="absolute left-3 top-1/2 -translate-y-1/2 text-green-500" size={16} />
+                        </div>
+                        <p className="text-[9px] text-gray-400">Recebe medição automática (separe múltiplos e-mails com vírgula)</p>
                     </div>
                     <div className="space-y-1.5">
                         <label className={LABEL_CLASS}>Telefone / WhatsApp</label>

@@ -28,6 +28,7 @@ const ProviderForm: React.FC<ProviderFormProps> = ({ onBack, onNavigateToVehicle
     contact: '',
     email: '',
     os_email: '',
+    medicao_email: '',
     phone: '',
     zip_code: '',
     street: '',
@@ -89,6 +90,7 @@ const ProviderForm: React.FC<ProviderFormProps> = ({ onBack, onNavigateToVehicle
                     contact: data.contact_name || '',
                     email: data.email || '',
                     os_email: data.os_email || '',
+                    medicao_email: data.medicao_email || '',
                     phone: data.phone || '',
                     zip_code: data.zip_code || '',
                     street: data.street || '',
@@ -306,6 +308,7 @@ const ProviderForm: React.FC<ProviderFormProps> = ({ onBack, onNavigateToVehicle
             contact_name: formData.contact,
             email: formData.email.toLowerCase(),
             os_email: formData.os_email?.toLowerCase() || null,
+            medicao_email: formData.medicao_email?.toLowerCase() || null,
             phone: formData.phone,
             zip_code: formData.zip_code,
             street: formData.street.toUpperCase(),
@@ -500,10 +503,18 @@ const ProviderForm: React.FC<ProviderFormProps> = ({ onBack, onNavigateToVehicle
                     <div className="space-y-1.5">
                         <label className={LABEL_CLASS}>E-mail Recebimento de OS</label>
                         <div className="relative">
-                            <input type="email" className={`${INPUT_CLASS} pl-10`} placeholder="os@fornecedor.com.br" value={formData.os_email} onChange={e => setFormData({...formData, os_email: e.target.value.toLowerCase()})} data-testid="input-os-email" />
+                            <input type="text" className={`${INPUT_CLASS} pl-10`} placeholder="os1@fornecedor.com.br, os2@fornecedor.com.br" value={formData.os_email} onChange={e => setFormData({...formData, os_email: e.target.value.toLowerCase()})} data-testid="input-os-email" />
                             <Mail className="absolute left-3 top-1/2 -translate-y-1/2 text-orange-500" size={16} />
                         </div>
-                        <p className="text-[9px] text-gray-400">Recebe ordens de serviço automáticas</p>
+                        <p className="text-[9px] text-gray-400">Recebe ordens de serviço automáticas (separe múltiplos com vírgula)</p>
+                    </div>
+                    <div className="space-y-1.5">
+                        <label className={LABEL_CLASS}>E-mail Medição Automática</label>
+                        <div className="relative">
+                            <input type="text" className={`${INPUT_CLASS} pl-10`} placeholder="medicao@fornecedor.com.br, financeiro@fornecedor.com.br" value={formData.medicao_email} onChange={e => setFormData({...formData, medicao_email: e.target.value.toLowerCase()})} data-testid="input-medicao-email" />
+                            <Mail className="absolute left-3 top-1/2 -translate-y-1/2 text-green-500" size={16} />
+                        </div>
+                        <p className="text-[9px] text-gray-400">Recebe medição automática (separe múltiplos com vírgula)</p>
                     </div>
                     <div className="space-y-1.5">
                         <label className={LABEL_CLASS}>Telefone / WhatsApp *</label>

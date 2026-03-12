@@ -859,12 +859,12 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
                                 <span className="font-black text-red-700">{emailMissingAlert.name}</span>{' '}
                                 não possui e-mail de notificação cadastrado.
                             </p>
-                            <p className="text-xs text-gray-500 mb-4">Insira o e-mail agora para continuar com o salvamento da missão:</p>
+                            <p className="text-xs text-gray-500 mb-4">Insira o(s) e-mail(s) agora para continuar (separe múltiplos com vírgula):</p>
                             <div className="relative mb-4">
                                 <input
-                                    type="email"
+                                    type="text"
                                     className="w-full px-4 py-3 bg-gray-50 border-2 border-red-200 rounded-xl outline-none focus:border-red-500 text-sm font-medium"
-                                    placeholder={emailMissingAlert.type === 'client' ? 'operacional@cliente.com.br' : 'os@fornecedor.com.br'}
+                                    placeholder={emailMissingAlert.type === 'client' ? 'op1@cliente.com.br, op2@cliente.com.br' : 'os1@fornecedor.com.br, os2@fornecedor.com.br'}
                                     value={quickEmailInput}
                                     onChange={e => setQuickEmailInput(e.target.value.toLowerCase())}
                                     data-testid="input-quick-email"
