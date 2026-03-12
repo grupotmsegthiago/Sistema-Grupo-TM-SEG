@@ -536,11 +536,12 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
                 @media print {
                     @page {
                         size: landscape;
-                        margin: 8mm 6mm;
+                        margin: 5mm;
                     }
                     html, body {
                         margin: 0 !important;
                         padding: 0 !important;
+                        width: 287mm !important;
                         -webkit-print-color-adjust: exact !important;
                         print-color-adjust: exact !important;
                         color-adjust: exact !important;
@@ -554,8 +555,8 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
                     #print-area {
                         position: absolute;
                         left: 0; top: 0;
-                        width: 100% !important;
-                        max-width: none !important;
+                        width: 287mm !important;
+                        max-width: 287mm !important;
                         padding: 0 !important;
                         margin: 0 !important;
                         overflow: visible !important;
@@ -566,27 +567,28 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
                     #print-area .report-table-scroll {
                         overflow: visible !important;
                         max-width: none !important;
+                        width: 287mm !important;
                     }
                     #print-area table {
                         table-layout: fixed !important;
-                        width: 100% !important;
-                        max-width: none !important;
+                        width: 287mm !important;
+                        max-width: 287mm !important;
                         border-collapse: collapse !important;
-                        break-inside: avoid !important;
-                        page-break-inside: avoid !important;
                     }
-                    #print-area thead { display: table-header-group !important; }
+                    #print-area thead {
+                        display: table-header-group !important;
+                    }
                     #print-area tr {
                         page-break-inside: avoid !important;
                         break-inside: avoid !important;
                     }
                     #print-area td, #print-area th {
-                        padding: 0.3mm 0.5mm !important;
-                        font-size: 5.5pt !important;
+                        padding: 0.5mm 0.8mm !important;
+                        font-size: 1.8mm !important;
                         overflow: hidden !important;
                         text-overflow: ellipsis !important;
-                        border: 0.3px solid #888 !important;
-                        line-height: 1.15 !important;
+                        border: 0.2px solid #999 !important;
+                        line-height: 1.2 !important;
                         white-space: nowrap !important;
                     }
                     #print-area td.route-cell {
@@ -594,45 +596,41 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
                         word-wrap: break-word !important;
                         word-break: break-word !important;
                         overflow-wrap: break-word !important;
-                        line-height: 1.1 !important;
-                        font-size: 5pt !important;
+                        line-height: 1.15 !important;
+                        font-size: 1.6mm !important;
                         max-width: 0 !important;
                     }
                     #print-area tbody tr:nth-child(odd) { background-color: #ffffff !important; }
                     #print-area tbody tr:nth-child(even) { background-color: #f0f0f0 !important; }
-                    #print-area tbody tr:nth-child(even) td[style*="backgroundColor"] {
-                        filter: brightness(0.96) !important;
-                    }
                     #print-area .group-hdr th {
-                        font-size: 6pt !important;
-                        padding: 0.5mm !important;
+                        font-size: 2mm !important;
+                        padding: 0.6mm !important;
                         font-weight: 900 !important;
                     }
                     #print-area .sub-hdr th {
-                        font-size: 5.5pt !important;
-                        padding: 0.3mm 0.5mm !important;
+                        font-size: 1.7mm !important;
+                        padding: 0.4mm 0.6mm !important;
                         font-weight: 900 !important;
                     }
                     #print-area .boletim-header { margin-bottom: 1mm !important; }
-                    #print-area .boletim-header h1 { font-size: 10pt !important; margin: 0 !important; }
-                    #print-area .subtitle-line { font-size: 7pt !important; margin: 0 !important; }
-                    #print-area .ref-line { font-size: 5.5pt !important; margin: 0 !important; }
+                    #print-area .boletim-header h1 { font-size: 4mm !important; margin: 0 !important; }
+                    #print-area .subtitle-line { font-size: 2.5mm !important; margin: 0 !important; }
+                    #print-area .ref-line { font-size: 2mm !important; margin: 0 !important; }
                     .no-print { display: none !important; }
                     #print-area .sign-section {
-                        margin-top: 3mm !important;
+                        margin-top: 4mm !important;
                         break-inside: avoid !important;
                         page-break-inside: avoid !important;
-                        page-break-before: avoid !important;
                     }
-                    #print-area .sign-box { font-size: 6pt !important; width: 55mm !important; }
-                    #print-area .digital-signature { font-size: 12pt !important; }
-                    #print-area .sign-role { font-size: 6pt !important; }
+                    #print-area .sign-box { font-size: 2mm !important; width: 55mm !important; }
+                    #print-area .digital-signature { font-size: 4mm !important; }
+                    #print-area .sign-role { font-size: 2mm !important; }
                     #print-area tfoot tr {
                         break-inside: avoid !important;
                         page-break-inside: avoid !important;
                     }
                     #print-area tfoot td {
-                        font-size: 6pt !important;
+                        font-size: 2mm !important;
                         font-weight: 900 !important;
                     }
                 }
@@ -943,32 +941,32 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
                         <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed' }}>
                             <colgroup>
                                 <col style={{ width: '2.5%' }} />
-                                <col style={{ width: '12%' }} />
-                                <col style={{ width: '3.8%' }} />
+                                <col style={{ width: '11%' }} />
+                                <col style={{ width: '3.7%' }} />
                                 <col style={{ width: '3%' }} />
                                 <col style={{ width: '3%' }} />
-                                <col style={{ width: '3.5%' }} />
-                                <col style={{ width: '3.5%' }} />
-                                <col style={{ width: '3.8%' }} />
+                                <col style={{ width: '3.3%' }} />
+                                <col style={{ width: '3.3%' }} />
+                                <col style={{ width: '3.7%' }} />
                                 <col style={{ width: '3%' }} />
-                                <col style={{ width: '4%' }} />
-                                <col style={{ width: '4%' }} />
-                                <col style={{ width: '3.8%' }} />
-                                <col style={{ width: '3%' }} />
-                                <col style={{ width: '3.5%' }} />
-                                <col style={{ width: '3.5%' }} />
-                                <col style={{ width: '3.5%' }} />
-                                <col style={{ width: '3%' }} />
-                                <col style={{ width: '3%' }} />
-                                <col style={{ width: '3%' }} />
-                                <col style={{ width: '2.8%' }} />
-                                <col style={{ width: '3.5%' }} />
-                                <col style={{ width: '3.8%' }} />
-                                <col style={{ width: '2.8%' }} />
-                                <col style={{ width: '3.5%' }} />
                                 <col style={{ width: '3.8%' }} />
                                 <col style={{ width: '3.8%' }} />
-                                <col style={{ width: '5%' }} />
+                                <col style={{ width: '3.7%' }} />
+                                <col style={{ width: '3%' }} />
+                                <col style={{ width: '3.5%' }} />
+                                <col style={{ width: '3.5%' }} />
+                                <col style={{ width: '3.5%' }} />
+                                <col style={{ width: '3%' }} />
+                                <col style={{ width: '3%' }} />
+                                <col style={{ width: '3%' }} />
+                                <col style={{ width: '2.7%' }} />
+                                <col style={{ width: '3.3%' }} />
+                                <col style={{ width: '3.7%' }} />
+                                <col style={{ width: '2.7%' }} />
+                                <col style={{ width: '3.3%' }} />
+                                <col style={{ width: '3.7%' }} />
+                                <col style={{ width: '3.5%' }} />
+                                <col style={{ width: '4.8%' }} />
                             </colgroup>
                             <thead>
                                 <tr className="group-hdr">
