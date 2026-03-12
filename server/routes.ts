@@ -870,21 +870,52 @@ export async function registerRoutes(
           threeMonthsAgo.setMonth(threeMonthsAgo.getMonth() - 3);
           const cutoffDate = threeMonthsAgo.toISOString();
 
-          const { count: historyCount, error: historyErr } = await supabaseAdmin
-              .from('mission_history')
-              .delete()
-              .lt('changed_at', cutoffDate)
-              .select('id', { count: 'exact', head: true });
+          const BATCH_SIZE = 500;
+          let historyDeleted = 0;
+          let logsDeleted = 0;
 
-          const { count: missionLogsCount, error: missionLogsErr } = await supabaseAdmin
-              .from('mission_logs')
-              .delete()
-              .lt('created_at', cutoffDate)
-              .select('id', { count: 'exact', head: true });
+          let batch;
+          do {
+              const { data, error } = await supabaseAdmin
+                  .from('mission_history')
+                  .select('id')
+                  .lt('changed_at', cutoffDate)
+                  .limit(BATCH_SIZE);
+              if (error || !data || data.length === 0) break;
+              batch = data;
+              const ids = batch.map((r: any) => r.id);
+              const { error: delErr } = await supabaseAdmin
+                  .from('mission_history')
+                  .delete()
+                  .in('id', ids);
+              if (delErr) { console.error('[CLEANUP] Erro deletando mission_history:', delErr.message); break; }
+              historyDeleted += ids.length;
+              if (ids.length < BATCH_SIZE) break;
+              await new Promise(r => setTimeout(r, 1000));
+          } while (batch && batch.length === BATCH_SIZE);
+
+          do {
+              const { data, error } = await supabaseAdmin
+                  .from('mission_logs')
+                  .select('id')
+                  .lt('created_at', cutoffDate)
+                  .limit(BATCH_SIZE);
+              if (error || !data || data.length === 0) break;
+              batch = data;
+              const ids = batch.map((r: any) => r.id);
+              const { error: delErr } = await supabaseAdmin
+                  .from('mission_logs')
+                  .delete()
+                  .in('id', ids);
+              if (delErr) { console.error('[CLEANUP] Erro deletando mission_logs:', delErr.message); break; }
+              logsDeleted += ids.length;
+              if (ids.length < BATCH_SIZE) break;
+              await new Promise(r => setTimeout(r, 1000));
+          } while (batch && batch.length === BATCH_SIZE);
 
           const results = {
-              mission_history: historyErr ? `erro: ${historyErr.message}` : `${historyCount || 0} registros removidos`,
-              mission_logs: missionLogsErr ? `erro: ${missionLogsErr.message}` : `${missionLogsCount || 0} registros removidos`,
+              mission_history: `${historyDeleted} registros removidos`,
+              mission_logs: `${logsDeleted} registros removidos`,
               cutoff_date: cutoffDate,
               executed_at: new Date().toISOString()
           };
@@ -906,11 +937,36 @@ export async function registerRoutes(
       }
   };
 
-  const CLEANUP_INTERVAL_MS = 90 * 24 * 60 * 60 * 1000;
+  const checkAndRunCleanup = async () => {
+      try {
+          const { data } = await supabaseAdmin
+              .from('system_logs')
+              .select('created_at')
+              .eq('action_type', 'CLEANUP_TRIMESTRAL')
+              .order('created_at', { ascending: false })
+              .limit(1);
+
+          if (data && data.length > 0) {
+              const lastRun = new Date(data[0].created_at);
+              const daysSince = (Date.now() - lastRun.getTime()) / (1000 * 60 * 60 * 24);
+              if (daysSince < 85) {
+                  console.log(`[CLEANUP] Última limpeza foi há ${daysSince.toFixed(0)} dias. Próxima em ~${(90 - daysSince).toFixed(0)} dias.`);
+                  return;
+              }
+          }
+
+          console.log('[CLEANUP] Iniciando limpeza trimestral automática...');
+          await runHistoryCleanup();
+      } catch (e: any) {
+          console.error('[CLEANUP] Erro ao verificar necessidade de limpeza:', e.message);
+      }
+  };
+
+  const ONE_DAY_MS = 24 * 60 * 60 * 1000;
   setTimeout(() => {
-      runHistoryCleanup();
-      setInterval(runHistoryCleanup, CLEANUP_INTERVAL_MS);
-  }, 60 * 1000);
+      checkAndRunCleanup();
+      setInterval(checkAndRunCleanup, ONE_DAY_MS);
+  }, 5 * 60 * 1000);
 
   app.post("/api/admin/cleanup-history", async (_req: Request, res: Response) => {
       try {
