@@ -281,19 +281,69 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
               setEditEndTime(et ? `${et.toLocaleDateString('en-CA')}T${et.toLocaleTimeString('pt-BR', { hour:'2-digit', minute:'2-digit' })}` : '');
               setIsEditingOpsData(false);
 
-              const provOpsEdited = mRes.data.provider_ops_edited === true;
-              const pStartKm = provOpsEdited && mRes.data.provider_start_km != null ? mRes.data.provider_start_km : mRes.data.start_km;
-              const pEndKm = provOpsEdited && mRes.data.provider_end_km != null ? mRes.data.provider_end_km : mRes.data.end_km;
-              const pStartTime = provOpsEdited && mRes.data.provider_start_time ? new Date(mRes.data.provider_start_time) : st;
-              const pEndTime = provOpsEdited && mRes.data.provider_end_time ? new Date(mRes.data.provider_end_time) : et;
+              let provOpsEdited = mRes.data.provider_ops_edited === true;
+              let pStartKm = provOpsEdited && mRes.data.provider_start_km != null ? mRes.data.provider_start_km : mRes.data.start_km;
+              let pEndKm = provOpsEdited && mRes.data.provider_end_km != null ? mRes.data.provider_end_km : mRes.data.end_km;
+              let pStartTime: Date | null = provOpsEdited && mRes.data.provider_start_time ? new Date(mRes.data.provider_start_time) : st;
+              let pEndTime: Date | null = provOpsEdited && mRes.data.provider_end_time ? new Date(mRes.data.provider_end_time) : et;
+
+              if (!provOpsEdited) {
+                  const { data: provOpsLog } = await supabase.from('system_logs')
+                      .select('details')
+                      .eq('entity', 'Mission')
+                      .eq('entity_id', initialMission.id)
+                      .eq('action_type', 'PROVIDER_OPS_UPDATE')
+                      .order('created_at', { ascending: false })
+                      .limit(1)
+                      .single();
+                  if (provOpsLog?.details) {
+                      try {
+                          const parsed = typeof provOpsLog.details === 'string' ? JSON.parse(provOpsLog.details) : provOpsLog.details;
+                          if (parsed.provider_ops_edited) {
+                              provOpsEdited = true;
+                              if (parsed.provider_start_km != null) pStartKm = parsed.provider_start_km;
+                              if (parsed.provider_end_km != null) pEndKm = parsed.provider_end_km;
+                              if (parsed.provider_start_time) pStartTime = new Date(parsed.provider_start_time);
+                              if (parsed.provider_end_time) pEndTime = new Date(parsed.provider_end_time);
+                              fullMission.provider_ops_edited = true;
+                              fullMission.provider_start_km = parsed.provider_start_km;
+                              fullMission.provider_end_km = parsed.provider_end_km;
+                              fullMission.provider_start_time = parsed.provider_start_time;
+                              fullMission.provider_end_time = parsed.provider_end_time;
+                              setMission(fullMission);
+                          }
+                      } catch {}
+                  }
+              }
+
+              let loadedRevReason = mRes.data.revenue_edit_reason || '';
+              let loadedCostReason = mRes.data.cost_edit_reason || '';
+              if (!loadedRevReason && !loadedCostReason) {
+                  const { data: reasonLog } = await supabase.from('system_logs')
+                      .select('details')
+                      .eq('entity', 'Mission')
+                      .eq('entity_id', initialMission.id)
+                      .eq('action_type', 'VALUE_EDIT_REASON')
+                      .order('created_at', { ascending: false })
+                      .limit(1)
+                      .single();
+                  if (reasonLog?.details) {
+                      try {
+                          const parsed = typeof reasonLog.details === 'string' ? JSON.parse(reasonLog.details) : reasonLog.details;
+                          if (parsed.revenue_edit_reason) loadedRevReason = parsed.revenue_edit_reason;
+                          if (parsed.cost_edit_reason) loadedCostReason = parsed.cost_edit_reason;
+                      } catch {}
+                  }
+              }
+
               setProvEditStartKm(pStartKm ? String(pStartKm) : '');
               setProvEditEndKm(pEndKm ? String(pEndKm) : '');
               setProvEditStartTime(pStartTime ? `${pStartTime.toLocaleDateString('en-CA')}T${pStartTime.toLocaleTimeString('pt-BR', { hour:'2-digit', minute:'2-digit' })}` : '');
               setProvEditEndTime(pEndTime ? `${pEndTime.toLocaleDateString('en-CA')}T${pEndTime.toLocaleTimeString('pt-BR', { hour:'2-digit', minute:'2-digit' })}` : '');
               setIsEditingProvOpsData(false);
 
-              setRevenueEditReason(mRes.data.revenue_edit_reason || '');
-              setCostEditReason(mRes.data.cost_edit_reason || '');
+              setRevenueEditReason(loadedRevReason);
+              setCostEditReason(loadedCostReason);
               setShowRevenueReasonInput(false);
               setShowCostReasonInput(false);
 
@@ -521,6 +571,23 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
 
   useEffect(() => { if (isOpen) loadData(); }, [isOpen]);
 
+  const providerOpsOverride = useMemo(() => {
+      if (!mission?.provider_ops_edited) return undefined;
+      const getKm = (val: any) => typeof val === 'number' ? val : parseFloat(String(val || '0').replace(',', '.'));
+      const pStartKm = mission.provider_start_km != null ? getKm(mission.provider_start_km) : getKm(mission.startKm || (mission as any).start_km);
+      const pEndKm = mission.provider_end_km != null ? getKm(mission.provider_end_km) : getKm(mission.endKm || (mission as any).end_km);
+      const pHasValidKms = pStartKm > 0 && pEndKm > 0 && pEndKm >= pStartKm;
+      const pDistanceKm = pHasValidKms ? (pEndKm - pStartKm) : safeNumber(mission.totalDistance);
+
+      const pStartTime = mission.provider_start_time ? new Date(mission.provider_start_time) : (mission.startTime ? new Date(mission.startTime) : null);
+      const pEndTime = mission.provider_end_time ? new Date(mission.provider_end_time) : (mission.endTime ? new Date(mission.endTime) : null);
+      let pDurationHours = 0;
+      if (pStartTime && pEndTime) {
+          pDurationHours = Math.max(0, (pEndTime.getTime() - pStartTime.getTime()) / (1000 * 60 * 60));
+      }
+      return { distanceKm: pDistanceKm, durationHours: pDurationHours };
+  }, [mission]);
+
   const financialData = useMemo(() => {
       if (!mission) return null;
       const currentToll = parseNumber(tollInput);
@@ -535,9 +602,10 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
           customProviderUnitKm: customProviderKm ? parseNumber(customProviderKm) : undefined,
           customProviderUnitHour: customProviderHour ? parseNumber(customProviderHour) : undefined,
           customClientBase: customClientBase ? parseNumber(customClientBase) : undefined,
-          customProviderBase: customProviderBase ? parseNumber(customProviderBase) : undefined
+          customProviderBase: customProviderBase ? parseNumber(customProviderBase) : undefined,
+          providerOpsOverride: providerOpsOverride
       });
-  }, [mission, clientTables, providerTables, clientData, manualClientTableId, manualProviderTableId, iblEnabled, tollInput, customProviderKm, customProviderHour, customClientKm, customClientHour, customClientBase, customProviderBase]);
+  }, [mission, clientTables, providerTables, clientData, manualClientTableId, manualProviderTableId, iblEnabled, tollInput, customProviderKm, customProviderHour, customClientKm, customClientHour, customClientBase, customProviderBase, providerOpsOverride]);
 
     useEffect(() => {
       if (financialData && mission) {

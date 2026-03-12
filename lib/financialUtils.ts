@@ -239,6 +239,10 @@ export const calculateMissionFinancials = (
         customProviderUnitHour?: number;
         customClientBase?: number;
         customProviderBase?: number;
+        providerOpsOverride?: {
+            distanceKm: number;
+            durationHours: number;
+        };
     }
 ): CalculatedFinancials => {
     const isTerminalStatus = [MissionStatus.COMPLETED, MissionStatus.CANCELLED, MissionStatus.REFUSED].includes(mission.status as MissionStatus);
@@ -570,7 +574,9 @@ export const calculateMissionFinancials = (
          }
     }
 
-    const providerDistReference = Math.max(totalDistance, distanceForCalculation);
+    const providerDistReference = manualTableOverrides?.providerOpsOverride 
+        ? manualTableOverrides.providerOpsOverride.distanceKm 
+        : Math.max(totalDistance, distanceForCalculation);
 
     if (manualTableOverrides?.providerTableId) {
         appliedProviderTable = providerTables.find(t => t.id.toString() === manualTableOverrides.providerTableId);
@@ -724,8 +730,12 @@ export const calculateMissionFinancials = (
                                      providerTableName.includes('02H') || 
                                      providerTableName.includes('02 HORAS'));
 
-    let providerDistForCalc = distanceForCalculation;
-    let providerDurationForCalc = durationHours;
+    let providerDistForCalc = manualTableOverrides?.providerOpsOverride 
+        ? manualTableOverrides.providerOpsOverride.distanceKm 
+        : distanceForCalculation;
+    let providerDurationForCalc = manualTableOverrides?.providerOpsOverride 
+        ? manualTableOverrides.providerOpsOverride.durationHours 
+        : durationHours;
 
     const rawBaseCost = appliedProviderTable?.activation_cost || 0;
     const pBase = isRefused ? 0 : (manualTableOverrides?.customProviderBase !== undefined
