@@ -4,7 +4,8 @@ import { MissionStatus } from '../types';
 import {
     Search, ClipboardCheck, RefreshCw, Loader2,
     Building2, CheckCircle2, AlertTriangle, Calendar,
-    FileText, Hash, Lock, Eye, X, Save, ShieldCheck
+    FileText, Hash, Lock, Eye, X, Save, ShieldCheck,
+    ImagePlus, Trash2, ZoomIn, Receipt, CreditCard
 } from 'lucide-react';
 import { useNotification } from '../lib/NotificationContext';
 
@@ -50,9 +51,113 @@ const VendorVerificationControl: React.FC = () => {
     const [verifiedAt, setVerifiedAt] = useState('');
     const [isSaving, setIsSaving] = useState(false);
 
+    const [invoiceImageUrl, setInvoiceImageUrl] = useState<string | null>(null);
+    const [receiptImageUrl, setReceiptImageUrl] = useState<string | null>(null);
+    const [uploadingInvoice, setUploadingInvoice] = useState(false);
+    const [uploadingReceipt, setUploadingReceipt] = useState(false);
+    const [previewImage, setPreviewImage] = useState<string | null>(null);
+
+    const invoiceInputRef = React.useRef<HTMLInputElement>(null);
+    const receiptInputRef = React.useRef<HTMLInputElement>(null);
+
     const userData = JSON.parse(localStorage.getItem('userData') || '{}');
     const userRole = (userData.role || '').toLowerCase();
     const isAdmin = ['administrador', 'diretoria', 'ceo'].includes(userRole) || userData.permissions?.includes('*');
+
+    const compressImage = (file: File, maxWidth = 1200, quality = 0.7): Promise<Blob> => {
+        return new Promise((resolve, reject) => {
+            const img = new window.Image();
+            img.onload = () => {
+                const canvas = document.createElement('canvas');
+                let w = img.width, h = img.height;
+                if (w > maxWidth) { h = (maxWidth / w) * h; w = maxWidth; }
+                canvas.width = w; canvas.height = h;
+                const ctx = canvas.getContext('2d');
+                if (!ctx) return reject(new Error('Canvas error'));
+                ctx.drawImage(img, 0, 0, w, h);
+                canvas.toBlob(blob => blob ? resolve(blob) : reject(new Error('Blob error')), 'image/jpeg', quality);
+            };
+            img.onerror = () => reject(new Error('Erro ao carregar imagem'));
+            img.src = URL.createObjectURL(file);
+        });
+    };
+
+    const handleImageUpload = async (file: File, type: 'invoice' | 'receipt') => {
+        if (!selectedMission) return;
+        const setUploading = type === 'invoice' ? setUploadingInvoice : setUploadingReceipt;
+        const setUrl = type === 'invoice' ? setInvoiceImageUrl : setReceiptImageUrl;
+
+        setUploading(true);
+        try {
+            const compressed = await compressImage(file);
+            const path = `vendor-docs/${selectedMission.id}/${type}_${Date.now()}.jpg`;
+            const { error: uploadError } = await supabase.storage.from('mission-evidence').upload(path, compressed, { contentType: 'image/jpeg', upsert: true });
+
+            if (uploadError) {
+                if (uploadError.message?.includes('not found') || uploadError.message?.includes('does not exist')) {
+                    showNotification('Erro', 'Bucket mission-evidence não existe no Supabase.', 'error');
+                } else {
+                    showNotification('Erro', uploadError.message, 'error');
+                }
+                return;
+            }
+
+            const { data: urlData } = supabase.storage.from('mission-evidence').getPublicUrl(path);
+            const publicUrl = urlData.publicUrl;
+            setUrl(publicUrl);
+
+            await supabase.from('system_logs').insert({
+                entity: 'VendorVerification',
+                entity_id: selectedMission.id,
+                action_type: type === 'invoice' ? 'VENDOR_INVOICE_UPLOAD' : 'VENDOR_RECEIPT_UPLOAD',
+                user_name: userData.name || 'Sistema',
+                details: JSON.stringify({ url: publicUrl, type, path })
+            });
+
+            showNotification('Upload Concluído', type === 'invoice' ? 'Nota Fiscal anexada.' : 'Comprovante anexado.', 'success');
+        } catch (e: any) {
+            showNotification('Erro no Upload', e.message, 'error');
+        } finally {
+            setUploading(false);
+        }
+    };
+
+    const handleRemoveImage = async (type: 'invoice' | 'receipt') => {
+        const setUrl = type === 'invoice' ? setInvoiceImageUrl : setReceiptImageUrl;
+        setUrl(null);
+        showNotification('Removido', type === 'invoice' ? 'Nota Fiscal removida.' : 'Comprovante removido.', 'info');
+    };
+
+    const loadAttachments = async (missionId: string) => {
+        setInvoiceImageUrl(null);
+        setReceiptImageUrl(null);
+        try {
+            const { data: logs } = await supabase.from('system_logs')
+                .select('action_type, details')
+                .eq('entity', 'VendorVerification')
+                .eq('entity_id', missionId)
+                .in('action_type', ['VENDOR_INVOICE_UPLOAD', 'VENDOR_RECEIPT_UPLOAD'])
+                .order('created_at', { ascending: false });
+
+            if (logs) {
+                let foundInvoice = false;
+                let foundReceipt = false;
+                for (const log of logs) {
+                    const details = typeof log.details === 'string' ? JSON.parse(log.details) : log.details;
+                    if (log.action_type === 'VENDOR_INVOICE_UPLOAD' && !foundInvoice) {
+                        setInvoiceImageUrl(details.url);
+                        foundInvoice = true;
+                    }
+                    if (log.action_type === 'VENDOR_RECEIPT_UPLOAD' && !foundReceipt) {
+                        setReceiptImageUrl(details.url);
+                        foundReceipt = true;
+                    }
+                }
+            }
+        } catch (e) {
+            console.error('Erro ao carregar anexos:', e);
+        }
+    };
 
     useEffect(() => {
         loadData();
@@ -121,6 +226,7 @@ const VendorVerificationControl: React.FC = () => {
         setSelectedMission(mission);
         setModalOpen(true);
         setModalLoading(true);
+        setPreviewImage(null);
 
         setVendorOsNumber(mission.vendor_os_number || '');
         setInvoiceNumber(mission.invoice_number || '');
@@ -129,14 +235,16 @@ const VendorVerificationControl: React.FC = () => {
         setVerifiedAt(mission.verified_at || '');
 
         try {
-            const res = await fetch(`/api/vendor-verification/${mission.id}`);
-            const json = await res.json();
-            if (json.ok && json.data) {
-                setVendorOsNumber(json.data.vendor_os_number || '');
-                setInvoiceNumber(json.data.invoice_number || '');
-                setPaymentDate(json.data.payment_date || '');
-                setVerifiedBy(json.data.verified_by || '');
-                setVerifiedAt(json.data.verified_at || '');
+            const [verRes] = await Promise.all([
+                fetch(`/api/vendor-verification/${mission.id}`).then(r => r.json()),
+                loadAttachments(mission.id)
+            ]);
+            if (verRes.ok && verRes.data) {
+                setVendorOsNumber(verRes.data.vendor_os_number || '');
+                setInvoiceNumber(verRes.data.invoice_number || '');
+                setPaymentDate(verRes.data.payment_date || '');
+                setVerifiedBy(verRes.data.verified_by || '');
+                setVerifiedAt(verRes.data.verified_at || '');
             }
         } catch (e) {
             console.error(e);
@@ -253,9 +361,18 @@ const VendorVerificationControl: React.FC = () => {
 
     return (
         <div className="space-y-6 animate-fade-in pb-20" data-testid="vendor-verification-control">
+            {previewImage && (
+                <div className="fixed inset-0 bg-black/90 z-[60] flex items-center justify-center p-4" onClick={() => setPreviewImage(null)}>
+                    <button onClick={() => setPreviewImage(null)} className="absolute top-4 right-4 p-2 bg-white/10 hover:bg-white/20 rounded-full text-white transition-colors" data-testid="button-close-preview">
+                        <X size={24} />
+                    </button>
+                    <img src={previewImage} alt="Preview" className="max-w-full max-h-[90vh] object-contain rounded-lg shadow-2xl" data-testid="img-fullscreen-preview" />
+                </div>
+            )}
+
             {modalOpen && selectedMission && (
                 <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4" onClick={() => setModalOpen(false)}>
-                    <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg" onClick={e => e.stopPropagation()}>
+                    <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] flex flex-col" onClick={e => e.stopPropagation()}>
                         <div className="bg-gradient-to-r from-blue-600 to-blue-800 text-white p-5 rounded-t-2xl flex justify-between items-center">
                             <div>
                                 <h3 className="text-lg font-black uppercase tracking-tight flex items-center gap-2" data-testid="modal-title">
@@ -268,7 +385,7 @@ const VendorVerificationControl: React.FC = () => {
                             </button>
                         </div>
 
-                        <div className="p-6 space-y-5">
+                        <div className="p-6 space-y-5 overflow-y-auto flex-1">
                             {modalLoading ? (
                                 <div className="flex justify-center py-10"><Loader2 size={32} className="animate-spin text-blue-600" /></div>
                             ) : (
@@ -345,6 +462,92 @@ const VendorVerificationControl: React.FC = () => {
                                                 />
                                                 {isLocked && !isAdmin && <Lock size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400" />}
                                             </div>
+                                        </div>
+                                    </div>
+
+                                    <div className="grid grid-cols-2 gap-4">
+                                        <div>
+                                            <label className="text-[10px] font-black text-gray-500 uppercase tracking-widest mb-2 block flex items-center gap-1">
+                                                <Receipt size={12} /> Nota Fiscal (Imagem)
+                                            </label>
+                                            <input
+                                                ref={invoiceInputRef}
+                                                type="file"
+                                                accept="image/*"
+                                                className="hidden"
+                                                onChange={e => { if (e.target.files?.[0]) handleImageUpload(e.target.files[0], 'invoice'); e.target.value = ''; }}
+                                                data-testid="input-invoice-image"
+                                            />
+                                            {invoiceImageUrl ? (
+                                                <div className="relative group">
+                                                    <img
+                                                        src={invoiceImageUrl}
+                                                        alt="Nota Fiscal"
+                                                        className="w-full h-28 object-cover rounded-lg border-2 border-green-300 cursor-pointer"
+                                                        onClick={() => setPreviewImage(invoiceImageUrl)}
+                                                        data-testid="img-invoice-preview"
+                                                    />
+                                                    <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity rounded-lg flex items-center justify-center gap-2">
+                                                        <button onClick={() => setPreviewImage(invoiceImageUrl)} className="p-1.5 bg-white rounded-lg" data-testid="button-zoom-invoice"><ZoomIn size={14} /></button>
+                                                        {(!isLocked || isAdmin) && (
+                                                            <button onClick={() => handleRemoveImage('invoice')} className="p-1.5 bg-red-500 text-white rounded-lg" data-testid="button-remove-invoice"><Trash2 size={14} /></button>
+                                                        )}
+                                                    </div>
+                                                    <span className="absolute top-1 left-1 text-[8px] font-black bg-green-600 text-white px-1.5 py-0.5 rounded">NF</span>
+                                                </div>
+                                            ) : (
+                                                <button
+                                                    onClick={() => invoiceInputRef.current?.click()}
+                                                    disabled={(isLocked && !isAdmin) || uploadingInvoice}
+                                                    className="w-full h-28 border-2 border-dashed border-gray-300 rounded-lg flex flex-col items-center justify-center gap-1 text-gray-400 hover:border-blue-400 hover:text-blue-500 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                                                    data-testid="button-upload-invoice"
+                                                >
+                                                    {uploadingInvoice ? <Loader2 size={20} className="animate-spin" /> : <ImagePlus size={20} />}
+                                                    <span className="text-[9px] font-bold uppercase">{uploadingInvoice ? 'Enviando...' : 'Anexar NF'}</span>
+                                                </button>
+                                            )}
+                                        </div>
+
+                                        <div>
+                                            <label className="text-[10px] font-black text-gray-500 uppercase tracking-widest mb-2 block flex items-center gap-1">
+                                                <CreditCard size={12} /> Comprovante Pgto (Imagem)
+                                            </label>
+                                            <input
+                                                ref={receiptInputRef}
+                                                type="file"
+                                                accept="image/*"
+                                                className="hidden"
+                                                onChange={e => { if (e.target.files?.[0]) handleImageUpload(e.target.files[0], 'receipt'); e.target.value = ''; }}
+                                                data-testid="input-receipt-image"
+                                            />
+                                            {receiptImageUrl ? (
+                                                <div className="relative group">
+                                                    <img
+                                                        src={receiptImageUrl}
+                                                        alt="Comprovante de Pagamento"
+                                                        className="w-full h-28 object-cover rounded-lg border-2 border-blue-300 cursor-pointer"
+                                                        onClick={() => setPreviewImage(receiptImageUrl)}
+                                                        data-testid="img-receipt-preview"
+                                                    />
+                                                    <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity rounded-lg flex items-center justify-center gap-2">
+                                                        <button onClick={() => setPreviewImage(receiptImageUrl)} className="p-1.5 bg-white rounded-lg" data-testid="button-zoom-receipt"><ZoomIn size={14} /></button>
+                                                        {(!isLocked || isAdmin) && (
+                                                            <button onClick={() => handleRemoveImage('receipt')} className="p-1.5 bg-red-500 text-white rounded-lg" data-testid="button-remove-receipt"><Trash2 size={14} /></button>
+                                                        )}
+                                                    </div>
+                                                    <span className="absolute top-1 left-1 text-[8px] font-black bg-blue-600 text-white px-1.5 py-0.5 rounded">COMP</span>
+                                                </div>
+                                            ) : (
+                                                <button
+                                                    onClick={() => receiptInputRef.current?.click()}
+                                                    disabled={(isLocked && !isAdmin) || uploadingReceipt}
+                                                    className="w-full h-28 border-2 border-dashed border-gray-300 rounded-lg flex flex-col items-center justify-center gap-1 text-gray-400 hover:border-blue-400 hover:text-blue-500 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                                                    data-testid="button-upload-receipt"
+                                                >
+                                                    {uploadingReceipt ? <Loader2 size={20} className="animate-spin" /> : <ImagePlus size={20} />}
+                                                    <span className="text-[9px] font-bold uppercase">{uploadingReceipt ? 'Enviando...' : 'Anexar Comprovante'}</span>
+                                                </button>
+                                            )}
                                         </div>
                                     </div>
 
