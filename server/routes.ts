@@ -971,11 +971,12 @@ export async function registerRoutes(
   app.post("/api/vendor-verification/:missionId", async (req: Request, res: Response) => {
       try {
           const { missionId } = req.params;
-          const { vendor_os_number, invoice_number, payment_date, verified_by, verified_at } = req.body;
+          const { vendor_os_number, invoice_number, release_date, payment_date, verified_by, verified_at } = req.body;
 
           const payload: any = {};
           if (vendor_os_number !== undefined) payload.vendor_os_number = vendor_os_number;
           if (invoice_number !== undefined) payload.invoice_number = invoice_number;
+          if (release_date !== undefined) payload.release_date = release_date;
           if (payment_date !== undefined) payload.payment_date = payment_date;
           if (verified_by !== undefined) payload.verified_by = verified_by;
           if (verified_at !== undefined) payload.verified_at = verified_at;
@@ -1020,7 +1021,7 @@ export async function registerRoutes(
 
           const { data: mission, error } = await supabaseAdmin
               .from('missions')
-              .select('vendor_os_number, invoice_number, payment_date, verified_by, verified_at')
+              .select('vendor_os_number, invoice_number, release_date, payment_date, verified_by, verified_at')
               .eq('id', missionId)
               .single();
 
@@ -1106,6 +1107,7 @@ export async function registerRoutes(
         { name: 'cost_edit_reason', type: 'text' },
         { name: 'vendor_os_number', type: 'text' },
         { name: 'invoice_number', type: 'text' },
+        { name: 'release_date', type: 'text' },
         { name: 'payment_date', type: 'text' },
         { name: 'verified_by', type: 'text' },
         { name: 'verified_at', type: 'timestamptz' }

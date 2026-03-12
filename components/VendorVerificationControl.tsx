@@ -5,7 +5,8 @@ import {
     Search, ClipboardCheck, RefreshCw, Loader2,
     Building2, CheckCircle2, AlertTriangle, Calendar,
     FileText, Hash, Lock, Eye, X, Save, ShieldCheck,
-    ImagePlus, Trash2, ZoomIn, Receipt, CreditCard
+    ImagePlus, Trash2, ZoomIn, Receipt, CreditCard,
+    CheckSquare, Square, ListChecks
 } from 'lucide-react';
 import { useNotification } from '../lib/NotificationContext';
 
@@ -46,6 +47,7 @@ const VendorVerificationControl: React.FC = () => {
 
     const [vendorOsNumber, setVendorOsNumber] = useState('');
     const [invoiceNumber, setInvoiceNumber] = useState('');
+    const [releaseDate, setReleaseDate] = useState('');
     const [paymentDate, setPaymentDate] = useState('');
     const [verifiedBy, setVerifiedBy] = useState('');
     const [verifiedAt, setVerifiedAt] = useState('');
@@ -56,6 +58,14 @@ const VendorVerificationControl: React.FC = () => {
     const [uploadingInvoice, setUploadingInvoice] = useState(false);
     const [uploadingReceipt, setUploadingReceipt] = useState(false);
     const [previewImage, setPreviewImage] = useState<string | null>(null);
+
+    const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+    const [batchSaving, setBatchSaving] = useState(false);
+    const [batchModalOpen, setBatchModalOpen] = useState(false);
+    const [batchVendorOs, setBatchVendorOs] = useState('');
+    const [batchInvoiceNumber, setBatchInvoiceNumber] = useState('');
+    const [batchReleaseDate, setBatchReleaseDate] = useState('');
+    const [batchPaymentDate, setBatchPaymentDate] = useState('');
 
     const invoiceInputRef = React.useRef<HTMLInputElement>(null);
     const receiptInputRef = React.useRef<HTMLInputElement>(null);
@@ -169,7 +179,7 @@ const VendorVerificationControl: React.FC = () => {
             const [clientsRes, missionsRes] = await Promise.all([
                 supabase.from('clients').select('id, name, trading_name').eq('status', 'Ativo').order('name'),
                 supabase.from('missions')
-                    .select('id, client, provider, origin, destination, status, created_at, start_time, end_time, start_km, end_km, total_distance, revenue_value, cost_value, toll_value, toll_value_provider, billing_approved, vendor_os_number, invoice_number, payment_date, verified_by, verified_at')
+                    .select('id, client, provider, origin, destination, status, created_at, start_time, end_time, start_km, end_km, total_distance, revenue_value, cost_value, toll_value, toll_value_provider, billing_approved, vendor_os_number, invoice_number, release_date, payment_date, verified_by, verified_at')
                     .eq('billing_approved', true)
                     .gte('created_at', '2025-02-01T00:00:00')
                     .order('created_at', { ascending: false })
@@ -230,6 +240,7 @@ const VendorVerificationControl: React.FC = () => {
 
         setVendorOsNumber(mission.vendor_os_number || '');
         setInvoiceNumber(mission.invoice_number || '');
+        setReleaseDate(mission.release_date || '');
         setPaymentDate(mission.payment_date || '');
         setVerifiedBy(mission.verified_by || '');
         setVerifiedAt(mission.verified_at || '');
@@ -242,6 +253,7 @@ const VendorVerificationControl: React.FC = () => {
             if (verRes.ok && verRes.data) {
                 setVendorOsNumber(verRes.data.vendor_os_number || '');
                 setInvoiceNumber(verRes.data.invoice_number || '');
+                setReleaseDate(verRes.data.release_date || '');
                 setPaymentDate(verRes.data.payment_date || '');
                 setVerifiedBy(verRes.data.verified_by || '');
                 setVerifiedAt(verRes.data.verified_at || '');
@@ -263,14 +275,11 @@ const VendorVerificationControl: React.FC = () => {
             showNotification('Campo Obrigatório', 'Informe o Nº da NF.', 'error');
             return;
         }
-        if (!paymentDate) {
-            showNotification('Campo Obrigatório', 'Informe a Data Prevista de Pagamento.', 'error');
-            return;
-        }
 
         setIsSaving(true);
         const now = new Date().toISOString();
         const userName = userData.name || userData.email || 'Desconhecido';
+        const finalReleaseDate = releaseDate || now.split('T')[0];
 
         try {
             const res = await fetch(`/api/vendor-verification/${selectedMission.id}`, {
@@ -279,7 +288,8 @@ const VendorVerificationControl: React.FC = () => {
                 body: JSON.stringify({
                     vendor_os_number: vendorOsNumber.trim(),
                     invoice_number: invoiceNumber.trim(),
-                    payment_date: paymentDate,
+                    release_date: finalReleaseDate,
+                    payment_date: paymentDate || null,
                     verified_by: userName,
                     verified_at: now,
                 })
@@ -289,10 +299,11 @@ const VendorVerificationControl: React.FC = () => {
             if (json.ok) {
                 setVerifiedBy(userName);
                 setVerifiedAt(now);
+                setReleaseDate(finalReleaseDate);
 
                 setMissions(prev => prev.map(m =>
                     m.id === selectedMission.id
-                        ? { ...m, vendor_os_number: vendorOsNumber.trim(), invoice_number: invoiceNumber.trim(), payment_date: paymentDate, verified_by: userName, verified_at: now }
+                        ? { ...m, vendor_os_number: vendorOsNumber.trim(), invoice_number: invoiceNumber.trim(), release_date: finalReleaseDate, payment_date: paymentDate || null, verified_by: userName, verified_at: now }
                         : m
                 ));
 
@@ -307,6 +318,98 @@ const VendorVerificationControl: React.FC = () => {
         }
     };
 
+    const toggleSelection = (id: string) => {
+        setSelectedIds(prev => {
+            const next = new Set(prev);
+            if (next.has(id)) next.delete(id);
+            else next.add(id);
+            return next;
+        });
+    };
+
+    const toggleSelectAll = () => {
+        const pendingIds = filteredMissions.filter(m => !m.verified_by && !m.verified_at).map(m => m.id);
+        if (pendingIds.every(id => selectedIds.has(id))) {
+            setSelectedIds(prev => {
+                const next = new Set(prev);
+                pendingIds.forEach(id => next.delete(id));
+                return next;
+            });
+        } else {
+            setSelectedIds(prev => {
+                const next = new Set(prev);
+                pendingIds.forEach(id => next.add(id));
+                return next;
+            });
+        }
+    };
+
+    const openBatchModal = () => {
+        if (selectedIds.size === 0) {
+            showNotification('Seleção Vazia', 'Selecione pelo menos uma OS para verificar em lote.', 'error');
+            return;
+        }
+        setBatchVendorOs('');
+        setBatchInvoiceNumber('');
+        setBatchReleaseDate('');
+        setBatchPaymentDate('');
+        setBatchModalOpen(true);
+    };
+
+    const handleBatchVerification = async () => {
+        if (!batchVendorOs.trim() && !batchInvoiceNumber.trim()) {
+            showNotification('Campos Obrigatórios', 'Informe pelo menos o Nº OS Fornecedor ou NF.', 'error');
+            return;
+        }
+
+        setBatchSaving(true);
+        const now = new Date().toISOString();
+        const userName = userData.name || userData.email || 'Desconhecido';
+        const finalReleaseDate = batchReleaseDate || now.split('T')[0];
+        let successCount = 0;
+        let errorCount = 0;
+
+        for (const missionId of selectedIds) {
+            try {
+                const res = await fetch(`/api/vendor-verification/${missionId}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        vendor_os_number: batchVendorOs.trim() || null,
+                        invoice_number: batchInvoiceNumber.trim() || null,
+                        release_date: finalReleaseDate,
+                        payment_date: batchPaymentDate || null,
+                        verified_by: userName,
+                        verified_at: now,
+                    })
+                });
+                const json = await res.json();
+                if (json.ok) {
+                    successCount++;
+                    setMissions(prev => prev.map(m =>
+                        m.id === missionId
+                            ? { ...m, vendor_os_number: batchVendorOs.trim() || null, invoice_number: batchInvoiceNumber.trim() || null, release_date: finalReleaseDate, payment_date: batchPaymentDate || null, verified_by: userName, verified_at: now }
+                            : m
+                    ));
+                } else {
+                    errorCount++;
+                }
+            } catch {
+                errorCount++;
+            }
+        }
+
+        setBatchSaving(false);
+        setBatchModalOpen(false);
+        setSelectedIds(new Set());
+
+        if (errorCount === 0) {
+            showNotification('Lote Verificado', `${successCount} OS verificadas com sucesso.`, 'success');
+        } else {
+            showNotification('Lote Parcial', `${successCount} OK, ${errorCount} com erro.`, 'error');
+        }
+    };
+
     const handleUnlock = async () => {
         if (!selectedMission || !isAdmin) return;
         setVerifiedBy('');
@@ -318,7 +421,8 @@ const VendorVerificationControl: React.FC = () => {
                 body: JSON.stringify({
                     vendor_os_number: vendorOsNumber.trim(),
                     invoice_number: invoiceNumber.trim(),
-                    payment_date: paymentDate,
+                    release_date: releaseDate || null,
+                    payment_date: paymentDate || null,
                     verified_by: null,
                     verified_at: null,
                 })
@@ -449,9 +553,26 @@ const VendorVerificationControl: React.FC = () => {
                                         </div>
 
                                         <div>
-                                            <label className="text-[10px] font-black text-gray-500 uppercase tracking-widest mb-1 block">Data Prevista de Pagamento</label>
+                                            <label className="text-[10px] font-black text-gray-500 uppercase tracking-widest mb-1 block">Data de Liberação</label>
                                             <div className="relative">
                                                 <Calendar size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                                                <input
+                                                    type="date"
+                                                    value={releaseDate}
+                                                    onChange={e => setReleaseDate(e.target.value)}
+                                                    disabled={isLocked && !isAdmin}
+                                                    className="w-full pl-10 pr-4 py-2.5 bg-white border border-gray-300 rounded-lg text-sm font-bold disabled:bg-gray-100 disabled:text-gray-500 disabled:cursor-not-allowed"
+                                                    data-testid="input-release-date"
+                                                />
+                                                {isLocked && !isAdmin && <Lock size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400" />}
+                                            </div>
+                                            <p className="text-[8px] text-gray-400 font-bold mt-1">Registrada automaticamente ao gravar</p>
+                                        </div>
+
+                                        <div>
+                                            <label className="text-[10px] font-black text-gray-500 uppercase tracking-widest mb-1 block">Data do Pagamento</label>
+                                            <div className="relative">
+                                                <CreditCard size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
                                                 <input
                                                     type="date"
                                                     value={paymentDate}
@@ -672,11 +793,120 @@ const VendorVerificationControl: React.FC = () => {
                 </div>
             </div>
 
+            {selectedIds.size > 0 && (
+                <div className="bg-blue-50 border-2 border-blue-300 rounded-2xl p-4 flex items-center justify-between animate-fade-in" data-testid="batch-action-bar">
+                    <div className="flex items-center gap-3">
+                        <ListChecks size={22} className="text-blue-600" />
+                        <span className="text-sm font-black text-blue-800">{selectedIds.size} OS selecionada{selectedIds.size > 1 ? 's' : ''}</span>
+                    </div>
+                    <div className="flex gap-2">
+                        <button
+                            onClick={openBatchModal}
+                            className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white font-black text-xs py-2.5 px-5 rounded-xl transition-colors uppercase tracking-wide"
+                            data-testid="button-batch-verify"
+                        >
+                            <ClipboardCheck size={16} /> Verificar em Lote
+                        </button>
+                        <button
+                            onClick={() => setSelectedIds(new Set())}
+                            className="flex items-center gap-2 bg-gray-200 hover:bg-gray-300 text-gray-700 font-black text-xs py-2.5 px-4 rounded-xl transition-colors"
+                            data-testid="button-clear-selection"
+                        >
+                            <X size={14} /> Limpar
+                        </button>
+                    </div>
+                </div>
+            )}
+
+            {batchModalOpen && (
+                <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4" onClick={() => setBatchModalOpen(false)}>
+                    <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md" onClick={e => e.stopPropagation()}>
+                        <div className="bg-gradient-to-r from-blue-600 to-indigo-700 text-white p-5 rounded-t-2xl flex justify-between items-center">
+                            <div>
+                                <h3 className="text-lg font-black uppercase tracking-tight flex items-center gap-2" data-testid="batch-modal-title">
+                                    <ListChecks size={20} /> Verificação em Lote
+                                </h3>
+                                <p className="text-xs text-blue-200 font-bold mt-1">{selectedIds.size} OS selecionada{selectedIds.size > 1 ? 's' : ''}</p>
+                            </div>
+                            <button onClick={() => setBatchModalOpen(false)} className="p-2 hover:bg-white/10 rounded-xl transition-colors">
+                                <X size={20} />
+                            </button>
+                        </div>
+
+                        <div className="p-6 space-y-4">
+                            <div className="bg-blue-50 border border-blue-200 rounded-xl p-3">
+                                <p className="text-[10px] font-black text-blue-700 uppercase mb-2">OS Selecionadas:</p>
+                                <div className="flex flex-wrap gap-1">
+                                    {[...selectedIds].map(id => (
+                                        <span key={id} className="text-[9px] font-black bg-blue-100 text-blue-800 px-2 py-0.5 rounded-lg border border-blue-200">{id}</span>
+                                    ))}
+                                </div>
+                            </div>
+
+                            <div>
+                                <label className="text-[10px] font-black text-gray-500 uppercase tracking-widest mb-1 block">Nº OS Fornecedor</label>
+                                <div className="relative">
+                                    <Hash size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                                    <input type="text" value={batchVendorOs} onChange={e => setBatchVendorOs(e.target.value)} placeholder="Ex: OS-FORN-00123" className="w-full pl-10 pr-4 py-2.5 bg-white border border-gray-300 rounded-lg text-sm font-bold" data-testid="batch-input-vendor-os" />
+                                </div>
+                            </div>
+                            <div>
+                                <label className="text-[10px] font-black text-gray-500 uppercase tracking-widest mb-1 block">Nº da NF</label>
+                                <div className="relative">
+                                    <FileText size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                                    <input type="text" value={batchInvoiceNumber} onChange={e => setBatchInvoiceNumber(e.target.value)} placeholder="Ex: NF-001234" className="w-full pl-10 pr-4 py-2.5 bg-white border border-gray-300 rounded-lg text-sm font-bold" data-testid="batch-input-invoice" />
+                                </div>
+                            </div>
+                            <div>
+                                <label className="text-[10px] font-black text-gray-500 uppercase tracking-widest mb-1 block">Data de Liberação</label>
+                                <div className="relative">
+                                    <Calendar size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                                    <input type="date" value={batchReleaseDate} onChange={e => setBatchReleaseDate(e.target.value)} className="w-full pl-10 pr-4 py-2.5 bg-white border border-gray-300 rounded-lg text-sm font-bold" data-testid="batch-input-release-date" />
+                                </div>
+                                <p className="text-[8px] text-gray-400 font-bold mt-1">Deixe vazio para registrar a data de hoje</p>
+                            </div>
+                            <div>
+                                <label className="text-[10px] font-black text-gray-500 uppercase tracking-widest mb-1 block">Data do Pagamento</label>
+                                <div className="relative">
+                                    <CreditCard size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                                    <input type="date" value={batchPaymentDate} onChange={e => setBatchPaymentDate(e.target.value)} className="w-full pl-10 pr-4 py-2.5 bg-white border border-gray-300 rounded-lg text-sm font-bold" data-testid="batch-input-payment-date" />
+                                </div>
+                            </div>
+
+                            <div className="flex gap-3 pt-2">
+                                <button
+                                    onClick={handleBatchVerification}
+                                    disabled={batchSaving}
+                                    className="flex-1 flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 text-white font-black text-sm py-3 rounded-xl transition-colors disabled:opacity-50"
+                                    data-testid="button-confirm-batch"
+                                >
+                                    {batchSaving ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
+                                    {batchSaving ? 'Processando...' : `Verificar ${selectedIds.size} OS`}
+                                </button>
+                                <button
+                                    onClick={() => setBatchModalOpen(false)}
+                                    className="px-6 py-3 bg-gray-100 hover:bg-gray-200 text-gray-700 font-black text-sm rounded-xl transition-colors"
+                                >
+                                    Cancelar
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
             <div className="bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden">
                 <div className="overflow-x-auto">
                     <table className="w-full text-left border-collapse">
                         <thead className="bg-gray-900 text-white text-[10px] font-black uppercase tracking-widest">
                             <tr>
+                                <th className="px-3 py-3 text-center w-10">
+                                    <button onClick={toggleSelectAll} className="p-1 hover:bg-white/10 rounded transition-colors" data-testid="button-select-all">
+                                        {filteredMissions.filter(m => !m.verified_by && !m.verified_at).length > 0 &&
+                                         filteredMissions.filter(m => !m.verified_by && !m.verified_at).every(m => selectedIds.has(m.id))
+                                            ? <CheckSquare size={16} /> : <Square size={16} />}
+                                    </button>
+                                </th>
                                 <th className="px-4 py-3">OS</th>
                                 <th className="px-4 py-3">Fornecedor / Cliente</th>
                                 <th className="px-4 py-3">Origem</th>
@@ -684,6 +914,7 @@ const VendorVerificationControl: React.FC = () => {
                                 <th className="px-4 py-3 text-right">Custo</th>
                                 <th className="px-4 py-3 text-center">OS Forn.</th>
                                 <th className="px-4 py-3 text-center">NF</th>
+                                <th className="px-4 py-3 text-center">Liberação</th>
                                 <th className="px-4 py-3 text-center">Pgto.</th>
                                 <th className="px-4 py-3 text-center">Status</th>
                                 <th className="px-4 py-3 text-center">Ação</th>
@@ -691,9 +922,9 @@ const VendorVerificationControl: React.FC = () => {
                         </thead>
                         <tbody className="divide-y divide-gray-100">
                             {isLoading ? (
-                                <tr><td colSpan={10} className="p-20 text-center"><Loader2 size={40} className="animate-spin text-blue-700 mx-auto" /></td></tr>
+                                <tr><td colSpan={12} className="p-20 text-center"><Loader2 size={40} className="animate-spin text-blue-700 mx-auto" /></td></tr>
                             ) : filteredMissions.length === 0 ? (
-                                <tr><td colSpan={10} className="p-20 text-center text-gray-400 font-bold uppercase">Nenhuma missão encontrada.</td></tr>
+                                <tr><td colSpan={12} className="p-20 text-center text-gray-400 font-bold uppercase">Nenhuma missão encontrada.</td></tr>
                             ) : (
                                 filteredMissions.map(m => {
                                     const isVerified = Boolean(m.verified_by && m.verified_at);
@@ -701,7 +932,16 @@ const VendorVerificationControl: React.FC = () => {
                                     const totalCost = (m.cost_value || 0) + tollProv;
 
                                     return (
-                                        <tr key={m.id} className={`hover:bg-gray-50/50 transition-colors ${isVerified ? 'bg-green-50/30' : ''}`} data-testid={`row-mission-${m.id}`}>
+                                        <tr key={m.id} className={`hover:bg-gray-50/50 transition-colors ${isVerified ? 'bg-green-50/30' : ''} ${selectedIds.has(m.id) ? 'bg-blue-50/50' : ''}`} data-testid={`row-mission-${m.id}`}>
+                                            <td className="px-3 py-3 text-center">
+                                                {!isVerified ? (
+                                                    <button onClick={() => toggleSelection(m.id)} className="p-1 hover:bg-gray-100 rounded transition-colors" data-testid={`checkbox-${m.id}`}>
+                                                        {selectedIds.has(m.id) ? <CheckSquare size={16} className="text-blue-600" /> : <Square size={16} className="text-gray-400" />}
+                                                    </button>
+                                                ) : (
+                                                    <CheckCircle2 size={16} className="text-green-400 mx-auto" />
+                                                )}
+                                            </td>
                                             <td className="px-4 py-3">
                                                 <span className="font-black text-gray-900 text-xs font-mono">{m.id}</span>
                                                 <div className="text-[9px] text-gray-400 font-bold">{fmtDate(m.created_at)}</div>
@@ -724,6 +964,9 @@ const VendorVerificationControl: React.FC = () => {
                                             </td>
                                             <td className="px-4 py-3 text-center">
                                                 <span className="text-[10px] font-bold text-gray-700">{m.invoice_number || '—'}</span>
+                                            </td>
+                                            <td className="px-4 py-3 text-center">
+                                                <span className="text-[10px] font-bold text-gray-700">{m.release_date ? fmtDate(m.release_date) : '—'}</span>
                                             </td>
                                             <td className="px-4 py-3 text-center">
                                                 <span className="text-[10px] font-bold text-gray-700">{m.payment_date ? fmtDate(m.payment_date) : '—'}</span>
