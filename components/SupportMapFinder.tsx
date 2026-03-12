@@ -1,14 +1,15 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { supabase } from '../lib/supabase';
 import { SupportAgent } from '../types';
-import { useLoadScript, GoogleMap, Marker, InfoWindow } from '@react-google-maps/api';
+import { useLoadScript, GoogleMap, Marker, InfoWindow, Circle, Autocomplete } from '@react-google-maps/api';
 import { googleMapsApiKey, libraries, googleMapsLoadConfig } from '../lib/maps';
 import { extractCoordinates } from '../lib/utils';
 import { 
   Loader2, MapPin, Globe, Users, Plus, X, ShieldCheck, 
   AlertTriangle, RefreshCw, MessageCircle, Phone, Search, 
   Shield, Target, Zap, Filter, Navigation, Clock, ChevronRight,
-  BarChart3, PieChart, TrendingUp, DollarSign, LayoutGrid, Map as MapIcon, Flag, Activity
+  BarChart3, PieChart, TrendingUp, DollarSign, LayoutGrid, Map as MapIcon, Flag, Activity,
+  Crosshair, SlidersHorizontal, Locate
 } from 'lucide-react';
 import SupportAgentFormModal from './SupportAgentFormModal';
 import WhatsAppChat from './WhatsAppChat';
@@ -17,6 +18,16 @@ declare const google: any;
 
 const mapContainerStyle = { width: '100%', height: '100%', borderRadius: '1.5rem' };
 const defaultCenter = { lat: -15.7938, lng: -47.8827 }; 
+
+function haversineDistance(lat1: number, lng1: number, lat2: number, lng2: number): number {
+    const R = 6371;
+    const dLat = (lat2 - lat1) * Math.PI / 180;
+    const dLng = (lng2 - lng1) * Math.PI / 180;
+    const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+              Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+              Math.sin(dLng / 2) * Math.sin(dLng / 2);
+    return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
 
 const MiniChart: React.FC<{ title: string, data: {label: string, value: number, color: string}[], type: 'bar' | 'hbar' }> = ({ title, data }) => {
     const total = data.reduce((acc, curr) => acc + curr.value, 0);
@@ -53,6 +64,13 @@ const SupportMapFinder: React.FC<{ onNavigate?: (s: string) => void }> = ({ onNa
     const [mapInstance, setMapInstance] = useState<any | null>(null);
     const [isLoading, setIsLoading] = useState(true);
 
+    const [radiusCenter, setRadiusCenter] = useState<{lat: number, lng: number} | null>(null);
+    const [radiusCityName, setRadiusCityName] = useState('');
+    const [radiusKm, setRadiusKm] = useState(20);
+    const [radiusActive, setRadiusActive] = useState(false);
+    const autocompleteRef = useRef<any>(null);
+    const radiusInputRef = useRef<HTMLInputElement>(null);
+
     useEffect(() => {
         fetchAgents();
     }, []);
@@ -65,7 +83,6 @@ const SupportMapFinder: React.FC<{ onNavigate?: (s: string) => void }> = ({ onNa
             let to = 999;
             let hasMore = true;
 
-            // Busca recursiva para carregar base de dados ilimitada (burlando limite de 1000 do Supabase)
             while (hasMore) {
                 const { data, error } = await supabase
                     .from('support_agents')
@@ -94,10 +111,25 @@ const SupportMapFinder: React.FC<{ onNavigate?: (s: string) => void }> = ({ onNa
         }
     };
 
+    const agentsWithDistance = useMemo(() => {
+        if (!radiusActive || !radiusCenter) return null;
+        return agents
+            .filter(a => a.latitude && a.longitude && a.status === 'Ativo')
+            .map(a => ({
+                ...a,
+                distance: haversineDistance(radiusCenter.lat, radiusCenter.lng, a.latitude, a.longitude)
+            }))
+            .filter(a => a.distance <= radiusKm)
+            .sort((a, b) => a.distance - b.distance);
+    }, [agents, radiusCenter, radiusKm, radiusActive]);
+
     const filteredAgents = useMemo(() => {
+        if (radiusActive && agentsWithDistance) {
+            return agentsWithDistance;
+        }
+
         const lowerSearch = searchTerm.toLowerCase();
         
-        // Reconhecimento de Coordenadas no input
         const extractedCoords = extractCoordinates(searchTerm);
         if (extractedCoords) {
             if (mapInstance) {
@@ -113,7 +145,7 @@ const SupportMapFinder: React.FC<{ onNavigate?: (s: string) => void }> = ({ onNa
             a.phone.includes(searchTerm) ||
             a.service_cities?.toLowerCase().includes(lowerSearch)
         );
-    }, [agents, searchTerm, mapInstance]);
+    }, [agents, searchTerm, mapInstance, radiusActive, agentsWithDistance]);
 
     const stats = useMemo(() => {
         if (agents.length === 0) return null;
@@ -155,6 +187,42 @@ const SupportMapFinder: React.FC<{ onNavigate?: (s: string) => void }> = ({ onNa
         window.open(`https://wa.me/${final}`, '_blank');
     };
 
+    const handleRadiusPlaceSelect = useCallback(() => {
+        if (!autocompleteRef.current) return;
+        const place = autocompleteRef.current.getPlace();
+        if (place?.geometry?.location) {
+            const lat = place.geometry.location.lat();
+            const lng = place.geometry.location.lng();
+            setRadiusCenter({ lat, lng });
+            setRadiusCityName(place.formatted_address || place.name || '');
+            setRadiusActive(true);
+            if (mapInstance) {
+                mapInstance.panTo({ lat, lng });
+                const zoomForRadius = radiusKm <= 10 ? 12 : radiusKm <= 30 ? 10 : radiusKm <= 60 ? 9 : radiusKm <= 100 ? 8 : 7;
+                mapInstance.setZoom(zoomForRadius);
+            }
+        }
+    }, [mapInstance, radiusKm]);
+
+    const clearRadius = () => {
+        setRadiusCenter(null);
+        setRadiusCityName('');
+        setRadiusActive(false);
+        if (radiusInputRef.current) radiusInputRef.current.value = '';
+        if (mapInstance) {
+            mapInstance.panTo(defaultCenter);
+            mapInstance.setZoom(5);
+        }
+    };
+
+    const handleRadiusChange = (newRadius: number) => {
+        setRadiusKm(newRadius);
+        if (mapInstance && radiusCenter) {
+            const zoomForRadius = newRadius <= 10 ? 12 : newRadius <= 30 ? 10 : newRadius <= 60 ? 9 : newRadius <= 100 ? 8 : 7;
+            mapInstance.setZoom(zoomForRadius);
+        }
+    };
+
     return (
         <div className="space-y-6 animate-fade-in pb-20">
             <div className="bg-white p-6 rounded-3xl shadow-sm border border-gray-200 flex flex-col lg:flex-row justify-between items-center gap-4">
@@ -176,6 +244,7 @@ const SupportMapFinder: React.FC<{ onNavigate?: (s: string) => void }> = ({ onNa
                             className="w-full pl-10 pr-4 py-3 bg-gray-50 border border-gray-200 rounded-2xl text-sm focus:ring-2 focus:ring-red-500/10 focus:border-red-500 outline-none transition-all shadow-inner"
                             value={searchTerm}
                             onChange={e => setSearchTerm(e.target.value)}
+                            data-testid="input-search-agents"
                         />
                         <Search size={18} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400" />
                     </div>
@@ -195,15 +264,82 @@ const SupportMapFinder: React.FC<{ onNavigate?: (s: string) => void }> = ({ onNa
             {view === 'map' && (
                 <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 h-[750px] animate-in fade-in zoom-in-95 duration-300">
                     <div className="lg:col-span-4 flex flex-col bg-white rounded-[2rem] shadow-sm border border-gray-200 overflow-hidden">
-                        <div className="p-5 bg-gray-900 text-white flex justify-between items-center border-b border-white/5">
-                            <h3 className="text-[10px] font-black uppercase tracking-[0.2em] flex items-center gap-2"><Users size={14} className="text-red-500"/> Agentes Disponíveis</h3>
+                        
+                        <div className="p-4 bg-gradient-to-r from-red-700 to-red-900 border-b border-white/10">
+                            <div className="flex items-center gap-2 mb-3">
+                                <Crosshair size={14} className="text-white/80"/>
+                                <span className="text-[10px] font-black text-white uppercase tracking-[0.15em]">Busca por Proximidade</span>
+                            </div>
+                            {isLoaded && (
+                                <div className="flex gap-2">
+                                    <Autocomplete
+                                        onLoad={ref => autocompleteRef.current = ref}
+                                        onPlaceChanged={handleRadiusPlaceSelect}
+                                        options={{ componentRestrictions: { country: 'br' }, types: ['(cities)'] }}
+                                    >
+                                        <input
+                                            ref={radiusInputRef}
+                                            type="text"
+                                            placeholder="Digite uma cidade..."
+                                            className="flex-1 px-3 py-2.5 bg-white/10 border border-white/20 rounded-xl text-sm text-white placeholder-white/50 focus:ring-2 focus:ring-white/30 focus:border-white/40 outline-none backdrop-blur-sm"
+                                            data-testid="input-radius-city"
+                                        />
+                                    </Autocomplete>
+                                    {radiusActive && (
+                                        <button onClick={clearRadius} className="p-2.5 bg-white/10 hover:bg-white/20 border border-white/20 rounded-xl text-white transition-all" title="Limpar busca por raio">
+                                            <X size={16} />
+                                        </button>
+                                    )}
+                                </div>
+                            )}
+                            {radiusActive && (
+                                <div className="mt-3 space-y-2">
+                                    <div className="flex items-center justify-between">
+                                        <span className="text-[10px] font-black text-white/70 uppercase tracking-widest">Raio: {radiusKm} km</span>
+                                        <span className="text-[10px] font-black text-yellow-300 bg-yellow-400/10 px-2 py-0.5 rounded-full border border-yellow-400/20">
+                                            {agentsWithDistance?.length || 0} encontrados
+                                        </span>
+                                    </div>
+                                    <input
+                                        type="range"
+                                        min={5}
+                                        max={200}
+                                        step={5}
+                                        value={radiusKm}
+                                        onChange={e => handleRadiusChange(Number(e.target.value))}
+                                        className="w-full h-1.5 bg-white/20 rounded-full appearance-none cursor-pointer accent-yellow-400"
+                                        data-testid="slider-radius"
+                                    />
+                                    <div className="flex justify-between text-[8px] font-bold text-white/40 uppercase">
+                                        <span>5 km</span>
+                                        <span>50 km</span>
+                                        <span>100 km</span>
+                                        <span>200 km</span>
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+
+                        <div className="p-4 bg-gray-900 text-white flex justify-between items-center border-b border-white/5">
+                            <h3 className="text-[10px] font-black uppercase tracking-[0.2em] flex items-center gap-2">
+                                <Users size={14} className="text-red-500"/> 
+                                {radiusActive ? `Agentes no Raio (${agentsWithDistance?.length || 0})` : 'Agentes Disponíveis'}
+                            </h3>
                             <button onClick={fetchAgents} className="p-1.5 hover:bg-white/10 rounded-lg transition-colors"><RefreshCw size={14} className={isLoading ? 'animate-spin' : ''} /></button>
                         </div>
                         <div className="flex-1 overflow-y-auto divide-y divide-gray-100 scrollbar-thin bg-gray-50/30">
                             {isLoading ? (
                                 <div className="p-20 text-center flex flex-col items-center"><Loader2 className="animate-spin text-red-600 mb-4" size={32}/><p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Sincronizando Base...</p></div>
+                            ) : filteredAgents.length === 0 ? (
+                                <div className="p-12 text-center flex flex-col items-center gap-3">
+                                    <Target size={32} className="text-gray-300" />
+                                    <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">
+                                        {radiusActive ? 'Nenhum agente encontrado neste raio' : 'Nenhum agente encontrado'}
+                                    </p>
+                                    {radiusActive && <p className="text-[10px] text-gray-400">Tente aumentar o raio de busca</p>}
+                                </div>
                             ) : (
-                                filteredAgents.map(agent => (
+                                filteredAgents.map((agent: any) => (
                                     <div 
                                         key={agent.id}
                                         onClick={() => handleSelectAgent(agent)}
@@ -211,14 +347,20 @@ const SupportMapFinder: React.FC<{ onNavigate?: (s: string) => void }> = ({ onNa
                                     >
                                         <div className="flex justify-between items-start mb-2">
                                             <h4 className={`font-black text-[13px] uppercase transition-colors ${selectedAgent?.id === agent.id ? 'text-red-700' : 'text-slate-800'}`}>{agent.name}</h4>
-                                            <span className={`text-[8px] font-black px-2 py-0.5 rounded-full border uppercase shadow-sm ${agent.is_virtual ? 'bg-indigo-50 text-indigo-700 border-indigo-200' : 'bg-emerald-50 text-emerald-700 border-emerald-200'}`}>
-                                                {agent.is_virtual ? 'Virtual' : 'Base'}
-                                            </span>
+                                            <div className="flex items-center gap-1.5">
+                                                {agent.distance !== undefined && (
+                                                    <span className="text-[9px] font-black px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200 font-mono">
+                                                        {agent.distance.toFixed(1)} km
+                                                    </span>
+                                                )}
+                                                <span className={`text-[8px] font-black px-2 py-0.5 rounded-full border uppercase shadow-sm ${agent.is_virtual ? 'bg-indigo-50 text-indigo-700 border-indigo-200' : 'bg-emerald-50 text-emerald-700 border-emerald-200'}`}>
+                                                    {agent.is_virtual ? 'Virtual' : 'Base'}
+                                                </span>
+                                            </div>
                                         </div>
                                         <p className="text-[10px] text-gray-500 font-bold uppercase flex items-start gap-1.5"><MapPin size={12} className="text-red-600 shrink-0 mt-0.5"/> {agent.base_address}</p>
                                         <div className="flex items-center justify-between mt-4">
                                             <div className="flex gap-2.5">
-                                                {/* Fix: wrap icons in a span to use the native title attribute as Lucide icons don't support it directly as a prop */}
                                                 {agent.is_armed && <span title="Agente Armado"><Shield size={14} className="text-red-600" /></span>}
                                                 {agent.is_24h && <span title="Disponível 24h"><Clock size={14} className="text-blue-600" /></span>}
                                                 <span className="text-[11px] font-mono font-black text-gray-700 bg-white border px-2 py-0.5 rounded shadow-sm">{agent.phone}</span>
@@ -241,11 +383,34 @@ const SupportMapFinder: React.FC<{ onNavigate?: (s: string) => void }> = ({ onNa
                         {isLoaded ? (
                             <GoogleMap 
                                 mapContainerStyle={mapContainerStyle} 
-                                center={selectedAgent ? { lat: selectedAgent.latitude, lng: selectedAgent.longitude } : defaultCenter} 
-                                zoom={selectedAgent ? 12 : 5} 
+                                center={radiusCenter || (selectedAgent ? { lat: selectedAgent.latitude, lng: selectedAgent.longitude } : defaultCenter)} 
+                                zoom={radiusActive ? (radiusKm <= 10 ? 12 : radiusKm <= 30 ? 10 : radiusKm <= 60 ? 9 : radiusKm <= 100 ? 8 : 7) : (selectedAgent ? 12 : 5)} 
                                 onLoad={map => setMapInstance(map)}
                                 options={{ disableDefaultUI: true, zoomControl: true }}
                             >
+                                {radiusActive && radiusCenter && (
+                                    <>
+                                        <Circle
+                                            center={radiusCenter}
+                                            radius={radiusKm * 1000}
+                                            options={{
+                                                fillColor: '#ef4444',
+                                                fillOpacity: 0.08,
+                                                strokeColor: '#ef4444',
+                                                strokeOpacity: 0.5,
+                                                strokeWeight: 2,
+                                            }}
+                                        />
+                                        <Marker
+                                            position={radiusCenter}
+                                            icon={{
+                                                url: 'https://maps.google.com/mapfiles/ms/icons/green-dot.png',
+                                                scaledSize: new google.maps.Size(40, 40)
+                                            }}
+                                            title={radiusCityName}
+                                        />
+                                    </>
+                                )}
                                 {filteredAgents.map(agent => (
                                     <Marker 
                                         key={agent.id} 
@@ -266,6 +431,9 @@ const SupportMapFinder: React.FC<{ onNavigate?: (s: string) => void }> = ({ onNa
                                             </div>
                                             <div className="space-y-2">
                                                 <p className="text-[10px] text-gray-500 font-bold uppercase flex items-start gap-1.5"><MapPin size={12} className="text-red-500 shrink-0 mt-0.5"/> {selectedAgent.base_address}</p>
+                                                {(selectedAgent as any).distance !== undefined && (
+                                                    <p className="text-[10px] font-black text-blue-600 flex items-center gap-1.5"><Navigation size={12}/> Distância: {(selectedAgent as any).distance.toFixed(1)} km do ponto</p>
+                                                )}
                                                 <div className="flex items-center justify-between pt-2 border-t mt-3">
                                                     <div className="flex flex-col gap-1">
                                                         <span className={`text-[8px] font-black px-2 py-0.5 rounded text-white w-fit ${selectedAgent.is_armed ? 'bg-red-600' : 'bg-slate-400'}`}>{selectedAgent.is_armed ? 'ARMADO' : 'DESARMADO'}</span>
