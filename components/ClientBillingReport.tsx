@@ -534,22 +534,35 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
     return (
         <div className="space-y-6 animate-fade-in pb-20 relative">
             <style>{`
-                @import url('https://fonts.googleapis.com/css2?family=Dancing+Script:wght@700&display=swap');
                 @media print {
-                    @page { size: landscape; margin: 10mm; }
+                    @page {
+                        size: landscape;
+                        margin: 8mm 6mm;
+                    }
                     html, body {
+                        margin: 0 !important;
+                        padding: 0 !important;
                         -webkit-print-color-adjust: exact !important;
                         print-color-adjust: exact !important;
                         color-adjust: exact !important;
                     }
                     body * { visibility: hidden !important; }
-                    #print-area, #print-area * { visibility: visible !important; }
+                    #print-area, #print-area * {
+                        visibility: visible !important;
+                        -webkit-print-color-adjust: exact !important;
+                        print-color-adjust: exact !important;
+                    }
                     #print-area {
-                        position: absolute; left: 0; top: 0;
+                        position: absolute;
+                        left: 0; top: 0;
                         width: 100% !important;
                         max-width: none !important;
-                        transform-origin: top left;
+                        padding: 0 !important;
+                        margin: 0 !important;
                         overflow: visible !important;
+                        border: none !important;
+                        box-shadow: none !important;
+                        border-radius: 0 !important;
                     }
                     #print-area .report-table-scroll {
                         overflow: visible !important;
@@ -560,7 +573,8 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
                         width: 100% !important;
                         max-width: none !important;
                         border-collapse: collapse !important;
-                        page-break-inside: auto !important;
+                        break-inside: avoid !important;
+                        page-break-inside: avoid !important;
                     }
                     #print-area thead { display: table-header-group !important; }
                     #print-area tr {
@@ -568,58 +582,58 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
                         break-inside: avoid !important;
                     }
                     #print-area td, #print-area th {
-                        padding: 1mm 1.5mm !important;
-                        font-size: 7pt !important;
+                        padding: 0.8mm 1mm !important;
+                        font-size: 6.5pt !important;
                         overflow: hidden !important;
                         text-overflow: ellipsis !important;
-                        border: 0.3px solid #888 !important;
-                        line-height: 1.3 !important;
-                        -webkit-print-color-adjust: exact !important;
-                        print-color-adjust: exact !important;
+                        border: 0.4px solid #666 !important;
+                        line-height: 1.25 !important;
                     }
                     #print-area td.route-cell {
                         white-space: normal !important;
                         word-wrap: break-word !important;
                         word-break: break-word !important;
                         overflow-wrap: break-word !important;
-                        line-height: 1.2 !important;
-                        font-size: 6.5pt !important;
+                        line-height: 1.15 !important;
+                        font-size: 6pt !important;
                         max-width: 0 !important;
                     }
                     #print-area tbody tr:nth-child(odd) { background-color: #ffffff !important; }
-                    #print-area tbody tr:nth-child(even) { background-color: #f3f4f6 !important; }
+                    #print-area tbody tr:nth-child(even) { background-color: #f0f0f0 !important; }
+                    #print-area tbody tr:nth-child(even) td[style*="backgroundColor"] {
+                        filter: brightness(0.96) !important;
+                    }
                     #print-area .group-hdr th {
-                        font-size: 7.5pt !important;
-                        padding: 1.5mm !important;
-                        -webkit-print-color-adjust: exact !important;
-                        print-color-adjust: exact !important;
+                        font-size: 7pt !important;
+                        padding: 1.2mm !important;
+                        font-weight: 900 !important;
                     }
                     #print-area .sub-hdr th {
-                        font-size: 6.5pt !important;
-                        padding: 1mm 1.5mm !important;
-                        -webkit-print-color-adjust: exact !important;
-                        print-color-adjust: exact !important;
+                        font-size: 6pt !important;
+                        padding: 0.7mm 1mm !important;
+                        font-weight: 900 !important;
                     }
-                    #print-area h1 { font-size: 14pt !important; margin: 0 !important; }
-                    #print-area .subtitle-line { font-size: 10pt !important; }
-                    #print-area .ref-line { font-size: 8pt !important; }
+                    #print-area .boletim-header { margin-bottom: 2mm !important; }
+                    #print-area .boletim-header h1 { font-size: 12pt !important; margin: 0 !important; }
+                    #print-area .subtitle-line { font-size: 8pt !important; margin: 0 !important; }
+                    #print-area .ref-line { font-size: 6.5pt !important; margin: 0 !important; }
                     .no-print { display: none !important; }
                     #print-area .sign-section {
-                        margin-top: 12mm !important;
+                        margin-top: 6mm !important;
                         break-inside: avoid !important;
                         page-break-inside: avoid !important;
+                        page-break-before: avoid !important;
                     }
-                    #print-area .sign-box { font-size: 9pt !important; width: 70mm !important; }
-                    #print-area .digital-signature { font-size: 16pt !important; }
-                    #print-area .sign-role { font-size: 8pt !important; }
+                    #print-area .sign-box { font-size: 8pt !important; width: 65mm !important; }
+                    #print-area .digital-signature { font-size: 14pt !important; }
+                    #print-area .sign-role { font-size: 7pt !important; }
                     #print-area tfoot tr {
                         break-inside: avoid !important;
                         page-break-inside: avoid !important;
                     }
                     #print-area tfoot td {
-                        font-size: 8pt !important;
-                        -webkit-print-color-adjust: exact !important;
-                        print-color-adjust: exact !important;
+                        font-size: 7pt !important;
+                        font-weight: 900 !important;
                     }
                 }
             `}</style>
@@ -919,10 +933,10 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
 
             {reportGenerated && (
                 <div id="print-area" className="bg-white p-2 w-full border border-gray-200 rounded-lg">
-                    <div className="mb-2 text-center">
-                        <h1 style={{ fontSize: '13px', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '1px' }}>BOLETIM DE MEDIÇÃO</h1>
-                        <p className="subtitle-line" style={{ fontSize: '9px', fontWeight: 700, textTransform: 'uppercase', color: '#374151' }}>{getPeriodLabel()}</p>
-                        <p className="ref-line" style={{ fontSize: '7px', fontWeight: 600, textTransform: 'uppercase', color: '#6b7280', marginTop: '2px' }}>REFERENTE A INTERMEDIAÇÃO DE SEGURANÇA E MONITORAMENTO DE CARGAS</p>
+                    <div className="boletim-header mb-2 text-center">
+                        <h1 style={{ fontSize: '13px', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '1px', margin: 0 }}>BOLETIM DE MEDIÇÃO</h1>
+                        <p className="subtitle-line" style={{ fontSize: '9px', fontWeight: 700, textTransform: 'uppercase', color: '#374151', margin: '1px 0' }}>{getPeriodLabel()}</p>
+                        <p className="ref-line" style={{ fontSize: '7px', fontWeight: 600, textTransform: 'uppercase', color: '#6b7280', margin: '1px 0' }}>REFERENTE A INTERMEDIAÇÃO DE SEGURANÇA E MONITORAMENTO DE CARGAS</p>
                     </div>
 
                     <div className="report-table-scroll" style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
@@ -1054,16 +1068,16 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
                         </table>
                     </div>
 
-                    <div className="sign-section" style={{ marginTop: '32px', display: 'flex', justifyContent: 'space-between', padding: '0 40px' }}>
-                        <div className="sign-box" style={{ textAlign: 'center', width: '280px' }}>
-                            <div className="digital-signature" style={{ fontFamily: "'Dancing Script', cursive", fontSize: '22px', fontWeight: 700, color: '#1a237e', marginBottom: '4px', lineHeight: 1.2 }}>Thiago Moreira</div>
-                            <div style={{ borderTop: '1.5px solid #000', paddingTop: '6px' }}>
-                                <div className="sign-role" style={{ fontSize: '9px', fontWeight: 800, textTransform: 'uppercase' as const, color: '#111827', letterSpacing: '0.5px' }}>CEO - Grupo TM SEG</div>
+                    <div className="sign-section" style={{ marginTop: '20px', display: 'flex', justifyContent: 'space-between', padding: '0 30px', alignItems: 'flex-end' }}>
+                        <div className="sign-box" style={{ textAlign: 'center', width: '260px' }}>
+                            <div className="digital-signature" style={{ fontFamily: "'Dancing Script', cursive", fontSize: '24px', fontWeight: 700, color: '#1a237e', marginBottom: '2px', lineHeight: 1.1 }}>Thiago Moreira</div>
+                            <div style={{ borderTop: '2px solid #111827', paddingTop: '4px' }}>
+                                <div className="sign-role" style={{ fontSize: '8px', fontWeight: 800, textTransform: 'uppercase' as const, color: '#111827', letterSpacing: '0.8px' }}>CEO - Grupo TM SEG</div>
                             </div>
                         </div>
-                        <div className="sign-box" style={{ textAlign: 'center', width: '280px', alignSelf: 'flex-end' }}>
-                            <div style={{ borderTop: '1.5px solid #000', paddingTop: '6px', marginTop: '30px' }}>
-                                <div style={{ fontSize: '9px', fontWeight: 800, textTransform: 'uppercase' as const, color: '#111827', letterSpacing: '0.5px' }}>Assinatura Cliente</div>
+                        <div className="sign-box" style={{ textAlign: 'center', width: '260px' }}>
+                            <div style={{ borderTop: '2px solid #111827', paddingTop: '4px', marginTop: '28px' }}>
+                                <div style={{ fontSize: '8px', fontWeight: 800, textTransform: 'uppercase' as const, color: '#111827', letterSpacing: '0.8px' }}>Assinatura Cliente</div>
                             </div>
                         </div>
                     </div>
