@@ -700,11 +700,11 @@ export const calculateMissionFinancials = (
                                       missionDest.includes('200KM'));
 
     const clientHasExtraHrPrice = (appliedClientTable?.price_per_extra_hour || 0) > 0;
+    const isVtcClient = missionClientName.includes('VTC');
     const isFixedHoursClientRule = !clientHasExtraHrPrice && (
                                    appliedTableName.includes('02H') || 
                                    appliedTableName.includes('02 HORAS') ||
-                                   missionDest.includes('02 HORAS') ||
-                                   missionDest.includes('02H'));
+                                   (isVtcClient && (missionDest.includes('02 HORAS') || missionDest.includes('02H'))));
 
     const originalDistanceForCalc = distanceForCalculation;
     const originalDurationHours = durationHours;
