@@ -114,32 +114,6 @@ const MissionAlertMonitor: React.FC = () => {
         } catch {}
     }, [soundEnabled]);
 
-    const simulateTestAlert = useCallback(() => {
-        const now = new Date();
-        const testStart = new Date(now.getTime() + 55 * 60_000);
-        const testAlert: MissionAlert = {
-            id: `alert-TEST-${Date.now()}`,
-            missionId: 'GTM-TESTE',
-            client: 'CEVA LOGISTICA',
-            provider: 'USE SEGURANCA PRIVADA LTDA',
-            providerContactName: 'JOÃO CARLOS',
-            providerPhone: '11988776655',
-            origin: 'SÃO PAULO, SP',
-            destination: 'GUARULHOS, SP',
-            startTime: testStart.toISOString(),
-            driverName: 'CARLOS EDUARDO SILVA',
-            driverPhone: '11999887766',
-            minutesUntilStart: 55,
-            createdAt: Date.now(),
-            dismissed: false,
-            acknowledged: false,
-            escalationLevel: 0,
-            lastEscalationMinutes: 60,
-        };
-        setAlerts(prev => [...prev, testAlert]);
-        setExpanded(true);
-        playAlertSound();
-    }, [playAlertSound]);
 
     const checkMissions = useCallback(async () => {
         try {
@@ -340,9 +314,6 @@ const MissionAlertMonitor: React.FC = () => {
     };
 
     const activeAlerts = alerts.filter(a => !a.dismissed);
-    const ud2 = JSON.parse(localStorage.getItem('userData') || '{}');
-    const userRole2 = (ud2.role || '').toLowerCase();
-    const isAdmin = ['administrador', 'diretoria', 'ceo'].includes(userRole2) || ud2.permissions?.includes('*');
 
     const lateCount = activeAlerts.filter(a => a.minutesUntilStart <= 0 && !a.acknowledged).length;
     const urgentCount = activeAlerts.filter(a => a.minutesUntilStart <= 15 && !a.acknowledged).length;
@@ -446,11 +417,6 @@ const MissionAlertMonitor: React.FC = () => {
                         {lateCount > 0 && <span className="bg-white text-red-700 text-[8px] font-black px-2 py-0.5 rounded-full animate-pulse">{lateCount} ATRASADA{lateCount > 1 ? 'S' : ''}</span>}
                     </div>
                     <div className="flex items-center gap-1">
-                        {isAdmin && (
-                            <button onClick={e => { e.stopPropagation(); simulateTestAlert(); }} className="px-2 py-1 bg-white/15 hover:bg-white/25 rounded-lg transition-colors text-[8px] font-black uppercase tracking-wider" data-testid="button-test-alert">
-                                Testar
-                            </button>
-                        )}
                         <button onClick={e => { e.stopPropagation(); setSoundEnabled(!soundEnabled); }} className="p-1.5 hover:bg-white/10 rounded-lg transition-colors" data-testid="button-toggle-sound">
                             <Volume2 size={14} className={soundEnabled ? 'opacity-100' : 'opacity-40'} />
                         </button>
