@@ -864,6 +864,97 @@ export async function registerRoutes(
     }
   });
 
+  const runHistoryCleanup = async () => {
+      try {
+          const threeMonthsAgo = new Date();
+          threeMonthsAgo.setMonth(threeMonthsAgo.getMonth() - 3);
+          const cutoffDate = threeMonthsAgo.toISOString();
+
+          const { count: historyCount, error: historyErr } = await supabaseAdmin
+              .from('mission_history')
+              .delete()
+              .lt('changed_at', cutoffDate)
+              .select('id', { count: 'exact', head: true });
+
+          const { count: missionLogsCount, error: missionLogsErr } = await supabaseAdmin
+              .from('mission_logs')
+              .delete()
+              .lt('created_at', cutoffDate)
+              .select('id', { count: 'exact', head: true });
+
+          const results = {
+              mission_history: historyErr ? `erro: ${historyErr.message}` : `${historyCount || 0} registros removidos`,
+              mission_logs: missionLogsErr ? `erro: ${missionLogsErr.message}` : `${missionLogsCount || 0} registros removidos`,
+              cutoff_date: cutoffDate,
+              executed_at: new Date().toISOString()
+          };
+
+          console.log('[CLEANUP] Limpeza trimestral executada:', JSON.stringify(results));
+
+          await supabaseAdmin.from('system_logs').insert([{
+              user_name: 'Sistema',
+              action_type: 'CLEANUP_TRIMESTRAL',
+              entity: 'Database',
+              entity_id: 'auto',
+              details: JSON.stringify(results)
+          }]);
+
+          return results;
+      } catch (e: any) {
+          console.error('[CLEANUP] Erro na limpeza trimestral:', e.message);
+          return { error: e.message };
+      }
+  };
+
+  const CLEANUP_INTERVAL_MS = 90 * 24 * 60 * 60 * 1000;
+  setTimeout(() => {
+      runHistoryCleanup();
+      setInterval(runHistoryCleanup, CLEANUP_INTERVAL_MS);
+  }, 60 * 1000);
+
+  app.post("/api/admin/cleanup-history", async (_req: Request, res: Response) => {
+      try {
+          const results = await runHistoryCleanup();
+          res.json({ ok: true, ...results });
+      } catch (e: any) {
+          res.json({ ok: false, error: e.message });
+      }
+  });
+
+  app.get("/api/admin/cleanup-preview", async (_req: Request, res: Response) => {
+      try {
+          const threeMonthsAgo = new Date();
+          threeMonthsAgo.setMonth(threeMonthsAgo.getMonth() - 3);
+          const cutoffDate = threeMonthsAgo.toISOString();
+
+          const { count: historyCount } = await supabaseAdmin
+              .from('mission_history')
+              .select('id', { count: 'exact', head: true })
+              .lt('changed_at', cutoffDate);
+
+          const { count: missionLogsCount } = await supabaseAdmin
+              .from('mission_logs')
+              .select('id', { count: 'exact', head: true })
+              .lt('created_at', cutoffDate);
+
+          const { count: totalHistory } = await supabaseAdmin
+              .from('mission_history')
+              .select('id', { count: 'exact', head: true });
+
+          const { count: totalLogs } = await supabaseAdmin
+              .from('mission_logs')
+              .select('id', { count: 'exact', head: true });
+
+          res.json({
+              cutoff_date: cutoffDate,
+              mission_history: { to_delete: historyCount || 0, total: totalHistory || 0 },
+              mission_logs: { to_delete: missionLogsCount || 0, total: totalLogs || 0 }
+          });
+      } catch (e: any) {
+          res.json({ ok: false, error: e.message });
+      }
+  });
+
   app.post("/api/migrations/provider-ops-columns", async (_req: Request, res: Response) => {
     try {
       const sbUrl = 'https://ajhmmjuewdsukecaimik.supabase.co';
