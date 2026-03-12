@@ -43,6 +43,27 @@ const MissionAlertMonitor: React.FC = () => {
         } catch {}
     }, [soundEnabled]);
 
+    const simulateTestAlert = useCallback(() => {
+        const now = new Date();
+        const testStart = new Date(now.getTime() + 45 * 60_000);
+        const testAlert: MissionAlert = {
+            id: `alert-TEST-${Date.now()}`,
+            missionId: `GTM-TESTE`,
+            client: 'CLIENTE TESTE',
+            provider: 'FORNECEDOR TESTE',
+            origin: 'SÃO PAULO, SP',
+            destination: 'GUARULHOS, SP',
+            startTime: testStart.toISOString(),
+            minutesUntilStart: 45,
+            createdAt: Date.now(),
+            dismissed: false,
+            acknowledged: false,
+        };
+        setAlerts(prev => [...prev, testAlert]);
+        setMinimized(false);
+        playAlertSound();
+    }, [playAlertSound]);
+
     const checkMissions = useCallback(async () => {
         try {
             const now = new Date();
@@ -156,7 +177,24 @@ const MissionAlertMonitor: React.FC = () => {
 
     const activeAlerts = alerts.filter(a => !a.dismissed);
 
-    if (activeAlerts.length === 0) return null;
+    const userData = JSON.parse(localStorage.getItem('userData') || '{}');
+    const userRole = (userData.role || '').toLowerCase();
+    const isAdmin = ['administrador', 'diretoria', 'ceo'].includes(userRole) || userData.permissions?.includes('*');
+
+    if (activeAlerts.length === 0) {
+        if (!isAdmin) return null;
+        return (
+            <div className="fixed bottom-4 right-4 z-[45]" data-testid="mission-alert-test">
+                <button
+                    onClick={simulateTestAlert}
+                    className="flex items-center gap-2 bg-gray-800 hover:bg-gray-700 text-white font-black text-[10px] py-2.5 px-4 rounded-xl shadow-lg transition-colors uppercase tracking-wider border border-gray-600"
+                    data-testid="button-test-alert"
+                >
+                    <Bell size={14} /> Testar Alerta
+                </button>
+            </div>
+        );
+    }
 
     const urgentCount = activeAlerts.filter(a => a.minutesUntilStart <= 30 && !a.acknowledged).length;
     const unackCount = activeAlerts.filter(a => !a.acknowledged).length;
