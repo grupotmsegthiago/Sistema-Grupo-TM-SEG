@@ -196,6 +196,7 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
                             (mission as any).operation_type?.toUpperCase().includes('LOGITECH'));
 
         let plannedKm = mission.totalDistance || 0;
+        if (plannedKm > 10000) plannedKm = plannedKm / 1000;
         if (editData.applyCeva200km || isLogitech) plannedKm = 200;
         else if (editData.applyVtc02h) plannedKm = 100;
 
@@ -570,11 +571,19 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
 
             const plannedDist = missionTotals.plannedKm || 0;
             const kmRodado = eKm > sKm ? (eKm - sKm) : 0;
+            const occurrenceText = (finalLocationToSave || '').toUpperCase();
+            const isAtDestination = occurrenceText.includes('DESTINO') ||
+                occurrenceText.includes('ENTREGUE') ||
+                occurrenceText.includes('PONTO C') ||
+                occurrenceText.includes('DESCARREGADO') ||
+                occurrenceText.includes('FINALIZADO') ||
+                occurrenceText.includes('CONCLUÍ');
+
             let progressValue: number;
-            if (finalStatus === MissionStatus.COMPLETED) {
+            if (finalStatus === MissionStatus.COMPLETED || isAtDestination) {
                 progressValue = 100;
             } else if (kmRodado > 0 && plannedDist > 0) {
-                progressValue = Math.round((kmRodado / plannedDist) * 100);
+                progressValue = Math.min(100, Math.round((kmRodado / plannedDist) * 100));
             } else if (plannedDist <= 0) {
                 progressValue = 0;
             } else {

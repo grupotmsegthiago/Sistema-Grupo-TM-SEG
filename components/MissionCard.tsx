@@ -360,7 +360,9 @@ const MissionCardComponent: React.FC<MissionCardProps> = ({
 
         if (isLogitech || destUpper.includes('200KM')) return '200.0 KM';
         if ((destUpper.includes('02H') || destUpper.includes('02 HORAS') || destUpper.includes('100KM')) && clientUpper.includes('VTC')) return '100.0 KM';
-        return `${mission.totalDistance || '0.0'} KM`;
+        let dist = mission.totalDistance || 0;
+        if (dist > 10000) dist = dist / 1000;
+        return `${dist || '0.0'} KM`;
     }, [mission.destination, mission.client, mission.totalDistance]);
 
     const handlePrintClick = async (e: React.MouseEvent) => {
@@ -445,17 +447,6 @@ Qualquer dúvida, estamos a disposição.
     }, [mission.billing_approved, mission.endTime, approvalStages]);
 
     const { progressVisual, progressReal } = useMemo(() => {
-        const sKm = mission.startKm || 0;
-        const eKm = mission.endKm || 0;
-        const kmRodado = eKm > sKm ? (eKm - sKm) : (mission.traveledDistance || 0);
-
-        const destUpper = (mission.destination || '').toUpperCase();
-        const clientUpper = (mission.client || '').toUpperCase();
-        const isLogitech = clientUpper.includes('CEVA') && (destUpper.includes('LOGITECH') || (mission as any).operation_type?.toUpperCase()?.includes('LOGITECH'));
-        let plannedKm = mission.totalDistance || 0;
-        if (isLogitech || destUpper.includes('200KM')) plannedKm = 200;
-        else if ((destUpper.includes('02H') || destUpper.includes('02 HORAS') || destUpper.includes('100KM')) && clientUpper.includes('VTC')) plannedKm = 100;
-
         if (mission.status === MissionStatus.COMPLETED) {
             return { progressVisual: 100, progressReal: 100 };
         }
@@ -464,14 +455,40 @@ Qualquer dúvida, estamos a disposição.
             return { progressVisual: Math.min(100, Math.max(0, fallback)), progressReal: fallback };
         }
 
+        const occurrenceUpper = (mission.currentLocation || '').toUpperCase();
+        const isAtDestination = occurrenceUpper.includes('DESTINO') ||
+            occurrenceUpper.includes('ENTREGUE') ||
+            occurrenceUpper.includes('PONTO C') ||
+            occurrenceUpper.includes('DESCARREGADO') ||
+            occurrenceUpper.includes('FINALIZADO') ||
+            occurrenceUpper.includes('CONCLUÍ');
+        if (isAtDestination) {
+            return { progressVisual: 100, progressReal: 100 };
+        }
+
+        const sKm = mission.startKm || 0;
+        const eKm = mission.endKm || 0;
+        const kmRodado = eKm > sKm ? (eKm - sKm) : (mission.traveledDistance || 0);
+
+        const destUpper = (mission.destination || '').toUpperCase();
+        const clientUpper = (mission.client || '').toUpperCase();
+        const isLogitech = clientUpper.includes('CEVA') && (destUpper.includes('LOGITECH') || (mission as any).operation_type?.toUpperCase()?.includes('LOGITECH'));
+        let plannedKm = mission.totalDistance || 0;
+        if (plannedKm > 10000) plannedKm = plannedKm / 1000;
+        if (isLogitech || destUpper.includes('200KM')) plannedKm = 200;
+        else if ((destUpper.includes('02H') || destUpper.includes('02 HORAS') || destUpper.includes('100KM')) && clientUpper.includes('VTC')) plannedKm = 100;
+
         if (kmRodado > 0 && plannedKm > 0) {
             const pct = (kmRodado / plannedKm) * 100;
+            if (pct >= 95) {
+                return { progressVisual: 100, progressReal: Math.round(pct) };
+            }
             return { progressVisual: Math.min(100, Math.max(0, Math.round(pct))), progressReal: Math.round(pct) };
         }
 
         const fallback = mission.progress || 0;
         return { progressVisual: Math.min(100, Math.max(0, fallback)), progressReal: fallback };
-    }, [mission.startKm, mission.endKm, mission.traveledDistance, mission.totalDistance, mission.destination, mission.client, mission.progress, isTerminal]);
+    }, [mission.startKm, mission.endKm, mission.traveledDistance, mission.totalDistance, mission.destination, mission.client, mission.progress, mission.status, mission.currentLocation]);
 
     return (<>
         <div 
