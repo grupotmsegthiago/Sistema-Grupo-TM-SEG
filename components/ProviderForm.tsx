@@ -492,7 +492,7 @@ const ProviderForm: React.FC<ProviderFormProps> = ({ onBack, onNavigateToVehicle
                     <MapPin className="text-red-600" size={18} />
                     <h3 className="font-black text-xs uppercase text-gray-700 tracking-widest">Localização e Contato</h3>
                 </div>
-                <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-4">
                     <div className="space-y-1.5">
                         <label className={LABEL_CLASS}>E-mail Comercial *</label>
                         <div className="relative">
@@ -501,21 +501,23 @@ const ProviderForm: React.FC<ProviderFormProps> = ({ onBack, onNavigateToVehicle
                         </div>
                     </div>
                     <div className="space-y-1.5">
-                        <label className={LABEL_CLASS}>E-mail Recebimento de OS</label>
+                        <label className={LABEL_CLASS}>E-mail Recebimento (OS)</label>
                         <div className="relative">
-                            <input type="text" className={`${INPUT_CLASS} pl-10`} placeholder="os1@fornecedor.com.br, os2@fornecedor.com.br" value={formData.os_email} onChange={e => setFormData({...formData, os_email: e.target.value.toLowerCase()})} data-testid="input-os-email" />
+                            <input type="text" className={`${INPUT_CLASS} pl-10`} placeholder="e-mail1, e-mail2..." value={formData.os_email} onChange={e => setFormData({...formData, os_email: e.target.value.toLowerCase()})} data-testid="input-os-email" />
                             <Mail className="absolute left-3 top-1/2 -translate-y-1/2 text-orange-500" size={16} />
                         </div>
-                        <p className="text-[9px] text-gray-400">Recebe ordens de serviço automáticas (separe múltiplos com vírgula)</p>
+                        <p className="text-[9px] text-gray-400">Múltiplos separados por vírgula</p>
                     </div>
                     <div className="space-y-1.5">
-                        <label className={LABEL_CLASS}>E-mail Medição Automática</label>
+                        <label className={LABEL_CLASS}>E-mail Medição</label>
                         <div className="relative">
-                            <input type="text" className={`${INPUT_CLASS} pl-10`} placeholder="medicao@fornecedor.com.br, financeiro@fornecedor.com.br" value={formData.medicao_email} onChange={e => setFormData({...formData, medicao_email: e.target.value.toLowerCase()})} data-testid="input-medicao-email" />
+                            <input type="text" className={`${INPUT_CLASS} pl-10`} placeholder="e-mail1, e-mail2..." value={formData.medicao_email} onChange={e => setFormData({...formData, medicao_email: e.target.value.toLowerCase()})} data-testid="input-medicao-email" />
                             <Mail className="absolute left-3 top-1/2 -translate-y-1/2 text-green-500" size={16} />
                         </div>
-                        <p className="text-[9px] text-gray-400">Recebe medição automática (separe múltiplos com vírgula)</p>
+                        <p className="text-[9px] text-gray-400">Múltiplos separados por vírgula</p>
                     </div>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
                     <div className="space-y-1.5">
                         <label className={LABEL_CLASS}>Telefone / WhatsApp *</label>
                         <div className="relative">
