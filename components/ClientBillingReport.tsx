@@ -395,7 +395,7 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
             'HORÁRIOS', '', '',
             'KM EXCEDENTE', '', '',
             'HORA EXCEDENTE', '', '',
-            'VALORES', '', ''
+            'VALORES', ''
         ];
         const headerSub = [
             'Nº', 'ROTA', 'VALOR', 'HR FRANQ', 'KM FRANQ', 'HR EXTRA', 'KM EXTRA',
@@ -404,7 +404,7 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
             'INICIAL', 'FINAL', 'TOTAL',
             'KM', 'VALOR', 'TOTAL',
             'HORA', 'VALOR', 'TOTAL',
-            'ESCOLTA', 'PEDÁGIO', 'TOTAL'
+            'PEDÁGIO', 'TOTAL'
         ];
 
         const titleRow = ['BOLETIM DE MEDIÇÃO'];
@@ -437,14 +437,13 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
             r.hrExtraQtd > 0 ? fmtHHMM(r.hrExtraQtd) : '-',
             r.hrExtraQtd > 0 ? fmtBRLExcel(r.hrExtraUnit) : '-',
             r.hrExtraTotal > 0 ? fmtBRLExcel(r.hrExtraTotal) : 'R$ 0,00',
-            fmtBRLExcel(r.escoltaVal),
             r.tollVal > 0 ? fmtBRLExcel(r.tollVal) : 'R$ 0,00',
             fmtBRLExcel(r.totalGeral)
         ]);
 
-        const totalRow = Array(28).fill('');
+        const totalRow = Array(27).fill('');
         totalRow[0] = 'TOTAL';
-        totalRow[27] = fmtBRLExcel(grandTotal);
+        totalRow[26] = fmtBRLExcel(grandTotal);
 
         const allRows = [titleRow, periodRow, subtitleRow, [], headerGroup, headerSub, ...dataRows, [], totalRow];
         const ws = XLSX.utils.aoa_to_sheet(allRows);
@@ -482,15 +481,15 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
 
     const cellStyle: React.CSSProperties = {
         border: '1px solid #9ca3af',
-        padding: '2px 3px',
-        fontSize: '7px',
+        padding: '1px 2px',
+        fontSize: '6.5px',
         fontFamily: "'Segoe UI', Tahoma, Geneva, Verdana, sans-serif",
         textAlign: 'center',
         whiteSpace: 'nowrap',
         overflow: 'hidden',
         textOverflow: 'ellipsis',
         color: '#1f2937',
-        lineHeight: '1.3',
+        lineHeight: '1.2',
         WebkitPrintColorAdjust: 'exact' as any,
         printColorAdjust: 'exact' as any,
     };
@@ -500,17 +499,17 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
         ...cellStyle,
         backgroundColor: '#e5e7eb',
         fontWeight: 900,
-        fontSize: '6.5px',
+        fontSize: '6px',
         textTransform: 'uppercase' as const,
         color: '#000',
-        padding: '3px 2px'
+        padding: '1px 1px'
     };
     const groupHeaderStyle: React.CSSProperties = {
         ...headerStyle,
         backgroundColor: '#d1d5db',
-        fontSize: '7px',
+        fontSize: '6.5px',
         letterSpacing: '0.3px',
-        padding: '4px 3px'
+        padding: '2px 1px'
     };
 
     const bgKm = '#eef2ff';
@@ -582,20 +581,21 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
                         break-inside: avoid !important;
                     }
                     #print-area td, #print-area th {
-                        padding: 0.8mm 1mm !important;
-                        font-size: 6.5pt !important;
+                        padding: 0.3mm 0.5mm !important;
+                        font-size: 5.5pt !important;
                         overflow: hidden !important;
                         text-overflow: ellipsis !important;
-                        border: 0.4px solid #666 !important;
-                        line-height: 1.25 !important;
+                        border: 0.3px solid #888 !important;
+                        line-height: 1.15 !important;
+                        white-space: nowrap !important;
                     }
                     #print-area td.route-cell {
                         white-space: normal !important;
                         word-wrap: break-word !important;
                         word-break: break-word !important;
                         overflow-wrap: break-word !important;
-                        line-height: 1.15 !important;
-                        font-size: 6pt !important;
+                        line-height: 1.1 !important;
+                        font-size: 5pt !important;
                         max-width: 0 !important;
                     }
                     #print-area tbody tr:nth-child(odd) { background-color: #ffffff !important; }
@@ -604,35 +604,35 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
                         filter: brightness(0.96) !important;
                     }
                     #print-area .group-hdr th {
-                        font-size: 7pt !important;
-                        padding: 1.2mm !important;
+                        font-size: 6pt !important;
+                        padding: 0.5mm !important;
                         font-weight: 900 !important;
                     }
                     #print-area .sub-hdr th {
-                        font-size: 6pt !important;
-                        padding: 0.7mm 1mm !important;
+                        font-size: 5.5pt !important;
+                        padding: 0.3mm 0.5mm !important;
                         font-weight: 900 !important;
                     }
-                    #print-area .boletim-header { margin-bottom: 2mm !important; }
-                    #print-area .boletim-header h1 { font-size: 12pt !important; margin: 0 !important; }
-                    #print-area .subtitle-line { font-size: 8pt !important; margin: 0 !important; }
-                    #print-area .ref-line { font-size: 6.5pt !important; margin: 0 !important; }
+                    #print-area .boletim-header { margin-bottom: 1mm !important; }
+                    #print-area .boletim-header h1 { font-size: 10pt !important; margin: 0 !important; }
+                    #print-area .subtitle-line { font-size: 7pt !important; margin: 0 !important; }
+                    #print-area .ref-line { font-size: 5.5pt !important; margin: 0 !important; }
                     .no-print { display: none !important; }
                     #print-area .sign-section {
-                        margin-top: 6mm !important;
+                        margin-top: 3mm !important;
                         break-inside: avoid !important;
                         page-break-inside: avoid !important;
                         page-break-before: avoid !important;
                     }
-                    #print-area .sign-box { font-size: 8pt !important; width: 65mm !important; }
-                    #print-area .digital-signature { font-size: 14pt !important; }
-                    #print-area .sign-role { font-size: 7pt !important; }
+                    #print-area .sign-box { font-size: 6pt !important; width: 55mm !important; }
+                    #print-area .digital-signature { font-size: 12pt !important; }
+                    #print-area .sign-role { font-size: 6pt !important; }
                     #print-area tfoot tr {
                         break-inside: avoid !important;
                         page-break-inside: avoid !important;
                     }
                     #print-area tfoot td {
-                        font-size: 7pt !important;
+                        font-size: 6pt !important;
                         font-weight: 900 !important;
                     }
                 }
@@ -942,41 +942,33 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
                     <div className="report-table-scroll" style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
                         <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed' }}>
                             <colgroup>
-                                {/* TABELA ACORDADA: Nº, ROTA, VALOR, HR FRANQ, KM FRANQ, HR EXTRA, KM EXTRA */}
-                                <col style={{ width: '2.6%' }} />
-                                <col style={{ width: '10%' }} />
-                                <col style={{ width: '4%' }} />
+                                <col style={{ width: '2.5%' }} />
+                                <col style={{ width: '12%' }} />
+                                <col style={{ width: '3.8%' }} />
                                 <col style={{ width: '3%' }} />
                                 <col style={{ width: '3%' }} />
-                                <col style={{ width: '3.6%' }} />
-                                <col style={{ width: '3.6%' }} />
-                                {/* INFO VIAGEM: DATA INÍCIO, HORA INI, VIATURA, VEÍC ESCOLT, DATA FIM, HORA FIM */}
+                                <col style={{ width: '3.5%' }} />
+                                <col style={{ width: '3.5%' }} />
                                 <col style={{ width: '3.8%' }} />
-                                <col style={{ width: '2.8%' }} />
-                                <col style={{ width: '4%' }} />
-                                <col style={{ width: '4%' }} />
-                                <col style={{ width: '3.8%' }} />
-                                <col style={{ width: '2.8%' }} />
-                                {/* KILOMETRAGEM: INICIAL, FINAL, TOTAL */}
-                                <col style={{ width: '3.2%' }} />
-                                <col style={{ width: '3.2%' }} />
-                                <col style={{ width: '3.2%' }} />
-                                {/* HORÁRIOS: INICIAL, FINAL, TOTAL */}
-                                <col style={{ width: '2.8%' }} />
-                                <col style={{ width: '2.8%' }} />
                                 <col style={{ width: '3%' }} />
-                                {/* KM EXCEDENTE: KM, VALOR, TOTAL */}
-                                <col style={{ width: '2.6%' }} />
-                                <col style={{ width: '3.6%' }} />
-                                <col style={{ width: '3.8%' }} />
-                                {/* HORA EXCEDENTE: HORA, VALOR, TOTAL */}
-                                <col style={{ width: '2.6%' }} />
-                                <col style={{ width: '3.6%' }} />
-                                <col style={{ width: '3.8%' }} />
-                                {/* VALORES: ESCOLTA, PEDÁGIO, TOTAL */}
                                 <col style={{ width: '4%' }} />
-                                <col style={{ width: '3.6%' }} />
-                                <col style={{ width: '4.8%' }} />
+                                <col style={{ width: '4%' }} />
+                                <col style={{ width: '3.8%' }} />
+                                <col style={{ width: '3%' }} />
+                                <col style={{ width: '3.5%' }} />
+                                <col style={{ width: '3.5%' }} />
+                                <col style={{ width: '3.5%' }} />
+                                <col style={{ width: '3%' }} />
+                                <col style={{ width: '3%' }} />
+                                <col style={{ width: '3%' }} />
+                                <col style={{ width: '2.8%' }} />
+                                <col style={{ width: '3.5%' }} />
+                                <col style={{ width: '3.8%' }} />
+                                <col style={{ width: '2.8%' }} />
+                                <col style={{ width: '3.5%' }} />
+                                <col style={{ width: '3.8%' }} />
+                                <col style={{ width: '3.8%' }} />
+                                <col style={{ width: '5%' }} />
                             </colgroup>
                             <thead>
                                 <tr className="group-hdr">
@@ -986,7 +978,7 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
                                     <th style={grpHr} colSpan={3}>HORÁRIOS</th>
                                     <th style={grpKmExc} colSpan={3}>KM EXCEDENTE</th>
                                     <th style={grpHrExc} colSpan={3}>HORA EXCEDENTE</th>
-                                    <th style={grpVal} colSpan={3}>VALORES</th>
+                                    <th style={grpVal} colSpan={2}>VALORES</th>
                                 </tr>
                                 <tr className="sub-hdr">
                                     <th style={headerStyle}>Nº</th>
@@ -997,9 +989,9 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
                                     <th style={headerStyle}>HR EXTRA</th>
                                     <th style={headerStyle}>KM EXTRA</th>
                                     <th style={headerStyle}>DATA INÍCIO</th>
-                                    <th style={headerStyle}>HORA INÍCIO</th>
+                                    <th style={headerStyle}>HORA INI</th>
                                     <th style={headerStyle}>VIATURA</th>
-                                    <th style={headerStyle}>VEÍC. ESCOLTADO</th>
+                                    <th style={headerStyle}>VEÍC. ESCOLT.</th>
                                     <th style={headerStyle}>DATA FIM</th>
                                     <th style={headerStyle}>HORA FIM</th>
                                     <th style={hdrKm}>INICIAL</th>
@@ -1014,14 +1006,13 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
                                     <th style={hdrHrExc}>HORA</th>
                                     <th style={hdrHrExc}>VALOR</th>
                                     <th style={hdrHrExc}>TOTAL</th>
-                                    <th style={hdrVal}>ESCOLTA</th>
                                     <th style={hdrVal}>PEDÁGIO</th>
                                     <th style={hdrVal}>TOTAL</th>
                                 </tr>
                             </thead>
                             <tbody>
                                 {rowsData.length === 0 ? (
-                                    <tr><td colSpan={28} style={{ ...cellStyle, padding: '16px', fontSize: '10px', fontWeight: 700, color: '#9ca3af' }}>NENHUMA MISSÃO NO PERÍODO.</td></tr>
+                                    <tr><td colSpan={27} style={{ ...cellStyle, padding: '16px', fontSize: '10px', fontWeight: 700, color: '#9ca3af' }}>NENHUMA MISSÃO NO PERÍODO.</td></tr>
                                 ) : (
                                     rowsData.map((r, i) => (
                                         <tr key={i} style={{ backgroundColor: i % 2 === 0 ? '#ffffff' : '#f3f4f6' }}>
@@ -1050,7 +1041,6 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
                                             <td style={{ ...cellStyle, backgroundColor: bgHrExc }}>{r.hrExtraQtd > 0 ? fmtHHMM(r.hrExtraQtd) : '-'}</td>
                                             <td style={{ ...cellStyle, backgroundColor: bgHrExc }}>{r.hrExtraQtd > 0 ? fmtBRL(r.hrExtraUnit) : '-'}</td>
                                             <td style={{ ...cellStyle, backgroundColor: bgHrExc }}>{r.hrExtraTotal > 0 ? fmtBRL(r.hrExtraTotal) : 'R$ 0,00'}</td>
-                                            <td style={{ ...cellStyle, backgroundColor: bgVal }}>{fmtBRL(r.escoltaVal)}</td>
                                             <td style={{ ...cellStyle, backgroundColor: bgVal }}>{r.tollVal > 0 ? fmtBRL(r.tollVal) : 'R$ 0,00'}</td>
                                             <td style={{ ...cellBold, backgroundColor: bgVal }}>{fmtBRL(r.totalGeral)}</td>
                                         </tr>
@@ -1060,7 +1050,7 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
                             {rowsData.length > 0 && (
                                 <tfoot>
                                     <tr style={{ backgroundColor: '#111827', color: '#fff' }}>
-                                        <td colSpan={27} style={{ ...cellStyle, textAlign: 'right', fontWeight: 900, fontSize: '8px', color: '#fff', border: '1px solid #000' }}>TOTAL</td>
+                                        <td colSpan={26} style={{ ...cellStyle, textAlign: 'right', fontWeight: 900, fontSize: '8px', color: '#fff', border: '1px solid #000' }}>TOTAL</td>
                                         <td style={{ ...cellStyle, fontWeight: 900, fontSize: '9px', color: '#fff', border: '1px solid #000' }}>{fmtBRL(grandTotal)}</td>
                                     </tr>
                                 </tfoot>
