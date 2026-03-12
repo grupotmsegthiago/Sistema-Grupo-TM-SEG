@@ -173,7 +173,10 @@ const MissionAlertMonitor: React.FC = () => {
                 const startDate = new Date(m.start_time);
                 const minutesUntil = Math.round((startDate.getTime() - now.getTime()) / 60_000);
 
-                if (minutesUntil <= ALERT_WINDOW_MINUTES && minutesUntil >= -30) {
+                const isVTR = (m.client || '').toUpperCase().includes('VTR');
+                const clientAlertWindow = isVTR ? 30 : ALERT_WINDOW_MINUTES;
+
+                if (minutesUntil <= clientAlertWindow && minutesUntil >= -30) {
                     const alertKey = `alert-${m.id}-${startDate.toISOString().split('T')[0]}`;
                     const pInfo = providerMap[m.provider] || { contact_name: '', phone: '' };
 
