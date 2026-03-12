@@ -2,6 +2,35 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '../lib/supabase';
 import { Bell, Clock, MapPin, Phone, Users, X, AlertTriangle, CheckCircle2, ChevronRight, ChevronLeft, Volume2, MessageCircle, Timer, XCircle, Maximize2, Minimize2, Shield } from 'lucide-react';
 
+const alertAnimation = `
+@keyframes alert3dPulse {
+  0%   { transform: perspective(600px) rotateX(0deg) scale(1);   box-shadow: 0 4px 20px rgba(239,68,68,0.4); }
+  15%  { transform: perspective(600px) rotateX(-4deg) scale(1.06); box-shadow: 0 8px 35px rgba(239,68,68,0.7); }
+  30%  { transform: perspective(600px) rotateX(3deg) scale(1.03);  box-shadow: 0 6px 28px rgba(239,68,68,0.5); }
+  50%  { transform: perspective(600px) rotateX(-2deg) scale(1.08); box-shadow: 0 10px 45px rgba(239,68,68,0.8), 0 0 20px rgba(239,68,68,0.3); }
+  70%  { transform: perspective(600px) rotateX(2deg) scale(1.04);  box-shadow: 0 6px 25px rgba(239,68,68,0.5); }
+  85%  { transform: perspective(600px) rotateX(-1deg) scale(1.02); box-shadow: 0 4px 20px rgba(239,68,68,0.4); }
+  100% { transform: perspective(600px) rotateX(0deg) scale(1);   box-shadow: 0 4px 20px rgba(239,68,68,0.4); }
+}
+@keyframes alert3dPulseAmber {
+  0%   { transform: perspective(600px) rotateX(0deg) scale(1);   box-shadow: 0 4px 20px rgba(245,158,11,0.4); }
+  15%  { transform: perspective(600px) rotateX(-3deg) scale(1.05); box-shadow: 0 8px 30px rgba(245,158,11,0.6); }
+  50%  { transform: perspective(600px) rotateX(2deg) scale(1.06); box-shadow: 0 10px 40px rgba(245,158,11,0.7), 0 0 15px rgba(245,158,11,0.25); }
+  100% { transform: perspective(600px) rotateX(0deg) scale(1);   box-shadow: 0 4px 20px rgba(245,158,11,0.4); }
+}
+@keyframes glowRing {
+  0%   { opacity: 0.6; transform: scale(1); }
+  50%  { opacity: 0;   transform: scale(1.5); }
+  100% { opacity: 0;   transform: scale(1.5); }
+}
+@keyframes shieldBounce {
+  0%, 100% { transform: translateY(0) rotateY(0deg); }
+  25%      { transform: translateY(-3px) rotateY(15deg); }
+  50%      { transform: translateY(-1px) rotateY(0deg); }
+  75%      { transform: translateY(-4px) rotateY(-15deg); }
+}
+`;
+
 interface MissionAlert {
     id: string;
     missionId: string;
@@ -343,42 +372,59 @@ const MissionAlertMonitor: React.FC = () => {
     };
 
     if (!expanded) {
+        const hasAlerts = activeAlerts.length > 0;
+        const animStyle = hasAlerts
+            ? lateCount > 0
+                ? { animation: 'alert3dPulse 2s ease-in-out infinite', transformStyle: 'preserve-3d' as const }
+                : urgentCount > 0
+                    ? { animation: 'alert3dPulse 2.5s ease-in-out infinite', transformStyle: 'preserve-3d' as const }
+                    : { animation: 'alert3dPulseAmber 3s ease-in-out infinite', transformStyle: 'preserve-3d' as const }
+            : {};
+
         return (
-            <div className="fixed bottom-4 right-4 z-[45]" data-testid="mission-alert-monitor-mini">
+            <div className="fixed bottom-4 right-4 z-[45]" data-testid="mission-alert-monitor-mini" style={{ perspective: '800px' }}>
+                <style>{alertAnimation}</style>
+                {hasAlerts && (
+                    <div
+                        className={`absolute inset-0 rounded-2xl ${lateCount > 0 ? 'bg-red-500' : urgentCount > 0 ? 'bg-red-400' : 'bg-amber-400'}`}
+                        style={{ animation: 'glowRing 2s ease-out infinite' }}
+                    />
+                )}
                 <div
                     onClick={() => setExpanded(true)}
-                    className={`cursor-pointer rounded-2xl shadow-2xl border-2 px-4 py-3 flex items-center gap-3 transition-all hover:scale-105 ${
-                        activeAlerts.length === 0
-                            ? 'bg-gray-700 border-gray-500'
-                            : lateCount > 0 ? 'bg-red-700 border-red-500 animate-pulse'
-                            : urgentCount > 0 ? 'bg-red-600 border-red-400'
-                            : 'bg-amber-500 border-amber-400'
+                    className={`relative cursor-pointer rounded-2xl border-2 px-4 py-3 flex items-center gap-3 ${
+                        !hasAlerts
+                            ? 'bg-gray-700 border-gray-500 shadow-lg'
+                            : lateCount > 0 ? 'bg-gradient-to-br from-red-600 via-red-700 to-red-900 border-red-400'
+                            : urgentCount > 0 ? 'bg-gradient-to-br from-red-500 via-red-600 to-red-800 border-red-400'
+                            : 'bg-gradient-to-br from-amber-400 via-amber-500 to-amber-700 border-amber-300'
                     } text-white`}
+                    style={animStyle}
                     data-testid="button-expand-alerts"
                 >
-                    <div className="relative">
-                        <Shield size={22} />
+                    <div className="relative" style={hasAlerts ? { animation: 'shieldBounce 2s ease-in-out infinite' } : {}}>
+                        <Shield size={24} className="drop-shadow-lg" />
                         {unackCount > 0 && (
-                            <span className="absolute -top-2 -right-2 bg-white text-red-700 text-[9px] font-black w-5 h-5 rounded-full flex items-center justify-center shadow-lg">
+                            <span className="absolute -top-2.5 -right-2.5 bg-white text-red-700 text-[9px] font-black w-5.5 h-5.5 rounded-full flex items-center justify-center shadow-xl border border-red-200" style={{ minWidth: '20px', minHeight: '20px' }}>
                                 {unackCount}
                             </span>
                         )}
                     </div>
                     <div className="min-w-0">
-                        <p className="text-[10px] font-black uppercase tracking-tight leading-none">Central de Alertas</p>
+                        <p className="text-[11px] font-black uppercase tracking-tight leading-none drop-shadow-sm">Central de Alertas</p>
                         <p className="text-[9px] font-bold opacity-80 mt-0.5">Fornecedor</p>
-                        {activeAlerts.length > 0 && (
-                            <div className="flex items-center gap-2 mt-1">
-                                <span className="text-[8px] font-black bg-white/20 px-1.5 py-0.5 rounded">{activeAlerts.length} OS</span>
-                                {lateCount > 0 && <span className="text-[8px] font-black bg-white/30 px-1.5 py-0.5 rounded">{lateCount} ATRASADA{lateCount > 1 ? 'S' : ''}</span>}
-                                {confirmedCount > 0 && <span className="text-[8px] font-black bg-green-400/40 px-1.5 py-0.5 rounded">{confirmedCount} OK</span>}
+                        {hasAlerts && (
+                            <div className="flex items-center gap-2 mt-1.5">
+                                <span className="text-[8px] font-black bg-white/25 px-1.5 py-0.5 rounded shadow-inner">{activeAlerts.length} OS</span>
+                                {lateCount > 0 && <span className="text-[8px] font-black bg-white/40 px-1.5 py-0.5 rounded shadow-inner animate-pulse">{lateCount} ATRASADA{lateCount > 1 ? 'S' : ''}</span>}
+                                {confirmedCount > 0 && <span className="text-[8px] font-black bg-green-400/50 px-1.5 py-0.5 rounded">{confirmedCount} OK</span>}
                             </div>
                         )}
-                        {activeAlerts.length === 0 && (
+                        {!hasAlerts && (
                             <p className="text-[8px] font-bold opacity-60 mt-0.5">Nenhuma OS próxima</p>
                         )}
                     </div>
-                    <Maximize2 size={16} className="flex-shrink-0 opacity-70" />
+                    <Maximize2 size={16} className="flex-shrink-0 opacity-70 drop-shadow-sm" />
                 </div>
             </div>
         );
