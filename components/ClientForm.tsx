@@ -662,7 +662,7 @@ const ClientForm: React.FC<ClientFormProps> = ({
                         </div>
                     </div>
                     <div className="space-y-1.5">
-                        <label className={LABEL_CLASS}>CEP (Busca Automática)</label>
+                        <label className={LABEL_CLASS}>CEP</label>
                         <div className="relative">
                             <input 
                                 type="text" 
@@ -680,12 +680,12 @@ const ClientForm: React.FC<ClientFormProps> = ({
                             {isSearchingCep && <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 animate-spin text-gray-400" size={16} />}
                         </div>
                     </div>
-                    <div className="space-y-1.5 md:col-span-1">
+                    <div className="space-y-1.5">
                         <label className={LABEL_CLASS}>UF</label>
                         <input type="text" className={INPUT_CLASS} value={formData.state} onChange={e => setFormData({...formData, state: e.target.value.toUpperCase()})} maxLength={2} />
                     </div>
-                    <div className="space-y-1.5 md:col-span-3">
-                        <label className={LABEL_CLASS}>Logradouro (Rua/Avenida) *</label>
+                    <div className="space-y-1.5 md:col-span-2">
+                        <label className={LABEL_CLASS}>Logradouro *</label>
                         <input type="text" className={INPUT_CLASS} required value={formData.street} onChange={e => setFormData({...formData, street: e.target.value.toUpperCase()})} />
                     </div>
                     <div className="space-y-1.5">
