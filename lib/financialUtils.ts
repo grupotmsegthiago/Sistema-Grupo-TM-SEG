@@ -706,6 +706,9 @@ export const calculateMissionFinancials = (
                                    missionDest.includes('02 HORAS') ||
                                    missionDest.includes('02H'));
 
+    const originalDistanceForCalc = distanceForCalculation;
+    const originalDurationHours = durationHours;
+
     if (isFixedDistanceClientRule && !isZeroValueMission) {
         distanceForCalculation = Math.min(distanceForCalculation, cFranchiseKm);
     }
@@ -732,10 +735,10 @@ export const calculateMissionFinancials = (
 
     let providerDistForCalc = manualTableOverrides?.providerOpsOverride 
         ? manualTableOverrides.providerOpsOverride.distanceKm 
-        : distanceForCalculation;
+        : originalDistanceForCalc;
     let providerDurationForCalc = manualTableOverrides?.providerOpsOverride 
         ? manualTableOverrides.providerOpsOverride.durationHours 
-        : durationHours;
+        : originalDurationHours;
 
     const rawBaseCost = appliedProviderTable?.activation_cost || 0;
     const pBase = isRefused ? 0 : (manualTableOverrides?.customProviderBase !== undefined
