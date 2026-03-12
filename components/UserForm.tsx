@@ -188,6 +188,22 @@ const UserForm: React.FC<UserFormProps> = ({ onBack, userType, id }) => {
                   type: userType === 'client' ? 'Cliente' : userType === 'provider' ? 'Fornecedor' : 'Interno'
               });
               setCredentialsCopied(false);
+
+              try {
+                  await fetch('/api/email/welcome', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({
+                          name: payload.name,
+                          email: payload.email,
+                          password: payload.password,
+                          userType: userType,
+                          profileName: profiles.find(p => p.id === selectedProfileId)?.name || '',
+                      }),
+                  });
+              } catch (emailErr) {
+                  console.error('[Email] Erro ao enviar boas-vindas:', emailErr);
+              }
               return;
           }
           onBack();

@@ -9,6 +9,7 @@ import webpush from "web-push";
 import { calculateMissionFinancials } from "../lib/financialUtils";
 import fs from "fs";
 import path from "path";
+import { sendMissionEmailToClient, sendMissionEmailToProvider, sendWelcomeEmail, sendTestEmail } from "./emailService";
 
 const resend = new Resend(process.env.RESEND_API_KEY);
 
@@ -178,8 +179,82 @@ export async function registerRoutes(
         }
       }
       console.log(`[Push] Notificação enviada para ${pushSubscriptions.size} dispositivos: OS ${osId}`);
+
+      // ── Auto-email on mission creation ──
+      try {
+        let vehiclePlate = '—';
+        if (mission.client_vehicle) {
+          const { data: veh } = await supabaseForPush
+            .from('vehicles')
+            .select('plate')
+            .eq('id', mission.client_vehicle)
+            .single();
+          if (veh?.plate) vehiclePlate = veh.plate;
+        }
+
+        const missionData = {
+          id: osId,
+          client: mission.client || '',
+          provider: mission.provider || '',
+          origin: mission.origin || '',
+          destination: mission.destination || '',
+          start_time: mission.start_time || '',
+          mission_type: mission.mission_type || 'Caracterizada',
+          driver_name: mission.driver_name || '',
+          driver_phone: mission.driver_phone || '',
+          client_vehicle: mission.client_vehicle,
+        };
+
+        if (mission.client) {
+          const { data: clientData } = await supabaseForPush
+            .from('clients')
+            .select('email')
+            .eq('name', mission.client)
+            .single();
+          if (clientData?.email) {
+            sendMissionEmailToClient(missionData, clientData.email, vehiclePlate);
+          }
+        }
+
+        if (mission.provider) {
+          const { data: provData } = await supabaseForPush
+            .from('providers')
+            .select('email')
+            .eq('name', mission.provider)
+            .single();
+          if (provData?.email) {
+            sendMissionEmailToProvider(missionData, provData.email, vehiclePlate);
+          }
+        }
+      } catch (emailErr: any) {
+        console.error('[Email] Erro no disparo automático de missão:', emailErr.message);
+      }
     })
     .subscribe();
+
+  // ── Email API Endpoints ──
+  app.post("/api/email/test", async (req: Request, res: Response) => {
+    try {
+      const { to } = req.body;
+      if (!to) return res.status(400).json({ error: 'Campo "to" obrigatório' });
+      const success = await sendTestEmail(to);
+      res.json({ success, message: success ? 'E-mail de teste enviado!' : 'Falha ao enviar e-mail' });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post("/api/email/welcome", async (req: Request, res: Response) => {
+    try {
+      const { name, email, password, userType, profileName } = req.body;
+      if (!name || !email || !password) return res.status(400).json({ error: 'Campos name, email e password são obrigatórios' });
+      const systemUrl = `https://${req.headers.host || 'app.grupotmseg.com.br'}`;
+      const success = await sendWelcomeEmail({ name, email, password, userType: userType || 'internal', profileName }, systemUrl);
+      res.json({ success, message: success ? 'E-mail de boas-vindas enviado!' : 'Falha ao enviar e-mail' });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
 
   app.post("/api/gemini/generate", async (req: Request, res: Response) => {
     try {
