@@ -482,15 +482,17 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
 
     const cellStyle: React.CSSProperties = {
         border: '1px solid #9ca3af',
-        padding: '1px 2px',
-        fontSize: '6.5px',
+        padding: '2px 3px',
+        fontSize: '7px',
         fontFamily: "'Segoe UI', Tahoma, Geneva, Verdana, sans-serif",
         textAlign: 'center',
         whiteSpace: 'nowrap',
         overflow: 'hidden',
         textOverflow: 'ellipsis',
         color: '#1f2937',
-        lineHeight: '1.3'
+        lineHeight: '1.3',
+        WebkitPrintColorAdjust: 'exact' as any,
+        printColorAdjust: 'exact' as any,
     };
     const cellRight: React.CSSProperties = { ...cellStyle, textAlign: 'right' };
     const cellBold: React.CSSProperties = { ...cellStyle, fontWeight: 800, color: '#111827' };
@@ -498,17 +500,17 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
         ...cellStyle,
         backgroundColor: '#e5e7eb',
         fontWeight: 900,
-        fontSize: '6px',
+        fontSize: '6.5px',
         textTransform: 'uppercase' as const,
         color: '#000',
-        padding: '2px 1px'
+        padding: '3px 2px'
     };
     const groupHeaderStyle: React.CSSProperties = {
         ...headerStyle,
         backgroundColor: '#d1d5db',
-        fontSize: '6.5px',
+        fontSize: '7px',
         letterSpacing: '0.3px',
-        padding: '3px 2px'
+        padding: '4px 3px'
     };
 
     const bgKm = '#eef2ff';
@@ -532,22 +534,31 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
     return (
         <div className="space-y-6 animate-fade-in pb-20 relative">
             <style>{`
+                @import url('https://fonts.googleapis.com/css2?family=Dancing+Script:wght@700&display=swap');
                 @media print {
-                    @page { size: A4 landscape; margin: 2mm 2mm; }
+                    @page { size: landscape; margin: 10mm; }
+                    html, body {
+                        -webkit-print-color-adjust: exact !important;
+                        print-color-adjust: exact !important;
+                        color-adjust: exact !important;
+                    }
                     body * { visibility: hidden !important; }
                     #print-area, #print-area * { visibility: visible !important; }
                     #print-area {
                         position: absolute; left: 0; top: 0;
-                        width: 293mm;
+                        width: 100% !important;
+                        max-width: none !important;
                         transform-origin: top left;
                         overflow: visible !important;
                     }
                     #print-area .report-table-scroll {
                         overflow: visible !important;
+                        max-width: none !important;
                     }
                     #print-area table {
                         table-layout: fixed !important;
-                        width: 293mm !important;
+                        width: 100% !important;
+                        max-width: none !important;
                         border-collapse: collapse !important;
                         page-break-inside: auto !important;
                     }
@@ -557,35 +568,58 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
                         break-inside: avoid !important;
                     }
                     #print-area td, #print-area th {
-                        padding: 0.3mm 0.5mm !important;
-                        font-size: 1.6mm !important;
-                        white-space: nowrap !important;
+                        padding: 1mm 1.5mm !important;
+                        font-size: 7pt !important;
                         overflow: hidden !important;
                         text-overflow: ellipsis !important;
-                        border: 0.2px solid #888 !important;
-                        line-height: 1.2 !important;
+                        border: 0.3px solid #888 !important;
+                        line-height: 1.3 !important;
+                        -webkit-print-color-adjust: exact !important;
+                        print-color-adjust: exact !important;
                     }
                     #print-area td.route-cell {
                         white-space: normal !important;
+                        word-wrap: break-word !important;
                         word-break: break-word !important;
-                        line-height: 1.1 !important;
-                        font-size: 1.5mm !important;
+                        overflow-wrap: break-word !important;
+                        line-height: 1.2 !important;
+                        font-size: 6.5pt !important;
+                        max-width: 0 !important;
                     }
-                    #print-area .group-hdr th { font-size: 1.7mm !important; padding: 0.5mm !important; }
-                    #print-area .sub-hdr th { font-size: 1.5mm !important; padding: 0.3mm 0.4mm !important; }
-                    #print-area h1 { font-size: 3.5mm !important; margin: 0 !important; }
-                    #print-area .subtitle-line { font-size: 2.2mm !important; }
-                    #print-area .ref-line { font-size: 1.8mm !important; }
+                    #print-area tbody tr:nth-child(odd) { background-color: #ffffff !important; }
+                    #print-area tbody tr:nth-child(even) { background-color: #f3f4f6 !important; }
+                    #print-area .group-hdr th {
+                        font-size: 7.5pt !important;
+                        padding: 1.5mm !important;
+                        -webkit-print-color-adjust: exact !important;
+                        print-color-adjust: exact !important;
+                    }
+                    #print-area .sub-hdr th {
+                        font-size: 6.5pt !important;
+                        padding: 1mm 1.5mm !important;
+                        -webkit-print-color-adjust: exact !important;
+                        print-color-adjust: exact !important;
+                    }
+                    #print-area h1 { font-size: 14pt !important; margin: 0 !important; }
+                    #print-area .subtitle-line { font-size: 10pt !important; }
+                    #print-area .ref-line { font-size: 8pt !important; }
                     .no-print { display: none !important; }
                     #print-area .sign-section {
-                        margin-top: 15mm !important;
+                        margin-top: 12mm !important;
                         break-inside: avoid !important;
                         page-break-inside: avoid !important;
                     }
-                    #print-area .sign-box { font-size: 2mm !important; width: 60mm !important; }
+                    #print-area .sign-box { font-size: 9pt !important; width: 70mm !important; }
+                    #print-area .digital-signature { font-size: 16pt !important; }
+                    #print-area .sign-role { font-size: 8pt !important; }
                     #print-area tfoot tr {
                         break-inside: avoid !important;
                         page-break-inside: avoid !important;
+                    }
+                    #print-area tfoot td {
+                        font-size: 8pt !important;
+                        -webkit-print-color-adjust: exact !important;
+                        print-color-adjust: exact !important;
                     }
                 }
             `}</style>
@@ -976,7 +1010,7 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
                                     <tr><td colSpan={28} style={{ ...cellStyle, padding: '16px', fontSize: '10px', fontWeight: 700, color: '#9ca3af' }}>NENHUMA MISSÃO NO PERÍODO.</td></tr>
                                 ) : (
                                     rowsData.map((r, i) => (
-                                        <tr key={i} style={{ backgroundColor: i % 2 === 0 ? '#fff' : '#f9fafb' }}>
+                                        <tr key={i} style={{ backgroundColor: i % 2 === 0 ? '#ffffff' : '#f3f4f6' }}>
                                             <td style={cellBold}>{r.id}</td>
                                             <td className="route-cell" style={{ ...cellStyle, textAlign: 'left' }} title={r.route}>{r.route}</td>
                                             <td style={cellStyle}>{fmtBRL(r.activationFee)}</td>
@@ -1021,8 +1055,17 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
                     </div>
 
                     <div className="sign-section" style={{ marginTop: '32px', display: 'flex', justifyContent: 'space-between', padding: '0 40px' }}>
-                        <div className="sign-box" style={{ textAlign: 'center', borderTop: '1px solid #000', width: '250px', paddingTop: '8px', fontSize: '8px', fontWeight: 700, textTransform: 'uppercase' }}>Assinatura TMSEG</div>
-                        <div className="sign-box" style={{ textAlign: 'center', borderTop: '1px solid #000', width: '250px', paddingTop: '8px', fontSize: '8px', fontWeight: 700, textTransform: 'uppercase' }}>Assinatura Cliente</div>
+                        <div className="sign-box" style={{ textAlign: 'center', width: '280px' }}>
+                            <div className="digital-signature" style={{ fontFamily: "'Dancing Script', cursive", fontSize: '22px', fontWeight: 700, color: '#1a237e', marginBottom: '4px', lineHeight: 1.2 }}>Thiago Moreira</div>
+                            <div style={{ borderTop: '1.5px solid #000', paddingTop: '6px' }}>
+                                <div className="sign-role" style={{ fontSize: '9px', fontWeight: 800, textTransform: 'uppercase' as const, color: '#111827', letterSpacing: '0.5px' }}>CEO - Grupo TM SEG</div>
+                            </div>
+                        </div>
+                        <div className="sign-box" style={{ textAlign: 'center', width: '280px', alignSelf: 'flex-end' }}>
+                            <div style={{ borderTop: '1.5px solid #000', paddingTop: '6px', marginTop: '30px' }}>
+                                <div style={{ fontSize: '9px', fontWeight: 800, textTransform: 'uppercase' as const, color: '#111827', letterSpacing: '0.5px' }}>Assinatura Cliente</div>
+                            </div>
+                        </div>
                     </div>
                 </div>
             )}
