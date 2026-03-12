@@ -559,6 +559,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
 
           setMission({ ...mission, ...provData, provider_ops_edited: true });
           setIsEditingProvOpsData(false);
+          setUseSavedValues(false);
           showNotification('Salvo', columnsExist 
               ? 'Dados do fornecedor atualizados com sucesso.' 
               : 'Dados do fornecedor registrados no log. Execute a migração SQL para persistência completa.',
