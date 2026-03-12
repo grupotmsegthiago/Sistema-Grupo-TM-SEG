@@ -848,6 +848,13 @@ export async function registerRoutes(
       `);
       await pool.query(`ALTER TABLE client_mission_notes ADD COLUMN IF NOT EXISTS responsavel TEXT DEFAULT ''`).catch(() => {});
       await pool.query(`ALTER TABLE missions ADD COLUMN IF NOT EXISTS operational_report TEXT`).catch(() => {});
+      await pool.query(`ALTER TABLE missions ADD COLUMN IF NOT EXISTS provider_start_km DOUBLE PRECISION`).catch(() => {});
+      await pool.query(`ALTER TABLE missions ADD COLUMN IF NOT EXISTS provider_end_km DOUBLE PRECISION`).catch(() => {});
+      await pool.query(`ALTER TABLE missions ADD COLUMN IF NOT EXISTS provider_start_time TIMESTAMPTZ`).catch(() => {});
+      await pool.query(`ALTER TABLE missions ADD COLUMN IF NOT EXISTS provider_end_time TIMESTAMPTZ`).catch(() => {});
+      await pool.query(`ALTER TABLE missions ADD COLUMN IF NOT EXISTS provider_ops_edited BOOLEAN DEFAULT FALSE`).catch(() => {});
+      await pool.query(`ALTER TABLE missions ADD COLUMN IF NOT EXISTS revenue_edit_reason TEXT`).catch(() => {});
+      await pool.query(`ALTER TABLE missions ADD COLUMN IF NOT EXISTS cost_edit_reason TEXT`).catch(() => {});
       await pool.end();
       console.log("Client registries tables created/verified.");
       res.json({ ok: true });

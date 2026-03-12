@@ -98,6 +98,15 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
 
   const [editStartKm, setEditStartKm] = useState('');
   const [editEndKm, setEditEndKm] = useState('');
+  const [provEditStartKm, setProvEditStartKm] = useState('');
+  const [provEditEndKm, setProvEditEndKm] = useState('');
+  const [provEditStartTime, setProvEditStartTime] = useState('');
+  const [provEditEndTime, setProvEditEndTime] = useState('');
+  const [isEditingProvOpsData, setIsEditingProvOpsData] = useState(false);
+  const [revenueEditReason, setRevenueEditReason] = useState('');
+  const [costEditReason, setCostEditReason] = useState('');
+  const [showRevenueReasonInput, setShowRevenueReasonInput] = useState(false);
+  const [showCostReasonInput, setShowCostReasonInput] = useState(false);
   const [editStartTime, setEditStartTime] = useState('');
   const [editEndTime, setEditEndTime] = useState('');
   const [isEditingOpsData, setIsEditingOpsData] = useState(false);
@@ -272,6 +281,22 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
               setEditEndTime(et ? `${et.toLocaleDateString('en-CA')}T${et.toLocaleTimeString('pt-BR', { hour:'2-digit', minute:'2-digit' })}` : '');
               setIsEditingOpsData(false);
 
+              const provOpsEdited = mRes.data.provider_ops_edited === true;
+              const pStartKm = provOpsEdited && mRes.data.provider_start_km != null ? mRes.data.provider_start_km : mRes.data.start_km;
+              const pEndKm = provOpsEdited && mRes.data.provider_end_km != null ? mRes.data.provider_end_km : mRes.data.end_km;
+              const pStartTime = provOpsEdited && mRes.data.provider_start_time ? new Date(mRes.data.provider_start_time) : st;
+              const pEndTime = provOpsEdited && mRes.data.provider_end_time ? new Date(mRes.data.provider_end_time) : et;
+              setProvEditStartKm(pStartKm ? String(pStartKm) : '');
+              setProvEditEndKm(pEndKm ? String(pEndKm) : '');
+              setProvEditStartTime(pStartTime ? `${pStartTime.toLocaleDateString('en-CA')}T${pStartTime.toLocaleTimeString('pt-BR', { hour:'2-digit', minute:'2-digit' })}` : '');
+              setProvEditEndTime(pEndTime ? `${pEndTime.toLocaleDateString('en-CA')}T${pEndTime.toLocaleTimeString('pt-BR', { hour:'2-digit', minute:'2-digit' })}` : '');
+              setIsEditingProvOpsData(false);
+
+              setRevenueEditReason(mRes.data.revenue_edit_reason || '');
+              setCostEditReason(mRes.data.cost_edit_reason || '');
+              setShowRevenueReasonInput(false);
+              setShowCostReasonInput(false);
+
               const dbToll = Math.max(0, mRes.data.toll_value || 0);
               const dbTollProvider = Math.max(0, mRes.data.toll_value_provider != null ? mRes.data.toll_value_provider : dbToll);
               const savedRev = safeNumber(mRes.data.revenue_value);
@@ -424,10 +449,56 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
           const updated = { ...mission, ...updatePayload, startKm: updatePayload.start_km, endKm: updatePayload.end_km, startTime: updatePayload.start_time, endTime: updatePayload.end_time, lastUpdate: updatePayload.last_update, status: updatePayload.status || mission.status };
           setMission(updated);
           setIsEditingOpsData(false);
-          showNotification('Salvo', updatePayload.status === 'Concluída' ? 'Dados salvos e missão concluída automaticamente.' : 'Dados operacionais atualizados com sucesso.', 'success');
+          if (!mission.provider_ops_edited) {
+              setProvEditStartKm(updatePayload.start_km ? String(updatePayload.start_km) : provEditStartKm);
+              setProvEditEndKm(updatePayload.end_km ? String(updatePayload.end_km) : provEditEndKm);
+              setProvEditStartTime(updatePayload.start_time ? editStartTime : provEditStartTime);
+              setProvEditEndTime(updatePayload.end_time ? editEndTime : provEditEndTime);
+          }
+          showNotification('Salvo', updatePayload.status === 'Concluída' ? 'Dados salvos e missão concluída automaticamente.' : 'Dados do cliente atualizados com sucesso.', 'success');
           if (onUpdate) onUpdate();
       } catch (e: any) {
           showNotification('Erro', e.message || 'Falha ao salvar dados operacionais.', 'error');
+      } finally { setIsUpdating(false); isSavingRef.current = false; }
+  };
+
+  const handleSaveProvOpsData = async () => {
+      if (!mission) return;
+      setIsUpdating(true);
+      isSavingRef.current = true;
+      try {
+          const updatePayload: any = {
+              provider_ops_edited: true,
+              last_update: new Date().toISOString(),
+              updated_by: JSON.parse(localStorage.getItem('userData') || '{}').name
+          };
+          if (provEditStartKm) updatePayload.provider_start_km = parseFloat(provEditStartKm) || null;
+          if (provEditEndKm) updatePayload.provider_end_km = parseFloat(provEditEndKm) || null;
+          if (provEditStartTime) updatePayload.provider_start_time = new Date(provEditStartTime).toISOString();
+          if (provEditEndTime) updatePayload.provider_end_time = new Date(provEditEndTime).toISOString();
+
+          const { error } = await supabase.from('missions').update(updatePayload).eq('id', mission.id);
+          if (error) throw error;
+
+          await supabase.from('system_logs').insert([{
+              user_name: updatePayload.updated_by || 'Usuário',
+              action_type: 'PROVIDER_OPS_UPDATE',
+              entity: 'Mission',
+              entity_id: mission.id,
+              details: JSON.stringify({
+                  provider_start_km: updatePayload.provider_start_km || null,
+                  provider_end_km: updatePayload.provider_end_km || null,
+                  provider_start_time: updatePayload.provider_start_time || null,
+                  provider_end_time: updatePayload.provider_end_time || null
+              })
+          }]);
+
+          setMission({ ...mission, ...updatePayload, provider_ops_edited: true });
+          setIsEditingProvOpsData(false);
+          showNotification('Salvo', 'Dados do fornecedor atualizados com sucesso.', 'success');
+          if (onUpdate) onUpdate();
+      } catch (e: any) {
+          showNotification('Erro', e.message || 'Falha ao salvar dados do fornecedor.', 'error');
       } finally { setIsUpdating(false); isSavingRef.current = false; }
   };
 
@@ -583,6 +654,25 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
           showNotification('Bloqueado', 'Esta OS foi aprovada pela Diretoria. Somente a Diretoria pode editar.', 'error');
           return;
       }
+
+      const revTotal = parseNumber(revenueInput);
+      const costTotal = parseNumber(costInput);
+      const calcRevTotal = financialData ? (financialData.client.base + financialData.client.extraKmVal + financialData.client.extraHrVal + (financialData.iblFee || 0) + parseNumber(tollInput)) : 0;
+      const calcCostTotal = financialData ? (financialData.provider.base + financialData.provider.extraKmVal + financialData.provider.extraHrVal + parseNumber(tollProviderInput)) : 0;
+      const revDivergent = Math.abs(revTotal - calcRevTotal) > 1;
+      const costDivergent = Math.abs(costTotal - calcCostTotal) > 1;
+
+      if (revDivergent && !revenueEditReason.trim()) {
+          setShowRevenueReasonInput(true);
+          showNotification('Motivo Obrigatório', 'O valor do cliente foi alterado manualmente. Informe o motivo da alteração.', 'error');
+          return;
+      }
+      if (costDivergent && !costEditReason.trim()) {
+          setShowCostReasonInput(true);
+          showNotification('Motivo Obrigatório', 'O valor do fornecedor foi alterado manualmente. Informe o motivo da alteração.', 'error');
+          return;
+      }
+
       setIsUpdating(true);
       isSavingRef.current = true;
       try {
@@ -591,8 +681,6 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
           const userRole = userData.role || '';
           const toll = parseNumber(tollInput);
           const tollProv = parseNumber(tollProviderInput);
-          const revTotal = parseNumber(revenueInput);
-          const costTotal = parseNumber(costInput);
 
           const revServiceOnly = revTotal - toll; 
           const costServiceOnly = costTotal - tollProv;
@@ -625,7 +713,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
           const updatedStages = newLog.map(l => l.stage);
           const isFullyApproved = updatedStages.includes('diretoria') || (updatedStages.includes('auditor') && updatedStages.includes('financeiro') && updatedStages.includes('diretoria'));
           
-          const basePayload = {
+          const basePayload: any = {
               revenue_value: revServiceOnly,
               cost_value: costServiceOnly,
               toll_value: toll,
@@ -633,6 +721,12 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
               billing_verified_by: userName,
               last_update: new Date().toISOString()
           };
+          if (revDivergent && revenueEditReason.trim()) {
+              basePayload.revenue_edit_reason = `[${userName} - ${new Date().toLocaleString('pt-BR')}] ${revenueEditReason.trim()}`;
+          }
+          if (costDivergent && costEditReason.trim()) {
+              basePayload.cost_edit_reason = `[${userName} - ${new Date().toLocaleString('pt-BR')}] ${costEditReason.trim()}`;
+          }
 
           let result = await supabase.from('missions').update({ ...basePayload, toll_value_provider: tollProv }).eq('id', mission.id).select('id, revenue_value, cost_value, toll_value, last_update').single();
           if (result.error && result.error.message?.includes('toll_value_provider')) {
@@ -721,7 +815,9 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
               toll_value_provider: tollProv,
               billing_approved: isFullyApproved,
               billing_verified_by: userName,
-              last_update: basePayload.last_update
+              last_update: basePayload.last_update,
+              ...(basePayload.revenue_edit_reason ? { revenue_edit_reason: basePayload.revenue_edit_reason } : {}),
+              ...(basePayload.cost_edit_reason ? { cost_edit_reason: basePayload.cost_edit_reason } : {})
           } : prev);
 
           if (approve) {
@@ -1024,76 +1120,177 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                         </div>
 
                         <div className="mt-4 pt-4 border-t border-gray-100">
-                            <div className="flex items-center justify-between mb-3">
-                                <p className="text-[10px] font-black text-gray-500 uppercase tracking-widest flex items-center gap-1.5"><MapPin size={12}/> Dados Operacionais</p>
-                                {canEditOpsData && !isEditingOpsData && (
-                                    <button onClick={() => setIsEditingOpsData(true)} className="flex items-center gap-1 px-2 py-1 text-[9px] font-black text-indigo-600 bg-indigo-50 rounded-lg hover:bg-indigo-100 uppercase tracking-wider transition-all" data-testid="button-edit-ops-data"><Edit2 size={10}/> Editar</button>
-                                )}
-                                {isEditingOpsData && (
-                                    <div className="flex gap-2">
-                                        <button onClick={() => setIsEditingOpsData(false)} className="px-2 py-1 text-[9px] font-black text-gray-500 bg-gray-100 rounded-lg hover:bg-gray-200 uppercase tracking-wider">Cancelar</button>
-                                        <button onClick={handleSaveOpsData} disabled={isUpdating} className="flex items-center gap-1 px-3 py-1 text-[9px] font-black text-white bg-green-600 rounded-lg hover:bg-green-700 uppercase tracking-wider disabled:opacity-50" data-testid="button-save-ops-data">{isUpdating ? <Loader2 size={10} className="animate-spin"/> : <Save size={10}/>} Salvar</button>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div className="bg-green-50/50 border border-green-200 rounded-xl p-3">
+                                    <div className="flex items-center justify-between mb-3">
+                                        <p className="text-[10px] font-black text-green-700 uppercase tracking-widest flex items-center gap-1.5"><MapPin size={12}/> Dados Cliente</p>
+                                        {canEditOpsData && !isEditingOpsData && (
+                                            <button onClick={() => setIsEditingOpsData(true)} className="flex items-center gap-1 px-2 py-1 text-[9px] font-black text-green-600 bg-green-100 rounded-lg hover:bg-green-200 uppercase tracking-wider transition-all" data-testid="button-edit-ops-data"><Edit2 size={10}/> Editar</button>
+                                        )}
+                                        {isEditingOpsData && (
+                                            <div className="flex gap-2">
+                                                <button onClick={() => setIsEditingOpsData(false)} className="px-2 py-1 text-[9px] font-black text-gray-500 bg-gray-100 rounded-lg hover:bg-gray-200 uppercase tracking-wider">Cancelar</button>
+                                                <button onClick={handleSaveOpsData} disabled={isUpdating} className="flex items-center gap-1 px-3 py-1 text-[9px] font-black text-white bg-green-600 rounded-lg hover:bg-green-700 uppercase tracking-wider disabled:opacity-50" data-testid="button-save-ops-data">{isUpdating ? <Loader2 size={10} className="animate-spin"/> : <Save size={10}/>} Salvar</button>
+                                            </div>
+                                        )}
                                     </div>
-                                )}
-                            </div>
-                            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                                <div>
-                                    <p className="text-[9px] font-bold text-gray-400 uppercase mb-1">Hora Inicial</p>
-                                    {isEditingOpsData ? (
-                                        <input type="datetime-local" value={editStartTime} onChange={e => setEditStartTime(e.target.value)} className="w-full text-xs font-bold text-gray-700 border border-gray-300 rounded-lg px-2 py-1.5 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none" data-testid="input-start-time" />
-                                    ) : (
-                                        <p className="text-sm font-bold text-gray-700 font-mono">{mission.startTime ? new Date(mission.startTime).toLocaleString('pt-BR', { day:'2-digit', month:'2-digit', year:'2-digit', hour:'2-digit', minute:'2-digit' }) : '---'}</p>
-                                    )}
+                                    <div className="grid grid-cols-2 gap-2">
+                                        <div>
+                                            <p className="text-[9px] font-bold text-gray-400 uppercase mb-1">Hora Inicial</p>
+                                            {isEditingOpsData ? (
+                                                <input type="datetime-local" value={editStartTime} onChange={e => setEditStartTime(e.target.value)} className="w-full text-xs font-bold text-gray-700 border border-gray-300 rounded-lg px-2 py-1.5 focus:ring-2 focus:ring-green-500/20 focus:border-green-500 outline-none" data-testid="input-start-time" />
+                                            ) : (
+                                                <p className="text-sm font-bold text-gray-700 font-mono">{mission.startTime ? new Date(mission.startTime).toLocaleString('pt-BR', { day:'2-digit', month:'2-digit', year:'2-digit', hour:'2-digit', minute:'2-digit' }) : '---'}</p>
+                                            )}
+                                        </div>
+                                        <div>
+                                            <p className="text-[9px] font-bold text-gray-400 uppercase mb-1">KM Inicial</p>
+                                            {isEditingOpsData ? (
+                                                <input type="number" step="0.1" value={editStartKm} onChange={e => setEditStartKm(e.target.value)} placeholder="0" className="w-full text-xs font-bold text-gray-700 border border-gray-300 rounded-lg px-2 py-1.5 focus:ring-2 focus:ring-green-500/20 focus:border-green-500 outline-none" data-testid="input-start-km" />
+                                            ) : (
+                                                <p className="text-sm font-bold text-gray-700 font-mono">{mission.startKm ? `${safeNumber(mission.startKm).toLocaleString('pt-BR')} km` : '---'}</p>
+                                            )}
+                                        </div>
+                                        <div>
+                                            <p className="text-[9px] font-bold text-gray-400 uppercase mb-1">Hora Final</p>
+                                            {isEditingOpsData ? (
+                                                <input type="datetime-local" value={editEndTime} onChange={e => setEditEndTime(e.target.value)} className="w-full text-xs font-bold text-gray-700 border border-gray-300 rounded-lg px-2 py-1.5 focus:ring-2 focus:ring-green-500/20 focus:border-green-500 outline-none" data-testid="input-end-time" />
+                                            ) : (
+                                                <p className="text-sm font-bold text-gray-700 font-mono">{mission.endTime ? new Date(mission.endTime).toLocaleString('pt-BR', { day:'2-digit', month:'2-digit', year:'2-digit', hour:'2-digit', minute:'2-digit' }) : '---'}</p>
+                                            )}
+                                        </div>
+                                        <div>
+                                            <p className="text-[9px] font-bold text-gray-400 uppercase mb-1">KM Final</p>
+                                            {isEditingOpsData ? (
+                                                <input type="number" step="0.1" value={editEndKm} onChange={e => setEditEndKm(e.target.value)} placeholder="0" className="w-full text-xs font-bold text-gray-700 border border-gray-300 rounded-lg px-2 py-1.5 focus:ring-2 focus:ring-green-500/20 focus:border-green-500 outline-none" data-testid="input-end-km" />
+                                            ) : (
+                                                <p className="text-sm font-bold text-gray-700 font-mono">{mission.endKm ? `${safeNumber(mission.endKm).toLocaleString('pt-BR')} km` : '---'}</p>
+                                            )}
+                                        </div>
+                                    </div>
+                                    <div className="grid grid-cols-2 gap-2 mt-2 pt-2 border-t border-dashed border-green-200">
+                                        <div className="bg-green-100 rounded-lg px-3 py-1.5">
+                                            <p className="text-[8px] font-bold text-green-500 uppercase mb-0.5">Duração</p>
+                                            <p className="text-xs font-black text-green-800 font-mono" data-testid="text-total-duration">
+                                                {(() => {
+                                                    if (!mission.startTime || !mission.endTime) return '---';
+                                                    const diffMs = new Date(mission.endTime).getTime() - new Date(mission.startTime).getTime();
+                                                    if (diffMs <= 0) return '---';
+                                                    const h = Math.floor(diffMs / 3600000);
+                                                    const m = Math.floor((diffMs % 3600000) / 60000);
+                                                    return `${h.toString().padStart(2,'0')}h${m.toString().padStart(2,'0')}min`;
+                                                })()}
+                                            </p>
+                                        </div>
+                                        <div className="bg-green-100 rounded-lg px-3 py-1.5">
+                                            <p className="text-[8px] font-bold text-green-500 uppercase mb-0.5">KM Rodado</p>
+                                            <p className="text-xs font-black text-green-800 font-mono" data-testid="text-total-km">
+                                                {(() => {
+                                                    const sk = safeNumber(mission.startKm);
+                                                    const ek = safeNumber(mission.endKm);
+                                                    if (sk <= 0 || ek <= 0) return '---';
+                                                    return `${(ek - sk).toLocaleString('pt-BR')} km`;
+                                                })()}
+                                            </p>
+                                        </div>
+                                    </div>
                                 </div>
-                                <div>
-                                    <p className="text-[9px] font-bold text-gray-400 uppercase mb-1">KM Inicial</p>
-                                    {isEditingOpsData ? (
-                                        <input type="number" step="0.1" value={editStartKm} onChange={e => setEditStartKm(e.target.value)} placeholder="0" className="w-full text-xs font-bold text-gray-700 border border-gray-300 rounded-lg px-2 py-1.5 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none" data-testid="input-start-km" />
-                                    ) : (
-                                        <p className="text-sm font-bold text-gray-700 font-mono">{mission.startKm ? `${safeNumber(mission.startKm).toLocaleString('pt-BR')} km` : '---'}</p>
-                                    )}
-                                </div>
-                                <div>
-                                    <p className="text-[9px] font-bold text-gray-400 uppercase mb-1">Hora Final</p>
-                                    {isEditingOpsData ? (
-                                        <input type="datetime-local" value={editEndTime} onChange={e => setEditEndTime(e.target.value)} className="w-full text-xs font-bold text-gray-700 border border-gray-300 rounded-lg px-2 py-1.5 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none" data-testid="input-end-time" />
-                                    ) : (
-                                        <p className="text-sm font-bold text-gray-700 font-mono">{mission.endTime ? new Date(mission.endTime).toLocaleString('pt-BR', { day:'2-digit', month:'2-digit', year:'2-digit', hour:'2-digit', minute:'2-digit' }) : '---'}</p>
-                                    )}
-                                </div>
-                                <div>
-                                    <p className="text-[9px] font-bold text-gray-400 uppercase mb-1">KM Final</p>
-                                    {isEditingOpsData ? (
-                                        <input type="number" step="0.1" value={editEndKm} onChange={e => setEditEndKm(e.target.value)} placeholder="0" className="w-full text-xs font-bold text-gray-700 border border-gray-300 rounded-lg px-2 py-1.5 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none" data-testid="input-end-km" />
-                                    ) : (
-                                        <p className="text-sm font-bold text-gray-700 font-mono">{mission.endKm ? `${safeNumber(mission.endKm).toLocaleString('pt-BR')} km` : '---'}</p>
-                                    )}
-                                </div>
-                            </div>
-                            <div className="grid grid-cols-2 gap-3 mt-3 pt-3 border-t border-dashed border-gray-200">
-                                <div className="bg-indigo-50 rounded-lg px-3 py-2">
-                                    <p className="text-[9px] font-bold text-indigo-400 uppercase mb-0.5">Duração Total</p>
-                                    <p className="text-sm font-black text-indigo-800 font-mono" data-testid="text-total-duration">
-                                        {(() => {
-                                            if (!mission.startTime || !mission.endTime) return '---';
-                                            const diffMs = new Date(mission.endTime).getTime() - new Date(mission.startTime).getTime();
-                                            if (diffMs <= 0) return '---';
-                                            const h = Math.floor(diffMs / 3600000);
-                                            const m = Math.floor((diffMs % 3600000) / 60000);
-                                            return `${h.toString().padStart(2,'0')}h${m.toString().padStart(2,'0')}min`;
-                                        })()}
-                                    </p>
-                                </div>
-                                <div className="bg-indigo-50 rounded-lg px-3 py-2">
-                                    <p className="text-[9px] font-bold text-indigo-400 uppercase mb-0.5">KM Rodado</p>
-                                    <p className="text-sm font-black text-indigo-800 font-mono" data-testid="text-total-km">
-                                        {(() => {
-                                            const sk = safeNumber(mission.startKm);
-                                            const ek = safeNumber(mission.endKm);
-                                            if (sk <= 0 || ek <= 0) return '---';
-                                            return `${(ek - sk).toLocaleString('pt-BR')} km`;
-                                        })()}
-                                    </p>
+
+                                <div className="bg-blue-50/50 border border-blue-200 rounded-xl p-3">
+                                    <div className="flex items-center justify-between mb-3">
+                                        <div className="flex items-center gap-2">
+                                            <p className="text-[10px] font-black text-blue-700 uppercase tracking-widest flex items-center gap-1.5"><Briefcase size={12}/> Dados Fornecedor</p>
+                                            {mission.provider_ops_edited && (
+                                                <span className="text-[8px] font-black text-amber-600 bg-amber-100 px-1.5 py-0.5 rounded-full">EDITADO</span>
+                                            )}
+                                            {!mission.provider_ops_edited && (
+                                                <span className="text-[8px] font-bold text-blue-400 bg-blue-100 px-1.5 py-0.5 rounded-full">CÓPIA CLIENTE</span>
+                                            )}
+                                        </div>
+                                        {canEditOpsData && !isEditingProvOpsData && (
+                                            <button onClick={() => setIsEditingProvOpsData(true)} className="flex items-center gap-1 px-2 py-1 text-[9px] font-black text-blue-600 bg-blue-100 rounded-lg hover:bg-blue-200 uppercase tracking-wider transition-all" data-testid="button-edit-prov-ops-data"><Edit2 size={10}/> Editar</button>
+                                        )}
+                                        {isEditingProvOpsData && (
+                                            <div className="flex gap-2">
+                                                <button onClick={() => setIsEditingProvOpsData(false)} className="px-2 py-1 text-[9px] font-black text-gray-500 bg-gray-100 rounded-lg hover:bg-gray-200 uppercase tracking-wider">Cancelar</button>
+                                                <button onClick={handleSaveProvOpsData} disabled={isUpdating} className="flex items-center gap-1 px-3 py-1 text-[9px] font-black text-white bg-blue-600 rounded-lg hover:bg-blue-700 uppercase tracking-wider disabled:opacity-50" data-testid="button-save-prov-ops-data">{isUpdating ? <Loader2 size={10} className="animate-spin"/> : <Save size={10}/>} Salvar</button>
+                                            </div>
+                                        )}
+                                    </div>
+                                    <div className="grid grid-cols-2 gap-2">
+                                        <div>
+                                            <p className="text-[9px] font-bold text-gray-400 uppercase mb-1">Hora Inicial</p>
+                                            {isEditingProvOpsData ? (
+                                                <input type="datetime-local" value={provEditStartTime} onChange={e => setProvEditStartTime(e.target.value)} className="w-full text-xs font-bold text-gray-700 border border-gray-300 rounded-lg px-2 py-1.5 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 outline-none" data-testid="input-prov-start-time" />
+                                            ) : (
+                                                <p className="text-sm font-bold text-gray-700 font-mono">{(() => {
+                                                    const t = mission.provider_ops_edited && mission.provider_start_time ? mission.provider_start_time : mission.startTime;
+                                                    return t ? new Date(t).toLocaleString('pt-BR', { day:'2-digit', month:'2-digit', year:'2-digit', hour:'2-digit', minute:'2-digit' }) : '---';
+                                                })()}</p>
+                                            )}
+                                        </div>
+                                        <div>
+                                            <p className="text-[9px] font-bold text-gray-400 uppercase mb-1">KM Inicial</p>
+                                            {isEditingProvOpsData ? (
+                                                <input type="number" step="0.1" value={provEditStartKm} onChange={e => setProvEditStartKm(e.target.value)} placeholder="0" className="w-full text-xs font-bold text-gray-700 border border-gray-300 rounded-lg px-2 py-1.5 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 outline-none" data-testid="input-prov-start-km" />
+                                            ) : (
+                                                <p className="text-sm font-bold text-gray-700 font-mono">{(() => {
+                                                    const k = mission.provider_ops_edited && mission.provider_start_km != null ? mission.provider_start_km : mission.startKm;
+                                                    return k ? `${safeNumber(k).toLocaleString('pt-BR')} km` : '---';
+                                                })()}</p>
+                                            )}
+                                        </div>
+                                        <div>
+                                            <p className="text-[9px] font-bold text-gray-400 uppercase mb-1">Hora Final</p>
+                                            {isEditingProvOpsData ? (
+                                                <input type="datetime-local" value={provEditEndTime} onChange={e => setProvEditEndTime(e.target.value)} className="w-full text-xs font-bold text-gray-700 border border-gray-300 rounded-lg px-2 py-1.5 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 outline-none" data-testid="input-prov-end-time" />
+                                            ) : (
+                                                <p className="text-sm font-bold text-gray-700 font-mono">{(() => {
+                                                    const t = mission.provider_ops_edited && mission.provider_end_time ? mission.provider_end_time : mission.endTime;
+                                                    return t ? new Date(t).toLocaleString('pt-BR', { day:'2-digit', month:'2-digit', year:'2-digit', hour:'2-digit', minute:'2-digit' }) : '---';
+                                                })()}</p>
+                                            )}
+                                        </div>
+                                        <div>
+                                            <p className="text-[9px] font-bold text-gray-400 uppercase mb-1">KM Final</p>
+                                            {isEditingProvOpsData ? (
+                                                <input type="number" step="0.1" value={provEditEndKm} onChange={e => setProvEditEndKm(e.target.value)} placeholder="0" className="w-full text-xs font-bold text-gray-700 border border-gray-300 rounded-lg px-2 py-1.5 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 outline-none" data-testid="input-prov-end-km" />
+                                            ) : (
+                                                <p className="text-sm font-bold text-gray-700 font-mono">{(() => {
+                                                    const k = mission.provider_ops_edited && mission.provider_end_km != null ? mission.provider_end_km : mission.endKm;
+                                                    return k ? `${safeNumber(k).toLocaleString('pt-BR')} km` : '---';
+                                                })()}</p>
+                                            )}
+                                        </div>
+                                    </div>
+                                    <div className="grid grid-cols-2 gap-2 mt-2 pt-2 border-t border-dashed border-blue-200">
+                                        <div className="bg-blue-100 rounded-lg px-3 py-1.5">
+                                            <p className="text-[8px] font-bold text-blue-500 uppercase mb-0.5">Duração</p>
+                                            <p className="text-xs font-black text-blue-800 font-mono" data-testid="text-prov-total-duration">
+                                                {(() => {
+                                                    const sTime = mission.provider_ops_edited && mission.provider_start_time ? mission.provider_start_time : mission.startTime;
+                                                    const eTime = mission.provider_ops_edited && mission.provider_end_time ? mission.provider_end_time : mission.endTime;
+                                                    if (!sTime || !eTime) return '---';
+                                                    const diffMs = new Date(eTime).getTime() - new Date(sTime).getTime();
+                                                    if (diffMs <= 0) return '---';
+                                                    const h = Math.floor(diffMs / 3600000);
+                                                    const m = Math.floor((diffMs % 3600000) / 60000);
+                                                    return `${h.toString().padStart(2,'0')}h${m.toString().padStart(2,'0')}min`;
+                                                })()}
+                                            </p>
+                                        </div>
+                                        <div className="bg-blue-100 rounded-lg px-3 py-1.5">
+                                            <p className="text-[8px] font-bold text-blue-500 uppercase mb-0.5">KM Rodado</p>
+                                            <p className="text-xs font-black text-blue-800 font-mono" data-testid="text-prov-total-km">
+                                                {(() => {
+                                                    const sk = safeNumber(mission.provider_ops_edited && mission.provider_start_km != null ? mission.provider_start_km : mission.startKm);
+                                                    const ek = safeNumber(mission.provider_ops_edited && mission.provider_end_km != null ? mission.provider_end_km : mission.endKm);
+                                                    if (sk <= 0 || ek <= 0) return '---';
+                                                    return `${(ek - sk).toLocaleString('pt-BR')} km`;
+                                                })()}
+                                            </p>
+                                        </div>
+                                    </div>
                                 </div>
                             </div>
                         </div>
@@ -1477,12 +1674,28 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                     inputMode="decimal"
                                     className={`w-full bg-white/60 border border-green-200 rounded-lg px-2 py-1 outline-none font-black text-3xl text-green-900 font-mono focus:ring-2 focus:ring-green-400 focus:border-green-400 ${!canEditOpsData ? 'pointer-events-none opacity-70' : 'cursor-text'}`}
                                     value={revenueInput} 
-                                    onChange={e => { if (canEditOpsData) { setUseSavedValues(true); setRevenueInput(e.target.value); } }}
+                                    onChange={e => { if (canEditOpsData) { setUseSavedValues(true); setRevenueInput(e.target.value); setShowRevenueReasonInput(true); } }}
                                     readOnly={!canEditOpsData}
                                     data-testid="input-revenue-total"
                                 />
                             </div>
                             <p className="text-[8px] text-green-600 font-bold mt-1 italic">{canEditOpsData ? '* EDITÁVEL - DIRETORIA / ADMINISTRADOR (toque para editar)' : '* VALOR TOTAL CALCULADO BASEADO NAS FRANQUIAS E MEDIÇÃO'}</p>
+                            {(showRevenueReasonInput || revenueEditReason) && (
+                                <div className="mt-2 p-2 bg-amber-50 border border-amber-200 rounded-lg">
+                                    <label className="text-[9px] font-black text-amber-700 uppercase mb-1 block flex items-center gap-1"><AlertCircle size={10}/> Motivo da Alteração (Cliente)</label>
+                                    <textarea
+                                        className="w-full text-xs font-bold text-gray-700 border border-amber-300 rounded-lg px-2 py-1.5 focus:ring-2 focus:ring-amber-400/20 focus:border-amber-400 outline-none bg-white resize-none"
+                                        rows={2}
+                                        placeholder="Informe o motivo da alteração do valor..."
+                                        value={revenueEditReason}
+                                        onChange={e => setRevenueEditReason(e.target.value)}
+                                        data-testid="input-revenue-edit-reason"
+                                    />
+                                    {mission.revenue_edit_reason && (
+                                        <p className="text-[8px] text-gray-500 mt-1 italic">Último registro: {mission.revenue_edit_reason}</p>
+                                    )}
+                                </div>
+                            )}
                             <div className="mt-3 flex items-center justify-between px-1 pt-2 border-t border-green-200">
                                 <label className="text-[10px] font-black text-blue-700 uppercase">Taxa IBL (12%):</label>
                                 <div className="flex items-center gap-2">
@@ -1528,12 +1741,28 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                     inputMode="decimal"
                                     className={`w-full bg-white/60 border border-blue-200 rounded-lg px-2 py-1 outline-none font-black text-3xl text-blue-900 font-mono focus:ring-2 focus:ring-blue-400 focus:border-blue-400 ${!canEditOpsData ? 'pointer-events-none opacity-70' : 'cursor-text'}`}
                                     value={costInput} 
-                                    onChange={e => { if (canEditOpsData) { setUseSavedValues(true); setCostInput(e.target.value); } }}
+                                    onChange={e => { if (canEditOpsData) { setUseSavedValues(true); setCostInput(e.target.value); setShowCostReasonInput(true); } }}
                                     readOnly={!canEditOpsData}
                                     data-testid="input-cost-total"
                                 />
                             </div>
                             <p className="text-[8px] text-blue-600 font-bold mt-1 italic">{canEditOpsData ? '* EDITÁVEL - DIRETORIA / ADMINISTRADOR (toque para editar)' : ''}</p>
+                            {(showCostReasonInput || costEditReason) && (
+                                <div className="mt-2 p-2 bg-amber-50 border border-amber-200 rounded-lg">
+                                    <label className="text-[9px] font-black text-amber-700 uppercase mb-1 block flex items-center gap-1"><AlertCircle size={10}/> Motivo da Alteração (Fornecedor)</label>
+                                    <textarea
+                                        className="w-full text-xs font-bold text-gray-700 border border-amber-300 rounded-lg px-2 py-1.5 focus:ring-2 focus:ring-amber-400/20 focus:border-amber-400 outline-none bg-white resize-none"
+                                        rows={2}
+                                        placeholder="Informe o motivo da alteração do valor..."
+                                        value={costEditReason}
+                                        onChange={e => setCostEditReason(e.target.value)}
+                                        data-testid="input-cost-edit-reason"
+                                    />
+                                    {mission.cost_edit_reason && (
+                                        <p className="text-[8px] text-gray-500 mt-1 italic">Último registro: {mission.cost_edit_reason}</p>
+                                    )}
+                                </div>
+                            )}
                         </div>
                     </div>
 

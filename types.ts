@@ -63,6 +63,15 @@ export interface Mission {
   cost_value?: number;    
   toll_value?: number;
   toll_value_provider?: number;
+
+  provider_start_km?: number;
+  provider_end_km?: number;
+  provider_start_time?: string;
+  provider_end_time?: string;
+  provider_ops_edited?: boolean;
+
+  revenue_edit_reason?: string;
+  cost_edit_reason?: string;
   
   billing_approved?: boolean;
   billing_verified_by?: string;
