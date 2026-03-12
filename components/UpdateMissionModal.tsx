@@ -380,6 +380,7 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
 
     const calculateProgressFromCoords = async (currentLat: number, currentLng: number) => {
         if (!editData.origin) return;
+        if (!missionTotals.plannedKm || missionTotals.plannedKm <= 0) return;
 
         try {
             const geocoder = new google.maps.Geocoder();
@@ -389,7 +390,7 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
                 const originLoc = originRes.results[0].geometry.location;
                 const distStraight = calculateDistance(originLoc.lat(), originLoc.lng(), currentLat, currentLng);
                 const distTraveledEst = distStraight * 1.25;
-                const totalPlanned = missionTotals.plannedKm || 1;
+                const totalPlanned = missionTotals.plannedKm;
                 const percentage = Math.min(99, Math.round((distTraveledEst / totalPlanned) * 100));
                 
                 setEditData(prev => ({ ...prev, manualProgress: percentage }));
@@ -554,7 +555,8 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
                 showNotification('Status Pendente', `Faltam dados obrigatórios: ${missing.join(', ')}. A OS ficará como PENDENTE até o preenchimento completo.`, 'warning');
             }
 
-            const progressValue = finalStatus === MissionStatus.COMPLETED ? 100 : editData.manualProgress;
+            const plannedDist = missionTotals.plannedKm || 0;
+            const progressValue = finalStatus === MissionStatus.COMPLETED ? 100 : (plannedDist <= 0 ? 0 : editData.manualProgress);
 
             if (editData.agent1 && editData.agent1.trim() !== '' && 
                (finalStatus === MissionStatus.SOLICITED || finalStatus === MissionStatus.DOCUMENTATION)) {
