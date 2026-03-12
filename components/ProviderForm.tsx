@@ -27,6 +27,7 @@ const ProviderForm: React.FC<ProviderFormProps> = ({ onBack, onNavigateToVehicle
     status: 'Ativo',
     contact: '',
     email: '',
+    os_email: '',
     phone: '',
     zip_code: '',
     street: '',
@@ -87,6 +88,7 @@ const ProviderForm: React.FC<ProviderFormProps> = ({ onBack, onNavigateToVehicle
                     status: data.status || 'Ativo',
                     contact: data.contact_name || '',
                     email: data.email || '',
+                    os_email: data.os_email || '',
                     phone: data.phone || '',
                     zip_code: data.zip_code || '',
                     street: data.street || '',
@@ -303,6 +305,7 @@ const ProviderForm: React.FC<ProviderFormProps> = ({ onBack, onNavigateToVehicle
             status: formData.status, 
             contact_name: formData.contact,
             email: formData.email.toLowerCase(),
+            os_email: formData.os_email?.toLowerCase() || null,
             phone: formData.phone,
             zip_code: formData.zip_code,
             street: formData.street.toUpperCase(),
@@ -493,6 +496,14 @@ const ProviderForm: React.FC<ProviderFormProps> = ({ onBack, onNavigateToVehicle
                             <input type="email" className={`${INPUT_CLASS} pl-10`} required value={formData.email} onChange={e => setFormData({...formData, email: e.target.value.toLowerCase()})} />
                             <Mail className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
                         </div>
+                    </div>
+                    <div className="space-y-1.5">
+                        <label className={LABEL_CLASS}>E-mail Recebimento de OS</label>
+                        <div className="relative">
+                            <input type="email" className={`${INPUT_CLASS} pl-10`} placeholder="os@fornecedor.com.br" value={formData.os_email} onChange={e => setFormData({...formData, os_email: e.target.value.toLowerCase()})} data-testid="input-os-email" />
+                            <Mail className="absolute left-3 top-1/2 -translate-y-1/2 text-orange-500" size={16} />
+                        </div>
+                        <p className="text-[9px] text-gray-400">Recebe ordens de serviço automáticas</p>
                     </div>
                     <div className="space-y-1.5">
                         <label className={LABEL_CLASS}>Telefone / WhatsApp *</label>

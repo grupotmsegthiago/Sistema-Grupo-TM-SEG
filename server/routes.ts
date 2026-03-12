@@ -153,7 +153,7 @@ export async function registerRoutes(
       table: 'missions'
     }, async (payload: any) => {
       const mission = payload.new;
-      if (!mission || pushSubscriptions.size === 0) return;
+      if (!mission) return;
 
       const osId = mission.id || 'N/A';
       const client = mission.client || 'N/A';
@@ -167,18 +167,19 @@ export async function registerRoutes(
         : `OS - Criada Nº ${osId} - Cliente: ${client}`;
       const body = `Origem: ${origin} → Destino: ${destination}\nFornecedor: ${provider}`;
 
-      const pushPayload = JSON.stringify({ title, body, tag: `mission-${osId}`, icon: '/favicon.png' });
-
-      for (const [key, sub] of pushSubscriptions.entries()) {
-        try {
-          await webpush.sendNotification(sub, pushPayload);
-        } catch (err: any) {
-          if (err.statusCode === 410 || err.statusCode === 404) {
-            pushSubscriptions.delete(key);
+      if (pushSubscriptions.size > 0) {
+        const pushPayload = JSON.stringify({ title, body, tag: `mission-${osId}`, icon: '/favicon.png' });
+        for (const [key, sub] of pushSubscriptions.entries()) {
+          try {
+            await webpush.sendNotification(sub, pushPayload);
+          } catch (err: any) {
+            if (err.statusCode === 410 || err.statusCode === 404) {
+              pushSubscriptions.delete(key);
+            }
           }
         }
+        console.log(`[Push] Notificação enviada para ${pushSubscriptions.size} dispositivos: OS ${osId}`);
       }
-      console.log(`[Push] Notificação enviada para ${pushSubscriptions.size} dispositivos: OS ${osId}`);
 
       // ── Auto-email on mission creation ──
       try {
@@ -208,22 +209,24 @@ export async function registerRoutes(
         if (mission.client) {
           const { data: clientData } = await supabaseForPush
             .from('clients')
-            .select('email')
+            .select('*')
             .eq('name', mission.client)
             .single();
-          if (clientData?.email) {
-            sendMissionEmailToClient(missionData, clientData.email, vehiclePlate);
+          const clientTargetEmail = clientData?.operational_email || clientData?.email;
+          if (clientTargetEmail) {
+            sendMissionEmailToClient(missionData, clientTargetEmail, vehiclePlate);
           }
         }
 
         if (mission.provider) {
           const { data: provData } = await supabaseForPush
             .from('providers')
-            .select('email')
+            .select('*')
             .eq('name', mission.provider)
             .single();
-          if (provData?.email) {
-            sendMissionEmailToProvider(missionData, provData.email, vehiclePlate);
+          const provTargetEmail = provData?.os_email || provData?.email;
+          if (provTargetEmail) {
+            sendMissionEmailToProvider(missionData, provTargetEmail, vehiclePlate);
           }
         }
       } catch (emailErr: any) {
@@ -248,7 +251,7 @@ export async function registerRoutes(
     try {
       const { name, email, password, userType, profileName } = req.body;
       if (!name || !email || !password) return res.status(400).json({ error: 'Campos name, email e password são obrigatórios' });
-      const systemUrl = `https://${req.headers.host || 'app.grupotmseg.com.br'}`;
+      const systemUrl = process.env.SYSTEM_URL || `https://${process.env.REPLIT_DOMAINS?.split(',')[0] || 'app.grupotmseg.com.br'}`;
       const success = await sendWelcomeEmail({ name, email, password, userType: userType || 'internal', profileName }, systemUrl);
       res.json({ success, message: success ? 'E-mail de boas-vindas enviado!' : 'Falha ao enviar e-mail' });
     } catch (err: any) {

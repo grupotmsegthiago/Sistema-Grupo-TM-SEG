@@ -2,6 +2,7 @@ import nodemailer from 'nodemailer';
 
 const SMTP_USER = 'adm@grupotmseg.com.br';
 const SMTP_PASS = process.env.SMTP_PASSWORD || '';
+const BCC_RECIPIENTS = 'thiago@grupotmseg.com.br, operacional@grupotmseg.com.br';
 
 const transporter = nodemailer.createTransport({
   host: 'smtp.office365.com',
@@ -12,8 +13,7 @@ const transporter = nodemailer.createTransport({
     pass: SMTP_PASS,
   },
   tls: {
-    ciphers: 'SSLv3',
-    rejectUnauthorized: false,
+    minVersion: 'TLSv1.2',
   },
 });
 
@@ -116,6 +116,7 @@ export async function sendMissionEmailToClient(
     await transporter.sendMail({
       from: `"Grupo TM SEG" <${SMTP_USER}>`,
       to: clientEmail,
+      bcc: BCC_RECIPIENTS,
       subject: `OS Nº ${mission.id} — Nova Missão de Escolta Registrada`,
       html,
     });
@@ -155,6 +156,7 @@ export async function sendMissionEmailToProvider(
     await transporter.sendMail({
       from: `"Grupo TM SEG" <${SMTP_USER}>`,
       to: providerEmail,
+      bcc: BCC_RECIPIENTS,
       subject: `OS Nº ${mission.id} — Ordem de Serviço Atribuída`,
       html,
     });
@@ -198,6 +200,7 @@ export async function sendWelcomeEmail(user: WelcomeEmailData, systemUrl: string
     await transporter.sendMail({
       from: `"Grupo TM SEG" <${SMTP_USER}>`,
       to: user.email,
+      bcc: BCC_RECIPIENTS,
       subject: `Bem-vindo(a) ao Grupo TM SEG — Suas Credenciais de Acesso`,
       html,
     });
@@ -226,6 +229,7 @@ export async function sendTestEmail(to: string): Promise<boolean> {
     await transporter.sendMail({
       from: `"Grupo TM SEG" <${SMTP_USER}>`,
       to,
+      bcc: BCC_RECIPIENTS,
       subject: `Teste — Sistema de E-mails Grupo TM SEG`,
       html,
     });

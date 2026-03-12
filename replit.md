@@ -49,6 +49,7 @@ The system encompasses modules for **Missions**, **Clients**, **Providers**, **F
 -   **Rotas Brasil API / calcularpedagio.com.br:** External APIs for toll cost calculation.
 -   **Z-API (WhatsApp):** Integrates WhatsApp messaging capabilities.
 -   **Resend API:** Used for sending email verification codes during user creation.
+-   **Nodemailer (Office 365 SMTP):** Automated email system via `adm@grupotmseg.com.br`. Sends mission notifications to clients (operational_email) and providers (os_email), welcome emails for new users, with BCC to `thiago@grupotmseg.com.br` and `operacional@grupotmseg.com.br`. Strict commercial confidentiality: client emails never show provider/cost data; provider emails never show client/revenue data. Templates use black/red/white branding with CEO signature.
 
 ### PWA & Push Notifications
 -   **PWA:** The app is configured as a Progressive Web App with `manifest.json` and `sw.js` in `client/public/`. Users can install it on mobile via "Add to Home Screen".

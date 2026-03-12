@@ -66,6 +66,7 @@ const ClientForm: React.FC<ClientFormProps> = ({
     neighborhood: '',
     city: '',
     state: '',
+    operational_email: '',
     status: 'Ativo',
     whatsapp_group_id: '',
     full_extra_hour_after_16_min: false,
@@ -130,6 +131,7 @@ const ClientForm: React.FC<ClientFormProps> = ({
                     neighborhood: data.neighborhood || '',
                     city: data.city || '',
                     state: data.state || '',
+                    operational_email: data.operational_email || '',
                     status: data.status || 'Ativo',
                     whatsapp_group_id: data.whatsapp_group_id || '',
                     full_extra_hour_after_16_min: !!data.full_extra_hour_after_16_min,
@@ -311,6 +313,7 @@ const ClientForm: React.FC<ClientFormProps> = ({
         city: formData.city,
         state: formData.state,
         address: fullAddress,
+        operational_email: formData.operational_email?.toLowerCase() || null,
         status: formData.status, 
         whatsapp_group_id: formData.whatsapp_group_id || null,
         full_extra_hour_after_16_min: formData.full_extra_hour_after_16_min,
@@ -633,6 +636,14 @@ const ClientForm: React.FC<ClientFormProps> = ({
                             <input type="email" className={`${INPUT_CLASS} pl-10`} value={formData.email} onChange={e => setFormData({...formData, email: e.target.value.toLowerCase()})} />
                             <Mail className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
                         </div>
+                    </div>
+                    <div className="space-y-1.5">
+                        <label className={LABEL_CLASS}>E-mail Operacional (Recebe OS)</label>
+                        <div className="relative">
+                            <input type="email" className={`${INPUT_CLASS} pl-10`} placeholder="operacional@cliente.com.br" value={formData.operational_email} onChange={e => setFormData({...formData, operational_email: e.target.value.toLowerCase()})} data-testid="input-operational-email" />
+                            <Mail className="absolute left-3 top-1/2 -translate-y-1/2 text-orange-500" size={16} />
+                        </div>
+                        <p className="text-[9px] text-gray-400">Recebe notificações de novas missões</p>
                     </div>
                     <div className="space-y-1.5">
                         <label className={LABEL_CLASS}>Telefone / WhatsApp</label>
