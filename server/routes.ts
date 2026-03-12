@@ -259,6 +259,31 @@ export async function registerRoutes(
     }
   });
 
+  app.post("/api/email/mission-scheduled", async (req: Request, res: Response) => {
+    try {
+      const { missionId, client, origin, destination, start_time, mission_type, vehiclePlate } = req.body;
+      if (!missionId || !client) return res.status(400).json({ error: 'Campos missionId e client obrigatórios' });
+
+      const { data: missionCheck } = await supabaseForPush.from('missions').select('id, status, client').eq('id', missionId).single();
+      if (!missionCheck) return res.status(404).json({ error: 'Missão não encontrada' });
+      if (missionCheck.status !== 'Agendada') return res.status(400).json({ error: 'Missão não está com status Agendada' });
+
+      const { data: clientData } = await supabaseForPush.from('clients').select('operational_email, email').eq('name', missionCheck.client || client).single();
+      const clientEmail = clientData?.operational_email || clientData?.email;
+      if (!clientEmail) return res.status(400).json({ error: 'Cliente sem e-mail cadastrado' });
+
+      const success = await sendMissionEmailToClient(
+        { id: missionId, origin: origin || '', destination: destination || '', start_time: start_time || '', mission_type: mission_type || 'Caracterizada' },
+        clientEmail,
+        vehiclePlate || '—'
+      );
+      res.json({ success, message: success ? 'E-mail de agendamento enviado ao cliente!' : 'Falha ao enviar e-mail' });
+    } catch (err: any) {
+      console.error('[Email] Erro mission-scheduled:', err.message);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   app.post("/api/gemini/generate", async (req: Request, res: Response) => {
     try {
       const { contents, config, stream } = req.body;

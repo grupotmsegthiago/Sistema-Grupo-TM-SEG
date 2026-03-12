@@ -88,10 +88,12 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
     const [searchDriver, setSearchDriver] = useState('');
     const [activeDropdown, setActiveDropdown] = useState<string | null>(null);
 
-    // Modais de Cadastro Rápido
     const [quickModal, setQuickModal] = useState<'provider' | 'vehicle' | 'agent' | 'cargo' | 'browse_cargo' | null>(null);
 
-    // Inteligência de Software
+    const [emailMissingAlert, setEmailMissingAlert] = useState<{ type: 'client' | 'provider'; name: string; entityId: string } | null>(null);
+    const [quickEmailInput, setQuickEmailInput] = useState('');
+    const [isSavingQuickEmail, setIsSavingQuickEmail] = useState(false);
+
     const [iblWarning, setIblWarning] = useState('');
     const [originalStatus, setOriginalStatus] = useState('');
 
@@ -536,6 +538,23 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
         if (checkBlockedAgent(editData.agent1, 'Agente 1 (Líder)')) return;
         if (checkBlockedAgent(editData.agent2, 'Agente 2 (Auxiliar)')) return;
 
+        if (mission?.client) {
+            const { data: cliCheck } = await supabase.from('clients').select('id, email, operational_email').eq('name', mission.client).single();
+            if (cliCheck && !cliCheck.operational_email && !cliCheck.email) {
+                setEmailMissingAlert({ type: 'client', name: mission.client, entityId: cliCheck.id });
+                setQuickEmailInput('');
+                return;
+            }
+        }
+        if (editData.provider) {
+            const { data: provCheck } = await supabase.from('providers').select('id, email, os_email').eq('name', editData.provider).single();
+            if (provCheck && !provCheck.os_email && !provCheck.email) {
+                setEmailMissingAlert({ type: 'provider', name: editData.provider, entityId: provCheck.id });
+                setQuickEmailInput('');
+                return;
+            }
+        }
+
         setIsUpdating(true);
         try {
             const finalDescription = editData.description.trim().toUpperCase();
@@ -600,7 +619,12 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
                 progressValue = editData.manualProgress;
             }
 
-            if (editData.agent1 && editData.agent1.trim() !== '' && 
+            if (editData.provider && editData.provider.trim() !== '' && 
+               finalStatus === MissionStatus.SOLICITED) {
+                finalStatus = MissionStatus.DOCUMENTATION;
+            }
+
+            if (editData.provider && editData.vehicleId && editData.agent1 && editData.agent1.trim() !== '' && 
                (finalStatus === MissionStatus.SOLICITED || finalStatus === MissionStatus.DOCUMENTATION)) {
                 finalStatus = MissionStatus.SCHEDULED;
             }
@@ -697,7 +721,27 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
                 showNotification('Relatório Copiado', 'Monitoramento formatado salvo e copiado.', 'success');
             } catch (err) { console.warn(err); }
 
-            // Broadcast da atualização para outros usuários via Supabase Realtime
+            if (finalStatus === MissionStatus.SCHEDULED && originalStatus !== MissionStatus.SCHEDULED) {
+                try {
+                    const vehiclePlateForEmail = searchVehicle || editData.client_vehicle_plate || '—';
+                    await fetch('/api/email/mission-scheduled', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            missionId: mission.id,
+                            client: mission.client,
+                            origin: editData.origin,
+                            destination: finalDestination,
+                            start_time: startIso,
+                            mission_type: editData.missionType,
+                            vehiclePlate: vehiclePlateForEmail
+                        })
+                    });
+                } catch (emailErr) {
+                    console.error('[Email] Erro ao enviar confirmação ao cliente:', emailErr);
+                }
+            }
+
             await supabase.channel('mission-updates').send({
                 type: 'broadcast',
                 event: 'mission_updated',
@@ -798,6 +842,69 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
                                 showNotification('Sucesso', `Veículo ${v.plate} selecionado.`, 'success');
                             }}
                         />
+                    </div>
+                </div>
+            )}
+
+            {emailMissingAlert && (
+                <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
+                    <div className="bg-white rounded-2xl w-full max-w-md shadow-2xl overflow-hidden">
+                        <div className="bg-red-600 p-4 flex items-center gap-3">
+                            <AlertCircle size={24} className="text-white" />
+                            <h3 className="text-white font-black text-sm uppercase tracking-wider">Atenção Operador</h3>
+                        </div>
+                        <div className="p-6">
+                            <p className="text-sm text-gray-700 mb-4">
+                                O <strong>{emailMissingAlert.type === 'client' ? 'Cliente' : 'Fornecedor'}</strong>{' '}
+                                <span className="font-black text-red-700">{emailMissingAlert.name}</span>{' '}
+                                não possui e-mail de notificação cadastrado.
+                            </p>
+                            <p className="text-xs text-gray-500 mb-4">Insira o e-mail agora para continuar com o salvamento da missão:</p>
+                            <div className="relative mb-4">
+                                <input
+                                    type="email"
+                                    className="w-full px-4 py-3 bg-gray-50 border-2 border-red-200 rounded-xl outline-none focus:border-red-500 text-sm font-medium"
+                                    placeholder={emailMissingAlert.type === 'client' ? 'operacional@cliente.com.br' : 'os@fornecedor.com.br'}
+                                    value={quickEmailInput}
+                                    onChange={e => setQuickEmailInput(e.target.value.toLowerCase())}
+                                    data-testid="input-quick-email"
+                                    autoFocus
+                                />
+                            </div>
+                            <div className="flex gap-2">
+                                <button
+                                    type="button"
+                                    disabled={isSavingQuickEmail || !quickEmailInput || !quickEmailInput.includes('@')}
+                                    className="flex-1 bg-red-600 text-white py-3 rounded-xl font-black text-xs uppercase tracking-wider hover:bg-red-700 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                                    data-testid="button-save-quick-email"
+                                    onClick={async () => {
+                                        setIsSavingQuickEmail(true);
+                                        try {
+                                            const table = emailMissingAlert.type === 'client' ? 'clients' : 'providers';
+                                            const field = emailMissingAlert.type === 'client' ? 'operational_email' : 'os_email';
+                                            await supabase.from(table).update({ [field]: quickEmailInput, email: quickEmailInput }).eq('id', emailMissingAlert.entityId);
+                                            showNotification('Sucesso', `E-mail ${quickEmailInput} salvo com sucesso!`, 'success');
+                                            setEmailMissingAlert(null);
+                                            setQuickEmailInput('');
+                                        } catch (err: any) {
+                                            alert('Erro ao salvar e-mail: ' + err.message);
+                                        } finally {
+                                            setIsSavingQuickEmail(false);
+                                        }
+                                    }}
+                                >
+                                    {isSavingQuickEmail ? 'Salvando...' : 'Salvar E-mail e Continuar'}
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => { setEmailMissingAlert(null); setQuickEmailInput(''); }}
+                                    className="px-4 py-3 bg-gray-100 text-gray-600 rounded-xl font-bold text-xs uppercase hover:bg-gray-200 transition-all"
+                                    data-testid="button-cancel-quick-email"
+                                >
+                                    Cancelar
+                                </button>
+                            </div>
+                        </div>
                     </div>
                 </div>
             )}
@@ -909,7 +1016,11 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
                                     {activeDropdown === 'provider' && (
                                         <div className="absolute z-[100] left-0 right-0 mt-1 bg-white border border-gray-200 rounded-xl shadow-2xl max-h-48 overflow-y-auto">
                                             {filteredProviders.map(p => (
-                                                <button key={p.id} type="button" onClick={() => { setEditData({...editData, provider: p.name, vehicleId: '', agent1: '', agent2: ''}); setSearchTerm(p.name); setSearchVehicle(''); setActiveDropdown(null); }} className={DROPDOWN_ITEM_CLASS}>
+                                                <button key={p.id} type="button" onClick={() => { 
+                                                    const newStatus = (editData.status === MissionStatus.SOLICITED) ? MissionStatus.DOCUMENTATION : editData.status;
+                                                    setEditData({...editData, provider: p.name, vehicleId: '', agent1: '', agent2: '', status: newStatus}); 
+                                                    setSearchTerm(p.name); setSearchVehicle(''); setActiveDropdown(null); 
+                                                }} className={DROPDOWN_ITEM_CLASS}>
                                                     <span>{p.name}</span>
                                                     <span className="bg-green-600 text-white px-2 py-1 rounded-[6px] text-[8px] font-black flex items-center gap-1 shadow-sm"><Check size={10} /> SELECIONAR</span>
                                                 </button>
