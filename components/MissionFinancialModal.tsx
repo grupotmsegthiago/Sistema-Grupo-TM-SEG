@@ -615,11 +615,12 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
     useEffect(() => {
       if (financialData && mission) {
           const provOpsActive = !!mission.provider_ops_edited;
+          const provTotalWithCorrectToll = financialData.provider.base + financialData.provider.extraKmVal + financialData.provider.extraHrVal + parseNumber(tollProviderInput);
           if (!useSavedValuesRef.current && !isSavingRef.current) {
               setRevenueInput(financialData.client.total.toLocaleString('pt-BR', {minimumFractionDigits: 2}));
-              setCostInput(financialData.provider.total.toLocaleString('pt-BR', {minimumFractionDigits: 2}));
+              setCostInput(provTotalWithCorrectToll.toLocaleString('pt-BR', {minimumFractionDigits: 2}));
           } else if (provOpsActive && !isSavingRef.current) {
-              setCostInput(financialData.provider.total.toLocaleString('pt-BR', {minimumFractionDigits: 2}));
+              setCostInput(provTotalWithCorrectToll.toLocaleString('pt-BR', {minimumFractionDigits: 2}));
           }
           
           if (financialData.provider.tableId) {
@@ -639,7 +640,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
               }
           }
       }
-    }, [financialData, memoryLoaded, mission]); 
+    }, [financialData, memoryLoaded, mission, tollProviderInput]); 
 
 
   const handleTollChange = (val: string) => {
