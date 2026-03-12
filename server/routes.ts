@@ -968,6 +968,85 @@ export async function registerRoutes(
       setInterval(checkAndRunCleanup, ONE_DAY_MS);
   }, 5 * 60 * 1000);
 
+  app.post("/api/vendor-verification/:missionId", async (req: Request, res: Response) => {
+      try {
+          const { missionId } = req.params;
+          const { vendor_os_number, invoice_number, payment_date, verified_by, verified_at } = req.body;
+
+          const payload: any = {};
+          if (vendor_os_number !== undefined) payload.vendor_os_number = vendor_os_number;
+          if (invoice_number !== undefined) payload.invoice_number = invoice_number;
+          if (payment_date !== undefined) payload.payment_date = payment_date;
+          if (verified_by !== undefined) payload.verified_by = verified_by;
+          if (verified_at !== undefined) payload.verified_at = verified_at;
+
+          const { error } = await supabaseAdmin
+              .from('missions')
+              .update(payload)
+              .eq('id', missionId);
+
+          if (error) {
+              if (error.message.includes('column') && error.message.includes('does not exist')) {
+                  await supabaseAdmin.from('system_logs').insert([{
+                      user_name: verified_by || 'Sistema',
+                      action_type: 'VENDOR_VERIFICATION',
+                      entity: 'Mission',
+                      entity_id: missionId,
+                      details: JSON.stringify(payload)
+                  }]);
+                  return res.json({ ok: true, fallback: 'system_logs' });
+              }
+              throw error;
+          }
+
+          await supabaseAdmin.from('system_logs').insert([{
+              user_name: verified_by || 'Sistema',
+              action_type: 'VENDOR_VERIFICATION',
+              entity: 'Mission',
+              entity_id: missionId,
+              details: JSON.stringify(payload)
+          }]);
+
+          res.json({ ok: true });
+      } catch (e: any) {
+          console.error('[VENDOR-VERIFICATION] Erro:', e.message);
+          res.status(500).json({ ok: false, error: e.message });
+      }
+  });
+
+  app.get("/api/vendor-verification/:missionId", async (req: Request, res: Response) => {
+      try {
+          const { missionId } = req.params;
+
+          const { data: mission, error } = await supabaseAdmin
+              .from('missions')
+              .select('vendor_os_number, invoice_number, payment_date, verified_by, verified_at')
+              .eq('id', missionId)
+              .single();
+
+          if (!error && mission) {
+              return res.json({ ok: true, data: mission });
+          }
+
+          const { data: logs } = await supabaseAdmin
+              .from('system_logs')
+              .select('details')
+              .eq('action_type', 'VENDOR_VERIFICATION')
+              .eq('entity_id', missionId)
+              .order('created_at', { ascending: false })
+              .limit(1);
+
+          if (logs && logs.length > 0) {
+              const details = typeof logs[0].details === 'string' ? JSON.parse(logs[0].details) : logs[0].details;
+              return res.json({ ok: true, data: details, source: 'system_logs' });
+          }
+
+          res.json({ ok: true, data: null });
+      } catch (e: any) {
+          res.json({ ok: true, data: null });
+      }
+  });
+
   app.post("/api/admin/cleanup-history", async (_req: Request, res: Response) => {
       try {
           const results = await runHistoryCleanup();
@@ -1024,7 +1103,12 @@ export async function registerRoutes(
         { name: 'provider_end_time', type: 'timestamptz' },
         { name: 'provider_ops_edited', type: 'boolean default false' },
         { name: 'revenue_edit_reason', type: 'text' },
-        { name: 'cost_edit_reason', type: 'text' }
+        { name: 'cost_edit_reason', type: 'text' },
+        { name: 'vendor_os_number', type: 'text' },
+        { name: 'invoice_number', type: 'text' },
+        { name: 'payment_date', type: 'text' },
+        { name: 'verified_by', type: 'text' },
+        { name: 'verified_at', type: 'timestamptz' }
       ];
 
       const results: string[] = [];

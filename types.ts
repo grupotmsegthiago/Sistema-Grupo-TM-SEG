@@ -75,6 +75,12 @@ export interface Mission {
   
   billing_approved?: boolean;
   billing_verified_by?: string;
+
+  vendor_os_number?: string;
+  invoice_number?: string;
+  payment_date?: string;
+  verified_by?: string;
+  verified_at?: string;
 }
 
 export interface MissionHistory {
