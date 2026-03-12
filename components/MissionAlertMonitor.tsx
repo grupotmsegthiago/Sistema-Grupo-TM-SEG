@@ -431,13 +431,33 @@ const MissionAlertMonitor: React.FC = () => {
                                     )}
 
                                     {!detail && !a.acknowledged && !a.declinedAt && (
-                                        <div className="flex gap-1.5 mt-2">
-                                            <button onClick={e => { e.stopPropagation(); handleAcknowledge(a.id); }} className="flex-1 flex items-center justify-center gap-1 bg-green-600 hover:bg-green-700 text-white font-black text-[8px] py-1.5 rounded-md transition-colors uppercase" data-testid={`button-ack-${a.missionId}`}>
-                                                <CheckCircle2 size={10} /> Sim
+                                        <div className="space-y-1.5 mt-2">
+                                            <div className="flex gap-1.5">
+                                                <button onClick={e => { e.stopPropagation(); handleAcknowledge(a.id); }} className="flex-1 flex items-center justify-center gap-1 bg-green-600 hover:bg-green-700 text-white font-black text-[8px] py-1.5 rounded-md transition-colors uppercase" data-testid={`button-ack-${a.missionId}`}>
+                                                    <CheckCircle2 size={10} /> Sim
+                                                </button>
+                                                <button onClick={e => { e.stopPropagation(); handleDecline(a.id); }} className="flex-1 flex items-center justify-center gap-1 bg-red-500 hover:bg-red-600 text-white font-black text-[8px] py-1.5 rounded-md transition-colors uppercase" data-testid={`button-decline-${a.missionId}`}>
+                                                    <XCircle size={10} /> Não
+                                                </button>
+                                            </div>
+                                            <button
+                                                onClick={e => { e.stopPropagation(); handleCopyContact(a); }}
+                                                className={`w-full flex items-center justify-center gap-1.5 font-black text-[8px] py-1.5 rounded-md transition-colors uppercase border ${
+                                                    copiedId === a.id ? 'bg-green-100 text-green-700 border-green-300' : 'bg-emerald-50 text-emerald-700 border-emerald-300 hover:bg-emerald-100'
+                                                }`}
+                                                data-testid={`button-contact-row-${a.missionId}`}
+                                            >
+                                                {copiedId === a.id ? <><CheckCircle2 size={10} /> Copiado!</> : <><MessageCircle size={10} /> Entre em Contato</>}
                                             </button>
-                                            <button onClick={e => { e.stopPropagation(); handleDecline(a.id); }} className="flex-1 flex items-center justify-center gap-1 bg-red-500 hover:bg-red-600 text-white font-black text-[8px] py-1.5 rounded-md transition-colors uppercase" data-testid={`button-decline-${a.missionId}`}>
-                                                <XCircle size={10} /> Não
-                                            </button>
+                                            {a.driverPhone && (
+                                                <button
+                                                    onClick={e => { e.stopPropagation(); handleWhatsAppDirect(a); }}
+                                                    className="w-full flex items-center justify-center gap-1.5 bg-green-500 hover:bg-green-600 text-white font-black text-[8px] py-1.5 rounded-md transition-colors uppercase"
+                                                    data-testid={`button-whatsapp-row-${a.missionId}`}
+                                                >
+                                                    <Phone size={10} /> WhatsApp Motorista
+                                                </button>
+                                            )}
                                         </div>
                                     )}
 
@@ -448,8 +468,19 @@ const MissionAlertMonitor: React.FC = () => {
                                     )}
 
                                     {!detail && a.declinedAt && !a.acknowledged && (
-                                        <div className="mt-1.5 text-[8px] font-bold text-gray-500 flex items-center gap-1">
-                                            <Timer size={9} /> Lembrete automático...
+                                        <div className="space-y-1.5 mt-2">
+                                            <div className="text-[8px] font-bold text-gray-500 flex items-center gap-1">
+                                                <Timer size={9} /> Lembrete automático...
+                                            </div>
+                                            <button
+                                                onClick={e => { e.stopPropagation(); handleCopyContact(a); }}
+                                                className={`w-full flex items-center justify-center gap-1.5 font-black text-[8px] py-1.5 rounded-md transition-colors uppercase border ${
+                                                    copiedId === a.id ? 'bg-green-100 text-green-700 border-green-300' : 'bg-emerald-50 text-emerald-700 border-emerald-300 hover:bg-emerald-100'
+                                                }`}
+                                                data-testid={`button-contact-waiting-row-${a.missionId}`}
+                                            >
+                                                {copiedId === a.id ? <><CheckCircle2 size={10} /> Copiado!</> : <><MessageCircle size={10} /> Entre em Contato</>}
+                                            </button>
                                         </div>
                                     )}
                                 </div>
