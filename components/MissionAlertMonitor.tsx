@@ -7,6 +7,8 @@ interface MissionAlert {
     missionId: string;
     client: string;
     provider: string;
+    providerContactName: string;
+    providerPhone: string;
     origin: string;
     destination: string;
     startTime: string;
@@ -91,6 +93,8 @@ const MissionAlertMonitor: React.FC = () => {
             missionId: 'GTM-TESTE',
             client: 'CEVA LOGISTICA',
             provider: 'USE SEGURANCA PRIVADA LTDA',
+            providerContactName: 'JOÃO CARLOS',
+            providerPhone: '11988776655',
             origin: 'SÃO PAULO, SP',
             destination: 'GUARULHOS, SP',
             startTime: testStart.toISOString(),
@@ -123,6 +127,20 @@ const MissionAlertMonitor: React.FC = () => {
 
             if (error || !missions) return;
 
+            const providerNames = [...new Set(missions.map(m => m.provider).filter(Boolean))];
+            let providerMap: Record<string, { contact_name: string; phone: string }> = {};
+            if (providerNames.length > 0) {
+                const { data: providers } = await supabase
+                    .from('providers')
+                    .select('name, contact_name, phone')
+                    .in('name', providerNames);
+                if (providers) {
+                    providers.forEach(p => {
+                        providerMap[p.name] = { contact_name: p.contact_name || '', phone: p.phone || '' };
+                    });
+                }
+            }
+
             let hasNewAlerts = false;
 
             missions.forEach(m => {
@@ -132,6 +150,7 @@ const MissionAlertMonitor: React.FC = () => {
 
                 if (minutesUntil <= ALERT_WINDOW_MINUTES && minutesUntil >= -30) {
                     const alertKey = `alert-${m.id}-${startDate.toISOString().split('T')[0]}`;
+                    const pInfo = providerMap[m.provider] || { contact_name: '', phone: '' };
 
                     if (!alertIdsRef.current.has(alertKey)) {
                         alertIdsRef.current.add(alertKey);
@@ -145,6 +164,8 @@ const MissionAlertMonitor: React.FC = () => {
                                 missionId: m.id,
                                 client: m.client || '—',
                                 provider: m.provider || '—',
+                                providerContactName: pInfo.contact_name,
+                                providerPhone: pInfo.phone,
                                 origin: m.origin || '—',
                                 destination: m.destination || '—',
                                 startTime: m.start_time,
@@ -261,7 +282,7 @@ const MissionAlertMonitor: React.FC = () => {
         const startFormatted = (() => {
             try { return new Date(alert.startTime).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }); } catch { return alert.startTime; }
         })();
-        return `🚨 *ATENÇÃO — MISSÃO PRÓXIMA DE INICIAR*\n\n📋 *OS:* ${alert.missionId}\n👤 *Cliente:* ${alert.client}\n🏢 *Fornecedor:* ${alert.provider}\n\n📍 *Origem:* ${alert.origin}\n📍 *Destino:* ${alert.destination}\n🕐 *Início:* ${startFormatted}\n\n🚗 *Motorista:* ${alert.driverName || 'Não informado'}\n📞 *Telefone:* ${alert.driverPhone ? formatPhone(alert.driverPhone) : 'Não informado'}\n\n⚠️ *Equipe, favor entrar em contato com o motorista para alinhar o ponto de encontro.*`;
+        return `🚨 *ATENÇÃO — MISSÃO PRÓXIMA DE INICIAR*\n\n📋 *OS:* ${alert.missionId}\n👤 *Cliente:* ${alert.client}\n🏢 *Fornecedor:* ${alert.provider}\n${alert.providerContactName ? `👷 *Contato:* ${alert.providerContactName}\n` : ''}📞 *Telefone Fornecedor:* ${alert.providerPhone ? formatPhone(alert.providerPhone) : 'Não informado'}\n\n📍 *Origem:* ${alert.origin}\n📍 *Destino:* ${alert.destination}\n🕐 *Início:* ${startFormatted}\n\n🚗 *Motorista:* ${alert.driverName || 'Não informado'}\n📞 *Tel Motorista:* ${alert.driverPhone ? formatPhone(alert.driverPhone) : 'Não informado'}\n\n⚠️ *Equipe, favor entrar em contato com o motorista para alinhar o ponto de encontro.*`;
     };
 
     const handleCopyContact = async (alert: MissionAlert) => {
@@ -281,10 +302,11 @@ const MissionAlertMonitor: React.FC = () => {
     };
 
     const handleWhatsAppDirect = (alert: MissionAlert) => {
-        if (!alert.driverPhone) return;
-        const phone = alert.driverPhone.replace(/\D/g, '');
+        if (!alert.providerPhone) return;
+        const phone = alert.providerPhone.replace(/\D/g, '');
         const fullPhone = phone.startsWith('55') ? phone : `55${phone}`;
-        const text = encodeURIComponent(`Olá ${alert.driverName || 'Motorista'}, tudo bem? Sou da equipe de escolta referente à OS ${alert.missionId}. Precisamos alinhar o ponto de encontro para a missão com início previsto. Podemos conversar?`);
+        const contactName = alert.providerContactName || alert.provider;
+        const text = encodeURIComponent(`Olá ${contactName}, tudo bem? Sou da equipe TMSEG referente à OS ${alert.missionId}.\n\nCliente: ${alert.client}\nOrigem: ${alert.origin}\nDestino: ${alert.destination}\n\nFavor entrar em contato com o motorista ${alert.driverName || ''} ${alert.driverPhone ? '(' + formatPhone(alert.driverPhone) + ')' : ''} para alinhar o ponto de encontro. Podemos confirmar?`);
         window.open(`https://wa.me/${fullPhone}?text=${text}`, '_blank');
     };
 
@@ -449,13 +471,13 @@ const MissionAlertMonitor: React.FC = () => {
                                             >
                                                 {copiedId === a.id ? <><CheckCircle2 size={10} /> Copiado!</> : <><MessageCircle size={10} /> Entre em Contato</>}
                                             </button>
-                                            {a.driverPhone && (
+                                            {a.providerPhone && (
                                                 <button
                                                     onClick={e => { e.stopPropagation(); handleWhatsAppDirect(a); }}
                                                     className="w-full flex items-center justify-center gap-1.5 bg-green-500 hover:bg-green-600 text-white font-black text-[8px] py-1.5 rounded-md transition-colors uppercase"
                                                     data-testid={`button-whatsapp-row-${a.missionId}`}
                                                 >
-                                                    <Phone size={10} /> WhatsApp Motorista
+                                                    <Phone size={10} /> WhatsApp Fornecedor
                                                 </button>
                                             )}
                                         </div>
@@ -544,6 +566,16 @@ const MissionAlertMonitor: React.FC = () => {
                                         <p className="font-black text-gray-900">{formatTime(detail.startTime)}</p>
                                     </div>
                                 </div>
+                                {(detail.providerContactName || detail.providerPhone) && (
+                                    <div className="flex items-start gap-2">
+                                        <Phone size={14} className="text-indigo-600 flex-shrink-0 mt-0.5" />
+                                        <div>
+                                            <p className="text-[9px] font-black text-gray-400 uppercase">Contato Fornecedor</p>
+                                            {detail.providerContactName && <p className="font-black text-gray-900">{detail.providerContactName}</p>}
+                                            {detail.providerPhone && <p className="font-mono text-indigo-700 text-[10px] font-bold">{formatPhone(detail.providerPhone)}</p>}
+                                        </div>
+                                    </div>
+                                )}
                                 {detail.driverName && (
                                     <div className="flex items-start gap-2">
                                         <Users size={14} className="text-teal-600 flex-shrink-0 mt-0.5" />
@@ -591,9 +623,9 @@ const MissionAlertMonitor: React.FC = () => {
                                     >
                                         {copiedId === detail.id ? <><CheckCircle2 size={12} /> Copiado para WhatsApp!</> : <><MessageCircle size={12} /> Entre em Contato — Copiar WhatsApp</>}
                                     </button>
-                                    {detail.driverPhone && (
+                                    {detail.providerPhone && (
                                         <button onClick={() => handleWhatsAppDirect(detail)} className="w-full flex items-center justify-center gap-1.5 bg-green-50 text-green-700 border border-green-300 hover:bg-green-100 font-black text-[10px] py-2.5 rounded-xl transition-colors uppercase" data-testid={`button-whatsapp-${detail.missionId}`}>
-                                            <Phone size={12} /> Abrir WhatsApp — {formatPhone(detail.driverPhone)}
+                                            <Phone size={12} /> WhatsApp Fornecedor — {formatPhone(detail.providerPhone)}
                                         </button>
                                     )}
                                 </div>
