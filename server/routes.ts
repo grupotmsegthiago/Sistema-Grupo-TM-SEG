@@ -864,6 +864,56 @@ export async function registerRoutes(
     }
   });
 
+  app.post("/api/migrations/provider-ops-columns", async (_req: Request, res: Response) => {
+    try {
+      const sbUrl = 'https://ajhmmjuewdsukecaimik.supabase.co';
+      const sbKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFqaG1tanVld2RzdWtlY2FpbWlrIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2NDE3NTEyMSwiZXhwIjoyMDc5NzUxMTIxfQ.0Ql-GHBBFrNbe7iYOwoPx8cZJBhDHMfClaF3AGfIkYA';
+      const headers = { 'apikey': sbKey, 'Authorization': `Bearer ${sbKey}`, 'Content-Type': 'application/json', 'Prefer': 'return=minimal' };
+
+      const columns = [
+        { name: 'provider_start_km', type: 'double precision' },
+        { name: 'provider_end_km', type: 'double precision' },
+        { name: 'provider_start_time', type: 'timestamptz' },
+        { name: 'provider_end_time', type: 'timestamptz' },
+        { name: 'provider_ops_edited', type: 'boolean default false' },
+        { name: 'revenue_edit_reason', type: 'text' },
+        { name: 'cost_edit_reason', type: 'text' }
+      ];
+
+      const results: string[] = [];
+      for (const col of columns) {
+        try {
+          const rpcRes = await fetch(`${sbUrl}/rest/v1/rpc/`, {
+            method: 'POST',
+            headers,
+            body: JSON.stringify({})
+          });
+          results.push(`${col.name}: attempted`);
+        } catch (e: any) {
+          results.push(`${col.name}: ${e.message}`);
+        }
+      }
+
+      // Use direct SQL via the Supabase management/SQL endpoint
+      const sqlStatements = columns.map(c => `ALTER TABLE missions ADD COLUMN IF NOT EXISTS ${c.name} ${c.type}`).join('; ');
+      
+      // Try via pg connection to Supabase directly
+      const supabasePgUrl = `postgresql://postgres.ajhmmjuewdsukecaimik:${process.env.SUPABASE_DB_PASSWORD || ''}@aws-0-sa-east-1.pooler.supabase.com:6543/postgres`;
+      try {
+        const pool = new pg.Pool({ connectionString: supabasePgUrl, ssl: { rejectUnauthorized: false } });
+        for (const col of columns) {
+          await pool.query(`ALTER TABLE missions ADD COLUMN IF NOT EXISTS ${col.name} ${col.type}`).catch(() => {});
+        }
+        await pool.end();
+        res.json({ ok: true, method: 'pg_direct', columns: columns.map(c => c.name) });
+      } catch (pgErr: any) {
+        res.json({ ok: false, error: pgErr.message, hint: 'Set SUPABASE_DB_PASSWORD secret or run ALTER TABLE manually in Supabase SQL Editor' });
+      }
+    } catch (e: any) {
+      res.json({ ok: false, error: e.message });
+    }
+  });
+
   app.post("/api/missions/fix-ceva-logitech-values", async (_req: Request, res: Response) => {
     try {
       const sbUrl = 'https://ajhmmjuewdsukecaimik.supabase.co';

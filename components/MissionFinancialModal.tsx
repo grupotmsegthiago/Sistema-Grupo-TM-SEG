@@ -467,35 +467,52 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
       setIsUpdating(true);
       isSavingRef.current = true;
       try {
-          const updatePayload: any = {
+          const userName = JSON.parse(localStorage.getItem('userData') || '{}').name || 'Usuário';
+          const provData: any = {
+              provider_start_km: provEditStartKm ? parseFloat(provEditStartKm) || null : null,
+              provider_end_km: provEditEndKm ? parseFloat(provEditEndKm) || null : null,
+              provider_start_time: provEditStartTime ? new Date(provEditStartTime).toISOString() : null,
+              provider_end_time: provEditEndTime ? new Date(provEditEndTime).toISOString() : null
+          };
+
+          let columnsExist = true;
+          const { error } = await supabase.from('missions').update({
+              provider_start_km: provData.provider_start_km,
+              provider_end_km: provData.provider_end_km,
+              provider_start_time: provData.provider_start_time,
+              provider_end_time: provData.provider_end_time,
               provider_ops_edited: true,
               last_update: new Date().toISOString(),
-              updated_by: JSON.parse(localStorage.getItem('userData') || '{}').name
-          };
-          if (provEditStartKm) updatePayload.provider_start_km = parseFloat(provEditStartKm) || null;
-          if (provEditEndKm) updatePayload.provider_end_km = parseFloat(provEditEndKm) || null;
-          if (provEditStartTime) updatePayload.provider_start_time = new Date(provEditStartTime).toISOString();
-          if (provEditEndTime) updatePayload.provider_end_time = new Date(provEditEndTime).toISOString();
+              updated_by: userName
+          }).eq('id', mission.id);
 
-          const { error } = await supabase.from('missions').update(updatePayload).eq('id', mission.id);
-          if (error) throw error;
+          if (error && error.message?.includes('does not exist')) {
+              columnsExist = false;
+          } else if (error) {
+              throw error;
+          }
 
           await supabase.from('system_logs').insert([{
-              user_name: updatePayload.updated_by || 'Usuário',
+              user_name: userName,
               action_type: 'PROVIDER_OPS_UPDATE',
               entity: 'Mission',
               entity_id: mission.id,
-              details: JSON.stringify({
-                  provider_start_km: updatePayload.provider_start_km || null,
-                  provider_end_km: updatePayload.provider_end_km || null,
-                  provider_start_time: updatePayload.provider_start_time || null,
-                  provider_end_time: updatePayload.provider_end_time || null
-              })
+              details: JSON.stringify({ ...provData, provider_ops_edited: true, columns_exist: columnsExist })
           }]);
 
-          setMission({ ...mission, ...updatePayload, provider_ops_edited: true });
+          if (!columnsExist) {
+              await supabase.from('missions').update({
+                  last_update: new Date().toISOString(),
+                  updated_by: userName
+              }).eq('id', mission.id);
+          }
+
+          setMission({ ...mission, ...provData, provider_ops_edited: true });
           setIsEditingProvOpsData(false);
-          showNotification('Salvo', 'Dados do fornecedor atualizados com sucesso.', 'success');
+          showNotification('Salvo', columnsExist 
+              ? 'Dados do fornecedor atualizados com sucesso.' 
+              : 'Dados do fornecedor registrados no log. Execute a migração SQL para persistência completa.',
+              columnsExist ? 'success' : 'info');
           if (onUpdate) onUpdate();
       } catch (e: any) {
           showNotification('Erro', e.message || 'Falha ao salvar dados do fornecedor.', 'error');
@@ -721,16 +738,29 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
               billing_verified_by: userName,
               last_update: new Date().toISOString()
           };
+          const reasonFields: any = {};
           if (revDivergent && revenueEditReason.trim()) {
-              basePayload.revenue_edit_reason = `[${userName} - ${new Date().toLocaleString('pt-BR')}] ${revenueEditReason.trim()}`;
+              reasonFields.revenue_edit_reason = `[${userName} - ${new Date().toLocaleString('pt-BR')}] ${revenueEditReason.trim()}`;
           }
           if (costDivergent && costEditReason.trim()) {
-              basePayload.cost_edit_reason = `[${userName} - ${new Date().toLocaleString('pt-BR')}] ${costEditReason.trim()}`;
+              reasonFields.cost_edit_reason = `[${userName} - ${new Date().toLocaleString('pt-BR')}] ${costEditReason.trim()}`;
           }
 
-          let result = await supabase.from('missions').update({ ...basePayload, toll_value_provider: tollProv }).eq('id', mission.id).select('id, revenue_value, cost_value, toll_value, last_update').single();
-          if (result.error && result.error.message?.includes('toll_value_provider')) {
-              result = await supabase.from('missions').update(basePayload).eq('id', mission.id).select('id, revenue_value, cost_value, toll_value, last_update').single();
+          let result = await supabase.from('missions').update({ ...basePayload, toll_value_provider: tollProv, ...reasonFields }).eq('id', mission.id).select('id, revenue_value, cost_value, toll_value, last_update').single();
+          if (result.error && result.error.message?.includes('does not exist')) {
+              result = await supabase.from('missions').update({ ...basePayload, toll_value_provider: tollProv }).eq('id', mission.id).select('id, revenue_value, cost_value, toll_value, last_update').single();
+              if (result.error && result.error.message?.includes('toll_value_provider')) {
+                  result = await supabase.from('missions').update(basePayload).eq('id', mission.id).select('id, revenue_value, cost_value, toll_value, last_update').single();
+              }
+              if (Object.keys(reasonFields).length > 0) {
+                  await supabase.from('system_logs').insert([{
+                      user_name: userName,
+                      action_type: 'VALUE_EDIT_REASON',
+                      entity: 'Mission',
+                      entity_id: mission.id,
+                      details: JSON.stringify(reasonFields)
+                  }]);
+              }
           }
           if (result.error) throw result.error;
           if (!result.data) throw new Error('Falha na persistência: registro não retornado após UPDATE');
@@ -816,8 +846,8 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
               billing_approved: isFullyApproved,
               billing_verified_by: userName,
               last_update: basePayload.last_update,
-              ...(basePayload.revenue_edit_reason ? { revenue_edit_reason: basePayload.revenue_edit_reason } : {}),
-              ...(basePayload.cost_edit_reason ? { cost_edit_reason: basePayload.cost_edit_reason } : {})
+              ...(reasonFields.revenue_edit_reason ? { revenue_edit_reason: reasonFields.revenue_edit_reason } : {}),
+              ...(reasonFields.cost_edit_reason ? { cost_edit_reason: reasonFields.cost_edit_reason } : {})
           } : prev);
 
           if (approve) {
