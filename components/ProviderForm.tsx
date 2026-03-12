@@ -492,7 +492,7 @@ const ProviderForm: React.FC<ProviderFormProps> = ({ onBack, onNavigateToVehicle
                     <MapPin className="text-red-600" size={18} />
                     <h3 className="font-black text-xs uppercase text-gray-700 tracking-widest">Localização e Contato</h3>
                 </div>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-4">
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
                     <div className="space-y-1.5">
                         <label className={LABEL_CLASS}>E-mail Comercial *</label>
                         <div className="relative">
@@ -516,8 +516,6 @@ const ProviderForm: React.FC<ProviderFormProps> = ({ onBack, onNavigateToVehicle
                         </div>
                         <p className="text-[9px] text-gray-400">Múltiplos separados por vírgula</p>
                     </div>
-                </div>
-                <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
                     <div className="space-y-1.5">
                         <label className={LABEL_CLASS}>Telefone / WhatsApp *</label>
                         <div className="relative">
