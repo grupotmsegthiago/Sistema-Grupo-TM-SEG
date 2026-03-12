@@ -359,7 +359,7 @@ const MissionCardComponent: React.FC<MissionCardProps> = ({
         const isLogitech = clientUpper.includes('CEVA') && (destUpper.includes('LOGITECH') || (mission as any).operation_type?.toUpperCase().includes('LOGITECH'));
 
         if (isLogitech || destUpper.includes('200KM')) return '200.0 KM';
-        if (destUpper.includes('02H') || destUpper.includes('100KM')) return '100.0 KM';
+        if ((destUpper.includes('02H') || destUpper.includes('02 HORAS') || destUpper.includes('100KM')) && clientUpper.includes('VTC')) return '100.0 KM';
         return `${mission.totalDistance || '0.0'} KM`;
     }, [mission.destination, mission.client, mission.totalDistance]);
 
@@ -444,8 +444,34 @@ Qualquer dúvida, estamos a disposição.
         return { missing, waitingDays, hasPartial, completedCount: (hasAuditor ? 1 : 0) + (hasFinanceiro ? 1 : 0) + (hasDiretoria ? 1 : 0) };
     }, [mission.billing_approved, mission.endTime, approvalStages]);
 
-    // Calcula o progresso visual para a barra (0 a 100)
-    const progressVisual = Math.min(100, Math.max(0, mission.progress || 0));
+    const { progressVisual, progressReal } = useMemo(() => {
+        const sKm = mission.startKm || 0;
+        const eKm = mission.endKm || 0;
+        const kmRodado = eKm > sKm ? (eKm - sKm) : (mission.traveledDistance || 0);
+
+        const destUpper = (mission.destination || '').toUpperCase();
+        const clientUpper = (mission.client || '').toUpperCase();
+        const isLogitech = clientUpper.includes('CEVA') && (destUpper.includes('LOGITECH') || (mission as any).operation_type?.toUpperCase()?.includes('LOGITECH'));
+        let plannedKm = mission.totalDistance || 0;
+        if (isLogitech || destUpper.includes('200KM')) plannedKm = 200;
+        else if ((destUpper.includes('02H') || destUpper.includes('02 HORAS') || destUpper.includes('100KM')) && clientUpper.includes('VTC')) plannedKm = 100;
+
+        if (mission.status === MissionStatus.COMPLETED) {
+            return { progressVisual: 100, progressReal: 100 };
+        }
+        if (mission.status === MissionStatus.CANCELLED || mission.status === MissionStatus.REFUSED) {
+            const fallback = mission.progress || 0;
+            return { progressVisual: Math.min(100, Math.max(0, fallback)), progressReal: fallback };
+        }
+
+        if (kmRodado > 0 && plannedKm > 0) {
+            const pct = (kmRodado / plannedKm) * 100;
+            return { progressVisual: Math.min(100, Math.max(0, Math.round(pct))), progressReal: Math.round(pct) };
+        }
+
+        const fallback = mission.progress || 0;
+        return { progressVisual: Math.min(100, Math.max(0, fallback)), progressReal: fallback };
+    }, [mission.startKm, mission.endKm, mission.traveledDistance, mission.totalDistance, mission.destination, mission.client, mission.progress, isTerminal]);
 
     return (<>
         <div 
@@ -667,7 +693,7 @@ Qualquer dúvida, estamos a disposição.
                                         {displayPlannedKm}
                                     </span>
                                 </div>
-                                <span className="text-[9px] font-black text-red-600 tabular-nums bg-red-50 px-1 rounded">{progressVisual.toFixed(0)}%</span>
+                                <span className={`text-[9px] font-black tabular-nums px-1 rounded ${progressReal > 100 ? 'text-amber-700 bg-amber-50 animate-pulse' : 'text-red-600 bg-red-50'}`}>{progressReal}%</span>
                             </div>
                             <div className="relative w-full h-2 bg-gray-200 rounded-full overflow-visible shadow-inner border border-gray-300">
                                 <div 

@@ -185,7 +185,7 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
 
     // CÁLCULO DE MEDIÇÃO OPERACIONAL SINCRONIZADO
     const missionTotals = useMemo(() => {
-        if (!mission) return { km: '0.0', time: '0h 0m', extraHours: 0, plannedKm: 0 };
+        if (!mission) return { km: '0.0', time: '0h 0m', extraHours: 0, plannedKm: 0, traveled: 0 };
         const sKm = parseNumber(editData.startKm);
         const eKm = parseNumber(editData.endKm);
         const traveled = eKm > sKm ? (eKm - sKm) : 0;
@@ -233,8 +233,21 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
             extraHours = Math.max(0, totalHours - (currentTable.franchise_hours || 0));
         }
 
-        return { km: traveled.toFixed(1), time: timeStr, extraHours, plannedKm };
+        return { km: traveled.toFixed(1), time: timeStr, extraHours, plannedKm, traveled };
     }, [editData, clientTables, mission]);
+
+    React.useEffect(() => {
+        if (missionTotals.traveled > 0 && missionTotals.plannedKm > 0) {
+            const pct = Math.round((missionTotals.traveled / missionTotals.plannedKm) * 100);
+            if (pct !== editData.manualProgress) {
+                setEditData(prev => ({ ...prev, manualProgress: pct }));
+            }
+        } else if (missionTotals.plannedKm > 0 && missionTotals.traveled === 0) {
+            if (editData.manualProgress !== 0) {
+                setEditData(prev => ({ ...prev, manualProgress: 0 }));
+            }
+        }
+    }, [missionTotals.traveled, missionTotals.plannedKm]);
 
     const loadMissionData = async () => {
         if (!mission) return;
@@ -556,7 +569,17 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
             }
 
             const plannedDist = missionTotals.plannedKm || 0;
-            const progressValue = finalStatus === MissionStatus.COMPLETED ? 100 : (plannedDist <= 0 ? 0 : editData.manualProgress);
+            const kmRodado = eKm > sKm ? (eKm - sKm) : 0;
+            let progressValue: number;
+            if (finalStatus === MissionStatus.COMPLETED) {
+                progressValue = 100;
+            } else if (kmRodado > 0 && plannedDist > 0) {
+                progressValue = Math.round((kmRodado / plannedDist) * 100);
+            } else if (plannedDist <= 0) {
+                progressValue = 0;
+            } else {
+                progressValue = editData.manualProgress;
+            }
 
             if (editData.agent1 && editData.agent1.trim() !== '' && 
                (finalStatus === MissionStatus.SOLICITED || finalStatus === MissionStatus.DOCUMENTATION)) {
@@ -1229,14 +1252,19 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
                                       <TrendingUp size={16} className="text-red-500" />
                                       <h4 className="text-[10px] font-black uppercase tracking-widest flex items-center gap-2">
                                           Progresso da Viagem: {editData.manualProgress}%
-                                          <span className="bg-red-600/20 text-red-500 px-2 py-0.5 rounded text-[8px] border border-red-500/30 animate-pulse flex items-center gap-1"><Zap size={8}/> CÁLCULO AUTOMÁTICO IA ATIVO</span>
+                                          {missionTotals.traveled > 0 && missionTotals.plannedKm > 0 && (
+                                              <span className="bg-emerald-600/20 text-emerald-400 px-2 py-0.5 rounded text-[8px] border border-emerald-500/30 font-mono">
+                                                  {missionTotals.traveled.toFixed(1)} / {missionTotals.plannedKm.toFixed(1)} KM
+                                              </span>
+                                          )}
+                                          <span className="bg-red-600/20 text-red-500 px-2 py-0.5 rounded text-[8px] border border-red-500/30 animate-pulse flex items-center gap-1"><Zap size={8}/> CÁLCULO AUTOMÁTICO</span>
                                       </h4>
                                   </div>
                               </div>
                               <div className="relative w-full h-3 bg-slate-800 rounded-full overflow-hidden shadow-inner border border-white/5">
                                   <div 
                                       className="h-full bg-gradient-to-r from-red-600 to-red-400 transition-all duration-1000 shadow-[0_0_15px_rgba(220,38,38,0.3)]" 
-                                      style={{ width: `${editData.manualProgress}%` }}
+                                      style={{ width: `${Math.min(100, editData.manualProgress)}%` }}
                                   ></div>
                               </div>
                               <div className="flex justify-between text-[8px] font-bold text-slate-600 uppercase tracking-widest">
