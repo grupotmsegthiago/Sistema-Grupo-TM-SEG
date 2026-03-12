@@ -315,17 +315,6 @@ const MissionAlertMonitor: React.FC = () => {
     const userRole2 = (ud2.role || '').toLowerCase();
     const isAdmin = ['administrador', 'diretoria', 'ceo'].includes(userRole2) || ud2.permissions?.includes('*');
 
-    if (activeAlerts.length === 0) {
-        if (!isAdmin) return null;
-        return (
-            <div className="fixed bottom-4 right-4 z-[45]" data-testid="mission-alert-test">
-                <button onClick={simulateTestAlert} className="flex items-center gap-2 bg-gray-800 hover:bg-gray-700 text-white font-black text-[10px] py-2.5 px-4 rounded-xl shadow-lg transition-colors uppercase tracking-wider border border-gray-600" data-testid="button-test-alert">
-                    <Bell size={14} /> Testar Alerta
-                </button>
-            </div>
-        );
-    }
-
     const lateCount = activeAlerts.filter(a => a.minutesUntilStart <= 0 && !a.acknowledged).length;
     const urgentCount = activeAlerts.filter(a => a.minutesUntilStart <= 15 && !a.acknowledged).length;
     const unackCount = activeAlerts.filter(a => !a.acknowledged && !a.declinedAt).length;
@@ -359,12 +348,16 @@ const MissionAlertMonitor: React.FC = () => {
                 <div
                     onClick={() => setExpanded(true)}
                     className={`cursor-pointer rounded-2xl shadow-2xl border-2 px-4 py-3 flex items-center gap-3 transition-all hover:scale-105 ${
-                        lateCount > 0 ? 'bg-red-700 border-red-500 animate-pulse' : urgentCount > 0 ? 'bg-red-600 border-red-400' : 'bg-amber-500 border-amber-400'
+                        activeAlerts.length === 0
+                            ? 'bg-gray-700 border-gray-500'
+                            : lateCount > 0 ? 'bg-red-700 border-red-500 animate-pulse'
+                            : urgentCount > 0 ? 'bg-red-600 border-red-400'
+                            : 'bg-amber-500 border-amber-400'
                     } text-white`}
                     data-testid="button-expand-alerts"
                 >
                     <div className="relative">
-                        <Bell size={22} className={unackCount > 0 ? 'animate-bounce' : ''} />
+                        <Shield size={22} />
                         {unackCount > 0 && (
                             <span className="absolute -top-2 -right-2 bg-white text-red-700 text-[9px] font-black w-5 h-5 rounded-full flex items-center justify-center shadow-lg">
                                 {unackCount}
@@ -372,14 +365,18 @@ const MissionAlertMonitor: React.FC = () => {
                         )}
                     </div>
                     <div className="min-w-0">
-                        <p className="text-xs font-black uppercase tracking-tight leading-none">
-                            {activeAlerts.length} Missão{activeAlerts.length > 1 ? 'ões' : ''} Próxima{activeAlerts.length > 1 ? 's' : ''}
-                        </p>
-                        <div className="flex items-center gap-2 mt-1">
-                            {lateCount > 0 && <span className="text-[8px] font-black bg-white/30 px-1.5 py-0.5 rounded">{lateCount} ATRASADA{lateCount > 1 ? 'S' : ''}</span>}
-                            {confirmedCount > 0 && <span className="text-[8px] font-black bg-green-400/40 px-1.5 py-0.5 rounded">{confirmedCount} OK</span>}
-                            <span className="text-[8px] font-bold opacity-70">toque para expandir</span>
-                        </div>
+                        <p className="text-[10px] font-black uppercase tracking-tight leading-none">Central de Alertas</p>
+                        <p className="text-[9px] font-bold opacity-80 mt-0.5">Fornecedor</p>
+                        {activeAlerts.length > 0 && (
+                            <div className="flex items-center gap-2 mt-1">
+                                <span className="text-[8px] font-black bg-white/20 px-1.5 py-0.5 rounded">{activeAlerts.length} OS</span>
+                                {lateCount > 0 && <span className="text-[8px] font-black bg-white/30 px-1.5 py-0.5 rounded">{lateCount} ATRASADA{lateCount > 1 ? 'S' : ''}</span>}
+                                {confirmedCount > 0 && <span className="text-[8px] font-black bg-green-400/40 px-1.5 py-0.5 rounded">{confirmedCount} OK</span>}
+                            </div>
+                        )}
+                        {activeAlerts.length === 0 && (
+                            <p className="text-[8px] font-bold opacity-60 mt-0.5">Nenhuma OS próxima</p>
+                        )}
                     </div>
                     <Maximize2 size={16} className="flex-shrink-0 opacity-70" />
                 </div>
@@ -403,6 +400,11 @@ const MissionAlertMonitor: React.FC = () => {
                         {lateCount > 0 && <span className="bg-white text-red-700 text-[8px] font-black px-2 py-0.5 rounded-full animate-pulse">{lateCount} ATRASADA{lateCount > 1 ? 'S' : ''}</span>}
                     </div>
                     <div className="flex items-center gap-1">
+                        {isAdmin && (
+                            <button onClick={e => { e.stopPropagation(); simulateTestAlert(); }} className="px-2 py-1 bg-white/15 hover:bg-white/25 rounded-lg transition-colors text-[8px] font-black uppercase tracking-wider" data-testid="button-test-alert">
+                                Testar
+                            </button>
+                        )}
                         <button onClick={e => { e.stopPropagation(); setSoundEnabled(!soundEnabled); }} className="p-1.5 hover:bg-white/10 rounded-lg transition-colors" data-testid="button-toggle-sound">
                             <Volume2 size={14} className={soundEnabled ? 'opacity-100' : 'opacity-40'} />
                         </button>
@@ -415,6 +417,13 @@ const MissionAlertMonitor: React.FC = () => {
                 <div className="flex flex-1 overflow-hidden bg-white">
 
                     <div className={`overflow-y-auto divide-y divide-gray-100 flex-shrink-0 ${detail ? 'w-[180px] border-r border-gray-200' : 'w-full'}`}>
+                        {sorted.length === 0 && (
+                            <div className="p-6 text-center">
+                                <Shield size={32} className="mx-auto text-gray-300 mb-2" />
+                                <p className="text-sm font-black text-gray-500 uppercase">Nenhuma OS próxima</p>
+                                <p className="text-[10px] text-gray-400 mt-1">Missões dentro de 1 hora aparecerão aqui</p>
+                            </div>
+                        )}
                         {sorted.map(a => {
                             const isLate = a.minutesUntilStart <= 0 && !a.acknowledged;
                             const isSelected = selectedAlert === a.id;
