@@ -303,9 +303,8 @@ const MissionCardComponent: React.FC<MissionCardProps> = ({
         const dbToll = Math.max(0, mission.toll_value || 0);
         const storedValue = (mission.revenue_value || 0) + dbToll;
         const hasStoredRevenue = (mission.revenue_value != null && mission.revenue_value > 0);
-        const isVerifiedZeroRevenue = (mission.revenue_value === 0 || mission.revenue_value === null) && (mission.billing_approved || (mission as any).billing_verified_by);
         
-        if (hasStoredRevenue || isVerifiedZeroRevenue) {
+        if (hasStoredRevenue || mission.billing_approved || hasBeenVerified) {
             return storedValue;
         }
         
@@ -314,15 +313,14 @@ const MissionCardComponent: React.FC<MissionCardProps> = ({
         }
 
         return storedValue;
-    }, [mission.revenue_value, mission.toll_value, mission.billing_approved, financials]);
+    }, [mission.revenue_value, mission.toll_value, mission.billing_approved, hasBeenVerified, financials]);
 
     const displayCost = useMemo(() => {
         const tollProv = Math.max(0, mission.toll_value_provider != null ? mission.toll_value_provider : (mission.toll_value || 0));
         const storedValue = (mission.cost_value || 0) + tollProv;
         const hasStoredCost = (mission.cost_value != null && mission.cost_value > 0);
-        const isVerifiedZeroCost = (mission.cost_value === 0 || mission.cost_value === null) && (mission.billing_approved || (mission as any).billing_verified_by);
         
-        if (hasStoredCost || isVerifiedZeroCost) {
+        if (hasStoredCost || mission.billing_approved || hasBeenVerified) {
             return storedValue;
         }
 
@@ -331,7 +329,7 @@ const MissionCardComponent: React.FC<MissionCardProps> = ({
         }
         
         return storedValue;
-    }, [mission.cost_value, mission.toll_value, mission.toll_value_provider, mission.billing_approved, financials]);
+    }, [mission.cost_value, mission.toll_value, mission.toll_value_provider, mission.billing_approved, hasBeenVerified, financials]);
 
     const isActive = !isTerminal;
 
