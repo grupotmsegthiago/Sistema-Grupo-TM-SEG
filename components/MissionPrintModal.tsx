@@ -161,34 +161,47 @@ const MissionPrintModal: React.FC<Props> = ({ mission, onClose }) => {
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
       
-      {/* CSS Específico para Impressão Limpa */}
+      {/* CSS Específico para Impressão Limpa — Página Única sem Duplicatas */}
       <style>{`
         @media print {
-          @page { margin: 10mm; size: A4; }
-          body {
+          @page {
+            size: A4;
+            margin: 5mm;
+          }
+          html, body {
+            height: 100% !important;
+            overflow: hidden !important;
+            margin: 0 !important;
+            padding: 0 !important;
             -webkit-print-color-adjust: exact !important;
             print-color-adjust: exact !important;
           }
           body * {
-            visibility: hidden;
+            visibility: hidden !important;
           }
           #print-content, #print-content * {
-            visibility: visible;
+            visibility: visible !important;
           }
           #print-content {
-            position: fixed;
-            left: 0;
-            top: 0;
-            width: 100%;
-            height: auto;
-            margin: 0;
-            padding: 10px;
-            background: white;
-            z-index: 9999;
-            box-shadow: none;
-            overflow: visible;
+            position: fixed !important;
+            left: 0 !important;
+            top: 0 !important;
+            width: 100% !important;
+            height: 100vh !important;
+            margin: 0 !important;
+            padding: 5mm !important;
+            background: white !important;
+            z-index: 99999 !important;
+            box-shadow: none !important;
+            overflow: hidden !important;
+            page-break-after: avoid !important;
+            page-break-inside: avoid !important;
             -webkit-print-color-adjust: exact !important;
             print-color-adjust: exact !important;
+          }
+          #print-content > div {
+            page-break-after: avoid !important;
+            page-break-inside: avoid !important;
           }
           .no-print { display: none !important; }
         }
