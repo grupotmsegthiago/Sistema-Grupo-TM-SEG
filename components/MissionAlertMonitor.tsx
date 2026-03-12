@@ -173,7 +173,7 @@ const MissionAlertMonitor: React.FC = () => {
                 const startDate = new Date(m.start_time);
                 const minutesUntil = Math.round((startDate.getTime() - now.getTime()) / 60_000);
 
-                const isVTR = (m.client || '').toUpperCase().includes('VTR');
+                const isVTR = (m.client || '').toUpperCase().includes('VTC');
                 const clientAlertWindow = isVTR ? 30 : ALERT_WINDOW_MINUTES;
 
                 if (minutesUntil <= clientAlertWindow && minutesUntil >= -30) {
