@@ -101,6 +101,7 @@ const MissionAlertMonitor: React.FC = () => {
     const audioRef = useRef<HTMLAudioElement | null>(null);
     const alertIdsRef = useRef<Set<string>>(new Set());
     const lastEscalationRef = useRef<Map<string, number>>(new Map());
+    const alertsRef = useRef<MissionAlert[]>([]);
 
     const playAlertSound = useCallback(() => {
         if (!soundEnabled) return;
@@ -129,6 +130,27 @@ const MissionAlertMonitor: React.FC = () => {
                 .order('start_time', { ascending: true });
 
             if (error || !missions) return;
+
+            const currentAlerts = alertsRef.current;
+            const activeMissionIds = new Set(currentAlerts.filter(a => !a.dismissed).map(a => a.missionId));
+            if (activeMissionIds.size > 0) {
+                const { data: statusCheck } = await supabase
+                    .from('missions')
+                    .select('id, status')
+                    .in('id', [...activeMissionIds]);
+                if (statusCheck) {
+                    const arrivedIds = new Set(
+                        statusCheck
+                            .filter(m => ['Origem', 'Em Trânsito', 'Destino', 'Finalizada', 'Concluída', 'Cancelada'].includes(m.status))
+                            .map(m => m.id)
+                    );
+                    if (arrivedIds.size > 0) {
+                        setAlerts(prev => prev.map(a =>
+                            arrivedIds.has(a.missionId) ? { ...a, dismissed: true } : a
+                        ));
+                    }
+                }
+            }
 
             const providerNames = [...new Set(missions.map(m => m.provider).filter(Boolean))];
             let providerMap: Record<string, { contact_name: string; phone: string }> = {};
@@ -211,6 +233,8 @@ const MissionAlertMonitor: React.FC = () => {
             console.error('[AlertMonitor] Erro:', e);
         }
     }, [playAlertSound]);
+
+    useEffect(() => { alertsRef.current = alerts; }, [alerts]);
 
     useEffect(() => {
         const timer = setTimeout(() => checkMissions(), 3000);
