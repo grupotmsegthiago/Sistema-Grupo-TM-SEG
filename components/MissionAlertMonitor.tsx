@@ -473,6 +473,14 @@ const MissionAlertMonitor: React.FC = () => {
                                         <div className="text-[8px] font-bold text-gray-600 truncate">{a.client}</div>
                                     )}
 
+                                    {!detail && a.minutesUntilStart <= 30 && !a.acknowledged && (
+                                        <div className="mt-2 bg-orange-100 border border-orange-300 rounded-md p-1.5">
+                                            <p className="text-[8px] font-black text-orange-800 uppercase flex items-center gap-1">
+                                                <AlertTriangle size={9} /> OBRIGATÓRIO: Entrar em contato com o fornecedor!
+                                            </p>
+                                        </div>
+                                    )}
+
                                     {!detail && !a.acknowledged && !a.declinedAt && (
                                         <div className="space-y-1.5 mt-2">
                                             <div className="flex gap-1.5">
@@ -524,6 +532,15 @@ const MissionAlertMonitor: React.FC = () => {
                                             >
                                                 {copiedId === a.id ? <><CheckCircle2 size={10} /> Copiado!</> : <><MessageCircle size={10} /> Entre em Contato</>}
                                             </button>
+                                            {a.providerPhone && (
+                                                <button
+                                                    onClick={e => { e.stopPropagation(); handleWhatsAppDirect(a); }}
+                                                    className="w-full flex items-center justify-center gap-1.5 bg-green-500 hover:bg-green-600 text-white font-black text-[8px] py-1.5 rounded-md transition-colors uppercase"
+                                                    data-testid={`button-whatsapp-waiting-row-${a.missionId}`}
+                                                >
+                                                    <Phone size={10} /> WhatsApp Fornecedor
+                                                </button>
+                                            )}
                                         </div>
                                     )}
                                 </div>
@@ -609,12 +626,28 @@ const MissionAlertMonitor: React.FC = () => {
                                 )}
                             </div>
 
-                            {detail.minutesUntilStart <= 0 && !detail.acknowledged && (
-                                <div className="bg-red-200 border-2 border-red-400 rounded-xl p-3 mb-4 animate-pulse">
-                                    <p className="text-[11px] font-black text-red-900 uppercase flex items-center gap-1">
-                                        <AlertTriangle size={14} /> MISSÃO ATRASADA SEM CONFIRMAÇÃO!
+                            {detail.minutesUntilStart <= 30 && !detail.acknowledged && (
+                                <div className={`border-2 rounded-xl p-3 mb-4 ${
+                                    detail.minutesUntilStart <= 0
+                                        ? 'bg-red-200 border-red-400 animate-pulse'
+                                        : detail.minutesUntilStart <= 15
+                                            ? 'bg-red-100 border-red-300'
+                                            : 'bg-orange-100 border-orange-300'
+                                }`}>
+                                    <p className={`text-[11px] font-black uppercase flex items-center gap-1 ${
+                                        detail.minutesUntilStart <= 0 ? 'text-red-900' : detail.minutesUntilStart <= 15 ? 'text-red-800' : 'text-orange-800'
+                                    }`}>
+                                        <AlertTriangle size={14} />
+                                        {detail.minutesUntilStart <= 0
+                                            ? 'MISSÃO ATRASADA SEM CONFIRMAÇÃO!'
+                                            : 'OBRIGATÓRIO: Entrar em contato com o fornecedor!'
+                                        }
                                     </p>
-                                    <p className="text-[10px] font-bold text-red-800 mt-1">Entrar em contato com equipe imediatamente.</p>
+                                    <p className={`text-[10px] font-bold mt-1 ${
+                                        detail.minutesUntilStart <= 0 ? 'text-red-800' : 'text-orange-700'
+                                    }`}>
+                                        Equipe, favor entrar em contato com o motorista para alinhar o ponto de encontro.
+                                    </p>
                                 </div>
                             )}
 
