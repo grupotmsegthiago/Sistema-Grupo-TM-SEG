@@ -223,7 +223,7 @@ export async function sendTestEmail(to: string): Promise<boolean> {
     <p>Este é um e-mail de teste do sistema de automação do <strong>Grupo TM SEG</strong>.</p>
     <p>Se você recebeu este e-mail, a configuração SMTP está funcionando corretamente.</p>
     <table class="info-table">
-      <tr><td>Remetente</td><td>${SMTP_USER}</td></tr>
+      <tr><td>Remetente</td><td>${EMAIL_USER}</td></tr>
       <tr><td>Destinatário</td><td>${to}</td></tr>
       <tr><td>Data/Hora</td><td>${formatDateTime(new Date().toISOString())}</td></tr>
     </table>
