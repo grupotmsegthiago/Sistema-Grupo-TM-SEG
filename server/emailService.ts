@@ -1,7 +1,8 @@
 import nodemailer from 'nodemailer';
 
-const SMTP_USER = 'adm@grupotmseg.com.br';
-const SMTP_PASS = process.env.SMTP_PASSWORD || '';
+const EMAIL_USER = process.env.EMAIL_USER || 'adm@grupotmseg.com.br';
+const EMAIL_PASS = process.env.EMAIL_PASS || process.env.SMTP_PASSWORD || '';
+const SMTP_FROM = `"Grupo TM SEG" <adm@grupotmseg.com.br>`;
 const BCC_RECIPIENTS = 'thiago@grupotmseg.com.br, operacional@grupotmseg.com.br';
 
 const transporter = nodemailer.createTransport({
@@ -9,17 +10,17 @@ const transporter = nodemailer.createTransport({
   port: 587,
   secure: false,
   auth: {
-    user: SMTP_USER,
-    pass: SMTP_PASS,
+    user: EMAIL_USER,
+    pass: EMAIL_PASS,
   },
   tls: {
-    minVersion: 'TLSv1.2',
     ciphers: 'SSLv3',
+    rejectUnauthorized: false,
   },
   requireTLS: true,
 });
 
-console.log(`[Email] SMTP configurado: ${SMTP_USER} | senha: ${SMTP_PASS ? '***configurada***' : '⚠ VAZIA'}`);
+console.log(`[Email] SMTP configurado: ${EMAIL_USER} | from: adm@grupotmseg.com.br | senha: ${EMAIL_PASS ? '***configurada***' : '⚠ VAZIA'}`);
 
 function baseTemplate(content: string): string {
   return `<!DOCTYPE html>
@@ -118,7 +119,7 @@ export async function sendMissionEmailToClient(
 
   try {
     await transporter.sendMail({
-      from: `"Grupo TM SEG" <${SMTP_USER}>`,
+      from: SMTP_FROM,
       to: clientEmail,
       bcc: BCC_RECIPIENTS,
       subject: `OS Nº ${mission.id} — Nova Missão de Escolta Registrada`,
@@ -158,7 +159,7 @@ export async function sendMissionEmailToProvider(
 
   try {
     await transporter.sendMail({
-      from: `"Grupo TM SEG" <${SMTP_USER}>`,
+      from: SMTP_FROM,
       to: providerEmail,
       bcc: BCC_RECIPIENTS,
       subject: `OS Nº ${mission.id} — Ordem de Serviço Atribuída`,
@@ -202,7 +203,7 @@ export async function sendWelcomeEmail(user: WelcomeEmailData, systemUrl: string
 
   try {
     await transporter.sendMail({
-      from: `"Grupo TM SEG" <${SMTP_USER}>`,
+      from: SMTP_FROM,
       to: user.email,
       bcc: BCC_RECIPIENTS,
       subject: `Bem-vindo(a) ao Grupo TM SEG — Suas Credenciais de Acesso`,
@@ -231,7 +232,7 @@ export async function sendTestEmail(to: string): Promise<boolean> {
 
   try {
     await transporter.sendMail({
-      from: `"Grupo TM SEG" <${SMTP_USER}>`,
+      from: SMTP_FROM,
       to,
       bcc: BCC_RECIPIENTS,
       subject: `Teste — Sistema de E-mails Grupo TM SEG`,
