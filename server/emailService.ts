@@ -14,8 +14,12 @@ const transporter = nodemailer.createTransport({
   },
   tls: {
     minVersion: 'TLSv1.2',
+    ciphers: 'SSLv3',
   },
+  requireTLS: true,
 });
+
+console.log(`[Email] SMTP configurado: ${SMTP_USER} | senha: ${SMTP_PASS ? '***configurada***' : '⚠ VAZIA'}`);
 
 function baseTemplate(content: string): string {
   return `<!DOCTYPE html>
