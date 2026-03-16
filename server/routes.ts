@@ -159,11 +159,13 @@ export async function registerRoutes(
     }
   });
 
-  // Supabase Realtime listener for push notifications
-  const supabaseForPush = createClient(
+  const supabase = createClient(
     'https://ajhmmjuewdsukecaimik.supabase.co',
     'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFqaG1tanVld2RzdWtlY2FpbWlrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjQxNzUxMjEsImV4cCI6MjA3OTc1MTEyMX0.5bXRWTyb1HxLimt3lqJTBfjzDoumux7TXlW4lycXrPk'
   );
+
+  // Supabase Realtime listener for push notifications
+  const supabaseForPush = supabase;
 
   supabaseForPush
     .channel('server-push-missions')
@@ -342,7 +344,7 @@ export async function registerRoutes(
       if (!missionId || !client || !imageUrl) return res.status(400).json({ error: 'Dados obrigatórios ausentes' });
 
       const { data: clientData } = await supabase.from('clients').select('*').eq('name', client).single();
-      const clientEmail = clientData?.os_email || clientData?.email;
+      const clientEmail = clientData?.operational_email || clientData?.email;
       if (!clientEmail) return res.status(400).json({ error: 'Cliente sem e-mail cadastrado' });
 
       const missionData = { id: missionId, client, origin: origin || '', destination: destination || '', start_time: start_time || '', mission_type: mission_type || 'Caracterizada' };
@@ -363,7 +365,7 @@ export async function registerRoutes(
       if (!missionRow) return res.status(404).json({ error: 'Missão não encontrada' });
 
       const { data: clientData } = await supabase.from('clients').select('*').eq('name', missionRow.client).single();
-      const clientEmail = clientData?.os_email || clientData?.email;
+      const clientEmail = clientData?.operational_email || clientData?.email;
 
       let vehiclePlate = '—';
       if (missionRow.vehicle_id) {
