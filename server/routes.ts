@@ -247,6 +247,38 @@ export async function registerRoutes(
     }
   });
 
+  app.post("/api/email/test-mission-emails", async (req: Request, res: Response) => {
+    try {
+      const { to } = req.body;
+      if (!to) return res.status(400).json({ error: 'Campo "to" obrigatório' });
+
+      const fakeMission = {
+        id: 'GTM-2026-0001',
+        client: 'CEVA Logística',
+        provider: 'MACOR Segurança',
+        origin: 'São Paulo, SP — CD Guarulhos',
+        destination: 'Campinas, SP — CD Hortolândia',
+        start_time: new Date().toISOString(),
+        mission_type: 'Escolta Caracterizada',
+        driver_name: 'José Carlos da Silva',
+        driver_phone: '(11) 99999-8888',
+        client_vehicle: 3,
+        revenue_value: 1850.00,
+        cost_value: 1200.00,
+      };
+
+      const clientOk = await sendMissionEmailToClient(fakeMission, to, 'ABC-1D23');
+      const providerOk = await sendMissionEmailToProvider(fakeMission, to, 'ABC-1D23');
+
+      res.json({
+        clientEmail: { success: clientOk, message: clientOk ? 'E-mail CLIENTE enviado!' : 'Falha no e-mail do cliente' },
+        providerEmail: { success: providerOk, message: providerOk ? 'E-mail FORNECEDOR enviado!' : 'Falha no e-mail do fornecedor' },
+      });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   app.post("/api/email/welcome", async (req: Request, res: Response) => {
     try {
       const { name, email, password, userType, profileName } = req.body;
