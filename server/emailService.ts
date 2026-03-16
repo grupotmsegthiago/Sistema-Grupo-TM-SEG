@@ -127,8 +127,9 @@ export async function sendMissionEmailToClient(
     <p>Informamos que uma nova missão de escolta foi registrada para a sua empresa. Seguem os detalhes:</p>
     <table class="info-table">
       <tr><td>Nº da OS</td><td><span class="badge">${formatOS(mission.id)}</span></td></tr>
-      <tr><td>Rota</td><td>${mission.origin} → ${mission.destination}</td></tr>
-      <tr><td>Viatura (Placa)</td><td>${vehiclePlate || '—'}</td></tr>
+      <tr><td>Origem</td><td>${mission.origin || '—'}</td></tr>
+      <tr><td>Destino</td><td>${mission.destination || '—'}</td></tr>
+      <tr><td>Viatura (Placa / Modelo)</td><td>${vehiclePlate || '—'}</td></tr>
       <tr><td>Tipo de Escolta</td><td>${mission.mission_type || 'Caracterizada'}</td></tr>
       <tr><td>Agendamento</td><td>${formatDateTime(mission.start_time)}</td></tr>
     </table>
@@ -186,8 +187,9 @@ export async function sendMissionEmailToProvider(
     <p>Uma nova ordem de serviço foi atribuída à sua empresa. Seguem os detalhes operacionais:</p>
     <table class="info-table">
       <tr><td>Nº da OS</td><td><span class="badge">${formatOS(mission.id)}</span></td></tr>
-      <tr><td>Rota</td><td>${mission.origin} → ${mission.destination}</td></tr>
-      <tr><td>Viatura (Placa)</td><td>${vehiclePlate || '—'}</td></tr>
+      <tr><td>Origem</td><td>${mission.origin || '—'}</td></tr>
+      <tr><td>Destino</td><td>${mission.destination || '—'}</td></tr>
+      <tr><td>Veículo / Carga (Placa)</td><td>${vehiclePlate || '—'}</td></tr>
       <tr><td>Tipo de Escolta</td><td>${escoltaTipo}</td></tr>
       <tr><td>Agendamento</td><td>${formatDateTime(mission.start_time)}</td></tr>
       ${mission.driver_name ? `<tr><td>Motorista</td><td>${mission.driver_name}</td></tr>` : ''}
@@ -283,8 +285,9 @@ export async function sendMissionResendToClient(
     <table class="info-table">
       <tr><td>Nº da OS</td><td><span class="badge">${formatOS(mission.id)}</span></td></tr>
       <tr><td>Cliente</td><td>${mission.client}</td></tr>
-      <tr><td>Rota</td><td>${mission.origin} → ${mission.destination}</td></tr>
-      <tr><td>Viatura (Placa)</td><td>${vehiclePlate || '—'}</td></tr>
+      <tr><td>Origem</td><td>${mission.origin || '—'}</td></tr>
+      <tr><td>Destino</td><td>${mission.destination || '—'}</td></tr>
+      <tr><td>Viatura (Placa / Modelo)</td><td>${vehiclePlate || '—'}</td></tr>
       <tr><td>Tipo de Escolta</td><td>${mission.mission_type || 'Caracterizada'}</td></tr>
       <tr><td>Agendamento</td><td>${formatDateTime(mission.start_time)}</td></tr>
       ${mission.driver_name ? `<tr><td>Motorista</td><td>${mission.driver_name}</td></tr>` : ''}
@@ -336,8 +339,9 @@ export async function sendMirroringEvidenceEmail(
     <p>Segue a evidência do espelhamento tático da viatura para a missão de escolta em andamento:</p>
     <table class="info-table">
       <tr><td>Nº da OS</td><td><span class="badge">${formatOS(mission.id)}</span></td></tr>
-      <tr><td>Rota</td><td>${mission.origin} → ${mission.destination}</td></tr>
-      <tr><td>Viatura (Placa)</td><td>${vehiclePlate || '—'}</td></tr>
+      <tr><td>Origem</td><td>${mission.origin || '—'}</td></tr>
+      <tr><td>Destino</td><td>${mission.destination || '—'}</td></tr>
+      <tr><td>Viatura (Placa / Modelo)</td><td>${vehiclePlate || '—'}</td></tr>
       <tr><td>Tipo de Escolta</td><td>${mission.mission_type || 'Caracterizada'}</td></tr>
       <tr><td>Agendamento</td><td>${formatDateTime(mission.start_time)}</td></tr>
     </table>

@@ -282,12 +282,18 @@ export async function registerRoutes(
         mission_type: mission_type || missionCheck.mission_type || 'Caracterizada',
       };
 
-      const plate = vehiclePlate || missionCheck.client_vehicle || '';
+      let clientVehicleLabel = vehiclePlate || '';
+      if (missionCheck.client_vehicle_id) {
+        const { data: cv } = await supabase.from('client_vehicles').select('plate, model').eq('id', missionCheck.client_vehicle_id).single();
+        if (cv) clientVehicleLabel = cv.model ? `${cv.plate} / ${cv.model}` : cv.plate;
+      }
+      if (!clientVehicleLabel) clientVehicleLabel = missionCheck.client_vehicle || '';
+
       const driverName = missionCheck.driver_name || '';
       const driverPhone = missionCheck.driver_phone || '';
 
       const missingFields: string[] = [];
-      if (!plate || plate === '—' || plate === '') missingFields.push('Placa da viatura');
+      if (!clientVehicleLabel || clientVehicleLabel === '—' || clientVehicleLabel === '') missingFields.push('Placa da viatura');
       if (!driverName) missingFields.push('Nome do motorista');
       if (!driverPhone) missingFields.push('Telefone do motorista');
       if (!missionData.origin) missingFields.push('Origem');
@@ -307,11 +313,11 @@ export async function registerRoutes(
       if (!clientEmail) {
         const fallback = 'operacional@grupotmseg.com.br';
         const alertMission = { ...missionData, _noEmailAlert: true, _alertEntity: 'Cliente', _alertName: missionData.client };
-        const success = await sendMissionEmailToClient(alertMission, fallback, plate);
+        const success = await sendMissionEmailToClient(alertMission, fallback, clientVehicleLabel);
         return res.json({ success, message: success ? `⚠️ Cliente "${missionData.client}" sem e-mail — notificação enviada para operacional.` : 'Falha ao enviar' });
       }
 
-      const success = await sendMissionEmailToClient(missionData, clientEmail, plate);
+      const success = await sendMissionEmailToClient(missionData, clientEmail, clientVehicleLabel);
       res.json({ success, message: success ? 'E-mail de agendamento enviado ao cliente!' : 'Falha ao enviar' });
     } catch (err: any) {
       console.error('[Email] Erro mission-scheduled:', err.message);
@@ -339,10 +345,15 @@ export async function registerRoutes(
         driver_phone: driver_phone || missionCheck.driver_phone || '',
       };
 
-      const plate = vehiclePlate || missionCheck.client_vehicle || '';
+      let cargoVehicleLabel = vehiclePlate || '';
+      if (missionCheck.vehicle_id) {
+        const { data: veh } = await supabase.from('vehicles').select('plate, model').eq('id', missionCheck.vehicle_id).single();
+        if (veh) cargoVehicleLabel = veh.model ? `${veh.plate} / ${veh.model}` : veh.plate;
+      }
+      if (!cargoVehicleLabel) cargoVehicleLabel = missionCheck.client_vehicle || '';
 
       const missingFields: string[] = [];
-      if (!plate || plate === '—' || plate === '') missingFields.push('Placa da viatura');
+      if (!cargoVehicleLabel || cargoVehicleLabel === '—' || cargoVehicleLabel === '') missingFields.push('Placa do veículo/carga');
       if (!missionData.driver_name) missingFields.push('Nome do motorista');
       if (!missionData.driver_phone) missingFields.push('Telefone do motorista');
       if (!missionData.origin) missingFields.push('Origem');
@@ -362,11 +373,11 @@ export async function registerRoutes(
       if (!provEmail) {
         const fallback = 'operacional@grupotmseg.com.br';
         const alertMission = { ...missionData, _noEmailAlert: true, _alertEntity: 'Fornecedor', _alertName: missionData.provider };
-        const success = await sendMissionEmailToProvider(alertMission, fallback, plate);
+        const success = await sendMissionEmailToProvider(alertMission, fallback, cargoVehicleLabel);
         return res.json({ success, message: success ? `⚠️ Fornecedor "${missionData.provider}" sem e-mail — notificação enviada para operacional.` : 'Falha ao enviar' });
       }
 
-      const success = await sendMissionEmailToProvider(missionData, provEmail, plate);
+      const success = await sendMissionEmailToProvider(missionData, provEmail, cargoVehicleLabel);
       res.json({ success, message: success ? 'E-mail de solicitação enviado ao fornecedor!' : 'Falha ao enviar' });
     } catch (err: any) {
       console.error('[Email] Erro mission-solicited:', err.message);
@@ -383,8 +394,16 @@ export async function registerRoutes(
       const clientEmail = clientData?.operational_email || clientData?.email;
       if (!clientEmail) return res.status(400).json({ error: 'Cliente sem e-mail cadastrado' });
 
+      let clientVehicleLabel = vehiclePlate || '';
+      const { data: missionRow } = await supabase.from('missions').select('client_vehicle_id, client_vehicle').eq('id', missionId).single();
+      if (missionRow?.client_vehicle_id) {
+        const { data: cv } = await supabase.from('client_vehicles').select('plate, model').eq('id', missionRow.client_vehicle_id).single();
+        if (cv) clientVehicleLabel = cv.model ? `${cv.plate} / ${cv.model}` : cv.plate;
+      }
+      if (!clientVehicleLabel && missionRow?.client_vehicle) clientVehicleLabel = missionRow.client_vehicle;
+
       const missionData = { id: missionId, client, origin: origin || '', destination: destination || '', start_time: start_time || '', mission_type: mission_type || 'Caracterizada' };
-      const success = await sendMirroringEvidenceEmail(missionData, clientEmail, vehiclePlate || '', imageUrl);
+      const success = await sendMirroringEvidenceEmail(missionData, clientEmail, clientVehicleLabel, imageUrl);
       res.json({ success, message: success ? 'E-mail de evidência de espelhamento enviado ao cliente!' : 'Falha ao enviar' });
     } catch (err: any) {
       console.error('[Email] Erro mirroring-evidence:', err.message);
@@ -403,10 +422,12 @@ export async function registerRoutes(
       const { data: clientData } = await supabase.from('clients').select('*').eq('name', missionRow.client).single();
       const clientEmail = clientData?.operational_email || clientData?.email;
 
-      let vehiclePlate = '—';
-      if (missionRow.vehicle_id) {
-        const { data: veh } = await supabase.from('vehicles').select('plate').eq('id', missionRow.vehicle_id).single();
-        if (veh?.plate) vehiclePlate = veh.plate;
+      let clientVehicleLabel = '—';
+      if (missionRow.client_vehicle_id) {
+        const { data: cv } = await supabase.from('client_vehicles').select('plate, model').eq('id', missionRow.client_vehicle_id).single();
+        if (cv) clientVehicleLabel = cv.model ? `${cv.plate} / ${cv.model}` : cv.plate;
+      } else if (missionRow.client_vehicle) {
+        clientVehicleLabel = missionRow.client_vehicle;
       }
 
       const missionData: any = {
@@ -428,7 +449,7 @@ export async function registerRoutes(
         missionData._alertEntity = 'Cliente';
         missionData._alertName = missionRow.client;
       }
-      const success = await sendMissionResendToClient(missionData, targetEmail, vehiclePlate, mirroringUrl || undefined);
+      const success = await sendMissionResendToClient(missionData, targetEmail, clientVehicleLabel, mirroringUrl || undefined);
       res.json({ success, message: success ? (clientEmail ? `E-mail enviado para ${clientEmail}${mirroringUrl ? ' (com evidência de espelhamento)' : ''}` : `⚠️ Cliente "${missionRow.client}" sem e-mail — notificação enviada para operacional.`) : 'Falha ao enviar' });
     } catch (err: any) {
       console.error('[Email] Erro mission-resend-client:', err.message);
