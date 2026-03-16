@@ -76,6 +76,8 @@ const ClientForm: React.FC<ClientFormProps> = ({
     is_prospect: false
   });
   
+  const [osEmailInput, setOsEmailInput] = useState('');
+  const [medicaoEmailInput, setMedicaoEmailInput] = useState('');
   const [isSearchingCep, setIsSearchingCep] = useState(false);
   const [isSearchingCnpj, setIsSearchingCnpj] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -83,6 +85,23 @@ const ClientForm: React.FC<ClientFormProps> = ({
   const [duplicateError, setDuplicateError] = useState('');
   
   const [priceTables, setPriceTables] = useState<ClientPriceTable[]>([]);
+  const getEmailList = (field: 'operational_email' | 'medicao_email'): string[] => {
+    const val = formData[field] || '';
+    return val.split(',').map(e => e.trim()).filter(Boolean);
+  };
+  const addEmail = (field: 'operational_email' | 'medicao_email', inputVal: string, setInput: (v: string) => void) => {
+    const email = inputVal.trim().toLowerCase();
+    if (!email || !email.includes('@')) return;
+    const current = getEmailList(field);
+    if (current.includes(email)) { setInput(''); return; }
+    setFormData({ ...formData, [field]: [...current, email].join(', ') });
+    setInput('');
+  };
+  const removeEmail = (field: 'operational_email' | 'medicao_email', emailToRemove: string) => {
+    const current = getEmailList(field).filter(e => e !== emailToRemove);
+    setFormData({ ...formData, [field]: current.join(', ') });
+  };
+
   const [editingPriceId, setEditingPriceId] = useState<string | null>(null);
   const [priceRegion, setPriceRegion] = useState('');
   const [priceDescription, setPriceDescription] = useState('');
@@ -642,17 +661,43 @@ const ClientForm: React.FC<ClientFormProps> = ({
                     </div>
                     <div className="space-y-1.5">
                         <label className={LABEL_CLASS}>E-mail Operacional (OS)</label>
-                        <div className="relative">
-                            <input type="text" className={`${INPUT_CLASS} pl-10`} placeholder="e-mail1, e-mail2..." value={formData.operational_email} onChange={e => setFormData({...formData, operational_email: e.target.value.toLowerCase()})} data-testid="input-operational-email" />
-                            <Mail className="absolute left-3 top-1/2 -translate-y-1/2 text-orange-500" size={16} />
+                        <div className="flex gap-1.5">
+                            <div className="relative flex-1">
+                                <input type="email" className={`${INPUT_CLASS} pl-10 pr-10`} placeholder="Digite o e-mail..." value={osEmailInput} onChange={e => setOsEmailInput(e.target.value.toLowerCase())} onKeyDown={e => e.key === 'Enter' && (e.preventDefault(), addEmail('operational_email', osEmailInput, setOsEmailInput))} data-testid="input-operational-email" />
+                                <Mail className="absolute left-3 top-1/2 -translate-y-1/2 text-orange-500" size={16} />
+                            </div>
+                            <button type="button" onClick={() => addEmail('operational_email', osEmailInput, setOsEmailInput)} className="p-2.5 bg-orange-500 text-white rounded-lg hover:bg-orange-600 transition-colors shadow-sm"><Plus size={16}/></button>
                         </div>
+                        {getEmailList('operational_email').length > 0 && (
+                            <div className="flex flex-wrap gap-1.5 mt-1.5">
+                                {getEmailList('operational_email').map(em => (
+                                    <span key={em} className="inline-flex items-center gap-1 px-2.5 py-1 bg-orange-50 text-orange-700 border border-orange-200 rounded-lg text-[11px] font-bold">
+                                        <Mail size={10}/> {em}
+                                        <button type="button" onClick={() => removeEmail('operational_email', em)} className="ml-0.5 text-orange-400 hover:text-red-600"><X size={12}/></button>
+                                    </span>
+                                ))}
+                            </div>
+                        )}
                     </div>
                     <div className="space-y-1.5">
                         <label className={LABEL_CLASS}>E-mail Medição</label>
-                        <div className="relative">
-                            <input type="text" className={`${INPUT_CLASS} pl-10`} placeholder="e-mail1, e-mail2..." value={formData.medicao_email} onChange={e => setFormData({...formData, medicao_email: e.target.value.toLowerCase()})} data-testid="input-medicao-email" />
-                            <Mail className="absolute left-3 top-1/2 -translate-y-1/2 text-green-500" size={16} />
+                        <div className="flex gap-1.5">
+                            <div className="relative flex-1">
+                                <input type="email" className={`${INPUT_CLASS} pl-10 pr-10`} placeholder="Digite o e-mail..." value={medicaoEmailInput} onChange={e => setMedicaoEmailInput(e.target.value.toLowerCase())} onKeyDown={e => e.key === 'Enter' && (e.preventDefault(), addEmail('medicao_email', medicaoEmailInput, setMedicaoEmailInput))} data-testid="input-medicao-email" />
+                                <Mail className="absolute left-3 top-1/2 -translate-y-1/2 text-green-500" size={16} />
+                            </div>
+                            <button type="button" onClick={() => addEmail('medicao_email', medicaoEmailInput, setMedicaoEmailInput)} className="p-2.5 bg-green-500 text-white rounded-lg hover:bg-green-600 transition-colors shadow-sm"><Plus size={16}/></button>
                         </div>
+                        {getEmailList('medicao_email').length > 0 && (
+                            <div className="flex flex-wrap gap-1.5 mt-1.5">
+                                {getEmailList('medicao_email').map(em => (
+                                    <span key={em} className="inline-flex items-center gap-1 px-2.5 py-1 bg-green-50 text-green-700 border border-green-200 rounded-lg text-[11px] font-bold">
+                                        <Mail size={10}/> {em}
+                                        <button type="button" onClick={() => removeEmail('medicao_email', em)} className="ml-0.5 text-green-400 hover:text-red-600"><X size={12}/></button>
+                                    </span>
+                                ))}
+                            </div>
+                        )}
                     </div>
                     <div className="space-y-1.5">
                         <label className={LABEL_CLASS}>Telefone / WhatsApp</label>
