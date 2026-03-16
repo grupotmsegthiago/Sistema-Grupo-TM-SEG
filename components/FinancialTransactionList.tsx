@@ -729,7 +729,7 @@ const FinancialTransactionList: React.FC = () => {
                 <div>
                     <h2 className="text-xl font-bold text-gray-900 flex items-center gap-3">
                         <span className="w-1.5 h-6 bg-red-700 rounded-full"></span>
-                        Fechamento de Terceiros
+                        Contas a Pagar / Receber
                     </h2>
                     <p className="text-xs text-gray-500 mt-1 ml-4.5">Gestão de pagamentos, recebimentos, faturas e fechamento financeiro de terceiros.</p>
                 </div>
