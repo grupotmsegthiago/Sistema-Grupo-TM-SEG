@@ -106,7 +106,7 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
         origin: '', destination: '',
         missionType: 'Caracterizada',
         revenueValue: '', costValue: '', tollValue: '',
-        isSameOs: false, applyCeva200km: false, applyVtc02h: false,
+        isSameOs: false, applyCeva200km: false, applyVtc02h: false, parentMissionId: '',
         totalDistance: 0, currentLocationName: '',
         // Dados da Carga
         driver_name: '', driver_phone: '', gr_espelhamento: '',
@@ -115,6 +115,10 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
     });
 
     const [currentPreviewCoords, setCurrentPreviewCoords] = useState<{ lat: number, lng: number } | null>(null);
+
+    const [parentOsSuggestions, setParentOsSuggestions] = useState<{id: string, client: string, provider: string, origin: string, destination: string, status: string}[]>([]);
+    const [parentOsSearch, setParentOsSearch] = useState('');
+    const [showParentOsDropdown, setShowParentOsDropdown] = useState(false);
 
     const updateLocRef = useRef<any>(null);
     const originAutocompleteRef = useRef<any>(null);
@@ -314,7 +318,7 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
                 revenueValue: m.revenue_value?.toString() || '',
                 costValue: m.cost_value?.toString() || '',
                 tollValue: m.toll_value?.toString() || '',
-                isSameOs: m.is_same_os || false,
+                isSameOs: m.is_same_os || false, parentMissionId: m.parent_mission_id || '',
                 applyCeva200km: (m.destination || '').includes('200KM'),
                 applyVtc02h: ((m.destination || '').includes('02H') || (m.destination || '').includes('02 HORAS')) && (m.client || '').toUpperCase().includes('VTC'),
                 totalDistance: m.total_distance || 0, 
@@ -457,6 +461,18 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
     };
 
     useEffect(() => { if (isOpen && mission) loadMissionData(); }, [isOpen, mission]);
+
+    useEffect(() => {
+        if (!editData.isSameOs || !mission?.client) { setParentOsSuggestions([]); return; }
+        const fetchParentSuggestions = async () => {
+            let query = supabase.from('missions').select('id, client, provider, origin, destination, status, parent_mission_id')
+                .eq('client', mission.client).neq('id', mission.id).is('parent_mission_id', null).order('created_at', { ascending: false }).limit(50);
+            if (editData.provider) query = query.eq('provider', editData.provider);
+            const { data } = await query;
+            if (data) setParentOsSuggestions(data);
+        };
+        fetchParentSuggestions();
+    }, [editData.isSameOs, mission?.client, editData.provider, mission?.id]);
 
     useEffect(() => {
         const handleClickOutside = (event: MouseEvent) => {
@@ -645,7 +661,7 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
                 start_time: startIso,
                 end_km: eKm || null,
                 end_time: endIso,
-                is_same_os: editData.isSameOs,
+                is_same_os: editData.isSameOs, parent_mission_id: editData.parentMissionId || null,
                 progress: progressValue,
                 driver_name: editData.driver_name.toUpperCase(),
                 driver_phone: editData.driver_phone,
@@ -951,11 +967,66 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
                                     </label>
                                 )}
                                 <label className={`flex items-center gap-2 px-4 py-1.5 rounded-xl border transition-all cursor-pointer ${editData.isSameOs ? 'bg-slate-900 text-white border-black shadow-lg' : 'bg-gray-50 text-gray-400 border-gray-200'}`}>
-                                    <input type="checkbox" className="hidden" checked={editData.isSameOs} onChange={e => setEditData({...editData, isSameOs: e.target.checked})} />
+                                    <input type="checkbox" className="hidden" checked={editData.isSameOs} onChange={e => setEditData({...editData, isSameOs: e.target.checked, parentMissionId: e.target.checked ? editData.parentMissionId : ''})} />
                                     <Layers size={12}/> <span className="text-[9px] font-black uppercase tracking-widest">Mesma OS</span>
                                 </label>
                             </div>
                         </div>
+                        {editData.isSameOs && (
+                            <div className="px-4 py-3 bg-slate-50 rounded-xl border border-slate-200 mb-3">
+                                <label className="text-[10px] font-black text-slate-600 uppercase tracking-widest mb-1.5 block">Vincular à OS Mãe (Principal)</label>
+                                <div className="relative">
+                                    <div className="flex items-center gap-2">
+                                        <div className="relative flex-1">
+                                            <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                                            <input type="text" className="w-full pl-9 pr-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-black focus:border-black"
+                                                placeholder="Digite o nº da OS mãe (ex: GTM-1234)..."
+                                                value={parentOsSearch || editData.parentMissionId}
+                                                onChange={e => { setParentOsSearch(e.target.value); setShowParentOsDropdown(true); if (!e.target.value) setEditData(prev => ({...prev, parentMissionId: ''})); }}
+                                                onFocus={() => setShowParentOsDropdown(true)}
+                                                data-testid="input-parent-mission-update"
+                                            />
+                                        </div>
+                                        {editData.parentMissionId && (
+                                            <button type="button" onClick={() => { setEditData(prev => ({...prev, parentMissionId: ''})); setParentOsSearch(''); }} className="p-2 text-red-500 hover:bg-red-50 rounded-lg"><X size={16}/></button>
+                                        )}
+                                    </div>
+                                    {editData.parentMissionId && (
+                                        <div className="mt-2 flex items-center gap-2 px-3 py-1.5 bg-blue-50 border border-blue-200 rounded-lg">
+                                            <Layers size={12} className="text-blue-600" />
+                                            <span className="text-[10px] font-black text-blue-700 uppercase">OS Mãe: {editData.parentMissionId}</span>
+                                        </div>
+                                    )}
+                                    {showParentOsDropdown && (
+                                        <div className="absolute z-50 mt-1 w-full bg-white border border-gray-200 rounded-lg shadow-xl max-h-48 overflow-y-auto">
+                                            {parentOsSuggestions.filter(s => {
+                                                if (!parentOsSearch) return true;
+                                                const term = parentOsSearch.toLowerCase();
+                                                return s.id.toLowerCase().includes(term) || s.client?.toLowerCase().includes(term) || s.provider?.toLowerCase().includes(term);
+                                            }).map(s => (
+                                                <button key={s.id} type="button" className={`w-full text-left px-3 py-2 hover:bg-gray-50 border-b border-gray-50 ${editData.parentMissionId === s.id ? 'bg-blue-50' : ''}`}
+                                                    onClick={() => { setEditData(prev => ({...prev, parentMissionId: s.id})); setParentOsSearch(''); setShowParentOsDropdown(false); }}
+                                                    data-testid={`option-parent-update-${s.id}`}
+                                                >
+                                                    <div className="flex items-center justify-between">
+                                                        <span className="text-xs font-black text-gray-900">{s.id}</span>
+                                                        <span className={`text-[8px] font-bold px-1.5 py-0.5 rounded ${s.status === 'Concluída' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600'}`}>{s.status}</span>
+                                                    </div>
+                                                    <div className="text-[9px] text-gray-500 mt-0.5">{s.provider || 'Sem fornecedor'} • {s.origin?.split(',')[0]} → {s.destination?.split(',')[0]}</div>
+                                                </button>
+                                            ))}
+                                            {parentOsSearch && !parentOsSuggestions.find(s => s.id === parentOsSearch.toUpperCase()) && (
+                                                <button type="button" className="w-full text-left px-3 py-2 hover:bg-blue-50 border-t border-gray-100 text-blue-700"
+                                                    onClick={() => { setEditData(prev => ({...prev, parentMissionId: parentOsSearch.toUpperCase()})); setParentOsSearch(''); setShowParentOsDropdown(false); }}
+                                                >
+                                                    <div className="flex items-center gap-2"><Plus size={12}/><span className="text-xs font-bold">Usar "{parentOsSearch.toUpperCase()}" como OS Mãe</span></div>
+                                                </button>
+                                            )}
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                        )}
                         {isCompletedMission && isBillingApproved && (
                             <div className="flex items-center gap-2 px-4 py-3 bg-blue-50 border border-blue-200 rounded-xl mb-3" data-testid="billing-approved-lock">
                                 <ShieldCheck size={16} className="text-blue-600" />

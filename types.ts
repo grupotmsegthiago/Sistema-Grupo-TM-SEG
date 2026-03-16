@@ -45,7 +45,8 @@ export interface Mission {
   mission_type?: 'Caracterizada' | 'Velada' | 'Pronta Resposta';
   gr_espelhamento?: string; 
   special_operation_type?: string; 
-  is_same_os?: boolean; 
+  is_same_os?: boolean;
+  parent_mission_id?: string; 
 
   totalDistance?: number; 
   traveledDistance?: number; 

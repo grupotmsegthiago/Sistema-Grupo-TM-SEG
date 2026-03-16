@@ -958,6 +958,7 @@ export async function registerRoutes(
       await pool.query(`ALTER TABLE missions ADD COLUMN IF NOT EXISTS provider_ops_edited BOOLEAN DEFAULT FALSE`).catch(() => {});
       await pool.query(`ALTER TABLE missions ADD COLUMN IF NOT EXISTS revenue_edit_reason TEXT`).catch(() => {});
       await pool.query(`ALTER TABLE missions ADD COLUMN IF NOT EXISTS cost_edit_reason TEXT`).catch(() => {});
+      await pool.query(`ALTER TABLE missions ADD COLUMN IF NOT EXISTS parent_mission_id TEXT`).catch(() => {});
       await pool.end();
       console.log("Client registries tables created/verified.");
       res.json({ ok: true });

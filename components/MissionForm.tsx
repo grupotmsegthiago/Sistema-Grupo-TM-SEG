@@ -65,7 +65,7 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
   const [formData, setFormData] = useState({
     client: '', provider: '', origin: '', destination: '', totalDistance: '', estimatedTime: '',
     scheduledDate: defaultDate, scheduledTime: defaultTime, missionType: 'Caracterizada', 
-    revenueValue: '', costValue: '', tollValue: '0', applyCeva200km: false, applyVtc02h: false, isSameOs: false,
+    revenueValue: '', costValue: '', tollValue: '0', applyCeva200km: false, applyVtc02h: false, isSameOs: false, parentMissionId: '',
     clientVehicleId: '', clientVehiclePlate: '', clientVehicleModel: '',
     clientVehicleId2: '', clientVehiclePlate2: '', clientVehicleModel2: '',
     driver_name: '', driver_phone: '', startKm: '',
@@ -101,6 +101,9 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
   const [isProviderModalOpen, setIsProviderModalOpen] = useState(false);
   const [isRouteModalOpen, setIsRouteModalOpen] = useState(false);
   const [isVehicleModalOpen, setIsVehicleModalOpen] = useState(false);
+  const [parentOsSuggestions, setParentOsSuggestions] = useState<{id: string, client: string, provider: string, origin: string, destination: string, start_time: string, status: string}[]>([]);
+  const [parentOsSearch, setParentOsSearch] = useState('');
+  const [showParentOsDropdown, setShowParentOsDropdown] = useState(false);
 
   const [evidenceFiles, setEvidenceFiles] = useState<{ file: File; preview: string }[]>([]);
   const [expandedEvidence, setExpandedEvidence] = useState<string | null>(null);
@@ -151,6 +154,18 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
         document.removeEventListener('paste', handlePaste);
     };
   }, []);
+
+  useEffect(() => {
+    if (!formData.isSameOs || !formData.client) { setParentOsSuggestions([]); return; }
+    const fetchSuggestions = async () => {
+      let query = supabase.from('missions').select('id, client, provider, origin, destination, start_time, status, parent_mission_id')
+        .eq('client', formData.client).is('parent_mission_id', null).order('created_at', { ascending: false }).limit(50);
+      if (formData.provider) query = query.eq('provider', formData.provider);
+      const { data } = await query;
+      if (data) setParentOsSuggestions(data);
+    };
+    fetchSuggestions();
+  }, [formData.isSameOs, formData.client, formData.provider]);
 
   const handleEvidenceFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
       const files = e.target.files;
@@ -612,7 +627,7 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
                 mission_type: formData.missionType || 'Caracterizada', 
                 revenue_value: parseFloat(formData.revenueValue) || 0, cost_value: formData.isSameOs ? 0 : (parseFloat(formData.costValue) || 0),
                 toll_value: parseFloat(formData.tollValue) || 0,
-                is_same_os: formData.isSameOs, current_location: 'Solicitação Criada',
+                is_same_os: formData.isSameOs, parent_mission_id: formData.parentMissionId || null, current_location: 'Solicitação Criada',
                 client_vehicle: vehicleId ? parseInt(vehicleId) : null,
                 client_vehicle_2: formData.clientVehicleId2 ? parseInt(formData.clientVehicleId2) : null,
                 driver_name: (formData.driver_name || '').toUpperCase(),
@@ -663,7 +678,67 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
       <div className="flex items-center justify-between"><div className="flex items-center gap-4"><button onClick={onBack} className="p-2.5 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 shadow-sm"><ArrowLeft size={20} /></button><div className="flex items-center gap-3"><h2 className="text-xl font-black text-gray-900 uppercase tracking-tight">Nova Ordem de Serviço</h2><span className="px-2 py-0.5 bg-yellow-100 text-yellow-800 text-[10px] font-black rounded-md">{osId}</span></div></div></div>
 
       <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden" ref={dropdownRef}>
-          <div className="p-4 border-b border-gray-100 bg-gray-50 flex items-center justify-between"><div className="flex items-center gap-2"><FileText size={18} className="text-red-700" /><h3 className="font-bold text-xs uppercase tracking-widest text-gray-600">Dados da Solicitação</h3></div><label className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border-2 cursor-pointer transition-all ${formData.isSameOs ? 'bg-black border-black text-white shadow-md' : 'bg-white border-gray-200 text-gray-500 hover:border-gray-300'}`}><input type="checkbox" className="hidden" checked={formData.isSameOs} onChange={e => { const checked = e.target.checked; setFormData(prev => ({ ...prev, isSameOs: checked })); const route = clientRoutes.find(r => r.id.toString() === selectedRouteId); if (route) calculatePricing(route, undefined, manualRevenueTableId, '', { ceva200km: formData.applyCeva200km, vtc02h: checked, isSameOs: checked }); }} /><Layers size={14} className={formData.isSameOs ? 'text-white' : 'text-gray-400'} /><span className="text-[10px] font-black uppercase tracking-wider">Mesma OS (Custo Zero)</span></label></div>
+          <div className="p-4 border-b border-gray-100 bg-gray-50 flex items-center justify-between"><div className="flex items-center gap-2"><FileText size={18} className="text-red-700" /><h3 className="font-bold text-xs uppercase tracking-widest text-gray-600">Dados da Solicitação</h3></div><label className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border-2 cursor-pointer transition-all ${formData.isSameOs ? 'bg-black border-black text-white shadow-md' : 'bg-white border-gray-200 text-gray-500 hover:border-gray-300'}`}><input type="checkbox" className="hidden" checked={formData.isSameOs} onChange={e => { const checked = e.target.checked; setFormData(prev => ({ ...prev, isSameOs: checked, parentMissionId: checked ? prev.parentMissionId : '' })); const route = clientRoutes.find(r => r.id.toString() === selectedRouteId); if (route) calculatePricing(route, undefined, manualRevenueTableId, '', { ceva200km: formData.applyCeva200km, vtc02h: checked, isSameOs: checked }); }} /><Layers size={14} className={formData.isSameOs ? 'text-white' : 'text-gray-400'} /><span className="text-[10px] font-black uppercase tracking-wider">Mesma OS (Custo Zero)</span></label></div>
+          {formData.isSameOs && (
+            <div className="px-4 py-3 bg-slate-50 border-b border-gray-100">
+              <label className="text-[10px] font-black text-slate-600 uppercase tracking-widest mb-1.5 block">Vincular à OS Mãe (Principal)</label>
+              <div className="relative">
+                <div className="flex items-center gap-2">
+                  <div className="relative flex-1">
+                    <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                    <input
+                      type="text"
+                      className="w-full pl-9 pr-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-black focus:border-black"
+                      placeholder="Digite o nº da OS mãe (ex: GTM-1234) ou busque..."
+                      value={parentOsSearch || formData.parentMissionId}
+                      onChange={e => { setParentOsSearch(e.target.value); setShowParentOsDropdown(true); if (!e.target.value) setFormData(prev => ({...prev, parentMissionId: ''})); }}
+                      onFocus={() => setShowParentOsDropdown(true)}
+                      data-testid="input-parent-mission-id"
+                    />
+                  </div>
+                  {formData.parentMissionId && (
+                    <button type="button" onClick={() => { setFormData(prev => ({...prev, parentMissionId: ''})); setParentOsSearch(''); }} className="p-2 text-red-500 hover:bg-red-50 rounded-lg"><X size={16}/></button>
+                  )}
+                </div>
+                {formData.parentMissionId && (
+                  <div className="mt-2 flex items-center gap-2 px-3 py-1.5 bg-blue-50 border border-blue-200 rounded-lg">
+                    <Layers size={12} className="text-blue-600" />
+                    <span className="text-[10px] font-black text-blue-700 uppercase">OS Mãe: {formData.parentMissionId}</span>
+                    {(() => { const p = parentOsSuggestions.find(s => s.id === formData.parentMissionId); return p ? <span className="text-[9px] text-blue-500 ml-1">({p.client} → {p.origin?.split(',')[0]} / {p.destination?.split(',')[0]})</span> : null; })()}
+                  </div>
+                )}
+                {showParentOsDropdown && formData.isSameOs && (
+                  <div className="absolute z-50 mt-1 w-full bg-white border border-gray-200 rounded-lg shadow-xl max-h-60 overflow-y-auto">
+                    {parentOsSuggestions.filter(s => {
+                      if (!parentOsSearch) return true;
+                      const term = parentOsSearch.toLowerCase();
+                      return s.id.toLowerCase().includes(term) || s.client?.toLowerCase().includes(term) || s.provider?.toLowerCase().includes(term);
+                    }).map(s => (
+                      <button key={s.id} type="button" className={`w-full text-left px-3 py-2 hover:bg-gray-50 border-b border-gray-50 transition-colors ${formData.parentMissionId === s.id ? 'bg-blue-50' : ''}`}
+                        onClick={() => { setFormData(prev => ({...prev, parentMissionId: s.id})); setParentOsSearch(''); setShowParentOsDropdown(false); }}
+                        data-testid={`option-parent-${s.id}`}
+                      >
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs font-black text-gray-900">{s.id}</span>
+                          <span className={`text-[8px] font-bold px-1.5 py-0.5 rounded ${s.status === 'Concluída' ? 'bg-green-100 text-green-700' : s.status === 'Em Viagem' ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-600'}`}>{s.status}</span>
+                        </div>
+                        <div className="text-[9px] text-gray-500 mt-0.5">{s.client} • {s.provider || 'Sem fornecedor'}</div>
+                        <div className="text-[9px] text-gray-400">{s.origin?.split(',')[0]} → {s.destination?.split(',')[0]}</div>
+                      </button>
+                    ))}
+                    {parentOsSuggestions.length === 0 && <div className="px-3 py-4 text-center text-xs text-gray-400">Nenhuma OS encontrada para este cliente</div>}
+                    {parentOsSearch && !parentOsSuggestions.find(s => s.id === parentOsSearch) && (
+                      <button type="button" className="w-full text-left px-3 py-2 hover:bg-blue-50 border-t border-gray-100 text-blue-700"
+                        onClick={() => { setFormData(prev => ({...prev, parentMissionId: parentOsSearch.toUpperCase()})); setParentOsSearch(''); setShowParentOsDropdown(false); }}
+                      >
+                        <div className="flex items-center gap-2"><Plus size={12}/><span className="text-xs font-bold">Usar "{parentOsSearch.toUpperCase()}" como OS Mãe</span></div>
+                      </button>
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
           
           <form onSubmit={handleSubmit} className="p-8 space-y-8">
               <div className="relative group"><label className={LABEL_CLASS}>Tipo de Operação *</label><div className="relative"><select className={SELECT_CLASS} value={formData.missionType} onChange={e => setFormData({...formData, missionType: e.target.value})}><option value="Caracterizada">Escolta Caracterizada</option><option value="Velada">Escolta Velada</option></select><Siren size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-300 pointer-events-none" /><ChevronDown size={16} className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" /></div></div>

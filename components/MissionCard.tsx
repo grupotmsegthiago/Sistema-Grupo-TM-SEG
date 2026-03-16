@@ -4,7 +4,7 @@ import { Mission, MissionStatus, MissionLog, ClientPriceTable, ProviderCostTable
 import { supabase } from '../lib/supabase';
 import { 
   Truck, User, Phone, EyeOff, ShieldCheck, UserCheck, CarFront, 
-  Map, Pencil, Eye, Check, Trash2, FileText, Clock, Building2, Navigation, Hourglass, History, Mail, MapPin, AlertOctagon, Printer, FileSearch, TrendingUp, TrendingDown, DollarSign, Layers, Calculator, Flag, Activity, Briefcase, Shield, MessageCircle, ImageOff, Image, X, Upload, Loader2, Camera
+  Map, Pencil, Eye, Check, Trash2, FileText, Clock, Building2, Navigation, Hourglass, History, Mail, MapPin, AlertOctagon, Printer, FileSearch, TrendingUp, TrendingDown, DollarSign, Layers, Calculator, Flag, Activity, Briefcase, Shield, MessageCircle, ImageOff, Image, X, Upload, Loader2, Camera, Link2
 } from 'lucide-react';
 
 const WhatsAppIcon = ({ size = 14 }: { size?: number }) => (
@@ -531,8 +531,13 @@ Qualquer dúvida, estamos a disposição.
                     <div className="flex items-center gap-2 flex-wrap">
                         <span className="text-xl font-black text-gray-900 tracking-tighter leading-none">{mission.id}</span>
                         {mission.is_same_os && (
-                            <span className="bg-black text-white px-1.5 py-0.5 rounded text-[8px] font-black uppercase flex items-center gap-1 border border-black shadow-sm" title="Missão de continuidade - Custo Fornecedor Zero">
+                            <span className="bg-black text-white px-1.5 py-0.5 rounded text-[8px] font-black uppercase flex items-center gap-1 border border-black shadow-sm" title={mission.parent_mission_id ? `OS Mãe: ${mission.parent_mission_id}` : 'Missão de continuidade - Custo Fornecedor Zero'}>
                                 <Layers size={10} /> MESMA OS
+                            </span>
+                        )}
+                        {mission.parent_mission_id && (
+                            <span className="bg-blue-600 text-white px-1.5 py-0.5 rounded text-[8px] font-black uppercase flex items-center gap-1 border border-blue-700 shadow-sm" title={`Vinculada à OS Principal: ${mission.parent_mission_id}`}>
+                                <Link2 size={10} /> MÃE: {mission.parent_mission_id}
                             </span>
                         )}
                         <span className={`px-1.5 py-0.5 rounded text-[9px] font-extrabold uppercase border tracking-wider ${isPendingKm && !hideProviderInfo ? 'bg-amber-100 text-amber-800 border-amber-300' : getStatusBadgeClass(mission.status)}`}>
