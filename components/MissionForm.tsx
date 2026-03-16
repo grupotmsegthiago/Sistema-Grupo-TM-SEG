@@ -647,7 +647,7 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
 
         if (formData.provider) {
             try {
-                await fetch('/api/email/mission-solicited', {
+                const provRes = await fetch('/api/email/mission-solicited', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
@@ -662,11 +662,15 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
                         driver_phone: formData.driver_phone
                     })
                 });
+                const provData = await provRes.json();
+                if (provData.queued) {
+                    showNotification('E-mail na Fila', provData.message, 'warning');
+                }
             } catch (emailErr) { console.error('[Email] Erro ao enviar solicitação ao fornecedor na criação:', emailErr); }
         }
 
         try {
-            await fetch('/api/email/mission-scheduled', {
+            const clientRes = await fetch('/api/email/mission-scheduled', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -679,6 +683,10 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
                     vehiclePlate
                 })
             });
+            const clientData = await clientRes.json();
+            if (clientData.queued) {
+                showNotification('E-mail na Fila', clientData.message, 'warning');
+            }
         } catch (emailErr) { console.error('[Email] Erro ao enviar confirmação ao cliente na criação:', emailErr); }
 
         onSaveAndContinue(finalId);

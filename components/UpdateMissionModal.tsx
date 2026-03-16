@@ -791,9 +791,11 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
 
             const vehiclePlateForEmail = searchVehicle || editData.client_vehicle_plate || '—';
 
-            if (finalStatus === MissionStatus.SCHEDULED && originalStatus !== MissionStatus.SCHEDULED) {
+            const sendClientEmail = finalStatus === MissionStatus.SCHEDULED && originalStatus !== MissionStatus.SCHEDULED;
+            const pendingClient = mission.email_pending_client === true;
+            if (sendClientEmail || pendingClient) {
                 try {
-                    await fetch('/api/email/mission-scheduled', {
+                    const emailRes = await fetch('/api/email/mission-scheduled', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({
@@ -806,6 +808,12 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
                             vehiclePlate: vehiclePlateForEmail
                         })
                     });
+                    const emailData = await emailRes.json();
+                    if (emailData.queued) {
+                        showNotification('E-mail na Fila', emailData.message, 'warning');
+                    } else if (emailData.success) {
+                        showNotification('E-mail Enviado', emailData.message, 'success');
+                    }
                 } catch (emailErr) {
                     console.error('[Email] Erro ao enviar confirmação ao cliente:', emailErr);
                 }
@@ -813,9 +821,10 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
 
             const providerChanged = editData.provider && editData.provider.trim() !== '' &&
                 (originalStatus === MissionStatus.SOLICITED || !mission.provider || mission.provider !== editData.provider);
-            if (providerChanged && (finalStatus === MissionStatus.DOCUMENTATION || finalStatus === MissionStatus.SOLICITED)) {
+            const pendingProvider = mission.email_pending_provider === true;
+            if ((providerChanged && (finalStatus === MissionStatus.DOCUMENTATION || finalStatus === MissionStatus.SOLICITED)) || pendingProvider) {
                 try {
-                    await fetch('/api/email/mission-solicited', {
+                    const emailRes = await fetch('/api/email/mission-solicited', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({
@@ -830,6 +839,12 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
                             driver_phone: editData.driver_phone
                         })
                     });
+                    const emailData = await emailRes.json();
+                    if (emailData.queued) {
+                        showNotification('E-mail na Fila', emailData.message, 'warning');
+                    } else if (emailData.success) {
+                        showNotification('E-mail Enviado', emailData.message, 'success');
+                    }
                 } catch (emailErr) {
                     console.error('[Email] Erro ao enviar solicitação ao fornecedor:', emailErr);
                 }

@@ -83,6 +83,9 @@ export interface Mission {
   payment_date?: string;
   verified_by?: string;
   verified_at?: string;
+
+  email_pending_client?: boolean;
+  email_pending_provider?: boolean;
 }
 
 export interface MissionHistory {

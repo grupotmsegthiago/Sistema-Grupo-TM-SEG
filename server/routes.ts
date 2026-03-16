@@ -47,6 +47,8 @@ export async function registerRoutes(
         await migrationPool.query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS operational_email TEXT`);
         await migrationPool.query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS medicao_email TEXT`);
         await migrationPool.query(`ALTER TABLE missions ADD COLUMN IF NOT EXISTS mirroring_evidence_url TEXT`);
+        await migrationPool.query(`ALTER TABLE missions ADD COLUMN IF NOT EXISTS email_pending_client BOOLEAN DEFAULT FALSE`);
+        await migrationPool.query(`ALTER TABLE missions ADD COLUMN IF NOT EXISTS email_pending_provider BOOLEAN DEFAULT FALSE`);
         console.log('[Migration] Colunas verificadas/criadas com sucesso');
         await migrationPool.end();
       }
@@ -267,7 +269,7 @@ export async function registerRoutes(
       const { missionId, client, origin, destination, start_time, mission_type, vehiclePlate } = req.body;
       if (!missionId || !client) return res.status(400).json({ error: 'Campos missionId e client obrigatórios' });
 
-      const { data: missionCheck } = await supabaseForPush.from('missions').select('*').eq('id', missionId).single();
+      const { data: missionCheck } = await supabase.from('missions').select('*').eq('id', missionId).single();
       if (!missionCheck) return res.status(404).json({ error: 'Missão não encontrada' });
 
       const missionData = {
@@ -280,8 +282,26 @@ export async function registerRoutes(
         mission_type: mission_type || missionCheck.mission_type || 'Caracterizada',
       };
 
-      const plate = vehiclePlate || '—';
-      const { data: clientData } = await supabaseForPush.from('clients').select('operational_email, email').eq('name', missionData.client).single();
+      const plate = vehiclePlate || missionCheck.client_vehicle || '';
+      const driverName = missionCheck.driver_name || '';
+      const driverPhone = missionCheck.driver_phone || '';
+
+      const missingFields: string[] = [];
+      if (!plate || plate === '—' || plate === '') missingFields.push('Placa da viatura');
+      if (!driverName) missingFields.push('Nome do motorista');
+      if (!driverPhone) missingFields.push('Telefone do motorista');
+      if (!missionData.origin) missingFields.push('Origem');
+      if (!missionData.destination) missingFields.push('Destino');
+
+      if (missingFields.length > 0) {
+        await supabase.from('missions').update({ email_pending_client: true }).eq('id', missionId);
+        console.log(`[Email Fila] Missão ${missionId} → Cliente pendente (faltam: ${missingFields.join(', ')})`);
+        return res.json({ success: true, queued: true, message: `📋 E-mail do CLIENTE na fila — faltam: ${missingFields.join(', ')}` });
+      }
+
+      await supabase.from('missions').update({ email_pending_client: false }).eq('id', missionId);
+
+      const { data: clientData } = await supabase.from('clients').select('operational_email, email').eq('name', missionData.client).single();
       const clientEmail = clientData?.operational_email || clientData?.email;
       
       if (!clientEmail) {
@@ -304,7 +324,7 @@ export async function registerRoutes(
       const { missionId, provider, vehiclePlate, origin, destination, start_time, mission_type, driver_name, driver_phone } = req.body;
       if (!missionId || !provider) return res.status(400).json({ error: 'Campos missionId e provider obrigatórios' });
 
-      const { data: missionCheck } = await supabaseForPush.from('missions').select('*').eq('id', missionId).single();
+      const { data: missionCheck } = await supabase.from('missions').select('*').eq('id', missionId).single();
       if (!missionCheck) return res.status(404).json({ error: 'Missão não encontrada' });
 
       const missionData = {
@@ -319,8 +339,24 @@ export async function registerRoutes(
         driver_phone: driver_phone || missionCheck.driver_phone || '',
       };
 
-      const plate = vehiclePlate || '—';
-      const { data: provData } = await supabaseForPush.from('providers').select('os_email, email').eq('name', missionData.provider).single();
+      const plate = vehiclePlate || missionCheck.client_vehicle || '';
+
+      const missingFields: string[] = [];
+      if (!plate || plate === '—' || plate === '') missingFields.push('Placa da viatura');
+      if (!missionData.driver_name) missingFields.push('Nome do motorista');
+      if (!missionData.driver_phone) missingFields.push('Telefone do motorista');
+      if (!missionData.origin) missingFields.push('Origem');
+      if (!missionData.destination) missingFields.push('Destino');
+
+      if (missingFields.length > 0) {
+        await supabase.from('missions').update({ email_pending_provider: true }).eq('id', missionId);
+        console.log(`[Email Fila] Missão ${missionId} → Fornecedor pendente (faltam: ${missingFields.join(', ')})`);
+        return res.json({ success: true, queued: true, message: `📋 E-mail do FORNECEDOR na fila — faltam: ${missingFields.join(', ')}` });
+      }
+
+      await supabase.from('missions').update({ email_pending_provider: false }).eq('id', missionId);
+
+      const { data: provData } = await supabase.from('providers').select('os_email, email').eq('name', missionData.provider).single();
       const provEmail = provData?.os_email || provData?.email;
       
       if (!provEmail) {
