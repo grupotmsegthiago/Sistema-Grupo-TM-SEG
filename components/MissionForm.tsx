@@ -627,7 +627,7 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
                 mission_type: formData.missionType || 'Caracterizada', 
                 revenue_value: parseFloat(formData.revenueValue) || 0, cost_value: formData.isSameOs ? 0 : (parseFloat(formData.costValue) || 0),
                 toll_value: parseFloat(formData.tollValue) || 0,
-                is_same_os: formData.isSameOs, parent_mission_id: formData.parentMissionId || null, current_location: 'Solicitação Criada',
+                ...(formData.isSameOs ? { is_same_os: true, parent_mission_id: formData.parentMissionId || null } : {}), current_location: 'Solicitação Criada',
                 client_vehicle: vehicleId ? parseInt(vehicleId) : null,
                 client_vehicle_2: formData.clientVehicleId2 ? parseInt(formData.clientVehicleId2) : null,
                 driver_name: (formData.driver_name || '').toUpperCase(),
@@ -639,6 +639,48 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
             if (!error) saved = true; else if (error.code === '23505') attempts++; else throw error;
         }
         await uploadEvidences(finalId);
+
+        const vehiclePlate = formData.clientVehicleId 
+            ? (dbClientVehicles.find(v => v.id.toString() === formData.clientVehicleId)?.plate || '—') 
+            : '—';
+        const scheduledIso = scheduledDateTime.toISOString();
+
+        if (formData.provider) {
+            try {
+                await fetch('/api/email/mission-solicited', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        missionId: finalId,
+                        provider: formData.provider,
+                        vehiclePlate,
+                        origin: formData.origin,
+                        destination: formData.destination,
+                        start_time: scheduledIso,
+                        mission_type: formData.missionType,
+                        driver_name: formData.driver_name,
+                        driver_phone: formData.driver_phone
+                    })
+                });
+            } catch (emailErr) { console.error('[Email] Erro ao enviar solicitação ao fornecedor na criação:', emailErr); }
+        }
+
+        try {
+            await fetch('/api/email/mission-scheduled', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    missionId: finalId,
+                    client: formData.client,
+                    origin: formData.origin,
+                    destination: formData.destination,
+                    start_time: scheduledIso,
+                    mission_type: formData.missionType,
+                    vehiclePlate
+                })
+            });
+        } catch (emailErr) { console.error('[Email] Erro ao enviar confirmação ao cliente na criação:', emailErr); }
+
         onSaveAndContinue(finalId);
     } catch (e: any) { alert("Erro ao salvar: " + e.message); } finally { setIsSaving(false); }
   };
