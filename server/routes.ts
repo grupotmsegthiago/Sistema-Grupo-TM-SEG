@@ -385,6 +385,40 @@ export async function registerRoutes(
   const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFqaG1tanVld2RzdWtlY2FpbWlrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjQxNzUxMjEsImV4cCI6MjA3OTc1MTEyMX0.5bXRWTyb1HxLimt3lqJTBfjzDoumux7TXlW4lycXrPk';
   const supabaseAdmin = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
+  app.post("/api/supabase/init-invoices", async (_req: Request, res: Response) => {
+    try {
+      const { data, error } = await supabaseAdmin.from('financial_invoices').select('id', { count: 'exact', head: true });
+      if (error && error.code === '42P01') {
+        const createSql = `
+          CREATE TABLE IF NOT EXISTS public.financial_invoices (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            client TEXT NOT NULL,
+            number TEXT NOT NULL,
+            amount DOUBLE PRECISION NOT NULL DEFAULT 0,
+            date TEXT NOT NULL,
+            status TEXT NOT NULL DEFAULT 'EMITIDA',
+            notes TEXT DEFAULT '',
+            created_by TEXT,
+            created_at TIMESTAMPTZ DEFAULT NOW()
+          );
+          ALTER TABLE public.financial_invoices ENABLE ROW LEVEL SECURITY;
+          CREATE POLICY IF NOT EXISTS "Allow all for financial_invoices" ON public.financial_invoices FOR ALL USING (true) WITH CHECK (true);
+        `;
+        const resp = await fetch(`${SUPABASE_URL}/rest/v1/rpc/exec_sql`, {
+          method: 'POST', headers: { 'Content-Type': 'application/json', 'apikey': SUPABASE_ANON_KEY, 'Authorization': `Bearer ${SUPABASE_ANON_KEY}` },
+          body: JSON.stringify({ query: createSql })
+        });
+        if (!resp.ok) {
+          res.json({ ok: false, note: 'Table does not exist. Please create it via Supabase SQL editor.', sql: createSql });
+          return;
+        }
+      }
+      res.json({ ok: true });
+    } catch (e: any) {
+      res.json({ ok: false, error: e.message });
+    }
+  });
+
   app.get("/api/supabase/status", async (_req: Request, res: Response) => {
     try {
       const startTime = Date.now();
@@ -959,6 +993,19 @@ export async function registerRoutes(
       await pool.query(`ALTER TABLE missions ADD COLUMN IF NOT EXISTS revenue_edit_reason TEXT`).catch(() => {});
       await pool.query(`ALTER TABLE missions ADD COLUMN IF NOT EXISTS cost_edit_reason TEXT`).catch(() => {});
       await pool.query(`ALTER TABLE missions ADD COLUMN IF NOT EXISTS parent_mission_id TEXT`).catch(() => {});
+      await pool.query(`
+        CREATE TABLE IF NOT EXISTS financial_invoices (
+          id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+          client TEXT NOT NULL,
+          number TEXT NOT NULL,
+          amount DOUBLE PRECISION NOT NULL DEFAULT 0,
+          date TEXT NOT NULL,
+          status TEXT NOT NULL DEFAULT 'EMITIDA',
+          notes TEXT DEFAULT '',
+          created_by TEXT,
+          created_at TIMESTAMPTZ DEFAULT NOW()
+        );
+      `);
       await pool.end();
       console.log("Client registries tables created/verified.");
       res.json({ ok: true });
