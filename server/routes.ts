@@ -35,6 +35,26 @@ export async function registerRoutes(
   app: Express
 ): Promise<Server> {
 
+  (async () => {
+    try {
+      const dbPass = process.env.SUPABASE_DB_PASSWORD;
+      if (dbPass) {
+        const migrationPool = new pg.Pool({
+          connectionString: `postgresql://postgres.ajhmmjuewdsukecaimik:${dbPass}@aws-0-sa-east-1.pooler.supabase.com:6543/postgres`,
+          ssl: { rejectUnauthorized: false },
+          max: 1
+        });
+        await migrationPool.query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS operational_email TEXT`);
+        await migrationPool.query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS medicao_email TEXT`);
+        await migrationPool.query(`ALTER TABLE missions ADD COLUMN IF NOT EXISTS mirroring_evidence_url TEXT`);
+        console.log('[Migration] Colunas verificadas/criadas com sucesso');
+        await migrationPool.end();
+      }
+    } catch (migErr: any) {
+      console.warn('[Migration] Aviso:', migErr.message);
+    }
+  })();
+
   app.get('/api/health', (_req: Request, res: Response) => {
     res.json({ status: 'ok', timestamp: Date.now(), uptime: process.uptime() });
   });

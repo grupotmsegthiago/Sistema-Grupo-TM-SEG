@@ -352,11 +352,23 @@ const ClientForm: React.FC<ClientFormProps> = ({
       };
 
       if (id) {
-          await supabase.from('clients').update(payload).eq('id', id);
+          let { error: updErr } = await supabase.from('clients').update(payload).eq('id', id);
+          if (updErr && updErr.code === '42703') {
+            const { operational_email, ...safePayload } = payload;
+            const res2 = await supabase.from('clients').update(safePayload).eq('id', id);
+            updErr = res2.error;
+          }
+          if (updErr) throw updErr;
           await logAction('UPDATE', 'Client', id, `Cliente atualizado: ${formData.name}`);
       } else {
           payload.created_by = currentUser?.name || 'SISTEMA';
-          const { error: insErr } = await supabase.from('clients').insert([payload]).select();
+          let { error: insErr } = await supabase.from('clients').insert([payload]).select();
+          if (insErr && insErr.code === '42703') {
+            const { operational_email, ...safePayload } = payload;
+            safePayload.created_by = currentUser?.name || 'SISTEMA';
+            const res2 = await supabase.from('clients').insert([safePayload]).select();
+            insErr = res2.error;
+          }
           if (insErr) throw insErr;
           await logAction('CREATE', 'Client', 'NEW', `Cliente cadastrado: ${formData.name}`);
       }
