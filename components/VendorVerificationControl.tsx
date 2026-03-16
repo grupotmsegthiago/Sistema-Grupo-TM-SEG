@@ -6,7 +6,7 @@ import {
     Building2, CheckCircle2, AlertTriangle, Calendar,
     FileText, Hash, Lock, Eye, X, Save, ShieldCheck,
     ImagePlus, Trash2, ZoomIn, Receipt, CreditCard,
-    CheckSquare, Square, ListChecks
+    CheckSquare, Square, ListChecks, Clock, ArrowRight
 } from 'lucide-react';
 import { useNotification } from '../lib/NotificationContext';
 
@@ -31,7 +31,11 @@ const fmtDateTime = (d: string | null | undefined) => {
     } catch { return d; }
 };
 
-const VendorVerificationControl: React.FC = () => {
+interface VendorVerificationControlProps {
+    onNavigate?: (moduleId: string) => void;
+}
+
+const VendorVerificationControl: React.FC<VendorVerificationControlProps> = ({ onNavigate }) => {
     const { showNotification } = useNotification();
     const [missions, setMissions] = useState<any[]>([]);
     const [clients, setClients] = useState<any[]>([]);
@@ -40,6 +44,10 @@ const VendorVerificationControl: React.FC = () => {
     const [selectedProvider, setSelectedProvider] = useState('ALL');
     const [filterStatus, setFilterStatus] = useState<'ALL' | 'PENDING' | 'VERIFIED'>('ALL');
     const [isLoading, setIsLoading] = useState(true);
+    const [dateStart, setDateStart] = useState('');
+    const [dateEnd, setDateEnd] = useState('');
+    const [timeStart, setTimeStart] = useState('');
+    const [timeEnd, setTimeEnd] = useState('');
 
     const [selectedMission, setSelectedMission] = useState<any | null>(null);
     const [modalOpen, setModalOpen] = useState(false);
@@ -446,15 +454,30 @@ const VendorVerificationControl: React.FC = () => {
             const isVerified = Boolean(m.verified_by && m.verified_at);
             const matchesStatus = filterStatus === 'ALL' || (filterStatus === 'VERIFIED' && isVerified) || (filterStatus === 'PENDING' && !isVerified);
             const searchLower = searchTerm.toLowerCase();
-            return matchesProvider && matchesStatus && (
-                m.id.toLowerCase().includes(searchLower) ||
+            const matchesSearch = m.id.toLowerCase().includes(searchLower) ||
                 (m.client || '').toLowerCase().includes(searchLower) ||
                 (m.provider || '').toLowerCase().includes(searchLower) ||
                 (m.vendor_os_number || '').toLowerCase().includes(searchLower) ||
-                (m.invoice_number || '').toLowerCase().includes(searchLower)
-            );
+                (m.invoice_number || '').toLowerCase().includes(searchLower);
+
+            let matchesDateRange = true;
+            if (dateStart || dateEnd) {
+                const mDate = m.created_at ? m.created_at.split('T')[0] : '';
+                if (dateStart && mDate < dateStart) matchesDateRange = false;
+                if (dateEnd && mDate > dateEnd) matchesDateRange = false;
+            }
+
+            let matchesTimeRange = true;
+            if (timeStart || timeEnd) {
+                const mTime = m.start_time || '';
+                const mTimeNorm = mTime.length === 5 ? mTime : mTime.slice(0, 5);
+                if (timeStart && mTimeNorm < timeStart) matchesTimeRange = false;
+                if (timeEnd && mTimeNorm > timeEnd) matchesTimeRange = false;
+            }
+
+            return matchesProvider && matchesStatus && matchesSearch && matchesDateRange && matchesTimeRange;
         });
-    }, [missions, selectedProvider, filterStatus, searchTerm]);
+    }, [missions, selectedProvider, filterStatus, searchTerm, dateStart, dateEnd, timeStart, timeEnd]);
 
     const stats = useMemo(() => {
         const total = missions.length;
@@ -751,45 +774,113 @@ const VendorVerificationControl: React.FC = () => {
                 </div>
             </div>
 
-            <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-200 grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div className="relative">
-                    <input
-                        type="text"
-                        placeholder="Buscar por OS, Cliente, Fornecedor, NF..."
-                        className="w-full pl-10 pr-4 py-2.5 bg-gray-50 border border-gray-300 rounded-lg text-sm"
-                        value={searchTerm}
-                        onChange={e => setSearchTerm(e.target.value)}
-                        data-testid="input-search"
-                    />
-                    <Search size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-                </div>
-                <div className="relative">
-                    <select
-                        className="w-full pl-10 pr-4 py-2.5 bg-gray-50 border border-gray-300 rounded-lg text-sm font-bold text-gray-700 outline-none appearance-none"
-                        value={selectedProvider}
-                        onChange={e => setSelectedProvider(e.target.value)}
-                        data-testid="select-provider"
-                    >
-                        <option value="ALL">TODOS OS FORNECEDORES</option>
-                        {providers.map(p => <option key={p} value={p}>{p}</option>)}
-                    </select>
-                    <Building2 size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-                </div>
-                <div className="flex gap-2">
-                    {(['ALL', 'PENDING', 'VERIFIED'] as const).map(s => (
-                        <button
-                            key={s}
-                            onClick={() => setFilterStatus(s)}
-                            className={`flex-1 py-2.5 rounded-lg text-xs font-black uppercase transition-colors ${
-                                filterStatus === s
-                                    ? s === 'VERIFIED' ? 'bg-green-600 text-white' : s === 'PENDING' ? 'bg-amber-500 text-white' : 'bg-gray-900 text-white'
-                                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                            }`}
-                            data-testid={`button-filter-${s.toLowerCase()}`}
+            <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-200 space-y-4">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div className="relative">
+                        <input
+                            type="text"
+                            placeholder="Buscar por OS, Cliente, Fornecedor, NF..."
+                            className="w-full pl-10 pr-4 py-2.5 bg-gray-50 border border-gray-300 rounded-lg text-sm"
+                            value={searchTerm}
+                            onChange={e => setSearchTerm(e.target.value)}
+                            data-testid="input-search"
+                        />
+                        <Search size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                    </div>
+                    <div className="relative">
+                        <select
+                            className="w-full pl-10 pr-4 py-2.5 bg-gray-50 border border-gray-300 rounded-lg text-sm font-bold text-gray-700 outline-none appearance-none"
+                            value={selectedProvider}
+                            onChange={e => setSelectedProvider(e.target.value)}
+                            data-testid="select-provider"
                         >
-                            {s === 'ALL' ? 'Todas' : s === 'PENDING' ? 'Pendentes' : 'Verificadas'}
+                            <option value="ALL">TODOS OS FORNECEDORES</option>
+                            {providers.map(p => <option key={p} value={p}>{p}</option>)}
+                        </select>
+                        <Building2 size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                    </div>
+                    <div className="flex gap-2">
+                        {(['ALL', 'PENDING', 'VERIFIED'] as const).map(s => (
+                            <button
+                                key={s}
+                                onClick={() => setFilterStatus(s)}
+                                className={`flex-1 py-2.5 rounded-lg text-xs font-black uppercase transition-colors ${
+                                    filterStatus === s
+                                        ? s === 'VERIFIED' ? 'bg-green-600 text-white' : s === 'PENDING' ? 'bg-amber-500 text-white' : 'bg-gray-900 text-white'
+                                        : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                                }`}
+                                data-testid={`button-filter-${s.toLowerCase()}`}
+                            >
+                                {s === 'ALL' ? 'Todas' : s === 'PENDING' ? 'Pendentes' : 'Verificadas'}
+                            </button>
+                        ))}
+                    </div>
+                </div>
+
+                <div className="grid grid-cols-2 md:grid-cols-5 gap-3 items-end">
+                    <div>
+                        <label className="text-[10px] font-black text-gray-500 uppercase tracking-widest mb-1 block">Data Inicial</label>
+                        <div className="relative">
+                            <Calendar size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                            <input
+                                type="date"
+                                value={dateStart}
+                                onChange={e => setDateStart(e.target.value)}
+                                className="w-full pl-10 pr-3 py-2 bg-gray-50 border border-gray-300 rounded-lg text-xs font-bold"
+                                data-testid="input-date-start"
+                            />
+                        </div>
+                    </div>
+                    <div>
+                        <label className="text-[10px] font-black text-gray-500 uppercase tracking-widest mb-1 block">Data Final</label>
+                        <div className="relative">
+                            <Calendar size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                            <input
+                                type="date"
+                                value={dateEnd}
+                                onChange={e => setDateEnd(e.target.value)}
+                                className="w-full pl-10 pr-3 py-2 bg-gray-50 border border-gray-300 rounded-lg text-xs font-bold"
+                                data-testid="input-date-end"
+                            />
+                        </div>
+                    </div>
+                    <div>
+                        <label className="text-[10px] font-black text-gray-500 uppercase tracking-widest mb-1 block">Hora Inicial</label>
+                        <div className="relative">
+                            <Clock size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                            <input
+                                type="time"
+                                value={timeStart}
+                                onChange={e => setTimeStart(e.target.value)}
+                                className="w-full pl-10 pr-3 py-2 bg-gray-50 border border-gray-300 rounded-lg text-xs font-bold"
+                                data-testid="input-time-start"
+                            />
+                        </div>
+                    </div>
+                    <div>
+                        <label className="text-[10px] font-black text-gray-500 uppercase tracking-widest mb-1 block">Hora Final</label>
+                        <div className="relative">
+                            <Clock size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                            <input
+                                type="time"
+                                value={timeEnd}
+                                onChange={e => setTimeEnd(e.target.value)}
+                                className="w-full pl-10 pr-3 py-2 bg-gray-50 border border-gray-300 rounded-lg text-xs font-bold"
+                                data-testid="input-time-end"
+                            />
+                        </div>
+                    </div>
+                    <div>
+                        <button
+                            onClick={() => onNavigate?.('fin-billing')}
+                            className="w-full flex items-center justify-center gap-2 bg-gradient-to-r from-indigo-600 to-purple-700 hover:from-indigo-700 hover:to-purple-800 text-white font-black text-[10px] uppercase tracking-wide py-2.5 px-4 rounded-lg transition-all shadow-sm hover:shadow-md"
+                            data-testid="button-billing-approval"
+                        >
+                            <ClipboardCheck size={14} />
+                            Conferência e Aprovação
+                            <ArrowRight size={14} />
                         </button>
-                    ))}
+                    </div>
                 </div>
             </div>
 
