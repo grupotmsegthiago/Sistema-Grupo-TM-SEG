@@ -289,6 +289,15 @@ export async function registerRoutes(
       }
       if (!clientVehicleLabel) clientVehicleLabel = missionCheck.client_vehicle || '';
 
+      const grEspelhamento = missionCheck.gr_espelhamento || '';
+      let trackerInfo = '';
+      if (missionCheck.vehicle_id) {
+        const { data: veh } = await supabase.from('vehicles').select('tracker_type, tracker_id').eq('id', missionCheck.vehicle_id).single();
+        if (veh && (veh.tracker_type || veh.tracker_id)) {
+          trackerInfo = `${veh.tracker_type || '-'} / ID: ${veh.tracker_id || '-'}`;
+        }
+      }
+
       const driverName = missionCheck.driver_name || '';
       const driverPhone = missionCheck.driver_phone || '';
 
@@ -313,11 +322,11 @@ export async function registerRoutes(
       if (!clientEmail) {
         const fallback = 'operacional@grupotmseg.com.br';
         const alertMission = { ...missionData, _noEmailAlert: true, _alertEntity: 'Cliente', _alertName: missionData.client };
-        const success = await sendMissionEmailToClient(alertMission, fallback, clientVehicleLabel);
+        const success = await sendMissionEmailToClient(alertMission, fallback, clientVehicleLabel, grEspelhamento, trackerInfo);
         return res.json({ success, message: success ? `⚠️ Cliente "${missionData.client}" sem e-mail — notificação enviada para operacional.` : 'Falha ao enviar' });
       }
 
-      const success = await sendMissionEmailToClient(missionData, clientEmail, clientVehicleLabel);
+      const success = await sendMissionEmailToClient(missionData, clientEmail, clientVehicleLabel, grEspelhamento, trackerInfo);
       res.json({ success, message: success ? 'E-mail de agendamento enviado ao cliente!' : 'Falha ao enviar' });
     } catch (err: any) {
       console.error('[Email] Erro mission-scheduled:', err.message);
@@ -395,15 +404,24 @@ export async function registerRoutes(
       if (!clientEmail) return res.status(400).json({ error: 'Cliente sem e-mail cadastrado' });
 
       let clientVehicleLabel = vehiclePlate || '';
-      const { data: missionRow } = await supabase.from('missions').select('client_vehicle_id, client_vehicle').eq('id', missionId).single();
+      const { data: missionRow } = await supabase.from('missions').select('client_vehicle_id, client_vehicle, vehicle_id, gr_espelhamento').eq('id', missionId).single();
       if (missionRow?.client_vehicle_id) {
         const { data: cv } = await supabase.from('client_vehicles').select('plate, model').eq('id', missionRow.client_vehicle_id).single();
         if (cv) clientVehicleLabel = cv.model ? `${cv.plate} / ${cv.model}` : cv.plate;
       }
       if (!clientVehicleLabel && missionRow?.client_vehicle) clientVehicleLabel = missionRow.client_vehicle;
 
+      const grEspelhamento = missionRow?.gr_espelhamento || '';
+      let trackerInfo = '';
+      if (missionRow?.vehicle_id) {
+        const { data: veh } = await supabase.from('vehicles').select('tracker_type, tracker_id').eq('id', missionRow.vehicle_id).single();
+        if (veh && (veh.tracker_type || veh.tracker_id)) {
+          trackerInfo = `${veh.tracker_type || '-'} / ID: ${veh.tracker_id || '-'}`;
+        }
+      }
+
       const missionData = { id: missionId, client, origin: origin || '', destination: destination || '', start_time: start_time || '', mission_type: mission_type || 'Caracterizada' };
-      const success = await sendMirroringEvidenceEmail(missionData, clientEmail, clientVehicleLabel, imageUrl);
+      const success = await sendMirroringEvidenceEmail(missionData, clientEmail, clientVehicleLabel, imageUrl, grEspelhamento, trackerInfo);
       res.json({ success, message: success ? 'E-mail de evidência de espelhamento enviado ao cliente!' : 'Falha ao enviar' });
     } catch (err: any) {
       console.error('[Email] Erro mirroring-evidence:', err.message);
@@ -430,6 +448,15 @@ export async function registerRoutes(
         clientVehicleLabel = missionRow.client_vehicle;
       }
 
+      const grEspelhamento = missionRow.gr_espelhamento || '';
+      let trackerInfo = '';
+      if (missionRow.vehicle_id) {
+        const { data: veh } = await supabase.from('vehicles').select('tracker_type, tracker_id').eq('id', missionRow.vehicle_id).single();
+        if (veh && (veh.tracker_type || veh.tracker_id)) {
+          trackerInfo = `${veh.tracker_type || '-'} / ID: ${veh.tracker_id || '-'}`;
+        }
+      }
+
       const missionData: any = {
         id: missionRow.id,
         client: missionRow.client,
@@ -449,7 +476,7 @@ export async function registerRoutes(
         missionData._alertEntity = 'Cliente';
         missionData._alertName = missionRow.client;
       }
-      const success = await sendMissionResendToClient(missionData, targetEmail, clientVehicleLabel, mirroringUrl || undefined);
+      const success = await sendMissionResendToClient(missionData, targetEmail, clientVehicleLabel, mirroringUrl || undefined, grEspelhamento, trackerInfo);
       res.json({ success, message: success ? (clientEmail ? `E-mail enviado para ${clientEmail}${mirroringUrl ? ' (com evidência de espelhamento)' : ''}` : `⚠️ Cliente "${missionRow.client}" sem e-mail — notificação enviada para operacional.`) : 'Falha ao enviar' });
     } catch (err: any) {
       console.error('[Email] Erro mission-resend-client:', err.message);

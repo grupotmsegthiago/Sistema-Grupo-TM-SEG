@@ -112,7 +112,9 @@ export interface MissionEmailData {
 export async function sendMissionEmailToClient(
   mission: MissionEmailData & { _noEmailAlert?: boolean; _alertEntity?: string; _alertName?: string },
   clientEmail: string,
-  vehiclePlate: string
+  vehiclePlate: string,
+  grEspelhamento?: string,
+  trackerInfo?: string
 ): Promise<boolean> {
   const alertBanner = (mission as any)._noEmailAlert ? `
     <div style="background:#fef2f2; border:2px solid #dc2626; border-radius:8px; padding:16px; margin-bottom:20px;">
@@ -133,6 +135,8 @@ export async function sendMissionEmailToClient(
       <tr><td>Viatura (Placa / Modelo)</td><td>${vehiclePlate || '—'}</td></tr>
       <tr><td>Tipo de Escolta</td><td>${mission.mission_type || 'Caracterizada'}</td></tr>
       <tr><td>Agendamento</td><td>${formatDateTime(mission.start_time)}</td></tr>
+      ${grEspelhamento ? `<tr><td>Espelhamento</td><td>${grEspelhamento}</td></tr>` : ''}
+      ${trackerInfo ? `<tr><td>Rastreador</td><td>${trackerInfo}</td></tr>` : ''}
     </table>
     <div class="highlight-box">
       <p><strong>Observação:</strong> Acompanhe o status da missão em tempo real pelo painel do sistema.</p>
@@ -275,7 +279,9 @@ export async function sendMissionResendToClient(
   mission: MissionEmailData,
   clientEmail: string,
   vehiclePlate: string,
-  mirroringEvidenceUrl?: string
+  mirroringEvidenceUrl?: string,
+  grEspelhamento?: string,
+  trackerInfo?: string
 ): Promise<boolean> {
   const evidenceBlock = mirroringEvidenceUrl ? `
     <div style="margin:20px 0; text-align:center;">
@@ -296,6 +302,8 @@ export async function sendMissionResendToClient(
       <tr><td>Viatura (Placa / Modelo)</td><td>${vehiclePlate || '—'}</td></tr>
       <tr><td>Tipo de Escolta</td><td>${mission.mission_type || 'Caracterizada'}</td></tr>
       <tr><td>Agendamento</td><td>${formatDateTime(mission.start_time)}</td></tr>
+      ${grEspelhamento ? `<tr><td>Espelhamento</td><td>${grEspelhamento}</td></tr>` : ''}
+      ${trackerInfo ? `<tr><td>Rastreador</td><td>${trackerInfo}</td></tr>` : ''}
       ${mission.driver_name ? `<tr><td>Motorista</td><td>${mission.driver_name}</td></tr>` : ''}
       ${mission.driver_phone ? `<tr><td>Contato Motorista</td><td>${mission.driver_phone}</td></tr>` : ''}
     </table>
@@ -341,7 +349,9 @@ export async function sendMirroringEvidenceEmail(
   mission: MissionEmailData,
   clientEmail: string,
   vehiclePlate: string,
-  imageUrl: string
+  imageUrl: string,
+  grEspelhamento?: string,
+  trackerInfo?: string
 ): Promise<boolean> {
   const html = baseTemplate(`
     <h2>📸 Evidência de Espelhamento — ${formatOS(mission.id)}</h2>
@@ -354,6 +364,8 @@ export async function sendMirroringEvidenceEmail(
       <tr><td>Viatura (Placa / Modelo)</td><td>${vehiclePlate || '—'}</td></tr>
       <tr><td>Tipo de Escolta</td><td>${mission.mission_type || 'Caracterizada'}</td></tr>
       <tr><td>Agendamento</td><td>${formatDateTime(mission.start_time)}</td></tr>
+      ${grEspelhamento ? `<tr><td>Espelhamento</td><td>${grEspelhamento}</td></tr>` : ''}
+      ${trackerInfo ? `<tr><td>Rastreador</td><td>${trackerInfo}</td></tr>` : ''}
     </table>
     <div style="margin:20px 0; text-align:center;">
       <p style="font-size:11px; font-weight:700; color:#666; text-transform:uppercase; letter-spacing:1px; margin-bottom:12px;">Foto do Espelhamento</p>
