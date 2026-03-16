@@ -6,7 +6,7 @@ import {
     Building2, CheckCircle2, AlertTriangle, Calendar,
     FileText, Hash, Lock, Eye, X, Save, ShieldCheck,
     ImagePlus, Trash2, ZoomIn, Receipt, CreditCard,
-    CheckSquare, Square, ListChecks, Clock, ArrowRight
+    CheckSquare, Square, ListChecks, ArrowRight
 } from 'lucide-react';
 import { useNotification } from '../lib/NotificationContext';
 
@@ -44,10 +44,6 @@ const VendorVerificationControl: React.FC<VendorVerificationControlProps> = ({ o
     const [selectedProvider, setSelectedProvider] = useState('ALL');
     const [filterStatus, setFilterStatus] = useState<'ALL' | 'PENDING' | 'VERIFIED'>('ALL');
     const [isLoading, setIsLoading] = useState(true);
-    const [dateStart, setDateStart] = useState('');
-    const [dateEnd, setDateEnd] = useState('');
-    const [timeStart, setTimeStart] = useState('');
-    const [timeEnd, setTimeEnd] = useState('');
 
     const [selectedMission, setSelectedMission] = useState<any | null>(null);
     const [modalOpen, setModalOpen] = useState(false);
@@ -454,30 +450,15 @@ const VendorVerificationControl: React.FC<VendorVerificationControlProps> = ({ o
             const isVerified = Boolean(m.verified_by && m.verified_at);
             const matchesStatus = filterStatus === 'ALL' || (filterStatus === 'VERIFIED' && isVerified) || (filterStatus === 'PENDING' && !isVerified);
             const searchLower = searchTerm.toLowerCase();
-            const matchesSearch = m.id.toLowerCase().includes(searchLower) ||
+            return matchesProvider && matchesStatus && (
+                m.id.toLowerCase().includes(searchLower) ||
                 (m.client || '').toLowerCase().includes(searchLower) ||
                 (m.provider || '').toLowerCase().includes(searchLower) ||
                 (m.vendor_os_number || '').toLowerCase().includes(searchLower) ||
-                (m.invoice_number || '').toLowerCase().includes(searchLower);
-
-            let matchesDateRange = true;
-            if (dateStart || dateEnd) {
-                const mDate = m.created_at ? m.created_at.split('T')[0] : '';
-                if (dateStart && mDate < dateStart) matchesDateRange = false;
-                if (dateEnd && mDate > dateEnd) matchesDateRange = false;
-            }
-
-            let matchesTimeRange = true;
-            if (timeStart || timeEnd) {
-                const mTime = m.start_time || '';
-                const mTimeNorm = mTime.length === 5 ? mTime : mTime.slice(0, 5);
-                if (timeStart && mTimeNorm < timeStart) matchesTimeRange = false;
-                if (timeEnd && mTimeNorm > timeEnd) matchesTimeRange = false;
-            }
-
-            return matchesProvider && matchesStatus && matchesSearch && matchesDateRange && matchesTimeRange;
+                (m.invoice_number || '').toLowerCase().includes(searchLower)
+            );
         });
-    }, [missions, selectedProvider, filterStatus, searchTerm, dateStart, dateEnd, timeStart, timeEnd]);
+    }, [missions, selectedProvider, filterStatus, searchTerm]);
 
     const stats = useMemo(() => {
         const total = missions.length;
@@ -775,7 +756,7 @@ const VendorVerificationControl: React.FC<VendorVerificationControlProps> = ({ o
             </div>
 
             <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-200 space-y-4">
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                     <div className="relative">
                         <input
                             type="text"
@@ -815,72 +796,15 @@ const VendorVerificationControl: React.FC<VendorVerificationControlProps> = ({ o
                             </button>
                         ))}
                     </div>
-                </div>
-
-                <div className="grid grid-cols-2 md:grid-cols-5 gap-3 items-end">
-                    <div>
-                        <label className="text-[10px] font-black text-gray-500 uppercase tracking-widest mb-1 block">Data Inicial</label>
-                        <div className="relative">
-                            <Calendar size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-                            <input
-                                type="date"
-                                value={dateStart}
-                                onChange={e => setDateStart(e.target.value)}
-                                className="w-full pl-10 pr-3 py-2 bg-gray-50 border border-gray-300 rounded-lg text-xs font-bold"
-                                data-testid="input-date-start"
-                            />
-                        </div>
-                    </div>
-                    <div>
-                        <label className="text-[10px] font-black text-gray-500 uppercase tracking-widest mb-1 block">Data Final</label>
-                        <div className="relative">
-                            <Calendar size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-                            <input
-                                type="date"
-                                value={dateEnd}
-                                onChange={e => setDateEnd(e.target.value)}
-                                className="w-full pl-10 pr-3 py-2 bg-gray-50 border border-gray-300 rounded-lg text-xs font-bold"
-                                data-testid="input-date-end"
-                            />
-                        </div>
-                    </div>
-                    <div>
-                        <label className="text-[10px] font-black text-gray-500 uppercase tracking-widest mb-1 block">Hora Inicial</label>
-                        <div className="relative">
-                            <Clock size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-                            <input
-                                type="time"
-                                value={timeStart}
-                                onChange={e => setTimeStart(e.target.value)}
-                                className="w-full pl-10 pr-3 py-2 bg-gray-50 border border-gray-300 rounded-lg text-xs font-bold"
-                                data-testid="input-time-start"
-                            />
-                        </div>
-                    </div>
-                    <div>
-                        <label className="text-[10px] font-black text-gray-500 uppercase tracking-widest mb-1 block">Hora Final</label>
-                        <div className="relative">
-                            <Clock size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-                            <input
-                                type="time"
-                                value={timeEnd}
-                                onChange={e => setTimeEnd(e.target.value)}
-                                className="w-full pl-10 pr-3 py-2 bg-gray-50 border border-gray-300 rounded-lg text-xs font-bold"
-                                data-testid="input-time-end"
-                            />
-                        </div>
-                    </div>
-                    <div>
-                        <button
-                            onClick={() => onNavigate?.('fin-billing')}
-                            className="w-full flex items-center justify-center gap-2 bg-gradient-to-r from-indigo-600 to-purple-700 hover:from-indigo-700 hover:to-purple-800 text-white font-black text-[10px] uppercase tracking-wide py-2.5 px-4 rounded-lg transition-all shadow-sm hover:shadow-md"
-                            data-testid="button-billing-approval"
-                        >
-                            <ClipboardCheck size={14} />
-                            Conferência e Aprovação
-                            <ArrowRight size={14} />
-                        </button>
-                    </div>
+                    <button
+                        onClick={() => onNavigate?.('fin-billing')}
+                        className="flex items-center justify-center gap-2 bg-gradient-to-r from-indigo-600 to-purple-700 hover:from-indigo-700 hover:to-purple-800 text-white font-black text-[10px] uppercase tracking-wide py-2.5 px-4 rounded-lg transition-all shadow-sm hover:shadow-md"
+                        data-testid="button-billing-approval"
+                    >
+                        <ClipboardCheck size={14} />
+                        Conferência e Aprovação de Faturamento
+                        <ArrowRight size={14} />
+                    </button>
                 </div>
             </div>
 
@@ -1002,6 +926,10 @@ const VendorVerificationControl: React.FC<VendorVerificationControlProps> = ({ o
                                 <th className="px-4 py-3">Fornecedor / Cliente</th>
                                 <th className="px-4 py-3">Origem</th>
                                 <th className="px-4 py-3">Destino</th>
+                                <th className="px-4 py-3 text-center">Dt. Inicial</th>
+                                <th className="px-4 py-3 text-center">Dt. Final</th>
+                                <th className="px-4 py-3 text-center">Hr. Inicial</th>
+                                <th className="px-4 py-3 text-center">Hr. Final</th>
                                 <th className="px-4 py-3 text-right">Custo</th>
                                 <th className="px-4 py-3 text-center">OS Forn.</th>
                                 <th className="px-4 py-3 text-center">NF</th>
@@ -1013,9 +941,9 @@ const VendorVerificationControl: React.FC<VendorVerificationControlProps> = ({ o
                         </thead>
                         <tbody className="divide-y divide-gray-100">
                             {isLoading ? (
-                                <tr><td colSpan={12} className="p-20 text-center"><Loader2 size={40} className="animate-spin text-blue-700 mx-auto" /></td></tr>
+                                <tr><td colSpan={16} className="p-20 text-center"><Loader2 size={40} className="animate-spin text-blue-700 mx-auto" /></td></tr>
                             ) : filteredMissions.length === 0 ? (
-                                <tr><td colSpan={12} className="p-20 text-center text-gray-400 font-bold uppercase">Nenhuma missão encontrada.</td></tr>
+                                <tr><td colSpan={16} className="p-20 text-center text-gray-400 font-bold uppercase">Nenhuma missão encontrada.</td></tr>
                             ) : (
                                 filteredMissions.map(m => {
                                     const isVerified = Boolean(m.verified_by && m.verified_at);
@@ -1046,6 +974,18 @@ const VendorVerificationControl: React.FC<VendorVerificationControlProps> = ({ o
                                             </td>
                                             <td className="px-4 py-3">
                                                 <div className="text-[10px] font-bold text-gray-700 max-w-[160px] truncate" title={m.destination}>{m.destination || '—'}</div>
+                                            </td>
+                                            <td className="px-4 py-3 text-center">
+                                                <span className="text-[10px] font-bold text-gray-700">{m.start_time ? new Date(m.start_time).toLocaleDateString('pt-BR') : '—'}</span>
+                                            </td>
+                                            <td className="px-4 py-3 text-center">
+                                                <span className="text-[10px] font-bold text-gray-700">{m.end_time ? new Date(m.end_time).toLocaleDateString('pt-BR') : '—'}</span>
+                                            </td>
+                                            <td className="px-4 py-3 text-center">
+                                                <span className="text-[10px] font-bold text-gray-700">{m.start_time ? new Date(m.start_time).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) : '—'}</span>
+                                            </td>
+                                            <td className="px-4 py-3 text-center">
+                                                <span className="text-[10px] font-bold text-gray-700">{m.end_time ? new Date(m.end_time).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) : '—'}</span>
                                             </td>
                                             <td className="px-4 py-3 text-right">
                                                 <span className="text-xs font-black text-red-600">{formatCurrency(totalCost)}</span>
