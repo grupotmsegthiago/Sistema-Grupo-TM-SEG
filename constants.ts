@@ -82,7 +82,6 @@ export const NAV_ITEMS: NavItem[] = [
     id: 'finance-group',
     children: [
       { name: 'Dashboard Financeiro', id: 'fin-dashboard' },
-      { name: 'Gestão de Cobrança', id: 'fin-billing-control' },
       { name: 'Boletim de Medição', id: 'fin-billing' },
       { name: 'Movimento Diário', id: 'fin-daily-movement' },
       { name: 'Fechamento Terceiros', id: 'fin-transactions' },

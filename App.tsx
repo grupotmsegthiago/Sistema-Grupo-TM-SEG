@@ -65,7 +65,6 @@ import FinancialCategoryManager from './components/FinancialCategoryManager';
 import FinancialReport from './components/FinancialReport'; 
 import ClientBillingReport from './components/ClientBillingReport';
 import DailyCashMovement from './components/DailyCashMovement';
-import BillingControlCenter from './components/BillingControlCenter';
 import VendorVerificationControl from './components/VendorVerificationControl';
 import MissionAlertMonitor from './components/MissionAlertMonitor';
 
@@ -231,7 +230,6 @@ const App: React.FC = () => {
       case 'fin-report': return <FinancialReport />; 
       case 'fin-billing': return <ClientBillingReport onNavigate={navigateTo} onOpenMission={handleOpenBillingMission} />;
       case 'fin-daily-movement': return <DailyCashMovement />;
-      case 'fin-billing-control': return <BillingControlCenter />;
       case 'fin-vendor-verification': return <VendorVerificationControl />;
       case 'clients': return <ClientList onAddClient={() => navigateTo('client-form')} onEdit={(id) => handleEdit('client-form', id)} />;
       case 'client-form': return ( <ClientForm id={selectedId} onBack={() => navigateTo('clients')} onSave={() => {}} onAddVehicle={() => navigateTo('client-vehicle-form')} onEditVehicle={(vid) => handleEdit('client-vehicle-form', vid)} onAddRoute={() => navigateTo('client-route-form')} onEditRoute={(rid) => handleEdit('client-route-form', rid)} onAddQuote={() => navigateTo('quote-form')} onEditQuote={(qid) => handleEdit('quote-form', qid)} /> );
