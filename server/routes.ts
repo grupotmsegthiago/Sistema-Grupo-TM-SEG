@@ -181,57 +181,6 @@ export async function registerRoutes(
         console.log(`[Push] Notificação enviada para ${pushSubscriptions.size} dispositivos: OS ${osId}`);
       }
 
-      // ── Auto-email on mission creation ──
-      try {
-        let vehiclePlate = '—';
-        if (mission.client_vehicle) {
-          const { data: veh } = await supabaseForPush
-            .from('vehicles')
-            .select('plate')
-            .eq('id', mission.client_vehicle)
-            .single();
-          if (veh?.plate) vehiclePlate = veh.plate;
-        }
-
-        const missionData = {
-          id: osId,
-          client: mission.client || '',
-          provider: mission.provider || '',
-          origin: mission.origin || '',
-          destination: mission.destination || '',
-          start_time: mission.start_time || '',
-          mission_type: mission.mission_type || 'Caracterizada',
-          driver_name: mission.driver_name || '',
-          driver_phone: mission.driver_phone || '',
-          client_vehicle: mission.client_vehicle,
-        };
-
-        if (mission.client) {
-          const { data: clientData } = await supabaseForPush
-            .from('clients')
-            .select('*')
-            .eq('name', mission.client)
-            .single();
-          const clientTargetEmail = clientData?.operational_email || clientData?.email;
-          if (clientTargetEmail) {
-            sendMissionEmailToClient(missionData, clientTargetEmail, vehiclePlate);
-          }
-        }
-
-        if (mission.provider) {
-          const { data: provData } = await supabaseForPush
-            .from('providers')
-            .select('*')
-            .eq('name', mission.provider)
-            .single();
-          const provTargetEmail = provData?.os_email || provData?.email;
-          if (provTargetEmail) {
-            sendMissionEmailToProvider(missionData, provTargetEmail, vehiclePlate);
-          }
-        }
-      } catch (emailErr: any) {
-        console.error('[Email] Erro no disparo automático de missão:', emailErr.message);
-      }
     })
     .subscribe();
 
@@ -293,23 +242,49 @@ export async function registerRoutes(
 
   app.post("/api/email/mission-scheduled", async (req: Request, res: Response) => {
     try {
-      const { missionId, client, origin, destination, start_time, mission_type, vehiclePlate } = req.body;
+      const { missionId, client, origin, destination, start_time, mission_type, vehiclePlate, provider, driver_name, driver_phone } = req.body;
       if (!missionId || !client) return res.status(400).json({ error: 'Campos missionId e client obrigatórios' });
 
-      const { data: missionCheck } = await supabaseForPush.from('missions').select('id, status, client').eq('id', missionId).single();
+      const { data: missionCheck } = await supabaseForPush.from('missions').select('*').eq('id', missionId).single();
       if (!missionCheck) return res.status(404).json({ error: 'Missão não encontrada' });
       if (missionCheck.status !== 'Agendada') return res.status(400).json({ error: 'Missão não está com status Agendada' });
 
-      const { data: clientData } = await supabaseForPush.from('clients').select('operational_email, email').eq('name', missionCheck.client || client).single();
-      const clientEmail = clientData?.operational_email || clientData?.email;
-      if (!clientEmail) return res.status(400).json({ error: 'Cliente sem e-mail cadastrado' });
+      const missionData = {
+        id: missionId,
+        client: missionCheck.client || client || '',
+        provider: missionCheck.provider || provider || '',
+        origin: origin || missionCheck.origin || '',
+        destination: destination || missionCheck.destination || '',
+        start_time: start_time || missionCheck.start_time || '',
+        mission_type: mission_type || missionCheck.mission_type || 'Caracterizada',
+        driver_name: driver_name || missionCheck.driver_name || '',
+        driver_phone: driver_phone || missionCheck.driver_phone || '',
+      };
 
-      const success = await sendMissionEmailToClient(
-        { id: missionId, origin: origin || '', destination: destination || '', start_time: start_time || '', mission_type: mission_type || 'Caracterizada' },
-        clientEmail,
-        vehiclePlate || '—'
-      );
-      res.json({ success, message: success ? 'E-mail de agendamento enviado ao cliente!' : 'Falha ao enviar e-mail' });
+      const plate = vehiclePlate || '—';
+      let clientOk = false;
+      let providerOk = false;
+
+      const { data: clientData } = await supabaseForPush.from('clients').select('operational_email, email').eq('name', missionData.client).single();
+      const clientEmail = clientData?.operational_email || clientData?.email;
+      if (clientEmail) {
+        clientOk = await sendMissionEmailToClient(missionData, clientEmail, plate);
+      }
+
+      if (missionData.provider) {
+        const { data: provData } = await supabaseForPush.from('providers').select('os_email, email').eq('name', missionData.provider).single();
+        const provEmail = provData?.os_email || provData?.email;
+        if (provEmail) {
+          providerOk = await sendMissionEmailToProvider(missionData, provEmail, plate);
+        }
+      }
+
+      res.json({
+        success: clientOk || providerOk,
+        clientEmail: { success: clientOk },
+        providerEmail: { success: providerOk },
+        message: `Cliente: ${clientOk ? 'enviado' : 'não enviado'} | Fornecedor: ${providerOk ? 'enviado' : 'não enviado'}`
+      });
     } catch (err: any) {
       console.error('[Email] Erro mission-scheduled:', err.message);
       res.status(500).json({ error: err.message });
