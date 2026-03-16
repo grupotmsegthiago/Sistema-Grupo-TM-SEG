@@ -33,9 +33,10 @@ const fmtDateTime = (d: string | null | undefined) => {
 
 interface VendorVerificationControlProps {
     onNavigate?: (moduleId: string) => void;
+    onOpenMission?: (missionId: string) => void;
 }
 
-const VendorVerificationControl: React.FC<VendorVerificationControlProps> = ({ onNavigate }) => {
+const VendorVerificationControl: React.FC<VendorVerificationControlProps> = ({ onNavigate, onOpenMission }) => {
     const { showNotification } = useNotification();
     const [missions, setMissions] = useState<any[]>([]);
     const [clients, setClients] = useState<any[]>([]);
@@ -1025,18 +1026,28 @@ const VendorVerificationControl: React.FC<VendorVerificationControlProps> = ({ o
                                                 )}
                                             </td>
                                             <td className="px-4 py-3 text-center">
-                                                <button
-                                                    onClick={() => openVerificationModal(m)}
-                                                    className={`p-2 rounded-xl transition-all flex items-center gap-1 text-[9px] font-black uppercase mx-auto ${
-                                                        isVerified
-                                                            ? 'bg-green-50 border border-green-200 text-green-700 hover:bg-green-100'
-                                                            : 'bg-blue-50 border-2 border-blue-400 text-blue-700 hover:bg-blue-100'
-                                                    }`}
-                                                    data-testid={`button-verify-${m.id}`}
-                                                >
-                                                    {isVerified ? <Eye size={14} /> : <ClipboardCheck size={14} />}
-                                                    {isVerified ? 'Ver' : 'Verificar'}
-                                                </button>
+                                                <div className="flex items-center justify-center gap-1.5">
+                                                    <button
+                                                        onClick={() => onOpenMission?.(m.id)}
+                                                        className="p-2 rounded-xl transition-all bg-emerald-50 border border-emerald-200 text-emerald-700 hover:bg-emerald-100"
+                                                        title="Conferência e Auditoria da OS"
+                                                        data-testid={`button-audit-${m.id}`}
+                                                    >
+                                                        <FileText size={14} />
+                                                    </button>
+                                                    <button
+                                                        onClick={() => openVerificationModal(m)}
+                                                        className={`p-2 rounded-xl transition-all flex items-center gap-1 text-[9px] font-black uppercase ${
+                                                            isVerified
+                                                                ? 'bg-green-50 border border-green-200 text-green-700 hover:bg-green-100'
+                                                                : 'bg-blue-50 border-2 border-blue-400 text-blue-700 hover:bg-blue-100'
+                                                        }`}
+                                                        data-testid={`button-verify-${m.id}`}
+                                                    >
+                                                        {isVerified ? <Eye size={14} /> : <ClipboardCheck size={14} />}
+                                                        {isVerified ? 'Ver' : 'Verificar'}
+                                                    </button>
+                                                </div>
                                             </td>
                                         </tr>
                                     );
