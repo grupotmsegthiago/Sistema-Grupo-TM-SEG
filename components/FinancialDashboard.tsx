@@ -179,7 +179,7 @@ const FinancialDashboard: React.FC = () => {
 
           <div className="bg-white p-5 rounded-2xl shadow-sm border border-gray-200 hover:shadow-md transition-shadow group">
               <div className="flex justify-between items-start mb-2">
-                <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Pagamentos Terceiros</p>
+                <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Contas a Pagar</p>
                 <ArrowDownRight className="text-red-500 group-hover:scale-110 transition-transform" size={18} />
               </div>
               <h3 className="text-2xl font-black text-red-600 font-mono tracking-tighter">
