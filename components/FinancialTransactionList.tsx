@@ -23,8 +23,8 @@ type Step = 'PAGAR' | 'RECEBER' | 'FATURAS' | 'CONFERENCIA' | 'RELATORIO' | 'FEC
 type StatusFilter = 'ALL' | 'PENDING' | 'PAID' | 'OVERDUE';
 
 const STEPS: { id: Step; label: string; icon: React.ReactNode; description: string; number: number }[] = [
-    { id: 'PAGAR', label: 'Contas a Pagar', icon: <ArrowDownCircle size={18}/>, description: 'Despesas e pagamentos a fornecedores', number: 1 },
-    { id: 'RECEBER', label: 'Contas a Receber', icon: <ArrowUpCircle size={18}/>, description: 'Valores a receber dos clientes', number: 2 },
+    { id: 'PAGAR', label: 'Pagamentos Terceiros', icon: <ArrowDownCircle size={18}/>, description: 'Despesas e pagamentos a fornecedores', number: 1 },
+    { id: 'RECEBER', label: 'Recebimentos Terceiros', icon: <ArrowUpCircle size={18}/>, description: 'Valores a receber dos clientes', number: 2 },
     { id: 'FATURAS', label: 'Emissão de Faturas', icon: <Receipt size={18}/>, description: 'Gerar e controlar faturas emitidas', number: 3 },
     { id: 'CONFERENCIA', label: 'Conferência', icon: <ClipboardCheck size={18}/>, description: 'Revisar lançamentos e pendências', number: 4 },
     { id: 'RELATORIO', label: 'Relatório de Controle', icon: <BarChart3 size={18}/>, description: 'Relatório de títulos pagos e vencidos', number: 5 },
@@ -531,7 +531,7 @@ const FinancialTransactionList: React.FC = () => {
                             <div className={`p-5 rounded-xl border-2 ${overduePagar.length > 0 ? 'border-red-300 bg-red-50' : 'border-green-300 bg-green-50'}`}>
                                 <div className="flex items-center gap-2 mb-3">
                                     {overduePagar.length > 0 ? <AlertCircle size={20} className="text-red-600"/> : <CheckCircle2 size={20} className="text-green-600"/>}
-                                    <h4 className="text-sm font-black text-gray-900 uppercase">Contas a Pagar</h4>
+                                    <h4 className="text-sm font-black text-gray-900 uppercase">Pagamentos Terceiros</h4>
                                 </div>
                                 {overduePagar.length > 0 ? (
                                     <div>
@@ -549,7 +549,7 @@ const FinancialTransactionList: React.FC = () => {
                             <div className={`p-5 rounded-xl border-2 ${overdueReceber.length > 0 ? 'border-red-300 bg-red-50' : 'border-green-300 bg-green-50'}`}>
                                 <div className="flex items-center gap-2 mb-3">
                                     {overdueReceber.length > 0 ? <AlertCircle size={20} className="text-red-600"/> : <CheckCircle2 size={20} className="text-green-600"/>}
-                                    <h4 className="text-sm font-black text-gray-900 uppercase">Contas a Receber</h4>
+                                    <h4 className="text-sm font-black text-gray-900 uppercase">Recebimentos Terceiros</h4>
                                 </div>
                                 {overdueReceber.length > 0 ? (
                                     <div>
@@ -656,14 +656,14 @@ const FinancialTransactionList: React.FC = () => {
                                 <div className={`flex items-center gap-3 p-4 rounded-xl border-2 ${!hasPendingPagar ? 'border-green-300 bg-green-50' : 'border-amber-300 bg-amber-50'}`}>
                                     {!hasPendingPagar ? <CheckCircle2 size={20} className="text-green-600"/> : <AlertCircle size={20} className="text-amber-600"/>}
                                     <div>
-                                        <p className="text-sm font-black text-gray-900 uppercase">1. Contas a Pagar</p>
+                                        <p className="text-sm font-black text-gray-900 uppercase">1. Pagamentos Terceiros</p>
                                         <p className="text-xs text-gray-500">{!hasPendingPagar ? 'Todos os títulos estão liquidados.' : `Existem ${transactions.filter(t => t.type === 'EXPENSE' && t.status === 'PENDING').length} título(s) pendente(s).`}</p>
                                     </div>
                                 </div>
                                 <div className={`flex items-center gap-3 p-4 rounded-xl border-2 ${!hasPendingReceber ? 'border-green-300 bg-green-50' : 'border-amber-300 bg-amber-50'}`}>
                                     {!hasPendingReceber ? <CheckCircle2 size={20} className="text-green-600"/> : <AlertCircle size={20} className="text-amber-600"/>}
                                     <div>
-                                        <p className="text-sm font-black text-gray-900 uppercase">2. Contas a Receber</p>
+                                        <p className="text-sm font-black text-gray-900 uppercase">2. Recebimentos Terceiros</p>
                                         <p className="text-xs text-gray-500">{!hasPendingReceber ? 'Todos os recebíveis confirmados.' : `Existem ${transactions.filter(t => t.type === 'INCOME' && t.status === 'PENDING').length} título(s) pendente(s).`}</p>
                                     </div>
                                 </div>
@@ -731,7 +731,7 @@ const FinancialTransactionList: React.FC = () => {
                         <span className="w-1.5 h-6 bg-red-700 rounded-full"></span>
                         Fechamento de Terceiros
                     </h2>
-                    <p className="text-xs text-gray-500 mt-1 ml-4.5">Contas a pagar, receber, faturas e fechamento financeiro.</p>
+                    <p className="text-xs text-gray-500 mt-1 ml-4.5">Gestão de pagamentos, recebimentos, faturas e fechamento financeiro de terceiros.</p>
                 </div>
                 <div className="flex gap-2">
                     <div className="flex bg-gray-100 p-1 rounded-xl border border-gray-200 no-print">
