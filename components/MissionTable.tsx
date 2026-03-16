@@ -528,10 +528,9 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
         const isSearching = searchTerm && searchTerm.trim().length > 0;
         const hasActiveSpecialFilters = showPendingOnly || showTomorrowOnly || showMyApprovalOnly;
 
-        const sourceMissions = periodMissions;
+        const sourceMissions = showTomorrowOnly ? allMissions : periodMissions;
 
         return sourceMissions.filter(mission => {
-            // Text Search
             if (isSearching) {
                 const searchLower = searchTerm.toLowerCase().trim();
                 const matchesSearch = 
@@ -544,7 +543,6 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
                 if (!matchesSearch) return false;
             }
 
-            // Filter 1: Pending (Toggle)
             if (showPendingOnly && !isMissionPending(mission)) {
                 return false;
             }
@@ -554,7 +552,8 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
                 tomorrow.setDate(tomorrow.getDate() + 1);
                 tomorrow.setHours(0, 0, 0, 0);
                 const mDate = new Date(mission.startTime || mission.createdAt).getTime();
-                if (mDate < tomorrow.getTime()) return false;
+                const isInitialStatus = [MissionStatus.SCHEDULED, MissionStatus.SOLICITED, MissionStatus.DOCUMENTATION].includes(mission.status as MissionStatus);
+                if (mDate < tomorrow.getTime() || !isInitialStatus) return false;
             }
 
             return true;
