@@ -802,10 +802,26 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
         await handleCopyToClipboard(text, (mission.id || 'OS'), true);
     };
     
-    const handleCopyEmail = (mission: Mission) => {
-        const subject = `STATUS OS ${mission.id} - ${mission.client}`;
-        const body = `Prezados, Segue status da operação: OS: ${mission.id} Status: ${mission.status} Local Atual: ${mission.currentLocation || 'N/A'} Atenciosamente, Grupo TMSEG`;
-        window.location.href = `mailto:?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+    const [isSendingEmail, setIsSendingEmail] = useState('');
+    const handleCopyEmail = async (mission: Mission) => {
+        setIsSendingEmail(mission.id);
+        try {
+            const res = await fetch('/api/email/mission-resend-client', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ missionId: mission.id })
+            });
+            const data = await res.json();
+            if (res.ok && data.success) {
+                showNotification('E-mail Enviado', data.message, 'success');
+            } else {
+                showNotification('Erro', data.error || 'Falha ao enviar e-mail', 'error');
+            }
+        } catch (err: any) {
+            showNotification('Erro', 'Falha na comunicação: ' + (err.message || ''), 'error');
+        } finally {
+            setIsSendingEmail('');
+        }
     };
     const handleCopyToClipboard = async (text: string, id: string, isReport = false) => { try { await navigator.clipboard.writeText(text); if(isReport) showNotification('Sucesso', 'Relatório WhatsApp Copiado!', 'success'); else { setCopiedId(id); setTimeout(() => setCopiedId(null), 2000); } } catch (err) { console.error(err); } };
     const confirmDelete = async () => { if (!missionToDelete) return; setIsDeleting(true); try { const { error } = await supabase.from('missions').update({ status: 'Cancelada' }).eq('id', missionToDelete.id).select('id').single(); if (error) throw error; await logAction('UPDATE', 'Mission', missionToDelete.id, `Missão cancelada por ${currentUser?.name}`); showNotification('Sucesso', 'Missão cancelada com sucesso. O registro permanece no banco.', 'success'); setIsDeleteModalOpen(false); setMissionToDelete(null); fetchMissions(true); } catch (error: any) { showNotification('Erro', error.message, 'error'); } finally { setIsDeleting(false); } };
@@ -1070,6 +1086,7 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
                                       isImminent={mission.status === MissionStatus.IN_TRANSIT && diffMinutes > 30 && diffMinutes <= 60}
                                       minutesSinceUpdate={diffMinutes}
                                       copiedId={copiedId}
+                                      isSendingEmail={isSendingEmail}
                                       onViewMap={handleOpenStatusModal}
                                       onUpdate={handleOpenUpdateModal}
                                       onOpenFinancials={handleOpenFinancialModal} 

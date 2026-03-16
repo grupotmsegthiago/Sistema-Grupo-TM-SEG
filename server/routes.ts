@@ -9,7 +9,7 @@ import webpush from "web-push";
 import { calculateMissionFinancials } from "../lib/financialUtils";
 import fs from "fs";
 import path from "path";
-import { sendMissionEmailToClient, sendMissionEmailToProvider, sendMirroringEvidenceEmail, sendWelcomeEmail, sendTestEmail, sendVerificationCodeEmail } from "./emailService";
+import { sendMissionEmailToClient, sendMissionEmailToProvider, sendMissionResendToClient, sendMirroringEvidenceEmail, sendWelcomeEmail, sendTestEmail, sendVerificationCodeEmail } from "./emailService";
 
 const resend = new Resend(process.env.RESEND_API_KEY);
 
@@ -318,6 +318,45 @@ export async function registerRoutes(
       res.json({ success, message: success ? 'E-mail de evidência de espelhamento enviado ao cliente!' : 'Falha ao enviar' });
     } catch (err: any) {
       console.error('[Email] Erro mirroring-evidence:', err.message);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post("/api/email/mission-resend-client", async (req: Request, res: Response) => {
+    try {
+      const { missionId } = req.body;
+      if (!missionId) return res.status(400).json({ error: 'ID da missão obrigatório' });
+
+      const { data: missionRow } = await supabase.from('missions').select('*').eq('id', missionId).single();
+      if (!missionRow) return res.status(404).json({ error: 'Missão não encontrada' });
+
+      const { data: clientData } = await supabase.from('clients').select('*').eq('name', missionRow.client).single();
+      const clientEmail = clientData?.os_email || clientData?.email;
+      if (!clientEmail) return res.status(400).json({ error: 'Cliente sem e-mail cadastrado' });
+
+      let vehiclePlate = '—';
+      if (missionRow.vehicle_id) {
+        const { data: veh } = await supabase.from('vehicles').select('plate').eq('id', missionRow.vehicle_id).single();
+        if (veh?.plate) vehiclePlate = veh.plate;
+      }
+
+      const missionData = {
+        id: missionRow.id,
+        client: missionRow.client,
+        provider: missionRow.provider || '',
+        origin: missionRow.origin || '',
+        destination: missionRow.destination || '',
+        start_time: missionRow.start_time || '',
+        mission_type: missionRow.mission_type || 'Caracterizada',
+        driver_name: missionRow.driver_name || '',
+        driver_phone: missionRow.driver_phone || ''
+      };
+
+      const mirroringUrl = missionRow.mirroring_evidence_url || '';
+      const success = await sendMissionResendToClient(missionData, clientEmail, vehiclePlate, mirroringUrl || undefined);
+      res.json({ success, message: success ? `E-mail enviado para ${clientEmail}${mirroringUrl ? ' (com evidência de espelhamento)' : ''}` : 'Falha ao enviar' });
+    } catch (err: any) {
+      console.error('[Email] Erro mission-resend-client:', err.message);
       res.status(500).json({ error: err.message });
     }
   });

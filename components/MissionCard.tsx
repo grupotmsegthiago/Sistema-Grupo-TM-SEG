@@ -25,6 +25,7 @@ interface MissionCardProps {
     isImminent: boolean;
     minutesSinceUpdate: number;
     copiedId: string | null;
+    isSendingEmail?: string;
     hideProviderInfo?: boolean;
     onViewMap: (m: Mission) => void;
     onUpdate: (m: Mission) => void;
@@ -162,7 +163,7 @@ const compressImage = (file: File, maxWidth = 1200, quality = 0.7): Promise<Blob
 };
 
 const MissionCardComponent: React.FC<MissionCardProps> = ({ 
-    mission, canEditMission, isDirector, isRedLight, isImminent, minutesSinceUpdate, copiedId, hideProviderInfo,
+    mission, canEditMission, isDirector, isRedLight, isImminent, minutesSinceUpdate, copiedId, isSendingEmail, hideProviderInfo,
     onViewMap, onUpdate, onOpenFinancials, onCopy, onCopyEmail, onDelete, onPrint, onViewHistory, onFullReport, onOperationalReport, lastLog, onEvidenceUploaded,
     clientTables, providerTables, clientsData, agentPhonesMap, currentTime, approvalStages, evidenceList
 }) => {
@@ -844,7 +845,7 @@ Qualquer dúvida, estamos a disposição.
                             </button>
                         )}
                         
-                        <button onClick={() => onCopyEmail(mission)} className="w-7 h-7 flex items-center justify-center rounded-md bg-slate-50 text-slate-600 border border-slate-200 transition-all duration-200 hover:bg-slate-600 hover:text-white hover:shadow-sm active:scale-95" title="Copiar Template de E-mail"><Mail size={14} /></button>
+                        <button onClick={() => onCopyEmail(mission)} disabled={isSendingEmail === mission.id} className={`w-7 h-7 flex items-center justify-center rounded-md border transition-all duration-200 hover:shadow-sm active:scale-95 ${isSendingEmail === mission.id ? 'bg-blue-100 text-blue-600 border-blue-200 animate-pulse cursor-wait' : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-600 hover:text-white'}`} title="Enviar E-mail ao Cliente" data-testid={`btn-email-client-${mission.id}`}>{isSendingEmail === mission.id ? <Loader2 size={14} className="animate-spin" /> : <Mail size={14} />}</button>
                         <button onClick={() => onCopy(mission)} className={`w-7 h-7 flex items-center justify-center rounded-md border transition-all duration-200 hover:shadow-sm active:scale-95 ${copiedId === mission.id ? 'bg-green-100 text-green-700 border-green-200' : 'bg-[#25D366]/10 text-[#25D366] border-[#25D366]/20 hover:bg-[#25D366] hover:text-white'}`} title="Copiar Relatório WhatsApp">{copiedId === mission.id ? <Check size={14} strokeWidth={3}/> : <WhatsAppIcon size={14}/>}</button>
                         {onViewHistory && isDirector && (<button onClick={(e) => { e.stopPropagation(); onViewHistory(mission); }} className="w-7 h-7 flex items-center justify-center rounded-md bg-purple-50 text-purple-600 border border-purple-200 transition-all duration-200 hover:bg-purple-600 hover:text-white hover:shadow-sm active:scale-95" title="Histórico Detalhado (Auditoria)"><FileSearch size={14} /></button>)}</>)}
                         <button onClick={() => hasEvidence ? setShowEvidenceModal(true) : setShowUploadModal(true)} className={`w-7 h-7 flex items-center justify-center rounded-md border transition-all duration-200 hover:shadow-sm active:scale-95 ${hasEvidence ? 'bg-emerald-50 text-emerald-600 border-emerald-200 hover:bg-emerald-600 hover:text-white' : requiresEvidence ? 'bg-red-50 text-red-600 border-red-200 hover:bg-red-600 hover:text-white animate-pulse' : 'bg-cyan-50 text-cyan-600 border-cyan-200 hover:bg-cyan-600 hover:text-white'}`} title={hasEvidence ? 'Ver Evidência' : 'Anexar Print / Evidência (Ctrl+V para colar)'} data-testid={`button-upload-evidence-${mission.id}`}>

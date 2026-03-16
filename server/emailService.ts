@@ -241,6 +241,67 @@ export interface WelcomeEmailData {
   profileName?: string;
 }
 
+export async function sendMissionResendToClient(
+  mission: MissionEmailData,
+  clientEmail: string,
+  vehiclePlate: string,
+  mirroringEvidenceUrl?: string
+): Promise<boolean> {
+  const evidenceBlock = mirroringEvidenceUrl ? `
+    <div style="margin:20px 0; text-align:center;">
+      <p style="font-size:11px; font-weight:700; color:#666; text-transform:uppercase; letter-spacing:1px; margin-bottom:12px;">📸 Evidência de Espelhamento</p>
+      <img src="${mirroringEvidenceUrl}" alt="Evidência de Espelhamento" style="max-width:100%; max-height:500px; border-radius:8px; border:2px solid #e0e0e0; box-shadow:0 2px 8px rgba(0,0,0,0.1);" />
+    </div>
+  ` : '';
+
+  const html = baseTemplate(`
+    <h2>📋 Confirmação de Escolta — ${formatOS(mission.id)}</h2>
+    <p>Prezado(a) Cliente,</p>
+    <p>Segue a confirmação e detalhes completos da missão de escolta registrada para a sua empresa:</p>
+    <table class="info-table">
+      <tr><td>Nº da OS</td><td><span class="badge">${formatOS(mission.id)}</span></td></tr>
+      <tr><td>Cliente</td><td>${mission.client}</td></tr>
+      <tr><td>Rota</td><td>${mission.origin} → ${mission.destination}</td></tr>
+      <tr><td>Viatura (Placa)</td><td>${vehiclePlate || '—'}</td></tr>
+      <tr><td>Tipo de Escolta</td><td>${mission.mission_type || 'Caracterizada'}</td></tr>
+      <tr><td>Data/Hora Inicial</td><td>${formatDateTime(mission.start_time)}</td></tr>
+      ${mission.driver_name ? `<tr><td>Motorista</td><td>${mission.driver_name}</td></tr>` : ''}
+      ${mission.driver_phone ? `<tr><td>Contato Motorista</td><td>${mission.driver_phone}</td></tr>` : ''}
+    </table>
+    ${evidenceBlock}
+    <div class="highlight-box">
+      <p><strong>Observação:</strong> Acompanhe o status da missão em tempo real pelo painel do sistema.</p>
+    </div>
+    <p>Atenciosamente,<br><strong>Equipe Grupo TM SEG</strong></p>
+  `);
+
+  try {
+    const mailOptions: any = {
+      from: SMTP_FROM,
+      to: clientEmail,
+      bcc: BCC_RECIPIENTS,
+      subject: `Confirmação de Escolta - ${vehiclePlate || 'S/PLACA'} / ${formatOS(mission.id)}`,
+      html,
+    };
+
+    const reportPath = path.resolve(process.cwd(), 'server', 'assets', 'relatorio_escolta.png');
+    if (fs.existsSync(reportPath)) {
+      mailOptions.attachments = [{
+        filename: `Relatorio_Escolta_${formatOS(mission.id)}.png`,
+        path: reportPath,
+        cid: 'relatorio_escolta'
+      }];
+    }
+
+    await transporter.sendMail(mailOptions);
+    console.log(`[Email] Reenvio missão ${mission.id} → Cliente: ${clientEmail} (evidência: ${mirroringEvidenceUrl ? 'SIM' : 'NÃO'})`);
+    return true;
+  } catch (err: any) {
+    console.error(`[Email] Erro ao reenviar para cliente ${clientEmail}:`, err.message);
+    return false;
+  }
+}
+
 export async function sendMirroringEvidenceEmail(
   mission: MissionEmailData,
   clientEmail: string,
