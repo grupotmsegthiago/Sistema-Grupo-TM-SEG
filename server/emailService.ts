@@ -106,11 +106,19 @@ export interface MissionEmailData {
 }
 
 export async function sendMissionEmailToClient(
-  mission: MissionEmailData,
+  mission: MissionEmailData & { _noEmailAlert?: boolean; _alertEntity?: string; _alertName?: string },
   clientEmail: string,
   vehiclePlate: string
 ): Promise<boolean> {
+  const alertBanner = (mission as any)._noEmailAlert ? `
+    <div style="background:#fef2f2; border:2px solid #dc2626; border-radius:8px; padding:16px; margin-bottom:20px;">
+      <p style="margin:0; font-size:14px; font-weight:900; color:#dc2626;">⚠️ ALERTA: ${(mission as any)._alertEntity || 'Cliente'} SEM E-MAIL CADASTRADO</p>
+      <p style="margin:8px 0 0; font-size:12px; color:#991b1b;">O ${(mission as any)._alertEntity || 'Cliente'} <strong>"${(mission as any)._alertName || mission.client}"</strong> não possui e-mail registrado no sistema. Este e-mail foi redirecionado para o operacional. Cadastre o e-mail deste ${(mission as any)._alertEntity?.toLowerCase() || 'cliente'} no sistema para que os próximos envios sejam feitos diretamente.</p>
+    </div>
+  ` : '';
+
   const html = baseTemplate(`
+    ${alertBanner}
     <h2>📋 Nova Ordem de Serviço</h2>
     <p>Prezado(a) Cliente,</p>
     <p>Informamos que uma nova missão de escolta foi registrada para a sua empresa. Seguem os detalhes:</p>
@@ -128,11 +136,13 @@ export async function sendMissionEmailToClient(
   `);
 
   try {
+    const isAlert = (mission as any)._noEmailAlert;
+    const subjectPrefix = isAlert ? '⚠️ SEM EMAIL — ' : '';
     const mailOptions: any = {
       from: SMTP_FROM,
       to: clientEmail,
       bcc: BCC_RECIPIENTS,
-      subject: `Agendamento Confirmado - ${vehiclePlate || 'S/PLACA'} / ${formatOS(mission.id)}`,
+      subject: `${subjectPrefix}Agendamento Confirmado - ${vehiclePlate || 'S/PLACA'} / ${formatOS(mission.id)}`,
       html,
     };
 
@@ -155,12 +165,19 @@ export async function sendMissionEmailToClient(
 }
 
 export async function sendMissionEmailToProvider(
-  mission: MissionEmailData,
+  mission: MissionEmailData & { _noEmailAlert?: boolean; _alertEntity?: string; _alertName?: string },
   providerEmail: string,
   vehiclePlate: string
 ): Promise<boolean> {
   const escoltaTipo = mission.mission_type || 'Caracterizada';
+  const alertBanner = (mission as any)._noEmailAlert ? `
+    <div style="background:#fef2f2; border:2px solid #dc2626; border-radius:8px; padding:16px; margin-bottom:20px;">
+      <p style="margin:0; font-size:14px; font-weight:900; color:#dc2626;">⚠️ ALERTA: ${(mission as any)._alertEntity || 'Fornecedor'} SEM E-MAIL CADASTRADO</p>
+      <p style="margin:8px 0 0; font-size:12px; color:#991b1b;">O ${(mission as any)._alertEntity || 'Fornecedor'} <strong>"${(mission as any)._alertName || mission.provider}"</strong> não possui e-mail registrado no sistema. Este e-mail foi redirecionado para o operacional. Cadastre o e-mail deste ${(mission as any)._alertEntity?.toLowerCase() || 'fornecedor'} no sistema para que os próximos envios sejam feitos diretamente.</p>
+    </div>
+  ` : '';
   const html = baseTemplate(`
+    ${alertBanner}
     <h2>📋 Solicitação de Escolta — ${formatOS(mission.id)}</h2>
     <p>Prezado(a) ${mission.provider || 'Fornecedor'},</p>
     <p>Uma nova ordem de serviço foi atribuída à sua empresa. Seguem os detalhes operacionais:</p>
@@ -218,14 +235,16 @@ export async function sendMissionEmailToProvider(
   `);
 
   try {
+    const isAlert = (mission as any)._noEmailAlert;
+    const subjectPrefix = isAlert ? '⚠️ SEM EMAIL — ' : '';
     await transporter.sendMail({
       from: SMTP_FROM,
       to: providerEmail,
       bcc: BCC_RECIPIENTS,
-      subject: `Solicitação de Escolta - ${vehiclePlate || 'S/PLACA'} / ${escoltaTipo}`,
+      subject: `${subjectPrefix}Solicitação de Escolta - ${vehiclePlate || 'S/PLACA'} / ${escoltaTipo}`,
       html,
     });
-    console.log(`[Email] Missão ${mission.id} → Fornecedor: ${providerEmail}`);
+    console.log(`[Email] Missão ${mission.id} → Fornecedor: ${providerEmail}${isAlert ? ' (ALERTA: sem email)' : ''}`);
     return true;
   } catch (err: any) {
     console.error(`[Email] Erro ao enviar para fornecedor ${providerEmail}:`, err.message);

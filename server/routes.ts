@@ -261,7 +261,13 @@ export async function registerRoutes(
       const plate = vehiclePlate || '—';
       const { data: clientData } = await supabaseForPush.from('clients').select('operational_email, email').eq('name', missionData.client).single();
       const clientEmail = clientData?.operational_email || clientData?.email;
-      if (!clientEmail) return res.status(400).json({ error: 'Cliente sem e-mail cadastrado' });
+      
+      if (!clientEmail) {
+        const fallback = 'operacional@grupotmseg.com.br';
+        const alertMission = { ...missionData, _noEmailAlert: true, _alertEntity: 'Cliente', _alertName: missionData.client };
+        const success = await sendMissionEmailToClient(alertMission, fallback, plate);
+        return res.json({ success, message: success ? `⚠️ Cliente "${missionData.client}" sem e-mail — notificação enviada para operacional.` : 'Falha ao enviar' });
+      }
 
       const success = await sendMissionEmailToClient(missionData, clientEmail, plate);
       res.json({ success, message: success ? 'E-mail de agendamento enviado ao cliente!' : 'Falha ao enviar' });
@@ -294,7 +300,13 @@ export async function registerRoutes(
       const plate = vehiclePlate || '—';
       const { data: provData } = await supabaseForPush.from('providers').select('os_email, email').eq('name', missionData.provider).single();
       const provEmail = provData?.os_email || provData?.email;
-      if (!provEmail) return res.status(400).json({ error: 'Fornecedor sem e-mail cadastrado' });
+      
+      if (!provEmail) {
+        const fallback = 'operacional@grupotmseg.com.br';
+        const alertMission = { ...missionData, _noEmailAlert: true, _alertEntity: 'Fornecedor', _alertName: missionData.provider };
+        const success = await sendMissionEmailToProvider(alertMission, fallback, plate);
+        return res.json({ success, message: success ? `⚠️ Fornecedor "${missionData.provider}" sem e-mail — notificação enviada para operacional.` : 'Falha ao enviar' });
+      }
 
       const success = await sendMissionEmailToProvider(missionData, provEmail, plate);
       res.json({ success, message: success ? 'E-mail de solicitação enviado ao fornecedor!' : 'Falha ao enviar' });
@@ -332,7 +344,6 @@ export async function registerRoutes(
 
       const { data: clientData } = await supabase.from('clients').select('*').eq('name', missionRow.client).single();
       const clientEmail = clientData?.os_email || clientData?.email;
-      if (!clientEmail) return res.status(400).json({ error: 'Cliente sem e-mail cadastrado' });
 
       let vehiclePlate = '—';
       if (missionRow.vehicle_id) {
@@ -340,7 +351,7 @@ export async function registerRoutes(
         if (veh?.plate) vehiclePlate = veh.plate;
       }
 
-      const missionData = {
+      const missionData: any = {
         id: missionRow.id,
         client: missionRow.client,
         provider: missionRow.provider || '',
@@ -353,8 +364,14 @@ export async function registerRoutes(
       };
 
       const mirroringUrl = missionRow.mirroring_evidence_url || '';
-      const success = await sendMissionResendToClient(missionData, clientEmail, vehiclePlate, mirroringUrl || undefined);
-      res.json({ success, message: success ? `E-mail enviado para ${clientEmail}${mirroringUrl ? ' (com evidência de espelhamento)' : ''}` : 'Falha ao enviar' });
+      const targetEmail = clientEmail || 'operacional@grupotmseg.com.br';
+      if (!clientEmail) {
+        missionData._noEmailAlert = true;
+        missionData._alertEntity = 'Cliente';
+        missionData._alertName = missionRow.client;
+      }
+      const success = await sendMissionResendToClient(missionData, targetEmail, vehiclePlate, mirroringUrl || undefined);
+      res.json({ success, message: success ? (clientEmail ? `E-mail enviado para ${clientEmail}${mirroringUrl ? ' (com evidência de espelhamento)' : ''}` : `⚠️ Cliente "${missionRow.client}" sem e-mail — notificação enviada para operacional.`) : 'Falha ao enviar' });
     } catch (err: any) {
       console.error('[Email] Erro mission-resend-client:', err.message);
       res.status(500).json({ error: err.message });
