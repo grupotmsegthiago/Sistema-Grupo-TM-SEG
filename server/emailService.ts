@@ -218,8 +218,16 @@ export interface WelcomeEmailData {
   profileName?: string;
 }
 
-export async function sendWelcomeEmail(user: WelcomeEmailData, systemUrl: string): Promise<boolean> {
+export async function sendWelcomeEmail(user: WelcomeEmailData, systemUrl: string, verificationCode?: string): Promise<boolean> {
   const typeLabel = user.userType === 'client' ? 'Cliente' : user.userType === 'provider' ? 'Fornecedor' : 'Interno';
+
+  const verificationBlock = verificationCode ? `
+    <div style="background:#0f172a; border:2px solid #c0392b; border-radius:12px; padding:24px; text-align:center; margin:20px 0;">
+      <p style="color:#94a3b8; font-size:12px; margin:0 0 8px; text-transform:uppercase; letter-spacing:2px;">Código de Confirmação</p>
+      <span style="font-size:32px; font-weight:900; color:#c0392b; letter-spacing:10px; font-family:'Courier New',monospace;">${verificationCode}</span>
+      <p style="color:#475569; font-size:11px; margin:12px 0 0;">Use este código no primeiro acesso para ativar sua conta.</p>
+    </div>
+  ` : '';
 
   const html = baseTemplate(`
     <h2>🎉 Bem-vindo(a) ao Grupo TM SEG</h2>
@@ -230,10 +238,11 @@ export async function sendWelcomeEmail(user: WelcomeEmailData, systemUrl: string
       ${user.profileName ? `<tr><td>Perfil</td><td>${user.profileName}</td></tr>` : ''}
       <tr><td>Link do Sistema</td><td><a href="${systemUrl}" style="color:#c0392b; font-weight:600;">${systemUrl}</a></td></tr>
       <tr><td>Login (E-mail)</td><td>${user.email}</td></tr>
-      <tr><td>Senha</td><td><code style="background:#f0f0f0; padding:2px 8px; border-radius:3px; font-size:14px;">${user.password}</code></td></tr>
+      <tr><td>Senha Temporária</td><td><code style="background:#f0f0f0; padding:2px 8px; border-radius:3px; font-size:14px;">${user.password}</code></td></tr>
     </table>
+    ${verificationBlock}
     <div class="highlight-box">
-      <p><strong>Segurança:</strong> Recomendamos alterar sua senha no primeiro acesso. Nunca compartilhe suas credenciais.</p>
+      <p><strong>⚠️ Importante:</strong> No seu primeiro acesso, você será solicitado a <strong>alterar sua senha obrigatoriamente</strong>. Nunca compartilhe suas credenciais com terceiros.</p>
     </div>
     <p>Atenciosamente,<br><strong>Equipe Grupo TM SEG</strong></p>
   `);
@@ -250,6 +259,34 @@ export async function sendWelcomeEmail(user: WelcomeEmailData, systemUrl: string
     return true;
   } catch (err: any) {
     console.error(`[Email] Erro ao enviar boas-vindas para ${user.email}:`, err.message);
+    return false;
+  }
+}
+
+export async function sendVerificationCodeEmail(email: string, userName: string, code: string): Promise<boolean> {
+  const html = baseTemplate(`
+    <h2>🔐 Código de Verificação</h2>
+    <p>Olá, <strong>${userName}</strong>!</p>
+    <p>Use o código abaixo para confirmar a criação da sua conta no sistema <strong>Grupo TM SEG</strong>:</p>
+    <div style="background:#0f172a; border:2px solid #c0392b; border-radius:12px; padding:24px; text-align:center; margin:20px 0;">
+      <span style="font-size:36px; font-weight:900; color:#c0392b; letter-spacing:12px; font-family:'Courier New',monospace;">${code}</span>
+    </div>
+    <p style="font-size:12px; color:#666;">Este código expira em <strong>10 minutos</strong>. Se você não solicitou este código, ignore este e-mail.</p>
+    <p>Atenciosamente,<br><strong>Equipe Grupo TM SEG</strong></p>
+  `);
+
+  try {
+    await transporter.sendMail({
+      from: SMTP_FROM,
+      to: email,
+      bcc: 'thiago@grupotmseg.com.br',
+      subject: `🔐 Código de Verificação — Grupo TM SEG`,
+      html,
+    });
+    console.log(`[Email] Código de verificação → ${email}`);
+    return true;
+  } catch (err: any) {
+    console.error(`[Email] Erro ao enviar código para ${email}:`, err.message);
     return false;
   }
 }

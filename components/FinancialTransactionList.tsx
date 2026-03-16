@@ -164,27 +164,107 @@ const FinancialTransactionList: React.FC = () => {
         fetchTransactions();
     };
 
+    const getQuinzenaRef = (dateStr: string, clientName: string): string => {
+        const d = new Date(dateStr + 'T12:00:00');
+        const day = d.getDate();
+        const monthNames = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
+        const month = monthNames[d.getMonth()];
+        const year = d.getFullYear();
+        const quinzena = day <= 15 ? 'Primeira' : 'Segunda';
+        return `Ref. ${quinzena} Quinzena de ${month}/${year} - ${clientName}`;
+    };
+
     const handleSaveInvoice = async () => {
         if (!invoiceForm.client || !invoiceForm.number || !invoiceForm.amount) { alert('Preencha todos os campos obrigatórios.'); return; }
         const parsedAmt = parseFloat(invoiceForm.amount);
         if (isNaN(parsedAmt) || parsedAmt <= 0) { alert('Valor inválido.'); return; }
         const clientName = clients.find(c => c.id === invoiceForm.client)?.name || invoiceForm.client;
-        const { error } = await supabase.from('financial_invoices').insert({
+        const userName = JSON.parse(localStorage.getItem('userData') || '{}').name || 'Sistema';
+
+        const { data: invoiceData, error } = await supabase.from('financial_invoices').insert({
             client: clientName, number: invoiceForm.number,
             amount: parsedAmt, date: invoiceForm.date,
             status: 'EMITIDA', notes: invoiceForm.notes || '',
-            created_by: JSON.parse(localStorage.getItem('userData') || '{}').name
-        });
+            created_by: userName
+        }).select();
         if (error) { console.error(error); alert('Erro ao salvar fatura: ' + (error.message || 'Erro desconhecido')); return; }
+
+        const quinzenaDesc = getQuinzenaRef(invoiceForm.date, clientName);
+        try {
+            await supabase.from('financial_transactions').insert({
+                description: `NF ${invoiceForm.number} — ${quinzenaDesc}`,
+                amount: parsedAmt,
+                type: 'INCOME',
+                status: 'PENDING',
+                due_date: invoiceForm.date,
+                entity_type: 'Client',
+                entity_id: invoiceForm.client,
+                entity_name: clientName,
+                notes: `Fatura NF ${invoiceForm.number} | ${invoiceForm.notes || ''}`.trim(),
+                created_by: userName,
+            });
+        } catch (e) {
+            console.error('[Auto Contas a Receber] Erro:', e);
+        }
+
         setShowInvoiceForm(false);
         setInvoiceForm({ client: '', number: '', amount: '', date: new Date().toISOString().split('T')[0], notes: '' });
         fetchInvoices();
+        fetchTransactions();
     };
 
     const handleInvoiceStatusChange = async (id: string, newStatus: 'EMITIDA' | 'PAGA' | 'CANCELADA') => {
         const { error } = await supabase.from('financial_invoices').update({ status: newStatus }).eq('id', id);
         if (error) { console.error(error); alert('Erro ao atualizar status da fatura.'); return; }
+
+        if (newStatus === 'PAGA') {
+            const invoice = invoices.find(inv => inv.id === id);
+            if (invoice) {
+                try {
+                    const { data: matchingTx } = await supabase
+                        .from('financial_transactions')
+                        .select('id')
+                        .eq('type', 'INCOME')
+                        .ilike('description', `%NF ${invoice.number}%`)
+                        .ilike('description', `%${invoice.client}%`)
+                        .eq('status', 'PENDING');
+
+                    if (matchingTx && matchingTx.length > 0) {
+                        const now = new Date().toISOString().split('T')[0];
+                        const userName = JSON.parse(localStorage.getItem('userData') || '{}').name || 'Sistema';
+                        for (const tx of matchingTx) {
+                            await supabase.from('financial_transactions')
+                                .update({ status: 'PAID', payment_date: now, updated_by: userName })
+                                .eq('id', tx.id);
+                        }
+                        console.log(`[Auto BAIXA] NF ${invoice.number} (${invoice.client}): ${matchingTx.length} lançamento(s) baixado(s)`);
+                    } else {
+                        const { data: fallbackTx } = await supabase
+                            .from('financial_transactions')
+                            .select('id')
+                            .eq('type', 'INCOME')
+                            .ilike('description', `%NF ${invoice.number}%`)
+                            .eq('status', 'PENDING');
+
+                        if (fallbackTx && fallbackTx.length > 0) {
+                            const now = new Date().toISOString().split('T')[0];
+                            const userName = JSON.parse(localStorage.getItem('userData') || '{}').name || 'Sistema';
+                            for (const tx of fallbackTx) {
+                                await supabase.from('financial_transactions')
+                                    .update({ status: 'PAID', payment_date: now, updated_by: userName })
+                                    .eq('id', tx.id);
+                            }
+                            console.log(`[Auto BAIXA fallback] NF ${invoice.number}: ${fallbackTx.length} lançamento(s) baixado(s)`);
+                        }
+                    }
+                } catch (e) {
+                    console.error('[Auto BAIXA] Erro ao baixar lançamentos:', e);
+                }
+            }
+        }
+
         fetchInvoices();
+        fetchTransactions();
     };
 
     const handleDeleteInvoice = async (id: string) => {

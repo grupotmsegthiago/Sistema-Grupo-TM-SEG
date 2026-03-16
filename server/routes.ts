@@ -9,7 +9,7 @@ import webpush from "web-push";
 import { calculateMissionFinancials } from "../lib/financialUtils";
 import fs from "fs";
 import path from "path";
-import { sendMissionEmailToClient, sendMissionEmailToProvider, sendWelcomeEmail, sendTestEmail } from "./emailService";
+import { sendMissionEmailToClient, sendMissionEmailToProvider, sendWelcomeEmail, sendTestEmail, sendVerificationCodeEmail } from "./emailService";
 
 const resend = new Resend(process.env.RESEND_API_KEY);
 
@@ -281,10 +281,10 @@ export async function registerRoutes(
 
   app.post("/api/email/welcome", async (req: Request, res: Response) => {
     try {
-      const { name, email, password, userType, profileName } = req.body;
+      const { name, email, password, userType, profileName, verificationCode } = req.body;
       if (!name || !email || !password) return res.status(400).json({ error: 'Campos name, email e password são obrigatórios' });
       const systemUrl = process.env.SYSTEM_URL || `https://${process.env.REPLIT_DOMAINS?.split(',')[0] || 'app.grupotmseg.com.br'}`;
-      const success = await sendWelcomeEmail({ name, email, password, userType: userType || 'internal', profileName }, systemUrl);
+      const success = await sendWelcomeEmail({ name, email, password, userType: userType || 'internal', profileName }, systemUrl, verificationCode);
       res.json({ success, message: success ? 'E-mail de boas-vindas enviado!' : 'Falha ao enviar e-mail' });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
@@ -1666,35 +1666,10 @@ export async function registerRoutes(
         if (val.expiresAt < Date.now()) verificationCodes.delete(key);
       }
 
-      const { error } = await resend.emails.send({
-        from: "TMSEG Sistema <onboarding@resend.dev>",
-        to: [email],
-        subject: "🔐 Código de Verificação - Grupo TMSEG",
-        html: `
-          <div style="font-family: 'Segoe UI', Tahoma, sans-serif; max-width: 500px; margin: 0 auto; background: #0f172a; border-radius: 16px; overflow: hidden; border: 1px solid #1e293b;">
-            <div style="background: linear-gradient(135deg, #dc2626 0%, #991b1b 100%); padding: 32px 24px; text-align: center;">
-              <h1 style="color: white; margin: 0; font-size: 22px; font-weight: 900; letter-spacing: 2px;">GRUPO TMSEG</h1>
-              <p style="color: #fca5a5; margin: 4px 0 0; font-size: 10px; text-transform: uppercase; letter-spacing: 3px;">Verificação de Segurança</p>
-            </div>
-            <div style="padding: 32px 24px; text-align: center;">
-              <p style="color: #94a3b8; font-size: 14px; margin: 0 0 8px;">Olá <strong style="color: white;">${userName || 'Usuário'}</strong>,</p>
-              <p style="color: #64748b; font-size: 13px; margin: 0 0 24px;">Use o código abaixo para confirmar a criação da sua conta:</p>
-              <div style="background: #1e293b; border: 2px solid #dc2626; border-radius: 12px; padding: 20px; display: inline-block; min-width: 200px;">
-                <span style="font-size: 36px; font-weight: 900; color: #dc2626; letter-spacing: 12px; font-family: 'Courier New', monospace;">${code}</span>
-              </div>
-              <p style="color: #475569; font-size: 11px; margin: 20px 0 0;">Este código expira em <strong style="color: #f59e0b;">10 minutos</strong>.</p>
-              <p style="color: #334155; font-size: 10px; margin: 16px 0 0;">Se você não solicitou este código, ignore este e-mail.</p>
-            </div>
-            <div style="background: #020617; padding: 16px 24px; text-align: center; border-top: 1px solid #1e293b;">
-              <p style="color: #334155; font-size: 9px; margin: 0; text-transform: uppercase; letter-spacing: 2px;">Intermediadora de Escolta Armada e Segurança Patrimonial</p>
-            </div>
-          </div>
-        `
-      });
+      const sent = await sendVerificationCodeEmail(email, userName || 'Usuário', code);
 
-      if (error) {
-        console.error("Resend error:", error);
-        return res.json({ sessionId, message: "E-mail não pôde ser enviado (domínio não verificado no Resend). Use o código exibido na tela.", fallbackCode: code });
+      if (!sent) {
+        return res.json({ sessionId, message: "E-mail não pôde ser enviado. Use o código exibido na tela.", fallbackCode: code });
       }
 
       res.json({ sessionId, message: "Código enviado com sucesso" });

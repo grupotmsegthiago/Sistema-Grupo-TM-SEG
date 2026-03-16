@@ -190,6 +190,7 @@ const UserForm: React.FC<UserFormProps> = ({ onBack, userType, id }) => {
               setCredentialsCopied(false);
 
               try {
+                  const verCode = Math.floor(100000 + Math.random() * 900000).toString();
                   await fetch('/api/email/welcome', {
                       method: 'POST',
                       headers: { 'Content-Type': 'application/json' },
@@ -199,6 +200,7 @@ const UserForm: React.FC<UserFormProps> = ({ onBack, userType, id }) => {
                           password: payload.password,
                           userType: userType,
                           profileName: profiles.find(p => p.id === selectedProfileId)?.name || '',
+                          verificationCode: verCode,
                       }),
                   });
               } catch (emailErr) {
