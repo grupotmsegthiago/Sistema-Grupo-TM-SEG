@@ -1,10 +1,6 @@
 import nodemailer from 'nodemailer';
 import path from 'path';
 import fs from 'fs';
-import { fileURLToPath } from 'url';
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
 
 const EMAIL_USER = process.env.EMAIL_USER || 'adm@grupotmseg.com.br';
 const EMAIL_PASS = process.env.EMAIL_PASS || process.env.SMTP_PASSWORD || '';
@@ -140,7 +136,7 @@ export async function sendMissionEmailToClient(
       html,
     };
 
-    const reportPath = path.resolve(__dirname, 'assets', 'relatorio_escolta.png');
+    const reportPath = path.resolve(process.cwd(), 'server', 'assets', 'relatorio_escolta.png');
     if (fs.existsSync(reportPath)) {
       mailOptions.attachments = [{
         filename: `Relatorio_Escolta_${formatOS(mission.id)}.png`,
