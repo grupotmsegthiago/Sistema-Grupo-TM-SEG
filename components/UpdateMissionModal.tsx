@@ -470,8 +470,8 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
     useEffect(() => {
         if (!editData.isSameOs || !mission?.client) { setParentOsSuggestions([]); return; }
         const fetchParentSuggestions = async () => {
-            let query = supabase.from('missions').select('id, client, provider, origin, destination, status, parent_mission_id')
-                .eq('client', mission.client).neq('id', mission.id).is('parent_mission_id', null).order('created_at', { ascending: false }).limit(50);
+            let query = supabase.from('missions').select('id, client, provider, origin, destination, status')
+                .eq('client', mission.client).neq('id', mission.id).order('created_at', { ascending: false }).limit(50);
             if (editData.provider) query = query.eq('provider', editData.provider);
             const { data } = await query;
             if (data) setParentOsSuggestions(data);
@@ -713,7 +713,7 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
                 start_time: startIso,
                 end_km: eKm || null,
                 end_time: endIso,
-                is_same_os: editData.isSameOs, parent_mission_id: editData.parentMissionId || null,
+                ...(editData.isSameOs ? { is_same_os: true, parent_mission_id: editData.parentMissionId || null } : {}),
                 progress: progressValue,
                 driver_name: editData.driver_name.toUpperCase(),
                 driver_phone: editData.driver_phone,
