@@ -122,7 +122,7 @@ export async function sendMissionEmailToClient(
       from: SMTP_FROM,
       to: clientEmail,
       bcc: BCC_RECIPIENTS,
-      subject: `OS Nº ${mission.id} — Nova Missão de Escolta Registrada`,
+      subject: `Agendamento Confirmado - ${vehiclePlate || 'S/PLACA'} / ${mission.id} / ${formatDateTime(mission.start_time)}`,
       html,
     });
     console.log(`[Email] Missão ${mission.id} → Cliente: ${clientEmail}`);
@@ -199,7 +199,7 @@ export async function sendMissionEmailToProvider(
       from: SMTP_FROM,
       to: providerEmail,
       bcc: BCC_RECIPIENTS,
-      subject: `OS Nº ${mission.id} — Ordem de Serviço Atribuída`,
+      subject: `Solicitação de Escolta - ${vehiclePlate || 'S/PLACA'} / ${formatDateTime(mission.start_time)}`,
       html,
     });
     console.log(`[Email] Missão ${mission.id} → Fornecedor: ${providerEmail}`);
