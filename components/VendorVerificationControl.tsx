@@ -930,6 +930,8 @@ const VendorVerificationControl: React.FC<VendorVerificationControlProps> = ({ o
                                 <th className="px-4 py-3 text-center">Dt. Final</th>
                                 <th className="px-4 py-3 text-center">Hr. Inicial</th>
                                 <th className="px-4 py-3 text-center">Hr. Final</th>
+                                <th className="px-4 py-3 text-center">KM Inicial</th>
+                                <th className="px-4 py-3 text-center">KM Final</th>
                                 <th className="px-4 py-3 text-right">Custo</th>
                                 <th className="px-4 py-3 text-center">OS Forn.</th>
                                 <th className="px-4 py-3 text-center">NF</th>
@@ -941,9 +943,9 @@ const VendorVerificationControl: React.FC<VendorVerificationControlProps> = ({ o
                         </thead>
                         <tbody className="divide-y divide-gray-100">
                             {isLoading ? (
-                                <tr><td colSpan={16} className="p-20 text-center"><Loader2 size={40} className="animate-spin text-blue-700 mx-auto" /></td></tr>
+                                <tr><td colSpan={18} className="p-20 text-center"><Loader2 size={40} className="animate-spin text-blue-700 mx-auto" /></td></tr>
                             ) : filteredMissions.length === 0 ? (
-                                <tr><td colSpan={16} className="p-20 text-center text-gray-400 font-bold uppercase">Nenhuma missão encontrada.</td></tr>
+                                <tr><td colSpan={18} className="p-20 text-center text-gray-400 font-bold uppercase">Nenhuma missão encontrada.</td></tr>
                             ) : (
                                 filteredMissions.map(m => {
                                     const isVerified = Boolean(m.verified_by && m.verified_at);
@@ -986,6 +988,12 @@ const VendorVerificationControl: React.FC<VendorVerificationControlProps> = ({ o
                                             </td>
                                             <td className="px-4 py-3 text-center">
                                                 <span className="text-[10px] font-bold text-gray-700">{m.end_time ? new Date(m.end_time).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) : '—'}</span>
+                                            </td>
+                                            <td className="px-4 py-3 text-center">
+                                                <span className="text-[10px] font-bold text-gray-700">{m.start_km != null ? Number(m.start_km).toLocaleString('pt-BR') : '—'}</span>
+                                            </td>
+                                            <td className="px-4 py-3 text-center">
+                                                <span className="text-[10px] font-bold text-gray-700">{m.end_km != null ? Number(m.end_km).toLocaleString('pt-BR') : '—'}</span>
                                             </td>
                                             <td className="px-4 py-3 text-right">
                                                 <span className="text-xs font-black text-red-600">{formatCurrency(totalCost)}</span>
