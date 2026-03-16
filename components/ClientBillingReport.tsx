@@ -2,8 +2,9 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { supabase } from '../lib/supabase';
 import { Mission, Client, ClientPriceTable, ProviderCostTable } from '../types';
-import { FileText, Search, Printer, Loader2, FileSpreadsheet, BarChart3, Users, Building2, ChevronDown, ChevronRight, List, ExternalLink } from 'lucide-react';
+import { FileText, Search, Printer, Loader2, FileSpreadsheet, BarChart3, Users, Building2, ChevronDown, ChevronRight, List, ExternalLink, Receipt, Camera, Sparkles, X, AlertCircle, CheckCircle2, ScanLine, Image as ImageIcon } from 'lucide-react';
 import { calculateMissionFinancials, extractCityFromAddress } from '../lib/financialUtils';
+import { generateContent } from '../lib/gemini';
 import {
     BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, LabelList
 } from 'recharts';
@@ -25,6 +26,16 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
     const [allProviderTables, setAllProviderTables] = useState<ProviderCostTable[]>([]);
     const [chartsLoading, setChartsLoading] = useState(false);
     const [chartsGenerated, setChartsGenerated] = useState(false);
+
+    const [showInvoiceModal, setShowInvoiceModal] = useState(false);
+    const [invoiceForm, setInvoiceForm] = useState({ client: '', number: '', amount: '', date: new Date().toISOString().split('T')[0], notes: '', provider: '', issuer_company: '', boleto_due_date: '' });
+    const [nfFile, setNfFile] = useState<File | null>(null);
+    const [boletoFile, setBoletoFile] = useState<File | null>(null);
+    const [nfPreview, setNfPreview] = useState('');
+    const [boletoPreview, setBoletoPreview] = useState('');
+    const [aiAnalyzing, setAiAnalyzing] = useState(false);
+    const [aiStatus, setAiStatus] = useState('');
+    const [invoiceSaving, setInvoiceSaving] = useState(false);
 
     useEffect(() => {
         fetchClients();
@@ -530,6 +541,384 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
     const grpHrExc: React.CSSProperties = { ...groupHeaderStyle, backgroundColor: '#f9a8d4' };
     const grpVal: React.CSSProperties = { ...groupHeaderStyle, backgroundColor: '#7dd3fc' };
 
+    const fileToBase64 = (file: File): Promise<string> => {
+        return new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.readAsDataURL(file);
+            reader.onload = () => { resolve((reader.result as string).split(',')[1]); };
+            reader.onerror = error => reject(error);
+        });
+    };
+
+    const compressImage = async (file: File, maxWidth = 1200): Promise<{ blob: Blob; base64: string }> => {
+        return new Promise((resolve, reject) => {
+            const img = new window.Image();
+            img.onload = () => {
+                const canvas = document.createElement('canvas');
+                const ratio = Math.min(maxWidth / img.width, 1);
+                canvas.width = img.width * ratio;
+                canvas.height = img.height * ratio;
+                const ctx = canvas.getContext('2d');
+                ctx?.drawImage(img, 0, 0, canvas.width, canvas.height);
+                canvas.toBlob((blob) => {
+                    if (!blob) { reject('Erro ao comprimir'); return; }
+                    const reader = new FileReader();
+                    reader.onload = () => resolve({ blob, base64: (reader.result as string).split(',')[1] });
+                    reader.readAsDataURL(blob);
+                }, 'image/jpeg', 0.8);
+            };
+            img.onerror = reject;
+            img.src = URL.createObjectURL(file);
+        });
+    };
+
+    const handleNfFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+        setNfFile(file);
+        setNfPreview(URL.createObjectURL(file));
+    };
+
+    const handleBoletoFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+        setBoletoFile(file);
+        setBoletoPreview(URL.createObjectURL(file));
+    };
+
+    const analyzeDocumentsWithAI = async () => {
+        if (!nfFile && !boletoFile) { alert('Anexe pelo menos a foto da NF ou do Boleto.'); return; }
+        setAiAnalyzing(true);
+        setAiStatus('Preparando documentos para análise...');
+        try {
+            const parts: any[] = [];
+            if (nfFile) {
+                setAiStatus('Processando imagem da NF...');
+                const nfB64 = nfFile.type === 'application/pdf' ? await fileToBase64(nfFile) : (await compressImage(nfFile)).base64;
+                parts.push({ inlineData: { mimeType: nfFile.type || 'image/jpeg', data: nfB64 } });
+            }
+            if (boletoFile) {
+                setAiStatus('Processando imagem do Boleto...');
+                const bolB64 = boletoFile.type === 'application/pdf' ? await fileToBase64(boletoFile) : (await compressImage(boletoFile)).base64;
+                parts.push({ inlineData: { mimeType: boletoFile.type || 'image/jpeg', data: bolB64 } });
+            }
+
+            const clientNames = clients.map(c => c.trading_name || c.name).join(', ');
+
+            parts.push({ text: `Analise os documentos fiscais brasileiros anexados (Nota Fiscal e/ou Boleto Bancário).
+Extraia as seguintes informações:
+
+1. "nf_number": Número da Nota Fiscal (ex: "001234", "NF-e 12345"). Se não encontrar, retorne "".
+2. "client_name": Nome do CLIENTE / TOMADOR / DESTINATÁRIO da NF. O cliente é quem RECEBE o serviço. Compare com a lista de clientes cadastrados: [${clientNames}]. Se encontrar correspondência, use o nome exato da lista. Se não encontrar, retorne o nome encontrado na NF.
+3. "provider_name": Nome do FORNECEDOR / PRESTADOR que emitiu a NF (quem prestou o serviço).
+4. "issuer_company": Nome/Razão Social da EMPRESA EMISSORA (a empresa que gerou a Nota Fiscal).
+5. "amount": Valor total da NF em número decimal (ex: 15000.50). Se não encontrar, retorne 0.
+6. "nf_date": Data de emissão da NF no formato YYYY-MM-DD. Se não encontrar, retorne "".
+7. "boleto_due_date": Data de VENCIMENTO do boleto no formato YYYY-MM-DD. Se não encontrar, retorne "".
+8. "boleto_amount": Valor do boleto em número decimal. Se não encontrar, use o valor da NF.
+
+Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
+
+            setAiStatus('IA analisando documentos...');
+
+            const rawText = await generateContent({
+                model: 'gemini-2.5-flash',
+                contents: { parts },
+                config: {
+                    responseMimeType: "application/json",
+                    responseSchema: {
+                        type: "OBJECT",
+                        properties: {
+                            nf_number: { type: "STRING" },
+                            client_name: { type: "STRING" },
+                            provider_name: { type: "STRING" },
+                            issuer_company: { type: "STRING" },
+                            amount: { type: "NUMBER" },
+                            nf_date: { type: "STRING" },
+                            boleto_due_date: { type: "STRING" },
+                            boleto_amount: { type: "NUMBER" },
+                        },
+                        required: ["nf_number", "client_name", "provider_name", "issuer_company", "amount", "nf_date", "boleto_due_date", "boleto_amount"]
+                    }
+                }
+            });
+
+            if (!rawText) throw new Error('IA não retornou dados.');
+            const parsed = JSON.parse(rawText);
+            setAiStatus('Dados extraídos! Preenchendo formulário...');
+
+            const matchedClient = clients.find(c =>
+                (c.trading_name || c.name).toLowerCase().includes(parsed.client_name?.toLowerCase() || '') ||
+                (parsed.client_name || '').toLowerCase().includes((c.trading_name || c.name).toLowerCase())
+            );
+
+            setInvoiceForm(prev => ({
+                ...prev,
+                number: parsed.nf_number || prev.number,
+                client: matchedClient?.id?.toString() || prev.client,
+                amount: parsed.amount ? parsed.amount.toString() : (parsed.boleto_amount ? parsed.boleto_amount.toString() : prev.amount),
+                date: parsed.nf_date || prev.date,
+                provider: parsed.provider_name || prev.provider,
+                issuer_company: parsed.issuer_company || prev.issuer_company,
+                boleto_due_date: parsed.boleto_due_date || prev.boleto_due_date,
+            }));
+            setTimeout(() => setAiStatus(''), 3000);
+        } catch (err: any) {
+            console.error('[AI Doc Analysis]', err);
+            setAiStatus(`Erro na análise: ${err.message}`);
+            setTimeout(() => setAiStatus(''), 5000);
+        } finally {
+            setAiAnalyzing(false);
+        }
+    };
+
+    const uploadDocImage = async (file: File, prefix: string): Promise<string> => {
+        const ts = Date.now();
+        const ext = file.name.split('.').pop() || 'jpg';
+        const path = `invoices/${prefix}_${ts}.${ext}`;
+        let uploadFile: Blob = file;
+        if (file.type.startsWith('image/')) {
+            const compressed = await compressImage(file);
+            uploadFile = compressed.blob;
+        }
+        const { error } = await supabase.storage.from('mission-evidence').upload(path, uploadFile, { upsert: true });
+        if (error) { console.error('[Upload]', error); return ''; }
+        const { data: urlData } = supabase.storage.from('mission-evidence').getPublicUrl(path);
+        return urlData.publicUrl || '';
+    };
+
+    const getQuinzenaRef = (dateStr: string, clientName: string): string => {
+        const d = new Date(dateStr + 'T12:00:00');
+        const day = d.getDate();
+        const monthNames = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
+        const month = monthNames[d.getMonth()];
+        const year = d.getFullYear();
+        const quinzena = day <= 15 ? 'Primeira' : 'Segunda';
+        return `Ref. ${quinzena} Quinzena de ${month}/${year} - ${clientName}`;
+    };
+
+    const resetInvoiceForm = () => {
+        setInvoiceForm({ client: '', number: '', amount: '', date: new Date().toISOString().split('T')[0], notes: '', provider: '', issuer_company: '', boleto_due_date: '' });
+        setNfFile(null);
+        setBoletoFile(null);
+        setNfPreview('');
+        setBoletoPreview('');
+        setAiStatus('');
+    };
+
+    const openInvoiceModal = () => {
+        if (selectedClient) {
+            setInvoiceForm(prev => ({ ...prev, client: selectedClient }));
+        }
+        if (reportGenerated && grandTotal > 0) {
+            setInvoiceForm(prev => ({ ...prev, amount: grandTotal.toFixed(2) }));
+        }
+        setShowInvoiceModal(true);
+    };
+
+    const handleSaveInvoice = async () => {
+        if (!invoiceForm.client || !invoiceForm.number || !invoiceForm.amount) { alert('Preencha todos os campos obrigatórios (Cliente, Nº NF, Valor).'); return; }
+        const parsedAmt = parseFloat(invoiceForm.amount);
+        if (isNaN(parsedAmt) || parsedAmt <= 0) { alert('Valor inválido.'); return; }
+        const clientObj = clients.find(c => c.id.toString() === invoiceForm.client);
+        const clientName = clientObj?.trading_name || clientObj?.name || invoiceForm.client;
+        const userName = JSON.parse(localStorage.getItem('userData') || '{}').name || 'Sistema';
+
+        setInvoiceSaving(true);
+        try {
+            let nfImageUrl = '';
+            let boletoImageUrl = '';
+            if (nfFile) {
+                setAiStatus('Salvando imagem da NF...');
+                nfImageUrl = await uploadDocImage(nfFile, `nf_${invoiceForm.number}`);
+            }
+            if (boletoFile) {
+                setAiStatus('Salvando imagem do Boleto...');
+                boletoImageUrl = await uploadDocImage(boletoFile, `boleto_${invoiceForm.number}`);
+            }
+
+            const invoicePayload: any = {
+                client: clientName, number: invoiceForm.number,
+                amount: parsedAmt, date: invoiceForm.date,
+                status: 'EMITIDA', notes: invoiceForm.notes || '',
+                created_by: userName,
+            };
+            if (nfImageUrl) invoicePayload.nf_image_url = nfImageUrl;
+            if (boletoImageUrl) invoicePayload.boleto_image_url = boletoImageUrl;
+            if (invoiceForm.provider) invoicePayload.provider = invoiceForm.provider;
+            if (invoiceForm.issuer_company) invoicePayload.issuer_company = invoiceForm.issuer_company;
+            if (invoiceForm.boleto_due_date) invoicePayload.boleto_due_date = invoiceForm.boleto_due_date;
+
+            let { error } = await supabase.from('financial_invoices').insert(invoicePayload).select();
+            if (error && error.code === '42703') {
+                const { nf_image_url, boleto_image_url, provider, issuer_company, boleto_due_date, ...basicPayload } = invoicePayload;
+                const retry = await supabase.from('financial_invoices').insert(basicPayload).select();
+                error = retry.error;
+            }
+            if (error) { alert('Erro ao salvar fatura: ' + (error.message || 'Erro desconhecido')); return; }
+
+            const dueDate = invoiceForm.boleto_due_date || invoiceForm.date;
+            const quinzenaDesc = getQuinzenaRef(invoiceForm.date, clientName);
+            try {
+                await supabase.from('financial_transactions').insert({
+                    description: `NF ${invoiceForm.number} — ${quinzenaDesc}`,
+                    amount: parsedAmt,
+                    type: 'INCOME',
+                    status: 'PENDING',
+                    due_date: dueDate,
+                    entity_type: 'Client',
+                    entity_id: invoiceForm.client,
+                    entity_name: clientName,
+                    notes: `Fatura NF ${invoiceForm.number} | Emissora: ${invoiceForm.issuer_company || '-'} | ${invoiceForm.notes || ''}`.trim(),
+                    created_by: userName,
+                });
+            } catch (e) {
+                console.error('[Auto Contas a Receber] Erro:', e);
+            }
+
+            alert(`Fatura NF ${invoiceForm.number} emitida com sucesso!\nContas a Receber criado automaticamente.`);
+            setShowInvoiceModal(false);
+            resetInvoiceForm();
+        } catch (e: any) {
+            console.error('[Invoice]', e);
+            alert('Erro ao salvar: ' + e.message);
+        } finally {
+            setInvoiceSaving(false);
+            setAiStatus('');
+        }
+    };
+
+    const formatCurrency = (val: number) => val.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+
+    const renderInvoiceModal = () => {
+        if (!showInvoiceModal) return null;
+        return (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 overflow-y-auto">
+                <div className="bg-white w-full max-w-2xl rounded-2xl shadow-2xl overflow-hidden animate-in fade-in my-4">
+                    <div className="p-4 border-b border-gray-100 flex justify-between items-center bg-gradient-to-r from-gray-900 to-gray-800">
+                        <div className="flex items-center gap-2">
+                            <ScanLine size={18} className="text-red-400"/>
+                            <h3 className="font-black text-white uppercase text-xs tracking-widest">Gerar Fatura — Boletim de Medição</h3>
+                        </div>
+                        <button onClick={() => { setShowInvoiceModal(false); resetInvoiceForm(); }} data-testid="btn-close-invoice-modal"><X size={20} className="text-gray-400 hover:text-white"/></button>
+                    </div>
+                    <div className="p-6 space-y-5 max-h-[80vh] overflow-y-auto">
+                        <div className="grid grid-cols-2 gap-4">
+                            <div className="border-2 border-dashed border-gray-300 rounded-xl p-4 text-center hover:border-blue-400 transition-colors relative">
+                                <input type="file" accept="image/*,.pdf" onChange={handleNfFileChange} className="absolute inset-0 opacity-0 cursor-pointer z-10" data-testid="input-billing-nf-file" />
+                                {nfPreview ? (
+                                    <div className="relative">
+                                        <img src={nfPreview} alt="NF" className="w-full h-32 object-cover rounded-lg mb-2" />
+                                        <div className="absolute top-1 right-1 bg-green-500 text-white text-[8px] px-1.5 py-0.5 rounded font-black">NF</div>
+                                        <p className="text-[9px] text-green-600 font-bold truncate">{nfFile?.name}</p>
+                                    </div>
+                                ) : (
+                                    <div className="py-4">
+                                        <Camera size={32} className="mx-auto text-gray-300 mb-2"/>
+                                        <p className="text-[10px] font-black text-gray-400 uppercase">Foto da Nota Fiscal</p>
+                                        <p className="text-[9px] text-gray-300 mt-1">Clique ou arraste</p>
+                                    </div>
+                                )}
+                            </div>
+                            <div className="border-2 border-dashed border-gray-300 rounded-xl p-4 text-center hover:border-orange-400 transition-colors relative">
+                                <input type="file" accept="image/*,.pdf" onChange={handleBoletoFileChange} className="absolute inset-0 opacity-0 cursor-pointer z-10" data-testid="input-billing-boleto-file" />
+                                {boletoPreview ? (
+                                    <div className="relative">
+                                        <img src={boletoPreview} alt="Boleto" className="w-full h-32 object-cover rounded-lg mb-2" />
+                                        <div className="absolute top-1 right-1 bg-orange-500 text-white text-[8px] px-1.5 py-0.5 rounded font-black">BOLETO</div>
+                                        <p className="text-[9px] text-orange-600 font-bold truncate">{boletoFile?.name}</p>
+                                    </div>
+                                ) : (
+                                    <div className="py-4">
+                                        <Receipt size={32} className="mx-auto text-gray-300 mb-2"/>
+                                        <p className="text-[10px] font-black text-gray-400 uppercase">Foto do Boleto</p>
+                                        <p className="text-[9px] text-gray-300 mt-1">Clique ou arraste</p>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+
+                        {(nfFile || boletoFile) && (
+                            <button onClick={analyzeDocumentsWithAI} disabled={aiAnalyzing}
+                                className="w-full bg-gradient-to-r from-violet-600 to-indigo-600 text-white font-black uppercase text-xs tracking-widest py-3 rounded-xl flex items-center justify-center gap-2 hover:from-violet-700 hover:to-indigo-700 transition-all shadow-lg disabled:opacity-50"
+                                data-testid="btn-billing-ai-analyze">
+                                {aiAnalyzing ? <Loader2 size={16} className="animate-spin"/> : <Sparkles size={16}/>}
+                                {aiAnalyzing ? 'Analisando...' : 'Analisar com IA (Gemini)'}
+                            </button>
+                        )}
+
+                        {aiStatus && (
+                            <div className={`text-xs font-bold px-3 py-2 rounded-lg flex items-center gap-2 ${aiStatus.includes('Erro') ? 'bg-red-50 text-red-600' : aiStatus.includes('extraídos') ? 'bg-green-50 text-green-600' : 'bg-blue-50 text-blue-600'}`}>
+                                {aiAnalyzing ? <Loader2 size={12} className="animate-spin"/> : aiStatus.includes('Erro') ? <AlertCircle size={12}/> : <CheckCircle2 size={12}/>}
+                                {aiStatus}
+                            </div>
+                        )}
+
+                        <div className="border-t border-gray-100 pt-4">
+                            <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest mb-3">Dados da Nota Fiscal</p>
+                            <div className="grid grid-cols-2 gap-3">
+                                <div>
+                                    <label className="text-[10px] font-black text-gray-400 uppercase mb-1 block">Cliente *</label>
+                                    <select className="w-full p-2.5 border rounded-lg text-sm font-bold uppercase" value={invoiceForm.client} onChange={e => setInvoiceForm({...invoiceForm, client: e.target.value})} data-testid="select-billing-invoice-client">
+                                        <option value="">Selecione...</option>
+                                        {clients.map(c => <option key={c.id} value={c.id}>{c.trading_name || c.name}</option>)}
+                                    </select>
+                                </div>
+                                <div>
+                                    <label className="text-[10px] font-black text-gray-400 uppercase mb-1 block">Nº da NF *</label>
+                                    <input type="text" className="w-full p-2.5 border rounded-lg text-sm font-bold uppercase" placeholder="NF-001" value={invoiceForm.number} onChange={e => setInvoiceForm({...invoiceForm, number: e.target.value})} data-testid="input-billing-invoice-number" />
+                                </div>
+                                <div>
+                                    <label className="text-[10px] font-black text-gray-400 uppercase mb-1 block">Valor *</label>
+                                    <input type="number" step="0.01" className="w-full p-2.5 border rounded-lg text-sm font-mono font-bold" placeholder="0.00" value={invoiceForm.amount} onChange={e => setInvoiceForm({...invoiceForm, amount: e.target.value})} data-testid="input-billing-invoice-amount" />
+                                </div>
+                                <div>
+                                    <label className="text-[10px] font-black text-gray-400 uppercase mb-1 block">Data Emissão NF</label>
+                                    <input type="date" className="w-full p-2.5 border rounded-lg text-sm font-bold" value={invoiceForm.date} onChange={e => setInvoiceForm({...invoiceForm, date: e.target.value})} data-testid="input-billing-invoice-date" />
+                                </div>
+                            </div>
+                        </div>
+
+                        <div className="border-t border-gray-100 pt-4">
+                            <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest mb-3">Dados Identificados</p>
+                            <div className="grid grid-cols-2 gap-3">
+                                <div>
+                                    <label className="text-[10px] font-black text-gray-400 uppercase mb-1 block">Fornecedor / Prestador</label>
+                                    <input type="text" className="w-full p-2.5 border rounded-lg text-sm font-bold uppercase bg-gray-50" placeholder="Auto-detectado pela IA" value={invoiceForm.provider} onChange={e => setInvoiceForm({...invoiceForm, provider: e.target.value})} data-testid="input-billing-invoice-provider" />
+                                </div>
+                                <div>
+                                    <label className="text-[10px] font-black text-gray-400 uppercase mb-1 block">Empresa Emissora</label>
+                                    <input type="text" className="w-full p-2.5 border rounded-lg text-sm font-bold uppercase bg-gray-50" placeholder="Auto-detectado pela IA" value={invoiceForm.issuer_company} onChange={e => setInvoiceForm({...invoiceForm, issuer_company: e.target.value})} data-testid="input-billing-invoice-issuer" />
+                                </div>
+                                <div>
+                                    <label className="text-[10px] font-black text-orange-400 uppercase mb-1 block flex items-center gap-1"><Receipt size={10}/> Vencimento do Boleto</label>
+                                    <input type="date" className="w-full p-2.5 border-2 border-orange-200 rounded-lg text-sm font-bold bg-orange-50" value={invoiceForm.boleto_due_date} onChange={e => setInvoiceForm({...invoiceForm, boleto_due_date: e.target.value})} data-testid="input-billing-invoice-boleto-date" />
+                                </div>
+                                <div className="flex items-end">
+                                    <div className="w-full p-2.5 bg-gray-50 rounded-lg border text-[10px] text-gray-400 font-bold">
+                                        {invoiceForm.boleto_due_date ? `Contas a Receber: venc. ${new Date(invoiceForm.boleto_due_date + 'T12:00:00').toLocaleDateString('pt-BR')}` : 'Data do boleto define o vencimento'}
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div>
+                            <label className="text-[10px] font-black text-gray-400 uppercase mb-1 block">Observações</label>
+                            <textarea className="w-full p-2.5 border rounded-lg text-sm" rows={2} placeholder="Detalhes da fatura..." value={invoiceForm.notes} onChange={e => setInvoiceForm({...invoiceForm, notes: e.target.value})} data-testid="input-billing-invoice-notes" />
+                        </div>
+
+                        <button onClick={handleSaveInvoice} disabled={invoiceSaving}
+                            className="w-full bg-gray-900 text-white font-black uppercase text-xs tracking-widest py-4 rounded-xl flex items-center justify-center gap-2 hover:bg-black transition-colors shadow-lg disabled:opacity-50"
+                            data-testid="btn-billing-save-invoice">
+                            {invoiceSaving ? <Loader2 size={18} className="animate-spin"/> : <Receipt size={18}/>}
+                            {invoiceSaving ? 'Salvando...' : 'Emitir Fatura e Vincular Contas a Receber'}
+                        </button>
+                    </div>
+                </div>
+            </div>
+        );
+    };
+
     return (
         <div className="space-y-6 animate-fade-in pb-20 relative">
             <style>{`
@@ -676,6 +1065,9 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
                             </button>
                             {reportGenerated && (
                                 <>
+                                    <button onClick={openInvoiceModal} className="bg-red-700 hover:bg-red-800 text-white px-4 py-2.5 rounded-lg text-sm font-bold shadow-sm flex items-center justify-center gap-2" data-testid="btn-generate-invoice">
+                                        <Receipt size={18} /> Gerar Fatura
+                                    </button>
                                     <button onClick={handleExportExcel} className="bg-emerald-700 hover:bg-emerald-800 text-white px-4 py-2.5 rounded-lg text-sm font-bold shadow-sm flex items-center justify-center gap-2">
                                         <FileSpreadsheet size={18} /> Excel
                                     </button>
@@ -1071,6 +1463,7 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
                     </div>
                 </div>
             )}
+            {renderInvoiceModal()}
         </div>
     );
 };
