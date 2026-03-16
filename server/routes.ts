@@ -420,6 +420,9 @@ export async function registerRoutes(
   app.post("/api/supabase/init-invoices", async (_req: Request, res: Response) => {
     try {
       const { data, error } = await supabaseAdmin.from('financial_invoices').select('id', { count: 'exact', head: true });
+
+      const newCols = ['nf_image_url', 'boleto_image_url', 'provider', 'issuer_company', 'boleto_due_date'];
+
       if (error && error.code === '42P01') {
         const createSql = `
           CREATE TABLE IF NOT EXISTS public.financial_invoices (
@@ -431,7 +434,12 @@ export async function registerRoutes(
             status TEXT NOT NULL DEFAULT 'EMITIDA',
             notes TEXT DEFAULT '',
             created_by TEXT,
-            created_at TIMESTAMPTZ DEFAULT NOW()
+            created_at TIMESTAMPTZ DEFAULT NOW(),
+            nf_image_url TEXT,
+            boleto_image_url TEXT,
+            provider TEXT,
+            issuer_company TEXT,
+            boleto_due_date TEXT
           );
           ALTER TABLE public.financial_invoices ENABLE ROW LEVEL SECURITY;
           CREATE POLICY IF NOT EXISTS "Allow all for financial_invoices" ON public.financial_invoices FOR ALL USING (true) WITH CHECK (true);
@@ -443,6 +451,32 @@ export async function registerRoutes(
         if (!resp.ok) {
           res.json({ ok: false, note: 'Table does not exist. Please create it via Supabase SQL editor.', sql: createSql });
           return;
+        }
+      } else {
+        let needsMigration = false;
+        try {
+          const { error: checkErr } = await supabaseAdmin.from('financial_invoices').select('nf_image_url').limit(1);
+          if (checkErr && checkErr.code === '42703') needsMigration = true;
+        } catch { needsMigration = true; }
+
+        if (needsMigration) {
+          const supabasePgUrl = `postgresql://postgres.ajhmmjuewdsukecaimik:${process.env.SUPABASE_DB_PASSWORD || ''}@aws-0-sa-east-1.pooler.supabase.com:6543/postgres`;
+          if (process.env.SUPABASE_DB_PASSWORD) {
+            try {
+              const pool = new pg.Pool({ connectionString: supabasePgUrl, ssl: { rejectUnauthorized: false } });
+              for (const col of newCols) {
+                await pool.query(`ALTER TABLE public.financial_invoices ADD COLUMN IF NOT EXISTS ${col} TEXT`).catch(() => {});
+              }
+              await pool.end();
+              console.log('[Invoice migration] Columns added via pg connection');
+            } catch (pgErr: any) {
+              console.log('[Invoice migration] pg failed:', pgErr.message);
+            }
+          } else {
+            const migSql = newCols.map(c => `ALTER TABLE public.financial_invoices ADD COLUMN IF NOT EXISTS ${c} TEXT;`).join('\n');
+            res.json({ ok: true, migration_needed: true, sql: migSql, hint: 'Execute this SQL in Supabase SQL Editor to add the new columns' });
+            return;
+          }
         }
       }
       res.json({ ok: true });
