@@ -755,8 +755,20 @@ const VendorVerificationControl: React.FC<VendorVerificationControlProps> = ({ o
                 </div>
             </div>
 
-            <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-200 space-y-4">
-                <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+            <div className="flex items-center gap-4">
+                <button
+                    onClick={() => onNavigate?.('fin-billing')}
+                    className="flex items-center gap-3 bg-gradient-to-r from-indigo-600 to-purple-700 hover:from-indigo-700 hover:to-purple-800 text-white font-black text-xs uppercase tracking-wide py-3.5 px-6 rounded-xl transition-all shadow-md hover:shadow-lg"
+                    data-testid="button-billing-approval"
+                >
+                    <ClipboardCheck size={18} />
+                    Conferência e Aprovação de Faturamento
+                    <ArrowRight size={18} />
+                </button>
+            </div>
+
+            <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-200">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                     <div className="relative">
                         <input
                             type="text"
@@ -796,15 +808,6 @@ const VendorVerificationControl: React.FC<VendorVerificationControlProps> = ({ o
                             </button>
                         ))}
                     </div>
-                    <button
-                        onClick={() => onNavigate?.('fin-billing')}
-                        className="flex items-center justify-center gap-2 bg-gradient-to-r from-indigo-600 to-purple-700 hover:from-indigo-700 hover:to-purple-800 text-white font-black text-[10px] uppercase tracking-wide py-2.5 px-4 rounded-lg transition-all shadow-sm hover:shadow-md"
-                        data-testid="button-billing-approval"
-                    >
-                        <ClipboardCheck size={14} />
-                        Conferência e Aprovação de Faturamento
-                        <ArrowRight size={14} />
-                    </button>
                 </div>
             </div>
 
