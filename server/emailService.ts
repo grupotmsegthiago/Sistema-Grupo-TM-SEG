@@ -162,7 +162,7 @@ export async function sendMissionEmailToProvider(
   const escoltaTipo = mission.mission_type || 'Caracterizada';
   const html = baseTemplate(`
     <h2>📋 Solicitação de Escolta — ${formatOS(mission.id)}</h2>
-    <p>Prezado(a) Fornecedor,</p>
+    <p>Prezado(a) ${mission.provider || 'Fornecedor'},</p>
     <p>Uma nova ordem de serviço foi atribuída à sua empresa. Seguem os detalhes operacionais:</p>
     <table class="info-table">
       <tr><td>Nº da OS</td><td><span class="badge">${formatOS(mission.id)}</span></td></tr>
