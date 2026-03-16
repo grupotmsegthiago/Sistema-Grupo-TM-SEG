@@ -151,9 +151,46 @@ export async function sendMissionEmailToProvider(
       ${mission.driver_name ? `<tr><td>Motorista</td><td>${mission.driver_name}</td></tr>` : ''}
       ${mission.driver_phone ? `<tr><td>Tel. Motorista</td><td>${mission.driver_phone}</td></tr>` : ''}
     </table>
-    <div class="highlight-box">
-      <p><strong>Importante:</strong> Confirme a disponibilidade e garanta que a equipe esteja pronta no horário indicado.</p>
+
+    <div style="background:#1a1a1a; color:#ffffff; padding:24px 28px; border-radius:8px; margin:24px 0; border-left:4px solid #c0392b;">
+      <h3 style="color:#c0392b; font-size:16px; margin:0 0 16px; text-align:center; letter-spacing:1px;">🛡️ BRIEFING RÁPIDO – ESCOLTA ARMADA GRUPO TM SEG 🛡️</h3>
+      <p style="color:#ccc; font-size:13px; margin:0 0 16px; text-align:center; font-style:italic;">Atenção, Equipe! Sua segurança e a excelência da operação dependem da atenção a estes pontos essenciais.</p>
+
+      <h4 style="color:#c0392b; font-size:14px; margin:20px 0 8px; border-bottom:1px solid #333; padding-bottom:6px;">1. 🚗 VIATURA E PREPARAÇÃO</h4>
+      <p style="color:#ddd; font-size:12px; margin:6px 0;"><strong style="color:#fff;">Espelhamento Tático:</strong> Viatura espelhada ANTES da chegada na origem. Posição estratégica e discreta.</p>
+      <p style="color:#ddd; font-size:12px; margin:10px 0 4px;"><strong style="color:#fff;">Checklist ESSENCIAL:</strong></p>
+      <ul style="color:#ccc; font-size:12px; margin:4px 0 8px 16px; padding:0; list-style:disc;">
+        <li style="margin:4px 0;">Comunicação: Teclado e Pânico 100% funcionais.</li>
+        <li style="margin:4px 0;">Veículo: Pneus, freios, iluminação e combustível sempre OK.</li>
+        <li style="margin:4px 0;">Equipamentos: Extintor, triângulo, macaco e chave de roda a bordo e acessíveis.</li>
+      </ul>
+      <p style="color:#f87171; font-size:12px; margin:8px 0; font-weight:700;">⛔ PROIBIDO: Estacionar em áreas demarcadas do cliente (exceto pontos de carga/descarga autorizados).</p>
+
+      <h4 style="color:#c0392b; font-size:14px; margin:20px 0 8px; border-bottom:1px solid #333; padding-bottom:6px;">2. 🧑‍✈️ AGENTES E CONDUTA</h4>
+      <ul style="color:#ccc; font-size:12px; margin:4px 0 8px 16px; padding:0; list-style:disc;">
+        <li style="margin:4px 0;"><strong style="color:#fff;">Profissionalismo Total:</strong> Postura padrão, uniforme impecável, vigilância constante.</li>
+        <li style="margin:4px 0;"><strong style="color:#fff;">Armamento e Equipamento:</strong> SEMPRE armado e com todos os equipamentos táticos em perfeitas condições de uso.</li>
+        <li style="margin:4px 0;"><strong style="color:#fff;">Pontualidade CRÍTICA:</strong> Chegar no horário.</li>
+        <li style="margin:4px 0;"><strong style="color:#fff;">Contato Prévio:</strong> Fazer contato padrão com o motorista do veículo escoltado na chegada.</li>
+        <li style="margin:4px 0;"><strong style="color:#fff;">Conhecimento da Rota:</strong> Estudar rota principal e alternativas, incluindo pontos críticos e de apoio.</li>
+      </ul>
+
+      <h4 style="color:#c0392b; font-size:14px; margin:20px 0 8px; border-bottom:1px solid #333; padding-bottom:6px;">3. 📞 COMUNICAÇÃO E EMERGÊNCIA</h4>
+      <ul style="color:#ccc; font-size:12px; margin:4px 0 8px 16px; padding:0; list-style:disc;">
+        <li style="margin:4px 0;"><strong style="color:#fff;">Comunicação Ativa:</strong> Manter a base informada (partida, paradas, chegada). Comunicação clara e concisa.</li>
+        <li style="margin:4px 0;"><strong style="color:#fff;">Emergências:</strong> Em caso de anomalia, incidente ou abordagem, comunicar IMEDIATAMENTE a base com detalhes.</li>
+        <li style="margin:4px 0;"><strong style="color:#fff;">Protocolos:</strong> Estar ciente e treinado nos protocolos para abordagens hostis, acidentes e falhas mecânicas. A segurança da vida é primordial.</li>
+      </ul>
+
+      <h4 style="color:#c0392b; font-size:14px; margin:20px 0 8px; border-bottom:1px solid #333; padding-bottom:6px;">4. 📝 ADMINISTRAÇÃO</h4>
+      <ul style="color:#ccc; font-size:12px; margin:4px 0 8px 16px; padding:0; list-style:disc;">
+        <li style="margin:4px 0;"><strong style="color:#fff;">Documentação:</strong> Portar e manter válidos CNH, CRLV e demais documentos obrigatórios.</li>
+        <li style="margin:4px 0;"><strong style="color:#fff;">Relatório Pós-Missão:</strong> Preencher relatório detalhado de todas as missões, mesmo sem ocorrências.</li>
+      </ul>
+
+      <p style="color:#c0392b; font-size:13px; margin:20px 0 0; text-align:center; font-weight:700; letter-spacing:0.5px;">Sua atenção a cada detalhe garante a segurança e o sucesso da nossa PARCERIA</p>
     </div>
+
     <p>Atenciosamente,<br><strong>Equipe Grupo TM SEG</strong></p>
   `);
 
