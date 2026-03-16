@@ -1,6 +1,7 @@
 import nodemailer from 'nodemailer';
 import path from 'path';
 import fs from 'fs';
+import { generateMissionReportPDF, formatOSForFilename } from './pdfReportService';
 
 const EMAIL_USER = process.env.EMAIL_USER || 'adm@grupotmseg.com.br';
 const EMAIL_PASS = process.env.EMAIL_PASS || process.env.SMTP_PASSWORD || '';
@@ -150,17 +151,22 @@ export async function sendMissionEmailToClient(
       html,
     };
 
-    const reportPath = path.resolve(process.cwd(), 'server', 'assets', 'relatorio_escolta.png');
-    if (fs.existsSync(reportPath)) {
+    const pdfBuffer = await generateMissionReportPDF(String(mission.id));
+    if (pdfBuffer) {
+      const originCity = mission.origin ? mission.origin.split(',')[0].split('-')[0].trim().replace(/\s+/g, '_') : 'ORIGEM';
+      const destCity = mission.destination ? mission.destination.split(',')[0].split('-')[0].trim().replace(/\s+/g, '_') : 'DESTINO';
       mailOptions.attachments = [{
-        filename: `Relatorio_Escolta_${formatOS(mission.id)}.png`,
-        path: reportPath,
-        cid: 'relatorio_escolta'
+        filename: `TMSEG_-_OS_${formatOSForFilename(mission.id)}_-_${originCity}_x_${destCity}.pdf`,
+        content: pdfBuffer,
+        contentType: 'application/pdf'
       }];
+      console.log(`[Email] PDF do relatório gerado para missão ${mission.id}`);
+    } else {
+      console.warn(`[Email] Não foi possível gerar PDF para missão ${mission.id}, enviando sem anexo`);
     }
 
     await transporter.sendMail(mailOptions);
-    console.log(`[Email] Missão ${mission.id} → Cliente: ${clientEmail} (com anexo)`);
+    console.log(`[Email] Missão ${mission.id} → Cliente: ${clientEmail} (com anexo PDF)`);
     return true;
   } catch (err: any) {
     console.error(`[Email] Erro ao enviar para cliente ${clientEmail}:`, err.message);
@@ -309,13 +315,17 @@ export async function sendMissionResendToClient(
       html,
     };
 
-    const reportPath = path.resolve(process.cwd(), 'server', 'assets', 'relatorio_escolta.png');
-    if (fs.existsSync(reportPath)) {
-      mailOptions.attachments = [{
-        filename: `Relatorio_Escolta_${formatOS(mission.id)}.png`,
-        path: reportPath,
-        cid: 'relatorio_escolta'
-      }];
+    const pdfBuffer = await generateMissionReportPDF(String(mission.id));
+    if (pdfBuffer) {
+      const originCity = mission.origin ? mission.origin.split(',')[0].split('-')[0].trim().replace(/\s+/g, '_') : 'ORIGEM';
+      const destCity = mission.destination ? mission.destination.split(',')[0].split('-')[0].trim().replace(/\s+/g, '_') : 'DESTINO';
+      if (!mailOptions.attachments) mailOptions.attachments = [];
+      mailOptions.attachments.push({
+        filename: `TMSEG_-_OS_${formatOSForFilename(mission.id)}_-_${originCity}_x_${destCity}.pdf`,
+        content: pdfBuffer,
+        contentType: 'application/pdf'
+      });
+      console.log(`[Email] PDF do relatório gerado para reenvio da missão ${mission.id}`);
     }
 
     await transporter.sendMail(mailOptions);
@@ -364,13 +374,16 @@ export async function sendMirroringEvidenceEmail(
       html,
     };
 
-    const reportPath = path.resolve(process.cwd(), 'server', 'assets', 'relatorio_escolta.png');
-    if (fs.existsSync(reportPath)) {
-      mailOptions.attachments = [{
-        filename: `Relatorio_Escolta_${formatOS(mission.id)}.png`,
-        path: reportPath,
-        cid: 'relatorio_escolta'
-      }];
+    const pdfBuffer = await generateMissionReportPDF(String(mission.id));
+    if (pdfBuffer) {
+      const originCity = mission.origin ? mission.origin.split(',')[0].split('-')[0].trim().replace(/\s+/g, '_') : 'ORIGEM';
+      const destCity = mission.destination ? mission.destination.split(',')[0].split('-')[0].trim().replace(/\s+/g, '_') : 'DESTINO';
+      if (!mailOptions.attachments) mailOptions.attachments = [];
+      mailOptions.attachments.push({
+        filename: `TMSEG_-_OS_${formatOSForFilename(mission.id)}_-_${originCity}_x_${destCity}.pdf`,
+        content: pdfBuffer,
+        contentType: 'application/pdf'
+      });
     }
 
     await transporter.sendMail(mailOptions);
