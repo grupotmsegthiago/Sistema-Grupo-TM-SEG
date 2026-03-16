@@ -737,9 +737,10 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
                 showNotification('Relatório Copiado', 'Monitoramento formatado salvo e copiado.', 'success');
             } catch (err) { console.warn(err); }
 
+            const vehiclePlateForEmail = searchVehicle || editData.client_vehicle_plate || '—';
+
             if (finalStatus === MissionStatus.SCHEDULED && originalStatus !== MissionStatus.SCHEDULED) {
                 try {
-                    const vehiclePlateForEmail = searchVehicle || editData.client_vehicle_plate || '—';
                     await fetch('/api/email/mission-scheduled', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
@@ -755,6 +756,30 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
                     });
                 } catch (emailErr) {
                     console.error('[Email] Erro ao enviar confirmação ao cliente:', emailErr);
+                }
+            }
+
+            const providerChanged = editData.provider && editData.provider.trim() !== '' &&
+                (originalStatus === MissionStatus.SOLICITED || !mission.provider || mission.provider !== editData.provider);
+            if (providerChanged && (finalStatus === MissionStatus.DOCUMENTATION || finalStatus === MissionStatus.SOLICITED)) {
+                try {
+                    await fetch('/api/email/mission-solicited', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            missionId: mission.id,
+                            provider: editData.provider,
+                            vehiclePlate: vehiclePlateForEmail,
+                            origin: editData.origin,
+                            destination: finalDestination,
+                            start_time: startIso,
+                            mission_type: editData.missionType,
+                            driver_name: editData.driver_name,
+                            driver_phone: editData.driver_phone
+                        })
+                    });
+                } catch (emailErr) {
+                    console.error('[Email] Erro ao enviar solicitação ao fornecedor:', emailErr);
                 }
             }
 

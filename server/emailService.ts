@@ -80,6 +80,14 @@ function formatDateTime(isoStr: string | null | undefined): string {
   } catch { return isoStr; }
 }
 
+function formatOS(id: string): string {
+  const parts = id.split('-');
+  if (parts.length >= 3) {
+    return parts.slice(0, parts.length - 1).join('-');
+  }
+  return id;
+}
+
 export interface MissionEmailData {
   id: string;
   client: string;
@@ -105,7 +113,7 @@ export async function sendMissionEmailToClient(
     <p>Prezado(a) Cliente,</p>
     <p>Informamos que uma nova missão de escolta foi registrada para a sua empresa. Seguem os detalhes:</p>
     <table class="info-table">
-      <tr><td>Nº da Missão (OS)</td><td><span class="badge">${mission.id}</span></td></tr>
+      <tr><td>Nº da OS</td><td><span class="badge">${formatOS(mission.id)}</span></td></tr>
       <tr><td>Rota</td><td>${mission.origin} → ${mission.destination}</td></tr>
       <tr><td>Viatura (Placa)</td><td>${vehiclePlate || '—'}</td></tr>
       <tr><td>Tipo de Escolta</td><td>${mission.mission_type || 'Caracterizada'}</td></tr>
@@ -122,7 +130,7 @@ export async function sendMissionEmailToClient(
       from: SMTP_FROM,
       to: clientEmail,
       bcc: BCC_RECIPIENTS,
-      subject: `Agendamento Confirmado - ${vehiclePlate || 'S/PLACA'} / ${mission.id}`,
+      subject: `Agendamento Confirmado - ${vehiclePlate || 'S/PLACA'} / ${formatOS(mission.id)}`,
       html,
     });
     console.log(`[Email] Missão ${mission.id} → Cliente: ${clientEmail}`);
@@ -138,57 +146,59 @@ export async function sendMissionEmailToProvider(
   providerEmail: string,
   vehiclePlate: string
 ): Promise<boolean> {
+  const escoltaTipo = mission.mission_type || 'Caracterizada';
   const html = baseTemplate(`
-    <h2>📋 Ordem de Serviço — Fornecedor</h2>
+    <h2>📋 Solicitação de Escolta — ${formatOS(mission.id)}</h2>
     <p>Prezado(a) Fornecedor,</p>
     <p>Uma nova ordem de serviço foi atribuída à sua empresa. Seguem os detalhes operacionais:</p>
     <table class="info-table">
-      <tr><td>Nº da Missão (OS)</td><td><span class="badge">${mission.id}</span></td></tr>
+      <tr><td>Nº da OS</td><td><span class="badge">${formatOS(mission.id)}</span></td></tr>
       <tr><td>Rota</td><td>${mission.origin} → ${mission.destination}</td></tr>
       <tr><td>Viatura (Placa)</td><td>${vehiclePlate || '—'}</td></tr>
-      <tr><td>Tipo de Escolta</td><td>${mission.mission_type || 'Caracterizada'}</td></tr>
+      <tr><td>Tipo de Escolta</td><td>${escoltaTipo}</td></tr>
       <tr><td>Data/Hora Inicial</td><td>${formatDateTime(mission.start_time)}</td></tr>
       ${mission.driver_name ? `<tr><td>Motorista</td><td>${mission.driver_name}</td></tr>` : ''}
       ${mission.driver_phone ? `<tr><td>Tel. Motorista</td><td>${mission.driver_phone}</td></tr>` : ''}
     </table>
 
-    <div style="background:#1a1a1a; color:#ffffff; padding:24px 28px; border-radius:8px; margin:24px 0; border-left:4px solid #c0392b;">
-      <h3 style="color:#c0392b; font-size:16px; margin:0 0 16px; text-align:center; letter-spacing:1px;">🛡️ BRIEFING RÁPIDO – ESCOLTA ARMADA GRUPO TM SEG 🛡️</h3>
-      <p style="color:#ccc; font-size:13px; margin:0 0 16px; text-align:center; font-style:italic;">Atenção, Equipe! Sua segurança e a excelência da operação dependem da atenção a estes pontos essenciais.</p>
+    <div style="background:#ffffff; padding:28px 32px; border-radius:10px; margin:24px 0; border:1px solid #e0e0e0; border-left:4px solid #c0392b;">
+      <h3 style="color:#c0392b; font-size:16px; margin:0 0 6px; text-align:center; letter-spacing:1px; font-weight:800;">BRIEFING OPERACIONAL</h3>
+      <p style="color:#c0392b; font-size:12px; margin:0 0 20px; text-align:center; font-weight:600; text-transform:uppercase; letter-spacing:2px;">Escolta Armada — Grupo TM SEG</p>
+      <p style="color:#555; font-size:13px; margin:0 0 20px; text-align:center; font-style:italic; border-bottom:1px solid #eee; padding-bottom:14px;">A segurança e a excelência da operação dependem da atenção a cada detalhe.</p>
 
-      <h4 style="color:#c0392b; font-size:14px; margin:20px 0 8px; border-bottom:1px solid #333; padding-bottom:6px;">1. 🚗 VIATURA E PREPARAÇÃO</h4>
-      <p style="color:#ddd; font-size:12px; margin:6px 0;"><strong style="color:#fff;">Espelhamento Tático:</strong> Viatura espelhada ANTES da chegada na origem. Posição estratégica e discreta.</p>
-      <p style="color:#ddd; font-size:12px; margin:10px 0 4px;"><strong style="color:#fff;">Checklist ESSENCIAL:</strong></p>
-      <ul style="color:#ccc; font-size:12px; margin:4px 0 8px 16px; padding:0; list-style:disc;">
-        <li style="margin:4px 0;">Comunicação: Teclado e Pânico 100% funcionais.</li>
-        <li style="margin:4px 0;">Veículo: Pneus, freios, iluminação e combustível sempre OK.</li>
-        <li style="margin:4px 0;">Equipamentos: Extintor, triângulo, macaco e chave de roda a bordo e acessíveis.</li>
+      <h4 style="color:#c0392b; font-size:13px; margin:20px 0 10px; border-bottom:2px solid #f0f0f0; padding-bottom:6px; font-weight:700;">1. VIATURA E PREPARAÇÃO</h4>
+      <p style="color:#333; font-size:12px; margin:6px 0;"><strong>Espelhamento Tático:</strong> Viatura espelhada ANTES da chegada na origem. Posição estratégica e discreta.</p>
+      <p style="color:#333; font-size:12px; margin:10px 0 6px;"><strong>Checklist Obrigatório:</strong></p>
+      <ul style="color:#444; font-size:12px; margin:4px 0 8px 20px; padding:0; list-style:disc;">
+        <li style="margin:5px 0;">Comunicação: Teclado e Pânico 100% funcionais.</li>
+        <li style="margin:5px 0;">Veículo: Pneus, freios, iluminação e combustível verificados.</li>
+        <li style="margin:5px 0;">Equipamentos: Extintor, triângulo, macaco e chave de roda a bordo.</li>
       </ul>
-      <p style="color:#f87171; font-size:12px; margin:8px 0; font-weight:700;">⛔ PROIBIDO: Estacionar em áreas demarcadas do cliente (exceto pontos de carga/descarga autorizados).</p>
+      <p style="color:#c0392b; font-size:12px; margin:8px 0; font-weight:700; background:#fef2f2; padding:8px 12px; border-radius:6px; border:1px solid #fecaca;">PROIBIDO: Estacionar em áreas demarcadas do cliente (exceto pontos de carga/descarga autorizados).</p>
 
-      <h4 style="color:#c0392b; font-size:14px; margin:20px 0 8px; border-bottom:1px solid #333; padding-bottom:6px;">2. 🧑‍✈️ AGENTES E CONDUTA</h4>
-      <ul style="color:#ccc; font-size:12px; margin:4px 0 8px 16px; padding:0; list-style:disc;">
-        <li style="margin:4px 0;"><strong style="color:#fff;">Profissionalismo Total:</strong> Postura padrão, uniforme impecável, vigilância constante.</li>
-        <li style="margin:4px 0;"><strong style="color:#fff;">Armamento e Equipamento:</strong> SEMPRE armado e com todos os equipamentos táticos em perfeitas condições de uso.</li>
-        <li style="margin:4px 0;"><strong style="color:#fff;">Pontualidade CRÍTICA:</strong> Chegar no horário.</li>
-        <li style="margin:4px 0;"><strong style="color:#fff;">Contato Prévio:</strong> Fazer contato padrão com o motorista do veículo escoltado na chegada.</li>
-        <li style="margin:4px 0;"><strong style="color:#fff;">Conhecimento da Rota:</strong> Estudar rota principal e alternativas, incluindo pontos críticos e de apoio.</li>
-      </ul>
-
-      <h4 style="color:#c0392b; font-size:14px; margin:20px 0 8px; border-bottom:1px solid #333; padding-bottom:6px;">3. 📞 COMUNICAÇÃO E EMERGÊNCIA</h4>
-      <ul style="color:#ccc; font-size:12px; margin:4px 0 8px 16px; padding:0; list-style:disc;">
-        <li style="margin:4px 0;"><strong style="color:#fff;">Comunicação Ativa:</strong> Manter a base informada (partida, paradas, chegada). Comunicação clara e concisa.</li>
-        <li style="margin:4px 0;"><strong style="color:#fff;">Emergências:</strong> Em caso de anomalia, incidente ou abordagem, comunicar IMEDIATAMENTE a base com detalhes.</li>
-        <li style="margin:4px 0;"><strong style="color:#fff;">Protocolos:</strong> Estar ciente e treinado nos protocolos para abordagens hostis, acidentes e falhas mecânicas. A segurança da vida é primordial.</li>
+      <h4 style="color:#c0392b; font-size:13px; margin:22px 0 10px; border-bottom:2px solid #f0f0f0; padding-bottom:6px; font-weight:700;">2. AGENTES E CONDUTA</h4>
+      <ul style="color:#444; font-size:12px; margin:4px 0 8px 20px; padding:0; list-style:disc;">
+        <li style="margin:5px 0;"><strong style="color:#222;">Profissionalismo:</strong> Postura padrão, uniforme impecável, vigilância constante.</li>
+        <li style="margin:5px 0;"><strong style="color:#222;">Armamento:</strong> SEMPRE armado e com equipamentos táticos em perfeitas condições.</li>
+        <li style="margin:5px 0;"><strong style="color:#222;">Pontualidade:</strong> Chegar no horário estabelecido.</li>
+        <li style="margin:5px 0;"><strong style="color:#222;">Contato Prévio:</strong> Fazer contato padrão com o motorista na chegada.</li>
+        <li style="margin:5px 0;"><strong style="color:#222;">Rota:</strong> Estudar rota principal e alternativas, incluindo pontos críticos.</li>
       </ul>
 
-      <h4 style="color:#c0392b; font-size:14px; margin:20px 0 8px; border-bottom:1px solid #333; padding-bottom:6px;">4. 📝 ADMINISTRAÇÃO</h4>
-      <ul style="color:#ccc; font-size:12px; margin:4px 0 8px 16px; padding:0; list-style:disc;">
-        <li style="margin:4px 0;"><strong style="color:#fff;">Documentação:</strong> Portar e manter válidos CNH, CRLV e demais documentos obrigatórios.</li>
-        <li style="margin:4px 0;"><strong style="color:#fff;">Relatório Pós-Missão:</strong> Preencher relatório detalhado de todas as missões, mesmo sem ocorrências.</li>
+      <h4 style="color:#c0392b; font-size:13px; margin:22px 0 10px; border-bottom:2px solid #f0f0f0; padding-bottom:6px; font-weight:700;">3. COMUNICAÇÃO E EMERGÊNCIA</h4>
+      <ul style="color:#444; font-size:12px; margin:4px 0 8px 20px; padding:0; list-style:disc;">
+        <li style="margin:5px 0;"><strong style="color:#222;">Comunicação Ativa:</strong> Manter a base informada (partida, paradas, chegada).</li>
+        <li style="margin:5px 0;"><strong style="color:#222;">Emergências:</strong> Comunicar IMEDIATAMENTE a base em caso de anomalia ou incidente.</li>
+        <li style="margin:5px 0;"><strong style="color:#222;">Protocolos:</strong> Conhecer procedimentos para abordagens hostis, acidentes e falhas mecânicas.</li>
       </ul>
 
-      <p style="color:#c0392b; font-size:13px; margin:20px 0 0; text-align:center; font-weight:700; letter-spacing:0.5px;">Sua atenção a cada detalhe garante a segurança e o sucesso da nossa PARCERIA</p>
+      <h4 style="color:#c0392b; font-size:13px; margin:22px 0 10px; border-bottom:2px solid #f0f0f0; padding-bottom:6px; font-weight:700;">4. ADMINISTRAÇÃO</h4>
+      <ul style="color:#444; font-size:12px; margin:4px 0 8px 20px; padding:0; list-style:disc;">
+        <li style="margin:5px 0;"><strong style="color:#222;">Documentação:</strong> Portar CNH, CRLV e demais documentos válidos e obrigatórios.</li>
+        <li style="margin:5px 0;"><strong style="color:#222;">Relatório Pós-Missão:</strong> Preencher relatório detalhado, mesmo sem ocorrências.</li>
+      </ul>
+
+      <p style="color:#c0392b; font-size:13px; margin:22px 0 0; text-align:center; font-weight:700; letter-spacing:0.5px; border-top:2px solid #f0f0f0; padding-top:14px;">Sua atenção a cada detalhe garante a segurança e o sucesso da operação.</p>
     </div>
 
     <p>Atenciosamente,<br><strong>Equipe Grupo TM SEG</strong></p>
@@ -199,7 +209,7 @@ export async function sendMissionEmailToProvider(
       from: SMTP_FROM,
       to: providerEmail,
       bcc: BCC_RECIPIENTS,
-      subject: `Solicitação de Escolta - ${vehiclePlate || 'S/PLACA'}`,
+      subject: `Solicitação de Escolta - ${vehiclePlate || 'S/PLACA'} / ${escoltaTipo}`,
       html,
     });
     console.log(`[Email] Missão ${mission.id} → Fornecedor: ${providerEmail}`);
