@@ -79,7 +79,9 @@ function formatDateTime(isoStr: string | null | undefined): string {
   if (!isoStr) return '—';
   try {
     const d = new Date(isoStr);
-    return d.toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo', day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+    const datePart = d.toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo', day: '2-digit', month: '2-digit', year: 'numeric' });
+    const timePart = d.toLocaleTimeString('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit' });
+    return `${datePart} — ${timePart}`;
   } catch { return isoStr; }
 }
 
@@ -128,7 +130,7 @@ export async function sendMissionEmailToClient(
       <tr><td>Rota</td><td>${mission.origin} → ${mission.destination}</td></tr>
       <tr><td>Viatura (Placa)</td><td>${vehiclePlate || '—'}</td></tr>
       <tr><td>Tipo de Escolta</td><td>${mission.mission_type || 'Caracterizada'}</td></tr>
-      <tr><td>Data/Hora Inicial</td><td>${formatDateTime(mission.start_time)}</td></tr>
+      <tr><td>Agendamento</td><td>${formatDateTime(mission.start_time)}</td></tr>
     </table>
     <div class="highlight-box">
       <p><strong>Observação:</strong> Acompanhe o status da missão em tempo real pelo painel do sistema.</p>
@@ -187,7 +189,7 @@ export async function sendMissionEmailToProvider(
       <tr><td>Rota</td><td>${mission.origin} → ${mission.destination}</td></tr>
       <tr><td>Viatura (Placa)</td><td>${vehiclePlate || '—'}</td></tr>
       <tr><td>Tipo de Escolta</td><td>${escoltaTipo}</td></tr>
-      <tr><td>Data/Hora Inicial</td><td>${formatDateTime(mission.start_time)}</td></tr>
+      <tr><td>Agendamento</td><td>${formatDateTime(mission.start_time)}</td></tr>
       ${mission.driver_name ? `<tr><td>Motorista</td><td>${mission.driver_name}</td></tr>` : ''}
       ${mission.driver_phone ? `<tr><td>Tel. Motorista</td><td>${mission.driver_phone}</td></tr>` : ''}
     </table>
@@ -284,7 +286,7 @@ export async function sendMissionResendToClient(
       <tr><td>Rota</td><td>${mission.origin} → ${mission.destination}</td></tr>
       <tr><td>Viatura (Placa)</td><td>${vehiclePlate || '—'}</td></tr>
       <tr><td>Tipo de Escolta</td><td>${mission.mission_type || 'Caracterizada'}</td></tr>
-      <tr><td>Data/Hora Inicial</td><td>${formatDateTime(mission.start_time)}</td></tr>
+      <tr><td>Agendamento</td><td>${formatDateTime(mission.start_time)}</td></tr>
       ${mission.driver_name ? `<tr><td>Motorista</td><td>${mission.driver_name}</td></tr>` : ''}
       ${mission.driver_phone ? `<tr><td>Contato Motorista</td><td>${mission.driver_phone}</td></tr>` : ''}
     </table>
@@ -337,7 +339,7 @@ export async function sendMirroringEvidenceEmail(
       <tr><td>Rota</td><td>${mission.origin} → ${mission.destination}</td></tr>
       <tr><td>Viatura (Placa)</td><td>${vehiclePlate || '—'}</td></tr>
       <tr><td>Tipo de Escolta</td><td>${mission.mission_type || 'Caracterizada'}</td></tr>
-      <tr><td>Data/Hora</td><td>${formatDateTime(mission.start_time)}</td></tr>
+      <tr><td>Agendamento</td><td>${formatDateTime(mission.start_time)}</td></tr>
     </table>
     <div style="margin:20px 0; text-align:center;">
       <p style="font-size:11px; font-weight:700; color:#666; text-transform:uppercase; letter-spacing:1px; margin-bottom:12px;">Foto do Espelhamento</p>
