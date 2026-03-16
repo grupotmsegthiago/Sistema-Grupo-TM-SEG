@@ -1,4 +1,10 @@
 import nodemailer from 'nodemailer';
+import path from 'path';
+import fs from 'fs';
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 const EMAIL_USER = process.env.EMAIL_USER || 'adm@grupotmseg.com.br';
 const EMAIL_PASS = process.env.EMAIL_PASS || process.env.SMTP_PASSWORD || '';
@@ -126,14 +132,25 @@ export async function sendMissionEmailToClient(
   `);
 
   try {
-    await transporter.sendMail({
+    const mailOptions: any = {
       from: SMTP_FROM,
       to: clientEmail,
       bcc: BCC_RECIPIENTS,
       subject: `Agendamento Confirmado - ${vehiclePlate || 'S/PLACA'} / ${formatOS(mission.id)}`,
       html,
-    });
-    console.log(`[Email] Missão ${mission.id} → Cliente: ${clientEmail}`);
+    };
+
+    const reportPath = path.resolve(__dirname, 'assets', 'relatorio_escolta.png');
+    if (fs.existsSync(reportPath)) {
+      mailOptions.attachments = [{
+        filename: `Relatorio_Escolta_${formatOS(mission.id)}.png`,
+        path: reportPath,
+        cid: 'relatorio_escolta'
+      }];
+    }
+
+    await transporter.sendMail(mailOptions);
+    console.log(`[Email] Missão ${mission.id} → Cliente: ${clientEmail} (com anexo)`);
     return true;
   } catch (err: any) {
     console.error(`[Email] Erro ao enviar para cliente ${clientEmail}:`, err.message);
