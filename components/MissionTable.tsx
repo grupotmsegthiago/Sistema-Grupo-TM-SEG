@@ -528,7 +528,7 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
         const isSearching = searchTerm && searchTerm.trim().length > 0;
         const hasActiveSpecialFilters = showPendingOnly || showTomorrowOnly || showMyApprovalOnly;
 
-        const sourceMissions = (isSearching || hasActiveSpecialFilters) ? allMissions : periodMissions;
+        const sourceMissions = periodMissions;
 
         return sourceMissions.filter(mission => {
             // Text Search

@@ -249,8 +249,8 @@ const MissionAlertMonitor: React.FC = () => {
         const interval = setInterval(() => {
             const now = Date.now();
             setAlerts(prev => prev.map(a => {
-                if (a.declinedAt && a.reminderAt && !a.dismissed && now >= a.reminderAt) {
-                    return { ...a, declinedAt: undefined, reminderAt: undefined, acknowledged: false };
+                if (a.declinedAt && a.reminderAt && now >= a.reminderAt) {
+                    return { ...a, declinedAt: undefined, reminderAt: undefined, acknowledged: false, dismissed: false };
                 }
                 return a;
             }));
@@ -264,9 +264,10 @@ const MissionAlertMonitor: React.FC = () => {
 
         setAlerts(prev => prev.map(a =>
             a.id === alertId
-                ? { ...a, acknowledged: true, acknowledgedAt: Date.now(), acknowledgedBy: userName, declinedAt: undefined, reminderAt: undefined }
+                ? { ...a, acknowledged: true, acknowledgedAt: Date.now(), acknowledgedBy: userName, declinedAt: undefined, reminderAt: undefined, dismissed: true }
                 : a
         ));
+        if (selectedAlert === alertId) setSelectedAlert(null);
 
         supabase.from('system_logs').insert({
             entity: 'MissionAlert',
@@ -287,9 +288,10 @@ const MissionAlertMonitor: React.FC = () => {
 
         setAlerts(prev => prev.map(a =>
             a.id === alertId
-                ? { ...a, declinedAt: now, reminderAt: now + reminderMinutes * 60_000 }
+                ? { ...a, declinedAt: now, reminderAt: now + reminderMinutes * 60_000, dismissed: true }
                 : a
         ));
+        if (selectedAlert === alertId) setSelectedAlert(null);
 
         const ud = JSON.parse(localStorage.getItem('userData') || '{}');
         supabase.from('system_logs').insert({
@@ -380,7 +382,7 @@ const MissionAlertMonitor: React.FC = () => {
             : {};
 
         return (
-            <div className="fixed bottom-4 right-4 z-[45]" data-testid="mission-alert-monitor-mini" style={{ perspective: '800px' }}>
+            <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-[45]" data-testid="mission-alert-monitor-mini" style={{ perspective: '800px' }}>
                 <style>{alertAnimation}</style>
                 {hasAlerts && (
                     <div
