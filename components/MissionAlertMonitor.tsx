@@ -382,7 +382,7 @@ const MissionAlertMonitor: React.FC = () => {
             : {};
 
         return (
-            <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-[45]" data-testid="mission-alert-monitor-mini" style={{ perspective: '800px' }}>
+            <div className="fixed bottom-4 z-[45]" data-testid="mission-alert-monitor-mini" style={{ perspective: '800px', left: '50%', transform: 'translateX(-50%)' }}>
                 <style>{alertAnimation}</style>
                 {hasAlerts && (
                     <div
