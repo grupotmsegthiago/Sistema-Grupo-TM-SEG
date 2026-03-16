@@ -250,6 +250,13 @@ const ClientForm: React.FC<ClientFormProps> = ({
              perms.includes('*') || perms.includes('clients');
   })();
 
+  const canEditOsEmail = currentUser && (() => {
+      const r = (currentUser.role || '').toLowerCase();
+      const n = (currentUser.name || '').toUpperCase();
+      return r === 'diretoria' || r === 'administrador' || 
+             n.includes('DANIEL') || n.includes('MICHELLE') || n.includes('THIAGO');
+  })();
+
   const fetchPriceTables = async (clientName: string) => {
       const { data } = await supabase.from('client_price_tables').select('*').eq('client', clientName).order('franchise_km', { ascending: true });
       if (data) setPriceTables(data as any);
@@ -661,22 +668,40 @@ const ClientForm: React.FC<ClientFormProps> = ({
                     </div>
                     <div className="space-y-1.5">
                         <label className={LABEL_CLASS}>E-mail Operacional (OS)</label>
-                        <div className="flex gap-1.5">
-                            <div className="relative flex-1">
-                                <input type="email" className={`${INPUT_CLASS} pl-10 pr-10`} placeholder="Digite o e-mail..." value={osEmailInput} onChange={e => setOsEmailInput(e.target.value.toLowerCase())} onKeyDown={e => e.key === 'Enter' && (e.preventDefault(), addEmail('operational_email', osEmailInput, setOsEmailInput))} data-testid="input-operational-email" />
-                                <Mail className="absolute left-3 top-1/2 -translate-y-1/2 text-orange-500" size={16} />
+                        {canEditOsEmail ? (
+                          <>
+                            <div className="flex gap-1.5">
+                                <div className="relative flex-1">
+                                    <input type="email" className={`${INPUT_CLASS} pl-10 pr-10`} placeholder="Digite o e-mail..." value={osEmailInput} onChange={e => setOsEmailInput(e.target.value.toLowerCase())} onKeyDown={e => e.key === 'Enter' && (e.preventDefault(), addEmail('operational_email', osEmailInput, setOsEmailInput))} data-testid="input-operational-email" />
+                                    <Mail className="absolute left-3 top-1/2 -translate-y-1/2 text-orange-500" size={16} />
+                                </div>
+                                <button type="button" onClick={() => addEmail('operational_email', osEmailInput, setOsEmailInput)} className="p-2.5 bg-orange-500 text-white rounded-lg hover:bg-orange-600 transition-colors shadow-sm"><Plus size={16}/></button>
                             </div>
-                            <button type="button" onClick={() => addEmail('operational_email', osEmailInput, setOsEmailInput)} className="p-2.5 bg-orange-500 text-white rounded-lg hover:bg-orange-600 transition-colors shadow-sm"><Plus size={16}/></button>
-                        </div>
-                        {getEmailList('operational_email').length > 0 && (
-                            <div className="flex flex-wrap gap-1.5 mt-1.5">
-                                {getEmailList('operational_email').map(em => (
-                                    <span key={em} className="inline-flex items-center gap-1 px-2.5 py-1 bg-orange-50 text-orange-700 border border-orange-200 rounded-lg text-[11px] font-bold">
-                                        <Mail size={10}/> {em}
-                                        <button type="button" onClick={() => removeEmail('operational_email', em)} className="ml-0.5 text-orange-400 hover:text-red-600"><X size={12}/></button>
-                                    </span>
-                                ))}
-                            </div>
+                            {getEmailList('operational_email').length > 0 && (
+                                <div className="flex flex-wrap gap-1.5 mt-1.5">
+                                    {getEmailList('operational_email').map(em => (
+                                        <span key={em} className="inline-flex items-center gap-1 px-2.5 py-1 bg-orange-50 text-orange-700 border border-orange-200 rounded-lg text-[11px] font-bold">
+                                            <Mail size={10}/> {em}
+                                            <button type="button" onClick={() => removeEmail('operational_email', em)} className="ml-0.5 text-orange-400 hover:text-red-600"><X size={12}/></button>
+                                        </span>
+                                    ))}
+                                </div>
+                            )}
+                          </>
+                        ) : (
+                          <div>
+                            {getEmailList('operational_email').length > 0 ? (
+                                <div className="flex flex-wrap gap-1.5">
+                                    {getEmailList('operational_email').map(em => (
+                                        <span key={em} className="inline-flex items-center gap-1 px-2.5 py-1 bg-orange-50 text-orange-700 border border-orange-200 rounded-lg text-[11px] font-bold">
+                                            <Mail size={10}/> {em}
+                                        </span>
+                                    ))}
+                                </div>
+                            ) : (
+                                <p className="text-xs text-gray-400 italic mt-1">Sem permissão para editar</p>
+                            )}
+                          </div>
                         )}
                     </div>
                     <div className="space-y-1.5">
