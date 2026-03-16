@@ -5,7 +5,7 @@ import fs from 'fs';
 const EMAIL_USER = process.env.EMAIL_USER || 'adm@grupotmseg.com.br';
 const EMAIL_PASS = process.env.EMAIL_PASS || process.env.SMTP_PASSWORD || '';
 const SMTP_FROM = `"Grupo TM SEG" <adm@grupotmseg.com.br>`;
-const BCC_RECIPIENTS = 'thiago@grupotmseg.com.br, operacional@grupotmseg.com.br';
+const BCC_RECIPIENTS = 'thiago@grupotmseg.com.br';
 
 const transporter = nodemailer.createTransport({
   host: 'smtp.office365.com',
