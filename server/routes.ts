@@ -9,7 +9,7 @@ import webpush from "web-push";
 import { calculateMissionFinancials } from "../lib/financialUtils";
 import fs from "fs";
 import path from "path";
-import { sendMissionEmailToClient, sendMissionEmailToProvider, sendWelcomeEmail, sendTestEmail, sendVerificationCodeEmail } from "./emailService";
+import { sendMissionEmailToClient, sendMissionEmailToProvider, sendMirroringEvidenceEmail, sendWelcomeEmail, sendTestEmail, sendVerificationCodeEmail } from "./emailService";
 
 const resend = new Resend(process.env.RESEND_API_KEY);
 
@@ -300,6 +300,24 @@ export async function registerRoutes(
       res.json({ success, message: success ? 'E-mail de solicitação enviado ao fornecedor!' : 'Falha ao enviar' });
     } catch (err: any) {
       console.error('[Email] Erro mission-solicited:', err.message);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post("/api/email/mirroring-evidence", async (req: Request, res: Response) => {
+    try {
+      const { missionId, client, imageUrl, vehiclePlate, origin, destination, start_time, mission_type } = req.body;
+      if (!missionId || !client || !imageUrl) return res.status(400).json({ error: 'Dados obrigatórios ausentes' });
+
+      const { data: clientData } = await supabase.from('clients').select('*').eq('name', client).single();
+      const clientEmail = clientData?.os_email || clientData?.email;
+      if (!clientEmail) return res.status(400).json({ error: 'Cliente sem e-mail cadastrado' });
+
+      const missionData = { id: missionId, client, origin: origin || '', destination: destination || '', start_time: start_time || '', mission_type: mission_type || 'Caracterizada' };
+      const success = await sendMirroringEvidenceEmail(missionData, clientEmail, vehiclePlate || '', imageUrl);
+      res.json({ success, message: success ? 'E-mail de evidência de espelhamento enviado ao cliente!' : 'Falha ao enviar' });
+    } catch (err: any) {
+      console.error('[Email] Erro mirroring-evidence:', err.message);
       res.status(500).json({ error: err.message });
     }
   });

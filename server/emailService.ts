@@ -241,6 +241,60 @@ export interface WelcomeEmailData {
   profileName?: string;
 }
 
+export async function sendMirroringEvidenceEmail(
+  mission: MissionEmailData,
+  clientEmail: string,
+  vehiclePlate: string,
+  imageUrl: string
+): Promise<boolean> {
+  const html = baseTemplate(`
+    <h2>📸 Evidência de Espelhamento — ${formatOS(mission.id)}</h2>
+    <p>Prezado(a) Cliente,</p>
+    <p>Segue a evidência do espelhamento tático da viatura para a missão de escolta em andamento:</p>
+    <table class="info-table">
+      <tr><td>Nº da OS</td><td><span class="badge">${formatOS(mission.id)}</span></td></tr>
+      <tr><td>Rota</td><td>${mission.origin} → ${mission.destination}</td></tr>
+      <tr><td>Viatura (Placa)</td><td>${vehiclePlate || '—'}</td></tr>
+      <tr><td>Tipo de Escolta</td><td>${mission.mission_type || 'Caracterizada'}</td></tr>
+      <tr><td>Data/Hora</td><td>${formatDateTime(mission.start_time)}</td></tr>
+    </table>
+    <div style="margin:20px 0; text-align:center;">
+      <p style="font-size:11px; font-weight:700; color:#666; text-transform:uppercase; letter-spacing:1px; margin-bottom:12px;">Foto do Espelhamento</p>
+      <img src="${imageUrl}" alt="Evidência de Espelhamento" style="max-width:100%; max-height:500px; border-radius:8px; border:2px solid #e0e0e0; box-shadow:0 2px 8px rgba(0,0,0,0.1);" />
+    </div>
+    <div class="highlight-box">
+      <p><strong>Confirmação:</strong> A viatura foi devidamente espelhada conforme o protocolo operacional do Grupo TM SEG.</p>
+    </div>
+    <p>Atenciosamente,<br><strong>Equipe Grupo TM SEG</strong></p>
+  `);
+
+  try {
+    const mailOptions: any = {
+      from: SMTP_FROM,
+      to: clientEmail,
+      bcc: BCC_RECIPIENTS,
+      subject: `Espelhamento Confirmado - ${vehiclePlate || 'S/PLACA'} / ${formatOS(mission.id)}`,
+      html,
+    };
+
+    const reportPath = path.resolve(process.cwd(), 'server', 'assets', 'relatorio_escolta.png');
+    if (fs.existsSync(reportPath)) {
+      mailOptions.attachments = [{
+        filename: `Relatorio_Escolta_${formatOS(mission.id)}.png`,
+        path: reportPath,
+        cid: 'relatorio_escolta'
+      }];
+    }
+
+    await transporter.sendMail(mailOptions);
+    console.log(`[Email] Espelhamento ${mission.id} → Cliente: ${clientEmail}`);
+    return true;
+  } catch (err: any) {
+    console.error(`[Email] Erro ao enviar espelhamento para ${clientEmail}:`, err.message);
+    return false;
+  }
+}
+
 export async function sendWelcomeEmail(user: WelcomeEmailData, systemUrl: string, verificationCode?: string): Promise<boolean> {
   const typeLabel = user.userType === 'client' ? 'Cliente' : user.userType === 'provider' ? 'Fornecedor' : 'Interno';
 

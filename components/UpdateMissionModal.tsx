@@ -96,6 +96,10 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
 
     const [iblWarning, setIblWarning] = useState('');
     const [originalStatus, setOriginalStatus] = useState('');
+    const [mirroringFile, setMirroringFile] = useState<File | null>(null);
+    const [mirroringPreview, setMirroringPreview] = useState('');
+    const [mirroringSending, setMirroringSending] = useState(false);
+    const [mirroringExistingUrl, setMirroringExistingUrl] = useState('');
 
     const [editData, setEditData] = useState({
         provider: '', vehicleId: '', agent1: '', agent2: '',
@@ -336,6 +340,7 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
             setSearchCargoVehicle(mission.clientVehicle?.plate || '');
             setSearchAgent1(m.agent1 || '');
             setSearchAgent2(m.agent2 || '');
+            setMirroringExistingUrl(m.mirroring_evidence_url || '');
 
             refreshAuxData(m.client, m.provider, m.vehicle_id?.toString(), clientObj?.id);
         } catch (error) { console.error(error); } finally { setIsLoadingData(false); }
@@ -483,6 +488,53 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
         document.addEventListener('mousedown', handleClickOutside);
         return () => document.removeEventListener('mousedown', handleClickOutside);
     }, []);
+
+    const handleMirroringUpload = async () => {
+        if (!mirroringFile || !mission) return;
+        setMirroringSending(true);
+        try {
+            const ts = Date.now();
+            const ext = mirroringFile.name.split('.').pop() || 'jpg';
+            const filePath = `espelhamento/${mission.id}_${ts}.${ext}`;
+            const { error: upErr } = await supabase.storage.from('mission-evidence').upload(filePath, mirroringFile, { upsert: true });
+            if (upErr) throw upErr;
+            const { data: urlData } = supabase.storage.from('mission-evidence').getPublicUrl(filePath);
+            const imageUrl = urlData.publicUrl || '';
+
+            await supabase.from('missions').update({ mirroring_evidence_url: imageUrl }).eq('id', mission.id);
+            setMirroringExistingUrl(imageUrl);
+
+            try {
+                const vehiclePlate = searchVehicle || editData.client_vehicle_plate || '—';
+                await fetch('/api/email/mirroring-evidence', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        missionId: mission.id,
+                        client: mission.client,
+                        imageUrl,
+                        vehiclePlate,
+                        origin: editData.origin,
+                        destination: editData.destination,
+                        start_time: editData.startDate && editData.startTime ? new Date(`${editData.startDate}T${editData.startTime}`).toISOString() : '',
+                        mission_type: editData.missionType
+                    })
+                });
+                showNotification('Evidência Enviada', 'Foto do espelhamento salva e e-mail enviado ao cliente.', 'success');
+            } catch (emailErr) {
+                console.error('[Email] Erro ao enviar evidência:', emailErr);
+                showNotification('Evidência Salva', 'Foto salva, mas houve erro ao enviar o e-mail.', 'warning');
+            }
+
+            setMirroringFile(null);
+            setMirroringPreview('');
+        } catch (err: any) {
+            console.error('[Mirroring]', err);
+            showNotification('Erro', 'Falha ao enviar evidência: ' + (err.message || ''), 'error');
+        } finally {
+            setMirroringSending(false);
+        }
+    };
 
     const handleUpdateSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -1281,6 +1333,61 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
 
                             <div><label className={LABEL_CLASS}>Modelo Carga</label><input type="text" className={INPUT_CLASS} value={editData.client_vehicle_model} onChange={e => setEditData({...editData, client_vehicle_model: e.target.value.toUpperCase()})} /></div>
                             <div><label className={LABEL_CLASS}>GR / Espelhamento</label><input type="text" className={`${INPUT_CLASS} border-indigo-200 bg-indigo-50/20`} value={editData.gr_espelhamento} onChange={e => setEditData({...editData, gr_espelhamento: e.target.value.toUpperCase()})} /></div>
+                        </div>
+
+                        <div className="mt-4 pt-4 border-t border-indigo-100">
+                            <label className="text-[10px] font-black text-indigo-600 uppercase tracking-widest mb-2 block flex items-center gap-1.5">
+                                <ShieldCheck size={12}/> Evidência do Espelhamento
+                            </label>
+                            {mirroringExistingUrl && !mirroringPreview && (
+                                <div className="mb-2 relative">
+                                    <a href={mirroringExistingUrl} target="_blank" rel="noopener noreferrer">
+                                        <img src={mirroringExistingUrl} alt="Espelhamento" className="w-full h-32 object-cover rounded-lg border border-green-200" />
+                                    </a>
+                                    <span className="absolute top-1 right-1 bg-green-600 text-white text-[8px] px-2 py-0.5 rounded font-black">ENVIADO</span>
+                                </div>
+                            )}
+                            <div className="flex gap-2 items-center">
+                                <div className="flex-1 relative">
+                                    <input
+                                        type="file"
+                                        accept="image/*"
+                                        data-testid="input-mirroring-evidence"
+                                        onChange={(e) => {
+                                            const file = e.target.files?.[0];
+                                            if (!file) return;
+                                            setMirroringFile(file);
+                                            setMirroringPreview(URL.createObjectURL(file));
+                                        }}
+                                        className="absolute inset-0 opacity-0 cursor-pointer z-10"
+                                    />
+                                    {mirroringPreview ? (
+                                        <div className="relative">
+                                            <img src={mirroringPreview} alt="Preview" className="w-full h-24 object-cover rounded-lg border-2 border-indigo-300" />
+                                            <span className="absolute top-1 left-1 bg-indigo-600 text-white text-[8px] px-2 py-0.5 rounded font-black">NOVO</span>
+                                            <p className="text-[9px] text-indigo-600 font-bold mt-1 truncate">{mirroringFile?.name}</p>
+                                        </div>
+                                    ) : (
+                                        <div className="border-2 border-dashed border-indigo-200 rounded-lg p-3 text-center hover:border-indigo-400 transition-colors bg-indigo-50/30">
+                                            <Package size={20} className="mx-auto text-indigo-300 mb-1"/>
+                                            <p className="text-[9px] font-black text-indigo-400 uppercase">Foto do Espelhamento</p>
+                                            <p className="text-[8px] text-indigo-300">Clique para selecionar</p>
+                                        </div>
+                                    )}
+                                </div>
+                                {mirroringPreview && (
+                                    <button
+                                        type="button"
+                                        onClick={handleMirroringUpload}
+                                        disabled={mirroringSending}
+                                        data-testid="btn-send-mirroring"
+                                        className="px-4 py-3 bg-indigo-600 text-white rounded-xl text-[10px] font-black uppercase tracking-wider hover:bg-indigo-700 transition-colors disabled:opacity-50 flex items-center gap-1.5 whitespace-nowrap shadow-md"
+                                    >
+                                        {mirroringSending ? <Loader2 size={14} className="animate-spin"/> : <ShieldCheck size={14}/>}
+                                        {mirroringSending ? 'Enviando...' : 'Enviar'}
+                                    </button>
+                                )}
+                            </div>
                         </div>
                     </div>
 

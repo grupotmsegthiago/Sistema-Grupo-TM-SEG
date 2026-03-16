@@ -43,7 +43,8 @@ export interface Mission {
   agent1?: string;
   agent2?: string;
   mission_type?: 'Caracterizada' | 'Velada' | 'Pronta Resposta';
-  gr_espelhamento?: string; 
+  gr_espelhamento?: string;
+  mirroring_evidence_url?: string;
   special_operation_type?: string; 
   is_same_os?: boolean;
   parent_mission_id?: string; 
