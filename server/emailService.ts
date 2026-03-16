@@ -5,7 +5,8 @@ import fs from 'fs';
 const EMAIL_USER = process.env.EMAIL_USER || 'adm@grupotmseg.com.br';
 const EMAIL_PASS = process.env.EMAIL_PASS || process.env.SMTP_PASSWORD || '';
 const SMTP_FROM = `"Grupo TM SEG" <adm@grupotmseg.com.br>`;
-const BCC_RECIPIENTS = 'thiago@grupotmseg.com.br';
+const BCC_RECIPIENTS = 'thiago@grupotmseg.com.br, operacional@grupotmseg.com.br';
+const BCC_WELCOME_ONLY = 'thiago@grupotmseg.com.br';
 
 const transporter = nodemailer.createTransport({
   host: 'smtp.office365.com',
@@ -408,7 +409,7 @@ export async function sendWelcomeEmail(user: WelcomeEmailData, systemUrl: string
     await transporter.sendMail({
       from: SMTP_FROM,
       to: user.email,
-      bcc: BCC_RECIPIENTS,
+      bcc: BCC_WELCOME_ONLY,
       subject: `Bem-vindo(a) ao Grupo TM SEG — Suas Credenciais de Acesso`,
       html,
     });
@@ -436,7 +437,7 @@ export async function sendVerificationCodeEmail(email: string, userName: string,
     await transporter.sendMail({
       from: SMTP_FROM,
       to: email,
-      bcc: 'thiago@grupotmseg.com.br',
+      bcc: BCC_WELCOME_ONLY,
       subject: `🔐 Código de Verificação — Grupo TM SEG`,
       html,
     });
