@@ -246,8 +246,10 @@ const ClientForm: React.FC<ClientFormProps> = ({
   const isFinanceAdmin = currentUser && (() => {
       const r = (currentUser.role || '').toLowerCase();
       const perms = currentUser.permissions || [];
+      const n = (currentUser.name || '').toUpperCase();
       return r === 'diretoria' || r === 'administrador' || r === 'comercial' ||
-             perms.includes('*') || perms.includes('clients');
+             perms.includes('*') || perms.includes('clients') ||
+             n.includes('DANIEL') || n.includes('MICHELLE');
   })();
 
   const canEditOsEmail = currentUser && (() => {
