@@ -1636,7 +1636,26 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
                                       className="h-full bg-gradient-to-r from-red-600 to-red-400 transition-all duration-1000 shadow-[0_0_15px_rgba(220,38,38,0.3)]" 
                                       style={{ width: `${Math.min(100, editData.manualProgress)}%` }}
                                   ></div>
+                                  {editData.manualProgress > 5 && editData.manualProgress < 95 && (
+                                      <div className="absolute top-1/2 -translate-y-1/2 flex items-center" style={{ left: `${Math.min(100, editData.manualProgress)}%`, transform: 'translate(-50%, -50%)' }}>
+                                          <Truck size={14} className="text-white drop-shadow-[0_0_6px_rgba(220,38,38,0.8)]" />
+                                      </div>
+                                  )}
                               </div>
+                              {(() => {
+                                  const loc = mission.currentLocation || '';
+                                  const parts = loc.split('|');
+                                  const locationPart = parts.length > 1 ? parts[parts.length - 1].trim() : loc.trim();
+                                  const cityName = locationPart ? locationPart.split(',')[0].trim() : '';
+                                  return cityName ? (
+                                      <div className="flex items-center justify-center gap-1.5 mt-1">
+                                          <MapPin size={9} className="text-yellow-500" />
+                                          <span className="text-[8px] font-black text-yellow-500 uppercase tracking-wider" data-testid="text-last-location-city">
+                                              Última localização: {cityName}
+                                          </span>
+                                      </div>
+                                  ) : null;
+                              })()}
                               <div className="flex justify-between text-[8px] font-bold text-slate-600 uppercase tracking-widest">
                                   <span>Ponto A (Saída)</span>
                                   <span>Projeção Inteligente Baseada em GPS</span>
