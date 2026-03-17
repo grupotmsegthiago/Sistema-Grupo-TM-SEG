@@ -6,7 +6,7 @@ import {
     Building2, CheckCircle2, AlertTriangle, Calendar,
     FileText, Hash, Lock, Eye, X, Save, ShieldCheck,
     ImagePlus, Trash2, ZoomIn, Receipt, CreditCard,
-    CheckSquare, Square, ListChecks, ArrowRight
+    CheckSquare, Square, ListChecks, ArrowRight, ExternalLink
 } from 'lucide-react';
 import { useNotification } from '../lib/NotificationContext';
 
@@ -104,11 +104,32 @@ const VendorVerificationControl: React.FC<VendorVerificationControlProps> = ({ o
         const setUploading = type === 'invoice' ? setUploadingInvoice : setUploadingReceipt;
         const setUrl = type === 'invoice' ? setInvoiceImageUrl : setReceiptImageUrl;
 
+        const MAX_FILE_SIZE = 55 * 1024;
+        const isPdf = file.type === 'application/pdf';
+
+        if (isPdf && file.size > MAX_FILE_SIZE) {
+            showNotification('Arquivo muito grande', `PDF máximo 55KB. Seu arquivo tem ${(file.size / 1024).toFixed(0)}KB.`, 'error');
+            return;
+        }
+
         setUploading(true);
         try {
-            const compressed = await compressImage(file);
-            const path = `vendor-docs/${selectedMission.id}/${type}_${Date.now()}.jpg`;
-            const { error: uploadError } = await supabase.storage.from('mission-evidence').upload(path, compressed, { contentType: 'image/jpeg', upsert: true });
+            let uploadBlob: Blob;
+            let contentType: string;
+            let ext: string;
+
+            if (isPdf) {
+                uploadBlob = file;
+                contentType = 'application/pdf';
+                ext = 'pdf';
+            } else {
+                uploadBlob = await compressImage(file);
+                contentType = 'image/jpeg';
+                ext = 'jpg';
+            }
+
+            const path = `vendor-docs/${selectedMission.id}/${type}_${Date.now()}.${ext}`;
+            const { error: uploadError } = await supabase.storage.from('mission-evidence').upload(path, uploadBlob, { contentType, upsert: true });
 
             if (uploadError) {
                 if (uploadError.message?.includes('not found') || uploadError.message?.includes('does not exist')) {
@@ -599,32 +620,40 @@ const VendorVerificationControl: React.FC<VendorVerificationControlProps> = ({ o
                                     <div className="grid grid-cols-2 gap-4">
                                         <div>
                                             <label className="text-[10px] font-black text-gray-500 uppercase tracking-widest mb-2 block flex items-center gap-1">
-                                                <Receipt size={12} /> Nota Fiscal (Imagem)
+                                                <Receipt size={12} /> Nota Fiscal (Imagem/PDF)
                                             </label>
                                             <input
                                                 ref={invoiceInputRef}
                                                 type="file"
-                                                accept="image/*"
+                                                accept="image/*,application/pdf"
                                                 className="hidden"
                                                 onChange={e => { if (e.target.files?.[0]) handleImageUpload(e.target.files[0], 'invoice'); e.target.value = ''; }}
                                                 data-testid="input-invoice-image"
                                             />
                                             {invoiceImageUrl ? (
                                                 <div className="relative group">
-                                                    <img
-                                                        src={invoiceImageUrl}
-                                                        alt="Nota Fiscal"
-                                                        className="w-full h-28 object-cover rounded-lg border-2 border-green-300 cursor-pointer"
-                                                        onClick={() => setPreviewImage(invoiceImageUrl)}
-                                                        data-testid="img-invoice-preview"
-                                                    />
+                                                    {invoiceImageUrl.toLowerCase().endsWith('.pdf') ? (
+                                                        <a href={invoiceImageUrl} target="_blank" rel="noopener noreferrer" className="w-full h-28 bg-green-50 border-2 border-green-300 rounded-lg flex flex-col items-center justify-center gap-1 cursor-pointer hover:bg-green-100 transition-colors" data-testid="link-invoice-pdf">
+                                                            <FileText size={28} className="text-green-600" />
+                                                            <span className="text-[9px] font-black text-green-700 uppercase">Abrir PDF</span>
+                                                        </a>
+                                                    ) : (
+                                                        <img
+                                                            src={invoiceImageUrl}
+                                                            alt="Nota Fiscal"
+                                                            className="w-full h-28 object-cover rounded-lg border-2 border-green-300 cursor-pointer"
+                                                            onClick={() => setPreviewImage(invoiceImageUrl)}
+                                                            data-testid="img-invoice-preview"
+                                                        />
+                                                    )}
                                                     <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity rounded-lg flex items-center justify-center gap-2">
-                                                        <button onClick={() => setPreviewImage(invoiceImageUrl)} className="p-1.5 bg-white rounded-lg" data-testid="button-zoom-invoice"><ZoomIn size={14} /></button>
+                                                        {!invoiceImageUrl.toLowerCase().endsWith('.pdf') && <button onClick={() => setPreviewImage(invoiceImageUrl)} className="p-1.5 bg-white rounded-lg" data-testid="button-zoom-invoice"><ZoomIn size={14} /></button>}
+                                                        {invoiceImageUrl.toLowerCase().endsWith('.pdf') && <a href={invoiceImageUrl} target="_blank" rel="noopener noreferrer" className="p-1.5 bg-white rounded-lg" data-testid="button-open-invoice-pdf"><ExternalLink size={14} /></a>}
                                                         {(!isLocked || isAdmin) && (
                                                             <button onClick={() => handleRemoveImage('invoice')} className="p-1.5 bg-red-500 text-white rounded-lg" data-testid="button-remove-invoice"><Trash2 size={14} /></button>
                                                         )}
                                                     </div>
-                                                    <span className="absolute top-1 left-1 text-[8px] font-black bg-green-600 text-white px-1.5 py-0.5 rounded">NF</span>
+                                                    <span className="absolute top-1 left-1 text-[8px] font-black bg-green-600 text-white px-1.5 py-0.5 rounded">{invoiceImageUrl.toLowerCase().endsWith('.pdf') ? 'PDF' : 'NF'}</span>
                                                 </div>
                                             ) : (
                                                 <button
@@ -641,32 +670,40 @@ const VendorVerificationControl: React.FC<VendorVerificationControlProps> = ({ o
 
                                         <div>
                                             <label className="text-[10px] font-black text-gray-500 uppercase tracking-widest mb-2 block flex items-center gap-1">
-                                                <CreditCard size={12} /> Comprovante Pgto (Imagem)
+                                                <CreditCard size={12} /> Comprovante Pgto (Imagem/PDF)
                                             </label>
                                             <input
                                                 ref={receiptInputRef}
                                                 type="file"
-                                                accept="image/*"
+                                                accept="image/*,application/pdf"
                                                 className="hidden"
                                                 onChange={e => { if (e.target.files?.[0]) handleImageUpload(e.target.files[0], 'receipt'); e.target.value = ''; }}
                                                 data-testid="input-receipt-image"
                                             />
                                             {receiptImageUrl ? (
                                                 <div className="relative group">
-                                                    <img
-                                                        src={receiptImageUrl}
-                                                        alt="Comprovante de Pagamento"
-                                                        className="w-full h-28 object-cover rounded-lg border-2 border-blue-300 cursor-pointer"
-                                                        onClick={() => setPreviewImage(receiptImageUrl)}
-                                                        data-testid="img-receipt-preview"
-                                                    />
+                                                    {receiptImageUrl.toLowerCase().endsWith('.pdf') ? (
+                                                        <a href={receiptImageUrl} target="_blank" rel="noopener noreferrer" className="w-full h-28 bg-blue-50 border-2 border-blue-300 rounded-lg flex flex-col items-center justify-center gap-1 cursor-pointer hover:bg-blue-100 transition-colors" data-testid="link-receipt-pdf">
+                                                            <FileText size={28} className="text-blue-600" />
+                                                            <span className="text-[9px] font-black text-blue-700 uppercase">Abrir PDF</span>
+                                                        </a>
+                                                    ) : (
+                                                        <img
+                                                            src={receiptImageUrl}
+                                                            alt="Comprovante de Pagamento"
+                                                            className="w-full h-28 object-cover rounded-lg border-2 border-blue-300 cursor-pointer"
+                                                            onClick={() => setPreviewImage(receiptImageUrl)}
+                                                            data-testid="img-receipt-preview"
+                                                        />
+                                                    )}
                                                     <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity rounded-lg flex items-center justify-center gap-2">
-                                                        <button onClick={() => setPreviewImage(receiptImageUrl)} className="p-1.5 bg-white rounded-lg" data-testid="button-zoom-receipt"><ZoomIn size={14} /></button>
+                                                        {!receiptImageUrl.toLowerCase().endsWith('.pdf') && <button onClick={() => setPreviewImage(receiptImageUrl)} className="p-1.5 bg-white rounded-lg" data-testid="button-zoom-receipt"><ZoomIn size={14} /></button>}
+                                                        {receiptImageUrl.toLowerCase().endsWith('.pdf') && <a href={receiptImageUrl} target="_blank" rel="noopener noreferrer" className="p-1.5 bg-white rounded-lg" data-testid="button-open-receipt-pdf"><ExternalLink size={14} /></a>}
                                                         {(!isLocked || isAdmin) && (
                                                             <button onClick={() => handleRemoveImage('receipt')} className="p-1.5 bg-red-500 text-white rounded-lg" data-testid="button-remove-receipt"><Trash2 size={14} /></button>
                                                         )}
                                                     </div>
-                                                    <span className="absolute top-1 left-1 text-[8px] font-black bg-blue-600 text-white px-1.5 py-0.5 rounded">COMP</span>
+                                                    <span className="absolute top-1 left-1 text-[8px] font-black bg-blue-600 text-white px-1.5 py-0.5 rounded">{receiptImageUrl.toLowerCase().endsWith('.pdf') ? 'PDF' : 'COMP'}</span>
                                                 </div>
                                             ) : (
                                                 <button
