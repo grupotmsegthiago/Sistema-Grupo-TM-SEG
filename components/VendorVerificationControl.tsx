@@ -199,6 +199,9 @@ const VendorVerificationControl: React.FC<VendorVerificationControlProps> = ({ o
 
     useEffect(() => {
         loadData();
+        const handleRefresh = () => loadData();
+        window.addEventListener('refreshMissions', handleRefresh);
+        return () => window.removeEventListener('refreshMissions', handleRefresh);
     }, []);
 
     const loadData = async () => {
