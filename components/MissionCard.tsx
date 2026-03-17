@@ -705,6 +705,24 @@ Qualquer dúvida, estamos a disposição.
                             </div>
                         </div>
 
+                        {(() => {
+                            const loc = mission.currentLocation || '';
+                            const parts = loc.split('|');
+                            const locationPart = parts.length > 1 ? parts[parts.length - 1].trim() : loc.trim();
+                            const cityName = locationPart ? locationPart.replace(/\s*-?\s*BRASIL$/i, '').replace(/,\s*$/, '').trim() : '';
+                            return cityName ? (
+                                <div className="relative flex items-center gap-3 z-10">
+                                    <div className="w-4 h-4 rounded-full bg-yellow-500 shadow-md flex items-center justify-center ring-4 ring-white shrink-0">
+                                        <Truck size={8} className="text-white" />
+                                    </div>
+                                    <div className="text-[9px] min-w-0 flex-1">
+                                        <span className="font-black text-yellow-500 uppercase tracking-widest block leading-none mb-1">Ponto B (Última Localização)</span>
+                                        <span className="font-black text-yellow-700 uppercase truncate block" data-testid="text-last-location-city" title={cityName}>{cityName}</span>
+                                    </div>
+                                </div>
+                            ) : null;
+                        })()}
+
                         <div className="relative flex items-center gap-3 z-10">
                             <div className="w-4 h-4 rounded-full bg-red-600 shadow-md flex items-center justify-center ring-4 ring-white shrink-0">
                                 <Flag size={8} className="text-white" />

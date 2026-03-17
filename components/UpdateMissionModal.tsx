@@ -1488,23 +1488,6 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
                                 </div>
                             </div>
 
-                            {/* LINHA PONTO B (ÚLTIMA LOCALIZAÇÃO) */}
-                            {(() => {
-                                const loc = mission.currentLocation || '';
-                                const parts = loc.split('|');
-                                const locationPart = parts.length > 1 ? parts[parts.length - 1].trim() : loc.trim();
-                                const cityName = locationPart ? locationPart.replace(/\s*-\s*BRASIL$/i, '').trim() : '';
-                                return cityName ? (
-                                    <div className="flex items-center gap-3 px-4 py-2.5 bg-yellow-50/80 rounded-2xl border border-yellow-200/60">
-                                        <div className="p-2.5 bg-yellow-100 rounded-xl text-yellow-600 shrink-0"><Truck size={16}/></div>
-                                        <div className="min-w-0 flex-1">
-                                            <span className="text-[10px] font-black text-yellow-600 uppercase tracking-widest">Ponto B (Última Localização)</span>
-                                            <p className="text-xs font-bold text-yellow-700 uppercase truncate" data-testid="text-last-location-city">{cityName}</p>
-                                        </div>
-                                    </div>
-                                ) : null;
-                            })()}
-
                             {/* LINHA DESTINO (PONTO C) */}
                             <div className="flex flex-col lg:flex-row items-center gap-6 p-4 bg-gray-50/50 rounded-2xl border border-gray-100 transition-all hover:bg-white hover:shadow-sm">
                                 <div className="flex-1 flex items-start gap-3 w-full">
