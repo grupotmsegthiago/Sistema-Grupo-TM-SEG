@@ -48,6 +48,34 @@ const ProviderForm: React.FC<ProviderFormProps> = ({ onBack, onNavigateToVehicle
   const [isLoading, setIsLoading] = useState(false);
   const [cnpjError, setCnpjError] = useState('');
   const [currentUser, setCurrentUser] = useState<any>(null);
+  const [osEmailInput, setOsEmailInput] = useState('');
+  const [medicaoEmailInput, setMedicaoEmailInput] = useState('');
+
+  const getEmailList = (field: 'os_email' | 'medicao_email'): string[] => {
+    const val = formData[field] || '';
+    return val.split(',').map(e => e.trim()).filter(Boolean);
+  };
+  const addEmail = (field: 'os_email' | 'medicao_email', inputVal: string, setInput: (v: string) => void) => {
+    const email = inputVal.trim().toLowerCase();
+    if (!email || !email.includes('@')) return;
+    const current = getEmailList(field);
+    if (current.includes(email)) { setInput(''); return; }
+    setFormData({ ...formData, [field]: [...current, email].join(', ') });
+    setInput('');
+  };
+  const removeEmail = (field: 'os_email' | 'medicao_email', emailToRemove: string) => {
+    const current = getEmailList(field).filter(e => e !== emailToRemove);
+    setFormData({ ...formData, [field]: current.join(', ') });
+  };
+
+  const isFinanceAdmin = currentUser && (() => {
+    const r = (currentUser.role || '').toLowerCase();
+    const perms = currentUser.permissions || [];
+    const n = (currentUser.name || '').toUpperCase();
+    return r === 'diretoria' || r === 'administrador' || r === 'comercial' ||
+           perms.includes('*') || perms.includes('providers') ||
+           n.includes('DANIEL') || n.includes('MICHELLE');
+  })();
 
   const [costTables, setCostTables] = useState<ProviderCostTable[]>([]);
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
@@ -502,17 +530,43 @@ const ProviderForm: React.FC<ProviderFormProps> = ({ onBack, onNavigateToVehicle
                     </div>
                     <div className="space-y-1.5">
                         <label className={LABEL_CLASS}>E-mail Recebimento (OS)</label>
-                        <div className="relative">
-                            <input type="text" className={`${INPUT_CLASS} pl-10`} placeholder="e-mail1, e-mail2..." value={formData.os_email} onChange={e => setFormData({...formData, os_email: e.target.value.toLowerCase()})} data-testid="input-os-email" />
-                            <Mail className="absolute left-3 top-1/2 -translate-y-1/2 text-orange-500" size={16} />
+                        <div className="flex gap-1.5">
+                            <div className="relative flex-1">
+                                <input type="email" className={`${INPUT_CLASS} pl-10 pr-10`} placeholder="Digite o e-mail..." value={osEmailInput} onChange={e => setOsEmailInput(e.target.value.toLowerCase())} onKeyDown={e => e.key === 'Enter' && (e.preventDefault(), addEmail('os_email', osEmailInput, setOsEmailInput))} data-testid="input-os-email" />
+                                <Mail className="absolute left-3 top-1/2 -translate-y-1/2 text-orange-500" size={16} />
+                            </div>
+                            <button type="button" onClick={() => addEmail('os_email', osEmailInput, setOsEmailInput)} className="p-2.5 bg-orange-500 text-white rounded-lg hover:bg-orange-600 transition-colors shadow-sm" data-testid="btn-add-os-email"><Plus size={16}/></button>
                         </div>
+                        {getEmailList('os_email').length > 0 && (
+                            <div className="flex flex-wrap gap-1.5 mt-1.5">
+                                {getEmailList('os_email').map(em => (
+                                    <span key={em} className="inline-flex items-center gap-1 px-2.5 py-1 bg-orange-50 border border-orange-200 rounded-full text-[10px] font-bold text-orange-700">
+                                        {em}
+                                        <button type="button" onClick={() => removeEmail('os_email', em)} className="ml-0.5 text-orange-400 hover:text-red-600"><X size={12}/></button>
+                                    </span>
+                                ))}
+                            </div>
+                        )}
                     </div>
                     <div className="space-y-1.5">
                         <label className={LABEL_CLASS}>E-mail Medição</label>
-                        <div className="relative">
-                            <input type="text" className={`${INPUT_CLASS} pl-10`} placeholder="e-mail1, e-mail2..." value={formData.medicao_email} onChange={e => setFormData({...formData, medicao_email: e.target.value.toLowerCase()})} data-testid="input-medicao-email" />
-                            <Mail className="absolute left-3 top-1/2 -translate-y-1/2 text-green-500" size={16} />
+                        <div className="flex gap-1.5">
+                            <div className="relative flex-1">
+                                <input type="email" className={`${INPUT_CLASS} pl-10 pr-10`} placeholder="Digite o e-mail..." value={medicaoEmailInput} onChange={e => setMedicaoEmailInput(e.target.value.toLowerCase())} onKeyDown={e => e.key === 'Enter' && (e.preventDefault(), addEmail('medicao_email', medicaoEmailInput, setMedicaoEmailInput))} data-testid="input-medicao-email" />
+                                <Mail className="absolute left-3 top-1/2 -translate-y-1/2 text-green-500" size={16} />
+                            </div>
+                            <button type="button" onClick={() => addEmail('medicao_email', medicaoEmailInput, setMedicaoEmailInput)} className="p-2.5 bg-green-500 text-white rounded-lg hover:bg-green-600 transition-colors shadow-sm" data-testid="btn-add-medicao-email"><Plus size={16}/></button>
                         </div>
+                        {getEmailList('medicao_email').length > 0 && (
+                            <div className="flex flex-wrap gap-1.5 mt-1.5">
+                                {getEmailList('medicao_email').map(em => (
+                                    <span key={em} className="inline-flex items-center gap-1 px-2.5 py-1 bg-green-50 border border-green-200 rounded-full text-[10px] font-bold text-green-700">
+                                        {em}
+                                        <button type="button" onClick={() => removeEmail('medicao_email', em)} className="ml-0.5 text-green-400 hover:text-red-600"><X size={12}/></button>
+                                    </span>
+                                ))}
+                            </div>
+                        )}
                     </div>
                     <div className="space-y-1.5">
                         <label className={LABEL_CLASS}>Telefone / WhatsApp *</label>
@@ -611,9 +665,10 @@ const ProviderForm: React.FC<ProviderFormProps> = ({ onBack, onNavigateToVehicle
                               <label className={LABEL_CLASS}>Operação / Rota</label>
                               <input required type="text" className="w-full p-2 border rounded text-xs uppercase font-bold" value={costFormData.operation_type} onChange={e => setCostFormData({...costFormData, operation_type: e.target.value})} placeholder="Ex: CARACTERIZADA - SUDESTE" />
                           </div>
-                          <div>
+                          <div className="relative">
                               <label className={LABEL_CLASS}>Custo Base (Acionamento)</label>
-                              <input required type="number" step="0.01" className="w-full p-2 border rounded text-xs font-bold text-red-600" value={costFormData.activation_cost} onChange={e => setCostFormData({...costFormData, activation_cost: e.target.value})} />
+                              <input required type="number" step="0.01" className={`w-full p-2 border rounded text-xs font-bold text-red-600 ${!isFinanceAdmin ? 'bg-gray-100 cursor-not-allowed' : ''}`} value={costFormData.activation_cost} onChange={e => setCostFormData({...costFormData, activation_cost: e.target.value})} readOnly={!isFinanceAdmin} />
+                              {!isFinanceAdmin && <Lock size={12} className="absolute right-2 top-2.5 text-gray-400" />}
                           </div>
                           <div>
                               <label className={LABEL_CLASS}>KM Franquia</label>
@@ -623,13 +678,15 @@ const ProviderForm: React.FC<ProviderFormProps> = ({ onBack, onNavigateToVehicle
                               <label className={LABEL_CLASS}>Horas Franquia</label>
                               <input required type="number" className="w-full p-2 border rounded text-xs" value={costFormData.franchise_hours} onChange={e => setCostFormData({...costFormData, franchise_hours: e.target.value})} />
                           </div>
-                          <div>
+                          <div className="relative">
                               <label className={LABEL_CLASS}>KM Extra</label>
-                              <input required type="number" step="0.01" className="w-full p-2 border rounded text-xs" value={costFormData.cost_per_extra_km} onChange={e => setCostFormData({...costFormData, cost_per_extra_km: e.target.value})} />
+                              <input required type="number" step="0.01" className={`w-full p-2 border rounded text-xs ${!isFinanceAdmin ? 'bg-gray-100 cursor-not-allowed' : ''}`} value={costFormData.cost_per_extra_km} onChange={e => setCostFormData({...costFormData, cost_per_extra_km: e.target.value})} readOnly={!isFinanceAdmin} />
+                              {!isFinanceAdmin && <Lock size={12} className="absolute right-2 top-2.5 text-gray-400" />}
                           </div>
-                          <div>
+                          <div className="relative">
                               <label className={LABEL_CLASS}>Hora Extra</label>
-                              <input required type="number" step="0.01" className="w-full p-2 border rounded text-xs" value={costFormData.cost_per_extra_hour} onChange={e => setCostFormData({...costFormData, cost_per_extra_hour: e.target.value})} />
+                              <input required type="number" step="0.01" className={`w-full p-2 border rounded text-xs ${!isFinanceAdmin ? 'bg-gray-100 cursor-not-allowed' : ''}`} value={costFormData.cost_per_extra_hour} onChange={e => setCostFormData({...costFormData, cost_per_extra_hour: e.target.value})} readOnly={!isFinanceAdmin} />
+                              {!isFinanceAdmin && <Lock size={12} className="absolute right-2 top-2.5 text-gray-400" />}
                           </div>
                           <div>
                               <label className={LABEL_CLASS}>Taxa Cancelamento</label>
