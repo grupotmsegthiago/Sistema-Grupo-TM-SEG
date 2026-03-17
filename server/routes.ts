@@ -282,12 +282,23 @@ export async function registerRoutes(
         mission_type: mission_type || missionCheck.mission_type || 'Caracterizada',
       };
 
-      let clientVehicleLabel = vehiclePlate || '';
+      let clientVehicleLabel = '';
       if (missionCheck.client_vehicle_id) {
         const { data: cv } = await supabase.from('client_vehicles').select('plate, model').eq('id', missionCheck.client_vehicle_id).single();
-        if (cv) clientVehicleLabel = cv.model ? `${cv.plate} / ${cv.model}` : cv.plate;
+        if (cv?.plate) clientVehicleLabel = cv.model ? `${cv.plate} / ${cv.model}` : cv.plate;
       }
-      if (!clientVehicleLabel) clientVehicleLabel = missionCheck.client_vehicle || '';
+      if (!clientVehicleLabel && vehiclePlate && vehiclePlate !== '—') {
+        clientVehicleLabel = vehiclePlate;
+      }
+      if (!clientVehicleLabel) {
+        const fallbackVal = missionCheck.client_vehicle || '';
+        if (fallbackVal && !isNaN(Number(fallbackVal))) {
+          const { data: cvFallback } = await supabase.from('client_vehicles').select('plate, model').eq('id', Number(fallbackVal)).single();
+          if (cvFallback?.plate) clientVehicleLabel = cvFallback.model ? `${cvFallback.plate} / ${cvFallback.model}` : cvFallback.plate;
+        } else if (fallbackVal) {
+          clientVehicleLabel = fallbackVal;
+        }
+      }
 
       const grEspelhamento = missionCheck.gr_espelhamento || '';
       let trackerInfo = '';
@@ -403,13 +414,24 @@ export async function registerRoutes(
       const clientEmail = clientData?.operational_email || clientData?.email;
       if (!clientEmail) return res.status(400).json({ error: 'Cliente sem e-mail cadastrado' });
 
-      let clientVehicleLabel = vehiclePlate || '';
+      let clientVehicleLabel = '';
       const { data: missionRow } = await supabase.from('missions').select('client_vehicle_id, client_vehicle, vehicle_id, gr_espelhamento').eq('id', missionId).single();
       if (missionRow?.client_vehicle_id) {
         const { data: cv } = await supabase.from('client_vehicles').select('plate, model').eq('id', missionRow.client_vehicle_id).single();
-        if (cv) clientVehicleLabel = cv.model ? `${cv.plate} / ${cv.model}` : cv.plate;
+        if (cv?.plate) clientVehicleLabel = cv.model ? `${cv.plate} / ${cv.model}` : cv.plate;
       }
-      if (!clientVehicleLabel && missionRow?.client_vehicle) clientVehicleLabel = missionRow.client_vehicle;
+      if (!clientVehicleLabel && vehiclePlate && vehiclePlate !== '—') {
+        clientVehicleLabel = vehiclePlate;
+      }
+      if (!clientVehicleLabel) {
+        const fallbackVal = missionRow?.client_vehicle || '';
+        if (fallbackVal && !isNaN(Number(fallbackVal))) {
+          const { data: cvFb } = await supabase.from('client_vehicles').select('plate, model').eq('id', Number(fallbackVal)).single();
+          if (cvFb?.plate) clientVehicleLabel = cvFb.model ? `${cvFb.plate} / ${cvFb.model}` : cvFb.plate;
+        } else if (fallbackVal) {
+          clientVehicleLabel = fallbackVal;
+        }
+      }
 
       const grEspelhamento = missionRow?.gr_espelhamento || '';
       let trackerInfo = '';
@@ -440,13 +462,21 @@ export async function registerRoutes(
       const { data: clientData } = await supabase.from('clients').select('*').eq('name', missionRow.client).single();
       const clientEmail = clientData?.operational_email || clientData?.email;
 
-      let clientVehicleLabel = '—';
+      let clientVehicleLabel = '';
       if (missionRow.client_vehicle_id) {
         const { data: cv } = await supabase.from('client_vehicles').select('plate, model').eq('id', missionRow.client_vehicle_id).single();
-        if (cv) clientVehicleLabel = cv.model ? `${cv.plate} / ${cv.model}` : cv.plate;
-      } else if (missionRow.client_vehicle) {
-        clientVehicleLabel = missionRow.client_vehicle;
+        if (cv?.plate) clientVehicleLabel = cv.model ? `${cv.plate} / ${cv.model}` : cv.plate;
       }
+      if (!clientVehicleLabel) {
+        const fallbackVal = missionRow.client_vehicle || '';
+        if (fallbackVal && !isNaN(Number(fallbackVal))) {
+          const { data: cvFallback } = await supabase.from('client_vehicles').select('plate, model').eq('id', Number(fallbackVal)).single();
+          if (cvFallback?.plate) clientVehicleLabel = cvFallback.model ? `${cvFallback.plate} / ${cvFallback.model}` : cvFallback.plate;
+        } else if (fallbackVal) {
+          clientVehicleLabel = fallbackVal;
+        }
+      }
+      if (!clientVehicleLabel) clientVehicleLabel = '—';
 
       const grEspelhamento = missionRow.gr_espelhamento || '';
       let trackerInfo = '';
