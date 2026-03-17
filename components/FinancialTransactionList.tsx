@@ -81,7 +81,7 @@ const FinancialTransactionList: React.FC = () => {
     };
 
     const fetchInvoices = async () => {
-        const { data, error } = await supabase.from('financial_invoices').select('*').order('date', { ascending: false });
+        const { data, error } = await supabase.from('financial_invoices').select('*').gte('date', '2026-03-17').order('date', { ascending: false });
         if (error) {
             if (error.code === '42P01') {
                 console.warn('financial_invoices table does not exist yet. Attempting init...');
@@ -99,6 +99,7 @@ const FinancialTransactionList: React.FC = () => {
             const { data, error } = await supabase
                 .from('financial_transactions')
                 .select('*')
+                .gte('due_date', '2026-03-17')
                 .order('due_date', { ascending: false });
             if (error) throw error;
             setTransactions(data as FinancialTransaction[]);
