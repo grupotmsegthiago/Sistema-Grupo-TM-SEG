@@ -620,10 +620,11 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
       if (financialData && mission) {
           const provOpsActive = !!mission.provider_ops_edited;
           const provTotalWithCorrectToll = financialData.provider.base + financialData.provider.extraKmVal + financialData.provider.extraHrVal + parseNumber(tollProviderInput);
+          const hasCustomProviderValues = !!(customProviderBase || customProviderKm || customProviderHour);
           if (!useSavedValuesRef.current && !isSavingRef.current) {
               setRevenueInput(financialData.client.total.toLocaleString('pt-BR', {minimumFractionDigits: 2}));
               setCostInput(provTotalWithCorrectToll.toLocaleString('pt-BR', {minimumFractionDigits: 2}));
-          } else if (provOpsActive && !isSavingRef.current) {
+          } else if ((provOpsActive || hasCustomProviderValues) && !isSavingRef.current) {
               setCostInput(provTotalWithCorrectToll.toLocaleString('pt-BR', {minimumFractionDigits: 2}));
           }
           
@@ -753,11 +754,12 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
           return;
       }
 
-      const revTotal = parseNumber(revenueInput);
+      const originalRevenue = (mission.revenue_value || 0) + (mission.toll_value || 0);
+      const revTotal = isController ? originalRevenue : parseNumber(revenueInput);
       const costTotal = parseNumber(costInput);
       const calcRevTotal = financialData ? (financialData.client.base + financialData.client.extraKmVal + financialData.client.extraHrVal + (financialData.iblFee || 0) + parseNumber(tollInput)) : 0;
       const calcCostTotal = financialData ? (financialData.provider.base + financialData.provider.extraKmVal + financialData.provider.extraHrVal + parseNumber(tollProviderInput)) : 0;
-      const revDivergent = Math.abs(revTotal - calcRevTotal) > 1;
+      const revDivergent = isController ? false : Math.abs(revTotal - calcRevTotal) > 1;
       const costDivergent = Math.abs(costTotal - calcCostTotal) > 1;
 
       if (revDivergent && !revenueEditReason.trim()) {
@@ -777,7 +779,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
           const userData = JSON.parse(localStorage.getItem('userData') || '{}');
           const userName = userData.name || 'Usuário';
           const userRole = userData.role || '';
-          const toll = parseNumber(tollInput);
+          const toll = isController ? (mission.toll_value || 0) : parseNumber(tollInput);
           const tollProv = parseNumber(tollProviderInput);
 
           const revServiceOnly = revTotal - toll; 
@@ -1419,9 +1421,10 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                 <label className={LABEL_CLASS}>Tabela de Preço Aplicada</label>
                                 <div className="flex gap-2">
                                     <select 
-                                        className="w-full p-2 bg-gray-50 border border-gray-200 rounded-lg text-xs font-bold text-gray-700 uppercase outline-none focus:border-blue-500"
+                                        className={`w-full p-2 bg-gray-50 border border-gray-200 rounded-lg text-xs font-bold text-gray-700 uppercase outline-none focus:border-blue-500 ${isController ? 'pointer-events-none opacity-60' : ''}`}
                                         value={manualClientTableId || ''}
-                                        onChange={(e) => { setManualClientTableId(e.target.value); setCustomClientBase(''); setCustomClientKm(''); setCustomClientHour(''); setUseSavedValues(false); }}
+                                        onChange={(e) => { if (!isController) { setManualClientTableId(e.target.value); setCustomClientBase(''); setCustomClientKm(''); setCustomClientHour(''); setUseSavedValues(false); } }}
+                                        disabled={isController}
                                     >
                                         <option value="">Automático (IA Detectando)</option>
                                         {[...clientTables].sort((a, b) => (a.operation_type || '').localeCompare(b.operation_type || '')).map(t => (
@@ -1500,7 +1503,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                     </div>
                                     <div className="flex items-center gap-1 mt-2 pt-2 border-t border-gray-200">
                                         <span className="text-[10px] text-gray-400">R$</span>
-                                        <input type="text" className="w-full bg-white border border-gray-200 rounded px-2 py-1 text-xs font-bold text-gray-700 focus:border-blue-500 focus:ring-1 focus:ring-blue-200 outline-none" placeholder={financialData.client.base.toFixed(2)} value={customClientBase} onChange={e => handleManualInput(setCustomClientBase, e.target.value)} />
+                                        <input type="text" className={`w-full bg-white border border-gray-200 rounded px-2 py-1 text-xs font-bold text-gray-700 focus:border-blue-500 focus:ring-1 focus:ring-blue-200 outline-none ${isController ? 'pointer-events-none opacity-60' : ''}`} placeholder={financialData.client.base.toFixed(2)} value={customClientBase} onChange={e => { if (!isController) handleManualInput(setCustomClientBase, e.target.value); }} readOnly={isController} />
                                         {customClientBase && <span className="text-[8px] text-blue-600 font-bold bg-blue-50 px-1 py-0.5 rounded shrink-0">AJUST</span>}
                                     </div>
                                 </div>
@@ -1516,7 +1519,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                     </div>
                                     <div className="flex items-center gap-1 mt-2 pt-2 border-t border-gray-200">
                                         <span className="text-[10px] text-gray-400">R$</span>
-                                        <input type="text" className="w-full bg-white border border-gray-200 rounded px-2 py-1 text-xs font-bold text-gray-700 focus:border-blue-500 focus:ring-1 focus:ring-blue-200 outline-none" placeholder={financialData.client.unitPriceKm.toFixed(2)} value={customClientKm} onChange={e => handleManualInput(setCustomClientKm, e.target.value)} />
+                                        <input type="text" className={`w-full bg-white border border-gray-200 rounded px-2 py-1 text-xs font-bold text-gray-700 focus:border-blue-500 focus:ring-1 focus:ring-blue-200 outline-none ${isController ? 'pointer-events-none opacity-60' : ''}`} placeholder={financialData.client.unitPriceKm.toFixed(2)} value={customClientKm} onChange={e => { if (!isController) handleManualInput(setCustomClientKm, e.target.value); }} readOnly={isController} />
                                         {customClientKm && <span className="text-[8px] text-blue-600 font-bold shrink-0">AJUST</span>}
                                     </div>
                                 </div>
@@ -1532,7 +1535,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                     </div>
                                     <div className="flex items-center gap-1 mt-2 pt-2 border-t border-gray-200">
                                         <span className="text-[10px] text-gray-400">R$</span>
-                                        <input type="text" className="w-full bg-white border border-gray-200 rounded px-2 py-1 text-xs font-bold text-gray-700 focus:border-blue-500 focus:ring-1 focus:ring-blue-200 outline-none" placeholder={financialData.client.unitPriceHour.toFixed(2)} value={customClientHour} onChange={e => handleManualInput(setCustomClientHour, e.target.value)} />
+                                        <input type="text" className={`w-full bg-white border border-gray-200 rounded px-2 py-1 text-xs font-bold text-gray-700 focus:border-blue-500 focus:ring-1 focus:ring-blue-200 outline-none ${isController ? 'pointer-events-none opacity-60' : ''}`} placeholder={financialData.client.unitPriceHour.toFixed(2)} value={customClientHour} onChange={e => { if (!isController) handleManualInput(setCustomClientHour, e.target.value); }} readOnly={isController} />
                                         {customClientHour && <span className="text-[8px] text-blue-600 font-bold shrink-0">AJUST</span>}
                                     </div>
                                 </div>
@@ -1712,13 +1715,14 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                         <div className="grid grid-cols-2 gap-3">
                             <div>
                                 <label className="text-[9px] font-black text-green-700 uppercase mb-1 block">Pedágio Cliente</label>
-                                <div className="relative bg-green-50 border border-green-200 rounded-xl p-3 flex items-center">
+                                <div className={`relative bg-green-50 border border-green-200 rounded-xl p-3 flex items-center ${isController ? 'opacity-70' : ''}`}>
                                     <span className="text-sm font-bold text-green-500 mr-2">R$</span>
                                     <input 
                                         type="text" 
-                                        className="flex-1 bg-transparent border-none outline-none font-black text-xl text-green-900" 
+                                        className={`flex-1 bg-transparent border-none outline-none font-black text-xl text-green-900 ${isController ? 'pointer-events-none' : ''}`}
                                         value={tollInput} 
-                                        onChange={e => handleTollChange(e.target.value)} 
+                                        onChange={e => { if (!isController) handleTollChange(e.target.value); }} 
+                                        readOnly={isController}
                                         data-testid="input-toll-client"
                                     />
                                     <Building2 size={16} className="text-green-300 ml-2" />
@@ -1755,7 +1759,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                         <div className="p-4 bg-green-50 border border-green-100 rounded-xl relative group">
                             <div className="flex justify-between items-center mb-2">
                                 <label className="text-[10px] font-black text-green-700 uppercase">Valor Final Cliente (Serviço + Pedágio)</label>
-                                <button type="button" onClick={handleRecalculateClient} className="flex items-center gap-1 text-[9px] font-bold text-green-700 hover:text-green-900 bg-green-100 hover:bg-green-200 px-2 py-0.5 rounded transition-colors" title="Resetar para o cálculo da tabela">
+                                <button type="button" onClick={handleRecalculateClient} className={`flex items-center gap-1 text-[9px] font-bold text-green-700 hover:text-green-900 bg-green-100 hover:bg-green-200 px-2 py-0.5 rounded transition-colors ${isController ? 'hidden' : ''}`} title="Resetar para o cálculo da tabela">
                                     <RefreshCw size={10} /> Recalcular
                                 </button>
                             </div>
