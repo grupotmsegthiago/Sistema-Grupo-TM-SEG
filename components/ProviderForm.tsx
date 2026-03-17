@@ -56,11 +56,14 @@ const ProviderForm: React.FC<ProviderFormProps> = ({ onBack, onNavigateToVehicle
     return val.split(',').map(e => e.trim()).filter(Boolean);
   };
   const addEmail = (field: 'os_email' | 'medicao_email', inputVal: string, setInput: (v: string) => void) => {
-    const email = inputVal.trim().toLowerCase();
-    if (!email || !email.includes('@')) return;
+    const raw = inputVal.trim().toLowerCase();
+    if (!raw) return;
+    const emails = raw.split(/[\s,;]+/).map(e => e.trim()).filter(e => e && e.includes('@'));
+    if (emails.length === 0) return;
     const current = getEmailList(field);
-    if (current.includes(email)) { setInput(''); return; }
-    setFormData({ ...formData, [field]: [...current, email].join(', ') });
+    const newEmails = emails.filter(e => !current.includes(e));
+    if (newEmails.length === 0) { setInput(''); return; }
+    setFormData({ ...formData, [field]: [...current, ...newEmails].join(', ') });
     setInput('');
   };
   const removeEmail = (field: 'os_email' | 'medicao_email', emailToRemove: string) => {
@@ -530,7 +533,7 @@ const ProviderForm: React.FC<ProviderFormProps> = ({ onBack, onNavigateToVehicle
                         <label className={LABEL_CLASS}>E-mail Recebimento (OS)</label>
                         <div className="flex gap-1.5">
                             <div className="relative flex-1">
-                                <input type="email" className={`${INPUT_CLASS} pl-10 pr-10`} placeholder="Digite o e-mail..." value={osEmailInput} onChange={e => setOsEmailInput(e.target.value.toLowerCase())} onKeyDown={e => e.key === 'Enter' && (e.preventDefault(), addEmail('os_email', osEmailInput, setOsEmailInput))} data-testid="input-os-email" />
+                                <input type="text" className={`${INPUT_CLASS} pl-10 pr-10`} placeholder="Digite o e-mail..." value={osEmailInput} onChange={e => setOsEmailInput(e.target.value.toLowerCase())} onKeyDown={e => e.key === 'Enter' && (e.preventDefault(), addEmail('os_email', osEmailInput, setOsEmailInput))} onPaste={e => { e.preventDefault(); const text = e.clipboardData.getData('text'); addEmail('os_email', text, setOsEmailInput); }} data-testid="input-os-email" />
                                 <Mail className="absolute left-3 top-1/2 -translate-y-1/2 text-orange-500" size={16} />
                             </div>
                             <button type="button" onClick={() => addEmail('os_email', osEmailInput, setOsEmailInput)} className="p-2.5 bg-orange-500 text-white rounded-lg hover:bg-orange-600 transition-colors shadow-sm" data-testid="btn-add-os-email"><Plus size={16}/></button>
@@ -550,7 +553,7 @@ const ProviderForm: React.FC<ProviderFormProps> = ({ onBack, onNavigateToVehicle
                         <label className={LABEL_CLASS}>E-mail Medição</label>
                         <div className="flex gap-1.5">
                             <div className="relative flex-1">
-                                <input type="email" className={`${INPUT_CLASS} pl-10 pr-10`} placeholder="Digite o e-mail..." value={medicaoEmailInput} onChange={e => setMedicaoEmailInput(e.target.value.toLowerCase())} onKeyDown={e => e.key === 'Enter' && (e.preventDefault(), addEmail('medicao_email', medicaoEmailInput, setMedicaoEmailInput))} data-testid="input-medicao-email" />
+                                <input type="text" className={`${INPUT_CLASS} pl-10 pr-10`} placeholder="Digite o e-mail..." value={medicaoEmailInput} onChange={e => setMedicaoEmailInput(e.target.value.toLowerCase())} onKeyDown={e => e.key === 'Enter' && (e.preventDefault(), addEmail('medicao_email', medicaoEmailInput, setMedicaoEmailInput))} onPaste={e => { e.preventDefault(); const text = e.clipboardData.getData('text'); addEmail('medicao_email', text, setMedicaoEmailInput); }} data-testid="input-medicao-email" />
                                 <Mail className="absolute left-3 top-1/2 -translate-y-1/2 text-green-500" size={16} />
                             </div>
                             <button type="button" onClick={() => addEmail('medicao_email', medicaoEmailInput, setMedicaoEmailInput)} className="p-2.5 bg-green-500 text-white rounded-lg hover:bg-green-600 transition-colors shadow-sm" data-testid="btn-add-medicao-email"><Plus size={16}/></button>

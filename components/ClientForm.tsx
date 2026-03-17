@@ -90,11 +90,14 @@ const ClientForm: React.FC<ClientFormProps> = ({
     return val.split(',').map(e => e.trim()).filter(Boolean);
   };
   const addEmail = (field: 'operational_email' | 'medicao_email', inputVal: string, setInput: (v: string) => void) => {
-    const email = inputVal.trim().toLowerCase();
-    if (!email || !email.includes('@')) return;
+    const raw = inputVal.trim().toLowerCase();
+    if (!raw) return;
+    const emails = raw.split(/[\s,;]+/).map(e => e.trim()).filter(e => e && e.includes('@'));
+    if (emails.length === 0) return;
     const current = getEmailList(field);
-    if (current.includes(email)) { setInput(''); return; }
-    setFormData({ ...formData, [field]: [...current, email].join(', ') });
+    const newEmails = emails.filter(e => !current.includes(e));
+    if (newEmails.length === 0) { setInput(''); return; }
+    setFormData({ ...formData, [field]: [...current, ...newEmails].join(', ') });
     setInput('');
   };
   const removeEmail = (field: 'operational_email' | 'medicao_email', emailToRemove: string) => {
@@ -687,7 +690,7 @@ const ClientForm: React.FC<ClientFormProps> = ({
                           <>
                             <div className="flex gap-1.5">
                                 <div className="relative flex-1">
-                                    <input type="email" className={`${INPUT_CLASS} pl-10 pr-10`} placeholder="Digite o e-mail..." value={osEmailInput} onChange={e => setOsEmailInput(e.target.value.toLowerCase())} onKeyDown={e => e.key === 'Enter' && (e.preventDefault(), addEmail('operational_email', osEmailInput, setOsEmailInput))} data-testid="input-operational-email" />
+                                    <input type="text" className={`${INPUT_CLASS} pl-10 pr-10`} placeholder="Digite o e-mail..." value={osEmailInput} onChange={e => setOsEmailInput(e.target.value.toLowerCase())} onKeyDown={e => e.key === 'Enter' && (e.preventDefault(), addEmail('operational_email', osEmailInput, setOsEmailInput))} onPaste={e => { e.preventDefault(); const text = e.clipboardData.getData('text'); addEmail('operational_email', text, setOsEmailInput); }} data-testid="input-operational-email" />
                                     <Mail className="absolute left-3 top-1/2 -translate-y-1/2 text-orange-500" size={16} />
                                 </div>
                                 <button type="button" onClick={() => addEmail('operational_email', osEmailInput, setOsEmailInput)} className="p-2.5 bg-orange-500 text-white rounded-lg hover:bg-orange-600 transition-colors shadow-sm"><Plus size={16}/></button>
@@ -723,7 +726,7 @@ const ClientForm: React.FC<ClientFormProps> = ({
                         <label className={LABEL_CLASS}>E-mail Medição</label>
                         <div className="flex gap-1.5">
                             <div className="relative flex-1">
-                                <input type="email" className={`${INPUT_CLASS} pl-10 pr-10`} placeholder="Digite o e-mail..." value={medicaoEmailInput} onChange={e => setMedicaoEmailInput(e.target.value.toLowerCase())} onKeyDown={e => e.key === 'Enter' && (e.preventDefault(), addEmail('medicao_email', medicaoEmailInput, setMedicaoEmailInput))} data-testid="input-medicao-email" />
+                                <input type="text" className={`${INPUT_CLASS} pl-10 pr-10`} placeholder="Digite o e-mail..." value={medicaoEmailInput} onChange={e => setMedicaoEmailInput(e.target.value.toLowerCase())} onKeyDown={e => e.key === 'Enter' && (e.preventDefault(), addEmail('medicao_email', medicaoEmailInput, setMedicaoEmailInput))} onPaste={e => { e.preventDefault(); const text = e.clipboardData.getData('text'); addEmail('medicao_email', text, setMedicaoEmailInput); }} data-testid="input-medicao-email" />
                                 <Mail className="absolute left-3 top-1/2 -translate-y-1/2 text-green-500" size={16} />
                             </div>
                             <button type="button" onClick={() => addEmail('medicao_email', medicaoEmailInput, setMedicaoEmailInput)} className="p-2.5 bg-green-500 text-white rounded-lg hover:bg-green-600 transition-colors shadow-sm"><Plus size={16}/></button>
