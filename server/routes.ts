@@ -1441,31 +1441,35 @@ export async function registerRoutes(
           const { missionId } = req.params;
           const { vendor_os_number, invoice_number, release_date, payment_date, verified_by, verified_at } = req.body;
 
-          const payload: any = {};
-          if (vendor_os_number !== undefined) payload.vendor_os_number = vendor_os_number;
-          if (invoice_number !== undefined) payload.invoice_number = invoice_number;
-          if (release_date !== undefined) payload.release_date = release_date;
-          if (payment_date !== undefined) payload.payment_date = payment_date;
-          if (verified_by !== undefined) payload.verified_by = verified_by;
-          if (verified_at !== undefined) payload.verified_at = verified_at;
+          const corePayload: any = {};
+          if (vendor_os_number !== undefined) corePayload.vendor_os_number = vendor_os_number;
+          if (invoice_number !== undefined) corePayload.invoice_number = invoice_number;
+          if (release_date !== undefined) corePayload.release_date = release_date;
+          if (payment_date !== undefined) corePayload.payment_date = payment_date;
 
-          const { error } = await supabaseAdmin
-              .from('missions')
-              .update(payload)
-              .eq('id', missionId);
-
-          if (error) {
-              if (error.message.includes('column') && error.message.includes('does not exist')) {
-                  await supabaseAdmin.from('system_logs').insert([{
-                      user_name: verified_by || 'Sistema',
-                      action_type: 'VENDOR_VERIFICATION',
-                      entity: 'Mission',
-                      entity_id: missionId,
-                      details: JSON.stringify(payload)
-                  }]);
-                  return res.json({ ok: true, fallback: 'system_logs' });
+          if (Object.keys(corePayload).length > 0) {
+              const { error: coreErr } = await supabaseAdmin.from('missions').update(corePayload).eq('id', missionId);
+              if (coreErr && !(coreErr.message.includes('column') && coreErr.message.includes('does not exist'))) {
+                  throw coreErr;
               }
-              throw error;
+          }
+
+          if (verified_by !== undefined || verified_at !== undefined) {
+              const verPayload: any = {};
+              if (verified_by !== undefined) verPayload.verified_by = verified_by;
+              if (verified_at !== undefined) verPayload.verified_at = verified_at;
+              const { error: verErr } = await supabaseAdmin.from('missions').update(verPayload).eq('id', missionId);
+              if (verErr && verErr.message.includes('column') && verErr.message.includes('does not exist')) {
+                  console.log('[VENDOR-VERIFICATION] verified_by/verified_at columns missing, creating them...');
+                  try {
+                      await supabaseAdmin.rpc('exec_sql', { sql: 'ALTER TABLE missions ADD COLUMN IF NOT EXISTS verified_by TEXT; ALTER TABLE missions ADD COLUMN IF NOT EXISTS verified_at TIMESTAMPTZ;' });
+                      await supabaseAdmin.from('missions').update(verPayload).eq('id', missionId);
+                  } catch (alterErr: any) {
+                      console.warn('[VENDOR-VERIFICATION] Could not auto-create columns:', alterErr.message);
+                  }
+              } else if (verErr) {
+                  throw verErr;
+              }
           }
 
           await supabaseAdmin.from('system_logs').insert([{
@@ -1473,7 +1477,7 @@ export async function registerRoutes(
               action_type: 'VENDOR_VERIFICATION',
               entity: 'Mission',
               entity_id: missionId,
-              details: JSON.stringify(payload)
+              details: JSON.stringify({ ...corePayload, verified_by, verified_at })
           }]);
 
           res.json({ ok: true });
