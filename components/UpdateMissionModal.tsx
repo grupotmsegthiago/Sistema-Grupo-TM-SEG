@@ -1642,24 +1642,22 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
                                       </div>
                                   )}
                               </div>
-                              {(() => {
-                                  const loc = mission.currentLocation || '';
-                                  const parts = loc.split('|');
-                                  const locationPart = parts.length > 1 ? parts[parts.length - 1].trim() : loc.trim();
-                                  const cityName = locationPart ? locationPart.split(',')[0].trim() : '';
-                                  return cityName ? (
-                                      <div className="flex items-center justify-center gap-1.5 mt-1">
-                                          <MapPin size={9} className="text-yellow-500" />
-                                          <span className="text-[8px] font-black text-yellow-500 uppercase tracking-wider" data-testid="text-last-location-city">
-                                              Última localização: {cityName}
+                              <div className="flex justify-between text-[8px] font-bold uppercase tracking-widest">
+                                  <span className="text-slate-600">Ponto A (Saída)</span>
+                                  {(() => {
+                                      const loc = mission.currentLocation || '';
+                                      const parts = loc.split('|');
+                                      const locationPart = parts.length > 1 ? parts[parts.length - 1].trim() : loc.trim();
+                                      const cityName = locationPart ? locationPart.split(',')[0].trim() : '';
+                                      return cityName ? (
+                                          <span className="text-yellow-500 flex items-center gap-1" data-testid="text-last-location-city">
+                                              <MapPin size={8} /> Ponto B — {cityName}
                                           </span>
-                                      </div>
-                                  ) : null;
-                              })()}
-                              <div className="flex justify-between text-[8px] font-bold text-slate-600 uppercase tracking-widest">
-                                  <span>Ponto A (Saída)</span>
-                                  <span>Projeção Inteligente Baseada em GPS</span>
-                                  <span>Ponto C (Chegada)</span>
+                                      ) : (
+                                          <span className="text-slate-600">Ponto B</span>
+                                      );
+                                  })()}
+                                  <span className="text-slate-600">Ponto C (Chegada)</span>
                               </div>
                           </div>
                       </div>
