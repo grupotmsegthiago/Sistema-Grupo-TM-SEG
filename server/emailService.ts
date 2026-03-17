@@ -362,6 +362,109 @@ export async function sendMissionResendToClient(
   }
 }
 
+export async function sendMissionChangeNotificationToClient(
+  mission: MissionEmailData,
+  clientEmail: string,
+  vehiclePlate: string,
+  changes: { field: string; oldValue: string; newValue: string }[],
+  senderName?: string
+): Promise<boolean> {
+  const changesRows = changes.map(c => 
+    `<tr><td style="font-weight:700;">${c.field}</td><td style="color:#b91c1c; text-decoration:line-through;">${c.oldValue || '—'}</td><td style="color:#15803d; font-weight:700;">${c.newValue || '—'}</td></tr>`
+  ).join('');
+
+  const html = baseTemplate(`
+    <h2>🔄 Alteração na OS — ${formatOS(mission.id)}</h2>
+    <p>Prezado(a) Cliente,</p>
+    <p>Informamos que houve <strong>alteração nos dados</strong> da ordem de serviço abaixo. Confira os detalhes atualizados:</p>
+    <table class="info-table">
+      <tr><td>Nº da OS</td><td><span class="badge">${formatOS(mission.id)}</span></td></tr>
+      <tr><td>Cliente</td><td>${mission.client || '—'}</td></tr>
+      <tr><td>Origem</td><td>${mission.origin || '—'}</td></tr>
+      <tr><td>Destino</td><td>${mission.destination || '—'}</td></tr>
+      <tr><td>Veículo / Carga</td><td>${vehiclePlate || '—'}</td></tr>
+      <tr><td>Agendamento</td><td>${formatDateTime(mission.start_time)}</td></tr>
+    </table>
+    <div style="margin:20px 0;">
+      <h3 style="color:#c0392b; font-size:14px; margin:0 0 10px;">📝 Dados Alterados</h3>
+      <table class="info-table">
+        <tr style="background:#f8fafc;"><td style="font-weight:800;">Campo</td><td style="font-weight:800; color:#b91c1c;">Anterior</td><td style="font-weight:800; color:#15803d;">Novo</td></tr>
+        ${changesRows}
+      </table>
+    </div>
+    <div class="highlight-box">
+      <p><strong>Observação:</strong> Esta alteração já está vigente no sistema. Em caso de dúvidas, entre em contato com a equipe operacional.</p>
+    </div>
+    <p>Atenciosamente,<br><strong>Equipe Grupo TM SEG</strong></p>
+  `, senderName);
+
+  try {
+    await transporter.sendMail({
+      from: SMTP_FROM,
+      to: clientEmail,
+      bcc: BCC_RECIPIENTS,
+      subject: `🔄 Alteração OS ${formatOS(mission.id)} - ${vehiclePlate || 'S/PLACA'} - Dados Atualizados`,
+      html,
+    });
+    console.log(`[Email] Notificação de alteração OS ${mission.id} → Cliente: ${clientEmail}`);
+    return true;
+  } catch (err: any) {
+    console.error(`[Email] Erro ao enviar alteração para cliente ${clientEmail}:`, err.message);
+    return false;
+  }
+}
+
+export async function sendMissionChangeNotificationToProvider(
+  mission: MissionEmailData,
+  providerEmail: string,
+  vehiclePlate: string,
+  changes: { field: string; oldValue: string; newValue: string }[],
+  senderName?: string
+): Promise<boolean> {
+  const changesRows = changes.map(c => 
+    `<tr><td style="font-weight:700;">${c.field}</td><td style="color:#b91c1c; text-decoration:line-through;">${c.oldValue || '—'}</td><td style="color:#15803d; font-weight:700;">${c.newValue || '—'}</td></tr>`
+  ).join('');
+
+  const html = baseTemplate(`
+    <h2>🔄 Alteração na OS — ${formatOS(mission.id)}</h2>
+    <p>Prezado(a) ${mission.provider || 'Fornecedor'},</p>
+    <p>Informamos que houve <strong>alteração nos dados do motorista/veículo</strong> da ordem de serviço abaixo. Por favor, atualize as informações junto à sua equipe:</p>
+    <table class="info-table">
+      <tr><td>Nº da OS</td><td><span class="badge">${formatOS(mission.id)}</span></td></tr>
+      <tr><td>Origem</td><td>${mission.origin || '—'}</td></tr>
+      <tr><td>Destino</td><td>${mission.destination || '—'}</td></tr>
+      <tr><td>Veículo / Carga</td><td>${vehiclePlate || '—'}</td></tr>
+      <tr><td>Agendamento</td><td>${formatDateTime(mission.start_time)}</td></tr>
+    </table>
+    <div style="margin:20px 0;">
+      <h3 style="color:#c0392b; font-size:14px; margin:0 0 10px;">📝 Dados Alterados</h3>
+      <table class="info-table">
+        <tr style="background:#f8fafc;"><td style="font-weight:800;">Campo</td><td style="font-weight:800; color:#b91c1c;">Anterior</td><td style="font-weight:800; color:#15803d;">Novo</td></tr>
+        ${changesRows}
+      </table>
+    </div>
+    <div class="highlight-box">
+      <p><strong>Atenção:</strong> Certifique-se de que a equipe em campo está ciente destas alterações antes do início da operação.</p>
+    </div>
+    <p>Atenciosamente,<br><strong>Equipe Grupo TM SEG</strong></p>
+  `, senderName);
+
+  try {
+    await transporter.sendMail({
+      from: SMTP_FROM,
+      to: providerEmail,
+      bcc: BCC_RECIPIENTS,
+      subject: `🔄 Alteração OS ${formatOS(mission.id)} - Dados do Motorista Atualizados`,
+      html,
+    });
+    console.log(`[Email] Notificação de alteração OS ${mission.id} → Fornecedor: ${providerEmail}`);
+    return true;
+  } catch (err: any) {
+    console.error(`[Email] Erro ao enviar alteração para fornecedor ${providerEmail}:`, err.message);
+    return false;
+  }
+}
+
 export async function sendMirroringEvidenceEmail(
   mission: MissionEmailData,
   clientEmail: string,

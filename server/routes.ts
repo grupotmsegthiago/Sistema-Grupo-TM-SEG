@@ -9,7 +9,7 @@ import webpush from "web-push";
 import { calculateMissionFinancials } from "../lib/financialUtils";
 import fs from "fs";
 import path from "path";
-import { sendMissionEmailToClient, sendMissionEmailToProvider, sendMissionResendToClient, sendMirroringEvidenceEmail, sendWelcomeEmail, sendTestEmail, sendVerificationCodeEmail } from "./emailService";
+import { sendMissionEmailToClient, sendMissionEmailToProvider, sendMissionResendToClient, sendMirroringEvidenceEmail, sendMissionChangeNotificationToClient, sendMissionChangeNotificationToProvider, sendWelcomeEmail, sendTestEmail, sendVerificationCodeEmail } from "./emailService";
 import { findOrCreateCustomer, createPayment, getPayment, getPaymentPixQrCode, getPaymentBankSlip, listPayments, deletePayment, mapAsaasStatus, isAsaasConfigured } from "./asaasService";
 
 const resend = new Resend(process.env.RESEND_API_KEY);
@@ -409,6 +409,43 @@ export async function registerRoutes(
       res.json({ success, message: success ? 'E-mail de solicitação enviado ao fornecedor!' : 'Falha ao enviar' });
     } catch (err: any) {
       console.error('[Email] Erro mission-solicited:', err.message);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post("/api/email/mission-change-client", async (req: Request, res: Response) => {
+    try {
+      const { missionId, client, origin, destination, start_time, mission_type, vehiclePlate, changes, senderName } = req.body;
+      if (!missionId || !client || !changes?.length) return res.status(400).json({ error: 'Dados obrigatórios ausentes' });
+
+      const { data: clientData } = await supabase.from('clients').select('operational_email, email').eq('name', client).single();
+      const clientEmail = clientData?.operational_email || clientData?.email;
+      if (!clientEmail) return res.json({ success: false, message: 'Cliente sem e-mail cadastrado' });
+
+      const missionData = { id: missionId, client, origin: origin || '', destination: destination || '', start_time: start_time || '', mission_type: mission_type || 'Caracterizada', provider: '', driver_name: '', driver_phone: '' };
+      const success = await sendMissionChangeNotificationToClient(missionData, clientEmail, vehiclePlate || '', changes, senderName);
+      res.json({ success, message: success ? 'E-mail de alteração enviado ao cliente!' : 'Falha ao enviar' });
+    } catch (err: any) {
+      console.error('[Email] Erro mission-change-client:', err.message);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post("/api/email/mission-change-provider", async (req: Request, res: Response) => {
+    try {
+      const { missionId, provider, origin, destination, start_time, mission_type, vehiclePlate, changes, senderName } = req.body;
+      if (!missionId || !provider || !changes?.length) return res.status(400).json({ error: 'Dados obrigatórios ausentes' });
+
+      const { data: provData } = await supabase.from('providers').select('os_email, email').eq('name', provider).single();
+      const provEmail = provData?.os_email || provData?.email;
+      if (!provEmail) return res.json({ success: false, message: 'Fornecedor sem e-mail cadastrado' });
+
+      const { data: missionCheck } = await supabase.from('missions').select('client').eq('id', missionId).single();
+      const missionData = { id: missionId, client: missionCheck?.client || '', provider, origin: origin || '', destination: destination || '', start_time: start_time || '', mission_type: mission_type || 'Caracterizada', driver_name: '', driver_phone: '' };
+      const success = await sendMissionChangeNotificationToProvider(missionData, provEmail, vehiclePlate || '', changes, senderName);
+      res.json({ success, message: success ? 'E-mail de alteração enviado ao fornecedor!' : 'Falha ao enviar' });
+    } catch (err: any) {
+      console.error('[Email] Erro mission-change-provider:', err.message);
       res.status(500).json({ error: err.message });
     }
   });

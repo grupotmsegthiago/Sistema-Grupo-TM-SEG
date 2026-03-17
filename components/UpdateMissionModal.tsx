@@ -864,6 +864,78 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
                 }
             });
 
+            const senderNameForChange = JSON.parse(localStorage.getItem('userData') || '{}').name || undefined;
+            const isFirstProviderAssignment = !mission.provider && editData.provider;
+            const isFirstScheduling = finalStatus === MissionStatus.SCHEDULED && originalStatus !== MissionStatus.SCHEDULED;
+
+            const providerChanges: { field: string; oldValue: string; newValue: string }[] = [];
+            if (!isFirstProviderAssignment && !isFirstScheduling) {
+                if (editData.provider && mission.provider && editData.provider !== mission.provider) {
+                    providerChanges.push({ field: 'Fornecedor', oldValue: mission.provider, newValue: editData.provider });
+                }
+                if (editData.agent1 && editData.agent1 !== (mission.agent1 || '') && mission.agent1) {
+                    providerChanges.push({ field: 'Agente 1 (Líder)', oldValue: mission.agent1 || '—', newValue: editData.agent1 });
+                }
+                if (editData.agent2 && editData.agent2 !== (mission.agent2 || '') && mission.agent2) {
+                    providerChanges.push({ field: 'Agente 2 (Auxiliar)', oldValue: mission.agent2 || '—', newValue: editData.agent2 });
+                }
+                const vehicleChanged = editData.vehicleId && mission.vehicle_id && editData.vehicleId !== String(mission.vehicle_id || '');
+                if (vehicleChanged) {
+                    providerChanges.push({ field: 'Viatura', oldValue: String(mission.vehicle_id ? `ID ${mission.vehicle_id}` : '—'), newValue: searchVehicle || `ID ${editData.vehicleId}` });
+                }
+            }
+
+            if (providerChanges.length > 0 && mission.client) {
+                try {
+                    await fetch('/api/email/mission-change-client', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            missionId: mission.id, client: mission.client,
+                            origin: editData.origin, destination: finalDestination,
+                            start_time: startIso, mission_type: editData.missionType,
+                            vehiclePlate: vehiclePlateForEmail,
+                            changes: providerChanges, senderName: senderNameForChange
+                        })
+                    });
+                    showNotification('E-mail de Alteração', 'Cliente notificado sobre alteração de fornecedor/agentes.', 'success');
+                } catch (chErr) { console.error('[Email] Erro ao enviar notificação de alteração ao cliente:', chErr); }
+            }
+
+            const driverChanges: { field: string; oldValue: string; newValue: string }[] = [];
+            if (editData.driver_name && mission.driver_name && editData.driver_name.toUpperCase() !== mission.driver_name.toUpperCase()) {
+                driverChanges.push({ field: 'Motorista', oldValue: mission.driver_name, newValue: editData.driver_name.toUpperCase() });
+            }
+            if (editData.driver_phone && mission.driver_phone && editData.driver_phone !== mission.driver_phone) {
+                driverChanges.push({ field: 'Tel. Motorista', oldValue: mission.driver_phone, newValue: editData.driver_phone });
+            }
+            if (editData.client_vehicle_id && mission.client_vehicle && editData.client_vehicle_id !== String(mission.client_vehicle)) {
+                driverChanges.push({ field: 'Veículo Carga', oldValue: String(mission.client_vehicle), newValue: editData.client_vehicle_plate || editData.client_vehicle_id });
+            }
+            if (mission.origin && editData.origin.toUpperCase() !== mission.origin.toUpperCase()) {
+                driverChanges.push({ field: 'Origem', oldValue: mission.origin, newValue: editData.origin.toUpperCase() });
+            }
+            if (mission.destination && finalDestination.toUpperCase() !== mission.destination.toUpperCase()) {
+                driverChanges.push({ field: 'Destino', oldValue: mission.destination, newValue: finalDestination.toUpperCase() });
+            }
+
+            if (driverChanges.length > 0 && editData.provider) {
+                try {
+                    await fetch('/api/email/mission-change-provider', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            missionId: mission.id, provider: editData.provider,
+                            origin: editData.origin, destination: finalDestination,
+                            start_time: startIso, mission_type: editData.missionType,
+                            vehiclePlate: vehiclePlateForEmail,
+                            changes: driverChanges, senderName: senderNameForChange
+                        })
+                    });
+                    showNotification('E-mail de Alteração', 'Fornecedor notificado sobre alteração de motorista/dados.', 'success');
+                } catch (chErr) { console.error('[Email] Erro ao enviar notificação de alteração ao fornecedor:', chErr); }
+            }
+
             onSuccess(report);
         } catch (error: any) { alert(error.message); } finally { setIsUpdating(false); }
     };
