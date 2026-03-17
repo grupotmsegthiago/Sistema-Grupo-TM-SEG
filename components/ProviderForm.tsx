@@ -526,7 +526,7 @@ const ProviderForm: React.FC<ProviderFormProps> = ({ onBack, onNavigateToVehicle
                             <Mail className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
                         </div>
                     </div>
-                    <div className="space-y-1.5">
+                    <div className="space-y-1.5 md:col-span-2">
                         <label className={LABEL_CLASS}>E-mail Recebimento (OS)</label>
                         <div className="flex gap-1.5">
                             <div className="relative flex-1">
@@ -546,7 +546,7 @@ const ProviderForm: React.FC<ProviderFormProps> = ({ onBack, onNavigateToVehicle
                             </div>
                         )}
                     </div>
-                    <div className="space-y-1.5">
+                    <div className="space-y-1.5 md:col-span-2">
                         <label className={LABEL_CLASS}>E-mail Medição</label>
                         <div className="flex gap-1.5">
                             <div className="relative flex-1">
