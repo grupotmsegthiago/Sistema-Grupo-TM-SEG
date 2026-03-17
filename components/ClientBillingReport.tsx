@@ -64,9 +64,13 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
     }, [showInvoiceModal]);
 
     useEffect(() => {
-        const base = 'Referente aos serviços de Intermediação de Escolta Armada e Fiscal de Rota';
+        const selectedClient = clients.find(c => c.id.toString() === invoiceForm.client);
+        const isCeva = selectedClient && (selectedClient.name?.toUpperCase().includes('CEVA') || selectedClient.trading_name?.toUpperCase().includes('CEVA'));
+        const base = isCeva
+            ? 'CNAE 07930 — Monitoramento e rastreamento a distância de veículos, cargas, pessoas e semoventes por qualquer meio'
+            : 'Referente aos serviços de Intermediação de Escolta Armada e Fiscal de Rota';
         setAsaasDescription(asaasPeriod ? `${base} — ${asaasPeriod}` : base);
-    }, [asaasPeriod, showInvoiceModal]);
+    }, [asaasPeriod, showInvoiceModal, invoiceForm.client, clients]);
 
     const asaasSplitTotal = useMemo(() => {
         return asaasSplitCharges.reduce((sum, c) => sum + (parseFloat(c.value) || 0), 0);
