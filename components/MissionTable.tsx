@@ -819,7 +819,7 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
             const res = await fetch('/api/email/mission-resend-client', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ missionId: mission.id })
+                body: JSON.stringify({ missionId: mission.id, senderName: JSON.parse(localStorage.getItem('userData') || '{}').name || undefined })
             });
             const data = await res.json();
             if (res.ok && data.success) {

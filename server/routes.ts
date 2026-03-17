@@ -268,7 +268,7 @@ export async function registerRoutes(
 
   app.post("/api/email/mission-scheduled", async (req: Request, res: Response) => {
     try {
-      const { missionId, client, origin, destination, start_time, mission_type, vehiclePlate } = req.body;
+      const { missionId, client, origin, destination, start_time, mission_type, vehiclePlate, senderName } = req.body;
       if (!missionId || !client) return res.status(400).json({ error: 'Campos missionId e client obrigatórios' });
 
       const { data: missionCheck } = await supabase.from('missions').select('*').eq('id', missionId).single();
@@ -335,12 +335,12 @@ export async function registerRoutes(
       if (!clientEmail) {
         const fallback = 'operacional@grupotmseg.com.br';
         const alertMission = { ...missionData, _noEmailAlert: true, _alertEntity: 'Cliente', _alertName: missionData.client };
-        const result = await sendMissionEmailToClient(alertMission, fallback, clientVehicleLabel, grEspelhamento, trackerInfo);
+        const result = await sendMissionEmailToClient(alertMission, fallback, clientVehicleLabel, grEspelhamento, trackerInfo, senderName);
         const success = typeof result === 'object' ? result.success : result;
         return res.json({ success, message: success ? `⚠️ Cliente "${missionData.client}" sem e-mail — notificação enviada para operacional.` : 'Falha ao enviar' });
       }
 
-      const result = await sendMissionEmailToClient(missionData, clientEmail, clientVehicleLabel, grEspelhamento, trackerInfo);
+      const result = await sendMissionEmailToClient(missionData, clientEmail, clientVehicleLabel, grEspelhamento, trackerInfo, senderName);
       const success = typeof result === 'object' ? result.success : result;
       if (success && typeof result === 'object' && result.messageId) {
         await supabase.from('missions').update({ email_message_id: result.messageId }).eq('id', missionId);
@@ -355,7 +355,7 @@ export async function registerRoutes(
 
   app.post("/api/email/mission-solicited", async (req: Request, res: Response) => {
     try {
-      const { missionId, provider, vehiclePlate, origin, destination, start_time, mission_type, driver_name, driver_phone } = req.body;
+      const { missionId, provider, vehiclePlate, origin, destination, start_time, mission_type, driver_name, driver_phone, senderName } = req.body;
       if (!missionId || !provider) return res.status(400).json({ error: 'Campos missionId e provider obrigatórios' });
 
       const { data: missionCheck } = await supabase.from('missions').select('*').eq('id', missionId).single();
@@ -401,11 +401,11 @@ export async function registerRoutes(
       if (!provEmail) {
         const fallback = 'operacional@grupotmseg.com.br';
         const alertMission = { ...missionData, _noEmailAlert: true, _alertEntity: 'Fornecedor', _alertName: missionData.provider };
-        const success = await sendMissionEmailToProvider(alertMission, fallback, cargoVehicleLabel);
+        const success = await sendMissionEmailToProvider(alertMission, fallback, cargoVehicleLabel, senderName);
         return res.json({ success, message: success ? `⚠️ Fornecedor "${missionData.provider}" sem e-mail — notificação enviada para operacional.` : 'Falha ao enviar' });
       }
 
-      const success = await sendMissionEmailToProvider(missionData, provEmail, cargoVehicleLabel);
+      const success = await sendMissionEmailToProvider(missionData, provEmail, cargoVehicleLabel, senderName);
       res.json({ success, message: success ? 'E-mail de solicitação enviado ao fornecedor!' : 'Falha ao enviar' });
     } catch (err: any) {
       console.error('[Email] Erro mission-solicited:', err.message);
@@ -415,7 +415,7 @@ export async function registerRoutes(
 
   app.post("/api/email/mirroring-evidence", async (req: Request, res: Response) => {
     try {
-      const { missionId, client, imageUrl, vehiclePlate, origin, destination, start_time, mission_type } = req.body;
+      const { missionId, client, imageUrl, vehiclePlate, origin, destination, start_time, mission_type, senderName } = req.body;
       if (!missionId || !client || !imageUrl) return res.status(400).json({ error: 'Dados obrigatórios ausentes' });
 
       const { data: clientData } = await supabase.from('clients').select('*').eq('name', client).single();
@@ -458,7 +458,7 @@ export async function registerRoutes(
         missionData._alertEntity = 'Cliente';
         missionData._alertName = client;
       }
-      const success = await sendMirroringEvidenceEmail(missionData, targetEmail, clientVehicleLabel, imageUrl, grEspelhamento, trackerInfo, threadMessageId);
+      const success = await sendMirroringEvidenceEmail(missionData, targetEmail, clientVehicleLabel, imageUrl, grEspelhamento, trackerInfo, threadMessageId, senderName);
       res.json({ success, message: success ? (clientEmail ? 'E-mail de evidência de espelhamento enviado ao cliente!' : `⚠️ Cliente "${client}" sem e-mail — notificação enviada para operacional.`) : 'Falha ao enviar' });
     } catch (err: any) {
       console.error('[Email] Erro mirroring-evidence:', err.message);
@@ -468,7 +468,7 @@ export async function registerRoutes(
 
   app.post("/api/email/mission-resend-client", async (req: Request, res: Response) => {
     try {
-      const { missionId } = req.body;
+      const { missionId, senderName } = req.body;
       if (!missionId) return res.status(400).json({ error: 'ID da missão obrigatório' });
 
       const { data: missionRow } = await supabase.from('missions').select('*').eq('id', missionId).single();
@@ -522,7 +522,7 @@ export async function registerRoutes(
         missionData._alertEntity = 'Cliente';
         missionData._alertName = missionRow.client;
       }
-      const success = await sendMissionResendToClient(missionData, targetEmail, clientVehicleLabel, mirroringUrl || undefined, grEspelhamento, trackerInfo, threadMessageId);
+      const success = await sendMissionResendToClient(missionData, targetEmail, clientVehicleLabel, mirroringUrl || undefined, grEspelhamento, trackerInfo, threadMessageId, senderName);
       res.json({ success, message: success ? (clientEmail ? `E-mail enviado para ${clientEmail}${mirroringUrl ? ' (com evidência de espelhamento)' : ''}` : `⚠️ Cliente "${missionRow.client}" sem e-mail — notificação enviada para operacional.`) : 'Falha ao enviar' });
     } catch (err: any) {
       console.error('[Email] Erro mission-resend-client:', err.message);

@@ -659,7 +659,8 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
                         start_time: scheduledIso,
                         mission_type: formData.missionType,
                         driver_name: formData.driver_name,
-                        driver_phone: formData.driver_phone
+                        driver_phone: formData.driver_phone,
+                        senderName: userData.name || undefined
                     })
                 });
                 const provData = await provRes.json();
@@ -680,7 +681,8 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
                     destination: formData.destination,
                     start_time: scheduledIso,
                     mission_type: formData.missionType,
-                    vehiclePlate
+                    vehiclePlate,
+                    senderName: userData.name || undefined
                 })
             });
             const clientData = await clientRes.json();

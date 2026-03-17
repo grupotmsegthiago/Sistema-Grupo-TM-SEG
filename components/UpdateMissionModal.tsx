@@ -517,7 +517,8 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
                         origin: editData.origin,
                         destination: editData.destination,
                         start_time: editData.startDate && editData.startTime ? new Date(`${editData.startDate}T${editData.startTime}`).toISOString() : '',
-                        mission_type: editData.missionType
+                        mission_type: editData.missionType,
+                        senderName: JSON.parse(localStorage.getItem('userData') || '{}').name || undefined
                     })
                 });
                 showNotification('Evidência Enviada', 'Foto do espelhamento salva e e-mail enviado ao cliente.', 'success');
@@ -805,7 +806,8 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
                             destination: finalDestination,
                             start_time: startIso,
                             mission_type: editData.missionType,
-                            vehiclePlate: vehiclePlateForEmail
+                            vehiclePlate: vehiclePlateForEmail,
+                            senderName: JSON.parse(localStorage.getItem('userData') || '{}').name || undefined
                         })
                     });
                     const emailData = await emailRes.json();
@@ -836,7 +838,8 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
                             start_time: startIso,
                             mission_type: editData.missionType,
                             driver_name: editData.driver_name,
-                            driver_phone: editData.driver_phone
+                            driver_phone: editData.driver_phone,
+                            senderName: JSON.parse(localStorage.getItem('userData') || '{}').name || undefined
                         })
                     });
                     const emailData = await emailRes.json();

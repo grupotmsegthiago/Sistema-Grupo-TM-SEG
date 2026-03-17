@@ -26,7 +26,7 @@ const transporter = nodemailer.createTransport({
 
 console.log(`[Email] SMTP configurado: ${EMAIL_USER} | from: adm@grupotmseg.com.br | senha: ${EMAIL_PASS ? '***configurada***' : '⚠ VAZIA'}`);
 
-function baseTemplate(content: string): string {
+function baseTemplate(content: string, senderName?: string): string {
   return `<!DOCTYPE html>
 <html lang="pt-BR">
 <head>
@@ -66,9 +66,9 @@ function baseTemplate(content: string): string {
     ${content}
   </div>
   <div class="footer">
-    <p class="ceo">Thiago Moreira — CEO</p>
+    <p class="ceo">${senderName || 'Equipe Grupo TM SEG'}</p>
     <p class="company">Grupo TM SEG</p>
-    <p>Segurança Patrimonial &amp; Escolta Armada</p>
+    <p>Intermediação de Escolta Armada</p>
     <p style="margin-top:8px; font-size:11px; color:#666;">Este é um e-mail automático. Em caso de dúvidas, entre em contato pelo e-mail adm@grupotmseg.com.br</p>
   </div>
 </div>
@@ -114,7 +114,8 @@ export async function sendMissionEmailToClient(
   clientEmail: string,
   vehiclePlate: string,
   grEspelhamento?: string,
-  trackerInfo?: string
+  trackerInfo?: string,
+  senderName?: string
 ): Promise<boolean> {
   const alertBanner = (mission as any)._noEmailAlert ? `
     <div style="background:#fef2f2; border:2px solid #dc2626; border-radius:8px; padding:16px; margin-bottom:20px;">
@@ -125,16 +126,19 @@ export async function sendMissionEmailToClient(
 
   const html = baseTemplate(`
     ${alertBanner}
-    <h2>📋 Nova Ordem de Serviço</h2>
+    <h2>📋 Confirmação de Escolta — ${formatOS(mission.id)}</h2>
     <p>Prezado(a) Cliente,</p>
-    <p>Informamos que uma nova missão de escolta foi registrada para a sua empresa. Seguem os detalhes:</p>
+    <p>Segue a confirmação e detalhes completos da missão de escolta registrada para a sua empresa:</p>
     <table class="info-table">
       <tr><td>Nº da OS</td><td><span class="badge">${formatOS(mission.id)}</span></td></tr>
+      <tr><td>Cliente</td><td>${mission.client || '—'}</td></tr>
       <tr><td>Origem</td><td>${mission.origin || '—'}</td></tr>
       <tr><td>Destino</td><td>${mission.destination || '—'}</td></tr>
       <tr><td>Viatura (Placa / Modelo)</td><td>${vehiclePlate || '—'}</td></tr>
       <tr><td>Tipo de Escolta</td><td>${mission.mission_type || 'Caracterizada'}</td></tr>
       <tr><td>Agendamento</td><td>${formatDateTime(mission.start_time)}</td></tr>
+      ${mission.driver_name ? `<tr><td>Motorista</td><td>${mission.driver_name}</td></tr>` : ''}
+      ${mission.driver_phone ? `<tr><td>Contato Motorista</td><td>${mission.driver_phone}</td></tr>` : ''}
       ${grEspelhamento ? `<tr><td>Espelhamento</td><td>${grEspelhamento}</td></tr>` : ''}
       ${trackerInfo ? `<tr><td>Rastreador</td><td>${trackerInfo}</td></tr>` : ''}
     </table>
@@ -142,7 +146,7 @@ export async function sendMissionEmailToClient(
       <p><strong>Observação:</strong> Acompanhe o status da missão em tempo real pelo painel do sistema.</p>
     </div>
     <p>Atenciosamente,<br><strong>Equipe Grupo TM SEG</strong></p>
-  `);
+  `, senderName);
 
   try {
     const isAlert = (mission as any)._noEmailAlert;
@@ -182,7 +186,8 @@ export async function sendMissionEmailToClient(
 export async function sendMissionEmailToProvider(
   mission: MissionEmailData & { _noEmailAlert?: boolean; _alertEntity?: string; _alertName?: string },
   providerEmail: string,
-  vehiclePlate: string
+  vehiclePlate: string,
+  senderName?: string
 ): Promise<boolean> {
   const escoltaTipo = mission.mission_type || 'Caracterizada';
   const alertBanner = (mission as any)._noEmailAlert ? `
@@ -248,7 +253,7 @@ export async function sendMissionEmailToProvider(
     </div>
 
     <p>Atenciosamente,<br><strong>Equipe Grupo TM SEG</strong></p>
-  `);
+  `, senderName);
 
   try {
     const isAlert = (mission as any)._noEmailAlert;
@@ -283,7 +288,8 @@ export async function sendMissionResendToClient(
   mirroringEvidenceUrl?: string,
   grEspelhamento?: string,
   trackerInfo?: string,
-  threadMessageId?: string
+  threadMessageId?: string,
+  senderName?: string
 ): Promise<boolean> {
   const evidenceBlock = mirroringEvidenceUrl ? `
     <div style="margin:20px 0; text-align:center;">
@@ -314,7 +320,7 @@ export async function sendMissionResendToClient(
       <p><strong>Observação:</strong> Acompanhe o status da missão em tempo real pelo painel do sistema.</p>
     </div>
     <p>Atenciosamente,<br><strong>Equipe Grupo TM SEG</strong></p>
-  `);
+  `, senderName);
 
   try {
     const isAlert = (mission as any)._noEmailAlert;
@@ -363,7 +369,8 @@ export async function sendMirroringEvidenceEmail(
   imageUrl: string,
   grEspelhamento?: string,
   trackerInfo?: string,
-  threadMessageId?: string
+  threadMessageId?: string,
+  senderName?: string
 ): Promise<boolean> {
   const isAlert = (mission as any)._noEmailAlert;
   const alertBanner = isAlert ? `
@@ -395,7 +402,7 @@ export async function sendMirroringEvidenceEmail(
       <p><strong>Confirmação:</strong> A viatura foi devidamente espelhada conforme o protocolo operacional do Grupo TM SEG.</p>
     </div>
     <p>Atenciosamente,<br><strong>Equipe Grupo TM SEG</strong></p>
-  `);
+  `, senderName);
 
   try {
     const subjectPrefix = isAlert ? '⚠️ SEM EMAIL — ' : '';
