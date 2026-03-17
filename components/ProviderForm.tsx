@@ -71,10 +71,8 @@ const ProviderForm: React.FC<ProviderFormProps> = ({ onBack, onNavigateToVehicle
   const isFinanceAdmin = currentUser && (() => {
     const r = (currentUser.role || '').toLowerCase();
     const perms = currentUser.permissions || [];
-    const n = (currentUser.name || '').toUpperCase();
     return r === 'diretoria' || r === 'administrador' || r === 'comercial' ||
-           perms.includes('*') || perms.includes('providers') ||
-           n.includes('DANIEL') || n.includes('MICHELLE');
+           perms.includes('*') || perms.includes('providers');
   })();
 
   const [costTables, setCostTables] = useState<ProviderCostTable[]>([]);
