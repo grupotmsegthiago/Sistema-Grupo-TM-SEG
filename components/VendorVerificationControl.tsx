@@ -79,7 +79,7 @@ const VendorVerificationControl: React.FC<VendorVerificationControlProps> = ({ o
 
     const userData = JSON.parse(localStorage.getItem('userData') || '{}');
     const userRole = (userData.role || '').toLowerCase();
-    const isAdmin = ['administrador', 'diretoria', 'ceo'].includes(userRole) || userData.permissions?.includes('*');
+    const isAdmin = ['administrador', 'diretoria', 'ceo', 'controller'].includes(userRole) || userData.permissions?.includes('*');
 
     const compressImage = (file: File, maxWidth = 1200, quality = 0.7): Promise<Blob> => {
         return new Promise((resolve, reject) => {
