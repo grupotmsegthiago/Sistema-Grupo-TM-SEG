@@ -18,6 +18,10 @@ const formatCurrency = (val: number | null | undefined) => {
 const fmtDate = (d: string | null | undefined) => {
     if (!d) return '—';
     try {
+        if (/^\d{4}-\d{2}-\d{2}$/.test(d)) {
+            const [y, m, day] = d.split('-');
+            return `${day}/${m}/${y}`;
+        }
         const dt = new Date(d);
         return dt.toLocaleDateString('pt-BR');
     } catch { return d; }
