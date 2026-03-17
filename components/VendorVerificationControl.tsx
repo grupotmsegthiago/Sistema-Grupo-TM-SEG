@@ -581,23 +581,6 @@ const VendorVerificationControl: React.FC<VendorVerificationControlProps> = ({ o
                                         </div>
 
                                         <div>
-                                            <label className="text-[10px] font-black text-gray-500 uppercase tracking-widest mb-1 block">Nº da NF</label>
-                                            <div className="relative">
-                                                <FileText size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-                                                <input
-                                                    type="text"
-                                                    value={invoiceNumber}
-                                                    onChange={e => setInvoiceNumber(e.target.value)}
-                                                    disabled={isLocked && !isAdmin}
-                                                    placeholder="Ex: NF-001234"
-                                                    className="w-full pl-10 pr-4 py-2.5 bg-white border border-gray-300 rounded-lg text-sm font-bold disabled:bg-gray-100 disabled:text-gray-500 disabled:cursor-not-allowed"
-                                                    data-testid="input-invoice-number"
-                                                />
-                                                {isLocked && !isAdmin && <Lock size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400" />}
-                                            </div>
-                                        </div>
-
-                                        <div>
                                             <label className="text-[10px] font-black text-gray-500 uppercase tracking-widest mb-1 block">Data de Liberação</label>
                                             <div className="relative">
                                                 <Calendar size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
@@ -632,57 +615,7 @@ const VendorVerificationControl: React.FC<VendorVerificationControlProps> = ({ o
                                         </div>
                                     </div>
 
-                                    <div className="grid grid-cols-2 gap-4">
-                                        <div>
-                                            <label className="text-[10px] font-black text-gray-500 uppercase tracking-widest mb-2 block flex items-center gap-1">
-                                                <Receipt size={12} /> Nota Fiscal (Imagem/PDF)
-                                            </label>
-                                            <input
-                                                ref={invoiceInputRef}
-                                                type="file"
-                                                accept="image/*,application/pdf"
-                                                className="hidden"
-                                                onChange={e => { if (e.target.files?.[0]) handleImageUpload(e.target.files[0], 'invoice'); e.target.value = ''; }}
-                                                data-testid="input-invoice-image"
-                                            />
-                                            {invoiceImageUrl ? (
-                                                <div className="relative group">
-                                                    {invoiceImageUrl.toLowerCase().endsWith('.pdf') ? (
-                                                        <a href={invoiceImageUrl} target="_blank" rel="noopener noreferrer" className="w-full h-28 bg-green-50 border-2 border-green-300 rounded-lg flex flex-col items-center justify-center gap-1 cursor-pointer hover:bg-green-100 transition-colors" data-testid="link-invoice-pdf">
-                                                            <FileText size={28} className="text-green-600" />
-                                                            <span className="text-[9px] font-black text-green-700 uppercase">Abrir PDF</span>
-                                                        </a>
-                                                    ) : (
-                                                        <img
-                                                            src={invoiceImageUrl}
-                                                            alt="Nota Fiscal"
-                                                            className="w-full h-28 object-cover rounded-lg border-2 border-green-300 cursor-pointer"
-                                                            onClick={() => setPreviewImage(invoiceImageUrl)}
-                                                            data-testid="img-invoice-preview"
-                                                        />
-                                                    )}
-                                                    <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity rounded-lg flex items-center justify-center gap-2">
-                                                        {!invoiceImageUrl.toLowerCase().endsWith('.pdf') && <button onClick={() => setPreviewImage(invoiceImageUrl)} className="p-1.5 bg-white rounded-lg" data-testid="button-zoom-invoice"><ZoomIn size={14} /></button>}
-                                                        {invoiceImageUrl.toLowerCase().endsWith('.pdf') && <a href={invoiceImageUrl} target="_blank" rel="noopener noreferrer" className="p-1.5 bg-white rounded-lg" data-testid="button-open-invoice-pdf"><ExternalLink size={14} /></a>}
-                                                        {(!isLocked || isAdmin) && (
-                                                            <button onClick={() => handleRemoveImage('invoice')} className="p-1.5 bg-red-500 text-white rounded-lg" data-testid="button-remove-invoice"><Trash2 size={14} /></button>
-                                                        )}
-                                                    </div>
-                                                    <span className="absolute top-1 left-1 text-[8px] font-black bg-green-600 text-white px-1.5 py-0.5 rounded">{invoiceImageUrl.toLowerCase().endsWith('.pdf') ? 'PDF' : 'NF'}</span>
-                                                </div>
-                                            ) : (
-                                                <button
-                                                    onClick={() => invoiceInputRef.current?.click()}
-                                                    disabled={(isLocked && !isAdmin) || uploadingInvoice}
-                                                    className="w-full h-28 border-2 border-dashed border-gray-300 rounded-lg flex flex-col items-center justify-center gap-1 text-gray-400 hover:border-blue-400 hover:text-blue-500 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                                                    data-testid="button-upload-invoice"
-                                                >
-                                                    {uploadingInvoice ? <Loader2 size={20} className="animate-spin" /> : <ImagePlus size={20} />}
-                                                    <span className="text-[9px] font-bold uppercase">{uploadingInvoice ? 'Enviando...' : 'Anexar NF'}</span>
-                                                </button>
-                                            )}
-                                        </div>
-
+                                    <div>
                                         <div>
                                             <label className="text-[10px] font-black text-gray-500 uppercase tracking-widest mb-2 block flex items-center gap-1">
                                                 <CreditCard size={12} /> Comprovante Pgto (Imagem/PDF)
