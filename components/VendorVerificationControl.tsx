@@ -306,6 +306,11 @@ const VendorVerificationControl: React.FC<VendorVerificationControlProps> = ({ o
             showNotification('Campo Obrigatório', 'Informe o Nº da OS Fornecedor.', 'error');
             return;
         }
+        const today = new Date().toISOString().split('T')[0];
+        if (paymentDate && paymentDate > today) {
+            showNotification('Data Inválida', 'A data de pagamento não pode ser posterior ao dia de hoje.', 'error');
+            return;
+        }
 
         setIsSaving(true);
         const now = new Date().toISOString();
@@ -390,6 +395,11 @@ const VendorVerificationControl: React.FC<VendorVerificationControlProps> = ({ o
     const handleBatchVerification = async () => {
         if (!batchVendorOs.trim() && !batchInvoiceNumber.trim()) {
             showNotification('Campos Obrigatórios', 'Informe pelo menos o Nº OS Fornecedor ou NF.', 'error');
+            return;
+        }
+        const todayBatch = new Date().toISOString().split('T')[0];
+        if (batchPaymentDate && batchPaymentDate > todayBatch) {
+            showNotification('Data Inválida', 'A data de pagamento não pode ser posterior ao dia de hoje.', 'error');
             return;
         }
 
@@ -611,6 +621,7 @@ const VendorVerificationControl: React.FC<VendorVerificationControlProps> = ({ o
                                                 <input
                                                     type="date"
                                                     value={paymentDate}
+                                                    max={new Date().toISOString().split('T')[0]}
                                                     onChange={e => setPaymentDate(e.target.value)}
                                                     disabled={isLocked && !isAdmin}
                                                     className="w-full pl-10 pr-4 py-2.5 bg-white border border-gray-300 rounded-lg text-sm font-bold disabled:bg-gray-100 disabled:text-gray-500 disabled:cursor-not-allowed"
@@ -947,7 +958,7 @@ const VendorVerificationControl: React.FC<VendorVerificationControlProps> = ({ o
                                 <label className="text-[10px] font-black text-gray-500 uppercase tracking-widest mb-1 block">Data do Pagamento</label>
                                 <div className="relative">
                                     <CreditCard size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-                                    <input type="date" value={batchPaymentDate} onChange={e => setBatchPaymentDate(e.target.value)} className="w-full pl-10 pr-4 py-2.5 bg-white border border-gray-300 rounded-lg text-sm font-bold" data-testid="batch-input-payment-date" />
+                                    <input type="date" value={batchPaymentDate} max={new Date().toISOString().split('T')[0]} onChange={e => setBatchPaymentDate(e.target.value)} className="w-full pl-10 pr-4 py-2.5 bg-white border border-gray-300 rounded-lg text-sm font-bold" data-testid="batch-input-payment-date" />
                                 </div>
                             </div>
 
