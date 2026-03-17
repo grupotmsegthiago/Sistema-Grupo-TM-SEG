@@ -567,32 +567,32 @@ const ProviderForm: React.FC<ProviderFormProps> = ({ onBack, onNavigateToVehicle
                         )}
                     </div>
                     <div className="space-y-1.5">
-                        <label className={LABEL_CLASS}>Telefone / WhatsApp *</label>
+                        <label className={LABEL_CLASS}>Telefone / WhatsApp</label>
                         <div className="relative">
-                            <input type="text" className={`${INPUT_CLASS} pl-10`} required value={formData.phone} onChange={e => setFormData({...formData, phone: e.target.value})} />
+                            <input type="text" className={`${INPUT_CLASS} pl-10`} value={formData.phone} onChange={e => setFormData({...formData, phone: e.target.value})} />
                             <PhoneIcon className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
                         </div>
                     </div>
                     <div className="space-y-1.5">
-                        <label className={LABEL_CLASS}>CEP (Busca Automática) *</label>
+                        <label className={LABEL_CLASS}>CEP (Busca Automática)</label>
                         <div className="relative">
-                            <input type="text" className={`${INPUT_CLASS} pl-10 font-mono`} required value={formData.zip_code} onChange={e => { setFormData({...formData, zip_code: e.target.value}); handleCepLookup(e.target.value); }} />
+                            <input type="text" className={`${INPUT_CLASS} pl-10 font-mono`} value={formData.zip_code} onChange={e => { setFormData({...formData, zip_code: e.target.value}); handleCepLookup(e.target.value); }} />
                             <MapPin size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-red-500" />
                             {isSearchingCep && <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 animate-spin text-gray-400" size={16} />}
                         </div>
                     </div>
                     <div className="space-y-1.5 md:col-span-1">
-                        <label className={LABEL_CLASS}>UF *</label>
-                        <input type="text" className={INPUT_CLASS} required value={formData.state} onChange={e => setFormData({...formData, state: e.target.value.toUpperCase()})} maxLength={2} />
+                        <label className={LABEL_CLASS}>UF</label>
+                        <input type="text" className={INPUT_CLASS} value={formData.state} onChange={e => setFormData({...formData, state: e.target.value.toUpperCase()})} maxLength={2} />
                     </div>
                     <div className="space-y-1.5 md:col-span-3">
-                        <label className={LABEL_CLASS}>Logradouro (Rua/Avenida) *</label>
-                        <input type="text" className={INPUT_CLASS} required value={formData.street} onChange={e => setFormData({...formData, street: e.target.value.toUpperCase()})} />
+                        <label className={LABEL_CLASS}>Logradouro (Rua/Avenida)</label>
+                        <input type="text" className={INPUT_CLASS} value={formData.street} onChange={e => setFormData({...formData, street: e.target.value.toUpperCase()})} />
                     </div>
                     <div className="space-y-1.5">
-                        <label className={LABEL_CLASS}>Número *</label>
+                        <label className={LABEL_CLASS}>Número</label>
                         <div className="relative">
-                            <input type="text" className={`${INPUT_CLASS} pl-10`} required value={formData.number} onChange={e => setFormData({...formData, number: e.target.value})} />
+                            <input type="text" className={`${INPUT_CLASS} pl-10`} value={formData.number} onChange={e => setFormData({...formData, number: e.target.value})} />
                             <Hash size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
                         </div>
                     </div>
@@ -601,12 +601,12 @@ const ProviderForm: React.FC<ProviderFormProps> = ({ onBack, onNavigateToVehicle
                         <input type="text" className={INPUT_CLASS} value={formData.complement} onChange={e => setFormData({...formData, complement: e.target.value.toUpperCase()})} />
                     </div>
                     <div className="space-y-1.5">
-                        <label className={LABEL_CLASS}>Bairro *</label>
-                        <input type="text" className={INPUT_CLASS} required value={formData.neighborhood} onChange={e => setFormData({...formData, neighborhood: e.target.value.toUpperCase()})} />
+                        <label className={LABEL_CLASS}>Bairro</label>
+                        <input type="text" className={INPUT_CLASS} value={formData.neighborhood} onChange={e => setFormData({...formData, neighborhood: e.target.value.toUpperCase()})} />
                     </div>
                     <div className="space-y-1.5 md:col-span-2">
-                        <label className={LABEL_CLASS}>Cidade *</label>
-                        <input type="text" className={INPUT_CLASS} required value={formData.city} onChange={e => setFormData({...formData, city: e.target.value.toUpperCase()})} />
+                        <label className={LABEL_CLASS}>Cidade</label>
+                        <input type="text" className={INPUT_CLASS} value={formData.city} onChange={e => setFormData({...formData, city: e.target.value.toUpperCase()})} />
                     </div>
                 </div>
                 
