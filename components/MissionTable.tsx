@@ -117,6 +117,7 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
   const [showTomorrowOnly, setShowTomorrowOnly] = useState(false); 
   
   const [searchHistoryId, setSearchHistoryId] = useState('');
+  const [osFilterTerm, setOsFilterTerm] = useState('');
   const [viewPeriod, setViewPeriod] = useState<string>('TODAY'); 
   
   const [clientTables, setClientTables] = useState<ClientPriceTable[]>([]);
@@ -527,10 +528,18 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
     const filteredBySpecialCriteria = useMemo(() => {
         const isSearching = searchTerm && searchTerm.trim().length > 0;
         const hasActiveSpecialFilters = showPendingOnly || showTomorrowOnly || showMyApprovalOnly;
+        const isOsFiltering = osFilterTerm && osFilterTerm.trim().length > 0;
 
-        const sourceMissions = showTomorrowOnly ? allMissions : periodMissions;
+        const sourceMissions = isOsFiltering ? allMissions : (showTomorrowOnly ? allMissions : periodMissions);
 
         return sourceMissions.filter(mission => {
+            if (isOsFiltering) {
+                const osLower = osFilterTerm.toLowerCase().trim();
+                const missionIdLower = (mission.id || '').toLowerCase();
+                const matchesOs = missionIdLower.includes(osLower) || missionIdLower.replace('gtm-', '').includes(osLower.replace('gtm-', ''));
+                if (!matchesOs) return false;
+            }
+
             if (isSearching) {
                 const searchLower = searchTerm.toLowerCase().trim();
                 const matchesSearch = 
@@ -558,7 +567,7 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
 
             return true;
         });
-    }, [allMissions, periodMissions, searchTerm, showPendingOnly, showTomorrowOnly, showMyApprovalOnly]);
+    }, [allMissions, periodMissions, searchTerm, osFilterTerm, showPendingOnly, showTomorrowOnly, showMyApprovalOnly]);
 
     // Status Counts based on the FILTERED set (to sync counters with visible criteria)
     const statusCounts = useMemo(() => {
@@ -638,6 +647,7 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
   
     const filteredMissions = useMemo(() => {
         const isSearching = searchTerm && searchTerm.trim().length > 0;
+        const isOsFiltering = osFilterTerm && osFilterTerm.trim().length > 0;
         const hasActiveSpecialFilters = showPendingOnly || showTomorrowOnly || showMyApprovalOnly;
 
         if (showMyApprovalOnly && myApprovalMissions.length > 0) {
@@ -647,6 +657,7 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
         let baseList = filteredBySpecialCriteria;
 
         return baseList.filter(mission => {
+            if (isOsFiltering) return true;
             if (filterStatus !== 'ALL') {
                 return mission.status === filterStatus;
             } else {
@@ -662,7 +673,7 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
             }
             return true;
         });
-    }, [filteredBySpecialCriteria, filterStatus, searchTerm, showPendingOnly, showTomorrowOnly, showMyApprovalOnly, myApprovalMissions]);
+    }, [filteredBySpecialCriteria, filterStatus, searchTerm, osFilterTerm, showPendingOnly, showTomorrowOnly, showMyApprovalOnly, myApprovalMissions]);
   
     const activeMapMissions = useMemo(() => {
         return allMissions.filter(m => {
@@ -855,7 +866,7 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
           )}
 
           <div className="flex flex-wrap gap-2 items-center justify-end xl:flex-1">
-                {!isRestrictedClientView && ( <div className="flex items-center gap-2 bg-indigo-50 p-1.5 rounded-lg border border-indigo-200"><input type="text" className="bg-transparent text-xs font-bold text-indigo-900 placeholder-indigo-400 outline-none w-32 pl-2" placeholder="OS..." value={searchHistoryId} onChange={(e) => setSearchHistoryId(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleSearchHistory()} /><button onClick={handleSearchHistory} className="p-1 bg-indigo-600 text-white rounded hover:bg-indigo-700"><FileSearch size={14} /></button></div> )}
+                {!isRestrictedClientView && ( <div className="flex items-center gap-2 bg-indigo-50 p-1.5 rounded-lg border border-indigo-200"><input type="text" className="bg-transparent text-xs font-bold text-indigo-900 placeholder-indigo-400 outline-none w-32 pl-2" placeholder="Filtrar OS..." value={osFilterTerm} onChange={(e) => setOsFilterTerm(e.target.value)} data-testid="input-os-filter" />{osFilterTerm && <button onClick={() => setOsFilterTerm('')} className="p-1 bg-indigo-600 text-white rounded hover:bg-indigo-700" data-testid="button-clear-os-filter"><X size={14} /></button>}</div> )}
                 <button onClick={() => setShowFleetMap(!showFleetMap)} className={`flex items-center gap-2 px-3 py-2.5 rounded-lg text-[11px] font-bold uppercase transition-all border ${showFleetMap ? (isCevaClient ? 'bg-[#e81818] text-white border-[#e81818] shadow-md' : 'bg-indigo-600 text-white border-indigo-700 shadow-md') : (isCevaClient ? 'bg-white/10 text-white border-white/30 hover:bg-white/20' : 'bg-white text-indigo-600 border-indigo-200 hover:bg-indigo-50')}`}><Globe size={14} /> Mapa</button>
                 {!isRestrictedClientView && ( <button onClick={() => setShowAnalyticsDash(!showAnalyticsDash)} className={`flex items-center gap-2 px-3 py-2.5 rounded-lg text-[11px] font-bold uppercase transition-all border ${showAnalyticsDash ? 'bg-blue-600 text-white border-blue-700 shadow-md' : 'bg-white text-gray-600 border-gray-300 hover:bg-gray-50'}`}><BarChart4 size={14} /> Analytics</button> )}
                 {isRestrictedClientView && ( <button onClick={() => { setShowClientDash(!showClientDash); if (!showClientDash) { setShowClientReports(false); setShowClientCommittee(false); } }} className={`flex items-center gap-2 px-3 py-2.5 rounded-lg text-[11px] font-bold uppercase transition-all border ${showClientDash ? (isCevaClient ? 'bg-[#e81818] text-white border-[#e81818] shadow-md' : 'bg-red-700 text-white border-red-800 shadow-md') : (isCevaClient ? 'bg-white/10 text-white border-white/30 hover:bg-white/20' : 'bg-white text-gray-600 border-gray-300 hover:bg-gray-50')}`} data-testid="button-client-dashboard"><BarChart4 size={14} /> Painel</button> )}
