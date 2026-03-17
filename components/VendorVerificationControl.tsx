@@ -773,36 +773,36 @@ const VendorVerificationControl: React.FC<VendorVerificationControlProps> = ({ o
                 </div>
             )}
 
-            <div className="grid grid-cols-1 lg:grid-cols-4 gap-4">
-                <div className="lg:col-span-2 bg-white p-6 rounded-2xl shadow-sm border border-gray-200 flex items-center gap-4">
+            <div className="flex flex-wrap items-stretch gap-4">
+                <div className="flex-1 min-w-[280px] bg-white p-5 rounded-2xl shadow-sm border border-gray-200 flex items-center gap-4">
                     <div className="p-3 bg-blue-700 text-white rounded-2xl shadow-lg"><ClipboardCheck size={28} /></div>
                     <div>
                         <h2 className="text-xl font-black text-gray-900 uppercase tracking-tight leading-none" data-testid="page-title">Controle de OS Fornecedor</h2>
-                        <p className="text-xs text-gray-500 font-bold uppercase mt-2 tracking-widest">Verificação de Faturamento</p>
+                        <p className="text-xs text-gray-500 font-bold uppercase mt-1 tracking-widest">Verificação de Faturamento</p>
                     </div>
                     <button onClick={loadData} className="ml-auto p-3 bg-white border border-gray-200 rounded-2xl hover:bg-gray-50 transition-all text-gray-500" data-testid="button-refresh">
                         <RefreshCw size={20} className={isLoading ? 'animate-spin' : ''} />
                     </button>
                 </div>
 
-                <div className="bg-green-50 border border-green-200 rounded-2xl p-4 flex items-center gap-3">
-                    <CheckCircle2 size={28} className="text-green-600" />
+                <div className="bg-green-50 border border-green-200 rounded-2xl px-5 py-3 flex items-center gap-3 min-w-[140px]">
+                    <CheckCircle2 size={24} className="text-green-600" />
                     <div>
                         <p className="text-2xl font-black text-green-700" data-testid="text-verified-count">{stats.verified}</p>
                         <p className="text-[9px] font-black text-green-600 uppercase tracking-widest">Verificadas</p>
                     </div>
                 </div>
 
-                <div className="bg-blue-50 border border-blue-200 rounded-2xl p-4 flex items-center gap-3">
-                    <CreditCard size={28} className="text-blue-600" />
+                <div className="bg-blue-50 border border-blue-200 rounded-2xl px-5 py-3 flex items-center gap-3 min-w-[120px]">
+                    <CreditCard size={24} className="text-blue-600" />
                     <div>
                         <p className="text-2xl font-black text-blue-700" data-testid="text-paid-count">{stats.paid}</p>
                         <p className="text-[9px] font-black text-blue-600 uppercase tracking-widest">Pagas</p>
                     </div>
                 </div>
 
-                <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 flex items-center gap-3">
-                    <AlertTriangle size={28} className="text-amber-600" />
+                <div className="bg-amber-50 border border-amber-200 rounded-2xl px-5 py-3 flex items-center gap-3 min-w-[130px]">
+                    <AlertTriangle size={24} className="text-amber-600" />
                     <div>
                         <p className="text-2xl font-black text-amber-700" data-testid="text-pending-count">{stats.pending}</p>
                         <p className="text-[9px] font-black text-amber-600 uppercase tracking-widest">Pendentes</p>
