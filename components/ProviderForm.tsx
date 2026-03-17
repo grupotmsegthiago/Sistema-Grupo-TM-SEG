@@ -71,7 +71,7 @@ const ProviderForm: React.FC<ProviderFormProps> = ({ onBack, onNavigateToVehicle
   const isFinanceAdmin = currentUser && (() => {
     const r = (currentUser.role || '').toLowerCase();
     const perms = currentUser.permissions || [];
-    return r === 'diretoria' || r === 'administrador' || r === 'comercial' ||
+    return r === 'diretoria' || r === 'administrador' || r === 'comercial' || r === 'controller' ||
            perms.includes('*');
   })();
 

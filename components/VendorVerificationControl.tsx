@@ -45,6 +45,8 @@ const VendorVerificationControl: React.FC<VendorVerificationControlProps> = ({ o
     const [selectedProvider, setSelectedProvider] = useState('ALL');
     const [filterStatus, setFilterStatus] = useState<'ALL' | 'PENDING' | 'VERIFIED'>('ALL');
     const [isLoading, setIsLoading] = useState(true);
+    const [dateFrom, setDateFrom] = useState('');
+    const [dateTo, setDateTo] = useState('');
 
     const [selectedMission, setSelectedMission] = useState<any | null>(null);
     const [modalOpen, setModalOpen] = useState(false);
@@ -450,8 +452,11 @@ const VendorVerificationControl: React.FC<VendorVerificationControlProps> = ({ o
             const matchesProvider = selectedProvider === 'ALL' || m.provider === selectedProvider;
             const isVerified = Boolean(m.verified_by && m.verified_at);
             const matchesStatus = filterStatus === 'ALL' || (filterStatus === 'VERIFIED' && isVerified) || (filterStatus === 'PENDING' && !isVerified);
+            const mDate = (m.created_at || '').split('T')[0];
+            const matchesDateFrom = !dateFrom || mDate >= dateFrom;
+            const matchesDateTo = !dateTo || mDate <= dateTo;
             const searchLower = searchTerm.toLowerCase();
-            return matchesProvider && matchesStatus && (
+            return matchesProvider && matchesStatus && matchesDateFrom && matchesDateTo && (
                 m.id.toLowerCase().includes(searchLower) ||
                 (m.client || '').toLowerCase().includes(searchLower) ||
                 (m.provider || '').toLowerCase().includes(searchLower) ||
@@ -459,7 +464,7 @@ const VendorVerificationControl: React.FC<VendorVerificationControlProps> = ({ o
                 (m.invoice_number || '').toLowerCase().includes(searchLower)
             );
         });
-    }, [missions, selectedProvider, filterStatus, searchTerm]);
+    }, [missions, selectedProvider, filterStatus, searchTerm, dateFrom, dateTo]);
 
     const stats = useMemo(() => {
         const total = missions.length;
@@ -797,6 +802,23 @@ const VendorVerificationControl: React.FC<VendorVerificationControlProps> = ({ o
                             </button>
                         ))}
                     </div>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-3">
+                    <div className="flex items-center gap-2">
+                        <Calendar size={16} className="text-gray-400 shrink-0" />
+                        <label className="text-[10px] font-black text-gray-500 uppercase shrink-0">De:</label>
+                        <input type="date" className="flex-1 px-3 py-2 bg-gray-50 border border-gray-300 rounded-lg text-sm" value={dateFrom} onChange={e => setDateFrom(e.target.value)} data-testid="input-date-from" />
+                    </div>
+                    <div className="flex items-center gap-2">
+                        <Calendar size={16} className="text-gray-400 shrink-0" />
+                        <label className="text-[10px] font-black text-gray-500 uppercase shrink-0">Até:</label>
+                        <input type="date" className="flex-1 px-3 py-2 bg-gray-50 border border-gray-300 rounded-lg text-sm" value={dateTo} onChange={e => setDateTo(e.target.value)} data-testid="input-date-to" />
+                    </div>
+                    {(dateFrom || dateTo) && (
+                        <button onClick={() => { setDateFrom(''); setDateTo(''); }} className="py-2 px-4 bg-gray-100 text-gray-600 rounded-lg text-xs font-bold hover:bg-gray-200 transition-colors flex items-center gap-2" data-testid="btn-clear-dates">
+                            <X size={14} /> Limpar Datas
+                        </button>
+                    )}
                 </div>
             </div>
 

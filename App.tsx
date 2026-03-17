@@ -280,7 +280,7 @@ const App: React.FC = () => {
         <div className="absolute inset-0 z-0 pointer-events-none"><img src="/background.png" alt="System Background" className="w-full h-full object-cover fixed opacity-[0.03]"/><div className="absolute inset-0 bg-[#f8fafc] -z-10"></div></div>
         <Sidebar isOpen={isSidebarOpen} activeScreen={currentScreen} onNavigate={navigateTo} onLogout={handleLogout} />
         <PushNotificationManager />
-        <MissionAlertMonitor />
+        {(() => { try { const u = JSON.parse(localStorage.getItem('userData') || '{}'); return (u.role || '').toLowerCase() !== 'controller'; } catch { return true; } })() && <MissionAlertMonitor />}
         <div className="flex-1 flex flex-col min-h-0 relative z-10 overflow-x-hidden lg:pl-20">
             {isSidebarOpen && <div className="fixed inset-0 bg-black/50 z-40 lg:hidden" onClick={() => setIsSidebarOpen(false)}></div>}
             <Header onMenuClick={toggleSidebar} onProfileSettingsClick={() => setIsProfileSettingsOpen(true)} isCevaClient={isCevaClient} />
