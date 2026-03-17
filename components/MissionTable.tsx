@@ -530,7 +530,7 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
         const hasActiveSpecialFilters = showPendingOnly || showTomorrowOnly || showMyApprovalOnly;
         const isOsFiltering = osFilterTerm && osFilterTerm.trim().length > 0;
 
-        const sourceMissions = isOsFiltering ? allMissions : (showTomorrowOnly ? allMissions : periodMissions);
+        const sourceMissions = (isOsFiltering || isSearching) ? allMissions : (showTomorrowOnly ? allMissions : periodMissions);
 
         return sourceMissions.filter(mission => {
             if (isOsFiltering) {
