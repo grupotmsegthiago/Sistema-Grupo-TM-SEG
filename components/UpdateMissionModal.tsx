@@ -1363,7 +1363,25 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
                                 </div>
                             )}
                             <div className="flex gap-2 items-center">
-                                <div className="flex-1 relative">
+                                <div
+                                    className="flex-1 relative"
+                                    tabIndex={0}
+                                    onPaste={(e) => {
+                                        const items = e.clipboardData?.items;
+                                        if (!items) return;
+                                        for (let i = 0; i < items.length; i++) {
+                                            if (items[i].type.startsWith('image/')) {
+                                                const file = items[i].getAsFile();
+                                                if (file) {
+                                                    setMirroringFile(file);
+                                                    setMirroringPreview(URL.createObjectURL(file));
+                                                }
+                                                e.preventDefault();
+                                                break;
+                                            }
+                                        }
+                                    }}
+                                >
                                     <input
                                         type="file"
                                         accept="image/*"
@@ -1380,13 +1398,13 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
                                         <div className="relative">
                                             <img src={mirroringPreview} alt="Preview" className="w-full h-24 object-cover rounded-lg border-2 border-indigo-300" />
                                             <span className="absolute top-1 left-1 bg-indigo-600 text-white text-[8px] px-2 py-0.5 rounded font-black">NOVO</span>
-                                            <p className="text-[9px] text-indigo-600 font-bold mt-1 truncate">{mirroringFile?.name}</p>
+                                            <p className="text-[9px] text-indigo-600 font-bold mt-1 truncate">{mirroringFile?.name || 'Imagem colada'}</p>
                                         </div>
                                     ) : (
-                                        <div className="border-2 border-dashed border-indigo-200 rounded-lg p-3 text-center hover:border-indigo-400 transition-colors bg-indigo-50/30">
+                                        <div className="border-2 border-dashed border-indigo-200 rounded-lg p-3 text-center hover:border-indigo-400 transition-colors bg-indigo-50/30 focus-within:border-indigo-400 focus-within:bg-indigo-50/50">
                                             <Package size={20} className="mx-auto text-indigo-300 mb-1"/>
                                             <p className="text-[9px] font-black text-indigo-400 uppercase">Foto do Espelhamento</p>
-                                            <p className="text-[8px] text-indigo-300">Clique para selecionar</p>
+                                            <p className="text-[8px] text-indigo-300">Clique para selecionar ou cole (Ctrl+V)</p>
                                         </div>
                                     )}
                                 </div>
