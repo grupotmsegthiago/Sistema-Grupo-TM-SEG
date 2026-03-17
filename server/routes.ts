@@ -10,6 +10,7 @@ import { calculateMissionFinancials } from "../lib/financialUtils";
 import fs from "fs";
 import path from "path";
 import { sendMissionEmailToClient, sendMissionEmailToProvider, sendMissionResendToClient, sendMirroringEvidenceEmail, sendWelcomeEmail, sendTestEmail, sendVerificationCodeEmail } from "./emailService";
+import { findOrCreateCustomer, createPayment, getPayment, getPaymentPixQrCode, getPaymentBankSlip, listPayments, deletePayment, mapAsaasStatus, isAsaasConfigured } from "./asaasService";
 
 const resend = new Resend(process.env.RESEND_API_KEY);
 
@@ -634,7 +635,7 @@ export async function registerRoutes(
     try {
       const { data, error } = await supabaseAdmin.from('financial_invoices').select('id', { count: 'exact', head: true });
 
-      const newCols = ['nf_image_url', 'boleto_image_url', 'provider', 'issuer_company', 'boleto_due_date'];
+      const newCols = ['nf_image_url', 'boleto_image_url', 'provider', 'issuer_company', 'boleto_due_date', 'asaas_payment_id', 'asaas_status', 'asaas_invoice_url', 'asaas_bankslip_url', 'asaas_pix_payload', 'asaas_barcode'];
 
       if (error && error.code === '42P01') {
         const createSql = `
@@ -2203,6 +2204,193 @@ export async function registerRoutes(
     } catch (e: any) {
       console.error('Erro ao consultar RapidAPI Pedágio:', e);
       return res.json({ success: false, apiError: `Erro interno: ${e.message}` });
+    }
+  });
+
+  // ═══════════════════════════════════════════════════════
+  // ASAAS INTEGRATION ROUTES
+  // ═══════════════════════════════════════════════════════
+
+  app.get("/api/asaas/status", (_req: Request, res: Response) => {
+    res.json({ configured: isAsaasConfigured() });
+  });
+
+  app.post("/api/asaas/create-charge", async (req: Request, res: Response) => {
+    try {
+      const { clientName, clientCpfCnpj, clientEmail, value, dueDate, description, invoiceNumber, issuerCompany } = req.body;
+      if (!clientCpfCnpj || !value || !dueDate) {
+        return res.status(400).json({ error: 'CNPJ do cliente, valor e vencimento são obrigatórios' });
+      }
+
+      const customer = await findOrCreateCustomer({
+        name: clientName || 'Cliente',
+        cpfCnpj: clientCpfCnpj,
+        email: clientEmail || undefined,
+      });
+
+      const externalRef = invoiceNumber ? `NF-${invoiceNumber}` : `TMSEG-${Date.now()}`;
+      const descText = description || `Serviço de Escolta — ${issuerCompany || 'Grupo TM SEG'} — NF ${invoiceNumber || 'S/N'}`;
+
+      const payment = await createPayment({
+        customerId: customer.id,
+        value: parseFloat(value),
+        dueDate,
+        description: descText,
+        externalReference: externalRef,
+        billingType: 'UNDEFINED',
+      });
+
+      let pixData = null;
+      let bankSlipData = null;
+      try { pixData = await getPaymentPixQrCode(payment.id); } catch (e) { console.log('[Asaas] PIX QR não disponível para esta cobrança'); }
+      try { bankSlipData = await getPaymentBankSlip(payment.id); } catch (e) { console.log('[Asaas] Boleto não disponível para esta cobrança'); }
+
+      console.log(`[Asaas] Cobrança criada: ${payment.id} | ${clientName} | R$ ${value} | Venc: ${dueDate}`);
+
+      res.json({
+        success: true,
+        payment: {
+          id: payment.id,
+          status: payment.status,
+          statusBr: mapAsaasStatus(payment.status),
+          value: payment.value,
+          dueDate: payment.dueDate,
+          invoiceUrl: payment.invoiceUrl || null,
+          bankSlipUrl: payment.bankSlipUrl || null,
+          externalReference: externalRef,
+        },
+        pix: pixData ? {
+          qrCodeBase64: pixData.encodedImage,
+          copyPaste: pixData.payload,
+          expirationDate: pixData.expirationDate,
+        } : null,
+        bankSlip: bankSlipData ? {
+          barCode: bankSlipData.barCode,
+          digitableLine: bankSlipData.identificationField,
+          nossoNumero: bankSlipData.nossoNumero,
+        } : null,
+        customer: { id: customer.id, name: customer.name },
+      });
+    } catch (err: any) {
+      console.error('[Asaas] Erro ao criar cobrança:', err.message);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get("/api/asaas/payment/:id", async (req: Request, res: Response) => {
+    try {
+      const payment = await getPayment(req.params.id);
+      let pixData = null;
+      let bankSlipData = null;
+      if (payment.status === 'PENDING' || payment.status === 'OVERDUE') {
+        try { pixData = await getPaymentPixQrCode(payment.id); } catch (_) {}
+        try { bankSlipData = await getPaymentBankSlip(payment.id); } catch (_) {}
+      }
+      res.json({
+        payment: { ...payment, statusBr: mapAsaasStatus(payment.status) },
+        pix: pixData ? { qrCodeBase64: pixData.encodedImage, copyPaste: pixData.payload } : null,
+        bankSlip: bankSlipData ? { barCode: bankSlipData.barCode, digitableLine: bankSlipData.identificationField } : null,
+      });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get("/api/asaas/payments", async (req: Request, res: Response) => {
+    try {
+      const { status, externalReference, offset, limit } = req.query;
+      const result = await listPayments({
+        status: status as string || undefined,
+        externalReference: externalReference as string || undefined,
+        offset: parseInt(offset as string) || 0,
+        limit: parseInt(limit as string) || 50,
+      });
+      const payments = result.data.map(p => ({ ...p, statusBr: mapAsaasStatus(p.status) }));
+      res.json({ payments, totalCount: result.totalCount });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post("/api/asaas/sync-payment-status", async (req: Request, res: Response) => {
+    try {
+      const { paymentId, invoiceId } = req.body;
+      if (!paymentId) return res.status(400).json({ error: 'paymentId obrigatório' });
+
+      const payment = await getPayment(paymentId);
+      const statusBr = mapAsaasStatus(payment.status);
+      const isPaid = ['RECEIVED', 'CONFIRMED', 'RECEIVED_IN_CASH'].includes(payment.status);
+
+      if (invoiceId) {
+        const { data: inv } = await supabase.from('financial_invoices').select('id, asaas_payment_id').eq('id', invoiceId).single();
+        if (!inv || (inv.asaas_payment_id && inv.asaas_payment_id !== paymentId)) {
+          return res.status(400).json({ error: 'Invoice não vinculada a este paymentId' });
+        }
+        const newStatus = isPaid ? 'PAGA' : payment.status === 'OVERDUE' ? 'VENCIDA' : 'EMITIDA';
+        await supabase.from('financial_invoices').update({
+          status: newStatus,
+          asaas_status: payment.status,
+        }).eq('id', invoiceId);
+
+        if (isPaid) {
+          const { data: inv } = await supabase.from('financial_invoices').select('number, client').eq('id', invoiceId).single();
+          if (inv?.number) {
+            await supabase.from('financial_transactions')
+              .update({ status: 'PAID', paid_date: new Date().toISOString().split('T')[0] })
+              .ilike('description', `%${inv.number}%`)
+              .eq('status', 'PENDING');
+            console.log(`[Asaas] Baixa automática: NF ${inv.number} — ${inv.client}`);
+          }
+        }
+      }
+
+      res.json({ status: payment.status, statusBr, isPaid, value: payment.value });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.delete("/api/asaas/payment/:id", async (req: Request, res: Response) => {
+    try {
+      await deletePayment(req.params.id);
+      res.json({ success: true });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Webhook do Asaas para baixa automática
+  app.post("/api/asaas/webhook", async (req: Request, res: Response) => {
+    try {
+      const { event, payment } = req.body;
+      console.log(`[Asaas Webhook] Evento: ${event} | Payment: ${payment?.id}`);
+
+      if (['PAYMENT_RECEIVED', 'PAYMENT_CONFIRMED'].includes(event) && payment?.externalReference) {
+        const nfNumber = payment.externalReference.replace('NF-', '').replace('TMSEG-', '');
+        const { data: invoices } = await supabase.from('financial_invoices')
+          .select('id, number, client')
+          .or(`number.eq.${nfNumber},asaas_payment_id.eq.${payment.id}`);
+
+        if (invoices && invoices.length > 0) {
+          for (const inv of invoices) {
+            await supabase.from('financial_invoices').update({
+              status: 'PAGA',
+              asaas_status: 'RECEIVED',
+            }).eq('id', inv.id);
+
+            await supabase.from('financial_transactions')
+              .update({ status: 'PAID', paid_date: new Date().toISOString().split('T')[0] })
+              .ilike('description', `%${inv.number}%`)
+              .eq('status', 'PENDING');
+
+            console.log(`[Asaas Webhook] Baixa automática: NF ${inv.number} — ${inv.client}`);
+          }
+        }
+      }
+      res.json({ received: true });
+    } catch (err: any) {
+      console.error('[Asaas Webhook] Erro:', err.message);
+      res.json({ received: true, error: err.message });
     }
   });
 

@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { supabase } from '../lib/supabase';
 import { Mission, Client, ClientPriceTable, ProviderCostTable } from '../types';
-import { FileText, Search, Printer, Loader2, FileSpreadsheet, BarChart3, Users, Building2, ChevronDown, ChevronRight, List, ExternalLink, Receipt, Camera, Sparkles, X, AlertCircle, CheckCircle2, ScanLine, Image as ImageIcon } from 'lucide-react';
+import { FileText, Search, Printer, Loader2, FileSpreadsheet, BarChart3, Users, Building2, ChevronDown, ChevronRight, List, ExternalLink, Receipt, Camera, Sparkles, X, AlertCircle, CheckCircle2, ScanLine, Image as ImageIcon, DollarSign } from 'lucide-react';
 import { calculateMissionFinancials, extractCityFromAddress } from '../lib/financialUtils';
 import { generateContent } from '../lib/gemini';
 import {
@@ -36,6 +36,18 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
     const [aiAnalyzing, setAiAnalyzing] = useState(false);
     const [aiStatus, setAiStatus] = useState('');
     const [invoiceSaving, setInvoiceSaving] = useState(false);
+
+    const [asaasLoading, setAsaasLoading] = useState(false);
+    const [asaasResult, setAsaasResult] = useState<any>(null);
+    const [asaasConfigured, setAsaasConfigured] = useState(false);
+
+    useEffect(() => {
+        fetch('/api/asaas/status').then(r => r.json()).then(d => setAsaasConfigured(d.configured)).catch(() => {});
+    }, []);
+
+    useEffect(() => {
+        if (asaasResult) setAsaasResult(null);
+    }, [invoiceForm.amount, invoiceForm.boleto_due_date, invoiceForm.client, invoiceForm.number]);
 
     useEffect(() => {
         fetchClients();
@@ -704,6 +716,46 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
         setNfPreview('');
         setBoletoPreview('');
         setAiStatus('');
+        setAsaasResult(null);
+    };
+
+    const handleGenerateAsaasCharge = async () => {
+        if (!invoiceForm.amount || !invoiceForm.boleto_due_date) {
+            alert('Preencha o Valor e o Vencimento do Boleto antes de gerar a cobrança.');
+            return;
+        }
+        const clientObj = clients.find(c => c.id.toString() === invoiceForm.client);
+        if (!clientObj?.cnpj) {
+            alert('O cliente selecionado não possui CNPJ cadastrado. Cadastre o CNPJ no módulo de Clientes.');
+            return;
+        }
+
+        setAsaasLoading(true);
+        try {
+            const res = await fetch('/api/asaas/create-charge', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    clientName: clientObj.trading_name || clientObj.name,
+                    clientCpfCnpj: clientObj.cnpj,
+                    clientEmail: (clientObj as any).medicao_email || (clientObj as any).operational_email || clientObj.email || '',
+                    value: parseFloat(invoiceForm.amount),
+                    dueDate: invoiceForm.boleto_due_date,
+                    description: `Serviço de Escolta — ${invoiceForm.issuer_company || 'Grupo TM SEG'} — NF ${invoiceForm.number || 'S/N'}`,
+                    invoiceNumber: invoiceForm.number,
+                    issuerCompany: invoiceForm.issuer_company,
+                }),
+            });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.error || 'Erro ao criar cobrança');
+            setAsaasResult(data);
+            setAiStatus('Cobrança Asaas gerada com sucesso!');
+        } catch (err: any) {
+            alert('Erro ao gerar cobrança no Asaas: ' + err.message);
+            setAiStatus('Erro: ' + err.message);
+        } finally {
+            setAsaasLoading(false);
+        }
     };
 
     const openInvoiceModal = () => {
@@ -748,10 +800,18 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
             if (invoiceForm.provider) invoicePayload.provider = invoiceForm.provider;
             if (invoiceForm.issuer_company) invoicePayload.issuer_company = invoiceForm.issuer_company;
             if (invoiceForm.boleto_due_date) invoicePayload.boleto_due_date = invoiceForm.boleto_due_date;
+            if (asaasResult?.payment) {
+                invoicePayload.asaas_payment_id = asaasResult.payment.id;
+                invoicePayload.asaas_status = asaasResult.payment.status;
+                invoicePayload.asaas_invoice_url = asaasResult.payment.invoiceUrl || '';
+                invoicePayload.asaas_bankslip_url = asaasResult.payment.bankSlipUrl || '';
+                if (asaasResult.pix?.copyPaste) invoicePayload.asaas_pix_payload = asaasResult.pix.copyPaste;
+                if (asaasResult.bankSlip?.digitableLine) invoicePayload.asaas_barcode = asaasResult.bankSlip.digitableLine;
+            }
 
             let { error } = await supabase.from('financial_invoices').insert(invoicePayload).select();
             if (error && error.code === '42703') {
-                const { nf_image_url, boleto_image_url, provider, issuer_company, boleto_due_date, ...basicPayload } = invoicePayload;
+                const { nf_image_url, boleto_image_url, provider, issuer_company, boleto_due_date, asaas_payment_id, asaas_status, asaas_invoice_url, asaas_bankslip_url, asaas_pix_payload, asaas_barcode, ...basicPayload } = invoicePayload;
                 const retry = await supabase.from('financial_invoices').insert(basicPayload).select();
                 error = retry.error;
             }
@@ -906,6 +966,75 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
                             <label className="text-[10px] font-black text-gray-400 uppercase mb-1 block">Observações</label>
                             <textarea className="w-full p-2.5 border rounded-lg text-sm" rows={2} placeholder="Detalhes da fatura..." value={invoiceForm.notes} onChange={e => setInvoiceForm({...invoiceForm, notes: e.target.value})} data-testid="input-billing-invoice-notes" />
                         </div>
+
+                        {asaasConfigured && (
+                            <div className="border-t border-gray-100 pt-4">
+                                <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest mb-3 flex items-center gap-1.5">
+                                    <DollarSign size={10} className="text-green-500"/> Cobrança Asaas (Boleto + PIX)
+                                </p>
+                                {!asaasResult ? (
+                                    <button
+                                        onClick={handleGenerateAsaasCharge}
+                                        disabled={asaasLoading || !invoiceForm.amount || !invoiceForm.boleto_due_date}
+                                        className="w-full bg-gradient-to-r from-green-600 to-emerald-600 text-white font-black uppercase text-xs tracking-widest py-3 rounded-xl flex items-center justify-center gap-2 hover:from-green-700 hover:to-emerald-700 transition-all shadow-lg disabled:opacity-50"
+                                        data-testid="btn-asaas-generate-charge"
+                                    >
+                                        {asaasLoading ? <Loader2 size={16} className="animate-spin"/> : <Receipt size={16}/>}
+                                        {asaasLoading ? 'Gerando cobrança...' : 'Gerar Boleto + PIX (Asaas)'}
+                                    </button>
+                                ) : (
+                                    <div className="space-y-3">
+                                        <div className="bg-green-50 border border-green-200 rounded-xl p-3 flex items-center gap-2">
+                                            <CheckCircle2 size={16} className="text-green-600 shrink-0"/>
+                                            <div className="flex-1 min-w-0">
+                                                <p className="text-[10px] font-black text-green-700 uppercase">Cobrança Gerada</p>
+                                                <p className="text-[9px] text-green-600 font-mono truncate">ID: {asaasResult.payment.id}</p>
+                                            </div>
+                                            <span className="text-[9px] font-black text-green-600 bg-green-100 px-2 py-0.5 rounded-full border border-green-300">{asaasResult.payment.statusBr}</span>
+                                        </div>
+
+                                        <div className="grid grid-cols-2 gap-3">
+                                            {asaasResult.bankSlip && (
+                                                <div className="bg-orange-50 border border-orange-200 rounded-xl p-3">
+                                                    <p className="text-[9px] font-black text-orange-600 uppercase mb-1.5 flex items-center gap-1"><Receipt size={10}/> Código de Barras</p>
+                                                    <p className="text-[8px] font-mono text-orange-800 break-all select-all cursor-text leading-relaxed" data-testid="text-asaas-barcode">{asaasResult.bankSlip.digitableLine}</p>
+                                                    <button onClick={() => { navigator.clipboard.writeText(asaasResult.bankSlip.digitableLine); alert('Código de barras copiado!'); }}
+                                                        className="mt-2 text-[8px] font-black text-orange-600 hover:text-orange-800 uppercase">Copiar</button>
+                                                </div>
+                                            )}
+
+                                            {asaasResult.pix && (
+                                                <div className="bg-indigo-50 border border-indigo-200 rounded-xl p-3">
+                                                    <p className="text-[9px] font-black text-indigo-600 uppercase mb-1.5 flex items-center gap-1"><ScanLine size={10}/> PIX QR Code</p>
+                                                    {asaasResult.pix.qrCodeBase64 && (
+                                                        <img src={`data:image/png;base64,${asaasResult.pix.qrCodeBase64}`} alt="QR Code PIX" className="w-24 h-24 mx-auto border-2 border-indigo-200 rounded-lg mb-1.5" data-testid="img-asaas-pix-qr"/>
+                                                    )}
+                                                    <button onClick={() => { navigator.clipboard.writeText(asaasResult.pix.copyPaste); alert('PIX Copia e Cola copiado!'); }}
+                                                        className="text-[8px] font-black text-indigo-600 hover:text-indigo-800 uppercase w-full text-center">Copiar PIX</button>
+                                                </div>
+                                            )}
+                                        </div>
+
+                                        <div className="flex gap-2">
+                                            {asaasResult.payment.bankSlipUrl && (
+                                                <a href={asaasResult.payment.bankSlipUrl} target="_blank" rel="noopener noreferrer"
+                                                    className="flex-1 text-center bg-orange-100 text-orange-700 font-black text-[9px] uppercase py-2 rounded-lg hover:bg-orange-200 transition-colors border border-orange-200"
+                                                    data-testid="link-asaas-boleto-pdf">
+                                                    Abrir Boleto PDF
+                                                </a>
+                                            )}
+                                            {asaasResult.payment.invoiceUrl && (
+                                                <a href={asaasResult.payment.invoiceUrl} target="_blank" rel="noopener noreferrer"
+                                                    className="flex-1 text-center bg-blue-100 text-blue-700 font-black text-[9px] uppercase py-2 rounded-lg hover:bg-blue-200 transition-colors border border-blue-200"
+                                                    data-testid="link-asaas-invoice">
+                                                    Fatura Online
+                                                </a>
+                                            )}
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+                        )}
 
                         <button onClick={handleSaveInvoice} disabled={invoiceSaving}
                             className="w-full bg-gray-900 text-white font-black uppercase text-xs tracking-widest py-4 rounded-xl flex items-center justify-center gap-2 hover:bg-black transition-colors shadow-lg disabled:opacity-50"

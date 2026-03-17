@@ -50,6 +50,7 @@ The system encompasses modules for **Missions**, **Clients**, **Providers**, **F
 -   **Z-API (WhatsApp):** Integrates WhatsApp messaging capabilities.
 -   **Resend API:** Used for sending email verification codes during user creation.
 -   **Nodemailer (Office 365 SMTP):** Automated email system via `adm@grupotmseg.com.br`. Sends mission notifications to clients (operational_email) and providers (os_email), welcome emails for new users, with BCC to `thiago@grupotmseg.com.br` and `operacional@grupotmseg.com.br`. Strict commercial confidentiality: client emails never show provider/cost data; provider emails never show client/revenue data. Templates use black/red/white branding with CEO signature.
+-   **Asaas Payment Gateway:** Integrated for automated charge generation (Boleto + PIX). Service at `server/asaasService.ts` with routes at `/api/asaas/*`. Features: auto-create customer by CNPJ, generate charges with PIX QR code + boleto barcode, sync payment status, webhook for automatic reconciliation. Invoice modal in `ClientBillingReport.tsx` has "Gerar Boleto + PIX (Asaas)" button. Asaas data (payment_id, status, invoice_url, pix_payload, barcode) saved to `financial_invoices` table. Webhook at `/api/asaas/webhook` handles automatic payment confirmation and marks invoices as PAGA.
 
 ### PWA & Push Notifications
 -   **PWA:** The app is configured as a Progressive Web App with `manifest.json` and `sw.js` in `client/public/`. Users can install it on mobile via "Add to Home Screen".
