@@ -26,6 +26,10 @@ const transporter = nodemailer.createTransport({
 
 console.log(`[Email] SMTP configurado: ${EMAIL_USER} | from: adm@grupotmseg.com.br | senha: ${EMAIL_PASS ? '***configurada***' : '⚠ VAZIA'}`);
 
+function toTitleCase(str: string): string {
+  return str.replace(/\w\S*/g, (txt) => txt.charAt(0).toUpperCase() + txt.substring(1).toLowerCase());
+}
+
 function baseTemplate(content: string, senderName?: string): string {
   return `<!DOCTYPE html>
 <html lang="pt-BR">
@@ -66,7 +70,7 @@ function baseTemplate(content: string, senderName?: string): string {
     ${content}
   </div>
   <div class="footer">
-    <p class="ceo">${senderName || 'Equipe Grupo TM SEG'}</p>
+    <p class="ceo">${senderName ? toTitleCase(senderName) : 'Equipe Grupo TM SEG'}</p>
     <p class="company">Grupo TM SEG</p>
     <p>Intermediação de Escolta Armada</p>
     <p style="margin-top:8px; font-size:11px; color:#666;">Este é um e-mail automático. Em caso de dúvidas, entre em contato pelo e-mail adm@grupotmseg.com.br</p>
