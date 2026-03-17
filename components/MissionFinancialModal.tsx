@@ -119,7 +119,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
     try {
       const u = JSON.parse(localStorage.getItem('userData') || '{}');
       const roleLower = (u.role || '').toLowerCase();
-      return ['diretoria', 'administrador', 'avançado', 'avancado'].includes(roleLower) || u.permissions?.includes('*');
+      return ['diretoria', 'administrador', 'avançado', 'avancado', 'controller'].includes(roleLower) || u.permissions?.includes('*');
     } catch { return false; }
   }, []);
   
@@ -737,7 +737,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
           blockedMessage = 'Aguardando aprovação: Daniel (Auditor)';
       }
 
-      const lockedByDiretoria = hasDiretoria && currentUserStage !== 'diretoria';
+      const lockedByDiretoria = hasDiretoria && currentUserStage !== 'diretoria' && (() => { try { const u = JSON.parse(localStorage.getItem('userData') || '{}'); return (u.role || '').toLowerCase() !== 'controller'; } catch { return true; } })();
 
       return { hasAuditor, hasFinanceiro, hasDiretoria, isFullyApproved, missing, waitingDays, hasPartial, blockedForCurrentUser, blockedMessage, currentUserStage, lockedByDiretoria };
   }, [approvalLog, mission?.endTime]);
