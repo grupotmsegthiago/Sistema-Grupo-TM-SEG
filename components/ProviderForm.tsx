@@ -72,7 +72,7 @@ const ProviderForm: React.FC<ProviderFormProps> = ({ onBack, onNavigateToVehicle
     const r = (currentUser.role || '').toLowerCase();
     const perms = currentUser.permissions || [];
     return r === 'diretoria' || r === 'administrador' || r === 'comercial' ||
-           perms.includes('*') || perms.includes('providers');
+           perms.includes('*');
   })();
 
   const [costTables, setCostTables] = useState<ProviderCostTable[]>([]);
