@@ -520,9 +520,9 @@ const ProviderForm: React.FC<ProviderFormProps> = ({ onBack, onNavigateToVehicle
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-4 gap-x-6 gap-y-4">
                     <div className="space-y-1.5">
-                        <label className={LABEL_CLASS}>E-mail Comercial *</label>
+                        <label className={LABEL_CLASS}>E-mail Comercial {!(formData.name.toUpperCase().includes('ATIVA') || formData.name.toUpperCase().includes('TM SEG') || formData.name.toUpperCase().includes('TMSEG')) && '*'}</label>
                         <div className="relative">
-                            <input type="email" className={`${INPUT_CLASS} pl-10`} required value={formData.email} onChange={e => setFormData({...formData, email: e.target.value.toLowerCase()})} />
+                            <input type="email" className={`${INPUT_CLASS} pl-10`} required={!(formData.name.toUpperCase().includes('ATIVA') || formData.name.toUpperCase().includes('TM SEG') || formData.name.toUpperCase().includes('TMSEG'))} value={formData.email} onChange={e => setFormData({...formData, email: e.target.value.toLowerCase()})} />
                             <Mail className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
                         </div>
                     </div>

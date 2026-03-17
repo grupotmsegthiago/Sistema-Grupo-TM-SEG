@@ -514,12 +514,12 @@ const ClientForm: React.FC<ClientFormProps> = ({
             <button onClick={onBack} className="p-2 bg-white border border-gray-200 rounded-lg hover:bg-gray-50"><ArrowLeft size={20} /></button>
             <h2 className="text-xl font-bold text-gray-900">{id ? 'Editar Cliente' : 'Novo Cliente'}</h2>
         </div>
-        <div className="flex gap-3">
+        {isFinanceAdmin && <div className="flex gap-3">
             <button onClick={() => setShowCalculator(!showCalculator)} className={`px-6 py-2.5 rounded-xl text-sm font-black flex items-center gap-2 shadow-xl transition-all uppercase border ${showCalculator ? 'bg-red-600 text-white border-red-700' : 'bg-white text-gray-700 border-gray-200 hover:bg-gray-50'}`}>
                 <Calculator size={18} /> Simulador Comercial
             </button>
             {id && <button onClick={() => setIsProposalModalOpen(true)} className="bg-black text-white px-6 py-2.5 rounded-xl text-sm font-black flex items-center gap-2 shadow-xl hover:bg-gray-800 transition-all uppercase"><ScrollText size={18} /> Gerar Contrato / Proposta</button>}
-        </div>
+        </div>}
       </div>
 
       {showCalculator && (
