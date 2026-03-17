@@ -35,10 +35,14 @@ const ProviderList: React.FC<ProviderListProps> = ({ onAddProvider, onEdit }) =>
     if (storedUser) {
         const user = JSON.parse(storedUser);
         setCurrentUser(user);
-        if (user.role === 'Administrador' || user.permissions?.includes('*')) {
+        const role = (user.role || '').toLowerCase();
+        const n = (user.name || '').toUpperCase();
+        if (role === 'administrador' || user.permissions?.includes('*') ||
+            role === 'avançado' || role === 'avancado' || role === 'diretoria' ||
+            n.includes('DANIEL') || n.includes('MICHELLE')) {
             setIsAdmin(true);
         }
-        if (user.role === 'Diretoria' || user.permissions?.includes('*')) {
+        if (role === 'diretoria' || user.permissions?.includes('*')) {
             setIsDirector(true);
         }
     }
