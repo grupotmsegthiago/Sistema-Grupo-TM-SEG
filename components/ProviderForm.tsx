@@ -399,7 +399,7 @@ const ProviderForm: React.FC<ProviderFormProps> = ({ onBack, onNavigateToVehicle
 
       <div className="flex flex-wrap gap-2 bg-white p-1.5 rounded-xl w-full lg:w-fit shadow-sm border border-gray-200">
           <button onClick={() => setActiveTab('registration')} className={`px-4 py-2 rounded-lg text-xs font-bold flex items-center gap-2 transition-all uppercase ${activeTab === 'registration' ? 'bg-black text-white shadow-sm' : 'text-gray-500 hover:text-gray-700 hover:bg-gray-50'}`}><Briefcase size={14} /> Dados Cadastrais</button>
-          <button onClick={() => { if (!id) { alert("Salve primeiro."); return; } setActiveTab('costs'); }} className={`px-4 py-2 rounded-lg text-xs font-bold flex items-center gap-2 transition-all uppercase ${activeTab === 'costs' ? 'bg-black text-white shadow-sm' : 'text-gray-500 hover:text-gray-700 hover:bg-gray-50'}`}><DollarSign size={14} /> Tabela de Custos</button>
+          {isFinanceAdmin && <button onClick={() => { if (!id) { alert("Salve primeiro."); return; } setActiveTab('costs'); }} className={`px-4 py-2 rounded-lg text-xs font-bold flex items-center gap-2 transition-all uppercase ${activeTab === 'costs' ? 'bg-black text-white shadow-sm' : 'text-gray-500 hover:text-gray-700 hover:bg-gray-50'}`}><DollarSign size={14} /> Tabela de Custos</button>}
       </div>
 
       {activeTab === 'registration' && (

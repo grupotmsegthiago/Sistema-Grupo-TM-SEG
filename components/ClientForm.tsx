@@ -529,7 +529,10 @@ const ClientForm: React.FC<ClientFormProps> = ({
       )}
 
       <div className="flex flex-wrap gap-2 bg-white p-1.5 rounded-xl w-full lg:w-fit shadow-sm border border-gray-200">
-          {[ { id: 'registration', label: 'Dados Contratuais', icon: Users }, { id: 'costs', label: 'Tabela de Preços', icon: DollarSign }, { id: 'vehicles', label: 'Veículos (Carga)', icon: Truck }, { id: 'routes', label: 'Rotas Fixas', icon: Navigation }, { id: 'quotes', label: 'Cotações', icon: FileText } ].map(tab => (
+          {[ { id: 'registration', label: 'Dados Contratuais', icon: Users }, { id: 'costs', label: 'Tabela de Preços', icon: DollarSign }, { id: 'vehicles', label: 'Veículos (Carga)', icon: Truck }, { id: 'routes', label: 'Rotas Fixas', icon: Navigation }, { id: 'quotes', label: 'Cotações', icon: FileText } ].filter(tab => {
+              if (tab.id === 'registration') return true;
+              return isFinanceAdmin;
+          }).map(tab => (
               <button key={tab.id} onClick={() => setActiveTab(tab.id as any)} className={`px-4 py-2 rounded-lg text-xs font-bold flex items-center gap-2 transition-all uppercase ${activeTab === tab.id ? 'bg-black text-white shadow-sm' : 'text-gray-500 hover:text-gray-700 hover:bg-gray-50'}`}><tab.icon size={14} /> {tab.label}</button>
           ))}
       </div>
