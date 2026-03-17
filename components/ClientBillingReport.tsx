@@ -1308,14 +1308,27 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
                     #print-area .subtitle-line { font-size: 2.5mm !important; margin: 0 !important; }
                     #print-area .ref-line { font-size: 2mm !important; margin: 0 !important; }
                     .no-print { display: none !important; }
+                    #print-area .watermark-logo {
+                        position: absolute !important;
+                        top: 50% !important;
+                        left: 50% !important;
+                        transform: translate(-50%, -50%) !important;
+                        opacity: 0.04 !important;
+                        width: 120mm !important;
+                        height: 120mm !important;
+                        z-index: 0 !important;
+                        -webkit-print-color-adjust: exact !important;
+                        print-color-adjust: exact !important;
+                    }
                     #print-area .sign-section {
-                        margin-top: 4mm !important;
+                        margin-top: 3mm !important;
                         break-inside: avoid !important;
                         page-break-inside: avoid !important;
                     }
-                    #print-area .sign-box { font-size: 2mm !important; width: 55mm !important; }
-                    #print-area .digital-signature { font-size: 4mm !important; }
-                    #print-area .sign-role { font-size: 2mm !important; }
+                    #print-area .sign-box { font-size: 2mm !important; width: 60mm !important; }
+                    #print-area .sign-logo { width: 8mm !important; height: 8mm !important; }
+                    #print-area .digital-signature { font-size: 3.5mm !important; }
+                    #print-area .sign-role { font-size: 1.8mm !important; }
                     #print-area tfoot tr {
                         break-inside: avoid !important;
                         page-break-inside: avoid !important;
@@ -1624,7 +1637,11 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
             )}
 
             {reportGenerated && (
-                <div id="print-area" className="bg-white p-2 w-full border border-gray-200 rounded-lg">
+                <div id="print-area" className="bg-white p-2 w-full border border-gray-200 rounded-lg" style={{ position: 'relative', overflow: 'hidden' }}>
+                    <div className="watermark-logo" style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', opacity: 0.04, pointerEvents: 'none', zIndex: 0, width: '400px', height: '400px' }}>
+                        <img src="/logo.png" alt="" style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
+                    </div>
+                    <div style={{ position: 'relative', zIndex: 1 }}>
                     <div className="boletim-header mb-2 text-center">
                         <h1 style={{ fontSize: '13px', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '1px', margin: 0 }}>BOLETIM DE MEDIÇÃO</h1>
                         <p className="subtitle-line" style={{ fontSize: '9px', fontWeight: 700, textTransform: 'uppercase', color: '#374151', margin: '1px 0' }}>{getPeriodLabel()}</p>
@@ -1709,7 +1726,7 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
                                     rowsData.map((r, i) => (
                                         <tr key={i} style={{ backgroundColor: i % 2 === 0 ? '#ffffff' : '#f3f4f6' }}>
                                             <td style={cellBold}>{r.id}</td>
-                                            <td className="route-cell" style={{ ...cellStyle, textAlign: 'left' }} title={r.route}>{r.route}</td>
+                                            <td className="route-cell" style={{ ...cellStyle, textAlign: 'left', whiteSpace: 'normal', wordWrap: 'break-word', wordBreak: 'break-word', overflowWrap: 'break-word', lineHeight: '1.15', fontSize: '5.8px' }} title={r.route}>{r.route}</td>
                                             <td style={cellStyle}>{fmtBRL(r.activationFee)}</td>
                                             <td style={cellStyle}>{r.franchiseHoursFmt}</td>
                                             <td style={cellStyle}>{fmtNum(r.franchiseKm)}</td>
@@ -1750,18 +1767,30 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
                         </table>
                     </div>
 
-                    <div className="sign-section" style={{ marginTop: '20px', display: 'flex', justifyContent: 'space-between', padding: '0 30px', alignItems: 'flex-end' }}>
-                        <div className="sign-box" style={{ textAlign: 'center', width: '260px' }}>
-                            <div className="digital-signature" style={{ fontFamily: "'Dancing Script', cursive", fontSize: '24px', fontWeight: 700, color: '#1a237e', marginBottom: '2px', lineHeight: 1.1 }}>Thiago Moreira</div>
-                            <div style={{ borderTop: '2px solid #111827', paddingTop: '4px' }}>
-                                <div className="sign-role" style={{ fontSize: '8px', fontWeight: 800, textTransform: 'uppercase' as const, color: '#111827', letterSpacing: '0.8px' }}>CEO - Grupo TM SEG</div>
+                    <div className="sign-section" style={{ marginTop: '24px', display: 'flex', justifyContent: 'space-between', padding: '0 20px', alignItems: 'flex-end' }}>
+                        <div className="sign-box" style={{ textAlign: 'center', width: '280px' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', marginBottom: '6px' }}>
+                                <img src="/logo.png" alt="TMSEG" style={{ width: '32px', height: '32px', objectFit: 'contain' }} className="sign-logo" />
+                                <div style={{ textAlign: 'left' }}>
+                                    <div className="digital-signature" style={{ fontFamily: "'Dancing Script', cursive", fontSize: '22px', fontWeight: 700, color: '#1a237e', lineHeight: 1 }}>Thiago Moreira</div>
+                                    <div style={{ fontSize: '7px', fontWeight: 800, textTransform: 'uppercase' as const, color: '#6b7280', letterSpacing: '0.5px' }}>Diretor Executivo</div>
+                                </div>
+                            </div>
+                            <div style={{ borderTop: '1.5px solid #111827', paddingTop: '3px' }}>
+                                <div className="sign-role" style={{ fontSize: '8px', fontWeight: 900, textTransform: 'uppercase' as const, color: '#111827', letterSpacing: '1px' }}>GRUPO TM SEG</div>
+                                <div style={{ fontSize: '6px', fontWeight: 600, color: '#6b7280', letterSpacing: '0.5px', marginTop: '1px' }}>CNPJ: 55.232.834/0001-49</div>
                             </div>
                         </div>
-                        <div className="sign-box" style={{ textAlign: 'center', width: '260px' }}>
-                            <div style={{ borderTop: '2px solid #111827', paddingTop: '4px', marginTop: '28px' }}>
-                                <div style={{ fontSize: '8px', fontWeight: 800, textTransform: 'uppercase' as const, color: '#111827', letterSpacing: '0.8px' }}>Assinatura Cliente</div>
+                        <div style={{ textAlign: 'center', flex: 1, padding: '0 40px' }}>
+                            <div style={{ fontSize: '6px', fontWeight: 600, color: '#9ca3af', textTransform: 'uppercase' as const, letterSpacing: '0.5px' }}>Documento gerado eletronicamente pelo sistema TMSEGo</div>
+                        </div>
+                        <div className="sign-box" style={{ textAlign: 'center', width: '280px' }}>
+                            <div style={{ borderTop: '1.5px solid #111827', paddingTop: '3px', marginTop: '34px' }}>
+                                <div style={{ fontSize: '8px', fontWeight: 900, textTransform: 'uppercase' as const, color: '#111827', letterSpacing: '1px' }}>Assinatura / Carimbo Cliente</div>
+                                <div style={{ fontSize: '6px', fontWeight: 600, color: '#6b7280', marginTop: '1px' }}>Data: ____/____/________</div>
                             </div>
                         </div>
+                    </div>
                     </div>
                 </div>
             )}
