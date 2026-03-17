@@ -494,7 +494,8 @@ const VendorVerificationControl: React.FC<VendorVerificationControlProps> = ({ o
         const total = missions.length;
         const verified = missions.filter(m => m.verified_by && m.verified_at).length;
         const pending = total - verified;
-        return { total, verified, pending };
+        const paid = missions.filter(m => m.payment_date).length;
+        return { total, verified, pending, paid };
     }, [missions]);
 
     return (
@@ -789,6 +790,14 @@ const VendorVerificationControl: React.FC<VendorVerificationControlProps> = ({ o
                     <div>
                         <p className="text-2xl font-black text-green-700" data-testid="text-verified-count">{stats.verified}</p>
                         <p className="text-[9px] font-black text-green-600 uppercase tracking-widest">Verificadas</p>
+                    </div>
+                </div>
+
+                <div className="bg-blue-50 border border-blue-200 rounded-2xl p-4 flex items-center gap-3">
+                    <CreditCard size={28} className="text-blue-600" />
+                    <div>
+                        <p className="text-2xl font-black text-blue-700" data-testid="text-paid-count">{stats.paid}</p>
+                        <p className="text-[9px] font-black text-blue-600 uppercase tracking-widest">Pagas</p>
                     </div>
                 </div>
 
