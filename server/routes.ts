@@ -240,7 +240,8 @@ export async function registerRoutes(
         cost_value: 1200.00,
       };
 
-      const clientOk = await sendMissionEmailToClient(fakeMission, to, 'ABC-1D23');
+      const clientResult = await sendMissionEmailToClient(fakeMission, to, 'ABC-1D23');
+      const clientOk = typeof clientResult === 'object' ? clientResult.success : clientResult;
       const providerOk = await sendMissionEmailToProvider(fakeMission, to, 'ABC-1D23');
 
       res.json({
@@ -333,11 +334,17 @@ export async function registerRoutes(
       if (!clientEmail) {
         const fallback = 'operacional@grupotmseg.com.br';
         const alertMission = { ...missionData, _noEmailAlert: true, _alertEntity: 'Cliente', _alertName: missionData.client };
-        const success = await sendMissionEmailToClient(alertMission, fallback, clientVehicleLabel, grEspelhamento, trackerInfo);
+        const result = await sendMissionEmailToClient(alertMission, fallback, clientVehicleLabel, grEspelhamento, trackerInfo);
+        const success = typeof result === 'object' ? result.success : result;
         return res.json({ success, message: success ? `⚠️ Cliente "${missionData.client}" sem e-mail — notificação enviada para operacional.` : 'Falha ao enviar' });
       }
 
-      const success = await sendMissionEmailToClient(missionData, clientEmail, clientVehicleLabel, grEspelhamento, trackerInfo);
+      const result = await sendMissionEmailToClient(missionData, clientEmail, clientVehicleLabel, grEspelhamento, trackerInfo);
+      const success = typeof result === 'object' ? result.success : result;
+      if (success && typeof result === 'object' && result.messageId) {
+        await supabase.from('missions').update({ email_message_id: result.messageId }).eq('id', missionId);
+        console.log(`[Email] Message-ID salvo para missão ${missionId}: ${result.messageId}`);
+      }
       res.json({ success, message: success ? 'E-mail de agendamento enviado ao cliente!' : 'Falha ao enviar' });
     } catch (err: any) {
       console.error('[Email] Erro mission-scheduled:', err.message);
@@ -412,10 +419,9 @@ export async function registerRoutes(
 
       const { data: clientData } = await supabase.from('clients').select('*').eq('name', client).single();
       const clientEmail = clientData?.operational_email || clientData?.email;
-      if (!clientEmail) return res.status(400).json({ error: 'Cliente sem e-mail cadastrado' });
 
       let clientVehicleLabel = '';
-      const { data: missionRow } = await supabase.from('missions').select('client_vehicle_id, client_vehicle, vehicle_id, gr_espelhamento').eq('id', missionId).single();
+      const { data: missionRow } = await supabase.from('missions').select('client_vehicle_id, client_vehicle, vehicle_id, gr_espelhamento, email_message_id').eq('id', missionId).single();
       if (missionRow?.client_vehicle_id) {
         const { data: cv } = await supabase.from('client_vehicles').select('plate, model').eq('id', missionRow.client_vehicle_id).single();
         if (cv?.plate) clientVehicleLabel = cv.model ? `${cv.plate} / ${cv.model}` : cv.plate;
@@ -442,9 +448,17 @@ export async function registerRoutes(
         }
       }
 
-      const missionData = { id: missionId, client, origin: origin || '', destination: destination || '', start_time: start_time || '', mission_type: mission_type || 'Caracterizada' };
-      const success = await sendMirroringEvidenceEmail(missionData, clientEmail, clientVehicleLabel, imageUrl, grEspelhamento, trackerInfo);
-      res.json({ success, message: success ? 'E-mail de evidência de espelhamento enviado ao cliente!' : 'Falha ao enviar' });
+      const missionData: any = { id: missionId, client, origin: origin || '', destination: destination || '', start_time: start_time || '', mission_type: mission_type || 'Caracterizada' };
+      const threadMessageId = missionRow?.email_message_id || '';
+
+      const targetEmail = clientEmail || 'operacional@grupotmseg.com.br';
+      if (!clientEmail) {
+        missionData._noEmailAlert = true;
+        missionData._alertEntity = 'Cliente';
+        missionData._alertName = client;
+      }
+      const success = await sendMirroringEvidenceEmail(missionData, targetEmail, clientVehicleLabel, imageUrl, grEspelhamento, trackerInfo, threadMessageId);
+      res.json({ success, message: success ? (clientEmail ? 'E-mail de evidência de espelhamento enviado ao cliente!' : `⚠️ Cliente "${client}" sem e-mail — notificação enviada para operacional.`) : 'Falha ao enviar' });
     } catch (err: any) {
       console.error('[Email] Erro mirroring-evidence:', err.message);
       res.status(500).json({ error: err.message });
@@ -500,13 +514,14 @@ export async function registerRoutes(
       };
 
       const mirroringUrl = missionRow.mirroring_evidence_url || '';
+      const threadMessageId = missionRow.email_message_id || '';
       const targetEmail = clientEmail || 'operacional@grupotmseg.com.br';
       if (!clientEmail) {
         missionData._noEmailAlert = true;
         missionData._alertEntity = 'Cliente';
         missionData._alertName = missionRow.client;
       }
-      const success = await sendMissionResendToClient(missionData, targetEmail, clientVehicleLabel, mirroringUrl || undefined, grEspelhamento, trackerInfo);
+      const success = await sendMissionResendToClient(missionData, targetEmail, clientVehicleLabel, mirroringUrl || undefined, grEspelhamento, trackerInfo, threadMessageId);
       res.json({ success, message: success ? (clientEmail ? `E-mail enviado para ${clientEmail}${mirroringUrl ? ' (com evidência de espelhamento)' : ''}` : `⚠️ Cliente "${missionRow.client}" sem e-mail — notificação enviada para operacional.`) : 'Falha ao enviar' });
     } catch (err: any) {
       console.error('[Email] Erro mission-resend-client:', err.message);

@@ -169,12 +169,13 @@ export async function sendMissionEmailToClient(
       console.warn(`[Email] Não foi possível gerar PDF para missão ${mission.id}, enviando sem anexo`);
     }
 
-    await transporter.sendMail(mailOptions);
-    console.log(`[Email] Missão ${mission.id} → Cliente: ${clientEmail} (com anexo PDF)`);
-    return true;
+    const info = await transporter.sendMail(mailOptions);
+    const messageId = info.messageId || '';
+    console.log(`[Email] Missão ${mission.id} → Cliente: ${clientEmail} (com anexo PDF) | Message-ID: ${messageId}`);
+    return { success: true, messageId };
   } catch (err: any) {
     console.error(`[Email] Erro ao enviar para cliente ${clientEmail}:`, err.message);
-    return false;
+    return { success: false, messageId: '' };
   }
 }
 
@@ -281,7 +282,8 @@ export async function sendMissionResendToClient(
   vehiclePlate: string,
   mirroringEvidenceUrl?: string,
   grEspelhamento?: string,
-  trackerInfo?: string
+  trackerInfo?: string,
+  threadMessageId?: string
 ): Promise<boolean> {
   const evidenceBlock = mirroringEvidenceUrl ? `
     <div style="margin:20px 0; text-align:center;">
@@ -315,13 +317,22 @@ export async function sendMissionResendToClient(
   `);
 
   try {
+    const isAlert = (mission as any)._noEmailAlert;
+    const subjectPrefix = isAlert ? '⚠️ SEM EMAIL — ' : '';
+    const baseSubject = `Agendamento Confirmado - ${vehiclePlate || 'S/PLACA'} / ${formatOS(mission.id)}`;
     const mailOptions: any = {
       from: SMTP_FROM,
       to: clientEmail,
       bcc: BCC_RECIPIENTS,
-      subject: `Confirmação de Escolta - ${vehiclePlate || 'S/PLACA'} / ${formatOS(mission.id)}`,
+      subject: `${subjectPrefix}Re: ${baseSubject}`,
       html,
     };
+
+    if (threadMessageId) {
+      mailOptions.inReplyTo = threadMessageId;
+      mailOptions.references = threadMessageId;
+      console.log(`[Email] Threading reenvio na thread: ${threadMessageId}`);
+    }
 
     const pdfBuffer = await generateMissionReportPDF(String(mission.id));
     if (pdfBuffer) {
@@ -351,9 +362,18 @@ export async function sendMirroringEvidenceEmail(
   vehiclePlate: string,
   imageUrl: string,
   grEspelhamento?: string,
-  trackerInfo?: string
+  trackerInfo?: string,
+  threadMessageId?: string
 ): Promise<boolean> {
+  const isAlert = (mission as any)._noEmailAlert;
+  const alertBanner = isAlert ? `
+    <div style="background:#dc2626; color:#fff; padding:16px; border-radius:8px; margin-bottom:20px; text-align:center;">
+      <strong>⚠️ ATENÇÃO:</strong> O ${(mission as any)._alertEntity || 'Cliente'} <strong>"${(mission as any)._alertName || mission.client}"</strong> não possui e-mail cadastrado. Este é um alerta interno.
+    </div>
+  ` : '';
+
   const html = baseTemplate(`
+    ${alertBanner}
     <h2>📸 Evidência de Espelhamento — ${formatOS(mission.id)}</h2>
     <p>Prezado(a) Cliente,</p>
     <p>Segue a evidência do espelhamento tático da viatura para a missão de escolta em andamento:</p>
@@ -378,13 +398,21 @@ export async function sendMirroringEvidenceEmail(
   `);
 
   try {
+    const subjectPrefix = isAlert ? '⚠️ SEM EMAIL — ' : '';
+    const baseSubject = `Agendamento Confirmado - ${vehiclePlate || 'S/PLACA'} / ${formatOS(mission.id)}`;
     const mailOptions: any = {
       from: SMTP_FROM,
       to: clientEmail,
       bcc: BCC_RECIPIENTS,
-      subject: `Espelhamento Confirmado - ${vehiclePlate || 'S/PLACA'} / ${formatOS(mission.id)}`,
+      subject: `${subjectPrefix}Re: ${baseSubject}`,
       html,
     };
+
+    if (threadMessageId) {
+      mailOptions.inReplyTo = threadMessageId;
+      mailOptions.references = threadMessageId;
+      console.log(`[Email] Threading espelhamento na thread: ${threadMessageId}`);
+    }
 
     const pdfBuffer = await generateMissionReportPDF(String(mission.id));
     if (pdfBuffer) {
@@ -399,7 +427,7 @@ export async function sendMirroringEvidenceEmail(
     }
 
     await transporter.sendMail(mailOptions);
-    console.log(`[Email] Espelhamento ${mission.id} → Cliente: ${clientEmail}`);
+    console.log(`[Email] Espelhamento ${mission.id} → ${clientEmail}${isAlert ? ' (alerta interno)' : ''}`);
     return true;
   } catch (err: any) {
     console.error(`[Email] Erro ao enviar espelhamento para ${clientEmail}:`, err.message);
