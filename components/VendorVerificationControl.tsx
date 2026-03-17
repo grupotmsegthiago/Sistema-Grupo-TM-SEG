@@ -215,7 +215,7 @@ const VendorVerificationControl: React.FC<VendorVerificationControlProps> = ({ o
                 supabase.from('clients').select('id, name, trading_name').eq('status', 'Ativo').order('name'),
                 supabase.from('missions')
                     .select('id, client, provider, origin, destination, status, created_at, start_time, end_time, start_km, end_km, total_distance, revenue_value, cost_value, toll_value, toll_value_provider, billing_approved, vendor_os_number, invoice_number, release_date, payment_date, verified_by, verified_at')
-                    .eq('billing_approved', true)
+                    .or('billing_approved.eq.true,status.eq.Concluída')
                     .order('created_at', { ascending: false })
                     .limit(2000)
             ]);
@@ -225,7 +225,7 @@ const VendorVerificationControl: React.FC<VendorVerificationControlProps> = ({ o
             if (missionsRes.error && missionsRes.error.message.includes('column')) {
                 const { data: fallbackData } = await supabase.from('missions')
                     .select('id, client, provider, origin, destination, status, created_at, start_time, end_time, start_km, end_km, total_distance, revenue_value, cost_value, toll_value, toll_value_provider, billing_approved')
-                    .eq('billing_approved', true)
+                    .or('billing_approved.eq.true,status.eq.Concluída')
                     .order('created_at', { ascending: false })
                     .limit(2000);
                 missionData = fallbackData || [];
@@ -1055,7 +1055,7 @@ const VendorVerificationControl: React.FC<VendorVerificationControlProps> = ({ o
                 </div>
                 {!isLoading && filteredMissions.length > 0 && (
                     <div className="px-4 py-3 bg-gray-50 border-t border-gray-200 text-[10px] font-bold text-gray-500 uppercase tracking-widest flex justify-between">
-                        <span>Exibindo {filteredMissions.length} de {missions.length} missões aprovadas</span>
+                        <span>Exibindo {filteredMissions.length} de {missions.length} missões</span>
                         <span>Total Custo: <span className="text-red-600 font-black">{formatCurrency(filteredMissions.reduce((sum, m) => sum + (m.cost_value || 0) + Math.max(0, m.toll_value_provider ?? m.toll_value ?? 0), 0))}</span></span>
                     </div>
                 )}
