@@ -302,10 +302,6 @@ const VendorVerificationControl: React.FC<VendorVerificationControlProps> = ({ o
             showNotification('Campo Obrigatório', 'Informe o Nº da OS Fornecedor.', 'error');
             return;
         }
-        if (!invoiceNumber.trim()) {
-            showNotification('Campo Obrigatório', 'Informe o Nº da NF.', 'error');
-            return;
-        }
 
         setIsSaving(true);
         const now = new Date().toISOString();
