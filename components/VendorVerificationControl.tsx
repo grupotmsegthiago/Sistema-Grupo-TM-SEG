@@ -1018,13 +1018,9 @@ const VendorVerificationControl: React.FC<VendorVerificationControlProps> = ({ o
                                     return (
                                         <tr key={m.id} className={`hover:bg-gray-50/50 transition-colors ${isVerified ? 'bg-green-50/30' : ''} ${selectedIds.has(m.id) ? 'bg-blue-50/50' : ''}`} data-testid={`row-mission-${m.id}`}>
                                             <td className="px-3 py-3 text-center">
-                                                {!isVerified ? (
-                                                    <button onClick={() => toggleSelection(m.id)} className="p-1 hover:bg-gray-100 rounded transition-colors" data-testid={`checkbox-${m.id}`}>
-                                                        {selectedIds.has(m.id) ? <CheckSquare size={16} className="text-blue-600" /> : <Square size={16} className="text-gray-400" />}
-                                                    </button>
-                                                ) : (
-                                                    <CheckCircle2 size={16} className="text-green-400 mx-auto" />
-                                                )}
+                                                <button onClick={() => toggleSelection(m.id)} className="p-1 hover:bg-gray-100 rounded transition-colors" data-testid={`checkbox-${m.id}`}>
+                                                    {selectedIds.has(m.id) ? <CheckSquare size={16} className="text-blue-600" /> : isVerified ? <CheckCircle2 size={16} className="text-green-400" /> : <Square size={16} className="text-gray-400" />}
+                                                </button>
                                             </td>
                                             <td className="px-4 py-3">
                                                 <span className="font-black text-gray-900 text-xs font-mono">{m.id}</span>
