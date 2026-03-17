@@ -68,12 +68,14 @@ export async function createCustomer(params: {
   phone?: string;
   externalReference?: string;
 }): Promise<AsaasCustomer> {
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  const validEmail = params.email && emailRegex.test(params.email.trim()) ? params.email.trim() : undefined;
   return asaasFetch('/customers', {
     method: 'POST',
     body: JSON.stringify({
       name: params.name,
       cpfCnpj: params.cpfCnpj.replace(/\D/g, ''),
-      email: params.email || undefined,
+      email: validEmail,
       phone: params.phone || undefined,
       externalReference: params.externalReference || undefined,
       notificationDisabled: false,
@@ -104,11 +106,13 @@ export async function createPayment(params: {
     method: 'POST',
     body: JSON.stringify({
       customer: params.customerId,
-      billingType: params.billingType || 'BOLETO',
+      billingType: params.billingType || 'UNDEFINED',
       value: params.value,
       dueDate: params.dueDate,
-      description: params.description || 'Serviço de escolta — Grupo TM SEG',
+      description: params.description || 'Referente aos serviços de Intermediação de Escolta Armada e Fiscal de Rota — Grupo TM SEG',
       externalReference: params.externalReference || undefined,
+      interest: { value: 2, type: 'PERCENTAGE' },
+      fine: { value: 1, type: 'PERCENTAGE' },
     }),
   });
 }

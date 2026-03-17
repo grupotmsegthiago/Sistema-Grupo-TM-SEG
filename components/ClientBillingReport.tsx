@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { supabase } from '../lib/supabase';
 import { Mission, Client, ClientPriceTable, ProviderCostTable } from '../types';
-import { FileText, Search, Printer, Loader2, FileSpreadsheet, BarChart3, Users, Building2, ChevronDown, ChevronRight, List, ExternalLink, Receipt, Camera, Sparkles, X, AlertCircle, CheckCircle2, ScanLine, Image as ImageIcon, DollarSign } from 'lucide-react';
+import { FileText, Search, Printer, Loader2, FileSpreadsheet, BarChart3, Users, Building2, ChevronDown, ChevronRight, List, ExternalLink, Receipt, Camera, Sparkles, X, AlertCircle, CheckCircle2, ScanLine, Image as ImageIcon, DollarSign, Plus, Trash2, GitBranch } from 'lucide-react';
 import { calculateMissionFinancials, extractCityFromAddress } from '../lib/financialUtils';
 import { generateContent } from '../lib/gemini';
 import {
@@ -40,6 +40,10 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
     const [asaasLoading, setAsaasLoading] = useState(false);
     const [asaasResult, setAsaasResult] = useState<any>(null);
     const [asaasConfigured, setAsaasConfigured] = useState(false);
+    const [asaasDescription, setAsaasDescription] = useState('');
+    const [asaasPeriod, setAsaasPeriod] = useState('');
+    const [asaasSplitMode, setAsaasSplitMode] = useState(false);
+    const [asaasSplitCharges, setAsaasSplitCharges] = useState<{name: string; cpfCnpj: string; email: string; value: string}[]>([]);
 
     useEffect(() => {
         fetch('/api/asaas/status').then(r => r.json()).then(d => setAsaasConfigured(d.configured)).catch(() => {});
@@ -48,6 +52,30 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
     useEffect(() => {
         if (asaasResult) setAsaasResult(null);
     }, [invoiceForm.amount, invoiceForm.boleto_due_date, invoiceForm.client, invoiceForm.number]);
+
+    useEffect(() => {
+        const now = new Date();
+        const day = now.getDate();
+        const monthNames = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
+        const monthLabel = monthNames[now.getMonth()];
+        const yearLabel = now.getFullYear();
+        const quinzena = day <= 15 ? '1ª Quinzena' : '2ª Quinzena';
+        setAsaasPeriod(`${quinzena} de ${monthLabel}/${yearLabel}`);
+    }, [showInvoiceModal]);
+
+    useEffect(() => {
+        const base = 'Referente aos serviços de Intermediação de Escolta Armada e Fiscal de Rota';
+        setAsaasDescription(asaasPeriod ? `${base} — ${asaasPeriod}` : base);
+    }, [asaasPeriod, showInvoiceModal]);
+
+    const asaasSplitTotal = useMemo(() => {
+        return asaasSplitCharges.reduce((sum, c) => sum + (parseFloat(c.value) || 0), 0);
+    }, [asaasSplitCharges]);
+
+    const asaasSplitDiff = useMemo(() => {
+        const total = parseFloat(invoiceForm.amount) || 0;
+        return Math.round((total - asaasSplitTotal) * 100) / 100;
+    }, [asaasSplitTotal, invoiceForm.amount]);
 
     useEffect(() => {
         fetchClients();
@@ -725,6 +753,45 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
             return;
         }
         const clientObj = clients.find(c => c.id.toString() === invoiceForm.client);
+
+        if (asaasSplitMode && asaasSplitCharges.length > 0) {
+            const validCharges = asaasSplitCharges.filter(c => c.cpfCnpj && parseFloat(c.value) > 0);
+            if (validCharges.length === 0) {
+                alert('Adicione pelo menos uma subconta com CNPJ e valor.');
+                return;
+            }
+            if (Math.abs(asaasSplitDiff) > 0.01) {
+                alert(`A soma das subcontas (R$ ${asaasSplitTotal.toFixed(2)}) não confere com o total da fatura (R$ ${parseFloat(invoiceForm.amount).toFixed(2)}). Diferença: R$ ${asaasSplitDiff.toFixed(2)}`);
+                return;
+            }
+            setAsaasLoading(true);
+            try {
+                const res = await fetch('/api/asaas/create-charge', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        clientName: clientObj?.trading_name || clientObj?.name || 'Cliente',
+                        clientEmail: (clientObj as any)?.medicao_email || (clientObj as any)?.operational_email || clientObj?.email || '',
+                        dueDate: invoiceForm.boleto_due_date,
+                        description: asaasDescription,
+                        invoiceNumber: invoiceForm.number,
+                        issuerCompany: invoiceForm.issuer_company,
+                        charges: validCharges.map(c => ({ name: c.name || clientObj?.trading_name || clientObj?.name || 'Cliente', cpfCnpj: c.cpfCnpj.replace(/\D/g, ''), email: c.email || '', value: parseFloat(c.value) })),
+                    }),
+                });
+                const data = await res.json();
+                if (!res.ok) throw new Error(data.error || 'Erro ao criar cobranças');
+                setAsaasResult(data);
+                setAiStatus(`${data.charges?.length || 0} cobranças Asaas geradas com sucesso!`);
+            } catch (err: any) {
+                alert('Erro ao gerar cobranças no Asaas: ' + err.message);
+                setAiStatus('Erro: ' + err.message);
+            } finally {
+                setAsaasLoading(false);
+            }
+            return;
+        }
+
         if (!clientObj?.cnpj) {
             alert('O cliente selecionado não possui CNPJ cadastrado. Cadastre o CNPJ no módulo de Clientes.');
             return;
@@ -737,11 +804,11 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     clientName: clientObj.trading_name || clientObj.name,
-                    clientCpfCnpj: clientObj.cnpj,
+                    clientCpfCnpj: clientObj.cnpj.replace(/\D/g, ''),
                     clientEmail: (clientObj as any).medicao_email || (clientObj as any).operational_email || clientObj.email || '',
                     value: parseFloat(invoiceForm.amount),
                     dueDate: invoiceForm.boleto_due_date,
-                    description: `Serviço de Escolta — ${invoiceForm.issuer_company || 'Grupo TM SEG'} — NF ${invoiceForm.number || 'S/N'}`,
+                    description: asaasDescription,
                     invoiceNumber: invoiceForm.number,
                     issuerCompany: invoiceForm.issuer_company,
                 }),
@@ -972,16 +1039,118 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
                                 <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest mb-3 flex items-center gap-1.5">
                                     <DollarSign size={10} className="text-green-500"/> Cobrança Asaas (Boleto + PIX)
                                 </p>
+                                <div className="bg-gray-50 border border-gray-200 rounded-xl p-3 mb-3 space-y-2">
+                                    <div className="flex items-center gap-1.5 mb-1">
+                                        <p className="text-[8px] font-black text-gray-500 uppercase">Juros: 2% a.m. | Multa: 1%</p>
+                                    </div>
+                                    <div>
+                                        <label className="text-[8px] font-black text-gray-500 uppercase mb-0.5 block">Período / Referência</label>
+                                        <input type="text" value={asaasPeriod} onChange={e => setAsaasPeriod(e.target.value)}
+                                            className="w-full border border-gray-200 rounded-lg px-2 py-1.5 text-[10px] font-medium focus:ring-1 focus:ring-green-400 focus:border-green-400"
+                                            placeholder="Ex: 1ª Quinzena de Março/2026" data-testid="input-asaas-period"/>
+                                    </div>
+                                    <div>
+                                        <label className="text-[8px] font-black text-gray-500 uppercase mb-0.5 block">Descrição da Cobrança</label>
+                                        <textarea value={asaasDescription} onChange={e => setAsaasDescription(e.target.value)} rows={2}
+                                            className="w-full border border-gray-200 rounded-lg px-2 py-1.5 text-[10px] font-medium focus:ring-1 focus:ring-green-400 focus:border-green-400 resize-none"
+                                            data-testid="input-asaas-description"/>
+                                    </div>
+                                </div>
+
+                                <div className="mb-3">
+                                    <button type="button" onClick={() => { setAsaasSplitMode(!asaasSplitMode); if (!asaasSplitMode && asaasSplitCharges.length === 0) { const clientObj = clients.find(c => c.id.toString() === invoiceForm.client); setAsaasSplitCharges([{ name: clientObj?.trading_name || clientObj?.name || '', cpfCnpj: clientObj?.cnpj || '', email: '', value: invoiceForm.amount || '' }]); } }}
+                                        className={`w-full text-[9px] font-black uppercase tracking-wider py-2 rounded-lg border flex items-center justify-center gap-1.5 transition-colors ${asaasSplitMode ? 'bg-purple-50 border-purple-300 text-purple-700' : 'bg-white border-gray-200 text-gray-500 hover:bg-gray-50'}`}
+                                        data-testid="btn-asaas-split-toggle">
+                                        <GitBranch size={12}/> {asaasSplitMode ? 'Dividir por CNPJ (ativo)' : 'Dividir por CNPJ (subcontas)'}
+                                    </button>
+
+                                    {asaasSplitMode && (
+                                        <div className="mt-2 space-y-2">
+                                            {asaasSplitCharges.map((charge, idx) => (
+                                                <div key={idx} className="bg-purple-50 border border-purple-200 rounded-lg p-2 space-y-1.5">
+                                                    <div className="flex items-center justify-between">
+                                                        <span className="text-[8px] font-black text-purple-600 uppercase">Subconta {idx + 1}</span>
+                                                        {asaasSplitCharges.length > 1 && (
+                                                            <button type="button" onClick={() => setAsaasSplitCharges(prev => prev.filter((_, i) => i !== idx))}
+                                                                className="text-red-400 hover:text-red-600" data-testid={`btn-asaas-split-remove-${idx}`}><Trash2 size={12}/></button>
+                                                        )}
+                                                    </div>
+                                                    <input type="text" placeholder="Nome / Razão Social" value={charge.name} onChange={e => { const u = [...asaasSplitCharges]; u[idx].name = e.target.value; setAsaasSplitCharges(u); }}
+                                                        className="w-full border border-purple-200 rounded px-2 py-1 text-[10px] bg-white" data-testid={`input-asaas-split-name-${idx}`}/>
+                                                    <input type="text" placeholder="CNPJ (somente números)" value={charge.cpfCnpj} onChange={e => { const u = [...asaasSplitCharges]; u[idx].cpfCnpj = e.target.value; setAsaasSplitCharges(u); }}
+                                                        className="w-full border border-purple-200 rounded px-2 py-1 text-[10px] bg-white font-mono" data-testid={`input-asaas-split-cnpj-${idx}`}/>
+                                                    <input type="email" placeholder="E-mail (opcional)" value={charge.email} onChange={e => { const u = [...asaasSplitCharges]; u[idx].email = e.target.value; setAsaasSplitCharges(u); }}
+                                                        className="w-full border border-purple-200 rounded px-2 py-1 text-[10px] bg-white" data-testid={`input-asaas-split-email-${idx}`}/>
+                                                    <input type="number" step="0.01" placeholder="Valor R$" value={charge.value} onChange={e => { const u = [...asaasSplitCharges]; u[idx].value = e.target.value; setAsaasSplitCharges(u); }}
+                                                        className="w-full border border-purple-200 rounded px-2 py-1 text-[10px] bg-white font-mono font-bold" data-testid={`input-asaas-split-value-${idx}`}/>
+                                                </div>
+                                            ))}
+
+                                            <button type="button" onClick={() => setAsaasSplitCharges(prev => [...prev, { name: '', cpfCnpj: '', email: '', value: '' }])}
+                                                className="w-full text-[9px] font-black uppercase text-purple-600 hover:text-purple-800 py-1.5 border border-dashed border-purple-300 rounded-lg flex items-center justify-center gap-1"
+                                                data-testid="btn-asaas-split-add">
+                                                <Plus size={12}/> Adicionar Subconta
+                                            </button>
+
+                                            <div className={`rounded-lg p-2 text-[9px] font-black text-center ${Math.abs(asaasSplitDiff) < 0.01 ? 'bg-green-50 text-green-700 border border-green-200' : 'bg-red-50 text-red-700 border border-red-200'}`}
+                                                data-testid="text-asaas-split-total">
+                                                Soma: R$ {asaasSplitTotal.toFixed(2)} / Total NF: R$ {(parseFloat(invoiceForm.amount) || 0).toFixed(2)}
+                                                {Math.abs(asaasSplitDiff) >= 0.01 && ` — Diferença: R$ ${asaasSplitDiff.toFixed(2)}`}
+                                                {Math.abs(asaasSplitDiff) < 0.01 && ' ✓'}
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
+
                                 {!asaasResult ? (
                                     <button
                                         onClick={handleGenerateAsaasCharge}
-                                        disabled={asaasLoading || !invoiceForm.amount || !invoiceForm.boleto_due_date}
+                                        disabled={asaasLoading || !invoiceForm.amount || !invoiceForm.boleto_due_date || (asaasSplitMode && Math.abs(asaasSplitDiff) >= 0.01)}
                                         className="w-full bg-gradient-to-r from-green-600 to-emerald-600 text-white font-black uppercase text-xs tracking-widest py-3 rounded-xl flex items-center justify-center gap-2 hover:from-green-700 hover:to-emerald-700 transition-all shadow-lg disabled:opacity-50"
                                         data-testid="btn-asaas-generate-charge"
                                     >
                                         {asaasLoading ? <Loader2 size={16} className="animate-spin"/> : <Receipt size={16}/>}
-                                        {asaasLoading ? 'Gerando cobrança...' : 'Gerar Boleto + PIX (Asaas)'}
+                                        {asaasLoading ? 'Gerando cobrança...' : asaasSplitMode ? `Gerar ${asaasSplitCharges.length} Cobranças (Asaas)` : 'Gerar Boleto + PIX (Asaas)'}
                                     </button>
+                                ) : asaasResult.split ? (
+                                    <div className="space-y-3">
+                                        <div className="bg-green-50 border border-green-200 rounded-xl p-3 flex items-center gap-2">
+                                            <CheckCircle2 size={16} className="text-green-600 shrink-0"/>
+                                            <div className="flex-1 min-w-0">
+                                                <p className="text-[10px] font-black text-green-700 uppercase">{asaasResult.charges?.length} Cobranças Geradas</p>
+                                                <p className="text-[9px] text-green-600">Total: R$ {asaasResult.totalValue?.toFixed(2)}</p>
+                                            </div>
+                                        </div>
+                                        {asaasResult.charges?.map((ch: any, idx: number) => (
+                                            <div key={idx} className="bg-white border border-gray-200 rounded-xl p-3 space-y-2">
+                                                <div className="flex items-center justify-between">
+                                                    <span className="text-[9px] font-black text-gray-700">{ch.customer?.name} — {ch.customer?.cpfCnpj}</span>
+                                                    <span className="text-[9px] font-black text-green-600 bg-green-100 px-2 py-0.5 rounded-full">{ch.payment?.statusBr}</span>
+                                                </div>
+                                                <p className="text-[10px] font-mono font-bold text-gray-900">R$ {ch.payment?.value?.toFixed(2)} — ID: {ch.payment?.id}</p>
+                                                <div className="grid grid-cols-2 gap-2">
+                                                    {ch.bankSlip && (
+                                                        <div className="bg-orange-50 rounded-lg p-2">
+                                                            <p className="text-[8px] font-mono text-orange-800 break-all select-all cursor-text">{ch.bankSlip.digitableLine}</p>
+                                                            <button onClick={() => { navigator.clipboard.writeText(ch.bankSlip.digitableLine); alert('Código de barras copiado!'); }}
+                                                                className="mt-1 text-[8px] font-black text-orange-600 uppercase">Copiar Barras</button>
+                                                        </div>
+                                                    )}
+                                                    {ch.pix && (
+                                                        <div className="bg-indigo-50 rounded-lg p-2">
+                                                            {ch.pix.qrCodeBase64 && <img src={`data:image/png;base64,${ch.pix.qrCodeBase64}`} alt="QR" className="w-20 h-20 mx-auto mb-1"/>}
+                                                            <button onClick={() => { navigator.clipboard.writeText(ch.pix.copyPaste); alert('PIX copiado!'); }}
+                                                                className="text-[8px] font-black text-indigo-600 uppercase w-full text-center">Copiar PIX</button>
+                                                        </div>
+                                                    )}
+                                                </div>
+                                                <div className="flex gap-2">
+                                                    {ch.payment?.bankSlipUrl && <a href={ch.payment.bankSlipUrl} target="_blank" rel="noopener noreferrer" className="flex-1 text-center bg-orange-100 text-orange-700 font-black text-[8px] uppercase py-1.5 rounded-lg border border-orange-200">Boleto PDF</a>}
+                                                    {ch.payment?.invoiceUrl && <a href={ch.payment.invoiceUrl} target="_blank" rel="noopener noreferrer" className="flex-1 text-center bg-blue-100 text-blue-700 font-black text-[8px] uppercase py-1.5 rounded-lg border border-blue-200">Fatura</a>}
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
                                 ) : (
                                     <div className="space-y-3">
                                         <div className="bg-green-50 border border-green-200 rounded-xl p-3 flex items-center gap-2">

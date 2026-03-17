@@ -2217,7 +2217,66 @@ export async function registerRoutes(
 
   app.post("/api/asaas/create-charge", async (req: Request, res: Response) => {
     try {
-      const { clientName, clientCpfCnpj, clientEmail, value, dueDate, description, invoiceNumber, issuerCompany } = req.body;
+      const { clientName, clientCpfCnpj, clientEmail, value, dueDate, description, invoiceNumber, issuerCompany, charges } = req.body;
+
+      if (charges && Array.isArray(charges) && charges.length > 0) {
+        if (!dueDate || !/^\d{4}-\d{2}-\d{2}$/.test(dueDate)) {
+          return res.status(400).json({ error: 'Vencimento inválido' });
+        }
+        const validCharges = charges.filter((c: any) => {
+          const cleanCnpj = String(c.cpfCnpj || '').replace(/\D/g, '');
+          const val = parseFloat(c.value);
+          return cleanCnpj.length >= 11 && !isNaN(val) && val > 0;
+        });
+        if (validCharges.length === 0) {
+          return res.status(400).json({ error: 'Nenhuma subconta válida encontrada. Verifique CNPJ e valores.' });
+        }
+
+        const results: any[] = [];
+        for (let i = 0; i < validCharges.length; i++) {
+          const charge = validCharges[i];
+          const cleanCnpj = String(charge.cpfCnpj).replace(/\D/g, '');
+
+          const customer = await findOrCreateCustomer({
+            name: charge.name || clientName || 'Cliente',
+            cpfCnpj: cleanCnpj,
+            email: charge.email || clientEmail || undefined,
+          });
+
+          const externalRef = invoiceNumber ? `NF-${invoiceNumber}-S${i + 1}-${cleanCnpj.slice(-4)}` : `TMSEG-${Date.now()}-S${i + 1}-${cleanCnpj.slice(-4)}`;
+          const descText = description || `Referente aos serviços de Intermediação de Escolta Armada e Fiscal de Rota — ${issuerCompany || 'Grupo TM SEG'}`;
+
+          const payment = await createPayment({
+            customerId: customer.id,
+            value: parseFloat(charge.value),
+            dueDate,
+            description: descText,
+            externalReference: externalRef,
+            billingType: 'UNDEFINED',
+          });
+
+          let pixData = null;
+          let bankSlipData = null;
+          try { pixData = await getPaymentPixQrCode(payment.id); } catch (_) {}
+          try { bankSlipData = await getPaymentBankSlip(payment.id); } catch (_) {}
+
+          console.log(`[Asaas] Cobrança split criada: ${payment.id} | ${charge.name || clientName} | CNPJ: ${cleanCnpj} | R$ ${charge.value} | Venc: ${dueDate}`);
+
+          results.push({
+            payment: {
+              id: payment.id, status: payment.status, statusBr: mapAsaasStatus(payment.status),
+              value: payment.value, dueDate: payment.dueDate,
+              invoiceUrl: payment.invoiceUrl || null, bankSlipUrl: payment.bankSlipUrl || null,
+              externalReference: externalRef,
+            },
+            pix: pixData ? { qrCodeBase64: pixData.encodedImage, copyPaste: pixData.payload } : null,
+            bankSlip: bankSlipData ? { barCode: bankSlipData.barCode, digitableLine: bankSlipData.identificationField, nossoNumero: bankSlipData.nossoNumero } : null,
+            customer: { id: customer.id, name: customer.name, cpfCnpj: cleanCnpj },
+          });
+        }
+        return res.json({ success: true, split: true, charges: results, totalValue: results.reduce((s, r) => s + r.payment.value, 0) });
+      }
+
       if (!clientCpfCnpj || !value || !dueDate) {
         return res.status(400).json({ error: 'CNPJ do cliente, valor e vencimento são obrigatórios' });
       }
@@ -2229,7 +2288,7 @@ export async function registerRoutes(
       });
 
       const externalRef = invoiceNumber ? `NF-${invoiceNumber}` : `TMSEG-${Date.now()}`;
-      const descText = description || `Serviço de Escolta — ${issuerCompany || 'Grupo TM SEG'} — NF ${invoiceNumber || 'S/N'}`;
+      const descText = description || `Referente aos serviços de Intermediação de Escolta Armada e Fiscal de Rota — ${issuerCompany || 'Grupo TM SEG'}`;
 
       const payment = await createPayment({
         customerId: customer.id,
