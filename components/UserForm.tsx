@@ -49,6 +49,7 @@ const UserForm: React.FC<UserFormProps> = ({ onBack, userType, id }) => {
   const [showPassword, setShowPassword] = useState(false);
   const [emailError, setEmailError] = useState('');
   const [generatedPass, setGeneratedPass] = useState('');
+  const [isSendingReset, setIsSendingReset] = useState(false);
   const [createdCredentials, setCreatedCredentials] = useState<{ name: string; email: string; password: string; type: string } | null>(null);
   const [credentialsCopied, setCredentialsCopied] = useState(false);
   const [selectedPermissions, setSelectedPermissions] = useState<string[]>(
@@ -388,6 +389,39 @@ const UserForm: React.FC<UserFormProps> = ({ onBack, userType, id }) => {
                           <span className="font-mono">{generatedPass}</span>
                           <button type="button" onClick={() => navigator.clipboard.writeText(generatedPass)} className="text-gray-500 hover:text-gray-800"><Copy size={14}/></button>
                       </div>
+                  )}
+                  {id && formData.email && (
+                      <button
+                        type="button"
+                        disabled={isSendingReset}
+                        onClick={async () => {
+                          if (!confirm(`Enviar e-mail de redefinição de senha para ${formData.email}?`)) return;
+                          setIsSendingReset(true);
+                          try {
+                            const senderName = currentUser?.name || 'Administrador';
+                            const res = await fetch('/api/password-reset/request', {
+                              method: 'POST',
+                              headers: { 'Content-Type': 'application/json' },
+                              body: JSON.stringify({ userId: id, senderName })
+                            });
+                            const data = await res.json();
+                            if (res.ok && data.success) {
+                              showNotification('success', 'E-mail de redefinição enviado com sucesso!');
+                            } else {
+                              showNotification('error', data.error || 'Falha ao enviar e-mail');
+                            }
+                          } catch (err: any) {
+                            showNotification('error', 'Erro ao enviar e-mail: ' + err.message);
+                          } finally {
+                            setIsSendingReset(false);
+                          }
+                        }}
+                        className="mt-3 w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-amber-50 border border-amber-200 rounded-lg text-xs font-bold text-amber-700 hover:bg-amber-100 transition-colors uppercase tracking-wider disabled:opacity-50"
+                        data-testid="button-send-password-reset"
+                      >
+                        {isSendingReset ? <Loader2 size={14} className="animate-spin" /> : <Mail size={14} />}
+                        Enviar nova senha por e-mail
+                      </button>
                   )}
               </div>
           </div>

@@ -9,7 +9,7 @@ import webpush from "web-push";
 import { calculateMissionFinancials } from "../lib/financialUtils";
 import fs from "fs";
 import path from "path";
-import { sendMissionEmailToClient, sendMissionEmailToProvider, sendMissionResendToClient, sendMirroringEvidenceEmail, sendMissionChangeNotificationToClient, sendMissionChangeNotificationToProvider, sendWelcomeEmail, sendTestEmail, sendVerificationCodeEmail } from "./emailService";
+import { sendMissionEmailToClient, sendMissionEmailToProvider, sendMissionResendToClient, sendMirroringEvidenceEmail, sendMissionChangeNotificationToClient, sendMissionChangeNotificationToProvider, sendWelcomeEmail, sendTestEmail, sendVerificationCodeEmail, sendPasswordResetEmail } from "./emailService";
 import { findOrCreateCustomer, createPayment, getPayment, getPaymentPixQrCode, getPaymentBankSlip, listPayments, deletePayment, mapAsaasStatus, isAsaasConfigured } from "./asaasService";
 
 const resend = new Resend(process.env.RESEND_API_KEY);
@@ -50,6 +50,8 @@ export async function registerRoutes(
         await migrationPool.query(`ALTER TABLE missions ADD COLUMN IF NOT EXISTS mirroring_evidence_url TEXT`);
         await migrationPool.query(`ALTER TABLE missions ADD COLUMN IF NOT EXISTS email_pending_client BOOLEAN DEFAULT FALSE`);
         await migrationPool.query(`ALTER TABLE missions ADD COLUMN IF NOT EXISTS email_pending_provider BOOLEAN DEFAULT FALSE`);
+        await migrationPool.query(`ALTER TABLE system_users ADD COLUMN IF NOT EXISTS password_reset_token TEXT`);
+        await migrationPool.query(`ALTER TABLE system_users ADD COLUMN IF NOT EXISTS password_reset_expires TIMESTAMPTZ`);
         console.log('[Migration] Colunas verificadas/criadas com sucesso');
         await migrationPool.end();
       }
@@ -261,6 +263,87 @@ export async function registerRoutes(
       const systemUrl = process.env.SYSTEM_URL || `https://${process.env.REPLIT_DOMAINS?.split(',')[0] || 'app.grupotmseg.com.br'}`;
       const success = await sendWelcomeEmail({ name, email, password, userType: userType || 'internal', profileName }, systemUrl, verificationCode);
       res.json({ success, message: success ? 'E-mail de boas-vindas enviado!' : 'Falha ao enviar e-mail' });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post("/api/password-reset/request", async (req: Request, res: Response) => {
+    try {
+      const { userId, senderName } = req.body;
+      if (!userId) return res.status(400).json({ error: 'userId obrigatório' });
+
+      const { data: user, error } = await supabase.from('system_users').select('id, name, email').eq('id', userId).single();
+      if (error || !user) return res.status(404).json({ error: 'Usuário não encontrado' });
+
+      const crypto = await import('crypto');
+      const token = crypto.randomBytes(32).toString('hex');
+      const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+
+      await supabase.from('system_users').update({
+        password_reset_token: token,
+        password_reset_expires: expiresAt,
+        force_password_change: true
+      }).eq('id', userId);
+
+      const systemUrl = process.env.SYSTEM_URL || `https://${process.env.REPLIT_DOMAINS?.split(',')[0] || 'app.grupotmseg.com.br'}`;
+      const resetLink = `${systemUrl}/reset-password?token=${token}`;
+
+      const success = await sendPasswordResetEmail(user.email, user.name, resetLink, senderName);
+      res.json({ success, message: success ? 'E-mail de redefinição enviado!' : 'Falha ao enviar e-mail' });
+    } catch (err: any) {
+      console.error('[PasswordReset] Erro:', err.message);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post("/api/password-reset/validate", async (req: Request, res: Response) => {
+    try {
+      const { token } = req.body;
+      if (!token) return res.status(400).json({ error: 'Token obrigatório' });
+
+      const { data: user, error } = await supabase.from('system_users')
+        .select('id, name, email, password_reset_expires')
+        .eq('password_reset_token', token)
+        .single();
+
+      if (error || !user) return res.status(404).json({ error: 'Token inválido ou expirado' });
+
+      if (new Date(user.password_reset_expires) < new Date()) {
+        return res.status(410).json({ error: 'Token expirado' });
+      }
+
+      res.json({ valid: true, userName: user.name, userEmail: user.email });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post("/api/password-reset/confirm", async (req: Request, res: Response) => {
+    try {
+      const { token, newPassword } = req.body;
+      if (!token || !newPassword) return res.status(400).json({ error: 'Token e nova senha são obrigatórios' });
+      if (newPassword.length < 6) return res.status(400).json({ error: 'A senha deve ter no mínimo 6 caracteres' });
+
+      const { data: user, error } = await supabase.from('system_users')
+        .select('id, name, password_reset_expires')
+        .eq('password_reset_token', token)
+        .single();
+
+      if (error || !user) return res.status(404).json({ error: 'Token inválido ou expirado' });
+
+      if (new Date(user.password_reset_expires) < new Date()) {
+        return res.status(410).json({ error: 'Token expirado' });
+      }
+
+      await supabase.from('system_users').update({
+        password: newPassword,
+        password_reset_token: null,
+        password_reset_expires: null,
+        force_password_change: false
+      }).eq('id', user.id);
+
+      res.json({ success: true, message: 'Senha alterada com sucesso!' });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }

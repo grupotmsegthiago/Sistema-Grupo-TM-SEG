@@ -3,6 +3,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import Sidebar from './components/Sidebar';
 import Header from './components/Header';
 import Login from './components/Login';
+import ResetPassword from './components/ResetPassword';
 import { APP_VERSION } from './constants';
 import { supabase } from './lib/supabase';
 import { RefreshCw } from 'lucide-react';
@@ -91,6 +92,8 @@ const App: React.FC = () => {
 
   const normalizedPath = window.location.pathname.toLowerCase().replace(/\/$/, '');
   const isPublicRoute = normalizedPath === '/cadastro-operacional';
+  const isResetPasswordRoute = normalizedPath === '/reset-password';
+  const resetToken = new URLSearchParams(window.location.search).get('token') || '';
 
   const handleLogout = useCallback(async () => {
     await supabase.auth.signOut();
@@ -209,6 +212,10 @@ const App: React.FC = () => {
   const handleSaveAndContinue = (missionId: string) => { localStorage.setItem('openMissionOnLoad', missionId); navigateTo('missions'); };
 
   if (isPublicRoute) { return ( <NotificationProvider> <PublicAgentRegistration /> </NotificationProvider> ); }
+
+  if (isResetPasswordRoute && resetToken) {
+    return <ResetPassword token={resetToken} onComplete={() => { window.location.href = '/'; }} />;
+  }
   
   if (!isAuthenticated) { return <Login onLogin={handleLogin} />; }
   

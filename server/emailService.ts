@@ -651,4 +651,50 @@ export async function sendTestEmail(to: string): Promise<boolean> {
   }
 }
 
+export async function sendPasswordResetEmail(
+  to: string,
+  name: string,
+  resetLink: string,
+  senderName?: string
+): Promise<boolean> {
+  try {
+    const html = baseTemplate(`
+    <h2 style="color:#111827; font-size:18px; font-weight:800; margin:0 0 12px 0;">Redefinição de Senha</h2>
+    <p style="color:#374151; font-size:14px; line-height:1.6; margin:0 0 16px 0;">
+      Olá <strong>${toTitleCase(name)}</strong>,
+    </p>
+    <p style="color:#374151; font-size:14px; line-height:1.6; margin:0 0 16px 0;">
+      Uma nova senha foi solicitada para o seu acesso ao sistema <strong>Grupo TM SEG</strong>.
+    </p>
+    <p style="color:#374151; font-size:14px; line-height:1.6; margin:0 0 20px 0;">
+      Clique no botão abaixo para definir sua nova senha de acesso:
+    </p>
+    <div style="text-align:center; margin:24px 0;">
+      <a href="${resetLink}" style="display:inline-block; background-color:#dc2626; color:#ffffff; font-size:14px; font-weight:800; text-decoration:none; padding:14px 40px; border-radius:8px; letter-spacing:0.5px; text-transform:uppercase;">
+        Definir Nova Senha
+      </a>
+    </div>
+    <p style="color:#6b7280; font-size:12px; line-height:1.5; margin:20px 0 0 0;">
+      ⚠️ Este link é válido por <strong>24 horas</strong>. Se você não solicitou essa alteração, ignore este e-mail.
+    </p>
+    <p style="color:#9ca3af; font-size:11px; line-height:1.5; margin:12px 0 0 0;">
+      Caso o botão não funcione, copie e cole o link abaixo no seu navegador:<br/>
+      <span style="color:#2563eb; word-break:break-all;">${resetLink}</span>
+    </p>
+    `, senderName);
+
+    await transporter.sendMail({
+      from: SMTP_FROM,
+      to,
+      subject: '🔐 Redefinição de Senha — Grupo TM SEG',
+      html,
+    });
+    console.log(`[Email] Reset de senha enviado → ${to}`);
+    return true;
+  } catch (err: any) {
+    console.error(`[Email] Erro ao enviar reset de senha:`, err.message);
+    return false;
+  }
+}
+
 export { transporter };
