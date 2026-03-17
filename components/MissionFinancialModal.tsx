@@ -115,13 +115,17 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
   const [isEditingRoute, setIsEditingRoute] = useState(false);
   const [isSavingRoute, setIsSavingRoute] = useState(false);
 
+  const userRoleLower = useMemo(() => {
+    try { return (JSON.parse(localStorage.getItem('userData') || '{}').role || '').toLowerCase(); } catch { return ''; }
+  }, []);
+  const isController = userRoleLower === 'controller';
   const canEditOpsData = useMemo(() => {
     try {
       const u = JSON.parse(localStorage.getItem('userData') || '{}');
-      const roleLower = (u.role || '').toLowerCase();
-      return ['diretoria', 'administrador', 'avançado', 'avancado', 'controller'].includes(roleLower) || u.permissions?.includes('*');
+      return ['diretoria', 'administrador', 'avançado', 'avancado', 'controller'].includes(userRoleLower) || u.permissions?.includes('*');
     } catch { return false; }
-  }, []);
+  }, [userRoleLower]);
+  const canEditClientData = canEditOpsData && !isController;
   
 
   const tollCalcMissionRef = React.useRef<string | null>(null);
@@ -1231,7 +1235,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                 <div className="bg-green-50/50 border border-green-200 rounded-xl p-3">
                                     <div className="flex items-center justify-between mb-3">
                                         <p className="text-[10px] font-black text-green-700 uppercase tracking-widest flex items-center gap-1.5"><MapPin size={12}/> Dados Cliente</p>
-                                        {canEditOpsData && !isEditingOpsData && (
+                                        {canEditClientData && !isEditingOpsData && (
                                             <button onClick={() => setIsEditingOpsData(true)} className="flex items-center gap-1 px-2 py-1 text-[9px] font-black text-green-600 bg-green-100 rounded-lg hover:bg-green-200 uppercase tracking-wider transition-all" data-testid="button-edit-ops-data"><Edit2 size={10}/> Editar</button>
                                         )}
                                         {isEditingOpsData && (
@@ -1779,14 +1783,14 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                 <input 
                                     type="text" 
                                     inputMode="decimal"
-                                    className={`w-full bg-white/60 border border-green-200 rounded-lg px-2 py-1 outline-none font-black text-3xl text-green-900 font-mono focus:ring-2 focus:ring-green-400 focus:border-green-400 ${!canEditOpsData ? 'pointer-events-none opacity-70' : 'cursor-text'}`}
+                                    className={`w-full bg-white/60 border border-green-200 rounded-lg px-2 py-1 outline-none font-black text-3xl text-green-900 font-mono focus:ring-2 focus:ring-green-400 focus:border-green-400 ${!canEditClientData ? 'pointer-events-none opacity-70' : 'cursor-text'}`}
                                     value={revenueInput} 
-                                    onChange={e => { if (canEditOpsData) { setUseSavedValues(true); setRevenueInput(e.target.value); setShowRevenueReasonInput(true); } }}
-                                    readOnly={!canEditOpsData}
+                                    onChange={e => { if (canEditClientData) { setUseSavedValues(true); setRevenueInput(e.target.value); setShowRevenueReasonInput(true); } }}
+                                    readOnly={!canEditClientData}
                                     data-testid="input-revenue-total"
                                 />
                             </div>
-                            <p className="text-[8px] text-green-600 font-bold mt-1 italic">{canEditOpsData ? '* EDITÁVEL - DIRETORIA / ADMINISTRADOR (toque para editar)' : '* VALOR TOTAL CALCULADO BASEADO NAS FRANQUIAS E MEDIÇÃO'}</p>
+                            <p className="text-[8px] text-green-600 font-bold mt-1 italic">{canEditClientData ? '* EDITÁVEL - DIRETORIA / ADMINISTRADOR (toque para editar)' : '* VALOR TOTAL CALCULADO BASEADO NAS FRANQUIAS E MEDIÇÃO'}</p>
                             {(showRevenueReasonInput || revenueEditReason) && (
                                 <div className="mt-2 p-2 bg-amber-50 border border-amber-200 rounded-lg">
                                     <label className="text-[9px] font-black text-amber-700 uppercase mb-1 block flex items-center gap-1"><AlertCircle size={10}/> Motivo da Alteração (Cliente)</label>
