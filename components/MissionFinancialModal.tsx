@@ -1948,13 +1948,13 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                 </button>
                                 <button 
                                     onClick={() => handleUpdate(true)} 
-                                    disabled={isUpdating || isZeroCostError || !tollConfirmed || mission?.status === MissionStatus.PENDING || currentApprovalStatus.blockedForCurrentUser || currentApprovalStatus.lockedByDiretoria} 
-                                    className={`px-8 py-3 rounded-xl font-black uppercase text-xs shadow-lg flex flex-col items-center justify-center gap-1 transition-all active:scale-95 min-h-[48px] ${(isZeroCostError || !tollConfirmed || mission?.status === MissionStatus.PENDING) ? 'bg-gray-400 cursor-not-allowed text-gray-200' : (currentApprovalStatus.blockedForCurrentUser || currentApprovalStatus.lockedByDiretoria) ? 'bg-amber-50 border-2 border-amber-400 text-amber-800 cursor-not-allowed shadow-amber-100' : currentApprovalStatus.hasPartial ? 'bg-gray-300 text-gray-600 border border-gray-400 cursor-pointer hover:bg-gray-400' : 'bg-blue-600 hover:bg-blue-700 text-white shadow-blue-200'}`}
+                                    disabled={isUpdating || isZeroCostError || !tollConfirmed || (mission?.status === MissionStatus.PENDING && currentApprovalStatus.currentUserStage !== 'diretoria') || currentApprovalStatus.blockedForCurrentUser || currentApprovalStatus.lockedByDiretoria} 
+                                    className={`px-8 py-3 rounded-xl font-black uppercase text-xs shadow-lg flex flex-col items-center justify-center gap-1 transition-all active:scale-95 min-h-[48px] ${(isZeroCostError || !tollConfirmed || (mission?.status === MissionStatus.PENDING && currentApprovalStatus.currentUserStage !== 'diretoria')) ? 'bg-gray-400 cursor-not-allowed text-gray-200' : (currentApprovalStatus.blockedForCurrentUser || currentApprovalStatus.lockedByDiretoria) ? 'bg-amber-50 border-2 border-amber-400 text-amber-800 cursor-not-allowed shadow-amber-100' : currentApprovalStatus.hasPartial ? 'bg-gray-300 text-gray-600 border border-gray-400 cursor-pointer hover:bg-gray-400' : 'bg-blue-600 hover:bg-blue-700 text-white shadow-blue-200'}`}
                                     data-testid="button-approve-billing"
                                 >
                                     <span className="flex items-center gap-2">
                                         {isUpdating ? <Loader2 size={16} className="animate-spin" /> : (currentApprovalStatus.blockedForCurrentUser || currentApprovalStatus.lockedByDiretoria) ? <Lock size={16} className="text-amber-600" /> : <CheckCircle2 size={16} />} 
-                                        {mission?.status === MissionStatus.PENDING 
+                                        {(mission?.status === MissionStatus.PENDING && currentApprovalStatus.currentUserStage !== 'diretoria')
                                             ? 'OS Pendente — Não Aprovável' 
                                             : !tollConfirmed 
                                                 ? 'Confirme o Pedágio' 
