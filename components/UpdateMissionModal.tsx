@@ -794,7 +794,8 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
 
             const sendClientEmail = finalStatus === MissionStatus.SCHEDULED && originalStatus !== MissionStatus.SCHEDULED;
             const pendingClient = mission.email_pending_client === true;
-            if (sendClientEmail || pendingClient) {
+            const hasRequiredDataForClientEmail = !!(editData.agent1 && editData.vehicleId && vehiclePlateForEmail && vehiclePlateForEmail !== '—');
+            if ((sendClientEmail || pendingClient) && hasRequiredDataForClientEmail) {
                 try {
                     const emailRes = await fetch('/api/email/mission-scheduled', {
                         method: 'POST',
@@ -819,6 +820,9 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
                 } catch (emailErr) {
                     console.error('[Email] Erro ao enviar confirmação ao cliente:', emailErr);
                 }
+            } else if ((sendClientEmail || pendingClient) && !hasRequiredDataForClientEmail) {
+                await supabase.from('missions').update({ email_pending_client: true }).eq('id', mission.id);
+                showNotification('E-mail Pendente', 'Confirmação ao cliente será enviada quando agente e veículo estiverem preenchidos.', 'warning');
             }
 
             const providerChanged = editData.provider && editData.provider.trim() !== '' &&
