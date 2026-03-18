@@ -65,7 +65,7 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
 
   const [formData, setFormData] = useState({
     client: '', provider: '', origin: '', destination: '', totalDistance: '', estimatedTime: '',
-    scheduledDate: defaultDate, scheduledTime: defaultTime, missionType: 'Caracterizada', 
+    scheduledDate: defaultDate, scheduledTime: defaultTime, missionType: '', 
     revenueValue: '', costValue: '', tollValue: '0', applyCeva200km: false, applyVtc02h: false, isSameOs: false, parentMissionId: '',
     clientVehicleId: '', clientVehiclePlate: '', clientVehicleModel: '',
     clientVehicleId2: '', clientVehiclePlate2: '', clientVehicleModel2: '',
@@ -838,7 +838,7 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
   );
 
   const stepSummaries: Record<number, string> = {
-      1: formData.missionType === 'Velada' ? 'Escolta Velada' : 'Escolta Caracterizada',
+      1: formData.missionType === 'Velada' ? 'Escolta Velada' : formData.missionType === 'Caracterizada' ? 'Escolta Caracterizada' : '',
       2: formData.client ? (dbClients.find(c => c.name === formData.client)?.trading_name || formData.client) : '',
       3: [vehicleSearchTerm, formData.driver_name ? `Mot: ${formData.driver_name}` : (driverQuestion === 'no' ? 'Sem motorista' : '')].filter(Boolean).join(' | ') || '',
       4: formData.provider ? formData.provider : (providerPending ? 'Aguardando informação' : ''),
