@@ -114,6 +114,7 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
 
   const [isCommercialUser, setIsCommercialUser] = useState(false);
   const [providerPending, setProviderPending] = useState(false);
+  const [expandedStep, setExpandedStep] = useState<number>(1);
 
   const stepComplete = {
     step1: !!formData.missionType,
@@ -128,6 +129,14 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
   const canShowStep5 = stepComplete.step4;
   const canShowStep6 = stepComplete.step5;
   const canShowStep7 = canShowStep6;
+
+  useEffect(() => {
+    if (expandedStep === 1 && stepComplete.step1) setExpandedStep(2);
+    else if (expandedStep === 2 && stepComplete.step2) setExpandedStep(3);
+    else if (expandedStep === 3 && stepComplete.step3) setExpandedStep(4);
+    else if (expandedStep === 4 && stepComplete.step4) setExpandedStep(5);
+    else if (expandedStep === 5 && stepComplete.step5) setExpandedStep(6);
+  }, [stepComplete.step1, stepComplete.step2, stepComplete.step3, stepComplete.step4, stepComplete.step5]);
 
   useEffect(() => {
     const storedUser = localStorage.getItem('userData');
@@ -745,17 +754,39 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
 
   const isVtcClient = (formData.client || '').toUpperCase().includes('VTC');
 
-  const STEP_HEADER = (num: number, title: string, icon: any, done: boolean, active: boolean) => (
-      <div className={`flex items-center gap-3 p-4 rounded-xl border-2 transition-all duration-300 ${done ? 'bg-green-50 border-green-300' : active ? 'bg-white border-red-400 shadow-md' : 'bg-gray-50 border-gray-200 opacity-60'}`}>
-          <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-black shrink-0 ${done ? 'bg-green-600 text-white' : active ? 'bg-red-700 text-white' : 'bg-gray-300 text-white'}`}>
-              {done ? <Check size={16} /> : num}
-          </div>
-          <div className="flex items-center gap-2">
-              {icon}
-              <span className={`text-[11px] font-black uppercase tracking-widest ${done ? 'text-green-700' : active ? 'text-red-800' : 'text-gray-400'}`}>{title}</span>
-          </div>
-      </div>
-  );
+  const stepSummaries: Record<number, string> = {
+      1: formData.missionType === 'Velada' ? 'Escolta Velada' : 'Escolta Caracterizada',
+      2: formData.client ? (dbClients.find(c => c.name === formData.client)?.trading_name || formData.client) : '',
+      3: [vehicleSearchTerm, formData.driver_name, formData.driver_phone].filter(Boolean).join(' | ') || '',
+      4: formData.provider ? formData.provider : (providerPending ? 'Aguardando informação' : ''),
+      5: formData.origin && formData.destination ? `${formData.origin.split(',')[0]} → ${formData.destination.split(',')[0]}${formData.totalDistance ? ` (${formData.totalDistance} KM)` : ''}` : '',
+      6: [formData.applyVtc02h && '02H VTC', formData.applyCeva200km && '200KM'].filter(Boolean).join(', ') || 'Sem regras especiais',
+      7: (() => { const t = clientPriceTables.find(pt => pt.id.toString() === manualRevenueTableId); return t ? t.operation_type : ''; })(),
+  };
+
+  const STEP_HEADER = (num: number, title: string, icon: any, done: boolean, active: boolean) => {
+      const isExpanded = expandedStep === num;
+      const isCollapsed = done && !isExpanded;
+      const summary = stepSummaries[num] || '';
+
+      return (
+          <button type="button" onClick={() => setExpandedStep(isExpanded ? 0 : num)} className={`w-full flex items-center gap-3 p-3 rounded-xl border-2 transition-all duration-300 cursor-pointer group ${isCollapsed ? 'bg-green-50/70 border-green-200 hover:border-green-400' : active && isExpanded ? 'bg-white border-red-400 shadow-md' : done && isExpanded ? 'bg-green-50 border-green-300' : 'bg-gray-50 border-gray-200 opacity-60'}`}>
+              <div className={`w-7 h-7 rounded-full flex items-center justify-center text-[10px] font-black shrink-0 transition-all ${done ? 'bg-green-600 text-white' : active ? 'bg-red-700 text-white' : 'bg-gray-300 text-white'}`}>
+                  {done ? <Check size={14} /> : num}
+              </div>
+              <div className="flex-1 min-w-0 text-left">
+                  <div className="flex items-center gap-2">
+                      {icon}
+                      <span className={`text-[10px] font-black uppercase tracking-widest ${isCollapsed ? 'text-green-600' : active ? 'text-red-800' : done ? 'text-green-700' : 'text-gray-400'}`}>{title}</span>
+                  </div>
+                  {isCollapsed && summary && (
+                      <p className="text-[10px] font-bold text-green-700/70 truncate mt-0.5 pl-6 uppercase">{summary}</p>
+                  )}
+              </div>
+              <ChevronDown size={16} className={`shrink-0 transition-transform duration-200 ${isCollapsed ? 'text-green-400 group-hover:text-green-600' : 'text-gray-300 rotate-180'} ${!done && !active ? 'hidden' : ''}`} />
+          </button>
+      );
+  };
 
   const tableGuidance = (() => {
       if (!manualRevenueTableId || !clientPriceTables.length) return null;
@@ -853,30 +884,34 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
           <form onSubmit={handleSubmit} className="divide-y divide-gray-100">
 
               {/* ETAPA 1 - TIPO DE OPERAÇÃO */}
-              <div className="p-6 space-y-4">
+              <div className="p-4 space-y-3">
                   {STEP_HEADER(1, 'Tipo de Operação', <Siren size={16} className={stepComplete.step1 ? 'text-green-600' : 'text-red-600'} />, stepComplete.step1, true)}
-                  <div className="grid grid-cols-2 gap-3 mt-3">
-                      <button type="button" data-testid="button-tipo-caracterizada" onClick={() => setFormData(prev => ({...prev, missionType: 'Caracterizada'}))} className={`p-4 rounded-xl border-2 flex items-center gap-3 transition-all ${formData.missionType === 'Caracterizada' ? 'border-red-600 bg-red-50 shadow-md ring-2 ring-red-200' : 'border-gray-200 bg-white hover:border-gray-300'}`}>
-                          <Siren size={24} className={formData.missionType === 'Caracterizada' ? 'text-red-600' : 'text-gray-400'} />
-                          <div className="text-left">
-                              <p className={`text-sm font-black uppercase ${formData.missionType === 'Caracterizada' ? 'text-red-800' : 'text-gray-600'}`}>Caracterizada</p>
-                              <p className="text-[9px] text-gray-400 font-medium">Viatura identificada</p>
-                          </div>
-                      </button>
-                      <button type="button" data-testid="button-tipo-velada" onClick={() => setFormData(prev => ({...prev, missionType: 'Velada'}))} className={`p-4 rounded-xl border-2 flex items-center gap-3 transition-all ${formData.missionType === 'Velada' ? 'border-gray-900 bg-gray-900 shadow-md ring-2 ring-gray-400 text-white' : 'border-gray-200 bg-white hover:border-gray-300'}`}>
-                          <ShieldCheck size={24} className={formData.missionType === 'Velada' ? 'text-white' : 'text-gray-400'} />
-                          <div className="text-left">
-                              <p className={`text-sm font-black uppercase ${formData.missionType === 'Velada' ? 'text-white' : 'text-gray-600'}`}>Velada</p>
-                              <p className={`text-[9px] font-medium ${formData.missionType === 'Velada' ? 'text-gray-300' : 'text-gray-400'}`}>Viatura descaracterizada</p>
-                          </div>
-                      </button>
-                  </div>
+                  {expandedStep === 1 && (
+                      <div className="grid grid-cols-2 gap-3 mt-2 animate-in slide-in-from-top-1 duration-200">
+                          <button type="button" data-testid="button-tipo-caracterizada" onClick={() => setFormData(prev => ({...prev, missionType: 'Caracterizada'}))} className={`p-4 rounded-xl border-2 flex items-center gap-3 transition-all ${formData.missionType === 'Caracterizada' ? 'border-red-600 bg-red-50 shadow-md ring-2 ring-red-200' : 'border-gray-200 bg-white hover:border-gray-300'}`}>
+                              <Siren size={24} className={formData.missionType === 'Caracterizada' ? 'text-red-600' : 'text-gray-400'} />
+                              <div className="text-left">
+                                  <p className={`text-sm font-black uppercase ${formData.missionType === 'Caracterizada' ? 'text-red-800' : 'text-gray-600'}`}>Caracterizada</p>
+                                  <p className="text-[9px] text-gray-400 font-medium">Viatura identificada</p>
+                              </div>
+                          </button>
+                          <button type="button" data-testid="button-tipo-velada" onClick={() => setFormData(prev => ({...prev, missionType: 'Velada'}))} className={`p-4 rounded-xl border-2 flex items-center gap-3 transition-all ${formData.missionType === 'Velada' ? 'border-gray-900 bg-gray-900 shadow-md ring-2 ring-gray-400 text-white' : 'border-gray-200 bg-white hover:border-gray-300'}`}>
+                              <ShieldCheck size={24} className={formData.missionType === 'Velada' ? 'text-white' : 'text-gray-400'} />
+                              <div className="text-left">
+                                  <p className={`text-sm font-black uppercase ${formData.missionType === 'Velada' ? 'text-white' : 'text-gray-600'}`}>Velada</p>
+                                  <p className={`text-[9px] font-medium ${formData.missionType === 'Velada' ? 'text-gray-300' : 'text-gray-400'}`}>Viatura descaracterizada</p>
+                              </div>
+                          </button>
+                      </div>
+                  )}
               </div>
 
               {/* ETAPA 2 - CLIENTE */}
               {canShowStep2 && (
-              <div className="p-6 space-y-4 animate-in slide-in-from-top-2">
+              <div className="p-4 space-y-3">
                   {STEP_HEADER(2, 'Selecionar Cliente', <Building2 size={16} className={stepComplete.step2 ? 'text-green-600' : 'text-red-600'} />, stepComplete.step2, !stepComplete.step2)}
+                  {expandedStep === 2 && (
+                  <div className="space-y-4 animate-in slide-in-from-top-1 duration-200">
                   <div className="flex gap-2">
                       <div className="relative flex-1">
                           <select required className={SELECT_CLASS} value={formData.client} disabled={isCommercialUser} data-testid="select-client" onChange={e => {
@@ -915,11 +950,15 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
                   )}
               </div>
               )}
+              </div>
+              )}
 
               {/* ETAPA 3 - VEÍCULO / MOTORISTA / TELEFONE */}
               {canShowStep3 && (
-              <div className="p-6 space-y-4 animate-in slide-in-from-top-2">
+              <div className="p-4 space-y-3">
                   {STEP_HEADER(3, 'Veículo do Cliente / Motorista', <Truck size={16} className={stepComplete.step3 ? 'text-green-600' : 'text-red-600'} />, stepComplete.step3, !stepComplete.step3)}
+                  {expandedStep === 3 && (
+                  <div className="space-y-4 animate-in slide-in-from-top-1 duration-200">
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                       <div className="relative">
                           <label className={LABEL_CLASS}>Veículo de Carga (Placa)</label>
@@ -987,11 +1026,15 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
                   )}
               </div>
               )}
+              </div>
+              )}
 
               {/* ETAPA 4 - FORNECEDOR */}
               {canShowStep4 && (
-              <div className="p-6 space-y-4 animate-in slide-in-from-top-2">
+              <div className="p-4 space-y-3">
                   {STEP_HEADER(4, 'Fornecedor (Parceiro de Escolta)', <Briefcase size={16} className={stepComplete.step4 ? 'text-green-600' : 'text-red-600'} />, stepComplete.step4, !stepComplete.step4)}
+                  {expandedStep === 4 && (
+                  <div className="space-y-4 animate-in slide-in-from-top-1 duration-200">
 
                   {iblWarning && (
                       <div className="bg-red-600 text-white px-4 py-2 rounded-lg text-xs font-bold uppercase flex items-center justify-center gap-2 shadow-lg animate-pulse">
@@ -1042,11 +1085,15 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
                   )}
               </div>
               )}
+              </div>
+              )}
 
               {/* ETAPA 5 - ROTA (ORIGEM x DESTINO) */}
               {canShowStep5 && (
-              <div className="p-6 space-y-5 animate-in slide-in-from-top-2">
+              <div className="p-4 space-y-3">
                   {STEP_HEADER(5, 'Rota (Origem x Destino)', <Navigation size={16} className={stepComplete.step5 ? 'text-green-600' : 'text-red-600'} />, stepComplete.step5, !stepComplete.step5)}
+                  {expandedStep === 5 && (
+                  <div className="space-y-5 animate-in slide-in-from-top-1 duration-200">
 
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <div className="relative">
@@ -1139,11 +1186,15 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
                   {calcDetails && (<div className="flex items-center gap-2 p-3 bg-blue-50 text-blue-700 rounded-lg text-[10px] font-black uppercase tracking-tight border border-blue-100 shadow-sm"><Info size={14} className="shrink-0"/> {calcDetails}</div>)}
               </div>
               )}
+              </div>
+              )}
 
               {/* ETAPA 6 - REGRAS ESPECÍFICAS */}
               {canShowStep6 && (
-              <div className="p-6 space-y-4 animate-in slide-in-from-top-2">
+              <div className="p-4 space-y-3">
                   {STEP_HEADER(6, 'Regras Específicas do Cliente', <ShieldCheck size={16} className="text-orange-600" />, true, true)}
+                  {expandedStep === 6 && (
+                  <div className="space-y-4 animate-in slide-in-from-top-1 duration-200">
                   <div className="flex flex-wrap gap-3">
                       {!isVtcClient && (
                           <label className={`flex items-center gap-2 px-4 py-2.5 rounded-xl border-2 cursor-pointer transition-all ${formData.applyVtc02h ? 'bg-blue-600 border-blue-600 text-white shadow-md' : 'bg-white border-gray-200 text-gray-500 hover:border-gray-300'}`}>
@@ -1160,11 +1211,15 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
                   </div>
               </div>
               )}
+              </div>
+              )}
 
               {/* ETAPA 7 - TABELA DE FATURAMENTO (ORIENTAÇÃO) */}
               {canShowStep7 && (
-              <div className="p-6 space-y-4 animate-in slide-in-from-top-2">
+              <div className="p-4 space-y-3">
                   {STEP_HEADER(7, 'Tabela de Rota Apropriada', <Tag size={16} className={manualRevenueTableId ? 'text-green-600' : 'text-red-600'} />, !!manualRevenueTableId, !manualRevenueTableId)}
+                  {expandedStep === 7 && (
+                  <div className="space-y-4 animate-in slide-in-from-top-1 duration-200">
 
                   <div className="p-4 bg-amber-50 border border-amber-200 rounded-xl space-y-2">
                       <div className="flex items-start gap-2">
@@ -1216,6 +1271,8 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
                           </div>
                       </div>
                   </div>
+              </div>
+              )}
               </div>
               )}
 
