@@ -467,6 +467,16 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
 
   const handleSaveOpsData = async () => {
       if (!mission) return;
+      if (isSnapshotFrozen) {
+          const u = JSON.parse(localStorage.getItem('userData') || '{}');
+          const uRole = (u.role || '').toLowerCase();
+          const uName = (u.name || '').toLowerCase();
+          const isPrivileged = uRole === 'administrador' || uRole === 'diretoria' || uName.includes('barbara') || uName.includes('bárbara') || uName.includes('thiago');
+          if (!isPrivileged) {
+              showNotification('Bloqueado', `Dados Congelados — Aprovado por ${mission.snapshot_approved_by}`, 'error');
+              return;
+          }
+      }
       setIsUpdating(true);
       isSavingRef.current = true;
       try {
@@ -522,6 +532,16 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
 
   const handleSaveProvOpsData = async () => {
       if (!mission) return;
+      if (isSnapshotFrozen) {
+          const u = JSON.parse(localStorage.getItem('userData') || '{}');
+          const uRole = (u.role || '').toLowerCase();
+          const uName = (u.name || '').toLowerCase();
+          const isPrivileged = uRole === 'administrador' || uRole === 'diretoria' || uName.includes('barbara') || uName.includes('bárbara') || uName.includes('thiago');
+          if (!isPrivileged) {
+              showNotification('Bloqueado', `Dados Congelados — Aprovado por ${mission.snapshot_approved_by}`, 'error');
+              return;
+          }
+      }
       setIsUpdating(true);
       isSavingRef.current = true;
       try {
@@ -698,16 +718,21 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
       return { stage: 'operacional', label: `Aprovado por ${userName}` };
   };
 
+  const isSnapshotFrozen = !!(mission?.snapshot_approved_by);
+
   const currentApprovalStatus = useMemo(() => {
       const stages = approvalLog.map(l => l.stage);
       const hasAuditor = stages.includes('auditor');
       const hasFinanceiro = stages.includes('financeiro');
       const hasDiretoria = stages.includes('diretoria');
-      const isFullyApproved = hasDiretoria || (hasAuditor && hasFinanceiro && hasDiretoria);
+      const isApprovedForBilling = hasFinanceiro || hasDiretoria;
+      const isFullyApproved = hasDiretoria;
       const missing: string[] = [];
       if (!hasDiretoria) {
-          if (!hasAuditor) missing.push('Daniel');
-          if (!hasFinanceiro) missing.push('Barbara');
+          if (!hasFinanceiro) {
+              if (!hasAuditor) missing.push('Daniel');
+              missing.push('Barbara');
+          }
           missing.push('Diretoria');
       }
       let waitingDays = 0;
@@ -737,11 +762,15 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
 
       const lockedByDiretoria = hasDiretoria && currentUserStage !== 'diretoria' && (() => { try { const u = JSON.parse(localStorage.getItem('userData') || '{}'); return (u.role || '').toLowerCase() !== 'controller'; } catch { return true; } })();
 
-      return { hasAuditor, hasFinanceiro, hasDiretoria, isFullyApproved, missing, waitingDays, hasPartial, blockedForCurrentUser, blockedMessage, currentUserStage, lockedByDiretoria };
+      return { hasAuditor, hasFinanceiro, hasDiretoria, isFullyApproved, isApprovedForBilling, missing, waitingDays, hasPartial, blockedForCurrentUser, blockedMessage, currentUserStage, lockedByDiretoria };
   }, [approvalLog, mission?.endTime]);
 
   const handleUpdate = async (approve: boolean) => {
       if (!mission) return;
+      if (isSnapshotFrozen && currentApprovalStatus.currentUserStage !== 'diretoria' && currentApprovalStatus.currentUserStage !== 'financeiro') {
+          showNotification('Bloqueado', `Dados Congelados — Aprovado por ${mission.snapshot_approved_by}. Somente Financeiro ou Diretoria podem editar.`, 'error');
+          return;
+      }
       if (currentApprovalStatus.lockedByDiretoria) {
           showNotification('Bloqueado', 'Esta OS foi aprovada pela Diretoria. Somente a Diretoria pode editar.', 'error');
           return;
@@ -799,19 +828,55 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
           }
           
           const updatedStages = newLog.map(l => l.stage);
-          const isFullyApproved = updatedStages.includes('diretoria') || (updatedStages.includes('auditor') && updatedStages.includes('financeiro') && updatedStages.includes('diretoria'));
+          const hasFinanceiro = updatedStages.includes('financeiro');
+          const hasDiretoria = updatedStages.includes('diretoria');
+          const isApprovedForBilling = hasFinanceiro || hasDiretoria;
+          const isFullyApproved = hasDiretoria;
           
           const canReleaseBilling = stage === 'financeiro' || stage === 'diretoria';
+          const shouldSnapshot = approve && canReleaseBilling && !mission.snapshot_approved_by;
           
           const basePayload: any = {
               revenue_value: revServiceOnly,
               cost_value: costServiceOnly,
               toll_value: toll,
-              billing_approved: isFullyApproved,
+              billing_approved: isApprovedForBilling,
               last_update: new Date().toISOString()
           };
           if (approve && canReleaseBilling) {
               basePayload.billing_verified_by = userName;
+          }
+
+          if (shouldSnapshot && financialData) {
+              const usedTable = clientTables.find((t: any) => t.id.toString() === (manualClientTableId || financialData.client.tableId));
+              const snapshotNow = new Date().toISOString();
+              const snapshotObj = {
+                  route: mission.origin && mission.destination
+                      ? `${(mission.origin || '').split(',')[0].trim()} X ${(mission.destination || '').split(',')[0].trim()}`
+                      : (usedTable?.route_name || '-'),
+                  tableName: usedTable?.operation_type || '-',
+                  tableId: manualClientTableId || financialData.client.tableId || null,
+                  activationFee: usedTable?.activation_fee ?? financialData.client.base,
+                  franchiseKm: usedTable?.franchise_km ?? 0,
+                  franchiseHours: usedTable?.franchise_hours ?? 0,
+                  unitKm: usedTable?.price_per_extra_km ?? 0,
+                  unitHr: usedTable?.price_per_extra_hour ?? 0,
+                  kmTotal: financialData.realTraveledKm,
+                  kmExtraQtd: financialData.client.excessKm,
+                  kmExtraTotal: financialData.client.extraKmVal,
+                  hrExtraQtd: financialData.client.excessHours,
+                  hrExtraTotal: financialData.client.extraHrVal,
+                  durationHours: financialData.durationHours,
+                  tollVal: toll,
+                  tollProvider: tollProv,
+                  revenueServiceOnly: revServiceOnly,
+                  costServiceOnly: costServiceOnly,
+                  totalGeral: revServiceOnly + toll,
+                  iblFee: financialData.iblFee || 0
+              };
+              basePayload.snapshot_data = snapshotObj;
+              basePayload.snapshot_approved_by = userName;
+              basePayload.snapshot_approved_at = snapshotNow;
           }
           const reasonFields: any = {};
           if (revDivergent && revenueEditReason.trim()) {
@@ -821,11 +886,23 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
               reasonFields.cost_edit_reason = `[${userName} - ${new Date().toLocaleString('pt-BR')}] ${costEditReason.trim()}`;
           }
 
-          let result = await supabase.from('missions').update({ ...basePayload, toll_value_provider: tollProv, ...reasonFields }).eq('id', mission.id).select('id, revenue_value, cost_value, toll_value, last_update').single();
+          const fullPayload = { ...basePayload, toll_value_provider: tollProv, ...reasonFields };
+          let result = await supabase.from('missions').update(fullPayload).eq('id', mission.id).select('id, revenue_value, cost_value, toll_value, last_update').single();
           if (result.error && result.error.message?.includes('does not exist')) {
-              result = await supabase.from('missions').update({ ...basePayload, toll_value_provider: tollProv }).eq('id', mission.id).select('id, revenue_value, cost_value, toll_value, last_update').single();
-              if (result.error && result.error.message?.includes('toll_value_provider')) {
-                  result = await supabase.from('missions').update(basePayload).eq('id', mission.id).select('id, revenue_value, cost_value, toll_value, last_update').single();
+              const { snapshot_data, snapshot_approved_by, snapshot_approved_at, ...payloadWithoutSnapshot } = fullPayload;
+              result = await supabase.from('missions').update(payloadWithoutSnapshot).eq('id', mission.id).select('id, revenue_value, cost_value, toll_value, last_update').single();
+              if (result.error && result.error.message?.includes('does not exist')) {
+                  const { toll_value_provider, ...payloadMin } = payloadWithoutSnapshot;
+                  result = await supabase.from('missions').update(payloadMin).eq('id', mission.id).select('id, revenue_value, cost_value, toll_value, last_update').single();
+              }
+              if (snapshot_data && !result.error) {
+                  await supabase.from('system_logs').insert([{
+                      user_name: userName,
+                      action_type: 'SNAPSHOT',
+                      entity: 'BillingSnapshot',
+                      entity_id: mission.id,
+                      details: JSON.stringify({ ...snapshot_data, approved_by: snapshot_approved_by, approved_at: snapshot_approved_at })
+                  }]);
               }
               if (Object.keys(reasonFields).length > 0) {
                   await supabase.from('system_logs').insert([{
@@ -918,15 +995,23 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
               cost_value: costServiceOnly,
               toll_value: toll,
               toll_value_provider: tollProv,
-              billing_approved: isFullyApproved,
+              billing_approved: isApprovedForBilling,
               ...(approve && canReleaseBilling ? { billing_verified_by: userName } : {}),
+              ...(shouldSnapshot ? { snapshot_data: basePayload.snapshot_data, snapshot_approved_by: userName, snapshot_approved_at: basePayload.snapshot_approved_at } : {}),
               last_update: basePayload.last_update,
               ...(reasonFields.revenue_edit_reason ? { revenue_edit_reason: reasonFields.revenue_edit_reason } : {}),
               ...(reasonFields.cost_edit_reason ? { cost_edit_reason: reasonFields.cost_edit_reason } : {})
           } : prev);
 
           if (approve) {
-              showNotification('Sucesso', isFullyApproved ? 'Faturamento 100% Aprovado! (Auditor + Financeiro + Diretoria)' : `${label} — Aguardando demais aprovações`, 'success');
+              const snapshotMsg = shouldSnapshot ? ' 🔒 Dados Congelados!' : '';
+              if (isFullyApproved) {
+                  showNotification('Sucesso', `Faturamento Finalizado pela Diretoria!${snapshotMsg}`, 'success');
+              } else if (isApprovedForBilling) {
+                  showNotification('Sucesso', `Aprovado para Faturamento por ${userName}!${snapshotMsg} Aguardando Diretoria.`, 'success');
+              } else {
+                  showNotification('Sucesso', `${label} — Aguardando demais aprovações`, 'success');
+              }
           } else {
               showNotification('Sucesso', `Ajustes Salvos por ${userName}`, 'success');
           }
@@ -1121,6 +1206,16 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
         </header>
 
         <div className="flex-1 overflow-y-auto p-6 space-y-6 bg-gray-50 pb-32">
+            {isSnapshotFrozen && (
+                <div data-testid="snapshot-frozen-banner" className="bg-amber-50 border-2 border-amber-400 rounded-xl p-4 flex items-center gap-3 shadow-sm">
+                    <div className="bg-amber-500 p-2 rounded-lg"><Lock size={20} className="text-white" /></div>
+                    <div>
+                        <p className="font-bold text-amber-900 text-sm">Dados Congelados</p>
+                        <p className="text-amber-700 text-xs">Aprovado por <strong>{mission.snapshot_approved_by}</strong> em {mission.snapshot_approved_at ? new Date(mission.snapshot_approved_at).toLocaleString('pt-BR') : '-'}</p>
+                        <p className="text-amber-600 text-[10px] mt-0.5">Valores finais salvos. O boletim de medição reflete esta versão aprovada.</p>
+                    </div>
+                </div>
+            )}
             {isLoading ? (
                 <div className="flex flex-col items-center justify-center py-20 gap-4">
                     <Loader2 size={48} className="animate-spin text-red-600" />

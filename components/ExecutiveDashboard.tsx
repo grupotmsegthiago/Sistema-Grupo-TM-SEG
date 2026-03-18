@@ -186,14 +186,56 @@ const ExecutiveDashboard: React.FC<Props> = ({ missions, isDirector, clientTable
                 }]);
 
                 const allStages = [...existingStages, stage];
-                const isFullyApproved = allStages.includes('diretoria') || (allStages.includes('auditor') && allStages.includes('financeiro') && allStages.includes('diretoria'));
+                const isApprovedForBilling = allStages.includes('financeiro') || allStages.includes('diretoria');
+                const canSnapshot = (stage === 'financeiro' || stage === 'diretoria') && !mission.snapshot_approved_by;
 
-                if (isFullyApproved) {
-                    await supabase.from('missions').update({
+                if (isApprovedForBilling) {
+                    const updatePayload: any = {
                         billing_approved: true,
                         billing_verified_by: displayName,
                         last_update: new Date().toISOString()
-                    }).eq('id', mission.id);
+                    };
+
+                    if (canSnapshot) {
+                        const snapshotObj: any = {
+                            route: mission.origin && mission.destination
+                                ? `${(mission.origin || '').split(',')[0].trim()} X ${(mission.destination || '').split(',')[0].trim()}`
+                                : '-',
+                            activationFee: c.revValue || mission.revenue_value || 0,
+                            franchiseKm: 0,
+                            franchiseHours: 0,
+                            unitKm: 0,
+                            unitHr: 0,
+                            kmTotal: 0,
+                            kmExtraQtd: 0,
+                            kmExtraTotal: 0,
+                            hrExtraQtd: 0,
+                            hrExtraTotal: 0,
+                            durationHours: 0,
+                            tollVal: mission.toll_value || 0,
+                            tollProvider: mission.toll_value_provider || mission.toll_value || 0,
+                            revenueServiceOnly: mission.revenue_value || 0,
+                            costServiceOnly: mission.cost_value || 0,
+                            totalGeral: (mission.revenue_value || 0) + (mission.toll_value || 0),
+                            iblFee: 0
+                        };
+                        updatePayload.snapshot_data = snapshotObj;
+                        updatePayload.snapshot_approved_by = displayName;
+                        updatePayload.snapshot_approved_at = new Date().toISOString();
+                    }
+
+                    const { error: updateErr } = await supabase.from('missions').update(updatePayload).eq('id', mission.id);
+                    if (updateErr && updateErr.message?.includes('does not exist') && canSnapshot) {
+                        const { snapshot_data, snapshot_approved_by, snapshot_approved_at, ...basicPayload } = updatePayload;
+                        await supabase.from('missions').update(basicPayload).eq('id', mission.id);
+                        await supabase.from('system_logs').insert([{
+                            user_name: displayName,
+                            action_type: 'SNAPSHOT',
+                            entity: 'BillingSnapshot',
+                            entity_id: mission.id,
+                            details: JSON.stringify({ ...snapshotObj, approved_by: displayName, approved_at: new Date().toISOString() })
+                        }]);
+                    }
                 }
 
                 success++;

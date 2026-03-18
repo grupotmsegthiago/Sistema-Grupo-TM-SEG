@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { supabase } from '../lib/supabase';
 import { Mission, Client, ClientPriceTable, ProviderCostTable } from '../types';
-import { FileText, Search, Printer, Loader2, FileSpreadsheet, BarChart3, Users, Building2, ChevronDown, ChevronRight, List, ExternalLink, Receipt, Camera, Sparkles, X, AlertCircle, CheckCircle2, ScanLine, Image as ImageIcon, DollarSign, Plus, Trash2, GitBranch, Calendar } from 'lucide-react';
+import { FileText, Search, Printer, Loader2, FileSpreadsheet, BarChart3, Users, Building2, ChevronDown, ChevronRight, List, ExternalLink, Receipt, Camera, Sparkles, X, AlertCircle, CheckCircle2, ScanLine, Image as ImageIcon, DollarSign, Plus, Trash2, GitBranch, Calendar, Lock } from 'lucide-react';
 import { calculateMissionFinancials, extractCityFromAddress } from '../lib/financialUtils';
 import { generateContent } from '../lib/gemini';
 import {
@@ -188,11 +188,14 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
 
             const missionIds = (missionData || []).map((m: any) => m.id).filter(Boolean);
 
-            const [ptRes, pctRes, adjRes] = await Promise.all([
+            const [ptRes, pctRes, adjRes, snapRes] = await Promise.all([
                 supabase.from('client_price_tables').select('*').eq('client', clientName),
                 supabase.from('provider_cost_tables').select('*'),
                 missionIds.length > 0
                     ? supabase.from('system_logs').select('entity_id, details').eq('entity', 'BillingAdjustment').in('entity_id', missionIds).order('created_at', { ascending: false })
+                    : Promise.resolve({ data: [] }),
+                missionIds.length > 0
+                    ? supabase.from('system_logs').select('entity_id, details').eq('entity', 'BillingSnapshot').in('entity_id', missionIds).order('created_at', { ascending: false })
                     : Promise.resolve({ data: [] })
             ]);
             setPriceTables(ptRes.data as ClientPriceTable[] || []);
@@ -208,7 +211,25 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
             }
             setBillingAdjustments(adjMap);
 
-            setMissions(enrichedMissions);
+            if (snapRes.data) {
+                const snapMap: Record<string, any> = {};
+                for (const row of snapRes.data) {
+                    if (!snapMap[row.entity_id]) {
+                        try { snapMap[row.entity_id] = JSON.parse(row.details); } catch {}
+                    }
+                }
+                const updated = enrichedMissions.map((m: any) => {
+                    const snap = snapMap[m.id];
+                    if (snap && !m.snapshot_approved_by) {
+                        return { ...m, snapshot_data: snap, snapshot_approved_by: snap.approved_by || 'Sistema', snapshot_approved_at: snap.approved_at };
+                    }
+                    return m;
+                });
+                setMissions(updated);
+            } else {
+                setMissions(enrichedMissions);
+            }
+
             setReportGenerated(true);
         } catch (err) {
             console.error(err);
@@ -602,8 +623,59 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
         return `GERAL - ${month} /${year} - ${fmtDateDisp(startDate)} A ${fmtDateDisp(endDate)}`;
     };
 
+    const hasFrozenMissions = useMemo(() => missions.some(m => m.snapshot_approved_by), [missions]);
+
     const rowsData = useMemo(() => {
         return missions.map(m => {
+            const snap = m.snapshot_data;
+            const isFrozen = !!(m.snapshot_approved_by && snap);
+
+            if (isFrozen) {
+                const refCidades = snap.route || (() => {
+                    const cidadeOrigem = extractCityFromAddress(m.origin || '');
+                    const cidadeDestino = extractCityFromAddress(m.destination || '');
+                    return cidadeOrigem && cidadeDestino
+                        ? `${cidadeOrigem} X ${cidadeDestino}`
+                        : cidadeOrigem || cidadeDestino || m.region || '-';
+                })();
+                return {
+                    id: (m.id || '').replace('GTM-', ''),
+                    route: refCidades,
+                    client: displayClientName,
+                    activationFee: snap.activationFee ?? 0,
+                    franchiseHours: snap.franchiseHours ?? 0,
+                    franchiseKm: snap.franchiseKm ?? 0,
+                    unitHr: snap.unitHr ?? 0,
+                    unitKm: snap.unitKm ?? 0,
+                    tollLabel: 'À PARTE',
+                    status: 'CONCLUÍDO',
+                    startDate: fmtDate(m.start_time),
+                    startTime: fmtTime(m.start_time),
+                    viatura: m.company_vehicle?.plate || m.vehicle_id || '-',
+                    cargoPlate: m._clientVehicle?.plate || '-',
+                    endDate: fmtDate(m.end_time),
+                    endTime: fmtTime(m.end_time),
+                    kmStart: m.start_km ?? 0,
+                    kmEnd: m.end_km ?? 0,
+                    kmTotal: snap.kmTotal ?? 0,
+                    timeStart: fmtTime(m.start_time),
+                    timeEnd: fmtTime(m.end_time),
+                    timeTotal: fmtHHMM(snap.durationHours ?? 0),
+                    kmExtraQtd: snap.kmExtraQtd ?? 0,
+                    kmExtraUnit: snap.unitKm ?? 0,
+                    kmExtraTotal: snap.kmExtraTotal ?? 0,
+                    hrExtraQtd: snap.hrExtraQtd ?? 0,
+                    hrExtraUnit: snap.unitHr ?? 0,
+                    hrExtraTotal: snap.hrExtraTotal ?? 0,
+                    escoltaVal: snap.activationFee ?? 0,
+                    tollVal: snap.tollVal ?? 0,
+                    totalGeral: snap.totalGeral ?? ((snap.revenueServiceOnly ?? 0) + (snap.tollVal ?? 0)),
+                    franchiseHoursFmt: fmtFranchiseHr(snap.franchiseHours ?? 0),
+                    frozen: true,
+                    frozenBy: m.snapshot_approved_by
+                };
+            }
+
             const adj = billingAdjustments[m.id];
             const overrides = adj ? {
                 clientTableId: adj.clientTableId || undefined,
@@ -622,9 +694,6 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
             const activationFee = usedTable?.activation_fee ?? 0;
             const unitKm = usedTable?.price_per_extra_km ?? 0;
             const unitHr = usedTable?.price_per_extra_hour ?? 0;
-            const route = m.origin && m.destination
-                ? `${(m.origin || '').split(',')[0].trim()} X ${(m.destination || '').split(',')[0].trim()}`
-                : (usedTable?.route_name || '-');
 
             const kmTotal = fin.realTraveledKm;
             const kmExtraQtd = fin.client.excessKm;
@@ -675,7 +744,9 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
                 escoltaVal: activationFee,
                 tollVal,
                 totalGeral,
-                franchiseHoursFmt: fmtFranchiseHr(franchiseHours)
+                franchiseHoursFmt: fmtFranchiseHr(franchiseHours),
+                frozen: false,
+                frozenBy: null as string | null
             };
         });
     }, [missions, priceTables, providerTables, clientData, displayClientName, billingAdjustments]);
@@ -2047,6 +2118,12 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
                         <h1 style={{ fontSize: '18px', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '1px', margin: 0, color: '#7f1d1d' }}>BOLETIM DE MEDIÇÃO</h1>
                         <p className="subtitle-line" style={{ fontSize: '13px', fontWeight: 700, textTransform: 'uppercase', color: '#991b1b', margin: '4px 0' }}>{getPeriodLabel()}</p>
                         <p className="ref-line" style={{ fontSize: '11px', fontWeight: 600, textTransform: 'uppercase', color: '#b91c1c', margin: '2px 0' }}>REFERENTE A INTERMEDIAÇÃO DE SEGURANÇA E MONITORAMENTO DE CARGAS</p>
+                        {hasFrozenMissions && (
+                            <div data-testid="boletim-frozen-header" style={{ marginTop: '6px', display: 'inline-flex', alignItems: 'center', gap: '6px', background: '#fef3c7', border: '1px solid #f59e0b', borderRadius: '6px', padding: '4px 12px' }}>
+                                <Lock size={12} style={{ color: '#92400e' }} />
+                                <span style={{ fontSize: '10px', fontWeight: 700, color: '#92400e', textTransform: 'uppercase' }}>Dados Congelados — Documento Mestre para Faturamento</span>
+                            </div>
+                        )}
                     </div>
 
                     <div className="report-table-scroll" style={{ overflowX: 'auto', maxHeight: '75vh', overflowY: 'auto', WebkitOverflowScrolling: 'touch', border: '1.5px solid #b91c1c', borderRadius: '8px' }}>
@@ -2125,8 +2202,8 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
                                     <tr><td colSpan={27} style={{ ...cellStyle, padding: '20px', fontSize: '14px', fontWeight: 700, color: '#9ca3af' }}>NENHUMA MISSÃO NO PERÍODO.</td></tr>
                                 ) : (
                                     rowsData.map((r, i) => (
-                                        <tr key={i}>
-                                            <td style={cellBold}>{r.id}</td>
+                                        <tr key={i} title={r.frozen ? `Dados Congelados - Aprovado por ${r.frozenBy}` : ''}>
+                                            <td style={cellBold}>{r.frozen && <Lock size={8} style={{ display: 'inline', marginRight: '2px', color: '#92400e' }} />}{r.id}</td>
                                             <td className="route-cell" style={{ ...cellStyle, textAlign: 'left', whiteSpace: 'normal', wordWrap: 'break-word', wordBreak: 'break-word', overflowWrap: 'break-word', lineHeight: '1.25', fontSize: '12px', maxWidth: '320px' }} title={r.route}>{r.route}</td>
                                             <td style={cellStyle}>{fmtBRL(r.activationFee)}</td>
                                             <td style={cellStyle}>{r.franchiseHoursFmt}</td>

@@ -51,6 +51,9 @@ export async function registerRoutes(
         await migrationPool.query(`ALTER TABLE missions ADD COLUMN IF NOT EXISTS mirroring_evidence_url TEXT`);
         await migrationPool.query(`ALTER TABLE missions ADD COLUMN IF NOT EXISTS email_pending_client BOOLEAN DEFAULT FALSE`);
         await migrationPool.query(`ALTER TABLE missions ADD COLUMN IF NOT EXISTS email_pending_provider BOOLEAN DEFAULT FALSE`);
+        await migrationPool.query(`ALTER TABLE missions ADD COLUMN IF NOT EXISTS snapshot_data JSONB`);
+        await migrationPool.query(`ALTER TABLE missions ADD COLUMN IF NOT EXISTS snapshot_approved_by TEXT`);
+        await migrationPool.query(`ALTER TABLE missions ADD COLUMN IF NOT EXISTS snapshot_approved_at TIMESTAMPTZ`);
         await migrationPool.query(`ALTER TABLE system_users ADD COLUMN IF NOT EXISTS password_reset_token TEXT`);
         await migrationPool.query(`ALTER TABLE system_users ADD COLUMN IF NOT EXISTS password_reset_expires TIMESTAMPTZ`);
         console.log('[Migration] Colunas verificadas/criadas com sucesso');

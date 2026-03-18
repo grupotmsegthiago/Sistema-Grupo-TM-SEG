@@ -1,0 +1,36 @@
+Atue como Arquiteto de Sistemas Sênior. Preciso implementar uma lógica de aprovação com 'Congelamento de Dados' (Data Snapshot). Responda e execute em Português (Brasil).
+
+1. Hierarquia de Aprovação com Sobrescrita:
+
+Daniel (Auditor): 1ª instância de aprovação.
+
+Barbara (Controller): 2ª instância, mas com prioridade maior. Se a Barbara aprovar, a OS é considerada 'Aprovada para Faturamento' e o sistema ignora/pula a necessidade de aprovação do Daniel.
+
+Thiago (Diretor): 3ª instância. Se o Thiago aprovar, a OS é considerada 'Finalizada' imediatamente, validando o trabalho de todos os anteriores.
+
+2. Congelamento de Dados (Snapshot):
+
+No momento exato em que a Barbara ou o Thiago clicarem em 'Aprovar', o sistema deve tirar uma 'foto' de todos os valores (KM, Horas, Adicionais, Pedágios, Total).
+
+Esses valores devem ser salvos em colunas específicas de 'Valor Final' no banco de dados e nunca mais serem recalculados, mesmo que as fórmulas de IA ou parâmetros do sistema mudem futuramente.
+
+3. Imutabilidade do Boletim de Medição:
+
+O Boletim de Medição deve ser uma cópia fiel e estática dessas informações aprovadas.
+
+Uma vez aprovado pela Barbara ou pelo Thiago, o Boletim para aquele período fica BLOQUEADO para edições. Qualquer tentativa de alteração na OS original não deve refletir no Boletim já gerado.
+
+4. Interface (UI):
+
+Exiba um ícone de cadeado e a mensagem: 'Dados Congelados - Aprovado por [Nome]' na linha da OS e no cabeçalho do Boletim.
+
+Desabilite todos os botões de edição para operadores comuns após essa aprovação.
+
+Garanta que o Boletim seja o documento mestre para o faturamento no Asaas, sem divergência de um centavo."
+
+Como isso blinda a sua operação:
+Segurança contra Erros de Sistema: Se amanhã você mudar o preço do KM rodado no cadastro geral, as missões do mês passado (que já foram aprovadas pela Barbara ou por você) não vão mudar o valor. O lucro está garantido.
+
+Transparência com o Cliente: Se a CEVA ou a Amazon questionarem um valor, você tem a prova de que aquele dado foi auditado e "congelado" por um humano responsável, e não alterado por um erro de software.
+
+Fim do Retrabalho: Uma vez que a Barbara deu o OK, o faturamento pode seguir direto para o Asaas. O sistema não vai mais "perguntar" ou "recalcular" nada.
