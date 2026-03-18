@@ -451,6 +451,24 @@ export const calculateMissionFinancials = (
 
         const topScore = validCandidates[0].score;
         const bestGroup = validCandidates.filter(t => t.score >= topScore - 20); 
+
+        const isFranchiseName = (name: string) => {
+            const n = (name || '').toUpperCase();
+            return n.includes('ATÉ') || n.includes('ATE ') || n.includes('FAIXA');
+        };
+
+        const franchiseTables = bestGroup.filter(t => isFranchiseName(t.operation_type || ''));
+        if (franchiseTables.length > 0) {
+            const coveringFranchise = franchiseTables
+                .filter(t => t.franchise_km >= dist)
+                .sort((a, b) => a.franchise_km - b.franchise_km);
+            if (coveringFranchise.length > 0) {
+                return { table: coveringFranchise[0], log: `Faixa KM (${coveringFranchise[0].matchType})` };
+            }
+            const largest = [...franchiseTables].sort((a, b) => b.franchise_km - a.franchise_km);
+            return { table: largest[0], log: `Faixa KM Máx (${largest[0].matchType})` };
+        }
+
         const sortedByKm = bestGroup.sort((a, b) => a.franchise_km - b.franchise_km);
         const exactCover = sortedByKm.find(t => t.franchise_km >= dist);
         const bestTable = exactCover || sortedByKm[sortedByKm.length - 1];
