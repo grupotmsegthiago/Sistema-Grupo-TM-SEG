@@ -618,24 +618,15 @@ Qualquer dúvida, estamos a disposição.
                 </div>
 
                 <div className="lg:col-span-2 p-3 flex flex-col justify-center bg-white">
-                    {hideProviderInfo ? (
-                        <div className="flex flex-col items-center justify-center h-full">
-                            <span className={`text-[10px] font-black uppercase px-2 py-0.5 rounded-md border shadow-sm ${
-                                mission.mission_type?.toUpperCase().includes('VELADA') 
-                                ? 'bg-indigo-50 text-indigo-700 border-indigo-200' 
-                                : 'bg-red-50 text-red-700 border-red-200'
-                            }`}>
-                                {(mission.mission_type || 'CARACTERIZADA').toUpperCase()}
-                            </span>
-                        </div>
-                    ) : (
                     <div className="flex flex-col gap-2">
+                        {!hideProviderInfo && (
                         <div className="flex flex-wrap gap-2 mb-1">
                             <span className="text-[10px] font-black text-slate-800 bg-white px-2 py-1 rounded border border-slate-200 uppercase tracking-widest shadow-sm">
                                 <Briefcase size={10} className="inline mr-1 text-blue-600" /> 
                                 {formatProviderName(mission.provider) || 'PENDENTE'}
                             </span>
                         </div>
+                        )}
 
                         <div className="flex items-center gap-2.5">
                             <div className="p-1.5 bg-white rounded-lg text-red-600 border border-gray-100 shadow-sm"><CarFront size={12}/></div>
@@ -689,7 +680,6 @@ Qualquer dúvida, estamos a disposição.
                             </div>
                         </div>
                     </div>
-                    )}
                 </div>
                 
                 <div className="lg:col-span-3 p-3 flex flex-col justify-center relative bg-gray-50/20">

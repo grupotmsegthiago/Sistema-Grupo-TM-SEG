@@ -1244,16 +1244,16 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
                     </div>
 
                     {/* DADOS DA EQUIPE */}
-                    {!hideProviderInfo && (
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 p-6 bg-white border border-gray-200 rounded-[2.5rem] shadow-sm relative">
+                    <div className={`grid grid-cols-1 md:grid-cols-2 ${hideProviderInfo ? 'lg:grid-cols-3' : 'lg:grid-cols-4'} gap-4 p-6 bg-white border border-gray-200 rounded-[2.5rem] shadow-sm relative`}>
                         
                         {/* ALERTA INTELIGENTE IBL */}
-                        {iblWarning && (
+                        {!hideProviderInfo && iblWarning && (
                             <div className="col-span-full bg-red-600 text-white px-4 py-2 rounded-lg text-xs font-bold uppercase flex items-center justify-center gap-2 shadow-lg animate-pulse mb-2">
                                 <ShieldAlert size={16} /> {iblWarning}
                             </div>
                         )}
 
+                        {!hideProviderInfo && (
                         <div className="relative">
                             <label className={LABEL_CLASS}>Fornecedor Parceiro</label>
                             <div className="flex gap-1.5">
@@ -1278,6 +1278,7 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
                                 <button type="button" onClick={() => setQuickModal('provider')} className="p-2.5 bg-gray-900 text-white rounded-xl hover:bg-black transition-all shadow-md"><Plus size={18}/></button>
                             </div>
                         </div>
+                        )}
 
                         <div className="relative">
                             <label className={LABEL_CLASS}>Viatura (Placa)</label>
