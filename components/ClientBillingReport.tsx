@@ -1404,12 +1404,6 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
                             </div>
                         )}
 
-                        <button onClick={handleSaveInvoice} disabled={invoiceSaving}
-                            className="w-full bg-gray-900 text-white font-black uppercase text-xs tracking-widest py-4 rounded-xl flex items-center justify-center gap-2 hover:bg-black transition-colors shadow-lg disabled:opacity-50"
-                            data-testid="btn-billing-save-invoice">
-                            {invoiceSaving ? <Loader2 size={18} className="animate-spin"/> : <Receipt size={18}/>}
-                            {invoiceSaving ? 'Salvando...' : 'Emitir Fatura e Vincular Contas a Receber'}
-                        </button>
                     </div>
                 </div>
             </div>
