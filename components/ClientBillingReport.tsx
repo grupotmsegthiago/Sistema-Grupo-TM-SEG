@@ -89,10 +89,15 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
 
     useEffect(() => {
         const selectedClient = clients.find(c => c.id.toString() === invoiceForm.client);
-        const isCeva = selectedClient && (selectedClient.name?.toUpperCase().includes('CEVA') || selectedClient.trading_name?.toUpperCase().includes('CEVA'));
-        const base = isCeva
-            ? 'CNAE 07930 — Monitoramento e rastreamento a distância de veículos, cargas, pessoas e semoventes por qualquer meio'
-            : 'Referente aos serviços de Intermediação de Escolta Armada e Fiscal de Rota';
+        const clientNameUpper = `${selectedClient?.name || ''} ${selectedClient?.trading_name || ''}`.toUpperCase();
+        let base: string;
+        if (clientNameUpper.includes('CEVA')) {
+            base = 'CNAE 07930 — Monitoramento e rastreamento a distância de veículos, cargas, pessoas e semoventes por qualquer meio';
+        } else if (clientNameUpper.includes('AMAZON')) {
+            base = 'CNAE 06298 — Outras atividades de prestação de serviços de informação não especificadas anteriormente';
+        } else {
+            base = 'CNAE 03115 — Atividades de vigilância e segurança privada';
+        }
         setAsaasDescription(asaasPeriod ? `${base} — ${asaasPeriod}` : base);
     }, [asaasPeriod, showInvoiceModal, invoiceForm.client, clients]);
 
