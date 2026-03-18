@@ -394,11 +394,11 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
             * { box-sizing: border-box; -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
             html, body { margin: 0; padding: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; font-size: 7pt; color: #1f2937; }
             #print-content { width: 100%; }
-            table { table-layout: auto; width: 100%; border-collapse: collapse; border: 1px solid #4b5563; }
+            table { table-layout: auto; width: 100%; border-collapse: collapse; border: 1.5px solid #991b1b; }
             td, th {
                 padding: 2px 4px;
                 font-size: 7pt;
-                border: 0.5px solid #9ca3af;
+                border: 0.5px solid #e5c4c4;
                 line-height: 1.3;
                 white-space: nowrap;
                 text-align: center;
@@ -420,31 +420,31 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
             tfoot { display: table-footer-group; }
             tr { page-break-inside: avoid; break-inside: avoid; }
             tbody tr:nth-child(odd) { background-color: #ffffff; }
-            tbody tr:nth-child(even) { background-color: #f9fafb; }
+            tbody tr:nth-child(even) { background-color: #fef2f2; }
             .group-hdr th {
                 font-size: 7.5pt;
                 padding: 3px 4px;
                 font-weight: 900;
                 letter-spacing: 0.5px;
-                border-bottom: 1.5px solid #4b5563;
-                border-top: 1.5px solid #4b5563;
+                border-bottom: 1.5px solid #7f1d1d;
+                border-top: 1.5px solid #7f1d1d;
             }
             .sub-hdr th {
                 font-size: 6.5pt;
                 padding: 2.5px 3px;
                 font-weight: 800;
-                border-bottom: 1px solid #6b7280;
+                border-bottom: 1px solid #b91c1c;
                 text-transform: uppercase;
             }
             .boletim-header {
                 margin-bottom: 4mm;
                 text-align: center;
                 padding-bottom: 2mm;
-                border-bottom: 0.5px solid #d1d5db;
+                border-bottom: 1px solid #dc2626;
             }
-            .boletim-header h1 { font-size: 14pt; margin: 0; color: #111827; }
-            .subtitle-line { font-size: 9.5pt; margin: 1.5mm 0 0.5mm; color: #374151; }
-            .ref-line { font-size: 7.5pt; margin: 0; color: #6b7280; letter-spacing: 0.3px; }
+            .boletim-header h1 { font-size: 14pt; margin: 0; color: #7f1d1d; }
+            .subtitle-line { font-size: 9.5pt; margin: 1.5mm 0 0.5mm; color: #991b1b; }
+            .ref-line { font-size: 7.5pt; margin: 0; color: #b91c1c; letter-spacing: 0.3px; }
             .watermark-logo { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); opacity: 0.04; width: 120mm; height: 120mm; z-index: 0; pointer-events: none; }
             .watermark-logo img { width: 100%; height: 100%; object-fit: contain; }
             .sign-section {
@@ -455,22 +455,22 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
                 justify-content: space-between;
                 align-items: flex-end;
                 padding: 0 10mm;
-                border-top: 0.5px solid #e5e7eb;
+                border-top: 1px solid #dc2626;
                 padding-top: 4mm;
             }
             .sign-box { width: 65mm; text-align: center; }
             .sign-logo { width: 10mm; height: 10mm; }
-            .digital-signature { font-size: 14pt; font-family: 'Dancing Script', cursive; font-weight: 700; color: #1a237e; line-height: 1; }
-            .sign-role { font-size: 8pt; font-weight: 900; text-transform: uppercase; color: #111827; letter-spacing: 0.8px; margin-top: 1mm; }
-            .sign-cargo { font-size: 7pt; color: #6b7280; font-weight: 700; }
-            .sign-cnpj { font-size: 6.5pt; color: #6b7280; }
-            .sign-system { font-size: 6.5pt; color: #9ca3af; letter-spacing: 0.3px; }
-            .sign-cliente { font-size: 8pt; font-weight: 900; text-transform: uppercase; color: #111827; letter-spacing: 0.8px; }
-            .sign-data { font-size: 7pt; color: #6b7280; margin-top: 1mm; }
+            .digital-signature { font-size: 14pt; font-family: 'Dancing Script', cursive; font-weight: 700; color: #7f1d1d; line-height: 1; }
+            .sign-role { font-size: 8pt; font-weight: 900; text-transform: uppercase; color: #7f1d1d; letter-spacing: 0.8px; margin-top: 1mm; }
+            .sign-cargo { font-size: 7pt; color: #991b1b; font-weight: 700; }
+            .sign-cnpj { font-size: 6.5pt; color: #b91c1c; }
+            .sign-system { font-size: 6.5pt; color: #dc2626; letter-spacing: 0.3px; }
+            .sign-cliente { font-size: 8pt; font-weight: 900; text-transform: uppercase; color: #7f1d1d; letter-spacing: 0.8px; }
+            .sign-data { font-size: 7pt; color: #991b1b; margin-top: 1mm; }
             tfoot tr {
                 break-inside: avoid;
                 page-break-inside: avoid;
-                border-top: 2px solid #111827;
+                border-top: 2px solid #7f1d1d;
             }
             tfoot td { font-size: 8pt; font-weight: 900; padding: 3px 5px; }
         `;
@@ -708,7 +708,7 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
     }, [rowsData, grandTotal, displayClientName, startDate, endDate]);
 
     const cellStyle: React.CSSProperties = {
-        border: '1px solid #c9cdd3',
+        border: '1px solid #e5c4c4',
         padding: '5px 7px',
         fontSize: '13px',
         fontFamily: "'Segoe UI', Tahoma, Geneva, Verdana, sans-serif",
@@ -723,38 +723,39 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
     const cellBold: React.CSSProperties = { ...cellStyle, fontWeight: 800, color: '#111827' };
     const headerStyle: React.CSSProperties = {
         ...cellStyle,
-        backgroundColor: '#e5e7eb',
+        backgroundColor: '#fecaca',
         fontWeight: 900,
         fontSize: '11px',
         textTransform: 'uppercase' as const,
-        color: '#000',
+        color: '#7f1d1d',
         padding: '5px 5px',
     };
     const groupHeaderStyle: React.CSSProperties = {
         ...headerStyle,
-        backgroundColor: '#d1d5db',
+        backgroundColor: '#b91c1c',
+        color: '#ffffff',
         fontSize: '12px',
         letterSpacing: '0.3px',
         padding: '6px 5px',
     };
 
-    const bgKm = '#eef2ff';
-    const bgHr = '#fef9c3';
-    const bgKmExc = '#ecfdf5';
-    const bgHrExc = '#fdf2f8';
-    const bgVal = '#f0f9ff';
+    const bgKm = '#fff5f5';
+    const bgHr = '#fef2f2';
+    const bgKmExc = '#fff1f2';
+    const bgHrExc = '#ffe4e6';
+    const bgVal = '#fce7e7';
 
-    const hdrKm: React.CSSProperties = { ...headerStyle, backgroundColor: '#c7d2fe' };
-    const hdrHr: React.CSSProperties = { ...headerStyle, backgroundColor: '#fde68a' };
-    const hdrKmExc: React.CSSProperties = { ...headerStyle, backgroundColor: '#a7f3d0' };
-    const hdrHrExc: React.CSSProperties = { ...headerStyle, backgroundColor: '#fbcfe8' };
-    const hdrVal: React.CSSProperties = { ...headerStyle, backgroundColor: '#bae6fd' };
+    const hdrKm: React.CSSProperties = { ...headerStyle, backgroundColor: '#fca5a5' };
+    const hdrHr: React.CSSProperties = { ...headerStyle, backgroundColor: '#fecdd3' };
+    const hdrKmExc: React.CSSProperties = { ...headerStyle, backgroundColor: '#fda4af' };
+    const hdrHrExc: React.CSSProperties = { ...headerStyle, backgroundColor: '#fb7185' };
+    const hdrVal: React.CSSProperties = { ...headerStyle, backgroundColor: '#f87171', color: '#fff' };
 
-    const grpKm: React.CSSProperties = { ...groupHeaderStyle, backgroundColor: '#a5b4fc' };
-    const grpHr: React.CSSProperties = { ...groupHeaderStyle, backgroundColor: '#fcd34d' };
-    const grpKmExc: React.CSSProperties = { ...groupHeaderStyle, backgroundColor: '#6ee7b7' };
-    const grpHrExc: React.CSSProperties = { ...groupHeaderStyle, backgroundColor: '#f9a8d4' };
-    const grpVal: React.CSSProperties = { ...groupHeaderStyle, backgroundColor: '#7dd3fc' };
+    const grpKm: React.CSSProperties = { ...groupHeaderStyle, backgroundColor: '#dc2626' };
+    const grpHr: React.CSSProperties = { ...groupHeaderStyle, backgroundColor: '#c53030' };
+    const grpKmExc: React.CSSProperties = { ...groupHeaderStyle, backgroundColor: '#b91c1c' };
+    const grpHrExc: React.CSSProperties = { ...groupHeaderStyle, backgroundColor: '#991b1b' };
+    const grpVal: React.CSSProperties = { ...groupHeaderStyle, backgroundColor: '#7f1d1d' };
 
     const fileToBase64 = (file: File): Promise<string> => {
         return new Promise((resolve, reject) => {
@@ -1413,8 +1414,8 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
                         z-index: 3;
                     }
                     #print-area .report-table-scroll tbody tr:nth-child(odd) { background-color: #ffffff; }
-                    #print-area .report-table-scroll tbody tr:nth-child(even) { background-color: #f8fafc; }
-                    #print-area .report-table-scroll tbody tr:hover { background-color: #eef2ff !important; }
+                    #print-area .report-table-scroll tbody tr:nth-child(even) { background-color: #fef2f2; }
+                    #print-area .report-table-scroll tbody tr:hover { background-color: #fee2e2 !important; }
                 }
 
                 /* ====== PRINT STYLES ====== */
@@ -1857,13 +1858,13 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
                         <img src="/logo.png" alt="" style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
                     </div>
                     <div style={{ position: 'relative', zIndex: 1 }}>
-                    <div className="boletim-header mb-4 text-center">
-                        <h1 style={{ fontSize: '18px', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '1px', margin: 0 }}>BOLETIM DE MEDIÇÃO</h1>
-                        <p className="subtitle-line" style={{ fontSize: '13px', fontWeight: 700, textTransform: 'uppercase', color: '#374151', margin: '4px 0' }}>{getPeriodLabel()}</p>
-                        <p className="ref-line" style={{ fontSize: '11px', fontWeight: 600, textTransform: 'uppercase', color: '#6b7280', margin: '2px 0' }}>REFERENTE A INTERMEDIAÇÃO DE SEGURANÇA E MONITORAMENTO DE CARGAS</p>
+                    <div className="boletim-header mb-4 text-center" style={{ borderBottom: '2px solid #dc2626', paddingBottom: '8px' }}>
+                        <h1 style={{ fontSize: '18px', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '1px', margin: 0, color: '#7f1d1d' }}>BOLETIM DE MEDIÇÃO</h1>
+                        <p className="subtitle-line" style={{ fontSize: '13px', fontWeight: 700, textTransform: 'uppercase', color: '#991b1b', margin: '4px 0' }}>{getPeriodLabel()}</p>
+                        <p className="ref-line" style={{ fontSize: '11px', fontWeight: 600, textTransform: 'uppercase', color: '#b91c1c', margin: '2px 0' }}>REFERENTE A INTERMEDIAÇÃO DE SEGURANÇA E MONITORAMENTO DE CARGAS</p>
                     </div>
 
-                    <div className="report-table-scroll" style={{ overflowX: 'auto', maxHeight: '75vh', overflowY: 'auto', WebkitOverflowScrolling: 'touch', border: '1px solid #d1d5db', borderRadius: '8px' }}>
+                    <div className="report-table-scroll" style={{ overflowX: 'auto', maxHeight: '75vh', overflowY: 'auto', WebkitOverflowScrolling: 'touch', border: '1.5px solid #b91c1c', borderRadius: '8px' }}>
                         <table style={{ width: 'max-content', minWidth: '100%', borderCollapse: 'collapse', tableLayout: 'auto' }}>
                             <colgroup>
                                 <col style={{ minWidth: '45px' }} />
@@ -1973,36 +1974,36 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
                             </tbody>
                             {rowsData.length > 0 && (
                                 <tfoot>
-                                    <tr style={{ backgroundColor: '#111827', color: '#fff' }}>
-                                        <td colSpan={26} style={{ ...cellStyle, textAlign: 'right', fontWeight: 900, fontSize: '14px', color: '#fff', border: '1px solid #000', padding: '8px 10px' }}>TOTAL</td>
-                                        <td style={{ ...cellStyle, fontWeight: 900, fontSize: '15px', color: '#fff', border: '1px solid #000', padding: '8px 10px' }}>{fmtBRL(grandTotal)}</td>
+                                    <tr style={{ backgroundColor: '#7f1d1d', color: '#fff' }}>
+                                        <td colSpan={26} style={{ ...cellStyle, textAlign: 'right', fontWeight: 900, fontSize: '14px', color: '#fff', border: '1px solid #991b1b', padding: '8px 10px' }}>TOTAL</td>
+                                        <td style={{ ...cellStyle, fontWeight: 900, fontSize: '15px', color: '#fff', border: '1px solid #991b1b', padding: '8px 10px' }}>{fmtBRL(grandTotal)}</td>
                                     </tr>
                                 </tfoot>
                             )}
                         </table>
                     </div>
 
-                    <div className="sign-section" style={{ marginTop: '32px', display: 'flex', justifyContent: 'space-between', padding: '0 24px', alignItems: 'flex-end' }}>
+                    <div className="sign-section" style={{ marginTop: '32px', display: 'flex', justifyContent: 'space-between', padding: '16px 24px 0', alignItems: 'flex-end', borderTop: '2px solid #dc2626' }}>
                         <div className="sign-box" style={{ textAlign: 'center', width: '280px' }}>
                             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px', marginBottom: '8px' }}>
                                 <img src="/logo.png" alt="TMSEG" style={{ width: '36px', height: '36px', objectFit: 'contain' }} className="sign-logo" />
                                 <div style={{ textAlign: 'left' }}>
-                                    <div className="digital-signature" style={{ fontFamily: "'Dancing Script', cursive", fontSize: '22px', fontWeight: 700, color: '#1a237e', lineHeight: 1 }}>Thiago Moreira</div>
-                                    <div className="sign-cargo" style={{ fontSize: '11px', fontWeight: 800, textTransform: 'uppercase' as const, color: '#6b7280', letterSpacing: '0.5px' }}>Diretor Executivo</div>
+                                    <div className="digital-signature" style={{ fontFamily: "'Dancing Script', cursive", fontSize: '22px', fontWeight: 700, color: '#7f1d1d', lineHeight: 1 }}>Thiago Moreira</div>
+                                    <div className="sign-cargo" style={{ fontSize: '11px', fontWeight: 800, textTransform: 'uppercase' as const, color: '#991b1b', letterSpacing: '0.5px' }}>Diretor Executivo</div>
                                 </div>
                             </div>
-                            <div style={{ borderTop: '1.5px solid #111827', paddingTop: '4px' }}>
-                                <div className="sign-role" style={{ fontSize: '12px', fontWeight: 900, textTransform: 'uppercase' as const, color: '#111827', letterSpacing: '1px' }}>GRUPO TM SEG</div>
-                                <div className="sign-cnpj" style={{ fontSize: '10px', fontWeight: 600, color: '#6b7280', letterSpacing: '0.5px', marginTop: '2px' }}>CNPJ: 55.232.834/0001-49</div>
+                            <div style={{ borderTop: '1.5px solid #7f1d1d', paddingTop: '4px' }}>
+                                <div className="sign-role" style={{ fontSize: '12px', fontWeight: 900, textTransform: 'uppercase' as const, color: '#7f1d1d', letterSpacing: '1px' }}>GRUPO TM SEG</div>
+                                <div className="sign-cnpj" style={{ fontSize: '10px', fontWeight: 600, color: '#b91c1c', letterSpacing: '0.5px', marginTop: '2px' }}>CNPJ: 55.232.834/0001-49</div>
                             </div>
                         </div>
                         <div style={{ textAlign: 'center', flex: 1, padding: '0 40px' }}>
-                            <div className="sign-system" style={{ fontSize: '10px', fontWeight: 600, color: '#9ca3af', textTransform: 'uppercase' as const, letterSpacing: '0.5px' }}>Documento gerado eletronicamente pelo sistema TMSEGo</div>
+                            <div className="sign-system" style={{ fontSize: '10px', fontWeight: 600, color: '#dc2626', textTransform: 'uppercase' as const, letterSpacing: '0.5px' }}>Documento gerado eletronicamente pelo sistema TMSEGo</div>
                         </div>
                         <div className="sign-box" style={{ textAlign: 'center', width: '280px' }}>
-                            <div style={{ borderTop: '1.5px solid #111827', paddingTop: '4px', marginTop: '34px' }}>
-                                <div className="sign-cliente" style={{ fontSize: '12px', fontWeight: 900, textTransform: 'uppercase' as const, color: '#111827', letterSpacing: '1px' }}>Assinatura / Carimbo Cliente</div>
-                                <div className="sign-data" style={{ fontSize: '10px', fontWeight: 600, color: '#6b7280', marginTop: '2px' }}>Data: ____/____/________</div>
+                            <div style={{ borderTop: '1.5px solid #7f1d1d', paddingTop: '4px', marginTop: '34px' }}>
+                                <div className="sign-cliente" style={{ fontSize: '12px', fontWeight: 900, textTransform: 'uppercase' as const, color: '#7f1d1d', letterSpacing: '1px' }}>Assinatura / Carimbo Cliente</div>
+                                <div className="sign-data" style={{ fontSize: '10px', fontWeight: 600, color: '#991b1b', marginTop: '2px' }}>Data: ____/____/________</div>
                             </div>
                         </div>
                     </div>
