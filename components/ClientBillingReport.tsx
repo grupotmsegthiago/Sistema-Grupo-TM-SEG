@@ -1231,13 +1231,12 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
             <style>{`
                 @media print {
                     @page {
-                        size: landscape;
-                        margin: 5mm;
+                        size: A4 landscape;
+                        margin: 6mm 8mm;
                     }
                     html, body {
                         margin: 0 !important;
                         padding: 0 !important;
-                        width: 287mm !important;
                         -webkit-print-color-adjust: exact !important;
                         print-color-adjust: exact !important;
                         color-adjust: exact !important;
@@ -1251,8 +1250,7 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
                     #print-area {
                         position: absolute;
                         left: 0; top: 0;
-                        width: 287mm !important;
-                        max-width: 287mm !important;
+                        width: 100% !important;
                         padding: 0 !important;
                         margin: 0 !important;
                         overflow: visible !important;
@@ -1263,28 +1261,33 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
                     #print-area .report-table-scroll {
                         overflow: visible !important;
                         max-width: none !important;
-                        width: 287mm !important;
+                        width: 100% !important;
                     }
                     #print-area table {
-                        table-layout: fixed !important;
-                        width: 287mm !important;
-                        max-width: 287mm !important;
+                        table-layout: auto !important;
+                        width: 100% !important;
                         border-collapse: collapse !important;
                     }
                     #print-area thead {
                         display: table-header-group !important;
+                    }
+                    #print-area tbody {
+                        display: table-row-group !important;
+                    }
+                    #print-area tfoot {
+                        display: table-footer-group !important;
                     }
                     #print-area tr {
                         page-break-inside: avoid !important;
                         break-inside: avoid !important;
                     }
                     #print-area td, #print-area th {
-                        padding: 0.5mm 0.8mm !important;
-                        font-size: 1.8mm !important;
+                        padding: 2.5px 4px !important;
+                        font-size: 8pt !important;
                         overflow: hidden !important;
                         text-overflow: ellipsis !important;
-                        border: 0.2px solid #999 !important;
-                        line-height: 1.2 !important;
+                        border: 0.5px solid #aaa !important;
+                        line-height: 1.35 !important;
                         white-space: nowrap !important;
                     }
                     #print-area td.route-cell {
@@ -1292,29 +1295,28 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
                         word-wrap: break-word !important;
                         word-break: break-word !important;
                         overflow-wrap: break-word !important;
-                        line-height: 1.15 !important;
-                        font-size: 1.6mm !important;
-                        max-width: 0 !important;
+                        line-height: 1.25 !important;
+                        font-size: 7pt !important;
                     }
                     #print-area tbody tr:nth-child(odd) { background-color: #ffffff !important; }
-                    #print-area tbody tr:nth-child(even) { background-color: #f0f0f0 !important; }
+                    #print-area tbody tr:nth-child(even) { background-color: #f3f4f6 !important; }
                     #print-area .group-hdr th {
-                        font-size: 2mm !important;
-                        padding: 0.6mm !important;
+                        font-size: 9pt !important;
+                        padding: 3px 4px !important;
                         font-weight: 900 !important;
                     }
                     #print-area .sub-hdr th {
-                        font-size: 1.7mm !important;
-                        padding: 0.4mm 0.6mm !important;
+                        font-size: 7.5pt !important;
+                        padding: 2px 4px !important;
                         font-weight: 900 !important;
                     }
-                    #print-area .boletim-header { margin-bottom: 1mm !important; }
-                    #print-area .boletim-header h1 { font-size: 4mm !important; margin: 0 !important; }
-                    #print-area .subtitle-line { font-size: 2.5mm !important; margin: 0 !important; }
-                    #print-area .ref-line { font-size: 2mm !important; margin: 0 !important; }
+                    #print-area .boletim-header { margin-bottom: 3mm !important; }
+                    #print-area .boletim-header h1 { font-size: 14pt !important; margin: 0 !important; }
+                    #print-area .subtitle-line { font-size: 10pt !important; margin: 0 !important; }
+                    #print-area .ref-line { font-size: 8pt !important; margin: 0 !important; }
                     .no-print { display: none !important; }
                     #print-area .watermark-logo {
-                        position: absolute !important;
+                        position: fixed !important;
                         top: 50% !important;
                         left: 50% !important;
                         transform: translate(-50%, -50%) !important;
@@ -1326,21 +1328,23 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
                         print-color-adjust: exact !important;
                     }
                     #print-area .sign-section {
-                        margin-top: 3mm !important;
+                        margin-top: 8mm !important;
                         break-inside: avoid !important;
                         page-break-inside: avoid !important;
+                        page-break-before: auto !important;
                     }
-                    #print-area .sign-box { font-size: 2mm !important; width: 60mm !important; }
-                    #print-area .sign-logo { width: 8mm !important; height: 8mm !important; }
-                    #print-area .digital-signature { font-size: 3.5mm !important; }
-                    #print-area .sign-role { font-size: 1.8mm !important; }
+                    #print-area .sign-box { font-size: 8pt !important; width: 60mm !important; }
+                    #print-area .sign-logo { width: 10mm !important; height: 10mm !important; }
+                    #print-area .digital-signature { font-size: 14pt !important; }
+                    #print-area .sign-role { font-size: 8pt !important; }
                     #print-area tfoot tr {
                         break-inside: avoid !important;
                         page-break-inside: avoid !important;
                     }
                     #print-area tfoot td {
-                        font-size: 2mm !important;
+                        font-size: 8pt !important;
                         font-weight: 900 !important;
+                        padding: 3px 4px !important;
                     }
                 }
             `}</style>
