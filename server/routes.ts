@@ -269,29 +269,47 @@ export async function registerRoutes(
     }
   });
 
+  const getResetPool = () => {
+    const dbPass = process.env.SUPABASE_DB_PASSWORD;
+    if (!dbPass) throw new Error('SUPABASE_DB_PASSWORD não configurada');
+    return new pg.Pool({
+      connectionString: `postgresql://postgres.ajhmmjuewdsukecaimik:${dbPass}@aws-0-sa-east-1.pooler.supabase.com:6543/postgres`,
+      ssl: { rejectUnauthorized: false },
+      max: 2
+    });
+  };
+
   app.post("/api/password-reset/request", async (req: Request, res: Response) => {
     try {
       const { userId, senderName } = req.body;
       if (!userId) return res.status(400).json({ error: 'userId obrigatório' });
 
-      const { data: user, error } = await supabase.from('system_users').select('id, name, email').eq('id', userId).single();
-      if (error || !user) return res.status(404).json({ error: 'Usuário não encontrado' });
+      const pool = getResetPool();
+      try {
+        const userResult = await pool.query('SELECT id, name, email FROM system_users WHERE id = $1', [userId]);
+        if (userResult.rows.length === 0) return res.status(404).json({ error: 'Usuário não encontrado' });
+        const user = userResult.rows[0];
 
-      const crypto = await import('crypto');
-      const token = crypto.randomBytes(32).toString('hex');
-      const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+        const crypto = await import('crypto');
+        const token = crypto.randomBytes(32).toString('hex');
+        const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
 
-      await supabase.from('system_users').update({
-        password_reset_token: token,
-        password_reset_expires: expiresAt,
-        force_password_change: true
-      }).eq('id', userId);
+        await pool.query(
+          'UPDATE system_users SET password_reset_token = $1, password_reset_expires = $2, force_password_change = true WHERE id = $3',
+          [token, expiresAt, userId]
+        );
 
-      const systemUrl = process.env.SYSTEM_URL || `https://${process.env.REPLIT_DOMAINS?.split(',')[0] || 'app.grupotmseg.com.br'}`;
-      const resetLink = `${systemUrl}/reset-password?token=${token}`;
+        const verifyResult = await pool.query('SELECT password_reset_token FROM system_users WHERE id = $1', [userId]);
+        console.log(`[PasswordReset] Token gravado para user ${userId}: ${verifyResult.rows[0]?.password_reset_token ? 'SIM' : 'NÃO'}`);
 
-      const success = await sendPasswordResetEmail(user.email, user.name, resetLink, senderName);
-      res.json({ success, message: success ? 'E-mail de redefinição enviado!' : 'Falha ao enviar e-mail' });
+        const systemUrl = process.env.SYSTEM_URL || `https://${process.env.REPLIT_DOMAINS?.split(',')[0] || 'app.grupotmseg.com.br'}`;
+        const resetLink = `${systemUrl}/reset-password?token=${token}`;
+
+        const success = await sendPasswordResetEmail(user.email, user.name, resetLink, senderName);
+        res.json({ success, message: success ? 'E-mail de redefinição enviado!' : 'Falha ao enviar e-mail' });
+      } finally {
+        await pool.end();
+      }
     } catch (err: any) {
       console.error('[PasswordReset] Erro:', err.message);
       res.status(500).json({ error: err.message });
@@ -303,18 +321,24 @@ export async function registerRoutes(
       const { token } = req.body;
       if (!token) return res.status(400).json({ error: 'Token obrigatório' });
 
-      const { data: user, error } = await supabase.from('system_users')
-        .select('id, name, email, password_reset_expires')
-        .eq('password_reset_token', token)
-        .single();
+      const pool = getResetPool();
+      try {
+        const result = await pool.query(
+          'SELECT id, name, email, password_reset_expires FROM system_users WHERE password_reset_token = $1',
+          [token]
+        );
 
-      if (error || !user) return res.status(404).json({ error: 'Token inválido ou expirado' });
+        if (result.rows.length === 0) return res.status(404).json({ error: 'Token inválido ou expirado' });
+        const user = result.rows[0];
 
-      if (new Date(user.password_reset_expires) < new Date()) {
-        return res.status(410).json({ error: 'Token expirado' });
+        if (new Date(user.password_reset_expires) < new Date()) {
+          return res.status(410).json({ error: 'Token expirado' });
+        }
+
+        res.json({ valid: true, userName: user.name, userEmail: user.email });
+      } finally {
+        await pool.end();
       }
-
-      res.json({ valid: true, userName: user.name, userEmail: user.email });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }
@@ -326,25 +350,29 @@ export async function registerRoutes(
       if (!token || !newPassword) return res.status(400).json({ error: 'Token e nova senha são obrigatórios' });
       if (newPassword.length < 6) return res.status(400).json({ error: 'A senha deve ter no mínimo 6 caracteres' });
 
-      const { data: user, error } = await supabase.from('system_users')
-        .select('id, name, password_reset_expires')
-        .eq('password_reset_token', token)
-        .single();
+      const pool = getResetPool();
+      try {
+        const result = await pool.query(
+          'SELECT id, name, password_reset_expires FROM system_users WHERE password_reset_token = $1',
+          [token]
+        );
 
-      if (error || !user) return res.status(404).json({ error: 'Token inválido ou expirado' });
+        if (result.rows.length === 0) return res.status(404).json({ error: 'Token inválido ou expirado' });
+        const user = result.rows[0];
 
-      if (new Date(user.password_reset_expires) < new Date()) {
-        return res.status(410).json({ error: 'Token expirado' });
+        if (new Date(user.password_reset_expires) < new Date()) {
+          return res.status(410).json({ error: 'Token expirado' });
+        }
+
+        await pool.query(
+          'UPDATE system_users SET password = $1, password_reset_token = NULL, password_reset_expires = NULL, force_password_change = false WHERE id = $2',
+          [newPassword, user.id]
+        );
+
+        res.json({ success: true, message: 'Senha alterada com sucesso!' });
+      } finally {
+        await pool.end();
       }
-
-      await supabase.from('system_users').update({
-        password: newPassword,
-        password_reset_token: null,
-        password_reset_expires: null,
-        force_password_change: false
-      }).eq('id', user.id);
-
-      res.json({ success: true, message: 'Senha alterada com sucesso!' });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }
