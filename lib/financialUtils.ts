@@ -534,6 +534,31 @@ export const calculateMissionFinancials = (
         );
         appliedClientTable = result.table;
         clientLog = result.log;
+
+        const isFranchiseN = (name: string) => {
+            const n = (name || '').toUpperCase();
+            return n.includes('ATÉ') || n.includes('ATE ') || n.includes('FAIXA');
+        };
+        if (appliedClientTable && !isFranchiseN(appliedClientTable.operation_type || '')) {
+            const selectedFranchiseKm = appliedClientTable.franchise_km || 0;
+            if (selectedFranchiseKm > clientDistReference * 3 && clientDistReference > 0) {
+                const franchiseCandidates = clientTablesFiltered.filter(t => {
+                    if (!isFranchiseN(t.operation_type || '')) return false;
+                    if ((t.franchise_km || 0) < clientDistReference) return false;
+                    const op = normalize(t.operation_type || '');
+                    if (op.includes('EXCETO')) {
+                        if (originUF === 'MG' && op.includes('EXCETO MG')) return false;
+                        if (originUF === 'ES' && op.includes('EXCETO MG') && op.includes('ES')) return false;
+                    }
+                    return true;
+                });
+                if (franchiseCandidates.length > 0) {
+                    const bestFranchise = franchiseCandidates.sort((a, b) => (a.franchise_km || 0) - (b.franchise_km || 0))[0];
+                    appliedClientTable = bestFranchise;
+                    clientLog = `Faixa KM Corrigida → ${bestFranchise.operation_type}`;
+                }
+            }
+        }
     }
 
     const isCevaClient = missionClientName.includes('CEVA');
