@@ -689,12 +689,11 @@ export const calculateMissionFinancials = (
     const appliedTableName = (appliedClientTable?.operation_type || '').toUpperCase();
     const missionDest = (mission.destination || '').toUpperCase();
 
-    const hasAtePrefix = (name: string) => name.includes('ATÉ') || name.includes('ATE') || name.includes('FAIXA');
+    const isFranchiseTable = (name: string) => name.includes('ATÉ') || name.includes('ATE ') || name.includes('FAIXA');
     const clientHasExtraKmPrice = (appliedClientTable?.price_per_extra_km || 0) > 0;
     const clientTableIs200km = appliedTableName.includes('200KM') || appliedTableName.includes('200 KM') || appliedTableName.includes('LOGITECH') || missionDest.includes('200KM');
     const clientTableIs100km = appliedTableName.includes('100KM') || appliedTableName.includes('100 KM');
-    const isFixedDistanceClientRule = (clientTableIs200km || clientTableIs100km) && 
-                                      !(hasAtePrefix(appliedTableName) && !clientTableIs200km && !clientTableIs100km);
+    const isFixedDistanceClientRule = (clientTableIs200km || clientTableIs100km) && !isFranchiseTable(appliedTableName);
 
     const clientHasExtraHrPrice = (appliedClientTable?.price_per_extra_hour || 0) > 0;
     const isVtcClient = missionClientName.includes('VTC');
@@ -720,8 +719,7 @@ export const calculateMissionFinancials = (
     const providerHasExtraKmCost = (appliedProviderTable?.cost_per_extra_km || 0) > 0;
     const providerTableIs200km = providerTableName.includes('200KM') || providerTableName.includes('200 KM') || providerTableName.includes('LOGITECH');
     const providerTableIs100km = providerTableName.includes('100KM') || providerTableName.includes('100 KM');
-    const isFixedDistanceProviderRule = (providerTableIs200km || providerTableIs100km) && 
-                                        !(hasAtePrefix(providerTableName) && !providerTableIs200km && !providerTableIs100km);
+    const isFixedDistanceProviderRule = (providerTableIs200km || providerTableIs100km) && !isFranchiseTable(providerTableName);
 
     const providerHasExtraHrCost = (appliedProviderTable?.cost_per_extra_hour || 0) > 0;
     const isFixedHoursProviderRule = !providerHasExtraHrCost && (
