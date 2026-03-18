@@ -285,7 +285,7 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
     // Isso permite que fornecedores com 'Alvará Vencido' apareçam na lista para seleção
     const [clientsRes, providersRes] = await Promise.all([
          supabase.from('clients').select('id, name, trading_name').eq('status', 'Ativo').order('trading_name', { ascending: true }),
-         supabase.from('providers').select('id, name, trading_name').neq('status', 'Bloqueado').order('name', { ascending: true })
+         supabase.from('providers').select('id, name, trading_name, type').neq('status', 'Bloqueado').order('name', { ascending: true })
     ]);
     if (clientsRes.data) setDbClients(clientsRes.data as any);
     if (providersRes.data) setDbProviders(providersRes.data as any);
@@ -833,7 +833,14 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
       (d.name || '').includes(driverSearchTerm.toUpperCase())
   );
 
-  const filteredProviders = dbProviders.filter(p => 
+  const providersByType = dbProviders.filter(p => {
+      if (!formData.missionType) return true;
+      const pType = ((p as any).type || '').toUpperCase();
+      if (formData.missionType === 'Velada') return pType.includes('VELADA') || pType.includes('PRONTA RESPOSTA');
+      if (formData.missionType === 'Caracterizada') return pType.includes('CARACTERIZADA') || pType.includes('ESCOLTA');
+      return true;
+  });
+  const filteredProviders = providersByType.filter(p => 
      formatProviderName(p.name, p.trading_name).includes(providerSearchTerm.toUpperCase())
   );
 
@@ -969,14 +976,14 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
                   {STEP_HEADER(1, 'Tipo de Operação', <Siren size={16} className={stepComplete.step1 ? 'text-green-600' : 'text-red-600'} />, stepComplete.step1, true)}
                   {expandedStep === 1 && (
                       <div className="grid grid-cols-2 gap-3 mt-2 animate-in slide-in-from-top-1 duration-200">
-                          <button type="button" data-testid="button-tipo-caracterizada" onClick={() => setFormData(prev => ({...prev, missionType: 'Caracterizada'}))} className={`p-4 rounded-xl border-2 flex items-center gap-3 transition-all ${formData.missionType === 'Caracterizada' ? 'border-red-600 bg-red-50 shadow-md ring-2 ring-red-200' : 'border-gray-200 bg-white hover:border-gray-300'}`}>
+                          <button type="button" data-testid="button-tipo-caracterizada" onClick={() => { setFormData(prev => ({...prev, missionType: 'Caracterizada', provider: ''})); setProviderSearchTerm(''); setProviderPending(false); }} className={`p-4 rounded-xl border-2 flex items-center gap-3 transition-all ${formData.missionType === 'Caracterizada' ? 'border-red-600 bg-red-50 shadow-md ring-2 ring-red-200' : 'border-gray-200 bg-white hover:border-gray-300'}`}>
                               <Siren size={24} className={formData.missionType === 'Caracterizada' ? 'text-red-600' : 'text-gray-400'} />
                               <div className="text-left">
                                   <p className={`text-sm font-black uppercase ${formData.missionType === 'Caracterizada' ? 'text-red-800' : 'text-gray-600'}`}>Caracterizada</p>
                                   <p className="text-[9px] text-gray-400 font-medium">Viatura identificada</p>
                               </div>
                           </button>
-                          <button type="button" data-testid="button-tipo-velada" onClick={() => setFormData(prev => ({...prev, missionType: 'Velada'}))} className={`p-4 rounded-xl border-2 flex items-center gap-3 transition-all ${formData.missionType === 'Velada' ? 'border-gray-900 bg-gray-900 shadow-md ring-2 ring-gray-400 text-white' : 'border-gray-200 bg-white hover:border-gray-300'}`}>
+                          <button type="button" data-testid="button-tipo-velada" onClick={() => { setFormData(prev => ({...prev, missionType: 'Velada', provider: ''})); setProviderSearchTerm(''); setProviderPending(false); }} className={`p-4 rounded-xl border-2 flex items-center gap-3 transition-all ${formData.missionType === 'Velada' ? 'border-gray-900 bg-gray-900 shadow-md ring-2 ring-gray-400 text-white' : 'border-gray-200 bg-white hover:border-gray-300'}`}>
                               <ShieldCheck size={24} className={formData.missionType === 'Velada' ? 'text-white' : 'text-gray-400'} />
                               <div className="text-left">
                                   <p className={`text-sm font-black uppercase ${formData.missionType === 'Velada' ? 'text-white' : 'text-gray-600'}`}>Velada</p>
@@ -1137,6 +1144,14 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
                   {STEP_HEADER(4, 'Fornecedor (Parceiro de Escolta)', <Briefcase size={16} className={stepComplete.step4 ? 'text-green-600' : 'text-red-600'} />, stepComplete.step4, !stepComplete.step4)}
                   {expandedStep === 4 && (
                   <div className="space-y-4 animate-in slide-in-from-top-1 duration-200">
+
+                  {formData.missionType && (
+                      <div className={`flex items-center gap-2 px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-wider ${formData.missionType === 'Velada' ? 'bg-gray-900 text-white' : 'bg-red-50 text-red-700 border border-red-200'}`}>
+                          {formData.missionType === 'Velada' ? <ShieldCheck size={14} /> : <Siren size={14} />}
+                          Exibindo fornecedores de {formData.missionType === 'Velada' ? 'Escolta Velada / Pronta Resposta' : 'Escolta Caracterizada'}
+                          <span className="ml-auto text-[9px] opacity-60">({providersByType.length} disponíveis)</span>
+                      </div>
+                  )}
 
                   {iblWarning && (
                       <div className="bg-red-600 text-white px-4 py-2 rounded-lg text-xs font-bold uppercase flex items-center justify-center gap-2 shadow-lg animate-pulse">
