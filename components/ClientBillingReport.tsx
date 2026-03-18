@@ -535,16 +535,14 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
     }, [rowsData, grandTotal, displayClientName, startDate, endDate]);
 
     const cellStyle: React.CSSProperties = {
-        border: '1px solid #9ca3af',
-        padding: '6px 8px',
-        fontSize: '12px',
+        border: '1px solid #c9cdd3',
+        padding: '5px 7px',
+        fontSize: '13px',
         fontFamily: "'Segoe UI', Tahoma, Geneva, Verdana, sans-serif",
         textAlign: 'center',
         whiteSpace: 'nowrap',
-        overflow: 'hidden',
-        textOverflow: 'ellipsis',
         color: '#1f2937',
-        lineHeight: '1.4',
+        lineHeight: '1.35',
         WebkitPrintColorAdjust: 'exact' as any,
         printColorAdjust: 'exact' as any,
     };
@@ -557,19 +555,14 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
         fontSize: '11px',
         textTransform: 'uppercase' as const,
         color: '#000',
-        padding: '6px 6px',
-        position: 'sticky' as const,
-        top: 0,
-        zIndex: 2,
+        padding: '5px 5px',
     };
     const groupHeaderStyle: React.CSSProperties = {
         ...headerStyle,
         backgroundColor: '#d1d5db',
         fontSize: '12px',
         letterSpacing: '0.3px',
-        padding: '8px 6px',
-        top: 0,
-        zIndex: 3,
+        padding: '6px 5px',
     };
 
     const bgKm = '#eef2ff';
@@ -1234,25 +1227,28 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
     return (
         <div className="space-y-6 animate-fade-in pb-20 relative">
             <style>{`
+                /* ====== SCREEN STYLES ====== */
                 @media screen {
                     #print-area .report-table-scroll thead tr.group-hdr th {
                         position: sticky;
                         top: 0;
-                        z-index: 3;
+                        z-index: 4;
                     }
                     #print-area .report-table-scroll thead tr.sub-hdr th {
                         position: sticky;
-                        top: 34px;
-                        z-index: 2;
+                        top: 30px;
+                        z-index: 3;
                     }
                     #print-area .report-table-scroll tbody tr:nth-child(odd) { background-color: #ffffff; }
-                    #print-area .report-table-scroll tbody tr:nth-child(even) { background-color: #f8f9fb; }
+                    #print-area .report-table-scroll tbody tr:nth-child(even) { background-color: #f8fafc; }
                     #print-area .report-table-scroll tbody tr:hover { background-color: #eef2ff !important; }
                 }
+
+                /* ====== PRINT STYLES ====== */
                 @media print {
                     @page {
                         size: A4 landscape;
-                        margin: 6mm 8mm;
+                        margin: 5mm 6mm;
                     }
                     html, body {
                         margin: 0 !important;
@@ -1280,13 +1276,20 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
                     }
                     #print-area .report-table-scroll {
                         overflow: visible !important;
+                        max-height: none !important;
                         max-width: none !important;
                         width: 100% !important;
+                        border: none !important;
+                        border-radius: 0 !important;
                     }
                     #print-area table {
-                        table-layout: auto !important;
+                        table-layout: fixed !important;
                         width: 100% !important;
                         border-collapse: collapse !important;
+                    }
+                    #print-area colgroup col {
+                        min-width: 0 !important;
+                        width: auto !important;
                     }
                     #print-area thead {
                         display: table-header-group !important;
@@ -1305,38 +1308,40 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
                         break-inside: avoid !important;
                     }
                     #print-area td, #print-area th {
-                        padding: 2.5px 4px !important;
-                        font-size: 8pt !important;
+                        padding: 1.5px 2.5px !important;
+                        font-size: 6.5pt !important;
                         overflow: hidden !important;
                         text-overflow: ellipsis !important;
                         border: 0.5px solid #aaa !important;
-                        line-height: 1.35 !important;
+                        line-height: 1.2 !important;
                         white-space: nowrap !important;
+                        max-width: none !important;
                     }
                     #print-area td.route-cell {
                         white-space: normal !important;
                         word-wrap: break-word !important;
                         word-break: break-word !important;
                         overflow-wrap: break-word !important;
-                        line-height: 1.25 !important;
-                        font-size: 7pt !important;
+                        line-height: 1.15 !important;
+                        font-size: 6pt !important;
+                        max-width: none !important;
                     }
                     #print-area tbody tr:nth-child(odd) { background-color: #ffffff !important; }
                     #print-area tbody tr:nth-child(even) { background-color: #f3f4f6 !important; }
                     #print-area .group-hdr th {
-                        font-size: 9pt !important;
-                        padding: 3px 4px !important;
+                        font-size: 7pt !important;
+                        padding: 2px 2px !important;
                         font-weight: 900 !important;
                     }
                     #print-area .sub-hdr th {
-                        font-size: 7.5pt !important;
-                        padding: 2px 4px !important;
+                        font-size: 6pt !important;
+                        padding: 1.5px 2px !important;
                         font-weight: 900 !important;
                     }
-                    #print-area .boletim-header { margin-bottom: 3mm !important; }
-                    #print-area .boletim-header h1 { font-size: 14pt !important; margin: 0 !important; }
-                    #print-area .subtitle-line { font-size: 10pt !important; margin: 0 !important; }
-                    #print-area .ref-line { font-size: 8pt !important; margin: 0 !important; }
+                    #print-area .boletim-header { margin-bottom: 2mm !important; }
+                    #print-area .boletim-header h1 { font-size: 12pt !important; margin: 0 !important; }
+                    #print-area .subtitle-line { font-size: 9pt !important; margin: 1px 0 !important; }
+                    #print-area .ref-line { font-size: 7pt !important; margin: 0 !important; }
                     .no-print { display: none !important; }
                     #print-area .watermark-logo {
                         position: fixed !important;
@@ -1351,23 +1356,28 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
                         print-color-adjust: exact !important;
                     }
                     #print-area .sign-section {
-                        margin-top: 8mm !important;
+                        margin-top: 6mm !important;
                         break-inside: avoid !important;
                         page-break-inside: avoid !important;
                         page-break-before: auto !important;
                     }
-                    #print-area .sign-box { font-size: 8pt !important; width: 60mm !important; }
-                    #print-area .sign-logo { width: 10mm !important; height: 10mm !important; }
-                    #print-area .digital-signature { font-size: 14pt !important; }
-                    #print-area .sign-role { font-size: 8pt !important; }
+                    #print-area .sign-box { font-size: 7pt !important; width: 55mm !important; }
+                    #print-area .sign-logo { width: 8mm !important; height: 8mm !important; }
+                    #print-area .digital-signature { font-size: 12pt !important; }
+                    #print-area .sign-role { font-size: 7pt !important; }
+                    #print-area .sign-cargo { font-size: 6pt !important; }
+                    #print-area .sign-cnpj { font-size: 5.5pt !important; }
+                    #print-area .sign-system { font-size: 5.5pt !important; }
+                    #print-area .sign-cliente { font-size: 7pt !important; }
+                    #print-area .sign-data { font-size: 5.5pt !important; }
                     #print-area tfoot tr {
                         break-inside: avoid !important;
                         page-break-inside: avoid !important;
                     }
                     #print-area tfoot td {
-                        font-size: 8pt !important;
+                        font-size: 7pt !important;
                         font-weight: 900 !important;
-                        padding: 3px 4px !important;
+                        padding: 2px 3px !important;
                     }
                 }
             `}</style>
@@ -1753,12 +1763,12 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
                             </thead>
                             <tbody>
                                 {rowsData.length === 0 ? (
-                                    <tr><td colSpan={27} style={{ ...cellStyle, padding: '16px', fontSize: '10px', fontWeight: 700, color: '#9ca3af' }}>NENHUMA MISSÃO NO PERÍODO.</td></tr>
+                                    <tr><td colSpan={27} style={{ ...cellStyle, padding: '20px', fontSize: '14px', fontWeight: 700, color: '#9ca3af' }}>NENHUMA MISSÃO NO PERÍODO.</td></tr>
                                 ) : (
                                     rowsData.map((r, i) => (
-                                        <tr key={i} style={{ backgroundColor: i % 2 === 0 ? '#ffffff' : '#f3f4f6' }}>
+                                        <tr key={i}>
                                             <td style={cellBold}>{r.id}</td>
-                                            <td className="route-cell" style={{ ...cellStyle, textAlign: 'left', whiteSpace: 'normal', wordWrap: 'break-word', wordBreak: 'break-word', overflowWrap: 'break-word', lineHeight: '1.15', fontSize: '5.8px' }} title={r.route}>{r.route}</td>
+                                            <td className="route-cell" style={{ ...cellStyle, textAlign: 'left', whiteSpace: 'normal', wordWrap: 'break-word', wordBreak: 'break-word', overflowWrap: 'break-word', lineHeight: '1.25', fontSize: '12px', maxWidth: '320px' }} title={r.route}>{r.route}</td>
                                             <td style={cellStyle}>{fmtBRL(r.activationFee)}</td>
                                             <td style={cellStyle}>{r.franchiseHoursFmt}</td>
                                             <td style={cellStyle}>{fmtNum(r.franchiseKm)}</td>
@@ -1791,35 +1801,35 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
                             {rowsData.length > 0 && (
                                 <tfoot>
                                     <tr style={{ backgroundColor: '#111827', color: '#fff' }}>
-                                        <td colSpan={26} style={{ ...cellStyle, textAlign: 'right', fontWeight: 900, fontSize: '8px', color: '#fff', border: '1px solid #000' }}>TOTAL</td>
-                                        <td style={{ ...cellStyle, fontWeight: 900, fontSize: '9px', color: '#fff', border: '1px solid #000' }}>{fmtBRL(grandTotal)}</td>
+                                        <td colSpan={26} style={{ ...cellStyle, textAlign: 'right', fontWeight: 900, fontSize: '14px', color: '#fff', border: '1px solid #000', padding: '8px 10px' }}>TOTAL</td>
+                                        <td style={{ ...cellStyle, fontWeight: 900, fontSize: '15px', color: '#fff', border: '1px solid #000', padding: '8px 10px' }}>{fmtBRL(grandTotal)}</td>
                                     </tr>
                                 </tfoot>
                             )}
                         </table>
                     </div>
 
-                    <div className="sign-section" style={{ marginTop: '24px', display: 'flex', justifyContent: 'space-between', padding: '0 20px', alignItems: 'flex-end' }}>
+                    <div className="sign-section" style={{ marginTop: '32px', display: 'flex', justifyContent: 'space-between', padding: '0 24px', alignItems: 'flex-end' }}>
                         <div className="sign-box" style={{ textAlign: 'center', width: '280px' }}>
-                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', marginBottom: '6px' }}>
-                                <img src="/logo.png" alt="TMSEG" style={{ width: '32px', height: '32px', objectFit: 'contain' }} className="sign-logo" />
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px', marginBottom: '8px' }}>
+                                <img src="/logo.png" alt="TMSEG" style={{ width: '36px', height: '36px', objectFit: 'contain' }} className="sign-logo" />
                                 <div style={{ textAlign: 'left' }}>
                                     <div className="digital-signature" style={{ fontFamily: "'Dancing Script', cursive", fontSize: '22px', fontWeight: 700, color: '#1a237e', lineHeight: 1 }}>Thiago Moreira</div>
-                                    <div style={{ fontSize: '7px', fontWeight: 800, textTransform: 'uppercase' as const, color: '#6b7280', letterSpacing: '0.5px' }}>Diretor Executivo</div>
+                                    <div className="sign-cargo" style={{ fontSize: '11px', fontWeight: 800, textTransform: 'uppercase' as const, color: '#6b7280', letterSpacing: '0.5px' }}>Diretor Executivo</div>
                                 </div>
                             </div>
-                            <div style={{ borderTop: '1.5px solid #111827', paddingTop: '3px' }}>
-                                <div className="sign-role" style={{ fontSize: '8px', fontWeight: 900, textTransform: 'uppercase' as const, color: '#111827', letterSpacing: '1px' }}>GRUPO TM SEG</div>
-                                <div style={{ fontSize: '6px', fontWeight: 600, color: '#6b7280', letterSpacing: '0.5px', marginTop: '1px' }}>CNPJ: 55.232.834/0001-49</div>
+                            <div style={{ borderTop: '1.5px solid #111827', paddingTop: '4px' }}>
+                                <div className="sign-role" style={{ fontSize: '12px', fontWeight: 900, textTransform: 'uppercase' as const, color: '#111827', letterSpacing: '1px' }}>GRUPO TM SEG</div>
+                                <div className="sign-cnpj" style={{ fontSize: '10px', fontWeight: 600, color: '#6b7280', letterSpacing: '0.5px', marginTop: '2px' }}>CNPJ: 55.232.834/0001-49</div>
                             </div>
                         </div>
                         <div style={{ textAlign: 'center', flex: 1, padding: '0 40px' }}>
-                            <div style={{ fontSize: '6px', fontWeight: 600, color: '#9ca3af', textTransform: 'uppercase' as const, letterSpacing: '0.5px' }}>Documento gerado eletronicamente pelo sistema TMSEGo</div>
+                            <div className="sign-system" style={{ fontSize: '10px', fontWeight: 600, color: '#9ca3af', textTransform: 'uppercase' as const, letterSpacing: '0.5px' }}>Documento gerado eletronicamente pelo sistema TMSEGo</div>
                         </div>
                         <div className="sign-box" style={{ textAlign: 'center', width: '280px' }}>
-                            <div style={{ borderTop: '1.5px solid #111827', paddingTop: '3px', marginTop: '34px' }}>
-                                <div style={{ fontSize: '8px', fontWeight: 900, textTransform: 'uppercase' as const, color: '#111827', letterSpacing: '1px' }}>Assinatura / Carimbo Cliente</div>
-                                <div style={{ fontSize: '6px', fontWeight: 600, color: '#6b7280', marginTop: '1px' }}>Data: ____/____/________</div>
+                            <div style={{ borderTop: '1.5px solid #111827', paddingTop: '4px', marginTop: '34px' }}>
+                                <div className="sign-cliente" style={{ fontSize: '12px', fontWeight: 900, textTransform: 'uppercase' as const, color: '#111827', letterSpacing: '1px' }}>Assinatura / Carimbo Cliente</div>
+                                <div className="sign-data" style={{ fontSize: '10px', fontWeight: 600, color: '#6b7280', marginTop: '2px' }}>Data: ____/____/________</div>
                             </div>
                         </div>
                     </div>
