@@ -833,10 +833,7 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
       (d.name || '').includes(driverSearchTerm.toUpperCase())
   );
 
-  const veladaProviders = formData.missionType === 'Velada' 
-      ? dbProviders.filter(p => { const n = formatProviderName(p.name, p.trading_name); return n.includes('TM SEG') || n.includes('TMSEG') || n.includes('ATIVA'); })
-      : dbProviders;
-  const filteredProviders = veladaProviders.filter(p => 
+  const filteredProviders = dbProviders.filter(p => 
      formatProviderName(p.name, p.trading_name).includes(providerSearchTerm.toUpperCase())
   );
 
@@ -1140,12 +1137,6 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
                   {STEP_HEADER(4, 'Fornecedor (Parceiro de Escolta)', <Briefcase size={16} className={stepComplete.step4 ? 'text-green-600' : 'text-red-600'} />, stepComplete.step4, !stepComplete.step4)}
                   {expandedStep === 4 && (
                   <div className="space-y-4 animate-in slide-in-from-top-1 duration-200">
-
-                  {formData.missionType === 'Velada' && (
-                      <div className="flex items-center gap-2 px-4 py-2.5 bg-gray-900 text-white rounded-xl text-[10px] font-black uppercase tracking-wider">
-                          <ShieldCheck size={14} /> Escolta Velada — Apenas TM Segurança e Ativa disponíveis
-                      </div>
-                  )}
 
                   {iblWarning && (
                       <div className="bg-red-600 text-white px-4 py-2 rounded-lg text-xs font-bold uppercase flex items-center justify-center gap-2 shadow-lg animate-pulse">
