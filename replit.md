@@ -2,7 +2,7 @@
 
 ## Overview
 
-Grupo TMSEG is a comprehensive operational management system designed for a Brazilian security escort company. Its primary purpose is to streamline and manage all facets of the business, including escort missions, fleet vehicles, clients, subcontractors, financial operations, billing, contracts, and advanced AI-powered functionalities. The system aims to enhance operational efficiency, improve financial oversight, and provide intelligent automation for tasks like reporting, auditing, and communication. Key capabilities include full mission lifecycle management, detailed client and provider management, a robust financial module, automated billing with AI auditing, and various AI features for enhanced decision-making and task automation.
+Grupo TMSEG is a comprehensive operational management system designed for a Brazilian security escort company. Its primary purpose is to streamline and manage all facets of the business, including escort missions, fleet vehicles, clients, subcontractors, financial operations, billing, contracts, and advanced AI-powered functionalities. The system aims to enhance operational efficiency, improve financial oversight, and provide intelligent automation for tasks like reporting, auditing, and communication. Key capabilities include full mission lifecycle management, detailed client and provider management, a robust financial module, automated billing with AI auditing, and various AI features for enhanced decision-making and task automation. The business vision is to become the leading operational management solution in the security escort sector, leveraging AI for unparalleled efficiency and financial control.
 
 ## User Preferences
 
@@ -11,76 +11,50 @@ Preferred communication style: Simple, everyday language.
 ## System Architecture
 
 ### Frontend Architecture
-The frontend is built with React 18, TypeScript, and Vite 5, utilizing Tailwind CSS for styling. Google Maps is integrated for geolocation and routing. PDF generation uses `jsPDF` and `html2canvas`. State management relies on local component state with React hooks and `localStorage` for user sessions. The UI aesthetics, including layout, colors, and button positioning, are frozen and should not be modified. Custom CSS classes `h-screen-ios` and JS-based `--vh` CSS variable ensure iOS/Safari compatibility.
+The frontend is built with React 18, TypeScript, and Vite 5, utilizing Tailwind CSS for styling. UI aesthetics, including layout, colors, and button positioning, are frozen and should not be modified. Custom CSS classes and JS-based `--vh` CSS variables ensure iOS/Safari compatibility.
 
 ### Backend Architecture
 The backend is built with Node.js and Express 5, using `tsx` for TypeScript execution. It integrates with Drizzle ORM for PostgreSQL. All AI calls are proxied through server routes, utilizing Replit AI Integrations for Google Gemini.
 
 ### Data Storage
-The primary database is Supabase (PostgreSQL), with the Supabase JS client used directly from the frontend for CRUD operations. The backend also uses Drizzle ORM for PostgreSQL. Key tables include `missions`, `clients`, `providers`, `vehicles`, `system_users`, `financial_transactions`, and `commercial_proposals`. Operational reports are stored in a separate `operational_reports` table within Replit PostgreSQL.
+The primary database is Supabase (PostgreSQL), with the Supabase JS client used directly from the frontend for CRUD operations. The backend also uses Drizzle ORM for PostgreSQL. Key tables include `missions`, `clients`, `providers`, `vehicles`, `system_users`, `financial_transactions`, `commercial_proposals`, `operational_reports`, `financial_invoices`, and `system_logs`.
 
 ### Authentication & Authorization
-Authentication is custom, using a `system_users` table in Supabase, with user session data stored in `localStorage`. The system implements role-based access control with roles like `Administrador`, `Diretoria`, `Avançado`, and `Comercial`. Client users can create new users with specific permission modules. Email verification with a 6-digit code is required for user creation.
+Authentication is custom, using a `system_users` table in Supabase, with user session data stored in `localStorage`. The system implements role-based access control with roles like `Administrador`, `Diretoria`, `Avançado`, and `Comercial`. Email verification with a 6-digit code is required for user creation.
 
 ### Key Modules & Features
 The system encompasses modules for **Missions**, **Clients**, **Providers**, **Financial Management**, and **Billing**, with advanced **AI Features** for chatbot, image generation, auditing, and analysis. **Reports** provide operational and financial dashboards. **System Admin** handles user, profile, and permission management.
 
 **Specific Features:**
--   **Investment Dashboard:** Manages investment accounts with analytics and AI analysis.
--   **Supabase Monitor:** Provides real-time health checks and database metrics.
--   **Toll Calculation:** Toll values are entered manually by the user in the financial modal. When a mission has no saved toll, it defaults to R$ 0,00 with "INSERIR MANUAL" label. Saved toll values are preserved across sessions.
+-   **AI-Powered Spreadsheet Comparison Module:** Analyzes pasted spreadsheet data against system values, highlighting divergences and recommending corrections.
 -   **CEVA + Jundiaí Price Table Intelligence:** Automatically adjusts price table selection for the CEVA client based on distance and location.
--   **Mission Report:** Generates detailed, AI-powered operational reports with client-specific views and PDF export.
--   **Spreadsheet Comparison Module (AI-Powered):** Users paste spreadsheet data (Ctrl+C from Excel), and the AI analyzes each OS line by line comparing with system values, highlighting divergences and recommending corrections. Replaced the previous Excel file upload approach.
--   **Client Portal OS Request:** Allows client users to create escort requests with specific service and incident types.
--   **Dashboard Click-to-Filter (PowerBI-like):** Enables interactive data filtering on dashboards with visual feedback and brand-specific color schemes for CEVA clients.
--   **Franchise Financial Calculation:** Implements strict franchise rules for extra KM and hours, with tolerance-based auditing and prioritization of user-saved values. **CRITICAL RULE — Fixed Distance vs Franchise:** In `lib/financialUtils.ts`, `isFixedDistanceClientRule` / `isFixedDistanceProviderRule` must ONLY activate for truly fixed-distance tables (e.g. "100KM MACOR", "LOGITECH", "200KM" without prefix). Tables with "ATÉ", "ATE " or "FAIXA" in the name are FRANCHISE tables — they charge excess KM above the franchise and must NEVER be treated as fixed distance. The function `isFranchiseTable(name)` guards this. DO NOT change this logic.
--   **Provider-Specific Sorting & Filtering:** Client and provider lists are sorted alphabetically, and specific business logic filters client tables for providers like MACOR.
--   **3-Step Billing Approval Flow:** Implements a three-stage approval process (Auditor → Financeiro → Diretoria) for mission billing, with detailed logging and progress visualization. Missions with "Pendente" status cannot be approved. **Diretoria (Thiago) has maximum authority** and can approve without needing Auditor or Financeiro approval first — Diretoria approval alone = fully approved (`billing_approved=true`). The "Sem Aprovação" filter button was removed from the mission list.
--   **Client Billing Visibility:** Mission cards for clients display "Faturamento Cliente" (revenue) and breakdown of extra hours/KM, without exposing provider data.
+-   **Mission Reporting:** Generates detailed, AI-powered operational reports with client-specific views and PDF export.
+-   **Toll Calculation:** Manual entry with persistence, defaulting to R$ 0,00 if no saved value exists.
+-   **Franchise Financial Calculation:** Implements strict franchise rules for extra KM and hours, with tolerance-based auditing and prioritizing user-saved values. Critical rule: `isFixedDistanceClientRule` / `isFixedDistanceProviderRule` must ONLY activate for truly fixed-distance tables. Tables with "ATÉ", "ATE " or "FAIXA" are FRANCHISE tables and must NEVER be treated as fixed distance.
+-   **3-Step Billing Approval Flow:** A three-stage approval process (Auditor → Financeiro → Diretoria) for mission billing, with `Diretoria` having maximum authority for direct approval.
+-   **Operational Data Division:** MissionFinancialModal divides operational data into "Dados Cliente" and "Dados Fornecedor", with provider data initially copying client data and becoming independently editable.
+-   **Mandatory Reason for Value Changes:** Manual changes to final client revenue or provider payment values require a justification, recorded in `revenue_edit_reason` and `cost_edit_reason` in the `missions` table.
+-   **Automated Status Transitions & Email Notifications:** Automated status updates based on data entry (e.g., provider selection, vehicle/agent assignment) triggering client confirmation emails.
+-   **Parent Mission Linking (`OS Mãe`):** Allows linking related missions for traceability, indicated by a "MÃE" badge on MissionCards.
+-   **Odometer Anomaly Validation:** System flags and warns about significant discrepancies between `kmRodado` and planned distance, suppressing auto-calculation.
+-   **Client Portal & Restricted View:** Clients can create mission requests, and the system restricts their view to relevant information, hiding internal data.
+-   **Dashboard Click-to-Filter:** PowerBI-style interactive filtering on all dashboard charts.
+-   **Third-Party Financial Closing Workflow:** A 6-step manual financial closing process (Payables, Receivables, Invoicing, Reconciliation, Control Report, Finalization) with dedicated tables for invoices.
+-   **Vendor Billing Verification Control (`Controle OS Fornecedor`):** Module for verifying provider payments, with fields for OS number, invoice, and payment date, including `verified_by` and `verified_at` tracking.
+-   **Automated Quarterly Data Cleanup:** Server-side cleanup of old `mission_history` and `mission_logs` entries every 90 days in batches.
 
 ## External Dependencies
 
 ### Third-Party Services
--   **Supabase:** Primary PostgreSQL database, storage, and real-time services.
--   **Google Gemini AI:** Powers all AI-driven features (chatbot, image generation, auditing, analysis).
+-   **Supabase:** Primary PostgreSQL database, storage (for `mission-evidence` bucket), and real-time services (for push notifications and client solicitation toasts).
+-   **Google Gemini AI:** Powers all AI-driven features (chatbot, image generation, auditing, analysis, spreadsheet comparison).
 -   **Google Maps Platform:** Provides mapping, routing, distance calculation, and geocoding functionalities.
 -   **WDAPI:** Used for Brazilian vehicle plate lookup.
 -   **Rotas Brasil API / calcularpedagio.com.br:** External APIs for toll cost calculation.
 -   **Z-API (WhatsApp):** Integrates WhatsApp messaging capabilities.
--   **Resend API:** Used for sending email verification codes during user creation.
--   **Nodemailer (Office 365 SMTP):** Automated email system via `adm@grupotmseg.com.br`. Sends mission notifications to clients (operational_email) and providers (os_email), welcome emails for new users, with BCC to `thiago@grupotmseg.com.br` and `operacional@grupotmseg.com.br`. Strict commercial confidentiality: client emails never show provider/cost data; provider emails never show client/revenue data. Templates use black/red/white branding with CEO signature.
--   **Asaas Payment Gateway:** Integrated for automated charge generation (Boleto + PIX). Service at `server/asaasService.ts` with routes at `/api/asaas/*`. Features: auto-create customer by CNPJ, generate charges with PIX QR code + boleto barcode, sync payment status, webhook for automatic reconciliation. Invoice modal in `ClientBillingReport.tsx` has "Gerar Boleto + PIX (Asaas)" button. Asaas data (payment_id, status, invoice_url, pix_payload, barcode) saved to `financial_invoices` table. Webhook at `/api/asaas/webhook` handles automatic payment confirmation and marks invoices as PAGA.
-
-### PWA & Push Notifications
--   **PWA:** The app is configured as a Progressive Web App with `manifest.json` and `sw.js` in `client/public/`. Users can install it on mobile via "Add to Home Screen".
--   **Push Notifications:** Uses Supabase Realtime to listen for new mission INSERTs on the `missions` table. When a new OS is created, a browser push notification is shown via the Service Worker. The `PushNotificationManager` component in `App.tsx` handles this. Requires Supabase Realtime to be enabled for the `missions` table.
--   **Evidence Upload:** Uses `mission-evidence` bucket in Supabase Storage. Evidence logs are stored in `system_logs` table with `entity='MissionEvidence'`. The `created_by` column does NOT exist in `system_logs`.
--   **Audit Logging:** All mission saves (UpdateMissionModal → `MISSION_UPDATE`, MissionFinancialModal ops → `OPS_UPDATE`, billing → `APPROVE_SAVE`/`MANUAL_SAVE`) write to `system_logs`. Entity is `Mission` or `BillingApproval`/`BillingAdjustment`.
--   **Saved Values Protection:** `recalculate-all` endpoints skip missions with `billing_approved=true` or `billing_verified_by` set. Modal detects any `revenue_value > 0 || cost_value > 0` as saved values and preserves them. `isSavingRef` prevents useEffect/loadData/fetchHistoricalPatterns from overwriting values during save operations. All `.update()` calls use `.select().single()` to verify persistence.
--   **Spreadsheet Comparison Module (AI-Powered):** Users paste spreadsheet data (Ctrl+C from Excel), and the AI analyzes each OS line by line comparing with system values, highlighting divergences and recommending corrections. Replaced the previous Excel file upload approach.
--   **Tolerance Rule:** Differences up to R$ 10.00 (positive or negative) in receita/custo are marked as "CONFERIDO" (not "DIVERGENTE"). Applied in both spreadsheet comparison and recalculate-all simulation.
--   **Spreadsheet Comparison Status Rules (checkComparisonMatch):**
-    -   `is_same_os = true` → ALWAYS CONFERIDO for both revenue and cost (no divergence check).
-    -   `billing_approved = true` → ALWAYS CONFERIDO (approved missions are never divergent).
-    -   Revenue: CONFERIDO if `revDiff <= R$10` OR if system base (revenue_value + toll) matches spreadsheet (acionamento + pedágio) within R$10 — meaning the difference is legitimate KM/hour extras.
-    -   Cost: CONFERIDO if `costDiff <= R$10` OR if system stored cost base (cost_value + toll_provider) matches and `excelCost > sysStoredCostBase` — meaning extras explain the difference.
-    -   NEVER compare Total Cliente vs Total Fornecedor to define divergence (different price tables by nature).
-    -   Pedágio is added to TOTAL but NOT used for KM extra or hour extra calculations.
--   **Financial Calculation Consistency:** Dashboard uses `missionFinancials` with `billing_approved || billing_verified_by` for stored values. Modal recalculates by table unless `billing_approved`. The `findSystemMission` function is the ONLY source for both dashboard and comparison — DO NOT create separate calculation functions.
--   **Odometer Anomaly Validation:** When `kmRodado (endKm - startKm)` exceeds 5x the planned route distance (`totalDistance`), the system: (1) blocks auto-calculation of progress from odometer data, (2) shows "⚠ HODÔMETRO" badge on MissionCard, (3) shows warning notification on save in UpdateMissionModal, (4) shows "HODÔMETRO INCONSISTENTE" label in modal progress section. Suppressed when status is COMPLETED or destination keywords indicate arrival.
--   **Dados Operacionais Divididos (Cliente/Fornecedor):** A seção "Dados Operacionais" no MissionFinancialModal foi dividida em "Dados Cliente" e "Dados Fornecedor". Dados do fornecedor iniciam como cópia fiel dos dados do cliente. Quando o fornecedor é editado, `provider_ops_edited=true` e os campos `provider_start_km`, `provider_end_km`, `provider_start_time`, `provider_end_time` são salvos independentemente. Enquanto não editado, mostra badge "CÓPIA CLIENTE".
--   **Motivo Obrigatório em Alteração de Valor:** Ao alterar manualmente o VALOR FINAL CLIENTE ou PAGAMENTO FORNECEDOR (quando diverge do cálculo da tabela), o sistema exige um motivo/justificativa antes de salvar. O motivo é gravado nos campos `revenue_edit_reason` e `cost_edit_reason` na tabela `missions`, com timestamp e nome do usuário.
--   **Auto Status Transitions (UpdateMissionModal):** (1) Selecting a provider auto-sets status from `Solicitada` → `Documentação`. (2) When provider + vehicle + agent1 are all filled, status auto-sets to `Agendada`. (3) When status transitions to `Agendada`, a client confirmation email is sent via `POST /api/email/mission-scheduled`. (4) Email validation popup: if client or provider has no email registered, a popup prompts the operator to enter an email before saving.
--   **OS Mãe (Parent Mission Linking):** When a mission is marked as "Mesma OS" (`is_same_os=true`), an additional field appears to link it to the parent/principal mission via `parent_mission_id`. Users can search by OS number or select from a dropdown of same-client missions. The MissionCard shows a blue "MÃE: GTM-XXXX" badge next to the MESMA OS badge. Calculations remain independent — the linkage is purely for identification/traceability.
--   **Auto-Complete Status:** When end_km and end_time are saved on a Pendente/Em Trânsito/Na Origem mission, status auto-updates to "Concluída" (in both MissionFinancialModal and UpdateMissionModal).
--   **Mobile/Scroll:** App uses `min-h-screen-ios` with `overflow-y-auto` for mobile compatibility. Scrollbars are thin and visible (not hidden). Login page uses `100dvh` for iOS safe area.
--   **Client View Restrictions:** `isRestrictedClientView` hides: Pendente status cards, Pendente/Unapproved toggles, internal alerts (KM PENDENTE banners), Eficiência KPI, provider data. `hideProviderInfo` prop on MissionCard controls visibility.
--   **Client OS Creation:** `ClientMissionRequest.tsx` allows clients to create missions with status "Solicitada". Internal users get toast notifications via Supabase Realtime when new solicitations arrive. The "Solicitada" StatCard in MissionTable blinks with a red badge for internal users when there are pending solicitations.
--   **Dashboard Click-to-Filter:** `ClientExecutiveDashboard.tsx` supports PowerBI-style click-to-filter on all charts (day, status, type, route, vehicle, distance, weekday, hour, month). Uses `toggleChartFilter` with visual dimming of unselected items.
--   **Fechamento de Terceiros:** Replaced the old "Lançamentos (Caixa)" module with a 6-step financial closing workflow: (1) Contas a Pagar — manual expense entries with summary cards and overdue tracking; (2) Contas a Receber — manual income entries with the same structure; (3) Emissão de Faturas — manual invoice creation/management with status tracking (Emitida/Paga/Cancelada), stored in `financial_invoices` table; (4) Conferência — side-by-side review of overdue payables/receivables with consolidated summary; (5) Relatório de Controle — financial report showing paid/overdue titles; (6) Fechamento — checklist-based finalization that blocks when pendencies exist. All entries are fully manual (not auto-pulled from missions). The `financial_invoices` table (UUID PK, client, number, amount, date, status, notes, created_by) must exist in Supabase.
--   **Controle OS Fornecedor (Verificação de Faturamento):** `VendorVerificationControl.tsx` — menu "Controle OS Fornecedor" no módulo Financeiro. Permite conferência de pagamentos do fornecedor com campos: Nº OS Fornecedor, Nº NF, Data Prevista Pgto. Grava automaticamente `verified_by` (usuário logado) e `verified_at` (timestamp). Após verificação, campos ficam bloqueados — só Admin/CEO/Diretoria pode desbloquear. Colunas no Supabase: `vendor_os_number`, `invoice_number`, `payment_date`, `verified_by`, `verified_at`. Grid com filtros por fornecedor e status (Pendente/Verificado), com ícones visuais. Fallback para `system_logs` quando colunas não existem no banco.
--   **Limpeza Trimestral Automática:** O servidor verifica diariamente se já passaram 90 dias desde a última limpeza. Remove registros antigos de `mission_history` e `mission_logs` em lotes de 500 para não sobrecarregar o banco. Rotas manuais: `POST /api/admin/cleanup-history` e `GET /api/admin/cleanup-preview`.
+-   **Resend API:** Used for sending email verification codes.
+-   **Nodemailer (Office 365 SMTP):** Automated email system for mission notifications and welcome emails, with strict commercial confidentiality.
+-   **Asaas Payment Gateway:** Integrated for automated charge generation (Boleto + PIX), payment status synchronization, and webhook-based reconciliation.
 
 ### Deployment
--   **Vercel:** Used for frontend deployment, configured with SPA rewrites and cache headers.
+-   **Vercel:** Used for frontend deployment.

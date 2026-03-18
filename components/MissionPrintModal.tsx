@@ -12,7 +12,7 @@ interface Props {
 const MissionPrintModal: React.FC<Props> = ({ mission, onClose }) => {
   const [agentsDetails, setAgentsDetails] = useState<Agent[]>([]);
   const [vehicleDetails, setVehicleDetails] = useState<Vehicle | null>(null);
-  const [evidenceUrls, setEvidenceUrls] = useState<{ url: string; uploadedBy: string; uploadedAt: string }[]>([]);
+  const [clientVehicleInfo, setClientVehicleInfo] = useState<{ plate: string; model: string } | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -39,12 +39,10 @@ const MissionPrintModal: React.FC<Props> = ({ mission, onClose }) => {
             if (vehicleData) setVehicleDetails(vehicleData as Vehicle);
         }
 
-        const { data: evData } = await supabase.from('system_logs').select('details').eq('entity', 'MissionEvidence').eq('entity_id', mission.id);
-        if (evData) {
-            const list = evData.map((e: any) => {
-                try { const p = JSON.parse(e.details); return { url: p.publicUrl || '', uploadedBy: p.uploadedBy || '', uploadedAt: p.uploadedAt || '' }; } catch { return null; }
-            }).filter(Boolean);
-            setEvidenceUrls(list);
+        const cvId = (mission as any).client_vehicle || (mission as any).clientVehicle;
+        if (cvId) {
+            const { data: cvData } = await supabase.from('client_vehicles').select('plate, model').eq('id', cvId).maybeSingle();
+            if (cvData) setClientVehicleInfo({ plate: cvData.plate || '', model: cvData.model || '' });
         }
 
       } catch (error) {
@@ -59,19 +57,11 @@ const MissionPrintModal: React.FC<Props> = ({ mission, onClose }) => {
 
   const handlePrint = () => {
     const originalTitle = document.title;
-    
-    // Formata o nome do arquivo para o PDF
     const originCity = mission.origin ? mission.origin.split(',')[0].split('-')[0].trim() : 'ORIGEM';
     const destCity = mission.destination ? mission.destination.split(',')[0].split('-')[0].trim() : 'DESTINO';
-    
     document.title = `TMSEG - OS ${mission.id} - ${originCity} x ${destCity}`;
-    
     window.print();
-    
-    // Restaura o título original
-    setTimeout(() => {
-        document.title = originalTitle;
-    }, 1000);
+    setTimeout(() => { document.title = originalTitle; }, 1000);
   };
 
   const formatDate = (dateString?: string) => {
@@ -86,70 +76,51 @@ const MissionPrintModal: React.FC<Props> = ({ mission, onClose }) => {
       } catch { return ''; }
   };
 
-  const getAgent = (name?: string) => {
-      return agentsDetails.find(a => a.name === name);
-  };
+  const getAgent = (name?: string) => agentsDetails.find(a => a.name === name);
 
-  const renderAgentRow = (agentName?: string, label?: string, badgeLabel?: string) => {
+  const clientVehicleLabel = (() => {
+    if (clientVehicleInfo?.plate) {
+      return clientVehicleInfo.model
+        ? `${clientVehicleInfo.plate} - ${clientVehicleInfo.model}`
+        : clientVehicleInfo.plate;
+    }
+    if ((mission as any).clientVehicle?.plate) {
+      return `${(mission as any).clientVehicle.plate}${(mission as any).clientVehicle.model ? ' - ' + (mission as any).clientVehicle.model : ''}`;
+    }
+    return '-';
+  })();
+
+  const renderAgentBlock = (agentName?: string, label?: string, badgeLabel?: string) => {
       if (!agentName) return null;
       const agent = getAgent(agentName);
 
       return (
-        <div className="border border-black mb-2 break-inside-avoid">
-            <div className="bg-gradient-to-r from-black to-red-900 text-white border-b border-black px-2 py-1 font-bold text-center text-xs uppercase tracking-wider print:bg-black print:text-white">
-                IDENTIFICAÇÃO DO AGENTE : {label || 'ESCOLTA'}
-            </div>
-            <div className="flex">
-                {/* Crachá / Ícone */}
-                <div className="w-28 border-r border-black flex flex-col items-center justify-center bg-gray-50 min-h-[90px] p-1">
-                    <div className="flex-1 flex flex-col items-center justify-center opacity-90">
-                       <ShieldCheck size={48} className="text-black" strokeWidth={1.5} />
-                    </div>
-                    <div className="w-full bg-black text-white text-[8px] font-black text-center mt-1 uppercase py-0.5">
-                        {badgeLabel || 'SEGURANÇA'}
-                    </div>
+        <div className="print-section">
+            <div className="section-header">{`IDENTIFICAÇÃO DO AGENTE : ${label || 'ESCOLTA'}`}</div>
+            <div className="agent-grid">
+                <div className="agent-badge">
+                   <ShieldCheck size={40} className="text-black" strokeWidth={1.5} />
+                   <div className="badge-label">{badgeLabel || 'SEGURANÇA'}</div>
                 </div>
-                
-                {/* Dados do Agente */}
-                <div className="flex-1 text-[10px] uppercase">
-                    <div className="flex border-b border-black">
-                        <div className="w-16 bg-gray-200 px-1 py-0.5 font-bold border-r border-black flex items-center print:bg-gray-200">NOME:</div>
-                        <div className="flex-1 px-2 py-0.5 font-bold text-black">{agentName}</div>
+                <div className="agent-data">
+                    <div className="agent-row">
+                        <span className="agent-label">NOME:</span>
+                        <span className="agent-value font-bold">{agentName}</span>
                     </div>
-                    <div className="flex border-b border-black">
-                        <div className="w-16 bg-gray-200 px-1 py-0.5 font-bold border-r border-black print:bg-gray-200">CPF:</div>
-                        <div className="flex-1 px-2 py-0.5">{agent?.cpf || '-'}</div>
+                    <div className="agent-row">
+                        <span className="agent-label">CPF:</span>
+                        <span className="agent-value">{agent?.cpf || '-'}</span>
                     </div>
-                    
-                    <div className="grid grid-cols-2">
-                        <div className="border-r border-black">
-                            <div className="flex border-b border-black">
-                                <div className="w-16 bg-gray-200 px-1 py-0.5 font-bold border-r border-black print:bg-gray-200">RG:</div>
-                                <div className="flex-1 px-2 py-0.5">{agent?.rg || '-'}</div>
-                            </div>
-                            <div className="flex border-b border-black">
-                                <div className="w-16 bg-gray-200 px-1 py-0.5 font-bold border-r border-black print:bg-gray-200">CNH:</div>
-                                <div className="flex-1 px-2 py-0.5">{agent?.cnh || '-'}</div>
-                            </div>
-                            <div className="flex">
-                                <div className="w-16 bg-gray-200 px-1 py-0.5 font-bold border-r border-black print:bg-gray-200">CNV:</div>
-                                <div className="flex-1 px-2 py-0.5">{agent?.cnv || '-'}</div>
-                            </div>
+                    <div className="agent-two-col">
+                        <div className="agent-col-left">
+                            <div className="agent-row"><span className="agent-label">RG:</span><span className="agent-value">{agent?.rg || '-'}</span></div>
+                            <div className="agent-row"><span className="agent-label">CNH:</span><span className="agent-value">{agent?.cnh || '-'}</span></div>
+                            <div className="agent-row last"><span className="agent-label">CNV:</span><span className="agent-value">{agent?.cnv || 'ISENTO'}</span></div>
                         </div>
-                        
-                        <div>
-                            <div className="flex border-b border-black">
-                                <div className="w-20 bg-gray-200 px-1 py-0.5 font-bold border-r border-black print:bg-gray-200">CONTATO:</div>
-                                <div className="flex-1 px-2 py-0.5">{agent?.phone || '-'}</div>
-                            </div>
-                            <div className="flex border-b border-black">
-                                <div className="w-20 bg-gray-200 px-1 py-0.5 font-bold border-r border-black print:bg-gray-200">VAL CNH:</div>
-                                <div className="flex-1 px-2 py-0.5">{formatDate(agent?.cnh_validity) || '-'}</div>
-                            </div>
-                            <div className="flex">
-                                <div className="w-20 bg-gray-200 px-1 py-0.5 font-bold border-r border-black print:bg-gray-200">VAL CNV:</div>
-                                <div className="flex-1 px-2 py-0.5">{formatDate(agent?.cnv_validity) || '-'}</div>
-                            </div>
+                        <div className="agent-col-right">
+                            <div className="agent-row"><span className="agent-label-r">CONTATO:</span><span className="agent-value">{agent?.phone || '-'}</span></div>
+                            <div className="agent-row"><span className="agent-label-r">VAL CNH:</span><span className="agent-value">{formatDate(agent?.cnh_validity) || '-'}</span></div>
+                            <div className="agent-row last"><span className="agent-label-r">VAL CNV:</span><span className="agent-value">{formatDate(agent?.cnv_validity) || '-'}</span></div>
                         </div>
                     </div>
                 </div>
@@ -161,277 +132,214 @@ const MissionPrintModal: React.FC<Props> = ({ mission, onClose }) => {
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
       
-      {/* CSS Específico para Impressão Limpa — Página Única sem Duplicatas */}
       <style>{`
         @media print {
-          @page {
-            size: A4;
-            margin: 5mm;
-          }
-          html, body {
-            height: 100% !important;
-            overflow: hidden !important;
-            margin: 0 !important;
-            padding: 0 !important;
-            -webkit-print-color-adjust: exact !important;
-            print-color-adjust: exact !important;
-          }
-          body * {
-            visibility: hidden !important;
-          }
-          #print-content, #print-content * {
-            visibility: visible !important;
-          }
-          #print-content {
-            position: fixed !important;
-            left: 0 !important;
-            top: 0 !important;
-            width: 100% !important;
-            height: 100vh !important;
-            margin: 0 !important;
-            padding: 5mm !important;
-            background: white !important;
-            z-index: 99999 !important;
-            box-shadow: none !important;
-            overflow: hidden !important;
-            page-break-after: avoid !important;
-            page-break-inside: avoid !important;
-            -webkit-print-color-adjust: exact !important;
-            print-color-adjust: exact !important;
-          }
-          #print-content > div {
-            page-break-after: avoid !important;
-            page-break-inside: avoid !important;
-          }
+          @page { size: A4; margin: 5mm; }
+          html, body { height: 100% !important; overflow: hidden !important; margin: 0 !important; padding: 0 !important; -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+          body * { visibility: hidden !important; }
+          #print-content, #print-content * { visibility: visible !important; }
+          #print-content { position: fixed !important; left: 0 !important; top: 0 !important; width: 100% !important; height: auto !important; margin: 0 !important; padding: 5mm !important; background: white !important; z-index: 99999 !important; box-shadow: none !important; overflow: visible !important; }
           .no-print { display: none !important; }
         }
+
+        #print-content .print-section { border: 1px solid #000; margin-bottom: 4px; }
+        #print-content .section-header { background: linear-gradient(to right, #000, #7f1d1d); color: #fff; font-size: 9px; font-weight: 700; text-align: center; padding: 3px 6px; text-transform: uppercase; letter-spacing: 0.05em; border-bottom: 1px solid #000; }
+        @media print { #print-content .section-header { background: #000 !important; color: #fff !important; -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; } }
+        
+        #print-content .agent-grid { display: flex; }
+        #print-content .agent-badge { width: 80px; border-right: 1px solid #000; display: flex; flex-direction: column; align-items: center; justify-content: center; background: #f9fafb; padding: 4px; min-height: 76px; }
+        #print-content .badge-label { width: 100%; background: #000; color: #fff; font-size: 7px; font-weight: 900; text-align: center; margin-top: 2px; padding: 1px 0; text-transform: uppercase; }
+        #print-content .agent-data { flex: 1; font-size: 9px; text-transform: uppercase; }
+        #print-content .agent-row { display: flex; border-bottom: 1px solid #000; }
+        #print-content .agent-row.last { border-bottom: none; }
+        #print-content .agent-label { width: 50px; background: #e5e7eb; padding: 2px 4px; font-weight: 700; border-right: 1px solid #000; flex-shrink: 0; }
+        #print-content .agent-label-r { width: 60px; background: #e5e7eb; padding: 2px 4px; font-weight: 700; border-right: 1px solid #000; flex-shrink: 0; }
+        #print-content .agent-value { padding: 2px 6px; flex: 1; }
+        #print-content .agent-two-col { display: grid; grid-template-columns: 1fr 1fr; }
+        #print-content .agent-col-left { border-right: 1px solid #000; }
+        @media print { #print-content .agent-label, #print-content .agent-label-r { background: #e5e7eb !important; -webkit-print-color-adjust: exact !important; } }
+
+        #print-content .data-table { width: 100%; border-collapse: collapse; font-size: 9px; text-transform: uppercase; margin-bottom: 4px; }
+        #print-content .data-table td, #print-content .data-table th { border: 1px solid #000; padding: 2px 6px; }
+        #print-content .data-table .label-cell { background: linear-gradient(to right, #000, #7f1d1d); color: #fff; font-weight: 700; width: 90px; letter-spacing: 0.03em; font-size: 9px; }
+        @media print { #print-content .data-table .label-cell { background: #000 !important; color: #fff !important; -webkit-print-color-adjust: exact !important; } }
+
+        #print-content .vehicle-grid { display: grid; grid-template-columns: repeat(4, 1fr); text-align: center; font-size: 9px; text-transform: uppercase; }
+        #print-content .vehicle-grid .vg-header { background: #e5e7eb; font-weight: 700; padding: 2px 4px; border-bottom: 1px solid #000; border-right: 1px solid #000; }
+        #print-content .vehicle-grid .vg-header:last-child { border-right: none; }
+        #print-content .vehicle-grid .vg-cell { padding: 3px 4px; font-weight: 700; border-right: 1px solid #000; }
+        #print-content .vehicle-grid .vg-cell:last-child { border-right: none; }
+        @media print { #print-content .vehicle-grid .vg-header { background: #e5e7eb !important; -webkit-print-color-adjust: exact !important; } }
+
+        #print-content .cargo-table { width: 100%; font-size: 9px; text-transform: uppercase; }
+        #print-content .cargo-table td { padding: 2px 6px; }
+        #print-content .cargo-label { width: 70px; background: #e5e7eb; font-weight: 700; border-right: 1px solid #000; border-bottom: 1px solid #000; }
+        #print-content .cargo-val { border-bottom: 1px solid #000; }
+        #print-content .cargo-label-last { width: 70px; background: #e5e7eb; font-weight: 700; border-right: 1px solid #000; }
+        @media print { #print-content .cargo-label, #print-content .cargo-label-last { background: #e5e7eb !important; -webkit-print-color-adjust: exact !important; } }
+
+        #print-content .timeline-table { width: 100%; border-collapse: collapse; font-size: 9px; text-transform: uppercase; margin-bottom: 4px; }
+        #print-content .timeline-table th { border: 1px solid #000; padding: 2px 6px; background: linear-gradient(to right, #991b1b, #dc2626); color: #fff; font-weight: 700; }
+        #print-content .timeline-table td { border: 1px solid #000; padding: 2px 6px; }
+        @media print { #print-content .timeline-table th { background: #000 !important; color: #fff !important; -webkit-print-color-adjust: exact !important; } }
       `}</style>
 
-      {/* Container Principal */}
       <div className="bg-white w-full max-w-[210mm] max-h-[90vh] shadow-2xl overflow-hidden flex flex-col rounded-lg">
         
-        {/* Toolbar (Não aparece na impressão) */}
         <div className="bg-gradient-to-r from-red-900 to-black text-white p-4 flex justify-between items-center shadow-md shrink-0 no-print">
             <h2 className="font-bold flex items-center gap-2 uppercase tracking-wider text-sm">
                 <Printer size={18} className="text-red-400" /> Visualização de Impressão
             </h2>
             <div className="flex gap-3">
-                <button onClick={handlePrint} className="bg-white text-red-900 hover:bg-gray-100 px-6 py-2 rounded-lg text-sm font-bold flex items-center gap-2 shadow-sm transition-all hover:scale-105 active:scale-95">
+                <button onClick={handlePrint} className="bg-white text-red-900 hover:bg-gray-100 px-6 py-2 rounded-lg text-sm font-bold flex items-center gap-2 shadow-sm transition-all hover:scale-105 active:scale-95" data-testid="button-save-pdf">
                     <Download size={16} /> SALVAR PDF
                 </button>
-                <button onClick={onClose} className="bg-black/20 hover:bg-black/40 text-white border border-white/20 px-6 py-2 rounded-lg text-sm font-bold transition-all">
+                <button onClick={onClose} className="bg-black/20 hover:bg-black/40 text-white border border-white/20 px-6 py-2 rounded-lg text-sm font-bold transition-all" data-testid="button-close-print">
                     <X size={16} /> FECHAR
                 </button>
             </div>
         </div>
 
-        {/* Conteúdo da Folha (A4 Like) - ID usado pelo CSS de impressão */}
         <div className="overflow-y-auto flex-1 bg-gray-100 p-8 flex justify-center">
-            <div id="print-content" className="bg-white w-[210mm] print:w-full min-h-[297mm] print:min-h-0 p-8 print:p-0 shadow-sm print:shadow-none text-black font-sans box-border relative">
+            <div id="print-content" className="bg-white w-[210mm] print:w-full min-h-[297mm] print:min-h-0 p-6 print:p-0 shadow-sm print:shadow-none text-black font-sans box-border relative" style={{ fontSize: '9px' }}>
                 
                 {loading ? (
                     <div className="flex justify-center items-center h-64">
                         <Loader2 size={32} className="animate-spin text-gray-400" />
                     </div>
                 ) : (
-                    <div className="border-2 border-black p-1 h-full">
+                    <div style={{ border: '2px solid #000', padding: '3px' }}>
                         
                         {/* CABEÇALHO */}
-                        <div className="flex border-b-2 border-black mb-2 pb-2">
-                            <div className="w-48 flex items-center justify-center border-r border-gray-300 pr-4">
-                                <img src="/logo.png" alt="Logo" className="max-h-16 object-contain" />
+                        <div style={{ display: 'flex', borderBottom: '2px solid #000', marginBottom: '4px', paddingBottom: '4px' }}>
+                            <div style={{ width: '140px', display: 'flex', alignItems: 'center', justifyContent: 'center', borderRight: '1px solid #ccc', paddingRight: '8px' }}>
+                                <img src="/logo.png" alt="Logo" style={{ maxHeight: '50px', objectFit: 'contain' }} />
                             </div>
-                            <div className="flex-1 flex items-center justify-center">
-                                <h1 className="text-xl font-black uppercase tracking-widest text-center">
-                                    GRUPO TMSEG - GESTÃO DE RISCO<br/>
-                                    <span className="text-sm font-normal text-gray-600 tracking-normal">Relatório de Operação de Escolta</span>
-                                </h1>
+                            <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', textAlign: 'center' }}>
+                                <div>
+                                    <div style={{ fontSize: '14px', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '2px' }}>GRUPO TMSEG - GESTÃO DE RISCO</div>
+                                    <div style={{ fontSize: '10px', color: '#666', fontWeight: 400, marginTop: '2px', textTransform: 'uppercase' }}>Relatório de Operação de Escolta</div>
+                                </div>
                             </div>
                         </div>
 
                         {/* DADOS PRINCIPAIS */}
-                        <table className="w-full border-collapse border border-black text-[10px] uppercase mb-2">
+                        <table className="data-table">
                             <tbody>
                                 <tr>
-                                    <td className="border border-black bg-gradient-to-r from-black to-red-900 text-white px-2 py-1 font-bold w-32 tracking-wider print:bg-black print:text-white">FOLHA / OS</td>
-                                    <td className="border border-black px-2 py-1 font-bold text-lg">{mission.id}</td>
-                                    <td className="border border-black bg-gradient-to-r from-black to-red-900 text-white px-2 py-1 font-bold w-32 tracking-wider print:bg-black print:text-white">OPERAÇÃO</td>
-                                    <td className="border border-black px-2 py-1">{mission.mission_type || 'CARACTERIZADA'}</td>
+                                    <td className="label-cell">FOLHA / OS</td>
+                                    <td style={{ fontWeight: 700, fontSize: '12px' }}>{mission.id}</td>
+                                    <td className="label-cell">OPERAÇÃO</td>
+                                    <td>{mission.mission_type || 'CARACTERIZADA'}</td>
                                 </tr>
                                 <tr>
-                                    <td className="border border-black bg-gradient-to-r from-black to-red-900 text-white px-2 py-1 font-bold tracking-wider print:bg-black print:text-white">ROTA</td>
-                                    <td className="border border-black px-2 py-1" colSpan={3}>
-                                        {mission.origin} <span className="font-bold mx-2">PARA</span> {mission.destination}
+                                    <td className="label-cell">ROTA</td>
+                                    <td colSpan={3} style={{ lineHeight: '1.3' }}>
+                                        {mission.origin} <span style={{ fontWeight: 700, margin: '0 4px' }}>PARA</span> {mission.destination}
                                     </td>
                                 </tr>
                             </tbody>
                         </table>
 
                         {/* CLIENTE */}
-                        <div className="border border-black mb-2">
-                            <div className="bg-gradient-to-r from-black to-red-900 text-white border-b border-black px-2 py-1 font-bold text-center text-xs uppercase tracking-wider print:bg-black print:text-white">
-                                EMPRESA CONTRATANTE / CLIENTE
-                            </div>
-                            <div className="px-2 py-2 text-center font-bold text-xs uppercase">
+                        <div className="print-section">
+                            <div className="section-header">EMPRESA CONTRATANTE / CLIENTE</div>
+                            <div style={{ padding: '4px 8px', textAlign: 'center', fontWeight: 700, fontSize: '10px', textTransform: 'uppercase' }}>
                                 {mission.client}
                             </div>
                         </div>
 
-                        {/* AGENTES (LOOP) */}
-                        {renderAgentRow(mission.agent1, 'LÍDER / MOTORISTA', 'AGENTE 01')}
-                        {renderAgentRow(mission.agent2, 'ESCOLTA AUXILIAR', 'AGENTE 02')}
+                        {/* AGENTES */}
+                        {renderAgentBlock(mission.agent1, 'LÍDER / MOTORISTA', 'AGENTE 01')}
+                        {renderAgentBlock(mission.agent2, 'ESCOLTA AUXILIAR', 'AGENTE 02')}
 
                         {/* VIATURA */}
-                        <div className="border border-black mb-2 mt-4 break-inside-avoid">
-                            <div className="bg-gradient-to-r from-black to-red-900 text-white border-b border-black px-2 py-1 font-bold text-center text-xs uppercase tracking-wider print:bg-black print:text-white">
-                                DADOS DA VIATURA E RASTREAMENTO
-                            </div>
-                            <div className="text-[10px] uppercase">
-                                <div className="grid grid-cols-4 border-b border-black text-center font-bold bg-gray-200 print:bg-gray-200">
-                                    <div className="py-1 border-r border-black">VIATURA</div>
-                                    <div className="py-1 border-r border-black">COR</div>
-                                    <div className="py-1 border-r border-black">PLACA</div>
-                                    <div className="py-1">RASTREADOR / ID</div>
-                                </div>
-                                <div className="grid grid-cols-4 text-center font-bold">
-                                    <div className="py-1 border-r border-black">{vehicleDetails?.model || '-'}</div>
-                                    <div className="py-1 border-r border-black">{vehicleDetails?.color || '-'}</div>
-                                    <div className="py-1 border-r border-black">{vehicleDetails?.plate || mission.vehicleId || '-'}</div>
-                                    <div className="py-1">{vehicleDetails?.tracker_type || '-'} / {vehicleDetails?.tracker_id || '-'}</div>
-                                </div>
+                        <div className="print-section" style={{ marginTop: '4px' }}>
+                            <div className="section-header">DADOS DA VIATURA E RASTREAMENTO</div>
+                            <div className="vehicle-grid">
+                                <div className="vg-header">VIATURA</div>
+                                <div className="vg-header">COR</div>
+                                <div className="vg-header">PLACA</div>
+                                <div className="vg-header" style={{ borderRight: 'none' }}>RASTREADOR / ID</div>
+                                <div className="vg-cell">{vehicleDetails?.model || '-'}</div>
+                                <div className="vg-cell">{vehicleDetails?.color || '-'}</div>
+                                <div className="vg-cell">{vehicleDetails?.plate || '-'}</div>
+                                <div className="vg-cell" style={{ borderRight: 'none' }}>{vehicleDetails?.tracker_type || '-'} / {vehicleDetails?.tracker_id || '-'}</div>
                             </div>
                         </div>
 
-                        {/* CARGA / CLIENTE */}
-                        <div className="border border-black mb-2 mt-4 break-inside-avoid">
-                            <div className="bg-gradient-to-r from-black to-red-900 text-white border-b border-black px-2 py-1 font-bold text-center text-xs uppercase tracking-wider print:bg-black print:text-white">
-                                DADOS DA CARGA / VEÍCULO CLIENTE
-                            </div>
-                            <table className="w-full text-[10px] uppercase text-left">
+                        {/* CARGA / VEÍCULO CLIENTE */}
+                        <div className="print-section" style={{ marginTop: '4px' }}>
+                            <div className="section-header">DADOS DA CARGA / VEÍCULO CLIENTE</div>
+                            <table className="cargo-table">
                                 <tbody>
                                     <tr>
-                                        <td className="w-24 bg-gray-200 font-bold px-2 py-1 border-r border-b border-black print:bg-gray-200">MOTORISTA:</td>
-                                        <td className="px-2 py-1 border-b border-black">{mission.driver_name || '-'}</td>
-                                        <td className="w-24 bg-gray-200 font-bold px-2 py-1 border-r border-b border-l border-black print:bg-gray-200">TELEFONE:</td>
-                                        <td className="px-2 py-1 border-b border-black">{mission.driver_phone || '-'}</td>
+                                        <td className="cargo-label">MOTORISTA:</td>
+                                        <td className="cargo-val">{mission.driver_name || '-'}</td>
+                                        <td className="cargo-label" style={{ borderLeft: '1px solid #000' }}>TELEFONE:</td>
+                                        <td className="cargo-val">{mission.driver_phone || '-'}</td>
                                     </tr>
                                     <tr>
-                                        <td className="bg-gray-200 font-bold px-2 py-1 border-r border-black print:bg-gray-200">VEÍCULO:</td>
-                                        <td className="px-2 py-1">{mission.clientVehicle?.plate} - {mission.clientVehicle?.model}</td>
-                                        <td className="bg-gray-200 font-bold px-2 py-1 border-r border-l border-black print:bg-gray-200">GR/DOC:</td>
-                                        <td className="px-2 py-1">{mission.gr_espelhamento || '-'}</td>
+                                        <td className="cargo-label-last">VEÍCULO:</td>
+                                        <td>{clientVehicleLabel}</td>
+                                        <td className="cargo-label-last" style={{ borderLeft: '1px solid #000' }}>GR/DOC:</td>
+                                        <td>{mission.gr_espelhamento || '-'}</td>
                                     </tr>
                                 </tbody>
                             </table>
                         </div>
 
-                        {/* EXCEDENTES */}
-                        {mission.billing_approved && (
-                            <div className="border border-black mb-2 mt-4 break-inside-avoid">
-                                <div className="bg-gradient-to-r from-black to-red-900 text-white border-b border-black px-2 py-1 font-bold text-center text-xs uppercase tracking-wider print:bg-black print:text-white">
-                                    DEMONSTRATIVO DE EXCEDENTES E VARIÁVEIS
-                                </div>
-                                <table className="w-full text-[10px] uppercase border-collapse">
-                                    <thead className="bg-gray-200 text-center font-bold print:bg-gray-200">
-                                        <tr>
-                                            <th className="border border-black px-2 py-1 w-1/3">ITEM</th>
-                                            <th className="border border-black px-2 py-1">VALOR UNITÁRIO</th>
-                                            <th className="border border-black px-2 py-1">QUANTIDADE</th>
-                                            <th className="border border-black px-2 py-1 text-right">TOTAL</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        <tr>
-                                            <td className="border border-black px-2 py-1 font-bold">KM EXCEDENTE</td>
-                                            <td className="border border-black px-2 py-1 text-center">-</td>
-                                            <td className="border border-black px-2 py-1 text-center font-bold">{mission.endKm && mission.startKm ? (mission.endKm - mission.startKm).toFixed(0) : 0} KM</td>
-                                            <td className="border border-black px-2 py-1 text-right">R$ {(mission.revenue_value || 0).toFixed(2)} (Base + Extra)</td>
-                                        </tr>
-                                        <tr>
-                                            <td className="border border-black px-2 py-1 font-bold">HORA EXCEDENTE</td>
-                                            <td className="border border-black px-2 py-1 text-center">-</td>
-                                            <td className="border border-black px-2 py-1 text-center">-</td>
-                                            <td className="border border-black px-2 py-1 text-right">-</td>
-                                        </tr>
-                                        <tr>
-                                            <td className="border border-black px-2 py-1 font-bold">PEDÁGIO / REEMBOLSO</td>
-                                            <td className="border border-black px-2 py-1 text-center">COMPROVADO</td>
-                                            <td className="border border-black px-2 py-1 text-center">1</td>
-                                            <td className="border border-black px-2 py-1 text-right font-bold">R$ {(mission.toll_value || 0).toFixed(2)}</td>
-                                        </tr>
-                                    </tbody>
-                                    <tfoot className="bg-gray-100 font-black">
-                                        <tr>
-                                            <td colSpan={3} className="border border-black px-2 py-1 text-right">TOTAL GERAL DA MISSÃO:</td>
-                                            <td className="border border-black px-2 py-1 text-right">R$ {((mission.revenue_value || 0) + (mission.toll_value || 0)).toFixed(2)}</td>
-                                        </tr>
-                                    </tfoot>
-                                </table>
-                            </div>
-                        )}
-
-                        {/* STATUS */}
-                        <div className="border border-black mb-2 mt-4 break-inside-avoid">
-                            <div className="bg-gradient-to-r from-black to-red-900 text-white border-b border-black px-2 py-1 font-bold text-center text-xs uppercase tracking-wider print:bg-black print:text-white">
-                                ÚLTIMA ATUALIZAÇÃO / OCORRÊNCIA
-                            </div>
-                            <div className="p-2 text-xs uppercase font-medium min-h-[60px]">
+                        {/* OCORRÊNCIA */}
+                        <div className="print-section" style={{ marginTop: '4px' }}>
+                            <div className="section-header">ÚLTIMA ATUALIZAÇÃO / OCORRÊNCIA</div>
+                            <div style={{ padding: '4px 8px', fontSize: '9px', textTransform: 'uppercase', fontWeight: 500, minHeight: '30px' }}>
                                 {mission.currentLocation || 'Sem ocorrências registradas.'}
                             </div>
                         </div>
 
-                        {/* DADOS DA OPERAÇÃO (CONSOLIDADO) */}
-                        <table className="w-full border-collapse border border-black text-[10px] uppercase mb-4">
+                        {/* TIMELINE */}
+                        <table className="timeline-table" style={{ marginTop: '4px' }}>
                             <thead>
-                                <tr className="bg-gradient-to-r from-red-800 to-red-600 text-white print:bg-black print:text-white">
-                                    <th className="border border-black px-2 py-1 w-10">ICON</th>
-                                    <th className="border border-black px-2 py-1 text-left">SITUAÇÃO / ETAPA</th>
-                                    <th className="border border-black px-2 py-1 w-32 text-center">DATA/HORA</th>
-                                    <th className="border border-black px-2 py-1 w-20 text-center">KM</th>
+                                <tr>
+                                    <th style={{ width: '30px' }}>ICON</th>
+                                    <th style={{ textAlign: 'left' }}>SITUAÇÃO / ETAPA</th>
+                                    <th style={{ width: '120px', textAlign: 'center' }}>DATA/HORA</th>
+                                    <th style={{ width: '60px', textAlign: 'center' }}>KM</th>
                                 </tr>
                             </thead>
                             <tbody>
                                 <tr>
-                                    <td className="border border-black text-center py-1">📝</td>
-                                    <td className="border border-black px-2 py-1 font-bold">DATA DA CRIAÇÃO</td>
-                                    <td className="border border-black px-2 py-1 text-center font-mono">
-                                        {formatDate(mission.createdAt)} {formatTime(mission.createdAt)}
-                                    </td>
-                                    <td className="border border-black px-2 py-1 text-center">-</td>
+                                    <td style={{ textAlign: 'center' }}>📝</td>
+                                    <td style={{ fontWeight: 700 }}>DATA DA CRIAÇÃO</td>
+                                    <td style={{ textAlign: 'center', fontFamily: 'monospace' }}>{formatDate(mission.createdAt)} {formatTime(mission.createdAt)}</td>
+                                    <td style={{ textAlign: 'center' }}>-</td>
                                 </tr>
                                 <tr>
-                                    <td className="border border-black text-center py-1">📅</td>
-                                    <td className="border border-black px-2 py-1 font-bold">DATA DO AGENDAMENTO</td>
-                                    <td className="border border-black px-2 py-1 text-center font-mono">
-                                        {mission.startTime ? `${formatDate(mission.startTime)} ${formatTime(mission.startTime)}` : '-'}
-                                    </td>
-                                    <td className="border border-black px-2 py-1 text-center">-</td>
+                                    <td style={{ textAlign: 'center' }}>📅</td>
+                                    <td style={{ fontWeight: 700 }}>DATA DO AGENDAMENTO</td>
+                                    <td style={{ textAlign: 'center', fontFamily: 'monospace' }}>{mission.startTime ? `${formatDate(mission.startTime)} ${formatTime(mission.startTime)}` : '-'}</td>
+                                    <td style={{ textAlign: 'center' }}>-</td>
                                 </tr>
                                 <tr>
-                                    <td className="border border-black text-center py-1">📍</td>
-                                    <td className="border border-black px-2 py-1 font-bold">DATA DA CHEGADA NA ORIGEM</td>
-                                    <td className="border border-black px-2 py-1 text-center font-mono">
-                                        {mission.startTime ? `${formatDate(mission.startTime)} ${formatTime(mission.startTime)}` : '-'}
-                                    </td>
-                                    <td className="border border-black px-2 py-1 text-center">{mission.startKm || '-'}</td>
+                                    <td style={{ textAlign: 'center' }}>📍</td>
+                                    <td style={{ fontWeight: 700 }}>DATA DA CHEGADA NA ORIGEM</td>
+                                    <td style={{ textAlign: 'center', fontFamily: 'monospace' }}>{mission.startTime ? `${formatDate(mission.startTime)} ${formatTime(mission.startTime)}` : '-'}</td>
+                                    <td style={{ textAlign: 'center' }}>{mission.startKm || '-'}</td>
                                 </tr>
                                 <tr>
-                                    <td className="border border-black text-center py-1">🏁</td>
-                                    <td className="border border-black px-2 py-1 font-bold">DATA DE CONCLUÍDO</td>
-                                    <td className="border border-black px-2 py-1 text-center font-mono">
-                                        {mission.endTime ? `${formatDate(mission.endTime)} ${formatTime(mission.endTime)}` : '-'}
-                                    </td>
-                                    <td className="border border-black px-2 py-1 text-center">{mission.endKm || '-'}</td>
+                                    <td style={{ textAlign: 'center' }}>🏁</td>
+                                    <td style={{ fontWeight: 700 }}>DATA DE CONCLUÍDO</td>
+                                    <td style={{ textAlign: 'center', fontFamily: 'monospace' }}>{mission.endTime ? `${formatDate(mission.endTime)} ${formatTime(mission.endTime)}` : '-'}</td>
+                                    <td style={{ textAlign: 'center' }}>{mission.endKm || '-'}</td>
                                 </tr>
                             </tbody>
                         </table>
 
-
                         {/* RODAPÉ */}
-                        <div className="mt-8 text-center text-[10px] uppercase text-gray-500 font-bold border-t border-gray-300 pt-2">
+                        <div style={{ marginTop: '16px', textAlign: 'center', fontSize: '9px', textTransform: 'uppercase', color: '#6b7280', fontWeight: 700, borderTop: '1px solid #d1d5db', paddingTop: '6px' }}>
                             ATENCIOSAMENTE DEPARTAMENTO DE ESCOLTA ARMADA - GRUPO TMSEG
                             <br/>
-                            <span className="font-normal normal-case">Documento gerado eletronicamente em {new Date().toLocaleString('pt-BR')}</span>
+                            <span style={{ fontWeight: 400, textTransform: 'none' }}>Documento gerado eletronicamente em {new Date().toLocaleString('pt-BR')}</span>
                         </div>
 
                     </div>
