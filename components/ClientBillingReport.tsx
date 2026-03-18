@@ -92,11 +92,11 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
         const clientNameUpper = `${selectedClient?.name || ''} ${selectedClient?.trading_name || ''}`.toUpperCase();
         let base: string;
         if (clientNameUpper.includes('CEVA')) {
-            base = 'CNAE 07930 — Monitoramento e rastreamento a distância de veículos, cargas, pessoas e semoventes por qualquer meio';
+            base = 'CNAE 07930 — Intermediação / Agenciamento de Contrato';
         } else if (clientNameUpper.includes('AMAZON')) {
-            base = 'CNAE 06298 — Outras atividades de prestação de serviços de informação não especificadas anteriormente';
+            base = 'CNAE 06298 — Rastreamento e Monitoramento de Carga';
         } else {
-            base = 'CNAE 03115 — Atividades de vigilância e segurança privada';
+            base = 'CNAE 03115 — Assessoria ou consultoria de qualquer natureza, não contida em outros itens desta lista';
         }
         setAsaasDescription(asaasPeriod ? `${base} — ${asaasPeriod}` : base);
     }, [asaasPeriod, showInvoiceModal, invoiceForm.client, clients]);
@@ -1376,9 +1376,9 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
                                         const cl = clients.find(c => c.id.toString() === invoiceForm.client);
                                         const nm = `${cl?.name || ''} ${cl?.trading_name || ''}`.toUpperCase();
                                         let cnaeCode = '03115';
-                                        let cnaeName = 'Atividades de vigilância e segurança privada';
-                                        if (nm.includes('CEVA')) { cnaeCode = '07930'; cnaeName = 'Monitoramento e rastreamento a distância de veículos, cargas, pessoas e semoventes'; }
-                                        else if (nm.includes('AMAZON')) { cnaeCode = '06298'; cnaeName = 'Outras atividades de prestação de serviços de informação não especificadas anteriormente'; }
+                                        let cnaeName = 'Assessoria ou consultoria de qualquer natureza, não contida em outros itens desta lista';
+                                        if (nm.includes('CEVA')) { cnaeCode = '07930'; cnaeName = 'Intermediação / Agenciamento de Contrato'; }
+                                        else if (nm.includes('AMAZON')) { cnaeCode = '06298'; cnaeName = 'Rastreamento e Monitoramento de Carga'; }
                                         return (
                                             <div className="bg-green-50 border border-green-200 rounded-lg px-2.5 py-2">
                                                 <p className="text-[8px] font-black text-green-700 uppercase mb-0.5">CNAE Fixado Automaticamente</p>
