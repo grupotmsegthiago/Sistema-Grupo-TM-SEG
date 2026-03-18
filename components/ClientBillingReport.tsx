@@ -977,6 +977,80 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
         }
     };
 
+    const autoSaveInvoiceAfterAsaas = async (asaasData: any, nfNumber: string) => {
+        try {
+            const clientObj = clients.find(c => c.id.toString() === invoiceForm.client);
+            const clientName = clientObj?.name || clientObj?.trading_name || invoiceForm.client;
+            const userName = JSON.parse(localStorage.getItem('userData') || '{}').name || 'Sistema';
+            const parsedAmt = parseFloat(invoiceForm.amount);
+
+            const invoicePayload: any = {
+                client: clientName,
+                number: nfNumber || `TMSEG-${Date.now()}`,
+                amount: parsedAmt,
+                date: invoiceForm.date,
+                status: 'EMITIDA',
+                notes: invoiceForm.notes || '',
+                created_by: userName,
+            };
+
+            if (invoiceForm.provider) invoicePayload.provider = invoiceForm.provider;
+            if (invoiceForm.issuer_company) invoicePayload.issuer_company = invoiceForm.issuer_company;
+            if (invoiceForm.boleto_due_date) invoicePayload.boleto_due_date = invoiceForm.boleto_due_date;
+
+            const payment = asaasData?.payment || asaasData?.charges?.[0]?.payment;
+            if (payment) {
+                invoicePayload.asaas_payment_id = payment.id;
+                invoicePayload.asaas_status = payment.status;
+                invoicePayload.asaas_invoice_url = payment.invoiceUrl || '';
+                invoicePayload.asaas_bankslip_url = payment.bankSlipUrl || '';
+            }
+            if (asaasData?.pix?.copyPaste) invoicePayload.asaas_pix_payload = asaasData.pix.copyPaste;
+            if (asaasData?.bankSlip?.digitableLine) invoicePayload.asaas_barcode = asaasData.bankSlip.digitableLine;
+            if (asaasData?.charges?.[0]?.pix?.copyPaste) invoicePayload.asaas_pix_payload = asaasData.charges[0].pix.copyPaste;
+
+            let { error } = await supabase.from('financial_invoices').insert(invoicePayload).select();
+            if (error && error.code === '42703') {
+                const { nf_image_url, boleto_image_url, provider, issuer_company, boleto_due_date, asaas_payment_id, asaas_status, asaas_invoice_url, asaas_bankslip_url, asaas_pix_payload, asaas_barcode, ...basicPayload } = invoicePayload;
+                const retry = await supabase.from('financial_invoices').insert(basicPayload).select();
+                error = retry.error;
+            }
+            if (error) {
+                console.error('[AutoSave Invoice]', error);
+                setAiStatus('Cobrança Asaas gerada, mas erro ao salvar fatura: ' + error.message);
+                return;
+            }
+
+            const dueDate = invoiceForm.boleto_due_date || invoiceForm.date;
+            const quinzenaDesc = getQuinzenaRef(invoiceForm.date, clientName);
+            try {
+                await supabase.from('financial_transactions').insert({
+                    description: `NF ${nfNumber} — ${quinzenaDesc}`,
+                    amount: parsedAmt,
+                    type: 'INCOME',
+                    status: 'PENDING',
+                    due_date: dueDate,
+                    entity_type: 'Client',
+                    entity_id: invoiceForm.client,
+                    entity_name: clientName,
+                    notes: `Fatura NF ${nfNumber} | Emissora: ${invoiceForm.issuer_company || '-'} | ${invoiceForm.notes || ''}`.trim(),
+                    created_by: userName,
+                });
+            } catch (e) {
+                console.error('[Auto Contas a Receber]', e);
+            }
+
+            setAiStatus('Cobrança Asaas gerada + Fatura salva + Contas a Receber criado!');
+            setTimeout(() => {
+                setShowInvoiceModal(false);
+                resetInvoiceForm();
+            }, 3000);
+        } catch (e: any) {
+            console.error('[AutoSave]', e);
+            setAiStatus('Cobrança gerada no Asaas, mas erro ao salvar fatura localmente: ' + e.message);
+        }
+    };
+
     const handleGenerateAsaasCharge = async () => {
         if (!invoiceForm.amount || !invoiceForm.boleto_due_date) {
             alert('Preencha o Valor e o Vencimento do Boleto antes de gerar a cobrança.');
@@ -1024,10 +1098,12 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
                 const data = await res.json();
                 if (!res.ok) throw new Error(data.error || 'Erro ao criar cobranças');
                 setAsaasResult(data);
-                if (data.charges?.[0]?.payment?.id) {
-                    setInvoiceForm(prev => ({ ...prev, number: `ASAAS-${data.charges[0].payment.id}` }));
+                const firstNf = data.charges?.[0]?.payment?.id ? `ASAAS-${data.charges[0].payment.id}` : '';
+                if (firstNf) {
+                    setInvoiceForm(prev => ({ ...prev, number: firstNf }));
                 }
-                setAiStatus(`${data.charges?.length || 0} cobranças Asaas geradas com sucesso!`);
+                setAiStatus(`${data.charges?.length || 0} cobranças Asaas geradas! Salvando fatura...`);
+                await autoSaveInvoiceAfterAsaas(data, firstNf);
             } catch (err: any) {
                 alert('Erro ao gerar cobranças no Asaas: ' + err.message);
                 setAiStatus('Erro: ' + err.message);
@@ -1061,10 +1137,13 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
             const data = await res.json();
             if (!res.ok) throw new Error(data.error || 'Erro ao criar cobrança');
             setAsaasResult(data);
-            if (data.payment?.id) {
-                setInvoiceForm(prev => ({ ...prev, number: `ASAAS-${data.payment.id}` }));
+            const nfNum = data.payment?.id ? `ASAAS-${data.payment.id}` : '';
+            if (nfNum) {
+                setInvoiceForm(prev => ({ ...prev, number: nfNum }));
             }
-            setAiStatus('Cobrança Asaas gerada com sucesso! NF e Boleto vinculados automaticamente.');
+            setAiStatus('Cobrança Asaas gerada! Salvando fatura e contas a receber...');
+
+            await autoSaveInvoiceAfterAsaas(data, nfNum);
         } catch (err: any) {
             alert('Erro ao gerar cobrança no Asaas: ' + err.message);
             setAiStatus('Erro: ' + err.message);
