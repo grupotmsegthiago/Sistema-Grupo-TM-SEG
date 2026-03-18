@@ -500,6 +500,7 @@ export const calculateMissionFinancials = (
         }
     }
 
+    let isManualOverride = false;
     if (manualTableOverrides?.clientTableId) {
         const manualTable = clientTables.find(t => t.id.toString() === manualTableOverrides.clientTableId);
         const manualTableOp = (manualTable?.operation_type || '').toUpperCase();
@@ -509,6 +510,7 @@ export const calculateMissionFinancials = (
         if (regionOk) {
             appliedClientTable = manualTable;
             clientLog = 'Seleção Manual / Memória';
+            isManualOverride = true;
         }
     }
     if (!appliedClientTable && isCancelled && clientTablesFiltered.length > 0) {
@@ -568,7 +570,7 @@ export const calculateMissionFinancials = (
     const destHas200km = normalizedDest.includes('200KM') || normalizedDest.includes('200 KM');
     const referenceDistance = Math.max(totalDistance, distanceForCalculation);
 
-    if (isCevaClient && isJundiai && !isCancelled && allClientTablesForThisClient.length > 0) {
+    if (isCevaClient && isJundiai && !isCancelled && !isManualOverride && allClientTablesForThisClient.length > 0) {
         if (referenceDistance > 200 || destHas200km) {
             const currentOp = normalize(appliedClientTable?.operation_type || '');
             const isAlreadyLogitech = currentOp.includes('LOGITECH') || currentOp.includes('200KM') || currentOp.includes('200 KM');

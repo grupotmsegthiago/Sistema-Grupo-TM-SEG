@@ -640,9 +640,6 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
               if (!manualClientTableId) {
                   setManualClientTableId(financialData.client.tableId);
               }
-              if (manualClientTableId && financialData.client.tableId !== manualClientTableId && financialData.client.detectionLog.includes('CEVA Jundiaí')) {
-                  setManualClientTableId(financialData.client.tableId);
-              }
           }
       }
     }, [financialData, memoryLoaded, mission, tollProviderInput]); 

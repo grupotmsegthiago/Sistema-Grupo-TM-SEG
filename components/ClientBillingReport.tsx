@@ -25,6 +25,7 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
     const [allPeriodMissions, setAllPeriodMissions] = useState<any[]>([]);
     const [allClientTables, setAllClientTables] = useState<ClientPriceTable[]>([]);
     const [allProviderTables, setAllProviderTables] = useState<ProviderCostTable[]>([]);
+    const [billingAdjustments, setBillingAdjustments] = useState<Record<string, any>>({});
     const [chartsLoading, setChartsLoading] = useState(false);
     const [chartsGenerated, setChartsGenerated] = useState(false);
 
@@ -185,12 +186,28 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
                 _clientVehicle: m.client_vehicle ? clientVehiclesMap[m.client_vehicle.toString()] : null
             }));
 
-            const [ptRes, pctRes] = await Promise.all([
+            const missionIds = (missionData || []).map((m: any) => m.id).filter(Boolean);
+
+            const [ptRes, pctRes, adjRes] = await Promise.all([
                 supabase.from('client_price_tables').select('*').eq('client', clientName),
-                supabase.from('provider_cost_tables').select('*')
+                supabase.from('provider_cost_tables').select('*'),
+                missionIds.length > 0
+                    ? supabase.from('system_logs').select('entity_id, details').eq('entity', 'BillingAdjustment').in('entity_id', missionIds).order('created_at', { ascending: false })
+                    : Promise.resolve({ data: [] })
             ]);
             setPriceTables(ptRes.data as ClientPriceTable[] || []);
             setProviderTables(pctRes.data as any || []);
+
+            const adjMap: Record<string, any> = {};
+            if (adjRes.data) {
+                for (const row of adjRes.data) {
+                    if (!adjMap[row.entity_id]) {
+                        try { adjMap[row.entity_id] = JSON.parse(row.details); } catch {}
+                    }
+                }
+            }
+            setBillingAdjustments(adjMap);
+
             setMissions(enrichedMissions);
             setReportGenerated(true);
         } catch (err) {
@@ -587,7 +604,18 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
 
     const rowsData = useMemo(() => {
         return missions.map(m => {
-            const fin = calculateMissionFinancials(m, priceTables, providerTables, clientData);
+            const adj = billingAdjustments[m.id];
+            const overrides = adj ? {
+                clientTableId: adj.clientTableId || undefined,
+                providerTableId: adj.providerTableId || undefined,
+                customClientBase: adj.customClientBase ? Number(adj.customClientBase) : undefined,
+                customClientUnitKm: adj.customClientKm ? Number(adj.customClientKm) : undefined,
+                customClientUnitHour: adj.customClientHour ? Number(adj.customClientHour) : undefined,
+                customProviderBase: adj.customProviderBase ? Number(adj.customProviderBase) : undefined,
+                customProviderUnitKm: adj.customProviderKm ? Number(adj.customProviderKm) : undefined,
+                customProviderUnitHour: adj.customProviderHour ? Number(adj.customProviderHour) : undefined,
+            } : undefined;
+            const fin = calculateMissionFinancials(m, priceTables, providerTables, clientData, new Date(), overrides);
             const usedTable = priceTables.find(t => t.id.toString() === fin.client.tableId);
             const franchiseKm = usedTable?.franchise_km ?? 0;
             const franchiseHours = usedTable?.franchise_hours ?? 0;
@@ -650,7 +678,7 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
                 franchiseHoursFmt: fmtFranchiseHr(franchiseHours)
             };
         });
-    }, [missions, priceTables, providerTables, clientData, displayClientName]);
+    }, [missions, priceTables, providerTables, clientData, displayClientName, billingAdjustments]);
 
     const grandTotal = useMemo(() => rowsData.reduce((s, r) => s + r.totalGeral, 0), [rowsData]);
 
