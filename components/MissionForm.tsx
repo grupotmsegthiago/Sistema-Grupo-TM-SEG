@@ -112,6 +112,8 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
   // Inteligência de Software: Restrição IBL/Sorocaba
   const [iblWarning, setIblWarning] = useState('');
 
+  const [isCommercialUser, setIsCommercialUser] = useState(false);
+
   useEffect(() => {
     const storedUser = localStorage.getItem('userData');
     if (storedUser) {
@@ -120,6 +122,14 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
             const role = (user.role || "").toLowerCase();
             const allowed = ['diretoria', 'administrador'].includes(role) || (user.permissions && user.permissions.includes('*'));
             setCanViewFinancials(allowed);
+            if (role === 'comercial') {
+                setIsCommercialUser(true);
+                const clientPerm = (user.permissions || []).find((p: string) => p.startsWith('client_view:'));
+                if (clientPerm) {
+                    const assignedClient = clientPerm.replace('client_view:', '');
+                    setFormData(prev => ({ ...prev, client: assignedClient }));
+                }
+            }
         } catch (e) { console.error(e); }
     }
     generateId();
@@ -801,7 +811,7 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
                     <div className="flex flex-col gap-3">
                         <div className="flex gap-2">
                             <div className="relative flex-1">
-                                <select required className={SELECT_CLASS} value={formData.client} onChange={e => {
+                                <select required className={SELECT_CLASS} value={formData.client} disabled={isCommercialUser} onChange={e => {
                                     const clientName = e.target.value;
                                     const isVTC = (clientName || '').toUpperCase().includes('VTC');
                                     setFormData(prev => {
@@ -837,7 +847,7 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
                                 <Building2 size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
                                 <ChevronDown size={16} className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
                             </div>
-                            <button type="button" onClick={() => setIsClientModalOpen(true)} className="p-3 bg-gray-900 text-white rounded-lg hover:bg-black transition-all shadow-md active:scale-95"><Plus size={20} /></button>
+                            {!isCommercialUser && <button type="button" onClick={() => setIsClientModalOpen(true)} className="p-3 bg-gray-900 text-white rounded-lg hover:bg-black transition-all shadow-md active:scale-95"><Plus size={20} /></button>}
                         </div>
 
                         {isVtcClient && (
@@ -1054,6 +1064,12 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
                     )}
 
                     <label className={LABEL_CLASS}>4. Fornecedor (Parceiro de Escolta)</label>
+                    {isCommercialUser ? (
+                        <div className="flex items-center gap-2 px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl text-sm font-bold text-gray-500">
+                            <Briefcase size={16} className="text-gray-400" />
+                            {formData.provider || 'Definido pela equipe operacional'}
+                        </div>
+                    ) : (
                     <div className="flex gap-2">
                         <div className="relative flex-1">
                             <input
@@ -1090,6 +1106,7 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
                         </div>
                         <button type="button" onClick={() => setIsProviderModalOpen(true)} className="p-3 bg-gray-100 text-gray-600 rounded-lg hover:bg-gray-200 transition-all shadow-sm active:scale-95"><Plus size={20} /></button>
                     </div>
+                    )}
                   </div>
               </div>
 

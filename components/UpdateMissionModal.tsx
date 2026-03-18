@@ -56,6 +56,12 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
     const [isEndTimeLocked, setIsEndTimeLocked] = useState(false);
 
     // Permissões Administrativas
+    const isCommercial = useMemo(() => {
+        if (!currentUser) return false;
+        const role = (currentUser.role || '').toLowerCase();
+        return role === 'comercial';
+    }, [currentUser]);
+
     const canEditRoute = useMemo(() => {
         if (!currentUser) return false;
         const role = (currentUser.role || '').toLowerCase();
@@ -1256,6 +1262,12 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
                         {!hideProviderInfo && (
                         <div className="relative">
                             <label className={LABEL_CLASS}>Fornecedor Parceiro</label>
+                            {isCommercial ? (
+                                <div className="flex items-center gap-2 px-3 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm font-bold text-gray-700">
+                                    <Briefcase size={14} className="text-gray-400" />
+                                    {editData.provider || 'Não definido'}
+                                </div>
+                            ) : (
                             <div className="flex gap-1.5">
                                 <div className="relative flex-1">
                                     <input type="text" className={INPUT_CLASS} placeholder="Filtrar..." value={searchProvider} onChange={e => setSearchTerm(e.target.value)} onFocus={() => setActiveDropdown('provider')} />
@@ -1277,6 +1289,7 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
                                 </div>
                                 <button type="button" onClick={() => setQuickModal('provider')} className="p-2.5 bg-gray-900 text-white rounded-xl hover:bg-black transition-all shadow-md"><Plus size={18}/></button>
                             </div>
+                            )}
                         </div>
                         )}
 
