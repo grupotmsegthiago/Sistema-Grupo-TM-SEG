@@ -55,14 +55,35 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
     }, [invoiceForm.amount, invoiceForm.boleto_due_date, invoiceForm.client, invoiceForm.number]);
 
     useEffect(() => {
-        const now = new Date();
-        const day = now.getDate();
-        const monthNames = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
-        const monthLabel = monthNames[now.getMonth()];
-        const yearLabel = now.getFullYear();
-        const quinzena = day <= 15 ? '1ª Quinzena' : '2ª Quinzena';
-        setAsaasPeriod(`${quinzena} de ${monthLabel}/${yearLabel}`);
-    }, [showInvoiceModal]);
+        if (showInvoiceModal) {
+            const monthNames = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
+            if (startDate) {
+                const sDate = new Date(startDate + 'T12:00:00');
+                const month = monthNames[sDate.getMonth()];
+                const year = sDate.getFullYear();
+                const sDay = sDate.getDate();
+                const eDate = endDate ? new Date(endDate + 'T12:00:00') : sDate;
+                const eDay = eDate.getDate();
+                const lastDayOfMonth = new Date(year, sDate.getMonth() + 1, 0).getDate();
+                if (sDay === 1 && eDay === lastDayOfMonth) {
+                    setAsaasPeriod(`Mês Completo de ${month}/${year}`);
+                } else if (sDay === 1 && eDay === 15) {
+                    setAsaasPeriod(`1ª Quinzena de ${month}/${year}`);
+                } else if (sDay === 16) {
+                    setAsaasPeriod(`2ª Quinzena de ${month}/${year}`);
+                } else {
+                    setAsaasPeriod(`${month}/${year}`);
+                }
+            } else {
+                const now = new Date();
+                const day = now.getDate();
+                const monthLabel = monthNames[now.getMonth()];
+                const yearLabel = now.getFullYear();
+                const quinzena = day <= 15 ? '1ª Quinzena' : '2ª Quinzena';
+                setAsaasPeriod(`${quinzena} de ${monthLabel}/${yearLabel}`);
+            }
+        }
+    }, [showInvoiceModal, startDate, endDate]);
 
     useEffect(() => {
         const selectedClient = clients.find(c => c.id.toString() === invoiceForm.client);
@@ -1041,7 +1062,8 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
 
     const openInvoiceModal = () => {
         const clientObj = clients.find(c => c.id.toString() === selectedClient);
-        const clientName = clientObj?.trading_name || clientObj?.name || '';
+        const razaoSocial = clientObj?.name || clientObj?.trading_name || '';
+        const tomador = razaoSocial;
         const issuer = (clientObj as any)?.issuer_company || '';
         const periodRef = buildPeriodRef();
         const notesText = `Referente aos serviços de Intermediação de Escolta Armada - Referente ao ${periodRef}`;
@@ -1050,7 +1072,7 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
             ...prev,
             client: selectedClient,
             amount: reportGenerated && grandTotal > 0 ? grandTotal.toFixed(2) : prev.amount,
-            provider: clientName,
+            provider: tomador,
             issuer_company: issuer,
             notes: notesText,
             number: '',
@@ -1168,21 +1190,21 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
                         <div className="bg-red-50 border border-red-200 rounded-xl p-4">
                             <p className="text-[9px] font-black text-red-700 uppercase tracking-widest mb-3">Dados da Fatura (Preenchidos Automaticamente)</p>
                             <div className="grid grid-cols-2 gap-3">
-                                <div>
-                                    <label className="text-[10px] font-black text-gray-400 uppercase mb-1 block">Cliente</label>
-                                    <input type="text" className="w-full p-2.5 border rounded-lg text-sm font-bold uppercase bg-white cursor-not-allowed" readOnly value={clients.find(c => c.id.toString() === invoiceForm.client)?.trading_name || clients.find(c => c.id.toString() === invoiceForm.client)?.name || ''} data-testid="display-billing-invoice-client" />
+                                <div className="col-span-2">
+                                    <label className="text-[10px] font-black text-gray-400 uppercase mb-1 block">Cliente (Razão Social)</label>
+                                    <input type="text" className="w-full p-2.5 border rounded-lg text-sm font-bold uppercase bg-white cursor-not-allowed" readOnly value={clients.find(c => c.id.toString() === invoiceForm.client)?.name || ''} data-testid="display-billing-invoice-client" />
                                 </div>
                                 <div>
-                                    <label className="text-[10px] font-black text-gray-400 uppercase mb-1 block">Valor</label>
+                                    <label className="text-[10px] font-black text-gray-400 uppercase mb-1 block">Valor Total</label>
                                     <input type="text" className="w-full p-2.5 border rounded-lg text-sm font-mono font-bold bg-white cursor-not-allowed" readOnly value={invoiceForm.amount ? `R$ ${parseFloat(invoiceForm.amount).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}` : ''} data-testid="display-billing-invoice-amount" />
                                 </div>
                                 <div>
-                                    <label className="text-[10px] font-black text-gray-400 uppercase mb-1 block">Fornecedor (Cliente)</label>
-                                    <input type="text" className="w-full p-2.5 border rounded-lg text-sm font-bold uppercase bg-white cursor-not-allowed" readOnly value={invoiceForm.provider} data-testid="display-billing-invoice-provider" />
-                                </div>
-                                <div>
-                                    <label className="text-[10px] font-black text-gray-400 uppercase mb-1 block">Empresa Emissora</label>
+                                    <label className="text-[10px] font-black text-gray-400 uppercase mb-1 block">Empresa Emissora (NF)</label>
                                     <input type="text" className="w-full p-2.5 border rounded-lg text-sm font-bold uppercase bg-white cursor-not-allowed" readOnly value={invoiceForm.issuer_company} data-testid="display-billing-invoice-issuer" />
+                                </div>
+                                <div className="col-span-2">
+                                    <label className="text-[10px] font-black text-gray-400 uppercase mb-1 block">Tomador do Serviço</label>
+                                    <input type="text" className="w-full p-2.5 border rounded-lg text-sm font-bold uppercase bg-white cursor-not-allowed" readOnly value={invoiceForm.provider} data-testid="display-billing-invoice-provider" />
                                 </div>
                                 <div className="col-span-2">
                                     <label className="text-[10px] font-black text-gray-400 uppercase mb-1 block">Nº NF (Gerado pelo Asaas)</label>
