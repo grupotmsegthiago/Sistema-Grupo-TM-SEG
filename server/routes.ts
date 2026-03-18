@@ -10,7 +10,7 @@ import { calculateMissionFinancials } from "../lib/financialUtils";
 import fs from "fs";
 import path from "path";
 import { sendMissionEmailToClient, sendMissionEmailToProvider, sendMissionResendToClient, sendMirroringEvidenceEmail, sendMissionChangeNotificationToClient, sendMissionChangeNotificationToProvider, sendWelcomeEmail, sendTestEmail, sendVerificationCodeEmail, sendPasswordResetEmail } from "./emailService";
-import { findOrCreateCustomer, createPayment, getPayment, getPaymentPixQrCode, getPaymentBankSlip, listPayments, deletePayment, mapAsaasStatus, isAsaasConfigured } from "./asaasService";
+import { findOrCreateCustomer, createPayment, getPayment, getPaymentPixQrCode, getPaymentBankSlip, listPayments, deletePayment, mapAsaasStatus, isAsaasConfigured, getAsaasCompanies } from "./asaasService";
 
 const resend = new Resend(process.env.RESEND_API_KEY);
 
@@ -47,6 +47,7 @@ export async function registerRoutes(
         });
         await migrationPool.query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS operational_email TEXT`);
         await migrationPool.query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS medicao_email TEXT`);
+        await migrationPool.query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS issuer_company TEXT`);
         await migrationPool.query(`ALTER TABLE missions ADD COLUMN IF NOT EXISTS mirroring_evidence_url TEXT`);
         await migrationPool.query(`ALTER TABLE missions ADD COLUMN IF NOT EXISTS email_pending_client BOOLEAN DEFAULT FALSE`);
         await migrationPool.query(`ALTER TABLE missions ADD COLUMN IF NOT EXISTS email_pending_provider BOOLEAN DEFAULT FALSE`);
@@ -2369,6 +2370,7 @@ export async function registerRoutes(
             name: charge.name || clientName || 'Cliente',
             cpfCnpj: cleanCnpj,
             email: charge.email || clientEmail || undefined,
+            company: issuerCompany,
           });
 
           const externalRef = invoiceNumber ? `NF-${invoiceNumber}-S${i + 1}-${cleanCnpj.slice(-4)}` : `TMSEG-${Date.now()}-S${i + 1}-${cleanCnpj.slice(-4)}`;
@@ -2381,12 +2383,13 @@ export async function registerRoutes(
             description: descText,
             externalReference: externalRef,
             billingType: 'UNDEFINED',
+            company: issuerCompany,
           });
 
           let pixData = null;
           let bankSlipData = null;
-          try { pixData = await getPaymentPixQrCode(payment.id); } catch (_) {}
-          try { bankSlipData = await getPaymentBankSlip(payment.id); } catch (_) {}
+          try { pixData = await getPaymentPixQrCode(payment.id, issuerCompany); } catch (_) {}
+          try { bankSlipData = await getPaymentBankSlip(payment.id, issuerCompany); } catch (_) {}
 
           console.log(`[Asaas] Cobrança split criada: ${payment.id} | ${charge.name || clientName} | CNPJ: ${cleanCnpj} | R$ ${charge.value} | Venc: ${dueDate}`);
 
@@ -2413,6 +2416,7 @@ export async function registerRoutes(
         name: clientName || 'Cliente',
         cpfCnpj: clientCpfCnpj,
         email: clientEmail || undefined,
+        company: issuerCompany,
       });
 
       const externalRef = invoiceNumber ? `NF-${invoiceNumber}` : `TMSEG-${Date.now()}`;
@@ -2425,12 +2429,13 @@ export async function registerRoutes(
         description: descText,
         externalReference: externalRef,
         billingType: 'UNDEFINED',
+        company: issuerCompany,
       });
 
       let pixData = null;
       let bankSlipData = null;
-      try { pixData = await getPaymentPixQrCode(payment.id); } catch (e) { console.log('[Asaas] PIX QR não disponível para esta cobrança'); }
-      try { bankSlipData = await getPaymentBankSlip(payment.id); } catch (e) { console.log('[Asaas] Boleto não disponível para esta cobrança'); }
+      try { pixData = await getPaymentPixQrCode(payment.id, issuerCompany); } catch (e) { console.log('[Asaas] PIX QR não disponível para esta cobrança'); }
+      try { bankSlipData = await getPaymentBankSlip(payment.id, issuerCompany); } catch (e) { console.log('[Asaas] Boleto não disponível para esta cobrança'); }
 
       console.log(`[Asaas] Cobrança criada: ${payment.id} | ${clientName} | R$ ${value} | Venc: ${dueDate}`);
 
@@ -2466,12 +2471,13 @@ export async function registerRoutes(
 
   app.get("/api/asaas/payment/:id", async (req: Request, res: Response) => {
     try {
-      const payment = await getPayment(req.params.id);
+      const company = req.query.company as string || undefined;
+      const payment = await getPayment(req.params.id, company);
       let pixData = null;
       let bankSlipData = null;
       if (payment.status === 'PENDING' || payment.status === 'OVERDUE') {
-        try { pixData = await getPaymentPixQrCode(payment.id); } catch (_) {}
-        try { bankSlipData = await getPaymentBankSlip(payment.id); } catch (_) {}
+        try { pixData = await getPaymentPixQrCode(payment.id, company); } catch (_) {}
+        try { bankSlipData = await getPaymentBankSlip(payment.id, company); } catch (_) {}
       }
       res.json({
         payment: { ...payment, statusBr: mapAsaasStatus(payment.status) },
@@ -2485,12 +2491,13 @@ export async function registerRoutes(
 
   app.get("/api/asaas/payments", async (req: Request, res: Response) => {
     try {
-      const { status, externalReference, offset, limit } = req.query;
+      const { status, externalReference, offset, limit, company } = req.query;
       const result = await listPayments({
         status: status as string || undefined,
         externalReference: externalReference as string || undefined,
         offset: parseInt(offset as string) || 0,
         limit: parseInt(limit as string) || 50,
+        company: company as string || undefined,
       });
       const payments = result.data.map(p => ({ ...p, statusBr: mapAsaasStatus(p.status) }));
       res.json({ payments, totalCount: result.totalCount });
@@ -2501,10 +2508,10 @@ export async function registerRoutes(
 
   app.post("/api/asaas/sync-payment-status", async (req: Request, res: Response) => {
     try {
-      const { paymentId, invoiceId } = req.body;
+      const { paymentId, invoiceId, company } = req.body;
       if (!paymentId) return res.status(400).json({ error: 'paymentId obrigatório' });
 
-      const payment = await getPayment(paymentId);
+      const payment = await getPayment(paymentId, company);
       const statusBr = mapAsaasStatus(payment.status);
       const isPaid = ['RECEIVED', 'CONFIRMED', 'RECEIVED_IN_CASH'].includes(payment.status);
 
@@ -2539,7 +2546,8 @@ export async function registerRoutes(
 
   app.delete("/api/asaas/payment/:id", async (req: Request, res: Response) => {
     try {
-      await deletePayment(req.params.id);
+      const company = req.query.company as string || undefined;
+      await deletePayment(req.params.id, company);
       res.json({ success: true });
     } catch (err: any) {
       res.status(500).json({ error: err.message });

@@ -1,9 +1,33 @@
-const ASAAS_API_KEY = process.env.ASAAS_API_KEY || '';
 const ASAAS_BASE_URL = 'https://api.asaas.com/v3';
 
-const headers = () => ({
+const ASAAS_COMPANIES: Record<string, { apiKey: string; cnpj: string; name: string }> = {
+  'TM GESTÃO': {
+    apiKey: process.env.ASAAS_API_KEY || '',
+    cnpj: '60485843000157',
+    name: 'TM GESTÃO',
+  },
+  'TM SECURITY': {
+    apiKey: process.env.ASAAS_API_KEY_TMSECURITY || '',
+    cnpj: '60508931000127',
+    name: 'TM SECURITY GESTÃO CORPORATIVA LTDA',
+  },
+};
+
+function resolveApiKey(company?: string): string {
+  if (company) {
+    const upper = company.toUpperCase();
+    for (const [key, val] of Object.entries(ASAAS_COMPANIES)) {
+      if (upper.includes(key) || upper.includes(val.cnpj) || val.name.toUpperCase().includes(upper)) {
+        return val.apiKey;
+      }
+    }
+  }
+  return ASAAS_COMPANIES['TM GESTÃO'].apiKey;
+}
+
+const headers = (company?: string) => ({
   'Content-Type': 'application/json',
-  'access_token': ASAAS_API_KEY,
+  'access_token': resolveApiKey(company),
 });
 
 export interface AsaasCustomer {
@@ -40,12 +64,13 @@ export interface AsaasBankSlip {
   barCode: string;
 }
 
-async function asaasFetch(endpoint: string, options: RequestInit = {}): Promise<any> {
-  if (!ASAAS_API_KEY) throw new Error('ASAAS_API_KEY não configurada');
+async function asaasFetch(endpoint: string, options: RequestInit = {}, company?: string): Promise<any> {
+  const apiKey = resolveApiKey(company);
+  if (!apiKey) throw new Error('ASAAS_API_KEY não configurada para a empresa selecionada');
   const url = `${ASAAS_BASE_URL}${endpoint}`;
   const res = await fetch(url, {
     ...options,
-    headers: { ...headers(), ...(options.headers || {}) },
+    headers: { ...headers(company), ...(options.headers || {}) },
   });
   const data = await res.json();
   if (!res.ok) {
@@ -55,9 +80,9 @@ async function asaasFetch(endpoint: string, options: RequestInit = {}): Promise<
   return data;
 }
 
-export async function findCustomerByCpfCnpj(cpfCnpj: string): Promise<AsaasCustomer | null> {
+export async function findCustomerByCpfCnpj(cpfCnpj: string, company?: string): Promise<AsaasCustomer | null> {
   const clean = cpfCnpj.replace(/\D/g, '');
-  const data = await asaasFetch(`/customers?cpfCnpj=${clean}`);
+  const data = await asaasFetch(`/customers?cpfCnpj=${clean}`, {}, company);
   return data.data?.length > 0 ? data.data[0] : null;
 }
 
@@ -67,6 +92,7 @@ export async function createCustomer(params: {
   email?: string;
   phone?: string;
   externalReference?: string;
+  company?: string;
 }): Promise<AsaasCustomer> {
   const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
   const validEmail = params.email && emailRegex.test(params.email.trim()) ? params.email.trim() : undefined;
@@ -80,7 +106,7 @@ export async function createCustomer(params: {
       externalReference: params.externalReference || undefined,
       notificationDisabled: false,
     }),
-  });
+  }, params.company);
 }
 
 export async function findOrCreateCustomer(params: {
@@ -88,8 +114,9 @@ export async function findOrCreateCustomer(params: {
   cpfCnpj: string;
   email?: string;
   phone?: string;
+  company?: string;
 }): Promise<AsaasCustomer> {
-  const existing = await findCustomerByCpfCnpj(params.cpfCnpj);
+  const existing = await findCustomerByCpfCnpj(params.cpfCnpj, params.company);
   if (existing) return existing;
   return createCustomer(params);
 }
@@ -101,6 +128,7 @@ export async function createPayment(params: {
   description?: string;
   externalReference?: string;
   billingType?: 'BOLETO' | 'PIX' | 'UNDEFINED';
+  company?: string;
 }): Promise<AsaasPayment> {
   return asaasFetch('/payments', {
     method: 'POST',
@@ -114,19 +142,19 @@ export async function createPayment(params: {
       interest: { value: 2, type: 'PERCENTAGE' },
       fine: { value: 1, type: 'PERCENTAGE' },
     }),
-  });
+  }, params.company);
 }
 
-export async function getPaymentPixQrCode(paymentId: string): Promise<AsaasPixQrCode> {
-  return asaasFetch(`/payments/${paymentId}/pixQrCode`);
+export async function getPaymentPixQrCode(paymentId: string, company?: string): Promise<AsaasPixQrCode> {
+  return asaasFetch(`/payments/${paymentId}/pixQrCode`, {}, company);
 }
 
-export async function getPaymentBankSlip(paymentId: string): Promise<AsaasBankSlip> {
-  return asaasFetch(`/payments/${paymentId}/identificationField`);
+export async function getPaymentBankSlip(paymentId: string, company?: string): Promise<AsaasBankSlip> {
+  return asaasFetch(`/payments/${paymentId}/identificationField`, {}, company);
 }
 
-export async function getPayment(paymentId: string): Promise<AsaasPayment> {
-  return asaasFetch(`/payments/${paymentId}`);
+export async function getPayment(paymentId: string, company?: string): Promise<AsaasPayment> {
+  return asaasFetch(`/payments/${paymentId}`, {}, company);
 }
 
 export async function listPayments(params?: {
@@ -135,6 +163,7 @@ export async function listPayments(params?: {
   externalReference?: string;
   offset?: number;
   limit?: number;
+  company?: string;
 }): Promise<{ data: AsaasPayment[]; totalCount: number }> {
   const query = new URLSearchParams();
   if (params?.customer) query.set('customer', params.customer);
@@ -142,11 +171,11 @@ export async function listPayments(params?: {
   if (params?.externalReference) query.set('externalReference', params.externalReference);
   query.set('offset', String(params?.offset || 0));
   query.set('limit', String(params?.limit || 50));
-  return asaasFetch(`/payments?${query.toString()}`);
+  return asaasFetch(`/payments?${query.toString()}`, {}, params?.company);
 }
 
-export async function deletePayment(paymentId: string): Promise<any> {
-  return asaasFetch(`/payments/${paymentId}`, { method: 'DELETE' });
+export async function deletePayment(paymentId: string, company?: string): Promise<any> {
+  return asaasFetch(`/payments/${paymentId}`, { method: 'DELETE' }, company);
 }
 
 export function mapAsaasStatus(status: string): string {
@@ -169,5 +198,14 @@ export function mapAsaasStatus(status: string): string {
 }
 
 export function isAsaasConfigured(): boolean {
-  return !!ASAAS_API_KEY;
+  return Object.values(ASAAS_COMPANIES).some(c => !!c.apiKey);
+}
+
+export function getAsaasCompanies(): { key: string; name: string; cnpj: string; configured: boolean }[] {
+  return Object.entries(ASAAS_COMPANIES).map(([key, val]) => ({
+    key,
+    name: val.name,
+    cnpj: val.cnpj,
+    configured: !!val.apiKey,
+  }));
 }

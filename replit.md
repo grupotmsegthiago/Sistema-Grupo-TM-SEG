@@ -54,7 +54,7 @@ The system encompasses modules for **Missions**, **Clients**, **Providers**, **F
 -   **Z-API (WhatsApp):** Integrates WhatsApp messaging capabilities.
 -   **Resend API:** Used for sending email verification codes.
 -   **Nodemailer (Office 365 SMTP):** Automated email system for mission notifications and welcome emails, with strict commercial confidentiality.
--   **Asaas Payment Gateway:** Integrated for automated charge generation (Boleto + PIX), payment status synchronization, and webhook-based reconciliation.
+-   **Asaas Payment Gateway:** Multi-company support — two Asaas accounts configured: **TM GESTÃO** (CNPJ 60.485.843/0001-57, env: `ASAAS_API_KEY`) and **TM SECURITY** (CNPJ 60.508.931/0001-27, env: `ASAAS_API_KEY_TMSECURITY`). The `issuer_company` field on the `clients` table determines which Asaas account is used for charges. The `asaasService.ts` `resolveApiKey(company)` function maps company names to the correct API key.
 
 ### Deployment
 -   **Vercel:** Used for frontend deployment.

@@ -73,7 +73,8 @@ const ClientForm: React.FC<ClientFormProps> = ({
     full_extra_hour_after_16_min: false,
     adjustment_2026_applied: false,
     proposal_2026_sent: false,
-    is_prospect: false
+    is_prospect: false,
+    issuer_company: ''
   });
   
   const [osEmailInput, setOsEmailInput] = useState('');
@@ -161,7 +162,8 @@ const ClientForm: React.FC<ClientFormProps> = ({
                     full_extra_hour_after_16_min: !!data.full_extra_hour_after_16_min,
                     adjustment_2026_applied: !!data.adjustment_2026_applied,
                     proposal_2026_sent: !!data.proposal_2026_sent,
-                    is_prospect: !!data.is_prospect
+                    is_prospect: !!data.is_prospect,
+                    issuer_company: data.issuer_company || ''
                 });
                 fetchPriceTables(data.name);
             }
@@ -351,7 +353,8 @@ const ClientForm: React.FC<ClientFormProps> = ({
         full_extra_hour_after_16_min: formData.full_extra_hour_after_16_min,
         adjustment_2026_applied: formData.adjustment_2026_applied,
         proposal_2026_sent: formData.proposal_2026_sent,
-        is_prospect: formData.is_prospect
+        is_prospect: formData.is_prospect,
+        issuer_company: formData.issuer_company || null
       };
 
       if (id) {
@@ -615,9 +618,17 @@ const ClientForm: React.FC<ClientFormProps> = ({
                     </div>
                     <div className="space-y-1.5">
                         <label className={LABEL_CLASS}>Status Operacional</label>
-                        <select className={INPUT_CLASS} value={formData.status} onChange={e => setFormData({...formData, status: e.target.value})}>
+                        <select className={INPUT_CLASS} value={formData.status} onChange={e => setFormData({...formData, status: e.target.value})} data-testid="select-client-status">
                             <option value="Ativo">Ativo</option>
                             <option value="Inativo">Inativo</option>
+                        </select>
+                    </div>
+                    <div className="space-y-1.5">
+                        <label className={LABEL_CLASS}>Empresa Emissora (NF / Asaas)</label>
+                        <select className={INPUT_CLASS} value={formData.issuer_company} onChange={e => setFormData({...formData, issuer_company: e.target.value})} data-testid="select-client-issuer-company">
+                            <option value="">Selecione...</option>
+                            <option value="TM GESTÃO">TM GESTÃO (60.485.843/0001-57)</option>
+                            <option value="TM SECURITY">TM SECURITY (60.508.931/0001-27)</option>
                         </select>
                     </div>
                     <div className="space-y-1.5 flex items-end">

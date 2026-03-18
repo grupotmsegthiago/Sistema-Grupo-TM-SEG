@@ -831,7 +831,12 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
 
     const openInvoiceModal = () => {
         if (selectedClient) {
-            setInvoiceForm(prev => ({ ...prev, client: selectedClient }));
+            const clientObj = clients.find(c => c.id.toString() === selectedClient);
+            setInvoiceForm(prev => ({ 
+                ...prev, 
+                client: selectedClient,
+                issuer_company: (clientObj as any)?.issuer_company || prev.issuer_company 
+            }));
         }
         if (reportGenerated && grandTotal > 0) {
             setInvoiceForm(prev => ({ ...prev, amount: grandTotal.toFixed(2) }));
