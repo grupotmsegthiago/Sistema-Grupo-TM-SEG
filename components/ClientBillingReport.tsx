@@ -348,15 +348,28 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
         if (colgroup) colgroup.remove();
 
         cloned.querySelectorAll('thead th').forEach((th: any) => {
+            const bg = th.style.backgroundColor;
+            const fw = th.style.fontWeight;
+            const tt = th.style.textTransform;
+            const ta = th.style.textAlign;
             th.style.cssText = '';
+            if (bg) th.style.backgroundColor = bg;
+            if (fw) th.style.fontWeight = fw;
+            if (tt) th.style.textTransform = tt;
+            if (ta) th.style.textAlign = ta;
         });
         cloned.querySelectorAll('tbody td, tfoot td').forEach((td: any) => {
             const isRoute = td.classList.contains('route-cell');
-            if (isRoute) {
-                td.style.cssText = 'text-align:left;';
-            } else {
-                td.style.cssText = '';
-            }
+            const bg = td.style.backgroundColor;
+            const fw = td.style.fontWeight;
+            const color = td.style.color;
+            const ff = td.style.fontFamily;
+            td.style.cssText = '';
+            if (bg) td.style.backgroundColor = bg;
+            if (fw) td.style.fontWeight = fw;
+            if (color) td.style.color = color;
+            if (ff && ff.includes('monospace')) td.style.fontFamily = 'monospace';
+            if (isRoute) td.style.textAlign = 'left';
         });
 
         const headerEl = cloned.querySelector('.boletim-header') as HTMLElement;
@@ -379,14 +392,14 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
         const printCSS = `
             @page { size: A4 landscape; margin: 4mm 5mm; }
             * { box-sizing: border-box; -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
-            html, body { margin: 0; padding: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; font-size: 7pt; }
+            html, body { margin: 0; padding: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; font-size: 7pt; color: #1f2937; }
             #print-content { width: 100%; }
-            table { table-layout: auto; width: 100%; border-collapse: collapse; }
+            table { table-layout: auto; width: 100%; border-collapse: collapse; border: 1px solid #4b5563; }
             td, th {
-                padding: 1.5px 3px;
+                padding: 2px 4px;
                 font-size: 7pt;
-                border: 0.5px solid #999;
-                line-height: 1.25;
+                border: 0.5px solid #9ca3af;
+                line-height: 1.3;
                 white-space: nowrap;
                 text-align: center;
                 vertical-align: middle;
@@ -395,38 +408,71 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
                 white-space: normal;
                 word-wrap: break-word;
                 overflow-wrap: break-word;
-                line-height: 1.2;
-                font-size: 6.5pt;
+                line-height: 1.25;
+                font-size: 7pt;
                 text-align: left;
-                min-width: 90px;
-                max-width: 160px;
+                min-width: 110px;
+                max-width: 200px;
+                font-weight: 600;
             }
             thead { display: table-header-group; }
             tbody { display: table-row-group; }
             tfoot { display: table-footer-group; }
             tr { page-break-inside: avoid; break-inside: avoid; }
-            tbody tr:nth-child(odd) { background-color: #fff; }
-            tbody tr:nth-child(even) { background-color: #f3f4f6; }
-            .group-hdr th { font-size: 7.5pt; padding: 2.5px 3px; font-weight: 900; }
-            .sub-hdr th { font-size: 6.5pt; padding: 2px 3px; font-weight: 900; }
-            .boletim-header { margin-bottom: 3mm; text-align: center; }
-            .boletim-header h1 { font-size: 13pt; margin: 0; }
-            .subtitle-line { font-size: 9pt; margin: 1mm 0; }
-            .ref-line { font-size: 7pt; margin: 0; }
+            tbody tr:nth-child(odd) { background-color: #ffffff; }
+            tbody tr:nth-child(even) { background-color: #f9fafb; }
+            .group-hdr th {
+                font-size: 7.5pt;
+                padding: 3px 4px;
+                font-weight: 900;
+                letter-spacing: 0.5px;
+                border-bottom: 1.5px solid #4b5563;
+                border-top: 1.5px solid #4b5563;
+            }
+            .sub-hdr th {
+                font-size: 6.5pt;
+                padding: 2.5px 3px;
+                font-weight: 800;
+                border-bottom: 1px solid #6b7280;
+                text-transform: uppercase;
+            }
+            .boletim-header {
+                margin-bottom: 4mm;
+                text-align: center;
+                padding-bottom: 2mm;
+                border-bottom: 0.5px solid #d1d5db;
+            }
+            .boletim-header h1 { font-size: 14pt; margin: 0; color: #111827; }
+            .subtitle-line { font-size: 9.5pt; margin: 1.5mm 0 0.5mm; color: #374151; }
+            .ref-line { font-size: 7.5pt; margin: 0; color: #6b7280; letter-spacing: 0.3px; }
             .watermark-logo { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); opacity: 0.04; width: 120mm; height: 120mm; z-index: 0; pointer-events: none; }
             .watermark-logo img { width: 100%; height: 100%; object-fit: contain; }
-            .sign-section { margin-top: 8mm; break-inside: avoid; page-break-inside: avoid; display: flex; justify-content: space-between; align-items: flex-end; padding: 0 8mm; }
-            .sign-box { width: 60mm; text-align: center; }
+            .sign-section {
+                margin-top: 10mm;
+                break-inside: avoid;
+                page-break-inside: avoid;
+                display: flex;
+                justify-content: space-between;
+                align-items: flex-end;
+                padding: 0 10mm;
+                border-top: 0.5px solid #e5e7eb;
+                padding-top: 4mm;
+            }
+            .sign-box { width: 65mm; text-align: center; }
             .sign-logo { width: 10mm; height: 10mm; }
-            .digital-signature { font-size: 13pt; font-family: 'Dancing Script', cursive; font-weight: 700; color: #1a237e; }
-            .sign-role { font-size: 8pt; font-weight: 900; text-transform: uppercase; }
-            .sign-cargo { font-size: 7pt; }
-            .sign-cnpj { font-size: 6.5pt; }
-            .sign-system { font-size: 6pt; }
-            .sign-cliente { font-size: 8pt; font-weight: 900; text-transform: uppercase; }
-            .sign-data { font-size: 6.5pt; }
-            tfoot tr { break-inside: avoid; page-break-inside: avoid; }
-            tfoot td { font-size: 8pt; font-weight: 900; padding: 3px 4px; }
+            .digital-signature { font-size: 14pt; font-family: 'Dancing Script', cursive; font-weight: 700; color: #1a237e; line-height: 1; }
+            .sign-role { font-size: 8pt; font-weight: 900; text-transform: uppercase; color: #111827; letter-spacing: 0.8px; margin-top: 1mm; }
+            .sign-cargo { font-size: 7pt; color: #6b7280; font-weight: 700; }
+            .sign-cnpj { font-size: 6.5pt; color: #6b7280; }
+            .sign-system { font-size: 6.5pt; color: #9ca3af; letter-spacing: 0.3px; }
+            .sign-cliente { font-size: 8pt; font-weight: 900; text-transform: uppercase; color: #111827; letter-spacing: 0.8px; }
+            .sign-data { font-size: 7pt; color: #6b7280; margin-top: 1mm; }
+            tfoot tr {
+                break-inside: avoid;
+                page-break-inside: avoid;
+                border-top: 2px solid #111827;
+            }
+            tfoot td { font-size: 8pt; font-weight: 900; padding: 3px 5px; }
         `;
 
         const wrapper = printWindow.document.createElement('div');
