@@ -335,17 +335,21 @@ export const calculateMissionFinancials = (
             let score = 0;
             let matchType = 'Genérico';
 
-            if (isVeladaMission && tableOp.includes('CARACTERIZADA') && !tableOp.includes('VELADA')) {
-                score -= 5000;
-                matchType = 'Tipo Incompatível (CARACTERIZADA)';
-            }
-            if (isCaracterizadaMission && tableOp.includes('VELADA') && !tableOp.includes('CARACTERIZADA')) {
-                score -= 5000;
-                matchType = 'Tipo Incompatível (VELADA)';
+            const isArmadoTable = tableOp.includes('ARMADO') || tableOp.includes('ARMADOS') || tableOp.includes('PRONTA RESPOSTA');
+            const isFranchiseKmTableName = tableOp.includes('ATE ') || tableOp.includes('ATE') || tableOp.includes('FAIXA');
+
+            if (isVeladaMission) {
+                if (isFranchiseKmTableName && !isArmadoTable) { score -= 5000; matchType = 'Velada não usa faixa KM'; }
+                if (tableOp.includes('CARACTERIZADA') && !tableOp.includes('VELADA')) { score -= 5000; matchType = 'Tipo Incompatível (CARACTERIZADA)'; }
+                if (isArmadoTable) { score += 3000; matchType = 'Tabela Armado (Velada)'; }
+                if (tableOp.includes('VELADA')) { score += 2500; matchType = 'Tipo: VELADA'; }
             }
 
-            if (isVeladaMission && tableOp.includes('VELADA')) { score += 2500; matchType = 'Tipo: VELADA'; }
-            if (isCaracterizadaMission && tableOp.includes('CARACTERIZADA')) { score += 2500; matchType = 'Tipo: CARACTERIZADA'; }
+            if (isCaracterizadaMission) {
+                if (isArmadoTable && !isFranchiseKmTableName) { score -= 3000; matchType = 'Caracterizada usa faixa KM'; }
+                if (tableOp.includes('VELADA') && !tableOp.includes('CARACTERIZADA')) { score -= 5000; matchType = 'Tipo Incompatível (VELADA)'; }
+                if (tableOp.includes('CARACTERIZADA')) { score += 2500; matchType = 'Tipo: CARACTERIZADA'; }
+            }
             
             if (agentAware && agentAware.isSpecial) {
                 const isTable02 = tableOp.includes('02 ARMADO') || tableOp.includes('02 ARMADOS') || tableOp.includes('DOIS ARMADO');

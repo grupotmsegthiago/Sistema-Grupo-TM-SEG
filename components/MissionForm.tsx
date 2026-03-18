@@ -374,15 +374,54 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
           let score = 0;
           let reasons: string[] = [];
 
-          if (isVelada && t.normOp.includes('CARACTERIZADA') && !t.normOp.includes('VELADA')) { score -= 5000; reasons.push('TIPO INCOMPATÍVEL (CARACTERIZADA)'); }
-          if (isCaracterizada && t.normOp.includes('VELADA') && !t.normOp.includes('CARACTERIZADA')) { score -= 5000; reasons.push('TIPO INCOMPATÍVEL (VELADA)'); }
+          const isArmadoTable = t.normOp.includes('ARMADO') || t.normOp.includes('ARMADOS') || t.normOp.includes('PRONTA RESPOSTA');
+          const isFranchiseTable = t.normOp.includes('ATE ') || t.normOp.includes('ATE') || t.normOp.includes('FAIXA');
+          const franchiseKm = parseFloat(t.franchise_km) || 0;
+          const franchiseHours = parseFloat(t.franchise_hours) || 0;
 
-          if (isVelada && t.normOp.includes('VELADA')) { score += 2500; reasons.push('TIPO: VELADA'); }
-          if (isCaracterizada && t.normOp.includes('CARACTERIZADA')) { score += 2500; reasons.push('TIPO: CARACTERIZADA'); }
+          if (isVelada) {
+              if (isFranchiseTable && !isArmadoTable) { score -= 5000; reasons.push('VELADA NÃO USA FAIXA KM'); }
+              if (t.normOp.includes('CARACTERIZADA')) { score -= 5000; reasons.push('TIPO INCOMPATÍVEL'); }
+              if (isArmadoTable) {
+                  score += 3000;
+                  const is02 = t.normOp.includes('02 ARMADO') || t.normOp.includes('02 ARMADOS') || t.normOp.includes('DOIS ARMADO');
+                  const is01 = !is02 && (t.normOp.includes('01 ARMADO') || t.normOp.includes('01 AGENTE') || t.normOp.includes('PRONTA RESPOSTA'));
+                  if (is02) reasons.push('02 ARMADOS');
+                  else if (is01) reasons.push('01 ARMADO');
+                  else reasons.push('ARMADO');
+              }
+              if (t.normOp.includes('VELADA')) { score += 2500; reasons.push('TIPO: VELADA'); }
+          }
+
+          if (isCaracterizada) {
+              if (isArmadoTable && !isFranchiseTable) { score -= 3000; reasons.push('CARACTERIZADA USA FAIXA KM'); }
+              if (t.normOp.includes('VELADA') && !t.normOp.includes('CARACTERIZADA')) { score -= 5000; reasons.push('TIPO INCOMPATÍVEL'); }
+              if (t.normOp.includes('CARACTERIZADA')) { score += 2500; reasons.push('TIPO: CARACTERIZADA'); }
+
+              if (isFranchiseTable && franchiseKm > 0 && dist > 0) {
+                  if (dist <= franchiseKm) {
+                      score += 600;
+                      const excess = franchiseKm - dist;
+                      score -= Math.min(excess * 0.5, 200);
+                      reasons.push(`FRANQUIA ${franchiseKm}KM COBRE ${Math.round(dist)}KM`);
+                  } else {
+                      score -= 300;
+                      reasons.push(`FRANQUIA ${franchiseKm}KM < ${Math.round(dist)}KM (EXCEDE)`);
+                  }
+              } else if (!isFranchiseTable) {
+                  if (franchiseKm > 0 && franchiseKm >= dist) { score += 50; }
+                  else if (franchiseKm > 0) { score -= 10; }
+              }
+          }
+
+          if (!isVelada && !isCaracterizada) {
+              if (franchiseKm > 0 && franchiseKm >= dist) { score += 50; }
+              else if (franchiseKm > 0) { score -= 10; }
+          }
 
           if (isSpecialProvider) {
-              const isNivelBrasil = t.normOp.includes('NIVEL BRASIL') || t.normOp.includes('ARMADO') || t.normOp.includes('ARMADOS');
-              if (!isNivelBrasil) { score -= 1000; }
+              const isNivelBrasil = t.normOp.includes('NIVEL BRASIL') || isArmadoTable;
+              if (!isNivelBrasil && !isVelada) { score -= 1000; }
           }
 
           if (originCity.length > 3 && t.normOp.includes(originCity)) {
@@ -410,30 +449,6 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
           if (originRegion && t.normOp.includes(originRegion)) {
               score += 800;
               reasons.push(`REGIÃO: ${originRegion}`);
-          }
-
-          const isFranchiseTable = t.normOp.includes('ATE ') || t.normOp.includes('ATE') || t.normOp.includes('FAIXA');
-          const franchiseKm = parseFloat(t.franchise_km) || 0;
-          const franchiseHours = parseFloat(t.franchise_hours) || 0;
-
-          if (isFranchiseTable) {
-              if (franchiseKm > 0 && dist > 0) {
-                  if (dist <= franchiseKm) {
-                      score += 600;
-                      const excess = franchiseKm - dist;
-                      score -= Math.min(excess * 0.5, 200);
-                      reasons.push(`FRANQUIA ${franchiseKm}KM COBRE ${Math.round(dist)}KM`);
-                  } else {
-                      score -= 300;
-                      reasons.push(`FRANQUIA ${franchiseKm}KM < ${Math.round(dist)}KM (EXCEDE)`);
-                  }
-              }
-          } else {
-              if (franchiseKm > 0 && franchiseKm >= dist) {
-                  score += 50;
-              } else if (franchiseKm > 0) {
-                  score -= 10;
-              }
           }
 
           if (estimatedHours && estimatedHours > 0 && franchiseHours > 0) {
@@ -818,7 +833,10 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
       (d.name || '').includes(driverSearchTerm.toUpperCase())
   );
 
-  const filteredProviders = dbProviders.filter(p => 
+  const veladaProviders = formData.missionType === 'Velada' 
+      ? dbProviders.filter(p => { const n = formatProviderName(p.name, p.trading_name); return n.includes('TM SEG') || n.includes('TMSEG') || n.includes('ATIVA'); })
+      : dbProviders;
+  const filteredProviders = veladaProviders.filter(p => 
      formatProviderName(p.name, p.trading_name).includes(providerSearchTerm.toUpperCase())
   );
 
@@ -1122,6 +1140,12 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
                   {STEP_HEADER(4, 'Fornecedor (Parceiro de Escolta)', <Briefcase size={16} className={stepComplete.step4 ? 'text-green-600' : 'text-red-600'} />, stepComplete.step4, !stepComplete.step4)}
                   {expandedStep === 4 && (
                   <div className="space-y-4 animate-in slide-in-from-top-1 duration-200">
+
+                  {formData.missionType === 'Velada' && (
+                      <div className="flex items-center gap-2 px-4 py-2.5 bg-gray-900 text-white rounded-xl text-[10px] font-black uppercase tracking-wider">
+                          <ShieldCheck size={14} /> Escolta Velada — Apenas TM Segurança e Ativa disponíveis
+                      </div>
+                  )}
 
                   {iblWarning && (
                       <div className="bg-red-600 text-white px-4 py-2 rounded-lg text-xs font-bold uppercase flex items-center justify-center gap-2 shadow-lg animate-pulse">
