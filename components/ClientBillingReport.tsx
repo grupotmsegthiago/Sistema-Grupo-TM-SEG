@@ -16,6 +16,7 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
     const [selectedClient, setSelectedClient] = useState('');
     const [startDate, setStartDate] = useState('');
     const [endDate, setEndDate] = useState('');
+    const [selectedMonth, setSelectedMonth] = useState('');
     const [missions, setMissions] = useState<any[]>([]);
     const [priceTables, setPriceTables] = useState<ClientPriceTable[]>([]);
     const [providerTables, setProviderTables] = useState<ProviderCostTable[]>([]);
@@ -84,10 +85,13 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
     useEffect(() => {
         fetchClients();
         const date = new Date();
-        const firstDay = new Date(date.getFullYear(), date.getMonth(), 1).toISOString().split('T')[0];
-        const lastDay = new Date(date.getFullYear(), date.getMonth() + 1, 0).toISOString().split('T')[0];
+        const y = date.getFullYear();
+        const m = date.getMonth();
+        const firstDay = new Date(y, m, 1).toISOString().split('T')[0];
+        const lastDay = new Date(y, m + 1, 0).toISOString().split('T')[0];
         setStartDate(firstDay);
         setEndDate(lastDay);
+        setSelectedMonth(`${y}-${(m + 1).toString().padStart(2, '0')}`);
     }, []);
 
     const fetchClients = async () => {
@@ -108,6 +112,17 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
             setStartDate(`${year}-${mm}-16`);
             setEndDate(`${year}-${mm}-${lastDay}`);
         }
+    };
+
+    const handleSetMonth = (value: string) => {
+        setSelectedMonth(value);
+        if (!value) return;
+        const [y, m] = value.split('-').map(Number);
+        const first = `${y}-${m.toString().padStart(2, '0')}-01`;
+        const last = new Date(y, m, 0).getDate();
+        const lastStr = `${y}-${m.toString().padStart(2, '0')}-${last.toString().padStart(2, '0')}`;
+        setStartDate(first);
+        setEndDate(lastStr);
     };
 
     const handleGenerate = async () => {
@@ -535,6 +550,8 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
         const sDay = sDate.getDate();
         const eDate = new Date(endDate + 'T12:00:00');
         const eDay = eDate.getDate();
+        const lastDayOfMonth = new Date(year, sDate.getMonth() + 1, 0).getDate();
+        if (sDay === 1 && eDay === lastDayOfMonth) return `GERAL - ${month} /${year} - MÊS COMPLETO`;
         if (sDay === 1 && eDay === 15) return `GERAL - ${month} /${year} - 1ª QUINZENA DE ${month}`;
         if (sDay === 16) return `GERAL - ${month} /${year} - 2ª QUINZENA DE ${month}`;
         return `GERAL - ${month} /${year} - ${fmtDateDisp(startDate)} A ${fmtDateDisp(endDate)}`;
@@ -1575,16 +1592,17 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
                             </select>
                         </div>
                         <div className="md:col-span-2">
-                            <div className="flex justify-between mb-1">
+                            <div className="flex justify-between items-center mb-1">
                                 <label className="text-xs font-bold text-gray-500 uppercase block">Período</label>
-                                <div className="flex gap-2">
+                                <div className="flex gap-2 items-center">
+                                    <input type="month" className="text-[11px] font-bold uppercase px-2 py-0.5 rounded border border-red-300 bg-red-50 text-red-700 outline-none focus:border-red-500 cursor-pointer" value={selectedMonth} onChange={e => handleSetMonth(e.target.value)} data-testid="input-month-selector" />
                                     <button onClick={() => handleSetFortnight(1)} className="text-[10px] font-black uppercase text-blue-600 bg-blue-50 hover:bg-blue-100 px-2 py-0.5 rounded border border-blue-200">1ª Quinzena</button>
                                     <button onClick={() => handleSetFortnight(2)} className="text-[10px] font-black uppercase text-blue-600 bg-blue-50 hover:bg-blue-100 px-2 py-0.5 rounded border border-blue-200">2ª Quinzena</button>
                                 </div>
                             </div>
                             <div className="flex gap-2">
-                                <input type="date" className="w-full p-2.5 border border-gray-300 rounded-lg text-sm bg-white" value={startDate} onChange={e => setStartDate(e.target.value)} />
-                                <input type="date" className="w-full p-2.5 border border-gray-300 rounded-lg text-sm bg-white" value={endDate} onChange={e => setEndDate(e.target.value)} />
+                                <input type="date" className="w-full p-2.5 border border-gray-300 rounded-lg text-sm bg-white" value={startDate} onChange={e => setStartDate(e.target.value)} data-testid="input-start-date" />
+                                <input type="date" className="w-full p-2.5 border border-gray-300 rounded-lg text-sm bg-white" value={endDate} onChange={e => setEndDate(e.target.value)} data-testid="input-end-date" />
                             </div>
                         </div>
                         <div className="flex gap-2 flex-wrap">
