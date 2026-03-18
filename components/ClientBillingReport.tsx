@@ -475,9 +475,8 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
             }
             .sign-box { width: 65mm; text-align: center; }
             .sign-logo { width: 10mm; height: 10mm; }
-            .digital-signature { font-size: 14pt; font-family: 'Dancing Script', cursive; font-weight: 700; color: #7f1d1d; line-height: 1; }
+            .digital-signature { font-size: 14pt; font-family: 'Brush Script MT', 'Segoe Script', 'Dancing Script', cursive; font-weight: 700; color: #7f1d1d; line-height: 1; font-style: italic; letter-spacing: 0.5px; border-bottom: 1.5px solid #b91c1c; padding-bottom: 1px; display: inline-block; }
             .sign-role { font-size: 8pt; font-weight: 900; text-transform: uppercase; color: #7f1d1d; letter-spacing: 0.8px; margin-top: 1mm; }
-            .sign-cargo { font-size: 7pt; color: #991b1b; font-weight: 700; }
             .sign-cnpj { font-size: 6.5pt; color: #b91c1c; }
             .sign-system { font-size: 6.5pt; color: #dc2626; letter-spacing: 0.3px; }
             .sign-cliente { font-size: 8pt; font-weight: 900; text-transform: uppercase; color: #7f1d1d; letter-spacing: 0.8px; }
@@ -2003,11 +2002,10 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
 
                     <div className="sign-section" style={{ marginTop: '32px', display: 'flex', justifyContent: 'space-between', padding: '16px 24px 0', alignItems: 'flex-end', borderTop: '2px solid #dc2626' }}>
                         <div className="sign-box" style={{ textAlign: 'center', width: '280px' }}>
-                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px', marginBottom: '8px' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px', marginBottom: '10px' }}>
                                 <img src="/logo.png" alt="TMSEG" style={{ width: '36px', height: '36px', objectFit: 'contain' }} className="sign-logo" />
                                 <div style={{ textAlign: 'left' }}>
-                                    <div className="digital-signature" style={{ fontFamily: "'Dancing Script', cursive", fontSize: '22px', fontWeight: 700, color: '#7f1d1d', lineHeight: 1 }}>Thiago Moreira</div>
-                                    <div className="sign-cargo" style={{ fontSize: '11px', fontWeight: 800, textTransform: 'uppercase' as const, color: '#991b1b', letterSpacing: '0.5px' }}>Diretor Executivo</div>
+                                    <div style={{ fontFamily: "'Brush Script MT', 'Segoe Script', 'Dancing Script', cursive", fontSize: '26px', fontWeight: 700, color: '#7f1d1d', lineHeight: 1, fontStyle: 'italic', letterSpacing: '1px', borderBottom: '2px solid #b91c1c', paddingBottom: '2px', display: 'inline-block' }}>T. Moreira</div>
                                 </div>
                             </div>
                             <div style={{ borderTop: '1.5px solid #7f1d1d', paddingTop: '4px' }}>
