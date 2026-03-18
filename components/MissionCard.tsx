@@ -532,12 +532,12 @@ Qualquer dúvida, estamos a disposição.
                 <div className="lg:col-span-2 p-3 flex flex-col justify-center gap-2">
                     <div className="flex items-center gap-2 flex-wrap">
                         <span className="text-xl font-black text-gray-900 tracking-tighter leading-none">{mission.id}</span>
-                        {mission.is_same_os && (
+                        {mission.is_same_os && !hideProviderInfo && (
                             <span className="bg-black text-white px-1.5 py-0.5 rounded text-[8px] font-black uppercase flex items-center gap-1 border border-black shadow-sm" title={mission.parent_mission_id ? `OS Mãe: ${mission.parent_mission_id}` : 'Missão de continuidade - Custo Fornecedor Zero'}>
                                 <Layers size={10} /> MESMA OS
                             </span>
                         )}
-                        {mission.parent_mission_id && (
+                        {mission.parent_mission_id && !hideProviderInfo && (
                             <span className="bg-blue-600 text-white px-1.5 py-0.5 rounded text-[8px] font-black uppercase flex items-center gap-1 border border-blue-700 shadow-sm" title={`Vinculada à OS Principal: ${mission.parent_mission_id}`}>
                                 <Link2 size={10} /> MÃE: {mission.parent_mission_id}
                             </span>
