@@ -327,7 +327,94 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
         );
     };
 
-    const handlePrint = () => { window.print(); };
+    const handlePrint = () => {
+        const printArea = document.getElementById('print-area');
+        if (!printArea) return;
+        const printWindow = window.open('', '_blank', 'width=1200,height=800');
+        if (!printWindow) { window.print(); return; }
+        const cloned = printArea.cloneNode(true) as HTMLElement;
+        cloned.style.cssText = 'width:100%;padding:0;margin:0;overflow:visible;border:none;box-shadow:none;border-radius:0;position:relative;';
+        const scrollDiv = cloned.querySelector('.report-table-scroll') as HTMLElement;
+        if (scrollDiv) {
+            scrollDiv.style.cssText = 'overflow:visible;max-height:none;max-width:none;width:100%;border:none;border-radius:0;';
+        }
+        const table = cloned.querySelector('table') as HTMLElement;
+        if (table) {
+            table.style.cssText = 'table-layout:fixed;width:100%;border-collapse:collapse;';
+        }
+        cloned.querySelectorAll('colgroup col').forEach((col: any) => {
+            col.style.minWidth = '0';
+            col.style.width = 'auto';
+        });
+        cloned.querySelectorAll('thead th').forEach((th: any) => {
+            th.style.position = 'static';
+            th.style.fontSize = '';
+            th.style.padding = '';
+            th.style.lineHeight = '';
+        });
+        cloned.querySelectorAll('td').forEach((td: any) => {
+            td.style.fontSize = '';
+            td.style.padding = '';
+            td.style.lineHeight = '';
+            td.style.maxWidth = '';
+        });
+        const boletimH1 = cloned.querySelector('.boletim-header h1') as HTMLElement;
+        if (boletimH1) boletimH1.style.fontSize = '';
+        const subtitleLine = cloned.querySelector('.subtitle-line') as HTMLElement;
+        if (subtitleLine) { subtitleLine.style.fontSize = ''; subtitleLine.style.margin = ''; }
+        const refLine = cloned.querySelector('.ref-line') as HTMLElement;
+        if (refLine) { refLine.style.fontSize = ''; refLine.style.margin = ''; }
+        const signSection = cloned.querySelector('.sign-section') as HTMLElement;
+        if (signSection) { signSection.style.marginTop = ''; signSection.style.padding = ''; }
+        cloned.querySelectorAll('.sign-box').forEach((el: any) => { el.style.width = ''; el.style.fontSize = ''; });
+        const signElements = ['.digital-signature', '.sign-role', '.sign-cargo', '.sign-cnpj', '.sign-system', '.sign-cliente', '.sign-data'];
+        signElements.forEach(sel => {
+            const el = cloned.querySelector(sel) as HTMLElement;
+            if (el) el.style.fontSize = '';
+        });
+        const printCSS = `
+            @page { size: A4 landscape; margin: 5mm 6mm; }
+            * { box-sizing: border-box; -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+            html, body { margin: 0; padding: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+            table { table-layout: fixed; width: 100%; border-collapse: collapse; }
+            td, th { padding: 1.5px 2.5px; font-size: 6.5pt; border: 0.5px solid #aaa; line-height: 1.2; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-align: center; }
+            td.route-cell { white-space: normal; word-wrap: break-word; word-break: break-word; overflow-wrap: break-word; line-height: 1.15; font-size: 6pt; text-align: left; }
+            thead { display: table-header-group; }
+            tbody { display: table-row-group; }
+            tfoot { display: table-footer-group; }
+            tr { page-break-inside: avoid; break-inside: avoid; }
+            tbody tr:nth-child(odd) { background-color: #ffffff; }
+            tbody tr:nth-child(even) { background-color: #f3f4f6; }
+            .group-hdr th { font-size: 7pt; padding: 2px 2px; font-weight: 900; }
+            .sub-hdr th { font-size: 6pt; padding: 1.5px 2px; font-weight: 900; }
+            .boletim-header { margin-bottom: 2mm; text-align: center; }
+            .boletim-header h1 { font-size: 12pt; margin: 0; font-weight: 900; text-transform: uppercase; letter-spacing: 1px; }
+            .subtitle-line { font-size: 9pt; margin: 1px 0; font-weight: 700; text-transform: uppercase; color: #374151; }
+            .ref-line { font-size: 7pt; margin: 0; font-weight: 600; text-transform: uppercase; color: #6b7280; }
+            .watermark-logo { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); opacity: 0.04; width: 120mm; height: 120mm; z-index: 0; pointer-events: none; }
+            .watermark-logo img { width: 100%; height: 100%; object-fit: contain; }
+            .sign-section { margin-top: 6mm; break-inside: avoid; page-break-inside: avoid; display: flex; justify-content: space-between; align-items: flex-end; padding: 0 5mm; }
+            .sign-box { font-size: 7pt; width: 55mm; text-align: center; }
+            .sign-logo { width: 8mm; height: 8mm; }
+            .digital-signature { font-size: 12pt; font-family: 'Dancing Script', cursive; font-weight: 700; color: #1a237e; }
+            .sign-role { font-size: 7pt; font-weight: 900; text-transform: uppercase; }
+            .sign-cargo { font-size: 6pt; }
+            .sign-cnpj { font-size: 5.5pt; }
+            .sign-system { font-size: 5.5pt; }
+            .sign-cliente { font-size: 7pt; font-weight: 900; text-transform: uppercase; }
+            .sign-data { font-size: 5.5pt; }
+            tfoot tr { break-inside: avoid; page-break-inside: avoid; }
+            tfoot td { font-size: 7pt; font-weight: 900; padding: 2px 3px; }
+        `;
+        printWindow.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>Boletim de Medição</title><link href="https://fonts.googleapis.com/css2?family=Dancing+Script:wght@700&display=swap" rel="stylesheet"><style>${printCSS}</style></head><body></body></html>`);
+        printWindow.document.body.appendChild(cloned);
+        printWindow.document.close();
+        setTimeout(() => {
+            printWindow.focus();
+            printWindow.print();
+            setTimeout(() => { printWindow.close(); }, 1000);
+        }, 500);
+    };
 
     const fmtBRL = (val: number | null | undefined) => {
         const v = val ?? 0;
