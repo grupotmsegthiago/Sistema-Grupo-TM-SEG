@@ -501,12 +501,16 @@ export async function registerRoutes(
       const { missionId, client, origin, destination, start_time, mission_type, vehiclePlate, changes, senderName } = req.body;
       if (!missionId || !client || !changes?.length) return res.status(400).json({ error: 'Dados obrigatórios ausentes' });
 
+      const providerBlockedFields = ['fornecedor', 'provider', 'prestador'];
+      const safeChanges = (changes as any[]).filter((c: any) => !providerBlockedFields.includes((c.field || '').toLowerCase()));
+      if (safeChanges.length === 0) return res.json({ success: true, message: 'Sem alterações relevantes para o cliente' });
+
       const { data: clientData } = await supabase.from('clients').select('operational_email, email').eq('name', client).single();
       const clientEmail = clientData?.operational_email || clientData?.email;
       if (!clientEmail) return res.json({ success: false, message: 'Cliente sem e-mail cadastrado' });
 
       const missionData = { id: missionId, client, origin: origin || '', destination: destination || '', start_time: start_time || '', mission_type: mission_type || 'Caracterizada', provider: '', driver_name: '', driver_phone: '' };
-      const success = await sendMissionChangeNotificationToClient(missionData, clientEmail, vehiclePlate || '', changes, senderName);
+      const success = await sendMissionChangeNotificationToClient(missionData, clientEmail, vehiclePlate || '', safeChanges, senderName);
       res.json({ success, message: success ? 'E-mail de alteração enviado ao cliente!' : 'Falha ao enviar' });
     } catch (err: any) {
       console.error('[Email] Erro mission-change-client:', err.message);

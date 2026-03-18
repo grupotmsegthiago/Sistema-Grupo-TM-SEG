@@ -886,20 +886,23 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
             }
 
             if (providerChanges.length > 0 && mission.client) {
-                try {
-                    await fetch('/api/email/mission-change-client', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                            missionId: mission.id, client: mission.client,
-                            origin: editData.origin, destination: finalDestination,
-                            start_time: startIso, mission_type: editData.missionType,
-                            vehiclePlate: vehiclePlateForEmail,
-                            changes: providerChanges, senderName: senderNameForChange
-                        })
-                    });
-                    showNotification('E-mail de Alteração', 'Cliente notificado sobre alteração de fornecedor/agentes.', 'success');
-                } catch (chErr) { console.error('[Email] Erro ao enviar notificação de alteração ao cliente:', chErr); }
+                const clientSafeChanges = providerChanges.filter(c => c.field !== 'Fornecedor');
+                if (clientSafeChanges.length > 0) {
+                    try {
+                        await fetch('/api/email/mission-change-client', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                missionId: mission.id, client: mission.client,
+                                origin: editData.origin, destination: finalDestination,
+                                start_time: startIso, mission_type: editData.missionType,
+                                vehiclePlate: vehiclePlateForEmail,
+                                changes: clientSafeChanges, senderName: senderNameForChange
+                            })
+                        });
+                        showNotification('E-mail de Alteração', 'Cliente notificado sobre alteração de agentes/viatura.', 'success');
+                    } catch (chErr) { console.error('[Email] Erro ao enviar notificação de alteração ao cliente:', chErr); }
+                }
             }
 
             const driverChanges: { field: string; oldValue: string; newValue: string }[] = [];
