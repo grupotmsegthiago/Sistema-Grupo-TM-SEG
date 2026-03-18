@@ -2002,13 +2002,7 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
 
                     <div className="sign-section" style={{ marginTop: '32px', display: 'flex', justifyContent: 'space-between', padding: '16px 24px 0', alignItems: 'flex-end', borderTop: '2px solid #dc2626' }}>
                         <div className="sign-box" style={{ textAlign: 'center', width: '280px' }}>
-                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px', marginBottom: '10px' }}>
-                                <img src="/logo.png" alt="TMSEG" style={{ width: '36px', height: '36px', objectFit: 'contain' }} className="sign-logo" />
-                                <div style={{ textAlign: 'left' }}>
-                                    <div style={{ fontFamily: "'Brush Script MT', 'Segoe Script', 'Dancing Script', cursive", fontSize: '26px', fontWeight: 700, color: '#7f1d1d', lineHeight: 1, fontStyle: 'italic', letterSpacing: '1px', borderBottom: '2px solid #b91c1c', paddingBottom: '2px', display: 'inline-block' }}>T. Moreira</div>
-                                </div>
-                            </div>
-                            <div style={{ borderTop: '1.5px solid #7f1d1d', paddingTop: '4px' }}>
+                            <div style={{ borderTop: '1.5px solid #7f1d1d', paddingTop: '4px', marginTop: '34px' }}>
                                 <div className="sign-role" style={{ fontSize: '12px', fontWeight: 900, textTransform: 'uppercase' as const, color: '#7f1d1d', letterSpacing: '1px' }}>GRUPO TM SEG</div>
                                 <div className="sign-cnpj" style={{ fontSize: '10px', fontWeight: 600, color: '#b91c1c', letterSpacing: '0.5px', marginTop: '2px' }}>CNPJ: 55.232.834/0001-49</div>
                             </div>
