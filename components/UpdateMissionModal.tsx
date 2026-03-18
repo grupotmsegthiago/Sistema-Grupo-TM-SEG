@@ -42,9 +42,10 @@ interface UpdateMissionModalProps {
     mission: Mission | null;
     currentUser: UserType | null;
     onSuccess: (reportText?: string) => void;
+    hideProviderInfo?: boolean;
 }
 
-const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose, mission, currentUser, onSuccess }) => {
+const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose, mission, currentUser, onSuccess, hideProviderInfo = false }) => {
     const { isLoaded } = useLoadScript(googleMapsLoadConfig);
     const { showNotification } = useNotification();
     
@@ -1186,7 +1187,7 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
                                                         <span className="text-xs font-black text-gray-900">{s.id}</span>
                                                         <span className={`text-[8px] font-bold px-1.5 py-0.5 rounded ${s.status === 'Concluída' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600'}`}>{s.status}</span>
                                                     </div>
-                                                    <div className="text-[9px] text-gray-500 mt-0.5">{s.provider || 'Sem fornecedor'} • {s.origin?.split(',')[0]} → {s.destination?.split(',')[0]}</div>
+                                                    <div className="text-[9px] text-gray-500 mt-0.5">{!hideProviderInfo ? `${s.provider || 'Sem fornecedor'} • ` : ''}{s.origin?.split(',')[0]} → {s.destination?.split(',')[0]}</div>
                                                 </button>
                                             ))}
                                             {parentOsSearch && !parentOsSuggestions.find(s => s.id === parentOsSearch.toUpperCase()) && (
@@ -1243,6 +1244,7 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
                     </div>
 
                     {/* DADOS DA EQUIPE */}
+                    {!hideProviderInfo && (
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 p-6 bg-white border border-gray-200 rounded-[2.5rem] shadow-sm relative">
                         
                         {/* ALERTA INTELIGENTE IBL */}
@@ -1368,6 +1370,7 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
                             )}
                         </div>
                     </div>
+                    )}
 
                     {/* DADOS DA CARGA E MOTORISTA */}
                     <div className="bg-white p-6 rounded-[2.5rem] border border-gray-200 shadow-sm space-y-5">
@@ -1553,6 +1556,7 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
                                             <Clock size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-300 pointer-events-none" />
                                         </div>
                                     </div>
+                                    {!hideProviderInfo && (
                                     <div className="flex-1 lg:w-36">
                                         <label className={LABEL_CLASS}>KM Inicial</label>
                                         <div className="relative">
@@ -1567,6 +1571,7 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
                                             <Navigation size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-300 pointer-events-none" />
                                         </div>
                                     </div>
+                                    )}
                                 </div>
                             </div>
 
@@ -1641,6 +1646,7 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
                                             {isEndTimeLocked ? <RefreshCw size={14} /> : <Zap size={14} fill="currentColor" />}
                                         </button>
                                     </div>
+                                    {!hideProviderInfo && (
                                     <div className="flex-1 lg:w-36">
                                         <label className={LABEL_CLASS}>KM Final</label>
                                         <div className="relative">
@@ -1655,6 +1661,7 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
                                             <Flag size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-300 pointer-events-none" />
                                         </div>
                                     </div>
+                                    )}
                                 </div>
                             </div>
                         </div>

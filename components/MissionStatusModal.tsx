@@ -31,10 +31,11 @@ interface Props {
   onOpenAgentModal?: () => void;
   refreshTrigger?: any;
   onUpdate?: () => void;
+  hideProviderInfo?: boolean;
 }
 
 const MissionStatusModal: React.FC<Props> = ({ 
-  isOpen, onClose, mission, logs, onOpenVehicleModal, onOpenAgentModal, refreshTrigger, onUpdate
+  isOpen, onClose, mission, logs, onOpenVehicleModal, onOpenAgentModal, refreshTrigger, onUpdate, hideProviderInfo = false
 }) => {
   const { isLoaded, loadError } = useLoadScript(googleMapsLoadConfig);
   
@@ -316,6 +317,8 @@ const MissionStatusModal: React.FC<Props> = ({
                     )}
                 </div>
                 <div className="space-y-3">
+                    {!hideProviderInfo && (
+                    <>
                     <div className="flex items-center gap-3">
                         <div className="p-2 bg-indigo-50 rounded-lg text-indigo-600 border border-indigo-100"><Briefcase size={16}/></div>
                         <span className="text-[11px] font-black text-gray-900 uppercase truncate">{mission.provider || 'N/A'}</span>
@@ -336,6 +339,8 @@ const MissionStatusModal: React.FC<Props> = ({
                             </div>
                         )}
                     </div>
+                    </>
+                    )}
                 </div>
             </div>
 
