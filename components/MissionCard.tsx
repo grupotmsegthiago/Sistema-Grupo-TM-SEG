@@ -173,6 +173,7 @@ const MissionCardComponent: React.FC<MissionCardProps> = ({
     const [showUploadModal, setShowUploadModal] = useState(false);
     const [isUploading, setIsUploading] = useState(false);
     const [pendingFiles, setPendingFiles] = useState<{ file: File; preview: string }[]>([]);
+    const [fullScreenImage, setFullScreenImage] = useState<string | null>(null);
     const uploadFileInputRef = useRef<HTMLInputElement>(null);
     const hasEvidence = evidenceList && evidenceList.length > 0;
     const missionCreatedAt = mission.createdAt ? new Date(mission.createdAt) : null;
@@ -958,7 +959,7 @@ Qualquer dúvida, estamos a disposição.
                             </div>
                         </div>
                         {evidenceList!.map((ev, idx) => (
-                            <div key={idx} className="border border-gray-200 rounded-xl overflow-hidden shadow-sm cursor-pointer" onClick={() => window.open(ev.url, '_blank')}>
+                            <div key={idx} className="border border-gray-200 rounded-xl overflow-hidden shadow-sm cursor-pointer" onClick={() => setFullScreenImage(ev.url)} data-testid={`evidence-image-${idx}`}>
                                 <img src={ev.url} alt={`Evidência ${idx + 1}`} className="w-full object-contain max-h-[60vh] bg-gray-100" />
                                 <div className="p-2 bg-gray-50 flex items-center justify-between text-[9px]">
                                     <span className="font-bold text-gray-500">Enviado por <span className="text-gray-800 font-black">{ev.uploadedBy}</span></span>
@@ -968,6 +969,13 @@ Qualquer dúvida, estamos a disposição.
                         ))}
                     </div>
                 </div>
+            </div>
+        )}
+
+        {fullScreenImage && (
+            <div className="fixed inset-0 z-[200] bg-black/90 backdrop-blur-sm flex items-center justify-center p-4" onClick={() => setFullScreenImage(null)} data-testid="fullscreen-evidence-overlay">
+                <button onClick={(e) => { e.stopPropagation(); setFullScreenImage(null); }} className="absolute top-4 right-4 p-2 bg-white/10 hover:bg-white/20 rounded-full text-white transition-all z-10" data-testid="button-close-fullscreen-evidence"><X size={24} /></button>
+                <img src={fullScreenImage} alt="Evidência ampliada" className="max-w-full max-h-[90vh] object-contain rounded-lg shadow-2xl" onClick={e => e.stopPropagation()} />
             </div>
         )}
         </>
