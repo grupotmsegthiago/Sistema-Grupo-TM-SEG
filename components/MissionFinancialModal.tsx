@@ -737,10 +737,6 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
 
       let blockedForCurrentUser = false;
       let blockedMessage = '';
-      if (currentUserStage === 'financeiro' && !hasAuditor) {
-          blockedForCurrentUser = true;
-          blockedMessage = 'Aguardando aprovação: Daniel (Auditor)';
-      }
 
       const lockedByDiretoria = hasDiretoria && currentUserStage !== 'diretoria' && (() => { try { const u = JSON.parse(localStorage.getItem('userData') || '{}'); return (u.role || '').toLowerCase() !== 'controller'; } catch { return true; } })();
 
@@ -790,11 +786,6 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
           const newLog = [...approvalLog];
           if (approve) {
               const existingStages = newLog.map(l => l.stage);
-              if (stage === 'financeiro' && !existingStages.includes('auditor')) {
-                  showNotification('Bloqueado', 'Aguardando aprovação: Auditor (Daniel)', 'error');
-                  setIsUpdating(false);
-                  return;
-              }
               const alreadyApproved = newLog.some(l => l.stage === stage);
               if (!alreadyApproved) {
                   const logEntry = { user: userName, role: userRole, stage, date: new Date().toISOString() };
@@ -813,14 +804,18 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
           const updatedStages = newLog.map(l => l.stage);
           const isFullyApproved = updatedStages.includes('diretoria') || (updatedStages.includes('auditor') && updatedStages.includes('financeiro') && updatedStages.includes('diretoria'));
           
+          const canReleaseBilling = stage === 'financeiro' || stage === 'diretoria';
+          
           const basePayload: any = {
               revenue_value: revServiceOnly,
               cost_value: costServiceOnly,
               toll_value: toll,
               billing_approved: isFullyApproved,
-              billing_verified_by: userName,
               last_update: new Date().toISOString()
           };
+          if (approve && canReleaseBilling) {
+              basePayload.billing_verified_by = userName;
+          }
           const reasonFields: any = {};
           if (revDivergent && revenueEditReason.trim()) {
               reasonFields.revenue_edit_reason = `[${userName} - ${new Date().toLocaleString('pt-BR')}] ${revenueEditReason.trim()}`;
@@ -927,7 +922,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
               toll_value: toll,
               toll_value_provider: tollProv,
               billing_approved: isFullyApproved,
-              billing_verified_by: userName,
+              ...(approve && canReleaseBilling ? { billing_verified_by: userName } : {}),
               last_update: basePayload.last_update,
               ...(reasonFields.revenue_edit_reason ? { revenue_edit_reason: reasonFields.revenue_edit_reason } : {}),
               ...(reasonFields.cost_edit_reason ? { cost_edit_reason: reasonFields.cost_edit_reason } : {})
