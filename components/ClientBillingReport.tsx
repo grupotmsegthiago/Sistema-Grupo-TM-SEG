@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { supabase } from '../lib/supabase';
 import { Mission, Client, ClientPriceTable, ProviderCostTable } from '../types';
-import { FileText, Search, Printer, Loader2, FileSpreadsheet, BarChart3, Users, Building2, ChevronDown, ChevronRight, List, ExternalLink, Receipt, Camera, Sparkles, X, AlertCircle, CheckCircle2, ScanLine, Image as ImageIcon, DollarSign, Plus, Trash2, GitBranch } from 'lucide-react';
+import { FileText, Search, Printer, Loader2, FileSpreadsheet, BarChart3, Users, Building2, ChevronDown, ChevronRight, List, ExternalLink, Receipt, Camera, Sparkles, X, AlertCircle, CheckCircle2, ScanLine, Image as ImageIcon, DollarSign, Plus, Trash2, GitBranch, Calendar } from 'lucide-react';
 import { calculateMissionFinancials, extractCityFromAddress } from '../lib/financialUtils';
 import { generateContent } from '../lib/gemini';
 import {
@@ -974,6 +974,9 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
                 const data = await res.json();
                 if (!res.ok) throw new Error(data.error || 'Erro ao criar cobranças');
                 setAsaasResult(data);
+                if (data.charges?.[0]?.payment?.id) {
+                    setInvoiceForm(prev => ({ ...prev, number: `ASAAS-${data.charges[0].payment.id}` }));
+                }
                 setAiStatus(`${data.charges?.length || 0} cobranças Asaas geradas com sucesso!`);
             } catch (err: any) {
                 alert('Erro ao gerar cobranças no Asaas: ' + err.message);
@@ -1001,14 +1004,17 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
                     value: parseFloat(invoiceForm.amount),
                     dueDate: invoiceForm.boleto_due_date,
                     description: asaasDescription,
-                    invoiceNumber: invoiceForm.number,
+                    invoiceNumber: invoiceForm.number || `TMSEG-${Date.now()}`,
                     issuerCompany: invoiceForm.issuer_company,
                 }),
             });
             const data = await res.json();
             if (!res.ok) throw new Error(data.error || 'Erro ao criar cobrança');
             setAsaasResult(data);
-            setAiStatus('Cobrança Asaas gerada com sucesso!');
+            if (data.payment?.id) {
+                setInvoiceForm(prev => ({ ...prev, number: `ASAAS-${data.payment.id}` }));
+            }
+            setAiStatus('Cobrança Asaas gerada com sucesso! NF e Boleto vinculados automaticamente.');
         } catch (err: any) {
             alert('Erro ao gerar cobrança no Asaas: ' + err.message);
             setAiStatus('Erro: ' + err.message);
@@ -1017,23 +1023,46 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
         }
     };
 
+    const buildPeriodRef = (): string => {
+        if (!startDate) return '';
+        const sDate = new Date(startDate + 'T12:00:00');
+        const monthNames = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
+        const month = monthNames[sDate.getMonth()];
+        const year = sDate.getFullYear();
+        const sDay = sDate.getDate();
+        const eDate = endDate ? new Date(endDate + 'T12:00:00') : sDate;
+        const eDay = eDate.getDate();
+        const lastDayOfMonth = new Date(year, sDate.getMonth() + 1, 0).getDate();
+        if (sDay === 1 && eDay === lastDayOfMonth) return `Mês Completo de ${month}/${year}`;
+        if (sDay === 1 && eDay === 15) return `1ª Quinzena de ${month}/${year}`;
+        if (sDay === 16) return `2ª Quinzena de ${month}/${year}`;
+        return `${month}/${year}`;
+    };
+
     const openInvoiceModal = () => {
-        if (selectedClient) {
-            const clientObj = clients.find(c => c.id.toString() === selectedClient);
-            setInvoiceForm(prev => ({ 
-                ...prev, 
-                client: selectedClient,
-                issuer_company: (clientObj as any)?.issuer_company || prev.issuer_company 
-            }));
-        }
-        if (reportGenerated && grandTotal > 0) {
-            setInvoiceForm(prev => ({ ...prev, amount: grandTotal.toFixed(2) }));
-        }
+        const clientObj = clients.find(c => c.id.toString() === selectedClient);
+        const clientName = clientObj?.trading_name || clientObj?.name || '';
+        const issuer = (clientObj as any)?.issuer_company || '';
+        const periodRef = buildPeriodRef();
+        const notesText = `Referente aos serviços de Intermediação de Escolta Armada - Referente ao ${periodRef}`;
+
+        setInvoiceForm(prev => ({
+            ...prev,
+            client: selectedClient,
+            amount: reportGenerated && grandTotal > 0 ? grandTotal.toFixed(2) : prev.amount,
+            provider: clientName,
+            issuer_company: issuer,
+            notes: notesText,
+            number: '',
+        }));
+        setAsaasPeriod(periodRef);
         setShowInvoiceModal(true);
     };
 
     const handleSaveInvoice = async () => {
-        if (!invoiceForm.client || !invoiceForm.number || !invoiceForm.amount) { alert('Preencha todos os campos obrigatórios (Cliente, Nº NF, Valor).'); return; }
+        const nfNumber = invoiceForm.number || (asaasResult?.payment?.id ? `ASAAS-${asaasResult.payment.id}` : '');
+        if (!invoiceForm.client || !nfNumber || !invoiceForm.amount) { alert('Preencha todos os campos obrigatórios (Cliente, Valor). Gere a cobrança Asaas primeiro para obter o Nº NF.'); return; }
+        if (!nfNumber) { alert('Gere a cobrança no Asaas primeiro para obter o número da fatura.'); return; }
         const parsedAmt = parseFloat(invoiceForm.amount);
         if (isNaN(parsedAmt) || parsedAmt <= 0) { alert('Valor inválido.'); return; }
         const clientObj = clients.find(c => c.id.toString() === invoiceForm.client);
@@ -1046,15 +1075,15 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
             let boletoImageUrl = '';
             if (nfFile) {
                 setAiStatus('Salvando imagem da NF...');
-                nfImageUrl = await uploadDocImage(nfFile, `nf_${invoiceForm.number}`);
+                nfImageUrl = await uploadDocImage(nfFile, `nf_${nfNumber}`);
             }
             if (boletoFile) {
                 setAiStatus('Salvando imagem do Boleto...');
-                boletoImageUrl = await uploadDocImage(boletoFile, `boleto_${invoiceForm.number}`);
+                boletoImageUrl = await uploadDocImage(boletoFile, `boleto_${nfNumber}`);
             }
 
             const invoicePayload: any = {
-                client: clientName, number: invoiceForm.number,
+                client: clientName, number: nfNumber,
                 amount: parsedAmt, date: invoiceForm.date,
                 status: 'EMITIDA', notes: invoiceForm.notes || '',
                 created_by: userName,
@@ -1064,6 +1093,8 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
             if (invoiceForm.provider) invoicePayload.provider = invoiceForm.provider;
             if (invoiceForm.issuer_company) invoicePayload.issuer_company = invoiceForm.issuer_company;
             if (invoiceForm.boleto_due_date) invoicePayload.boleto_due_date = invoiceForm.boleto_due_date;
+            if (asaasResult?.payment?.invoiceUrl) invoicePayload.nf_image_url = invoicePayload.nf_image_url || asaasResult.payment.invoiceUrl;
+            if (asaasResult?.payment?.bankSlipUrl) invoicePayload.boleto_image_url = invoicePayload.boleto_image_url || asaasResult.payment.bankSlipUrl;
             if (asaasResult?.payment) {
                 invoicePayload.asaas_payment_id = asaasResult.payment.id;
                 invoicePayload.asaas_status = asaasResult.payment.status;
@@ -1085,7 +1116,7 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
             const quinzenaDesc = getQuinzenaRef(invoiceForm.date, clientName);
             try {
                 await supabase.from('financial_transactions').insert({
-                    description: `NF ${invoiceForm.number} — ${quinzenaDesc}`,
+                    description: `NF ${nfNumber} — ${quinzenaDesc}`,
                     amount: parsedAmt,
                     type: 'INCOME',
                     status: 'PENDING',
@@ -1093,14 +1124,14 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
                     entity_type: 'Client',
                     entity_id: invoiceForm.client,
                     entity_name: clientName,
-                    notes: `Fatura NF ${invoiceForm.number} | Emissora: ${invoiceForm.issuer_company || '-'} | ${invoiceForm.notes || ''}`.trim(),
+                    notes: `Fatura NF ${nfNumber} | Emissora: ${invoiceForm.issuer_company || '-'} | ${invoiceForm.notes || ''}`.trim(),
                     created_by: userName,
                 });
             } catch (e) {
                 console.error('[Auto Contas a Receber] Erro:', e);
             }
 
-            alert(`Fatura NF ${invoiceForm.number} emitida com sucesso!\nContas a Receber criado automaticamente.`);
+            alert(`Fatura NF ${nfNumber} emitida com sucesso!\nContas a Receber criado automaticamente.`);
             setShowInvoiceModal(false);
             resetInvoiceForm();
         } catch (e: any) {
@@ -1127,108 +1158,57 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
                         <button onClick={() => { setShowInvoiceModal(false); resetInvoiceForm(); }} data-testid="btn-close-invoice-modal"><X size={20} className="text-gray-400 hover:text-white"/></button>
                     </div>
                     <div className="p-6 space-y-5 max-h-[80vh] overflow-y-auto">
-                        <div className="grid grid-cols-2 gap-4">
-                            <div className="border-2 border-dashed border-gray-300 rounded-xl p-4 text-center hover:border-blue-400 transition-colors relative">
-                                <input type="file" accept="image/*,.pdf" onChange={handleNfFileChange} className="absolute inset-0 opacity-0 cursor-pointer z-10" data-testid="input-billing-nf-file" />
-                                {nfPreview ? (
-                                    <div className="relative">
-                                        <img src={nfPreview} alt="NF" className="w-full h-32 object-cover rounded-lg mb-2" />
-                                        <div className="absolute top-1 right-1 bg-green-500 text-white text-[8px] px-1.5 py-0.5 rounded font-black">NF</div>
-                                        <p className="text-[9px] text-green-600 font-bold truncate">{nfFile?.name}</p>
-                                    </div>
-                                ) : (
-                                    <div className="py-4">
-                                        <Camera size={32} className="mx-auto text-gray-300 mb-2"/>
-                                        <p className="text-[10px] font-black text-gray-400 uppercase">Foto da Nota Fiscal</p>
-                                        <p className="text-[9px] text-gray-300 mt-1">Clique ou arraste</p>
-                                    </div>
-                                )}
-                            </div>
-                            <div className="border-2 border-dashed border-gray-300 rounded-xl p-4 text-center hover:border-orange-400 transition-colors relative">
-                                <input type="file" accept="image/*,.pdf" onChange={handleBoletoFileChange} className="absolute inset-0 opacity-0 cursor-pointer z-10" data-testid="input-billing-boleto-file" />
-                                {boletoPreview ? (
-                                    <div className="relative">
-                                        <img src={boletoPreview} alt="Boleto" className="w-full h-32 object-cover rounded-lg mb-2" />
-                                        <div className="absolute top-1 right-1 bg-orange-500 text-white text-[8px] px-1.5 py-0.5 rounded font-black">BOLETO</div>
-                                        <p className="text-[9px] text-orange-600 font-bold truncate">{boletoFile?.name}</p>
-                                    </div>
-                                ) : (
-                                    <div className="py-4">
-                                        <Receipt size={32} className="mx-auto text-gray-300 mb-2"/>
-                                        <p className="text-[10px] font-black text-gray-400 uppercase">Foto do Boleto</p>
-                                        <p className="text-[9px] text-gray-300 mt-1">Clique ou arraste</p>
-                                    </div>
-                                )}
-                            </div>
-                        </div>
-
-                        {(nfFile || boletoFile) && (
-                            <button onClick={analyzeDocumentsWithAI} disabled={aiAnalyzing}
-                                className="w-full bg-gradient-to-r from-violet-600 to-indigo-600 text-white font-black uppercase text-xs tracking-widest py-3 rounded-xl flex items-center justify-center gap-2 hover:from-violet-700 hover:to-indigo-700 transition-all shadow-lg disabled:opacity-50"
-                                data-testid="btn-billing-ai-analyze">
-                                {aiAnalyzing ? <Loader2 size={16} className="animate-spin"/> : <Sparkles size={16}/>}
-                                {aiAnalyzing ? 'Analisando...' : 'Analisar com IA (Gemini)'}
-                            </button>
-                        )}
-
                         {aiStatus && (
-                            <div className={`text-xs font-bold px-3 py-2 rounded-lg flex items-center gap-2 ${aiStatus.includes('Erro') ? 'bg-red-50 text-red-600' : aiStatus.includes('extraídos') ? 'bg-green-50 text-green-600' : 'bg-blue-50 text-blue-600'}`}>
-                                {aiAnalyzing ? <Loader2 size={12} className="animate-spin"/> : aiStatus.includes('Erro') ? <AlertCircle size={12}/> : <CheckCircle2 size={12}/>}
+                            <div className={`text-xs font-bold px-3 py-2 rounded-lg flex items-center gap-2 ${aiStatus.includes('Erro') ? 'bg-red-50 text-red-600' : aiStatus.includes('sucesso') ? 'bg-green-50 text-green-600' : 'bg-blue-50 text-blue-600'}`}>
+                                {asaasLoading ? <Loader2 size={12} className="animate-spin"/> : aiStatus.includes('Erro') ? <AlertCircle size={12}/> : <CheckCircle2 size={12}/>}
                                 {aiStatus}
                             </div>
                         )}
 
-                        <div className="border-t border-gray-100 pt-4">
-                            <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest mb-3">Dados da Nota Fiscal</p>
+                        <div className="bg-red-50 border border-red-200 rounded-xl p-4">
+                            <p className="text-[9px] font-black text-red-700 uppercase tracking-widest mb-3">Dados da Fatura (Preenchidos Automaticamente)</p>
                             <div className="grid grid-cols-2 gap-3">
                                 <div>
-                                    <label className="text-[10px] font-black text-gray-400 uppercase mb-1 block">Cliente *</label>
-                                    <select className="w-full p-2.5 border rounded-lg text-sm font-bold uppercase" value={invoiceForm.client} onChange={e => setInvoiceForm({...invoiceForm, client: e.target.value})} data-testid="select-billing-invoice-client">
-                                        <option value="">Selecione...</option>
-                                        {clients.map(c => <option key={c.id} value={c.id}>{c.trading_name || c.name}</option>)}
-                                    </select>
+                                    <label className="text-[10px] font-black text-gray-400 uppercase mb-1 block">Cliente</label>
+                                    <input type="text" className="w-full p-2.5 border rounded-lg text-sm font-bold uppercase bg-white cursor-not-allowed" readOnly value={clients.find(c => c.id.toString() === invoiceForm.client)?.trading_name || clients.find(c => c.id.toString() === invoiceForm.client)?.name || ''} data-testid="display-billing-invoice-client" />
                                 </div>
                                 <div>
-                                    <label className="text-[10px] font-black text-gray-400 uppercase mb-1 block">Nº da NF *</label>
-                                    <input type="text" className="w-full p-2.5 border rounded-lg text-sm font-bold uppercase" placeholder="NF-001" value={invoiceForm.number} onChange={e => setInvoiceForm({...invoiceForm, number: e.target.value})} data-testid="input-billing-invoice-number" />
+                                    <label className="text-[10px] font-black text-gray-400 uppercase mb-1 block">Valor</label>
+                                    <input type="text" className="w-full p-2.5 border rounded-lg text-sm font-mono font-bold bg-white cursor-not-allowed" readOnly value={invoiceForm.amount ? `R$ ${parseFloat(invoiceForm.amount).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}` : ''} data-testid="display-billing-invoice-amount" />
                                 </div>
                                 <div>
-                                    <label className="text-[10px] font-black text-gray-400 uppercase mb-1 block">Valor *</label>
-                                    <input type="number" step="0.01" className="w-full p-2.5 border rounded-lg text-sm font-mono font-bold" placeholder="0.00" value={invoiceForm.amount} onChange={e => setInvoiceForm({...invoiceForm, amount: e.target.value})} data-testid="input-billing-invoice-amount" />
+                                    <label className="text-[10px] font-black text-gray-400 uppercase mb-1 block">Fornecedor (Cliente)</label>
+                                    <input type="text" className="w-full p-2.5 border rounded-lg text-sm font-bold uppercase bg-white cursor-not-allowed" readOnly value={invoiceForm.provider} data-testid="display-billing-invoice-provider" />
                                 </div>
                                 <div>
-                                    <label className="text-[10px] font-black text-gray-400 uppercase mb-1 block">Data Emissão NF</label>
-                                    <input type="date" className="w-full p-2.5 border rounded-lg text-sm font-bold" value={invoiceForm.date} onChange={e => setInvoiceForm({...invoiceForm, date: e.target.value})} data-testid="input-billing-invoice-date" />
+                                    <label className="text-[10px] font-black text-gray-400 uppercase mb-1 block">Empresa Emissora</label>
+                                    <input type="text" className="w-full p-2.5 border rounded-lg text-sm font-bold uppercase bg-white cursor-not-allowed" readOnly value={invoiceForm.issuer_company} data-testid="display-billing-invoice-issuer" />
+                                </div>
+                                <div className="col-span-2">
+                                    <label className="text-[10px] font-black text-gray-400 uppercase mb-1 block">Nº NF (Gerado pelo Asaas)</label>
+                                    <input type="text" className="w-full p-2.5 border rounded-lg text-sm font-mono font-bold bg-white cursor-not-allowed" readOnly value={invoiceForm.number || 'Será gerado automaticamente ao criar cobrança'} placeholder="Será gerado automaticamente" data-testid="display-billing-invoice-number" />
                                 </div>
                             </div>
                         </div>
 
                         <div className="border-t border-gray-100 pt-4">
-                            <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest mb-3">Dados Identificados</p>
+                            <p className="text-[9px] font-black text-orange-600 uppercase tracking-widest mb-3 flex items-center gap-1"><Receipt size={10}/> Dados Manuais</p>
                             <div className="grid grid-cols-2 gap-3">
                                 <div>
-                                    <label className="text-[10px] font-black text-gray-400 uppercase mb-1 block">Fornecedor / Prestador</label>
-                                    <input type="text" className="w-full p-2.5 border rounded-lg text-sm font-bold uppercase bg-gray-50" placeholder="Auto-detectado pela IA" value={invoiceForm.provider} onChange={e => setInvoiceForm({...invoiceForm, provider: e.target.value})} data-testid="input-billing-invoice-provider" />
-                                </div>
-                                <div>
-                                    <label className="text-[10px] font-black text-gray-400 uppercase mb-1 block">Empresa Emissora</label>
-                                    <input type="text" className="w-full p-2.5 border rounded-lg text-sm font-bold uppercase bg-gray-50" placeholder="Auto-detectado pela IA" value={invoiceForm.issuer_company} onChange={e => setInvoiceForm({...invoiceForm, issuer_company: e.target.value})} data-testid="input-billing-invoice-issuer" />
-                                </div>
-                                <div>
-                                    <label className="text-[10px] font-black text-orange-400 uppercase mb-1 block flex items-center gap-1"><Receipt size={10}/> Vencimento do Boleto</label>
-                                    <input type="date" className="w-full p-2.5 border-2 border-orange-200 rounded-lg text-sm font-bold bg-orange-50" value={invoiceForm.boleto_due_date} onChange={e => setInvoiceForm({...invoiceForm, boleto_due_date: e.target.value})} data-testid="input-billing-invoice-boleto-date" />
+                                    <label className="text-[10px] font-black text-orange-500 uppercase mb-1 block flex items-center gap-1"><Calendar size={10}/> Vencimento do Boleto *</label>
+                                    <input type="date" className="w-full p-2.5 border-2 border-orange-300 rounded-lg text-sm font-bold bg-orange-50 focus:ring-2 focus:ring-orange-400" value={invoiceForm.boleto_due_date} onChange={e => setInvoiceForm({...invoiceForm, boleto_due_date: e.target.value})} data-testid="input-billing-invoice-boleto-date" />
                                 </div>
                                 <div className="flex items-end">
                                     <div className="w-full p-2.5 bg-gray-50 rounded-lg border text-[10px] text-gray-400 font-bold">
-                                        {invoiceForm.boleto_due_date ? `Contas a Receber: venc. ${new Date(invoiceForm.boleto_due_date + 'T12:00:00').toLocaleDateString('pt-BR')}` : 'Data do boleto define o vencimento'}
+                                        {invoiceForm.boleto_due_date ? `Contas a Receber: venc. ${new Date(invoiceForm.boleto_due_date + 'T12:00:00').toLocaleDateString('pt-BR')}` : 'Defina o vencimento para gerar a cobrança'}
                                     </div>
                                 </div>
                             </div>
                         </div>
 
                         <div>
-                            <label className="text-[10px] font-black text-gray-400 uppercase mb-1 block">Observações</label>
-                            <textarea className="w-full p-2.5 border rounded-lg text-sm" rows={2} placeholder="Detalhes da fatura..." value={invoiceForm.notes} onChange={e => setInvoiceForm({...invoiceForm, notes: e.target.value})} data-testid="input-billing-invoice-notes" />
+                            <label className="text-[10px] font-black text-gray-400 uppercase mb-1 block">Observações (Auto-preenchida)</label>
+                            <textarea className="w-full p-2.5 border rounded-lg text-sm bg-gray-50" rows={2} value={invoiceForm.notes} onChange={e => setInvoiceForm({...invoiceForm, notes: e.target.value})} data-testid="input-billing-invoice-notes" />
                         </div>
 
                         {asaasConfigured && (
