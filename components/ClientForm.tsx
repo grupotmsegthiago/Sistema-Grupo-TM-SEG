@@ -628,7 +628,8 @@ const ClientForm: React.FC<ClientFormProps> = ({
                         <select className={INPUT_CLASS} value={formData.issuer_company} onChange={e => setFormData({...formData, issuer_company: e.target.value})} data-testid="select-client-issuer-company">
                             <option value="">Selecione...</option>
                             <option value="TM GESTÃO">TM GESTÃO — CNPJ 60.485.843/0001-57</option>
-                            <option value="TM SECURITY">TM SEGURANÇA — CNPJ 60.508.931/0001-27</option>
+                            <option value="TM SEGURANÇA">TM SEGURANÇA — CNPJ 60.508.931/0001-27</option>
+                            <option value="TM SECURITY">TM SECURITY — CNPJ 60.508.931/0001-27</option>
                         </select>
                     </div>
                     <div className="space-y-1.5 flex items-end">

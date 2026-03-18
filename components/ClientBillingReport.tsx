@@ -30,6 +30,8 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
 
     const [showInvoiceModal, setShowInvoiceModal] = useState(false);
     const [invoiceForm, setInvoiceForm] = useState({ client: '', number: '', amount: '', date: new Date().toISOString().split('T')[0], notes: '', provider: '', issuer_company: '', boleto_due_date: '' });
+    const [invoiceMedicaoEmail, setInvoiceMedicaoEmail] = useState('');
+    const [showMedicaoEmailInput, setShowMedicaoEmailInput] = useState(false);
     const [nfFile, setNfFile] = useState<File | null>(null);
     const [boletoFile, setBoletoFile] = useState<File | null>(null);
     const [nfPreview, setNfPreview] = useState('');
@@ -960,12 +962,39 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
         setAsaasResult(null);
     };
 
+    const saveMedicaoEmailToClient = async (clientId: string, email: string) => {
+        try {
+            const clientObj = clients.find(c => c.id.toString() === clientId);
+            const existing = (clientObj as any)?.medicao_email || '';
+            const emailList = existing ? existing.split(',').map((e: string) => e.trim()).filter(Boolean) : [];
+            if (!emailList.includes(email.trim().toLowerCase())) {
+                emailList.push(email.trim().toLowerCase());
+            }
+            const newVal = emailList.join(', ');
+            await supabase.from('clients').update({ medicao_email: newVal }).eq('id', parseInt(clientId));
+        } catch (err) {
+            console.error('Erro ao salvar e-mail medição:', err);
+        }
+    };
+
     const handleGenerateAsaasCharge = async () => {
         if (!invoiceForm.amount || !invoiceForm.boleto_due_date) {
             alert('Preencha o Valor e o Vencimento do Boleto antes de gerar a cobrança.');
             return;
         }
+
+        if (!invoiceMedicaoEmail || !invoiceMedicaoEmail.includes('@')) {
+            alert('Informe um E-mail Medição válido antes de gerar a cobrança. Este e-mail será salvo no cadastro do cliente.');
+            setShowMedicaoEmailInput(true);
+            return;
+        }
+
         const clientObj = clients.find(c => c.id.toString() === invoiceForm.client);
+
+        if (showMedicaoEmailInput && invoiceMedicaoEmail) {
+            await saveMedicaoEmailToClient(invoiceForm.client, invoiceMedicaoEmail);
+            setShowMedicaoEmailInput(false);
+        }
 
         if (asaasSplitMode && asaasSplitCharges.length > 0) {
             const validCharges = asaasSplitCharges.filter(c => c.cpfCnpj && parseFloat(c.value) > 0);
@@ -984,12 +1013,12 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
                         clientName: clientObj?.trading_name || clientObj?.name || 'Cliente',
-                        clientEmail: (clientObj as any)?.medicao_email || (clientObj as any)?.operational_email || clientObj?.email || '',
+                        clientEmail: invoiceMedicaoEmail,
                         dueDate: invoiceForm.boleto_due_date,
                         description: asaasDescription,
                         invoiceNumber: invoiceForm.number,
                         issuerCompany: invoiceForm.issuer_company,
-                        charges: validCharges.map(c => ({ name: c.name || clientObj?.trading_name || clientObj?.name || 'Cliente', cpfCnpj: c.cpfCnpj.replace(/\D/g, ''), email: c.email || '', value: parseFloat(c.value) })),
+                        charges: validCharges.map(c => ({ name: c.name || clientObj?.trading_name || clientObj?.name || 'Cliente', cpfCnpj: c.cpfCnpj.replace(/\D/g, ''), email: c.email || invoiceMedicaoEmail, value: parseFloat(c.value) })),
                     }),
                 });
                 const data = await res.json();
@@ -1021,7 +1050,7 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
                 body: JSON.stringify({
                     clientName: clientObj.trading_name || clientObj.name,
                     clientCpfCnpj: clientObj.cnpj.replace(/\D/g, ''),
-                    clientEmail: (clientObj as any).medicao_email || (clientObj as any).operational_email || clientObj.email || '',
+                    clientEmail: invoiceMedicaoEmail,
                     value: parseFloat(invoiceForm.amount),
                     dueDate: invoiceForm.boleto_due_date,
                     description: asaasDescription,
@@ -1067,6 +1096,11 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
         const issuer = (clientObj as any)?.issuer_company || '';
         const periodRef = buildPeriodRef();
         const notesText = `Referente aos serviços de Intermediação de Escolta Armada - Referente ao ${periodRef}`;
+
+        const existingMedicaoEmail = (clientObj as any)?.medicao_email || '';
+        const emailList = existingMedicaoEmail ? existingMedicaoEmail.split(',').map((e: string) => e.trim()).filter(Boolean) : [];
+        setInvoiceMedicaoEmail(emailList.length > 0 ? emailList[0] : '');
+        setShowMedicaoEmailInput(emailList.length === 0);
 
         setInvoiceForm(prev => ({
             ...prev,
@@ -1216,6 +1250,17 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
                         <div className="border-t border-gray-100 pt-4">
                             <p className="text-[9px] font-black text-orange-600 uppercase tracking-widest mb-3 flex items-center gap-1"><Receipt size={10}/> Dados Manuais</p>
                             <div className="grid grid-cols-2 gap-3">
+                                <div className="col-span-2">
+                                    <label className={`text-[10px] font-black uppercase mb-1 block flex items-center gap-1 ${showMedicaoEmailInput ? 'text-red-500' : 'text-gray-400'}`}>
+                                        {showMedicaoEmailInput ? <AlertCircle size={10}/> : null} E-mail Medição *
+                                        {showMedicaoEmailInput && <span className="text-[8px] text-red-400 font-bold ml-1">(Obrigatório — será salvo no cadastro do cliente)</span>}
+                                    </label>
+                                    {showMedicaoEmailInput ? (
+                                        <input type="email" className="w-full p-2.5 border-2 border-red-300 rounded-lg text-sm font-bold bg-red-50 focus:ring-2 focus:ring-red-400 lowercase" placeholder="Digite o e-mail de medição do cliente..." value={invoiceMedicaoEmail} onChange={e => setInvoiceMedicaoEmail(e.target.value.toLowerCase())} data-testid="input-billing-medicao-email" />
+                                    ) : (
+                                        <input type="text" className="w-full p-2.5 border rounded-lg text-sm font-bold bg-white cursor-not-allowed lowercase" readOnly value={invoiceMedicaoEmail} data-testid="display-billing-medicao-email" />
+                                    )}
+                                </div>
                                 <div>
                                     <label className="text-[10px] font-black text-orange-500 uppercase mb-1 block flex items-center gap-1"><Calendar size={10}/> Vencimento do Boleto *</label>
                                     <input type="date" className="w-full p-2.5 border-2 border-orange-300 rounded-lg text-sm font-bold bg-orange-50 focus:ring-2 focus:ring-orange-400" value={invoiceForm.boleto_due_date} onChange={e => setInvoiceForm({...invoiceForm, boleto_due_date: e.target.value})} data-testid="input-billing-invoice-boleto-date" />
