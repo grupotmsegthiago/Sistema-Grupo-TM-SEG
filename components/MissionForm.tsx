@@ -113,6 +113,21 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
   const [iblWarning, setIblWarning] = useState('');
 
   const [isCommercialUser, setIsCommercialUser] = useState(false);
+  const [providerPending, setProviderPending] = useState(false);
+
+  const stepComplete = {
+    step1: !!formData.missionType,
+    step2: !!formData.client,
+    step3: !!(formData.clientVehicleId || formData.driver_name),
+    step4: !!(formData.provider || providerPending),
+    step5: !!(selectedRouteId && formData.origin && formData.destination),
+  };
+  const canShowStep2 = stepComplete.step1;
+  const canShowStep3 = stepComplete.step2;
+  const canShowStep4 = canShowStep3;
+  const canShowStep5 = stepComplete.step4;
+  const canShowStep6 = stepComplete.step5;
+  const canShowStep7 = canShowStep6;
 
   useEffect(() => {
     const storedUser = localStorage.getItem('userData');
@@ -730,6 +745,32 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
 
   const isVtcClient = (formData.client || '').toUpperCase().includes('VTC');
 
+  const STEP_HEADER = (num: number, title: string, icon: any, done: boolean, active: boolean) => (
+      <div className={`flex items-center gap-3 p-4 rounded-xl border-2 transition-all duration-300 ${done ? 'bg-green-50 border-green-300' : active ? 'bg-white border-red-400 shadow-md' : 'bg-gray-50 border-gray-200 opacity-60'}`}>
+          <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-black shrink-0 ${done ? 'bg-green-600 text-white' : active ? 'bg-red-700 text-white' : 'bg-gray-300 text-white'}`}>
+              {done ? <Check size={16} /> : num}
+          </div>
+          <div className="flex items-center gap-2">
+              {icon}
+              <span className={`text-[11px] font-black uppercase tracking-widest ${done ? 'text-green-700' : active ? 'text-red-800' : 'text-gray-400'}`}>{title}</span>
+          </div>
+      </div>
+  );
+
+  const tableGuidance = (() => {
+      if (!manualRevenueTableId || !clientPriceTables.length) return null;
+      const selectedTable = clientPriceTables.find(t => t.id.toString() === manualRevenueTableId);
+      if (!selectedTable) return null;
+      const opName = (selectedTable.operation_type || '').toUpperCase();
+      const dist = parseFloat(formData.totalDistance) || 0;
+      const tips: string[] = [];
+      if (formData.missionType === 'Velada' && opName.includes('CARACTERIZ')) tips.push('A operacao e VELADA mas a tabela selecionada parece ser CARACTERIZADA. Confirme se esta correto.');
+      if (formData.missionType === 'Caracterizada' && opName.includes('VELAD')) tips.push('A operacao e CARACTERIZADA mas a tabela selecionada parece ser VELADA. Confirme se esta correto.');
+      if (dist > 0 && selectedTable.franchise_km > 0 && dist > selectedTable.franchise_km * 1.5) tips.push(`A distancia real (${dist} KM) excede significativamente a franquia da tabela (${selectedTable.franchise_km} KM). Verifique se ha uma tabela com franquia maior.`);
+      if (opName.includes('LOGITECH') && !formData.destination.toUpperCase().includes('LOGITECH')) tips.push('Tabela LOGITECH selecionada, mas o destino nao parece ser Logitech. Confirme.');
+      return tips.length > 0 ? tips : null;
+  })();
+
   return (
     <div className="max-w-4xl mx-auto space-y-6 pb-20 animate-in fade-in">
       {isClientModalOpen && (<div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in zoom-in-95"><div className="bg-[#f8fafc] rounded-2xl w-full max-w-5xl p-6 relative shadow-2xl overflow-y-auto max-h-[95vh]"><button onClick={() => setIsClientModalOpen(false)} className="absolute top-6 right-6 p-2 bg-white rounded-full shadow-sm hover:bg-red-50 text-gray-400 hover:text-red-600 transition-all z-10"><X size={20}/></button><ClientForm onBack={() => setIsClientModalOpen(false)} onSave={() => { setIsClientModalOpen(false); loadBasicData(); }} onAddVehicle={() => {}} onEditVehicle={() => {}} onAddRoute={() => {}} onEditRoute={() => {}} onAddQuote={() => {}} onEditQuote={() => {}} /></div></div>)}
@@ -737,460 +778,496 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
       {isRouteModalOpen && (<div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in zoom-in-95"><div className="bg-[#f8fafc] rounded-2xl w-full max-w-5xl p-6 relative shadow-2xl overflow-y-auto max-h-[95vh]"><button onClick={() => setIsRouteModalOpen(false)} className="absolute top-6 right-6 p-2 bg-white rounded-full shadow-sm hover:bg-red-50 text-gray-400 hover:text-red-600 transition-all z-10"><X size={20}/></button><ClientRouteForm onSuccess={(newRouteId) => { setIsRouteModalOpen(false); if (formData.client) { supabase.from('client_routes').select('*').eq('client', formData.client).order('name').then(({ data }) => { if (data) { setClientRoutes(data as any); const newRoute = data.find((r: any) => r.id.toString() === newRouteId); if (newRoute) handleRouteSelect(newRoute); } }); } }} /></div></div>)}
       {isVehicleModalOpen && (<div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in zoom-in-95"><div className="bg-[#f8fafc] rounded-2xl w-full max-w-5xl p-6 relative shadow-2xl overflow-y-auto max-h-[95vh]"><button onClick={() => setIsVehicleModalOpen(false)} className="absolute top-6 right-6 p-2 bg-white rounded-full shadow-sm hover:bg-red-50 text-gray-400 hover:text-red-600 transition-all z-10"><X size={20}/></button><ClientVehicleForm embedded onBack={() => setIsVehicleModalOpen(false)} onSuccess={() => { setIsVehicleModalOpen(false); if(formData.client) fetchClientVehicles(formData.client); }} /></div></div>)}
 
-      <div className="flex items-center justify-between"><div className="flex items-center gap-4"><button onClick={onBack} className="p-2.5 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 shadow-sm"><ArrowLeft size={20} /></button><div className="flex items-center gap-3"><h2 className="text-xl font-black text-gray-900 uppercase tracking-tight">Nova Ordem de Serviço</h2><span className="px-2 py-0.5 bg-yellow-100 text-yellow-800 text-[10px] font-black rounded-md">{osId}</span></div></div></div>
+      <div className="flex items-center justify-between">
+          <div className="flex items-center gap-4">
+              <button onClick={onBack} className="p-2.5 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 shadow-sm" data-testid="button-back"><ArrowLeft size={20} /></button>
+              <div className="flex items-center gap-3">
+                  <h2 className="text-xl font-black text-gray-900 uppercase tracking-tight">Nova Ordem de Serviço</h2>
+                  <span className="px-2 py-0.5 bg-yellow-100 text-yellow-800 text-[10px] font-black rounded-md">{osId}</span>
+              </div>
+          </div>
+          <label className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border-2 cursor-pointer transition-all ${formData.isSameOs ? 'bg-black border-black text-white shadow-md' : 'bg-white border-gray-200 text-gray-500 hover:border-gray-300'}`}>
+              <input type="checkbox" className="hidden" checked={formData.isSameOs} onChange={e => { const checked = e.target.checked; setFormData(prev => ({ ...prev, isSameOs: checked, parentMissionId: checked ? prev.parentMissionId : '' })); const route = clientRoutes.find(r => r.id.toString() === selectedRouteId); if (route) calculatePricing(route, undefined, manualRevenueTableId, '', { ceva200km: formData.applyCeva200km, vtc02h: checked, isSameOs: checked }); }} />
+              <Layers size={14} className={formData.isSameOs ? 'text-white' : 'text-gray-400'} />
+              <span className="text-[10px] font-black uppercase tracking-wider">Mesma OS</span>
+          </label>
+      </div>
+
+      {formData.isSameOs && (
+        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4">
+          <label className="text-[10px] font-black text-slate-600 uppercase tracking-widest mb-1.5 block">Vincular à OS Mãe (Principal)</label>
+          <div className="relative">
+            <div className="flex items-center gap-2">
+              <div className="relative flex-1">
+                <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                <input type="text" className="w-full pl-9 pr-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-black focus:border-black" placeholder="Digite o nº da OS mãe (ex: GTM-1234) ou busque..." value={parentOsSearch || formData.parentMissionId} onChange={e => { setParentOsSearch(e.target.value); setShowParentOsDropdown(true); if (!e.target.value) setFormData(prev => ({...prev, parentMissionId: ''})); }} onFocus={() => setShowParentOsDropdown(true)} data-testid="input-parent-mission-id" />
+              </div>
+              {formData.parentMissionId && (<button type="button" onClick={() => { setFormData(prev => ({...prev, parentMissionId: ''})); setParentOsSearch(''); }} className="p-2 text-red-500 hover:bg-red-50 rounded-lg"><X size={16}/></button>)}
+            </div>
+            {formData.parentMissionId && (
+              <div className="mt-2 flex items-center gap-2 px-3 py-1.5 bg-blue-50 border border-blue-200 rounded-lg">
+                <Layers size={12} className="text-blue-600" />
+                <span className="text-[10px] font-black text-blue-700 uppercase">OS Mãe: {formData.parentMissionId}</span>
+                {(() => { const p = parentOsSuggestions.find(s => s.id === formData.parentMissionId); return p ? <span className="text-[9px] text-blue-500 ml-1">({p.client} → {p.origin?.split(',')[0]} / {p.destination?.split(',')[0]})</span> : null; })()}
+              </div>
+            )}
+            {showParentOsDropdown && formData.isSameOs && (
+              <div className="absolute z-50 mt-1 w-full bg-white border border-gray-200 rounded-lg shadow-xl max-h-60 overflow-y-auto">
+                {parentOsSuggestions.filter(s => { if (!parentOsSearch) return true; const term = parentOsSearch.toLowerCase(); return s.id.toLowerCase().includes(term) || s.client?.toLowerCase().includes(term) || s.provider?.toLowerCase().includes(term); }).map(s => (
+                  <button key={s.id} type="button" className={`w-full text-left px-3 py-2 hover:bg-gray-50 border-b border-gray-50 transition-colors ${formData.parentMissionId === s.id ? 'bg-blue-50' : ''}`} onClick={() => { setFormData(prev => ({...prev, parentMissionId: s.id})); setParentOsSearch(''); setShowParentOsDropdown(false); }} data-testid={`option-parent-${s.id}`}>
+                    <div className="flex items-center justify-between"><span className="text-xs font-black text-gray-900">{s.id}</span><span className={`text-[8px] font-bold px-1.5 py-0.5 rounded ${s.status === 'Concluída' ? 'bg-green-100 text-green-700' : s.status === 'Em Viagem' ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-600'}`}>{s.status}</span></div>
+                    <div className="text-[9px] text-gray-500 mt-0.5">{s.client} • {s.provider || 'Sem fornecedor'}</div>
+                    <div className="text-[9px] text-gray-400">{s.origin?.split(',')[0]} → {s.destination?.split(',')[0]}</div>
+                  </button>
+                ))}
+                {parentOsSuggestions.length === 0 && <div className="px-3 py-4 text-center text-xs text-gray-400">Nenhuma OS encontrada para este cliente</div>}
+                {parentOsSearch && !parentOsSuggestions.find(s => s.id === parentOsSearch) && (
+                  <button type="button" className="w-full text-left px-3 py-2 hover:bg-blue-50 border-t border-gray-100 text-blue-700" onClick={() => { setFormData(prev => ({...prev, parentMissionId: parentOsSearch.toUpperCase()})); setParentOsSearch(''); setShowParentOsDropdown(false); }}>
+                    <div className="flex items-center gap-2"><Plus size={12}/><span className="text-xs font-bold">Usar "{parentOsSearch.toUpperCase()}" como OS Mãe</span></div>
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      <div className="flex gap-2 overflow-x-auto pb-1">
+          {[
+              { n: 1, t: 'Operação', done: stepComplete.step1 },
+              { n: 2, t: 'Cliente', done: stepComplete.step2 },
+              { n: 3, t: 'Veículo', done: stepComplete.step3 },
+              { n: 4, t: 'Fornecedor', done: stepComplete.step4 },
+              { n: 5, t: 'Rota', done: stepComplete.step5 },
+              { n: 6, t: 'Regras', done: canShowStep6 && !!manualRevenueTableId },
+              { n: 7, t: 'Tabela', done: !!manualRevenueTableId },
+          ].map(s => (
+              <div key={s.n} className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[9px] font-black uppercase tracking-wider shrink-0 transition-all ${s.done ? 'bg-green-100 text-green-700 border border-green-300' : 'bg-gray-100 text-gray-400 border border-gray-200'}`}>
+                  <div className={`w-5 h-5 rounded-full flex items-center justify-center text-[8px] font-black ${s.done ? 'bg-green-600 text-white' : 'bg-gray-300 text-white'}`}>{s.done ? <Check size={10}/> : s.n}</div>
+                  {s.t}
+              </div>
+          ))}
+      </div>
 
       <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden" ref={dropdownRef}>
-          <div className="p-4 border-b border-gray-100 bg-gray-50 flex items-center justify-between"><div className="flex items-center gap-2"><FileText size={18} className="text-red-700" /><h3 className="font-bold text-xs uppercase tracking-widest text-gray-600">Dados da Solicitação</h3></div><label className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border-2 cursor-pointer transition-all ${formData.isSameOs ? 'bg-black border-black text-white shadow-md' : 'bg-white border-gray-200 text-gray-500 hover:border-gray-300'}`}><input type="checkbox" className="hidden" checked={formData.isSameOs} onChange={e => { const checked = e.target.checked; setFormData(prev => ({ ...prev, isSameOs: checked, parentMissionId: checked ? prev.parentMissionId : '' })); const route = clientRoutes.find(r => r.id.toString() === selectedRouteId); if (route) calculatePricing(route, undefined, manualRevenueTableId, '', { ceva200km: formData.applyCeva200km, vtc02h: checked, isSameOs: checked }); }} /><Layers size={14} className={formData.isSameOs ? 'text-white' : 'text-gray-400'} /><span className="text-[10px] font-black uppercase tracking-wider">Mesma OS (Custo Zero)</span></label></div>
-          {formData.isSameOs && (
-            <div className="px-4 py-3 bg-slate-50 border-b border-gray-100">
-              <label className="text-[10px] font-black text-slate-600 uppercase tracking-widest mb-1.5 block">Vincular à OS Mãe (Principal)</label>
-              <div className="relative">
-                <div className="flex items-center gap-2">
-                  <div className="relative flex-1">
-                    <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-                    <input
-                      type="text"
-                      className="w-full pl-9 pr-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-black focus:border-black"
-                      placeholder="Digite o nº da OS mãe (ex: GTM-1234) ou busque..."
-                      value={parentOsSearch || formData.parentMissionId}
-                      onChange={e => { setParentOsSearch(e.target.value); setShowParentOsDropdown(true); if (!e.target.value) setFormData(prev => ({...prev, parentMissionId: ''})); }}
-                      onFocus={() => setShowParentOsDropdown(true)}
-                      data-testid="input-parent-mission-id"
-                    />
+          <form onSubmit={handleSubmit} className="divide-y divide-gray-100">
+
+              {/* ETAPA 1 - TIPO DE OPERAÇÃO */}
+              <div className="p-6 space-y-4">
+                  {STEP_HEADER(1, 'Tipo de Operação', <Siren size={16} className={stepComplete.step1 ? 'text-green-600' : 'text-red-600'} />, stepComplete.step1, true)}
+                  <div className="grid grid-cols-2 gap-3 mt-3">
+                      <button type="button" data-testid="button-tipo-caracterizada" onClick={() => setFormData(prev => ({...prev, missionType: 'Caracterizada'}))} className={`p-4 rounded-xl border-2 flex items-center gap-3 transition-all ${formData.missionType === 'Caracterizada' ? 'border-red-600 bg-red-50 shadow-md ring-2 ring-red-200' : 'border-gray-200 bg-white hover:border-gray-300'}`}>
+                          <Siren size={24} className={formData.missionType === 'Caracterizada' ? 'text-red-600' : 'text-gray-400'} />
+                          <div className="text-left">
+                              <p className={`text-sm font-black uppercase ${formData.missionType === 'Caracterizada' ? 'text-red-800' : 'text-gray-600'}`}>Caracterizada</p>
+                              <p className="text-[9px] text-gray-400 font-medium">Viatura identificada</p>
+                          </div>
+                      </button>
+                      <button type="button" data-testid="button-tipo-velada" onClick={() => setFormData(prev => ({...prev, missionType: 'Velada'}))} className={`p-4 rounded-xl border-2 flex items-center gap-3 transition-all ${formData.missionType === 'Velada' ? 'border-gray-900 bg-gray-900 shadow-md ring-2 ring-gray-400 text-white' : 'border-gray-200 bg-white hover:border-gray-300'}`}>
+                          <ShieldCheck size={24} className={formData.missionType === 'Velada' ? 'text-white' : 'text-gray-400'} />
+                          <div className="text-left">
+                              <p className={`text-sm font-black uppercase ${formData.missionType === 'Velada' ? 'text-white' : 'text-gray-600'}`}>Velada</p>
+                              <p className={`text-[9px] font-medium ${formData.missionType === 'Velada' ? 'text-gray-300' : 'text-gray-400'}`}>Viatura descaracterizada</p>
+                          </div>
+                      </button>
                   </div>
-                  {formData.parentMissionId && (
-                    <button type="button" onClick={() => { setFormData(prev => ({...prev, parentMissionId: ''})); setParentOsSearch(''); }} className="p-2 text-red-500 hover:bg-red-50 rounded-lg"><X size={16}/></button>
+              </div>
+
+              {/* ETAPA 2 - CLIENTE */}
+              {canShowStep2 && (
+              <div className="p-6 space-y-4 animate-in slide-in-from-top-2">
+                  {STEP_HEADER(2, 'Selecionar Cliente', <Building2 size={16} className={stepComplete.step2 ? 'text-green-600' : 'text-red-600'} />, stepComplete.step2, !stepComplete.step2)}
+                  <div className="flex gap-2">
+                      <div className="relative flex-1">
+                          <select required className={SELECT_CLASS} value={formData.client} disabled={isCommercialUser} data-testid="select-client" onChange={e => {
+                              const clientName = e.target.value;
+                              const isVTC = (clientName || '').toUpperCase().includes('VTC');
+                              setFormData(prev => {
+                                  const next = { ...prev, client: clientName, applyVtc02h: isVTC, clientVehicleId: '', clientVehiclePlate: '', clientVehicleModel: '', clientVehicleId2: '', clientVehiclePlate2: '', clientVehicleModel2: '', driver_name: '', driver_phone: '', driver_name_2: '', driver_phone_2: '' };
+                                  const route = clientRoutes.find(r => r.id.toString() === selectedRouteId);
+                                  if (route) { setTimeout(() => calculatePricing(route, undefined, '', '', { ceva200km: next.applyCeva200km, vtc02h: next.applyVtc02h, isSameOs: next.isSameOs }), 100); }
+                                  return next;
+                              });
+                              setProviderPending(false);
+                              if (isVTC) showNotification('Inteligência Comercial', 'Cliente VTC detectado: Verifique a Regra de 02 Horas.', 'info');
+                          }}>
+                              <option value="">Selecione o cliente...</option>
+                              {dbClients.map(c => <option key={c.id} value={c.name}>{c.trading_name || c.name}</option>)}
+                          </select>
+                          <Building2 size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+                          <ChevronDown size={16} className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+                      </div>
+                      {!isCommercialUser && <button type="button" onClick={() => setIsClientModalOpen(true)} className="p-3 bg-gray-900 text-white rounded-lg hover:bg-black transition-all shadow-md active:scale-95" data-testid="button-add-client"><Plus size={20} /></button>}
+                  </div>
+                  {isVtcClient && (
+                      <div className={`p-4 rounded-xl border-2 transition-all duration-300 animate-in slide-in-from-top-2 ${!formData.applyVtc02h ? 'bg-red-50 border-red-500 animate-pulse' : 'bg-blue-50 border-blue-600'}`}>
+                          <div className="flex items-center justify-between">
+                              <div className="flex items-center gap-3">
+                                  <div className={`p-2 rounded-lg ${!formData.applyVtc02h ? 'bg-red-500 text-white' : 'bg-blue-600 text-white'}`}>{!formData.applyVtc02h ? <AlertCircle size={18} /> : <CheckCircle2 size={18} />}</div>
+                                  <div>
+                                      <p className={`text-[10px] font-black uppercase tracking-widest ${!formData.applyVtc02h ? 'text-red-700' : 'text-blue-800'}`}>Atenção: Regra 02 Horas</p>
+                                      <p className={`text-[9px] font-bold ${!formData.applyVtc02h ? 'text-red-600' : 'text-blue-600'}`}>{!formData.applyVtc02h ? 'ESTA OPÇÃO É OBRIGATÓRIA PARA ACIONAMENTOS VTC' : 'REGRA APLICADA COM SUCESSO'}</p>
+                                  </div>
+                              </div>
+                              <button type="button" onClick={() => { const nextVal = !formData.applyVtc02h; setFormData(prev => ({ ...prev, applyVtc02h: nextVal })); const route = clientRoutes.find(r => r.id.toString() === selectedRouteId); if (route) calculatePricing(route, undefined, manualRevenueTableId, '', { ceva200km: formData.applyCeva200km, vtc02h: nextVal, isSameOs: formData.isSameOs }); }} className={`px-4 py-2 rounded-lg text-[10px] font-black uppercase shadow-md transition-all active:scale-95 ${!formData.applyVtc02h ? 'bg-red-600 text-white hover:bg-red-700' : 'bg-blue-600 text-white'}`}>{!formData.applyVtc02h ? 'ATIVAR AGORA' : 'DESATIVAR'}</button>
+                          </div>
+                      </div>
                   )}
-                </div>
-                {formData.parentMissionId && (
-                  <div className="mt-2 flex items-center gap-2 px-3 py-1.5 bg-blue-50 border border-blue-200 rounded-lg">
-                    <Layers size={12} className="text-blue-600" />
-                    <span className="text-[10px] font-black text-blue-700 uppercase">OS Mãe: {formData.parentMissionId}</span>
-                    {(() => { const p = parentOsSuggestions.find(s => s.id === formData.parentMissionId); return p ? <span className="text-[9px] text-blue-500 ml-1">({p.client} → {p.origin?.split(',')[0]} / {p.destination?.split(',')[0]})</span> : null; })()}
-                  </div>
-                )}
-                {showParentOsDropdown && formData.isSameOs && (
-                  <div className="absolute z-50 mt-1 w-full bg-white border border-gray-200 rounded-lg shadow-xl max-h-60 overflow-y-auto">
-                    {parentOsSuggestions.filter(s => {
-                      if (!parentOsSearch) return true;
-                      const term = parentOsSearch.toLowerCase();
-                      return s.id.toLowerCase().includes(term) || s.client?.toLowerCase().includes(term) || s.provider?.toLowerCase().includes(term);
-                    }).map(s => (
-                      <button key={s.id} type="button" className={`w-full text-left px-3 py-2 hover:bg-gray-50 border-b border-gray-50 transition-colors ${formData.parentMissionId === s.id ? 'bg-blue-50' : ''}`}
-                        onClick={() => { setFormData(prev => ({...prev, parentMissionId: s.id})); setParentOsSearch(''); setShowParentOsDropdown(false); }}
-                        data-testid={`option-parent-${s.id}`}
-                      >
-                        <div className="flex items-center justify-between">
-                          <span className="text-xs font-black text-gray-900">{s.id}</span>
-                          <span className={`text-[8px] font-bold px-1.5 py-0.5 rounded ${s.status === 'Concluída' ? 'bg-green-100 text-green-700' : s.status === 'Em Viagem' ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-600'}`}>{s.status}</span>
-                        </div>
-                        <div className="text-[9px] text-gray-500 mt-0.5">{s.client} • {s.provider || 'Sem fornecedor'}</div>
-                        <div className="text-[9px] text-gray-400">{s.origin?.split(',')[0]} → {s.destination?.split(',')[0]}</div>
-                      </button>
-                    ))}
-                    {parentOsSuggestions.length === 0 && <div className="px-3 py-4 text-center text-xs text-gray-400">Nenhuma OS encontrada para este cliente</div>}
-                    {parentOsSearch && !parentOsSuggestions.find(s => s.id === parentOsSearch) && (
-                      <button type="button" className="w-full text-left px-3 py-2 hover:bg-blue-50 border-t border-gray-100 text-blue-700"
-                        onClick={() => { setFormData(prev => ({...prev, parentMissionId: parentOsSearch.toUpperCase()})); setParentOsSearch(''); setShowParentOsDropdown(false); }}
-                      >
-                        <div className="flex items-center gap-2"><Plus size={12}/><span className="text-xs font-bold">Usar "{parentOsSearch.toUpperCase()}" como OS Mãe</span></div>
-                      </button>
-                    )}
-                  </div>
-                )}
               </div>
-            </div>
-          )}
-          
-          <form onSubmit={handleSubmit} className="p-8 space-y-8">
-              <div className="relative group"><label className={LABEL_CLASS}>Tipo de Operação *</label><div className="relative"><select className={SELECT_CLASS} value={formData.missionType} onChange={e => setFormData({...formData, missionType: e.target.value})}><option value="Caracterizada">Escolta Caracterizada</option><option value="Velada">Escolta Velada</option></select><Siren size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-300 pointer-events-none" /><ChevronDown size={16} className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" /></div></div>
-              
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  <div className="relative">
-                    <label className={LABEL_CLASS}>1. Selecione o Cliente *</label>
-                    <div className="flex flex-col gap-3">
-                        <div className="flex gap-2">
-                            <div className="relative flex-1">
-                                <select required className={SELECT_CLASS} value={formData.client} disabled={isCommercialUser} onChange={e => {
-                                    const clientName = e.target.value;
-                                    const isVTC = (clientName || '').toUpperCase().includes('VTC');
-                                    setFormData(prev => {
-                                        const next = {
-                                            ...prev, 
-                                            client: clientName, 
-                                            applyVtc02h: isVTC, 
-                                            clientVehicleId: '', 
-                                            clientVehiclePlate: '', 
-                                            clientVehicleModel: '', 
-                                            clientVehicleId2: '',
-                                            clientVehiclePlate2: '',
-                                            clientVehicleModel2: '',
-                                            driver_name: '', 
-                                            driver_phone: '',
-                                            driver_name_2: '',
-                                            driver_phone_2: ''
-                                        };
-                                        const route = clientRoutes.find(r => r.id.toString() === selectedRouteId);
-                                        if (route) {
-                                            setTimeout(() => calculatePricing(route, undefined, '', '', {
-                                                ceva200km: next.applyCeva200km,
-                                                vtc02h: next.applyVtc02h,
-                                                isSameOs: next.isSameOs
-                                            }), 100);
-                                        }
-                                        return next;
-                                    });
-                                    if (isVTC) {
-                                        showNotification('Inteligência Comercial', 'Cliente VTC detectado: Verifique a Regra de 02 Horas.', 'info');
-                                    }
-                                }}><option value="">Selecione...</option>{dbClients.map(c => <option key={c.id} value={c.name}>{c.trading_name || c.name}</option>)}</select>
-                                <Building2 size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
-                                <ChevronDown size={16} className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
-                            </div>
-                            {!isCommercialUser && <button type="button" onClick={() => setIsClientModalOpen(true)} className="p-3 bg-gray-900 text-white rounded-lg hover:bg-black transition-all shadow-md active:scale-95"><Plus size={20} /></button>}
-                        </div>
-
-                        {isVtcClient && (
-                            <div className={`p-4 rounded-xl border-2 transition-all duration-300 animate-in slide-in-from-top-2 ${!formData.applyVtc02h ? 'bg-red-50 border-red-500 animate-pulse' : 'bg-blue-50 border-blue-600'}`}>
-                                <div className="flex items-center justify-between">
-                                    <div className="flex items-center gap-3">
-                                        <div className={`p-2 rounded-lg ${!formData.applyVtc02h ? 'bg-red-500 text-white' : 'bg-blue-600 text-white'}`}>
-                                            {!formData.applyVtc02h ? <AlertCircle size={18} /> : <CheckCircle2 size={18} />}
-                                        </div>
-                                        <div>
-                                            <p className={`text-[10px] font-black uppercase tracking-widest ${!formData.applyVtc02h ? 'text-red-700' : 'text-blue-800'}`}>Atenção: Regra 02 Horas</p>
-                                            <p className={`text-[9px] font-bold ${!formData.applyVtc02h ? 'text-red-600' : 'text-blue-600'}`}>
-                                                {!formData.applyVtc02h ? 'ESTA OPÇÃO É OBRIGATÓRIA PARA ACIONAMENTOS VTC' : 'REGRA APLICADA COM SUCESSO'}
-                                            </p>
-                                        </div>
-                                    </div>
-                                    <button 
-                                        type="button"
-                                        onClick={() => {
-                                            const nextVal = !formData.applyVtc02h;
-                                            setFormData(prev => ({ ...prev, applyVtc02h: nextVal }));
-                                            const route = clientRoutes.find(r => r.id.toString() === selectedRouteId);
-                                            if (route) calculatePricing(route, undefined, manualRevenueTableId, '', { ceva200km: formData.applyCeva200km, vtc02h: nextVal, isSameOs: formData.isSameOs });
-                                        }}
-                                        className={`px-4 py-2 rounded-lg text-[10px] font-black uppercase shadow-md transition-all active:scale-95 ${!formData.applyVtc02h ? 'bg-red-600 text-white hover:bg-red-700' : 'bg-blue-600 text-white'}`}
-                                    >
-                                        {!formData.applyVtc02h ? 'ATIVAR AGORA' : 'DESATIVAR'}
-                                    </button>
-                                </div>
-                            </div>
-                        )}
-                    </div>
-                  </div>
-
-                  <div className="relative">
-                    <label className={LABEL_CLASS}>2. Veículo de Carga (Placa)</label>
-                    <div className="flex gap-1.5">
-                        <div className="relative flex-1">
-                            <input type="text" className={INPUT_CLASS} placeholder={formData.client ? "Buscar veículo..." : "Aguardando Cliente..."} value={vehicleSearchTerm} onChange={e => { setVehicleSearchTerm(e.target.value.toUpperCase()); setActiveDropdown('vehicle'); }} onFocus={() => formData.client && setActiveDropdown('vehicle')} disabled={!formData.client} />
-                            <Truck size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
-                            {activeDropdown === 'vehicle' && formData.client && filteredVehicles.length > 0 && (
-                                <div className="absolute z-[100] left-0 right-0 mt-1 bg-white border border-gray-200 rounded-xl shadow-xl max-h-48 overflow-y-auto ring-1 ring-black/5">
-                                    {filteredVehicles.map(v => (
-                                        <button key={v.id} type="button" onClick={() => handleVehicleSelect(v)} className={DROPDOWN_ITEM_CLASS}>{v.plate} ({v.model})</button>
-                                    ))}
-                                </div>
-                            )}
-                        </div>
-                        <button type="button" disabled={!formData.client} onClick={() => setIsVehicleModalOpen(true)} className="p-2.5 bg-gray-100 text-gray-600 border border-gray-200 rounded-lg hover:bg-gray-200 transition-all shadow-sm active:scale-95 disabled:opacity-50"><Plus size={18} /></button>
-                    </div>
-                  </div>
-
-                  <div className="relative">
-                    <label className={LABEL_CLASS}>Motorista</label>
-                    <div className="relative">
-                        <input 
-                            type="text" 
-                            className={INPUT_CLASS} 
-                            placeholder="Nome do condutor..." 
-                            value={driverSearchTerm} 
-                            onChange={e => { setDriverSearchTerm(e.target.value.toUpperCase()); setFormData({...formData, driver_name: e.target.value}); setActiveDropdown('driver'); }} 
-                            onFocus={() => setActiveDropdown('driver')}
-                        />
-                        <User size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" />
-                        {activeDropdown === 'driver' && filteredDrivers.length > 0 && (
-                            <div className="absolute z-[100] left-0 right-0 mt-1 bg-white border border-gray-200 rounded-xl shadow-xl max-h-48 overflow-y-auto ring-1 ring-black/5">
-                                {filteredDrivers.map((d, i) => (
-                                    <button key={i} type="button" onClick={() => { handleDriverSelect(d); }} className={DROPDOWN_ITEM_CLASS}>{d.name}</button>
-                                ))}
-                            </div>
-                        )}
-                    </div>
-                  </div>
-
-                  <div className="relative">
-                    <label className={LABEL_CLASS}>Telefone Motorista</label>
-                    <div className="relative">
-                        <input type="text" className={INPUT_CLASS} placeholder="(00) 00000-0000" value={formData.driver_phone} onChange={e => setFormData({...formData, driver_phone: e.target.value})} />
-                        <Phone size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
-                    </div>
-                  </div>
-              </div>
-
-              {!showSecondVehicle && formData.client && (
-                  <div className="flex justify-center">
-                      <button type="button" onClick={() => setShowSecondVehicle(true)} className="flex items-center gap-2 px-4 py-2 bg-blue-50 text-blue-700 border border-blue-200 rounded-lg text-[11px] font-black uppercase tracking-wider hover:bg-blue-100 transition-all active:scale-95" data-testid="button-add-vehicle-2">
-                          <Plus size={14} /> Adicionar 2° Veículo de Carga
-                      </button>
-                  </div>
               )}
 
-              {showSecondVehicle && (
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6 p-5 bg-blue-50/50 rounded-xl border border-blue-100 relative">
-                      <button type="button" onClick={() => { setShowSecondVehicle(false); setFormData(prev => ({ ...prev, clientVehicleId2: '', clientVehiclePlate2: '', clientVehicleModel2: '', driver_name_2: '', driver_phone_2: '' })); setVehicleSearchTerm2(''); }} className="absolute top-3 right-3 p-1.5 bg-white rounded-full border border-gray-200 text-gray-400 hover:text-red-600 hover:border-red-200 transition-all shadow-sm" data-testid="button-remove-vehicle-2"><X size={14} /></button>
-                      <div className="col-span-full"><span className="text-[10px] font-black text-blue-600 uppercase tracking-widest flex items-center gap-1.5"><Truck size={12} /> 2° Veículo de Carga</span></div>
-                      
+              {/* ETAPA 3 - VEÍCULO / MOTORISTA / TELEFONE */}
+              {canShowStep3 && (
+              <div className="p-6 space-y-4 animate-in slide-in-from-top-2">
+                  {STEP_HEADER(3, 'Veículo do Cliente / Motorista', <Truck size={16} className={stepComplete.step3 ? 'text-green-600' : 'text-red-600'} />, stepComplete.step3, !stepComplete.step3)}
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                       <div className="relative">
-                          <label className={LABEL_CLASS}>Placa do 2° Veículo</label>
+                          <label className={LABEL_CLASS}>Veículo de Carga (Placa)</label>
                           <div className="flex gap-1.5">
                               <div className="relative flex-1">
-                                  <input type="text" className={INPUT_CLASS} placeholder="Buscar veículo..." value={vehicleSearchTerm2} onChange={e => { setVehicleSearchTerm2(e.target.value.toUpperCase()); setActiveDropdown('vehicle2'); }} onFocus={() => formData.client && setActiveDropdown('vehicle2')} disabled={!formData.client} data-testid="input-vehicle-2" />
-                                  <Truck size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-blue-400 pointer-events-none" />
-                                  {activeDropdown === 'vehicle2' && formData.client && filteredVehicles2.length > 0 && (
+                                  <input type="text" className={INPUT_CLASS} placeholder="Buscar veículo..." value={vehicleSearchTerm} onChange={e => { setVehicleSearchTerm(e.target.value.toUpperCase()); setActiveDropdown('vehicle'); }} onFocus={() => formData.client && setActiveDropdown('vehicle')} data-testid="input-vehicle" />
+                                  <Truck size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+                                  {activeDropdown === 'vehicle' && formData.client && filteredVehicles.length > 0 && (
                                       <div className="absolute z-[100] left-0 right-0 mt-1 bg-white border border-gray-200 rounded-xl shadow-xl max-h-48 overflow-y-auto ring-1 ring-black/5">
-                                          {filteredVehicles2.map(v => (
-                                              <button key={v.id} type="button" onClick={() => handleVehicleSelect2(v)} className={DROPDOWN_ITEM_CLASS}>{v.plate} ({v.model})</button>
+                                          {filteredVehicles.map(v => (<button key={v.id} type="button" onClick={() => handleVehicleSelect(v)} className={DROPDOWN_ITEM_CLASS}>{v.plate} ({v.model})</button>))}
+                                      </div>
+                                  )}
+                              </div>
+                              <button type="button" onClick={() => setIsVehicleModalOpen(true)} className="p-2.5 bg-gray-100 text-gray-600 border border-gray-200 rounded-lg hover:bg-gray-200 transition-all shadow-sm active:scale-95" data-testid="button-add-vehicle"><Plus size={18} /></button>
+                          </div>
+                      </div>
+                      <div className="relative">
+                          <label className={LABEL_CLASS}>Motorista</label>
+                          <div className="relative">
+                              <input type="text" className={INPUT_CLASS} placeholder="Nome do condutor..." value={driverSearchTerm} onChange={e => { setDriverSearchTerm(e.target.value.toUpperCase()); setFormData({...formData, driver_name: e.target.value}); setActiveDropdown('driver'); }} onFocus={() => setActiveDropdown('driver')} data-testid="input-driver-name" />
+                              <User size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" />
+                              {activeDropdown === 'driver' && filteredDrivers.length > 0 && (
+                                  <div className="absolute z-[100] left-0 right-0 mt-1 bg-white border border-gray-200 rounded-xl shadow-xl max-h-48 overflow-y-auto ring-1 ring-black/5">
+                                      {filteredDrivers.map((d, i) => (<button key={i} type="button" onClick={() => handleDriverSelect(d)} className={DROPDOWN_ITEM_CLASS}>{d.name}</button>))}
+                                  </div>
+                              )}
+                          </div>
+                      </div>
+                      <div className="relative">
+                          <label className={LABEL_CLASS}>Telefone Motorista</label>
+                          <div className="relative">
+                              <input type="text" className={INPUT_CLASS} placeholder="(00) 00000-0000" value={formData.driver_phone} onChange={e => setFormData({...formData, driver_phone: e.target.value})} data-testid="input-driver-phone" />
+                              <Phone size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+                          </div>
+                      </div>
+                  </div>
+
+                  {!showSecondVehicle && (
+                      <div className="flex justify-center">
+                          <button type="button" onClick={() => setShowSecondVehicle(true)} className="flex items-center gap-2 px-4 py-2 bg-blue-50 text-blue-700 border border-blue-200 rounded-lg text-[11px] font-black uppercase tracking-wider hover:bg-blue-100 transition-all active:scale-95" data-testid="button-add-vehicle-2"><Plus size={14} /> Adicionar 2° Veículo</button>
+                      </div>
+                  )}
+                  {showSecondVehicle && (
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 p-4 bg-blue-50/50 rounded-xl border border-blue-100 relative">
+                          <button type="button" onClick={() => { setShowSecondVehicle(false); setFormData(prev => ({ ...prev, clientVehicleId2: '', clientVehiclePlate2: '', clientVehicleModel2: '', driver_name_2: '', driver_phone_2: '' })); setVehicleSearchTerm2(''); }} className="absolute top-2 right-2 p-1 bg-white rounded-full border border-gray-200 text-gray-400 hover:text-red-600 transition-all" data-testid="button-remove-vehicle-2"><X size={14} /></button>
+                          <div className="col-span-full"><span className="text-[10px] font-black text-blue-600 uppercase tracking-widest flex items-center gap-1.5"><Truck size={12} /> 2° Veículo de Carga</span></div>
+                          <div className="relative">
+                              <label className={LABEL_CLASS}>Placa 2° Veículo</label>
+                              <div className="flex gap-1.5">
+                                  <div className="relative flex-1">
+                                      <input type="text" className={INPUT_CLASS} placeholder="Buscar veículo..." value={vehicleSearchTerm2} onChange={e => { setVehicleSearchTerm2(e.target.value.toUpperCase()); setActiveDropdown('vehicle2'); }} onFocus={() => formData.client && setActiveDropdown('vehicle2')} data-testid="input-vehicle-2" />
+                                      <Truck size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-blue-400 pointer-events-none" />
+                                      {activeDropdown === 'vehicle2' && formData.client && filteredVehicles2.length > 0 && (
+                                          <div className="absolute z-[100] left-0 right-0 mt-1 bg-white border border-gray-200 rounded-xl shadow-xl max-h-48 overflow-y-auto ring-1 ring-black/5">
+                                              {filteredVehicles2.map(v => (<button key={v.id} type="button" onClick={() => handleVehicleSelect2(v)} className={DROPDOWN_ITEM_CLASS}>{v.plate} ({v.model})</button>))}
+                                          </div>
+                                      )}
+                                  </div>
+                                  <button type="button" onClick={() => setIsVehicleModalOpen(true)} className="p-2.5 bg-gray-100 text-gray-600 border border-gray-200 rounded-lg hover:bg-gray-200 transition-all shadow-sm active:scale-95 disabled:opacity-50"><Plus size={18} /></button>
+                              </div>
+                          </div>
+                          <div className="relative"><label className={LABEL_CLASS}>Motorista 2° Veículo</label><div className="relative"><input type="text" className={INPUT_CLASS} placeholder="Nome do 2° condutor..." value={formData.driver_name_2} onChange={e => setFormData({...formData, driver_name_2: e.target.value.toUpperCase()})} data-testid="input-driver-name-2" /><User size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-blue-400" /></div></div>
+                          <div className="relative"><label className={LABEL_CLASS}>Telefone 2° Motorista</label><div className="relative"><input type="text" className={INPUT_CLASS} placeholder="(00) 00000-0000" value={formData.driver_phone_2} onChange={e => setFormData({...formData, driver_phone_2: e.target.value})} data-testid="input-driver-phone-2" /><Phone size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-blue-400 pointer-events-none" /></div></div>
+                      </div>
+                  )}
+              </div>
+              )}
+
+              {/* ETAPA 4 - FORNECEDOR */}
+              {canShowStep4 && (
+              <div className="p-6 space-y-4 animate-in slide-in-from-top-2">
+                  {STEP_HEADER(4, 'Fornecedor (Parceiro de Escolta)', <Briefcase size={16} className={stepComplete.step4 ? 'text-green-600' : 'text-red-600'} />, stepComplete.step4, !stepComplete.step4)}
+
+                  {iblWarning && (
+                      <div className="bg-red-600 text-white px-4 py-2 rounded-lg text-xs font-bold uppercase flex items-center justify-center gap-2 shadow-lg animate-pulse">
+                          <ShieldAlert size={16} /> {iblWarning}
+                      </div>
+                  )}
+
+                  {isCommercialUser ? (
+                      <div className="flex items-center gap-2 px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl text-sm font-bold text-gray-500">
+                          <Briefcase size={16} className="text-gray-400" />
+                          {formData.provider || 'Definido pela equipe operacional'}
+                      </div>
+                  ) : (
+                  <div className="space-y-3">
+                      <div className="flex gap-2">
+                          <div className="relative flex-1">
+                              <input type="text" className={INPUT_CLASS} placeholder="Filtrar Fornecedor..." value={providerSearchTerm} onChange={e => { setProviderSearchTerm(e.target.value); setProviderPending(false); setActiveDropdown('provider'); }} onFocus={() => setActiveDropdown('provider')} data-testid="input-provider" />
+                              <Briefcase size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+                              <ChevronDown size={16} className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+                              {activeDropdown === 'provider' && (
+                                  <div className="absolute z-[100] left-0 right-0 mt-1 bg-white border border-gray-200 rounded-xl shadow-2xl max-h-48 overflow-y-auto ring-1 ring-black/5">
+                                      {filteredProviders.map(p => (
+                                          <button key={p.id} type="button" onClick={() => handleProviderSelection(p.name)} className={DROPDOWN_ITEM_CLASS}>
+                                              <span className="flex items-center gap-2"><Shield size={14} className="text-red-500" />{formatProviderName(p.name, p.trading_name)}</span>
+                                          </button>
+                                      ))}
+                                  </div>
+                              )}
+                          </div>
+                          <button type="button" onClick={() => setIsProviderModalOpen(true)} className="p-3 bg-gray-100 text-gray-600 rounded-lg hover:bg-gray-200 transition-all shadow-sm active:scale-95" data-testid="button-add-provider"><Plus size={20} /></button>
+                      </div>
+
+                      {!formData.provider && !providerPending && (
+                          <button type="button" onClick={() => { setProviderPending(true); showNotification('Fornecedor', 'Prosseguindo sem fornecedor. Você poderá atribuir posteriormente.', 'info'); }} className="w-full py-3 bg-amber-50 text-amber-700 border-2 border-amber-300 rounded-xl text-[11px] font-black uppercase tracking-widest hover:bg-amber-100 transition-all flex items-center justify-center gap-2 active:scale-[0.98]" data-testid="button-provider-pending">
+                              <Clock size={16} />
+                              AGUARDANDO INFORMAÇÃO — PULAR ETAPA
+                          </button>
+                      )}
+
+                      {providerPending && !formData.provider && (
+                          <div className="flex items-center gap-2 px-4 py-2.5 bg-amber-50 border border-amber-200 rounded-xl">
+                              <Clock size={14} className="text-amber-600" />
+                              <span className="text-[10px] font-black text-amber-700 uppercase tracking-wider">Fornecedor pendente — será definido depois</span>
+                              <button type="button" onClick={() => setProviderPending(false)} className="ml-auto text-amber-500 hover:text-amber-700"><X size={14}/></button>
+                          </div>
+                      )}
+                  </div>
+                  )}
+              </div>
+              )}
+
+              {/* ETAPA 5 - ROTA (ORIGEM x DESTINO) */}
+              {canShowStep5 && (
+              <div className="p-6 space-y-4 animate-in slide-in-from-top-2">
+                  {STEP_HEADER(5, 'Rota (Origem x Destino)', <Navigation size={16} className={stepComplete.step5 ? 'text-green-600' : 'text-red-600'} />, stepComplete.step5, !stepComplete.step5)}
+
+                  {clientRoutes.length > 0 ? (
+                      <div className="space-y-3">
+                          <label className={LABEL_CLASS}>Selecionar Rota Cadastrada</label>
+                          <div className="flex gap-2">
+                              <div className="relative flex-1">
+                                  <input type="text" className={INPUT_CLASS} placeholder="Buscar rota (Ex: PERUS)..." value={routeSearchTerm} onChange={e => { setRouteSearchTerm(e.target.value); setActiveDropdown('route'); }} onFocus={() => setActiveDropdown('route')} data-testid="input-route-search" />
+                                  <Navigation size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-red-600 opacity-50 pointer-events-none" />
+                                  {activeDropdown === 'route' && filteredRoutes.length > 0 && (
+                                      <div className="absolute z-[100] left-0 right-0 mt-1 bg-white border border-gray-200 rounded-xl shadow-xl max-h-64 overflow-y-auto ring-1 ring-black/5">
+                                          {filteredRoutes.map(r => (
+                                              <div key={r.id} onClick={() => handleRouteSelect(r)} className="p-3 border-b border-gray-50 hover:bg-red-50 cursor-pointer transition-colors group" data-testid={`option-route-${r.id}`}>
+                                                  <p className="font-bold text-xs text-gray-800 uppercase group-hover:text-red-700">{r.name}</p>
+                                                  <p className="text-[10px] text-gray-400 font-medium uppercase mt-0.5">{r.origin.split(',')[0]} x {r.destination.split(',')[0]} | {r.distance} KM</p>
+                                              </div>
                                           ))}
                                       </div>
                                   )}
                               </div>
-                              <button type="button" disabled={!formData.client} onClick={() => setIsVehicleModalOpen(true)} className="p-2.5 bg-gray-100 text-gray-600 border border-gray-200 rounded-lg hover:bg-gray-200 transition-all shadow-sm active:scale-95 disabled:opacity-50"><Plus size={18} /></button>
+                              <button type="button" onClick={() => setIsRouteModalOpen(true)} className="p-3 bg-red-700 text-white rounded-lg hover:bg-red-800 transition-all shadow-md active:scale-95" data-testid="button-add-route"><Plus size={20} /></button>
                           </div>
                       </div>
+                  ) : (
+                      <div className="space-y-3">
+                          <div className="p-4 bg-gray-50 border border-gray-200 rounded-xl text-center">
+                              <p className="text-xs text-gray-500 font-bold uppercase mb-2">Nenhuma rota cadastrada para este cliente</p>
+                              <button type="button" onClick={() => setIsRouteModalOpen(true)} className="px-6 py-2.5 bg-red-700 text-white rounded-lg text-[11px] font-black uppercase tracking-wider hover:bg-red-800 transition-all shadow-md active:scale-95 flex items-center gap-2 mx-auto" data-testid="button-create-first-route">
+                                  <Plus size={16} /> Cadastrar Nova Rota
+                              </button>
+                          </div>
+                      </div>
+                  )}
 
-                      <div className="relative">
-                          <label className={LABEL_CLASS}>Motorista do 2° Veículo</label>
-                          <div className="relative">
-                              <input type="text" className={INPUT_CLASS} placeholder="Nome do 2° condutor..." value={formData.driver_name_2} onChange={e => setFormData({...formData, driver_name_2: e.target.value.toUpperCase()})} data-testid="input-driver-name-2" />
-                              <User size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-blue-400" />
+                  {selectedRouteId && (
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-3">
+                          <div className="space-y-3">
+                              <div className="relative"><label className={LABEL_CLASS}>Origem (Ponto A)</label><input type="text" readOnly className={`${INPUT_CLASS} bg-gray-50 font-black uppercase`} value={formData.origin} /><MapPin size={18} className="absolute left-4 bottom-3 text-gray-300 pointer-events-none" /></div>
+                              <div className="relative"><label className={LABEL_CLASS}>Destino (Ponto B)</label><input type="text" readOnly className={`${INPUT_CLASS} bg-gray-50 font-black uppercase`} value={formData.destination} /><Flag size={18} className="absolute left-4 bottom-3 text-gray-300 pointer-events-none" /></div>
+                          </div>
+                          <div className="bg-gray-900 rounded-2xl p-6 text-white flex flex-col justify-center items-center relative overflow-hidden group border border-gray-800 shadow-lg">
+                              <div className="absolute top-0 right-0 p-4 opacity-5 group-hover:scale-110 transition-transform"><Ruler size={100}/></div>
+                              <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2">Distância Prevista</p>
+                              <div className="flex items-baseline gap-1"><span className="text-4xl font-black">{formData.totalDistance || '-'}</span><span className="text-sm font-bold text-gray-500">KM</span></div>
+                              {isCalculating && <Loader2 size={16} className="animate-spin text-red-500 mt-4"/>}
                           </div>
                       </div>
+                  )}
 
-                      <div className="relative">
-                          <label className={LABEL_CLASS}>Telefone do 2° Motorista</label>
-                          <div className="relative">
-                              <input type="text" className={INPUT_CLASS} placeholder="(00) 00000-0000" value={formData.driver_phone_2} onChange={e => setFormData({...formData, driver_phone_2: e.target.value})} data-testid="input-driver-phone-2" />
-                              <Phone size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-blue-400 pointer-events-none" />
-                          </div>
-                      </div>
-                  </div>
+                  {calcDetails && (<div className="flex items-center gap-2 p-3 bg-blue-50 text-blue-700 rounded-lg text-[10px] font-black uppercase tracking-tight border border-blue-100 shadow-sm"><Info size={14} className="shrink-0"/> {calcDetails}</div>)}
+              </div>
               )}
 
-              <div className="relative"><label className={LABEL_CLASS}>3. Selecione a Rota Cadastrada *</label><div className="flex gap-2"><div className="relative flex-1"><input type="text" required className={INPUT_CLASS} placeholder={formData.client ? "Buscar rota (Ex: PERUS)..." : "Aguardando Cliente..."} value={routeSearchTerm} onChange={e => { setRouteSearchTerm(e.target.value); setActiveDropdown('route'); }} onFocus={() => formData.client && setActiveDropdown('route')} disabled={!formData.client} /><Navigation size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-red-600 opacity-50 pointer-events-none" />{activeDropdown === 'route' && formData.client && filteredRoutes.length > 0 && (<div className="absolute z-[100] left-0 right-0 mt-1 bg-white border border-gray-200 rounded-xl shadow-xl max-h-64 overflow-y-auto ring-1 ring-black/5">{filteredRoutes.map(r => (<div key={r.id} onClick={() => handleRouteSelect(r)} className="p-3 border-b border-gray-50 hover:bg-red-50 cursor-pointer transition-colors group"><p className="font-bold text-xs text-gray-800 uppercase group-hover:text-red-700">{r.name}</p><p className="text-[10px] text-gray-400 font-medium uppercase mt-0.5">{r.origin.split(',')[0]} x {r.destination.split(',')[0]} | {r.distance} KM</p></div>))}</div>)}</div><button type="button" disabled={!formData.client} onClick={() => setIsRouteModalOpen(true)} className="p-3 bg-red-700 text-white rounded-lg hover:bg-red-800 transition-all shadow-md active:scale-95 disabled:opacity-50"><Plus size={20} /></button></div></div>
-
-              {calcDetails && (<div className="flex items-center gap-2 p-3 bg-blue-50 text-blue-700 rounded-lg text-[10px] font-black uppercase tracking-tight border border-blue-100 shadow-sm"><Info size={14} className="shrink-0"/> {calcDetails}</div>)}
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6"><div className="space-y-4"><div className="relative"><label className={LABEL_CLASS}>Origem (Ponto A)</label><input type="text" readOnly className={`${INPUT_CLASS} bg-gray-50 font-black uppercase font-medium`} value={formData.origin} /><MapPin size={18} className="absolute left-4 bottom-3 text-gray-300 pointer-events-none" /></div><div className="relative"><label className={LABEL_CLASS}>Destino (Ponto B)</label><input type="text" readOnly className={`${INPUT_CLASS} bg-gray-50 font-black uppercase font-medium`} value={formData.destination} /><Flag size={18} className="absolute left-4 bottom-3 text-gray-300 pointer-events-none" /></div></div><div className="bg-gray-900 rounded-2xl p-6 text-white flex flex-col justify-center items-center relative overflow-hidden group border border-gray-800 shadow-lg"><div className="absolute top-0 right-0 p-4 opacity-5 group-hover:scale-110 transition-transform"><Ruler size={100}/></div><p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2">Distância Prevista</p><div className="flex items-baseline gap-1"><span className="text-4xl font-black">{formData.totalDistance || '-'}</span><span className="text-sm font-bold text-gray-500">KM</span></div>{isCalculating && <Loader2 size={16} className="animate-spin text-red-500 mt-4"/>}</div></div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 p-6 bg-gray-50 rounded-2xl border border-gray-200">
-                  <div className="space-y-4">
-                      <div className="flex flex-col gap-3">
-                          <label className={LABEL_CLASS}>Regras Específicas de Faturamento</label>
-                          <div className="flex flex-wrap gap-2">
-                              {!isVtcClient && (
-                                <label className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border-2 cursor-pointer transition-all ${formData.applyVtc02h ? 'bg-blue-600 border-blue-600 text-white shadow-md' : 'bg-white border-gray-200 text-gray-500 hover:border-gray-300'}`}>
-                                    <input type="checkbox" className="hidden" checked={formData.applyVtc02h} onChange={e => {
-                                        const checked = e.target.checked;
-                                        setFormData(prev => ({ ...prev, applyVtc02h: checked }));
-                                        const route = clientRoutes.find(r => r.id.toString() === selectedRouteId);
-                                        if (route) calculatePricing(route, undefined, manualRevenueTableId, '', { ceva200km: formData.applyCeva200km, vtc02h: checked, isSameOs: formData.isSameOs });
-                                    }} />
-                                    <Clock size={14} className={formData.applyVtc02h ? 'text-white' : 'text-gray-400'} />
-                                    <span className="text-[10px] font-black uppercase tracking-wider">Regra 02 Horas (VTC)</span>
-                                </label>
-                              )}
-                              <label className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border-2 cursor-pointer transition-all ${formData.applyCeva200km ? 'bg-orange-600 border-orange-600 text-white shadow-md' : 'bg-white border-gray-200 text-gray-500 hover:border-gray-300'}`}>
-                                  <input type="checkbox" className="hidden" checked={formData.applyCeva200km} onChange={e => {
-                                      const checked = e.target.checked;
-                                      setFormData(prev => ({ ...prev, applyCeva200km: checked }));
-                                      const route = clientRoutes.find(r => r.id.toString() === selectedRouteId);
-                                      if (route) calculatePricing(route, undefined, manualRevenueTableId, '', { ceva200km: checked, vtc02h: formData.applyVtc02h, isSameOs: formData.isSameOs });
-                                  }} />
-                                  <TrendingUp size={14} className={formData.applyCeva200km ? 'text-white' : 'text-gray-400'} />
-                                  <span className="text-[10px] font-black uppercase tracking-wider">Regra 200KM</span>
-                              </label>
-                          </div>
-                      </div>
-                      <div><label className={LABEL_CLASS}>Confirmar Tabela de Faturamento (Cliente)</label><div className="relative"><select className={SELECT_CLASS} value={manualRevenueTableId} onChange={e => handleManualTableChange('rev', e.target.value)} disabled={!selectedRouteId}><option value="">Aguardando rota...</option>{clientPriceTables.map(t => ( <option key={t.id} value={t.id}> {t.operation_type} {canViewFinancials ? `(Base: R$${t.activation_fee})` : ''} </option> ))}</select><Tag size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-green-500 opacity-50 pointer-events-none" /><ChevronDown size={16} className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" /></div></div>
-                  </div>
-                  <div className="space-y-4 flex flex-col justify-end">
-                      <div><label className={LABEL_CLASS}>Confirmar Tabela de Custo (Fornecedor)</label><div className="relative"><select className={SELECT_CLASS} value={manualCostTableId} onChange={e => handleManualTableChange('cst', e.target.value)} disabled={!selectedRouteId || !formData.provider || formData.isSameOs}><option value="">{formData.isSameOs ? 'CUSTO ZERADO (MESMA OS)' : formData.provider ? 'Selecione a tabela...' : 'Selecione o Fornecedor primeiro'}</option>{providerCostTables.map(t => ( <option key={t.id} value={t.id}> {t.operation_type} {canViewFinancials ? `(Base: R$${t.activation_cost})` : ''} </option> ))}</select><Tag size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-red-500 opacity-50 pointer-events-none" /><ChevronDown size={16} className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" /></div></div>
-                  </div>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-6 pt-4 border-t border-gray-100">
-                  <div className="bg-gray-50 p-4 rounded-xl border border-gray-200">
-                      <label className={LABEL_CLASS}>Pedágio Estimado</label>
-                      <div className="relative">
-                          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm font-bold text-gray-400">R$</span>
-                          <input 
-                            type="number" step="0.01" 
-                            className={`w-full bg-white border border-gray-200 rounded-lg py-2 pl-9 pr-10 text-lg font-black text-gray-700 outline-none focus:ring-2 focus:ring-indigo-500/20 ${isCalculatingToll ? 'opacity-50' : ''}`}
-                            value={formData.tollValue}
-                            onChange={e => setFormData({...formData, tollValue: e.target.value})}
-                            disabled={isCalculatingToll}
-                            data-testid="input-toll-value"
-                          />
-                          <span title={isCalculatingToll ? "Consultando API de pedágio..." : "Valor calculado via API de Pedágio"} className="absolute right-3 top-1/2 -translate-y-1/2">
-                              {isCalculatingToll ? <Loader2 size={16} className="text-indigo-500 animate-spin" /> : <Zap size={16} className="text-yellow-500 animate-pulse" />}
-                          </span>
-                      </div>
-                      <p className="text-[8px] text-gray-400 font-bold uppercase mt-1.5 flex items-center gap-1">
-                          <Info size={8}/>
-                          {isCalculatingToll ? 'Calculando pedágio via API...' : tollDetails ? `${tollDetails.count} praça${tollDetails.count > 1 ? 's' : ''} de pedágio na rota (Veículo leve 2 eixos)` : 'Valor preenchido via Memória Evolutiva / API Pedágio'}
-                      </p>
-                      {tollDetails && tollDetails.tolls.length > 0 && (
-                          <div className="mt-2 max-h-28 overflow-y-auto">
-                              {tollDetails.tolls.map((t: any, i: number) => (
-                                  <div key={i} className="flex items-center justify-between text-[9px] font-bold text-gray-500 py-0.5 border-b border-gray-100 last:border-0">
-                                      <span className="truncate mr-2">{t.nome}{t.concessionaria ? ` — ${t.concessionaria}` : ''}{t.rodovia ? ` (${t.rodovia})` : ''}</span>
-                                      <span className="text-gray-700 whitespace-nowrap">R$ {(t.valorDinheiro || 0).toFixed(2)}</span>
-                                  </div>
-                              ))}
-                          </div>
+              {/* ETAPA 6 - REGRAS ESPECÍFICAS */}
+              {canShowStep6 && (
+              <div className="p-6 space-y-4 animate-in slide-in-from-top-2">
+                  {STEP_HEADER(6, 'Regras Específicas do Cliente', <ShieldCheck size={16} className="text-orange-600" />, true, true)}
+                  <div className="flex flex-wrap gap-3">
+                      {!isVtcClient && (
+                          <label className={`flex items-center gap-2 px-4 py-2.5 rounded-xl border-2 cursor-pointer transition-all ${formData.applyVtc02h ? 'bg-blue-600 border-blue-600 text-white shadow-md' : 'bg-white border-gray-200 text-gray-500 hover:border-gray-300'}`}>
+                              <input type="checkbox" className="hidden" checked={formData.applyVtc02h} onChange={e => { const checked = e.target.checked; setFormData(prev => ({ ...prev, applyVtc02h: checked })); const route = clientRoutes.find(r => r.id.toString() === selectedRouteId); if (route) calculatePricing(route, undefined, manualRevenueTableId, '', { ceva200km: formData.applyCeva200km, vtc02h: checked, isSameOs: formData.isSameOs }); }} />
+                              <Clock size={16} className={formData.applyVtc02h ? 'text-white' : 'text-gray-400'} />
+                              <span className="text-[11px] font-black uppercase tracking-wider">Regra 02 Horas (VTC)</span>
+                          </label>
                       )}
-                  </div>
-
-                  <div className="md:col-span-2 relative">
-                    {/* ALERTA INTELIGENTE IBL */}
-                    {iblWarning && (
-                        <div className="absolute -top-12 left-0 right-0 bg-red-600 text-white px-4 py-2 rounded-lg text-xs font-bold uppercase flex items-center justify-center gap-2 shadow-lg animate-pulse z-10">
-                            <ShieldAlert size={16} /> {iblWarning}
-                        </div>
-                    )}
-
-                    <label className={LABEL_CLASS}>4. Fornecedor (Parceiro de Escolta)</label>
-                    {isCommercialUser ? (
-                        <div className="flex items-center gap-2 px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl text-sm font-bold text-gray-500">
-                            <Briefcase size={16} className="text-gray-400" />
-                            {formData.provider || 'Definido pela equipe operacional'}
-                        </div>
-                    ) : (
-                    <div className="flex gap-2">
-                        <div className="relative flex-1">
-                            <input
-                                type="text"
-                                className={INPUT_CLASS}
-                                placeholder="Filtrar Fornecedor..."
-                                value={providerSearchTerm}
-                                onChange={e => {
-                                    setProviderSearchTerm(e.target.value);
-                                    setActiveDropdown('provider');
-                                }}
-                                onFocus={() => setActiveDropdown('provider')}
-                            />
-                            <Briefcase size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
-                            <ChevronDown size={16} className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
-
-                            {activeDropdown === 'provider' && (
-                                <div className="absolute z-[100] left-0 right-0 mt-1 bg-white border border-gray-200 rounded-xl shadow-2xl max-h-48 overflow-y-auto ring-1 ring-black/5">
-                                    {filteredProviders.map(p => (
-                                        <button 
-                                            key={p.id} 
-                                            type="button" 
-                                            onClick={() => handleProviderSelection(p.name)} 
-                                            className={DROPDOWN_ITEM_CLASS}
-                                        >
-                                            <span className="flex items-center gap-2">
-                                                <Shield size={14} className="text-red-500" />
-                                                {formatProviderName(p.name, p.trading_name)}
-                                            </span>
-                                        </button>
-                                    ))}
-                                </div>
-                            )}
-                        </div>
-                        <button type="button" onClick={() => setIsProviderModalOpen(true)} className="p-3 bg-gray-100 text-gray-600 rounded-lg hover:bg-gray-200 transition-all shadow-sm active:scale-95"><Plus size={20} /></button>
-                    </div>
-                    )}
+                      <label className={`flex items-center gap-2 px-4 py-2.5 rounded-xl border-2 cursor-pointer transition-all ${formData.applyCeva200km ? 'bg-orange-600 border-orange-600 text-white shadow-md' : 'bg-white border-gray-200 text-gray-500 hover:border-gray-300'}`}>
+                          <input type="checkbox" className="hidden" checked={formData.applyCeva200km} onChange={e => { const checked = e.target.checked; setFormData(prev => ({ ...prev, applyCeva200km: checked })); const route = clientRoutes.find(r => r.id.toString() === selectedRouteId); if (route) calculatePricing(route, undefined, manualRevenueTableId, '', { ceva200km: checked, vtc02h: formData.applyVtc02h, isSameOs: formData.isSameOs }); }} />
+                          <TrendingUp size={16} className={formData.applyCeva200km ? 'text-white' : 'text-gray-400'} />
+                          <span className="text-[11px] font-black uppercase tracking-wider">Regra 200KM</span>
+                      </label>
                   </div>
               </div>
+              )}
 
-              {canViewFinancials && (<div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-4 border-t border-gray-100 animate-in fade-in"><div className="bg-green-50/50 p-6 rounded-2xl border border-green-100 group shadow-sm"><div className="flex items-center justify-between mb-3"><label className="text-[10px] font-black text-green-700 uppercase tracking-widest">Faturamento Previsto</label><TrendingUp size={16} className="text-green-400" /></div><div className="relative"><span className="absolute left-0 top-1/2 -translate-y-1/2 text-lg font-black text-green-400">R$</span><input type="number" step="0.01" className="w-full pl-8 bg-transparent outline-none text-2xl font-black text-green-900" placeholder="0.00" value={formData.revenueValue} onChange={e => setFormData({...formData, revenueValue: e.target.value})} /></div></div><div className={`p-6 rounded-2xl border group shadow-sm transition-all ${formData.isSameOs ? 'bg-gray-900 border-black ring-2 ring-black/10' : 'bg-red-50/50 border-red-100'}`}><div className="flex items-center justify-between mb-3"><label className={`text-[10px] font-black uppercase tracking-widest ${formData.isSameOs ? 'text-gray-400' : 'text-red-700'}`}>Custo Previsto {formData.isSameOs && '(MESMA OS)'}</label><TrendingDown size={16} className={formData.isSameOs ? 'text-gray-500' : 'text-red-400'} /></div><div className="relative"><span className={`absolute left-0 top-1/2 -translate-y-1/2 text-lg font-black ${formData.isSameOs ? 'text-slate-700' : 'text-green-400'}`}>R$</span><input type="number" step="0.01" className={`w-full pl-8 bg-transparent outline-none text-2xl font-black ${formData.isSameOs ? 'text-white cursor-not-allowed' : 'text-green-900'}`} placeholder="0.00" value={formData.isSameOs ? '0.00' : formData.costValue} onChange={e => !formData.isSameOs && setFormData({...formData, costValue: e.target.value})} readOnly={formData.isSameOs} /></div></div></div>)}
+              {/* ETAPA 7 - TABELA DE FATURAMENTO (ORIENTAÇÃO) */}
+              {canShowStep7 && (
+              <div className="p-6 space-y-4 animate-in slide-in-from-top-2">
+                  {STEP_HEADER(7, 'Tabela de Rota Apropriada', <Tag size={16} className={manualRevenueTableId ? 'text-green-600' : 'text-red-600'} />, !!manualRevenueTableId, !manualRevenueTableId)}
 
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-6"><div className="relative"><label className={LABEL_CLASS}>Tempo Estimado</label><div className="relative"><input type="text" readOnly className={`${INPUT_CLASS} bg-gray-50`} value={formData.estimatedTime} /><Clock size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-300 pointer-events-none" /></div></div><div className="relative"><label className={LABEL_CLASS}>Data do Agendamento *</label><div className="relative"><input type="date" required className={INPUT_CLASS} value={formData.scheduledDate} onChange={e => setFormData({...formData, scheduledDate: e.target.value})} /><Calendar size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-300 pointer-events-none" /></div></div><div className="relative"><label className={LABEL_CLASS}>Horário *</label><div className="relative"><input type="time" required className={INPUT_CLASS} value={formData.scheduledTime} onChange={e => setFormData({...formData, scheduledTime: e.target.value})} /><Clock size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-300 pointer-events-none" /></div></div></div>
-              
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                <div className="relative">
-                  <label className={LABEL_CLASS}>KM Inicial</label>
-                  <div className="relative">
-                      <input 
-                          type="text" 
-                          inputMode="decimal"
-                          className={INPUT_CLASS} 
-                          value={formData.startKm} 
-                          onChange={e => handleKmInput(e.target.value)} 
-                          placeholder="0.0"
-                      />
-                      <Navigation size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-300 pointer-events-none" />
+                  <div className="p-4 bg-amber-50 border border-amber-200 rounded-xl space-y-2">
+                      <div className="flex items-start gap-2">
+                          <AlertCircle size={16} className="text-amber-600 shrink-0 mt-0.5" />
+                          <div className="text-[10px] font-bold text-amber-800 space-y-1">
+                              <p>ATENÇÃO OPERADOR: Verifique antes de confirmar:</p>
+                              <ul className="list-disc list-inside space-y-0.5 text-amber-700">
+                                  <li>A operação é <strong>{formData.missionType === 'Velada' ? 'VELADA' : 'CARACTERIZADA'}</strong> — selecione a tabela correspondente</li>
+                                  <li>Distância real da viagem: <strong>{formData.totalDistance || '?'} KM</strong> — verifique a franquia (100, 200 KM, etc.)</li>
+                                  {formData.provider && <li>Fornecedor: <strong>{formData.provider}</strong> — verifique particularidades (Logitech, etc.)</li>}
+                                  {(formData.applyCeva200km || formData.applyVtc02h) && <li className="text-red-700 font-black">Regra especial ativa: {formData.applyVtc02h ? '02 HORAS (VTC)' : '200KM'}</li>}
+                              </ul>
+                          </div>
+                      </div>
                   </div>
-                </div>
-              </div>
 
-              <div className="pt-6 border-t border-gray-100 space-y-4">
-                <div>
-                    <div className="flex items-center gap-2 mb-3">
-                        <Paperclip size={16} className="text-gray-500" />
-                        <span className={LABEL_CLASS + " mb-0"}>Evidência da Solicitação (Print / Imagem)</span>
-                    </div>
-                    <div 
-                        className="border-2 border-dashed border-gray-200 rounded-xl p-4 bg-gray-50/50 hover:border-red-300 hover:bg-red-50/20 transition-all cursor-pointer"
-                        onClick={() => fileInputRef.current?.click()}
-                        data-testid="evidence-drop-zone"
-                    >
-                        <input 
-                            ref={fileInputRef} 
-                            type="file" 
-                            accept="image/*" 
-                            multiple 
-                            className="hidden" 
-                            onChange={handleEvidenceFileSelect} 
-                        />
-                        <div className="flex flex-col items-center gap-2 text-gray-400">
-                            <div className="flex items-center gap-3">
-                                <Image size={20} />
-                                <span className="text-xs font-bold uppercase">Clique para selecionar ou use Ctrl+V para colar um print</span>
-                                <Clipboard size={16} />
-                            </div>
-                            <span className="text-[10px] text-gray-300">PNG, JPG — Evidencie que o cliente solicitou esta demanda</span>
-                        </div>
-                    </div>
-                    {evidenceFiles.length > 0 && (
-                        <div className="mt-3 grid grid-cols-2 md:grid-cols-4 gap-3">
-                            {evidenceFiles.map((ev, idx) => (
-                                <div key={idx} className="relative group rounded-lg overflow-hidden border border-gray-200 shadow-sm cursor-pointer" onClick={() => setExpandedEvidence(ev.preview)} data-testid={`evidence-thumbnail-${idx}`}>
-                                    <img src={ev.preview} alt={`Evidência ${idx + 1}`} className="w-full h-32 object-cover" />
-                                    <button 
-                                        type="button"
-                                        onClick={(e) => { e.stopPropagation(); removeEvidence(idx); }}
-                                        className="absolute top-1 right-1 p-1 bg-red-600 text-white rounded-full opacity-0 group-hover:opacity-100 transition-opacity shadow-lg"
-                                        data-testid={`button-remove-evidence-${idx}`}
-                                    >
-                                        <Trash2 size={12} />
-                                    </button>
-                                    <div className="absolute bottom-0 left-0 right-0 bg-black/60 px-2 py-1 flex items-center justify-between">
-                                        <span className="text-[9px] text-white font-bold">EVIDÊNCIA {idx + 1}</span>
-                                        <span className="text-[8px] text-white/70">Clique para ampliar</span>
-                                    </div>
-                                </div>
-                            ))}
-                        </div>
-                    )}
-                    {expandedEvidence && (
-                        <div className="fixed inset-0 z-[200] bg-black/90 flex items-center justify-center p-4 animate-in fade-in" onClick={() => setExpandedEvidence(null)} data-testid="evidence-fullscreen-modal">
-                            <button type="button" onClick={() => setExpandedEvidence(null)} className="absolute top-4 right-4 p-2 bg-white/10 hover:bg-white/20 text-white rounded-full transition-all z-10" data-testid="button-close-evidence">
-                                <X size={24} />
-                            </button>
-                            <img src={expandedEvidence} alt="Evidência ampliada" className="max-w-full max-h-full object-contain rounded-lg shadow-2xl" onClick={(e) => e.stopPropagation()} />
-                        </div>
-                    )}
-                </div>
-                <div className="flex justify-end gap-3"><button type="button" onClick={onBack} className="px-8 py-3 bg-white text-gray-500 rounded-xl font-bold uppercase text-xs hover:bg-gray-100 border border-gray-200 transition-all">Cancelar</button><button type="submit" disabled={isSaving} className="px-10 py-3 bg-orange-500 text-black rounded-xl font-black uppercase text-sm shadow-lg hover:bg-orange-600 flex items-center gap-2 transition-all active:scale-95">{isSaving ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />} Gerar Ordem de Serviço</button></div>
+                  {tableGuidance && (
+                      <div className="p-3 bg-red-50 border border-red-200 rounded-xl">
+                          {tableGuidance.map((tip, i) => (
+                              <div key={i} className="flex items-start gap-2 text-[10px] font-bold text-red-700">
+                                  <ShieldAlert size={12} className="shrink-0 mt-0.5" />
+                                  <span>{tip}</span>
+                              </div>
+                          ))}
+                      </div>
+                  )}
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div>
+                          <label className={LABEL_CLASS}>Tabela de Faturamento (Cliente)</label>
+                          <div className="relative">
+                              <select className={SELECT_CLASS} value={manualRevenueTableId} onChange={e => handleManualTableChange('rev', e.target.value)} data-testid="select-revenue-table">
+                                  <option value="">Selecione a tabela...</option>
+                                  {clientPriceTables.map(t => (<option key={t.id} value={t.id}>{t.operation_type} {canViewFinancials ? `(Base: R$${t.activation_fee})` : ''}</option>))}
+                              </select>
+                              <Tag size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-green-500 opacity-50 pointer-events-none" />
+                              <ChevronDown size={16} className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+                          </div>
+                      </div>
+                      <div>
+                          <label className={LABEL_CLASS}>Tabela de Custo (Fornecedor)</label>
+                          <div className="relative">
+                              <select className={SELECT_CLASS} value={manualCostTableId} onChange={e => handleManualTableChange('cst', e.target.value)} disabled={!formData.provider || formData.isSameOs} data-testid="select-cost-table">
+                                  <option value="">{formData.isSameOs ? 'CUSTO ZERADO (MESMA OS)' : formData.provider ? 'Selecione a tabela...' : providerPending ? 'FORNECEDOR PENDENTE' : 'Selecione o Fornecedor primeiro'}</option>
+                                  {providerCostTables.map(t => (<option key={t.id} value={t.id}>{t.operation_type} {canViewFinancials ? `(Base: R$${t.activation_cost})` : ''}</option>))}
+                              </select>
+                              <Tag size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-red-500 opacity-50 pointer-events-none" />
+                              <ChevronDown size={16} className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+                          </div>
+                      </div>
+                  </div>
               </div>
+              )}
+
+              {/* SEÇÕES FINAIS - PEDÁGIO, FINANCEIRO, AGENDAMENTO */}
+              {canShowStep7 && (
+              <div className="p-6 space-y-6">
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                      <div className="bg-gray-50 p-4 rounded-xl border border-gray-200">
+                          <label className={LABEL_CLASS}>Pedágio Estimado</label>
+                          <div className="relative">
+                              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm font-bold text-gray-400">R$</span>
+                              <input type="number" step="0.01" className={`w-full bg-white border border-gray-200 rounded-lg py-2 pl-9 pr-10 text-lg font-black text-gray-700 outline-none focus:ring-2 focus:ring-indigo-500/20 ${isCalculatingToll ? 'opacity-50' : ''}`} value={formData.tollValue} onChange={e => setFormData({...formData, tollValue: e.target.value})} disabled={isCalculatingToll} data-testid="input-toll-value" />
+                              <span title={isCalculatingToll ? "Consultando API de pedágio..." : "Valor calculado via API de Pedágio"} className="absolute right-3 top-1/2 -translate-y-1/2">
+                                  {isCalculatingToll ? <Loader2 size={16} className="text-indigo-500 animate-spin" /> : <Zap size={16} className="text-yellow-500 animate-pulse" />}
+                              </span>
+                          </div>
+                          <p className="text-[8px] text-gray-400 font-bold uppercase mt-1.5 flex items-center gap-1">
+                              <Info size={8}/>
+                              {isCalculatingToll ? 'Calculando pedágio via API...' : tollDetails ? `${tollDetails.count} praça${tollDetails.count > 1 ? 's' : ''} de pedágio na rota (Veículo leve 2 eixos)` : 'Valor preenchido via Memória Evolutiva / API Pedágio'}
+                          </p>
+                          {tollDetails && tollDetails.tolls.length > 0 && (
+                              <div className="mt-2 max-h-28 overflow-y-auto">
+                                  {tollDetails.tolls.map((t: any, i: number) => (
+                                      <div key={i} className="flex items-center justify-between text-[9px] font-bold text-gray-500 py-0.5 border-b border-gray-100 last:border-0">
+                                          <span className="truncate mr-2">{t.nome}{t.concessionaria ? ` — ${t.concessionaria}` : ''}{t.rodovia ? ` (${t.rodovia})` : ''}</span>
+                                          <span className="text-gray-700 whitespace-nowrap">R$ {(t.valorDinheiro || 0).toFixed(2)}</span>
+                                      </div>
+                                  ))}
+                              </div>
+                          )}
+                      </div>
+                      <div className="relative"><label className={LABEL_CLASS}>Tempo Estimado</label><div className="relative"><input type="text" readOnly className={`${INPUT_CLASS} bg-gray-50`} value={formData.estimatedTime} /><Clock size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-300 pointer-events-none" /></div></div>
+                      <div className="relative"><label className={LABEL_CLASS}>KM Inicial</label><div className="relative"><input type="text" inputMode="decimal" className={INPUT_CLASS} value={formData.startKm} onChange={e => handleKmInput(e.target.value)} placeholder="0.0" data-testid="input-start-km" /><Navigation size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-300 pointer-events-none" /></div></div>
+                  </div>
+
+                  {canViewFinancials && (
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 animate-in fade-in">
+                          <div className="bg-green-50/50 p-6 rounded-2xl border border-green-100 group shadow-sm">
+                              <div className="flex items-center justify-between mb-3"><label className="text-[10px] font-black text-green-700 uppercase tracking-widest">Faturamento Previsto</label><TrendingUp size={16} className="text-green-400" /></div>
+                              <div className="relative"><span className="absolute left-0 top-1/2 -translate-y-1/2 text-lg font-black text-green-400">R$</span><input type="number" step="0.01" className="w-full pl-8 bg-transparent outline-none text-2xl font-black text-green-900" placeholder="0.00" value={formData.revenueValue} onChange={e => setFormData({...formData, revenueValue: e.target.value})} data-testid="input-revenue" /></div>
+                          </div>
+                          <div className={`p-6 rounded-2xl border group shadow-sm transition-all ${formData.isSameOs ? 'bg-gray-900 border-black ring-2 ring-black/10' : 'bg-red-50/50 border-red-100'}`}>
+                              <div className="flex items-center justify-between mb-3"><label className={`text-[10px] font-black uppercase tracking-widest ${formData.isSameOs ? 'text-gray-400' : 'text-red-700'}`}>Custo Previsto {formData.isSameOs && '(MESMA OS)'}</label><TrendingDown size={16} className={formData.isSameOs ? 'text-gray-500' : 'text-red-400'} /></div>
+                              <div className="relative"><span className={`absolute left-0 top-1/2 -translate-y-1/2 text-lg font-black ${formData.isSameOs ? 'text-slate-700' : 'text-green-400'}`}>R$</span><input type="number" step="0.01" className={`w-full pl-8 bg-transparent outline-none text-2xl font-black ${formData.isSameOs ? 'text-white cursor-not-allowed' : 'text-green-900'}`} placeholder="0.00" value={formData.isSameOs ? '0.00' : formData.costValue} onChange={e => !formData.isSameOs && setFormData({...formData, costValue: e.target.value})} readOnly={formData.isSameOs} data-testid="input-cost" /></div>
+                          </div>
+                      </div>
+                  )}
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                      <div className="relative"><label className={LABEL_CLASS}>Data do Agendamento *</label><div className="relative"><input type="date" required className={INPUT_CLASS} value={formData.scheduledDate} onChange={e => setFormData({...formData, scheduledDate: e.target.value})} data-testid="input-scheduled-date" /><Calendar size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-300 pointer-events-none" /></div></div>
+                      <div className="relative"><label className={LABEL_CLASS}>Horário *</label><div className="relative"><input type="time" required className={INPUT_CLASS} value={formData.scheduledTime} onChange={e => setFormData({...formData, scheduledTime: e.target.value})} data-testid="input-scheduled-time" /><Clock size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-300 pointer-events-none" /></div></div>
+                  </div>
+
+                  <div className="pt-4 border-t border-gray-100 space-y-4">
+                      <div>
+                          <div className="flex items-center gap-2 mb-3">
+                              <Paperclip size={16} className="text-gray-500" />
+                              <span className={LABEL_CLASS + " mb-0"}>Evidência da Solicitação (Print / Imagem)</span>
+                          </div>
+                          <div className="border-2 border-dashed border-gray-200 rounded-xl p-4 bg-gray-50/50 hover:border-red-300 hover:bg-red-50/20 transition-all cursor-pointer" onClick={() => fileInputRef.current?.click()} data-testid="evidence-drop-zone">
+                              <input ref={fileInputRef} type="file" accept="image/*" multiple className="hidden" onChange={handleEvidenceFileSelect} />
+                              <div className="flex flex-col items-center gap-2 text-gray-400">
+                                  <div className="flex items-center gap-3"><Image size={20} /><span className="text-xs font-bold uppercase">Clique para selecionar ou use Ctrl+V para colar um print</span><Clipboard size={16} /></div>
+                                  <span className="text-[10px] text-gray-300">PNG, JPG — Evidencie que o cliente solicitou esta demanda</span>
+                              </div>
+                          </div>
+                          {evidenceFiles.length > 0 && (
+                              <div className="mt-3 grid grid-cols-2 md:grid-cols-4 gap-3">
+                                  {evidenceFiles.map((ev, idx) => (
+                                      <div key={idx} className="relative group rounded-lg overflow-hidden border border-gray-200 shadow-sm cursor-pointer" onClick={() => setExpandedEvidence(ev.preview)} data-testid={`evidence-thumbnail-${idx}`}>
+                                          <img src={ev.preview} alt={`Evidência ${idx + 1}`} className="w-full h-32 object-cover" />
+                                          <button type="button" onClick={(e) => { e.stopPropagation(); removeEvidence(idx); }} className="absolute top-1 right-1 p-1 bg-red-600 text-white rounded-full opacity-0 group-hover:opacity-100 transition-opacity shadow-lg" data-testid={`button-remove-evidence-${idx}`}><Trash2 size={12} /></button>
+                                          <div className="absolute bottom-0 left-0 right-0 bg-black/60 px-2 py-1 flex items-center justify-between"><span className="text-[9px] text-white font-bold">EVIDÊNCIA {idx + 1}</span><span className="text-[8px] text-white/70">Clique para ampliar</span></div>
+                                      </div>
+                                  ))}
+                              </div>
+                          )}
+                          {expandedEvidence && (
+                              <div className="fixed inset-0 z-[200] bg-black/90 flex items-center justify-center p-4 animate-in fade-in" onClick={() => setExpandedEvidence(null)} data-testid="evidence-fullscreen-modal">
+                                  <button type="button" onClick={() => setExpandedEvidence(null)} className="absolute top-4 right-4 p-2 bg-white/10 hover:bg-white/20 text-white rounded-full transition-all z-10" data-testid="button-close-evidence"><X size={24} /></button>
+                                  <img src={expandedEvidence} alt="Evidência ampliada" className="max-w-full max-h-full object-contain rounded-lg shadow-2xl" onClick={(e) => e.stopPropagation()} />
+                              </div>
+                          )}
+                      </div>
+                      <div className="flex justify-end gap-3">
+                          <button type="button" onClick={onBack} className="px-8 py-3 bg-white text-gray-500 rounded-xl font-bold uppercase text-xs hover:bg-gray-100 border border-gray-200 transition-all" data-testid="button-cancel">Cancelar</button>
+                          <button type="submit" disabled={isSaving} className="px-10 py-3 bg-orange-500 text-black rounded-xl font-black uppercase text-sm shadow-lg hover:bg-orange-600 flex items-center gap-2 transition-all active:scale-95" data-testid="button-submit-os">
+                              {isSaving ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />} Gerar Ordem de Serviço
+                          </button>
+                      </div>
+                  </div>
+              </div>
+              )}
           </form>
       </div>
     </div>
