@@ -2016,7 +2016,7 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
                             </div>
                         </div>
                         <div style={{ textAlign: 'center', flex: 1, padding: '0 40px' }}>
-                            <div className="sign-system" style={{ fontSize: '10px', fontWeight: 600, color: '#dc2626', textTransform: 'uppercase' as const, letterSpacing: '0.5px' }}>Documento gerado eletronicamente pelo sistema TMSEGo</div>
+                            <div className="sign-system" style={{ fontSize: '10px', fontWeight: 600, color: '#dc2626', textTransform: 'uppercase' as const, letterSpacing: '0.5px' }}>Documento gerado eletronicamente pelo GRUPO TM SEG</div>
                         </div>
                         <div className="sign-box" style={{ textAlign: 'center', width: '280px' }}>
                             <div style={{ borderTop: '1.5px solid #7f1d1d', paddingTop: '4px', marginTop: '34px' }}>
