@@ -1371,17 +1371,31 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
                                     <div className="flex items-center gap-1.5 mb-1">
                                         <p className="text-[8px] font-black text-gray-500 uppercase">Juros: 2% a.m. | Multa: 1%</p>
                                     </div>
+                                    {(() => {
+                                        const cl = clients.find(c => c.id.toString() === invoiceForm.client);
+                                        const nm = `${cl?.name || ''} ${cl?.trading_name || ''}`.toUpperCase();
+                                        let cnaeCode = '03115';
+                                        let cnaeName = 'Atividades de vigilância e segurança privada';
+                                        if (nm.includes('CEVA')) { cnaeCode = '07930'; cnaeName = 'Monitoramento e rastreamento a distância de veículos, cargas, pessoas e semoventes'; }
+                                        else if (nm.includes('AMAZON')) { cnaeCode = '06298'; cnaeName = 'Outras atividades de prestação de serviços de informação não especificadas anteriormente'; }
+                                        return (
+                                            <div className="bg-green-50 border border-green-200 rounded-lg px-2.5 py-2">
+                                                <p className="text-[8px] font-black text-green-700 uppercase mb-0.5">CNAE Fixado Automaticamente</p>
+                                                <p className="text-[11px] font-bold text-green-800">CNAE {cnaeCode} — {cnaeName}</p>
+                                            </div>
+                                        );
+                                    })()}
                                     <div>
                                         <label className="text-[8px] font-black text-gray-500 uppercase mb-0.5 block">Período / Referência</label>
-                                        <input type="text" value={asaasPeriod} onChange={e => setAsaasPeriod(e.target.value)}
-                                            className="w-full border border-gray-200 rounded-lg px-2 py-1.5 text-[10px] font-medium focus:ring-1 focus:ring-green-400 focus:border-green-400"
-                                            placeholder="Ex: 1ª Quinzena de Março/2026" data-testid="input-asaas-period"/>
+                                        <input type="text" readOnly value={asaasPeriod}
+                                            className="w-full border border-gray-200 rounded-lg px-2 py-1.5 text-[10px] font-medium bg-white cursor-not-allowed"
+                                            data-testid="display-asaas-period"/>
                                     </div>
                                     <div>
-                                        <label className="text-[8px] font-black text-gray-500 uppercase mb-0.5 block">Descrição da Cobrança</label>
-                                        <textarea value={asaasDescription} onChange={e => setAsaasDescription(e.target.value)} rows={2}
-                                            className="w-full border border-gray-200 rounded-lg px-2 py-1.5 text-[10px] font-medium focus:ring-1 focus:ring-green-400 focus:border-green-400 resize-none"
-                                            data-testid="input-asaas-description"/>
+                                        <label className="text-[8px] font-black text-gray-500 uppercase mb-0.5 block">Descrição da Cobrança (Automática)</label>
+                                        <textarea readOnly value={asaasDescription} rows={2}
+                                            className="w-full border border-gray-200 rounded-lg px-2 py-1.5 text-[10px] font-medium bg-white cursor-not-allowed resize-none"
+                                            data-testid="display-asaas-description"/>
                                     </div>
                                 </div>
 
