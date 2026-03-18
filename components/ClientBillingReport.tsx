@@ -536,15 +536,15 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
 
     const cellStyle: React.CSSProperties = {
         border: '1px solid #9ca3af',
-        padding: '1px 2px',
-        fontSize: '6.5px',
+        padding: '6px 8px',
+        fontSize: '12px',
         fontFamily: "'Segoe UI', Tahoma, Geneva, Verdana, sans-serif",
         textAlign: 'center',
         whiteSpace: 'nowrap',
         overflow: 'hidden',
         textOverflow: 'ellipsis',
         color: '#1f2937',
-        lineHeight: '1.2',
+        lineHeight: '1.4',
         WebkitPrintColorAdjust: 'exact' as any,
         printColorAdjust: 'exact' as any,
     };
@@ -554,17 +554,22 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
         ...cellStyle,
         backgroundColor: '#e5e7eb',
         fontWeight: 900,
-        fontSize: '6px',
+        fontSize: '11px',
         textTransform: 'uppercase' as const,
         color: '#000',
-        padding: '1px 1px'
+        padding: '6px 6px',
+        position: 'sticky' as const,
+        top: 0,
+        zIndex: 2,
     };
     const groupHeaderStyle: React.CSSProperties = {
         ...headerStyle,
         backgroundColor: '#d1d5db',
-        fontSize: '6.5px',
+        fontSize: '12px',
         letterSpacing: '0.3px',
-        padding: '2px 1px'
+        padding: '8px 6px',
+        top: 0,
+        zIndex: 3,
     };
 
     const bgKm = '#eef2ff';
@@ -1229,6 +1234,21 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
     return (
         <div className="space-y-6 animate-fade-in pb-20 relative">
             <style>{`
+                @media screen {
+                    #print-area .report-table-scroll thead tr.group-hdr th {
+                        position: sticky;
+                        top: 0;
+                        z-index: 3;
+                    }
+                    #print-area .report-table-scroll thead tr.sub-hdr th {
+                        position: sticky;
+                        top: 34px;
+                        z-index: 2;
+                    }
+                    #print-area .report-table-scroll tbody tr:nth-child(odd) { background-color: #ffffff; }
+                    #print-area .report-table-scroll tbody tr:nth-child(even) { background-color: #f8f9fb; }
+                    #print-area .report-table-scroll tbody tr:hover { background-color: #eef2ff !important; }
+                }
                 @media print {
                     @page {
                         size: A4 landscape;
@@ -1270,6 +1290,9 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
                     }
                     #print-area thead {
                         display: table-header-group !important;
+                    }
+                    #print-area thead th {
+                        position: static !important;
                     }
                     #print-area tbody {
                         display: table-row-group !important;
@@ -1646,47 +1669,47 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
             )}
 
             {reportGenerated && (
-                <div id="print-area" className="bg-white p-2 w-full border border-gray-200 rounded-lg" style={{ position: 'relative', overflow: 'hidden' }}>
+                <div id="print-area" className="bg-white p-4 w-full border border-gray-200 rounded-lg" style={{ position: 'relative', overflow: 'hidden' }}>
                     <div className="watermark-logo" style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', opacity: 0.04, pointerEvents: 'none', zIndex: 0, width: '400px', height: '400px' }}>
                         <img src="/logo.png" alt="" style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
                     </div>
                     <div style={{ position: 'relative', zIndex: 1 }}>
-                    <div className="boletim-header mb-2 text-center">
-                        <h1 style={{ fontSize: '13px', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '1px', margin: 0 }}>BOLETIM DE MEDIÇÃO</h1>
-                        <p className="subtitle-line" style={{ fontSize: '9px', fontWeight: 700, textTransform: 'uppercase', color: '#374151', margin: '1px 0' }}>{getPeriodLabel()}</p>
-                        <p className="ref-line" style={{ fontSize: '7px', fontWeight: 600, textTransform: 'uppercase', color: '#6b7280', margin: '1px 0' }}>REFERENTE A INTERMEDIAÇÃO DE SEGURANÇA E MONITORAMENTO DE CARGAS</p>
+                    <div className="boletim-header mb-4 text-center">
+                        <h1 style={{ fontSize: '18px', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '1px', margin: 0 }}>BOLETIM DE MEDIÇÃO</h1>
+                        <p className="subtitle-line" style={{ fontSize: '13px', fontWeight: 700, textTransform: 'uppercase', color: '#374151', margin: '4px 0' }}>{getPeriodLabel()}</p>
+                        <p className="ref-line" style={{ fontSize: '11px', fontWeight: 600, textTransform: 'uppercase', color: '#6b7280', margin: '2px 0' }}>REFERENTE A INTERMEDIAÇÃO DE SEGURANÇA E MONITORAMENTO DE CARGAS</p>
                     </div>
 
-                    <div className="report-table-scroll" style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
-                        <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed' }}>
+                    <div className="report-table-scroll" style={{ overflowX: 'auto', maxHeight: '75vh', overflowY: 'auto', WebkitOverflowScrolling: 'touch', border: '1px solid #d1d5db', borderRadius: '8px' }}>
+                        <table style={{ width: 'max-content', minWidth: '100%', borderCollapse: 'collapse', tableLayout: 'auto' }}>
                             <colgroup>
-                                <col style={{ width: '2.5%' }} />
-                                <col style={{ width: '11%' }} />
-                                <col style={{ width: '3.7%' }} />
-                                <col style={{ width: '3%' }} />
-                                <col style={{ width: '3%' }} />
-                                <col style={{ width: '3.3%' }} />
-                                <col style={{ width: '3.3%' }} />
-                                <col style={{ width: '3.7%' }} />
-                                <col style={{ width: '3%' }} />
-                                <col style={{ width: '3.8%' }} />
-                                <col style={{ width: '3.8%' }} />
-                                <col style={{ width: '3.7%' }} />
-                                <col style={{ width: '3%' }} />
-                                <col style={{ width: '3.5%' }} />
-                                <col style={{ width: '3.5%' }} />
-                                <col style={{ width: '3.5%' }} />
-                                <col style={{ width: '3%' }} />
-                                <col style={{ width: '3%' }} />
-                                <col style={{ width: '3%' }} />
-                                <col style={{ width: '2.7%' }} />
-                                <col style={{ width: '3.3%' }} />
-                                <col style={{ width: '3.7%' }} />
-                                <col style={{ width: '2.7%' }} />
-                                <col style={{ width: '3.3%' }} />
-                                <col style={{ width: '3.7%' }} />
-                                <col style={{ width: '3.5%' }} />
-                                <col style={{ width: '4.8%' }} />
+                                <col style={{ minWidth: '45px' }} />
+                                <col style={{ minWidth: '250px' }} />
+                                <col style={{ minWidth: '70px' }} />
+                                <col style={{ minWidth: '60px' }} />
+                                <col style={{ minWidth: '60px' }} />
+                                <col style={{ minWidth: '65px' }} />
+                                <col style={{ minWidth: '65px' }} />
+                                <col style={{ minWidth: '70px' }} />
+                                <col style={{ minWidth: '60px' }} />
+                                <col style={{ minWidth: '75px' }} />
+                                <col style={{ minWidth: '75px' }} />
+                                <col style={{ minWidth: '70px' }} />
+                                <col style={{ minWidth: '60px' }} />
+                                <col style={{ minWidth: '70px' }} />
+                                <col style={{ minWidth: '70px' }} />
+                                <col style={{ minWidth: '70px' }} />
+                                <col style={{ minWidth: '60px' }} />
+                                <col style={{ minWidth: '60px' }} />
+                                <col style={{ minWidth: '60px' }} />
+                                <col style={{ minWidth: '55px' }} />
+                                <col style={{ minWidth: '65px' }} />
+                                <col style={{ minWidth: '75px' }} />
+                                <col style={{ minWidth: '55px' }} />
+                                <col style={{ minWidth: '65px' }} />
+                                <col style={{ minWidth: '75px' }} />
+                                <col style={{ minWidth: '80px' }} />
+                                <col style={{ minWidth: '95px' }} />
                             </colgroup>
                             <thead>
                                 <tr className="group-hdr">
