@@ -327,22 +327,25 @@ export const calculateMissionFinancials = (
         const normalizedOriginAddr = normalize(originAddress);
         const ufCode = (originUFCode || '').toUpperCase();
 
-        const hasTypeSpecificTables = candidateTables.some(t => {
-            const op = normalize(t.operation_type || '');
-            return op.includes('VELADA') || op.includes('CARACTERIZADA');
-        });
+        const isVeladaMission = normalizedType.includes('VELADA');
+        const isCaracterizadaMission = normalizedType.includes('CARACTERIZADA');
 
         const scoredTables = candidateTables.map(t => {
             const tableOp = normalize(t.operation_type || '');
             let score = 0;
             let matchType = 'Genérico';
 
-            if (hasTypeSpecificTables && normalizedType && !tableOp.includes(normalizedType)) {
-                if (tableOp.includes('VELADA') || tableOp.includes('CARACTERIZADA')) {
-                    score -= 5000;
-                    matchType = `Tipo Incompatível`;
-                }
+            if (isVeladaMission && tableOp.includes('CARACTERIZADA') && !tableOp.includes('VELADA')) {
+                score -= 5000;
+                matchType = 'Tipo Incompatível (CARACTERIZADA)';
             }
+            if (isCaracterizadaMission && tableOp.includes('VELADA') && !tableOp.includes('CARACTERIZADA')) {
+                score -= 5000;
+                matchType = 'Tipo Incompatível (VELADA)';
+            }
+
+            if (isVeladaMission && tableOp.includes('VELADA')) { score += 2500; matchType = 'Tipo: VELADA'; }
+            if (isCaracterizadaMission && tableOp.includes('CARACTERIZADA')) { score += 2500; matchType = 'Tipo: CARACTERIZADA'; }
             
             if (agentAware && agentAware.isSpecial) {
                 const isTable02 = tableOp.includes('02 ARMADO') || tableOp.includes('02 ARMADOS') || tableOp.includes('DOIS ARMADO');
@@ -437,9 +440,20 @@ export const calculateMissionFinancials = (
                 score -= 100;
             }
 
-            if (t.franchise_km >= dist) {
+            const isFranchiseKmTable = tableOp.includes('ATE ') || tableOp.includes('ATE') || tableOp.includes('FAIXA');
+            const franchiseKm = parseFloat(t.franchise_km) || 0;
+
+            if (isFranchiseKmTable && franchiseKm > 0 && dist > 0) {
+                if (dist <= franchiseKm) {
+                    score += 600;
+                    const excess = franchiseKm - dist;
+                    score -= Math.min(excess * 0.5, 200);
+                } else {
+                    score -= 300;
+                }
+            } else if (franchiseKm >= dist) {
                 score += 50;
-            } else {
+            } else if (franchiseKm > 0) {
                 score -= 10;
             }
 

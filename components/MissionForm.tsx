@@ -347,13 +347,20 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
       return generated;
   };
 
-  const findBestTable = (tables: any[], dist: number, locationKeywords: string[], clientRuleKeyword?: string, providerName?: string, originAddress?: string) => {
+  const findBestTable = (tables: any[], dist: number, locationKeywords: string[], clientRuleKeyword?: string, providerName?: string, originAddress?: string, missionType?: string, estimatedHours?: number) => {
       if (!tables || tables.length === 0) return null;
       const normalizedTables = tables.map(t => ({ ...t, normOp: normalizeStr(t.operation_type || '') }));
+      const opType = normalizeStr(missionType || '');
+      const isVelada = opType.includes('VELADA');
+      const isCaracterizada = opType.includes('CARACTERIZADA');
 
       if (clientRuleKeyword) {
-          const ruleMatch = normalizedTables.find(t => t.normOp.includes(normalizeStr(clientRuleKeyword)));
-          if (ruleMatch) return { table: ruleMatch, reason: `REGRA PRIORITÁRIA: ${clientRuleKeyword}` };
+          let ruleMatches = normalizedTables.filter(t => t.normOp.includes(normalizeStr(clientRuleKeyword)));
+          if (ruleMatches.length > 1 && (isVelada || isCaracterizada)) {
+              const typed = ruleMatches.filter(t => isVelada ? t.normOp.includes('VELADA') : t.normOp.includes('CARACTERIZADA'));
+              if (typed.length > 0) ruleMatches = typed;
+          }
+          if (ruleMatches.length > 0) return { table: ruleMatches[0], reason: `REGRA PRIORITÁRIA: ${clientRuleKeyword}` };
       }
 
       const providerUpper = normalizeStr(providerName || '');
@@ -365,49 +372,82 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
 
       const scored = normalizedTables.map(t => {
           let score = 0;
-          let reason = 'GENÉRICO';
+          let reasons: string[] = [];
+
+          if (isVelada && t.normOp.includes('CARACTERIZADA') && !t.normOp.includes('VELADA')) { score -= 5000; reasons.push('TIPO INCOMPATÍVEL (CARACTERIZADA)'); }
+          if (isCaracterizada && t.normOp.includes('VELADA') && !t.normOp.includes('CARACTERIZADA')) { score -= 5000; reasons.push('TIPO INCOMPATÍVEL (VELADA)'); }
+
+          if (isVelada && t.normOp.includes('VELADA')) { score += 2500; reasons.push('TIPO: VELADA'); }
+          if (isCaracterizada && t.normOp.includes('CARACTERIZADA')) { score += 2500; reasons.push('TIPO: CARACTERIZADA'); }
 
           if (isSpecialProvider) {
               const isNivelBrasil = t.normOp.includes('NIVEL BRASIL') || t.normOp.includes('ARMADO') || t.normOp.includes('ARMADOS');
-              if (!isNivelBrasil) {
-                  score -= 1000;
-              }
+              if (!isNivelBrasil) { score -= 1000; }
           }
 
           if (originCity.length > 3 && t.normOp.includes(originCity)) {
               score += 3000;
-              reason = `CIDADE: ${originCity}`;
+              reasons.push(`CIDADE: ${originCity}`);
           }
 
           if (t.normOp.includes('EXCETO')) {
-              if (originUF === 'MG' && t.normOp.includes('EXCETO MG')) { score -= 5000; reason = 'BLOQUEADO (EXCETO MG)'; }
-              if (originUF === 'ES' && t.normOp.includes('EXCETO') && t.normOp.includes('ES')) { score -= 5000; reason = 'BLOQUEADO (EXCETO ES)'; }
+              if (originUF === 'MG' && t.normOp.includes('EXCETO MG')) { score -= 5000; reasons.push('BLOQUEADO (EXCETO MG)'); }
+              if (originUF === 'ES' && t.normOp.includes('EXCETO') && t.normOp.includes('ES')) { score -= 5000; reasons.push('BLOQUEADO (EXCETO ES)'); }
           }
 
           if (originUF && (originUF === 'MG' || originUF === 'ES')) {
               if (t.normOp.includes('MG') && t.normOp.includes('ES') && !t.normOp.includes('EXCETO')) {
                   score += 2000;
-                  reason = `UF ESPECÍFICO: ${originUF}`;
+                  reasons.push(`UF ESPECÍFICO: ${originUF}`);
               }
           }
 
           if (originUF && t.normOp.includes(originUF) && !t.normOp.includes('EXCETO')) {
               score += 1500;
-              if (reason === 'GENÉRICO') reason = `UF: ${originUF}`;
+              reasons.push(`UF: ${originUF}`);
           }
 
           if (originRegion && t.normOp.includes(originRegion)) {
               score += 800;
-              if (reason === 'GENÉRICO') reason = `REGIÃO: ${originRegion}`;
+              reasons.push(`REGIÃO: ${originRegion}`);
           }
 
-          if (t.franchise_km >= dist) {
-              score += 50;
+          const isFranchiseTable = t.normOp.includes('ATE ') || t.normOp.includes('ATE') || t.normOp.includes('FAIXA');
+          const franchiseKm = parseFloat(t.franchise_km) || 0;
+          const franchiseHours = parseFloat(t.franchise_hours) || 0;
+
+          if (isFranchiseTable) {
+              if (franchiseKm > 0 && dist > 0) {
+                  if (dist <= franchiseKm) {
+                      score += 600;
+                      const excess = franchiseKm - dist;
+                      score -= Math.min(excess * 0.5, 200);
+                      reasons.push(`FRANQUIA ${franchiseKm}KM COBRE ${Math.round(dist)}KM`);
+                  } else {
+                      score -= 300;
+                      reasons.push(`FRANQUIA ${franchiseKm}KM < ${Math.round(dist)}KM (EXCEDE)`);
+                  }
+              }
           } else {
-              score -= 10;
+              if (franchiseKm > 0 && franchiseKm >= dist) {
+                  score += 50;
+              } else if (franchiseKm > 0) {
+                  score -= 10;
+              }
           }
 
-          return { ...t, score, reason };
+          if (estimatedHours && estimatedHours > 0 && franchiseHours > 0) {
+              if (estimatedHours <= franchiseHours) {
+                  score += 100;
+                  reasons.push(`HORAS OK (${estimatedHours}h ≤ ${franchiseHours}h)`);
+              } else {
+                  score -= 50;
+                  reasons.push(`HORAS EXCEDE (${estimatedHours}h > ${franchiseHours}h)`);
+              }
+          }
+
+          const reason = reasons.length > 0 ? reasons[0] : 'GENÉRICO';
+          return { ...t, score, reason, allReasons: reasons };
       });
 
       const valid = scored.filter(t => t.score > -1000).sort((a, b) => b.score - a.score);
@@ -419,10 +459,14 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
 
       const topScore = valid[0].score;
       const bestGroup = valid.filter(t => t.score >= topScore - 20);
-      const sortedByKm = bestGroup.sort((a, b) => a.franchise_km - b.franchise_km);
-      const exactCover = sortedByKm.find(t => t.franchise_km >= dist);
+
+      const franchiseGroup = bestGroup.filter(t => t.normOp.includes('ATE ') || t.normOp.includes('ATE') || t.normOp.includes('FAIXA'));
+      const pickFrom = franchiseGroup.length > 0 ? franchiseGroup : bestGroup;
+
+      const sortedByKm = pickFrom.sort((a, b) => a.franchise_km - b.franchise_km);
+      const exactCover = sortedByKm.find(t => (t.franchise_km || 0) >= dist);
       const bestTable = exactCover || sortedByKm[sortedByKm.length - 1];
-      return { table: bestTable, reason: bestTable.reason || "MELHOR MATCH" };
+      return { table: bestTable, reason: bestTable.reason || "MELHOR MATCH", allReasons: bestTable.allReasons || [] };
   };
 
   const calculatePricing = useCallback(async (route: ClientRoute, providerOverride?: string, revTableId?: string, cstTableId?: string, flags?: { ceva200km: boolean, vtc02h: boolean, isSameOs: boolean }) => {
@@ -450,19 +494,26 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
       else if (currentFlags.ceva200km || isLogitech) { effectiveDist = 200; forceKeyword = isLogitech ? 'LOGITECH' : '200KM'; }
 
       try {
+          const estHours = isSpecialRuleActive ? (currentFlags.vtc02h ? 2 : isLogitech ? 3 : 4) : Math.max(2, Math.ceil(realDist / 45));
+
           let revTable: any = null;
           if (revTableId) {
               revTable = clientPriceTables.find(t => t.id.toString() === revTableId);
               if (revTable) details.push(`FAT (MANUAL): ${revTable.operation_type}`);
           } else {
-              const result = findBestTable(clientPriceTables, effectiveDist, locationKeywords, forceKeyword, undefined, route.origin);
-              if (result) { revTable = result.table; details.push(`FAT (${result.reason.split(':')[0]}): ${revTable.operation_type}`); }
+              const result = findBestTable(clientPriceTables, effectiveDist, locationKeywords, forceKeyword, undefined, route.origin, formData.missionType, estHours);
+              if (result) { revTable = result.table; details.push(`FAT (${result.reason}): ${revTable.operation_type}`); }
           }
           if (revTable) {
               revenue = revTable.activation_fee;
               const revTableName = (revTable.operation_type || '').toUpperCase();
               const isFixedPriceRevTable = revTableName.includes('LOGITECH') || revTableName.includes('200KM') || revTableName.includes('200 KM') || revTableName.includes('100KM') || revTableName.includes('100 KM');
               if (!isSpecialRuleActive && !isFixedPriceRevTable && realDist > revTable.franchise_km) revenue += (realDist - revTable.franchise_km) * (revTable.price_per_extra_km || 0);
+              const revFranchiseHours = parseFloat(revTable.franchise_hours) || 0;
+              if (revFranchiseHours > 0 && estHours > revFranchiseHours) {
+                  revenue += (estHours - revFranchiseHours) * (revTable.price_per_extra_hour || 0);
+                  details.push(`+${estHours - revFranchiseHours}h extra faturamento`);
+              }
           }
 
           let cstTable: any = null;
@@ -477,14 +528,19 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
                       const { data } = await supabase.from('provider_cost_tables').select('*').eq('provider', providerOverride);
                       if (data) currentCostTables = data as any;
                   }
-                  const result = findBestTable(currentCostTables, effectiveDist, locationKeywords, forceKeyword, activeProvider, route.origin);
-                  if (result) { cstTable = result.table; details.push(`CUSTO (${result.reason.split(':')[0]}): ${cstTable.operation_type}`); }
+                  const result = findBestTable(currentCostTables, effectiveDist, locationKeywords, forceKeyword, activeProvider, route.origin, formData.missionType, estHours);
+                  if (result) { cstTable = result.table; details.push(`CUSTO (${result.reason}): ${cstTable.operation_type}`); }
               }
               if (cstTable) {
                   cost = cstTable.activation_cost;
                   const cstTableName = (cstTable.operation_type || '').toUpperCase();
                   const isFixedPriceCstTable = cstTableName.includes('LOGITECH') || cstTableName.includes('200KM') || cstTableName.includes('200 KM') || cstTableName.includes('100KM') || cstTableName.includes('100 KM');
                   if (!isSpecialRuleActive && !isFixedPriceCstTable && realDist > cstTable.franchise_km) cost += (realDist - cstTable.franchise_km) * (cstTable.cost_per_extra_km || 0);
+                  const cstFranchiseHours = parseFloat(cstTable.franchise_hours) || 0;
+                  if (cstFranchiseHours > 0 && estHours > cstFranchiseHours) {
+                      cost += (estHours - cstFranchiseHours) * (cstTable.cost_per_extra_hour || 0);
+                      details.push(`+${estHours - cstFranchiseHours}h extra custo`);
+                  }
               }
           }
 
@@ -1345,28 +1401,45 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
 
                   {canViewFinancials && (
                       <div className="space-y-6 animate-in fade-in">
+                          {calcDetails && (
+                              <div className="p-4 bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-xl space-y-2">
+                                  <div className="flex items-center gap-2">
+                                      <div className="p-1.5 bg-blue-600 rounded-lg"><Zap size={12} className="text-white" /></div>
+                                      <span className="text-[10px] font-black text-blue-800 uppercase tracking-widest">Seleção Inteligente de Tabelas</span>
+                                  </div>
+                                  <div className="flex flex-wrap gap-1.5">
+                                      {calcDetails.split(' | ').map((d, i) => (
+                                          <span key={i} className={`px-2.5 py-1 rounded-lg text-[9px] font-black uppercase tracking-wide ${d.includes('FAT') ? 'bg-green-100 text-green-800 border border-green-200' : d.includes('CUSTO') ? 'bg-red-100 text-red-800 border border-red-200' : 'bg-blue-100 text-blue-800 border border-blue-200'}`}>{d}</span>
+                                      ))}
+                                  </div>
+                                  <p className="text-[8px] font-bold text-blue-500 flex items-center gap-1"><Info size={8} /> Critérios: Tipo de operação ({formData.missionType}) + KM ({formData.totalDistance || '?'}) + Localização + Regras do cliente</p>
+                              </div>
+                          )}
+
                           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                               <div>
-                                  <label className={LABEL_CLASS}>Tabela de Faturamento (Cliente)</label>
+                                  <label className={LABEL_CLASS}>Tabela de Faturamento (Cliente) {manualRevenueTableId && <span className="text-green-600">✓ Selecionada</span>}</label>
                                   <div className="relative">
                                       <select className={SELECT_CLASS} value={manualRevenueTableId} onChange={e => handleManualTableChange('rev', e.target.value)} data-testid="select-revenue-table">
                                           <option value="">Selecione a tabela...</option>
-                                          {clientPriceTables.map(t => (<option key={t.id} value={t.id}>{t.operation_type} (Base: R${t.activation_fee})</option>))}
+                                          {clientPriceTables.map(t => (<option key={t.id} value={t.id}>{t.operation_type} (Base: R${t.activation_fee} | {t.franchise_km || 0}KM | {t.franchise_hours || 0}h)</option>))}
                                       </select>
                                       <Tag size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-green-500 opacity-50 pointer-events-none" />
                                       <ChevronDown size={16} className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
                                   </div>
+                                  {manualRevenueTableId && (() => { const t = clientPriceTables.find(pt => pt.id.toString() === manualRevenueTableId); return t ? <p className="text-[8px] font-bold text-green-600 mt-1">Franquia: {t.franchise_km}KM / {t.franchise_hours || '—'}h | Extra KM: R${t.price_per_extra_km || 0} | Extra Hora: R${t.price_per_extra_hour || 0}</p> : null; })()}
                               </div>
                               <div>
-                                  <label className={LABEL_CLASS}>Tabela de Custo (Fornecedor)</label>
+                                  <label className={LABEL_CLASS}>Tabela de Custo (Fornecedor) {manualCostTableId && <span className="text-red-600">✓ Selecionada</span>}</label>
                                   <div className="relative">
                                       <select className={SELECT_CLASS} value={manualCostTableId} onChange={e => handleManualTableChange('cst', e.target.value)} disabled={!formData.provider || formData.isSameOs} data-testid="select-cost-table">
                                           <option value="">{formData.isSameOs ? 'CUSTO ZERADO (MESMA OS)' : formData.provider ? 'Selecione a tabela...' : providerPending ? 'FORNECEDOR PENDENTE' : 'Selecione o Fornecedor primeiro'}</option>
-                                          {providerCostTables.map(t => (<option key={t.id} value={t.id}>{t.operation_type} (Base: R${t.activation_cost})</option>))}
+                                          {providerCostTables.map(t => (<option key={t.id} value={t.id}>{t.operation_type} (Base: R${t.activation_cost} | {t.franchise_km || 0}KM | {t.franchise_hours || 0}h)</option>))}
                                       </select>
                                       <Tag size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-red-500 opacity-50 pointer-events-none" />
                                       <ChevronDown size={16} className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
                                   </div>
+                                  {manualCostTableId && !formData.isSameOs && (() => { const t = providerCostTables.find(pt => pt.id.toString() === manualCostTableId); return t ? <p className="text-[8px] font-bold text-red-600 mt-1">Franquia: {t.franchise_km}KM / {t.franchise_hours || '—'}h | Extra KM: R${t.cost_per_extra_km || 0} | Extra Hora: R${t.cost_per_extra_hour || 0}</p> : null; })()}
                               </div>
                           </div>
                           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
