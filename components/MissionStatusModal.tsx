@@ -318,11 +318,11 @@ const MissionStatusModal: React.FC<Props> = ({
                 </div>
                 <div className="space-y-3">
                     {!hideProviderInfo && (
-                    <>
                     <div className="flex items-center gap-3">
                         <div className="p-2 bg-indigo-50 rounded-lg text-indigo-600 border border-indigo-100"><Briefcase size={16}/></div>
                         <span className="text-[11px] font-black text-gray-900 uppercase truncate">{mission.provider || 'N/A'}</span>
                     </div>
+                    )}
                     <div className="flex items-center gap-3">
                         <div className="p-2 bg-slate-50 rounded-lg text-slate-600 border border-slate-100"><Car size={16}/></div>
                         <span className="text-[11px] font-mono font-black text-gray-700 bg-gray-100 px-2 py-0.5 rounded">{mission.vehicleId || 'S/V'}</span>
@@ -339,8 +339,6 @@ const MissionStatusModal: React.FC<Props> = ({
                             </div>
                         )}
                     </div>
-                    </>
-                    )}
                 </div>
             </div>
 

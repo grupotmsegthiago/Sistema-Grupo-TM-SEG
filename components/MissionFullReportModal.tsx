@@ -186,7 +186,7 @@ const MissionFullReportModal: React.FC<Props> = ({ mission, onClose, hideProvide
             });
 
             const hiddenAuditFields = ['cost_value', 'toll_value', 'is_same_os', 'billing_approved', 'revenue_value', 'billing_verified_by',
-                ...(hideProviderInfo ? ['provider', 'agent1', 'agent2', 'vehicle_id', 'start_km', 'end_km'] : [])];
+                ...(hideProviderInfo ? ['provider', 'start_km', 'end_km'] : [])];
             const filteredHistory = history.filter(h =>
                 !hiddenAuditFields.includes(h.field_name) &&
                 (!timelineCutoff || new Date(h.changed_at).getTime() >= timelineCutoff)
@@ -621,7 +621,7 @@ const MissionFullReportModal: React.FC<Props> = ({ mission, onClose, hideProvide
                     <div class="field-label">FORNECEDOR</div>
                     <div class="field-value">${(mission.provider || '—').toUpperCase()}</div>
                 </div>` : ''}
-                ${!hideProviderInfo && mission.agent1 ? `
+                ${mission.agent1 ? `
                     <div class="divider"></div>
                     <div class="grid-4">
                         <div>
@@ -642,7 +642,7 @@ const MissionFullReportModal: React.FC<Props> = ({ mission, onClose, hideProvide
                         </div>
                     </div>
                 ` : ''}
-                ${!hideProviderInfo && mission.agent2 && mission.agent2 !== '---' ? `
+                ${mission.agent2 && mission.agent2 !== '---' ? `
                     <div class="divider"></div>
                     <div class="grid-4">
                         <div>
@@ -663,7 +663,7 @@ const MissionFullReportModal: React.FC<Props> = ({ mission, onClose, hideProvide
                         </div>
                     </div>
                 ` : ''}
-                ${!hideProviderInfo ? `<div class="divider"></div>
+                ${`<div class="divider"></div>
                 <div class="grid-2">
                     <div>
                         <div class="field-label">VIATURA</div>
@@ -673,7 +673,7 @@ const MissionFullReportModal: React.FC<Props> = ({ mission, onClose, hideProvide
                         <div class="field-label">RASTREADOR</div>
                         <div class="field-value">${trackerDisplay}</div>
                     </div>
-                </div>` : ''}
+                </div>`}
             </div>
 
             <div class="section-header">ÚLTIMA OCORRÊNCIA REGISTRADA</div>

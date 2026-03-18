@@ -1371,7 +1371,6 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
                             )}
                         </div>
                     </div>
-                    )}
 
                     {/* DADOS DA CARGA E MOTORISTA */}
                     <div className="bg-white p-6 rounded-[2.5rem] border border-gray-200 shadow-sm space-y-5">
