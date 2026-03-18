@@ -84,6 +84,7 @@ export const NAV_ITEMS: NavItem[] = [
       { name: 'Dashboard Financeiro', id: 'fin-dashboard' },
       { name: 'Boletim de Medição', id: 'fin-billing' },
       { name: 'Movimento Diário', id: 'fin-daily-movement' },
+      { name: 'Controle de Faturas / NF', id: 'fin-invoices' },
       { name: 'Contas a Pagar / Receber', id: 'fin-transactions' },
       { name: 'Relatório Geral (Diretoria)', id: 'fin-report' },
       { name: 'DRE Gerencial', id: 'fin-dre' },
