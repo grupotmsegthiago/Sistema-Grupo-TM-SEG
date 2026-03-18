@@ -835,9 +835,9 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
 
   const providersByType = dbProviders.filter(p => {
       if (!formData.missionType) return true;
-      const pType = ((p as any).type || '').toUpperCase();
+      const pType = ((p as any).type || 'Escolta Caracterizada').toUpperCase();
       if (formData.missionType === 'Velada') return pType.includes('VELADA') || pType.includes('PRONTA RESPOSTA');
-      if (formData.missionType === 'Caracterizada') return pType.includes('CARACTERIZADA') || pType.includes('ESCOLTA');
+      if (formData.missionType === 'Caracterizada') return pType.includes('CARACTERIZADA');
       return true;
   });
   const filteredProviders = providersByType.filter(p => 
