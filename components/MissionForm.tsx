@@ -120,7 +120,7 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
     step2: !!formData.client,
     step3: !!(formData.clientVehicleId || formData.driver_name),
     step4: !!(formData.provider || providerPending),
-    step5: !!(selectedRouteId && formData.origin && formData.destination),
+    step5: !!(formData.origin && formData.destination),
   };
   const canShowStep2 = stepComplete.step1;
   const canShowStep3 = stepComplete.step2;
@@ -623,7 +623,7 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!formData.client || !selectedRouteId) return alert("Selecione cliente e rota.");
+    if (!formData.client || (!formData.origin && !formData.destination)) return alert("Selecione o cliente e informe a origem e destino da rota.");
 
     const scheduledDateTime = new Date(`${formData.scheduledDate}T${formData.scheduledTime}:00`);
     const now = new Date();
@@ -1045,52 +1045,93 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
 
               {/* ETAPA 5 - ROTA (ORIGEM x DESTINO) */}
               {canShowStep5 && (
-              <div className="p-6 space-y-4 animate-in slide-in-from-top-2">
+              <div className="p-6 space-y-5 animate-in slide-in-from-top-2">
                   {STEP_HEADER(5, 'Rota (Origem x Destino)', <Navigation size={16} className={stepComplete.step5 ? 'text-green-600' : 'text-red-600'} />, stepComplete.step5, !stepComplete.step5)}
 
-                  {clientRoutes.length > 0 ? (
-                      <div className="space-y-3">
-                          <label className={LABEL_CLASS}>Selecionar Rota Cadastrada</label>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div className="relative">
+                          <label className={LABEL_CLASS}>Endereço de Origem (Ponto A) *</label>
+                          <div className="relative">
+                              <input type="text" className={`${INPUT_CLASS} font-bold uppercase`} placeholder="Ex: Rua das Flores, 100 - São Paulo, SP" value={formData.origin} onChange={e => setFormData(prev => ({...prev, origin: e.target.value}))} data-testid="input-origin" />
+                              <MapPin size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-red-500 pointer-events-none" />
+                          </div>
+                      </div>
+                      <div className="relative">
+                          <label className={LABEL_CLASS}>Endereço de Destino (Ponto B) *</label>
+                          <div className="relative">
+                              <input type="text" className={`${INPUT_CLASS} font-bold uppercase`} placeholder="Ex: Av. Brasil, 500 - Jundiaí, SP" value={formData.destination} onChange={e => setFormData(prev => ({...prev, destination: e.target.value}))} data-testid="input-destination" />
+                              <Flag size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-blue-500 pointer-events-none" />
+                          </div>
+                      </div>
+                  </div>
+
+                  {clientRoutes.length > 0 && (
+                      <div className="space-y-2">
+                          <div className="flex items-center gap-2">
+                              <div className="flex-1 h-px bg-gray-200"></div>
+                              <span className="text-[9px] font-black text-gray-400 uppercase tracking-widest px-2">ou selecionar rota cadastrada</span>
+                              <div className="flex-1 h-px bg-gray-200"></div>
+                          </div>
                           <div className="flex gap-2">
                               <div className="relative flex-1">
-                                  <input type="text" className={INPUT_CLASS} placeholder="Buscar rota (Ex: PERUS)..." value={routeSearchTerm} onChange={e => { setRouteSearchTerm(e.target.value); setActiveDropdown('route'); }} onFocus={() => setActiveDropdown('route')} data-testid="input-route-search" />
-                                  <Navigation size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-red-600 opacity-50 pointer-events-none" />
+                                  <input type="text" className={INPUT_CLASS} placeholder="Buscar rota cadastrada (Ex: PERUS)..." value={routeSearchTerm} onChange={e => { setRouteSearchTerm(e.target.value); setActiveDropdown('route'); }} onFocus={() => setActiveDropdown('route')} data-testid="input-route-search" />
+                                  <Search size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
                                   {activeDropdown === 'route' && filteredRoutes.length > 0 && (
                                       <div className="absolute z-[100] left-0 right-0 mt-1 bg-white border border-gray-200 rounded-xl shadow-xl max-h-64 overflow-y-auto ring-1 ring-black/5">
                                           {filteredRoutes.map(r => (
                                               <div key={r.id} onClick={() => handleRouteSelect(r)} className="p-3 border-b border-gray-50 hover:bg-red-50 cursor-pointer transition-colors group" data-testid={`option-route-${r.id}`}>
-                                                  <p className="font-bold text-xs text-gray-800 uppercase group-hover:text-red-700">{r.name}</p>
-                                                  <p className="text-[10px] text-gray-400 font-medium uppercase mt-0.5">{r.origin.split(',')[0]} x {r.destination.split(',')[0]} | {r.distance} KM</p>
+                                                  <div className="flex items-center justify-between">
+                                                      <p className="font-bold text-xs text-gray-800 uppercase group-hover:text-red-700">{r.name}</p>
+                                                      <span className="text-[9px] font-black text-gray-400 bg-gray-100 px-2 py-0.5 rounded">{r.distance} KM</span>
+                                                  </div>
+                                                  <p className="text-[10px] text-gray-400 font-medium uppercase mt-0.5 flex items-center gap-1">
+                                                      <MapPin size={10} className="text-red-400"/> {r.origin.split(',')[0]} <ArrowRight size={10} className="text-gray-300 mx-1"/> <Flag size={10} className="text-blue-400"/> {r.destination.split(',')[0]}
+                                                  </p>
                                               </div>
                                           ))}
                                       </div>
                                   )}
                               </div>
-                              <button type="button" onClick={() => setIsRouteModalOpen(true)} className="p-3 bg-red-700 text-white rounded-lg hover:bg-red-800 transition-all shadow-md active:scale-95" data-testid="button-add-route"><Plus size={20} /></button>
+                              <button type="button" onClick={() => setIsRouteModalOpen(true)} className="p-3 bg-red-700 text-white rounded-lg hover:bg-red-800 transition-all shadow-md active:scale-95" title="Cadastrar nova rota" data-testid="button-add-route"><Plus size={20} /></button>
                           </div>
-                      </div>
-                  ) : (
-                      <div className="space-y-3">
-                          <div className="p-4 bg-gray-50 border border-gray-200 rounded-xl text-center">
-                              <p className="text-xs text-gray-500 font-bold uppercase mb-2">Nenhuma rota cadastrada para este cliente</p>
-                              <button type="button" onClick={() => setIsRouteModalOpen(true)} className="px-6 py-2.5 bg-red-700 text-white rounded-lg text-[11px] font-black uppercase tracking-wider hover:bg-red-800 transition-all shadow-md active:scale-95 flex items-center gap-2 mx-auto" data-testid="button-create-first-route">
-                                  <Plus size={16} /> Cadastrar Nova Rota
-                              </button>
-                          </div>
+                          {selectedRouteId && (
+                              <div className="flex items-center gap-2 px-3 py-2 bg-green-50 border border-green-200 rounded-lg animate-in fade-in">
+                                  <Check size={14} className="text-green-600" />
+                                  <span className="text-[10px] font-black text-green-700 uppercase tracking-wider">Rota selecionada: {routeSearchTerm}</span>
+                                  <button type="button" onClick={() => { setSelectedRouteId(''); setRouteSearchTerm(''); setFormData(prev => ({...prev, origin: '', destination: '', totalDistance: '', estimatedTime: ''})); setCalcDetails(''); }} className="ml-auto text-green-500 hover:text-red-500 transition-colors" data-testid="button-clear-route"><X size={14}/></button>
+                              </div>
+                          )}
                       </div>
                   )}
 
-                  {selectedRouteId && (
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-3">
-                          <div className="space-y-3">
-                              <div className="relative"><label className={LABEL_CLASS}>Origem (Ponto A)</label><input type="text" readOnly className={`${INPUT_CLASS} bg-gray-50 font-black uppercase`} value={formData.origin} /><MapPin size={18} className="absolute left-4 bottom-3 text-gray-300 pointer-events-none" /></div>
-                              <div className="relative"><label className={LABEL_CLASS}>Destino (Ponto B)</label><input type="text" readOnly className={`${INPUT_CLASS} bg-gray-50 font-black uppercase`} value={formData.destination} /><Flag size={18} className="absolute left-4 bottom-3 text-gray-300 pointer-events-none" /></div>
+                  {!clientRoutes.length && (
+                      <div className="flex items-center gap-3 p-3 bg-gray-50 border border-gray-200 rounded-xl">
+                          <Info size={14} className="text-gray-400 shrink-0" />
+                          <span className="text-[10px] font-bold text-gray-500">Nenhuma rota cadastrada para este cliente.</span>
+                          <button type="button" onClick={() => setIsRouteModalOpen(true)} className="ml-auto flex items-center gap-1.5 px-3 py-1.5 bg-red-700 text-white rounded-lg text-[10px] font-black uppercase hover:bg-red-800 transition-all active:scale-95" data-testid="button-create-first-route"><Plus size={14} /> Nova Rota</button>
+                      </div>
+                  )}
+
+                  {(formData.origin && formData.destination) && (
+                      <div className="bg-gray-900 rounded-2xl p-5 text-white flex items-center justify-between relative overflow-hidden group border border-gray-800 shadow-lg">
+                          <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2 text-[10px] text-gray-400 font-bold uppercase tracking-wider mb-1">
+                                  <MapPin size={12} className="text-red-400 shrink-0" />
+                                  <span className="truncate">{formData.origin.split(',')[0]}</span>
+                              </div>
+                              <div className="flex items-center gap-2 text-[10px] text-gray-400 font-bold uppercase tracking-wider">
+                                  <Flag size={12} className="text-blue-400 shrink-0" />
+                                  <span className="truncate">{formData.destination.split(',')[0]}</span>
+                              </div>
                           </div>
-                          <div className="bg-gray-900 rounded-2xl p-6 text-white flex flex-col justify-center items-center relative overflow-hidden group border border-gray-800 shadow-lg">
-                              <div className="absolute top-0 right-0 p-4 opacity-5 group-hover:scale-110 transition-transform"><Ruler size={100}/></div>
-                              <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2">Distância Prevista</p>
-                              <div className="flex items-baseline gap-1"><span className="text-4xl font-black">{formData.totalDistance || '-'}</span><span className="text-sm font-bold text-gray-500">KM</span></div>
-                              {isCalculating && <Loader2 size={16} className="animate-spin text-red-500 mt-4"/>}
+                          <div className="text-center px-6">
+                              <div className="absolute top-0 right-0 p-3 opacity-5 group-hover:scale-110 transition-transform"><Ruler size={80}/></div>
+                              <p className="text-[9px] font-black text-gray-500 uppercase tracking-widest mb-1">Distância</p>
+                              <div className="flex items-baseline gap-1">
+                                  <span className="text-3xl font-black">{formData.totalDistance || '-'}</span>
+                                  <span className="text-xs font-bold text-gray-500">KM</span>
+                              </div>
+                              {isCalculating && <Loader2 size={14} className="animate-spin text-red-500 mt-2 mx-auto"/>}
                           </div>
                       </div>
                   )}
