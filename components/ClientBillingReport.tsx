@@ -269,15 +269,16 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
             let revenue: number;
             let cost: number;
 
-            if (hasStoredRevenue || hasStoredCost) {
+            if (hasStoredRevenue && hasStoredCost) {
                 revenue = (m.revenue_value || 0) + Math.max(0, m.toll_value || 0);
                 const tollProv = Math.max(0, m.toll_value_provider != null ? m.toll_value_provider : (m.toll_value || 0));
                 cost = (m.cost_value || 0) + tollProv;
             } else {
                 const clientTablesForM = allClientTables.filter(t => t.client === clientName);
                 const fin = calculateMissionFinancials(m, clientTablesForM, allProviderTables, clientObj);
-                revenue = fin.client.total || 0;
-                cost = fin.provider.total || 0;
+                revenue = hasStoredRevenue ? (m.revenue_value || 0) + Math.max(0, m.toll_value || 0) : (fin.client.total || 0);
+                const tollProv = Math.max(0, m.toll_value_provider != null ? m.toll_value_provider : (m.toll_value || 0));
+                cost = hasStoredCost ? (m.cost_value || 0) + tollProv : (fin.provider.total || 0);
             }
             const mLucro = revenue - cost;
             const mPct = revenue > 0 ? Math.round((mLucro / revenue) * 100) : 0;
