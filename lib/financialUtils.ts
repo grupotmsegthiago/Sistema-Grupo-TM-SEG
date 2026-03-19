@@ -24,6 +24,7 @@ export interface CalculatedFinancials {
       extraHrVal: number;
       excessKm: number;
       excessHours: number;
+      excessHoursReal: number;
       unitPriceKm: number;
       unitPriceHour: number;
       franchiseKm: number;
@@ -40,6 +41,7 @@ export interface CalculatedFinancials {
       extraHrVal: number;
       excessKm: number;
       excessHours: number;
+      excessHoursReal: number;
       unitCostKm: number;
       unitCostHour: number;
       franchiseKm: number;
@@ -822,24 +824,24 @@ export const calculateMissionFinancials = (
         ? manualTableOverrides.customProviderUnitHour
         : (appliedProviderTable?.cost_per_extra_hour || 0);
 
-    // --- APLICAÇÃO DA REGRA DE 16 MINUTOS (ARREDONDAMENTO) ---
-    if (clientData?.full_extra_hour_after_16_min) {
-        const applyRoundingRule = (hours: number) => {
-            if (hours <= 0) return 0;
-            const integer = Math.floor(hours);
-            const fraction = hours - integer;
-            const minutes = fraction * 60;
-            
-            // Regra: Se exceder 15 minutos (tolerância), considera a hora cheia (próximo inteiro)
-            if (minutes > 15) {
-                return integer + 1;
-            }
-            return hours; // Caso contrário, mantém o proporcional
-        };
+    const cExcessHrReal = cExcessHr;
+    const pExcessHrReal = pExcessHr;
 
+    const applyRoundingRule = (hours: number) => {
+        if (hours <= 0) return 0;
+        const integer = Math.floor(hours);
+        const fraction = hours - integer;
+        const minutes = fraction * 60;
+        if (minutes > 15) {
+            return integer + 1;
+        }
+        return integer > 0 ? integer : hours;
+    };
+
+    if (clientData?.full_extra_hour_after_16_min) {
         cExcessHr = applyRoundingRule(cExcessHr);
     }
-    // ---------------------------------------------------------
+    pExcessHr = applyRoundingRule(pExcessHr);
 
     const round2 = (v: number) => Math.round(v * 100) / 100;
 
@@ -885,6 +887,7 @@ export const calculateMissionFinancials = (
             total: totalRevenue, base: cBase, extraKmVal: cExtraKmVal, extraHrVal: cExtraHrVal, 
             excessKm: cExcessKm, 
             excessHours: cExcessHr,
+            excessHoursReal: cExcessHrReal,
             unitPriceKm: cUnitPriceKm,
             unitPriceHour: cUnitPriceHour,
             franchiseKm: cFranchiseKm,
@@ -898,6 +901,7 @@ export const calculateMissionFinancials = (
             total: totalCost, base: pBase, extraKmVal: pExtraKmVal, extraHrVal: pExtraHrVal, 
             excessKm: pExcessKm, 
             excessHours: pExcessHr,
+            excessHoursReal: pExcessHrReal,
             unitCostKm: pUnitCostKm,
             unitCostHour: pUnitCostHour,
             franchiseKm: pFranchiseKm,
