@@ -211,14 +211,15 @@ const VendorVerificationControl: React.FC<VendorVerificationControlProps> = ({ o
     const loadData = async () => {
         setIsLoading(true);
         try {
-            const [clientsRes, missionsRes] = await Promise.all([
+            const [clientsRes, missionsRes, vehiclesRes] = await Promise.all([
                 supabase.from('clients').select('id, name, trading_name').eq('status', 'Ativo').order('name'),
                 supabase.from('missions')
-                    .select('id, client, provider, origin, destination, status, created_at, start_time, end_time, start_km, end_km, total_distance, revenue_value, cost_value, toll_value, toll_value_provider, billing_approved, vendor_os_number, invoice_number, release_date, payment_date, verified_by, verified_at')
+                    .select('id, client, provider, origin, destination, status, created_at, start_time, end_time, start_km, end_km, total_distance, revenue_value, cost_value, toll_value, toll_value_provider, billing_approved, vendor_os_number, invoice_number, release_date, payment_date, verified_by, verified_at, client_vehicle, client_vehicle_2')
                     .or('billing_approved.eq.true,status.eq.Concluída')
                     .gte('created_at', '2026-02-01')
                     .order('created_at', { ascending: false })
-                    .limit(2000)
+                    .limit(2000),
+                supabase.from('client_vehicles').select('id, plate, model')
             ]);
 
             let missionData = missionsRes.data || [];
@@ -256,6 +257,14 @@ const VendorVerificationControl: React.FC<VendorVerificationControlProps> = ({ o
             }
 
             if (clientsRes.data) setClients(clientsRes.data);
+
+            const vehicleMap = new Map<number, { plate: string; model: string }>();
+            (vehiclesRes.data || []).forEach((v: any) => vehicleMap.set(v.id, { plate: v.plate || '', model: v.model || '' }));
+            missionData = missionData.map((m: any) => {
+                const v1 = m.client_vehicle ? vehicleMap.get(m.client_vehicle) : null;
+                const v2 = m.client_vehicle_2 ? vehicleMap.get(m.client_vehicle_2) : null;
+                return { ...m, _plate1: v1?.plate || '', _plate2: v2?.plate || '' };
+            });
 
             const uniqueProviders = [...new Set(missionData.map((m: any) => m.provider).filter(Boolean))].sort();
             setProviders(uniqueProviders as string[]);
@@ -490,13 +499,20 @@ const VendorVerificationControl: React.FC<VendorVerificationControlProps> = ({ o
             const matchesDateFrom = !dateFrom || mDate >= dateFrom;
             const matchesDateTo = !dateTo || mDate <= dateTo;
             const searchLower = searchTerm.toLowerCase();
-            return matchesProvider && matchesStatus && matchesDateFrom && matchesDateTo && (
+            const matchesSearch = !searchTerm || 
                 m.id.toLowerCase().includes(searchLower) ||
                 (m.client || '').toLowerCase().includes(searchLower) ||
                 (m.provider || '').toLowerCase().includes(searchLower) ||
                 (m.vendor_os_number || '').toLowerCase().includes(searchLower) ||
-                (m.invoice_number || '').toLowerCase().includes(searchLower)
-            );
+                (m.invoice_number || '').toLowerCase().includes(searchLower) ||
+                (m._plate1 || '').toLowerCase().includes(searchLower) ||
+                (m._plate2 || '').toLowerCase().includes(searchLower) ||
+                (m.origin || '').toLowerCase().includes(searchLower) ||
+                (m.destination || '').toLowerCase().includes(searchLower) ||
+                String(m.start_km || '').includes(searchLower) ||
+                String(m.end_km || '').includes(searchLower) ||
+                String(m.total_distance || '').includes(searchLower);
+            return matchesProvider && matchesStatus && matchesDateFrom && matchesDateTo && matchesSearch;
         });
     }, [missions, selectedProvider, filterStatus, searchTerm, dateFrom, dateTo]);
 
@@ -759,7 +775,7 @@ const VendorVerificationControl: React.FC<VendorVerificationControlProps> = ({ o
                     <div className="relative">
                         <input
                             type="text"
-                            placeholder="Buscar por OS, Cliente, Fornecedor, NF..."
+                            placeholder="Buscar por OS, Placa, Cliente, Fornecedor, NF, KM, Origem, Destino..."
                             className="w-full pl-10 pr-4 py-2.5 bg-gray-50 border border-gray-300 rounded-lg text-sm"
                             value={searchTerm}
                             onChange={e => setSearchTerm(e.target.value)}
