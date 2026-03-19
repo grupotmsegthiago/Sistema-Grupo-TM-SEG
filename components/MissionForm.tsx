@@ -124,7 +124,7 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
   const destinationAutocompleteRef = useRef<google.maps.places.Autocomplete | null>(null);
 
   const step3Done = !!(formData.clientVehicleId && (driverQuestion === 'no' || (driverQuestion === 'yes' && formData.driver_name)));
-  const step5Done = !!(formData.origin && formData.destination);
+  const step5Done = !!(formData.origin && formData.destination && selectedRouteId && parseFloat(formData.totalDistance) > 0 && formData.estimatedTime && manualRevenueTableId);
   const step6Done = step5Done && (scheduleMode === 'immediate' || (scheduleMode === 'scheduled' && !!formData.scheduledDate && !!formData.scheduledTime));
 
   const isVtcClient = (formData.client || '').toUpperCase().includes('VTC');
@@ -150,7 +150,7 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
     else if (expandedStep === 3 && stepComplete.step3) setExpandedStep(4);
     else if (expandedStep === 4 && stepComplete.step4) setExpandedStep(5);
     else if (expandedStep === 5 && stepComplete.step5) { setScheduleMode('asking'); setExpandedStep(6); }
-  }, [stepComplete.step1, stepComplete.step2, stepComplete.step3, stepComplete.step4, stepComplete.step5]);
+  }, [stepComplete.step1, stepComplete.step2, stepComplete.step3, stepComplete.step4, stepComplete.step5, manualRevenueTableId]);
 
   useEffect(() => {
     const storedUser = localStorage.getItem('userData');
@@ -810,9 +810,18 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
 
   const routesFilteredByOrigin = (() => {
       if (!formData.origin) return clientRoutes;
-      const originCity = normalizeStr(formData.origin.split(',')[0].trim());
-      if (originCity.length < 3) return clientRoutes;
-      const matched = clientRoutes.filter(r => normalizeStr(r.origin).includes(originCity));
+      const parts = formData.origin.split(',').map(p => p.trim());
+      const candidates: string[] = [];
+      for (const part of parts) {
+          const clean = normalizeStr(part).replace(/\d+/g, '').replace(/-/g, ' ').trim();
+          if (clean.length >= 3 && !clean.match(/^(SP|RJ|MG|PR|SC|RS|BA|CE|PE|GO|MT|MS|ES|DF|PA|AM|MA|PI|RN|PB|AL|SE|TO|RO|RR|AP|AC|BRASIL|BRAZIL)$/))
+              candidates.push(clean);
+      }
+      if (candidates.length === 0) return clientRoutes;
+      const matched = clientRoutes.filter(r => {
+          const rOrigin = normalizeStr(r.origin);
+          return candidates.some(c => rOrigin.includes(c));
+      });
       return matched.length > 0 ? matched : clientRoutes;
   })();
 
@@ -851,7 +860,7 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
       2: formData.client ? (dbClients.find(c => c.name === formData.client)?.trading_name || formData.client) : '',
       3: [vehicleSearchTerm, formData.driver_name ? `Mot: ${formData.driver_name}` : (driverQuestion === 'no' ? 'Sem motorista' : '')].filter(Boolean).join(' | ') || '',
       4: formData.provider ? formData.provider : (providerPending ? 'Aguardando informação' : ''),
-      5: formData.origin && formData.destination ? `${formData.origin.split(',')[0]} → ${formData.destination.split(',')[0]}${formData.totalDistance ? ` (${formData.totalDistance} KM)` : ''}` : '',
+      5: formData.origin && formData.destination ? `${formData.origin.split(',')[0]} → ${formData.destination.split(',')[0]}${formData.totalDistance ? ` (${formData.totalDistance} KM)` : ''}${manualRevenueTableId ? ' | Tabela ✓' : ''}` : '',
       6: scheduleMode === 'immediate' ? 'Imediata' : scheduleMode === 'scheduled' ? `Agendada: ${formData.scheduledDate} ${formData.scheduledTime}` : '',
   };
 
@@ -1344,6 +1353,43 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
                   )}
 
                   {calcDetails && (<div className="flex items-center gap-2 p-3 bg-blue-50 text-blue-700 rounded-lg text-[10px] font-black uppercase tracking-tight border border-blue-100 shadow-sm"><Info size={14} className="shrink-0"/> {calcDetails}</div>)}
+
+                  {selectedRouteId && parseFloat(formData.totalDistance) > 0 && canViewFinancials && (
+                      <div className="space-y-4 pt-2 border-t border-gray-100 mt-4 animate-in slide-in-from-top-2">
+                          <p className="text-[10px] font-black text-gray-500 uppercase tracking-widest flex items-center gap-2"><Tag size={12} /> Selecionar Tabelas</p>
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                              <div>
+                                  <label className={LABEL_CLASS}>Tabela de Faturamento (Cliente) {manualRevenueTableId && <span className="text-green-600">✓</span>}</label>
+                                  <div className="relative">
+                                      <select className={SELECT_CLASS} value={manualRevenueTableId} onChange={e => handleManualTableChange('rev', e.target.value)} data-testid="select-revenue-table-step5">
+                                          <option value="">Selecione a tabela...</option>
+                                          {clientPriceTables.map(t => (<option key={t.id} value={t.id}>{t.operation_type} (Base: R${t.activation_fee} | {t.franchise_km || 0}KM | {t.franchise_hours || 0}h)</option>))}
+                                      </select>
+                                      <Tag size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-green-500 opacity-50 pointer-events-none" />
+                                      <ChevronDown size={16} className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+                                  </div>
+                                  {manualRevenueTableId && (() => { const t = clientPriceTables.find(pt => pt.id.toString() === manualRevenueTableId); return t ? <p className="text-[8px] font-bold text-green-600 mt-1">Franquia: {t.franchise_km}KM / {t.franchise_hours || '—'}h | Extra KM: R${t.price_per_extra_km || 0} | Extra Hora: R${t.price_per_extra_hour || 0}</p> : null; })()}
+                              </div>
+                              <div>
+                                  <label className={LABEL_CLASS}>Tabela de Custo (Fornecedor) {manualCostTableId && <span className="text-red-600">✓</span>}</label>
+                                  <div className="relative">
+                                      <select className={SELECT_CLASS} value={manualCostTableId} onChange={e => handleManualTableChange('cst', e.target.value)} disabled={!formData.provider || formData.isSameOs} data-testid="select-cost-table-step5">
+                                          <option value="">{formData.isSameOs ? 'CUSTO ZERADO (MESMA OS)' : formData.provider ? 'Selecione a tabela...' : providerPending ? 'FORNECEDOR PENDENTE' : 'Selecione o fornecedor primeiro'}</option>
+                                          {providerCostTables.map(t => (<option key={t.id} value={t.id}>{t.operation_type} (Base: R${t.activation_cost} | {t.franchise_km || 0}KM | {t.franchise_hours || 0}h)</option>))}
+                                      </select>
+                                      <Tag size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-red-500 opacity-50 pointer-events-none" />
+                                      <ChevronDown size={16} className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+                                  </div>
+                                  {manualCostTableId && !formData.isSameOs && (() => { const t = providerCostTables.find(pt => pt.id.toString() === manualCostTableId); return t ? <p className="text-[8px] font-bold text-red-600 mt-1">Franquia: {t.franchise_km}KM / {t.franchise_hours || '—'}h | Extra KM: R${t.cost_per_extra_km || 0} | Extra Hora: R${t.cost_per_extra_hour || 0}</p> : null; })()}
+                              </div>
+                          </div>
+                          {!manualRevenueTableId && (
+                              <div className="flex items-center gap-2 px-3 py-2 bg-amber-50 border border-amber-200 rounded-lg text-[9px] font-black text-amber-700 uppercase">
+                                  <Info size={12} /> Selecione ao menos a tabela de faturamento para avançar
+                              </div>
+                          )}
+                      </div>
+                  )}
               </div>
               )}
               </div>
@@ -1470,33 +1516,6 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
 
                   {canViewFinancials && (
                       <div className="space-y-6 animate-in fade-in">
-
-                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                              <div>
-                                  <label className={LABEL_CLASS}>Tabela de Faturamento (Cliente) {manualRevenueTableId && <span className="text-green-600">✓ Selecionada</span>}</label>
-                                  <div className="relative">
-                                      <select className={SELECT_CLASS} value={manualRevenueTableId} onChange={e => handleManualTableChange('rev', e.target.value)} data-testid="select-revenue-table">
-                                          <option value="">Selecione a tabela...</option>
-                                          {clientPriceTables.map(t => (<option key={t.id} value={t.id}>{t.operation_type} (Base: R${t.activation_fee} | {t.franchise_km || 0}KM | {t.franchise_hours || 0}h)</option>))}
-                                      </select>
-                                      <Tag size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-green-500 opacity-50 pointer-events-none" />
-                                      <ChevronDown size={16} className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
-                                  </div>
-                                  {manualRevenueTableId && (() => { const t = clientPriceTables.find(pt => pt.id.toString() === manualRevenueTableId); return t ? <p className="text-[8px] font-bold text-green-600 mt-1">Franquia: {t.franchise_km}KM / {t.franchise_hours || '—'}h | Extra KM: R${t.price_per_extra_km || 0} | Extra Hora: R${t.price_per_extra_hour || 0}</p> : null; })()}
-                              </div>
-                              <div>
-                                  <label className={LABEL_CLASS}>Tabela de Custo (Fornecedor) {manualCostTableId && <span className="text-red-600">✓ Selecionada</span>}</label>
-                                  <div className="relative">
-                                      <select className={SELECT_CLASS} value={manualCostTableId} onChange={e => handleManualTableChange('cst', e.target.value)} disabled={!formData.provider || formData.isSameOs} data-testid="select-cost-table">
-                                          <option value="">{formData.isSameOs ? 'CUSTO ZERADO (MESMA OS)' : formData.provider ? 'Selecione a tabela...' : providerPending ? 'FORNECEDOR PENDENTE' : 'Selecione o Fornecedor primeiro'}</option>
-                                          {providerCostTables.map(t => (<option key={t.id} value={t.id}>{t.operation_type} (Base: R${t.activation_cost} | {t.franchise_km || 0}KM | {t.franchise_hours || 0}h)</option>))}
-                                      </select>
-                                      <Tag size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-red-500 opacity-50 pointer-events-none" />
-                                      <ChevronDown size={16} className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
-                                  </div>
-                                  {manualCostTableId && !formData.isSameOs && (() => { const t = providerCostTables.find(pt => pt.id.toString() === manualCostTableId); return t ? <p className="text-[8px] font-bold text-red-600 mt-1">Franquia: {t.franchise_km}KM / {t.franchise_hours || '—'}h | Extra KM: R${t.cost_per_extra_km || 0} | Extra Hora: R${t.cost_per_extra_hour || 0}</p> : null; })()}
-                              </div>
-                          </div>
                           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                               <div className="bg-green-50/50 p-6 rounded-2xl border border-green-100 group shadow-sm">
                                   <div className="flex items-center justify-between mb-3"><label className="text-[10px] font-black text-green-700 uppercase tracking-widest">Faturamento Previsto</label><TrendingUp size={16} className="text-green-400" /></div>
