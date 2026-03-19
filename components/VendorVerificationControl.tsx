@@ -49,7 +49,7 @@ const VendorVerificationControl: React.FC<VendorVerificationControlProps> = ({ o
     const [selectedProvider, setSelectedProvider] = useState('ALL');
     const [filterStatus, setFilterStatus] = useState<'ALL' | 'PENDING' | 'VERIFIED'>('ALL');
     const [isLoading, setIsLoading] = useState(true);
-    const [dateFrom, setDateFrom] = useState('');
+    const [dateFrom, setDateFrom] = useState('2026-02-01');
     const [dateTo, setDateTo] = useState('');
 
     const [selectedMission, setSelectedMission] = useState<any | null>(null);
