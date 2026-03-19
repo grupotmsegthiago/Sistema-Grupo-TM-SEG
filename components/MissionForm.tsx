@@ -1442,16 +1442,32 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
                   )}
 
                   {hasClientRules && (scheduleMode === 'immediate' || scheduleMode === 'scheduled') && (
-                      <div className="p-3 bg-blue-50 border border-blue-200 rounded-xl">
-                          <p className="text-[10px] font-black text-blue-700 uppercase tracking-wider mb-2">Regras do cliente detectadas:</p>
-                          <div className="flex flex-wrap gap-2">
-                              {isVtcClient && (
-                                  <span className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 text-white rounded-lg text-[10px] font-black uppercase"><Clock size={12} /> Regra 02H VTC {formData.applyVtc02h ? '✓' : ''}</span>
-                              )}
-                              {(formData.client || '').toUpperCase().includes('CEVA') && (
-                                  <span className="flex items-center gap-1.5 px-3 py-1.5 bg-orange-600 text-white rounded-lg text-[10px] font-black uppercase"><TrendingUp size={12} /> Regra 200KM {formData.applyCeva200km ? '✓' : ''}</span>
-                              )}
-                          </div>
+                      <div className="p-4 bg-blue-50 border border-blue-200 rounded-xl space-y-3">
+                          <p className="text-[10px] font-black text-blue-700 uppercase tracking-wider">Regras do cliente detectadas:</p>
+                          {isVtcClient && (
+                              <div className="flex items-center justify-between p-3 bg-white rounded-lg border border-blue-100">
+                                  <div className="flex items-center gap-2">
+                                      <Clock size={14} className="text-blue-600" />
+                                      <span className="text-[11px] font-black text-gray-700 uppercase">Regra 02H VTC</span>
+                                  </div>
+                                  <div className="flex gap-2">
+                                      <button type="button" onClick={() => { setFormData(prev => ({ ...prev, applyVtc02h: true })); const route = clientRoutes.find(r => r.id.toString() === selectedRouteId); if (route) calculatePricing(route, undefined, manualRevenueTableId, '', { ceva200km: formData.applyCeva200km, vtc02h: true, isSameOs: formData.isSameOs }); }} className={`px-4 py-1.5 rounded-lg text-[10px] font-black uppercase transition-all active:scale-95 ${formData.applyVtc02h ? 'bg-blue-600 text-white shadow-md' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'}`} data-testid="button-vtc-yes">Sim</button>
+                                      <button type="button" onClick={() => { setFormData(prev => ({ ...prev, applyVtc02h: false })); const route = clientRoutes.find(r => r.id.toString() === selectedRouteId); if (route) calculatePricing(route, undefined, manualRevenueTableId, '', { ceva200km: formData.applyCeva200km, vtc02h: false, isSameOs: formData.isSameOs }); }} className={`px-4 py-1.5 rounded-lg text-[10px] font-black uppercase transition-all active:scale-95 ${!formData.applyVtc02h ? 'bg-gray-900 text-white shadow-md' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'}`} data-testid="button-vtc-no">Não</button>
+                                  </div>
+                              </div>
+                          )}
+                          {(formData.client || '').toUpperCase().includes('CEVA') && (
+                              <div className="flex items-center justify-between p-3 bg-white rounded-lg border border-orange-100">
+                                  <div className="flex items-center gap-2">
+                                      <TrendingUp size={14} className="text-orange-600" />
+                                      <span className="text-[11px] font-black text-gray-700 uppercase">Regra 200KM</span>
+                                  </div>
+                                  <div className="flex gap-2">
+                                      <button type="button" onClick={() => { setFormData(prev => ({ ...prev, applyCeva200km: true })); const route = clientRoutes.find(r => r.id.toString() === selectedRouteId); if (route) calculatePricing(route, undefined, manualRevenueTableId, '', { ceva200km: true, vtc02h: formData.applyVtc02h, isSameOs: formData.isSameOs }); }} className={`px-4 py-1.5 rounded-lg text-[10px] font-black uppercase transition-all active:scale-95 ${formData.applyCeva200km ? 'bg-orange-600 text-white shadow-md' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'}`} data-testid="button-200km-yes">Sim</button>
+                                      <button type="button" onClick={() => { setFormData(prev => ({ ...prev, applyCeva200km: false })); const route = clientRoutes.find(r => r.id.toString() === selectedRouteId); if (route) calculatePricing(route, undefined, manualRevenueTableId, '', { ceva200km: false, vtc02h: formData.applyVtc02h, isSameOs: formData.isSameOs }); }} className={`px-4 py-1.5 rounded-lg text-[10px] font-black uppercase transition-all active:scale-95 ${!formData.applyCeva200km ? 'bg-gray-900 text-white shadow-md' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'}`} data-testid="button-200km-no">Não</button>
+                                  </div>
+                              </div>
+                          )}
                       </div>
                   )}
 
