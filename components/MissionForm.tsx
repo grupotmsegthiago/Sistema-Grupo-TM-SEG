@@ -515,7 +515,8 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
       else if (currentFlags.ceva200km || isLogitech) { effectiveDist = 200; forceKeyword = isLogitech ? 'LOGITECH' : '200KM'; }
 
       try {
-          const estHours = isSpecialRuleActive ? (currentFlags.vtc02h ? 2 : isLogitech ? 3 : 4) : Math.max(2, Math.ceil(realDist / 45));
+          const googleDurationMin = (route as any)._googleDurationMin;
+          const estHours = isSpecialRuleActive ? (currentFlags.vtc02h ? 2 : isLogitech ? 3 : 4) : (googleDurationMin ? Math.max(1, Math.ceil(googleDurationMin / 60)) : Math.max(2, Math.ceil(realDist / 45)));
 
           let revTable: any = null;
           if (revTableId) {
@@ -574,7 +575,7 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
               revenueValue: manualOverrides.revenue ? prev.revenueValue : revenue.toFixed(2),
               costValue: manualOverrides.cost ? prev.costValue : cost.toFixed(2),
               totalDistance: realDist.toString(), origin: route.origin, destination: finalDestination,
-              estimatedTime: isSpecialRuleActive ? (currentFlags.vtc02h ? '2 horas' : isLogitech ? '3 horas' : '4 horas') : `${Math.max(2, Math.ceil(realDist / 45))} horas`
+              estimatedTime: isSpecialRuleActive ? (currentFlags.vtc02h ? '2 horas' : isLogitech ? '3 horas' : '4 horas') : (googleDurationMin ? (googleDurationMin < 60 ? `${googleDurationMin} min` : `${Math.floor(googleDurationMin / 60)}h${googleDurationMin % 60 > 0 ? `${googleDurationMin % 60}min` : ''}`) : `${Math.max(2, Math.ceil(realDist / 45))} horas`)
           }));
           setCalcDetails(details.join(' | '));
           if (revTable) setManualRevenueTableId(revTable.id.toString());
@@ -632,12 +633,41 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
       }
   };
 
+  const getGoogleMapsDistance = async (origin: string, destination: string): Promise<{ distKm: number; durationMin: number } | null> => {
+      if (!isGoogleLoaded || !window.google) return null;
+      try {
+          const service = new google.maps.DistanceMatrixService();
+          const result = await service.getDistanceMatrix({
+              origins: [origin],
+              destinations: [destination],
+              travelMode: google.maps.TravelMode.DRIVING,
+              unitSystem: google.maps.UnitSystem.METRIC,
+          });
+          const el = result.rows?.[0]?.elements?.[0];
+          if (el?.status === 'OK') {
+              return { distKm: Math.round(el.distance.value / 1000), durationMin: Math.round(el.duration.value / 60) };
+          }
+      } catch (e) { console.error('Google Maps distance error:', e); }
+      return null;
+  };
+
   const handleRouteSelect = async (route: ClientRoute) => {
       setSelectedRouteId(route.id.toString());
       setRouteSearchTerm(route.name);
       setActiveDropdown(null);
       setTollDetails(null);
       setOperatorConfirmedCalc(false);
+
+      const routeDist = parseFloat(route.distance) || 0;
+      const gResult = await getGoogleMapsDistance(route.origin, route.destination);
+      if (gResult) {
+          if (routeDist <= 0 && gResult.distKm > 0) {
+              (route as any).distance = gResult.distKm.toString();
+          }
+          if (gResult.durationMin > 0) {
+              (route as any)._googleDurationMin = gResult.durationMin;
+          }
+      }
       
       let suggestedToll = 0;
       let tollSource = '';
