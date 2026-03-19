@@ -245,14 +245,21 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                      setSuggestedToll(memToll);
                      setTollSource('MEMÓRIA (Rota Anterior)');
                      setTollConfirmed(false);
-                 }
-                 if (details.tollProviderValue !== undefined && details.tollProviderValue !== null) {
-                     const memTollProv = Number(details.tollProviderValue);
-                     setTollProviderInput(memTollProv.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
+                     if (details.tollProviderValue !== undefined && details.tollProviderValue !== null) {
+                         const memTollProv = Number(details.tollProviderValue);
+                         setTollProviderInput(memTollProv.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
+                     } else if (memToll > 0) {
+                         setTollProviderInput(memToll.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
+                     }
                  }
                  setMemoryLoaded(true);
                  const hasCustomValues = details.customClientBase || details.customProviderBase;
-                 showNotification('Memória Evolutiva', `Tabela${hasCustomValues ? ' e valores' : ''} aplicados (${memorySource === 'EXATA' ? 'mesmo fornecedor' : 'mesma rota'}).`, 'success');
+                 const hasTollMemory = details.tollValue !== undefined && details.tollValue !== null && Number(details.tollValue) > 0;
+                 const extraInfo = [
+                     hasCustomValues ? 'valores ajustados' : null,
+                     hasTollMemory ? `pedágio R$ ${Number(details.tollValue).toFixed(2)}` : null
+                 ].filter(Boolean).join(' + ');
+                 showNotification('Memória Evolutiva', `Tabela${extraInfo ? ` (${extraInfo})` : ''} aplicados (${memorySource === 'EXATA' ? 'mesmo fornecedor' : 'mesma rota'}).`, 'success');
              } catch (e) { console.error("Erro ao ler memória:", e); }
           }
           
