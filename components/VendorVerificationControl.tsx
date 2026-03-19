@@ -63,6 +63,8 @@ const VendorVerificationControl: React.FC<VendorVerificationControlProps> = ({ o
     const [verifiedBy, setVerifiedBy] = useState('');
     const [verifiedAt, setVerifiedAt] = useState('');
     const [isSaving, setIsSaving] = useState(false);
+    const [editCostValue, setEditCostValue] = useState('');
+    const [editTollProviderValue, setEditTollProviderValue] = useState('');
 
     const [invoiceImageUrl, setInvoiceImageUrl] = useState<string | null>(null);
     const [receiptImageUrl, setReceiptImageUrl] = useState<string | null>(null);
@@ -83,7 +85,9 @@ const VendorVerificationControl: React.FC<VendorVerificationControlProps> = ({ o
 
     const userData = JSON.parse(localStorage.getItem('userData') || '{}');
     const userRole = (userData.role || '').toLowerCase();
-    const isAdmin = ['administrador', 'diretoria', 'ceo', 'controller'].includes(userRole) || userData.permissions?.includes('*');
+    const isController = userRole === 'controller';
+    const isDiretoria = ['administrador', 'diretoria', 'ceo'].includes(userRole) || userData.permissions?.includes('*');
+    const isAdmin = isDiretoria || isController;
 
     const compressImage = (file: File, maxWidth = 1200, quality = 0.7): Promise<Blob> => {
         return new Promise((resolve, reject) => {
@@ -288,6 +292,10 @@ const VendorVerificationControl: React.FC<VendorVerificationControlProps> = ({ o
         setPaymentDate(mission.payment_date || '');
         setVerifiedBy(mission.verified_by || '');
         setVerifiedAt(mission.verified_at || '');
+        const costVal = mission.cost_value || 0;
+        const tollProvVal = Math.max(0, mission.toll_value_provider ?? mission.toll_value ?? 0);
+        setEditCostValue(costVal.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
+        setEditTollProviderValue(tollProvVal.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
 
         try {
             const [verRes] = await Promise.all([
@@ -309,6 +317,12 @@ const VendorVerificationControl: React.FC<VendorVerificationControlProps> = ({ o
         }
     };
 
+    const parseNumber = (v: string): number => {
+        if (!v) return 0;
+        const cleaned = v.replace(/\./g, '').replace(',', '.');
+        return parseFloat(cleaned) || 0;
+    };
+
     const handleSaveVerification = async () => {
         if (!selectedMission) return;
         if (!vendorOsNumber.trim()) {
@@ -326,6 +340,9 @@ const VendorVerificationControl: React.FC<VendorVerificationControlProps> = ({ o
         const userName = userData.name || userData.email || 'Desconhecido';
         const finalReleaseDate = releaseDate || now.split('T')[0];
 
+        const newCostValue = parseNumber(editCostValue);
+        const newTollProvValue = parseNumber(editTollProviderValue);
+
         try {
             const res = await fetch(`/api/vendor-verification/${selectedMission.id}`, {
                 method: 'POST',
@@ -337,6 +354,8 @@ const VendorVerificationControl: React.FC<VendorVerificationControlProps> = ({ o
                     payment_date: paymentDate || null,
                     verified_by: userName,
                     verified_at: now,
+                    cost_value: newCostValue,
+                    toll_value_provider: newTollProvValue,
                 })
             });
             const json = await res.json();
@@ -348,11 +367,11 @@ const VendorVerificationControl: React.FC<VendorVerificationControlProps> = ({ o
 
                 setMissions(prev => prev.map(m =>
                     m.id === selectedMission.id
-                        ? { ...m, vendor_os_number: vendorOsNumber.trim(), invoice_number: invoiceNumber.trim(), release_date: finalReleaseDate, payment_date: paymentDate || null, verified_by: userName, verified_at: now }
+                        ? { ...m, vendor_os_number: vendorOsNumber.trim(), invoice_number: invoiceNumber.trim(), release_date: finalReleaseDate, payment_date: paymentDate || null, verified_by: userName, verified_at: now, cost_value: newCostValue, toll_value_provider: newTollProvValue }
                         : m
                 ));
 
-                showNotification('Verificação Gravada', `OS ${selectedMission.id} verificada por ${userName}.`, 'success');
+                showNotification('Verificação Gravada', `OS ${selectedMission.id} verificada e travada por ${userName}. Custo: ${formatCurrency(newCostValue + newTollProvValue)}`, 'success');
             } else {
                 throw new Error(json.error || 'Erro ao gravar');
             }
@@ -461,7 +480,7 @@ const VendorVerificationControl: React.FC<VendorVerificationControlProps> = ({ o
     };
 
     const handleUnlock = async () => {
-        if (!selectedMission || !isAdmin) return;
+        if (!selectedMission || !isDiretoria) return;
         setVerifiedBy('');
         setVerifiedAt('');
         try {
@@ -572,9 +591,41 @@ const VendorVerificationControl: React.FC<VendorVerificationControlProps> = ({ o
                                             <span className="text-gray-500 font-bold">Destino:</span>
                                             <span className="font-bold text-gray-700 text-right truncate" title={selectedMission.destination}>{selectedMission.destination || '—'}</span>
                                         </div>
-                                        <div className="grid grid-cols-[100px_1fr] gap-1 items-center border-t border-gray-200 pt-2 mt-1">
-                                            <span className="text-gray-500 font-bold">Custo Total:</span>
-                                            <span className="font-black text-red-600 text-right">{formatCurrency((selectedMission.cost_value || 0) + Math.max(0, selectedMission.toll_value_provider ?? selectedMission.toll_value ?? 0))}</span>
+                                    </div>
+
+                                    <div className="bg-red-50 rounded-xl p-4 border border-red-200 space-y-3">
+                                        <div className="flex items-center gap-2 mb-1">
+                                            <Receipt size={14} className="text-red-600" />
+                                            <span className="text-[10px] font-black text-red-700 uppercase tracking-widest">Valores do Fornecedor</span>
+                                            {isLocked && !isDiretoria && <Lock size={12} className="text-red-400 ml-auto" />}
+                                        </div>
+                                        <div className="grid grid-cols-2 gap-3">
+                                            <div>
+                                                <label className="text-[9px] font-black text-red-500 uppercase tracking-widest mb-1 block">Custo Serviço (R$)</label>
+                                                <input
+                                                    type="text"
+                                                    value={editCostValue}
+                                                    onChange={e => setEditCostValue(e.target.value)}
+                                                    disabled={isLocked && !isDiretoria}
+                                                    className="w-full px-3 py-2 bg-white border border-red-300 rounded-lg text-sm font-black text-red-700 text-right disabled:bg-gray-100 disabled:text-gray-500 disabled:cursor-not-allowed"
+                                                    data-testid="input-edit-cost-value"
+                                                />
+                                            </div>
+                                            <div>
+                                                <label className="text-[9px] font-black text-red-500 uppercase tracking-widest mb-1 block">Pedágio Forn. (R$)</label>
+                                                <input
+                                                    type="text"
+                                                    value={editTollProviderValue}
+                                                    onChange={e => setEditTollProviderValue(e.target.value)}
+                                                    disabled={isLocked && !isDiretoria}
+                                                    className="w-full px-3 py-2 bg-white border border-red-300 rounded-lg text-sm font-black text-red-700 text-right disabled:bg-gray-100 disabled:text-gray-500 disabled:cursor-not-allowed"
+                                                    data-testid="input-edit-toll-provider"
+                                                />
+                                            </div>
+                                        </div>
+                                        <div className="flex justify-between items-center border-t border-red-200 pt-2">
+                                            <span className="text-[10px] font-black text-red-600 uppercase">Custo Total:</span>
+                                            <span className="font-black text-red-700 text-sm">{formatCurrency(parseNumber(editCostValue) + parseNumber(editTollProviderValue))}</span>
                                         </div>
                                     </div>
 
@@ -687,9 +738,14 @@ const VendorVerificationControl: React.FC<VendorVerificationControlProps> = ({ o
                                         <div className="bg-green-50 border border-green-200 rounded-xl p-4 flex items-start gap-3" data-testid="verification-stamp">
                                             <ShieldCheck size={24} className="text-green-600 flex-shrink-0 mt-0.5" />
                                             <div>
-                                                <p className="text-sm font-black text-green-800">OS Verificada</p>
+                                                <p className="text-sm font-black text-green-800 flex items-center gap-2">
+                                                    <Lock size={14} /> OS Verificada e Travada
+                                                </p>
                                                 <p className="text-xs text-green-600 font-bold mt-1">
                                                     Verificado por <span className="font-black">{verifiedBy}</span> em <span className="font-black">{fmtDateTime(verifiedAt)}</span>
+                                                </p>
+                                                <p className="text-[9px] text-amber-600 font-bold mt-1">
+                                                    Somente Diretoria pode desbloquear esta OS.
                                                 </p>
                                             </div>
                                         </div>
@@ -708,13 +764,13 @@ const VendorVerificationControl: React.FC<VendorVerificationControlProps> = ({ o
                                             </button>
                                         )}
 
-                                        {isLocked && isAdmin && (
+                                        {isLocked && isDiretoria && (
                                             <button
                                                 onClick={handleUnlock}
                                                 className="flex-1 flex items-center justify-center gap-2 bg-amber-500 hover:bg-amber-600 text-white font-black text-sm py-3 rounded-xl transition-colors"
                                                 data-testid="button-unlock-verification"
                                             >
-                                                <Lock size={16} /> Desbloquear (Admin)
+                                                <Lock size={16} /> Desbloquear (Diretoria)
                                             </button>
                                         )}
 

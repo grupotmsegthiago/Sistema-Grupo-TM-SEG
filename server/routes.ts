@@ -1572,13 +1572,15 @@ export async function registerRoutes(
   app.post("/api/vendor-verification/:missionId", async (req: Request, res: Response) => {
       try {
           const { missionId } = req.params;
-          const { vendor_os_number, invoice_number, release_date, payment_date, verified_by, verified_at } = req.body;
+          const { vendor_os_number, invoice_number, release_date, payment_date, verified_by, verified_at, cost_value, toll_value_provider } = req.body;
 
           const corePayload: any = {};
           if (vendor_os_number !== undefined) corePayload.vendor_os_number = vendor_os_number;
           if (invoice_number !== undefined) corePayload.invoice_number = invoice_number;
           if (release_date !== undefined) corePayload.release_date = release_date;
           if (payment_date !== undefined) corePayload.payment_date = payment_date;
+          if (cost_value !== undefined) corePayload.cost_value = cost_value;
+          if (toll_value_provider !== undefined) corePayload.toll_value_provider = toll_value_provider;
 
           if (Object.keys(corePayload).length > 0) {
               const { error: coreErr } = await supabaseAdmin.from('missions').update(corePayload).eq('id', missionId);
