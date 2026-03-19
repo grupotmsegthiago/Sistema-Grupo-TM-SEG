@@ -2378,24 +2378,44 @@ export async function registerRoutes(
         return res.json({ success: false, error: 'Origem e destino são obrigatórios' });
       }
 
-      const prompt = `Você é um especialista em logística rodoviária brasileira. Para o trajeto de "${origin}" até "${destination}" com um veículo LEVE (carro/SUV - 2 eixos), responda EXCLUSIVAMENTE no formato JSON abaixo, sem markdown, sem explicação adicional, apenas o JSON:
+      const prompt = `Você é um engenheiro de tráfego rodoviário brasileiro com conhecimento detalhado de TODAS as praças de pedágio do Brasil.
+
+TAREFA: Identificar as praças de pedágio no trajeto de "${origin}" até "${destination}" para veículo LEVE (carro/SUV - 2 eixos).
+
+REGRAS CRÍTICAS DE ANÁLISE:
+
+1. ROTA REAL: Identifique a rota REAL mais provável entre os dois pontos. Use vias urbanas quando os pontos estão na mesma região metropolitana. NÃO assuma que o veículo pegará rodovias pedagiadas se a rota urbana é mais curta e direta.
+
+2. ROTAS METROPOLITANAS SEM PEDÁGIO: Muitas rotas dentro de regiões metropolitanas NÃO passam por pedágio. Exemplos:
+   - Guarulhos → Pinheiros (SP): Via Marginal Tietê/Pinheiros, SEM pedágio
+   - Zona Leste SP → Zona Oeste SP: Via vias urbanas, SEM pedágio
+   - Osasco → Santo André: Via vias urbanas, SEM pedágio
+   - Trajetos dentro da mesma cidade ou região metropolitana próxima geralmente NÃO têm pedágio
+   Se a rota mais provável é urbana e sem pedágio, retorne "pracas": [] e "totalEstimado": 0
+
+3. PRAÇAS CORRETAS POR RODOVIA: Só inclua praças que REALMENTE existem na rodovia e trecho percorrido. Não confunda:
+   - Praças da Rodovia Ayrton Senna (SP-070) com praças da Dutra (BR-116)
+   - Praças do Rodoanel com praças de rodovias radiais
+   - Praças da Anchieta-Imigrantes com praças da Régis Bittencourt
+   
+4. SENTIDO CORRETO: Verifique se a praça cobra no sentido em que o veículo está trafegando. Muitas praças têm cobrança unidirecional.
+
+5. SISTEMA ANCHIETA-IMIGRANTES (SAI): Se o trajeto usar este sistema, identifique se está SUBINDO (Santos→SP) ou DESCENDO (SP→Santos) a serra.
+
+6. VALORES: Use tarifas atualizadas 2025/2026, categoria 1 (2 eixos, rodagem simples).
+
+7. CONFIANÇA: "alta" = certeza absoluta dos valores e praças; "media" = praças corretas mas valores podem variar ±10%; "baixa" = incerteza sobre rota ou praças.
+
+RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
 
 {
   "totalEstimado": 0.00,
   "pracas": [
-    { "nome": "Nome da praça/concessionária", "rodovia": "BR-XXX ou SP-XXX", "valor": 0.00, "sentido": "Norte/Sul/Subida/Descida", "cobrancaUnica": true/false }
+    { "nome": "Nome da praça", "rodovia": "SP-XXX ou BR-XXX", "valor": 0.00, "sentido": "sentido da cobrança", "cobrancaUnica": true/false }
   ],
-  "observacoes": "Texto curto com observações relevantes sobre o trajeto",
+  "observacoes": "Justificativa da rota escolhida e praças identificadas",
   "confianca": "alta/media/baixa"
-}
-
-Regras importantes:
-1. Identifique TODAS as praças de pedágio no sentido correto da via (de "${origin}" para "${destination}")
-2. Verifique se a concessionária utiliza cobrança única (unidirecional) e em qual sentido ela ocorre
-3. Se o trajeto passar pelo Sistema Anchieta-Imigrantes, identifique se o veículo está SUBINDO ou DESCENDO a serra e aplique a tarifa correta para o sentido
-4. Use valores atualizados de 2025/2026 para veículos leves (categoria 1 - 2 eixos)
-5. Considere a rota mais comum/principal entre os dois pontos
-6. O campo "confianca" deve ser "alta" se você tem certeza dos valores, "media" se são aproximados, "baixa" se não tem dados precisos`;
+}`;
 
       const response = await ai.models.generateContent({
         model: "gemini-2.5-flash",

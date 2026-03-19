@@ -127,7 +127,7 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
   const destinationAutocompleteRef = useRef<google.maps.places.Autocomplete | null>(null);
 
   const step3Done = !!(formData.clientVehicleId && (driverQuestion === 'no' || (driverQuestion === 'yes' && formData.driver_name)));
-  const tollLoaded = !isCalculatingToll && (parseFloat(formData.tollValue) >= 0 && (parseFloat(formData.tollValue) > 0 || manualOverrides.toll));
+  const tollLoaded = !isCalculatingToll && (parseFloat(formData.tollValue) > 0 || manualOverrides.toll || (tollDetails !== null && parseFloat(formData.tollValue) === 0));
   const step5Done = !!(formData.origin && formData.destination && selectedRouteId && parseFloat(formData.totalDistance) > 0 && formData.estimatedTime && manualRevenueTableId && tollLoaded && operatorConfirmedCalc);
   const isScheduledInPast = scheduleMode === 'scheduled' && formData.scheduledDate && formData.scheduledTime && new Date(`${formData.scheduledDate}T${formData.scheduledTime}:00`).getTime() < Date.now();
   const step6Done = step5Done && (scheduleMode === 'immediate' || (scheduleMode === 'scheduled' && !!formData.scheduledDate && !!formData.scheduledTime && !isScheduledInPast));
@@ -592,8 +592,8 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
           });
           if (!resp.ok) return null;
           const data = await resp.json();
-          if (data.success && data.tollValue > 0) {
-              return { value: data.tollValue, count: data.tollCount, tolls: data.tolls || [], observacoes: data.observacoes, confianca: data.confianca, provider: 'gemini-ai' };
+          if (data.success && typeof data.tollValue === 'number') {
+              return { value: data.tollValue, count: data.tollCount || 0, tolls: data.tolls || [], observacoes: data.observacoes, confianca: data.confianca, provider: 'gemini-ai' };
           }
           return null;
       } catch (e) {
@@ -678,9 +678,13 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
           if (apiResult) {
               if (apiResult.apiError && !apiResult.provider) {
                   showNotification('API Pedágio', apiResult.apiError, 'error');
-              } else if (apiResult.value > 0) {
+              } else if (typeof apiResult.value === 'number') {
                   setTollDetails({ count: apiResult.count, tolls: apiResult.tolls, observacoes: apiResult.observacoes, confianca: apiResult.confianca, provider: apiResult.provider });
-                  if (tollSource !== 'history' || Math.abs(apiResult.value - suggestedToll) > 1) {
+                  if (apiResult.value === 0) {
+                      setFormData(prev => ({ ...prev, tollValue: '0' }));
+                      const providerLabel = apiResult.provider === 'gemini-ai' ? 'Gemini IA' : 'API Pedágio';
+                      showNotification(providerLabel, 'Rota sem pedágio identificado. Se houver, informe manualmente.', 'info');
+                  } else if (tollSource !== 'history' || Math.abs(apiResult.value - suggestedToll) > 1) {
                       setFormData(prev => ({ ...prev, tollValue: apiResult.value.toFixed(2) }));
                       const providerLabel = apiResult.provider === 'gemini-ai' ? 'Gemini IA' : apiResult.provider === 'rotasbrasil' ? 'Rotas Brasil' : 'API Pedágio';
                       const confiancaLabel = apiResult.confianca ? ` (Confiança: ${apiResult.confianca})` : '';
@@ -1667,9 +1671,9 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
                                           <span className="text-[10px] font-black text-gray-400">R$</span>
                                           <input type="number" step="0.01" className="bg-transparent outline-none text-sm font-black text-gray-800 w-20" value={formData.tollValue} onChange={e => { setFormData(prev => ({ ...prev, tollValue: e.target.value })); setManualOverrides(prev => ({ ...prev, toll: true })); }} data-testid="input-toll-summary" />
                                       </div>
-                                      <p className="text-[8px] text-gray-400 font-bold mt-1">{manualOverrides.toll ? 'Editado pelo usuário' : tollDetails ? `${tollDetails.count} praça${tollDetails.count > 1 ? 's' : ''} · ${tollDetails.provider === 'gemini-ai' ? 'IA' : 'API'}` : isCalculatingToll ? 'Calculando...' : 'Via API'}</p>
+                                      <p className="text-[8px] text-gray-400 font-bold mt-1">{manualOverrides.toll ? 'Editado pelo usuário' : tollDetails ? (tollDetails.count === 0 ? `Sem pedágio · ${tollDetails.provider === 'gemini-ai' ? 'IA' : 'API'}` : `${tollDetails.count} praça${tollDetails.count > 1 ? 's' : ''} · ${tollDetails.provider === 'gemini-ai' ? 'IA' : 'API'}`) : isCalculatingToll ? 'Calculando...' : 'Via API'}</p>
                                       {tollDetails?.confianca && !manualOverrides.toll && <p className={`text-[7px] font-black uppercase mt-1 ${tollDetails.confianca === 'alta' ? 'text-green-600' : tollDetails.confianca === 'media' ? 'text-yellow-600' : 'text-red-600'}`}>Conf: {tollDetails.confianca}</p>}
-                                      {manualOverrides.toll && <button type="button" onClick={() => { setManualOverrides(prev => ({ ...prev, toll: false })); const route = clientRoutes.find(r => r.id.toString() === selectedRouteId); if (route) { setTollDetails(null); calculateTollFromAPI(route.origin, route.destination).then(r => { if (r && r.value > 0) { setFormData(prev => ({ ...prev, tollValue: r.value.toFixed(2) })); setTollDetails({ count: r.count, tolls: r.tolls, observacoes: r.observacoes, confianca: r.confianca, provider: r.provider }); } }); } }} className="text-[7px] font-bold text-amber-600 hover:text-amber-500 underline mt-1">Recalcular via IA</button>}
+                                      {manualOverrides.toll && <button type="button" onClick={() => { setManualOverrides(prev => ({ ...prev, toll: false })); const route = clientRoutes.find(r => r.id.toString() === selectedRouteId); if (route) { setTollDetails(null); calculateTollFromAPI(route.origin, route.destination).then(r => { if (r && typeof r.value === 'number') { setFormData(prev => ({ ...prev, tollValue: r.value.toFixed(2) })); setTollDetails({ count: r.count, tolls: r.tolls, observacoes: r.observacoes, confianca: r.confianca, provider: r.provider }); } }); } }} className="text-[7px] font-bold text-amber-600 hover:text-amber-500 underline mt-1">Recalcular via IA</button>}
                                   </div>
                               </div>
 
