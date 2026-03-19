@@ -115,6 +115,7 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
 
   const [isCommercialUser, setIsCommercialUser] = useState(false);
   const [providerPending, setProviderPending] = useState(false);
+  const [manualOverrides, setManualOverrides] = useState({ revenue: false, cost: false, toll: false });
   const [expandedStep, setExpandedStep] = useState<number>(1);
   const [driverQuestion, setDriverQuestion] = useState<'asking' | 'yes' | 'no' | null>(null);
   const [scheduleMode, setScheduleMode] = useState<'asking' | 'immediate' | 'scheduled' | null>(null);
@@ -564,7 +565,9 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
           else if (currentFlags.ceva200km) finalDestination = '200KM DE ACOMPANHAMENTO';
 
           setFormData(prev => ({
-              ...prev, provider: activeProvider, revenueValue: revenue.toFixed(2), costValue: cost.toFixed(2),
+              ...prev, provider: activeProvider,
+              revenueValue: manualOverrides.revenue ? prev.revenueValue : revenue.toFixed(2),
+              costValue: manualOverrides.cost ? prev.costValue : cost.toFixed(2),
               totalDistance: realDist.toString(), origin: route.origin, destination: finalDestination,
               estimatedTime: isSpecialRuleActive ? (currentFlags.vtc02h ? '2 horas' : isLogitech ? '3 horas' : '4 horas') : `${Math.max(2, Math.ceil(realDist / 45))} horas`
           }));
@@ -572,7 +575,7 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
           if (revTable) setManualRevenueTableId(revTable.id.toString());
           if (cstTable) setManualCostTableId(cstTable.id.toString());
       } finally { setIsCalculating(false); }
-  }, [formData.client, formData.provider, formData.applyCeva200km, formData.applyVtc02h, formData.isSameOs, clientPriceTables, providerCostTables]);
+  }, [formData.client, formData.provider, formData.applyCeva200km, formData.applyVtc02h, formData.isSameOs, clientPriceTables, providerCostTables, manualOverrides.revenue, manualOverrides.cost]);
 
   const [isCalculatingToll, setIsCalculatingToll] = useState(false);
   const [tollDetails, setTollDetails] = useState<{ count: number; tolls: any[]; observacoes?: string; confianca?: string; provider?: string } | null>(null);
@@ -661,10 +664,12 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
           } catch (e) { console.error(e); }
       }
 
-      setFormData(prev => ({ ...prev, tollValue: suggestedToll.toString() }));
+      if (!manualOverrides.toll) {
+          setFormData(prev => ({ ...prev, tollValue: suggestedToll.toString() }));
+      }
       calculatePricing(route);
 
-      if (tollSource !== 'fixed') {
+      if (tollSource !== 'fixed' && !manualOverrides.toll) {
           const apiResult = await calculateTollFromAPI(route.origin, route.destination);
           if (apiResult) {
               if (apiResult.apiError && !apiResult.provider) {
@@ -679,6 +684,8 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
                   }
               }
           }
+      } else if (manualOverrides.toll) {
+          showNotification('Pedágio Manual', 'Valor de pedágio mantido (editado manualmente). Cálculo automático desativado.', 'info');
       }
   };
 
@@ -711,6 +718,8 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
   };
 
   const handleManualTableChange = (type: 'rev' | 'cst', val: string) => {
+      if (type === 'rev') setManualOverrides(prev => ({ ...prev, revenue: false }));
+      else setManualOverrides(prev => ({ ...prev, cost: false }));
       const route = clientRoutes.find(r => r.id.toString() === selectedRouteId);
       if (!route) return;
       if (type === 'rev') { setManualRevenueTableId(val); calculatePricing(route, undefined, val, manualCostTableId); } 
@@ -1550,11 +1559,15 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
                                       <p className="text-sm font-black">{region || '-'}</p>
                                       <p className="text-[8px] text-gray-500 font-bold mt-1">{uf ? `UF: ${uf}` : '-'}</p>
                                   </div>
-                                  <div className="p-3 rounded-xl bg-green-900/20 border border-green-800/30">
-                                      <p className="text-[8px] font-black text-gray-500 uppercase tracking-widest mb-1">Pedágio</p>
-                                      <p className="text-sm font-black">R$ {parseFloat(formData.tollValue || '0').toFixed(2)}</p>
-                                      <p className="text-[8px] text-gray-500 font-bold mt-1">{tollDetails ? `${tollDetails.count} praça${tollDetails.count > 1 ? 's' : ''} · ${tollDetails.provider === 'gemini-ai' ? 'IA' : 'API'}` : isCalculatingToll ? 'Calculando...' : 'Via API'}</p>
-                                      {tollDetails?.confianca && <p className={`text-[7px] font-black uppercase mt-1 ${tollDetails.confianca === 'alta' ? 'text-green-400' : tollDetails.confianca === 'media' ? 'text-yellow-400' : 'text-red-400'}`}>Conf: {tollDetails.confianca}</p>}
+                                  <div className={`p-3 rounded-xl border ${manualOverrides.toll ? 'bg-amber-900/20 border-amber-700/40' : 'bg-green-900/20 border-green-800/30'}`}>
+                                      <p className="text-[8px] font-black text-gray-500 uppercase tracking-widest mb-1">Pedágio {manualOverrides.toll && <span className="text-amber-400">(Manual)</span>}</p>
+                                      <div className="flex items-center gap-1">
+                                          <span className="text-[10px] font-black text-gray-400">R$</span>
+                                          <input type="number" step="0.01" className="bg-transparent outline-none text-sm font-black text-white w-20" value={formData.tollValue} onChange={e => { setFormData(prev => ({ ...prev, tollValue: e.target.value })); setManualOverrides(prev => ({ ...prev, toll: true })); }} data-testid="input-toll-summary" />
+                                      </div>
+                                      <p className="text-[8px] text-gray-500 font-bold mt-1">{manualOverrides.toll ? 'Editado pelo usuário' : tollDetails ? `${tollDetails.count} praça${tollDetails.count > 1 ? 's' : ''} · ${tollDetails.provider === 'gemini-ai' ? 'IA' : 'API'}` : isCalculatingToll ? 'Calculando...' : 'Via API'}</p>
+                                      {tollDetails?.confianca && !manualOverrides.toll && <p className={`text-[7px] font-black uppercase mt-1 ${tollDetails.confianca === 'alta' ? 'text-green-400' : tollDetails.confianca === 'media' ? 'text-yellow-400' : 'text-red-400'}`}>Conf: {tollDetails.confianca}</p>}
+                                      {manualOverrides.toll && <button type="button" onClick={() => { setManualOverrides(prev => ({ ...prev, toll: false })); const route = clientRoutes.find(r => r.id.toString() === selectedRouteId); if (route) { setTollDetails(null); calculateTollFromAPI(route.origin, route.destination).then(r => { if (r && r.value > 0) { setFormData(prev => ({ ...prev, tollValue: r.value.toFixed(2) })); setTollDetails({ count: r.count, tolls: r.tolls, observacoes: r.observacoes, confianca: r.confianca, provider: r.provider }); } }); } }} className="text-[7px] font-bold text-amber-400 hover:text-amber-300 underline mt-1">Recalcular via IA</button>}
                                   </div>
                               </div>
 
@@ -1645,11 +1658,13 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
                           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                               <div className="bg-green-50/50 p-6 rounded-2xl border border-green-100 group shadow-sm">
                                   <div className="flex items-center justify-between mb-3"><label className="text-[10px] font-black text-green-700 uppercase tracking-widest">Faturamento Previsto</label><TrendingUp size={16} className="text-green-400" /></div>
-                                  <div className="relative"><span className="absolute left-0 top-1/2 -translate-y-1/2 text-lg font-black text-green-400">R$</span><input type="number" step="0.01" className="w-full pl-8 bg-transparent outline-none text-2xl font-black text-green-900" placeholder="0.00" value={formData.revenueValue} onChange={e => setFormData({...formData, revenueValue: e.target.value})} data-testid="input-revenue" /></div>
+                                  <div className="relative"><span className="absolute left-0 top-1/2 -translate-y-1/2 text-lg font-black text-green-400">R$</span><input type="number" step="0.01" className="w-full pl-8 bg-transparent outline-none text-2xl font-black text-green-900" placeholder="0.00" value={formData.revenueValue} onChange={e => { setFormData({...formData, revenueValue: e.target.value}); setManualOverrides(prev => ({ ...prev, revenue: true })); }} data-testid="input-revenue" /></div>
+                                  {manualOverrides.revenue && <div className="flex items-center justify-between mt-1"><p className="text-[8px] font-bold text-amber-600 flex items-center gap-1"><AlertTriangle size={8} /> Editado manualmente — IA desativada</p><button type="button" onClick={() => { setManualOverrides(prev => ({ ...prev, revenue: false })); const route = clientRoutes.find(r => r.id.toString() === selectedRouteId); if (route) calculatePricing(route); }} className="text-[8px] font-bold text-blue-600 hover:text-blue-500 underline">Recalcular</button></div>}
                               </div>
                               <div className={`p-6 rounded-2xl border group shadow-sm transition-all ${formData.isSameOs ? 'bg-gray-900 border-black ring-2 ring-black/10' : 'bg-red-50/50 border-red-100'}`}>
                                   <div className="flex items-center justify-between mb-3"><label className={`text-[10px] font-black uppercase tracking-widest ${formData.isSameOs ? 'text-gray-400' : 'text-red-700'}`}>Custo Previsto {formData.isSameOs && '(MESMA OS)'}</label><TrendingDown size={16} className={formData.isSameOs ? 'text-gray-500' : 'text-red-400'} /></div>
-                                  <div className="relative"><span className={`absolute left-0 top-1/2 -translate-y-1/2 text-lg font-black ${formData.isSameOs ? 'text-slate-700' : 'text-green-400'}`}>R$</span><input type="number" step="0.01" className={`w-full pl-8 bg-transparent outline-none text-2xl font-black ${formData.isSameOs ? 'text-white cursor-not-allowed' : 'text-green-900'}`} placeholder="0.00" value={formData.isSameOs ? '0.00' : formData.costValue} onChange={e => !formData.isSameOs && setFormData({...formData, costValue: e.target.value})} readOnly={formData.isSameOs} data-testid="input-cost" /></div>
+                                  <div className="relative"><span className={`absolute left-0 top-1/2 -translate-y-1/2 text-lg font-black ${formData.isSameOs ? 'text-slate-700' : 'text-green-400'}`}>R$</span><input type="number" step="0.01" className={`w-full pl-8 bg-transparent outline-none text-2xl font-black ${formData.isSameOs ? 'text-white cursor-not-allowed' : 'text-green-900'}`} placeholder="0.00" value={formData.isSameOs ? '0.00' : formData.costValue} onChange={e => { if (!formData.isSameOs) { setFormData({...formData, costValue: e.target.value}); setManualOverrides(prev => ({ ...prev, cost: true })); } }} readOnly={formData.isSameOs} data-testid="input-cost" /></div>
+                                  {manualOverrides.cost && !formData.isSameOs && <div className="flex items-center justify-between mt-1"><p className="text-[8px] font-bold text-amber-600 flex items-center gap-1"><AlertTriangle size={8} /> Editado manualmente — IA desativada</p><button type="button" onClick={() => { setManualOverrides(prev => ({ ...prev, cost: false })); const route = clientRoutes.find(r => r.id.toString() === selectedRouteId); if (route) calculatePricing(route); }} className="text-[8px] font-bold text-blue-600 hover:text-blue-500 underline">Recalcular</button></div>}
                               </div>
                           </div>
                       </div>
