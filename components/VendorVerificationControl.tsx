@@ -216,6 +216,7 @@ const VendorVerificationControl: React.FC<VendorVerificationControlProps> = ({ o
                 supabase.from('missions')
                     .select('id, client, provider, origin, destination, status, created_at, start_time, end_time, start_km, end_km, total_distance, revenue_value, cost_value, toll_value, toll_value_provider, billing_approved, vendor_os_number, invoice_number, release_date, payment_date, verified_by, verified_at')
                     .or('billing_approved.eq.true,status.eq.Concluída')
+                    .gte('created_at', '2026-02-01')
                     .order('created_at', { ascending: false })
                     .limit(2000)
             ]);
@@ -226,6 +227,7 @@ const VendorVerificationControl: React.FC<VendorVerificationControlProps> = ({ o
                 const { data: fallbackData } = await supabase.from('missions')
                     .select('id, client, provider, origin, destination, status, created_at, start_time, end_time, start_km, end_km, total_distance, revenue_value, cost_value, toll_value, toll_value_provider, billing_approved')
                     .or('billing_approved.eq.true,status.eq.Concluída')
+                    .gte('created_at', '2026-02-01')
                     .order('created_at', { ascending: false })
                     .limit(2000);
                 missionData = fallbackData || [];
