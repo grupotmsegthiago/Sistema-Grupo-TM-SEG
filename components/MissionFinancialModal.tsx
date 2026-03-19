@@ -4,7 +4,7 @@ import { Mission, ClientPriceTable, ProviderCostTable, MissionStatus, Client } f
 import { supabase } from '../lib/supabase';
 import { useNotification } from '../lib/NotificationContext';
 import { calculateMissionFinancials, auditMissionFinancials, extractUF, UF_TO_REGION } from '../lib/financialUtils';
-import { X, Calculator, Loader2, Save, CheckCircle2, TrendingUp, Landmark, Zap, RotateCcw, Building2, Briefcase, Plus, Users, MapPin, ArrowRight, BrainCircuit, AlertTriangle, AlertCircle, Edit2, Info, RefreshCw, Clock, Pencil, Lock } from 'lucide-react';
+import { X, Calculator, Loader2, Save, CheckCircle2, TrendingUp, Landmark, Zap, RotateCcw, Building2, Briefcase, Plus, Users, MapPin, ArrowRight, BrainCircuit, AlertTriangle, AlertCircle, Edit2, Info, RefreshCw, Clock, Pencil, Lock, ShieldCheck } from 'lucide-react';
 import ProviderCostForm from './ProviderCostForm';
 import ClientPriceForm from './ClientPriceForm';
 import { formatProviderName } from '../lib/utils';
@@ -397,13 +397,15 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                   autoCalculateToll(fullMission.origin, fullMission.destination, fullMission.id);
               }
 
-              if (mRes.data.billing_approved && (savedRev > 0 || savedCost > 0)) {
+              const isVendorVerified = !!(mRes.data.verified_by && mRes.data.verified_at);
+
+              if ((mRes.data.billing_approved || isVendorVerified) && (savedRev > 0 || savedCost > 0)) {
                   const hasSeparateTollProvider = mRes.data.toll_value_provider != null;
                   const totalCost = hasSeparateTollProvider ? savedCost + dbTollProvider : savedCost;
                   if (!hasSeparateTollProvider && savedCost > 0) {
                       setTollEmbeddedInCost(true);
                   }
-                  if (provOpsEdited) {
+                  if (provOpsEdited && !isVendorVerified) {
                       setUseSavedValues(false);
                   } else {
                       setUseSavedValues(true);
@@ -657,12 +659,13 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
     useEffect(() => {
       if (financialData && mission) {
           const provOpsActive = !!mission.provider_ops_edited;
+          const isVendorLocked = !!(mission.verified_by && mission.verified_at);
           const provTotalWithCorrectToll = financialData.provider.base + financialData.provider.extraKmVal + financialData.provider.extraHrVal + parseNumber(tollProviderInput);
           const hasCustomProviderValues = !!(customProviderBase || customProviderKm || customProviderHour);
-          if (!useSavedValuesRef.current && !isSavingRef.current) {
+          if (!useSavedValuesRef.current && !isSavingRef.current && !isVendorLocked) {
               setRevenueInput(financialData.client.total.toLocaleString('pt-BR', {minimumFractionDigits: 2, maximumFractionDigits: 2}));
               setCostInput(provTotalWithCorrectToll.toLocaleString('pt-BR', {minimumFractionDigits: 2, maximumFractionDigits: 2}));
-          } else if ((provOpsActive || hasCustomProviderValues) && !isSavingRef.current) {
+          } else if ((provOpsActive || hasCustomProviderValues) && !isSavingRef.current && !isVendorLocked) {
               setCostInput(provTotalWithCorrectToll.toLocaleString('pt-BR', {minimumFractionDigits: 2, maximumFractionDigits: 2}));
           }
           
@@ -1953,13 +1956,24 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                             </div>
                         </div>
 
-                        <div className="p-4 bg-blue-50 border border-blue-100 rounded-xl relative group">
+                        <div className={`p-4 ${mission?.verified_by && mission?.verified_at ? 'bg-blue-50 border-2 border-blue-300' : 'bg-blue-50 border border-blue-100'} rounded-xl relative group`}>
                             <div className="flex justify-between items-center mb-2">
-                                <label className="text-[10px] font-black text-blue-700 uppercase">Pagamento Fornecedor (Tabela + Pedágio)</label>
-                                <button type="button" onClick={handleRecalculateProvider} className="flex items-center gap-1 text-[9px] font-bold text-blue-700 hover:text-blue-900 bg-blue-100 hover:bg-blue-200 px-2 py-0.5 rounded transition-colors" title="Resetar para o cálculo da tabela">
-                                    <RefreshCw size={10} /> Recalcular
-                                </button>
+                                <label className="text-[10px] font-black text-blue-700 uppercase flex items-center gap-1">
+                                    Pagamento Fornecedor (Tabela + Pedágio)
+                                    {mission?.verified_by && mission?.verified_at && <Lock size={12} className="text-blue-600" />}
+                                </label>
+                                {!(mission?.verified_by && mission?.verified_at) && (
+                                    <button type="button" onClick={handleRecalculateProvider} className="flex items-center gap-1 text-[9px] font-bold text-blue-700 hover:text-blue-900 bg-blue-100 hover:bg-blue-200 px-2 py-0.5 rounded transition-colors" title="Resetar para o cálculo da tabela">
+                                        <RefreshCw size={10} /> Recalcular
+                                    </button>
+                                )}
                             </div>
+                            {mission?.verified_by && mission?.verified_at && (
+                                <div className="bg-blue-100 border border-blue-300 rounded-lg px-3 py-1.5 mb-2 flex items-center gap-2">
+                                    <ShieldCheck size={14} className="text-blue-700" />
+                                    <span className="text-[9px] font-black text-blue-800">VERIFICADO PELO CONTROLLER — Valor travado. Somente Diretoria pode alterar.</span>
+                                </div>
+                            )}
                             {(() => {
                                 const calcTotal = financialData.provider.base + financialData.provider.extraKmVal + financialData.provider.extraHrVal + parseNumber(tollProviderInput);
                                 const savedTotal = parseNumber(costInput);
@@ -1982,14 +1996,18 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                 <input 
                                     type="text" 
                                     inputMode="decimal"
-                                    className={`w-full bg-white/60 border border-blue-200 rounded-lg px-2 py-1 outline-none font-black text-3xl text-blue-900 font-mono focus:ring-2 focus:ring-blue-400 focus:border-blue-400 ${!canEditOpsData ? 'pointer-events-none opacity-70' : 'cursor-text'}`}
+                                    className={`w-full bg-white/60 border border-blue-200 rounded-lg px-2 py-1 outline-none font-black text-3xl text-blue-900 font-mono focus:ring-2 focus:ring-blue-400 focus:border-blue-400 ${(!canEditOpsData || (mission?.verified_by && mission?.verified_at && !['diretoria', 'administrador', 'ceo'].includes(userRoleLower))) ? 'pointer-events-none opacity-70' : 'cursor-text'}`}
                                     value={costInput} 
-                                    onChange={e => { if (canEditOpsData) { setUseSavedValues(true); setCostInput(e.target.value); setShowCostReasonInput(true); } }}
-                                    readOnly={!canEditOpsData}
+                                    onChange={e => { if (canEditOpsData && !(mission?.verified_by && mission?.verified_at && !['diretoria', 'administrador', 'ceo'].includes(userRoleLower))) { setUseSavedValues(true); setCostInput(e.target.value); setShowCostReasonInput(true); } }}
+                                    readOnly={!canEditOpsData || !!(mission?.verified_by && mission?.verified_at && !['diretoria', 'administrador', 'ceo'].includes(userRoleLower))}
                                     data-testid="input-cost-total"
                                 />
                             </div>
-                            <p className="text-[8px] text-blue-600 font-bold mt-1 italic">{canEditOpsData ? '* EDITÁVEL - DIRETORIA / ADMINISTRADOR (toque para editar)' : ''}</p>
+                            <p className="text-[8px] text-blue-600 font-bold mt-1 italic">
+                                {mission?.verified_by && mission?.verified_at
+                                    ? '🔒 VALOR VERIFICADO PELO CONTROLLER — Somente Diretoria pode alterar'
+                                    : canEditOpsData ? '* EDITÁVEL - DIRETORIA / ADMINISTRADOR (toque para editar)' : ''}
+                            </p>
                             {(showCostReasonInput || costEditReason) && (
                                 <div className="mt-2 p-2 bg-amber-50 border border-amber-200 rounded-lg">
                                     <label className="text-[9px] font-black text-amber-700 uppercase mb-1 block flex items-center gap-1"><AlertCircle size={10}/> Motivo da Alteração (Fornecedor)</label>

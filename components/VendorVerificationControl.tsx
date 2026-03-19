@@ -372,6 +372,7 @@ const VendorVerificationControl: React.FC<VendorVerificationControlProps> = ({ o
                 ));
 
                 showNotification('Verificação Gravada', `OS ${selectedMission.id} verificada e travada por ${userName}. Custo: ${formatCurrency(newCostValue + newTollProvValue)}`, 'success');
+                loadData();
             } else {
                 throw new Error(json.error || 'Erro ao gravar');
             }
