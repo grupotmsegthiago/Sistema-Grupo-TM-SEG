@@ -536,9 +536,9 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
           const u = JSON.parse(localStorage.getItem('userData') || '{}');
           const uRole = (u.role || '').toLowerCase();
           const uName = (u.name || '').toLowerCase();
-          const isPrivileged = uRole === 'administrador' || uRole === 'diretoria' || uName.includes('barbara') || uName.includes('bárbara') || uName.includes('thiago');
+          const isPrivileged = uRole === 'administrador' || uRole === 'diretoria' || uRole === 'controller' || uName.includes('barbara') || uName.includes('bárbara') || uName.includes('thiago');
           if (!isPrivileged) {
-              showNotification('Bloqueado', `Dados Congelados — Aprovado por ${mission.snapshot_approved_by}`, 'error');
+              showNotification('Bloqueado', `Dados Congelados — Aprovado por ${mission.snapshot_approved_by}. Somente Financeiro ou Diretoria podem editar.`, 'error');
               return;
           }
       }
@@ -767,7 +767,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
 
   const handleUpdate = async (approve: boolean) => {
       if (!mission) return;
-      if (isSnapshotFrozen && currentApprovalStatus.currentUserStage !== 'diretoria' && currentApprovalStatus.currentUserStage !== 'financeiro') {
+      if (isSnapshotFrozen && !isController && currentApprovalStatus.currentUserStage !== 'diretoria' && currentApprovalStatus.currentUserStage !== 'financeiro') {
           showNotification('Bloqueado', `Dados Congelados — Aprovado por ${mission.snapshot_approved_by}. Somente Financeiro ou Diretoria podem editar.`, 'error');
           return;
       }
