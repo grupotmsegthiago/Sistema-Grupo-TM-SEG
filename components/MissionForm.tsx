@@ -128,8 +128,8 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
   const destinationAutocompleteRef = useRef<google.maps.places.Autocomplete | null>(null);
 
   const step3Done = !!(formData.clientVehicleId && (driverQuestion === 'no' || (driverQuestion === 'yes' && formData.driver_name)));
-  const tollLoaded = !isCalculatingToll && (parseFloat(formData.tollValue) > 0 || manualOverrides.toll || (tollDetails !== null && parseFloat(formData.tollValue) === 0));
-  const step5Done = !!(formData.origin && formData.destination && selectedRouteId && parseFloat(formData.totalDistance) > 0 && formData.estimatedTime && manualRevenueTableId && tollLoaded && operatorConfirmedCalc);
+  const tollLoaded = !isCalculatingToll && (parseFloat(formData.tollValue) > 0 || manualOverrides.toll || parseFloat(formData.tollValue) === 0);
+  const step5Done = !!(formData.origin && formData.destination && selectedRouteId && formData.estimatedTime && manualRevenueTableId && tollLoaded && operatorConfirmedCalc);
   const isScheduledInPast = scheduleMode === 'scheduled' && formData.scheduledDate && formData.scheduledTime && new Date(`${formData.scheduledDate}T${formData.scheduledTime}:00`).getTime() < Date.now();
   const step6Done = step5Done && (scheduleMode === 'immediate' || (scheduleMode === 'scheduled' && !!formData.scheduledDate && !!formData.scheduledTime && !isScheduledInPast));
 
