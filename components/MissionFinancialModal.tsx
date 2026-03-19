@@ -160,14 +160,14 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
           if (currentMission.billing_approved && currentMission.toll_value !== null && currentMission.toll_value !== undefined) {
              setSuggestedToll(dbToll);
              setTollSource(dbToll === 0 ? 'APROVADO (R$ 0,00)' : 'VALOR APROVADO');
-             setTollInput(dbToll.toLocaleString('pt-BR', { minimumFractionDigits: 2 }));
-             setTollProviderInput(dbTollProv.toLocaleString('pt-BR', { minimumFractionDigits: 2 }));
+             setTollInput(dbToll.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
+             setTollProviderInput(dbTollProv.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
              setTollConfirmed(true);
           } else if (dbToll > 0 || hasSavedData) {
              setSuggestedToll(dbToll);
              setTollSource(dbToll === 0 ? 'VALOR SALVO (R$ 0,00)' : 'VALOR SALVO');
-             setTollInput(dbToll.toLocaleString('pt-BR', { minimumFractionDigits: 2 }));
-             setTollProviderInput(dbTollProv.toLocaleString('pt-BR', { minimumFractionDigits: 2 }));
+             setTollInput(dbToll.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
+             setTollProviderInput(dbTollProv.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
              setTollConfirmed(true);
           } else {
              setSuggestedToll(0);
@@ -237,14 +237,14 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                  if (details.customProviderHour) setCustomProviderHour(details.customProviderHour);
                  if (details.tollValue !== undefined && details.tollValue !== null && !currentMission.billing_approved && !(dbToll > 0 || hasSavedData)) {
                      const memToll = Number(details.tollValue);
-                     setTollInput(memToll.toLocaleString('pt-BR', { minimumFractionDigits: 2 }));
+                     setTollInput(memToll.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
                      setSuggestedToll(memToll);
                      setTollSource('MEMÓRIA (Rota Anterior)');
                      setTollConfirmed(false);
                  }
                  if (details.tollProviderValue !== undefined && details.tollProviderValue !== null && !currentMission.billing_approved && !(dbToll > 0 || hasSavedData)) {
                      const memTollProv = Number(details.tollProviderValue);
-                     setTollProviderInput(memTollProv.toLocaleString('pt-BR', { minimumFractionDigits: 2 }));
+                     setTollProviderInput(memTollProv.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
                  }
                  setMemoryLoaded(true);
                  const hasCustomValues = details.customClientBase || details.customProviderBase;
@@ -357,18 +357,18 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
               const savedCost = safeNumber(mRes.data.cost_value);
               const hasSavedData = mRes.data.billing_approved || mRes.data.billing_verified_by || savedRev > 0 || savedCost > 0;
               if (mRes.data.is_same_os) {
-                  setTollInput(dbToll.toLocaleString('pt-BR', {minimumFractionDigits: 2}));
+                  setTollInput(dbToll.toLocaleString('pt-BR', {minimumFractionDigits: 2, maximumFractionDigits: 2}));
                   setTollProviderInput('0,00');
                   setTollConfirmed(true);
                   setTollSource(dbToll === 0 ? 'MESMA OS (R$ 0,00)' : 'MESMA OS');
               } else if (mRes.data.billing_approved) {
-                  setTollInput(dbToll.toLocaleString('pt-BR', {minimumFractionDigits: 2}));
-                  setTollProviderInput(dbTollProvider.toLocaleString('pt-BR', {minimumFractionDigits: 2}));
+                  setTollInput(dbToll.toLocaleString('pt-BR', {minimumFractionDigits: 2, maximumFractionDigits: 2}));
+                  setTollProviderInput(dbTollProvider.toLocaleString('pt-BR', {minimumFractionDigits: 2, maximumFractionDigits: 2}));
                   setTollConfirmed(true);
                   setTollSource(dbToll === 0 ? 'APROVADO (R$ 0,00)' : 'VALOR APROVADO');
               } else if (hasSavedData || dbToll > 0) {
-                  setTollInput(dbToll.toLocaleString('pt-BR', {minimumFractionDigits: 2}));
-                  setTollProviderInput(dbTollProvider.toLocaleString('pt-BR', {minimumFractionDigits: 2}));
+                  setTollInput(dbToll.toLocaleString('pt-BR', {minimumFractionDigits: 2, maximumFractionDigits: 2}));
+                  setTollProviderInput(dbTollProvider.toLocaleString('pt-BR', {minimumFractionDigits: 2, maximumFractionDigits: 2}));
                   setTollConfirmed(true);
                   setTollSource(dbToll === 0 ? 'VALOR SALVO (R$ 0,00)' : 'VALOR SALVO');
               } else {
@@ -390,8 +390,8 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                   } else {
                       setUseSavedValues(true);
                       const totalRev = savedRev + dbToll;
-                      setRevenueInput(totalRev.toLocaleString('pt-BR', {minimumFractionDigits: 2}));
-                      setCostInput(totalCost.toLocaleString('pt-BR', {minimumFractionDigits: 2}));
+                      setRevenueInput(totalRev.toLocaleString('pt-BR', {minimumFractionDigits: 2, maximumFractionDigits: 2}));
+                      setCostInput(totalCost.toLocaleString('pt-BR', {minimumFractionDigits: 2, maximumFractionDigits: 2}));
                   }
               }
               if (mRes.data.billing_verified_by) {
@@ -642,10 +642,10 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
           const provTotalWithCorrectToll = financialData.provider.base + financialData.provider.extraKmVal + financialData.provider.extraHrVal + parseNumber(tollProviderInput);
           const hasCustomProviderValues = !!(customProviderBase || customProviderKm || customProviderHour);
           if (!useSavedValuesRef.current && !isSavingRef.current) {
-              setRevenueInput(financialData.client.total.toLocaleString('pt-BR', {minimumFractionDigits: 2}));
-              setCostInput(provTotalWithCorrectToll.toLocaleString('pt-BR', {minimumFractionDigits: 2}));
+              setRevenueInput(financialData.client.total.toLocaleString('pt-BR', {minimumFractionDigits: 2, maximumFractionDigits: 2}));
+              setCostInput(provTotalWithCorrectToll.toLocaleString('pt-BR', {minimumFractionDigits: 2, maximumFractionDigits: 2}));
           } else if ((provOpsActive || hasCustomProviderValues) && !isSavingRef.current) {
-              setCostInput(provTotalWithCorrectToll.toLocaleString('pt-BR', {minimumFractionDigits: 2}));
+              setCostInput(provTotalWithCorrectToll.toLocaleString('pt-BR', {minimumFractionDigits: 2, maximumFractionDigits: 2}));
           }
           
           if (financialData.provider.tableId) {
@@ -673,7 +673,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
       setTollConfirmed(true);
       const currentRev = parseNumber(revenueInput);
       const updatedRev = currentRev - oldToll + newToll;
-      setRevenueInput(updatedRev.toLocaleString('pt-BR', { minimumFractionDigits: 2 }));
+      setRevenueInput(updatedRev.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
       setUseSavedValues(true);
   };
 
@@ -685,7 +685,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
       setTollConfirmed(true);
       const currentCost = parseNumber(costInput);
       const updatedCost = currentCost - oldTollProv + newTollProv;
-      setCostInput(updatedCost.toLocaleString('pt-BR', { minimumFractionDigits: 2 }));
+      setCostInput(updatedCost.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
       setUseSavedValues(true);
   };
 
@@ -836,10 +836,11 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
           const canReleaseBilling = stage === 'financeiro' || stage === 'diretoria';
           const shouldSnapshot = approve && canReleaseBilling && !mission.snapshot_approved_by;
           
+          const r2 = (v: number) => Math.round(v * 100) / 100;
           const basePayload: any = {
-              revenue_value: revServiceOnly,
-              cost_value: costServiceOnly,
-              toll_value: toll,
+              revenue_value: r2(revServiceOnly),
+              cost_value: r2(costServiceOnly),
+              toll_value: r2(toll),
               billing_approved: isApprovedForBilling,
               last_update: new Date().toISOString()
           };
@@ -886,7 +887,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
               reasonFields.cost_edit_reason = `[${userName} - ${new Date().toLocaleString('pt-BR')}] ${costEditReason.trim()}`;
           }
 
-          const fullPayload = { ...basePayload, toll_value_provider: tollProv, ...reasonFields };
+          const fullPayload = { ...basePayload, toll_value_provider: r2(tollProv), ...reasonFields };
           let result = await supabase.from('missions').update(fullPayload).eq('id', mission.id).select('id, revenue_value, cost_value, toll_value, last_update').single();
           if (result.error && result.error.message?.includes('does not exist')) {
               const { snapshot_data, snapshot_approved_by, snapshot_approved_at, ...payloadWithoutSnapshot } = fullPayload;
@@ -1251,10 +1252,10 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                             if (financialData) {
                                                 const toll = financialData.tollValue;
                                                 setUseSavedValues(false);
-                                                setRevenueInput((financialData.client.total).toLocaleString('pt-BR', { minimumFractionDigits: 2 }));
-                                                setCostInput((financialData.provider.total).toLocaleString('pt-BR', { minimumFractionDigits: 2 }));
-                                                setTollInput(toll.toLocaleString('pt-BR', { minimumFractionDigits: 2 }));
-                                                setTollProviderInput(toll.toLocaleString('pt-BR', { minimumFractionDigits: 2 }));
+                                                setRevenueInput((financialData.client.total).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
+                                                setCostInput((financialData.provider.total).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
+                                                setTollInput(toll.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
+                                                setTollProviderInput(toll.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
                                                 showNotification('Tabela Aplicada', 'Valores ajustados conforme tabela oficial de franquia.', 'success');
                                             }
                                         }}
@@ -1585,7 +1586,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                         <p className="text-[10px] font-black text-gray-400 uppercase tracking-wider">Base (Saída)</p>
                                         <p className="text-lg font-black text-gray-800 mt-1">
                                             <span className="text-[10px] font-semibold text-gray-400 mr-0.5">R$</span>
-                                            {financialData.client.base.toLocaleString('pt-BR', {minimumFractionDigits: 2})}
+                                            {financialData.client.base.toLocaleString('pt-BR', {minimumFractionDigits: 2, maximumFractionDigits: 2})}
                                         </p>
                                     </div>
                                     <div className="flex items-center gap-1 mt-2 pt-2 border-t border-gray-200">
@@ -1720,7 +1721,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                         <p className="text-[10px] font-black text-gray-400 uppercase tracking-wider">Custo Base</p>
                                         <p className={`text-lg font-black mt-1 ${financialData.provider.base === 0 && !mission.is_same_os ? 'text-red-500' : 'text-gray-800'}`}>
                                             <span className="text-[10px] font-semibold text-gray-400 mr-0.5">R$</span>
-                                            {financialData.provider.base.toLocaleString('pt-BR', {minimumFractionDigits: 2})}
+                                            {financialData.provider.base.toLocaleString('pt-BR', {minimumFractionDigits: 2, maximumFractionDigits: 2})}
                                         </p>
                                         {financialData.providerMult > 1 && <p className="text-[9px] text-red-500 font-bold font-mono mt-0.5">(x{financialData.providerMult})</p>}
                                     </div>

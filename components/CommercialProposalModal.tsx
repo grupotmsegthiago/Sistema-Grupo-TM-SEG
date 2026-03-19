@@ -699,7 +699,7 @@ const CommercialProposalModal: React.FC<Props> = ({
                                                 {t.id === 'virtual-logitech' && <span className="block text-[8px] text-red-700 font-black mt-1">REGRA AUTOMÁTICA ATIVA</span>}
                                             </td>
                                             <td className="p-5 text-center text-black font-mono border-r border-black font-bold">{t.franchise_km}KM / {t.franchise_hours}H</td>
-                                            <td className="p-5 text-right font-black text-black text-sm">R$ {t.activation_fee.toLocaleString('pt-BR', {minimumFractionDigits: 2})}</td>
+                                            <td className="p-5 text-right font-black text-black text-sm">R$ {t.activation_fee.toLocaleString('pt-BR', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
                                         </tr>
                                     ))}
                                 </tbody>
@@ -966,9 +966,9 @@ const CommercialProposalModal: React.FC<Props> = ({
                                             <tr key={i} className="even:bg-gray-50">
                                                 <td className="p-2 border border-black uppercase font-bold">{t.operation_type}</td>
                                                 <td className="p-2 border border-black text-center">{t.franchise_km}KM / {t.franchise_hours}H</td>
-                                                <td className="p-2 border border-black text-center">R$ {t.price_per_extra_km?.toLocaleString('pt-BR', {minimumFractionDigits: 2})}</td>
-                                                <td className="p-2 border border-black text-center">R$ {t.price_per_extra_hour?.toLocaleString('pt-BR', {minimumFractionDigits: 2})}</td>
-                                                <td className="p-2 border border-black text-right font-black">R$ {t.activation_fee.toLocaleString('pt-BR', {minimumFractionDigits: 2})}</td>
+                                                <td className="p-2 border border-black text-center">R$ {t.price_per_extra_km?.toLocaleString('pt-BR', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
+                                                <td className="p-2 border border-black text-center">R$ {t.price_per_extra_hour?.toLocaleString('pt-BR', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
+                                                <td className="p-2 border border-black text-right font-black">R$ {t.activation_fee.toLocaleString('pt-BR', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
                                             </tr>
                                         ))}
                                     </tbody>

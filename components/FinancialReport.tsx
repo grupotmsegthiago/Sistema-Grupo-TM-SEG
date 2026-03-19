@@ -255,7 +255,7 @@ const FinancialReport: React.FC = () => {
                     <div>
                         <p className="text-xs font-bold text-gray-500 uppercase mb-1">Receitas (Período)</p>
                         <h3 className="text-2xl font-black text-green-600">
-                            R$ {totals.income.toLocaleString('pt-BR', {minimumFractionDigits: 2})}
+                            R$ {totals.income.toLocaleString('pt-BR', {minimumFractionDigits: 2, maximumFractionDigits: 2})}
                         </h3>
                     </div>
                     <div className="p-3 bg-green-50 rounded-full text-green-600"><ArrowUpCircle size={24}/></div>
@@ -265,7 +265,7 @@ const FinancialReport: React.FC = () => {
                     <div>
                         <p className="text-xs font-bold text-gray-500 uppercase mb-1">Despesas (Período)</p>
                         <h3 className="text-2xl font-black text-red-600">
-                            R$ {totals.expense.toLocaleString('pt-BR', {minimumFractionDigits: 2})}
+                            R$ {totals.expense.toLocaleString('pt-BR', {minimumFractionDigits: 2, maximumFractionDigits: 2})}
                         </h3>
                     </div>
                     <div className="p-3 bg-red-50 rounded-full text-red-600"><ArrowDownCircle size={24}/></div>
@@ -275,7 +275,7 @@ const FinancialReport: React.FC = () => {
                     <div>
                         <p className="text-xs font-bold text-gray-500 uppercase mb-1">Resultado Líquido</p>
                         <h3 className={`text-2xl font-black ${totals.balance >= 0 ? 'text-blue-700' : 'text-red-700'}`}>
-                            R$ {totals.balance.toLocaleString('pt-BR', {minimumFractionDigits: 2})}
+                            R$ {totals.balance.toLocaleString('pt-BR', {minimumFractionDigits: 2, maximumFractionDigits: 2})}
                         </h3>
                     </div>
                     <div className="p-3 bg-gray-100 rounded-full text-gray-600"><DollarSign size={24}/></div>
@@ -387,7 +387,7 @@ const FinancialReport: React.FC = () => {
                                             </span>
                                         </td>
                                         <td className={`p-4 text-right font-mono font-bold ${item.type === 'INCOME' ? 'text-green-600' : 'text-red-600'}`}>
-                                            {item.type === 'INCOME' ? '+' : '-'} R$ {item.amount.toLocaleString('pt-BR', {minimumFractionDigits: 2})}
+                                            {item.type === 'INCOME' ? '+' : '-'} R$ {item.amount.toLocaleString('pt-BR', {minimumFractionDigits: 2, maximumFractionDigits: 2})}
                                         </td>
                                     </tr>
                                 ))
@@ -397,7 +397,7 @@ const FinancialReport: React.FC = () => {
                             <tr>
                                 <td colSpan={7} className="p-4 text-right text-gray-700 uppercase">Total do Relatório:</td>
                                 <td className={`p-4 text-right font-mono ${totals.balance >= 0 ? 'text-blue-800' : 'text-red-800'}`}>
-                                    R$ {totals.balance.toLocaleString('pt-BR', {minimumFractionDigits: 2})}
+                                    R$ {totals.balance.toLocaleString('pt-BR', {minimumFractionDigits: 2, maximumFractionDigits: 2})}
                                 </td>
                             </tr>
                         </tfoot>
