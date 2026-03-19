@@ -1426,7 +1426,7 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
                   )}
 
                   {/* PEDÁGIO - STATUS DE CARREGAMENTO */}
-                  {selectedRouteId && parseFloat(formData.totalDistance) > 0 && isCalculatingToll && (
+                  {selectedRouteId && isCalculatingToll && (
                       <div className="flex items-center gap-3 p-4 bg-amber-50 border-2 border-amber-300 rounded-xl animate-pulse">
                           <Loader2 size={18} className="animate-spin text-amber-600" />
                           <div>
@@ -1436,21 +1436,21 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
                       </div>
                   )}
 
-                  {selectedRouteId && parseFloat(formData.totalDistance) > 0 && !isCalculatingToll && parseFloat(formData.tollValue) === 0 && !manualOverrides.toll && (
-                      <div className="p-4 bg-red-50 border-2 border-red-300 rounded-xl space-y-3">
+                  {selectedRouteId && !isCalculatingToll && parseFloat(formData.tollValue) === 0 && !manualOverrides.toll && (
+                      <div className="p-4 bg-amber-50 border-2 border-amber-300 rounded-xl space-y-3">
                           <div className="flex items-center gap-2">
-                              <AlertTriangle size={16} className="text-red-600" />
-                              <p className="text-[11px] font-black text-red-800 uppercase">Pedágio não encontrado automaticamente</p>
+                              <AlertTriangle size={16} className="text-amber-600" />
+                              <p className="text-[11px] font-black text-amber-800 uppercase">Pedágio: R$ 0,00</p>
                           </div>
-                          <p className="text-[9px] text-red-600 font-bold">Informe o valor manualmente para prosseguir. A OS não será gerada sem pedágio.</p>
+                          <p className="text-[9px] text-amber-600 font-bold">Nenhum pedágio identificado nesta rota. Se houver, informe o valor abaixo. Caso contrário, pode prosseguir normalmente.</p>
                           <div className="flex items-center gap-2">
-                              <span className="text-sm font-black text-red-700">R$</span>
-                              <input type="number" step="0.01" className="flex-1 px-3 py-2 border-2 border-red-300 rounded-lg text-sm font-black text-red-900 bg-white focus:border-red-500 outline-none" placeholder="0.00" value={formData.tollValue === '0' ? '' : formData.tollValue} onChange={e => { setFormData(prev => ({ ...prev, tollValue: e.target.value || '0' })); setManualOverrides(prev => ({ ...prev, toll: true })); }} data-testid="input-toll-manual" />
+                              <span className="text-sm font-black text-amber-700">R$</span>
+                              <input type="number" step="0.01" className="flex-1 px-3 py-2 border-2 border-amber-300 rounded-lg text-sm font-black text-amber-900 bg-white focus:border-amber-500 outline-none" placeholder="0.00" value={formData.tollValue === '0' ? '' : formData.tollValue} onChange={e => { setFormData(prev => ({ ...prev, tollValue: e.target.value || '0' })); setManualOverrides(prev => ({ ...prev, toll: true })); }} data-testid="input-toll-manual" />
                           </div>
                       </div>
                   )}
 
-                  {selectedRouteId && parseFloat(formData.totalDistance) > 0 && (
+                  {selectedRouteId && (
                       <div className="space-y-4 pt-2 border-t border-gray-100 mt-4 animate-in slide-in-from-top-2">
                           <p className="text-[10px] font-black text-gray-500 uppercase tracking-widest flex items-center gap-2"><Tag size={12} /> Selecionar Tabelas</p>
                           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
