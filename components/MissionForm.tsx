@@ -116,6 +116,7 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
   const [isCommercialUser, setIsCommercialUser] = useState(false);
   const [providerPending, setProviderPending] = useState(false);
   const [manualOverrides, setManualOverrides] = useState({ revenue: false, cost: false, toll: false });
+  const [operatorConfirmedCalc, setOperatorConfirmedCalc] = useState(false);
   const [expandedStep, setExpandedStep] = useState<number>(1);
   const [driverQuestion, setDriverQuestion] = useState<'asking' | 'yes' | 'no' | null>(null);
   const [scheduleMode, setScheduleMode] = useState<'asking' | 'immediate' | 'scheduled' | null>(null);
@@ -125,7 +126,8 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
   const destinationAutocompleteRef = useRef<google.maps.places.Autocomplete | null>(null);
 
   const step3Done = !!(formData.clientVehicleId && (driverQuestion === 'no' || (driverQuestion === 'yes' && formData.driver_name)));
-  const step5Done = !!(formData.origin && formData.destination && selectedRouteId && parseFloat(formData.totalDistance) > 0 && formData.estimatedTime && manualRevenueTableId);
+  const tollLoaded = !isCalculatingToll && (parseFloat(formData.tollValue) >= 0 && (parseFloat(formData.tollValue) > 0 || manualOverrides.toll));
+  const step5Done = !!(formData.origin && formData.destination && selectedRouteId && parseFloat(formData.totalDistance) > 0 && formData.estimatedTime && manualRevenueTableId && tollLoaded && operatorConfirmedCalc);
   const step6Done = step5Done && (scheduleMode === 'immediate' || (scheduleMode === 'scheduled' && !!formData.scheduledDate && !!formData.scheduledTime));
 
   const isVtcClient = (formData.client || '').toUpperCase().includes('VTC');
@@ -635,6 +637,7 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
       setRouteSearchTerm(route.name);
       setActiveDropdown(null);
       setTollDetails(null);
+      setOperatorConfirmedCalc(false);
       
       let suggestedToll = 0;
       let tollSource = '';
@@ -1218,7 +1221,7 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
                               <Briefcase size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
                               <ChevronDown size={16} className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
                               {activeDropdown === 'provider' && (
-                                  <div className="absolute z-[100] left-0 right-0 mt-1 bg-white border border-gray-200 rounded-xl shadow-2xl max-h-48 overflow-y-auto ring-1 ring-black/5">
+                                  <div className="absolute z-[100] left-0 right-0 mt-1 bg-white border border-gray-200 rounded-xl shadow-2xl max-h-72 overflow-y-auto ring-1 ring-black/5">
                                       {filteredProviders.map(p => (
                                           <button key={p.id} type="button" onClick={() => handleProviderSelection(p.name)} className={DROPDOWN_ITEM_CLASS}>
                                               <span className="flex items-center gap-2"><Shield size={14} className="text-red-500" />{formatProviderName(p.name, p.trading_name)}</span>
@@ -1387,9 +1390,32 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
                       </div>
                   )}
 
-                  {calcDetails && (<div className="flex items-center gap-2 p-3 bg-blue-50 text-blue-700 rounded-lg text-[10px] font-black uppercase tracking-tight border border-blue-100 shadow-sm"><Info size={14} className="shrink-0"/> {calcDetails}</div>)}
+                  {/* PEDÁGIO - STATUS DE CARREGAMENTO */}
+                  {selectedRouteId && parseFloat(formData.totalDistance) > 0 && isCalculatingToll && (
+                      <div className="flex items-center gap-3 p-4 bg-amber-50 border-2 border-amber-300 rounded-xl animate-pulse">
+                          <Loader2 size={18} className="animate-spin text-amber-600" />
+                          <div>
+                              <p className="text-[11px] font-black text-amber-800 uppercase">Calculando pedágio...</p>
+                              <p className="text-[9px] text-amber-600 font-bold">Aguarde. A OS não pode ser gerada sem o valor do pedágio.</p>
+                          </div>
+                      </div>
+                  )}
 
-                  {selectedRouteId && parseFloat(formData.totalDistance) > 0 && canViewFinancials && (
+                  {selectedRouteId && parseFloat(formData.totalDistance) > 0 && !isCalculatingToll && parseFloat(formData.tollValue) === 0 && !manualOverrides.toll && (
+                      <div className="p-4 bg-red-50 border-2 border-red-300 rounded-xl space-y-3">
+                          <div className="flex items-center gap-2">
+                              <AlertTriangle size={16} className="text-red-600" />
+                              <p className="text-[11px] font-black text-red-800 uppercase">Pedágio não encontrado automaticamente</p>
+                          </div>
+                          <p className="text-[9px] text-red-600 font-bold">Informe o valor manualmente para prosseguir. A OS não será gerada sem pedágio.</p>
+                          <div className="flex items-center gap-2">
+                              <span className="text-sm font-black text-red-700">R$</span>
+                              <input type="number" step="0.01" className="flex-1 px-3 py-2 border-2 border-red-300 rounded-lg text-sm font-black text-red-900 bg-white focus:border-red-500 outline-none" placeholder="0.00" value={formData.tollValue === '0' ? '' : formData.tollValue} onChange={e => { setFormData(prev => ({ ...prev, tollValue: e.target.value || '0' })); setManualOverrides(prev => ({ ...prev, toll: true })); }} data-testid="input-toll-manual" />
+                          </div>
+                      </div>
+                  )}
+
+                  {selectedRouteId && parseFloat(formData.totalDistance) > 0 && (
                       <div className="space-y-4 pt-2 border-t border-gray-100 mt-4 animate-in slide-in-from-top-2">
                           <p className="text-[10px] font-black text-gray-500 uppercase tracking-widest flex items-center gap-2"><Tag size={12} /> Selecionar Tabelas</p>
                           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -1398,7 +1424,7 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
                                   <div className="relative">
                                       <select className={SELECT_CLASS} value={manualRevenueTableId} onChange={e => handleManualTableChange('rev', e.target.value)} data-testid="select-revenue-table-step5">
                                           <option value="">Selecione a tabela...</option>
-                                          {clientPriceTables.map(t => (<option key={t.id} value={t.id}>{t.operation_type} (Base: R${t.activation_fee} | {t.franchise_km || 0}KM | {t.franchise_hours || 0}h)</option>))}
+                                          {clientPriceTables.map(t => (<option key={t.id} value={t.id}>{t.operation_type} ({t.franchise_km || 0}KM / {t.franchise_hours || 0}h)</option>))}
                                       </select>
                                       <Tag size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-green-500 opacity-50 pointer-events-none" />
                                       <ChevronDown size={16} className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
@@ -1410,7 +1436,7 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
                                   <div className="relative">
                                       <select className={SELECT_CLASS} value={manualCostTableId} onChange={e => handleManualTableChange('cst', e.target.value)} disabled={!formData.provider || formData.isSameOs} data-testid="select-cost-table-step5">
                                           <option value="">{formData.isSameOs ? 'CUSTO ZERADO (MESMA OS)' : formData.provider ? 'Selecione a tabela...' : providerPending ? 'FORNECEDOR PENDENTE' : 'Selecione o fornecedor primeiro'}</option>
-                                          {providerCostTables.map(t => (<option key={t.id} value={t.id}>{t.operation_type} (Base: R${t.activation_cost} | {t.franchise_km || 0}KM | {t.franchise_hours || 0}h)</option>))}
+                                          {providerCostTables.map(t => (<option key={t.id} value={t.id}>{t.operation_type} ({t.franchise_km || 0}KM / {t.franchise_hours || 0}h)</option>))}
                                       </select>
                                       <Tag size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-red-500 opacity-50 pointer-events-none" />
                                       <ChevronDown size={16} className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
@@ -1418,6 +1444,74 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
                                   {manualCostTableId && !formData.isSameOs && (() => { const t = providerCostTables.find(pt => pt.id.toString() === manualCostTableId); return t ? <p className="text-[8px] font-bold text-red-600 mt-1">Franquia: {t.franchise_km}KM / {t.franchise_hours || '—'}h | Extra KM: R${t.cost_per_extra_km || 0} | Extra Hora: R${t.cost_per_extra_hour || 0}</p> : null; })()}
                               </div>
                           </div>
+
+                          {/* RESUMO CLARO PARA CONFIRMAÇÃO DO OPERADOR */}
+                          {manualRevenueTableId && tollLoaded && (
+                              <div className={`p-4 rounded-xl border-2 space-y-3 ${operatorConfirmedCalc ? 'bg-green-50 border-green-300' : 'bg-blue-50 border-blue-300'}`}>
+                                  <div className="flex items-center gap-2">
+                                      <AlertCircle size={16} className={operatorConfirmedCalc ? 'text-green-700' : 'text-blue-700'} />
+                                      <p className="text-[11px] font-black uppercase text-gray-800">Confira os dados antes de avançar</p>
+                                  </div>
+                                  <div className="grid grid-cols-1 gap-2 text-[10px] font-bold text-gray-700">
+                                      <div className="flex items-center gap-2 px-3 py-2 bg-white rounded-lg border border-gray-200">
+                                          <Ruler size={12} className="text-blue-500 shrink-0" />
+                                          <span className="font-black text-gray-900">Distância:</span>
+                                          <span>{formData.totalDistance} KM</span>
+                                          <span className="text-gray-400">|</span>
+                                          <span className="font-black text-gray-900">Tempo:</span>
+                                          <span>{formData.estimatedTime}</span>
+                                      </div>
+                                      {(() => {
+                                          const rt = clientPriceTables.find(pt => pt.id.toString() === manualRevenueTableId);
+                                          if (!rt) return null;
+                                          const dist = parseFloat(formData.totalDistance) || 0;
+                                          const cobreKm = rt.franchise_km || 0;
+                                          return (
+                                              <div className="flex items-start gap-2 px-3 py-2 bg-white rounded-lg border border-green-200">
+                                                  <DollarSign size={12} className="text-green-500 shrink-0 mt-0.5" />
+                                                  <div>
+                                                      <p><span className="font-black text-green-800">Faturamento:</span> {rt.operation_type}</p>
+                                                      <p className="text-[9px] text-gray-500">Franquia de {cobreKm}KM {dist > cobreKm ? `— excede em ${(dist - cobreKm).toFixed(0)}KM` : `— cobre os ${dist.toFixed(0)}KM`}</p>
+                                                  </div>
+                                              </div>
+                                          );
+                                      })()}
+                                      {manualCostTableId && !formData.isSameOs && (() => {
+                                          const ct = providerCostTables.find(pt => pt.id.toString() === manualCostTableId);
+                                          if (!ct) return null;
+                                          const dist = parseFloat(formData.totalDistance) || 0;
+                                          const cobreKm = ct.franchise_km || 0;
+                                          return (
+                                              <div className="flex items-start gap-2 px-3 py-2 bg-white rounded-lg border border-red-200">
+                                                  <DollarSign size={12} className="text-red-500 shrink-0 mt-0.5" />
+                                                  <div>
+                                                      <p><span className="font-black text-red-800">Custo:</span> {ct.operation_type}</p>
+                                                      <p className="text-[9px] text-gray-500">Franquia de {cobreKm}KM {dist > cobreKm ? `— excede em ${(dist - cobreKm).toFixed(0)}KM` : `— cobre os ${dist.toFixed(0)}KM`}</p>
+                                                  </div>
+                                              </div>
+                                          );
+                                      })()}
+                                      <div className="flex items-center gap-2 px-3 py-2 bg-white rounded-lg border border-gray-200">
+                                          <Navigation size={12} className="text-green-500 shrink-0" />
+                                          <span className="font-black text-gray-900">Pedágio:</span>
+                                          <span>R$ {parseFloat(formData.tollValue || '0').toFixed(2)}</span>
+                                          {tollDetails?.provider === 'gemini-ai' && <span className="text-[8px] text-purple-600 font-black">(via IA)</span>}
+                                          {manualOverrides.toll && <span className="text-[8px] text-amber-600 font-black">(manual)</span>}
+                                      </div>
+                                  </div>
+                                  {!operatorConfirmedCalc ? (
+                                      <button type="button" onClick={() => setOperatorConfirmedCalc(true)} className="w-full py-3 bg-blue-600 text-white rounded-xl text-[11px] font-black uppercase tracking-wider hover:bg-blue-700 transition-all active:scale-[0.98] shadow-lg" data-testid="button-confirm-calc">
+                                          <Check size={14} className="inline mr-2" />Li e confirmo que os dados estão corretos
+                                      </button>
+                                  ) : (
+                                      <div className="flex items-center justify-between">
+                                          <p className="text-[10px] font-black text-green-700 flex items-center gap-1.5"><CheckCircle2 size={14} /> Confirmado pelo operador</p>
+                                          <button type="button" onClick={() => setOperatorConfirmedCalc(false)} className="text-[9px] font-bold text-gray-500 hover:text-red-600 underline">Revisar novamente</button>
+                                      </div>
+                                  )}
+                              </div>
+                          )}
+
                           {!manualRevenueTableId && (
                               <div className="flex items-center gap-2 px-3 py-2 bg-amber-50 border border-amber-200 rounded-lg text-[9px] font-black text-amber-700 uppercase">
                                   <Info size={12} /> Selecione ao menos a tabela de faturamento para avançar
@@ -1608,7 +1702,7 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
                                       {revTable ? (
                                           <>
                                               <p className="text-[11px] font-black text-white truncate">{revTable.operation_type}</p>
-                                              <p className="text-[9px] text-gray-400 font-bold mt-1">Base: R${revTable.activation_fee} | {revTable.franchise_km || 0}KM | {revTable.franchise_hours || 0}h</p>
+                                              <p className="text-[9px] text-gray-400 font-bold mt-1">{revTable.franchise_km || 0}KM / {revTable.franchise_hours || 0}h</p>
                                           </>
                                       ) : <p className="text-[10px] text-gray-500 font-bold">Não selecionada</p>}
                                   </div>
@@ -1620,7 +1714,7 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
                                       {cstTable && !formData.isSameOs ? (
                                           <>
                                               <p className="text-[11px] font-black text-white truncate">{cstTable.operation_type}</p>
-                                              <p className="text-[9px] text-gray-400 font-bold mt-1">Base: R${cstTable.activation_cost} | {cstTable.franchise_km || 0}KM | {cstTable.franchise_hours || 0}h</p>
+                                              <p className="text-[9px] text-gray-400 font-bold mt-1">{cstTable.franchise_km || 0}KM / {cstTable.franchise_hours || 0}h</p>
                                           </>
                                       ) : <p className="text-[10px] text-gray-500 font-bold">{formData.isSameOs ? 'MESMA OS (Zerado)' : providerPending ? 'Fornecedor pendente' : 'Não selecionada'}</p>}
                                   </div>
@@ -1653,22 +1747,6 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
                       );
                   })()}
 
-                  {canViewFinancials && (
-                      <div className="space-y-6 animate-in fade-in">
-                          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                              <div className="bg-green-50/50 p-6 rounded-2xl border border-green-100 group shadow-sm">
-                                  <div className="flex items-center justify-between mb-3"><label className="text-[10px] font-black text-green-700 uppercase tracking-widest">Faturamento Previsto</label><TrendingUp size={16} className="text-green-400" /></div>
-                                  <div className="relative"><span className="absolute left-0 top-1/2 -translate-y-1/2 text-lg font-black text-green-400">R$</span><input type="number" step="0.01" className="w-full pl-8 bg-transparent outline-none text-2xl font-black text-green-900" placeholder="0.00" value={formData.revenueValue} onChange={e => { setFormData({...formData, revenueValue: e.target.value}); setManualOverrides(prev => ({ ...prev, revenue: true })); }} data-testid="input-revenue" /></div>
-                                  {manualOverrides.revenue && <div className="flex items-center justify-between mt-1"><p className="text-[8px] font-bold text-amber-600 flex items-center gap-1"><AlertTriangle size={8} /> Editado manualmente — IA desativada</p><button type="button" onClick={() => { setManualOverrides(prev => ({ ...prev, revenue: false })); const route = clientRoutes.find(r => r.id.toString() === selectedRouteId); if (route) calculatePricing(route); }} className="text-[8px] font-bold text-blue-600 hover:text-blue-500 underline">Recalcular</button></div>}
-                              </div>
-                              <div className={`p-6 rounded-2xl border group shadow-sm transition-all ${formData.isSameOs ? 'bg-gray-900 border-black ring-2 ring-black/10' : 'bg-red-50/50 border-red-100'}`}>
-                                  <div className="flex items-center justify-between mb-3"><label className={`text-[10px] font-black uppercase tracking-widest ${formData.isSameOs ? 'text-gray-400' : 'text-red-700'}`}>Custo Previsto {formData.isSameOs && '(MESMA OS)'}</label><TrendingDown size={16} className={formData.isSameOs ? 'text-gray-500' : 'text-red-400'} /></div>
-                                  <div className="relative"><span className={`absolute left-0 top-1/2 -translate-y-1/2 text-lg font-black ${formData.isSameOs ? 'text-slate-700' : 'text-green-400'}`}>R$</span><input type="number" step="0.01" className={`w-full pl-8 bg-transparent outline-none text-2xl font-black ${formData.isSameOs ? 'text-white cursor-not-allowed' : 'text-green-900'}`} placeholder="0.00" value={formData.isSameOs ? '0.00' : formData.costValue} onChange={e => { if (!formData.isSameOs) { setFormData({...formData, costValue: e.target.value}); setManualOverrides(prev => ({ ...prev, cost: true })); } }} readOnly={formData.isSameOs} data-testid="input-cost" /></div>
-                                  {manualOverrides.cost && !formData.isSameOs && <div className="flex items-center justify-between mt-1"><p className="text-[8px] font-bold text-amber-600 flex items-center gap-1"><AlertTriangle size={8} /> Editado manualmente — IA desativada</p><button type="button" onClick={() => { setManualOverrides(prev => ({ ...prev, cost: false })); const route = clientRoutes.find(r => r.id.toString() === selectedRouteId); if (route) calculatePricing(route); }} className="text-[8px] font-bold text-blue-600 hover:text-blue-500 underline">Recalcular</button></div>}
-                              </div>
-                          </div>
-                      </div>
-                  )}
 
                   <div className="pt-4 border-t border-gray-100 space-y-4">
                       <div>
