@@ -1018,7 +1018,7 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
           ))}
       </div>
 
-      <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden" ref={dropdownRef}>
+      <div className="bg-white rounded-xl shadow-sm border border-gray-200" ref={dropdownRef}>
           <form onSubmit={handleSubmit} className="divide-y divide-gray-100">
 
               {/* ETAPA 1 - TIPO DE OPERAÇÃO */}
@@ -1222,12 +1222,13 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
                               <Briefcase size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
                               <ChevronDown size={16} className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
                               {activeDropdown === 'provider' && (
-                                  <div className="absolute z-[100] left-0 right-0 mt-1 bg-white border border-gray-200 rounded-xl shadow-2xl max-h-72 overflow-y-auto ring-1 ring-black/5">
+                                  <div className="absolute z-[100] left-0 right-0 mt-1 bg-white border border-gray-200 rounded-xl shadow-2xl max-h-96 overflow-y-auto ring-1 ring-black/5">
                                       {filteredProviders.map(p => (
                                           <button key={p.id} type="button" onClick={() => handleProviderSelection(p.name)} className={DROPDOWN_ITEM_CLASS}>
                                               <span className="flex items-center gap-2"><Shield size={14} className="text-red-500" />{formatProviderName(p.name, p.trading_name)}</span>
                                           </button>
                                       ))}
+                                      {filteredProviders.length === 0 && <p className="px-4 py-3 text-xs text-gray-400 font-bold">Nenhum fornecedor encontrado</p>}
                                   </div>
                               )}
                           </div>
