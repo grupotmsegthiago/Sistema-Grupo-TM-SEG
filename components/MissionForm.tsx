@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { ArrowLeft, Save, MapPin, Flag, FileText, Building2, Ruler, Loader2, Plus, X, Navigation, Calendar, ShieldCheck, DollarSign, Calculator, Briefcase, TrendingUp, TrendingDown, ArrowRight, Check, ChevronDown, Package, Info, Siren, Clock, Tag, Layers, Truck, Search, User, Phone, AlertCircle, AlertTriangle, CheckCircle2, Zap, Shield, ShieldAlert, Paperclip, Image, Trash2, Clipboard } from 'lucide-react';
+import { ArrowLeft, Save, MapPin, Flag, FileText, Building2, Ruler, Loader2, Plus, X, Navigation, Calendar, ShieldCheck, DollarSign, Calculator, Briefcase, TrendingUp, TrendingDown, ArrowRight, Check, ChevronDown, Package, Info, Siren, Clock, Tag, Layers, Truck, Search, User, Phone, AlertCircle, AlertTriangle, CheckCircle2, Zap, Shield, ShieldAlert, Paperclip, Image, Trash2, Clipboard, Mail } from 'lucide-react';
 import { MissionStatus, Client, ClientRoute, ClientPriceTable, ProviderData, ProviderCostTable, ClientVehicleDB } from '../types';
 import { supabase } from '../lib/supabase';
 import { logAction } from '../lib/logger';
@@ -74,6 +74,8 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
   });
   
   const [isSaving, setIsSaving] = useState(false);
+  const [emailConfirmDialog, setEmailConfirmDialog] = useState<{ clientPayload?: any; providerPayload?: any; onSaveCallback?: () => void } | null>(null);
+  const [isSendingConfirmedEmail, setIsSendingConfirmedEmail] = useState(false);
   const [isCalculating, setIsCalculating] = useState(false);
   const [calcDetails, setCalcDetails] = useState('');
   const [dbClients, setDbClients] = useState<Client[]>([]);
@@ -830,53 +832,35 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
             : '—';
         const scheduledIso = scheduledDateTime.toISOString();
 
-        if (formData.provider) {
-            try {
-                const provRes = await fetch('/api/email/mission-solicited', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        missionId: finalId,
-                        provider: formData.provider,
-                        vehiclePlate,
-                        origin: formData.origin,
-                        destination: formData.destination,
-                        start_time: scheduledIso,
-                        mission_type: formData.missionType,
-                        driver_name: formData.driver_name,
-                        driver_phone: formData.driver_phone,
-                        senderName: userData.name || undefined
-                    })
-                });
-                const provData = await provRes.json();
-                if (provData.queued) {
-                    showNotification('E-mail na Fila', provData.message, 'warning');
-                }
-            } catch (emailErr) { console.error('[Email] Erro ao enviar solicitação ao fornecedor na criação:', emailErr); }
-        }
+        const pendingClientPayload = {
+            missionId: finalId,
+            client: formData.client,
+            origin: formData.origin,
+            destination: formData.destination,
+            start_time: scheduledIso,
+            mission_type: formData.missionType,
+            vehiclePlate,
+            senderName: userData.name || undefined
+        };
 
-        try {
-            const clientRes = await fetch('/api/email/mission-scheduled', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    missionId: finalId,
-                    client: formData.client,
-                    origin: formData.origin,
-                    destination: formData.destination,
-                    start_time: scheduledIso,
-                    mission_type: formData.missionType,
-                    vehiclePlate,
-                    senderName: userData.name || undefined
-                })
-            });
-            const clientData = await clientRes.json();
-            if (clientData.queued) {
-                showNotification('E-mail na Fila', clientData.message, 'warning');
-            }
-        } catch (emailErr) { console.error('[Email] Erro ao enviar confirmação ao cliente na criação:', emailErr); }
+        const pendingProviderPayload = formData.provider ? {
+            missionId: finalId,
+            provider: formData.provider,
+            vehiclePlate,
+            origin: formData.origin,
+            destination: formData.destination,
+            start_time: scheduledIso,
+            mission_type: formData.missionType,
+            driver_name: formData.driver_name,
+            driver_phone: formData.driver_phone,
+            senderName: userData.name || undefined
+        } : undefined;
 
-        onSaveAndContinue(finalId);
+        setEmailConfirmDialog({
+            clientPayload: pendingClientPayload,
+            providerPayload: pendingProviderPayload,
+            onSaveCallback: () => onSaveAndContinue(finalId)
+        });
     } catch (e: any) { alert("Erro ao salvar: " + e.message); } finally { setIsSaving(false); }
   };
 
@@ -980,6 +964,86 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
       {isProviderModalOpen && (<div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in zoom-in-95"><div className="bg-[#f8fafc] rounded-2xl w-full max-w-5xl p-6 relative shadow-2xl overflow-y-auto max-h-[95vh]"><button onClick={() => setIsProviderModalOpen(false)} className="absolute top-6 right-6 p-2 bg-white rounded-full shadow-sm hover:bg-red-50 text-gray-400 hover:text-red-600 transition-all z-10"><X size={20}/></button><ProviderForm onBack={() => setIsProviderModalOpen(false)} onNavigateToVehicles={() => {}} /></div></div>)}
       {isRouteModalOpen && (<div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in zoom-in-95"><div className="bg-[#f8fafc] rounded-2xl w-full max-w-5xl p-6 relative shadow-2xl overflow-y-auto max-h-[95vh]"><button onClick={() => setIsRouteModalOpen(false)} className="absolute top-6 right-6 p-2 bg-white rounded-full shadow-sm hover:bg-red-50 text-gray-400 hover:text-red-600 transition-all z-10"><X size={20}/></button><ClientRouteForm onSuccess={(newRouteId) => { setIsRouteModalOpen(false); if (formData.client) { supabase.from('client_routes').select('*').eq('client', formData.client).order('name').then(({ data }) => { if (data) { setClientRoutes(data as any); const newRoute = data.find((r: any) => r.id.toString() === newRouteId); if (newRoute) handleRouteSelect(newRoute); } }); } }} /></div></div>)}
       {isVehicleModalOpen && (<div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in zoom-in-95"><div className="bg-[#f8fafc] rounded-2xl w-full max-w-5xl p-6 relative shadow-2xl overflow-y-auto max-h-[95vh]"><button onClick={() => setIsVehicleModalOpen(false)} className="absolute top-6 right-6 p-2 bg-white rounded-full shadow-sm hover:bg-red-50 text-gray-400 hover:text-red-600 transition-all z-10"><X size={20}/></button><ClientVehicleForm embedded onBack={() => setIsVehicleModalOpen(false)} onSuccess={() => { setIsVehicleModalOpen(false); if(formData.client) fetchClientVehicles(formData.client); }} /></div></div>)}
+
+      {emailConfirmDialog && (
+        <div className="fixed inset-0 z-[130] flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
+          <div className="bg-white rounded-2xl w-full max-w-md shadow-2xl overflow-hidden">
+            <div className="bg-blue-600 p-4 flex items-center gap-3">
+              <Mail size={24} className="text-white" />
+              <h3 className="text-white font-black text-sm uppercase tracking-wider">Confirmação de Envio</h3>
+            </div>
+            <div className="p-6">
+              <p className="text-sm text-gray-700 mb-2">
+                {emailConfirmDialog.clientPayload && emailConfirmDialog.providerPayload
+                  ? 'Deseja realmente enviar os e-mails ao cliente e ao fornecedor?'
+                  : emailConfirmDialog.clientPayload
+                    ? 'Você deseja realmente enviar o e-mail ao cliente?'
+                    : 'Você deseja realmente enviar o e-mail ao fornecedor?'}
+              </p>
+              <p className="text-xs text-gray-400 mb-5">
+                {emailConfirmDialog.clientPayload && <span className="block mb-1">📧 <strong>Cliente:</strong> {emailConfirmDialog.clientPayload.client}</span>}
+                {emailConfirmDialog.providerPayload && <span className="block">📧 <strong>Fornecedor:</strong> {emailConfirmDialog.providerPayload.provider}</span>}
+              </p>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  disabled={isSendingConfirmedEmail}
+                  className="flex-1 bg-blue-600 text-white py-3 rounded-xl font-black text-xs uppercase tracking-wider hover:bg-blue-700 transition-all disabled:opacity-50 flex items-center justify-center gap-2"
+                  data-testid="button-confirm-send-email-form"
+                  onClick={async () => {
+                    setIsSendingConfirmedEmail(true);
+                    try {
+                      if (emailConfirmDialog.providerPayload) {
+                        try {
+                          const provRes = await fetch('/api/email/mission-solicited', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify(emailConfirmDialog.providerPayload)
+                          });
+                          const provData = await provRes.json();
+                          if (provData.queued) showNotification('E-mail na Fila', provData.message, 'warning');
+                          else if (provData.success) showNotification('E-mail Enviado', 'Solicitação enviada ao fornecedor!', 'success');
+                        } catch (err) { console.error('[Email] Erro fornecedor:', err); }
+                      }
+                      if (emailConfirmDialog.clientPayload) {
+                        try {
+                          const clientRes = await fetch('/api/email/mission-scheduled', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify(emailConfirmDialog.clientPayload)
+                          });
+                          const clientData = await clientRes.json();
+                          if (clientData.queued) showNotification('E-mail na Fila', clientData.message, 'warning');
+                          else if (clientData.success) showNotification('E-mail Enviado', 'Confirmação enviada ao cliente!', 'success');
+                        } catch (err) { console.error('[Email] Erro cliente:', err); }
+                      }
+                    } finally {
+                      setIsSendingConfirmedEmail(false);
+                      const cb = emailConfirmDialog.onSaveCallback;
+                      setEmailConfirmDialog(null);
+                      if (cb) cb();
+                    }
+                  }}
+                >
+                  {isSendingConfirmedEmail ? <><Loader2 size={14} className="animate-spin" /> Enviando...</> : 'Sim, Enviar'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const cb = emailConfirmDialog.onSaveCallback;
+                    setEmailConfirmDialog(null);
+                    if (cb) cb();
+                  }}
+                  className="px-5 py-3 bg-gray-100 text-gray-600 rounded-xl font-bold text-xs uppercase hover:bg-gray-200 transition-all"
+                  data-testid="button-cancel-send-email-form"
+                >
+                  Não Enviar
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="flex items-center justify-between">
           <div className="flex items-center gap-4">
