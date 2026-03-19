@@ -180,6 +180,10 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
 
           setAiMaturity(0);
 
+          if (hasSavedData || currentMission.billing_approved) {
+              return;
+          }
+
           const providerNorm = (currentMission.provider || '').toUpperCase().trim();
           const routeKeyFull = `${currentMission.client}|${providerNorm}|${currentMission.origin}|${currentMission.destination}`.toUpperCase();
           const routeKeyBase = `${currentMission.client}|${currentMission.origin}|${currentMission.destination}`.toUpperCase();
@@ -235,14 +239,14 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                  if (details.customProviderBase) setCustomProviderBase(details.customProviderBase);
                  if (details.customProviderKm) setCustomProviderKm(details.customProviderKm);
                  if (details.customProviderHour) setCustomProviderHour(details.customProviderHour);
-                 if (details.tollValue !== undefined && details.tollValue !== null && !currentMission.billing_approved && !(dbToll > 0 || hasSavedData)) {
+                 if (details.tollValue !== undefined && details.tollValue !== null) {
                      const memToll = Number(details.tollValue);
                      setTollInput(memToll.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
                      setSuggestedToll(memToll);
                      setTollSource('MEMÓRIA (Rota Anterior)');
                      setTollConfirmed(false);
                  }
-                 if (details.tollProviderValue !== undefined && details.tollProviderValue !== null && !currentMission.billing_approved && !(dbToll > 0 || hasSavedData)) {
+                 if (details.tollProviderValue !== undefined && details.tollProviderValue !== null) {
                      const memTollProv = Number(details.tollProviderValue);
                      setTollProviderInput(memTollProv.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
                  }
