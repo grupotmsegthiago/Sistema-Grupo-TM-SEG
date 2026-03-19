@@ -129,7 +129,8 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
   const step3Done = !!(formData.clientVehicleId && (driverQuestion === 'no' || (driverQuestion === 'yes' && formData.driver_name)));
   const tollLoaded = !isCalculatingToll && (parseFloat(formData.tollValue) >= 0 && (parseFloat(formData.tollValue) > 0 || manualOverrides.toll));
   const step5Done = !!(formData.origin && formData.destination && selectedRouteId && parseFloat(formData.totalDistance) > 0 && formData.estimatedTime && manualRevenueTableId && tollLoaded && operatorConfirmedCalc);
-  const step6Done = step5Done && (scheduleMode === 'immediate' || (scheduleMode === 'scheduled' && !!formData.scheduledDate && !!formData.scheduledTime));
+  const isScheduledInPast = scheduleMode === 'scheduled' && formData.scheduledDate && formData.scheduledTime && new Date(`${formData.scheduledDate}T${formData.scheduledTime}:00`).getTime() < Date.now();
+  const step6Done = step5Done && (scheduleMode === 'immediate' || (scheduleMode === 'scheduled' && !!formData.scheduledDate && !!formData.scheduledTime && !isScheduledInPast));
 
   const isVtcClient = (formData.client || '').toUpperCase().includes('VTC');
   const hasClientRules = isVtcClient || (formData.client || '').toUpperCase().includes('CEVA');
@@ -1563,9 +1564,15 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
                   {scheduleMode === 'scheduled' && (
                       <div className="space-y-4 animate-in slide-in-from-top-2">
                           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                              <div className="relative"><label className={LABEL_CLASS}>Data do Agendamento *</label><div className="relative"><input type="date" required className={INPUT_CLASS} value={formData.scheduledDate} onChange={e => setFormData({...formData, scheduledDate: e.target.value})} data-testid="input-scheduled-date" /><Calendar size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-300 pointer-events-none" /></div></div>
+                              <div className="relative"><label className={LABEL_CLASS}>Data do Agendamento *</label><div className="relative"><input type="date" required min={new Date().toLocaleDateString('en-CA')} className={INPUT_CLASS} value={formData.scheduledDate} onChange={e => setFormData({...formData, scheduledDate: e.target.value})} data-testid="input-scheduled-date" /><Calendar size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-300 pointer-events-none" /></div></div>
                               <div className="relative"><label className={LABEL_CLASS}>Horário *</label><div className="relative"><input type="time" required className={INPUT_CLASS} value={formData.scheduledTime} onChange={e => setFormData({...formData, scheduledTime: e.target.value})} data-testid="input-scheduled-time" /><Clock size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-300 pointer-events-none" /></div></div>
                           </div>
+                          {isScheduledInPast && (
+                              <div className="flex items-center gap-2 px-3 py-2 bg-red-50 border border-red-200 rounded-lg">
+                                  <AlertTriangle size={14} className="text-red-500 shrink-0" />
+                                  <p className="text-[10px] font-bold text-red-600">Não é possível agendar no passado. Selecione uma data/horário futura.</p>
+                              </div>
+                          )}
                           <button type="button" onClick={() => setScheduleMode('asking')} className="text-[10px] font-bold text-gray-400 hover:text-orange-600 uppercase">← Voltar para escolher tipo</button>
                       </div>
                   )}
