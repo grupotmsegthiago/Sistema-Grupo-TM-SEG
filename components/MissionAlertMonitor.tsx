@@ -314,7 +314,7 @@ const MissionAlertMonitor: React.FC = () => {
         const startFormatted = (() => {
             try { return new Date(alert.startTime).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }); } catch { return alert.startTime; }
         })();
-        return `🚨 *ATENÇÃO — MISSÃO PRÓXIMA DE INICIAR*\n\n📋 *OS:* ${alert.missionId}\n🏢 *Fornecedor:* ${alert.provider}\n${alert.providerContactName ? `👷 *Contato:* ${alert.providerContactName}\n` : ''}📞 *Telefone Fornecedor:* ${alert.providerPhone ? formatPhone(alert.providerPhone) : 'Não informado'}\n\n📍 *Origem:* ${alert.origin}\n📍 *Destino:* ${alert.destination}\n🕐 *Início:* ${startFormatted}\n\n🚗 *Motorista:* ${alert.driverName || 'Não informado'}\n📞 *Tel Motorista:* ${alert.driverPhone ? formatPhone(alert.driverPhone) : 'Não informado'}\n\n⚠️ *Equipe, favor entrar em contato com o motorista para alinhar o ponto de encontro.*`;
+        return `🚨 *ATENÇÃO — MISSÃO PRÓXIMA DE INICIAR*\n\n📍 *Origem:* ${alert.origin}\n📍 *Destino:* ${alert.destination}\n🕐 *Início:* ${startFormatted}\n\n🚗 *Motorista:* ${alert.driverName || 'Não informado'}\n📞 *Tel Motorista:* ${alert.driverPhone ? formatPhone(alert.driverPhone) : 'Não informado'}\n\n⚠️ *Equipe, favor entrar em contato com o motorista para alinhar o ponto de encontro.*`;
     };
 
     const handleCopyContact = async (alert: MissionAlert) => {
