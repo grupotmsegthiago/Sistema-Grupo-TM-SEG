@@ -1653,6 +1653,26 @@ export async function registerRoutes(
       }
   });
 
+  app.post("/api/admin/fix-mission-toll", async (req: Request, res: Response) => {
+    try {
+      const { missionId, tollValue, revenueValue } = req.body;
+      if (!missionId) return res.status(400).json({ error: 'missionId obrigatório' });
+      const updates: any = {};
+      if (tollValue !== undefined) updates.toll_value = tollValue;
+      if (revenueValue !== undefined) updates.revenue_value = revenueValue;
+      const setClauses = Object.entries(updates).map(([k, v]) => `${k} = ${v}`).join(', ');
+      const sql = `UPDATE missions SET ${setClauses} WHERE id = ${parseInt(missionId)}`;
+      const { error: rpcErr } = await supabaseAdmin.rpc('exec_sql', { sql });
+      if (rpcErr) throw rpcErr;
+      const verifySql = `SELECT id, toll_value, toll_value_provider, revenue_value, cost_value FROM missions WHERE id = ${parseInt(missionId)}`;
+      const { data: verifyData, error: verifyErr } = await supabaseAdmin.rpc('exec_sql', { sql: verifySql });
+      console.log('[fix-toll] verify:', verifyData, verifyErr?.message);
+      res.json({ ok: true, sql, verifyData });
+    } catch (e: any) {
+      res.status(500).json({ ok: false, error: e.message });
+    }
+  });
+
   app.post("/api/admin/inject-operacional-email", async (_req: Request, res: Response) => {
     try {
       const OPERACIONAL = 'operacional@grupotmseg.com.br';
