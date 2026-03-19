@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { ArrowLeft, Save, MapPin, Flag, FileText, Building2, Ruler, Loader2, Plus, X, Navigation, Calendar, ShieldCheck, DollarSign, Calculator, Briefcase, TrendingUp, TrendingDown, ArrowRight, Check, ChevronDown, Package, Info, Siren, Clock, Tag, Layers, Truck, Search, User, Phone, AlertCircle, CheckCircle2, Zap, Shield, ShieldAlert, Paperclip, Image, Trash2, Clipboard } from 'lucide-react';
+import { ArrowLeft, Save, MapPin, Flag, FileText, Building2, Ruler, Loader2, Plus, X, Navigation, Calendar, ShieldCheck, DollarSign, Calculator, Briefcase, TrendingUp, TrendingDown, ArrowRight, Check, ChevronDown, Package, Info, Siren, Clock, Tag, Layers, Truck, Search, User, Phone, AlertCircle, AlertTriangle, CheckCircle2, Zap, Shield, ShieldAlert, Paperclip, Image, Trash2, Clipboard } from 'lucide-react';
 import { MissionStatus, Client, ClientRoute, ClientPriceTable, ProviderData, ProviderCostTable, ClientVehicleDB } from '../types';
 import { supabase } from '../lib/supabase';
 import { logAction } from '../lib/logger';
@@ -1488,17 +1488,31 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
                       const uf = extractUF(formData.origin || '') || geoInfo.uf;
                       const region = UF_TO_REGION[uf] || geoInfo.region;
                       const isVelada = formData.missionType === 'Velada';
+
+                      const revTable = clientPriceTables.find(t => t.id.toString() === manualRevenueTableId);
+                      const cstTable = providerCostTables.find(t => t.id.toString() === manualCostTableId);
+                      const revName = (revTable?.operation_type || '').toUpperCase();
+                      const cstName = (cstTable?.operation_type || '').toUpperCase();
+
+                      const warnings: string[] = [];
+                      if (isVelada && revName.includes('CARACTERIZ')) warnings.push('Tipo VELADA, mas tabela de faturamento parece ser CARACTERIZADA');
+                      if (!isVelada && revName.includes('VELAD')) warnings.push('Tipo CARACTERIZADA, mas tabela de faturamento parece ser VELADA');
+                      if (revTable && dist > 0 && revTable.franchise_km > 0 && dist > revTable.franchise_km * 1.5) warnings.push(`KM real (${dist}) excede muito a franquia da tabela FAT (${revTable.franchise_km} KM)`);
+                      if (cstTable && dist > 0 && cstTable.franchise_km > 0 && dist > cstTable.franchise_km * 1.5) warnings.push(`KM real (${dist}) excede muito a franquia da tabela CUSTO (${cstTable.franchise_km} KM)`);
+                      if (revName.includes('LOGITECH') && !formData.destination.toUpperCase().includes('LOGITECH')) warnings.push('Tabela LOGITECH selecionada, mas destino não é Logitech');
+
                       return (
                           <div className="bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 rounded-2xl p-5 text-white border border-gray-700 shadow-xl space-y-4">
                               <div className="flex items-center gap-2 mb-1">
                                   <div className="p-1.5 bg-red-600 rounded-lg"><Zap size={12} className="text-white" /></div>
                                   <span className="text-[10px] font-black text-white uppercase tracking-widest">Resumo da Operação</span>
+                                  {warnings.length > 0 && <span className="ml-auto flex items-center gap-1 px-2 py-0.5 bg-amber-500/20 border border-amber-500/30 rounded-lg text-[9px] font-black text-amber-400 uppercase"><AlertTriangle size={10} /> {warnings.length} alerta{warnings.length > 1 ? 's' : ''}</span>}
                               </div>
                               <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                                   <div className={`p-3 rounded-xl border ${isVelada ? 'bg-gray-800 border-gray-600' : 'bg-red-900/30 border-red-800/50'}`}>
                                       <p className="text-[8px] font-black text-gray-500 uppercase tracking-widest mb-1">Tipo</p>
-                                      <p className="text-sm font-black">{isVelada ? '🔒 Velada' : '🚨 Caracterizada'}</p>
-                                      <p className="text-[8px] text-gray-500 font-bold mt-1">{isVelada ? 'Tabelas 01/02 ARMADOS' : 'Tabelas por faixa de KM'}</p>
+                                      <p className="text-sm font-black">{isVelada ? 'Velada' : 'Caracterizada'}</p>
+                                      <p className="text-[8px] text-gray-500 font-bold mt-1">{isVelada ? '01/02 ARMADOS' : 'Faixa de KM'}</p>
                                   </div>
                                   <div className="p-3 rounded-xl bg-blue-900/20 border border-blue-800/30">
                                       <p className="text-[8px] font-black text-gray-500 uppercase tracking-widest mb-1">Distância</p>
@@ -1516,9 +1530,51 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
                                       <p className="text-[8px] text-gray-500 font-bold mt-1">{tollDetails ? `${tollDetails.count} praça${tollDetails.count > 1 ? 's' : ''}` : isCalculatingToll ? 'Calculando...' : 'Via API'}</p>
                                   </div>
                               </div>
+
+                              {/* TABELAS SELECIONADAS COM DETALHES */}
+                              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-3 border-t border-gray-700">
+                                  <div className="p-3 rounded-xl bg-green-900/15 border border-green-800/30">
+                                      <div className="flex items-center justify-between mb-2">
+                                          <p className="text-[8px] font-black text-green-400 uppercase tracking-widest">Tabela Faturamento (Cliente)</p>
+                                          <button type="button" onClick={() => setExpandedStep(5)} className="text-[8px] font-bold text-green-400 hover:text-green-300 underline uppercase">Alterar</button>
+                                      </div>
+                                      {revTable ? (
+                                          <>
+                                              <p className="text-[11px] font-black text-white truncate">{revTable.operation_type}</p>
+                                              <p className="text-[9px] text-gray-400 font-bold mt-1">Base: R${revTable.activation_fee} | {revTable.franchise_km || 0}KM | {revTable.franchise_hours || 0}h</p>
+                                          </>
+                                      ) : <p className="text-[10px] text-gray-500 font-bold">Não selecionada</p>}
+                                  </div>
+                                  <div className="p-3 rounded-xl bg-red-900/15 border border-red-800/30">
+                                      <div className="flex items-center justify-between mb-2">
+                                          <p className="text-[8px] font-black text-red-400 uppercase tracking-widest">Tabela Custo (Fornecedor)</p>
+                                          <button type="button" onClick={() => setExpandedStep(5)} className="text-[8px] font-bold text-red-400 hover:text-red-300 underline uppercase">Alterar</button>
+                                      </div>
+                                      {cstTable && !formData.isSameOs ? (
+                                          <>
+                                              <p className="text-[11px] font-black text-white truncate">{cstTable.operation_type}</p>
+                                              <p className="text-[9px] text-gray-400 font-bold mt-1">Base: R${cstTable.activation_cost} | {cstTable.franchise_km || 0}KM | {cstTable.franchise_hours || 0}h</p>
+                                          </>
+                                      ) : <p className="text-[10px] text-gray-500 font-bold">{formData.isSameOs ? 'MESMA OS (Zerado)' : providerPending ? 'Fornecedor pendente' : 'Não selecionada'}</p>}
+                                  </div>
+                              </div>
+
+                              {/* ALERTAS */}
+                              {warnings.length > 0 && (
+                                  <div className="space-y-2 pt-3 border-t border-amber-500/20">
+                                      {warnings.map((w, i) => (
+                                          <div key={i} className="flex items-start gap-2 px-3 py-2 bg-amber-500/10 border border-amber-500/20 rounded-lg">
+                                              <AlertTriangle size={12} className="text-amber-400 shrink-0 mt-0.5" />
+                                              <p className="text-[9px] font-bold text-amber-300">{w}</p>
+                                              <button type="button" onClick={() => setExpandedStep(5)} className="ml-auto text-[8px] font-black text-amber-400 hover:text-amber-300 uppercase underline whitespace-nowrap">Corrigir</button>
+                                          </div>
+                                      ))}
+                                  </div>
+                              )}
+
                               {calcDetails && (
                                   <div className="pt-3 border-t border-gray-700 space-y-2">
-                                      <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest">Seleção Inteligente de Tabelas</p>
+                                      <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest">Critérios da Seleção Inteligente</p>
                                       <div className="flex flex-wrap gap-1.5">
                                           {calcDetails.split(' | ').map((d, i) => (
                                               <span key={i} className={`px-2.5 py-1 rounded-lg text-[9px] font-black uppercase tracking-wide ${d.includes('FAT') ? 'bg-green-500/20 text-green-300 border border-green-500/30' : d.includes('CUSTO') ? 'bg-red-500/20 text-red-300 border border-red-500/30' : 'bg-blue-500/20 text-blue-300 border border-blue-500/30'}`}>{d}</span>
