@@ -251,6 +251,13 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                      } else if (memToll > 0) {
                          setTollProviderInput(memToll.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
                      }
+                 } else if (details.tollProviderValue !== undefined && details.tollProviderValue !== null) {
+                     const memTollProv = Number(details.tollProviderValue);
+                     setTollProviderInput(memTollProv.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
+                     setTollInput(memTollProv.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
+                     setSuggestedToll(memTollProv);
+                     setTollSource('MEMÓRIA (Rota Anterior)');
+                     setTollConfirmed(false);
                  }
                  setMemoryLoaded(true);
                  const hasCustomValues = details.customClientBase || details.customProviderBase;
@@ -685,6 +692,13 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
       const currentRev = parseNumber(revenueInput);
       const updatedRev = currentRev - oldToll + newToll;
       setRevenueInput(updatedRev.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
+      if (parseNumber(tollProviderInput) === 0 && newToll > 0) {
+          const oldTollProv = parseNumber(tollProviderInput);
+          setTollProviderInput(val);
+          const currentCost = parseNumber(costInput);
+          const updatedCost = currentCost - oldTollProv + newToll;
+          setCostInput(updatedCost.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
+      }
       setUseSavedValues(true);
   };
 
@@ -697,13 +711,6 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
       const currentCost = parseNumber(costInput);
       const updatedCost = currentCost - oldTollProv + newTollProv;
       setCostInput(updatedCost.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
-      if (parseNumber(tollInput) === 0 && newTollProv > 0) {
-          const oldTollClient = parseNumber(tollInput);
-          setTollInput(val);
-          const currentRev = parseNumber(revenueInput);
-          const updatedRev = currentRev - oldTollClient + newTollProv;
-          setRevenueInput(updatedRev.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
-      }
       setUseSavedValues(true);
   };
 
@@ -819,10 +826,10 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
           const userData = JSON.parse(localStorage.getItem('userData') || '{}');
           const userName = userData.name || 'Usuário';
           const userRole = userData.role || '';
-          let toll = isController ? (mission.toll_value || 0) : parseNumber(tollInput);
-          const tollProv = parseNumber(tollProviderInput);
-          if (toll === 0 && tollProv > 0) {
-              toll = tollProv;
+          const toll = isController ? (mission.toll_value || 0) : parseNumber(tollInput);
+          let tollProv = parseNumber(tollProviderInput);
+          if (tollProv === 0 && toll > 0) {
+              tollProv = toll;
           }
 
           const revServiceOnly = revTotal - toll; 
