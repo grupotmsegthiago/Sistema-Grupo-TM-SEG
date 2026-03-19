@@ -1653,6 +1653,76 @@ export async function registerRoutes(
       }
   });
 
+  app.post("/api/admin/inject-operacional-email", async (_req: Request, res: Response) => {
+    try {
+      const OPERACIONAL = 'operacional@grupotmseg.com.br';
+      const log: string[] = [];
+
+      const addEmail = (current: string | null | undefined, opEmail: string): string => {
+        if (!current || !current.trim()) return opEmail;
+        const emails = current.split(/[,;]\s*/).map(e => e.trim().toLowerCase()).filter(Boolean);
+        if (emails.includes(opEmail.toLowerCase())) return current;
+        return current.trim() + ', ' + opEmail;
+      };
+
+      const { data: clients } = await supabaseAdmin.from('clients').select('id, name, operational_email, email');
+      let clientUpdated = 0;
+      for (const c of (clients || [])) {
+        const updates: any = {};
+        const opField = c.operational_email || c.email || '';
+        const emailField = c.email || '';
+        
+        if (opField && !opField.toLowerCase().includes(OPERACIONAL.toLowerCase())) {
+          updates.operational_email = addEmail(c.operational_email || c.email, OPERACIONAL);
+        } else if (!opField) {
+          updates.operational_email = OPERACIONAL;
+        }
+        
+        if (emailField && !emailField.toLowerCase().includes(OPERACIONAL.toLowerCase())) {
+          if (!updates.operational_email) {
+            updates.operational_email = addEmail(c.operational_email || c.email, OPERACIONAL);
+          }
+        }
+
+        if (Object.keys(updates).length > 0) {
+          await supabaseAdmin.from('clients').update(updates).eq('id', c.id);
+          clientUpdated++;
+          log.push(`Cliente "${c.name}" → operational_email atualizado`);
+        }
+      }
+
+      const { data: providers } = await supabaseAdmin.from('providers').select('id, name, os_email, email');
+      let providerUpdated = 0;
+      for (const p of (providers || [])) {
+        const updates: any = {};
+        const osField = p.os_email || p.email || '';
+        
+        if (osField && !osField.toLowerCase().includes(OPERACIONAL.toLowerCase())) {
+          updates.os_email = addEmail(p.os_email || p.email, OPERACIONAL);
+        } else if (!osField) {
+          updates.os_email = OPERACIONAL;
+        }
+
+        if (Object.keys(updates).length > 0) {
+          await supabaseAdmin.from('providers').update(updates).eq('id', p.id);
+          providerUpdated++;
+          log.push(`Fornecedor "${p.name}" → os_email atualizado`);
+        }
+      }
+
+      res.json({ 
+        ok: true, 
+        clientsTotal: clients?.length || 0,
+        clientsUpdated: clientUpdated,
+        providersTotal: providers?.length || 0,
+        providersUpdated: providerUpdated,
+        log 
+      });
+    } catch (e: any) {
+      res.status(500).json({ ok: false, error: e.message });
+    }
+  });
+
   app.post("/api/admin/cleanup-history", async (_req: Request, res: Response) => {
       try {
           const results = await runHistoryCleanup();

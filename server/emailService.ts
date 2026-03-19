@@ -178,7 +178,7 @@ export async function sendMissionEmailToClient(
       cc: 'operacional@grupotmseg.com.br',
       replyTo: 'operacional@grupotmseg.com.br',
       bcc: BCC_RECIPIENTS,
-      subject: `${subjectPrefix}Agendamento - ${formatOS(mission.id)} - ${originCityUF || 'S/ORIGEM'}`,
+      subject: `${subjectPrefix}Agendamento Confirmado - ${formatOS(mission.id)} - Origem: ${originCityUF || 'S/ORIGEM'}`,
       html,
     };
 
