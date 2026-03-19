@@ -841,7 +841,6 @@ export const calculateMissionFinancials = (
     if (clientData?.full_extra_hour_after_16_min) {
         cExcessHr = applyRoundingRule(cExcessHr);
     }
-    pExcessHr = applyRoundingRule(pExcessHr);
 
     const round2 = (v: number) => Math.round(v * 100) / 100;
 
