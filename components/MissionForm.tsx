@@ -1631,58 +1631,58 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
                       if (revName.includes('LOGITECH') && !formData.destination.toUpperCase().includes('LOGITECH')) warnings.push('Tabela LOGITECH selecionada, mas destino não é Logitech');
 
                       return (
-                          <div className="bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 rounded-2xl p-5 text-white border border-gray-700 shadow-xl space-y-4">
+                          <div className="bg-white rounded-2xl p-5 border border-gray-200 shadow-sm space-y-4">
                               <div className="flex items-center gap-2 mb-1">
                                   <div className="p-1.5 bg-red-600 rounded-lg"><Zap size={12} className="text-white" /></div>
-                                  <span className="text-[10px] font-black text-white uppercase tracking-widest">Resumo da Operação</span>
-                                  {warnings.length > 0 && <span className="ml-auto flex items-center gap-1 px-2 py-0.5 bg-amber-500/20 border border-amber-500/30 rounded-lg text-[9px] font-black text-amber-400 uppercase"><AlertTriangle size={10} /> {warnings.length} alerta{warnings.length > 1 ? 's' : ''}</span>}
+                                  <span className="text-[10px] font-black text-gray-700 uppercase tracking-widest">Resumo da Operação</span>
+                                  {warnings.length > 0 && <span className="ml-auto flex items-center gap-1 px-2 py-0.5 bg-amber-50 border border-amber-200 rounded-lg text-[9px] font-black text-amber-600 uppercase"><AlertTriangle size={10} /> {warnings.length} alerta{warnings.length > 1 ? 's' : ''}</span>}
                               </div>
                               <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                                  <div className={`p-3 rounded-xl border ${isVelada ? 'bg-gray-800 border-gray-600' : 'bg-red-900/30 border-red-800/50'}`}>
-                                      <p className="text-[8px] font-black text-gray-500 uppercase tracking-widest mb-1">Tipo</p>
-                                      <p className="text-sm font-black">{isVelada ? 'Velada' : 'Caracterizada'}</p>
-                                      <p className="text-[8px] text-gray-500 font-bold mt-1">{isVelada ? '01/02 ARMADOS' : 'Faixa de KM'}</p>
+                                  <div className={`p-3 rounded-xl border ${isVelada ? 'bg-gray-50 border-gray-200' : 'bg-red-50 border-red-200'}`}>
+                                      <p className="text-[8px] font-black text-gray-400 uppercase tracking-widest mb-1">Tipo</p>
+                                      <p className="text-sm font-black text-gray-800">{isVelada ? 'Velada' : 'Caracterizada'}</p>
+                                      <p className="text-[8px] text-gray-400 font-bold mt-1">{isVelada ? '01/02 ARMADOS' : 'Faixa de KM'}</p>
                                   </div>
-                                  <div className="p-3 rounded-xl bg-blue-900/20 border border-blue-800/30">
-                                      <p className="text-[8px] font-black text-gray-500 uppercase tracking-widest mb-1">Distância</p>
-                                      <p className="text-sm font-black">{dist > 0 ? `${dist} KM` : '-'}</p>
-                                      <p className="text-[8px] text-gray-500 font-bold mt-1">{formData.estimatedTime || '-'}</p>
+                                  <div className="p-3 rounded-xl bg-blue-50 border border-blue-200">
+                                      <p className="text-[8px] font-black text-gray-400 uppercase tracking-widest mb-1">Distância</p>
+                                      <p className="text-sm font-black text-gray-800">{dist > 0 ? `${dist} KM` : '-'}</p>
+                                      <p className="text-[8px] text-gray-400 font-bold mt-1">{formData.estimatedTime || '-'}</p>
                                   </div>
-                                  <div className="p-3 rounded-xl bg-indigo-900/20 border border-indigo-800/30">
-                                      <p className="text-[8px] font-black text-gray-500 uppercase tracking-widest mb-1">Região</p>
-                                      <p className="text-sm font-black">{region || '-'}</p>
-                                      <p className="text-[8px] text-gray-500 font-bold mt-1">{uf ? `UF: ${uf}` : '-'}</p>
+                                  <div className="p-3 rounded-xl bg-indigo-50 border border-indigo-200">
+                                      <p className="text-[8px] font-black text-gray-400 uppercase tracking-widest mb-1">Região</p>
+                                      <p className="text-sm font-black text-gray-800">{region || '-'}</p>
+                                      <p className="text-[8px] text-gray-400 font-bold mt-1">{uf ? `UF: ${uf}` : '-'}</p>
                                   </div>
-                                  <div className={`p-3 rounded-xl border ${manualOverrides.toll ? 'bg-amber-900/20 border-amber-700/40' : 'bg-green-900/20 border-green-800/30'}`}>
-                                      <p className="text-[8px] font-black text-gray-500 uppercase tracking-widest mb-1">Pedágio {manualOverrides.toll && <span className="text-amber-400">(Manual)</span>}</p>
+                                  <div className={`p-3 rounded-xl border ${manualOverrides.toll ? 'bg-amber-50 border-amber-200' : 'bg-green-50 border-green-200'}`}>
+                                      <p className="text-[8px] font-black text-gray-400 uppercase tracking-widest mb-1">Pedágio {manualOverrides.toll && <span className="text-amber-600">(Manual)</span>}</p>
                                       <div className="flex items-center gap-1">
                                           <span className="text-[10px] font-black text-gray-400">R$</span>
-                                          <input type="number" step="0.01" className="bg-transparent outline-none text-sm font-black text-white w-20" value={formData.tollValue} onChange={e => { setFormData(prev => ({ ...prev, tollValue: e.target.value })); setManualOverrides(prev => ({ ...prev, toll: true })); }} data-testid="input-toll-summary" />
+                                          <input type="number" step="0.01" className="bg-transparent outline-none text-sm font-black text-gray-800 w-20" value={formData.tollValue} onChange={e => { setFormData(prev => ({ ...prev, tollValue: e.target.value })); setManualOverrides(prev => ({ ...prev, toll: true })); }} data-testid="input-toll-summary" />
                                       </div>
-                                      <p className="text-[8px] text-gray-500 font-bold mt-1">{manualOverrides.toll ? 'Editado pelo usuário' : tollDetails ? `${tollDetails.count} praça${tollDetails.count > 1 ? 's' : ''} · ${tollDetails.provider === 'gemini-ai' ? 'IA' : 'API'}` : isCalculatingToll ? 'Calculando...' : 'Via API'}</p>
-                                      {tollDetails?.confianca && !manualOverrides.toll && <p className={`text-[7px] font-black uppercase mt-1 ${tollDetails.confianca === 'alta' ? 'text-green-400' : tollDetails.confianca === 'media' ? 'text-yellow-400' : 'text-red-400'}`}>Conf: {tollDetails.confianca}</p>}
-                                      {manualOverrides.toll && <button type="button" onClick={() => { setManualOverrides(prev => ({ ...prev, toll: false })); const route = clientRoutes.find(r => r.id.toString() === selectedRouteId); if (route) { setTollDetails(null); calculateTollFromAPI(route.origin, route.destination).then(r => { if (r && r.value > 0) { setFormData(prev => ({ ...prev, tollValue: r.value.toFixed(2) })); setTollDetails({ count: r.count, tolls: r.tolls, observacoes: r.observacoes, confianca: r.confianca, provider: r.provider }); } }); } }} className="text-[7px] font-bold text-amber-400 hover:text-amber-300 underline mt-1">Recalcular via IA</button>}
+                                      <p className="text-[8px] text-gray-400 font-bold mt-1">{manualOverrides.toll ? 'Editado pelo usuário' : tollDetails ? `${tollDetails.count} praça${tollDetails.count > 1 ? 's' : ''} · ${tollDetails.provider === 'gemini-ai' ? 'IA' : 'API'}` : isCalculatingToll ? 'Calculando...' : 'Via API'}</p>
+                                      {tollDetails?.confianca && !manualOverrides.toll && <p className={`text-[7px] font-black uppercase mt-1 ${tollDetails.confianca === 'alta' ? 'text-green-600' : tollDetails.confianca === 'media' ? 'text-yellow-600' : 'text-red-600'}`}>Conf: {tollDetails.confianca}</p>}
+                                      {manualOverrides.toll && <button type="button" onClick={() => { setManualOverrides(prev => ({ ...prev, toll: false })); const route = clientRoutes.find(r => r.id.toString() === selectedRouteId); if (route) { setTollDetails(null); calculateTollFromAPI(route.origin, route.destination).then(r => { if (r && r.value > 0) { setFormData(prev => ({ ...prev, tollValue: r.value.toFixed(2) })); setTollDetails({ count: r.count, tolls: r.tolls, observacoes: r.observacoes, confianca: r.confianca, provider: r.provider }); } }); } }} className="text-[7px] font-bold text-amber-600 hover:text-amber-500 underline mt-1">Recalcular via IA</button>}
                                   </div>
                               </div>
 
                               {/* DETALHAMENTO PRAÇAS DE PEDÁGIO */}
                               {tollDetails && tollDetails.tolls.length > 0 && (
-                                  <div className="pt-3 border-t border-gray-700 space-y-2">
+                                  <div className="pt-3 border-t border-gray-100 space-y-2">
                                       <div className="flex items-center justify-between">
-                                          <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest flex items-center gap-1.5">
+                                          <p className="text-[9px] font-black text-gray-500 uppercase tracking-widest flex items-center gap-1.5">
                                               <Navigation size={10} />
                                               Praças de Pedágio Identificadas
-                                              {tollDetails.provider === 'gemini-ai' && <span className="px-1.5 py-0.5 bg-purple-500/20 border border-purple-500/30 rounded text-[7px] text-purple-300">via Gemini IA</span>}
+                                              {tollDetails.provider === 'gemini-ai' && <span className="px-1.5 py-0.5 bg-purple-50 border border-purple-200 rounded text-[7px] text-purple-600">via Gemini IA</span>}
                                           </p>
                                       </div>
                                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
                                           {tollDetails.tolls.map((t: any, i: number) => (
-                                              <div key={i} className="flex items-center justify-between px-3 py-1.5 bg-gray-800/50 rounded-lg border border-gray-700/50">
+                                              <div key={i} className="flex items-center justify-between px-3 py-1.5 bg-gray-50 rounded-lg border border-gray-200">
                                                   <div className="flex-1 min-w-0">
-                                                      <p className="text-[9px] font-bold text-white truncate">{t.name}</p>
-                                                      <p className="text-[7px] text-gray-500 font-bold">{t.road}{t.sentido ? ` · ${t.sentido}` : ''}{t.cobrancaUnica ? ' · Unidirecional' : ''}</p>
+                                                      <p className="text-[9px] font-bold text-gray-700 truncate">{t.name}</p>
+                                                      <p className="text-[7px] text-gray-400 font-bold">{t.road}{t.sentido ? ` · ${t.sentido}` : ''}{t.cobrancaUnica ? ' · Unidirecional' : ''}</p>
                                                   </div>
-                                                  <span className="text-[10px] font-black text-green-400 ml-2">R$ {(t.value || 0).toFixed(2)}</span>
+                                                  <span className="text-[10px] font-black text-green-600 ml-2">R$ {(t.value || 0).toFixed(2)}</span>
                                               </div>
                                           ))}
                                       </div>
@@ -1693,52 +1693,52 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
                               )}
 
                               {/* TABELAS SELECIONADAS COM DETALHES */}
-                              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-3 border-t border-gray-700">
-                                  <div className="p-3 rounded-xl bg-green-900/15 border border-green-800/30">
+                              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-3 border-t border-gray-100">
+                                  <div className="p-3 rounded-xl bg-green-50 border border-green-200">
                                       <div className="flex items-center justify-between mb-2">
-                                          <p className="text-[8px] font-black text-green-400 uppercase tracking-widest">Tabela Faturamento (Cliente)</p>
-                                          <button type="button" onClick={() => setExpandedStep(5)} className="text-[8px] font-bold text-green-400 hover:text-green-300 underline uppercase">Alterar</button>
+                                          <p className="text-[8px] font-black text-green-600 uppercase tracking-widest">Tabela Faturamento (Cliente)</p>
+                                          <button type="button" onClick={() => setExpandedStep(5)} className="text-[8px] font-bold text-green-600 hover:text-green-500 underline uppercase">Alterar</button>
                                       </div>
                                       {revTable ? (
                                           <>
-                                              <p className="text-[11px] font-black text-white truncate">{revTable.operation_type}</p>
-                                              <p className="text-[9px] text-gray-400 font-bold mt-1">{revTable.franchise_km || 0}KM / {revTable.franchise_hours || 0}h</p>
+                                              <p className="text-[11px] font-black text-gray-800 truncate">{revTable.operation_type}</p>
+                                              <p className="text-[9px] text-gray-500 font-bold mt-1">{revTable.franchise_km || 0}KM / {revTable.franchise_hours || 0}h</p>
                                           </>
-                                      ) : <p className="text-[10px] text-gray-500 font-bold">Não selecionada</p>}
+                                      ) : <p className="text-[10px] text-gray-400 font-bold">Não selecionada</p>}
                                   </div>
-                                  <div className="p-3 rounded-xl bg-red-900/15 border border-red-800/30">
+                                  <div className="p-3 rounded-xl bg-red-50 border border-red-200">
                                       <div className="flex items-center justify-between mb-2">
-                                          <p className="text-[8px] font-black text-red-400 uppercase tracking-widest">Tabela Custo (Fornecedor)</p>
-                                          <button type="button" onClick={() => setExpandedStep(5)} className="text-[8px] font-bold text-red-400 hover:text-red-300 underline uppercase">Alterar</button>
+                                          <p className="text-[8px] font-black text-red-600 uppercase tracking-widest">Tabela Custo (Fornecedor)</p>
+                                          <button type="button" onClick={() => setExpandedStep(5)} className="text-[8px] font-bold text-red-600 hover:text-red-500 underline uppercase">Alterar</button>
                                       </div>
                                       {cstTable && !formData.isSameOs ? (
                                           <>
-                                              <p className="text-[11px] font-black text-white truncate">{cstTable.operation_type}</p>
-                                              <p className="text-[9px] text-gray-400 font-bold mt-1">{cstTable.franchise_km || 0}KM / {cstTable.franchise_hours || 0}h</p>
+                                              <p className="text-[11px] font-black text-gray-800 truncate">{cstTable.operation_type}</p>
+                                              <p className="text-[9px] text-gray-500 font-bold mt-1">{cstTable.franchise_km || 0}KM / {cstTable.franchise_hours || 0}h</p>
                                           </>
-                                      ) : <p className="text-[10px] text-gray-500 font-bold">{formData.isSameOs ? 'MESMA OS (Zerado)' : providerPending ? 'Fornecedor pendente' : 'Não selecionada'}</p>}
+                                      ) : <p className="text-[10px] text-gray-400 font-bold">{formData.isSameOs ? 'MESMA OS (Zerado)' : providerPending ? 'Fornecedor pendente' : 'Não selecionada'}</p>}
                                   </div>
                               </div>
 
                               {/* ALERTAS */}
                               {warnings.length > 0 && (
-                                  <div className="space-y-2 pt-3 border-t border-amber-500/20">
+                                  <div className="space-y-2 pt-3 border-t border-amber-100">
                                       {warnings.map((w, i) => (
-                                          <div key={i} className="flex items-start gap-2 px-3 py-2 bg-amber-500/10 border border-amber-500/20 rounded-lg">
-                                              <AlertTriangle size={12} className="text-amber-400 shrink-0 mt-0.5" />
-                                              <p className="text-[9px] font-bold text-amber-300">{w}</p>
-                                              <button type="button" onClick={() => setExpandedStep(5)} className="ml-auto text-[8px] font-black text-amber-400 hover:text-amber-300 uppercase underline whitespace-nowrap">Corrigir</button>
+                                          <div key={i} className="flex items-start gap-2 px-3 py-2 bg-amber-50 border border-amber-200 rounded-lg">
+                                              <AlertTriangle size={12} className="text-amber-500 shrink-0 mt-0.5" />
+                                              <p className="text-[9px] font-bold text-amber-700">{w}</p>
+                                              <button type="button" onClick={() => setExpandedStep(5)} className="ml-auto text-[8px] font-black text-amber-600 hover:text-amber-500 uppercase underline whitespace-nowrap">Corrigir</button>
                                           </div>
                                       ))}
                                   </div>
                               )}
 
                               {calcDetails && (
-                                  <div className="pt-3 border-t border-gray-700 space-y-2">
-                                      <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest">Critérios da Seleção Inteligente</p>
+                                  <div className="pt-3 border-t border-gray-100 space-y-2">
+                                      <p className="text-[9px] font-black text-gray-500 uppercase tracking-widest">Critérios da Seleção Inteligente</p>
                                       <div className="flex flex-wrap gap-1.5">
                                           {calcDetails.split(' | ').map((d, i) => (
-                                              <span key={i} className={`px-2.5 py-1 rounded-lg text-[9px] font-black uppercase tracking-wide ${d.includes('FAT') ? 'bg-green-500/20 text-green-300 border border-green-500/30' : d.includes('CUSTO') ? 'bg-red-500/20 text-red-300 border border-red-500/30' : 'bg-blue-500/20 text-blue-300 border border-blue-500/30'}`}>{d}</span>
+                                              <span key={i} className={`px-2.5 py-1 rounded-lg text-[9px] font-black uppercase tracking-wide ${d.includes('FAT') ? 'bg-green-50 text-green-700 border border-green-200' : d.includes('CUSTO') ? 'bg-red-50 text-red-700 border border-red-200' : 'bg-blue-50 text-blue-700 border border-blue-200'}`}>{d}</span>
                                           ))}
                                       </div>
                                   </div>
