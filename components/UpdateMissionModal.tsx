@@ -9,7 +9,7 @@ import {
   Layers, Navigation, History, 
   Calculator, Clock, Trash2, UserCheck, CarFront, DollarSign, AlertCircle, Info, ShieldAlert, AlertTriangle,
   Loader2, Search, ChevronDown, UserPlus, Package, ShieldCheck, Check, BadgeCheck, Sparkles,
-  Milestone, Timer, Calendar, Globe, Briefcase, Zap, TrendingUp, RefreshCw, User, Phone, CheckCircle2
+  Milestone, Timer, Calendar, Globe, Briefcase, Zap, TrendingUp, RefreshCw, User, Phone, CheckCircle2, Mail
 } from 'lucide-react';
 import { useLoadScript, Autocomplete, GoogleMap, Marker } from '@react-google-maps/api';
 import { googleMapsApiKey, libraries, googleMapsLoadConfig } from '../lib/maps';
@@ -100,6 +100,8 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
     const [emailMissingAlert, setEmailMissingAlert] = useState<{ type: 'client' | 'provider'; name: string; entityId: string } | null>(null);
     const [quickEmailInput, setQuickEmailInput] = useState('');
     const [isSavingQuickEmail, setIsSavingQuickEmail] = useState(false);
+    const [emailConfirmDialog, setEmailConfirmDialog] = useState<{ type: 'client' | 'provider' | 'both'; clientPayload?: any; providerPayload?: any } | null>(null);
+    const [isSendingConfirmedEmail, setIsSendingConfirmedEmail] = useState(false);
 
     const [iblWarning, setIblWarning] = useState('');
     const [originalStatus, setOriginalStatus] = useState('');
@@ -802,31 +804,19 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
             const sendClientEmail = finalStatus === MissionStatus.SCHEDULED && originalStatus !== MissionStatus.SCHEDULED;
             const pendingClient = mission.email_pending_client === true;
             const hasRequiredDataForClientEmail = !!(editData.agent1 && editData.agent2 && editData.vehicleId && vehiclePlateForEmail && vehiclePlateForEmail !== '—');
+
+            let pendingClientPayload: any = null;
             if ((sendClientEmail || pendingClient) && hasRequiredDataForClientEmail) {
-                try {
-                    const emailRes = await fetch('/api/email/mission-scheduled', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                            missionId: mission.id,
-                            client: mission.client,
-                            origin: editData.origin,
-                            destination: finalDestination,
-                            start_time: startIso,
-                            mission_type: editData.missionType,
-                            vehiclePlate: vehiclePlateForEmail,
-                            senderName: JSON.parse(localStorage.getItem('userData') || '{}').name || undefined
-                        })
-                    });
-                    const emailData = await emailRes.json();
-                    if (emailData.queued) {
-                        showNotification('E-mail na Fila', emailData.message, 'warning');
-                    } else if (emailData.success) {
-                        showNotification('E-mail Enviado', emailData.message, 'success');
-                    }
-                } catch (emailErr) {
-                    console.error('[Email] Erro ao enviar confirmação ao cliente:', emailErr);
-                }
+                pendingClientPayload = {
+                    missionId: mission.id,
+                    client: mission.client,
+                    origin: editData.origin,
+                    destination: finalDestination,
+                    start_time: startIso,
+                    mission_type: editData.missionType,
+                    vehiclePlate: vehiclePlateForEmail,
+                    senderName: JSON.parse(localStorage.getItem('userData') || '{}').name || undefined
+                };
             } else if ((sendClientEmail || pendingClient) && !hasRequiredDataForClientEmail) {
                 await supabase.from('missions').update({ email_pending_client: true }).eq('id', mission.id);
                 showNotification('E-mail Pendente', 'Confirmação ao cliente será enviada quando agente e veículo estiverem preenchidos.', 'warning');
@@ -835,33 +825,25 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
             const providerChanged = editData.provider && editData.provider.trim() !== '' &&
                 (originalStatus === MissionStatus.SOLICITED || !mission.provider || mission.provider !== editData.provider);
             const pendingProvider = mission.email_pending_provider === true;
+            let pendingProviderPayload: any = null;
             if ((providerChanged && (finalStatus === MissionStatus.DOCUMENTATION || finalStatus === MissionStatus.SOLICITED)) || pendingProvider) {
-                try {
-                    const emailRes = await fetch('/api/email/mission-solicited', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                            missionId: mission.id,
-                            provider: editData.provider,
-                            vehiclePlate: vehiclePlateForEmail,
-                            origin: editData.origin,
-                            destination: finalDestination,
-                            start_time: startIso,
-                            mission_type: editData.missionType,
-                            driver_name: editData.driver_name,
-                            driver_phone: editData.driver_phone,
-                            senderName: JSON.parse(localStorage.getItem('userData') || '{}').name || undefined
-                        })
-                    });
-                    const emailData = await emailRes.json();
-                    if (emailData.queued) {
-                        showNotification('E-mail na Fila', emailData.message, 'warning');
-                    } else if (emailData.success) {
-                        showNotification('E-mail Enviado', emailData.message, 'success');
-                    }
-                } catch (emailErr) {
-                    console.error('[Email] Erro ao enviar solicitação ao fornecedor:', emailErr);
-                }
+                pendingProviderPayload = {
+                    missionId: mission.id,
+                    provider: editData.provider,
+                    vehiclePlate: vehiclePlateForEmail,
+                    origin: editData.origin,
+                    destination: finalDestination,
+                    start_time: startIso,
+                    mission_type: editData.missionType,
+                    driver_name: editData.driver_name,
+                    driver_phone: editData.driver_phone,
+                    senderName: JSON.parse(localStorage.getItem('userData') || '{}').name || undefined
+                };
+            }
+
+            if (pendingClientPayload || pendingProviderPayload) {
+                const type = pendingClientPayload && pendingProviderPayload ? 'both' : pendingClientPayload ? 'client' : 'provider';
+                setEmailConfirmDialog({ type, clientPayload: pendingClientPayload, providerPayload: pendingProviderPayload });
             }
 
             await supabase.channel('mission-updates').send({
@@ -1099,6 +1081,85 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
                                     data-testid="button-cancel-quick-email"
                                 >
                                     Cancelar
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {emailConfirmDialog && (
+                <div className="fixed inset-0 z-[130] flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
+                    <div className="bg-white rounded-2xl w-full max-w-md shadow-2xl overflow-hidden">
+                        <div className="bg-blue-600 p-4 flex items-center gap-3">
+                            <Mail size={24} className="text-white" />
+                            <h3 className="text-white font-black text-sm uppercase tracking-wider">Confirmação de Envio</h3>
+                        </div>
+                        <div className="p-6">
+                            <p className="text-sm text-gray-700 mb-2">
+                                {emailConfirmDialog.type === 'both' 
+                                    ? 'Deseja realmente enviar os e-mails ao cliente e ao fornecedor?' 
+                                    : emailConfirmDialog.type === 'client' 
+                                        ? 'Você deseja realmente enviar o e-mail ao cliente?' 
+                                        : 'Você deseja realmente enviar o e-mail ao fornecedor?'}
+                            </p>
+                            <p className="text-xs text-gray-400 mb-5">
+                                {emailConfirmDialog.clientPayload && <span className="block mb-1">📧 <strong>Cliente:</strong> {emailConfirmDialog.clientPayload.client}</span>}
+                                {emailConfirmDialog.providerPayload && <span className="block">📧 <strong>Fornecedor:</strong> {emailConfirmDialog.providerPayload.provider}</span>}
+                            </p>
+                            <div className="flex gap-2">
+                                <button
+                                    type="button"
+                                    disabled={isSendingConfirmedEmail}
+                                    className="flex-1 bg-blue-600 text-white py-3 rounded-xl font-black text-xs uppercase tracking-wider hover:bg-blue-700 transition-all disabled:opacity-50 flex items-center justify-center gap-2"
+                                    data-testid="button-confirm-send-email"
+                                    onClick={async () => {
+                                        setIsSendingConfirmedEmail(true);
+                                        try {
+                                            if (emailConfirmDialog.clientPayload) {
+                                                const emailRes = await fetch('/api/email/mission-scheduled', {
+                                                    method: 'POST',
+                                                    headers: { 'Content-Type': 'application/json' },
+                                                    body: JSON.stringify(emailConfirmDialog.clientPayload)
+                                                });
+                                                const emailData = await emailRes.json();
+                                                if (emailData.queued) {
+                                                    showNotification('E-mail na Fila', emailData.message, 'warning');
+                                                } else if (emailData.success) {
+                                                    showNotification('E-mail Enviado', 'Confirmação enviada ao cliente!', 'success');
+                                                }
+                                            }
+                                            if (emailConfirmDialog.providerPayload) {
+                                                const emailRes = await fetch('/api/email/mission-solicited', {
+                                                    method: 'POST',
+                                                    headers: { 'Content-Type': 'application/json' },
+                                                    body: JSON.stringify(emailConfirmDialog.providerPayload)
+                                                });
+                                                const emailData = await emailRes.json();
+                                                if (emailData.queued) {
+                                                    showNotification('E-mail na Fila', emailData.message, 'warning');
+                                                } else if (emailData.success) {
+                                                    showNotification('E-mail Enviado', 'Solicitação enviada ao fornecedor!', 'success');
+                                                }
+                                            }
+                                        } catch (err) {
+                                            console.error('[Email] Erro ao enviar e-mail confirmado:', err);
+                                            showNotification('Erro', 'Falha ao enviar e-mail.', 'error');
+                                        } finally {
+                                            setIsSendingConfirmedEmail(false);
+                                            setEmailConfirmDialog(null);
+                                        }
+                                    }}
+                                >
+                                    {isSendingConfirmedEmail ? <><Loader2 size={14} className="animate-spin" /> Enviando...</> : 'Sim, Enviar'}
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => setEmailConfirmDialog(null)}
+                                    className="px-5 py-3 bg-gray-100 text-gray-600 rounded-xl font-bold text-xs uppercase hover:bg-gray-200 transition-all"
+                                    data-testid="button-cancel-send-email"
+                                >
+                                    Não Enviar
                                 </button>
                             </div>
                         </div>
