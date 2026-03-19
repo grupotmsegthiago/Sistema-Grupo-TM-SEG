@@ -692,19 +692,13 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
   };
 
   const handleProviderSelection = (newProviderName: string) => {
-      const upper = (newProviderName || '').toUpperCase();
-      const isVeladaKeywords = ['TM SEGURANÇA', 'TM SEGURANCA', 'ATIVA'];
-      const nextType = isVeladaKeywords.some(k => upper.includes(k)) ? 'Velada' : 'Caracterizada';
-      
       setProviderSearchTerm(newProviderName);
       
       const route = clientRoutes.find(r => r.id.toString() === selectedRouteId);
       if(route) { 
           calculatePricing(route, newProviderName, manualRevenueTableId, ''); 
-          setFormData(prev => ({ ...prev, provider: newProviderName, missionType: nextType })); 
-      } else { 
-          setFormData(prev => ({ ...prev, provider: newProviderName, missionType: nextType })); 
       }
+      setFormData(prev => ({ ...prev, provider: newProviderName })); 
       setActiveDropdown(null);
   };
 
@@ -814,7 +808,15 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
     } catch (e: any) { alert("Erro ao salvar: " + e.message); } finally { setIsSaving(false); }
   };
 
-  const filteredRoutes = clientRoutes.filter(r => 
+  const routesFilteredByOrigin = (() => {
+      if (!formData.origin) return clientRoutes;
+      const originCity = normalizeStr(formData.origin.split(',')[0].trim());
+      if (originCity.length < 3) return clientRoutes;
+      const matched = clientRoutes.filter(r => normalizeStr(r.origin).includes(originCity));
+      return matched.length > 0 ? matched : clientRoutes;
+  })();
+
+  const filteredRoutes = routesFilteredByOrigin.filter(r => 
       normalizeStr(r.name).includes(normalizeStr(routeSearchTerm)) || 
       normalizeStr(r.origin).includes(normalizeStr(routeSearchTerm)) || 
       normalizeStr(r.destination).includes(normalizeStr(routeSearchTerm))
@@ -1302,27 +1304,42 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
                       </div>
                   )}
 
+                  {formData.origin && routesFilteredByOrigin.length < clientRoutes.length && (
+                      <div className="flex items-center gap-2 px-3 py-2 bg-amber-50 border border-amber-200 rounded-lg text-[9px] font-black text-amber-700 uppercase tracking-wider">
+                          <Search size={12} /> Rotas filtradas pela origem: {formData.origin.split(',')[0]} ({routesFilteredByOrigin.length} de {clientRoutes.length})
+                      </div>
+                  )}
+
                   {(formData.origin && formData.destination) && (
-                      <div className="bg-gray-900 rounded-2xl p-5 text-white flex items-center justify-between relative overflow-hidden group border border-gray-800 shadow-lg">
-                          <div className="flex-1 min-w-0">
-                              <div className="flex items-center gap-2 text-[10px] text-gray-400 font-bold uppercase tracking-wider mb-1">
-                                  <MapPin size={12} className="text-red-400 shrink-0" />
-                                  <span className="truncate">{formData.origin.split(',')[0]}</span>
+                      <div className="bg-gray-900 rounded-2xl p-5 text-white relative overflow-hidden group border border-gray-800 shadow-lg">
+                          <div className="flex items-center justify-between">
+                              <div className="flex-1 min-w-0">
+                                  <div className="flex items-center gap-2 text-[10px] text-gray-400 font-bold uppercase tracking-wider mb-1">
+                                      <MapPin size={12} className="text-red-400 shrink-0" />
+                                      <span className="truncate">{formData.origin.split(',')[0]}</span>
+                                  </div>
+                                  <div className="flex items-center gap-2 text-[10px] text-gray-400 font-bold uppercase tracking-wider">
+                                      <Flag size={12} className="text-blue-400 shrink-0" />
+                                      <span className="truncate">{formData.destination.split(',')[0]}</span>
+                                  </div>
                               </div>
-                              <div className="flex items-center gap-2 text-[10px] text-gray-400 font-bold uppercase tracking-wider">
-                                  <Flag size={12} className="text-blue-400 shrink-0" />
-                                  <span className="truncate">{formData.destination.split(',')[0]}</span>
+                              <div className="text-center px-4">
+                                  <p className="text-[9px] font-black text-gray-500 uppercase tracking-widest mb-1">Distância</p>
+                                  <div className="flex items-baseline gap-1">
+                                      <span className="text-3xl font-black">{formData.totalDistance || '-'}</span>
+                                      <span className="text-xs font-bold text-gray-500">KM</span>
+                                  </div>
+                              </div>
+                              <div className="text-center px-4 border-l border-gray-700">
+                                  <p className="text-[9px] font-black text-gray-500 uppercase tracking-widest mb-1">Tempo Est.</p>
+                                  <div className="flex items-baseline gap-1">
+                                      <Clock size={14} className="text-gray-500" />
+                                      <span className="text-lg font-black">{formData.estimatedTime || '-'}</span>
+                                  </div>
                               </div>
                           </div>
-                          <div className="text-center px-6">
-                              <div className="absolute top-0 right-0 p-3 opacity-5 group-hover:scale-110 transition-transform"><Ruler size={80}/></div>
-                              <p className="text-[9px] font-black text-gray-500 uppercase tracking-widest mb-1">Distância</p>
-                              <div className="flex items-baseline gap-1">
-                                  <span className="text-3xl font-black">{formData.totalDistance || '-'}</span>
-                                  <span className="text-xs font-bold text-gray-500">KM</span>
-                              </div>
-                              {isCalculating && <Loader2 size={14} className="animate-spin text-red-500 mt-2 mx-auto"/>}
-                          </div>
+                          {isCalculating && <div className="mt-3 flex items-center justify-center gap-2"><Loader2 size={14} className="animate-spin text-red-500"/><span className="text-[9px] text-gray-500 font-bold">Calculando rota...</span></div>}
+                          <div className="absolute top-0 right-0 p-3 opacity-5 group-hover:scale-110 transition-transform"><Ruler size={80}/></div>
                       </div>
                   )}
 
@@ -1397,54 +1414,62 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
               </div>
               )}
 
-              {/* SEÇÕES FINAIS - PEDÁGIO, FINANCEIRO, EVIDÊNCIAS */}
+              {/* SEÇÕES FINAIS - FINANCEIRO, EVIDÊNCIAS */}
               {stepComplete.step6 && (
               <div className="p-6 space-y-6">
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                      <div className="bg-gray-50 p-4 rounded-xl border border-gray-200">
-                          <label className={LABEL_CLASS}>Pedágio Estimado</label>
-                          <div className="relative">
-                              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm font-bold text-gray-400">R$</span>
-                              <input type="number" step="0.01" className={`w-full bg-white border border-gray-200 rounded-lg py-2 pl-9 pr-10 text-lg font-black text-gray-700 outline-none focus:ring-2 focus:ring-indigo-500/20 ${isCalculatingToll ? 'opacity-50' : ''}`} value={formData.tollValue} onChange={e => setFormData({...formData, tollValue: e.target.value})} disabled={isCalculatingToll} data-testid="input-toll-value" />
-                              <span title={isCalculatingToll ? "Consultando API de pedágio..." : "Valor calculado via API de Pedágio"} className="absolute right-3 top-1/2 -translate-y-1/2">
-                                  {isCalculatingToll ? <Loader2 size={16} className="text-indigo-500 animate-spin" /> : <Zap size={16} className="text-yellow-500 animate-pulse" />}
-                              </span>
-                          </div>
-                          <p className="text-[8px] text-gray-400 font-bold uppercase mt-1.5 flex items-center gap-1">
-                              <Info size={8}/>
-                              {isCalculatingToll ? 'Calculando pedágio via API...' : tollDetails ? `${tollDetails.count} praça${tollDetails.count > 1 ? 's' : ''} de pedágio na rota (Veículo leve 2 eixos)` : 'Valor preenchido via Memória Evolutiva / API Pedágio'}
-                          </p>
-                          {tollDetails && tollDetails.tolls.length > 0 && (
-                              <div className="mt-2 max-h-28 overflow-y-auto">
-                                  {tollDetails.tolls.map((t: any, i: number) => (
-                                      <div key={i} className="flex items-center justify-between text-[9px] font-bold text-gray-500 py-0.5 border-b border-gray-100 last:border-0">
-                                          <span className="truncate mr-2">{t.nome}{t.concessionaria ? ` — ${t.concessionaria}` : ''}{t.rodovia ? ` (${t.rodovia})` : ''}</span>
-                                          <span className="text-gray-700 whitespace-nowrap">R$ {(t.valorDinheiro || 0).toFixed(2)}</span>
-                                      </div>
-                                  ))}
+
+                  {/* RESUMO INTELIGENTE DA OPERAÇÃO */}
+                  {(() => {
+                      const dist = parseFloat(formData.totalDistance) || 0;
+                      const originCity = normalizeStr((formData.origin || '').split(',')[0].trim());
+                      const geoInfo = CITY_MAP[originCity] || { uf: '', region: '' };
+                      const uf = extractUF(formData.origin || '') || geoInfo.uf;
+                      const region = UF_TO_REGION[uf] || geoInfo.region;
+                      const isVelada = formData.missionType === 'Velada';
+                      return (
+                          <div className="bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 rounded-2xl p-5 text-white border border-gray-700 shadow-xl space-y-4">
+                              <div className="flex items-center gap-2 mb-1">
+                                  <div className="p-1.5 bg-red-600 rounded-lg"><Zap size={12} className="text-white" /></div>
+                                  <span className="text-[10px] font-black text-white uppercase tracking-widest">Resumo da Operação</span>
                               </div>
-                          )}
-                      </div>
-                      <div className="relative"><label className={LABEL_CLASS}>Tempo Estimado</label><div className="relative"><input type="text" readOnly className={`${INPUT_CLASS} bg-gray-50`} value={formData.estimatedTime} /><Clock size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-300 pointer-events-none" /></div></div>
-                      <div className="relative"><label className={LABEL_CLASS}>KM Inicial</label><div className="relative"><input type="text" inputMode="decimal" className={INPUT_CLASS} value={formData.startKm} onChange={e => handleKmInput(e.target.value)} placeholder="0.0" data-testid="input-start-km" /><Navigation size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-300 pointer-events-none" /></div></div>
-                  </div>
+                              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                                  <div className={`p-3 rounded-xl border ${isVelada ? 'bg-gray-800 border-gray-600' : 'bg-red-900/30 border-red-800/50'}`}>
+                                      <p className="text-[8px] font-black text-gray-500 uppercase tracking-widest mb-1">Tipo</p>
+                                      <p className="text-sm font-black">{isVelada ? '🔒 Velada' : '🚨 Caracterizada'}</p>
+                                      <p className="text-[8px] text-gray-500 font-bold mt-1">{isVelada ? 'Tabelas 01/02 ARMADOS' : 'Tabelas por faixa de KM'}</p>
+                                  </div>
+                                  <div className="p-3 rounded-xl bg-blue-900/20 border border-blue-800/30">
+                                      <p className="text-[8px] font-black text-gray-500 uppercase tracking-widest mb-1">Distância</p>
+                                      <p className="text-sm font-black">{dist > 0 ? `${dist} KM` : '-'}</p>
+                                      <p className="text-[8px] text-gray-500 font-bold mt-1">{formData.estimatedTime || '-'}</p>
+                                  </div>
+                                  <div className="p-3 rounded-xl bg-indigo-900/20 border border-indigo-800/30">
+                                      <p className="text-[8px] font-black text-gray-500 uppercase tracking-widest mb-1">Região</p>
+                                      <p className="text-sm font-black">{region || '-'}</p>
+                                      <p className="text-[8px] text-gray-500 font-bold mt-1">{uf ? `UF: ${uf}` : '-'}</p>
+                                  </div>
+                                  <div className="p-3 rounded-xl bg-green-900/20 border border-green-800/30">
+                                      <p className="text-[8px] font-black text-gray-500 uppercase tracking-widest mb-1">Pedágio</p>
+                                      <p className="text-sm font-black">R$ {parseFloat(formData.tollValue || '0').toFixed(2)}</p>
+                                      <p className="text-[8px] text-gray-500 font-bold mt-1">{tollDetails ? `${tollDetails.count} praça${tollDetails.count > 1 ? 's' : ''}` : isCalculatingToll ? 'Calculando...' : 'Via API'}</p>
+                                  </div>
+                              </div>
+                              {calcDetails && (
+                                  <div className="pt-3 border-t border-gray-700 space-y-2">
+                                      <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest">Seleção Inteligente de Tabelas</p>
+                                      <div className="flex flex-wrap gap-1.5">
+                                          {calcDetails.split(' | ').map((d, i) => (
+                                              <span key={i} className={`px-2.5 py-1 rounded-lg text-[9px] font-black uppercase tracking-wide ${d.includes('FAT') ? 'bg-green-500/20 text-green-300 border border-green-500/30' : d.includes('CUSTO') ? 'bg-red-500/20 text-red-300 border border-red-500/30' : 'bg-blue-500/20 text-blue-300 border border-blue-500/30'}`}>{d}</span>
+                                          ))}
+                                      </div>
+                                  </div>
+                              )}
+                          </div>
+                      );
+                  })()}
 
                   {canViewFinancials && (
                       <div className="space-y-6 animate-in fade-in">
-                          {calcDetails && (
-                              <div className="p-4 bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-xl space-y-2">
-                                  <div className="flex items-center gap-2">
-                                      <div className="p-1.5 bg-blue-600 rounded-lg"><Zap size={12} className="text-white" /></div>
-                                      <span className="text-[10px] font-black text-blue-800 uppercase tracking-widest">Seleção Inteligente de Tabelas</span>
-                                  </div>
-                                  <div className="flex flex-wrap gap-1.5">
-                                      {calcDetails.split(' | ').map((d, i) => (
-                                          <span key={i} className={`px-2.5 py-1 rounded-lg text-[9px] font-black uppercase tracking-wide ${d.includes('FAT') ? 'bg-green-100 text-green-800 border border-green-200' : d.includes('CUSTO') ? 'bg-red-100 text-red-800 border border-red-200' : 'bg-blue-100 text-blue-800 border border-blue-200'}`}>{d}</span>
-                                      ))}
-                                  </div>
-                                  <p className="text-[8px] font-bold text-blue-500 flex items-center gap-1"><Info size={8} /> Critérios: Tipo de operação ({formData.missionType}) + KM ({formData.totalDistance || '?'}) + Localização + Regras do cliente</p>
-                              </div>
-                          )}
 
                           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                               <div>
