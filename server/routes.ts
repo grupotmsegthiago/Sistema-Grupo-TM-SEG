@@ -2368,6 +2368,79 @@ export async function registerRoutes(
   });
 
   // ═══════════════════════════════════════════════════════
+  // TOLL ESTIMATION VIA GEMINI AI
+  // ═══════════════════════════════════════════════════════
+
+  app.post('/api/toll/gemini-estimate', async (req: Request, res: Response) => {
+    try {
+      const { origin, destination } = req.body;
+      if (!origin || !destination) {
+        return res.json({ success: false, error: 'Origem e destino são obrigatórios' });
+      }
+
+      const prompt = `Você é um especialista em logística rodoviária brasileira. Para o trajeto de "${origin}" até "${destination}" com um veículo LEVE (carro/SUV - 2 eixos), responda EXCLUSIVAMENTE no formato JSON abaixo, sem markdown, sem explicação adicional, apenas o JSON:
+
+{
+  "totalEstimado": 0.00,
+  "pracas": [
+    { "nome": "Nome da praça/concessionária", "rodovia": "BR-XXX ou SP-XXX", "valor": 0.00, "sentido": "Norte/Sul/Subida/Descida", "cobrancaUnica": true/false }
+  ],
+  "observacoes": "Texto curto com observações relevantes sobre o trajeto",
+  "confianca": "alta/media/baixa"
+}
+
+Regras importantes:
+1. Identifique TODAS as praças de pedágio no sentido correto da via (de "${origin}" para "${destination}")
+2. Verifique se a concessionária utiliza cobrança única (unidirecional) e em qual sentido ela ocorre
+3. Se o trajeto passar pelo Sistema Anchieta-Imigrantes, identifique se o veículo está SUBINDO ou DESCENDO a serra e aplique a tarifa correta para o sentido
+4. Use valores atualizados de 2025/2026 para veículos leves (categoria 1 - 2 eixos)
+5. Considere a rota mais comum/principal entre os dois pontos
+6. O campo "confianca" deve ser "alta" se você tem certeza dos valores, "media" se são aproximados, "baixa" se não tem dados precisos`;
+
+      const response = await ai.models.generateContent({
+        model: "gemini-2.5-flash",
+        contents: [{ role: "user", parts: [{ text: prompt }] }],
+        config: { maxOutputTokens: 4096, temperature: 0.1 }
+      });
+
+      const rawText = (response.text || '').trim();
+      
+      let parsed: any = null;
+      try {
+        const jsonMatch = rawText.match(/\{[\s\S]*\}/);
+        if (jsonMatch) {
+          parsed = JSON.parse(jsonMatch[0]);
+        }
+      } catch (parseErr) {
+        console.error('Erro ao parsear resposta Gemini pedágio:', parseErr, rawText);
+      }
+
+      if (parsed && typeof parsed.totalEstimado === 'number') {
+        return res.json({
+          success: true,
+          tollValue: parseFloat(parsed.totalEstimado.toFixed(2)),
+          tollCount: Array.isArray(parsed.pracas) ? parsed.pracas.length : 0,
+          tolls: (parsed.pracas || []).map((p: any) => ({
+            name: p.nome || 'Praça',
+            value: parseFloat(p.valor) || 0,
+            road: p.rodovia || '',
+            sentido: p.sentido || '',
+            cobrancaUnica: p.cobrancaUnica || false,
+          })),
+          observacoes: parsed.observacoes || '',
+          confianca: parsed.confianca || 'baixa',
+          provider: 'gemini-ai',
+        });
+      }
+
+      return res.json({ success: false, error: 'Não foi possível extrair dados da resposta da IA', raw: rawText.substring(0, 500) });
+    } catch (e: any) {
+      console.error('Erro Gemini pedágio:', e);
+      return res.json({ success: false, error: `Erro ao consultar IA: ${e.message}` });
+    }
+  });
+
+  // ═══════════════════════════════════════════════════════
   // ASAAS INTEGRATION ROUTES
   // ═══════════════════════════════════════════════════════
 

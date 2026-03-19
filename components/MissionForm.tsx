@@ -575,9 +575,28 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
   }, [formData.client, formData.provider, formData.applyCeva200km, formData.applyVtc02h, formData.isSameOs, clientPriceTables, providerCostTables]);
 
   const [isCalculatingToll, setIsCalculatingToll] = useState(false);
-  const [tollDetails, setTollDetails] = useState<{ count: number; tolls: any[] } | null>(null);
+  const [tollDetails, setTollDetails] = useState<{ count: number; tolls: any[]; observacoes?: string; confianca?: string; provider?: string } | null>(null);
 
-  const calculateTollFromAPI = async (origin: string, destination: string): Promise<{ value: number; count: number; tolls: any[]; apiError?: string; distance?: number; duration?: string; provider?: string } | null> => {
+  const calculateTollGemini = async (origin: string, destination: string): Promise<{ value: number; count: number; tolls: any[]; observacoes?: string; confianca?: string; provider?: string } | null> => {
+      try {
+          const resp = await fetch('/api/toll/gemini-estimate', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ origin, destination }),
+          });
+          if (!resp.ok) return null;
+          const data = await resp.json();
+          if (data.success && data.tollValue > 0) {
+              return { value: data.tollValue, count: data.tollCount, tolls: data.tolls || [], observacoes: data.observacoes, confianca: data.confianca, provider: 'gemini-ai' };
+          }
+          return null;
+      } catch (e) {
+          console.error('Erro Gemini pedágio:', e);
+          return null;
+      }
+  };
+
+  const calculateTollFromAPI = async (origin: string, destination: string): Promise<{ value: number; count: number; tolls: any[]; apiError?: string; distance?: number; duration?: string; provider?: string; observacoes?: string; confianca?: string } | null> => {
       try {
           setIsCalculatingToll(true);
           const resp = await fetch('/api/toll/calculate', {
@@ -590,12 +609,18 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
           if (data.success && data.tollValue > 0) {
               return { value: data.tollValue, count: data.tollCount, tolls: data.tolls || [], distance: data.distance, duration: data.duration, provider: data.provider };
           }
+
+          const geminiResult = await calculateTollGemini(origin, destination);
+          if (geminiResult) return geminiResult;
+
           if (data.apiError) {
               return { value: 0, count: 0, tolls: [], apiError: data.apiError };
           }
           return null;
       } catch (e) {
           console.error('Erro ao consultar API de pedágio:', e);
+          const geminiResult = await calculateTollGemini(origin, destination);
+          if (geminiResult) return geminiResult;
           return null;
       } finally {
           setIsCalculatingToll(false);
@@ -642,14 +667,15 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
       if (tollSource !== 'fixed') {
           const apiResult = await calculateTollFromAPI(route.origin, route.destination);
           if (apiResult) {
-              if (apiResult.apiError) {
+              if (apiResult.apiError && !apiResult.provider) {
                   showNotification('API Pedágio', apiResult.apiError, 'error');
               } else if (apiResult.value > 0) {
-                  setTollDetails({ count: apiResult.count, tolls: apiResult.tolls });
+                  setTollDetails({ count: apiResult.count, tolls: apiResult.tolls, observacoes: apiResult.observacoes, confianca: apiResult.confianca, provider: apiResult.provider });
                   if (tollSource !== 'history' || Math.abs(apiResult.value - suggestedToll) > 1) {
                       setFormData(prev => ({ ...prev, tollValue: apiResult.value.toFixed(2) }));
-                      const providerLabel = apiResult.provider === 'rotasbrasil' ? 'Rotas Brasil' : 'API Pedágio';
-                      showNotification(providerLabel, `R$ ${apiResult.value.toFixed(2)} calculado automaticamente (${apiResult.count} praça${apiResult.count > 1 ? 's' : ''} - Veículo leve 2 eixos).`, 'success');
+                      const providerLabel = apiResult.provider === 'gemini-ai' ? 'Gemini IA' : apiResult.provider === 'rotasbrasil' ? 'Rotas Brasil' : 'API Pedágio';
+                      const confiancaLabel = apiResult.confianca ? ` (Confiança: ${apiResult.confianca})` : '';
+                      showNotification(providerLabel, `R$ ${apiResult.value.toFixed(2)} estimado (${apiResult.count} praça${apiResult.count > 1 ? 's' : ''} - Veículo leve 2 eixos)${confiancaLabel}.`, 'success');
                   }
               }
           }
@@ -1527,9 +1553,37 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
                                   <div className="p-3 rounded-xl bg-green-900/20 border border-green-800/30">
                                       <p className="text-[8px] font-black text-gray-500 uppercase tracking-widest mb-1">Pedágio</p>
                                       <p className="text-sm font-black">R$ {parseFloat(formData.tollValue || '0').toFixed(2)}</p>
-                                      <p className="text-[8px] text-gray-500 font-bold mt-1">{tollDetails ? `${tollDetails.count} praça${tollDetails.count > 1 ? 's' : ''}` : isCalculatingToll ? 'Calculando...' : 'Via API'}</p>
+                                      <p className="text-[8px] text-gray-500 font-bold mt-1">{tollDetails ? `${tollDetails.count} praça${tollDetails.count > 1 ? 's' : ''} · ${tollDetails.provider === 'gemini-ai' ? 'IA' : 'API'}` : isCalculatingToll ? 'Calculando...' : 'Via API'}</p>
+                                      {tollDetails?.confianca && <p className={`text-[7px] font-black uppercase mt-1 ${tollDetails.confianca === 'alta' ? 'text-green-400' : tollDetails.confianca === 'media' ? 'text-yellow-400' : 'text-red-400'}`}>Conf: {tollDetails.confianca}</p>}
                                   </div>
                               </div>
+
+                              {/* DETALHAMENTO PRAÇAS DE PEDÁGIO */}
+                              {tollDetails && tollDetails.tolls.length > 0 && (
+                                  <div className="pt-3 border-t border-gray-700 space-y-2">
+                                      <div className="flex items-center justify-between">
+                                          <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest flex items-center gap-1.5">
+                                              <Navigation size={10} />
+                                              Praças de Pedágio Identificadas
+                                              {tollDetails.provider === 'gemini-ai' && <span className="px-1.5 py-0.5 bg-purple-500/20 border border-purple-500/30 rounded text-[7px] text-purple-300">via Gemini IA</span>}
+                                          </p>
+                                      </div>
+                                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
+                                          {tollDetails.tolls.map((t: any, i: number) => (
+                                              <div key={i} className="flex items-center justify-between px-3 py-1.5 bg-gray-800/50 rounded-lg border border-gray-700/50">
+                                                  <div className="flex-1 min-w-0">
+                                                      <p className="text-[9px] font-bold text-white truncate">{t.name}</p>
+                                                      <p className="text-[7px] text-gray-500 font-bold">{t.road}{t.sentido ? ` · ${t.sentido}` : ''}{t.cobrancaUnica ? ' · Unidirecional' : ''}</p>
+                                                  </div>
+                                                  <span className="text-[10px] font-black text-green-400 ml-2">R$ {(t.value || 0).toFixed(2)}</span>
+                                              </div>
+                                          ))}
+                                      </div>
+                                      {tollDetails.observacoes && (
+                                          <p className="text-[8px] text-gray-400 italic px-1">{tollDetails.observacoes}</p>
+                                      )}
+                                  </div>
+                              )}
 
                               {/* TABELAS SELECIONADAS COM DETALHES */}
                               <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-3 border-t border-gray-700">
