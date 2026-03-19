@@ -117,6 +117,7 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
   const [providerPending, setProviderPending] = useState(false);
   const [manualOverrides, setManualOverrides] = useState({ revenue: false, cost: false, toll: false });
   const [operatorConfirmedCalc, setOperatorConfirmedCalc] = useState(false);
+  const [isCalculatingToll, setIsCalculatingToll] = useState(false);
   const [expandedStep, setExpandedStep] = useState<number>(1);
   const [driverQuestion, setDriverQuestion] = useState<'asking' | 'yes' | 'no' | null>(null);
   const [scheduleMode, setScheduleMode] = useState<'asking' | 'immediate' | 'scheduled' | null>(null);
@@ -579,7 +580,6 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
       } finally { setIsCalculating(false); }
   }, [formData.client, formData.provider, formData.applyCeva200km, formData.applyVtc02h, formData.isSameOs, clientPriceTables, providerCostTables, manualOverrides.revenue, manualOverrides.cost]);
 
-  const [isCalculatingToll, setIsCalculatingToll] = useState(false);
   const [tollDetails, setTollDetails] = useState<{ count: number; tolls: any[]; observacoes?: string; confianca?: string; provider?: string } | null>(null);
 
   const calculateTollGemini = async (origin: string, destination: string): Promise<{ value: number; count: number; tolls: any[]; observacoes?: string; confianca?: string; provider?: string } | null> => {
