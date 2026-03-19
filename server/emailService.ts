@@ -114,7 +114,7 @@ export interface MissionEmailData {
 }
 
 export async function sendMissionEmailToClient(
-  mission: MissionEmailData & { _noEmailAlert?: boolean; _alertEntity?: string; _alertName?: string },
+  mission: MissionEmailData & { _noEmailAlert?: boolean; _alertEntity?: string; _alertName?: string; agent1?: string; agent2?: string; escort_vehicle_plate?: string },
   clientEmail: string,
   vehiclePlate: string,
   grEspelhamento?: string,
@@ -143,6 +143,9 @@ export async function sendMissionEmailToClient(
       <tr><td>Agendamento</td><td>${formatDateTime(mission.start_time)}</td></tr>
       ${mission.driver_name ? `<tr><td>Motorista</td><td>${mission.driver_name}</td></tr>` : ''}
       ${mission.driver_phone ? `<tr><td>Contato Motorista</td><td>${mission.driver_phone}</td></tr>` : ''}
+      ${(mission as any).agent1 ? `<tr><td>Agente 01</td><td>${(mission as any).agent1}</td></tr>` : ''}
+      ${(mission as any).agent2 ? `<tr><td>Agente 02</td><td>${(mission as any).agent2}</td></tr>` : ''}
+      ${(mission as any).escort_vehicle_plate ? `<tr><td>Viatura de Escolta</td><td>${(mission as any).escort_vehicle_plate}</td></tr>` : ''}
       ${grEspelhamento ? `<tr><td>Espelhamento</td><td>${grEspelhamento}</td></tr>` : ''}
       ${trackerInfo ? `<tr><td>Rastreador</td><td>${trackerInfo}</td></tr>` : ''}
     </table>
@@ -155,11 +158,27 @@ export async function sendMissionEmailToClient(
   try {
     const isAlert = (mission as any)._noEmailAlert;
     const subjectPrefix = isAlert ? '⚠️ SEM EMAIL — ' : '';
+
+    const originParts = (mission.origin || '').split(',');
+    let originCityUF = '';
+    if (originParts.length >= 2) {
+      const city = originParts[0].trim();
+      const ufMatch = originParts[originParts.length - 1].trim().match(/([A-Z]{2})/);
+      const uf = ufMatch ? ufMatch[1] : originParts[originParts.length - 1].trim().replace(/\s*-?\s*Brasil$/i, '').trim();
+      originCityUF = `${city}/${uf}`;
+    } else {
+      const raw = (mission.origin || '').trim();
+      const dashParts = raw.split(' - ');
+      originCityUF = dashParts.length >= 2 ? `${dashParts[0].trim()}/${dashParts[1].trim()}` : raw;
+    }
+
     const mailOptions: any = {
       from: SMTP_FROM,
       to: clientEmail,
+      cc: 'operacional@grupotmseg.com.br',
+      replyTo: 'operacional@grupotmseg.com.br',
       bcc: BCC_RECIPIENTS,
-      subject: `${subjectPrefix}Agendamento Confirmado - ${vehiclePlate || 'S/PLACA'} / ${formatOS(mission.id)}`,
+      subject: `${subjectPrefix}Agendamento - ${formatOS(mission.id)} - ${originCityUF || 'S/ORIGEM'}`,
       html,
     };
 

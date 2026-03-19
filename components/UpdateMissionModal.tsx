@@ -801,7 +801,7 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
 
             const sendClientEmail = finalStatus === MissionStatus.SCHEDULED && originalStatus !== MissionStatus.SCHEDULED;
             const pendingClient = mission.email_pending_client === true;
-            const hasRequiredDataForClientEmail = !!(editData.agent1 && editData.vehicleId && vehiclePlateForEmail && vehiclePlateForEmail !== '—');
+            const hasRequiredDataForClientEmail = !!(editData.agent1 && editData.agent2 && editData.vehicleId && vehiclePlateForEmail && vehiclePlateForEmail !== '—');
             if ((sendClientEmail || pendingClient) && hasRequiredDataForClientEmail) {
                 try {
                     const emailRes = await fetch('/api/email/mission-scheduled', {

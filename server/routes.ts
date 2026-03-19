@@ -429,8 +429,20 @@ export async function registerRoutes(
       const driverName = missionCheck.driver_name || '';
       const driverPhone = missionCheck.driver_phone || '';
 
+      const agent1 = missionCheck.agent1 || '';
+      const agent2 = missionCheck.agent2 || '';
+
+      let escortVehiclePlate = '';
+      if (missionCheck.vehicle_id) {
+        const { data: escVeh } = await supabase.from('vehicles').select('plate, model').eq('id', missionCheck.vehicle_id).single();
+        if (escVeh?.plate) escortVehiclePlate = escVeh.model ? `${escVeh.plate} / ${escVeh.model}` : escVeh.plate;
+      }
+
       const missingFields: string[] = [];
-      if (!clientVehicleLabel || clientVehicleLabel === '—' || clientVehicleLabel === '') missingFields.push('Placa da viatura');
+      if (!agent1) missingFields.push('Agente 01');
+      if (!agent2) missingFields.push('Agente 02');
+      if (!escortVehiclePlate) missingFields.push('Placa da viatura de escolta');
+      if (!clientVehicleLabel || clientVehicleLabel === '—' || clientVehicleLabel === '') missingFields.push('Placa do veículo do cliente');
       if (!driverName) missingFields.push('Nome do motorista');
       if (!driverPhone) missingFields.push('Telefone do motorista');
       if (!missionData.origin) missingFields.push('Origem');
@@ -447,15 +459,17 @@ export async function registerRoutes(
       const { data: clientData } = await supabase.from('clients').select('operational_email, email').eq('name', missionData.client).single();
       const clientEmail = clientData?.operational_email || clientData?.email;
       
+      const enrichedMission = { ...missionData, agent1, agent2, escort_vehicle_plate: escortVehiclePlate, driver_name: driverName, driver_phone: driverPhone };
+
       if (!clientEmail) {
         const fallback = 'operacional@grupotmseg.com.br';
-        const alertMission = { ...missionData, _noEmailAlert: true, _alertEntity: 'Cliente', _alertName: missionData.client };
+        const alertMission = { ...enrichedMission, _noEmailAlert: true, _alertEntity: 'Cliente', _alertName: missionData.client };
         const result = await sendMissionEmailToClient(alertMission, fallback, clientVehicleLabel, grEspelhamento, trackerInfo, senderName);
         const success = typeof result === 'object' ? result.success : result;
         return res.json({ success, message: success ? `⚠️ Cliente "${missionData.client}" sem e-mail — notificação enviada para operacional.` : 'Falha ao enviar' });
       }
 
-      const result = await sendMissionEmailToClient(missionData, clientEmail, clientVehicleLabel, grEspelhamento, trackerInfo, senderName);
+      const result = await sendMissionEmailToClient(enrichedMission, clientEmail, clientVehicleLabel, grEspelhamento, trackerInfo, senderName);
       const success = typeof result === 'object' ? result.success : result;
       if (success && typeof result === 'object' && result.messageId) {
         await supabase.from('missions').update({ email_message_id: result.messageId }).eq('id', missionId);
