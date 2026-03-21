@@ -1,6 +1,9 @@
-const CACHE_NAME = 'tmseg-v3';
+const CACHE_NAME = 'tmseg-v4';
 
 self.addEventListener('install', (event) => {
+  event.waitUntil(
+    caches.keys().then(names => Promise.all(names.map(n => caches.delete(n))))
+  );
   self.skipWaiting();
 });
 
@@ -9,10 +12,14 @@ self.addEventListener('activate', (event) => {
     Promise.all([
       clients.claim(),
       caches.keys().then(names => Promise.all(
-        names.filter(n => n !== CACHE_NAME).map(n => caches.delete(n))
+        names.map(n => caches.delete(n))
       ))
     ])
   );
+});
+
+self.addEventListener('fetch', (event) => {
+  event.respondWith(fetch(event.request));
 });
 
 self.addEventListener('push', (event) => {

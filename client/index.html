@@ -148,8 +148,12 @@
           });
         }
         if ('serviceWorker' in navigator) {
+          navigator.serviceWorker.getRegistrations().then(function(regs) {
+            regs.forEach(function(reg) { reg.update(); });
+          });
           navigator.serviceWorker.register('/sw.js').then(function(reg) {
-            console.log('[PWA] Service Worker registrado');
+            reg.update();
+            console.log('[PWA] Service Worker registrado/atualizado');
           }).catch(function(err) {
             console.error('[PWA] SW falhou:', err);
           });
@@ -187,6 +191,6 @@
   <body>
     <div id="ios-error-overlay"></div>
     <div id="root"></div>
-    <script type="module" src="/src/main.tsx"></script>
+    <script type="module" src="/src/main.tsx?v=20260321122500"></script>
   </body>
 </html>

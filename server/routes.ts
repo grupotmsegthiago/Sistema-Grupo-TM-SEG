@@ -1303,6 +1303,86 @@ export async function registerRoutes(
     }
   });
 
+  app.post("/api/missions/force-recalculate-by-os/:osNumber", async (req: Request, res: Response) => {
+    try {
+      const osNumber = req.params.osNumber;
+      const missionId = osNumber.startsWith('GTM-') ? osNumber : `GTM-${osNumber}`;
+      
+      const { data: checkMission } = await supabaseAdmin.from('missions').select('id').eq('id', missionId).single();
+      if (!checkMission) return res.status(404).json({ error: `OS ${osNumber} (ID: ${missionId}) não encontrada` });
+      const url = `${req.protocol}://${req.get('host')}/api/missions/${missionId}/force-recalculate`;
+      const response = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' } });
+      const result = await response.json();
+      return res.json(result);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.post("/api/missions/:id/force-recalculate", async (req: Request, res: Response) => {
+    try {
+      const missionId = req.params.id;
+
+      const { data: mission, error: mErr } = await supabaseAdmin.from('missions').select('*').eq('id', missionId).single();
+      if (mErr || !mission) return res.status(404).json({ error: 'Missão não encontrada' });
+
+      await supabaseAdmin.from('system_logs').delete().eq('entity', 'BillingAdjustment').eq('entity_id', missionId);
+
+      const { data: clientTables } = await supabaseAdmin.from('client_price_tables').select('*');
+      const { data: providerTables } = await supabaseAdmin.from('provider_cost_tables').select('*');
+      const { data: clients } = await supabaseAdmin.from('clients').select('*');
+
+      const clientData = (clients || []).find((c: any) => c.name === mission.client);
+      const { calculateMissionFinancials } = await import('../lib/financialUtils');
+
+      const missionObj = {
+        ...mission,
+        startKm: mission.start_km,
+        endKm: mission.end_km,
+        startTime: mission.start_time,
+        endTime: mission.end_time,
+        agentCount: mission.agent_count || 1,
+        is_same_os: mission.is_same_os || false,
+      };
+
+      const result = calculateMissionFinancials(missionObj, clientTables || [], providerTables || [], clientData);
+
+      if (result && result.client && result.provider) {
+        const newRevenue = result.client.total || 0;
+        const newCost = result.provider.total || 0;
+
+        await supabaseAdmin.from('missions').update({
+          revenue_value: newRevenue,
+          cost_value: newCost,
+          toll_value: result.tollValue || mission.toll_value || 0,
+          billing_verified_by: null,
+          snapshot_approved_by: null,
+        }).eq('id', missionId);
+
+        return res.json({
+          success: true,
+          mission_id: missionId,
+          os_number: mission.os_number,
+          old: { revenue: mission.revenue_value, cost: mission.cost_value },
+          new: { revenue: newRevenue, cost: newCost },
+          details: {
+            provider_excess_km: result.provider.excessKm,
+            provider_unit_cost_km: result.provider.unitCostKm,
+            provider_extra_km_val: result.provider.extraKmVal,
+            provider_base: result.provider.base,
+            provider_total: result.provider.total,
+            client_total: result.client.total,
+            distance: result.realTraveledKm,
+          }
+        });
+      }
+
+      res.status(400).json({ error: 'Não foi possível calcular financeiro' });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
   app.post("/api/missions/recalculate-all", async (req: Request, res: Response) => {
     try {
       const fetchAll = async (table: string) => {
