@@ -1948,6 +1948,33 @@ export async function registerRoutes(
   };
   ensureReportsTable().catch(e => console.warn('Erro ao criar tabela operational_reports:', e.message));
 
+  app.get("/api/missions/:id/debug-financial", async (req: Request, res: Response) => {
+    try {
+      const searchId = req.params.id;
+      let result = await supabase.from('missions')
+        .select('*')
+        .ilike('id', `%${searchId}%`)
+        .limit(1);
+      const mission = result.data?.[0];
+      if (!mission) { res.json({ error: 'not found' }); return; }
+      
+      const { data: ptData } = await supabase.from('provider_cost_tables').select('*');
+      const { data: ctData } = await supabase.from('client_price_tables').select('*').eq('client', mission.client || mission.originalClientName);
+      
+      const { calculateMissionFinancials } = await import('../lib/financialUtils');
+      const financials = calculateMissionFinancials(mission, ctData || [], ptData || [], null, new Date(), {
+        providerTableId: '0e49ec71-80b5-4081-8f44-fb79d80f18de'
+      });
+      
+      res.json({
+        mission: { id: mission.id, is_same_os: mission.is_same_os, provider_ops_edited: mission.provider_ops_edited, start_km: mission.start_km, end_km: mission.end_km, total_distance: mission.total_distance, status: mission.status },
+        provider: financials.provider,
+        realTraveledKm: financials.realTraveledKm,
+        hasValidKms: financials.hasValidKms
+      });
+    } catch (e: any) { res.json({ error: e.message, stack: e.stack?.split('\n').slice(0,5) }); }
+  });
+
   app.get("/api/missions/:id/operational-report", async (req: Request, res: Response) => {
     let pool;
     try {
