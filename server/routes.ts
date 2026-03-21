@@ -1383,6 +1383,75 @@ export async function registerRoutes(
     }
   });
 
+  app.post("/api/missions/scan-divergences", async (req: Request, res: Response) => {
+    try {
+      const fetchAll = async (table: string) => {
+        const allRows: any[] = [];
+        let from = 0;
+        while (true) {
+          const { data } = await supabaseAdmin.from(table).select('*').range(from, from + 999);
+          if (!data || data.length === 0) break;
+          allRows.push(...data);
+          if (data.length < 1000) break;
+          from += 1000;
+        }
+        return allRows;
+      };
+
+      const [missions, clientTables, providerTables, clients] = await Promise.all([
+        fetchAll('missions'), fetchAll('client_price_tables'), fetchAll('provider_cost_tables'), fetchAll('clients')
+      ]);
+
+      const { calculateMissionFinancials } = await import('../lib/financialUtils');
+
+      const completed = (missions || []).filter((m: any) => 
+        m.status === 'Concluída' && !m.is_same_os && m.cost_value > 0 && m.start_km > 0 && m.end_km > 0
+      );
+
+      const divergences: any[] = [];
+      for (const m of completed) {
+        try {
+          const clientData = (clients || []).find((c: any) => c.name === m.client);
+          const mObj = { ...m, startKm: m.start_km, endKm: m.end_km, startTime: m.start_time, endTime: m.end_time, agentCount: m.agent_count || 1 };
+          const result = calculateMissionFinancials(mObj, clientTables || [], providerTables || [], clientData);
+          if (!result?.provider) continue;
+
+          const savedCost = m.cost_value || 0;
+          const calcCost = result.provider.total || 0;
+          const diff = calcCost - savedCost;
+
+          if (diff > 10 && diff / savedCost > 0.03) {
+            divergences.push({
+              id: m.id,
+              provider: (m.provider || '').substring(0, 40),
+              distance: Math.abs(m.end_km - m.start_km),
+              savedCost: Math.round(savedCost * 100) / 100,
+              correctCost: Math.round(calcCost * 100) / 100,
+              difference: Math.round(diff * 100) / 100,
+              excessKm: result.provider.excessKm,
+              extraKmVal: result.provider.extraKmVal,
+              tableName: result.provider.tableName || '-',
+              approved: !!m.billing_approved
+            });
+          }
+        } catch(e) {}
+      }
+
+      divergences.sort((a: any, b: any) => b.difference - a.difference);
+
+      res.json({
+        totalAnalyzed: completed.length,
+        divergencesFound: divergences.length,
+        notApproved: divergences.filter((d: any) => !d.approved).length,
+        approved: divergences.filter((d: any) => d.approved).length,
+        totalDifferenceR$: Math.round(divergences.reduce((s: number, d: any) => s + d.difference, 0) * 100) / 100,
+        divergences
+      });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
   app.post("/api/missions/recalculate-all", async (req: Request, res: Response) => {
     try {
       const fetchAll = async (table: string) => {
