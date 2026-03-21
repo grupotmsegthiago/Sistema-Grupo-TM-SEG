@@ -474,7 +474,7 @@ export const calculateMissionFinancials = (
 
         const isFranchiseName = (name: string) => {
             const n = (name || '').toUpperCase();
-            return n.includes('ATÉ') || n.includes('ATE ') || n.includes('FAIXA');
+            return n.includes('ATÉ') || n.includes('ATE ') || n.includes('FAIXA') || /\bATE[´'`]\d/i.test(n) || /\bATE\s*\d/i.test(n);
         };
 
         const franchiseTables = bestGroup.filter(t => isFranchiseName(t.operation_type || ''));
@@ -754,7 +754,7 @@ export const calculateMissionFinancials = (
     const appliedTableName = (appliedClientTable?.operation_type || '').toUpperCase();
     const missionDest = (mission.destination || '').toUpperCase();
 
-    const isFranchiseTable = (name: string) => name.includes('ATÉ') || name.includes('ATE ') || name.includes('FAIXA');
+    const isFranchiseTable = (name: string) => name.includes('ATÉ') || name.includes('ATE ') || name.includes('FAIXA') || /\bATE[´'`]\d/i.test(name) || /\bATE\s*\d/i.test(name);
     const clientHasExtraKmPrice = (appliedClientTable?.price_per_extra_km || 0) > 0;
     const clientTableIs200km = appliedTableName.includes('200KM') || appliedTableName.includes('200 KM') || appliedTableName.includes('LOGITECH') || missionDest.includes('200KM');
     const clientTableIs100km = appliedTableName.includes('100KM') || appliedTableName.includes('100 KM');
