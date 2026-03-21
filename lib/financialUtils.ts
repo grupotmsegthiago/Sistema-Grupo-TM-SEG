@@ -717,7 +717,8 @@ export const calculateMissionFinancials = (
             const tIs200 = tName.includes('200KM') || tName.includes('200 KM') || tName.includes('LOGITECH');
             const tIs100 = tName.includes('100KM') || tName.includes('100 KM');
             const tIsFranchise = isFranchiseCheck(tName);
-            const tIsFixedDist = (tIs200 || tIs100) && !tIsFranchise;
+            const tHasExtraKm = (table.cost_per_extra_km || 0) > 0;
+            const tIsFixedDist = (tIs200 || tIs100) && !tIsFranchise && !tHasExtraKm;
             const tHasExtraHr = (table.cost_per_extra_hour || 0) > 0;
             const tIsFixedHr = !tHasExtraHr && (tName.includes('02H') || tName.includes('02 HORAS'));
 
@@ -827,7 +828,7 @@ export const calculateMissionFinancials = (
     const clientHasExtraKmPrice = (appliedClientTable?.price_per_extra_km || 0) > 0;
     const clientTableIs200km = appliedTableName.includes('200KM') || appliedTableName.includes('200 KM') || appliedTableName.includes('LOGITECH') || missionDest.includes('200KM');
     const clientTableIs100km = appliedTableName.includes('100KM') || appliedTableName.includes('100 KM');
-    const isFixedDistanceClientRule = (clientTableIs200km || clientTableIs100km) && !isFranchiseTable(appliedTableName);
+    const isFixedDistanceClientRule = (clientTableIs200km || clientTableIs100km) && !isFranchiseTable(appliedTableName) && !clientHasExtraKmPrice;
 
     const clientHasExtraHrPrice = (appliedClientTable?.price_per_extra_hour || 0) > 0;
     const isVtcClient = missionClientName.includes('VTC');
@@ -853,7 +854,7 @@ export const calculateMissionFinancials = (
     const providerHasExtraKmCost = (appliedProviderTable?.cost_per_extra_km || 0) > 0;
     const providerTableIs200km = providerTableName.includes('200KM') || providerTableName.includes('200 KM') || providerTableName.includes('LOGITECH');
     const providerTableIs100km = providerTableName.includes('100KM') || providerTableName.includes('100 KM');
-    const isFixedDistanceProviderRule = (providerTableIs200km || providerTableIs100km) && !isFranchiseTable(providerTableName);
+    const isFixedDistanceProviderRule = (providerTableIs200km || providerTableIs100km) && !isFranchiseTable(providerTableName) && !providerHasExtraKmCost;
 
     const providerHasExtraHrCost = (appliedProviderTable?.cost_per_extra_hour || 0) > 0;
     const isFixedHoursProviderRule = !providerHasExtraHrCost && (
@@ -884,6 +885,21 @@ export const calculateMissionFinancials = (
 
     let pExcessKm = mission.is_same_os ? 0 : Math.max(0, providerDistForCalc - pFranchiseKm);
     let pExcessHr = mission.is_same_os ? 0 : Math.max(0, providerDurationForCalc - pFranchiseHr);
+
+    console.log('[PROVIDER-DEBUG]', {
+        providerTableName,
+        isFranchise: isFranchiseTable(providerTableName),
+        isFixedDistanceProviderRule,
+        providerDistForCalc,
+        pFranchiseKm,
+        pExcessKm,
+        realTraveledKm,
+        originalDistanceForCalc,
+        hasProvOpsOverride: !!manualTableOverrides?.providerOpsOverride,
+        provOpsOverrideDist: manualTableOverrides?.providerOpsOverride?.distanceKm,
+        isSameOs: mission.is_same_os,
+        charCodesAfterATE: providerTableName.includes('ATE') ? [...providerTableName.substring(providerTableName.indexOf('ATE')+3, providerTableName.indexOf('ATE')+6)].map(c => `${c}=U+${c.charCodeAt(0).toString(16).padStart(4,'0')}`) : 'N/A'
+    });
 
     const pUnitCostKm = manualTableOverrides?.customProviderUnitKm !== undefined
         ? manualTableOverrides.customProviderUnitKm
