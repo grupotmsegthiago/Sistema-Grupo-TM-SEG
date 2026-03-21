@@ -1670,9 +1670,34 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
 
                         {/* COLUNA CUSTO (FORNECEDOR) */}
                         <div className={`bg-white p-6 rounded-2xl shadow-sm border border-gray-200 flex flex-col h-full relative ${isZeroCostError ? 'ring-2 ring-red-500' : ''}`}>
-                            <h4 className="text-sm font-black text-red-700 uppercase tracking-widest mb-4 flex items-center gap-2">
-                                [ {formatProviderName(mission.provider)} ]
-                            </h4>
+                            <div className="flex items-center justify-between mb-4">
+                                <h4 className="text-sm font-black text-red-700 uppercase tracking-widest flex items-center gap-2">
+                                    [ {formatProviderName(mission.provider)} ]
+                                </h4>
+                                {!mission.is_same_os && (
+                                    <button
+                                        data-testid="btn-recalculate-provider"
+                                        onClick={async () => {
+                                            const currentTableId = manualProviderTableId;
+                                            setCustomProviderBase('');
+                                            setCustomProviderKm('');
+                                            setCustomProviderHour('');
+                                            setUseSavedValues(false);
+                                            setManualProviderTableId('');
+                                            await supabase.from('system_logs').delete().eq('entity', 'BillingAdjustment').eq('entity_id', mission.id);
+                                            setTimeout(() => {
+                                                setManualProviderTableId(currentTableId);
+                                                showNotification('Recalculado', 'Valores do fornecedor recalculados com sucesso.', 'success');
+                                            }, 100);
+                                        }}
+                                        className="flex items-center gap-1.5 px-3 py-1.5 bg-red-600 text-white text-[10px] font-black uppercase rounded-lg hover:bg-red-700 transition-all shadow-md active:scale-95"
+                                        title="Recalcular custos do fornecedor"
+                                    >
+                                        <RefreshCw size={12} />
+                                        Recalcular
+                                    </button>
+                                )}
+                            </div>
 
                             <div className="mb-4">
                                 <label className={LABEL_CLASS}>Tabela de Custo de Referência</label>
@@ -1776,9 +1801,6 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                         </p>
                                         <p className="text-[9px] text-gray-400 font-mono leading-tight mt-0.5">
                                             {financialData.provider.excessKm.toFixed(1)}km × R${financialData.provider.unitCostKm.toFixed(2)}
-                                        </p>
-                                        <p className="text-[7px] text-blue-500 font-mono leading-tight mt-0.5 bg-blue-50 px-1 rounded break-all">
-                                            DBG: dist={providerOpsOverride ? `OPS:${providerOpsOverride.distanceKm.toFixed(1)}` : `CLI:${financialData.realTraveledKm.toFixed(1)}`} fr={financialData.provider.franchiseKm} fixed={financialData.provider.usedSpecialRule ? 'Y' : 'N'} same={mission?.is_same_os ? 'Y' : 'N'} opsEdit={mission?.provider_ops_edited ? 'Y' : 'N'} pSt={mission?.provider_start_km ?? 'null'} pEn={mission?.provider_end_km ?? 'null'}
                                         </p>
                                     </div>
                                     <div className="flex items-center gap-1 mt-2 pt-2 border-t border-gray-200">

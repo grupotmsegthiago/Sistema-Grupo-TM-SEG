@@ -886,20 +886,14 @@ export const calculateMissionFinancials = (
     let pExcessKm = mission.is_same_os ? 0 : Math.max(0, providerDistForCalc - pFranchiseKm);
     let pExcessHr = mission.is_same_os ? 0 : Math.max(0, providerDurationForCalc - pFranchiseHr);
 
-    console.log('[PROVIDER-DEBUG]', {
-        providerTableName,
-        isFranchise: isFranchiseTable(providerTableName),
-        isFixedDistanceProviderRule,
-        providerDistForCalc,
-        pFranchiseKm,
-        pExcessKm,
-        realTraveledKm,
-        originalDistanceForCalc,
-        hasProvOpsOverride: !!manualTableOverrides?.providerOpsOverride,
-        provOpsOverrideDist: manualTableOverrides?.providerOpsOverride?.distanceKm,
-        isSameOs: mission.is_same_os,
-        charCodesAfterATE: providerTableName.includes('ATE') ? [...providerTableName.substring(providerTableName.indexOf('ATE')+3, providerTableName.indexOf('ATE')+6)].map(c => `${c}=U+${c.charCodeAt(0).toString(16).padStart(4,'0')}`) : 'N/A'
-    });
+    if (!mission.is_same_os && !isZeroValueMission && providerHasExtraKmCost && pExcessKm === 0) {
+        const rawDist = manualTableOverrides?.providerOpsOverride 
+            ? manualTableOverrides.providerOpsOverride.distanceKm 
+            : originalDistanceForCalc;
+        if (rawDist > pFranchiseKm) {
+            pExcessKm = Math.max(0, rawDist - pFranchiseKm);
+        }
+    }
 
     const pUnitCostKm = manualTableOverrides?.customProviderUnitKm !== undefined
         ? manualTableOverrides.customProviderUnitKm
