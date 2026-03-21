@@ -168,7 +168,7 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
                 .or('billing_approved.eq.true,billing_verified_by.not.is.null')
                 .gte('created_at', `${startDate}T00:00:00`)
                 .lte('created_at', `${endDate}T23:59:59`)
-                .neq('status', 'Cancelada')
+                .neq('status', 'Recusada')
                 .order('created_at', { ascending: true });
             if (error) throw error;
 
