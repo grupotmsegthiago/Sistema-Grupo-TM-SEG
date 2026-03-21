@@ -1777,6 +1777,9 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                         <p className="text-[9px] text-gray-400 font-mono leading-tight mt-0.5">
                                             {financialData.provider.excessKm.toFixed(1)}km × R${financialData.provider.unitCostKm.toFixed(2)}
                                         </p>
+                                        <p className="text-[7px] text-blue-500 font-mono leading-tight mt-0.5 bg-blue-50 px-1 rounded break-all">
+                                            DBG: dist={providerOpsOverride ? `OPS:${providerOpsOverride.distanceKm.toFixed(1)}` : `CLI:${financialData.realTraveledKm.toFixed(1)}`} fr={financialData.provider.franchiseKm} fixed={financialData.provider.usedSpecialRule ? 'Y' : 'N'} same={mission?.is_same_os ? 'Y' : 'N'} opsEdit={mission?.provider_ops_edited ? 'Y' : 'N'} pSt={mission?.provider_start_km ?? 'null'} pEn={mission?.provider_end_km ?? 'null'}
+                                        </p>
                                     </div>
                                     <div className="flex items-center gap-1 mt-2 pt-2 border-t border-gray-200">
                                         <span className="text-[10px] text-gray-400">R$</span>
