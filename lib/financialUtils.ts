@@ -704,6 +704,75 @@ export const calculateMissionFinancials = (
         providerLog = result.log;
     }
 
+    if (!isZeroValueMission && !manualTableOverrides?.providerTableId && appliedProviderTable && filteredProviderTables.length > 1) {
+        const isFranchiseCheck = (name: string) => name.includes('ATÉ') || name.includes('ATE ') || name.includes('FAIXA') || /\bATE[´'`]\d/i.test(name) || /\bATE\s*\d/i.test(name);
+        const calcProviderCost = (table: any) => {
+            const tBase = Math.max(0, (table.activation_cost || 0) * providerMultiplier);
+            const tFrKm = table.franchise_km || 100;
+            const tFrHr = table.franchise_hours || 3;
+            const tUnitKm = table.cost_per_extra_km || 0;
+            const tUnitHr = table.cost_per_extra_hour || 0;
+
+            const tName = (table.operation_type || '').toUpperCase();
+            const tIs200 = tName.includes('200KM') || tName.includes('200 KM') || tName.includes('LOGITECH');
+            const tIs100 = tName.includes('100KM') || tName.includes('100 KM');
+            const tIsFranchise = isFranchiseCheck(tName);
+            const tIsFixedDist = (tIs200 || tIs100) && !tIsFranchise;
+            const tHasExtraHr = (table.cost_per_extra_hour || 0) > 0;
+            const tIsFixedHr = !tHasExtraHr && (tName.includes('02H') || tName.includes('02 HORAS'));
+
+            let tDist = manualTableOverrides?.providerOpsOverride
+                ? manualTableOverrides.providerOpsOverride.distanceKm
+                : distanceForCalculation;
+            let tDur = manualTableOverrides?.providerOpsOverride
+                ? manualTableOverrides.providerOpsOverride.durationHours
+                : durationHours;
+
+            if (tIsFixedDist) tDist = Math.min(tDist, tFrKm);
+            if (tIsFixedHr) tDur = Math.min(tDur, tFrHr);
+
+            const tExKm = mission.is_same_os ? 0 : Math.max(0, tDist - tFrKm);
+            const tExHr = mission.is_same_os ? 0 : Math.max(0, tDur - tFrHr);
+
+            return {
+                total: Math.round((tBase + tExKm * tUnitKm + tExHr * tUnitHr) * 100) / 100,
+                base: tBase,
+                exKm: tExKm,
+                exHr: tExHr,
+                table,
+            };
+        };
+
+        const currentCost = calcProviderCost(appliedProviderTable);
+
+        const regionCandidates = filteredProviderTables.filter(t => {
+            const op = normalize(t.operation_type || '');
+            const selectedOp = normalize(appliedProviderTable.operation_type || '');
+            const isVeladaT = op.includes('VELADA');
+            const isCaractT = op.includes('CARACTERIZADA');
+            const missionIsVelada = isVelada;
+            if (missionIsVelada && isCaractT) return false;
+            if (!missionIsVelada && isVeladaT) return false;
+            if (op.includes('PRONTA RESPOSTA') || op.includes('PRONTA')) return false;
+            return true;
+        });
+
+        let cheapest = currentCost;
+        for (const candidate of regionCandidates) {
+            if (candidate.id === appliedProviderTable.id) continue;
+            const cost = calcProviderCost(candidate);
+            if (cost.total < cheapest.total && cost.total > 0) {
+                cheapest = cost;
+            }
+        }
+
+        if (cheapest.table.id !== appliedProviderTable.id) {
+            const oldName = appliedProviderTable.operation_type;
+            appliedProviderTable = cheapest.table;
+            providerLog = `Menor Custo: ${cheapest.table.operation_type} (R$${cheapest.total}) vs ${oldName} (R$${currentCost.total})`;
+        }
+    }
+
     if (isCevaClient && isJundiai && !isCancelled && filteredProviderTables.length > 0) {
         if (referenceDistance > 200 || destHas200km) {
             const provOp = normalize(appliedProviderTable?.operation_type || '');
