@@ -1452,6 +1452,99 @@ export async function registerRoutes(
     }
   });
 
+  app.post("/api/missions/fix-divergences", async (req: Request, res: Response) => {
+    try {
+      const fetchAll = async (table: string) => {
+        const allRows: any[] = [];
+        let from = 0;
+        while (true) {
+          const { data } = await supabaseAdmin.from(table).select('*').range(from, from + 999);
+          if (!data || data.length === 0) break;
+          allRows.push(...data);
+          if (data.length < 1000) break;
+          from += 1000;
+        }
+        return allRows;
+      };
+
+      const [missions, clientTables, providerTables, clients] = await Promise.all([
+        fetchAll('missions'), fetchAll('client_price_tables'), fetchAll('provider_cost_tables'), fetchAll('clients')
+      ]);
+
+      const { calculateMissionFinancials } = await import('../lib/financialUtils');
+
+      const completed = (missions || []).filter((m: any) =>
+        m.status === 'Concluída' && !m.is_same_os && m.cost_value > 0 && m.start_km > 0 && m.end_km > 0 && !m.billing_approved
+      );
+
+      let fixed = 0;
+      let skipped = 0;
+      const fixedList: any[] = [];
+      const errorList: string[] = [];
+
+      for (const m of completed) {
+        try {
+          const clientData = (clients || []).find((c: any) => c.name === m.client);
+          const mObj = { ...m, startKm: m.start_km, endKm: m.end_km, startTime: m.start_time, endTime: m.end_time, agentCount: m.agent_count || 1 };
+          const result = calculateMissionFinancials(mObj, clientTables || [], providerTables || [], clientData);
+          if (!result?.provider || !result?.client) { skipped++; continue; }
+
+          const savedCost = m.cost_value || 0;
+          const calcCost = result.provider.total || 0;
+          const diff = calcCost - savedCost;
+
+          if (diff > 10 && diff / savedCost > 0.03 && result.provider.excessKm > 0) {
+            await supabaseAdmin.from('system_logs').delete().eq('entity', 'BillingAdjustment').eq('entity_id', m.id);
+
+            const newRevenue = result.client.total || 0;
+            const { error: upErr } = await supabaseAdmin.from('missions').update({
+              revenue_value: newRevenue,
+              cost_value: calcCost,
+              toll_value: result.tollValue || m.toll_value || 0,
+              billing_verified_by: null,
+              snapshot_approved_by: null,
+            }).eq('id', m.id);
+
+            if (upErr) { errorList.push(`${m.id}: ${upErr.message}`); continue; }
+
+            fixedList.push({
+              id: m.id,
+              provider: (m.provider || '').substring(0, 40),
+              distance: Math.abs(m.end_km - m.start_km),
+              oldCost: savedCost,
+              newCost: calcCost,
+              oldRevenue: m.revenue_value || 0,
+              newRevenue: newRevenue,
+              difference: Math.round(diff * 100) / 100,
+              excessKm: result.provider.excessKm,
+              tableName: result.provider.tableName || '-'
+            });
+            fixed++;
+          } else {
+            skipped++;
+          }
+        } catch(e: any) {
+          errorList.push(`${m.id}: ${e.message}`);
+        }
+      }
+
+      const totalDiff = Math.round(fixedList.reduce((s: number, d: any) => s + d.difference, 0) * 100) / 100;
+
+      res.json({
+        success: true,
+        totalAnalyzed: completed.length,
+        fixed,
+        skipped,
+        errors: errorList.length,
+        totalCostDifferenceR$: totalDiff,
+        fixedMissions: fixedList,
+        errorDetails: errorList
+      });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
   app.post("/api/missions/recalculate-all", async (req: Request, res: Response) => {
     try {
       const fetchAll = async (table: string) => {
