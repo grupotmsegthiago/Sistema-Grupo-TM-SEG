@@ -99,7 +99,7 @@ const FinancialTransactionList: React.FC = () => {
             const { data, error } = await supabase
                 .from('financial_transactions')
                 .select('*')
-                .gte('due_date', '2026-03-17')
+                .gte('due_date', '2026-02-15')
                 .order('due_date', { ascending: false });
             if (error) throw error;
             setTransactions(data as FinancialTransaction[]);
