@@ -49,6 +49,7 @@ import PushNotificationManager from './components/PushNotificationManager';
 import CostOptimizationDashboard from './components/CostOptimizationDashboard';
 import MaintenanceDashboard from './components/MaintenanceDashboard';
 import ContractManager from './components/ContractManager';
+import EquipmentManager from './components/EquipmentManager';
 
 // INTELIGÊNCIA ARTIFICIAL
 import AIChatbot from './components/AIChatbot';
@@ -267,6 +268,7 @@ const App: React.FC = () => {
       case 'profiles': return <ProfileList onAdd={() => navigateTo('profile-form')} onEdit={(id) => handleEdit('profile-form', id)} />;
       case 'profile-form': return <ProfileForm id={selectedId} onBack={() => navigateTo('profiles')} />;
       case 'server-stats': return <ServerStats />;
+      case 'equipment-manager': return <EquipmentManager />;
       case 'system-logs': return <SystemLogs />;
       case 'reports': return <ReportsDashboard />;
       case 'support-network': return <SupportMapFinder onNavigate={navigateTo} />;

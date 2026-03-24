@@ -126,7 +126,8 @@ export const NAV_ITEMS: NavItem[] = [
     children: [
       { name: 'Backup & Manutenção', id: 'db-maintenance' },
       { name: 'Otimização de Custos', id: 'cost-optimization' }, 
-      { name: 'Equipe Interna', id: 'internal-users' }, 
+      { name: 'Equipe Interna', id: 'internal-users' },
+      { name: 'Patrimônio & Equipamentos', id: 'equipment-manager' },
       { name: 'Perfis de Acesso', id: 'profiles' },
       { name: 'Auditoria & Logs', id: 'system-logs' },
       { name: 'Status do Servidor', id: 'server-stats' },
