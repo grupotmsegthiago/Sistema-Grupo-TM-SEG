@@ -788,7 +788,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
       let blockedForCurrentUser = false;
       let blockedMessage = '';
 
-      const lockedByDiretoria = hasDiretoria && currentUserStage !== 'diretoria' && (() => { try { const u = JSON.parse(localStorage.getItem('userData') || '{}'); return (u.role || '').toLowerCase() !== 'controller'; } catch { return true; } })();
+      const lockedByDiretoria = hasDiretoria && currentUserStage !== 'diretoria' && (() => { try { const u = JSON.parse(localStorage.getItem('userData') || '{}'); const r = (u.role || '').toLowerCase(); return r !== 'controller' && r !== 'administrador'; } catch { return true; } })();
 
       return { hasAuditor, hasFinanceiro, hasDiretoria, isFullyApproved, isApprovedForBilling, missing, waitingDays, hasPartial, blockedForCurrentUser, blockedMessage, currentUserStage, lockedByDiretoria };
   }, [approvalLog, mission?.endTime]);
