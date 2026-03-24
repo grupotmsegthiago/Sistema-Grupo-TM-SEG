@@ -800,6 +800,25 @@ const ClientContractTab: React.FC<Props> = ({
                       >
                         <Download size={14} />
                       </button>
+                      {c.status !== 'ASSINADO' ? (
+                        <button
+                          onClick={() => { generatePDF(c); showNotification('Cláusulas Atualizadas', 'O PDF foi gerado com as cláusulas mais recentes.', 'success'); }}
+                          className="p-2 bg-amber-50 text-amber-600 rounded-lg hover:bg-amber-100 transition-colors"
+                          title="Atualizar Cláusulas e Gerar PDF"
+                          data-testid={`btn-update-clauses-${c.id}`}
+                        >
+                          <RefreshCw size={14} />
+                        </button>
+                      ) : (
+                        <button
+                          disabled
+                          className="p-2 bg-gray-100 text-gray-300 rounded-lg cursor-not-allowed"
+                          title="Contrato assinado — cláusulas não podem ser atualizadas"
+                          data-testid={`btn-update-clauses-disabled-${c.id}`}
+                        >
+                          <RefreshCw size={14} />
+                        </button>
+                      )}
                       <button
                         onClick={() => handleEdit(c)}
                         className="p-2 bg-gray-50 text-gray-600 rounded-lg hover:bg-gray-100 transition-colors"
