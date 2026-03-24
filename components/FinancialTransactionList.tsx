@@ -41,7 +41,7 @@ const FinancialTransactionList: React.FC = () => {
     const [loading, setLoading] = useState(true);
     const [searchTerm, setSearchTerm] = useState('');
     const [statusFilter, setStatusFilter] = useState<StatusFilter>('ALL');
-    const [viewPeriod, setViewPeriod] = useState<'MONTH' | 'CUSTOM' | 'ALL'>('MONTH');
+    const [viewPeriod, setViewPeriod] = useState<'DAY' | 'WEEK' | 'MONTH' | 'CUSTOM' | 'ALL'>('MONTH');
     const [customStartDate, setCustomStartDate] = useState(new Date().toISOString().split('T')[0]);
     const [customEndDate, setCustomEndDate] = useState(new Date().toISOString().split('T')[0]);
     const [canAccessReconciliation, setCanAccessReconciliation] = useState(false);
@@ -115,7 +115,21 @@ const FinancialTransactionList: React.FC = () => {
         const now = new Date();
         const todayStr = now.toISOString().split('T')[0];
 
-        if (viewPeriod === 'MONTH') {
+        if (viewPeriod === 'DAY') {
+            list = list.filter(t => t.due_date.split('T')[0] === todayStr);
+        } else if (viewPeriod === 'WEEK') {
+            const day = now.getDay();
+            const sunday = new Date(now);
+            sunday.setDate(now.getDate() - day);
+            const saturday = new Date(sunday);
+            saturday.setDate(sunday.getDate() + 6);
+            const weekStart = sunday.toISOString().split('T')[0];
+            const weekEnd = saturday.toISOString().split('T')[0];
+            list = list.filter(t => {
+                const d = t.due_date.split('T')[0];
+                return d >= weekStart && d <= weekEnd;
+            });
+        } else if (viewPeriod === 'MONTH') {
             list = list.filter(t => {
                 const d = new Date(t.due_date);
                 return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
@@ -266,10 +280,10 @@ const FinancialTransactionList: React.FC = () => {
 
     const renderFilters = () => (
         <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-200 grid grid-cols-1 lg:grid-cols-12 gap-4 items-end no-print">
-            <div className="lg:col-span-3">
+            <div className="lg:col-span-5">
                 <label className="text-[10px] font-black text-gray-400 uppercase mb-1.5 block tracking-widest">Período</label>
                 <div className="flex gap-1 bg-gray-50 p-1 rounded-lg border border-gray-100">
-                    {[{id: 'MONTH', label: 'Mês Atual'}, {id: 'CUSTOM', label: 'Personalizado'}, {id: 'ALL', label: 'Tudo'}].map(p => (
+                    {[{id: 'DAY', label: 'Dia'}, {id: 'WEEK', label: 'Semana'}, {id: 'MONTH', label: 'Mês'}, {id: 'CUSTOM', label: 'Personalizado'}, {id: 'ALL', label: 'Tudo'}].map(p => (
                         <button key={p.id} onClick={() => setViewPeriod(p.id as any)}
                             className={`flex-1 px-2 py-1.5 text-[10px] font-black uppercase rounded-md transition-all ${viewPeriod === p.id ? 'bg-white text-red-700 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
                         >{p.label}</button>
@@ -288,7 +302,7 @@ const FinancialTransactionList: React.FC = () => {
                     </div>
                 </div>
             )}
-            <div className={`relative ${viewPeriod === 'CUSTOM' ? 'lg:col-span-3' : 'lg:col-span-5'}`}>
+            <div className={`relative ${viewPeriod === 'CUSTOM' ? 'lg:col-span-1' : 'lg:col-span-4'}`}>
                 <label className="text-[10px] font-black text-gray-400 uppercase mb-1.5 block tracking-widest">Buscar</label>
                 <input type="text" placeholder="Fornecedor, cliente, descrição..." className="w-full pl-10 pr-4 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:border-red-500 outline-none" value={searchTerm} onChange={e => setSearchTerm(e.target.value)} data-testid="input-search-financial" />
                 <Search size={18} className="absolute left-3 bottom-2.5 text-gray-400" />
