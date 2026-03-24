@@ -617,8 +617,18 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
         if (checkBlockedAgent(editData.agent2, 'Agente 2 (Auxiliar)')) return;
 
         if (mission?.client) {
-            const { data: cliRows } = await supabase.from('clients').select('id, email, operational_email, status').eq('name', mission.client);
-            const cliCheck = cliRows?.find(c => c.status === 'Ativo') || cliRows?.[0] || null;
+            const clientName = mission.client;
+            let cliCheck: any = null;
+            const { data: byName } = await supabase.from('clients').select('id, email, operational_email, trading_name, name, status').eq('name', clientName);
+            cliCheck = byName?.find(c => c.status === 'Ativo') || byName?.[0] || null;
+            if (!cliCheck) {
+                const { data: byTrading } = await supabase.from('clients').select('id, email, operational_email, trading_name, name, status').eq('trading_name', clientName);
+                cliCheck = byTrading?.find(c => c.status === 'Ativo') || byTrading?.[0] || null;
+            }
+            if (!cliCheck) {
+                const { data: byIlike } = await supabase.from('clients').select('id, email, operational_email, trading_name, name, status').ilike('trading_name', clientName);
+                cliCheck = byIlike?.find(c => c.status === 'Ativo') || byIlike?.[0] || null;
+            }
             if (cliCheck && !(cliCheck.operational_email?.trim()) && !(cliCheck.email?.trim())) {
                 setEmailMissingAlert({ type: 'client', name: mission.client, entityId: cliCheck.id });
                 setQuickEmailInput('');
@@ -626,8 +636,18 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
             }
         }
         if (editData.provider) {
-            const { data: provRows } = await supabase.from('providers').select('id, email, os_email, status').eq('name', editData.provider);
-            const provCheck = provRows?.find(p => p.status === 'Ativo') || provRows?.[0] || null;
+            const provName = editData.provider;
+            let provCheck: any = null;
+            const { data: byName } = await supabase.from('providers').select('id, email, os_email, trading_name, name, status').eq('name', provName);
+            provCheck = byName?.find(p => p.status === 'Ativo') || byName?.[0] || null;
+            if (!provCheck) {
+                const { data: byTrading } = await supabase.from('providers').select('id, email, os_email, trading_name, name, status').eq('trading_name', provName);
+                provCheck = byTrading?.find(p => p.status === 'Ativo') || byTrading?.[0] || null;
+            }
+            if (!provCheck) {
+                const { data: byIlike } = await supabase.from('providers').select('id, email, os_email, trading_name, name, status').ilike('trading_name', provName);
+                provCheck = byIlike?.find(p => p.status === 'Ativo') || byIlike?.[0] || null;
+            }
             if (provCheck && !(provCheck.os_email?.trim()) && !(provCheck.email?.trim())) {
                 setEmailMissingAlert({ type: 'provider', name: editData.provider, entityId: provCheck.id });
                 setQuickEmailInput('');

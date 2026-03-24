@@ -188,6 +188,21 @@ export async function registerRoutes(
     return { email, data: clientData };
   }
 
+  async function findProviderEmail(providerName: string): Promise<{ email: string; data: any }> {
+    const { data: byName } = await supabase.from('providers').select('os_email, email, trading_name, name, status').eq('name', providerName);
+    let provData = byName?.find(p => p.status === 'Ativo') || byName?.[0] || null;
+    if (!provData) {
+      const { data: byTrading } = await supabase.from('providers').select('os_email, email, trading_name, name, status').eq('trading_name', providerName);
+      provData = byTrading?.find(p => p.status === 'Ativo') || byTrading?.[0] || null;
+    }
+    if (!provData) {
+      const { data: byIlike } = await supabase.from('providers').select('os_email, email, trading_name, name, status').ilike('trading_name', providerName);
+      provData = byIlike?.find(p => p.status === 'Ativo') || byIlike?.[0] || null;
+    }
+    const email = provData?.os_email?.trim() || provData?.email?.trim() || '';
+    return { email, data: provData };
+  }
+
   // Supabase Realtime listener for push notifications
   const supabaseForPush = supabase;
 
@@ -538,9 +553,7 @@ export async function registerRoutes(
 
       await supabase.from('missions').update({ email_pending_provider: false }).eq('id', missionId);
 
-      const { data: provRows } = await supabase.from('providers').select('os_email, email, status').eq('name', missionData.provider);
-      const provData = provRows?.find(p => p.status === 'Ativo') || provRows?.[0] || null;
-      const provEmail = provData?.os_email?.trim() || provData?.email?.trim() || '';
+      const { email: provEmail } = await findProviderEmail(missionData.provider);
       
       if (!provEmail) {
         const fallback = 'operacional@grupotmseg.com.br';
@@ -583,9 +596,7 @@ export async function registerRoutes(
       const { missionId, provider, origin, destination, start_time, mission_type, vehiclePlate, changes, senderName } = req.body;
       if (!missionId || !provider || !changes?.length) return res.status(400).json({ error: 'Dados obrigatórios ausentes' });
 
-      const { data: provRows } = await supabase.from('providers').select('os_email, email, status').eq('name', provider);
-      const provData = provRows?.find(p => p.status === 'Ativo') || provRows?.[0] || null;
-      const provEmail = provData?.os_email?.trim() || provData?.email?.trim() || '';
+      const { email: provEmail } = await findProviderEmail(provider);
       if (!provEmail) return res.json({ success: false, message: 'Fornecedor sem e-mail cadastrado' });
 
       const { data: missionCheck } = await supabase.from('missions').select('client').eq('id', missionId).single();

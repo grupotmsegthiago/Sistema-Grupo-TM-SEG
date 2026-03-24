@@ -49,7 +49,7 @@ const MissionFullReportModal: React.FC<Props> = ({ mission, onClose, hideProvide
     const fetchAllData = async () => {
         setIsLoading(true);
         try {
-            const [logsRes, historyRes, agentsRes, vehicleRes, clientsRes, evidenceRes] = await Promise.all([
+            const [logsRes, historyRes, agentsRes, vehicleRes, evidenceRes] = await Promise.all([
                 supabase.from('mission_logs').select('*').eq('mission_id', mission.id).order('created_at', { ascending: true }),
                 supabase.from('mission_history').select('*').eq('mission_id', mission.id).order('changed_at', { ascending: true }),
                 supabase.from('agents').select('*').in('name', [mission.agent1, mission.agent2].filter(Boolean)),
@@ -58,15 +58,28 @@ const MissionFullReportModal: React.FC<Props> = ({ mission, onClose, hideProvide
                         ? supabase.from('vehicles').select('*').eq('id', mission.vehicleId).maybeSingle()
                         : supabase.from('vehicles').select('*').eq('plate', mission.vehicleId).maybeSingle())
                     : Promise.resolve({ data: null }),
-                supabase.from('clients').select('*').eq('name', mission.client),
                 supabase.from('system_logs').select('details').eq('entity', 'MissionEvidence').eq('entity_id', mission.id)
             ]);
+
+            let clientsData: Client[] = [];
+            const { data: cliByName } = await supabase.from('clients').select('*').eq('name', mission.client);
+            if (cliByName && cliByName.length > 0) {
+                clientsData = cliByName as Client[];
+            } else {
+                const { data: cliByTrading } = await supabase.from('clients').select('*').eq('trading_name', mission.client);
+                if (cliByTrading && cliByTrading.length > 0) {
+                    clientsData = cliByTrading as Client[];
+                } else {
+                    const { data: cliByIlike } = await supabase.from('clients').select('*').ilike('trading_name', mission.client);
+                    if (cliByIlike && cliByIlike.length > 0) clientsData = cliByIlike as Client[];
+                }
+            }
 
             if (logsRes.data) setLogs(logsRes.data);
             if (historyRes.data) setHistory(historyRes.data);
             if (agentsRes.data) setAgents(agentsRes.data as Agent[]);
             if (vehicleRes.data) setVehicle(vehicleRes.data as Vehicle);
-            if (clientsRes.data) setClients(clientsRes.data as Client[]);
+            setClients(clientsData);
             if (evidenceRes.data) {
                 const evList = evidenceRes.data.map((e: any) => {
                     try { const p = JSON.parse(e.details); return { url: p.publicUrl || '', uploadedBy: p.uploadedBy || '', uploadedAt: p.uploadedAt || '' }; } catch { return null; }
