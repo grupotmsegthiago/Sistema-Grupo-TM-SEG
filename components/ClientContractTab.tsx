@@ -46,6 +46,7 @@ interface Props {
   city: string;
   state: string;
   zipCode: string;
+  isProvider?: boolean;
 }
 
 const STATUS_CONFIG: Record<string, { label: string; color: string; icon: any }> = {
@@ -62,7 +63,7 @@ const INPUT = "w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:
 const ClientContractTab: React.FC<Props> = ({
   clientId, clientName, tradingName, cnpj, rgIe,
   contactName, email, phone, street, number, complement,
-  neighborhood, city, state, zipCode
+  neighborhood, city, state, zipCode, isProvider = false
 }) => {
   const { showNotification } = useNotification();
   const [contracts, setContracts] = useState<ContractData[]>([]);
@@ -409,7 +410,9 @@ const ClientContractTab: React.FC<Props> = ({
       { title: '', body: '§1º: A CONTRATADA prestará os serviços por demanda certa e específica, sempre que requisitada pela CONTRATANTE, ficando à encargo da primeira o aceite ou não quanto ao preço, forma, rota e termo de pagamento proposta pela CONTRATANTE.' },
       { title: '', body: '§2º: A requisição do(s) serviço(s) será feita sempre por escrito, através do e-mail institucional das partes, WhatsApp ou qualquer outro meio de comunicação que possa delimitar as regras do trabalho a ser executado, o tempo de duração e a remuneração.' },
       { title: '', body: '§3º: A CONTRATADA é responsável por planejar, mapear e realizar os serviços solicitados pela CONTRATANTE, garantindo a comunicação das rotas necessárias, em colaboração com outros prestadores de serviços da CONTRATANTE, seguradoras, empresas de monitoramento entre outros.' },
-      { title: '', body: '§4º: A CONTRATANTE e a CONTRATADA poderão, a seu exclusivo critério, firmar contratos de igual natureza com terceiros, inexistindo qualquer regime de exclusividade na presente avença. Os profissionais, prepostos ou colaboradores vinculados à CONTRATADA igualmente não estarão sujeitos a regime de exclusividade.' },
+      { title: '', body: isProvider
+        ? '§4º: A CONTRATANTE e a CONTRATADA poderão, a seu exclusivo critério, firmar contratos de igual natureza com terceiros, inexistindo qualquer regime de exclusividade na presente avença. Os profissionais, prepostos ou colaboradores vinculados à CONTRATADA igualmente não estarão sujeitos a regime de exclusividade.'
+        : '§4º: A CONTRATANTE e a CONTRATADA poderão, a seu exclusivo critério, firmar contratos de igual natureza com terceiros, inexistindo qualquer regime de exclusividade na presente avença.' },
       { title: '', body: '§5º: Quaisquer serviços adicionais só poderão ser cobrados se forem previamente solicitados e aprovados de forma expressa pela CONTRATANTE.' },
       { title: 'CLÁUSULA SEGUNDA: DO RELACIONAMENTO DAS PARTES', body: 'O presente instrumento não gera para nenhuma das partes quaisquer outros direitos e obrigações diversos daqueles aqui expressamente previstos, ficando afastada qualquer relação, ostensiva ou remota, de sociedade ou associação, filiação ou extensão entre as Partes.' },
       { title: '', body: '§1º: O presente Contrato não estabelece qualquer relação de emprego entre a CONTRATANTE e os funcionários, prepostos ou subcontratados da CONTRATADA, sendo a CONTRATADA a única e exclusiva responsável pelo recrutamento, seleção, contratação, administração, gerenciamento e pagamento de seu pessoal.' },

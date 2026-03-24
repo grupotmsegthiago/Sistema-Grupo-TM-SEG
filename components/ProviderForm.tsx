@@ -794,6 +794,7 @@ const ProviderForm: React.FC<ProviderFormProps> = ({ onBack, onNavigateToVehicle
             city={formData.city}
             state={formData.state}
             zipCode={formData.zip_code}
+            isProvider={true}
           />
       )}
 
