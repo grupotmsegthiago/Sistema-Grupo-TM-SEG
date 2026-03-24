@@ -434,6 +434,10 @@ const ClientContractTab: React.FC<Props> = ({
       { title: '', body: '§9º: Apresentar mensalmente e em conjunto com a Nota Fiscal todos os documentos de registro de seus funcionários e guias comprobatórias de recolhimento dos encargos trabalhistas;' },
       { title: '', body: '§10º: Caso a CONTRATANTE não aceite os serviços entregues pela CONTRATADA, a CONTRATADA obriga-se a refazer, alterar, melhorar, corrigir e/ou completar os serviços, sem quaisquer ônus adicionais;' },
       { title: '', body: '§11º: A CONTRATADA deverá manter pessoa responsável (supervisor) em contato direto com os funcionários que estiverem executando os serviços contratados.' },
+      { title: '', body: '§12º: A CONTRATADA deverá manter durante toda a execução do contrato, em compatibilidade com as obrigações por ela assumidas, todas as condições de habilitação e qualificação exigidas.' },
+      { title: '', body: '§13º: Manter os equipamentos e veículos em perfeitas condições de uso e com as devidas manutenções em dia.' },
+      { title: '', body: '§14º: Providenciar a imediata substituição de qualquer funcionário cujo comportamento seja considerado inadequado pela CONTRATANTE.' },
+      { title: '', body: '§15º: Responsabilizar-se por todos os encargos trabalhistas, previdenciários, fiscais e comerciais resultantes da execução do contrato.' },
       { title: 'CLÁUSULA SEXTA: DAS OBRIGAÇÕES DA CONTRATANTE', body: 'São responsabilidades exclusivas da CONTRATANTE:' },
       { title: '', body: '§1º: Fornecer à CONTRATADA as informações pertinentes à CONTRATANTE e que sejam essenciais para o desenvolvimento dos serviços.' },
       { title: '', body: '§2º: Cumprir pontualmente os prazos e as condições de pagamento.' },
@@ -445,6 +449,9 @@ const ClientContractTab: React.FC<Props> = ({
       { title: '', body: '§4º: Decretação de falência, pedido de recuperação judicial ou manifesta situação de insolvência;' },
       { title: '', body: '§5º: No caso de qualquer das partes não observar as cláusulas deste instrumento, ficará sujeito ao pagamento de multa equivalente à 2 (duas) vezes o valor médio das 3 (três) faturas anteriores.' },
       { title: 'CLÁUSULA OITAVA: CONFIDENCIALIDADE', body: 'O CONTRATADO compromete-se, por si, seus sócios e funcionários, a manter a mais estrita confidencialidade em relação as informações relacionadas e sobre as quais tiver acesso em relação à CONTRATANTE. Esta obrigação sobrevive ao término deste Contrato, nos termos do inciso XI, do artigo 195, da Lei n. 9279/96.' },
+      { title: 'CLÁUSULA NONA: DA RESPONSABILIDADE CIVIL', body: 'A CONTRATADA é responsável pelos danos causados diretamente à CONTRATANTE ou a terceiros, decorrentes de sua culpa ou dolo na execução dos serviços, não excluindo ou reduzindo essa responsabilidade a fiscalização ou o acompanhamento pela CONTRATANTE.' },
+      { title: '', body: '§1º: A CONTRATADA deverá comunicar à CONTRATANTE, por escrito e imediatamente, qualquer ocorrência, acidente ou anormalidade verificada durante a prestação dos serviços, devendo apresentar relatório detalhado do evento no prazo máximo de 24 (vinte e quatro) horas.' },
+      { title: '', body: '§2º: A CONTRATADA se responsabiliza integralmente por eventuais danos materiais ou pessoais causados a terceiros durante a execução dos serviços, devendo ressarcir a CONTRATANTE caso esta venha a ser demandada judicialmente em razão de atos praticados pela CONTRATADA ou por seus prepostos.' },
       { title: 'CLÁUSULA DÉCIMA TERCEIRA: DO FORO', body: 'As partes elegem a Comarca de São Paulo – SP, Foro de Santana, como único competente para dirimir dúvidas decorrentes deste contrato, com renúncia expressa a qualquer outro, por mais privilegiado que seja.' },
     ];
 
