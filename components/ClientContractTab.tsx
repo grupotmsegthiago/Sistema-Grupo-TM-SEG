@@ -254,46 +254,155 @@ const ClientContractTab: React.FC<Props> = ({
   const generatePDF = (contract: ContractData) => {
     const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
     const pageWidth = doc.internal.pageSize.getWidth();
-    const margin = 20;
+    const pageHeight = doc.internal.pageSize.getHeight();
+    const margin = 25;
     const maxWidth = pageWidth - margin * 2;
-    let y = 25;
+    const brandRed = [185, 28, 28];
+    const brandBlack = [0, 0, 0];
+    const brandGray = [100, 100, 100];
+    const lightGray = [200, 200, 200];
+    let y = 0;
+    let pageNum = 1;
 
-    const addText = (text: string, fontSize: number, style: string = 'normal', align: 'left' | 'center' | 'justify' = 'left') => {
+    const drawHeader = () => {
+      doc.setFillColor(brandRed[0], brandRed[1], brandRed[2]);
+      doc.rect(0, 0, pageWidth, 3, 'F');
+
+      doc.setFillColor(brandBlack[0], brandBlack[1], brandBlack[2]);
+      doc.rect(0, 3, pageWidth, 32, 'F');
+
+      doc.setFontSize(22);
+      doc.setFont('helvetica', 'bold');
+      doc.setTextColor(brandRed[0], brandRed[1], brandRed[2]);
+      doc.text('TM', margin, 22);
+      const tmW = doc.getTextWidth('TM');
+      doc.setTextColor(255, 255, 255);
+      doc.text('SEG', margin + tmW + 1, 22);
+
+      doc.setDrawColor(brandRed[0], brandRed[1], brandRed[2]);
+      doc.setLineWidth(0.8);
+      doc.line(margin, 26, margin + 80, 26);
+
+      doc.setFontSize(7);
+      doc.setFont('helvetica', 'bold');
+      doc.setTextColor(200, 200, 200);
+      doc.text('SERVIÇOS EM SEGURANÇA', margin, 30);
+
+      doc.setFontSize(7);
+      doc.setTextColor(180, 180, 180);
+      doc.setFont('helvetica', 'normal');
+      doc.text('www.grupotmseg.com.br', pageWidth - margin, 16, { align: 'right' });
+      doc.text('+55 11 95456-3755', pageWidth - margin, 21, { align: 'right' });
+      doc.text('contato@grupotmseg.com.br', pageWidth - margin, 26, { align: 'right' });
+      doc.text('CNPJ: 28.804.378/0001-67', pageWidth - margin, 31, { align: 'right' });
+
+      doc.setFillColor(brandRed[0], brandRed[1], brandRed[2]);
+      doc.rect(0, 35, pageWidth, 1.5, 'F');
+
+      y = 45;
+    };
+
+    const drawFooter = () => {
+      const footerY = pageHeight - 12;
+      doc.setDrawColor(lightGray[0], lightGray[1], lightGray[2]);
+      doc.setLineWidth(0.3);
+      doc.line(margin, footerY - 3, pageWidth - margin, footerY - 3);
+
+      doc.setFontSize(6.5);
+      doc.setFont('helvetica', 'normal');
+      doc.setTextColor(brandGray[0], brandGray[1], brandGray[2]);
+      doc.text('TM SEGURANÇA CONSULTORIA & TECNOLOGIA INTEGRADA LTDA — CNPJ 28.804.378/0001-67', margin, footerY);
+      doc.text('Av. Parada Pinto, 745 — Vila Nova Cachoeirinha — São Paulo/SP — CEP 02.611-003', margin, footerY + 4);
+
+      doc.setTextColor(brandRed[0], brandRed[1], brandRed[2]);
+      doc.setFont('helvetica', 'bold');
+      doc.text('www.grupotmseg.com.br', pageWidth - margin, footerY, { align: 'right' });
+
+      doc.setTextColor(brandGray[0], brandGray[1], brandGray[2]);
+      doc.setFont('helvetica', 'normal');
+      doc.text(`Página ${pageNum}`, pageWidth - margin, footerY + 4, { align: 'right' });
+    };
+
+    const checkPage = (needed: number = 10) => {
+      if (y + needed > pageHeight - 20) {
+        drawFooter();
+        doc.addPage();
+        pageNum++;
+        drawHeader();
+      }
+    };
+
+    const addText = (text: string, fontSize: number, style: string = 'normal', align: 'left' | 'center' | 'justify' = 'left', color?: number[]) => {
       doc.setFontSize(fontSize);
       doc.setFont('helvetica', style);
+      doc.setTextColor(color ? color[0] : 30, color ? color[1] : 30, color ? color[2] : 30);
       const lines = doc.splitTextToSize(text, maxWidth);
-      if (y + lines.length * (fontSize * 0.45) > 270) {
-        doc.addPage();
-        y = 25;
-      }
+      const lineH = fontSize * 0.42;
+      const blockH = lines.length * lineH;
+
+      checkPage(blockH + 2);
+
       if (align === 'center') {
         lines.forEach((line: string) => {
           const w = doc.getTextWidth(line);
           doc.text(line, (pageWidth - w) / 2, y);
-          y += fontSize * 0.45;
+          y += lineH;
         });
       } else {
         doc.text(lines, margin, y, { maxWidth, align: 'justify' });
-        y += lines.length * (fontSize * 0.45);
+        y += blockH;
       }
     };
 
     const addSpace = (s: number = 4) => { y += s; };
 
-    addText('CONTRATO DE PRESTAÇÃO DE SERVIÇO', 14, 'bold', 'center');
+    drawHeader();
+
+    doc.setFillColor(245, 245, 245);
+    doc.roundedRect(margin, y, maxWidth, 12, 2, 2, 'F');
+    doc.setFontSize(13);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(brandRed[0], brandRed[1], brandRed[2]);
+    const titleText = 'CONTRATO DE PRESTAÇÃO DE SERVIÇO';
+    const titleW = doc.getTextWidth(titleText);
+    doc.text(titleText, (pageWidth - titleW) / 2, y + 8.5);
+    y += 18;
+
+    doc.setDrawColor(brandRed[0], brandRed[1], brandRed[2]);
+    doc.setLineWidth(0.5);
+    doc.line(margin, y, pageWidth - margin, y);
     addSpace(8);
 
-    addText('CONTRATANTE: TM SEGURANÇA CONSULTORIA & TECNOLOGIA INTEGRADA LTDA, pessoa jurídica de direito privado, inscrita no CNPJ sob nº 28.804.378/0001-67, neste ato representado por THIAGO MOREIRA DOS SANTOS com sede na Avenida Parada Pinto, nº 745, Apt. 24, Bloco D, Vila Nova Cachoeirinha, São Paulo – SP, CEP 02.611-003 e e-mail: thiago@grupotmseg.com.br', 10, 'normal', 'justify');
+    doc.setFontSize(9);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(brandRed[0], brandRed[1], brandRed[2]);
+    doc.text('CONTRATANTE:', margin, y);
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(30, 30, 30);
+    const contratanteText = 'TM SEGURANÇA CONSULTORIA & TECNOLOGIA INTEGRADA LTDA, pessoa jurídica de direito privado, inscrita no CNPJ sob nº 28.804.378/0001-67, neste ato representado por THIAGO MOREIRA DOS SANTOS com sede na Avenida Parada Pinto, nº 745, Apt. 24, Bloco D, Vila Nova Cachoeirinha, São Paulo – SP, CEP 02.611-003 e e-mail: thiago@grupotmseg.com.br';
+    const cLines = doc.splitTextToSize(contratanteText, maxWidth);
+    doc.text(cLines, margin, y + 4.5, { maxWidth, align: 'justify' });
+    y += 4.5 + cLines.length * 3.8;
     addSpace(6);
 
     const cName = (tradingName || clientName).toUpperCase();
     const cAddr = buildFullAddress();
     const cContact = contactName || 'representante legal';
-    addText(`CONTRATADA: ${cName}, inscrita no CNPJ nº ${cnpj || 'N/I'}, com sede sito à ${cAddr || 'endereço não informado'}, neste ato representada por seu sócio administrador ${cContact}, inscrito no CPF/MF nº ${rgIe || 'N/I'} e e-mail: ${email || 'N/I'}.`, 10, 'normal', 'justify');
+
+    doc.setFontSize(9);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(brandRed[0], brandRed[1], brandRed[2]);
+    doc.text('CONTRATADA:', margin, y);
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(30, 30, 30);
+    const contratadaText = `${cName}, inscrita no CNPJ nº ${cnpj || 'N/I'}, com sede sito à ${cAddr || 'endereço não informado'}, neste ato representada por seu sócio administrador ${cContact}, inscrito no CPF/MF nº ${rgIe || 'N/I'} e e-mail: ${email || 'N/I'}.`;
+    const dLines = doc.splitTextToSize(contratadaText, maxWidth);
+    doc.text(dLines, margin, y + 4.5, { maxWidth, align: 'justify' });
+    y += 4.5 + dLines.length * 3.8;
     addSpace(6);
 
-    addText('As partes acima identificadas têm, entre si, justo e acertado o presente Contrato de Prestação de Serviços, considerando as disposições do Código Civil Brasileiro, que se regerá pelas cláusulas seguintes e pelas condições de preço, forma e termo de pagamento descritas no presente.', 10, 'normal', 'justify');
-    addSpace(8);
+    addText('As partes acima identificadas têm, entre si, justo e acertado o presente Contrato de Prestação de Serviços, considerando as disposições do Código Civil Brasileiro, que se regerá pelas cláusulas seguintes e pelas condições de preço, forma e termo de pagamento descritas no presente.', 9, 'italic', 'justify', brandGray);
+    addSpace(6);
 
     const clauses = [
       { title: 'CLÁUSULA PRIMEIRA: DO OBJETO', body: 'O propósito deste contrato é a execução, pela CONTRATADA, dos serviços de Acompanhamento Logístico e Escolta Armada para os trajetos solicitados pela CONTRATANTE, cujos dados serão indicados antes da execução do serviço.' },
@@ -341,32 +450,124 @@ const ClientContractTab: React.FC<Props> = ({
 
     clauses.forEach(cl => {
       if (cl.title) {
-        addSpace(6);
-        addText(cl.title, 10, 'bold');
-        addSpace(2);
+        addSpace(5);
+        checkPage(12);
+        doc.setFillColor(245, 245, 245);
+        doc.setFontSize(9);
+        doc.setFont('helvetica', 'bold');
+        const titleLines = doc.splitTextToSize(cl.title, maxWidth - 6);
+        const titleBlockH = titleLines.length * 4 + 4;
+        doc.roundedRect(margin, y - 1, maxWidth, titleBlockH, 1, 1, 'F');
+        doc.setDrawColor(brandRed[0], brandRed[1], brandRed[2]);
+        doc.setLineWidth(0.8);
+        doc.line(margin, y - 1, margin, y - 1 + titleBlockH);
+        doc.setTextColor(brandBlack[0], brandBlack[1], brandBlack[2]);
+        doc.text(titleLines, margin + 3, y + 3);
+        y += titleBlockH + 3;
       }
-      addText(cl.body, 10, 'normal', 'justify');
-      addSpace(3);
+      addText(cl.body, 9, 'normal', 'justify');
+      addSpace(2);
     });
 
-    addSpace(10);
-    addText(`São Paulo, ${formatDateExtended(contract.valid_from || contract.contract_date)}`, 10, 'normal', 'center');
-    addSpace(20);
+    addSpace(8);
+    checkPage(50);
 
-    addText('__________________________________', 10, 'normal', 'center');
-    addText('TM SEGURANÇA CONSULTORIA & TECNOLOGIA INTEGRADA LTDA', 9, 'bold', 'center');
-    addSpace(15);
+    doc.setDrawColor(brandRed[0], brandRed[1], brandRed[2]);
+    doc.setLineWidth(0.5);
+    doc.line(margin, y, pageWidth - margin, y);
+    addSpace(6);
 
-    addText('________________________________________', 10, 'normal', 'center');
-    addText(`CONTRATADA: ${cName}`, 9, 'bold', 'center');
-    addSpace(15);
+    addText(`São Paulo, ${formatDateExtended(contract.valid_from || contract.contract_date)}`, 10, 'italic', 'center', brandGray);
+    addSpace(16);
 
-    if (contract.witness1) {
-      addText(`TESTEMUNHA 1: ${contract.witness1}`, 9, 'normal');
-      addSpace(5);
+    checkPage(60);
+
+    const sigLeftX = margin;
+    const sigRightX = pageWidth / 2 + 8;
+    const sigWidth = (pageWidth - margin * 2 - 16) / 2;
+
+    doc.setFillColor(250, 250, 250);
+    doc.roundedRect(sigLeftX, y, sigWidth, 35, 2, 2, 'F');
+    doc.setDrawColor(brandRed[0], brandRed[1], brandRed[2]);
+    doc.setLineWidth(0.5);
+    doc.line(sigLeftX, y, sigLeftX + sigWidth, y);
+
+    doc.setFontSize(7);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(brandRed[0], brandRed[1], brandRed[2]);
+    doc.text('CONTRATANTE', sigLeftX + sigWidth / 2, y + 5, { align: 'center' });
+
+    doc.setDrawColor(brandGray[0], brandGray[1], brandGray[2]);
+    doc.setLineWidth(0.3);
+    doc.line(sigLeftX + 8, y + 22, sigLeftX + sigWidth - 8, y + 22);
+
+    doc.setFontSize(7);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(brandBlack[0], brandBlack[1], brandBlack[2]);
+    const contratanteSigName = 'TM SEGURANÇA CONSULTORIA &';
+    const contratanteSigName2 = 'TECNOLOGIA INTEGRADA LTDA';
+    doc.text(contratanteSigName, sigLeftX + sigWidth / 2, y + 27, { align: 'center' });
+    doc.text(contratanteSigName2, sigLeftX + sigWidth / 2, y + 31, { align: 'center' });
+
+    doc.setFillColor(250, 250, 250);
+    doc.roundedRect(sigRightX, y, sigWidth, 35, 2, 2, 'F');
+    doc.setDrawColor(brandRed[0], brandRed[1], brandRed[2]);
+    doc.setLineWidth(0.5);
+    doc.line(sigRightX, y, sigRightX + sigWidth, y);
+
+    doc.setFontSize(7);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(brandRed[0], brandRed[1], brandRed[2]);
+    doc.text('CONTRATADA', sigRightX + sigWidth / 2, y + 5, { align: 'center' });
+
+    doc.setDrawColor(brandGray[0], brandGray[1], brandGray[2]);
+    doc.setLineWidth(0.3);
+    doc.line(sigRightX + 8, y + 22, sigRightX + sigWidth - 8, y + 22);
+
+    doc.setFontSize(7);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(brandBlack[0], brandBlack[1], brandBlack[2]);
+    const cNameLines = doc.splitTextToSize(cName, sigWidth - 16);
+    cNameLines.forEach((line: string, idx: number) => {
+      doc.text(line, sigRightX + sigWidth / 2, y + 27 + idx * 4, { align: 'center' });
+    });
+
+    y += 42;
+
+    if (contract.witness1 || contract.witness2) {
+      checkPage(25);
+      doc.setFillColor(250, 250, 250);
+      doc.roundedRect(sigLeftX, y, sigWidth, 25, 2, 2, 'F');
+      doc.setFontSize(7);
+      doc.setFont('helvetica', 'bold');
+      doc.setTextColor(brandGray[0], brandGray[1], brandGray[2]);
+      doc.text('TESTEMUNHA 1', sigLeftX + sigWidth / 2, y + 5, { align: 'center' });
+      doc.setDrawColor(brandGray[0], brandGray[1], brandGray[2]);
+      doc.line(sigLeftX + 8, y + 15, sigLeftX + sigWidth - 8, y + 15);
+      doc.setTextColor(brandBlack[0], brandBlack[1], brandBlack[2]);
+      doc.setFont('helvetica', 'normal');
+      doc.text(contract.witness1 || '', sigLeftX + sigWidth / 2, y + 20, { align: 'center' });
+
+      doc.setFillColor(250, 250, 250);
+      doc.roundedRect(sigRightX, y, sigWidth, 25, 2, 2, 'F');
+      doc.setFont('helvetica', 'bold');
+      doc.setTextColor(brandGray[0], brandGray[1], brandGray[2]);
+      doc.text('TESTEMUNHA 2', sigRightX + sigWidth / 2, y + 5, { align: 'center' });
+      doc.line(sigRightX + 8, y + 15, sigRightX + sigWidth - 8, y + 15);
+      doc.setTextColor(brandBlack[0], brandBlack[1], brandBlack[2]);
+      doc.setFont('helvetica', 'normal');
+      doc.text(contract.witness2 || '', sigRightX + sigWidth / 2, y + 20, { align: 'center' });
     }
-    if (contract.witness2) {
-      addText(`TESTEMUNHA 2: ${contract.witness2}`, 9, 'normal');
+
+    const totalPages = doc.getNumberOfPages();
+    for (let i = 1; i <= totalPages; i++) {
+      doc.setPage(i);
+      pageNum = i;
+      drawFooter();
+      if (i > 1) {
+        doc.setFillColor(brandRed[0], brandRed[1], brandRed[2]);
+        doc.rect(0, 0, pageWidth, 3, 'F');
+      }
     }
 
     doc.save(`Contrato_${cName.replace(/[^a-zA-Z0-9]/g, '_')}_${contract.contract_date}.pdf`);
