@@ -6,7 +6,7 @@ import { useNotification } from '../lib/NotificationContext';
 
 interface EquipmentRecord {
   id: string;
-  type: 'notebook' | 'desktop' | 'celular' | 'tablet' | 'outro';
+  type: string;
   brand: string;
   model: string;
   serial_number: string;
@@ -19,7 +19,7 @@ interface EquipmentRecord {
   history: { user_id: string; user_name: string; date: string; action: string }[];
 }
 
-const EQUIPMENT_TYPES: { value: EquipmentRecord['type']; label: string }[] = [
+const DEFAULT_TYPES = [
   { value: 'notebook', label: 'Notebook' },
   { value: 'desktop', label: 'Desktop / PC' },
   { value: 'celular', label: 'Celular' },
@@ -43,7 +43,14 @@ const EquipmentManager: React.FC = () => {
   const [uploadingPhoto, setUploadingPhoto] = useState<string | null>(null);
   const [photoPreview, setPhotoPreview] = useState<string | null>(null);
   const [showForm, setShowForm] = useState(false);
+  const [customTypes, setCustomTypes] = useState<{ value: string; label: string }[]>([]);
+  const [showAddType, setShowAddType] = useState(false);
+  const [newTypeName, setNewTypeName] = useState('');
   const masterRowIdRef = useRef<number | null>(null);
+
+  const allTypes = [...DEFAULT_TYPES, ...customTypes];
+
+  const getTypeLabel = (val: string) => allTypes.find(t => t.value === val)?.label || val;
 
   const loadData = useCallback(async () => {
     setIsLoading(true);
@@ -59,6 +66,9 @@ const EquipmentManager: React.FC = () => {
           if (parsed && Array.isArray(parsed.equipments)) {
             setEquipments(parsed.equipments);
             masterRowIdRef.current = eqRes.data.id;
+          }
+          if (parsed && Array.isArray(parsed.customTypes)) {
+            setCustomTypes(parsed.customTypes);
           }
         } catch (parseErr) {
           console.error('Erro ao interpretar dados de equipamentos:', parseErr);
@@ -78,10 +88,10 @@ const EquipmentManager: React.FC = () => {
 
   useEffect(() => { loadData(); }, [loadData]);
 
-  const saveAll = async (updatedList: EquipmentRecord[]) => {
+  const saveAll = async (updatedList: EquipmentRecord[], typesOverride?: { value: string; label: string }[]) => {
     setIsSaving(true);
     try {
-      const payload = JSON.stringify({ equipments: updatedList });
+      const payload = JSON.stringify({ equipments: updatedList, customTypes: typesOverride || customTypes });
 
       if (masterRowIdRef.current) {
         const { error } = await supabase.from('system_logs')
@@ -210,6 +220,23 @@ const EquipmentManager: React.FC = () => {
     setEditData(prev => prev ? { ...prev, photo_urls: prev.photo_urls.filter((_, i) => i !== index) } : prev);
   };
 
+  const handleAddType = async () => {
+    const name = newTypeName.trim();
+    if (!name) return;
+    const val = name.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
+    if (allTypes.some(t => t.value === val || t.label.toLowerCase() === name.toLowerCase())) {
+      showNotification('Tipo já existe', 'Esse tipo já está cadastrado.', 'error');
+      return;
+    }
+    const newType = { value: val, label: name };
+    const updatedTypes = [...customTypes, newType];
+    setCustomTypes(updatedTypes);
+    if (editData) setEditData({ ...editData, type: val });
+    setNewTypeName('');
+    setShowAddType(false);
+    await saveAll(equipments, updatedTypes);
+  };
+
   const handleAssignChange = (userId: string) => {
     if (!editData) return;
     const user = internalUsers.find(u => u.id === userId);
@@ -224,7 +251,7 @@ const EquipmentManager: React.FC = () => {
            eq.model.toLowerCase().includes(term) ||
            eq.serial_number.toLowerCase().includes(term) ||
            eq.assigned_to_name.toLowerCase().includes(term) ||
-           EQUIPMENT_TYPES.find(t => t.value === eq.type)?.label.toLowerCase().includes(term);
+           getTypeLabel(eq.type).toLowerCase().includes(term);
   });
 
   if (showForm && editData) {
@@ -246,9 +273,21 @@ const EquipmentManager: React.FC = () => {
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className={LABEL_CLASS}>Tipo</label>
-              <select className={SELECT_CLASS} value={editData.type} onChange={e => setEditData({ ...editData, type: e.target.value as any })} data-testid="select-eq-type">
-                {EQUIPMENT_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
-              </select>
+              <div className="flex gap-1.5">
+                <select className={`${SELECT_CLASS} flex-1`} value={editData.type} onChange={e => setEditData({ ...editData, type: e.target.value as any })} data-testid="select-eq-type">
+                  {allTypes.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
+                </select>
+                <button type="button" onClick={() => { setNewTypeName(''); setShowAddType(true); }} className="shrink-0 w-10 h-10 flex items-center justify-center bg-slate-800 text-white rounded-lg hover:bg-slate-900 transition-colors" title="Adicionar novo tipo" data-testid="button-add-eq-type">
+                  <Plus size={16} />
+                </button>
+              </div>
+              {showAddType && (
+                <div className="mt-2 flex gap-1.5 items-center animate-in fade-in">
+                  <input autoFocus className={`${INPUT_CLASS} flex-1 !py-2`} placeholder="Nome do novo tipo..." value={newTypeName} onChange={e => setNewTypeName(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') handleAddType(); if (e.key === 'Escape') setShowAddType(false); }} data-testid="input-new-type-name" />
+                  <button type="button" onClick={handleAddType} disabled={!newTypeName.trim()} className="shrink-0 px-3 py-2 bg-emerald-600 text-white rounded-lg text-xs font-bold hover:bg-emerald-700 transition-colors disabled:opacity-40" data-testid="button-confirm-new-type">OK</button>
+                  <button type="button" onClick={() => setShowAddType(false)} className="shrink-0 px-2 py-2 bg-gray-100 text-gray-500 rounded-lg text-xs font-bold hover:bg-gray-200 transition-colors" data-testid="button-cancel-new-type"><X size={14} /></button>
+                </div>
+              )}
             </div>
             <div>
               <label className={LABEL_CLASS}>Nº Patrimônio</label>
@@ -392,7 +431,7 @@ const EquipmentManager: React.FC = () => {
                   </div>
                   <div>
                     <span className="text-xs font-black text-slate-800 font-mono block leading-none">{eq.patrimony_id}</span>
-                    <span className="text-[9px] font-bold text-slate-400 uppercase">{EQUIPMENT_TYPES.find(t => t.value === eq.type)?.label}</span>
+                    <span className="text-[9px] font-bold text-slate-400 uppercase">{getTypeLabel(eq.type)}</span>
                   </div>
                 </div>
                 <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
