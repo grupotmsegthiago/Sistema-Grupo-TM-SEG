@@ -5,7 +5,7 @@ import { APP_VERSION } from '../constants';
 import { 
   Plus, Shield, Loader2, RefreshCw, Pencil, Eye, EyeOff, 
   Trash2, Ban, CheckCircle2, Database, AlertTriangle, 
-  Building2, Briefcase, LogIn 
+  Building2, Briefcase, LogIn, Search, Package 
 } from 'lucide-react';
 import { useNotification } from '../lib/NotificationContext';
 
@@ -27,7 +27,9 @@ const UserList: React.FC<UserListProps> = ({ onAddUser, onEdit, userType }) => {
   const [isDeleting, setIsDeleting] = useState<string | null>(null);
   const [isToggling, setIsToggling] = useState<string | null>(null);
 
-  // Estado local para revelar senhas individualmente
+  const [searchTerm, setSearchTerm] = useState('');
+  const [equipmentMap, setEquipmentMap] = useState<{[userId: string]: { patrimony_id: string; type: string; brand: string; model: string }[]}>({});
+
   const [revealedPasswords, setRevealedPasswords] = useState<{[key: string]: boolean}>({});
 
   useEffect(() => {
@@ -118,6 +120,29 @@ const UserList: React.FC<UserListProps> = ({ onAddUser, onEdit, userType }) => {
 
         setUsers(filteredUsers);
 
+        if (userType === 'internal') {
+          try {
+            const { data: eqData } = await supabase.from('system_logs')
+              .select('details').eq('entity', 'EquipmentRegistry').eq('entity_id', 'master')
+              .order('created_at', { ascending: false }).limit(1).maybeSingle();
+            if (eqData?.details) {
+              const parsed = JSON.parse(eqData.details);
+              if (parsed?.equipments && Array.isArray(parsed.equipments)) {
+                const map: {[userId: string]: { patrimony_id: string; type: string; brand: string; model: string }[]} = {};
+                parsed.equipments.forEach((eq: any) => {
+                  if (eq.assigned_to) {
+                    if (!map[eq.assigned_to]) map[eq.assigned_to] = [];
+                    map[eq.assigned_to].push({ patrimony_id: eq.patrimony_id, type: eq.type, brand: eq.brand, model: eq.model });
+                  }
+                });
+                setEquipmentMap(map);
+              }
+            }
+          } catch (eqErr) {
+            console.error('Erro ao carregar equipamentos:', eqErr);
+          }
+        }
+
     } catch (e: any) {
         console.error("Erro ao buscar usuários:", e);
         setDbStatus('error');
@@ -207,10 +232,28 @@ const UserList: React.FC<UserListProps> = ({ onAddUser, onEdit, userType }) => {
 
   const getColSpan = () => {
       let span = 5;
-      if (userType !== 'internal') span++;
+      if (userType === 'client' || userType === 'provider') span++;
+      if (userType === 'internal') span++;
       if (isDirector) span++;
       return span;
   }
+
+  const displayedUsers = (() => {
+    let list = [...users];
+    if (userType === 'internal') {
+      list.sort((a, b) => (a.name || '').localeCompare(b.name || '', 'pt-BR'));
+    }
+    if (searchTerm.trim() && userType === 'internal') {
+      const term = searchTerm.toLowerCase();
+      list = list.filter(u =>
+        (u.name || '').toLowerCase().includes(term) ||
+        (u.email || '').toLowerCase().includes(term) ||
+        (u.profiles?.name || '').toLowerCase().includes(term) ||
+        (equipmentMap[u.id] || []).some((eq: any) => eq.patrimony_id.toLowerCase().includes(term) || eq.brand.toLowerCase().includes(term) || eq.model.toLowerCase().includes(term))
+      );
+    }
+    return list;
+  })();
 
   return (
     <div className="space-y-6 animate-fade-in">
@@ -240,6 +283,22 @@ const UserList: React.FC<UserListProps> = ({ onAddUser, onEdit, userType }) => {
         </div>
       </div>
 
+      {userType === 'internal' && (
+        <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-200">
+          <div className="relative max-w-md">
+            <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+            <input
+              type="text"
+              className="w-full pl-9 pr-4 py-2.5 bg-gray-50 border border-gray-200 rounded-lg text-sm font-medium outline-none focus:ring-2 focus:ring-gray-400 focus:border-gray-400 transition-all"
+              placeholder="Buscar por nome, email, perfil..."
+              value={searchTerm}
+              onChange={e => setSearchTerm(e.target.value)}
+              data-testid="input-search-users"
+            />
+          </div>
+        </div>
+      )}
+
       <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
         <table className="w-full text-left border-collapse">
           <thead>
@@ -248,6 +307,7 @@ const UserList: React.FC<UserListProps> = ({ onAddUser, onEdit, userType }) => {
               <th className="px-6 py-4 text-xs font-bold text-gray-500 uppercase tracking-wider">Perfil / Cargo</th>
               {userType === 'client' && <th className="px-6 py-4 text-xs font-bold text-gray-500 uppercase tracking-wider">Cliente Vinculado</th>}
               {userType === 'provider' && <th className="px-6 py-4 text-xs font-bold text-gray-500 uppercase tracking-wider">Fornecedor Vinculado</th>}
+              {userType === 'internal' && <th className="px-6 py-4 text-xs font-bold text-gray-500 uppercase tracking-wider">Patrimônio</th>}
               {isDirector && <th className="px-6 py-4 text-xs font-bold text-red-600 uppercase tracking-wider">Senha (Restrito)</th>}
               <th className="px-6 py-4 text-xs font-bold text-gray-500 uppercase tracking-wider">Status</th>
               <th className="px-6 py-4 text-xs font-bold text-gray-500 uppercase tracking-wider text-right">Ações</th>
@@ -256,10 +316,10 @@ const UserList: React.FC<UserListProps> = ({ onAddUser, onEdit, userType }) => {
           <tbody className="divide-y divide-gray-100 bg-white">
             {isLoading ? (
                  <tr><td colSpan={getColSpan()} className="p-6 text-center text-gray-500">Carregando usuários...</td></tr>
-            ) : users.length === 0 ? (
-                 <tr><td colSpan={getColSpan()} className="p-6 text-center text-gray-500">Nenhum usuário encontrado nesta categoria.</td></tr>
+            ) : displayedUsers.length === 0 ? (
+                 <tr><td colSpan={getColSpan()} className="p-6 text-center text-gray-500">{searchTerm ? 'Nenhum resultado encontrado.' : 'Nenhum usuário encontrado nesta categoria.'}</td></tr>
             ) : (
-                users.map((user) => (
+                displayedUsers.map((user) => (
                 <tr key={user.id} className="hover:bg-gray-50 transition-colors">
                     <td className="px-6 py-4">
                     <div className="flex items-center gap-3">
@@ -286,6 +346,23 @@ const UserList: React.FC<UserListProps> = ({ onAddUser, onEdit, userType }) => {
                     {userType === 'provider' && (
                         <td className="px-6 py-4 text-sm font-bold text-gray-800 uppercase">
                             {user.providers?.name || '-'}
+                        </td>
+                    )}
+
+                    {userType === 'internal' && (
+                        <td className="px-6 py-4">
+                          {equipmentMap[user.id]?.length > 0 ? (
+                            <div className="flex flex-wrap gap-1">
+                              {equipmentMap[user.id].map((eq, idx) => (
+                                <span key={idx} className="inline-flex items-center gap-1 px-2 py-0.5 bg-slate-100 border border-slate-200 rounded text-[10px] font-bold text-slate-700" title={`${eq.brand} ${eq.model}`}>
+                                  <Package size={9} className="text-slate-500" />
+                                  {eq.patrimony_id}
+                                </span>
+                              ))}
+                            </div>
+                          ) : (
+                            <span className="text-xs text-gray-400">—</span>
+                          )}
                         </td>
                     )}
                     
