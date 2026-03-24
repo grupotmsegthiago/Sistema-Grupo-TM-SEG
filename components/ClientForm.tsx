@@ -11,6 +11,7 @@ import QuoteList from './QuoteList';
 import CommercialProposalModal from './CommercialProposalModal';
 import ClientPriceCalculator from './ClientPriceCalculator';
 import QuotePrintModal from './QuotePrintModal';
+import ClientContractTab from './ClientContractTab';
 
 interface ClientFormProps {
   onBack: () => void;
@@ -50,7 +51,7 @@ const ClientForm: React.FC<ClientFormProps> = ({
     onSave, id 
 }) => {
   const { showNotification } = useNotification();
-  const [activeTab, setActiveTab] = useState<'registration' | 'costs' | 'vehicles' | 'routes' | 'quotes'>('registration');
+  const [activeTab, setActiveTab] = useState<'registration' | 'costs' | 'vehicles' | 'routes' | 'quotes' | 'contracts'>('registration');
   const [formData, setFormData] = useState({
     name: '',
     trading_name: '', 
@@ -535,8 +536,9 @@ const ClientForm: React.FC<ClientFormProps> = ({
       )}
 
       <div className="flex flex-wrap gap-2 bg-white p-1.5 rounded-xl w-full lg:w-fit shadow-sm border border-gray-200">
-          {[ { id: 'registration', label: 'Dados Contratuais', icon: Users }, { id: 'costs', label: 'Tabela de Preços', icon: DollarSign }, { id: 'vehicles', label: 'Veículos (Carga)', icon: Truck }, { id: 'routes', label: 'Rotas Fixas', icon: Navigation }, { id: 'quotes', label: 'Cotações', icon: FileText } ].filter(tab => {
+          {[ { id: 'registration', label: 'Dados Cadastrais', icon: Users }, { id: 'contracts', label: 'Contratos', icon: ScrollText }, { id: 'costs', label: 'Tabela de Preços', icon: DollarSign }, { id: 'vehicles', label: 'Veículos (Carga)', icon: Truck }, { id: 'routes', label: 'Rotas Fixas', icon: Navigation }, { id: 'quotes', label: 'Cotações', icon: FileText } ].filter(tab => {
               if (tab.id === 'registration') return true;
+              if (tab.id === 'contracts') return !!id && isFinanceAdmin;
               return isFinanceAdmin;
           }).map(tab => (
               <button key={tab.id} onClick={() => setActiveTab(tab.id as any)} className={`px-4 py-2 rounded-lg text-xs font-bold flex items-center gap-2 transition-all uppercase ${activeTab === tab.id ? 'bg-black text-white shadow-sm' : 'text-gray-500 hover:text-gray-700 hover:bg-gray-50'}`}><tab.icon size={14} /> {tab.label}</button>
@@ -941,6 +943,25 @@ const ClientForm: React.FC<ClientFormProps> = ({
           </div>
       )}
       {activeTab === 'vehicles' && <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6"><ClientVehicleList onAddVehicle={onAddVehicle} onEdit={onEditVehicle} clientId={id ? parseInt(id) : undefined} embedded={true} /></div>}
+      {activeTab === 'contracts' && id && (
+          <ClientContractTab
+            clientId={id}
+            clientName={formData.name}
+            tradingName={formData.trading_name}
+            cnpj={formData.cnpj}
+            rgIe={formData.rg_ie}
+            contactName={formData.contact}
+            email={formData.email}
+            phone={formData.phone}
+            street={formData.street}
+            number={formData.number}
+            complement={formData.complement}
+            neighborhood={formData.neighborhood}
+            city={formData.city}
+            state={formData.state}
+            zipCode={formData.zip_code}
+          />
+      )}
       {activeTab === 'routes' && <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6"><ClientRouteList onAdd={onAddRoute} onEdit={onEditRoute} clientName={formData.name} embedded={true} /></div>}
       {activeTab === 'quotes' && <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6"><QuoteList onAdd={onAddQuote} onEdit={onEditQuote} clientName={formData.name} embedded={true} /></div>}
     </div>

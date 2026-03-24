@@ -165,6 +165,8 @@ const ClientContractTab: React.FC<Props> = ({
       const storedUser = localStorage.getItem('userData');
       const user = storedUser ? JSON.parse(storedUser) : { name: 'Sistema' };
 
+      const autoSignedAt = formState.status === 'ASSINADO' && !formState.signed_at ? today : formState.signed_at;
+
       const payload: Partial<ContractData> = {
         client_id: clientId,
         client_name: tradingName || clientName,
@@ -172,7 +174,7 @@ const ClientContractTab: React.FC<Props> = ({
         contract_date: formState.contract_date,
         valid_from: formState.valid_from,
         valid_until: formState.valid_until,
-        signed_at: formState.signed_at,
+        signed_at: autoSignedAt,
         signed_by: formState.signed_by,
         witness1: formState.witness1,
         witness2: formState.witness2,
@@ -199,7 +201,7 @@ const ClientContractTab: React.FC<Props> = ({
         showNotification('Contrato registrado com sucesso!', 'success');
       }
 
-      await logAction(editingId ? 'UPDATE' : 'CREATE', 'ClientContract', clientId, `Contrato ${editingId ? 'atualizado' : 'criado'} para ${tradingName || clientName}`);
+      await logAction(editingId ? 'UPDATE' : 'CREATE', 'ClientContractAudit', clientId, `Contrato ${editingId ? 'atualizado' : 'criado'} para ${tradingName || clientName}`);
       resetForm();
       fetchContracts();
     } catch (e) {
