@@ -90,6 +90,7 @@ const UserForm: React.FC<UserFormProps> = ({ onBack, userType, id }) => {
   const [chips, setChips] = useState<ChipItem[]>([]);
   const [uploadingPhoto, setUploadingPhoto] = useState<string | null>(null);
   const [photoPreview, setPhotoPreview] = useState<string | null>(null);
+  const [linkedEquipments, setLinkedEquipments] = useState<{ patrimony_id: string; type: string; brand: string; model: string; serial_number: string; photo_urls?: string[] }[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const currentUser = (() => {
@@ -118,6 +119,21 @@ const UserForm: React.FC<UserFormProps> = ({ onBack, userType, id }) => {
         if (parsed.chips) setChips(parsed.chips);
       }
     } catch (e) { console.error('Erro ao carregar equipamentos:', e); }
+  };
+
+  const loadLinkedEquipments = async (userId: string) => {
+    try {
+      const { data } = await supabase.from('system_logs')
+        .select('details').eq('entity', 'EquipmentRegistry').eq('entity_id', 'master')
+        .order('created_at', { ascending: false }).limit(1).maybeSingle();
+      if (data?.details) {
+        const parsed = JSON.parse(data.details);
+        if (parsed?.equipments && Array.isArray(parsed.equipments)) {
+          const linked = parsed.equipments.filter((eq: any) => String(eq.assigned_to) === String(userId));
+          setLinkedEquipments(linked);
+        }
+      }
+    } catch (e) { console.error('Erro ao carregar equipamentos vinculados:', e); }
   };
 
   const saveEquipmentData = async (userId: string) => {
@@ -152,6 +168,7 @@ const UserForm: React.FC<UserFormProps> = ({ onBack, userType, id }) => {
     if (id) {
       loadUser();
       loadEquipmentData(id);
+      loadLinkedEquipments(id);
     } else {
       generateRandomPassword();
       if (isClientUser && userType === 'client') {
@@ -547,82 +564,34 @@ const UserForm: React.FC<UserFormProps> = ({ onBack, userType, id }) => {
                     <div className="flex items-center justify-between mb-4">
                       <div className="flex items-center gap-2">
                         <Monitor size={18} className="text-slate-700" />
-                        <h4 className="font-bold text-xs text-slate-800 uppercase tracking-wider">Equipamentos</h4>
-                        <span className="text-[9px] font-bold bg-slate-200 text-slate-600 px-1.5 py-0.5 rounded">{equipments.length}</span>
+                        <h4 className="font-bold text-xs text-slate-800 uppercase tracking-wider">Patrimônio Vinculado</h4>
+                        <span className="text-[9px] font-bold bg-slate-200 text-slate-600 px-1.5 py-0.5 rounded">{linkedEquipments.length}</span>
                       </div>
-                      <button type="button" onClick={addEquipment} className="flex items-center gap-1 px-3 py-1.5 bg-slate-700 text-white rounded-lg text-[10px] font-bold uppercase hover:bg-slate-800 transition-colors" data-testid="button-add-equipment">
-                        <Plus size={12} /> Adicionar
-                      </button>
+                      <span className="text-[9px] font-medium text-slate-400 italic">Gerenciar em Configurações → Patrimônio & Equipamentos</span>
                     </div>
 
-                    {equipments.length === 0 && (
-                      <p className="text-xs text-slate-400 text-center py-4">Nenhum equipamento cadastrado</p>
+                    {linkedEquipments.length === 0 ? (
+                      <p className="text-xs text-slate-400 text-center py-4">Nenhum equipamento vinculado a este funcionário</p>
+                    ) : (
+                      <div className="space-y-2">
+                        {linkedEquipments.map((eq, idx) => (
+                          <div key={idx} className="bg-white rounded-lg border border-slate-200 p-3 flex items-center gap-3" data-testid={`linked-equipment-${idx}`}>
+                            {eq.photo_urls && eq.photo_urls.length > 0 ? (
+                              <img src={eq.photo_urls[0]} alt="" className="w-10 h-10 object-cover rounded border border-slate-200 shrink-0 cursor-pointer" onClick={() => setPhotoPreview(eq.photo_urls![0])} />
+                            ) : (
+                              <div className="w-10 h-10 bg-slate-100 rounded border border-slate-200 flex items-center justify-center shrink-0"><Monitor size={14} className="text-slate-400" /></div>
+                            )}
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2">
+                                <span className="text-xs font-black text-slate-800 font-mono">{eq.patrimony_id}</span>
+                                <span className="text-[9px] font-bold text-slate-400 uppercase">{eq.type}</span>
+                              </div>
+                              <div className="text-[11px] text-slate-600 truncate">{eq.brand} {eq.model}{eq.serial_number ? ` · SN: ${eq.serial_number}` : ''}</div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
                     )}
-
-                    <div className="space-y-4">
-                      {equipments.map((eq, idx) => (
-                        <div key={eq.id} className="bg-white rounded-lg border border-slate-200 p-4 space-y-3" data-testid={`equipment-card-${idx}`}>
-                          <div className="flex items-center justify-between">
-                            <span className="text-[10px] font-bold text-slate-400 uppercase">Equipamento #{idx + 1}</span>
-                            <button type="button" onClick={() => removeEquipment(eq.id)} className="p-1 text-red-400 hover:text-red-600 hover:bg-red-50 rounded" data-testid={`button-remove-equipment-${idx}`}>
-                              <Trash2 size={14} />
-                            </button>
-                          </div>
-
-                          <div className="grid grid-cols-2 gap-3">
-                            <div>
-                              <label className="text-[10px] font-bold text-gray-500 uppercase mb-1 block">Tipo</label>
-                              <select className={SELECT_CLASS} value={eq.type} onChange={e => updateEquipment(eq.id, 'type', e.target.value)} data-testid={`select-equipment-type-${idx}`}>
-                                {EQUIPMENT_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
-                              </select>
-                            </div>
-                            <div>
-                              <label className="text-[10px] font-bold text-gray-500 uppercase mb-1 block">Nº Patrimônio</label>
-                              <input className={`${INPUT_CLASS} bg-slate-50 font-mono`} value={eq.patrimony_id} readOnly data-testid={`input-equipment-patrimony-${idx}`} />
-                            </div>
-                          </div>
-
-                          <div className="grid grid-cols-2 gap-3">
-                            <div>
-                              <label className="text-[10px] font-bold text-gray-500 uppercase mb-1 block">Marca</label>
-                              <input className={INPUT_CLASS} placeholder="Dell, Lenovo..." value={eq.brand} onChange={e => updateEquipment(eq.id, 'brand', e.target.value)} data-testid={`input-equipment-brand-${idx}`} />
-                            </div>
-                            <div>
-                              <label className="text-[10px] font-bold text-gray-500 uppercase mb-1 block">Modelo</label>
-                              <input className={INPUT_CLASS} placeholder="Inspiron 15..." value={eq.model} onChange={e => updateEquipment(eq.id, 'model', e.target.value)} data-testid={`input-equipment-model-${idx}`} />
-                            </div>
-                          </div>
-
-                          <div>
-                            <label className="text-[10px] font-bold text-gray-500 uppercase mb-1 block">Nº de Série</label>
-                            <input className={INPUT_CLASS} placeholder="SN-XXXXX" value={eq.serial_number} onChange={e => updateEquipment(eq.id, 'serial_number', e.target.value)} data-testid={`input-equipment-serial-${idx}`} />
-                          </div>
-
-                          <div>
-                            <label className="text-[10px] font-bold text-gray-500 uppercase mb-1 block">Observações</label>
-                            <input className={INPUT_CLASS} placeholder="Detalhes adicionais..." value={eq.notes} onChange={e => updateEquipment(eq.id, 'notes', e.target.value)} data-testid={`input-equipment-notes-${idx}`} />
-                          </div>
-
-                          <div>
-                            <label className="text-[10px] font-bold text-gray-500 uppercase mb-1 block">Fotos do Equipamento ({eq.photo_urls?.length || 0})</label>
-                            <div className="flex flex-wrap items-center gap-2">
-                              {(eq.photo_urls || []).map((url, pIdx) => (
-                                <div key={pIdx} className="relative group">
-                                  <img src={url} alt={`Equipamento foto ${pIdx + 1}`} className="w-16 h-16 object-cover rounded-lg border border-slate-200 cursor-pointer" onClick={() => setPhotoPreview(url)} data-testid={`img-equipment-photo-${idx}-${pIdx}`} />
-                                  <button type="button" onClick={() => removePhoto(eq.id, pIdx)} className="absolute -top-1 -right-1 p-0.5 bg-red-500 text-white rounded-full opacity-0 group-hover:opacity-100 transition-opacity">
-                                    <X size={10} />
-                                  </button>
-                                </div>
-                              ))}
-                              <label className="w-16 h-16 bg-slate-50 border-2 border-dashed border-slate-300 rounded-lg flex flex-col items-center justify-center cursor-pointer hover:bg-slate-100 hover:border-slate-400 transition-colors" data-testid={`button-upload-photo-${idx}`}>
-                                {uploadingPhoto === eq.id ? <Loader2 size={14} className="animate-spin text-slate-400" /> : <><Plus size={14} className="text-slate-400" /><span className="text-[7px] font-bold text-slate-400 uppercase mt-0.5">Foto</span></>}
-                                <input type="file" accept="image/*" className="hidden" onChange={e => { if (e.target.files?.[0]) handlePhotoUpload(eq.id, e.target.files[0]); }} />
-                              </label>
-                            </div>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
                   </div>
 
                   <div className="bg-emerald-50 p-4 rounded-xl border border-emerald-200 animate-in fade-in">
