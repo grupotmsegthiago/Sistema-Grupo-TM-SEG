@@ -1,11 +1,12 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
-import { ArrowLeft, Save, Briefcase, Truck, Loader2, Search, Calendar, FileText, AlertTriangle, CheckCircle2, MapPin, Upload, Eye, X, Trash2, DollarSign, Plus, Edit, FileSpreadsheet, TrendingUp, Percent, Lock, Phone as PhoneIcon, Mail, Hash, Fingerprint, Building2, ShieldCheck, User, RotateCcw, Check, CheckSquare, Square, Download } from 'lucide-react';
+import { ArrowLeft, Save, Briefcase, Truck, Loader2, Search, Calendar, FileText, AlertTriangle, CheckCircle2, MapPin, Upload, Eye, X, Trash2, DollarSign, Plus, Edit, FileSpreadsheet, TrendingUp, Percent, Lock, Phone as PhoneIcon, Mail, Hash, Fingerprint, Building2, ShieldCheck, User, RotateCcw, Check, CheckSquare, Square, Download, ScrollText } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { logAction } from '../lib/logger';
 import { ProviderCostTable } from '../types';
 import ImportProviderCostModal from './ImportProviderCostModal';
 import { useNotification } from '../lib/NotificationContext';
+import ClientContractTab from './ClientContractTab';
 
 interface ProviderFormProps {
   onBack: () => void;
@@ -18,7 +19,7 @@ const LABEL_CLASS = "text-[10px] font-black text-gray-500 uppercase mb-1.5 block
 
 const ProviderForm: React.FC<ProviderFormProps> = ({ onBack, onNavigateToVehicles, id }) => {
   const { showNotification } = useNotification();
-  const [activeTab, setActiveTab] = useState<'registration' | 'costs'>('registration');
+  const [activeTab, setActiveTab] = useState<'registration' | 'contracts' | 'costs'>('registration');
   const [formData, setFormData] = useState({
     name: '',
     trading_name: '',
@@ -402,6 +403,7 @@ const ProviderForm: React.FC<ProviderFormProps> = ({ onBack, onNavigateToVehicle
 
       <div className="flex flex-wrap gap-2 bg-white p-1.5 rounded-xl w-full lg:w-fit shadow-sm border border-gray-200">
           <button onClick={() => setActiveTab('registration')} className={`px-4 py-2 rounded-lg text-xs font-bold flex items-center gap-2 transition-all uppercase ${activeTab === 'registration' ? 'bg-black text-white shadow-sm' : 'text-gray-500 hover:text-gray-700 hover:bg-gray-50'}`}><Briefcase size={14} /> Dados Cadastrais</button>
+          {isFinanceAdmin && id && <button onClick={() => setActiveTab('contracts')} className={`px-4 py-2 rounded-lg text-xs font-bold flex items-center gap-2 transition-all uppercase ${activeTab === 'contracts' ? 'bg-black text-white shadow-sm' : 'text-gray-500 hover:text-gray-700 hover:bg-gray-50'}`}><ScrollText size={14} /> Contratos</button>}
           {isFinanceAdmin && <button onClick={() => { if (!id) { alert("Salve primeiro."); return; } setActiveTab('costs'); }} className={`px-4 py-2 rounded-lg text-xs font-bold flex items-center gap-2 transition-all uppercase ${activeTab === 'costs' ? 'bg-black text-white shadow-sm' : 'text-gray-500 hover:text-gray-700 hover:bg-gray-50'}`}><DollarSign size={14} /> Tabela de Custos</button>}
       </div>
 
@@ -773,6 +775,26 @@ const ProviderForm: React.FC<ProviderFormProps> = ({ onBack, onNavigateToVehicle
                 </table>
               </div>
           </div>
+      )}
+
+      {activeTab === 'contracts' && id && (
+          <ClientContractTab
+            clientId={id}
+            clientName={formData.name}
+            tradingName={formData.trading_name}
+            cnpj={formData.cnpj}
+            rgIe=""
+            contactName={formData.contact}
+            email={formData.email || formData.os_email}
+            phone={formData.phone}
+            street={formData.street}
+            number={formData.number}
+            complement={formData.complement}
+            neighborhood={formData.neighborhood}
+            city={formData.city}
+            state={formData.state}
+            zipCode={formData.zip_code}
+          />
       )}
 
       {isImportModalOpen && (
