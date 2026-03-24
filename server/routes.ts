@@ -456,8 +456,9 @@ export async function registerRoutes(
 
       await supabase.from('missions').update({ email_pending_client: false }).eq('id', missionId);
 
-      const { data: clientData } = await supabase.from('clients').select('operational_email, email').eq('name', missionData.client).single();
-      const clientEmail = clientData?.operational_email || clientData?.email;
+      const { data: clientRows } = await supabase.from('clients').select('operational_email, email, status').eq('name', missionData.client);
+      const clientData = clientRows?.find(c => c.status === 'Ativo') || clientRows?.[0] || null;
+      const clientEmail = clientData?.operational_email?.trim() || clientData?.email?.trim() || '';
       
       const enrichedMission = { ...missionData, agent1, agent2, escort_vehicle_plate: escortVehiclePlate, driver_name: driverName, driver_phone: driverPhone };
 
@@ -524,8 +525,9 @@ export async function registerRoutes(
 
       await supabase.from('missions').update({ email_pending_provider: false }).eq('id', missionId);
 
-      const { data: provData } = await supabase.from('providers').select('os_email, email').eq('name', missionData.provider).single();
-      const provEmail = provData?.os_email || provData?.email;
+      const { data: provRows } = await supabase.from('providers').select('os_email, email, status').eq('name', missionData.provider);
+      const provData = provRows?.find(p => p.status === 'Ativo') || provRows?.[0] || null;
+      const provEmail = provData?.os_email?.trim() || provData?.email?.trim() || '';
       
       if (!provEmail) {
         const fallback = 'operacional@grupotmseg.com.br';
@@ -551,8 +553,9 @@ export async function registerRoutes(
       const safeChanges = (changes as any[]).filter((c: any) => !providerBlockedFields.includes((c.field || '').toLowerCase()));
       if (safeChanges.length === 0) return res.json({ success: true, message: 'Sem alterações relevantes para o cliente' });
 
-      const { data: clientData } = await supabase.from('clients').select('operational_email, email').eq('name', client).single();
-      const clientEmail = clientData?.operational_email || clientData?.email;
+      const { data: clientRows } = await supabase.from('clients').select('operational_email, email, status').eq('name', client);
+      const clientData = clientRows?.find(c => c.status === 'Ativo') || clientRows?.[0] || null;
+      const clientEmail = clientData?.operational_email?.trim() || clientData?.email?.trim() || '';
       if (!clientEmail) return res.json({ success: false, message: 'Cliente sem e-mail cadastrado' });
 
       const missionData = { id: missionId, client, origin: origin || '', destination: destination || '', start_time: start_time || '', mission_type: mission_type || 'Caracterizada', provider: '', driver_name: '', driver_phone: '' };
@@ -569,8 +572,9 @@ export async function registerRoutes(
       const { missionId, provider, origin, destination, start_time, mission_type, vehiclePlate, changes, senderName } = req.body;
       if (!missionId || !provider || !changes?.length) return res.status(400).json({ error: 'Dados obrigatórios ausentes' });
 
-      const { data: provData } = await supabase.from('providers').select('os_email, email').eq('name', provider).single();
-      const provEmail = provData?.os_email || provData?.email;
+      const { data: provRows } = await supabase.from('providers').select('os_email, email, status').eq('name', provider);
+      const provData = provRows?.find(p => p.status === 'Ativo') || provRows?.[0] || null;
+      const provEmail = provData?.os_email?.trim() || provData?.email?.trim() || '';
       if (!provEmail) return res.json({ success: false, message: 'Fornecedor sem e-mail cadastrado' });
 
       const { data: missionCheck } = await supabase.from('missions').select('client').eq('id', missionId).single();
@@ -588,8 +592,9 @@ export async function registerRoutes(
       const { missionId, client, imageUrl, vehiclePlate, origin, destination, start_time, mission_type, senderName } = req.body;
       if (!missionId || !client || !imageUrl) return res.status(400).json({ error: 'Dados obrigatórios ausentes' });
 
-      const { data: clientData } = await supabase.from('clients').select('*').eq('name', client).single();
-      const clientEmail = clientData?.operational_email || clientData?.email;
+      const { data: clientRows } = await supabase.from('clients').select('operational_email, email, status').eq('name', client);
+      const clientData = clientRows?.find(c => c.status === 'Ativo') || clientRows?.[0] || null;
+      const clientEmail = clientData?.operational_email?.trim() || clientData?.email?.trim() || '';
 
       let clientVehicleLabel = '';
       const { data: missionRow } = await supabase.from('missions').select('client_vehicle_id, client_vehicle, vehicle_id, gr_espelhamento, email_message_id').eq('id', missionId).single();
@@ -644,8 +649,9 @@ export async function registerRoutes(
       const { data: missionRow } = await supabase.from('missions').select('*').eq('id', missionId).single();
       if (!missionRow) return res.status(404).json({ error: 'Missão não encontrada' });
 
-      const { data: clientData } = await supabase.from('clients').select('*').eq('name', missionRow.client).single();
-      const clientEmail = clientData?.operational_email || clientData?.email;
+      const { data: clientRows } = await supabase.from('clients').select('operational_email, email, status').eq('name', missionRow.client);
+      const clientData = clientRows?.find(c => c.status === 'Ativo') || clientRows?.[0] || null;
+      const clientEmail = clientData?.operational_email?.trim() || clientData?.email?.trim() || '';
 
       let clientVehicleLabel = '';
       if (missionRow.client_vehicle_id) {

@@ -617,16 +617,18 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
         if (checkBlockedAgent(editData.agent2, 'Agente 2 (Auxiliar)')) return;
 
         if (mission?.client) {
-            const { data: cliCheck } = await supabase.from('clients').select('id, email, operational_email').eq('name', mission.client).single();
-            if (cliCheck && !cliCheck.operational_email && !cliCheck.email) {
+            const { data: cliRows } = await supabase.from('clients').select('id, email, operational_email, status').eq('name', mission.client);
+            const cliCheck = cliRows?.find(c => c.status === 'Ativo') || cliRows?.[0] || null;
+            if (cliCheck && !(cliCheck.operational_email?.trim()) && !(cliCheck.email?.trim())) {
                 setEmailMissingAlert({ type: 'client', name: mission.client, entityId: cliCheck.id });
                 setQuickEmailInput('');
                 return;
             }
         }
         if (editData.provider) {
-            const { data: provCheck } = await supabase.from('providers').select('id, email, os_email').eq('name', editData.provider).single();
-            if (provCheck && !provCheck.os_email && !provCheck.email) {
+            const { data: provRows } = await supabase.from('providers').select('id, email, os_email, status').eq('name', editData.provider);
+            const provCheck = provRows?.find(p => p.status === 'Ativo') || provRows?.[0] || null;
+            if (provCheck && !(provCheck.os_email?.trim()) && !(provCheck.email?.trim())) {
                 setEmailMissingAlert({ type: 'provider', name: editData.provider, entityId: provCheck.id });
                 setQuickEmailInput('');
                 return;
