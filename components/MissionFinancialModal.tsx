@@ -842,6 +842,12 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
           
           const newLog = [...approvalLog];
           if (approve) {
+              if (stage === 'financeiro' && !newLog.some(l => l.stage === 'auditor')) {
+                  showNotification('Bloqueado', 'A aprovação do Daniel (Auditor) é necessária antes da aprovação do Financeiro.', 'error');
+                  setIsUpdating(false);
+                  isSavingRef.current = false;
+                  return;
+              }
               const existingStages = newLog.map(l => l.stage);
               const alreadyApproved = newLog.some(l => l.stage === stage);
               if (!alreadyApproved) {

@@ -624,7 +624,7 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
         eligibleApprovalMissions.forEach(m => {
             const stages = (approvalMap[m.id] || []).map(s => s.stage);
             if (!stages.includes('auditor')) auditor.push(m);
-            if (!stages.includes('financeiro')) financeiro.push(m);
+            if (stages.includes('auditor') && !stages.includes('financeiro')) financeiro.push(m);
             if (!stages.includes('diretoria')) diretoria.push(m);
         });
         return { auditor, financeiro, diretoria };
