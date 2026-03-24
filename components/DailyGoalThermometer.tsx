@@ -78,10 +78,12 @@ const DailyGoalThermometer: React.FC<Props> = ({ viewPeriod = 'TODAY', customSta
         });
     }, [parentMissions, viewPeriod, customStartDate, customEndDate]);
 
-    const currentRevenue = useMemo(() => {
-        if (!parentClientTables || !parentProviderTables || !parentClientsData) return 0;
-        return filteredMissions.reduce((acc, m) => {
-            if (m.status === MissionStatus.REFUSED) return acc;
+    const { currentRevenue, currentCost } = useMemo(() => {
+        if (!parentClientTables || !parentProviderTables || !parentClientsData) return { currentRevenue: 0, currentCost: 0 };
+        let totalRevenue = 0;
+        let totalCost = 0;
+        filteredMissions.forEach(m => {
+            if (m.status === MissionStatus.REFUSED) return;
 
             const hasStoredRevenue = (m.revenue_value != null && m.revenue_value > 0);
             const hasStoredCost = (m.cost_value != null && m.cost_value > 0);
@@ -89,41 +91,56 @@ const DailyGoalThermometer: React.FC<Props> = ({ viewPeriod = 'TODAY', customSta
             const hasSavedValues = isVerified && (hasStoredRevenue || hasStoredCost || m.revenue_value === 0 || m.cost_value === 0);
 
             if (hasSavedValues) {
-                 const storedVal = (m.revenue_value || 0) + Math.max(0, m.toll_value || 0);
-                 return acc + storedVal;
+                 totalRevenue += (m.revenue_value || 0) + Math.max(0, m.toll_value || 0);
+                 totalCost += (m.cost_value || 0);
+                 return;
+            }
+
+            if (hasStoredRevenue && hasStoredCost) {
+                 totalRevenue += (m.revenue_value || 0) + Math.max(0, m.toll_value || 0);
+                 totalCost += (m.cost_value || 0);
+                 return;
             }
 
             if (hasStoredRevenue) {
-                 const storedVal = (m.revenue_value || 0) + Math.max(0, m.toll_value || 0);
-                 return acc + storedVal;
+                 totalRevenue += (m.revenue_value || 0) + Math.max(0, m.toll_value || 0);
             }
 
-            const isCancelled = m.status === MissionStatus.CANCELLED;
-            const missionObj: Mission = {
-                ...m,
-                startKm: m.startKm ?? m.start_km,
-                endKm: m.endKm ?? m.end_km,
-                startTime: m.startTime ?? m.start_time,
-                endTime: m.endTime ?? m.end_time,
-                ...(isCancelled ? { status: MissionStatus.COMPLETED } : {})
-            };
-            const clientName = (m.originalClientName || m.client || '').trim();
-            const matchedClient = parentClientsData.find(c => c.name === clientName);
-            const financials = calculateMissionFinancials(
-                missionObj, 
-                parentClientTables, 
-                parentProviderTables, 
-                matchedClient, 
-                currentTime 
-            );
-            return acc + (financials.client.total || 0);
+            if (hasStoredCost) {
+                 totalCost += (m.cost_value || 0);
+            }
 
-        }, 0);
+            if (!hasStoredRevenue || !hasStoredCost) {
+                const isCancelled = m.status === MissionStatus.CANCELLED;
+                const missionObj: Mission = {
+                    ...m,
+                    startKm: m.startKm ?? m.start_km,
+                    endKm: m.endKm ?? m.end_km,
+                    startTime: m.startTime ?? m.start_time,
+                    endTime: m.endTime ?? m.end_time,
+                    ...(isCancelled ? { status: MissionStatus.COMPLETED } : {})
+                };
+                const clientName = (m.originalClientName || m.client || '').trim();
+                const matchedClient = parentClientsData.find(c => c.name === clientName);
+                const financials = calculateMissionFinancials(
+                    missionObj, 
+                    parentClientTables, 
+                    parentProviderTables, 
+                    matchedClient, 
+                    currentTime 
+                );
+                if (!hasStoredRevenue) totalRevenue += (financials.client.total || 0);
+                if (!hasStoredCost) totalCost += (financials.provider.total || 0);
+            }
+        });
+        return { currentRevenue: totalRevenue, currentCost: totalCost };
     }, [filteredMissions, parentClientTables, parentProviderTables, parentClientsData, currentTime]);
 
     const stats = useMemo(() => {
         const percentage = Math.min(100, (currentRevenue / DAILY_GOAL) * 100);
         const remaining = Math.max(0, DAILY_GOAL - currentRevenue);
+        const profit = currentRevenue - currentCost;
+        const marginPercent = currentRevenue > 0 ? (profit / currentRevenue) * 100 : 0;
         
         let colorClass = 'bg-red-500'; 
         let textClass = 'text-red-500';
@@ -141,9 +158,11 @@ const DailyGoalThermometer: React.FC<Props> = ({ viewPeriod = 'TODAY', customSta
             remaining, 
             isGoalMet: percentage >= 100,
             colorClass,
-            textClass
+            textClass,
+            profit,
+            marginPercent
         };
-    }, [currentRevenue]);
+    }, [currentRevenue, currentCost]);
 
     const userPermissions = useMemo(() => {
         try {
@@ -258,6 +277,31 @@ const DailyGoalThermometer: React.FC<Props> = ({ viewPeriod = 'TODAY', customSta
                         </div>
                     )}
                 </div>
+
+                {canSeeMonetary && currentRevenue > 0 && (
+                    <div className="mt-3 pt-3 border-t border-dashed border-gray-200">
+                        <div className="grid grid-cols-3 gap-2">
+                            <div className="flex flex-col items-center bg-red-50/60 rounded-xl px-2 py-1.5 border border-red-100/50">
+                                <span className="text-[7px] font-black text-red-400 uppercase tracking-widest mb-0.5">Custo Fornec.</span>
+                                <span className="text-[10px] font-black text-red-600 font-mono tracking-tight whitespace-nowrap" data-testid="text-provider-cost">
+                                    {formatCurrency(currentCost)}
+                                </span>
+                            </div>
+                            <div className={`flex flex-col items-center rounded-xl px-2 py-1.5 border ${stats.profit >= 0 ? 'bg-emerald-50/60 border-emerald-100/50' : 'bg-red-50/60 border-red-100/50'}`}>
+                                <span className={`text-[7px] font-black uppercase tracking-widest mb-0.5 ${stats.profit >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>Lucro</span>
+                                <span className={`text-[10px] font-black font-mono tracking-tight whitespace-nowrap ${stats.profit >= 0 ? 'text-emerald-600' : 'text-red-600'}`} data-testid="text-profit">
+                                    {formatCurrency(stats.profit)}
+                                </span>
+                            </div>
+                            <div className={`flex flex-col items-center rounded-xl px-2 py-1.5 border ${stats.marginPercent >= 30 ? 'bg-emerald-50/60 border-emerald-100/50' : stats.marginPercent >= 15 ? 'bg-yellow-50/60 border-yellow-100/50' : 'bg-red-50/60 border-red-100/50'}`}>
+                                <span className={`text-[7px] font-black uppercase tracking-widest mb-0.5 ${stats.marginPercent >= 30 ? 'text-emerald-400' : stats.marginPercent >= 15 ? 'text-yellow-500' : 'text-red-400'}`}>Margem</span>
+                                <span className={`text-[10px] font-black font-mono tracking-tight whitespace-nowrap ${stats.marginPercent >= 30 ? 'text-emerald-600' : stats.marginPercent >= 15 ? 'text-yellow-600' : 'text-red-600'}`} data-testid="text-margin">
+                                    {stats.marginPercent.toFixed(1)}%
+                                </span>
+                            </div>
+                        </div>
+                    </div>
+                )}
             </div>
 
             <style>{`
