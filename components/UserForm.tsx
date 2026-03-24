@@ -13,7 +13,8 @@ interface EquipmentItem {
   model: string;
   serial_number: string;
   patrimony_id: string;
-  photo_url: string;
+  photo_url?: string;
+  photo_urls: string[];
   notes: string;
 }
 
@@ -108,7 +109,12 @@ const UserForm: React.FC<UserFormProps> = ({ onBack, userType, id }) => {
         .maybeSingle();
       if (data?.details) {
         const parsed = JSON.parse(data.details);
-        if (parsed.equipments) setEquipments(parsed.equipments);
+        if (parsed.equipments) {
+          setEquipments(parsed.equipments.map((eq: any) => ({
+            ...eq,
+            photo_urls: eq.photo_urls || (eq.photo_url ? [eq.photo_url] : []),
+          })));
+        }
         if (parsed.chips) setChips(parsed.chips);
       }
     } catch (e) { console.error('Erro ao carregar equipamentos:', e); }
@@ -301,20 +307,32 @@ const UserForm: React.FC<UserFormProps> = ({ onBack, userType, id }) => {
       }
   };
 
-  const addEquipment = () => {
-    setEquipments(prev => [...prev, {
-      id: crypto.randomUUID(),
-      type: 'notebook',
-      brand: '',
-      model: '',
-      serial_number: '',
-      patrimony_id: '',
-      photo_url: '',
-      notes: ''
-    }]);
+  const generatePatrimonyId = (existing: EquipmentItem[]) => {
+    let maxNum = 0;
+    existing.forEach(eq => {
+      const match = eq.patrimony_id.match(/PAT-(\d+)/i);
+      if (match) maxNum = Math.max(maxNum, parseInt(match[1]));
+    });
+    return `PAT-${String(maxNum + 1).padStart(4, '0')}`;
   };
 
-  const updateEquipment = (eqId: string, field: keyof EquipmentItem, value: string) => {
+  const addEquipment = () => {
+    setEquipments(prev => {
+      const newPatrimony = generatePatrimonyId(prev);
+      return [...prev, {
+        id: crypto.randomUUID(),
+        type: 'notebook',
+        brand: '',
+        model: '',
+        serial_number: '',
+        patrimony_id: newPatrimony,
+        photo_urls: [],
+        notes: ''
+      }];
+    });
+  };
+
+  const updateEquipment = (eqId: string, field: keyof EquipmentItem, value: any) => {
     setEquipments(prev => prev.map(e => e.id === eqId ? { ...e, [field]: value } : e));
   };
 
@@ -331,12 +349,20 @@ const UserForm: React.FC<UserFormProps> = ({ onBack, userType, id }) => {
       const { error } = await supabase.storage.from('mission-evidence').upload(path, file, { upsert: true });
       if (error) throw error;
       const { data: urlData } = supabase.storage.from('mission-evidence').getPublicUrl(path);
-      updateEquipment(eqId, 'photo_url', urlData.publicUrl);
+      const eq = equipments.find(e => e.id === eqId);
+      const currentPhotos = eq?.photo_urls || [];
+      updateEquipment(eqId, 'photo_urls', [...currentPhotos, urlData.publicUrl]);
     } catch (e: any) {
       showNotification('Erro', 'Erro ao enviar foto: ' + e.message, 'error');
     } finally {
       setUploadingPhoto(null);
     }
+  };
+
+  const removePhoto = (eqId: string, photoIndex: number) => {
+    const eq = equipments.find(e => e.id === eqId);
+    if (!eq) return;
+    updateEquipment(eqId, 'photo_urls', eq.photo_urls.filter((_: string, i: number) => i !== photoIndex));
   };
 
   const addChip = () => {
@@ -540,7 +566,7 @@ const UserForm: React.FC<UserFormProps> = ({ onBack, userType, id }) => {
                             </div>
                             <div>
                               <label className="text-[10px] font-bold text-gray-500 uppercase mb-1 block">Nº Patrimônio</label>
-                              <input className={INPUT_CLASS} placeholder="PAT-001" value={eq.patrimony_id} onChange={e => updateEquipment(eq.id, 'patrimony_id', e.target.value)} data-testid={`input-equipment-patrimony-${idx}`} />
+                              <input className={`${INPUT_CLASS} bg-slate-50 font-mono`} value={eq.patrimony_id} readOnly data-testid={`input-equipment-patrimony-${idx}`} />
                             </div>
                           </div>
 
@@ -566,23 +592,18 @@ const UserForm: React.FC<UserFormProps> = ({ onBack, userType, id }) => {
                           </div>
 
                           <div>
-                            <label className="text-[10px] font-bold text-gray-500 uppercase mb-1 block">Foto do Equipamento</label>
-                            <div className="flex items-center gap-3">
-                              {eq.photo_url ? (
-                                <div className="relative group">
-                                  <img src={eq.photo_url} alt="Equipamento" className="w-20 h-20 object-cover rounded-lg border border-slate-200 cursor-pointer" onClick={() => setPhotoPreview(eq.photo_url)} data-testid={`img-equipment-photo-${idx}`} />
-                                  <button type="button" onClick={() => updateEquipment(eq.id, 'photo_url', '')} className="absolute -top-1 -right-1 p-0.5 bg-red-500 text-white rounded-full opacity-0 group-hover:opacity-100 transition-opacity">
+                            <label className="text-[10px] font-bold text-gray-500 uppercase mb-1 block">Fotos do Equipamento ({eq.photo_urls?.length || 0})</label>
+                            <div className="flex flex-wrap items-center gap-2">
+                              {(eq.photo_urls || []).map((url, pIdx) => (
+                                <div key={pIdx} className="relative group">
+                                  <img src={url} alt={`Equipamento foto ${pIdx + 1}`} className="w-16 h-16 object-cover rounded-lg border border-slate-200 cursor-pointer" onClick={() => setPhotoPreview(url)} data-testid={`img-equipment-photo-${idx}-${pIdx}`} />
+                                  <button type="button" onClick={() => removePhoto(eq.id, pIdx)} className="absolute -top-1 -right-1 p-0.5 bg-red-500 text-white rounded-full opacity-0 group-hover:opacity-100 transition-opacity">
                                     <X size={10} />
                                   </button>
                                 </div>
-                              ) : (
-                                <div className="w-20 h-20 bg-slate-100 border-2 border-dashed border-slate-300 rounded-lg flex items-center justify-center">
-                                  <ImageIcon size={20} className="text-slate-300" />
-                                </div>
-                              )}
-                              <label className="flex items-center gap-1.5 px-3 py-2 bg-slate-100 border border-slate-200 rounded-lg text-[10px] font-bold text-slate-600 uppercase hover:bg-slate-200 cursor-pointer transition-colors" data-testid={`button-upload-photo-${idx}`}>
-                                {uploadingPhoto === eq.id ? <Loader2 size={12} className="animate-spin" /> : <Camera size={12} />}
-                                {uploadingPhoto === eq.id ? 'Enviando...' : 'Enviar Foto'}
+                              ))}
+                              <label className="w-16 h-16 bg-slate-50 border-2 border-dashed border-slate-300 rounded-lg flex flex-col items-center justify-center cursor-pointer hover:bg-slate-100 hover:border-slate-400 transition-colors" data-testid={`button-upload-photo-${idx}`}>
+                                {uploadingPhoto === eq.id ? <Loader2 size={14} className="animate-spin text-slate-400" /> : <><Plus size={14} className="text-slate-400" /><span className="text-[7px] font-bold text-slate-400 uppercase mt-0.5">Foto</span></>}
                                 <input type="file" accept="image/*" className="hidden" onChange={e => { if (e.target.files?.[0]) handlePhotoUpload(eq.id, e.target.files[0]); }} />
                               </label>
                             </div>
