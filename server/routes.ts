@@ -173,6 +173,21 @@ export async function registerRoutes(
     'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFqaG1tanVld2RzdWtlY2FpbWlrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjQxNzUxMjEsImV4cCI6MjA3OTc1MTEyMX0.5bXRWTyb1HxLimt3lqJTBfjzDoumux7TXlW4lycXrPk'
   );
 
+  async function findClientEmail(clientName: string): Promise<{ email: string; data: any }> {
+    const { data: byName } = await supabase.from('clients').select('operational_email, email, trading_name, name, status').eq('name', clientName);
+    let clientData = byName?.find(c => c.status === 'Ativo') || byName?.[0] || null;
+    if (!clientData) {
+      const { data: byTrading } = await supabase.from('clients').select('operational_email, email, trading_name, name, status').eq('trading_name', clientName);
+      clientData = byTrading?.find(c => c.status === 'Ativo') || byTrading?.[0] || null;
+    }
+    if (!clientData) {
+      const { data: byIlike } = await supabase.from('clients').select('operational_email, email, trading_name, name, status').ilike('trading_name', clientName);
+      clientData = byIlike?.find(c => c.status === 'Ativo') || byIlike?.[0] || null;
+    }
+    const email = clientData?.operational_email?.trim() || clientData?.email?.trim() || '';
+    return { email, data: clientData };
+  }
+
   // Supabase Realtime listener for push notifications
   const supabaseForPush = supabase;
 
@@ -456,9 +471,7 @@ export async function registerRoutes(
 
       await supabase.from('missions').update({ email_pending_client: false }).eq('id', missionId);
 
-      const { data: clientRows } = await supabase.from('clients').select('operational_email, email, status').eq('name', missionData.client);
-      const clientData = clientRows?.find(c => c.status === 'Ativo') || clientRows?.[0] || null;
-      const clientEmail = clientData?.operational_email?.trim() || clientData?.email?.trim() || '';
+      const { email: clientEmail } = await findClientEmail(missionData.client);
       
       const enrichedMission = { ...missionData, agent1, agent2, escort_vehicle_plate: escortVehiclePlate, driver_name: driverName, driver_phone: driverPhone };
 
@@ -553,9 +566,7 @@ export async function registerRoutes(
       const safeChanges = (changes as any[]).filter((c: any) => !providerBlockedFields.includes((c.field || '').toLowerCase()));
       if (safeChanges.length === 0) return res.json({ success: true, message: 'Sem alterações relevantes para o cliente' });
 
-      const { data: clientRows } = await supabase.from('clients').select('operational_email, email, status').eq('name', client);
-      const clientData = clientRows?.find(c => c.status === 'Ativo') || clientRows?.[0] || null;
-      const clientEmail = clientData?.operational_email?.trim() || clientData?.email?.trim() || '';
+      const { email: clientEmail } = await findClientEmail(client);
       if (!clientEmail) return res.json({ success: false, message: 'Cliente sem e-mail cadastrado' });
 
       const missionData = { id: missionId, client, origin: origin || '', destination: destination || '', start_time: start_time || '', mission_type: mission_type || 'Caracterizada', provider: '', driver_name: '', driver_phone: '' };
@@ -592,9 +603,7 @@ export async function registerRoutes(
       const { missionId, client, imageUrl, vehiclePlate, origin, destination, start_time, mission_type, senderName } = req.body;
       if (!missionId || !client || !imageUrl) return res.status(400).json({ error: 'Dados obrigatórios ausentes' });
 
-      const { data: clientRows } = await supabase.from('clients').select('operational_email, email, status').eq('name', client);
-      const clientData = clientRows?.find(c => c.status === 'Ativo') || clientRows?.[0] || null;
-      const clientEmail = clientData?.operational_email?.trim() || clientData?.email?.trim() || '';
+      const { email: clientEmail } = await findClientEmail(client);
 
       let clientVehicleLabel = '';
       const { data: missionRow } = await supabase.from('missions').select('client_vehicle_id, client_vehicle, vehicle_id, gr_espelhamento, email_message_id').eq('id', missionId).single();
@@ -649,9 +658,7 @@ export async function registerRoutes(
       const { data: missionRow } = await supabase.from('missions').select('*').eq('id', missionId).single();
       if (!missionRow) return res.status(404).json({ error: 'Missão não encontrada' });
 
-      const { data: clientRows } = await supabase.from('clients').select('operational_email, email, status').eq('name', missionRow.client);
-      const clientData = clientRows?.find(c => c.status === 'Ativo') || clientRows?.[0] || null;
-      const clientEmail = clientData?.operational_email?.trim() || clientData?.email?.trim() || '';
+      const { email: clientEmail } = await findClientEmail(missionRow.client);
 
       let clientVehicleLabel = '';
       if (missionRow.client_vehicle_id) {
