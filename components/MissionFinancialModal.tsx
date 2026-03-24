@@ -788,6 +788,11 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
       let blockedForCurrentUser = false;
       let blockedMessage = '';
 
+      if (currentUserStage === 'financeiro' && !hasAuditor) {
+          blockedForCurrentUser = true;
+          blockedMessage = 'Aguardando aprovação do Daniel (Auditor) antes do Financeiro.';
+      }
+
       const lockedByDiretoria = hasDiretoria && currentUserStage !== 'diretoria' && (() => { try { const u = JSON.parse(localStorage.getItem('userData') || '{}'); const r = (u.role || '').toLowerCase(); return r !== 'controller' && r !== 'administrador'; } catch { return true; } })();
 
       return { hasAuditor, hasFinanceiro, hasDiretoria, isFullyApproved, isApprovedForBilling, missing, waitingDays, hasPartial, blockedForCurrentUser, blockedMessage, currentUserStage, lockedByDiretoria };
