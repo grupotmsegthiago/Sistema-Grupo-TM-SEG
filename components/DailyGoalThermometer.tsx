@@ -281,21 +281,21 @@ const DailyGoalThermometer: React.FC<Props> = ({ viewPeriod = 'TODAY', customSta
                 {canSeeMonetary && currentRevenue > 0 && (
                     <div className="mt-3 pt-3 border-t border-dashed border-gray-200">
                         <div className="grid grid-cols-3 gap-2">
-                            <div className="flex flex-col items-center bg-red-50/60 rounded-xl px-2 py-1.5 border border-red-100/50">
-                                <span className="text-[7px] font-black text-red-400 uppercase tracking-widest mb-0.5">Custo Fornec.</span>
-                                <span className="text-[10px] font-black text-red-600 font-mono tracking-tight whitespace-nowrap" data-testid="text-provider-cost">
+                            <div className="flex flex-col items-center bg-red-50/60 rounded-xl px-2 py-2 border border-red-100/50">
+                                <span className="text-[8px] font-bold text-red-400 uppercase tracking-wider mb-1">Custo Fornec.</span>
+                                <span className="text-xs font-extrabold text-red-600 tracking-tight whitespace-nowrap" data-testid="text-provider-cost">
                                     {formatCurrency(currentCost)}
                                 </span>
                             </div>
-                            <div className={`flex flex-col items-center rounded-xl px-2 py-1.5 border ${stats.profit >= 0 ? 'bg-emerald-50/60 border-emerald-100/50' : 'bg-red-50/60 border-red-100/50'}`}>
-                                <span className={`text-[7px] font-black uppercase tracking-widest mb-0.5 ${stats.profit >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>Lucro</span>
-                                <span className={`text-[10px] font-black font-mono tracking-tight whitespace-nowrap ${stats.profit >= 0 ? 'text-emerald-600' : 'text-red-600'}`} data-testid="text-profit">
+                            <div className={`flex flex-col items-center rounded-xl px-2 py-2 border ${stats.profit >= 0 ? 'bg-emerald-50/60 border-emerald-100/50' : 'bg-red-50/60 border-red-100/50'}`}>
+                                <span className={`text-[8px] font-bold uppercase tracking-wider mb-1 ${stats.profit >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>Lucro</span>
+                                <span className={`text-xs font-extrabold tracking-tight whitespace-nowrap ${stats.profit >= 0 ? 'text-emerald-600' : 'text-red-600'}`} data-testid="text-profit">
                                     {formatCurrency(stats.profit)}
                                 </span>
                             </div>
-                            <div className={`flex flex-col items-center rounded-xl px-2 py-1.5 border ${stats.marginPercent >= 30 ? 'bg-emerald-50/60 border-emerald-100/50' : stats.marginPercent >= 15 ? 'bg-yellow-50/60 border-yellow-100/50' : 'bg-red-50/60 border-red-100/50'}`}>
-                                <span className={`text-[7px] font-black uppercase tracking-widest mb-0.5 ${stats.marginPercent >= 30 ? 'text-emerald-400' : stats.marginPercent >= 15 ? 'text-yellow-500' : 'text-red-400'}`}>Margem</span>
-                                <span className={`text-[10px] font-black font-mono tracking-tight whitespace-nowrap ${stats.marginPercent >= 30 ? 'text-emerald-600' : stats.marginPercent >= 15 ? 'text-yellow-600' : 'text-red-600'}`} data-testid="text-margin">
+                            <div className={`flex flex-col items-center rounded-xl px-2 py-2 border ${stats.marginPercent >= 30 ? 'bg-emerald-50/60 border-emerald-100/50' : stats.marginPercent >= 15 ? 'bg-yellow-50/60 border-yellow-100/50' : 'bg-red-50/60 border-red-100/50'}`}>
+                                <span className={`text-[8px] font-bold uppercase tracking-wider mb-1 ${stats.marginPercent >= 30 ? 'text-emerald-400' : stats.marginPercent >= 15 ? 'text-yellow-500' : 'text-red-400'}`}>Margem</span>
+                                <span className={`text-xs font-extrabold tracking-tight whitespace-nowrap ${stats.marginPercent >= 30 ? 'text-emerald-600' : stats.marginPercent >= 15 ? 'text-yellow-600' : 'text-red-600'}`} data-testid="text-margin">
                                     {stats.marginPercent.toFixed(1)}%
                                 </span>
                             </div>
