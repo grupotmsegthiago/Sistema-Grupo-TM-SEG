@@ -43,6 +43,7 @@ The system encompasses modules for **Missions**, **Clients**, **Providers**, **F
 -   **Third-Party Financial Closing Workflow:** A 6-step manual financial closing process (Payables, Receivables, Invoicing, Reconciliation, Control Report, Finalization) with dedicated tables for invoices.
 -   **Vendor Billing Verification Control (`Controle OS Fornecedor`):** Module for verifying provider payments, with fields for OS number, invoice, and payment date, including `verified_by` and `verified_at` tracking.
 -   **Automated Quarterly Data Cleanup:** Server-side cleanup of old `mission_history` and `mission_logs` entries every 90 days in batches.
+-   **Internal Employee Equipment Control:** Equipment and SIM chip management for internal users. Stores notebooks, desktops, phones, tablets with brand, model, serial number, patrimony ID, and photo upload. Also tracks SIM chips with phone number, operator, ICCID, and plan. Data is stored in `system_logs` table (entity='UserEquipment', entity_id=user_id) as JSON. Photos uploaded to `mission-evidence` storage bucket under `equipment/` prefix.
 
 ## External Dependencies
 

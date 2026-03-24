@@ -1,10 +1,40 @@
 
-import React, { useState, useEffect } from 'react';
-import { ArrowLeft, Save, UserCog, Building2, Shield, Info, Loader2, Key, RefreshCw, Eye, EyeOff, Copy, Briefcase, AlertTriangle, CheckSquare, Square, Mail, LayoutDashboard, MapPin, Truck, Route, Users, FileText, BarChart3, Bell, FileBarChart, CheckCircle2, MessageCircle, X } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { ArrowLeft, Save, UserCog, Building2, Shield, Info, Loader2, Key, RefreshCw, Eye, EyeOff, Copy, Briefcase, AlertTriangle, CheckSquare, Square, Mail, LayoutDashboard, MapPin, Truck, Route, Users, FileText, BarChart3, Bell, FileBarChart, CheckCircle2, MessageCircle, X, Monitor, Smartphone, Plus, Trash2, Camera, Image as ImageIcon, Wifi } from 'lucide-react';
 import { Client, AccessProfile, ProviderData } from '../types';
 import { supabase } from '../lib/supabase';
 import { logAction } from '../lib/logger';
 import { useNotification } from '../lib/NotificationContext';
+
+interface EquipmentItem {
+  id: string;
+  type: 'notebook' | 'desktop' | 'celular' | 'tablet' | 'outro';
+  brand: string;
+  model: string;
+  serial_number: string;
+  patrimony_id: string;
+  photo_url: string;
+  notes: string;
+}
+
+interface ChipItem {
+  id: string;
+  phone_number: string;
+  operator: string;
+  iccid: string;
+  plan: string;
+  notes: string;
+}
+
+const EQUIPMENT_TYPES: { value: EquipmentItem['type']; label: string }[] = [
+  { value: 'notebook', label: 'Notebook' },
+  { value: 'desktop', label: 'Desktop / PC' },
+  { value: 'celular', label: 'Celular' },
+  { value: 'tablet', label: 'Tablet' },
+  { value: 'outro', label: 'Outro' },
+];
+
+const OPERATORS = ['Vivo', 'Claro', 'TIM', 'Oi', 'Outra'];
 
 const CLIENT_PERMISSION_OPTIONS = [
     { id: 'dashboard', label: 'Página Inicial (Dashboard)', description: 'Visão geral com indicadores e gráficos', icon: LayoutDashboard, default: true },
@@ -55,6 +85,11 @@ const UserForm: React.FC<UserFormProps> = ({ onBack, userType, id }) => {
   const [selectedPermissions, setSelectedPermissions] = useState<string[]>(
     CLIENT_PERMISSION_OPTIONS.filter(p => p.default).map(p => p.id)
   );
+  const [equipments, setEquipments] = useState<EquipmentItem[]>([]);
+  const [chips, setChips] = useState<ChipItem[]>([]);
+  const [uploadingPhoto, setUploadingPhoto] = useState<string | null>(null);
+  const [photoPreview, setPhotoPreview] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const currentUser = (() => {
     try { return JSON.parse(localStorage.getItem('userData') || '{}'); } catch { return {}; }
@@ -62,10 +97,56 @@ const UserForm: React.FC<UserFormProps> = ({ onBack, userType, id }) => {
   const currentUserClientId = currentUser.clientId || currentUser.client_id || '';
   const isClientUser = !!currentUserClientId;
 
+  const loadEquipmentData = async (userId: string) => {
+    try {
+      const { data } = await supabase.from('system_logs')
+        .select('details')
+        .eq('entity', 'UserEquipment')
+        .eq('entity_id', userId)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (data?.details) {
+        const parsed = JSON.parse(data.details);
+        if (parsed.equipments) setEquipments(parsed.equipments);
+        if (parsed.chips) setChips(parsed.chips);
+      }
+    } catch (e) { console.error('Erro ao carregar equipamentos:', e); }
+  };
+
+  const saveEquipmentData = async (userId: string) => {
+    try {
+      const payload = JSON.stringify({ equipments, chips });
+      const { data: existing } = await supabase.from('system_logs')
+        .select('id')
+        .eq('entity', 'UserEquipment')
+        .eq('entity_id', userId)
+        .limit(1)
+        .maybeSingle();
+      if (existing) {
+        await supabase.from('system_logs').update({
+          details: payload,
+          user_name: currentUser?.name || 'Sistema',
+          action_type: 'UPDATE'
+        }).eq('id', existing.id);
+      } else {
+        await supabase.from('system_logs').insert({
+          entity: 'UserEquipment',
+          entity_id: userId,
+          action_type: 'CREATE',
+          user_name: currentUser?.name || 'Sistema',
+          details: payload
+        });
+      }
+    } catch (e) { console.error('Erro ao salvar equipamentos:', e); }
+  };
+
   useEffect(() => {
     fetchAuxData();
-    if (id) loadUser();
-    else {
+    if (id) {
+      loadUser();
+      loadEquipmentData(id);
+    } else {
       generateRandomPassword();
       if (isClientUser && userType === 'client') {
         setFormData(prev => ({ ...prev, clientId: currentUserClientId }));
@@ -170,9 +251,9 @@ const UserForm: React.FC<UserFormProps> = ({ onBack, userType, id }) => {
           if (userType === 'client' && isClientUser) {
               payload.permissions = selectedPermissions;
           }
-
           if (id) {
               await supabase.from('system_users').update(payload).eq('id', id);
+              if (userType === 'internal') await saveEquipmentData(id);
               await logAction('UPDATE', 'User', id, `Usuário atualizado: ${payload.name}`);
               showNotification('Sucesso', 'Usuário atualizado.', 'success');
           } else {
@@ -180,6 +261,9 @@ const UserForm: React.FC<UserFormProps> = ({ onBack, userType, id }) => {
               if (error) throw error;
               if (data && data[0]) {
                   await logAction('CREATE', 'User', data[0].id, `Novo usuário: ${payload.name}`);
+                  if (userType === 'internal' && (equipments.length > 0 || chips.length > 0)) {
+                    await saveEquipmentData(data[0].id);
+                  }
               }
               showNotification('Sucesso', 'Usuário criado com sucesso.', 'success');
               setCreatedCredentials({
@@ -215,6 +299,64 @@ const UserForm: React.FC<UserFormProps> = ({ onBack, userType, id }) => {
       } finally {
           setIsSaving(false);
       }
+  };
+
+  const addEquipment = () => {
+    setEquipments(prev => [...prev, {
+      id: crypto.randomUUID(),
+      type: 'notebook',
+      brand: '',
+      model: '',
+      serial_number: '',
+      patrimony_id: '',
+      photo_url: '',
+      notes: ''
+    }]);
+  };
+
+  const updateEquipment = (eqId: string, field: keyof EquipmentItem, value: string) => {
+    setEquipments(prev => prev.map(e => e.id === eqId ? { ...e, [field]: value } : e));
+  };
+
+  const removeEquipment = (eqId: string) => {
+    if (!confirm('Remover este equipamento?')) return;
+    setEquipments(prev => prev.filter(e => e.id !== eqId));
+  };
+
+  const handlePhotoUpload = async (eqId: string, file: File) => {
+    setUploadingPhoto(eqId);
+    try {
+      const ext = file.name.split('.').pop();
+      const path = `equipment/${eqId}-${Date.now()}.${ext}`;
+      const { error } = await supabase.storage.from('mission-evidence').upload(path, file, { upsert: true });
+      if (error) throw error;
+      const { data: urlData } = supabase.storage.from('mission-evidence').getPublicUrl(path);
+      updateEquipment(eqId, 'photo_url', urlData.publicUrl);
+    } catch (e: any) {
+      showNotification('Erro', 'Erro ao enviar foto: ' + e.message, 'error');
+    } finally {
+      setUploadingPhoto(null);
+    }
+  };
+
+  const addChip = () => {
+    setChips(prev => [...prev, {
+      id: crypto.randomUUID(),
+      phone_number: '',
+      operator: '',
+      iccid: '',
+      plan: '',
+      notes: ''
+    }]);
+  };
+
+  const updateChip = (chipId: string, field: keyof ChipItem, value: string) => {
+    setChips(prev => prev.map(c => c.id === chipId ? { ...c, [field]: value } : c));
+  };
+
+  const removeChip = (chipId: string) => {
+    if (!confirm('Remover este chip?')) return;
+    setChips(prev => prev.filter(c => c.id !== chipId));
   };
 
   if (isLoading) return <div className="flex justify-center p-10"><Loader2 className="animate-spin text-red-600"/></div>;
@@ -361,6 +503,163 @@ const UserForm: React.FC<UserFormProps> = ({ onBack, userType, id }) => {
                   </div>
               )}
 
+              {userType === 'internal' && (
+                <div className="space-y-6">
+                  <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 animate-in fade-in">
+                    <div className="flex items-center justify-between mb-4">
+                      <div className="flex items-center gap-2">
+                        <Monitor size={18} className="text-slate-700" />
+                        <h4 className="font-bold text-xs text-slate-800 uppercase tracking-wider">Equipamentos</h4>
+                        <span className="text-[9px] font-bold bg-slate-200 text-slate-600 px-1.5 py-0.5 rounded">{equipments.length}</span>
+                      </div>
+                      <button type="button" onClick={addEquipment} className="flex items-center gap-1 px-3 py-1.5 bg-slate-700 text-white rounded-lg text-[10px] font-bold uppercase hover:bg-slate-800 transition-colors" data-testid="button-add-equipment">
+                        <Plus size={12} /> Adicionar
+                      </button>
+                    </div>
+
+                    {equipments.length === 0 && (
+                      <p className="text-xs text-slate-400 text-center py-4">Nenhum equipamento cadastrado</p>
+                    )}
+
+                    <div className="space-y-4">
+                      {equipments.map((eq, idx) => (
+                        <div key={eq.id} className="bg-white rounded-lg border border-slate-200 p-4 space-y-3" data-testid={`equipment-card-${idx}`}>
+                          <div className="flex items-center justify-between">
+                            <span className="text-[10px] font-bold text-slate-400 uppercase">Equipamento #{idx + 1}</span>
+                            <button type="button" onClick={() => removeEquipment(eq.id)} className="p-1 text-red-400 hover:text-red-600 hover:bg-red-50 rounded" data-testid={`button-remove-equipment-${idx}`}>
+                              <Trash2 size={14} />
+                            </button>
+                          </div>
+
+                          <div className="grid grid-cols-2 gap-3">
+                            <div>
+                              <label className="text-[10px] font-bold text-gray-500 uppercase mb-1 block">Tipo</label>
+                              <select className={SELECT_CLASS} value={eq.type} onChange={e => updateEquipment(eq.id, 'type', e.target.value)} data-testid={`select-equipment-type-${idx}`}>
+                                {EQUIPMENT_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
+                              </select>
+                            </div>
+                            <div>
+                              <label className="text-[10px] font-bold text-gray-500 uppercase mb-1 block">Nº Patrimônio</label>
+                              <input className={INPUT_CLASS} placeholder="PAT-001" value={eq.patrimony_id} onChange={e => updateEquipment(eq.id, 'patrimony_id', e.target.value)} data-testid={`input-equipment-patrimony-${idx}`} />
+                            </div>
+                          </div>
+
+                          <div className="grid grid-cols-2 gap-3">
+                            <div>
+                              <label className="text-[10px] font-bold text-gray-500 uppercase mb-1 block">Marca</label>
+                              <input className={INPUT_CLASS} placeholder="Dell, Lenovo..." value={eq.brand} onChange={e => updateEquipment(eq.id, 'brand', e.target.value)} data-testid={`input-equipment-brand-${idx}`} />
+                            </div>
+                            <div>
+                              <label className="text-[10px] font-bold text-gray-500 uppercase mb-1 block">Modelo</label>
+                              <input className={INPUT_CLASS} placeholder="Inspiron 15..." value={eq.model} onChange={e => updateEquipment(eq.id, 'model', e.target.value)} data-testid={`input-equipment-model-${idx}`} />
+                            </div>
+                          </div>
+
+                          <div>
+                            <label className="text-[10px] font-bold text-gray-500 uppercase mb-1 block">Nº de Série</label>
+                            <input className={INPUT_CLASS} placeholder="SN-XXXXX" value={eq.serial_number} onChange={e => updateEquipment(eq.id, 'serial_number', e.target.value)} data-testid={`input-equipment-serial-${idx}`} />
+                          </div>
+
+                          <div>
+                            <label className="text-[10px] font-bold text-gray-500 uppercase mb-1 block">Observações</label>
+                            <input className={INPUT_CLASS} placeholder="Detalhes adicionais..." value={eq.notes} onChange={e => updateEquipment(eq.id, 'notes', e.target.value)} data-testid={`input-equipment-notes-${idx}`} />
+                          </div>
+
+                          <div>
+                            <label className="text-[10px] font-bold text-gray-500 uppercase mb-1 block">Foto do Equipamento</label>
+                            <div className="flex items-center gap-3">
+                              {eq.photo_url ? (
+                                <div className="relative group">
+                                  <img src={eq.photo_url} alt="Equipamento" className="w-20 h-20 object-cover rounded-lg border border-slate-200 cursor-pointer" onClick={() => setPhotoPreview(eq.photo_url)} data-testid={`img-equipment-photo-${idx}`} />
+                                  <button type="button" onClick={() => updateEquipment(eq.id, 'photo_url', '')} className="absolute -top-1 -right-1 p-0.5 bg-red-500 text-white rounded-full opacity-0 group-hover:opacity-100 transition-opacity">
+                                    <X size={10} />
+                                  </button>
+                                </div>
+                              ) : (
+                                <div className="w-20 h-20 bg-slate-100 border-2 border-dashed border-slate-300 rounded-lg flex items-center justify-center">
+                                  <ImageIcon size={20} className="text-slate-300" />
+                                </div>
+                              )}
+                              <label className="flex items-center gap-1.5 px-3 py-2 bg-slate-100 border border-slate-200 rounded-lg text-[10px] font-bold text-slate-600 uppercase hover:bg-slate-200 cursor-pointer transition-colors" data-testid={`button-upload-photo-${idx}`}>
+                                {uploadingPhoto === eq.id ? <Loader2 size={12} className="animate-spin" /> : <Camera size={12} />}
+                                {uploadingPhoto === eq.id ? 'Enviando...' : 'Enviar Foto'}
+                                <input type="file" accept="image/*" className="hidden" onChange={e => { if (e.target.files?.[0]) handlePhotoUpload(eq.id, e.target.files[0]); }} />
+                              </label>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="bg-emerald-50 p-4 rounded-xl border border-emerald-200 animate-in fade-in">
+                    <div className="flex items-center justify-between mb-4">
+                      <div className="flex items-center gap-2">
+                        <Smartphone size={18} className="text-emerald-700" />
+                        <h4 className="font-bold text-xs text-emerald-800 uppercase tracking-wider">Chips / Linhas</h4>
+                        <span className="text-[9px] font-bold bg-emerald-200 text-emerald-600 px-1.5 py-0.5 rounded">{chips.length}</span>
+                      </div>
+                      <button type="button" onClick={addChip} className="flex items-center gap-1 px-3 py-1.5 bg-emerald-700 text-white rounded-lg text-[10px] font-bold uppercase hover:bg-emerald-800 transition-colors" data-testid="button-add-chip">
+                        <Plus size={12} /> Adicionar
+                      </button>
+                    </div>
+
+                    {chips.length === 0 && (
+                      <p className="text-xs text-emerald-400 text-center py-4">Nenhum chip cadastrado</p>
+                    )}
+
+                    <div className="space-y-4">
+                      {chips.map((chip, idx) => (
+                        <div key={chip.id} className="bg-white rounded-lg border border-emerald-200 p-4 space-y-3" data-testid={`chip-card-${idx}`}>
+                          <div className="flex items-center justify-between">
+                            <span className="text-[10px] font-bold text-emerald-400 uppercase">Chip #{idx + 1}</span>
+                            <button type="button" onClick={() => removeChip(chip.id)} className="p-1 text-red-400 hover:text-red-600 hover:bg-red-50 rounded" data-testid={`button-remove-chip-${idx}`}>
+                              <Trash2 size={14} />
+                            </button>
+                          </div>
+
+                          <div className="grid grid-cols-2 gap-3">
+                            <div>
+                              <label className="text-[10px] font-bold text-gray-500 uppercase mb-1 block">Número da Linha</label>
+                              <div className="relative">
+                                <input className={INPUT_CLASS} placeholder="(11) 99999-9999" value={chip.phone_number} onChange={e => updateChip(chip.id, 'phone_number', e.target.value)} data-testid={`input-chip-phone-${idx}`} />
+                                <Smartphone size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+                              </div>
+                            </div>
+                            <div>
+                              <label className="text-[10px] font-bold text-gray-500 uppercase mb-1 block">Operadora</label>
+                              <select className={SELECT_CLASS} value={chip.operator} onChange={e => updateChip(chip.id, 'operator', e.target.value)} data-testid={`select-chip-operator-${idx}`}>
+                                <option value="">Selecione...</option>
+                                {OPERATORS.map(op => <option key={op} value={op}>{op}</option>)}
+                              </select>
+                            </div>
+                          </div>
+
+                          <div className="grid grid-cols-2 gap-3">
+                            <div>
+                              <label className="text-[10px] font-bold text-gray-500 uppercase mb-1 block">ICCID do Chip</label>
+                              <div className="relative">
+                                <input className={INPUT_CLASS} placeholder="8955..." value={chip.iccid} onChange={e => updateChip(chip.id, 'iccid', e.target.value)} data-testid={`input-chip-iccid-${idx}`} />
+                                <Wifi size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+                              </div>
+                            </div>
+                            <div>
+                              <label className="text-[10px] font-bold text-gray-500 uppercase mb-1 block">Plano</label>
+                              <input className={INPUT_CLASS} placeholder="15GB, Controle..." value={chip.plan} onChange={e => updateChip(chip.id, 'plan', e.target.value)} data-testid={`input-chip-plan-${idx}`} />
+                            </div>
+                          </div>
+
+                          <div>
+                            <label className="text-[10px] font-bold text-gray-500 uppercase mb-1 block">Observações</label>
+                            <input className={INPUT_CLASS} placeholder="Detalhes adicionais..." value={chip.notes} onChange={e => updateChip(chip.id, 'notes', e.target.value)} data-testid={`input-chip-notes-${idx}`} />
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              )}
+
               <div className="pt-4 border-t border-gray-100">
                   <div className="flex justify-between items-end mb-2">
                       <label className={LABEL_CLASS}>Senha de Acesso</label>
@@ -505,6 +804,17 @@ _Grupo TMSEG — Gestão Operacional_`}
                   </div>
               </div>
           </div>
+      )}
+
+      {photoPreview && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4" onClick={() => setPhotoPreview(null)} data-testid="modal-photo-preview">
+          <div className="relative max-w-3xl max-h-[80vh]">
+            <img src={photoPreview} alt="Foto do equipamento" className="max-w-full max-h-[80vh] object-contain rounded-xl shadow-2xl" />
+            <button onClick={() => setPhotoPreview(null)} className="absolute -top-3 -right-3 p-1.5 bg-white rounded-full shadow-lg text-gray-600 hover:text-gray-900">
+              <X size={16} />
+            </button>
+          </div>
+        </div>
       )}
     </div>
   );
