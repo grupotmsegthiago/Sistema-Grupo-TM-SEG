@@ -307,29 +307,41 @@ const UserForm: React.FC<UserFormProps> = ({ onBack, userType, id }) => {
       }
   };
 
-  const generatePatrimonyId = (existing: EquipmentItem[]) => {
+  const addEquipment = async () => {
     let maxNum = 0;
-    existing.forEach(eq => {
+    equipments.forEach(eq => {
       const match = eq.patrimony_id.match(/PAT-(\d+)/i);
       if (match) maxNum = Math.max(maxNum, parseInt(match[1]));
     });
-    return `PAT-${String(maxNum + 1).padStart(4, '0')}`;
-  };
 
-  const addEquipment = () => {
-    setEquipments(prev => {
-      const newPatrimony = generatePatrimonyId(prev);
-      return [...prev, {
-        id: crypto.randomUUID(),
-        type: 'notebook',
-        brand: '',
-        model: '',
-        serial_number: '',
-        patrimony_id: newPatrimony,
-        photo_urls: [],
-        notes: ''
-      }];
-    });
+    try {
+      const { data: allLogs } = await supabase.from('system_logs')
+        .select('details')
+        .eq('entity', 'UserEquipment');
+      if (allLogs) {
+        allLogs.forEach(log => {
+          try {
+            const parsed = JSON.parse(log.details);
+            (parsed.equipments || []).forEach((eq: any) => {
+              const match = (eq.patrimony_id || '').match(/PAT-(\d+)/i);
+              if (match) maxNum = Math.max(maxNum, parseInt(match[1]));
+            });
+          } catch {}
+        });
+      }
+    } catch {}
+
+    const newPatrimony = `PAT-${String(maxNum + 1).padStart(4, '0')}`;
+    setEquipments(prev => [...prev, {
+      id: crypto.randomUUID(),
+      type: 'notebook',
+      brand: '',
+      model: '',
+      serial_number: '',
+      patrimony_id: newPatrimony,
+      photo_urls: [],
+      notes: ''
+    }]);
   };
 
   const updateEquipment = (eqId: string, field: keyof EquipmentItem, value: any) => {
