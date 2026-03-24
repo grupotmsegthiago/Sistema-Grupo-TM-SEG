@@ -258,25 +258,48 @@ const FinancialTransactionList: React.FC = () => {
         link.click();
     };
 
+    const periodFilteredTransactions = useMemo(() => {
+        let list = [...transactions];
+        const now = new Date();
+        const todayStr = now.toISOString().split('T')[0];
+        if (viewPeriod === 'DAY') {
+            list = list.filter(t => t.due_date.split('T')[0] === todayStr);
+        } else if (viewPeriod === 'WEEK') {
+            const day = now.getDay();
+            const sunday = new Date(now);
+            sunday.setDate(now.getDate() - day);
+            const saturday = new Date(sunday);
+            saturday.setDate(sunday.getDate() + 6);
+            const weekStart = sunday.toISOString().split('T')[0];
+            const weekEnd = saturday.toISOString().split('T')[0];
+            list = list.filter(t => { const d = t.due_date.split('T')[0]; return d >= weekStart && d <= weekEnd; });
+        } else if (viewPeriod === 'MONTH') {
+            list = list.filter(t => { const d = new Date(t.due_date); return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear(); });
+        } else if (viewPeriod === 'CUSTOM') {
+            list = list.filter(t => { const d = t.due_date.split('T')[0]; return d >= customStartDate && d <= customEndDate; });
+        }
+        return list;
+    }, [transactions, viewPeriod, customStartDate, customEndDate]);
+
     const summaryPagar = useMemo(() => {
-        const expenses = transactions.filter(t => t.type === 'EXPENSE');
+        const expenses = periodFilteredTransactions.filter(t => t.type === 'EXPENSE');
         return { total: expenses.reduce((a, t) => a + t.amount, 0), paid: expenses.filter(t => t.status === 'PAID').reduce((a, t) => a + t.amount, 0), pending: expenses.filter(t => t.status === 'PENDING').reduce((a, t) => a + t.amount, 0), count: expenses.length, paidCount: expenses.filter(t => t.status === 'PAID').length };
-    }, [transactions]);
+    }, [periodFilteredTransactions]);
 
     const summaryReceber = useMemo(() => {
-        const incomes = transactions.filter(t => t.type === 'INCOME');
+        const incomes = periodFilteredTransactions.filter(t => t.type === 'INCOME');
         return { total: incomes.reduce((a, t) => a + t.amount, 0), paid: incomes.filter(t => t.status === 'PAID').reduce((a, t) => a + t.amount, 0), pending: incomes.filter(t => t.status === 'PENDING').reduce((a, t) => a + t.amount, 0), count: incomes.length, paidCount: incomes.filter(t => t.status === 'PAID').length };
-    }, [transactions]);
+    }, [periodFilteredTransactions]);
 
     const overduePagar = useMemo(() => {
         const today = new Date().toISOString().split('T')[0];
-        return transactions.filter(t => t.type === 'EXPENSE' && t.status === 'PENDING' && t.due_date.split('T')[0] < today);
-    }, [transactions]);
+        return periodFilteredTransactions.filter(t => t.type === 'EXPENSE' && t.status === 'PENDING' && t.due_date.split('T')[0] < today);
+    }, [periodFilteredTransactions]);
 
     const overdueReceber = useMemo(() => {
         const today = new Date().toISOString().split('T')[0];
-        return transactions.filter(t => t.type === 'INCOME' && t.status === 'PENDING' && t.due_date.split('T')[0] < today);
-    }, [transactions]);
+        return periodFilteredTransactions.filter(t => t.type === 'INCOME' && t.status === 'PENDING' && t.due_date.split('T')[0] < today);
+    }, [periodFilteredTransactions]);
 
     const renderFilters = () => (
         <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-200 grid grid-cols-1 lg:grid-cols-12 gap-4 items-end no-print">
@@ -401,7 +424,7 @@ const FinancialTransactionList: React.FC = () => {
                 const summary = isPagar ? summaryPagar : summaryReceber;
                 return (
                     <>
-                        <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest no-print">Visão Geral (Todos os Registros)</p>
+                        <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest no-print">Visão Geral ({viewPeriod === 'DAY' ? 'Hoje' : viewPeriod === 'WEEK' ? 'Semana Atual' : viewPeriod === 'MONTH' ? 'Mês Atual' : viewPeriod === 'CUSTOM' ? 'Período Personalizado' : 'Todos os Registros'})</p>
                         <div className="grid grid-cols-1 md:grid-cols-4 gap-4 no-print">
                             <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm flex items-center gap-3">
                                 <div className={`p-2.5 rounded-full ${isPagar ? 'bg-red-50 text-red-600' : 'bg-green-50 text-green-600'}`}>
