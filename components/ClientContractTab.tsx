@@ -350,7 +350,7 @@ const ClientContractTab: React.FC<Props> = ({
     });
 
     addSpace(10);
-    addText(`São Paulo, ${formatDateExtended(contract.contract_date)}`, 10, 'normal', 'center');
+    addText(`São Paulo, ${formatDateExtended(contract.valid_from || contract.contract_date)}`, 10, 'normal', 'center');
     addSpace(20);
 
     addText('__________________________________', 10, 'normal', 'center');
@@ -472,8 +472,9 @@ const ClientContractTab: React.FC<Props> = ({
                 </select>
               </div>
               <div>
-                <label className={LABEL}>Vigência Início</label>
+                <label className={LABEL}>Data Início do Contrato</label>
                 <input type="date" value={formState.valid_from} onChange={e => setFormState(p => ({ ...p, valid_from: e.target.value }))} className={INPUT} data-testid="input-valid-from" />
+                <span className="text-[9px] text-gray-400 mt-0.5 block">Data que constará no PDF (aceita retroativa)</span>
               </div>
               <div>
                 <label className={LABEL}>Vigência Fim (opcional)</label>
