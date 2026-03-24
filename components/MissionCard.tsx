@@ -4,7 +4,7 @@ import { Mission, MissionStatus, MissionLog, ClientPriceTable, ProviderCostTable
 import { supabase } from '../lib/supabase';
 import { 
   Truck, User, Phone, EyeOff, ShieldCheck, UserCheck, CarFront, 
-  Map, Pencil, Eye, Check, Trash2, FileText, Clock, Building2, Navigation, Hourglass, History, Mail, MapPin, AlertOctagon, Printer, FileSearch, TrendingUp, TrendingDown, DollarSign, Layers, Calculator, Flag, Activity, Briefcase, Shield, MessageCircle, ImageOff, Image, X, Upload, Loader2, Camera, Link2
+  Map, Pencil, Eye, Check, Trash2, FileText, Clock, Building2, Navigation, Hourglass, History, Mail, MapPin, AlertOctagon, AlertTriangle, Printer, FileSearch, TrendingUp, TrendingDown, DollarSign, Layers, Calculator, Flag, Activity, Briefcase, Shield, MessageCircle, ImageOff, Image, X, Upload, Loader2, Camera, Link2
 } from 'lucide-react';
 
 const WhatsAppIcon = ({ size = 14 }: { size?: number }) => (
@@ -333,6 +333,11 @@ const MissionCardComponent: React.FC<MissionCardProps> = ({
         return storedValue;
     }, [mission.cost_value, mission.toll_value, mission.toll_value_provider, mission.billing_approved, hasBeenVerified, financials]);
 
+    const profitMargin = useMemo(() => {
+        return displayRevenue > 0 ? ((displayRevenue - displayCost) / displayRevenue) * 100 : 0;
+    }, [displayRevenue, displayCost]);
+    const isNegativeProfit = profitMargin < 0;
+
     const isActive = !isTerminal;
 
     const isPendingKm = useMemo(() => {
@@ -501,10 +506,20 @@ Qualquer dúvida, estamos a disposição.
 
     return (<>
         <div 
-          className={`group relative rounded-xl border bg-white transition-all duration-300 hover:-translate-y-1 hover:shadow-[0_20px_50px_rgba(8,_112,_184,_0.07)] shadow-sm ${
-              isRedLight ? 'border-red-200 ring-1 ring-red-100' : isImminent ? 'border-amber-200 ring-1 ring-amber-100' : 'border-gray-200 hover:border-blue-200'
+          className={`group relative rounded-xl border transition-all duration-300 hover:-translate-y-1 shadow-sm ${
+              isNegativeProfit ? 'bg-red-50 border-red-400 ring-2 ring-red-300 shadow-red-200 shadow-md hover:shadow-[0_20px_50px_rgba(220,38,38,0.15)]' : 'bg-white hover:shadow-[0_20px_50px_rgba(8,_112,_184,_0.07)]'
+          } ${
+              !isNegativeProfit && (isRedLight ? 'border-red-200 ring-1 ring-red-100' : isImminent ? 'border-amber-200 ring-1 ring-amber-100' : 'border-gray-200 hover:border-blue-200')
           }`}
         >
+            {isNegativeProfit && (
+                <div className="relative overflow-hidden rounded-t-xl" style={{ background: 'linear-gradient(135deg, #dc2626 0%, #b91c1c 50%, #991b1b 100%)', boxShadow: 'inset 0 2px 4px rgba(255,255,255,0.2), 0 4px 12px rgba(220,38,38,0.3)' }}>
+                    <div className="flex items-center justify-center gap-2 py-1.5 px-3 relative z-10">
+                        <AlertTriangle size={13} className="text-white drop-shadow-md animate-pulse" strokeWidth={3} />
+                        <span className="text-[10px] font-black text-white uppercase tracking-widest drop-shadow-md">PREJUÍZO — {profitMargin.toFixed(1)}%</span>
+                    </div>
+                </div>
+            )}
             {isExtraHourActive && (
                 <div className="relative overflow-hidden rounded-t-xl" style={{ background: 'linear-gradient(135deg, #f59e0b 0%, #d97706 50%, #b45309 100%)', boxShadow: 'inset 0 2px 4px rgba(255,255,255,0.3), inset 0 -2px 4px rgba(0,0,0,0.2), 0 4px 12px rgba(245,158,11,0.4), 0 2px 4px rgba(0,0,0,0.15)' }}>
                     <div className="flex items-center justify-center gap-2 py-2 px-3 relative z-10">
