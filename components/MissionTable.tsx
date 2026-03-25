@@ -1198,29 +1198,29 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
                       </div>
                     </div>
                     <div className="overflow-x-auto max-h-[70vh] overflow-y-auto">
-                      <table className="w-full text-[10px] border-collapse min-w-[1200px]">
+                      <table className="w-full text-xs border-collapse min-w-[1400px]">
                         <thead className="sticky top-0 z-10">
-                          <tr className="bg-gray-900 text-white">
-                            <th className="px-2 py-2 text-left font-black border-r border-gray-700 w-[30px]">#</th>
-                            <th className="px-2 py-2 text-left font-black border-r border-gray-700">OS</th>
-                            <th className="px-2 py-2 text-center font-black border-r border-gray-700">STATUS</th>
-                            <th className="px-2 py-2 text-left font-black border-r border-gray-700">CLIENTE</th>
-                            <th className="px-2 py-2 text-left font-black border-r border-gray-700">VEÍC. ESCOLTADO</th>
-                            <th className="px-2 py-2 text-left font-black border-r border-gray-700">FORNECEDOR</th>
-                            <th className="px-2 py-2 text-left font-black border-r border-gray-700">VIATURA</th>
-                            <th className="px-2 py-2 text-left font-black border-r border-gray-700">AGENTES</th>
-                            <th className="px-2 py-2 text-left font-black border-r border-gray-700">DATA INICIAL</th>
-                            <th className="px-2 py-2 text-left font-black border-r border-gray-700">HORA INICIAL</th>
-                            <th className="px-2 py-2 text-left font-black border-r border-gray-700">DATA FINAL</th>
-                            <th className="px-2 py-2 text-left font-black border-r border-gray-700">HORA FINAL</th>
+                          <tr className="bg-gray-900 text-white text-[11px]">
+                            <th className="px-3 py-2.5 text-left font-black border-r border-gray-700 w-[35px]">#</th>
+                            <th className="px-3 py-2.5 text-left font-black border-r border-gray-700">OS</th>
+                            <th className="px-3 py-2.5 text-center font-black border-r border-gray-700">STATUS</th>
+                            <th className="px-3 py-2.5 text-left font-black border-r border-gray-700">CLIENTE</th>
+                            <th className="px-3 py-2.5 text-left font-black border-r border-gray-700">VEÍC. ESCOLTADO</th>
+                            <th className="px-3 py-2.5 text-left font-black border-r border-gray-700">FORNECEDOR</th>
+                            <th className="px-3 py-2.5 text-left font-black border-r border-gray-700">VIATURA</th>
+                            <th className="px-3 py-2.5 text-left font-black border-r border-gray-700">AGENTES</th>
+                            <th className="px-3 py-2.5 text-left font-black border-r border-gray-700">DATA INICIAL</th>
+                            <th className="px-3 py-2.5 text-left font-black border-r border-gray-700">HORA INICIAL</th>
+                            <th className="px-3 py-2.5 text-left font-black border-r border-gray-700">DATA FINAL</th>
+                            <th className="px-3 py-2.5 text-left font-black border-r border-gray-700">HORA FINAL</th>
                             {canSeeFinancials && (<>
-                            <th className="px-2 py-2 text-right font-black border-r border-gray-700">RECEITA</th>
-                            <th className="px-2 py-2 text-right font-black border-r border-gray-700">CUSTO</th>
-                            <th className="px-2 py-2 text-right font-black border-r border-gray-700">PEDÁGIO</th>
-                            <th className="px-2 py-2 text-right font-black border-r border-gray-700">RESULTADO</th>
-                            <th className="px-2 py-2 text-right font-black border-r border-gray-700">% LUCRO</th>
+                            <th className="px-3 py-2.5 text-right font-black border-r border-gray-700">RECEITA</th>
+                            <th className="px-3 py-2.5 text-right font-black border-r border-gray-700">CUSTO</th>
+                            <th className="px-3 py-2.5 text-right font-black border-r border-gray-700">PEDÁGIO</th>
+                            <th className="px-3 py-2.5 text-right font-black border-r border-gray-700">RESULTADO</th>
+                            <th className="px-3 py-2.5 text-right font-black border-r border-gray-700">% LUCRO</th>
                             </>)}
-                            <th className="px-2 py-2 text-center font-black">FATURAMENTO</th>
+                            <th className="px-3 py-2.5 text-center font-black">FATURAMENTO</th>
                           </tr>
                         </thead>
                         <tbody>
@@ -1236,41 +1236,41 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
                             
                             return (
                               <tr key={m.id} className={`${rowBg} hover:bg-yellow-50 border-b border-gray-200 transition-colors`} data-testid={`timeline-row-${m.id}`}>
-                                <td className="px-2 py-1.5 font-black text-gray-500 border-r border-gray-100">{idx + 1}</td>
-                                <td className="px-2 py-1.5 font-black text-gray-900 border-r border-gray-100 whitespace-nowrap">
+                                <td className="px-3 py-2 font-black text-gray-500 border-r border-gray-100">{idx + 1}</td>
+                                <td className="px-3 py-2 font-black text-gray-900 border-r border-gray-100 whitespace-nowrap">
                                   <span>{m.id}</span>
-                                  {m.mission_type && <span className={`ml-1 text-[8px] font-bold px-1 py-0.5 rounded ${m.mission_type === 'Velada' ? 'bg-purple-100 text-purple-700' : m.mission_type === 'Pronta Resposta' ? 'bg-orange-100 text-orange-700' : 'bg-blue-100 text-blue-700'}`}>{m.mission_type === 'Caracterizada' ? 'CARACT' : m.mission_type === 'Velada' ? 'VELADA' : 'PR'}</span>}
-                                  {m.is_same_os && <span className="ml-1 text-[8px] font-black bg-slate-200 text-slate-600 px-1 py-0.5 rounded">MESMA OS</span>}
+                                  {m.mission_type && <span className={`ml-1 text-[9px] font-bold px-1.5 py-0.5 rounded ${m.mission_type === 'Velada' ? 'bg-purple-100 text-purple-700' : m.mission_type === 'Pronta Resposta' ? 'bg-orange-100 text-orange-700' : 'bg-blue-100 text-blue-700'}`}>{m.mission_type === 'Caracterizada' ? 'CARACT' : m.mission_type === 'Velada' ? 'VELADA' : 'PR'}</span>}
+                                  {m.is_same_os && <span className="ml-1 text-[9px] font-black bg-slate-200 text-slate-600 px-1.5 py-0.5 rounded">MESMA OS</span>}
                                 </td>
-                                <td className="px-2 py-1.5 border-r border-gray-100 text-center whitespace-nowrap"><span className={`text-[9px] font-black px-2 py-0.5 rounded-full ${statusBg(m.status)}`}>{m.status}</span></td>
-                                <td className="px-2 py-1.5 border-r border-gray-100 font-bold text-gray-800 max-w-[140px] truncate">{m.client || '-'}</td>
-                                <td className="px-2 py-1.5 border-r border-gray-100 font-mono text-gray-700 whitespace-nowrap">{placaEscoltado}</td>
-                                <td className="px-2 py-1.5 border-r border-gray-100 text-gray-700 max-w-[120px] truncate">{m.provider || '-'}</td>
-                                <td className="px-2 py-1.5 border-r border-gray-100 font-mono text-gray-700 whitespace-nowrap">{m.vehicleId || '-'}</td>
-                                <td className="px-2 py-1.5 border-r border-gray-100 text-gray-600 max-w-[160px] truncate" title={agentes}>{agentes}</td>
-                                <td className="px-2 py-1.5 border-r border-gray-100 whitespace-nowrap">{fmtDate(m.created_at)}</td>
-                                <td className="px-2 py-1.5 border-r border-gray-100 whitespace-nowrap">{m.startTime ? fmtTime(m.startTime) : '-'}</td>
-                                <td className="px-2 py-1.5 border-r border-gray-100 whitespace-nowrap">{m.endTime ? fmtDate(m.endTime) : '-'}</td>
-                                <td className="px-2 py-1.5 border-r border-gray-100 whitespace-nowrap">{m.endTime ? fmtTime(m.endTime) : '-'}</td>
+                                <td className="px-3 py-2 border-r border-gray-100 text-center whitespace-nowrap"><span className={`text-[10px] font-black px-2.5 py-1 rounded-full ${statusBg(m.status)}`}>{m.status}</span></td>
+                                <td className="px-3 py-2 border-r border-gray-100 font-bold text-gray-800 max-w-[160px] truncate">{m.client || '-'}</td>
+                                <td className="px-3 py-2 border-r border-gray-100 font-mono text-gray-700 whitespace-nowrap">{placaEscoltado}</td>
+                                <td className="px-3 py-2 border-r border-gray-100 text-gray-700 max-w-[140px] truncate">{m.provider || '-'}</td>
+                                <td className="px-3 py-2 border-r border-gray-100 font-mono text-gray-700 whitespace-nowrap">{m.vehicleId || '-'}</td>
+                                <td className="px-3 py-2 border-r border-gray-100 text-gray-600 max-w-[180px] truncate" title={agentes}>{agentes}</td>
+                                <td className="px-3 py-2 border-r border-gray-100 whitespace-nowrap">{fmtDate(m.created_at)}</td>
+                                <td className="px-3 py-2 border-r border-gray-100 whitespace-nowrap">{m.startTime ? fmtTime(m.startTime) : '-'}</td>
+                                <td className="px-3 py-2 border-r border-gray-100 whitespace-nowrap">{m.endTime ? fmtDate(m.endTime) : '-'}</td>
+                                <td className="px-3 py-2 border-r border-gray-100 whitespace-nowrap">{m.endTime ? fmtTime(m.endTime) : '-'}</td>
                                 {canSeeFinancials && (<>
-                                <td className="px-2 py-1.5 border-r border-gray-100 text-right font-bold text-green-700 whitespace-nowrap">{rev > 0 ? fmtMoney(rev) : '-'}</td>
-                                <td className="px-2 py-1.5 border-r border-gray-100 text-right font-bold text-blue-700 whitespace-nowrap">{cost > 0 ? fmtMoney(cost) : '-'}</td>
-                                <td className="px-2 py-1.5 border-r border-gray-100 text-right text-orange-600 whitespace-nowrap">{toll > 0 ? fmtMoney(toll) : '-'}</td>
-                                <td className={`px-2 py-1.5 border-r border-gray-100 text-right font-black whitespace-nowrap ${resultado >= 0 ? 'text-emerald-700' : 'text-red-600 bg-red-50'}`}>{rev > 0 || cost > 0 ? fmtMoney(resultado) : '-'}</td>
-                                <td className={`px-2 py-1.5 border-r border-gray-100 text-right font-black whitespace-nowrap ${lucroPerc >= 0 ? 'text-emerald-700' : 'text-red-600'}`}>{rev > 0 ? `${lucroPerc.toFixed(1)}%` : '-'}</td>
+                                <td className="px-3 py-2 border-r border-gray-100 text-right font-bold text-green-700 whitespace-nowrap">{rev > 0 ? fmtMoney(rev) : '-'}</td>
+                                <td className="px-3 py-2 border-r border-gray-100 text-right font-bold text-blue-700 whitespace-nowrap">{cost > 0 ? fmtMoney(cost) : '-'}</td>
+                                <td className="px-3 py-2 border-r border-gray-100 text-right text-orange-600 whitespace-nowrap">{toll > 0 ? fmtMoney(toll) : '-'}</td>
+                                <td className={`px-3 py-2 border-r border-gray-100 text-right font-black whitespace-nowrap ${resultado >= 0 ? 'text-emerald-700' : 'text-red-600 bg-red-50'}`}>{rev > 0 || cost > 0 ? fmtMoney(resultado) : '-'}</td>
+                                <td className={`px-3 py-2 border-r border-gray-100 text-right font-black whitespace-nowrap ${lucroPerc >= 0 ? 'text-emerald-700' : 'text-red-600'}`}>{rev > 0 ? `${lucroPerc.toFixed(1)}%` : '-'}</td>
                                 </>)}
-                                <td className="px-2 py-1.5 text-center">
+                                <td className="px-3 py-2 text-center">
                                   <button
                                     data-testid={`btn-financial-${m.id}`}
                                     onClick={() => { setMissionForFinancials(m); setIsFinancialModalOpen(true); }}
-                                    className={`inline-flex items-center gap-1 px-2 py-1 rounded text-[9px] font-bold transition-colors ${
+                                    className={`inline-flex items-center gap-1 px-2.5 py-1 rounded text-[10px] font-bold transition-colors ${
                                       m.billing_approved 
                                         ? 'bg-emerald-100 text-emerald-700 hover:bg-emerald-200' 
                                         : 'bg-amber-100 text-amber-700 hover:bg-amber-200'
                                     }`}
                                     title="Conferência e Aprovação"
                                   >
-                                    <ClipboardCheck size={11} />
+                                    <ClipboardCheck size={12} />
                                     {m.billing_approved ? 'APROVADO' : 'CONFERIR'}
                                   </button>
                                 </td>
@@ -1280,14 +1280,14 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
                         </tbody>
                         {missions.length > 0 && canSeeFinancials && (
                           <tfoot>
-                            <tr className="bg-gray-800 text-white font-black">
-                              <td colSpan={12} className="px-2 py-2 text-right border-r border-gray-600">TOTAIS →</td>
-                              <td className="px-2 py-2 text-right border-r border-gray-600 text-green-300">{fmtMoney(totalRev)}</td>
-                              <td className="px-2 py-2 text-right border-r border-gray-600 text-blue-300">{fmtMoney(totalCost)}</td>
-                              <td className="px-2 py-2 text-right border-r border-gray-600 text-orange-300">{fmtMoney(totalToll)}</td>
-                              <td className="px-2 py-2 text-right border-r border-gray-600 text-emerald-300">{fmtMoney(totalRev - totalCost - totalToll)}</td>
-                              <td className={`px-2 py-2 text-right border-r border-gray-600 ${totalRev > 0 ? (((totalRev - totalCost - totalToll) / totalRev * 100) >= 0 ? 'text-emerald-300' : 'text-red-300') : ''}`}>{totalRev > 0 ? `${((totalRev - totalCost - totalToll) / totalRev * 100).toFixed(1)}%` : '-'}</td>
-                              <td className="px-2 py-2"></td>
+                            <tr className="bg-gray-800 text-white font-black text-xs">
+                              <td colSpan={12} className="px-3 py-2.5 text-right border-r border-gray-600">TOTAIS →</td>
+                              <td className="px-3 py-2.5 text-right border-r border-gray-600 text-green-300">{fmtMoney(totalRev)}</td>
+                              <td className="px-3 py-2.5 text-right border-r border-gray-600 text-blue-300">{fmtMoney(totalCost)}</td>
+                              <td className="px-3 py-2.5 text-right border-r border-gray-600 text-orange-300">{fmtMoney(totalToll)}</td>
+                              <td className="px-3 py-2.5 text-right border-r border-gray-600 text-emerald-300">{fmtMoney(totalRev - totalCost - totalToll)}</td>
+                              <td className={`px-3 py-2.5 text-right border-r border-gray-600 ${totalRev > 0 ? (((totalRev - totalCost - totalToll) / totalRev * 100) >= 0 ? 'text-emerald-300' : 'text-red-300') : ''}`}>{totalRev > 0 ? `${((totalRev - totalCost - totalToll) / totalRev * 100).toFixed(1)}%` : '-'}</td>
+                              <td className="px-3 py-2.5"></td>
                             </tr>
                           </tfoot>
                         )}
