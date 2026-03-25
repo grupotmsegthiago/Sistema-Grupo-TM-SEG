@@ -2268,10 +2268,10 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                 <input 
                                     type="text" 
                                     inputMode="decimal"
-                                    className={`w-full bg-white/60 border border-blue-200 rounded-lg px-2 py-1 outline-none font-black text-3xl text-blue-900 font-mono focus:ring-2 focus:ring-blue-400 focus:border-blue-400 ${(!canEditOpsData || (mission?.verified_by && mission?.verified_at && !['diretoria', 'administrador', 'ceo'].includes(userRoleLower))) ? 'pointer-events-none opacity-70' : 'cursor-text'}`}
+                                    className={`w-full bg-white/60 border border-blue-200 rounded-lg px-2 py-1 outline-none font-black text-3xl text-blue-900 font-mono focus:ring-2 focus:ring-blue-400 focus:border-blue-400 ${(!canEditOpsData || (mission?.verified_by && mission?.verified_at && !['diretoria', 'administrador', 'ceo', 'controller'].includes(userRoleLower))) ? 'pointer-events-none opacity-70' : 'cursor-text'}`}
                                     value={costInput} 
-                                    onChange={e => { if (canEditOpsData && !(mission?.verified_by && mission?.verified_at && !['diretoria', 'administrador', 'ceo'].includes(userRoleLower))) { userManuallyEditedRef.current = true; setUseSavedValues(true); setCostInput(e.target.value); setShowCostReasonInput(true); } }}
-                                    readOnly={!canEditOpsData || !!(mission?.verified_by && mission?.verified_at && !['diretoria', 'administrador', 'ceo'].includes(userRoleLower))}
+                                    onChange={e => { if (canEditOpsData && !(mission?.verified_by && mission?.verified_at && !['diretoria', 'administrador', 'ceo', 'controller'].includes(userRoleLower))) { userManuallyEditedRef.current = true; setUseSavedValues(true); setCostInput(e.target.value); setShowCostReasonInput(true); } }}
+                                    readOnly={!canEditOpsData || !!(mission?.verified_by && mission?.verified_at && !['diretoria', 'administrador', 'ceo', 'controller'].includes(userRoleLower))}
                                     data-testid="input-cost-total"
                                 />
                             </div>
