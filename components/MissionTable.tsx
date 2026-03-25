@@ -1091,103 +1091,124 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
             </div></div>
   
           {showTimeline && (
-            <div className="p-4 border-b border-gray-200 bg-white">
+            <div className="border-b border-gray-200 bg-white">
               {(() => {
-                const missions = filteredMissions;
-                const grouped: Record<string, Mission[]> = {};
-                missions.forEach(m => {
-                  const dateKey = new Date(m.created_at).toLocaleDateString('pt-BR');
-                  if (!grouped[dateKey]) grouped[dateKey] = [];
-                  grouped[dateKey].push(m);
-                });
-                const sortedDates = Object.keys(grouped).sort((a, b) => {
-                  const [dA, mA, yA] = a.split('/').map(Number);
-                  const [dB, mB, yB] = b.split('/').map(Number);
-                  return new Date(yA, mA - 1, dA).getTime() - new Date(yB, mB - 1, dB).getTime();
-                });
-                const statusLabel = (s: string) => {
-                  if (s === MissionStatus.COMPLETED) return { text: 'Concluída', color: 'bg-emerald-100 text-emerald-700' };
-                  if (s === MissionStatus.IN_PROGRESS) return { text: 'Em Andamento', color: 'bg-blue-100 text-blue-700' };
-                  if (s === MissionStatus.PENDING) return { text: 'Pendente', color: 'bg-amber-100 text-amber-700' };
-                  if (s === MissionStatus.CANCELLED) return { text: 'Cancelada', color: 'bg-red-100 text-red-700' };
-                  return { text: s || '-', color: 'bg-gray-100 text-gray-600' };
+                const missions = [...filteredMissions].sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
+                const fmtDate = (d: string | undefined) => d ? new Date(d).toLocaleDateString('pt-BR') : '-';
+                const fmtTime = (d: string | undefined) => d ? new Date(d).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) : '-';
+                const fmtMoney = (v: number) => v ? v.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '-';
+                const extractRoute = (origin: string, dest: string) => {
+                  const getCity = (addr: string) => {
+                    if (!addr) return '?';
+                    const parts = addr.split(',');
+                    if (parts.length >= 2) { const c = parts[1]?.trim().split('-')[0]?.trim(); if (c && c.length > 2) return c; }
+                    return parts[0]?.trim().substring(0, 25) || '?';
+                  };
+                  return `${getCity(origin)} X ${getCity(dest)}`;
                 };
-                const extractCity = (addr: string) => {
-                  if (!addr) return '-';
-                  const parts = addr.split(',');
-                  if (parts.length >= 2) {
-                    const cityPart = parts[1]?.trim().split('-')[0]?.trim();
-                    if (cityPart && cityPart.length > 2) return cityPart;
-                  }
-                  return parts[0]?.trim().substring(0, 30) || '-';
+                const statusBg = (s: string) => {
+                  if (s === MissionStatus.COMPLETED) return 'bg-emerald-100 text-emerald-800';
+                  if (s === MissionStatus.IN_PROGRESS) return 'bg-blue-100 text-blue-800';
+                  if (s === MissionStatus.PENDING || s === MissionStatus.SCHEDULED || s === MissionStatus.SOLICITED) return 'bg-amber-100 text-amber-800';
+                  if (s === MissionStatus.CANCELLED || s === MissionStatus.REFUSED) return 'bg-red-100 text-red-800';
+                  return 'bg-gray-100 text-gray-700';
                 };
-                let globalCounter = 0;
+
+                const totalRev = missions.reduce((s, m) => s + (m.revenue_value || 0), 0);
+                const totalCost = missions.reduce((s, m) => s + (m.cost_value || 0), 0);
+                const totalToll = missions.reduce((s, m) => s + (m.toll_value || 0), 0);
+
                 return (
-                  <div className="space-y-4">
-                    <div className="flex items-center justify-between mb-2">
-                      <h3 className="text-lg font-black text-gray-800 flex items-center gap-2">
-                        <FileBarChart size={20} className="text-red-600" />
-                        Timeline de OS — {missions.length} missões
-                      </h3>
-                      <div className="flex gap-4 text-center">
-                        <div><p className="text-lg font-black text-emerald-600">{missions.filter(m => m.status === MissionStatus.COMPLETED).length}</p><p className="text-[9px] font-bold text-gray-400 uppercase">Concluídas</p></div>
-                        <div><p className="text-lg font-black text-blue-600">{missions.filter(m => m.status === MissionStatus.IN_PROGRESS).length}</p><p className="text-[9px] font-bold text-gray-400 uppercase">Em Andamento</p></div>
-                        <div><p className="text-lg font-black text-amber-600">{missions.filter(m => m.status === MissionStatus.PENDING).length}</p><p className="text-[9px] font-bold text-gray-400 uppercase">Pendentes</p></div>
-                        <div><p className="text-lg font-black text-red-600">{missions.filter(m => m.status === MissionStatus.CANCELLED).length}</p><p className="text-[9px] font-bold text-gray-400 uppercase">Canceladas</p></div>
+                  <div>
+                    <div className="p-3 bg-gray-50 border-b border-gray-200 flex items-center justify-between flex-wrap gap-2">
+                      <div className="flex items-center gap-3">
+                        <FileBarChart size={18} className="text-red-600" />
+                        <span className="font-black text-sm text-gray-800">RELATÓRIO DE OS — {missions.length} missões</span>
+                      </div>
+                      <div className="flex items-center gap-4 text-[10px] font-bold">
+                        <span className="text-emerald-700">Concl: {missions.filter(m => m.status === MissionStatus.COMPLETED).length}</span>
+                        <span className="text-blue-700">Andamento: {missions.filter(m => m.status === MissionStatus.IN_PROGRESS).length}</span>
+                        <span className="text-amber-700">Pend: {missions.filter(m => [MissionStatus.PENDING, MissionStatus.SCHEDULED, MissionStatus.SOLICITED].includes(m.status)).length}</span>
+                        <span className="text-red-700">Canc: {missions.filter(m => [MissionStatus.CANCELLED, MissionStatus.REFUSED].includes(m.status)).length}</span>
+                        <span className="border-l border-gray-300 pl-3 text-green-700">Receita Total: R$ {fmtMoney(totalRev)}</span>
+                        <span className="text-blue-700">Custo Total: R$ {fmtMoney(totalCost)}</span>
+                        <span className="text-orange-700">Pedágio Total: R$ {fmtMoney(totalToll)}</span>
+                        <span className={`font-black ${totalRev - totalCost - totalToll >= 0 ? 'text-emerald-700' : 'text-red-700'}`}>Resultado: R$ {fmtMoney(totalRev - totalCost - totalToll)}</span>
                       </div>
                     </div>
-                    {sortedDates.map(dateStr => {
-                      const dayMissions = grouped[dateStr];
-                      return (
-                        <div key={dateStr}>
-                          <div className="bg-gradient-to-r from-red-600 to-red-700 text-white px-5 py-2 rounded-xl shadow-md flex items-center justify-between mb-2">
-                            <div className="flex items-center gap-3"><Calendar size={16} /><span className="font-black text-sm uppercase tracking-wider">{dateStr}</span></div>
-                            <span className="bg-white/20 px-3 py-1 rounded-full text-xs font-bold">{dayMissions.length} OS</span>
-                          </div>
-                          <div className="space-y-1.5 pl-2 mb-4">
-                            {dayMissions.map((m) => {
-                              globalCounter++;
-                              const st = statusLabel(m.status);
-                              const hora = new Date(m.created_at).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
-                              const revTotal = (m.revenue_value || 0) + (m.toll_value || 0);
-                              const costTotal = (m.cost_value || 0) + (m.toll_value || 0);
-                              return (
-                                <div key={m.id} className="flex items-stretch gap-3 group" data-testid={`timeline-row-${m.id}`}>
-                                  <div className="flex flex-col items-center">
-                                    <div className="w-8 h-8 rounded-full bg-gray-800 text-white flex items-center justify-center text-[10px] font-black shrink-0">{globalCounter}</div>
-                                    <div className="w-0.5 flex-1 bg-gray-200 group-last:hidden" />
-                                  </div>
-                                  <div className="flex-1 bg-white border border-gray-200 rounded-xl p-3 hover:shadow-md transition-shadow mb-1">
-                                    <div className="flex items-center justify-between gap-2 flex-wrap">
-                                      <div className="flex items-center gap-2">
-                                        <span className="font-black text-sm text-gray-900">{m.id}</span>
-                                        <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full ${st.color}`}>{st.text}</span>
-                                        {m.is_same_os && <span className="text-[8px] font-black bg-slate-200 text-slate-600 px-1.5 py-0.5 rounded-full">MESMA OS</span>}
-                                        {m.billing_approved && <span className="text-[8px] font-black bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded-full">FATURADO</span>}
-                                        {m.mission_type && <span className="text-[8px] font-bold bg-purple-100 text-purple-700 px-1.5 py-0.5 rounded-full uppercase">{m.mission_type}</span>}
-                                      </div>
-                                      <span className="text-[10px] font-mono text-gray-400 flex items-center gap-1"><Clock size={10} /> {hora}</span>
-                                    </div>
-                                    <div className="flex flex-wrap gap-x-6 gap-y-1 mt-2 text-[10px]">
-                                      <div className="flex items-center gap-1.5"><Building2 size={11} className="text-blue-500" /><span className="font-bold text-gray-700 truncate max-w-[200px]">{m.client || '-'}</span></div>
-                                      <div className="flex items-center gap-1.5"><Briefcase size={11} className="text-indigo-500" /><span className="font-bold text-gray-600 truncate max-w-[200px]">{m.provider || 'Pendente'}</span></div>
-                                      <div className="flex items-center gap-1.5 text-gray-500"><MapPin size={11} className="text-red-400" /><span className="truncate max-w-[150px]">{extractCity(m.origin)}</span><ArrowRight size={10} /><span className="truncate max-w-[150px]">{extractCity(m.destination)}</span></div>
-                                    </div>
-                                    {(revTotal > 0 || costTotal > 0) && (
-                                      <div className="flex gap-4 mt-2 text-[10px]">
-                                        <span className="font-bold text-green-700">Receita: R$ {revTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
-                                        <span className="font-bold text-blue-700">Custo: R$ {costTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
-                                        {revTotal > 0 && costTotal > 0 && <span className={`font-black ${revTotal - costTotal >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>Margem: {((1 - costTotal / revTotal) * 100).toFixed(1)}%</span>}
-                                      </div>
-                                    )}
-                                  </div>
-                                </div>
-                              );
-                            })}
-                          </div>
-                        </div>
-                      );
-                    })}
+                    <div className="overflow-x-auto max-h-[70vh] overflow-y-auto">
+                      <table className="w-full text-[10px] border-collapse min-w-[1400px]">
+                        <thead className="sticky top-0 z-10">
+                          <tr className="bg-gray-900 text-white">
+                            <th className="px-2 py-2 text-left font-black border-r border-gray-700 w-[30px]">#</th>
+                            <th className="px-2 py-2 text-left font-black border-r border-gray-700">OS</th>
+                            <th className="px-2 py-2 text-left font-black border-r border-gray-700">DATA INICIAL</th>
+                            <th className="px-2 py-2 text-left font-black border-r border-gray-700">HORA AGEND.</th>
+                            <th className="px-2 py-2 text-left font-black border-r border-gray-700">HORA ORIGEM</th>
+                            <th className="px-2 py-2 text-left font-black border-r border-gray-700">CLIENTE</th>
+                            <th className="px-2 py-2 text-left font-black border-r border-gray-700">ROTA</th>
+                            <th className="px-2 py-2 text-left font-black border-r border-gray-700">FORNECEDOR</th>
+                            <th className="px-2 py-2 text-left font-black border-r border-gray-700">VIATURA</th>
+                            <th className="px-2 py-2 text-left font-black border-r border-gray-700">VEÍC. ESCOLTADO</th>
+                            <th className="px-2 py-2 text-left font-black border-r border-gray-700">DATA FINAL</th>
+                            <th className="px-2 py-2 text-left font-black border-r border-gray-700">HORA FINAL</th>
+                            <th className="px-2 py-2 text-right font-black border-r border-gray-700">RECEITA</th>
+                            <th className="px-2 py-2 text-right font-black border-r border-gray-700">CUSTO</th>
+                            <th className="px-2 py-2 text-right font-black border-r border-gray-700">PEDÁGIO</th>
+                            <th className="px-2 py-2 text-right font-black border-r border-gray-700">RESULTADO</th>
+                            <th className="px-2 py-2 text-left font-black">AGENTES</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {missions.map((m, idx) => {
+                            const rev = m.revenue_value || 0;
+                            const cost = m.cost_value || 0;
+                            const toll = m.toll_value || 0;
+                            const resultado = rev - cost - toll;
+                            const veicEscoltado = m.clientVehicle ? `${m.clientVehicle.plate}${m.clientVehicle.model ? ' / ' + m.clientVehicle.model : ''}` : '-';
+                            const agentes = [m.agent1, m.agent2].filter(Boolean).join(' & ') || '-';
+                            const rowBg = idx % 2 === 0 ? 'bg-white' : 'bg-gray-50';
+                            
+                            return (
+                              <tr key={m.id} className={`${rowBg} hover:bg-yellow-50 border-b border-gray-200 transition-colors`} data-testid={`timeline-row-${m.id}`}>
+                                <td className="px-2 py-1.5 font-black text-gray-500 border-r border-gray-100">{idx + 1}</td>
+                                <td className="px-2 py-1.5 font-black text-gray-900 border-r border-gray-100 whitespace-nowrap">
+                                  <span>{m.id}</span>
+                                  {m.mission_type && <span className={`ml-1 text-[8px] font-bold px-1 py-0.5 rounded ${m.mission_type === 'Velada' ? 'bg-purple-100 text-purple-700' : m.mission_type === 'Pronta Resposta' ? 'bg-orange-100 text-orange-700' : 'bg-blue-100 text-blue-700'}`}>{m.mission_type === 'Caracterizada' ? 'CARACT' : m.mission_type === 'Velada' ? 'VELADA' : 'PR'}</span>}
+                                </td>
+                                <td className="px-2 py-1.5 border-r border-gray-100 whitespace-nowrap">{fmtDate(m.created_at)}</td>
+                                <td className="px-2 py-1.5 border-r border-gray-100 whitespace-nowrap font-bold">{fmtTime(m.estimatedTime || m.startTime)}</td>
+                                <td className="px-2 py-1.5 border-r border-gray-100 whitespace-nowrap">{m.startTime ? fmtTime(m.startTime) : '-'}</td>
+                                <td className="px-2 py-1.5 border-r border-gray-100 font-bold text-gray-800 max-w-[140px] truncate">{m.client || '-'}</td>
+                                <td className="px-2 py-1.5 border-r border-gray-100 text-gray-600 max-w-[180px] truncate">{extractRoute(m.origin, m.destination)}</td>
+                                <td className="px-2 py-1.5 border-r border-gray-100 text-gray-700 max-w-[120px] truncate">{m.provider || '-'}</td>
+                                <td className="px-2 py-1.5 border-r border-gray-100 font-mono text-gray-700 whitespace-nowrap">{m.vehicleId || '-'}</td>
+                                <td className="px-2 py-1.5 border-r border-gray-100 text-gray-600 max-w-[140px] truncate" title={veicEscoltado}>{veicEscoltado}</td>
+                                <td className="px-2 py-1.5 border-r border-gray-100 whitespace-nowrap">{m.endTime ? fmtDate(m.endTime) : '-'}</td>
+                                <td className="px-2 py-1.5 border-r border-gray-100 whitespace-nowrap">{m.endTime ? fmtTime(m.endTime) : '-'}</td>
+                                <td className="px-2 py-1.5 border-r border-gray-100 text-right font-bold text-green-700 whitespace-nowrap">{rev > 0 ? fmtMoney(rev) : '-'}</td>
+                                <td className="px-2 py-1.5 border-r border-gray-100 text-right font-bold text-blue-700 whitespace-nowrap">{cost > 0 ? fmtMoney(cost) : '-'}</td>
+                                <td className="px-2 py-1.5 border-r border-gray-100 text-right text-orange-600 whitespace-nowrap">{toll > 0 ? fmtMoney(toll) : '-'}</td>
+                                <td className={`px-2 py-1.5 border-r border-gray-100 text-right font-black whitespace-nowrap ${resultado >= 0 ? 'text-emerald-700' : 'text-red-600 bg-red-50'}`}>{rev > 0 || cost > 0 ? fmtMoney(resultado) : '-'}</td>
+                                <td className="px-2 py-1.5 text-gray-600 max-w-[160px] truncate" title={agentes}>{agentes}</td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                        {missions.length > 0 && (
+                          <tfoot>
+                            <tr className="bg-gray-800 text-white font-black">
+                              <td colSpan={12} className="px-2 py-2 text-right border-r border-gray-600">TOTAIS →</td>
+                              <td className="px-2 py-2 text-right border-r border-gray-600 text-green-300">{fmtMoney(totalRev)}</td>
+                              <td className="px-2 py-2 text-right border-r border-gray-600 text-blue-300">{fmtMoney(totalCost)}</td>
+                              <td className="px-2 py-2 text-right border-r border-gray-600 text-orange-300">{fmtMoney(totalToll)}</td>
+                              <td className={`px-2 py-2 text-right border-r border-gray-600 ${totalRev - totalCost - totalToll >= 0 ? 'text-emerald-300' : 'text-red-300'}`}>{fmtMoney(totalRev - totalCost - totalToll)}</td>
+                              <td className="px-2 py-2"></td>
+                            </tr>
+                          </tfoot>
+                        )}
+                      </table>
+                    </div>
                     {missions.length === 0 && (
                       <div className="text-center py-12 text-gray-400">
                         <List size={40} className="mx-auto mb-3 opacity-30" />
