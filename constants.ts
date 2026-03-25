@@ -119,6 +119,7 @@ export const NAV_ITEMS: NavItem[] = [
       { name: 'Tecnologias (Rastreador)', id: 'provider-technologies' },
     ]
   },
+  { name: 'Relatórios', icon: 'FileBarChart', id: 'reports' },
   { 
     name: 'Configurações', 
     icon: 'Settings', 
