@@ -1218,8 +1218,9 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
                             <th className="px-2 py-2 text-right font-black border-r border-gray-700">CUSTO</th>
                             <th className="px-2 py-2 text-right font-black border-r border-gray-700">PEDÁGIO</th>
                             <th className="px-2 py-2 text-right font-black border-r border-gray-700">RESULTADO</th>
-                            <th className="px-2 py-2 text-right font-black">% LUCRO</th>
+                            <th className="px-2 py-2 text-right font-black border-r border-gray-700">% LUCRO</th>
                             </>)}
+                            <th className="px-2 py-2 text-center font-black">FATURAMENTO</th>
                           </tr>
                         </thead>
                         <tbody>
@@ -1256,8 +1257,23 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
                                 <td className="px-2 py-1.5 border-r border-gray-100 text-right font-bold text-blue-700 whitespace-nowrap">{cost > 0 ? fmtMoney(cost) : '-'}</td>
                                 <td className="px-2 py-1.5 border-r border-gray-100 text-right text-orange-600 whitespace-nowrap">{toll > 0 ? fmtMoney(toll) : '-'}</td>
                                 <td className={`px-2 py-1.5 border-r border-gray-100 text-right font-black whitespace-nowrap ${resultado >= 0 ? 'text-emerald-700' : 'text-red-600 bg-red-50'}`}>{rev > 0 || cost > 0 ? fmtMoney(resultado) : '-'}</td>
-                                <td className={`px-2 py-1.5 text-right font-black whitespace-nowrap ${lucroPerc >= 0 ? 'text-emerald-700' : 'text-red-600'}`}>{rev > 0 ? `${lucroPerc.toFixed(1)}%` : '-'}</td>
+                                <td className={`px-2 py-1.5 border-r border-gray-100 text-right font-black whitespace-nowrap ${lucroPerc >= 0 ? 'text-emerald-700' : 'text-red-600'}`}>{rev > 0 ? `${lucroPerc.toFixed(1)}%` : '-'}</td>
                                 </>)}
+                                <td className="px-2 py-1.5 text-center">
+                                  <button
+                                    data-testid={`btn-financial-${m.id}`}
+                                    onClick={() => { setMissionForFinancials(m); setIsFinancialModalOpen(true); }}
+                                    className={`inline-flex items-center gap-1 px-2 py-1 rounded text-[9px] font-bold transition-colors ${
+                                      m.billing_approved 
+                                        ? 'bg-emerald-100 text-emerald-700 hover:bg-emerald-200' 
+                                        : 'bg-amber-100 text-amber-700 hover:bg-amber-200'
+                                    }`}
+                                    title="Conferência e Aprovação"
+                                  >
+                                    <ClipboardCheck size={11} />
+                                    {m.billing_approved ? 'APROVADO' : 'CONFERIR'}
+                                  </button>
+                                </td>
                               </tr>
                             );
                           })}
@@ -1270,7 +1286,8 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
                               <td className="px-2 py-2 text-right border-r border-gray-600 text-blue-300">{fmtMoney(totalCost)}</td>
                               <td className="px-2 py-2 text-right border-r border-gray-600 text-orange-300">{fmtMoney(totalToll)}</td>
                               <td className="px-2 py-2 text-right border-r border-gray-600 text-emerald-300">{fmtMoney(totalRev - totalCost - totalToll)}</td>
-                              <td className={`px-2 py-2 text-right ${totalRev > 0 ? (((totalRev - totalCost - totalToll) / totalRev * 100) >= 0 ? 'text-emerald-300' : 'text-red-300') : ''}`}>{totalRev > 0 ? `${((totalRev - totalCost - totalToll) / totalRev * 100).toFixed(1)}%` : '-'}</td>
+                              <td className={`px-2 py-2 text-right border-r border-gray-600 ${totalRev > 0 ? (((totalRev - totalCost - totalToll) / totalRev * 100) >= 0 ? 'text-emerald-300' : 'text-red-300') : ''}`}>{totalRev > 0 ? `${((totalRev - totalCost - totalToll) / totalRev * 100).toFixed(1)}%` : '-'}</td>
+                              <td className="px-2 py-2"></td>
                             </tr>
                           </tfoot>
                         )}
