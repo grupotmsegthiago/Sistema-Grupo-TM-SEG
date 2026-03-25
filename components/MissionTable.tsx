@@ -8,7 +8,7 @@ import {
   ClipboardList, FileSearch, CalendarClock, MapPin, Truck, Flag, XCircle, UserX, AlertOctagon, ToggleLeft, ToggleRight, Calendar,
   BarChart4, Globe, Building2, LayoutDashboard, User, ExternalLink, RefreshCw,
   Target, Clock, History, CalendarPlus, ShieldAlert, Mail, MessageCircle, ClipboardCheck,
-  FileBarChart, ArrowRight, Briefcase, Printer, Filter, List
+  FileBarChart, ArrowRight, Briefcase, Printer, Filter, List, Download
 } from 'lucide-react';
 import { GoogleMap, useLoadScript, Marker, InfoWindow } from '@react-google-maps/api';
 import { googleMapsLoadConfig } from '../lib/maps';
@@ -1132,6 +1132,57 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
                       <div className="flex items-center gap-3">
                         <FileBarChart size={18} className="text-red-600" />
                         <span className="font-black text-sm text-gray-800">RELATÓRIO DE OS — {missions.length} missões</span>
+                        <button
+                          data-testid="btn-export-report"
+                          onClick={() => {
+                            const sep = ';';
+                            const headers = ['#','OS','Status','Cliente','Veíc. Escoltado','Fornecedor','Viatura','Agentes','Data Inicial','Hora Inicial','Data Final','Hora Final'];
+                            if (canSeeFinancials) headers.push('Receita','Custo','Pedágio','Resultado','% Lucro');
+                            const rows = missions.map((m, i) => {
+                              const rev = m.revenue_value || 0;
+                              const cost = m.cost_value || 0;
+                              const toll = m.toll_value || 0;
+                              const resultado = rev - cost - toll;
+                              const row = [
+                                i + 1,
+                                m.id,
+                                m.status,
+                                m.client || '',
+                                m.clientVehicle?.plate || '',
+                                m.provider || '',
+                                m.vehicleId || '',
+                                [m.agent1, m.agent2].filter(Boolean).join(' & '),
+                                fmtDate(m.created_at),
+                                m.startTime ? fmtTime(m.startTime) : '',
+                                m.endTime ? fmtDate(m.endTime) : '',
+                                m.endTime ? fmtTime(m.endTime) : '',
+                              ];
+                              if (canSeeFinancials) {
+                                row.push(
+                                  rev > 0 ? rev.toFixed(2).replace('.', ',') : '',
+                                  cost > 0 ? cost.toFixed(2).replace('.', ',') : '',
+                                  toll > 0 ? toll.toFixed(2).replace('.', ',') : '',
+                                  resultado !== 0 ? resultado.toFixed(2).replace('.', ',') : '',
+                                  rev > 0 ? ((resultado / rev) * 100).toFixed(1).replace('.', ',') + '%' : ''
+                                );
+                              }
+                              return row.join(sep);
+                            });
+                            const bom = '\uFEFF';
+                            const csv = bom + headers.join(sep) + '\n' + rows.join('\n');
+                            const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+                            const url = URL.createObjectURL(blob);
+                            const a = document.createElement('a');
+                            a.href = url;
+                            a.download = `relatorio_os_${new Date().toISOString().split('T')[0]}.csv`;
+                            a.click();
+                            URL.revokeObjectURL(url);
+                          }}
+                          className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-[10px] font-bold transition-colors"
+                          title="Exportar para Excel"
+                        >
+                          <Download size={13} /> Excel
+                        </button>
                       </div>
                       <div className="flex items-center gap-4 text-[10px] font-bold">
                         <span className="text-emerald-700">Concl: {missions.filter(m => m.status === MissionStatus.COMPLETED).length}</span>
