@@ -182,11 +182,12 @@ const ReportsDashboard: React.FC = () => {
         };
     }, [logs]);
 
-    const filteredLogs = logs.filter(log => 
-        log.user_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        log.details.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        log.entity.toLowerCase().includes(searchTerm.toLowerCase())
-    );
+    const filteredLogs = logs.filter(log => {
+        const term = searchTerm.toLowerCase();
+        return (log.user_name || '').toLowerCase().includes(term) ||
+            (log.details || '').toLowerCase().includes(term) ||
+            (log.entity || '').toLowerCase().includes(term);
+    });
 
     const handlePrint = () => {
         window.print();
