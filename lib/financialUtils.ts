@@ -887,7 +887,7 @@ export const calculateMissionFinancials = (
         if (minutes > 15) {
             return integer + 1;
         }
-        return integer > 0 ? integer : hours;
+        return hours;
     };
 
     if (clientData?.full_extra_hour_after_16_min) {
