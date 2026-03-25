@@ -75,6 +75,9 @@ const VendorVerificationControl: React.FC<VendorVerificationControlProps> = ({ o
     const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
     const [batchSaving, setBatchSaving] = useState(false);
     const [batchModalOpen, setBatchModalOpen] = useState(false);
+    const [auditLog, setAuditLog] = useState<any[]>([]);
+    const [showAuditPanel, setShowAuditPanel] = useState(false);
+    const [auditLoading, setAuditLoading] = useState(false);
     const [batchVendorOs, setBatchVendorOs] = useState('');
     const [batchInvoiceNumber, setBatchInvoiceNumber] = useState('');
     const [batchReleaseDate, setBatchReleaseDate] = useState('');
@@ -279,6 +282,60 @@ const VendorVerificationControl: React.FC<VendorVerificationControlProps> = ({ o
             setIsLoading(false);
         }
     };
+
+    const loadAuditTrail = async () => {
+        setAuditLoading(true);
+        try {
+            const { data: logs } = await supabase.from('system_logs')
+                .select('*')
+                .in('entity', ['Mission', 'BillingApproval', 'BillingSnapshot'])
+                .gte('created_at', new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString())
+                .order('created_at', { ascending: false })
+                .limit(500);
+
+            if (logs) {
+                const relevantLogs = logs.filter(log => {
+                    try {
+                        const details = typeof log.details === 'string' ? JSON.parse(log.details) : log.details;
+                        if (!details) return false;
+                        const field = details.field || '';
+                        const relevantFields = ['status', 'billing_approved', 'verified_by', 'verified_at', 'payment_date', 'vendor_os_number', 'invoice_number', 'is_same_os'];
+                        if (relevantFields.includes(field)) return true;
+                        if (log.entity === 'BillingApproval') return true;
+                        if (log.action_type === 'VENDOR_VERIFICATION') return true;
+                        if (log.action_type === 'STATUS_CHANGE') return true;
+                        if (details.oldStatus || details.newStatus) return true;
+                        if (details.oldValue !== undefined || details.newValue !== undefined) return true;
+                        return false;
+                    } catch { return log.entity === 'BillingApproval'; }
+                });
+                setAuditLog(relevantLogs.slice(0, 200));
+            }
+        } catch (e) {
+            console.error('Erro ao carregar auditoria:', e);
+        } finally {
+            setAuditLoading(false);
+        }
+    };
+
+    const saveStatsSnapshot = useCallback(async (statsData: { total: number; verified: number; paid: number; pending: number }) => {
+        try {
+            const userData = JSON.parse(localStorage.getItem('userData') || '{}');
+            await supabase.from('system_logs').insert([{
+                user_name: userData.name || 'Sistema',
+                action_type: 'VENDOR_STATS_SNAPSHOT',
+                entity: 'VendorControl',
+                entity_id: 'daily-snapshot',
+                details: JSON.stringify({
+                    ...statsData,
+                    timestamp: new Date().toISOString(),
+                    accessedBy: userData.name || 'Sistema'
+                })
+            }]);
+        } catch (e) {
+            console.error('Erro snapshot:', e);
+        }
+    }, []);
 
     const openVerificationModal = async (mission: any) => {
         setSelectedMission(mission);
@@ -543,6 +600,29 @@ const VendorVerificationControl: React.FC<VendorVerificationControlProps> = ({ o
         const paid = missions.filter(m => m.payment_date).length;
         return { total, verified, pending, paid };
     }, [missions]);
+
+    useEffect(() => {
+        if (stats.total > 0) {
+            saveStatsSnapshot(stats);
+        }
+    }, [stats, saveStatsSnapshot]);
+
+    const [statsHistory, setStatsHistory] = useState<any[]>([]);
+    const loadStatsHistory = async () => {
+        const { data } = await supabase.from('system_logs')
+            .select('details, created_at')
+            .eq('action_type', 'VENDOR_STATS_SNAPSHOT')
+            .eq('entity', 'VendorControl')
+            .order('created_at', { ascending: false })
+            .limit(50);
+        if (data) {
+            const parsed = data.map(d => {
+                const det = typeof d.details === 'string' ? JSON.parse(d.details) : d.details;
+                return { ...det, logged_at: d.created_at };
+            });
+            setStatsHistory(parsed);
+        }
+    };
 
     return (
         <div className="space-y-6 animate-fade-in pb-20" data-testid="vendor-verification-control">
@@ -825,7 +905,136 @@ const VendorVerificationControl: React.FC<VendorVerificationControlProps> = ({ o
                         <p className="text-[9px] font-black text-amber-600 uppercase tracking-widest">Pendentes</p>
                     </div>
                 </div>
+
+                <button
+                    data-testid="btn-audit-trail"
+                    onClick={() => {
+                        setShowAuditPanel(!showAuditPanel);
+                        if (!showAuditPanel) {
+                            loadAuditTrail();
+                            loadStatsHistory();
+                        }
+                    }}
+                    className={`rounded-2xl px-5 py-3 flex items-center gap-3 min-w-[130px] transition-all ${showAuditPanel ? 'bg-red-600 text-white border border-red-600' : 'bg-white border border-gray-200 hover:bg-gray-50'}`}
+                >
+                    <Eye size={24} className={showAuditPanel ? 'text-white' : 'text-red-600'} />
+                    <div>
+                        <p className={`text-xs font-black uppercase tracking-widest ${showAuditPanel ? 'text-white' : 'text-red-600'}`}>Auditoria</p>
+                        <p className={`text-[9px] font-bold ${showAuditPanel ? 'text-red-100' : 'text-gray-400'}`}>Rastreamento</p>
+                    </div>
+                </button>
             </div>
+
+            {showAuditPanel && (
+                <div className="bg-white rounded-2xl shadow-sm border border-red-200 overflow-hidden">
+                    <div className="bg-red-50 p-4 border-b border-red-200 flex items-center justify-between">
+                        <div className="flex items-center gap-3">
+                            <Eye size={20} className="text-red-600" />
+                            <h3 className="font-black text-sm text-red-800 uppercase tracking-widest">Auditoria e Rastreamento</h3>
+                        </div>
+                        <div className="flex gap-2">
+                            <button onClick={() => { loadAuditTrail(); loadStatsHistory(); }} className="px-3 py-1.5 bg-red-600 text-white text-[10px] font-black rounded-lg hover:bg-red-700" data-testid="btn-refresh-audit">
+                                <RefreshCw size={12} className={auditLoading ? 'animate-spin' : ''} />
+                            </button>
+                            <button onClick={() => setShowAuditPanel(false)} className="px-3 py-1.5 bg-gray-200 text-gray-600 text-[10px] font-black rounded-lg hover:bg-gray-300">
+                                <X size={12} />
+                            </button>
+                        </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-0 divide-y lg:divide-y-0 lg:divide-x divide-gray-200">
+                        <div className="p-4">
+                            <h4 className="text-[10px] font-black text-gray-500 uppercase tracking-widest mb-3 flex items-center gap-2">
+                                <Hash size={12} /> Histórico de Contadores (Snapshots)
+                            </h4>
+                            <div className="max-h-[300px] overflow-y-auto">
+                                {statsHistory.length === 0 ? (
+                                    <p className="text-xs text-gray-400 text-center py-4">Nenhum snapshot registrado ainda. Os contadores serão gravados a cada acesso.</p>
+                                ) : (
+                                    <table className="w-full text-[10px]">
+                                        <thead className="sticky top-0 bg-gray-50">
+                                            <tr className="text-gray-500 font-black uppercase">
+                                                <th className="px-2 py-1.5 text-left">Data/Hora</th>
+                                                <th className="px-2 py-1.5 text-right">Total</th>
+                                                <th className="px-2 py-1.5 text-right text-green-600">Verif.</th>
+                                                <th className="px-2 py-1.5 text-right text-blue-600">Pagas</th>
+                                                <th className="px-2 py-1.5 text-right text-amber-600">Pend.</th>
+                                                <th className="px-2 py-1.5 text-left">Usuário</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {statsHistory.map((s, i) => {
+                                                const prev = statsHistory[i + 1];
+                                                const diffV = prev ? s.verified - prev.verified : 0;
+                                                const diffP = prev ? s.paid - prev.paid : 0;
+                                                const diffPend = prev ? s.pending - prev.pending : 0;
+                                                return (
+                                                    <tr key={i} className={`border-b border-gray-100 ${diffV < 0 || diffP < 0 ? 'bg-red-50' : ''}`}>
+                                                        <td className="px-2 py-1.5 whitespace-nowrap font-bold">{fmtDateTime(s.logged_at)}</td>
+                                                        <td className="px-2 py-1.5 text-right font-black">{s.total}</td>
+                                                        <td className="px-2 py-1.5 text-right font-black text-green-700">
+                                                            {s.verified}
+                                                            {diffV !== 0 && <span className={`ml-1 text-[8px] ${diffV > 0 ? 'text-green-500' : 'text-red-500'}`}>({diffV > 0 ? '+' : ''}{diffV})</span>}
+                                                        </td>
+                                                        <td className="px-2 py-1.5 text-right font-black text-blue-700">
+                                                            {s.paid}
+                                                            {diffP !== 0 && <span className={`ml-1 text-[8px] ${diffP > 0 ? 'text-blue-500' : 'text-red-500'}`}>({diffP > 0 ? '+' : ''}{diffP})</span>}
+                                                        </td>
+                                                        <td className="px-2 py-1.5 text-right font-black text-amber-700">
+                                                            {s.pending}
+                                                            {diffPend !== 0 && <span className={`ml-1 text-[8px] ${diffPend > 0 ? 'text-amber-500' : 'text-green-500'}`}>({diffPend > 0 ? '+' : ''}{diffPend})</span>}
+                                                        </td>
+                                                        <td className="px-2 py-1.5 text-gray-500 truncate max-w-[80px]">{s.accessedBy || '-'}</td>
+                                                    </tr>
+                                                );
+                                            })}
+                                        </tbody>
+                                    </table>
+                                )}
+                            </div>
+                        </div>
+
+                        <div className="p-4">
+                            <h4 className="text-[10px] font-black text-gray-500 uppercase tracking-widest mb-3 flex items-center gap-2">
+                                <FileText size={12} /> Alterações Recentes (últimos 7 dias)
+                            </h4>
+                            <div className="max-h-[300px] overflow-y-auto">
+                                {auditLoading ? (
+                                    <div className="flex items-center justify-center py-8"><Loader2 size={20} className="animate-spin text-gray-400" /></div>
+                                ) : auditLog.length === 0 ? (
+                                    <p className="text-xs text-gray-400 text-center py-4">Nenhuma alteração relevante encontrada.</p>
+                                ) : (
+                                    <div className="space-y-1">
+                                        {auditLog.map((log, i) => {
+                                            const details = typeof log.details === 'string' ? JSON.parse(log.details) : (log.details || {});
+                                            const field = details.field || log.action_type || '';
+                                            let description = '';
+                                            if (field === 'status') description = `Status: ${details.oldValue || details.oldStatus || '?'} → ${details.newValue || details.newStatus || '?'}`;
+                                            else if (field === 'billing_approved') description = `Faturamento: ${details.oldValue ? 'Aprovado' : 'Pendente'} → ${details.newValue ? 'Aprovado' : 'Desaprovado'}`;
+                                            else if (field === 'is_same_os') description = `Mesma OS: ${details.oldValue ? 'Sim' : 'Não'} → ${details.newValue ? 'Sim' : 'Não'}`;
+                                            else if (field === 'verified_by' || log.action_type === 'VENDOR_VERIFICATION') description = `Verificação: ${details.verified_by || details.user || log.user_name}`;
+                                            else if (log.entity === 'BillingApproval') description = `Aprovação ${details.stage || ''}: ${details.user || log.user_name}`;
+                                            else if (details.oldValue !== undefined) description = `${field}: ${details.oldValue} → ${details.newValue}`;
+                                            else description = `${log.action_type}: ${JSON.stringify(details).slice(0, 80)}`;
+
+                                            const isAlert = field === 'status' || field === 'billing_approved' || (field === 'is_same_os' && details.newValue);
+
+                                            return (
+                                                <div key={i} className={`flex items-start gap-2 px-2 py-1.5 rounded text-[10px] ${isAlert ? 'bg-red-50 border border-red-100' : 'bg-gray-50 border border-gray-100'}`}>
+                                                    <span className="font-bold text-gray-400 whitespace-nowrap shrink-0">{fmtDateTime(log.created_at)}</span>
+                                                    <span className="font-black text-blue-700 whitespace-nowrap shrink-0">{log.entity_id}</span>
+                                                    <span className={`font-bold flex-1 min-w-0 truncate ${isAlert ? 'text-red-700' : 'text-gray-700'}`} title={description}>{description}</span>
+                                                    <span className="text-gray-400 whitespace-nowrap shrink-0">{log.user_name}</span>
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-200">
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
