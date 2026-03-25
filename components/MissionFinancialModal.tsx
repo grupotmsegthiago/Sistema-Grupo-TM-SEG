@@ -845,9 +845,10 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
       setUseSavedValues(false);
       userManuallyEditedRef.current = false;
       if (financialData && mission) {
-          const tollProv = parseNumber(tollProviderInput);
-          const newCost = financialData.provider.base + financialData.provider.extraKmVal + financialData.provider.extraHrVal + tollProv;
-          const costServiceOnly = newCost - tollProv;
+          const isSameOs = mission.is_same_os === true;
+          const tollProv = isSameOs ? 0 : parseNumber(tollProviderInput);
+          const newCost = isSameOs ? 0 : (financialData.provider.base + financialData.provider.extraKmVal + financialData.provider.extraHrVal + tollProv);
+          const costServiceOnly = isSameOs ? 0 : (newCost - tollProv);
           setCostInput(newCost.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
           
           const r2 = (v: number) => Math.round(v * 100) / 100;
@@ -1031,9 +1032,10 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
           const shouldSnapshot = approve && canReleaseBilling && !mission.snapshot_approved_by;
           
           const r2 = (v: number) => Math.round(v * 100) / 100;
+          const isSameOs = mission.is_same_os === true;
           const basePayload: any = {
               revenue_value: r2(revServiceOnly),
-              cost_value: r2(costServiceOnly),
+              cost_value: isSameOs ? 0 : r2(costServiceOnly),
               toll_value: r2(toll),
               billing_approved: isApprovedForBilling,
               last_update: new Date().toISOString()
@@ -1081,7 +1083,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
               reasonFields.cost_edit_reason = `[${userName} - ${new Date().toLocaleString('pt-BR')}] ${costEditReason.trim()}`;
           }
 
-          const fullPayload = { ...basePayload, toll_value_provider: r2(tollProv), ...reasonFields };
+          const fullPayload = { ...basePayload, toll_value_provider: isSameOs ? 0 : r2(tollProv), ...reasonFields };
           let result = await supabase.from('missions').update(fullPayload).eq('id', mission.id).select('id, revenue_value, cost_value, toll_value, last_update').single();
           if (result.error && result.error.message?.includes('does not exist')) {
               const { snapshot_data, snapshot_approved_by, snapshot_approved_at, ...payloadWithoutSnapshot } = fullPayload;

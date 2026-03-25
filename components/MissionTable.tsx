@@ -1123,7 +1123,7 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
                 };
 
                 const totalRev = missions.reduce((s, m) => s + (m.revenue_value || 0), 0);
-                const totalCost = missions.reduce((s, m) => s + (m.cost_value || 0), 0);
+                const totalCost = missions.reduce((s, m) => s + (m.is_same_os ? 0 : (m.cost_value || 0)), 0);
                 const totalToll = missions.reduce((s, m) => s + (m.toll_value || 0), 0);
 
                 return (
@@ -1140,7 +1140,7 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
                             if (canSeeFinancials) headers.push('Receita','Custo','Pedágio','Resultado','% Lucro');
                             const rows = missions.map((m, i) => {
                               const rev = m.revenue_value || 0;
-                              const cost = m.cost_value || 0;
+                              const cost = m.is_same_os ? 0 : (m.cost_value || 0);
                               const toll = m.toll_value || 0;
                               const resultado = rev - cost - toll;
                               const row = [
@@ -1228,7 +1228,7 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
                         <tbody>
                           {missions.map((m, idx) => {
                             const rev = m.revenue_value || 0;
-                            const cost = m.cost_value || 0;
+                            const cost = m.is_same_os ? 0 : (m.cost_value || 0);
                             const toll = m.toll_value || 0;
                             const resultado = rev - cost - toll;
                             const lucroPerc = rev > 0 ? ((resultado / rev) * 100) : 0;
