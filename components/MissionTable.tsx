@@ -1076,6 +1076,7 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
             <div className="flex items-center gap-2 text-xs text-gray-500">
               <span className="hidden md:inline">Filtrados:</span>
               <span className="font-bold text-gray-800 bg-gray-200 px-2 py-1 rounded">{filteredMissions.length}</span>
+              {isDirector && (
               <button
                 data-testid="btn-toggle-timeline"
                 onClick={() => setShowTimeline(!showTimeline)}
@@ -1088,6 +1089,7 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
                 <FileBarChart size={14} />
                 Relatório
               </button>
+              )}
             </div></div>
   
           {showTimeline && (
@@ -1175,6 +1177,7 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
                                 <td className="px-2 py-1.5 font-black text-gray-900 border-r border-gray-100 whitespace-nowrap">
                                   <span>{m.id}</span>
                                   {m.mission_type && <span className={`ml-1 text-[8px] font-bold px-1 py-0.5 rounded ${m.mission_type === 'Velada' ? 'bg-purple-100 text-purple-700' : m.mission_type === 'Pronta Resposta' ? 'bg-orange-100 text-orange-700' : 'bg-blue-100 text-blue-700'}`}>{m.mission_type === 'Caracterizada' ? 'CARACT' : m.mission_type === 'Velada' ? 'VELADA' : 'PR'}</span>}
+                                  {m.is_same_os && <span className="ml-1 text-[8px] font-black bg-slate-200 text-slate-600 px-1 py-0.5 rounded">MESMA OS</span>}
                                 </td>
                                 <td className="px-2 py-1.5 border-r border-gray-100 whitespace-nowrap">{fmtDate(m.created_at)}</td>
                                 <td className="px-2 py-1.5 border-r border-gray-100 whitespace-nowrap font-bold">{fmtTime(m.estimatedTime || m.startTime)}</td>
