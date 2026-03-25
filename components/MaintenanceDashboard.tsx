@@ -1,13 +1,13 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../lib/supabase';
 import { DATA_RETENTION } from '../constants';
-// Fix: Added missing Info icon to the lucide-react imports
 import { 
     Database, Download, Trash2, RefreshCw, Loader2, CheckCircle2, 
     AlertTriangle, ShieldCheck, Clock, Zap, FileJson, Server,
     HardDrive, History, Trash, FileDown, ShieldAlert, Upload, 
-    FileUp, AlertCircle, ArrowRight, Save, List, Info
+    FileUp, AlertCircle, ArrowRight, Save, List, Info, Activity,
+    BarChart3, Gauge, Wind, Table2
 } from 'lucide-react';
 import { useNotification } from '../lib/NotificationContext';
 import { logAction } from '../lib/logger';
@@ -22,6 +22,29 @@ interface BackupRecord {
     status: string;
 }
 
+interface DbCapacity {
+    used_bytes: number;
+    limit_bytes: number;
+    percent_used: number | null;
+    used_mb: number;
+    used_gb: number;
+    limit_gb: number;
+    size_pretty: string;
+    total_rows: number;
+    total_dead_rows: number;
+    tables: Array<{
+        table: string;
+        total_bytes: number;
+        total_size: string;
+        data_bytes?: number;
+        data_size?: string;
+        rows: number;
+        dead_rows: number;
+    }>;
+    source: string;
+    updated_at: string;
+}
+
 const MaintenanceDashboard: React.FC = () => {
     const { showNotification } = useNotification();
     const [stats, setStats] = useState({
@@ -30,15 +53,34 @@ const MaintenanceDashboard: React.FC = () => {
         missionsCount: 0,
         storageEstimate: 0
     });
+    const [dbCapacity, setDbCapacity] = useState<DbCapacity | null>(null);
+    const [capacityLoading, setCapacityLoading] = useState(false);
     const [backups, setBackups] = useState<BackupRecord[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [isProcessing, setIsProcessing] = useState<string | null>(null);
     const [isRestoreMode, setIsRestoreMode] = useState(false);
+    const [vacuumResults, setVacuumResults] = useState<any[] | null>(null);
+
+    const fetchDbCapacity = useCallback(async () => {
+        setCapacityLoading(true);
+        try {
+            const resp = await fetch('/api/db/capacity');
+            if (resp.ok) {
+                const data = await resp.json();
+                setDbCapacity(data);
+            }
+        } catch (e) {
+            console.error('Erro ao buscar capacidade:', e);
+        } finally {
+            setCapacityLoading(false);
+        }
+    }, []);
 
     useEffect(() => {
         fetchStats();
         fetchBackupHistory();
-    }, []);
+        fetchDbCapacity();
+    }, [fetchDbCapacity]);
 
     const fetchStats = async () => {
         setIsLoading(true);
@@ -92,8 +134,34 @@ const MaintenanceDashboard: React.FC = () => {
             await logAction('DELETE', 'DatabaseMaintenance', 'LOG_ROTATION', `Limpeza de ${stats.oldLogsCount} logs de auditoria antigos.`);
             showNotification('Otimização Concluída', `${stats.oldLogsCount} logs de rastro foram removidos.`, 'success');
             fetchStats();
+            fetchDbCapacity();
         } catch (e: any) {
             alert(e.message);
+        } finally {
+            setIsProcessing(null);
+        }
+    };
+
+    const handleVacuum = async () => {
+        if (!confirm('Executar VACUUM ANALYZE nas tabelas principais?\n\nIsso recupera espaço de linhas deletadas e atualiza estatísticas do banco. Pode levar alguns segundos.')) return;
+        setIsProcessing('VACUUM');
+        setVacuumResults(null);
+        try {
+            const resp = await fetch('/api/db/vacuum', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({})
+            });
+            const data = await resp.json();
+            if (data.success) {
+                setVacuumResults(data.results);
+                showNotification('VACUUM Concluído', `${data.results.filter((r: any) => r.status === 'ok').length} tabelas otimizadas.`, 'success');
+                fetchDbCapacity();
+            } else {
+                showNotification('Erro', data.error || 'Falha ao executar VACUUM', 'error');
+            }
+        } catch (e: any) {
+            showNotification('Erro', e.message, 'error');
         } finally {
             setIsProcessing(null);
         }
@@ -102,7 +170,6 @@ const MaintenanceDashboard: React.FC = () => {
     const handleFullBackup = async () => {
         setIsProcessing('BACKUP');
         try {
-            // Coleta todas as tabelas vitais
             const [
                 clients, providers, missions, prices, costs, routes, 
                 agents, vehicles, mission_logs, fin_trans, fin_acc, fin_cat
@@ -156,7 +223,6 @@ const MaintenanceDashboard: React.FC = () => {
 
             const userData = JSON.parse(localStorage.getItem('userData') || '{}');
             
-            // Grava no histórico do banco
             await supabase.from('backup_history').insert([{
                 created_by: userData.name || 'SISTEMA',
                 file_name: fileName,
@@ -195,7 +261,6 @@ const MaintenanceDashboard: React.FC = () => {
                 const tables = content.content;
                 let totalRestored = 0;
 
-                // Restauração em Ordem para respeitar Foreign Keys
                 const order = [
                     'clients', 'providers', 'financial_accounts', 'financial_categories',
                     'vehicles', 'agents', 'client_routes', 'client_price_tables', 
@@ -224,35 +289,50 @@ const MaintenanceDashboard: React.FC = () => {
         reader.readAsText(file);
     };
 
-    const storagePercent = (stats.storageEstimate / DATA_RETENTION.STORAGE_LIMIT_MB) * 100;
+    const usedPercent = dbCapacity?.percent_used ? (dbCapacity.percent_used * 100) : 0;
+    const isWarning = usedPercent > 75;
+    const isCritical = usedPercent > 90;
+
+    const getBarColor = () => {
+        if (isCritical) return 'bg-red-500';
+        if (isWarning) return 'bg-amber-500';
+        return 'bg-emerald-500';
+    };
+
+    const getStatusLabel = () => {
+        if (isCritical) return { text: 'CRÍTICO', color: 'text-red-600 bg-red-50 border-red-200' };
+        if (isWarning) return { text: 'ATENÇÃO', color: 'text-amber-600 bg-amber-50 border-amber-200' };
+        return { text: 'SAUDÁVEL', color: 'text-emerald-600 bg-emerald-50 border-emerald-200' };
+    };
+
+    const status = getStatusLabel();
 
     return (
         <div className="space-y-6 animate-fade-in pb-20">
-            {/* CABEÇALHO */}
             <div className="bg-white p-6 rounded-[2rem] shadow-sm border border-gray-200 flex flex-col md:flex-row justify-between items-center gap-4">
                 <div className="flex items-center gap-4">
                     <div className="p-3 bg-slate-900 text-white rounded-2xl shadow-lg">
                         <Database size={28} />
                     </div>
                     <div>
-                        <h2 className="text-2xl font-black text-gray-900 uppercase tracking-tight">Saúde & Backup do Sistema</h2>
-                        <p className="text-sm text-gray-500 font-medium">Proteção contra perda de dados e otimização de espaço</p>
+                        <h2 className="text-2xl font-black text-gray-900 uppercase tracking-tight" data-testid="text-page-title">Saúde do Banco de Dados</h2>
+                        <p className="text-sm text-gray-500 font-medium">Monitoramento, otimização e backup — Supabase Pro (8 GB)</p>
                     </div>
                 </div>
                 <div className="flex gap-2">
                     <button 
                         onClick={() => setIsRestoreMode(!isRestoreMode)} 
                         className={`px-6 py-2.5 rounded-xl text-xs font-black uppercase transition-all flex items-center gap-2 border ${isRestoreMode ? 'bg-red-600 text-white border-red-700' : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'}`}
+                        data-testid="btn-restore-mode"
                     >
                         <ShieldAlert size={16} /> {isRestoreMode ? 'Cancelar Restauro' : 'Restaurar Backup'}
                     </button>
-                    <button onClick={fetchStats} className="p-3 bg-gray-100 text-gray-600 rounded-xl hover:bg-gray-200 transition-all">
-                        <RefreshCw size={20} className={isLoading ? 'animate-spin' : ''} />
+                    <button onClick={() => { fetchStats(); fetchDbCapacity(); }} className="p-3 bg-gray-100 text-gray-600 rounded-xl hover:bg-gray-200 transition-all" data-testid="btn-refresh-all">
+                        <RefreshCw size={20} className={isLoading || capacityLoading ? 'animate-spin' : ''} />
                     </button>
                 </div>
             </div>
 
-            {/* MODO RESTAURO (ALERTA) */}
             {isRestoreMode && (
                 <div className="bg-red-50 border-2 border-red-500 p-8 rounded-[2rem] animate-in zoom-in-95">
                     <div className="flex flex-col md:flex-row items-center gap-8">
@@ -275,53 +355,162 @@ const MaintenanceDashboard: React.FC = () => {
                 </div>
             )}
 
-            <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-                
-                {/* COLUNA ESQUERDA: INFRA E LIMPEZA */}
-                <div className="lg:col-span-4 space-y-6">
-                    <div className="bg-white p-6 rounded-[2.5rem] shadow-sm border border-gray-200 flex flex-col justify-between group overflow-hidden relative">
-                        <div className="absolute top-0 right-0 p-4 opacity-5 group-hover:scale-125 transition-transform"><HardDrive size={120}/></div>
-                        <div className="relative z-10">
-                            <h4 className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] mb-4">Uso de Banco (Limite 500MB)</h4>
-                            <div className="flex items-baseline gap-2 mb-2">
-                                <span className={`text-4xl font-black font-mono tracking-tighter ${storagePercent > 80 ? 'text-red-600' : 'text-slate-900'}`}>
-                                    {storagePercent.toFixed(1)}%
-                                </span>
-                            </div>
-                            <div className="w-full h-3 bg-gray-100 rounded-full overflow-hidden border border-gray-200">
-                                <div className={`h-full transition-all duration-1000 ${storagePercent > 80 ? 'bg-red-500' : 'bg-blue-600'}`} style={{ width: `${storagePercent}%` }}></div>
-                            </div>
-                            <p className="text-[10px] text-gray-400 mt-4 font-bold uppercase tracking-widest">Est: {stats.storageEstimate.toFixed(2)} MB / 500 MB</p>
-                        </div>
+            {(isWarning || isCritical) && (
+                <div className={`p-5 rounded-2xl border-2 flex items-center gap-4 ${isCritical ? 'bg-red-50 border-red-400' : 'bg-amber-50 border-amber-400'}`}>
+                    <AlertTriangle size={32} className={isCritical ? 'text-red-600' : 'text-amber-600'} />
+                    <div>
+                        <p className={`font-black text-sm uppercase ${isCritical ? 'text-red-800' : 'text-amber-800'}`}>
+                            {isCritical ? 'ALERTA CRÍTICO — Banco próximo do limite!' : 'ATENÇÃO — Uso acima de 75% do limite'}
+                        </p>
+                        <p className={`text-xs mt-1 ${isCritical ? 'text-red-600' : 'text-amber-600'}`}>
+                            {isCritical 
+                                ? 'O banco pode entrar em modo somente-leitura em breve. Execute VACUUM e limpe logs antigos imediatamente.'
+                                : 'Considere limpar logs antigos e executar VACUUM para recuperar espaço.'}
+                        </p>
                     </div>
+                </div>
+            )}
 
-                    <div className="bg-white p-6 rounded-[2.5rem] shadow-sm border border-gray-200 flex flex-col justify-between">
-                        <div>
-                            <h4 className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] mb-4">Otimização de Espaço</h4>
-                            <div className="flex items-center gap-4 mb-4">
-                                <div className="p-3 bg-orange-50 text-orange-600 rounded-2xl border border-orange-100"><History size={24}/></div>
-                                <div>
-                                    <p className="text-2xl font-black text-gray-900">{stats.oldLogsCount}</p>
-                                    <p className="text-[10px] font-bold text-gray-400 uppercase">Logs de Auditoria (+30 dias)</p>
-                                </div>
-                            </div>
-                            <p className="text-xs text-gray-500 leading-relaxed italic">Apaga apenas os rastros de uso do sistema para liberar espaço. <strong>Suas missões estão seguras.</strong></p>
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                <div className="bg-white rounded-[2rem] shadow-sm border border-gray-200 p-6 relative overflow-hidden">
+                    <div className="absolute top-4 right-4 opacity-5"><HardDrive size={100}/></div>
+                    <div className="relative z-10">
+                        <div className="flex items-center justify-between mb-4">
+                            <h4 className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em]">Espaço em Disco</h4>
+                            <span className={`px-2 py-0.5 rounded-full text-[9px] font-black uppercase border ${status.color}`} data-testid="badge-db-status">
+                                {status.text}
+                            </span>
                         </div>
-                        <button 
-                            onClick={handleLogRotation} 
-                            disabled={isProcessing === 'ROTATE' || stats.oldLogsCount === 0}
-                            className="mt-6 w-full py-3 bg-red-50 text-red-700 hover:bg-red-600 hover:text-white rounded-2xl text-xs font-black uppercase transition-all shadow-sm flex items-center justify-center gap-2 border border-red-200 disabled:opacity-50"
-                        >
-                            {isProcessing === 'ROTATE' ? <Loader2 size={16} className="animate-spin"/> : <Trash size={16}/>}
-                            Limpar Apenas Logs
-                        </button>
+
+                        {capacityLoading && !dbCapacity ? (
+                            <div className="flex items-center justify-center py-8"><Loader2 size={24} className="animate-spin text-gray-400" /></div>
+                        ) : dbCapacity ? (
+                            <>
+                                <div className="flex items-baseline gap-2 mb-1">
+                                    <span className={`text-4xl font-black font-mono tracking-tighter ${isCritical ? 'text-red-600' : isWarning ? 'text-amber-600' : 'text-slate-900'}`} data-testid="text-db-size">
+                                        {dbCapacity.size_pretty}
+                                    </span>
+                                    <span className="text-sm font-bold text-gray-400">de {dbCapacity.limit_gb} GB</span>
+                                </div>
+                                <div className="w-full h-4 bg-gray-100 rounded-full overflow-hidden border border-gray-200 mb-2" data-testid="progress-db-usage">
+                                    <div className={`h-full transition-all duration-1000 rounded-full ${getBarColor()}`} style={{ width: `${Math.min(usedPercent, 100)}%` }}></div>
+                                </div>
+                                <div className="flex justify-between text-[10px] font-bold text-gray-400 uppercase tracking-wider">
+                                    <span>{usedPercent.toFixed(1)}% utilizado</span>
+                                    <span>{dbCapacity.source === 'pg_database_size' ? 'Dados reais' : 'Estimativa'}</span>
+                                </div>
+                                <div className="mt-4 grid grid-cols-2 gap-3">
+                                    <div className="bg-gray-50 rounded-xl p-3 text-center border border-gray-100">
+                                        <p className="text-lg font-black text-gray-900 font-mono" data-testid="text-total-rows">{dbCapacity.total_rows.toLocaleString('pt-BR')}</p>
+                                        <p className="text-[9px] font-bold text-gray-400 uppercase">Registros ativos</p>
+                                    </div>
+                                    <div className={`rounded-xl p-3 text-center border ${dbCapacity.total_dead_rows > 1000 ? 'bg-amber-50 border-amber-200' : 'bg-gray-50 border-gray-100'}`}>
+                                        <p className={`text-lg font-black font-mono ${dbCapacity.total_dead_rows > 1000 ? 'text-amber-700' : 'text-gray-900'}`} data-testid="text-dead-rows">{dbCapacity.total_dead_rows.toLocaleString('pt-BR')}</p>
+                                        <p className="text-[9px] font-bold text-gray-400 uppercase">Linhas mortas</p>
+                                    </div>
+                                </div>
+                            </>
+                        ) : (
+                            <p className="text-sm text-gray-400 text-center py-4">Não foi possível consultar o banco.</p>
+                        )}
                     </div>
                 </div>
 
-                {/* COLUNA DIREITA: BACKUP E LISTA */}
-                <div className="lg:col-span-8 flex flex-col gap-6">
-                    {/* BOTÃO BACKUP MESTRE */}
-                    <div className="bg-slate-900 p-8 rounded-[2.5rem] shadow-2xl text-white overflow-hidden relative">
+                <div className="bg-white rounded-[2rem] shadow-sm border border-gray-200 p-6">
+                    <h4 className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] mb-4 flex items-center gap-2">
+                        <Table2 size={14} /> Maiores Tabelas
+                    </h4>
+                    {dbCapacity && dbCapacity.tables.length > 0 ? (
+                        <div className="space-y-2">
+                            {dbCapacity.tables.slice(0, 8).map((t, i) => {
+                                const pct = dbCapacity.used_bytes > 0 ? (t.total_bytes / dbCapacity.used_bytes * 100) : 0;
+                                return (
+                                    <div key={t.table} className="flex items-center gap-3" data-testid={`row-table-${t.table}`}>
+                                        <span className="text-[9px] font-black text-gray-300 w-4 text-right">{i + 1}</span>
+                                        <div className="flex-1 min-w-0">
+                                            <div className="flex items-center justify-between mb-0.5">
+                                                <span className="text-[11px] font-black text-gray-700 truncate">{t.table}</span>
+                                                <span className="text-[10px] font-bold text-gray-500 ml-2 shrink-0">{t.total_size}</span>
+                                            </div>
+                                            <div className="w-full h-1.5 bg-gray-100 rounded-full overflow-hidden">
+                                                <div className="h-full bg-blue-500 rounded-full transition-all" style={{ width: `${Math.min(pct, 100)}%` }}></div>
+                                            </div>
+                                            <div className="flex justify-between mt-0.5">
+                                                <span className="text-[8px] text-gray-400">{t.rows.toLocaleString('pt-BR')} registros</span>
+                                                {t.dead_rows > 0 && <span className="text-[8px] text-amber-500 font-bold">{t.dead_rows.toLocaleString('pt-BR')} mortas</span>}
+                                            </div>
+                                        </div>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    ) : capacityLoading ? (
+                        <div className="flex items-center justify-center py-8"><Loader2 size={20} className="animate-spin text-gray-400" /></div>
+                    ) : (
+                        <p className="text-xs text-gray-400 text-center py-4">Sem dados disponíveis</p>
+                    )}
+                </div>
+
+                <div className="space-y-6">
+                    <div className="bg-white p-6 rounded-[2rem] shadow-sm border border-gray-200">
+                        <h4 className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] mb-4 flex items-center gap-2">
+                            <Wind size={14} /> Otimização (VACUUM)
+                        </h4>
+                        <p className="text-xs text-gray-500 leading-relaxed mb-4">
+                            Recupera espaço de linhas deletadas e atualiza as estatísticas do PostgreSQL para consultas mais rápidas.
+                        </p>
+                        <button 
+                            onClick={handleVacuum} 
+                            disabled={isProcessing === 'VACUUM'}
+                            className="w-full py-3 bg-blue-50 text-blue-700 hover:bg-blue-600 hover:text-white rounded-2xl text-xs font-black uppercase transition-all shadow-sm flex items-center justify-center gap-2 border border-blue-200 disabled:opacity-50"
+                            data-testid="btn-vacuum"
+                        >
+                            {isProcessing === 'VACUUM' ? <Loader2 size={16} className="animate-spin"/> : <Zap size={16}/>}
+                            Executar VACUUM ANALYZE
+                        </button>
+                        {vacuumResults && (
+                            <div className="mt-3 bg-green-50 border border-green-200 rounded-xl p-3">
+                                <p className="text-[9px] font-black text-green-700 uppercase mb-2">Resultado</p>
+                                {vacuumResults.map((r, i) => (
+                                    <div key={i} className="flex items-center justify-between text-[10px] py-0.5">
+                                        <span className="font-bold text-gray-700">{r.table}</span>
+                                        <span className={`font-black ${r.status === 'ok' ? 'text-green-600' : 'text-red-600'}`}>
+                                            {r.status === 'ok' ? `✓ ${r.dead_rows_before} limpas` : `✗ ${r.error}`}
+                                        </span>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+                    </div>
+
+                    <div className="bg-white p-6 rounded-[2rem] shadow-sm border border-gray-200">
+                        <h4 className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] mb-4 flex items-center gap-2">
+                            <History size={14} /> Limpeza de Logs
+                        </h4>
+                        <div className="flex items-center gap-4 mb-3">
+                            <div className="p-2.5 bg-orange-50 text-orange-600 rounded-xl border border-orange-100"><Trash2 size={18}/></div>
+                            <div>
+                                <p className="text-xl font-black text-gray-900">{stats.oldLogsCount.toLocaleString('pt-BR')}</p>
+                                <p className="text-[9px] font-bold text-gray-400 uppercase">Logs com +{DATA_RETENTION.LOGS_DAYS} dias</p>
+                            </div>
+                        </div>
+                        <p className="text-[10px] text-gray-500 italic mb-3">Apaga rastros de uso antigos. Missões e cadastros permanecem intactos.</p>
+                        <button 
+                            onClick={handleLogRotation} 
+                            disabled={isProcessing === 'ROTATE' || stats.oldLogsCount === 0}
+                            className="w-full py-2.5 bg-red-50 text-red-700 hover:bg-red-600 hover:text-white rounded-xl text-xs font-black uppercase transition-all flex items-center justify-center gap-2 border border-red-200 disabled:opacity-50"
+                            data-testid="btn-log-rotation"
+                        >
+                            {isProcessing === 'ROTATE' ? <Loader2 size={14} className="animate-spin"/> : <Trash size={14}/>}
+                            Limpar Logs Antigos
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+                <div className="lg:col-span-12">
+                    <div className="bg-slate-900 p-8 rounded-[2rem] shadow-2xl text-white overflow-hidden relative">
                         <div className="absolute top-0 right-0 p-4 opacity-10"><Zap size={150} className="text-red-500"/></div>
                         <div className="relative z-10 flex flex-col md:flex-row items-center justify-between gap-6">
                             <div>
@@ -329,67 +518,65 @@ const MaintenanceDashboard: React.FC = () => {
                                     <div className="p-2 bg-red-600 rounded-xl shadow-lg"><FileJson size={20}/></div>
                                     <h3 className="text-xl font-black uppercase tracking-tight">Gerar Cópia de Segurança Total</h3>
                                 </div>
-                                <p className="text-sm text-slate-400 font-medium max-w-md">Este processo exporta todas as tabelas vitais do Grupo TMSEG para um arquivo JSON seguro que pode ser guardado fora do sistema.</p>
+                                <p className="text-sm text-slate-400 font-medium max-w-md">Exporta todas as tabelas vitais para um arquivo JSON seguro que pode ser guardado fora do sistema.</p>
                             </div>
                             <button 
                                 onClick={handleFullBackup}
                                 disabled={isProcessing === 'BACKUP'}
                                 className="px-10 py-4 bg-white text-slate-900 hover:bg-red-600 hover:text-white rounded-2xl text-sm font-black uppercase transition-all shadow-xl flex items-center justify-center gap-3 disabled:opacity-50"
+                                data-testid="btn-backup"
                             >
                                 {isProcessing === 'BACKUP' ? <Loader2 size={20} className="animate-spin"/> : <FileDown size={20} strokeWidth={3} />}
                                 Executar Backup Agora
                             </button>
                         </div>
                     </div>
-
-                    {/* LISTA DE HISTÓRICO DE BACKUP */}
-                    <div className="bg-white rounded-[2.5rem] shadow-sm border border-gray-200 overflow-hidden flex-1 flex flex-col">
-                        <div className="p-6 border-b border-gray-100 flex justify-between items-center bg-gray-50/50">
-                            <h3 className="text-xs font-black text-gray-500 uppercase tracking-widest flex items-center gap-2">
-                                <List size={16} className="text-slate-400"/> Histórico de Exportações (Últimas 10)
-                            </h3>
-                        </div>
-                        <div className="flex-1 overflow-x-auto">
-                            <table className="w-full text-left border-collapse">
-                                <thead className="bg-gray-50 text-[10px] font-black text-gray-400 uppercase tracking-widest border-b border-gray-100">
-                                    <tr>
-                                        <th className="px-6 py-4">Data / Hora</th>
-                                        <th className="px-6 py-4">Responsável</th>
-                                        <th className="px-6 py-4">Tamanho</th>
-                                        <th className="px-6 py-4">Itens Salvos</th>
-                                        <th className="px-6 py-4 text-center">Status</th>
-                                    </tr>
-                                </thead>
-                                <tbody className="divide-y divide-gray-100">
-                                    {backups.length === 0 ? (
-                                        <tr><td colSpan={5} className="p-10 text-center text-gray-400 italic text-sm">Nenhum backup registrado recentemente.</td></tr>
-                                    ) : (
-                                        backups.map(b => (
-                                            <tr key={b.id} className="hover:bg-gray-50/50 transition-colors">
-                                                <td className="px-6 py-4 text-xs font-bold text-gray-700">{new Date(b.created_at).toLocaleString('pt-BR')}</td>
-                                                <td className="px-6 py-4 text-xs font-black text-slate-500 uppercase">{b.created_by}</td>
-                                                <td className="px-6 py-4 text-xs font-mono text-indigo-600 font-bold">{b.file_size}</td>
-                                                <td className="px-6 py-4 text-xs font-bold text-gray-900">{b.record_count} registros</td>
-                                                <td className="px-6 py-4 text-center">
-                                                    <span className="bg-green-100 text-green-700 px-2 py-0.5 rounded-full text-[9px] font-black uppercase border border-green-200">
-                                                        {b.status}
-                                                    </span>
-                                                </td>
-                                            </tr>
-                                        ))
-                                    )}
-                                </tbody>
-                            </table>
-                        </div>
-                    </div>
                 </div>
             </div>
 
-            {/* INFOCARD PROTOCOLO */}
-            <div className="bg-blue-600 rounded-[2.5rem] p-8 text-white shadow-xl relative overflow-hidden flex flex-col md:flex-row items-center gap-8">
+            <div className="bg-white rounded-[2rem] shadow-sm border border-gray-200 overflow-hidden">
+                <div className="p-6 border-b border-gray-100 flex justify-between items-center bg-gray-50/50">
+                    <h3 className="text-xs font-black text-gray-500 uppercase tracking-widest flex items-center gap-2">
+                        <List size={16} className="text-slate-400"/> Histórico de Exportações (Últimas 10)
+                    </h3>
+                </div>
+                <div className="overflow-x-auto">
+                    <table className="w-full text-left border-collapse">
+                        <thead className="bg-gray-50 text-[10px] font-black text-gray-400 uppercase tracking-widest border-b border-gray-100">
+                            <tr>
+                                <th className="px-6 py-4">Data / Hora</th>
+                                <th className="px-6 py-4">Responsável</th>
+                                <th className="px-6 py-4">Tamanho</th>
+                                <th className="px-6 py-4">Itens Salvos</th>
+                                <th className="px-6 py-4 text-center">Status</th>
+                            </tr>
+                        </thead>
+                        <tbody className="divide-y divide-gray-100">
+                            {backups.length === 0 ? (
+                                <tr><td colSpan={5} className="p-10 text-center text-gray-400 italic text-sm">Nenhum backup registrado recentemente.</td></tr>
+                            ) : (
+                                backups.map(b => (
+                                    <tr key={b.id} className="hover:bg-gray-50/50 transition-colors">
+                                        <td className="px-6 py-4 text-xs font-bold text-gray-700">{new Date(b.created_at).toLocaleString('pt-BR')}</td>
+                                        <td className="px-6 py-4 text-xs font-black text-slate-500 uppercase">{b.created_by}</td>
+                                        <td className="px-6 py-4 text-xs font-mono text-indigo-600 font-bold">{b.file_size}</td>
+                                        <td className="px-6 py-4 text-xs font-bold text-gray-900">{b.record_count} registros</td>
+                                        <td className="px-6 py-4 text-center">
+                                            <span className="bg-green-100 text-green-700 px-2 py-0.5 rounded-full text-[9px] font-black uppercase border border-green-200">
+                                                {b.status}
+                                            </span>
+                                        </td>
+                                    </tr>
+                                ))
+                            )}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <div className="bg-blue-600 rounded-[2rem] p-8 text-white shadow-xl relative overflow-hidden flex flex-col md:flex-row items-center gap-8">
                 <div className="absolute top-0 right-0 p-4 opacity-10"><ShieldCheck size={120} /></div>
                 <div className="p-4 bg-white/10 rounded-3xl backdrop-blur-md border border-white/20">
-                    {/* Fix: Usage of previously missing Info icon */}
                     <Info size={40} className="text-white" />
                 </div>
                 <div>
@@ -398,6 +585,12 @@ const MaintenanceDashboard: React.FC = () => {
                         Em caso de falha crítica no servidor ou banco de dados, o arquivo de backup baixado permite a reconstrução total da operação em um novo ambiente em menos de 5 minutos. 
                         <strong> Recomendamos realizar o download manual a cada 12 horas ou antes de atualizações massivas.</strong>
                     </p>
+                    <div className="mt-4 flex flex-wrap gap-3 text-[10px] font-black uppercase tracking-wider">
+                        <span className="px-3 py-1 bg-white/10 rounded-lg border border-white/20">Plano: Supabase Pro</span>
+                        <span className="px-3 py-1 bg-white/10 rounded-lg border border-white/20">Disco: 8 GB</span>
+                        <span className="px-3 py-1 bg-white/10 rounded-lg border border-white/20">Região: sa-east-1</span>
+                        <span className="px-3 py-1 bg-white/10 rounded-lg border border-white/20">Alerta: 75% (6 GB)</span>
+                    </div>
                 </div>
             </div>
         </div>

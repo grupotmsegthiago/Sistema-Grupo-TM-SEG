@@ -1013,44 +1013,84 @@ export async function registerRoutes(
 
   app.get("/api/db/capacity", async (_req: Request, res: Response) => {
     try {
-      const DB_CAPACITY_GB = Number(process.env.DB_CAPACITY_GB || 0.5);
-
-      const tables = ['missions', 'clients', 'providers', 'vehicles', 'system_users',
-        'financial_transactions', 'commercial_proposals', 'client_price_tables',
-        'provider_cost_tables', 'system_logs', 'financial_accounts', 'financial_categories'];
-
-      let totalRows = 0;
-      const tableStats: any[] = [];
-
-      for (const table of tables) {
-        try {
-          const { count, error } = await supabaseAdmin.from(table).select('*', { count: 'exact', head: true });
-          if (!error && count !== null) {
-            totalRows += count;
-            tableStats.push({ table, rows: count });
-          }
-        } catch {}
-      }
+      const DB_CAPACITY_GB = Number(process.env.DB_CAPACITY_GB || 8);
+      const dbPass = process.env.SUPABASE_DB_PASSWORD;
 
       let used_bytes = 0;
       let dbSizeSource = 'estimate';
+      let dbSizePretty = '';
+      let topTables: any[] = [];
+      let totalRows = 0;
+      const tableStats: any[] = [];
 
-      try {
-        const { data: rpcData, error: rpcErr } = await supabaseAdmin.rpc('get_db_usage_bytes');
-        if (!rpcErr && rpcData) {
-          used_bytes = Number(rpcData);
-          dbSizeSource = 'rpc';
+      if (dbPass) {
+        const pool = new pg.Pool({
+          connectionString: `postgresql://postgres.ajhmmjuewdsukecaimik:${dbPass}@aws-0-sa-east-1.pooler.supabase.com:6543/postgres`,
+          ssl: { rejectUnauthorized: false },
+          max: 1
+        });
+        try {
+          const sizeRes = await pool.query(`SELECT pg_database_size(current_database()) as size_bytes, pg_size_pretty(pg_database_size(current_database())) as size_pretty`);
+          if (sizeRes.rows[0]) {
+            used_bytes = Number(sizeRes.rows[0].size_bytes);
+            dbSizePretty = sizeRes.rows[0].size_pretty;
+            dbSizeSource = 'pg_database_size';
+          }
+
+          const tablesRes = await pool.query(`
+            SELECT 
+              schemaname || '.' || relname as table_name,
+              relname as short_name,
+              pg_total_relation_size(schemaname || '.' || relname) as total_bytes,
+              pg_size_pretty(pg_total_relation_size(schemaname || '.' || relname)) as total_size,
+              pg_relation_size(schemaname || '.' || relname) as data_bytes,
+              pg_size_pretty(pg_relation_size(schemaname || '.' || relname)) as data_size,
+              n_live_tup as row_count,
+              n_dead_tup as dead_rows
+            FROM pg_stat_user_tables
+            ORDER BY pg_total_relation_size(schemaname || '.' || relname) DESC
+            LIMIT 20
+          `);
+          topTables = tablesRes.rows.map(r => ({
+            table: r.short_name,
+            total_bytes: Number(r.total_bytes),
+            total_size: r.total_size,
+            data_bytes: Number(r.data_bytes),
+            data_size: r.data_size,
+            rows: Number(r.row_count),
+            dead_rows: Number(r.dead_rows)
+          }));
+          totalRows = topTables.reduce((s, t) => s + t.rows, 0);
+
+          await pool.end();
+        } catch (pgErr: any) {
+          console.error('[DB Capacity] pg error:', pgErr.message);
+          try { await pool.end(); } catch {}
         }
-      } catch {}
+      }
 
       if (used_bytes === 0) {
-        const avgRowBytes = 800;
-        used_bytes = totalRows * avgRowBytes;
+        const tables = ['missions', 'clients', 'providers', 'vehicles', 'system_users',
+          'financial_transactions', 'commercial_proposals', 'client_price_tables',
+          'provider_cost_tables', 'system_logs', 'financial_accounts', 'financial_categories'];
+
+        for (const table of tables) {
+          try {
+            const { count, error } = await supabaseAdmin.from(table).select('*', { count: 'exact', head: true });
+            if (!error && count !== null) {
+              totalRows += count;
+              tableStats.push({ table, rows: count, total_bytes: count * 800, total_size: `${(count * 800 / 1024).toFixed(0)} kB`, dead_rows: 0 });
+            }
+          } catch {}
+        }
+        used_bytes = totalRows * 800;
         dbSizeSource = 'estimate';
+        topTables = tableStats.sort((a, b) => b.total_bytes - a.total_bytes);
       }
 
       const limit_bytes = Math.round(DB_CAPACITY_GB * 1024 * 1024 * 1024);
       const percent_used = limit_bytes > 0 ? used_bytes / limit_bytes : null;
+      const totalDeadRows = topTables.reduce((s, t) => s + (t.dead_rows || 0), 0);
 
       res.json({
         used_bytes,
@@ -1059,11 +1099,54 @@ export async function registerRoutes(
         used_mb: +(used_bytes / 1024 / 1024).toFixed(2),
         used_gb: +(used_bytes / 1024 / 1024 / 1024).toFixed(3),
         limit_gb: DB_CAPACITY_GB,
+        size_pretty: dbSizePretty || `${(used_bytes / 1024 / 1024).toFixed(2)} MB`,
         total_rows: totalRows,
-        tables: tableStats.sort((a, b) => b.rows - a.rows),
+        total_dead_rows: totalDeadRows,
+        tables: topTables,
         source: dbSizeSource,
         updated_at: new Date().toISOString(),
       });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.post("/api/db/vacuum", async (req: Request, res: Response) => {
+    try {
+      const dbPass = process.env.SUPABASE_DB_PASSWORD;
+      if (!dbPass) {
+        return res.status(400).json({ error: 'Conexão direta indisponível' });
+      }
+      const { tables } = req.body;
+      const allowedTables = ['missions', 'system_logs', 'mission_logs', 'mission_history',
+        'financial_transactions', 'clients', 'providers', 'vehicles', 'client_price_tables',
+        'provider_cost_tables', 'client_routes', 'agents', 'provider_agents', 'profiles',
+        'commercial_proposals', 'quotes', 'contracts', 'financial_accounts', 'financial_categories'];
+
+      const targetTables = (tables && Array.isArray(tables) && tables.length > 0)
+        ? tables.filter((t: string) => allowedTables.includes(t))
+        : ['missions', 'system_logs', 'mission_logs', 'financial_transactions'];
+
+      const pool = new pg.Pool({
+        connectionString: `postgresql://postgres.ajhmmjuewdsukecaimik:${dbPass}@aws-0-sa-east-1.pooler.supabase.com:6543/postgres`,
+        ssl: { rejectUnauthorized: false },
+        max: 1
+      });
+
+      const results: any[] = [];
+      for (const table of targetTables) {
+        try {
+          const before = await pool.query(`SELECT n_dead_tup FROM pg_stat_user_tables WHERE relname = $1`, [table]);
+          const deadBefore = before.rows[0]?.n_dead_tup || 0;
+          await pool.query(`VACUUM ANALYZE ${table}`);
+          results.push({ table, dead_rows_before: deadBefore, status: 'ok' });
+        } catch (e: any) {
+          results.push({ table, status: 'error', error: e.message });
+        }
+      }
+
+      await pool.end();
+      res.json({ success: true, results, timestamp: new Date().toISOString() });
     } catch (e: any) {
       res.status(500).json({ error: e.message });
     }
