@@ -4,9 +4,10 @@ import { supabase } from '../lib/supabase';
 import { 
     FileBarChart, Calendar, Clock, User, Download, Search, Loader2, 
     ArrowRight, Shield, Activity, FileText, BarChart2, PieChart, Users, 
-    MousePointer2, AlertTriangle, CheckCircle2, TrendingUp
+    MousePointer2, AlertTriangle, CheckCircle2, TrendingUp, List, MapPin, 
+    Building2, Briefcase, Printer, Filter
 } from 'lucide-react';
-import { SystemLog } from '../types';
+import { SystemLog, MissionStatus } from '../types';
 
 interface UserStats {
     userId: string;
@@ -21,7 +22,7 @@ interface UserStats {
 }
 
 const ReportsDashboard: React.FC = () => {
-    const [activeTab, setActiveTab] = useState<'dashboard' | 'ranking' | 'logs'>('dashboard');
+    const [activeTab, setActiveTab] = useState<'dashboard' | 'ranking' | 'logs' | 'timeline'>('dashboard');
     
     // Helper para formatar data local (YYYY-MM-DD)
     const getLocalISODate = (date: Date) => {
@@ -37,10 +38,40 @@ const ReportsDashboard: React.FC = () => {
     
     // Filtros
     const [searchTerm, setSearchTerm] = useState('');
+    
+    // Timeline
+    const [timelineMissions, setTimelineMissions] = useState<any[]>([]);
+    const [timelineLoading, setTimelineLoading] = useState(false);
+    const [timelineClientFilter, setTimelineClientFilter] = useState('');
+    const [timelineProviderFilter, setTimelineProviderFilter] = useState('');
+    const [timelineStatusFilter, setTimelineStatusFilter] = useState('');
 
     useEffect(() => {
         fetchData();
+        if (activeTab === 'timeline') fetchTimelineData();
     }, [startDate, endDate]);
+
+    useEffect(() => {
+        if (activeTab === 'timeline' && timelineMissions.length === 0) fetchTimelineData();
+    }, [activeTab]);
+
+    const fetchTimelineData = async () => {
+        setTimelineLoading(true);
+        try {
+            const { data, error } = await supabase
+                .from('missions')
+                .select('id, client, provider, origin, destination, status, mission_type, created_at, startTime, endTime, start_km, end_km, vehicle_id, agent1, agent2, is_same_os, revenue_value, cost_value, toll_value, billing_approved')
+                .gte('created_at', `${startDate}T00:00:00`)
+                .lte('created_at', `${endDate}T23:59:59`)
+                .order('created_at', { ascending: true });
+            if (error) throw error;
+            setTimelineMissions(data || []);
+        } catch (e) {
+            console.error('Erro ao carregar timeline:', e);
+        } finally {
+            setTimelineLoading(false);
+        }
+    };
 
     const fetchData = async () => {
         setIsLoading(true);
@@ -235,6 +266,13 @@ const ReportsDashboard: React.FC = () => {
                     className={`px-4 py-2 rounded-lg text-sm font-bold transition-all flex items-center gap-2 ${activeTab === 'logs' ? 'bg-white text-red-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
                 >
                     <FileText size={16} /> Logs Detalhados
+                </button>
+                <button 
+                    onClick={() => setActiveTab('timeline')}
+                    className={`px-4 py-2 rounded-lg text-sm font-bold transition-all flex items-center gap-2 ${activeTab === 'timeline' ? 'bg-white text-red-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+                    data-testid="tab-timeline"
+                >
+                    <List size={16} /> Timeline de OS
                 </button>
             </div>
 
@@ -497,6 +535,210 @@ const ReportsDashboard: React.FC = () => {
                                 )}
                             </div>
                         </div>
+                    </div>
+                )}
+
+                {activeTab === 'timeline' && (
+                    <div className="space-y-4 animate-in fade-in slide-in-from-bottom-4">
+                        <div className="flex flex-wrap gap-3 items-center no-print">
+                            <div className="flex items-center gap-2">
+                                <Filter size={14} className="text-gray-400" />
+                                <input
+                                    type="text"
+                                    placeholder="Filtrar cliente..."
+                                    value={timelineClientFilter}
+                                    onChange={e => setTimelineClientFilter(e.target.value)}
+                                    className="px-3 py-1.5 border border-gray-300 rounded-lg text-xs w-40"
+                                    data-testid="input-timeline-client-filter"
+                                />
+                                <input
+                                    type="text"
+                                    placeholder="Filtrar fornecedor..."
+                                    value={timelineProviderFilter}
+                                    onChange={e => setTimelineProviderFilter(e.target.value)}
+                                    className="px-3 py-1.5 border border-gray-300 rounded-lg text-xs w-40"
+                                    data-testid="input-timeline-provider-filter"
+                                />
+                                <select
+                                    value={timelineStatusFilter}
+                                    onChange={e => setTimelineStatusFilter(e.target.value)}
+                                    className="px-3 py-1.5 border border-gray-300 rounded-lg text-xs"
+                                    data-testid="select-timeline-status-filter"
+                                >
+                                    <option value="">Todos os Status</option>
+                                    <option value="COMPLETED">Concluída</option>
+                                    <option value="IN_PROGRESS">Em Andamento</option>
+                                    <option value="PENDING">Pendente</option>
+                                    <option value="CANCELLED">Cancelada</option>
+                                </select>
+                            </div>
+                            <button
+                                onClick={() => window.print()}
+                                className="ml-auto px-4 py-1.5 bg-gray-100 hover:bg-gray-200 rounded-lg text-xs font-bold flex items-center gap-2 transition-colors"
+                                data-testid="btn-print-timeline"
+                            >
+                                <Printer size={14} /> Imprimir
+                            </button>
+                        </div>
+
+                        {timelineLoading ? (
+                            <div className="flex items-center justify-center py-20">
+                                <Loader2 size={32} className="animate-spin text-red-500" />
+                            </div>
+                        ) : (() => {
+                            const filtered = timelineMissions.filter(m => {
+                                if (timelineClientFilter && !(m.client || '').toUpperCase().includes(timelineClientFilter.toUpperCase())) return false;
+                                if (timelineProviderFilter && !(m.provider || '').toUpperCase().includes(timelineProviderFilter.toUpperCase())) return false;
+                                if (timelineStatusFilter && m.status !== timelineStatusFilter) return false;
+                                return true;
+                            });
+
+                            const grouped: Record<string, any[]> = {};
+                            filtered.forEach(m => {
+                                const dateKey = new Date(m.created_at).toLocaleDateString('pt-BR');
+                                if (!grouped[dateKey]) grouped[dateKey] = [];
+                                grouped[dateKey].push(m);
+                            });
+
+                            const sortedDates = Object.keys(grouped).sort((a, b) => {
+                                const [dA, mA, yA] = a.split('/').map(Number);
+                                const [dB, mB, yB] = b.split('/').map(Number);
+                                return new Date(yA, mA - 1, dA).getTime() - new Date(yB, mB - 1, dB).getTime();
+                            });
+
+                            const statusLabel = (s: string) => {
+                                if (s === 'COMPLETED') return { text: 'Concluída', color: 'bg-emerald-100 text-emerald-700' };
+                                if (s === 'IN_PROGRESS') return { text: 'Em Andamento', color: 'bg-blue-100 text-blue-700' };
+                                if (s === 'PENDING') return { text: 'Pendente', color: 'bg-amber-100 text-amber-700' };
+                                if (s === 'CANCELLED') return { text: 'Cancelada', color: 'bg-red-100 text-red-700' };
+                                return { text: s || '-', color: 'bg-gray-100 text-gray-600' };
+                            };
+
+                            const extractCity = (addr: string) => {
+                                if (!addr) return '-';
+                                const parts = addr.split(',');
+                                if (parts.length >= 2) {
+                                    const cityPart = parts[1]?.trim().split('-')[0]?.trim();
+                                    if (cityPart && cityPart.length > 2) return cityPart;
+                                }
+                                return parts[0]?.trim().substring(0, 30) || '-';
+                            };
+
+                            let globalCounter = 0;
+
+                            return (
+                                <div className="space-y-6">
+                                    <div className="bg-white rounded-xl border border-gray-200 p-4 flex items-center justify-between">
+                                        <div>
+                                            <p className="text-lg font-black text-gray-800">{filtered.length} <span className="text-sm font-bold text-gray-500">OS criadas no período</span></p>
+                                            <p className="text-[10px] text-gray-400">{sortedDates.length} dia(s) com atividade</p>
+                                        </div>
+                                        <div className="flex gap-4 text-center">
+                                            <div>
+                                                <p className="text-lg font-black text-emerald-600">{filtered.filter(m => m.status === 'COMPLETED').length}</p>
+                                                <p className="text-[9px] font-bold text-gray-400 uppercase">Concluídas</p>
+                                            </div>
+                                            <div>
+                                                <p className="text-lg font-black text-blue-600">{filtered.filter(m => m.status === 'IN_PROGRESS').length}</p>
+                                                <p className="text-[9px] font-bold text-gray-400 uppercase">Em Andamento</p>
+                                            </div>
+                                            <div>
+                                                <p className="text-lg font-black text-amber-600">{filtered.filter(m => m.status === 'PENDING').length}</p>
+                                                <p className="text-[9px] font-bold text-gray-400 uppercase">Pendentes</p>
+                                            </div>
+                                            <div>
+                                                <p className="text-lg font-black text-red-600">{filtered.filter(m => m.status === 'CANCELLED').length}</p>
+                                                <p className="text-[9px] font-bold text-gray-400 uppercase">Canceladas</p>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    {sortedDates.map(dateStr => {
+                                        const dayMissions = grouped[dateStr];
+                                        return (
+                                            <div key={dateStr} className="relative">
+                                                <div className="sticky top-0 z-10 bg-gradient-to-r from-red-600 to-red-700 text-white px-5 py-2.5 rounded-xl shadow-md flex items-center justify-between mb-3">
+                                                    <div className="flex items-center gap-3">
+                                                        <Calendar size={18} />
+                                                        <span className="font-black text-sm uppercase tracking-wider">{dateStr}</span>
+                                                    </div>
+                                                    <span className="bg-white/20 px-3 py-1 rounded-full text-xs font-bold">{dayMissions.length} OS</span>
+                                                </div>
+
+                                                <div className="space-y-1.5 pl-2">
+                                                    {dayMissions.map((m: any) => {
+                                                        globalCounter++;
+                                                        const st = statusLabel(m.status);
+                                                        const hora = new Date(m.created_at).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+                                                        const revTotal = (m.revenue_value || 0) + (m.toll_value || 0);
+                                                        const costTotal = (m.cost_value || 0) + (m.toll_value || 0);
+                                                        
+                                                        return (
+                                                            <div key={m.id} className="flex items-stretch gap-3 group" data-testid={`timeline-row-${m.id}`}>
+                                                                <div className="flex flex-col items-center">
+                                                                    <div className="w-8 h-8 rounded-full bg-gray-800 text-white flex items-center justify-center text-[10px] font-black shrink-0">{globalCounter}</div>
+                                                                    <div className="w-0.5 flex-1 bg-gray-200 group-last:hidden" />
+                                                                </div>
+
+                                                                <div className="flex-1 bg-white border border-gray-200 rounded-xl p-3 hover:shadow-md transition-shadow mb-1">
+                                                                    <div className="flex items-center justify-between gap-2 flex-wrap">
+                                                                        <div className="flex items-center gap-2">
+                                                                            <span className="font-black text-sm text-gray-900" data-testid={`timeline-id-${m.id}`}>{m.id}</span>
+                                                                            <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full ${st.color}`}>{st.text}</span>
+                                                                            {m.is_same_os && <span className="text-[8px] font-black bg-slate-200 text-slate-600 px-1.5 py-0.5 rounded-full">MESMA OS</span>}
+                                                                            {m.billing_approved && <span className="text-[8px] font-black bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded-full">FATURADO</span>}
+                                                                            {m.mission_type && <span className="text-[8px] font-bold bg-purple-100 text-purple-700 px-1.5 py-0.5 rounded-full uppercase">{m.mission_type}</span>}
+                                                                        </div>
+                                                                        <span className="text-[10px] font-mono text-gray-400 flex items-center gap-1"><Clock size={10} /> {hora}</span>
+                                                                    </div>
+                                                                    
+                                                                    <div className="flex flex-wrap gap-x-6 gap-y-1 mt-2 text-[10px]">
+                                                                        <div className="flex items-center gap-1.5">
+                                                                            <Building2 size={11} className="text-blue-500" />
+                                                                            <span className="font-bold text-gray-700 truncate max-w-[200px]">{m.client || '-'}</span>
+                                                                        </div>
+                                                                        <div className="flex items-center gap-1.5">
+                                                                            <Briefcase size={11} className="text-indigo-500" />
+                                                                            <span className="font-bold text-gray-600 truncate max-w-[200px]">{m.provider || 'Pendente'}</span>
+                                                                        </div>
+                                                                        <div className="flex items-center gap-1.5 text-gray-500">
+                                                                            <MapPin size={11} className="text-red-400" />
+                                                                            <span className="truncate max-w-[150px]">{extractCity(m.origin)}</span>
+                                                                            <ArrowRight size={10} />
+                                                                            <span className="truncate max-w-[150px]">{extractCity(m.destination)}</span>
+                                                                        </div>
+                                                                    </div>
+
+                                                                    {(revTotal > 0 || costTotal > 0) && (
+                                                                        <div className="flex gap-4 mt-2 text-[10px]">
+                                                                            <span className="font-bold text-green-700">Receita: R$ {revTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
+                                                                            <span className="font-bold text-blue-700">Custo: R$ {costTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
+                                                                            {revTotal > 0 && costTotal > 0 && (
+                                                                                <span className={`font-black ${revTotal - costTotal >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
+                                                                                    Margem: {((1 - costTotal / revTotal) * 100).toFixed(1)}%
+                                                                                </span>
+                                                                            )}
+                                                                        </div>
+                                                                    )}
+                                                                </div>
+                                                            </div>
+                                                        );
+                                                    })}
+                                                </div>
+                                            </div>
+                                        );
+                                    })}
+
+                                    {filtered.length === 0 && (
+                                        <div className="text-center py-20 text-gray-400">
+                                            <List size={48} className="mx-auto mb-4 opacity-30" />
+                                            <p className="font-bold text-lg">Nenhuma OS encontrada</p>
+                                            <p className="text-sm">Ajuste o período ou os filtros para ver resultados.</p>
+                                        </div>
+                                    )}
+                                </div>
+                            );
+                        })()}
                     </div>
                 )}
             </div>
