@@ -4,7 +4,7 @@ import { Mission, ClientPriceTable, ProviderCostTable, MissionStatus, Client } f
 import { supabase } from '../lib/supabase';
 import { useNotification } from '../lib/NotificationContext';
 import { calculateMissionFinancials, auditMissionFinancials, extractUF, UF_TO_REGION } from '../lib/financialUtils';
-import { X, Calculator, Loader2, Save, CheckCircle2, TrendingUp, Landmark, Zap, RotateCcw, Building2, Briefcase, Plus, Users, MapPin, ArrowRight, BrainCircuit, AlertTriangle, AlertCircle, Edit2, Info, RefreshCw, Clock, Pencil, Lock, ShieldCheck, Camera, Image as ImageIcon } from 'lucide-react';
+import { X, Calculator, Loader2, Save, CheckCircle2, TrendingUp, Landmark, Zap, RotateCcw, Building2, Briefcase, Plus, Users, MapPin, ArrowRight, BrainCircuit, AlertTriangle, AlertCircle, Edit2, Info, RefreshCw, Clock, Pencil, Lock, ShieldCheck, Camera, Image as ImageIcon, Link2, Layers } from 'lucide-react';
 import ProviderCostForm from './ProviderCostForm';
 import ClientPriceForm from './ClientPriceForm';
 import { formatProviderName } from '../lib/utils';
@@ -1436,7 +1436,50 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                 </div>
             </div>
           </div>
-          <button onClick={onClose} className="p-2 rounded-full hover:bg-white/10 transition-colors ml-4 shrink-0"><X size={24}/></button>
+          <div className="flex items-center gap-2 ml-4 shrink-0">
+            {mission.is_same_os && mission.parent_mission_id && (
+              <span className="text-[9px] font-black bg-blue-600 text-white px-2 py-1 rounded uppercase flex items-center gap-1">
+                <Link2 size={10} /> MÃE: {mission.parent_mission_id}
+              </span>
+            )}
+            <button
+              data-testid="btn-toggle-same-os"
+              onClick={async () => {
+                const newVal = !mission.is_same_os;
+                if (newVal && !confirm('Marcar como MESMA OS? O custo do fornecedor será zerado.')) return;
+                if (!newVal && !confirm('Desmarcar MESMA OS? O custo do fornecedor será recalculado.')) return;
+                try {
+                  const updateData: any = { is_same_os: newVal };
+                  if (!newVal) updateData.parent_mission_id = null;
+                  await supabase.from('missions').update(updateData).eq('id', mission.id);
+                  const userData = JSON.parse(localStorage.getItem('user') || '{}');
+                  await supabase.from('system_logs').insert([{
+                    user_name: userData.name || 'Sistema',
+                    action_type: 'UPDATE',
+                    entity: 'Mission',
+                    entity_id: mission.id,
+                    details: JSON.stringify({ field: 'is_same_os', oldValue: mission.is_same_os, newValue: newVal })
+                  }]);
+                  mission.is_same_os = newVal;
+                  if (!newVal) mission.parent_mission_id = undefined;
+                  showNotification(newVal ? 'MESMA OS Ativada' : 'MESMA OS Desativada', newVal ? 'Custo do fornecedor zerado.' : 'Custo será recalculado.', 'success');
+                  onUpdate();
+                } catch (err: any) {
+                  showNotification('Erro', err.message, 'error');
+                }
+              }}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-black uppercase transition-all shadow-md active:scale-95 ${
+                mission.is_same_os 
+                  ? 'bg-black text-white hover:bg-gray-800' 
+                  : 'bg-white/10 text-gray-300 hover:bg-white/20 border border-white/20'
+              }`}
+              title={mission.is_same_os ? 'Missão marcada como Mesma OS (custo zero)' : 'Clique para marcar como Mesma OS'}
+            >
+              <Layers size={12} />
+              {mission.is_same_os ? 'MESMA OS ✓' : 'MESMA OS'}
+            </button>
+            <button onClick={onClose} className="p-2 rounded-full hover:bg-white/10 transition-colors"><X size={24}/></button>
+          </div>
         </header>
 
         <div ref={modalContentRef} className="flex-1 overflow-y-auto p-6 space-y-6 bg-gray-50 pb-32">

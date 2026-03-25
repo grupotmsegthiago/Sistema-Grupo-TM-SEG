@@ -1145,7 +1145,7 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
                               const resultado = rev - cost - toll;
                               const row = [
                                 i + 1,
-                                m.id,
+                                m.id + (m.is_same_os ? ` (MESMA OS${m.parent_mission_id ? ` → ${m.parent_mission_id}` : ''})` : ''),
                                 m.status,
                                 m.client || '',
                                 m.clientVehicle?.plate || '',
@@ -1240,7 +1240,11 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
                                 <td className="px-3 py-2 font-black text-gray-900 border-r border-gray-100 whitespace-nowrap">
                                   <span>{m.id}</span>
                                   {m.mission_type && <span className={`ml-1 text-[9px] font-bold px-1.5 py-0.5 rounded ${m.mission_type === 'Velada' ? 'bg-purple-100 text-purple-700' : m.mission_type === 'Pronta Resposta' ? 'bg-orange-100 text-orange-700' : 'bg-blue-100 text-blue-700'}`}>{m.mission_type === 'Caracterizada' ? 'CARACT' : m.mission_type === 'Velada' ? 'VELADA' : 'PR'}</span>}
-                                  {m.is_same_os && <span className="ml-1 text-[9px] font-black bg-slate-200 text-slate-600 px-1.5 py-0.5 rounded">MESMA OS</span>}
+                                  {m.is_same_os && (
+                                    <span className="ml-1 text-[9px] font-black bg-black text-white px-1.5 py-0.5 rounded" title={m.parent_mission_id ? `OS Mãe: ${m.parent_mission_id}` : 'Mesma OS'}>
+                                      MESMA OS{m.parent_mission_id ? ` → ${m.parent_mission_id}` : ''}
+                                    </span>
+                                  )}
                                 </td>
                                 <td className="px-3 py-2 border-r border-gray-100 text-center whitespace-nowrap"><span className={`text-[10px] font-black px-2.5 py-1 rounded-full ${statusBg(m.status)}`}>{m.status}</span></td>
                                 <td className="px-3 py-2 border-r border-gray-100 font-bold text-gray-800 max-w-[160px] truncate">{m.client || '-'}</td>
