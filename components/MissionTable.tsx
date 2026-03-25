@@ -7,7 +7,8 @@ import {
   Plus, Loader2, Activity, Search, Database, AlertTriangle, Check, Trash2, Lock, Share2, X, Eye, EyeOff, Layers, PlayCircle, CheckCircle2,
   ClipboardList, FileSearch, CalendarClock, MapPin, Truck, Flag, XCircle, UserX, AlertOctagon, ToggleLeft, ToggleRight, Calendar,
   BarChart4, Globe, Building2, LayoutDashboard, User, ExternalLink, RefreshCw,
-  Target, Clock, History, CalendarPlus, ShieldAlert, Mail, MessageCircle, ClipboardCheck
+  Target, Clock, History, CalendarPlus, ShieldAlert, Mail, MessageCircle, ClipboardCheck,
+  FileBarChart, ArrowRight, Briefcase, Printer, Filter, List
 } from 'lucide-react';
 import { GoogleMap, useLoadScript, Marker, InfoWindow } from '@react-google-maps/api';
 import { googleMapsLoadConfig } from '../lib/maps';
@@ -163,6 +164,7 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
   const [lastLogMap, setLastLogMap] = useState<Record<string, MissionLog>>({});
   const [resolvedClientName, setResolvedClientName] = useState('');
   const [showMyApprovalOnly, setShowMyApprovalOnly] = useState(false);
+  const [showTimeline, setShowTimeline] = useState(false);
 
   // Relógio para projeções
   const [currentTime, setCurrentTime] = useState(new Date());
@@ -1071,8 +1073,133 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
                 </div>
                 )}
             </div>
-            <div className="flex items-center gap-2 text-xs text-gray-500"><span className="hidden md:inline">Filtrados:</span><span className="font-bold text-gray-800 bg-gray-200 px-2 py-1 rounded">{filteredMissions.length}</span></div></div>
+            <div className="flex items-center gap-2 text-xs text-gray-500">
+              <span className="hidden md:inline">Filtrados:</span>
+              <span className="font-bold text-gray-800 bg-gray-200 px-2 py-1 rounded">{filteredMissions.length}</span>
+              <button
+                data-testid="btn-toggle-timeline"
+                onClick={() => setShowTimeline(!showTimeline)}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-black uppercase border transition-all ml-2 ${
+                  showTimeline 
+                    ? 'bg-red-600 text-white border-red-700 shadow-md' 
+                    : 'bg-white text-red-600 border-red-200 hover:bg-red-50'
+                }`}
+              >
+                <FileBarChart size={14} />
+                Relatório
+              </button>
+            </div></div>
   
+          {showTimeline && (
+            <div className="p-4 border-b border-gray-200 bg-white">
+              {(() => {
+                const missions = filteredMissions;
+                const grouped: Record<string, Mission[]> = {};
+                missions.forEach(m => {
+                  const dateKey = new Date(m.created_at).toLocaleDateString('pt-BR');
+                  if (!grouped[dateKey]) grouped[dateKey] = [];
+                  grouped[dateKey].push(m);
+                });
+                const sortedDates = Object.keys(grouped).sort((a, b) => {
+                  const [dA, mA, yA] = a.split('/').map(Number);
+                  const [dB, mB, yB] = b.split('/').map(Number);
+                  return new Date(yA, mA - 1, dA).getTime() - new Date(yB, mB - 1, dB).getTime();
+                });
+                const statusLabel = (s: string) => {
+                  if (s === MissionStatus.COMPLETED) return { text: 'Concluída', color: 'bg-emerald-100 text-emerald-700' };
+                  if (s === MissionStatus.IN_PROGRESS) return { text: 'Em Andamento', color: 'bg-blue-100 text-blue-700' };
+                  if (s === MissionStatus.PENDING) return { text: 'Pendente', color: 'bg-amber-100 text-amber-700' };
+                  if (s === MissionStatus.CANCELLED) return { text: 'Cancelada', color: 'bg-red-100 text-red-700' };
+                  return { text: s || '-', color: 'bg-gray-100 text-gray-600' };
+                };
+                const extractCity = (addr: string) => {
+                  if (!addr) return '-';
+                  const parts = addr.split(',');
+                  if (parts.length >= 2) {
+                    const cityPart = parts[1]?.trim().split('-')[0]?.trim();
+                    if (cityPart && cityPart.length > 2) return cityPart;
+                  }
+                  return parts[0]?.trim().substring(0, 30) || '-';
+                };
+                let globalCounter = 0;
+                return (
+                  <div className="space-y-4">
+                    <div className="flex items-center justify-between mb-2">
+                      <h3 className="text-lg font-black text-gray-800 flex items-center gap-2">
+                        <FileBarChart size={20} className="text-red-600" />
+                        Timeline de OS — {missions.length} missões
+                      </h3>
+                      <div className="flex gap-4 text-center">
+                        <div><p className="text-lg font-black text-emerald-600">{missions.filter(m => m.status === MissionStatus.COMPLETED).length}</p><p className="text-[9px] font-bold text-gray-400 uppercase">Concluídas</p></div>
+                        <div><p className="text-lg font-black text-blue-600">{missions.filter(m => m.status === MissionStatus.IN_PROGRESS).length}</p><p className="text-[9px] font-bold text-gray-400 uppercase">Em Andamento</p></div>
+                        <div><p className="text-lg font-black text-amber-600">{missions.filter(m => m.status === MissionStatus.PENDING).length}</p><p className="text-[9px] font-bold text-gray-400 uppercase">Pendentes</p></div>
+                        <div><p className="text-lg font-black text-red-600">{missions.filter(m => m.status === MissionStatus.CANCELLED).length}</p><p className="text-[9px] font-bold text-gray-400 uppercase">Canceladas</p></div>
+                      </div>
+                    </div>
+                    {sortedDates.map(dateStr => {
+                      const dayMissions = grouped[dateStr];
+                      return (
+                        <div key={dateStr}>
+                          <div className="bg-gradient-to-r from-red-600 to-red-700 text-white px-5 py-2 rounded-xl shadow-md flex items-center justify-between mb-2">
+                            <div className="flex items-center gap-3"><Calendar size={16} /><span className="font-black text-sm uppercase tracking-wider">{dateStr}</span></div>
+                            <span className="bg-white/20 px-3 py-1 rounded-full text-xs font-bold">{dayMissions.length} OS</span>
+                          </div>
+                          <div className="space-y-1.5 pl-2 mb-4">
+                            {dayMissions.map((m) => {
+                              globalCounter++;
+                              const st = statusLabel(m.status);
+                              const hora = new Date(m.created_at).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+                              const revTotal = (m.revenue_value || 0) + (m.toll_value || 0);
+                              const costTotal = (m.cost_value || 0) + (m.toll_value || 0);
+                              return (
+                                <div key={m.id} className="flex items-stretch gap-3 group" data-testid={`timeline-row-${m.id}`}>
+                                  <div className="flex flex-col items-center">
+                                    <div className="w-8 h-8 rounded-full bg-gray-800 text-white flex items-center justify-center text-[10px] font-black shrink-0">{globalCounter}</div>
+                                    <div className="w-0.5 flex-1 bg-gray-200 group-last:hidden" />
+                                  </div>
+                                  <div className="flex-1 bg-white border border-gray-200 rounded-xl p-3 hover:shadow-md transition-shadow mb-1">
+                                    <div className="flex items-center justify-between gap-2 flex-wrap">
+                                      <div className="flex items-center gap-2">
+                                        <span className="font-black text-sm text-gray-900">{m.id}</span>
+                                        <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full ${st.color}`}>{st.text}</span>
+                                        {m.is_same_os && <span className="text-[8px] font-black bg-slate-200 text-slate-600 px-1.5 py-0.5 rounded-full">MESMA OS</span>}
+                                        {m.billing_approved && <span className="text-[8px] font-black bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded-full">FATURADO</span>}
+                                        {m.mission_type && <span className="text-[8px] font-bold bg-purple-100 text-purple-700 px-1.5 py-0.5 rounded-full uppercase">{m.mission_type}</span>}
+                                      </div>
+                                      <span className="text-[10px] font-mono text-gray-400 flex items-center gap-1"><Clock size={10} /> {hora}</span>
+                                    </div>
+                                    <div className="flex flex-wrap gap-x-6 gap-y-1 mt-2 text-[10px]">
+                                      <div className="flex items-center gap-1.5"><Building2 size={11} className="text-blue-500" /><span className="font-bold text-gray-700 truncate max-w-[200px]">{m.client || '-'}</span></div>
+                                      <div className="flex items-center gap-1.5"><Briefcase size={11} className="text-indigo-500" /><span className="font-bold text-gray-600 truncate max-w-[200px]">{m.provider || 'Pendente'}</span></div>
+                                      <div className="flex items-center gap-1.5 text-gray-500"><MapPin size={11} className="text-red-400" /><span className="truncate max-w-[150px]">{extractCity(m.origin)}</span><ArrowRight size={10} /><span className="truncate max-w-[150px]">{extractCity(m.destination)}</span></div>
+                                    </div>
+                                    {(revTotal > 0 || costTotal > 0) && (
+                                      <div className="flex gap-4 mt-2 text-[10px]">
+                                        <span className="font-bold text-green-700">Receita: R$ {revTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
+                                        <span className="font-bold text-blue-700">Custo: R$ {costTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
+                                        {revTotal > 0 && costTotal > 0 && <span className={`font-black ${revTotal - costTotal >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>Margem: {((1 - costTotal / revTotal) * 100).toFixed(1)}%</span>}
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      );
+                    })}
+                    {missions.length === 0 && (
+                      <div className="text-center py-12 text-gray-400">
+                        <List size={40} className="mx-auto mb-3 opacity-30" />
+                        <p className="font-bold">Nenhuma OS encontrada</p>
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
+            </div>
+          )}
+
           <div className="bg-gray-50/5 p-4 min-h-[400px]">
               {isLoading ? ( <div className="flex flex-col items-center justify-center h-64 text-gray-400"><Loader2 size={32} className="animate-spin mb-2 text-red-600" /><p className="text-sm font-medium">Carregando...</p></div> ) : sortedMissions.length === 0 ? ( <div className="relative flex flex-col items-center justify-center h-64 text-gray-400 border-2 border-dashed border-gray-200 rounded-xl bg-white overflow-hidden">
                   <svg viewBox="0 0 320 80" className="absolute h-32 opacity-[0.06] pointer-events-none" fill="none" xmlns="http://www.w3.org/2000/svg">
