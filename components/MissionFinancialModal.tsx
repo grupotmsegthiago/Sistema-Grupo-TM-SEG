@@ -726,6 +726,9 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
       setCustomClientKm('');
       setCustomClientHour('');
       setUseSavedValues(false);
+      if (financialData) {
+          setRevenueInput(financialData.client.total.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
+      }
       showNotification('Recalculado', 'Valores do cliente restaurados para a tabela original.', 'info');
   };
 
@@ -734,6 +737,9 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
       setCustomProviderKm('');
       setCustomProviderHour('');
       setUseSavedValues(false);
+      if (financialData) {
+          setCostInput(financialData.provider.total.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
+      }
       showNotification('Recalculado', 'Valores do fornecedor restaurados para a tabela original.', 'info');
   };
 
