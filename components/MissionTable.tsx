@@ -194,6 +194,12 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
   const isDanielPinto = useMemo(() => {
     return currentUser?.name?.toUpperCase() === 'DANIEL PINTO';
   }, [currentUser]);
+
+  const canSeeFinancials = useMemo(() => {
+    if (!currentUser) return false;
+    const nameLower = (currentUser.name || '').toLowerCase();
+    return nameLower.includes('daniel') || nameLower.includes('barbara') || nameLower.includes('bárbara') || nameLower.includes('thiago');
+  }, [currentUser]);
   
   const isCommercial = useMemo(() => {
       if (!currentUser) return false;
@@ -1132,10 +1138,12 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
                         <span className="text-blue-700">Andamento: {missions.filter(m => m.status === MissionStatus.IN_PROGRESS).length}</span>
                         <span className="text-amber-700">Pend: {missions.filter(m => [MissionStatus.PENDING, MissionStatus.SCHEDULED, MissionStatus.SOLICITED].includes(m.status)).length}</span>
                         <span className="text-red-700">Canc: {missions.filter(m => [MissionStatus.CANCELLED, MissionStatus.REFUSED].includes(m.status)).length}</span>
+                        {canSeeFinancials && (<>
                         <span className="border-l border-gray-300 pl-3 text-green-700">Receita Total: R$ {fmtMoney(totalRev)}</span>
                         <span className="text-blue-700">Custo Total: R$ {fmtMoney(totalCost)}</span>
                         <span className="text-orange-700">Pedágio Total: R$ {fmtMoney(totalToll)}</span>
                         <span className={`font-black ${totalRev - totalCost - totalToll >= 0 ? 'text-emerald-700' : 'text-red-700'}`}>Resultado: R$ {fmtMoney(totalRev - totalCost - totalToll)}</span>
+                        </>)}
                       </div>
                     </div>
                     <div className="overflow-x-auto max-h-[70vh] overflow-y-auto">
@@ -1154,10 +1162,12 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
                             <th className="px-2 py-2 text-left font-black border-r border-gray-700">VEÍC. ESCOLTADO</th>
                             <th className="px-2 py-2 text-left font-black border-r border-gray-700">DATA FINAL</th>
                             <th className="px-2 py-2 text-left font-black border-r border-gray-700">HORA FINAL</th>
+                            {canSeeFinancials && (<>
                             <th className="px-2 py-2 text-right font-black border-r border-gray-700">RECEITA</th>
                             <th className="px-2 py-2 text-right font-black border-r border-gray-700">CUSTO</th>
                             <th className="px-2 py-2 text-right font-black border-r border-gray-700">PEDÁGIO</th>
                             <th className="px-2 py-2 text-right font-black border-r border-gray-700">RESULTADO</th>
+                            </>)}
                             <th className="px-2 py-2 text-left font-black">AGENTES</th>
                           </tr>
                         </thead>
@@ -1189,16 +1199,18 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
                                 <td className="px-2 py-1.5 border-r border-gray-100 text-gray-600 max-w-[140px] truncate" title={veicEscoltado}>{veicEscoltado}</td>
                                 <td className="px-2 py-1.5 border-r border-gray-100 whitespace-nowrap">{m.endTime ? fmtDate(m.endTime) : '-'}</td>
                                 <td className="px-2 py-1.5 border-r border-gray-100 whitespace-nowrap">{m.endTime ? fmtTime(m.endTime) : '-'}</td>
+                                {canSeeFinancials && (<>
                                 <td className="px-2 py-1.5 border-r border-gray-100 text-right font-bold text-green-700 whitespace-nowrap">{rev > 0 ? fmtMoney(rev) : '-'}</td>
                                 <td className="px-2 py-1.5 border-r border-gray-100 text-right font-bold text-blue-700 whitespace-nowrap">{cost > 0 ? fmtMoney(cost) : '-'}</td>
                                 <td className="px-2 py-1.5 border-r border-gray-100 text-right text-orange-600 whitespace-nowrap">{toll > 0 ? fmtMoney(toll) : '-'}</td>
                                 <td className={`px-2 py-1.5 border-r border-gray-100 text-right font-black whitespace-nowrap ${resultado >= 0 ? 'text-emerald-700' : 'text-red-600 bg-red-50'}`}>{rev > 0 || cost > 0 ? fmtMoney(resultado) : '-'}</td>
+                                </>)}
                                 <td className="px-2 py-1.5 text-gray-600 max-w-[160px] truncate" title={agentes}>{agentes}</td>
                               </tr>
                             );
                           })}
                         </tbody>
-                        {missions.length > 0 && (
+                        {missions.length > 0 && canSeeFinancials && (
                           <tfoot>
                             <tr className="bg-gray-800 text-white font-black">
                               <td colSpan={12} className="px-2 py-2 text-right border-r border-gray-600">TOTAIS →</td>
