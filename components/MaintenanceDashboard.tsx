@@ -155,7 +155,11 @@ const MaintenanceDashboard: React.FC = () => {
             const data = await resp.json();
             if (data.success) {
                 setVacuumResults(data.results);
-                showNotification('VACUUM Concluído', `${data.results.filter((r: any) => r.status === 'ok').length} tabelas otimizadas.`, 'success');
+                if (data.method === 'direct') {
+                    showNotification('VACUUM Concluído', `${data.results.filter((r: any) => r.status === 'ok').length} tabelas otimizadas com sucesso.`, 'success');
+                } else {
+                    showNotification('Verificação Concluída', data.message || 'Contagens de registros atualizadas. Para VACUUM completo, use o painel do Supabase.', 'info');
+                }
                 fetchDbCapacity();
             } else {
                 showNotification('Erro', data.error || 'Falha ao executar VACUUM', 'error');
@@ -475,7 +479,9 @@ const MaintenanceDashboard: React.FC = () => {
                                     <div key={i} className="flex items-center justify-between text-[10px] py-0.5">
                                         <span className="font-bold text-gray-700">{r.table}</span>
                                         <span className={`font-black ${r.status === 'ok' ? 'text-green-600' : 'text-red-600'}`}>
-                                            {r.status === 'ok' ? `✓ ${r.dead_rows_before} limpas` : `✗ ${r.error}`}
+                                            {r.status === 'ok' 
+                                                ? (r.note === 'count-only' ? `✓ ${(r.rows || 0).toLocaleString('pt-BR')} registros` : `✓ ${r.dead_rows_before} limpas`)
+                                                : `✗ ${r.error}`}
                                         </span>
                                     </div>
                                 ))}
