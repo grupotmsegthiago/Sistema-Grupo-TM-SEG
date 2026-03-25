@@ -275,6 +275,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
 
   const loadData = async () => {
       if (!initialMission?.id || isSavingRef.current) return;
+      userManuallyEditedRef.current = false;
       setIsLoading(true);
       try {
           const clientName = initialMission.originalClientName || initialMission.client;
@@ -656,6 +657,8 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
       });
   }, [mission, clientTables, providerTables, clientData, manualClientTableId, manualProviderTableId, iblEnabled, tollInput, customProviderKm, customProviderHour, customClientKm, customClientHour, customClientBase, customProviderBase, providerOpsOverride]);
 
+    const userManuallyEditedRef = React.useRef(false);
+
     useEffect(() => {
       if (financialData && mission) {
           const provOpsActive = !!mission.provider_ops_edited;
@@ -665,6 +668,18 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
           if (!useSavedValuesRef.current && !isSavingRef.current && !isVendorLocked) {
               setRevenueInput(financialData.client.total.toLocaleString('pt-BR', {minimumFractionDigits: 2, maximumFractionDigits: 2}));
               setCostInput(provTotalWithCorrectToll.toLocaleString('pt-BR', {minimumFractionDigits: 2, maximumFractionDigits: 2}));
+          } else if (useSavedValuesRef.current && !isSavingRef.current && !userManuallyEditedRef.current) {
+              const currentRev = parseNumber(revenueInput);
+              const tableRev = financialData.client.total;
+              if (Math.abs(currentRev - tableRev) > 1) {
+                  setRevenueInput(tableRev.toLocaleString('pt-BR', {minimumFractionDigits: 2, maximumFractionDigits: 2}));
+              }
+              if (!isVendorLocked) {
+                  const currentCost = parseNumber(costInput);
+                  if (Math.abs(currentCost - provTotalWithCorrectToll) > 1) {
+                      setCostInput(provTotalWithCorrectToll.toLocaleString('pt-BR', {minimumFractionDigits: 2, maximumFractionDigits: 2}));
+                  }
+              }
           } else if ((provOpsActive || hasCustomProviderValues) && !isSavingRef.current && !isVendorLocked) {
               setCostInput(provTotalWithCorrectToll.toLocaleString('pt-BR', {minimumFractionDigits: 2, maximumFractionDigits: 2}));
           }
@@ -1962,7 +1977,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                     inputMode="decimal"
                                     className={`w-full bg-white/60 border border-green-200 rounded-lg px-2 py-1 outline-none font-black text-3xl text-green-900 font-mono focus:ring-2 focus:ring-green-400 focus:border-green-400 ${!canEditClientData ? 'pointer-events-none opacity-70' : 'cursor-text'}`}
                                     value={revenueInput} 
-                                    onChange={e => { if (canEditClientData) { setUseSavedValues(true); setRevenueInput(e.target.value); setShowRevenueReasonInput(true); } }}
+                                    onChange={e => { if (canEditClientData) { userManuallyEditedRef.current = true; setUseSavedValues(true); setRevenueInput(e.target.value); setShowRevenueReasonInput(true); } }}
                                     readOnly={!canEditClientData}
                                     data-testid="input-revenue-total"
                                 />
@@ -2040,7 +2055,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                     inputMode="decimal"
                                     className={`w-full bg-white/60 border border-blue-200 rounded-lg px-2 py-1 outline-none font-black text-3xl text-blue-900 font-mono focus:ring-2 focus:ring-blue-400 focus:border-blue-400 ${(!canEditOpsData || (mission?.verified_by && mission?.verified_at && !['diretoria', 'administrador', 'ceo'].includes(userRoleLower))) ? 'pointer-events-none opacity-70' : 'cursor-text'}`}
                                     value={costInput} 
-                                    onChange={e => { if (canEditOpsData && !(mission?.verified_by && mission?.verified_at && !['diretoria', 'administrador', 'ceo'].includes(userRoleLower))) { setUseSavedValues(true); setCostInput(e.target.value); setShowCostReasonInput(true); } }}
+                                    onChange={e => { if (canEditOpsData && !(mission?.verified_by && mission?.verified_at && !['diretoria', 'administrador', 'ceo'].includes(userRoleLower))) { userManuallyEditedRef.current = true; setUseSavedValues(true); setCostInput(e.target.value); setShowCostReasonInput(true); } }}
                                     readOnly={!canEditOpsData || !!(mission?.verified_by && mission?.verified_at && !['diretoria', 'administrador', 'ceo'].includes(userRoleLower))}
                                     data-testid="input-cost-total"
                                 />
