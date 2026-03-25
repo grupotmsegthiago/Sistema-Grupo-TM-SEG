@@ -55,6 +55,8 @@ const MaintenanceDashboard: React.FC = () => {
     });
     const [dbCapacity, setDbCapacity] = useState<DbCapacity | null>(null);
     const [capacityLoading, setCapacityLoading] = useState(false);
+    const [platformCosts, setPlatformCosts] = useState<any | null>(null);
+    const [costsLoading, setCostsLoading] = useState(false);
     const [backups, setBackups] = useState<BackupRecord[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [isProcessing, setIsProcessing] = useState<string | null>(null);
@@ -76,11 +78,27 @@ const MaintenanceDashboard: React.FC = () => {
         }
     }, []);
 
+    const fetchPlatformCosts = useCallback(async () => {
+        setCostsLoading(true);
+        try {
+            const resp = await fetch('/api/platform/costs');
+            if (resp.ok) {
+                const data = await resp.json();
+                setPlatformCosts(data);
+            }
+        } catch (e) {
+            console.error('Erro ao buscar custos:', e);
+        } finally {
+            setCostsLoading(false);
+        }
+    }, []);
+
     useEffect(() => {
         fetchStats();
         fetchBackupHistory();
         fetchDbCapacity();
-    }, [fetchDbCapacity]);
+        fetchPlatformCosts();
+    }, [fetchDbCapacity, fetchPlatformCosts]);
 
     const fetchStats = async () => {
         setIsLoading(true);
@@ -512,6 +530,119 @@ const MaintenanceDashboard: React.FC = () => {
                         </button>
                     </div>
                 </div>
+            </div>
+
+            <div className="bg-white rounded-[2rem] shadow-sm border border-gray-200 overflow-hidden">
+                <div className="p-6 border-b border-gray-100 flex items-center justify-between bg-gradient-to-r from-emerald-50 to-white">
+                    <div className="flex items-center gap-3">
+                        <div className="p-2.5 bg-emerald-600 text-white rounded-xl shadow-lg"><BarChart3 size={20}/></div>
+                        <div>
+                            <h3 className="text-sm font-black text-gray-900 uppercase tracking-wider" data-testid="text-costs-title">Estimativa de Custos Mensais (R$)</h3>
+                            <p className="text-[10px] text-gray-500 font-medium">Valores baseados nos planos configurados — Câmbio: $1 = R$ {platformCosts?.currency_rate?.toFixed(2) || '5.80'}</p>
+                        </div>
+                    </div>
+                    <button onClick={fetchPlatformCosts} className="p-2 bg-gray-100 rounded-lg hover:bg-gray-200 transition-all" data-testid="btn-refresh-costs">
+                        <RefreshCw size={14} className={costsLoading ? 'animate-spin text-gray-400' : 'text-gray-500'} />
+                    </button>
+                </div>
+
+                {costsLoading && !platformCosts ? (
+                    <div className="flex items-center justify-center py-12"><Loader2 size={24} className="animate-spin text-gray-400" /></div>
+                ) : platformCosts ? (
+                    <div className="p-6">
+                        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+                            <div className="bg-gradient-to-br from-slate-900 to-slate-800 rounded-2xl p-5 text-white relative overflow-hidden">
+                                <div className="absolute top-2 right-2 opacity-10"><Gauge size={60}/></div>
+                                <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 mb-1">Total Mensal</p>
+                                <p className="text-3xl font-black font-mono" data-testid="text-total-brl">R$ {platformCosts.total_brl?.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
+                                <p className="text-[10px] text-slate-400 mt-1">US$ {platformCosts.total_usd?.toFixed(2)}</p>
+                            </div>
+
+                            <div className="bg-blue-50 border border-blue-200 rounded-2xl p-5">
+                                <p className="text-[9px] font-black uppercase tracking-widest text-blue-500 mb-1">Replit</p>
+                                <p className="text-2xl font-black text-blue-900 font-mono" data-testid="text-replit-brl">R$ {platformCosts.replit?.total_brl?.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
+                                <p className="text-[10px] text-blue-600 font-bold mt-1">{platformCosts.replit?.plan}</p>
+                            </div>
+
+                            <div className="bg-green-50 border border-green-200 rounded-2xl p-5">
+                                <p className="text-[9px] font-black uppercase tracking-widest text-green-500 mb-1">Supabase</p>
+                                <p className="text-2xl font-black text-green-900 font-mono" data-testid="text-supabase-brl">R$ {platformCosts.supabase?.total_brl?.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
+                                <p className="text-[10px] text-green-600 font-bold mt-1">{platformCosts.supabase?.plan}</p>
+                            </div>
+
+                            <div className="bg-amber-50 border border-amber-200 rounded-2xl p-5">
+                                <p className="text-[9px] font-black uppercase tracking-widest text-amber-500 mb-1">APIs Externas</p>
+                                <p className="text-2xl font-black text-amber-900 font-mono" data-testid="text-apis-brl">R$ {platformCosts.apis?.total_brl?.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
+                                <p className="text-[10px] text-amber-600 font-bold mt-1">Maps, Email, Outros</p>
+                            </div>
+                        </div>
+
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                            <div className="bg-gray-50 rounded-xl p-4 border border-gray-100">
+                                <h5 className="text-[9px] font-black text-blue-600 uppercase tracking-widest mb-3">Replit — Detalhes</h5>
+                                <div className="space-y-1.5 text-[11px]">
+                                    <div className="flex justify-between"><span className="text-gray-600">Plano Base</span><span className="font-black text-gray-900">R$ {platformCosts.replit?.base_brl?.toFixed(2)}</span></div>
+                                    {platformCosts.replit?.extras?.egress?.brl > 0 && <div className="flex justify-between"><span className="text-gray-600">Tráfego Extra</span><span className="font-bold text-gray-700">R$ {platformCosts.replit.extras.egress.brl.toFixed(2)}</span></div>}
+                                    {platformCosts.replit?.extras?.compute?.brl > 0 && <div className="flex justify-between"><span className="text-gray-600">Computação Extra</span><span className="font-bold text-gray-700">R$ {platformCosts.replit.extras.compute.brl.toFixed(2)}</span></div>}
+                                    {platformCosts.replit?.extras?.storage?.brl > 0 && <div className="flex justify-between"><span className="text-gray-600">Armazenamento</span><span className="font-bold text-gray-700">R$ {platformCosts.replit.extras.storage.brl.toFixed(2)}</span></div>}
+                                    {platformCosts.replit?.extras?.always_on?.brl > 0 && <div className="flex justify-between"><span className="text-gray-600">Always-On</span><span className="font-bold text-gray-700">R$ {platformCosts.replit.extras.always_on.brl.toFixed(2)}</span></div>}
+                                    {platformCosts.replit?.extras?.other?.brl > 0 && <div className="flex justify-between"><span className="text-gray-600">Outros</span><span className="font-bold text-gray-700">R$ {platformCosts.replit.extras.other.brl.toFixed(2)}</span></div>}
+                                    <div className="border-t border-gray-200 pt-1.5 flex justify-between font-black"><span className="text-gray-700">Subtotal</span><span className="text-blue-700">R$ {platformCosts.replit?.total_brl?.toFixed(2)}</span></div>
+                                </div>
+                            </div>
+
+                            <div className="bg-gray-50 rounded-xl p-4 border border-gray-100">
+                                <h5 className="text-[9px] font-black text-green-600 uppercase tracking-widest mb-3">Supabase — Detalhes</h5>
+                                <div className="space-y-1.5 text-[11px]">
+                                    <div className="flex justify-between"><span className="text-gray-600">Plano Base</span><span className="font-black text-gray-900">R$ {platformCosts.supabase?.base_brl?.toFixed(2)}</span></div>
+                                    {platformCosts.supabase?.extras?.db?.brl > 0 && <div className="flex justify-between"><span className="text-gray-600">Banco Extra</span><span className="font-bold text-gray-700">R$ {platformCosts.supabase.extras.db.brl.toFixed(2)}</span></div>}
+                                    {platformCosts.supabase?.extras?.bandwidth?.brl > 0 && <div className="flex justify-between"><span className="text-gray-600">Bandwidth</span><span className="font-bold text-gray-700">R$ {platformCosts.supabase.extras.bandwidth.brl.toFixed(2)}</span></div>}
+                                    {platformCosts.supabase?.extras?.storage?.brl > 0 && <div className="flex justify-between"><span className="text-gray-600">Storage</span><span className="font-bold text-gray-700">R$ {platformCosts.supabase.extras.storage.brl.toFixed(2)}</span></div>}
+                                    <div className="flex justify-between text-[10px] text-gray-400"><span>Disco: {platformCosts.supabase?.db_capacity_gb} GB</span><span>Região: sa-east-1</span></div>
+                                    <div className="border-t border-gray-200 pt-1.5 flex justify-between font-black"><span className="text-gray-700">Subtotal</span><span className="text-green-700">R$ {platformCosts.supabase?.total_brl?.toFixed(2)}</span></div>
+                                </div>
+                            </div>
+
+                            <div className="bg-gray-50 rounded-xl p-4 border border-gray-100">
+                                <h5 className="text-[9px] font-black text-amber-600 uppercase tracking-widest mb-3">APIs — Detalhes</h5>
+                                <div className="space-y-1.5 text-[11px]">
+                                    <div className="flex justify-between"><span className="text-gray-600">Google Maps</span><span className="font-black text-gray-900">R$ {platformCosts.apis?.google_maps?.brl?.toFixed(2)}</span></div>
+                                    <div className="flex justify-between"><span className="text-gray-600">Email (SMTP)</span><span className="font-bold text-gray-700">R$ {platformCosts.apis?.resend?.brl?.toFixed(2)}</span></div>
+                                    <div className="flex justify-between"><span className="text-gray-600">Outras APIs</span><span className="font-bold text-gray-700">R$ {platformCosts.apis?.other?.brl?.toFixed(2)}</span></div>
+                                    <div className="border-t border-gray-200 pt-1.5 flex justify-between font-black"><span className="text-gray-700">Subtotal</span><span className="text-amber-700">R$ {platformCosts.apis?.total_brl?.toFixed(2)}</span></div>
+                                </div>
+                            </div>
+                        </div>
+
+                        {platformCosts.saving_tips && platformCosts.saving_tips.length > 0 && (
+                            <div className="mt-6 bg-blue-50 border border-blue-200 rounded-xl p-4">
+                                <h5 className="text-[9px] font-black text-blue-600 uppercase tracking-widest mb-3 flex items-center gap-2"><Info size={12} /> Dicas de Economia</h5>
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                                    {platformCosts.saving_tips.slice(0, 6).map((tip: any, i: number) => (
+                                        <div key={i} className="flex items-start gap-2 bg-white rounded-lg p-2.5 border border-blue-100">
+                                            <span className={`text-[8px] font-black px-1.5 py-0.5 rounded shrink-0 mt-0.5 ${
+                                                tip.impact === 'Alto' ? 'bg-red-100 text-red-700' : 
+                                                tip.impact === 'Médio' ? 'bg-amber-100 text-amber-700' : 
+                                                tip.impact === 'Info' ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-600'
+                                            }`}>{tip.impact}</span>
+                                            <div className="min-w-0">
+                                                <span className="text-[9px] font-bold text-blue-800 uppercase">{tip.area}</span>
+                                                <p className="text-[10px] text-gray-700 leading-relaxed">{tip.tip}</p>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+
+                        <p className="text-[9px] text-gray-400 mt-4 text-center italic">
+                            Valores estimados baseados nos planos configurados. Custos extras de uso (egress, compute) podem ser ajustados via variáveis de ambiente. 
+                            O Replit não disponibiliza API para consultar o valor exato cobrado — consulte Settings &gt; Account &gt; Billing no site do Replit para o valor real.
+                        </p>
+                    </div>
+                ) : (
+                    <div className="p-6 text-center text-gray-400 text-sm">Não foi possível carregar os custos.</div>
+                )}
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">

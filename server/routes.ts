@@ -1206,23 +1206,24 @@ export async function registerRoutes(
 
       const BRL_RATE = overrides['usd_to_brl'] || Number(process.env.USD_TO_BRL || 5.80);
 
-      const replitPlan = process.env.REPLIT_PLAN || 'Hacker';
+      const replitPlan = process.env.REPLIT_PLAN || 'Core';
       const replitPlanCosts: Record<string, { usd: number, label: string }> = {
         'Free': { usd: 0, label: 'Free' },
         'Starter': { usd: 9, label: 'Starter ($9/mês)' },
         'Hacker': { usd: 7, label: 'Hacker ($7/mês)' },
+        'Core': { usd: 25, label: 'Core ($25/mês)' },
         'Pro': { usd: 20, label: 'Pro ($20/mês)' },
         'Teams': { usd: 25, label: 'Teams ($25/mês)' },
       };
-      const replitBase = replitPlanCosts[replitPlan] || replitPlanCosts['Hacker'];
+      const replitBase = replitPlanCosts[replitPlan] || replitPlanCosts['Core'];
 
-      const supabasePlan = process.env.SUPABASE_PLAN || 'Free';
+      const supabasePlan = process.env.SUPABASE_PLAN || 'Pro';
       const supabasePlanCosts: Record<string, { usd: number, label: string }> = {
         'Free': { usd: 0, label: 'Free Tier' },
         'Pro': { usd: 25, label: 'Pro ($25/mês)' },
         'Team': { usd: 599, label: 'Team ($599/mês)' },
       };
-      const supabaseBase = supabasePlanCosts[supabasePlan] || supabasePlanCosts['Free'];
+      const supabaseBase = supabasePlanCosts[supabasePlan] || supabasePlanCosts['Pro'];
 
       const replitExtraEgress = overrides['replit_egress'] ?? Number(process.env.REPLIT_EXTRA_EGRESS_USD || 0);
       const replitExtraCompute = overrides['replit_compute'] ?? Number(process.env.REPLIT_EXTRA_COMPUTE_USD || 0);
@@ -1244,12 +1245,14 @@ export async function registerRoutes(
 
       const toR = (v: number) => +(v * BRL_RATE).toFixed(2);
 
-      const DB_CAPACITY_GB = Number(process.env.DB_CAPACITY_GB || 0.5);
+      const DB_CAPACITY_GB = Number(process.env.DB_CAPACITY_GB || 8);
       let dbUsedMb = 0;
       try {
-        const { data: capData } = await supabaseAdmin.from('missions').select('*', { count: 'exact', head: true });
-        const missionsCount = (capData as any)?.length || 0;
-        dbUsedMb = missionsCount * 0.001;
+        const capResp = await fetch(`http://localhost:${process.env.PORT || 5000}/api/db/capacity`);
+        if (capResp.ok) {
+          const capData = await capResp.json();
+          dbUsedMb = capData.used_mb || 0;
+        }
       } catch {}
 
       const savingTips = [];
