@@ -4,10 +4,11 @@ import { Mission, ClientPriceTable, ProviderCostTable, MissionStatus, Client } f
 import { supabase } from '../lib/supabase';
 import { useNotification } from '../lib/NotificationContext';
 import { calculateMissionFinancials, auditMissionFinancials, extractUF, UF_TO_REGION } from '../lib/financialUtils';
-import { X, Calculator, Loader2, Save, CheckCircle2, TrendingUp, Landmark, Zap, RotateCcw, Building2, Briefcase, Plus, Users, MapPin, ArrowRight, BrainCircuit, AlertTriangle, AlertCircle, Edit2, Info, RefreshCw, Clock, Pencil, Lock, ShieldCheck } from 'lucide-react';
+import { X, Calculator, Loader2, Save, CheckCircle2, TrendingUp, Landmark, Zap, RotateCcw, Building2, Briefcase, Plus, Users, MapPin, ArrowRight, BrainCircuit, AlertTriangle, AlertCircle, Edit2, Info, RefreshCw, Clock, Pencil, Lock, ShieldCheck, Camera, Image as ImageIcon } from 'lucide-react';
 import ProviderCostForm from './ProviderCostForm';
 import ClientPriceForm from './ClientPriceForm';
 import { formatProviderName } from '../lib/utils';
+import html2canvas from 'html2canvas';
 
 interface Props {
   isOpen: boolean;
@@ -129,6 +130,60 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
   
 
   const tollCalcMissionRef = React.useRef<string | null>(null);
+  const modalContentRef = React.useRef<HTMLDivElement>(null);
+  const [screenshotPreview, setScreenshotPreview] = useState<string | null>(null);
+  const [isCapturing, setIsCapturing] = useState(false);
+
+  const captureModalScreenshot = async (stageName: string, userName: string): Promise<string | null> => {
+    const modalEl = modalContentRef.current?.closest('.flex.flex-col') as HTMLElement;
+    if (!modalEl || !mission) return null;
+    try {
+      setIsCapturing(true);
+      await new Promise(r => setTimeout(r, 200));
+      
+      const canvas = await html2canvas(modalEl, {
+        scale: 1,
+        useCORS: true,
+        allowTaint: true,
+        backgroundColor: '#ffffff',
+        logging: false,
+        ignoreElements: (el) => el.getAttribute('data-html2canvas-ignore') === 'true'
+      });
+      
+      const resizedCanvas = document.createElement('canvas');
+      const maxWidth = 800;
+      const ratio = Math.min(maxWidth / canvas.width, 1);
+      resizedCanvas.width = canvas.width * ratio;
+      resizedCanvas.height = canvas.height * ratio;
+      const ctx = resizedCanvas.getContext('2d');
+      if (ctx) {
+        ctx.drawImage(canvas, 0, 0, resizedCanvas.width, resizedCanvas.height);
+      }
+      
+      const base64 = resizedCanvas.toDataURL('image/jpeg', 0.6);
+
+      await supabase.from('system_logs').insert([{
+        user_name: userName,
+        action_type: 'APPROVAL_SCREENSHOT',
+        entity: 'BillingApproval',
+        entity_id: mission.id,
+        details: JSON.stringify({
+          stage: stageName,
+          user: userName,
+          date: new Date().toISOString(),
+          missionId: mission.id,
+          screenshot: base64
+        })
+      }]);
+      
+      return base64;
+    } catch (e) {
+      console.error('Erro ao capturar screenshot:', e);
+      return null;
+    } finally {
+      setIsCapturing(false);
+    }
+  };
   
   const autoCalculateToll = async (origin: string, destination: string, missionId?: string) => {
     setTollInput('0,00');
@@ -855,6 +910,10 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
           const userData = JSON.parse(localStorage.getItem('userData') || '{}');
           const userName = userData.name || 'Usuário';
           const userRole = userData.role || '';
+          
+          const { stage: captureStage } = getApprovalStage(userName, userRole);
+          await captureModalScreenshot(approve ? captureStage : 'save', userName);
+
           const toll = isController ? (mission.toll_value || 0) : parseNumber(tollInput);
           let tollProv = parseNumber(tollProviderInput);
           if (tollProv === 0 && toll > 0) {
@@ -1103,6 +1162,45 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-in fade-in">
       
+      {isCapturing && (
+          <div className="absolute inset-0 z-[120] flex items-center justify-center bg-black/40 backdrop-blur-sm">
+              <div className="bg-white rounded-2xl px-8 py-6 flex items-center gap-4 shadow-2xl border-2 border-blue-200 animate-pulse">
+                  <Camera size={28} className="text-blue-600" />
+                  <div>
+                      <p className="text-sm font-black text-blue-800 uppercase">Capturando Print...</p>
+                      <p className="text-[10px] text-gray-500">Registrando tela para auditoria</p>
+                  </div>
+              </div>
+          </div>
+      )}
+
+      {screenshotPreview && (
+          <div className="absolute inset-0 z-[115] flex items-center justify-center bg-black/80 backdrop-blur-md p-4" onClick={() => setScreenshotPreview(null)}>
+              <div className="bg-white rounded-2xl shadow-2xl max-w-4xl w-full max-h-[95vh] overflow-hidden flex flex-col" onClick={e => e.stopPropagation()}>
+                  <div className="flex items-center justify-between p-4 border-b bg-gradient-to-r from-emerald-50 to-blue-50">
+                      <div className="flex items-center gap-3">
+                          <div className="p-2 bg-emerald-100 rounded-lg"><Camera size={18} className="text-emerald-700" /></div>
+                          <div>
+                              <p className="text-sm font-black text-gray-800 uppercase">Print da Aprovacao</p>
+                              <p className="text-[10px] text-gray-500">Registro visual no momento da aprovacao - {mission.id}</p>
+                          </div>
+                      </div>
+                      <button onClick={() => setScreenshotPreview(null)} className="p-2 rounded-full hover:bg-gray-100 transition-colors">
+                          <X size={20} className="text-gray-500" />
+                      </button>
+                  </div>
+                  <div className="flex-1 overflow-auto p-4 bg-gray-100">
+                      <img src={screenshotPreview} alt="Print da aprovação" className="w-full rounded-xl border border-gray-300 shadow-lg" />
+                  </div>
+                  <div className="p-3 border-t bg-white flex justify-end">
+                      <a href={screenshotPreview} download={`print_${mission.id}_${Date.now()}.jpg`} className="px-4 py-2 bg-blue-600 text-white rounded-lg text-xs font-bold flex items-center gap-2 hover:bg-blue-700 transition-colors" data-testid="btn-download-screenshot">
+                          <Save size={14} /> Baixar Imagem
+                      </a>
+                  </div>
+              </div>
+          </div>
+      )}
+
       {isEditClientTableOpen && (
           <div className="absolute inset-0 z-[110] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in zoom-in-95">
               <div className="bg-white rounded-2xl w-full max-w-3xl p-6 relative shadow-2xl border-2 border-blue-100">
@@ -1269,7 +1367,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
           <button onClick={onClose} className="p-2 rounded-full hover:bg-white/10 transition-colors ml-4 shrink-0"><X size={24}/></button>
         </header>
 
-        <div className="flex-1 overflow-y-auto p-6 space-y-6 bg-gray-50 pb-32">
+        <div ref={modalContentRef} className="flex-1 overflow-y-auto p-6 space-y-6 bg-gray-50 pb-32">
             {isSnapshotFrozen && (
                 <div data-testid="snapshot-frozen-banner" className="bg-amber-50 border-2 border-amber-400 rounded-xl p-4 flex items-center gap-3 shadow-sm">
                     <div className="bg-amber-500 p-2 rounded-lg"><Lock size={20} className="text-white" /></div>
@@ -2098,6 +2196,31 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                             <span className="text-[9px] text-gray-500 ml-1">({log.user})</span>
                                             <p className="text-[8px] text-gray-400 font-mono">{new Date(log.date).toLocaleString('pt-BR')}</p>
                                         </div>
+                                        <button
+                                            onClick={async () => {
+                                                const { data } = await supabase.from('system_logs')
+                                                    .select('details')
+                                                    .eq('entity', 'BillingApproval')
+                                                    .eq('entity_id', mission.id)
+                                                    .eq('action_type', 'APPROVAL_SCREENSHOT')
+                                                    .order('created_at', { ascending: false });
+                                                if (data) {
+                                                    const match = data.find(d => {
+                                                        try { const p = JSON.parse(d.details); return p.stage === log.stage; } catch { return false; }
+                                                    });
+                                                    if (match) {
+                                                        try { setScreenshotPreview(JSON.parse(match.details).screenshot); } catch {}
+                                                    } else {
+                                                        showNotification('Sem Print', 'Nenhum print de tela encontrado para esta aprovação.', 'error');
+                                                    }
+                                                }
+                                            }}
+                                            className="p-1 rounded-md hover:bg-emerald-100 transition-colors ml-1"
+                                            title="Ver print da aprovação"
+                                            data-testid={`btn-view-screenshot-${log.stage}`}
+                                        >
+                                            <Camera size={12} className="text-emerald-600" />
+                                        </button>
                                     </div>
                                 ))}
                             </div>
