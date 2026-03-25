@@ -8,7 +8,7 @@ import {
   ClipboardList, FileSearch, CalendarClock, MapPin, Truck, Flag, XCircle, UserX, AlertOctagon, ToggleLeft, ToggleRight, Calendar,
   BarChart4, Globe, Building2, LayoutDashboard, User, ExternalLink, RefreshCw,
   Target, Clock, History, CalendarPlus, ShieldAlert, Mail, MessageCircle, ClipboardCheck,
-  FileBarChart, ArrowRight, Briefcase, Printer, Filter, List, Download
+  FileBarChart, ArrowRight, Briefcase, Printer, Filter, List, Download, Link2
 } from 'lucide-react';
 import { GoogleMap, useLoadScript, Marker, InfoWindow } from '@react-google-maps/api';
 import { googleMapsLoadConfig } from '../lib/maps';
@@ -1243,9 +1243,10 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
                                   <span>{m.id}</span>
                                   {m.mission_type && <span className={`ml-1 text-[9px] font-bold px-1.5 py-0.5 rounded ${m.mission_type === 'Velada' ? 'bg-purple-100 text-purple-700' : m.mission_type === 'Pronta Resposta' ? 'bg-orange-100 text-orange-700' : 'bg-blue-100 text-blue-700'}`}>{m.mission_type === 'Caracterizada' ? 'CARACT' : m.mission_type === 'Velada' ? 'VELADA' : 'PR'}</span>}
                                   {m.is_same_os && (
-                                    <span className="ml-1 text-[9px] font-black bg-black text-white px-1.5 py-0.5 rounded" title={m.parent_mission_id ? `OS Mãe: ${m.parent_mission_id}` : 'Mesma OS'}>
-                                      MESMA OS{m.parent_mission_id ? ` → ${m.parent_mission_id}` : ''}
-                                    </span>
+                                    <span className="ml-1 text-[9px] font-black bg-black text-white px-1.5 py-0.5 rounded">MESMA OS</span>
+                                  )}
+                                  {m.is_same_os && m.parent_mission_id && (
+                                    <span className="ml-1 text-[9px] font-black bg-blue-600 text-white px-1.5 py-0.5 rounded inline-flex items-center gap-0.5"><Link2 size={9} /> MÃE: {m.parent_mission_id}</span>
                                   )}
                                 </td>
                                 <td className="px-3 py-2 border-r border-gray-100 text-center whitespace-nowrap"><span className={`text-[10px] font-black px-2.5 py-1 rounded-full ${statusBg(m.status)}`}>{m.status}</span></td>
