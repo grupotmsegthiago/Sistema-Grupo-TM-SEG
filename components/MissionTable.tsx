@@ -1239,7 +1239,7 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
                             return (
                               <tr key={m.id} className={`${rowBg} hover:bg-yellow-50 border-b border-gray-200 transition-colors`} data-testid={`timeline-row-${m.id}`}>
                                 <td className="px-3 py-2 font-black text-gray-500 border-r border-gray-100">{idx + 1}</td>
-                                <td className="px-3 py-2 font-black text-gray-900 border-r border-gray-100 whitespace-nowrap">
+                                <td className="px-3 py-2 font-black text-gray-900 border-r border-gray-100 whitespace-nowrap text-[10px]">
                                   <span>{m.id}</span>
                                   {m.mission_type && <span className={`ml-1 text-[9px] font-bold px-1.5 py-0.5 rounded ${m.mission_type === 'Velada' ? 'bg-purple-100 text-purple-700' : m.mission_type === 'Pronta Resposta' ? 'bg-orange-100 text-orange-700' : 'bg-blue-100 text-blue-700'}`}>{m.mission_type === 'Caracterizada' ? 'CARACT' : m.mission_type === 'Velada' ? 'VELADA' : 'PR'}</span>}
                                   {m.is_same_os && (
@@ -1250,7 +1250,7 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
                                 </td>
                                 <td className="px-3 py-2 border-r border-gray-100 text-center whitespace-nowrap"><span className={`text-[10px] font-black px-2.5 py-1 rounded-full ${statusBg(m.status)}`}>{m.status}</span></td>
                                 <td className="px-3 py-2 border-r border-gray-100 font-bold text-gray-800 max-w-[160px] truncate">{m.client || '-'}</td>
-                                <td className="px-3 py-2 border-r border-gray-100 text-gray-600 max-w-[200px] truncate text-[10px]" title={`${m.origin || ''} → ${m.destination || ''}`}>
+                                <td className="px-3 py-2 border-r border-gray-100 text-gray-600 max-w-[200px] truncate text-xs font-semibold" title={`${m.origin || ''} → ${m.destination || ''}`}>
                                   {m.origin ? m.origin.split(',')[0].split('-')[0].trim() : '-'} → {m.destination ? m.destination.split(',')[0].split('-')[0].trim() : '-'}
                                 </td>
                                 <td className="px-3 py-2 border-r border-gray-100 font-mono text-gray-700 whitespace-nowrap">{placaEscoltado}</td>
