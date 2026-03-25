@@ -1147,20 +1147,19 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
                       </div>
                     </div>
                     <div className="overflow-x-auto max-h-[70vh] overflow-y-auto">
-                      <table className="w-full text-[10px] border-collapse min-w-[1400px]">
+                      <table className="w-full text-[10px] border-collapse min-w-[1200px]">
                         <thead className="sticky top-0 z-10">
                           <tr className="bg-gray-900 text-white">
                             <th className="px-2 py-2 text-left font-black border-r border-gray-700 w-[30px]">#</th>
                             <th className="px-2 py-2 text-left font-black border-r border-gray-700">OS</th>
-                            <th className="px-2 py-2 text-left font-black border-r border-gray-700">DATA INICIAL</th>
-                            <th className="px-2 py-2 text-left font-black border-r border-gray-700">HORA AGEND.</th>
-                            <th className="px-2 py-2 text-left font-black border-r border-gray-700">HORA ORIGEM</th>
                             <th className="px-2 py-2 text-center font-black border-r border-gray-700">STATUS</th>
                             <th className="px-2 py-2 text-left font-black border-r border-gray-700">CLIENTE</th>
-                            <th className="px-2 py-2 text-left font-black border-r border-gray-700">ROTA</th>
+                            <th className="px-2 py-2 text-left font-black border-r border-gray-700">VEÍC. ESCOLTADO</th>
                             <th className="px-2 py-2 text-left font-black border-r border-gray-700">FORNECEDOR</th>
                             <th className="px-2 py-2 text-left font-black border-r border-gray-700">VIATURA</th>
-                            <th className="px-2 py-2 text-left font-black border-r border-gray-700">VEÍC. ESCOLTADO</th>
+                            <th className="px-2 py-2 text-left font-black border-r border-gray-700">AGENTES</th>
+                            <th className="px-2 py-2 text-left font-black border-r border-gray-700">DATA INICIAL</th>
+                            <th className="px-2 py-2 text-left font-black border-r border-gray-700">HORA INICIAL</th>
                             <th className="px-2 py-2 text-left font-black border-r border-gray-700">DATA FINAL</th>
                             <th className="px-2 py-2 text-left font-black border-r border-gray-700">HORA FINAL</th>
                             {canSeeFinancials && (<>
@@ -1168,8 +1167,8 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
                             <th className="px-2 py-2 text-right font-black border-r border-gray-700">CUSTO</th>
                             <th className="px-2 py-2 text-right font-black border-r border-gray-700">PEDÁGIO</th>
                             <th className="px-2 py-2 text-right font-black border-r border-gray-700">RESULTADO</th>
+                            <th className="px-2 py-2 text-right font-black">% LUCRO</th>
                             </>)}
-                            <th className="px-2 py-2 text-left font-black">AGENTES</th>
                           </tr>
                         </thead>
                         <tbody>
@@ -1178,7 +1177,8 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
                             const cost = m.cost_value || 0;
                             const toll = m.toll_value || 0;
                             const resultado = rev - cost - toll;
-                            const veicEscoltado = m.clientVehicle ? `${m.clientVehicle.plate}${m.clientVehicle.model ? ' / ' + m.clientVehicle.model : ''}` : '-';
+                            const lucroPerc = rev > 0 ? ((resultado / rev) * 100) : 0;
+                            const placaEscoltado = m.clientVehicle?.plate || '-';
                             const agentes = [m.agent1, m.agent2].filter(Boolean).join(' & ') || '-';
                             const rowBg = idx % 2 === 0 ? 'bg-white' : 'bg-gray-50';
                             
@@ -1190,15 +1190,14 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
                                   {m.mission_type && <span className={`ml-1 text-[8px] font-bold px-1 py-0.5 rounded ${m.mission_type === 'Velada' ? 'bg-purple-100 text-purple-700' : m.mission_type === 'Pronta Resposta' ? 'bg-orange-100 text-orange-700' : 'bg-blue-100 text-blue-700'}`}>{m.mission_type === 'Caracterizada' ? 'CARACT' : m.mission_type === 'Velada' ? 'VELADA' : 'PR'}</span>}
                                   {m.is_same_os && <span className="ml-1 text-[8px] font-black bg-slate-200 text-slate-600 px-1 py-0.5 rounded">MESMA OS</span>}
                                 </td>
-                                <td className="px-2 py-1.5 border-r border-gray-100 whitespace-nowrap">{fmtDate(m.created_at)}</td>
-                                <td className="px-2 py-1.5 border-r border-gray-100 whitespace-nowrap font-bold">{fmtTime(m.estimatedTime || m.startTime)}</td>
-                                <td className="px-2 py-1.5 border-r border-gray-100 whitespace-nowrap">{m.startTime ? fmtTime(m.startTime) : '-'}</td>
                                 <td className="px-2 py-1.5 border-r border-gray-100 text-center whitespace-nowrap"><span className={`text-[9px] font-black px-2 py-0.5 rounded-full ${statusBg(m.status)}`}>{m.status}</span></td>
                                 <td className="px-2 py-1.5 border-r border-gray-100 font-bold text-gray-800 max-w-[140px] truncate">{m.client || '-'}</td>
-                                <td className="px-2 py-1.5 border-r border-gray-100 text-gray-600 max-w-[180px] truncate">{extractRoute(m.origin, m.destination)}</td>
+                                <td className="px-2 py-1.5 border-r border-gray-100 font-mono text-gray-700 whitespace-nowrap">{placaEscoltado}</td>
                                 <td className="px-2 py-1.5 border-r border-gray-100 text-gray-700 max-w-[120px] truncate">{m.provider || '-'}</td>
                                 <td className="px-2 py-1.5 border-r border-gray-100 font-mono text-gray-700 whitespace-nowrap">{m.vehicleId || '-'}</td>
-                                <td className="px-2 py-1.5 border-r border-gray-100 text-gray-600 max-w-[140px] truncate" title={veicEscoltado}>{veicEscoltado}</td>
+                                <td className="px-2 py-1.5 border-r border-gray-100 text-gray-600 max-w-[160px] truncate" title={agentes}>{agentes}</td>
+                                <td className="px-2 py-1.5 border-r border-gray-100 whitespace-nowrap">{fmtDate(m.created_at)}</td>
+                                <td className="px-2 py-1.5 border-r border-gray-100 whitespace-nowrap">{m.startTime ? fmtTime(m.startTime) : '-'}</td>
                                 <td className="px-2 py-1.5 border-r border-gray-100 whitespace-nowrap">{m.endTime ? fmtDate(m.endTime) : '-'}</td>
                                 <td className="px-2 py-1.5 border-r border-gray-100 whitespace-nowrap">{m.endTime ? fmtTime(m.endTime) : '-'}</td>
                                 {canSeeFinancials && (<>
@@ -1206,8 +1205,8 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
                                 <td className="px-2 py-1.5 border-r border-gray-100 text-right font-bold text-blue-700 whitespace-nowrap">{cost > 0 ? fmtMoney(cost) : '-'}</td>
                                 <td className="px-2 py-1.5 border-r border-gray-100 text-right text-orange-600 whitespace-nowrap">{toll > 0 ? fmtMoney(toll) : '-'}</td>
                                 <td className={`px-2 py-1.5 border-r border-gray-100 text-right font-black whitespace-nowrap ${resultado >= 0 ? 'text-emerald-700' : 'text-red-600 bg-red-50'}`}>{rev > 0 || cost > 0 ? fmtMoney(resultado) : '-'}</td>
+                                <td className={`px-2 py-1.5 text-right font-black whitespace-nowrap ${lucroPerc >= 0 ? 'text-emerald-700' : 'text-red-600'}`}>{rev > 0 ? `${lucroPerc.toFixed(1)}%` : '-'}</td>
                                 </>)}
-                                <td className="px-2 py-1.5 text-gray-600 max-w-[160px] truncate" title={agentes}>{agentes}</td>
                               </tr>
                             );
                           })}
@@ -1215,12 +1214,12 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
                         {missions.length > 0 && canSeeFinancials && (
                           <tfoot>
                             <tr className="bg-gray-800 text-white font-black">
-                              <td colSpan={13} className="px-2 py-2 text-right border-r border-gray-600">TOTAIS →</td>
+                              <td colSpan={12} className="px-2 py-2 text-right border-r border-gray-600">TOTAIS →</td>
                               <td className="px-2 py-2 text-right border-r border-gray-600 text-green-300">{fmtMoney(totalRev)}</td>
                               <td className="px-2 py-2 text-right border-r border-gray-600 text-blue-300">{fmtMoney(totalCost)}</td>
                               <td className="px-2 py-2 text-right border-r border-gray-600 text-orange-300">{fmtMoney(totalToll)}</td>
-                              <td className={`px-2 py-2 text-right border-r border-gray-600 ${totalRev - totalCost - totalToll >= 0 ? 'text-emerald-300' : 'text-red-300'}`}>{fmtMoney(totalRev - totalCost - totalToll)}</td>
-                              <td className="px-2 py-2"></td>
+                              <td className="px-2 py-2 text-right border-r border-gray-600 text-emerald-300">{fmtMoney(totalRev - totalCost - totalToll)}</td>
+                              <td className={`px-2 py-2 text-right ${totalRev > 0 ? (((totalRev - totalCost - totalToll) / totalRev * 100) >= 0 ? 'text-emerald-300' : 'text-red-300') : ''}`}>{totalRev > 0 ? `${((totalRev - totalCost - totalToll) / totalRev * 100).toFixed(1)}%` : '-'}</td>
                             </tr>
                           </tfoot>
                         )}
