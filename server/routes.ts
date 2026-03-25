@@ -1780,9 +1780,31 @@ export async function registerRoutes(
               await new Promise(r => setTimeout(r, 1000));
           } while (batch && batch.length === BATCH_SIZE);
 
+          let screenshotsDeleted = 0;
+          do {
+              const { data, error } = await supabaseAdmin
+                  .from('system_logs')
+                  .select('id')
+                  .eq('action_type', 'APPROVAL_SCREENSHOT')
+                  .lt('created_at', cutoffDate)
+                  .limit(BATCH_SIZE);
+              if (error || !data || data.length === 0) break;
+              batch = data;
+              const ids = batch.map((r: any) => r.id);
+              const { error: delErr } = await supabaseAdmin
+                  .from('system_logs')
+                  .delete()
+                  .in('id', ids);
+              if (delErr) { console.error('[CLEANUP] Erro deletando screenshots:', delErr.message); break; }
+              screenshotsDeleted += ids.length;
+              if (ids.length < BATCH_SIZE) break;
+              await new Promise(r => setTimeout(r, 1000));
+          } while (batch && batch.length === BATCH_SIZE);
+
           const results = {
               mission_history: `${historyDeleted} registros removidos`,
               mission_logs: `${logsDeleted} registros removidos`,
+              approval_screenshots: `${screenshotsDeleted} prints removidos`,
               cutoff_date: cutoffDate,
               executed_at: new Date().toISOString()
           };

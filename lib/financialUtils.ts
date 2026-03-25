@@ -619,6 +619,23 @@ export const calculateMissionFinancials = (
         }
     }
 
+    const isCeslogClient = missionClientName.includes('CESLOG') || missionClientName.includes('CESARI');
+    const normalizedOriginCity = normalize(originCity);
+    const normalizedDestCity2 = normalize(destCity);
+    const isCubataoSantos = (normalizedOriginCity.includes('CUBATAO') && normalizedDestCity2.includes('SANTOS')) || 
+                            (normalizedOriginCity.includes('SANTOS') && normalizedDestCity2.includes('CUBATAO'));
+    
+    if (isCeslogClient && isCubataoSantos && !isCancelled && !isManualOverride) {
+        const cubSantosTable = allClientTablesForThisClient.find(t => {
+            const op = normalize(t.operation_type || '');
+            return op.includes('CUBATAO') && op.includes('SANTOS') && !op.includes('PRONTA RESPOSTA') && !op.includes('PRONTA');
+        });
+        if (cubSantosTable) {
+            appliedClientTable = cubSantosTable;
+            clientLog = `CESLOG Rota Fixa → ${cubSantosTable.operation_type}`;
+        }
+    }
+
     let appliedProviderTable: any = null;
     let providerLog = 'Manual';
 
@@ -704,7 +721,19 @@ export const calculateMissionFinancials = (
         providerLog = result.log;
     }
 
-    if (!isZeroValueMission && !manualTableOverrides?.providerTableId && appliedProviderTable && filteredProviderTables.length > 1) {
+    if (isCeslogClient && isCubataoSantos && !isCancelled && !manualTableOverrides?.providerTableId) {
+        const allProvForRoute = providerTables.filter(t => {
+            const op = normalize(t.operation_type || '');
+            return op.includes('CUBATAO') && op.includes('SANTOS') && !op.includes('PRONTA');
+        });
+        if (allProvForRoute.length > 0) {
+            appliedProviderTable = allProvForRoute[0];
+            providerLog = `CESLOG Rota Fixa → ${allProvForRoute[0].operation_type}`;
+        }
+    }
+
+    const isFixedProviderRoute = isCeslogClient && isCubataoSantos && !isCancelled;
+    if (!isZeroValueMission && !manualTableOverrides?.providerTableId && !isFixedProviderRoute && appliedProviderTable && filteredProviderTables.length > 1) {
         const isFranchiseCheck = (name: string) => name.includes('ATÉ') || name.includes('ATE ') || name.includes('FAIXA') || /\bATE\W*\d/i.test(name);
         const calcProviderCost = (table: any) => {
             const tBase = Math.max(0, (table.activation_cost || 0) * providerMultiplier);
