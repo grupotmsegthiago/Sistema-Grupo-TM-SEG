@@ -791,26 +791,98 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
       setter(val);
   }
 
-  const handleRecalculateClient = () => {
+  const handleRecalculateClient = async () => {
       setCustomClientBase('');
       setCustomClientKm('');
       setCustomClientHour('');
       setUseSavedValues(false);
-      if (financialData) {
-          setRevenueInput(financialData.client.total.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
+      userManuallyEditedRef.current = false;
+      if (financialData && mission) {
+          const newRevenue = financialData.client.total;
+          const toll = parseNumber(tollInput);
+          const revServiceOnly = newRevenue - toll;
+          setRevenueInput(newRevenue.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
+          
+          const r2 = (v: number) => Math.round(v * 100) / 100;
+          try {
+              const userData = JSON.parse(localStorage.getItem('userData') || '{}');
+              const userName = userData.name || 'Usuário';
+              await supabase.from('missions').update({
+                  revenue_value: r2(revServiceOnly),
+                  toll_value: r2(toll),
+                  last_update: new Date().toISOString()
+              }).eq('id', mission.id);
+              
+              await supabase.from('system_logs').insert([{
+                  user_name: userName,
+                  action_type: 'RECALCULATE_CLIENT',
+                  entity: 'Mission',
+                  entity_id: mission.id,
+                  details: JSON.stringify({
+                      newRevenue: r2(revServiceOnly),
+                      toll: r2(toll),
+                      total: r2(newRevenue),
+                      extraKm: financialData.client.excessKm,
+                      extraKmVal: r2(financialData.client.extraKmVal),
+                      extraHr: financialData.client.excessHours,
+                      extraHrVal: r2(financialData.client.extraHrVal),
+                      base: r2(financialData.client.base),
+                      table: financialData.client.tableId
+                  })
+              }]);
+              showNotification('Recalculado e Salvo', 'Valores do cliente atualizados na tabela e salvos no banco.', 'success');
+          } catch (e) {
+              console.error('Erro ao salvar recálculo cliente:', e);
+              showNotification('Recalculado', 'Valores restaurados na tela, mas houve erro ao salvar no banco.', 'error');
+          }
       }
-      showNotification('Recalculado', 'Valores do cliente restaurados para a tabela original.', 'info');
   };
 
-  const handleRecalculateProvider = () => {
+  const handleRecalculateProvider = async () => {
       setCustomProviderBase('');
       setCustomProviderKm('');
       setCustomProviderHour('');
       setUseSavedValues(false);
-      if (financialData) {
-          setCostInput(financialData.provider.total.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
+      userManuallyEditedRef.current = false;
+      if (financialData && mission) {
+          const tollProv = parseNumber(tollProviderInput);
+          const newCost = financialData.provider.base + financialData.provider.extraKmVal + financialData.provider.extraHrVal + tollProv;
+          const costServiceOnly = newCost - tollProv;
+          setCostInput(newCost.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
+          
+          const r2 = (v: number) => Math.round(v * 100) / 100;
+          try {
+              const userData = JSON.parse(localStorage.getItem('userData') || '{}');
+              const userName = userData.name || 'Usuário';
+              await supabase.from('missions').update({
+                  cost_value: r2(costServiceOnly),
+                  toll_value_provider: r2(tollProv),
+                  last_update: new Date().toISOString()
+              }).eq('id', mission.id);
+              
+              await supabase.from('system_logs').insert([{
+                  user_name: userName,
+                  action_type: 'RECALCULATE_PROVIDER',
+                  entity: 'Mission',
+                  entity_id: mission.id,
+                  details: JSON.stringify({
+                      newCost: r2(costServiceOnly),
+                      tollProvider: r2(tollProv),
+                      total: r2(newCost),
+                      extraKm: financialData.provider.excessKm,
+                      extraKmVal: r2(financialData.provider.extraKmVal),
+                      extraHr: financialData.provider.excessHours,
+                      extraHrVal: r2(financialData.provider.extraHrVal),
+                      base: r2(financialData.provider.base),
+                      table: financialData.provider.tableId
+                  })
+              }]);
+              showNotification('Recalculado e Salvo', 'Valores do fornecedor atualizados na tabela e salvos no banco.', 'success');
+          } catch (e) {
+              console.error('Erro ao salvar recálculo fornecedor:', e);
+              showNotification('Recalculado', 'Valores restaurados na tela, mas houve erro ao salvar no banco.', 'error');
+          }
       }
-      showNotification('Recalculado', 'Valores do fornecedor restaurados para a tabela original.', 'info');
   };
 
   const getApprovalStage = (userName: string, userRole: string): { stage: string; label: string } => {
