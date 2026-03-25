@@ -1136,7 +1136,7 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
                           data-testid="btn-export-report"
                           onClick={() => {
                             const sep = ';';
-                            const headers = ['#','OS','Status','Cliente','Veíc. Escoltado','Fornecedor','Viatura','Agentes','Data Inicial','Hora Inicial','Data Final','Hora Final'];
+                            const headers = ['#','OS','Status','Cliente','Rota','Veíc. Escoltado','Fornecedor','Viatura','Agentes','Data Inicial','Hora Inicial','Data Final','Hora Final'];
                             if (canSeeFinancials) headers.push('Receita','Custo','Pedágio','Resultado','% Lucro');
                             const rows = missions.map((m, i) => {
                               const rev = m.revenue_value || 0;
@@ -1148,6 +1148,7 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
                                 m.id + (m.is_same_os ? ` (MESMA OS${m.parent_mission_id ? ` → ${m.parent_mission_id}` : ''})` : ''),
                                 m.status,
                                 m.client || '',
+                                `${m.origin ? m.origin.split(',')[0].split('-')[0].trim() : ''} → ${m.destination ? m.destination.split(',')[0].split('-')[0].trim() : ''}`,
                                 m.clientVehicle?.plate || '',
                                 m.provider || '',
                                 m.vehicleId || '',
@@ -1205,6 +1206,7 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
                             <th className="px-3 py-2.5 text-left font-black border-r border-gray-700">OS</th>
                             <th className="px-3 py-2.5 text-center font-black border-r border-gray-700">STATUS</th>
                             <th className="px-3 py-2.5 text-left font-black border-r border-gray-700">CLIENTE</th>
+                            <th className="px-3 py-2.5 text-left font-black border-r border-gray-700">ROTA</th>
                             <th className="px-3 py-2.5 text-left font-black border-r border-gray-700">VEÍC. ESCOLTADO</th>
                             <th className="px-3 py-2.5 text-left font-black border-r border-gray-700">FORNECEDOR</th>
                             <th className="px-3 py-2.5 text-left font-black border-r border-gray-700">VIATURA</th>
@@ -1248,6 +1250,9 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
                                 </td>
                                 <td className="px-3 py-2 border-r border-gray-100 text-center whitespace-nowrap"><span className={`text-[10px] font-black px-2.5 py-1 rounded-full ${statusBg(m.status)}`}>{m.status}</span></td>
                                 <td className="px-3 py-2 border-r border-gray-100 font-bold text-gray-800 max-w-[160px] truncate">{m.client || '-'}</td>
+                                <td className="px-3 py-2 border-r border-gray-100 text-gray-600 max-w-[200px] truncate text-[10px]" title={`${m.origin || ''} → ${m.destination || ''}`}>
+                                  {m.origin ? m.origin.split(',')[0].split('-')[0].trim() : '-'} → {m.destination ? m.destination.split(',')[0].split('-')[0].trim() : '-'}
+                                </td>
                                 <td className="px-3 py-2 border-r border-gray-100 font-mono text-gray-700 whitespace-nowrap">{placaEscoltado}</td>
                                 <td className="px-3 py-2 border-r border-gray-100 text-gray-700 max-w-[140px] truncate">{m.provider || '-'}</td>
                                 <td className="px-3 py-2 border-r border-gray-100 font-mono text-gray-700 whitespace-nowrap">{m.vehicleId || '-'}</td>
@@ -1285,7 +1290,7 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
                         {missions.length > 0 && canSeeFinancials && (
                           <tfoot>
                             <tr className="bg-gray-800 text-white font-black text-xs">
-                              <td colSpan={12} className="px-3 py-2.5 text-right border-r border-gray-600">TOTAIS →</td>
+                              <td colSpan={13} className="px-3 py-2.5 text-right border-r border-gray-600">TOTAIS →</td>
                               <td className="px-3 py-2.5 text-right border-r border-gray-600 text-green-300">{fmtMoney(totalRev)}</td>
                               <td className="px-3 py-2.5 text-right border-r border-gray-600 text-blue-300">{fmtMoney(totalCost)}</td>
                               <td className="px-3 py-2.5 text-right border-r border-gray-600 text-orange-300">{fmtMoney(totalToll)}</td>
