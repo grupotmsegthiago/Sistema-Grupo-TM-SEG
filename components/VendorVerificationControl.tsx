@@ -318,9 +318,15 @@ const VendorVerificationControl: React.FC<VendorVerificationControlProps> = ({ o
         }
     };
 
-    const saveStatsSnapshot = useCallback(async (statsData: { total: number; verified: number; paid: number; pending: number }) => {
+    const lastSnapshotRef = React.useRef<number>(0);
+    const saveStatsSnapshot = useCallback(async (statsData: { total: number; verified: number; paid: number; pending: number }, missionsList: any[]) => {
+        const now = Date.now();
+        if (now - lastSnapshotRef.current < 30 * 60 * 1000) return;
+        lastSnapshotRef.current = now;
         try {
             const userData = JSON.parse(localStorage.getItem('userData') || '{}');
+            const verifiedIds = missionsList.filter(m => m.verified_by && m.verified_at).map(m => m.id);
+            const paidIds = missionsList.filter(m => m.payment_date).map(m => m.id);
             await supabase.from('system_logs').insert([{
                 user_name: userData.name || 'Sistema',
                 action_type: 'VENDOR_STATS_SNAPSHOT',
@@ -328,6 +334,8 @@ const VendorVerificationControl: React.FC<VendorVerificationControlProps> = ({ o
                 entity_id: 'daily-snapshot',
                 details: JSON.stringify({
                     ...statsData,
+                    verifiedIds,
+                    paidIds,
                     timestamp: new Date().toISOString(),
                     accessedBy: userData.name || 'Sistema'
                 })
@@ -603,9 +611,9 @@ const VendorVerificationControl: React.FC<VendorVerificationControlProps> = ({ o
 
     useEffect(() => {
         if (stats.total > 0) {
-            saveStatsSnapshot(stats);
+            saveStatsSnapshot(stats, missions);
         }
-    }, [stats, saveStatsSnapshot]);
+    }, [stats, missions, saveStatsSnapshot]);
 
     const [statsHistory, setStatsHistory] = useState<any[]>([]);
     const loadStatsHistory = async () => {
@@ -942,95 +950,133 @@ const VendorVerificationControl: React.FC<VendorVerificationControlProps> = ({ o
                         </div>
                     </div>
 
-                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-0 divide-y lg:divide-y-0 lg:divide-x divide-gray-200">
-                        <div className="p-4">
-                            <h4 className="text-[10px] font-black text-gray-500 uppercase tracking-widest mb-3 flex items-center gap-2">
-                                <Hash size={12} /> Histórico de Contadores (Snapshots)
-                            </h4>
-                            <div className="max-h-[300px] overflow-y-auto">
-                                {statsHistory.length === 0 ? (
-                                    <p className="text-xs text-gray-400 text-center py-4">Nenhum snapshot registrado ainda. Os contadores serão gravados a cada acesso.</p>
-                                ) : (
-                                    <table className="w-full text-[10px]">
-                                        <thead className="sticky top-0 bg-gray-50">
-                                            <tr className="text-gray-500 font-black uppercase">
-                                                <th className="px-2 py-1.5 text-left">Data/Hora</th>
-                                                <th className="px-2 py-1.5 text-right">Total</th>
-                                                <th className="px-2 py-1.5 text-right text-green-600">Verif.</th>
-                                                <th className="px-2 py-1.5 text-right text-blue-600">Pagas</th>
-                                                <th className="px-2 py-1.5 text-right text-amber-600">Pend.</th>
-                                                <th className="px-2 py-1.5 text-left">Usuário</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody>
-                                            {statsHistory.map((s, i) => {
-                                                const prev = statsHistory[i + 1];
-                                                const diffV = prev ? s.verified - prev.verified : 0;
-                                                const diffP = prev ? s.paid - prev.paid : 0;
-                                                const diffPend = prev ? s.pending - prev.pending : 0;
-                                                return (
-                                                    <tr key={i} className={`border-b border-gray-100 ${diffV < 0 || diffP < 0 ? 'bg-red-50' : ''}`}>
-                                                        <td className="px-2 py-1.5 whitespace-nowrap font-bold">{fmtDateTime(s.logged_at)}</td>
-                                                        <td className="px-2 py-1.5 text-right font-black">{s.total}</td>
-                                                        <td className="px-2 py-1.5 text-right font-black text-green-700">
-                                                            {s.verified}
-                                                            {diffV !== 0 && <span className={`ml-1 text-[8px] ${diffV > 0 ? 'text-green-500' : 'text-red-500'}`}>({diffV > 0 ? '+' : ''}{diffV})</span>}
-                                                        </td>
-                                                        <td className="px-2 py-1.5 text-right font-black text-blue-700">
-                                                            {s.paid}
-                                                            {diffP !== 0 && <span className={`ml-1 text-[8px] ${diffP > 0 ? 'text-blue-500' : 'text-red-500'}`}>({diffP > 0 ? '+' : ''}{diffP})</span>}
-                                                        </td>
-                                                        <td className="px-2 py-1.5 text-right font-black text-amber-700">
-                                                            {s.pending}
-                                                            {diffPend !== 0 && <span className={`ml-1 text-[8px] ${diffPend > 0 ? 'text-amber-500' : 'text-green-500'}`}>({diffPend > 0 ? '+' : ''}{diffPend})</span>}
-                                                        </td>
-                                                        <td className="px-2 py-1.5 text-gray-500 truncate max-w-[80px]">{s.accessedBy || '-'}</td>
-                                                    </tr>
-                                                );
-                                            })}
-                                        </tbody>
-                                    </table>
-                                )}
+                    <div className="p-4 space-y-4">
+                        <h4 className="text-[10px] font-black text-gray-500 uppercase tracking-widest flex items-center gap-2">
+                            <Hash size={12} /> Evolução dos Contadores
+                        </h4>
+                        {statsHistory.length === 0 ? (
+                            <p className="text-xs text-gray-400 text-center py-4">Nenhum snapshot registrado ainda. A cada 30 min que alguém acessar esta tela, os contadores serão gravados automaticamente.</p>
+                        ) : (
+                            <div className="max-h-[200px] overflow-y-auto">
+                                <table className="w-full text-[11px]">
+                                    <thead className="sticky top-0 bg-gray-50">
+                                        <tr className="text-gray-500 font-black uppercase text-[9px]">
+                                            <th className="px-3 py-2 text-left">Data/Hora</th>
+                                            <th className="px-3 py-2 text-right">Total</th>
+                                            <th className="px-3 py-2 text-right text-green-600">Verificadas</th>
+                                            <th className="px-3 py-2 text-right text-blue-600">Pagas</th>
+                                            <th className="px-3 py-2 text-right text-amber-600">Pendentes</th>
+                                            <th className="px-3 py-2 text-left">Quem acessou</th>
+                                            <th className="px-3 py-2 text-left">OS que saíram / entraram</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {statsHistory.map((s, i) => {
+                                            const prev = statsHistory[i + 1];
+                                            const diffV = prev ? s.verified - prev.verified : 0;
+                                            const diffP = prev ? s.paid - prev.paid : 0;
+                                            const diffPend = prev ? s.pending - prev.pending : 0;
+                                            let lostVerified: string[] = [];
+                                            let gainedVerified: string[] = [];
+                                            let lostPaid: string[] = [];
+                                            let gainedPaid: string[] = [];
+                                            if (prev && prev.verifiedIds && s.verifiedIds) {
+                                                const prevSet = new Set(prev.verifiedIds);
+                                                const currSet = new Set(s.verifiedIds);
+                                                lostVerified = prev.verifiedIds.filter((id: string) => !currSet.has(id));
+                                                gainedVerified = s.verifiedIds.filter((id: string) => !prevSet.has(id));
+                                            }
+                                            if (prev && prev.paidIds && s.paidIds) {
+                                                const prevSet = new Set(prev.paidIds);
+                                                const currSet = new Set(s.paidIds);
+                                                lostPaid = prev.paidIds.filter((id: string) => !currSet.has(id));
+                                                gainedPaid = s.paidIds.filter((id: string) => !prevSet.has(id));
+                                            }
+                                            const hasChanges = lostVerified.length > 0 || gainedVerified.length > 0 || lostPaid.length > 0 || gainedPaid.length > 0;
+                                            return (
+                                                <tr key={i} className={`border-b border-gray-100 ${diffV < 0 || diffP < 0 ? 'bg-red-50' : ''}`}>
+                                                    <td className="px-3 py-2 whitespace-nowrap font-bold">{fmtDateTime(s.logged_at)}</td>
+                                                    <td className="px-3 py-2 text-right font-black">{s.total}</td>
+                                                    <td className="px-3 py-2 text-right font-black text-green-700">
+                                                        {s.verified}
+                                                        {diffV !== 0 && <span className={`ml-1 text-[9px] font-black ${diffV > 0 ? 'text-green-500' : 'text-red-600'}`}>({diffV > 0 ? '+' : ''}{diffV})</span>}
+                                                    </td>
+                                                    <td className="px-3 py-2 text-right font-black text-blue-700">
+                                                        {s.paid}
+                                                        {diffP !== 0 && <span className={`ml-1 text-[9px] font-black ${diffP > 0 ? 'text-blue-500' : 'text-red-600'}`}>({diffP > 0 ? '+' : ''}{diffP})</span>}
+                                                    </td>
+                                                    <td className="px-3 py-2 text-right font-black text-amber-700">
+                                                        {s.pending}
+                                                        {diffPend !== 0 && <span className={`ml-1 text-[9px] font-black ${diffPend > 0 ? 'text-amber-500' : 'text-green-500'}`}>({diffPend > 0 ? '+' : ''}{diffPend})</span>}
+                                                    </td>
+                                                    <td className="px-3 py-2 text-gray-500 truncate max-w-[100px]">{s.accessedBy || '-'}</td>
+                                                    <td className="px-3 py-2 max-w-[250px]">
+                                                        {!hasChanges && <span className="text-gray-300 text-[9px]">—</span>}
+                                                        {lostVerified.length > 0 && (
+                                                            <div className="text-[9px]"><span className="font-black text-red-600">Perdeu verif:</span> {lostVerified.join(', ')}</div>
+                                                        )}
+                                                        {gainedVerified.length > 0 && (
+                                                            <div className="text-[9px]"><span className="font-black text-green-600">+Verificou:</span> {gainedVerified.join(', ')}</div>
+                                                        )}
+                                                        {lostPaid.length > 0 && (
+                                                            <div className="text-[9px]"><span className="font-black text-red-600">Perdeu pago:</span> {lostPaid.join(', ')}</div>
+                                                        )}
+                                                        {gainedPaid.length > 0 && (
+                                                            <div className="text-[9px]"><span className="font-black text-blue-600">+Pagou:</span> {gainedPaid.join(', ')}</div>
+                                                        )}
+                                                    </td>
+                                                </tr>
+                                            );
+                                        })}
+                                    </tbody>
+                                </table>
                             </div>
-                        </div>
+                        )}
 
-                        <div className="p-4">
-                            <h4 className="text-[10px] font-black text-gray-500 uppercase tracking-widest mb-3 flex items-center gap-2">
-                                <FileText size={12} /> Alterações Recentes (últimos 7 dias)
-                            </h4>
-                            <div className="max-h-[300px] overflow-y-auto">
-                                {auditLoading ? (
-                                    <div className="flex items-center justify-center py-8"><Loader2 size={20} className="animate-spin text-gray-400" /></div>
-                                ) : auditLog.length === 0 ? (
-                                    <p className="text-xs text-gray-400 text-center py-4">Nenhuma alteração relevante encontrada.</p>
-                                ) : (
-                                    <div className="space-y-1">
+                        <h4 className="text-[10px] font-black text-gray-500 uppercase tracking-widest flex items-center gap-2 pt-3 border-t border-gray-200">
+                            <FileText size={12} /> Alterações em Missões (últimos 7 dias)
+                        </h4>
+                        <div className="max-h-[250px] overflow-y-auto">
+                            {auditLoading ? (
+                                <div className="flex items-center justify-center py-8"><Loader2 size={20} className="animate-spin text-gray-400" /></div>
+                            ) : auditLog.length === 0 ? (
+                                <p className="text-xs text-gray-400 text-center py-4">Nenhuma alteração relevante encontrada nos logs.</p>
+                            ) : (
+                                <table className="w-full text-[11px]">
+                                    <thead className="sticky top-0 bg-gray-50">
+                                        <tr className="text-gray-500 font-black uppercase text-[9px]">
+                                            <th className="px-3 py-2 text-left">Data/Hora</th>
+                                            <th className="px-3 py-2 text-left">OS</th>
+                                            <th className="px-3 py-2 text-left">O que mudou</th>
+                                            <th className="px-3 py-2 text-left">Quem alterou</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
                                         {auditLog.map((log, i) => {
                                             const details = typeof log.details === 'string' ? JSON.parse(log.details) : (log.details || {});
                                             const field = details.field || log.action_type || '';
                                             let description = '';
-                                            if (field === 'status') description = `Status: ${details.oldValue || details.oldStatus || '?'} → ${details.newValue || details.newStatus || '?'}`;
-                                            else if (field === 'billing_approved') description = `Faturamento: ${details.oldValue ? 'Aprovado' : 'Pendente'} → ${details.newValue ? 'Aprovado' : 'Desaprovado'}`;
-                                            else if (field === 'is_same_os') description = `Mesma OS: ${details.oldValue ? 'Sim' : 'Não'} → ${details.newValue ? 'Sim' : 'Não'}`;
-                                            else if (field === 'verified_by' || log.action_type === 'VENDOR_VERIFICATION') description = `Verificação: ${details.verified_by || details.user || log.user_name}`;
-                                            else if (log.entity === 'BillingApproval') description = `Aprovação ${details.stage || ''}: ${details.user || log.user_name}`;
-                                            else if (details.oldValue !== undefined) description = `${field}: ${details.oldValue} → ${details.newValue}`;
-                                            else description = `${log.action_type}: ${JSON.stringify(details).slice(0, 80)}`;
-
-                                            const isAlert = field === 'status' || field === 'billing_approved' || (field === 'is_same_os' && details.newValue);
+                                            let severity: 'danger' | 'warning' | 'info' = 'info';
+                                            if (field === 'status') { description = `Status: ${details.oldValue || details.oldStatus || '?'} → ${details.newValue || details.newStatus || '?'}`; severity = 'danger'; }
+                                            else if (field === 'billing_approved') { description = `Aprovação fatur.: ${details.oldValue ? '✓ Aprovado' : '✗ Pendente'} → ${details.newValue ? '✓ Aprovado' : '✗ DESAPROVADO'}`; severity = details.newValue ? 'info' : 'danger'; }
+                                            else if (field === 'is_same_os') { description = `Mesma OS: ${details.oldValue ? 'Sim' : 'Não'} → ${details.newValue ? 'Sim' : 'Não'}`; severity = 'warning'; }
+                                            else if (field === 'verified_by' || log.action_type === 'VENDOR_VERIFICATION') { description = `Verificação por ${details.verified_by || details.user || log.user_name}`; }
+                                            else if (log.entity === 'BillingApproval') { description = `Aprovação ${details.stage || ''} por ${details.user || log.user_name}`; }
+                                            else if (details.oldValue !== undefined) { description = `${field}: ${details.oldValue} → ${details.newValue}`; }
+                                            else { description = `${log.action_type}: ${JSON.stringify(details).slice(0, 100)}`; }
 
                                             return (
-                                                <div key={i} className={`flex items-start gap-2 px-2 py-1.5 rounded text-[10px] ${isAlert ? 'bg-red-50 border border-red-100' : 'bg-gray-50 border border-gray-100'}`}>
-                                                    <span className="font-bold text-gray-400 whitespace-nowrap shrink-0">{fmtDateTime(log.created_at)}</span>
-                                                    <span className="font-black text-blue-700 whitespace-nowrap shrink-0">{log.entity_id}</span>
-                                                    <span className={`font-bold flex-1 min-w-0 truncate ${isAlert ? 'text-red-700' : 'text-gray-700'}`} title={description}>{description}</span>
-                                                    <span className="text-gray-400 whitespace-nowrap shrink-0">{log.user_name}</span>
-                                                </div>
+                                                <tr key={i} className={`border-b border-gray-100 ${severity === 'danger' ? 'bg-red-50' : severity === 'warning' ? 'bg-amber-50' : ''}`}>
+                                                    <td className="px-3 py-1.5 whitespace-nowrap font-bold text-gray-500">{fmtDateTime(log.created_at)}</td>
+                                                    <td className="px-3 py-1.5 font-black text-blue-700 whitespace-nowrap">{log.entity_id}</td>
+                                                    <td className={`px-3 py-1.5 font-bold ${severity === 'danger' ? 'text-red-700' : severity === 'warning' ? 'text-amber-700' : 'text-gray-700'}`} title={description}>{description}</td>
+                                                    <td className="px-3 py-1.5 text-gray-500 whitespace-nowrap">{log.user_name}</td>
+                                                </tr>
                                             );
                                         })}
-                                    </div>
-                                )}
-                            </div>
+                                    </tbody>
+                                </table>
+                            )}
                         </div>
                     </div>
                 </div>
