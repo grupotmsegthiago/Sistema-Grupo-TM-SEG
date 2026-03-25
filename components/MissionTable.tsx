@@ -1155,6 +1155,7 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
                             <th className="px-2 py-2 text-left font-black border-r border-gray-700">DATA INICIAL</th>
                             <th className="px-2 py-2 text-left font-black border-r border-gray-700">HORA AGEND.</th>
                             <th className="px-2 py-2 text-left font-black border-r border-gray-700">HORA ORIGEM</th>
+                            <th className="px-2 py-2 text-center font-black border-r border-gray-700">STATUS</th>
                             <th className="px-2 py-2 text-left font-black border-r border-gray-700">CLIENTE</th>
                             <th className="px-2 py-2 text-left font-black border-r border-gray-700">ROTA</th>
                             <th className="px-2 py-2 text-left font-black border-r border-gray-700">FORNECEDOR</th>
@@ -1192,6 +1193,7 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
                                 <td className="px-2 py-1.5 border-r border-gray-100 whitespace-nowrap">{fmtDate(m.created_at)}</td>
                                 <td className="px-2 py-1.5 border-r border-gray-100 whitespace-nowrap font-bold">{fmtTime(m.estimatedTime || m.startTime)}</td>
                                 <td className="px-2 py-1.5 border-r border-gray-100 whitespace-nowrap">{m.startTime ? fmtTime(m.startTime) : '-'}</td>
+                                <td className="px-2 py-1.5 border-r border-gray-100 text-center whitespace-nowrap"><span className={`text-[9px] font-black px-2 py-0.5 rounded-full ${statusBg(m.status)}`}>{m.status}</span></td>
                                 <td className="px-2 py-1.5 border-r border-gray-100 font-bold text-gray-800 max-w-[140px] truncate">{m.client || '-'}</td>
                                 <td className="px-2 py-1.5 border-r border-gray-100 text-gray-600 max-w-[180px] truncate">{extractRoute(m.origin, m.destination)}</td>
                                 <td className="px-2 py-1.5 border-r border-gray-100 text-gray-700 max-w-[120px] truncate">{m.provider || '-'}</td>
@@ -1213,7 +1215,7 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
                         {missions.length > 0 && canSeeFinancials && (
                           <tfoot>
                             <tr className="bg-gray-800 text-white font-black">
-                              <td colSpan={12} className="px-2 py-2 text-right border-r border-gray-600">TOTAIS →</td>
+                              <td colSpan={13} className="px-2 py-2 text-right border-r border-gray-600">TOTAIS →</td>
                               <td className="px-2 py-2 text-right border-r border-gray-600 text-green-300">{fmtMoney(totalRev)}</td>
                               <td className="px-2 py-2 text-right border-r border-gray-600 text-blue-300">{fmtMoney(totalCost)}</td>
                               <td className="px-2 py-2 text-right border-r border-gray-600 text-orange-300">{fmtMoney(totalToll)}</td>
