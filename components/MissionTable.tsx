@@ -1136,7 +1136,7 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
                           data-testid="btn-export-report"
                           onClick={() => {
                             const sep = ';';
-                            const headers = ['#','OS','Status','Cliente','Rota','Veíc. Escoltado','Fornecedor','Viatura','Agentes','Data Inicial','Hora Inicial','Data Final','Hora Final'];
+                            const headers = ['#','OS','Status','Cliente','Veíc. Escoltado','Fornecedor','Viatura','Agentes','Rota','Data Inicial','Hora Inicial','Data Final','Hora Final'];
                             if (canSeeFinancials) headers.push('Receita','Custo','Pedágio','Resultado','% Lucro');
                             const rows = missions.map((m, i) => {
                               const rev = m.revenue_value || 0;
@@ -1148,11 +1148,11 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
                                 m.id + (m.is_same_os ? ` (MESMA OS${m.parent_mission_id ? ` → ${m.parent_mission_id}` : ''})` : ''),
                                 m.status,
                                 m.client || '',
-                                `${m.origin ? m.origin.split(',')[0].split('-')[0].trim() : ''} → ${m.destination ? m.destination.split(',')[0].split('-')[0].trim() : ''}`,
                                 m.clientVehicle?.plate || '',
                                 m.provider || '',
                                 m.vehicleId || '',
                                 [m.agent1, m.agent2].filter(Boolean).join(' & '),
+                                `${m.origin ? m.origin.split(',')[0].split('-')[0].trim() : ''} → ${m.destination ? m.destination.split(',')[0].split('-')[0].trim() : ''}`,
                                 fmtDate(m.created_at),
                                 m.startTime ? fmtTime(m.startTime) : '',
                                 m.endTime ? fmtDate(m.endTime) : '',
@@ -1206,11 +1206,11 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
                             <th className="px-3 py-2.5 text-left font-black border-r border-gray-700">OS</th>
                             <th className="px-3 py-2.5 text-center font-black border-r border-gray-700">STATUS</th>
                             <th className="px-3 py-2.5 text-left font-black border-r border-gray-700">CLIENTE</th>
-                            <th className="px-3 py-2.5 text-left font-black border-r border-gray-700">ROTA</th>
                             <th className="px-3 py-2.5 text-left font-black border-r border-gray-700">VEÍC. ESCOLTADO</th>
                             <th className="px-3 py-2.5 text-left font-black border-r border-gray-700">FORNECEDOR</th>
                             <th className="px-3 py-2.5 text-left font-black border-r border-gray-700">VIATURA</th>
                             <th className="px-3 py-2.5 text-left font-black border-r border-gray-700">AGENTES</th>
+                            <th className="px-3 py-2.5 text-left font-black border-r border-gray-700">ROTA</th>
                             <th className="px-3 py-2.5 text-left font-black border-r border-gray-700">DATA INICIAL</th>
                             <th className="px-3 py-2.5 text-left font-black border-r border-gray-700">HORA INICIAL</th>
                             <th className="px-3 py-2.5 text-left font-black border-r border-gray-700">DATA FINAL</th>
@@ -1250,13 +1250,13 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
                                 </td>
                                 <td className="px-3 py-2 border-r border-gray-100 text-center whitespace-nowrap"><span className={`text-[10px] font-black px-2.5 py-1 rounded-full ${statusBg(m.status)}`}>{m.status}</span></td>
                                 <td className="px-3 py-2 border-r border-gray-100 font-bold text-gray-800 max-w-[160px] truncate">{m.client || '-'}</td>
-                                <td className="px-3 py-2 border-r border-gray-100 text-gray-600 max-w-[200px] truncate" title={`${m.origin || ''} → ${m.destination || ''}`}>
-                                  {m.origin ? m.origin.split(',')[0].split('-')[0].trim() : '-'} → {m.destination ? m.destination.split(',')[0].split('-')[0].trim() : '-'}
-                                </td>
                                 <td className="px-3 py-2 border-r border-gray-100 font-mono text-gray-700 whitespace-nowrap">{placaEscoltado}</td>
                                 <td className="px-3 py-2 border-r border-gray-100 text-gray-700 max-w-[140px] truncate">{m.provider || '-'}</td>
                                 <td className="px-3 py-2 border-r border-gray-100 font-mono text-gray-700 whitespace-nowrap">{m.vehicleId || '-'}</td>
                                 <td className="px-3 py-2 border-r border-gray-100 text-gray-600 max-w-[180px] truncate" title={agentes}>{agentes}</td>
+                                <td className="px-3 py-2 border-r border-gray-100 text-gray-600 max-w-[200px] truncate" title={`${m.origin || ''} → ${m.destination || ''}`}>
+                                  {m.origin ? m.origin.split(',')[0].split('-')[0].trim() : '-'} → {m.destination ? m.destination.split(',')[0].split('-')[0].trim() : '-'}
+                                </td>
                                 <td className="px-3 py-2 border-r border-gray-100 whitespace-nowrap">{fmtDate(m.created_at)}</td>
                                 <td className="px-3 py-2 border-r border-gray-100 whitespace-nowrap">{m.startTime ? fmtTime(m.startTime) : '-'}</td>
                                 <td className="px-3 py-2 border-r border-gray-100 whitespace-nowrap">{m.endTime ? fmtDate(m.endTime) : '-'}</td>
