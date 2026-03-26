@@ -1138,14 +1138,17 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
                             const sep = ';';
                             const headers = ['#','OS','Status','Cliente','Veíc. Escoltado','Fornecedor','Viatura','Agentes','Rota','Data Inicial','Hora Inicial','Data Final','Hora Final'];
                             if (canSeeFinancials) headers.push('Receita','Custo','Pedágio','Resultado','% Lucro');
+                            const exportParentIds = new Set<string>();
+                            missions.forEach(m => { if (m.is_same_os && m.parent_mission_id) exportParentIds.add(m.parent_mission_id); });
                             const rows = missions.map((m, i) => {
                               const rev = m.revenue_value || 0;
                               const cost = m.is_same_os ? 0 : (m.cost_value || 0);
                               const toll = m.toll_value || 0;
                               const resultado = rev - cost - toll;
+                              const osLabel = exportParentIds.has(m.id) ? ' (OS MÃE)' : (m.is_same_os ? ` (MESMA OS${m.parent_mission_id ? ` → MÃE: ${m.parent_mission_id}` : ''})` : '');
                               const row = [
                                 i + 1,
-                                m.id + (m.is_same_os ? ` (MESMA OS${m.parent_mission_id ? ` → ${m.parent_mission_id}` : ''})` : ''),
+                                m.id + osLabel,
                                 m.status,
                                 m.client || '',
                                 m.clientVehicle?.plate || '',
@@ -1226,7 +1229,12 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
                           </tr>
                         </thead>
                         <tbody>
-                          {missions.map((m, idx) => {
+                          {(() => {
+                            const parentIds = new Set<string>();
+                            missions.forEach(m => {
+                              if (m.is_same_os && m.parent_mission_id) parentIds.add(m.parent_mission_id);
+                            });
+                            return missions.map((m, idx) => {
                             const rev = m.revenue_value || 0;
                             const cost = m.is_same_os ? 0 : (m.cost_value || 0);
                             const toll = m.toll_value || 0;
@@ -1234,19 +1242,23 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
                             const lucroPerc = rev > 0 ? ((resultado / rev) * 100) : 0;
                             const placaEscoltado = m.clientVehicle?.plate || '-';
                             const agentes = [m.agent1, m.agent2].filter(Boolean).join(' & ') || '-';
-                            const rowBg = idx % 2 === 0 ? 'bg-white' : 'bg-gray-50';
+                            const isParentMission = parentIds.has(m.id);
+                            const rowBg = isParentMission ? 'bg-blue-50' : idx % 2 === 0 ? 'bg-white' : 'bg-gray-50';
                             
                             return (
-                              <tr key={m.id} className={`${rowBg} hover:bg-yellow-50 border-b border-gray-200 transition-colors`} data-testid={`timeline-row-${m.id}`}>
+                              <tr key={m.id} className={`${rowBg} hover:bg-yellow-50 border-b border-gray-200 transition-colors ${isParentMission ? 'border-l-4 border-l-blue-500' : ''}`} data-testid={`timeline-row-${m.id}`}>
                                 <td className="px-3 py-2 font-black text-gray-500 border-r border-gray-100">{idx + 1}</td>
                                 <td className="px-3 py-2 font-black text-gray-900 border-r border-gray-100 whitespace-nowrap">
-                                  <span>{m.id}</span>
+                                  <span className={isParentMission ? 'text-blue-700' : ''}>{m.id}</span>
                                   {m.mission_type && <span className={`ml-1 text-[9px] font-bold px-1.5 py-0.5 rounded ${m.mission_type === 'Velada' ? 'bg-purple-100 text-purple-700' : m.mission_type === 'Pronta Resposta' ? 'bg-orange-100 text-orange-700' : 'bg-blue-100 text-blue-700'}`}>{m.mission_type === 'Caracterizada' ? 'CARACT' : m.mission_type === 'Velada' ? 'VELADA' : 'PR'}</span>}
+                                  {isParentMission && (
+                                    <span className="ml-1 text-[9px] font-black bg-blue-600 text-white px-1.5 py-0.5 rounded inline-flex items-center gap-0.5"><Link2 size={9} /> OS MÃE</span>
+                                  )}
                                   {m.is_same_os && (
                                     <span className="ml-1 text-[9px] font-black bg-black text-white px-1.5 py-0.5 rounded">MESMA OS</span>
                                   )}
                                   {m.is_same_os && m.parent_mission_id && (
-                                    <span className="ml-1 text-[9px] font-black bg-blue-600 text-white px-1.5 py-0.5 rounded inline-flex items-center gap-0.5"><Link2 size={9} /> MÃE: {m.parent_mission_id}</span>
+                                    <span className="ml-1 text-[9px] font-black bg-blue-400 text-white px-1.5 py-0.5 rounded inline-flex items-center gap-0.5"><Link2 size={9} /> MÃE: {m.parent_mission_id}</span>
                                   )}
                                 </td>
                                 <td className="px-3 py-2 border-r border-gray-100 text-center whitespace-nowrap"><span className={`text-[10px] font-black px-2.5 py-1 rounded-full ${statusBg(m.status)}`}>{m.status}</span></td>
@@ -1286,7 +1298,8 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
                                 </td>
                               </tr>
                             );
-                          })}
+                          });
+                          })()}
                         </tbody>
                         {missions.length > 0 && canSeeFinancials && (
                           <tfoot>
