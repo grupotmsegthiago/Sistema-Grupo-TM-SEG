@@ -1230,9 +1230,13 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
                         </thead>
                         <tbody>
                           {(() => {
-                            const parentIds = new Set<string>();
+                            const parentChildMap = new Map<string, string[]>();
                             missions.forEach(m => {
-                              if (m.is_same_os && m.parent_mission_id) parentIds.add(m.parent_mission_id);
+                              if (m.is_same_os && m.parent_mission_id) {
+                                const arr = parentChildMap.get(m.parent_mission_id) || [];
+                                arr.push(m.id);
+                                parentChildMap.set(m.parent_mission_id, arr);
+                              }
                             });
                             return missions.map((m, idx) => {
                             const rev = m.revenue_value || 0;
@@ -1242,24 +1246,29 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
                             const lucroPerc = rev > 0 ? ((resultado / rev) * 100) : 0;
                             const placaEscoltado = m.clientVehicle?.plate || '-';
                             const agentes = [m.agent1, m.agent2].filter(Boolean).join(' & ') || '-';
-                            const isParentMission = parentIds.has(m.id);
-                            const rowBg = isParentMission ? 'bg-blue-50' : idx % 2 === 0 ? 'bg-white' : 'bg-gray-50';
+                            const isParentMission = parentChildMap.has(m.id);
+                            const childrenOfThis = parentChildMap.get(m.id);
+                            const hasLink = isParentMission || (m.is_same_os && !!m.parent_mission_id);
+                            const rowBg = isParentMission ? 'bg-blue-50' : (m.is_same_os && m.parent_mission_id) ? 'bg-blue-50/40' : idx % 2 === 0 ? 'bg-white' : 'bg-gray-50';
                             
                             return (
-                              <tr key={m.id} className={`${rowBg} hover:bg-yellow-50 border-b border-gray-200 transition-colors ${isParentMission ? 'border-l-4 border-l-blue-500' : ''}`} data-testid={`timeline-row-${m.id}`}>
+                              <tr key={m.id} className={`${rowBg} hover:bg-yellow-50 border-b border-gray-200 transition-colors ${hasLink ? 'border-l-4 border-l-blue-500' : ''}`} data-testid={`timeline-row-${m.id}`}>
                                 <td className="px-3 py-2 font-black text-gray-500 border-r border-gray-100">{idx + 1}</td>
                                 <td className="px-3 py-2 font-black text-gray-900 border-r border-gray-100 whitespace-nowrap">
-                                  <span className={isParentMission ? 'text-blue-700' : ''}>{m.id}</span>
-                                  {m.mission_type && <span className={`ml-1 text-[9px] font-bold px-1.5 py-0.5 rounded ${m.mission_type === 'Velada' ? 'bg-purple-100 text-purple-700' : m.mission_type === 'Pronta Resposta' ? 'bg-orange-100 text-orange-700' : 'bg-blue-100 text-blue-700'}`}>{m.mission_type === 'Caracterizada' ? 'CARACT' : m.mission_type === 'Velada' ? 'VELADA' : 'PR'}</span>}
-                                  {isParentMission && (
-                                    <span className="ml-1 text-[9px] font-black bg-blue-600 text-white px-1.5 py-0.5 rounded inline-flex items-center gap-0.5"><Link2 size={9} /> OS MÃE</span>
-                                  )}
-                                  {m.is_same_os && (
-                                    <span className="ml-1 text-[9px] font-black bg-black text-white px-1.5 py-0.5 rounded">MESMA OS</span>
-                                  )}
-                                  {m.is_same_os && m.parent_mission_id && (
-                                    <span className="ml-1 text-[9px] font-black bg-blue-400 text-white px-1.5 py-0.5 rounded inline-flex items-center gap-0.5"><Link2 size={9} /> MÃE: {m.parent_mission_id}</span>
-                                  )}
+                                  <div className="flex items-center gap-1 flex-wrap">
+                                    {hasLink && <Link2 size={12} className="text-blue-500 shrink-0" />}
+                                    <span className={isParentMission ? 'font-black text-blue-700' : (m.is_same_os && m.parent_mission_id) ? 'text-blue-600' : ''}>{m.id}</span>
+                                    {m.mission_type && <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded ${m.mission_type === 'Velada' ? 'bg-purple-100 text-purple-700' : m.mission_type === 'Pronta Resposta' ? 'bg-orange-100 text-orange-700' : 'bg-blue-100 text-blue-700'}`}>{m.mission_type === 'Caracterizada' ? 'CARACT' : m.mission_type === 'Velada' ? 'VELADA' : 'PR'}</span>}
+                                    {isParentMission && (
+                                      <span className="text-[9px] font-black bg-blue-600 text-white px-1.5 py-0.5 rounded inline-flex items-center gap-0.5" title={`Filhas: ${childrenOfThis?.join(', ')}`}>OS MÃE</span>
+                                    )}
+                                    {m.is_same_os && (
+                                      <span className="text-[9px] font-black bg-black text-white px-1.5 py-0.5 rounded">MESMA OS</span>
+                                    )}
+                                    {m.is_same_os && m.parent_mission_id && (
+                                      <span className="text-[9px] font-bold bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded inline-flex items-center gap-0.5">MÃE: {m.parent_mission_id}</span>
+                                    )}
+                                  </div>
                                 </td>
                                 <td className="px-3 py-2 border-r border-gray-100 text-center whitespace-nowrap"><span className={`text-[10px] font-black px-2.5 py-1 rounded-full ${statusBg(m.status)}`}>{m.status}</span></td>
                                 <td className="px-3 py-2 border-r border-gray-100 font-bold text-gray-800 max-w-[160px] truncate">{m.client || '-'}</td>
