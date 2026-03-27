@@ -720,10 +720,11 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
           const isVendorLocked = !!(mission.verified_by && mission.verified_at);
           const provTotalWithCorrectToll = financialData.provider.base + financialData.provider.extraKmVal + financialData.provider.extraHrVal + parseNumber(tollProviderInput);
           const hasCustomProviderValues = !!(customProviderBase || customProviderKm || customProviderHour);
+          const isBillingLocked = !!(mission.billing_approved || mission.billing_verified_by);
           if (!useSavedValuesRef.current && !isSavingRef.current && !isVendorLocked) {
               setRevenueInput(financialData.client.total.toLocaleString('pt-BR', {minimumFractionDigits: 2, maximumFractionDigits: 2}));
               setCostInput(provTotalWithCorrectToll.toLocaleString('pt-BR', {minimumFractionDigits: 2, maximumFractionDigits: 2}));
-          } else if (useSavedValuesRef.current && !isSavingRef.current && !userManuallyEditedRef.current) {
+          } else if (useSavedValuesRef.current && !isSavingRef.current && !userManuallyEditedRef.current && !isBillingLocked) {
               const currentRev = parseNumber(revenueInput);
               const tableRev = financialData.client.total;
               if (Math.abs(currentRev - tableRev) > 1) {
