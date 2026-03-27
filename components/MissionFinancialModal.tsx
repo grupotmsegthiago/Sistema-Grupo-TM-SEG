@@ -455,20 +455,16 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
 
               const isVendorVerified = !!(mRes.data.verified_by && mRes.data.verified_at);
 
-              if ((mRes.data.billing_approved || isVendorVerified) && (savedRev > 0 || savedCost > 0)) {
+              if (hasSavedData) {
                   const hasSeparateTollProvider = mRes.data.toll_value_provider != null;
                   const totalCost = hasSeparateTollProvider ? savedCost + dbTollProvider : savedCost;
                   if (!hasSeparateTollProvider && savedCost > 0) {
                       setTollEmbeddedInCost(true);
                   }
-                  if (provOpsEdited && !isVendorVerified) {
-                      setUseSavedValues(false);
-                  } else {
-                      setUseSavedValues(true);
-                      const totalRev = savedRev + dbToll;
-                      setRevenueInput(totalRev.toLocaleString('pt-BR', {minimumFractionDigits: 2, maximumFractionDigits: 2}));
-                      setCostInput(totalCost.toLocaleString('pt-BR', {minimumFractionDigits: 2, maximumFractionDigits: 2}));
-                  }
+                  setUseSavedValues(true);
+                  const totalRev = savedRev + dbToll;
+                  setRevenueInput(totalRev.toLocaleString('pt-BR', {minimumFractionDigits: 2, maximumFractionDigits: 2}));
+                  setCostInput(totalCost.toLocaleString('pt-BR', {minimumFractionDigits: 2, maximumFractionDigits: 2}));
               }
               if (mRes.data.billing_verified_by) {
                   setSavedByInfo(`Salvo por ${mRes.data.billing_verified_by}`);
@@ -716,27 +712,10 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
 
     useEffect(() => {
       if (financialData && mission) {
-          const provOpsActive = !!mission.provider_ops_edited;
           const isVendorLocked = !!(mission.verified_by && mission.verified_at);
           const provTotalWithCorrectToll = financialData.provider.base + financialData.provider.extraKmVal + financialData.provider.extraHrVal + parseNumber(tollProviderInput);
-          const hasCustomProviderValues = !!(customProviderBase || customProviderKm || customProviderHour);
-          const isBillingLocked = !!(mission.billing_approved || mission.billing_verified_by);
           if (!useSavedValuesRef.current && !isSavingRef.current && !isVendorLocked) {
               setRevenueInput(financialData.client.total.toLocaleString('pt-BR', {minimumFractionDigits: 2, maximumFractionDigits: 2}));
-              setCostInput(provTotalWithCorrectToll.toLocaleString('pt-BR', {minimumFractionDigits: 2, maximumFractionDigits: 2}));
-          } else if (useSavedValuesRef.current && !isSavingRef.current && !userManuallyEditedRef.current && !isBillingLocked) {
-              const currentRev = parseNumber(revenueInput);
-              const tableRev = financialData.client.total;
-              if (Math.abs(currentRev - tableRev) > 1) {
-                  setRevenueInput(tableRev.toLocaleString('pt-BR', {minimumFractionDigits: 2, maximumFractionDigits: 2}));
-              }
-              if (!isVendorLocked) {
-                  const currentCost = parseNumber(costInput);
-                  if (Math.abs(currentCost - provTotalWithCorrectToll) > 1) {
-                      setCostInput(provTotalWithCorrectToll.toLocaleString('pt-BR', {minimumFractionDigits: 2, maximumFractionDigits: 2}));
-                  }
-              }
-          } else if ((provOpsActive || hasCustomProviderValues) && !isSavingRef.current && !isVendorLocked) {
               setCostInput(provTotalWithCorrectToll.toLocaleString('pt-BR', {minimumFractionDigits: 2, maximumFractionDigits: 2}));
           }
           
