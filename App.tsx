@@ -116,14 +116,26 @@ const App: React.FC = () => {
       if (!storedUser) return;
       try {
           const user = JSON.parse(storedUser);
-          const { data, error } = await supabase.from('system_users').select(`status, force_password_change, permissions, profile_id, client_id, profiles:profile_id ( permissions )`).eq('id', user.id).single();
+          const { data, error } = await supabase.from('system_users').select(`name, status, force_password_change, permissions, profile_id, client_id, profiles:profile_id ( name, permissions )`).eq('id', user.id).single();
           if (error || !data || data.status !== 'Ativo') { handleLogout(); return; }
           if (data.force_password_change) setNeedsPasswordChange(true);
           const profilePerms = data.profiles?.permissions || [];
           const userPerms = data.permissions || [];
           const combinedPermissions = [...new Set([...profilePerms, ...userPerms])];
+          let needsUpdate = false;
           if (JSON.stringify(user.permissions) !== JSON.stringify(combinedPermissions)) {
               user.permissions = combinedPermissions;
+              needsUpdate = true;
+          }
+          if (data.name && (!user.name || user.name === 'Usuário')) {
+              user.name = data.name;
+              needsUpdate = true;
+          }
+          if (data.profiles?.name && (!user.role || user.role === 'Usuário')) {
+              user.role = data.profiles.name;
+              needsUpdate = true;
+          }
+          if (needsUpdate) {
               localStorage.setItem('userData', JSON.stringify(user));
           }
           if (data.client_id) {
