@@ -1043,6 +1043,9 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
           if (approve && canReleaseBilling) {
               basePayload.billing_verified_by = userName;
           }
+          if (isApprovedForBilling && !basePayload.billing_verified_by) {
+              basePayload.billing_verified_by = userName;
+          }
 
           if (shouldSnapshot && financialData) {
               const usedTable = clientTables.find((t: any) => t.id.toString() === (manualClientTableId || financialData.client.tableId));

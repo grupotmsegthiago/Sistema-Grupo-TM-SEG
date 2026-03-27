@@ -259,23 +259,35 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
           }
       }
 
-      const [missionsRes, clientTablesRes, providerTablesRes, clientsRes, providersRes] = await Promise.all([
-          query,
+      const fetchAllPages = async () => {
+          let all: any[] = [];
+          let from = 0;
+          const pageSize = 1000;
+          while (true) {
+              const { data, error } = await query.range(from, from + pageSize - 1);
+              if (error) throw error;
+              if (data) all = all.concat(data);
+              if (!data || data.length < pageSize) break;
+              from += pageSize;
+          }
+          return all;
+      };
+
+      const [missionsData, clientTablesRes, providerTablesRes, clientsRes, providersRes] = await Promise.all([
+          fetchAllPages(),
           supabase.from('client_price_tables').select('*'),
           supabase.from('provider_cost_tables').select('*'),
           supabase.from('clients').select('*'),
           supabase.from('providers').select('name, trading_name')
       ]);
 
-      if (missionsRes.error) throw missionsRes.error;
       setDbStatus('ok');
 
       if (clientTablesRes.data) setClientTables(clientTablesRes.data as any);
       if (providerTablesRes.data) setProviderTables(providerTablesRes.data as any);
       if (clientsRes.data) setClientsData(clientsRes.data as any);
 
-      if (missionsRes.data) {
-          const missionsData = missionsRes.data;
+      if (missionsData) {
           const vehicleIds = [...new Set(missionsData.map((m: any) => m.vehicle_id).filter((id: any) => id))];
           const clientVehicleIds = [...new Set(missionsData.map((m: any) => m.client_vehicle).filter((id: any) => id))];
           

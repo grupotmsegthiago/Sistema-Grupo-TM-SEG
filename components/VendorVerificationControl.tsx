@@ -218,64 +218,45 @@ const VendorVerificationControl: React.FC<VendorVerificationControlProps> = ({ o
     const loadData = async () => {
         setIsLoading(true);
         try {
-            const [clientsRes, missionsRes, vehiclesRes] = await Promise.all([
+            const missionFields = 'id, client, provider, origin, destination, status, created_at, start_time, end_time, start_km, end_km, total_distance, revenue_value, cost_value, toll_value, toll_value_provider, billing_approved, vendor_os_number, invoice_number, release_date, payment_date, verified_by, verified_at, client_vehicle, client_vehicle_2';
+            const fetchAllMissions = async () => {
+                let all: any[] = [];
+                let from = 0;
+                const pageSize = 1000;
+                while (true) {
+                    const { data, error } = await supabase.from('missions')
+                        .select(missionFields)
+                        .or('billing_approved.eq.true,status.eq.Concluída')
+                        .gte('created_at', '2026-01-01')
+                        .order('created_at', { ascending: false })
+                        .range(from, from + pageSize - 1);
+                    if (error) throw error;
+                    if (data) all = all.concat(data);
+                    if (!data || data.length < pageSize) break;
+                    from += pageSize;
+                }
+                return all;
+            };
+
+            const [clientsRes, missionData, vehiclesRes] = await Promise.all([
                 supabase.from('clients').select('id, name, trading_name').eq('status', 'Ativo').order('name'),
-                supabase.from('missions')
-                    .select('id, client, provider, origin, destination, status, created_at, start_time, end_time, start_km, end_km, total_distance, revenue_value, cost_value, toll_value, toll_value_provider, billing_approved, vendor_os_number, invoice_number, release_date, payment_date, verified_by, verified_at, client_vehicle, client_vehicle_2')
-                    .or('billing_approved.eq.true,status.eq.Concluída')
-                    .gte('created_at', '2026-01-01')
-                    .order('created_at', { ascending: false })
-                    .limit(2000),
+                fetchAllMissions(),
                 supabase.from('client_vehicles').select('id, plate, model')
             ]);
-
-            let missionData = missionsRes.data || [];
-
-            if (missionsRes.error && missionsRes.error.message.includes('column')) {
-                const { data: fallbackData } = await supabase.from('missions')
-                    .select('id, client, provider, origin, destination, status, created_at, start_time, end_time, start_km, end_km, total_distance, revenue_value, cost_value, toll_value, toll_value_provider, billing_approved')
-                    .or('billing_approved.eq.true,status.eq.Concluída')
-                    .gte('created_at', '2026-01-01')
-                    .order('created_at', { ascending: false })
-                    .limit(2000);
-                missionData = fallbackData || [];
-
-                const { data: verLogs } = await supabase.from('system_logs')
-                    .select('entity_id, details')
-                    .eq('action_type', 'VENDOR_VERIFICATION')
-                    .order('created_at', { ascending: false });
-
-                if (verLogs) {
-                    const verMap = new Map<string, any>();
-                    verLogs.forEach(log => {
-                        if (!verMap.has(log.entity_id)) {
-                            const details = typeof log.details === 'string' ? JSON.parse(log.details) : log.details;
-                            verMap.set(log.entity_id, details);
-                        }
-                    });
-                    missionData = missionData.map(m => {
-                        const ver = verMap.get(m.id);
-                        if (ver) {
-                            return { ...m, ...ver };
-                        }
-                        return m;
-                    });
-                }
-            }
 
             if (clientsRes.data) setClients(clientsRes.data);
 
             const vehicleMap = new Map<number, { plate: string; model: string }>();
             (vehiclesRes.data || []).forEach((v: any) => vehicleMap.set(v.id, { plate: v.plate || '', model: v.model || '' }));
-            missionData = missionData.map((m: any) => {
+            const enrichedMissions = missionData.map((m: any) => {
                 const v1 = m.client_vehicle ? vehicleMap.get(m.client_vehicle) : null;
                 const v2 = m.client_vehicle_2 ? vehicleMap.get(m.client_vehicle_2) : null;
                 return { ...m, _plate1: v1?.plate || '', _plate2: v2?.plate || '' };
             });
 
-            const uniqueProviders = [...new Set(missionData.map((m: any) => m.provider).filter(Boolean))].sort();
+            const uniqueProviders = [...new Set(enrichedMissions.map((m: any) => m.provider).filter(Boolean))].sort();
             setProviders(uniqueProviders as string[]);
-            setMissions(missionData);
+            setMissions(enrichedMissions);
         } catch (e) {
             console.error(e);
         } finally {
