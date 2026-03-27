@@ -129,7 +129,7 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
   const originAutocompleteRef = useRef<google.maps.places.Autocomplete | null>(null);
   const destinationAutocompleteRef = useRef<google.maps.places.Autocomplete | null>(null);
 
-  const step3Done = !!(formData.clientVehicleId && (driverQuestion === 'no' || (driverQuestion === 'yes' && formData.driver_name && formData.driver_phone)));
+  const step3Done = !!(formData.clientVehicleId && (driverQuestion === 'no' || (driverQuestion === 'yes' && formData.driver_name && formData.driver_phone && formData.driver_phone.replace(/\D/g, '').length >= 10)));
   const tollLoaded = !isCalculatingToll && (parseFloat(formData.tollValue) > 0 || manualOverrides.toll || parseFloat(formData.tollValue) === 0);
   const step5Done = !!(formData.origin && formData.destination && selectedRouteId && formData.estimatedTime && manualRevenueTableId && tollLoaded && operatorConfirmedCalc);
   const isScheduledInPast = scheduleMode === 'scheduled' && formData.scheduledDate && formData.scheduledTime && new Date(`${formData.scheduledDate}T${formData.scheduledTime}:00`).getTime() < Date.now();
@@ -1237,7 +1237,7 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
                           <div className="relative">
                               <label className={LABEL_CLASS}>Telefone Motorista</label>
                               <div className="relative">
-                                  <input type="text" className={INPUT_CLASS} placeholder="(00) 00000-0000" value={formData.driver_phone} onChange={e => setFormData({...formData, driver_phone: e.target.value})} data-testid="input-driver-phone" />
+                                  <input type="text" className={INPUT_CLASS} placeholder="(00) 00000-0000" maxLength={15} value={formData.driver_phone} onChange={e => { const digits = e.target.value.replace(/\D/g, '').slice(0, 11); let masked = ''; if (digits.length > 0) { masked = '(' + digits.slice(0, 2); if (digits.length > 2) { masked += ') ' + digits.slice(2, digits.length > 10 ? 7 : 6); if (digits.length > (digits.length > 10 ? 7 : 6)) masked += '-' + digits.slice(digits.length > 10 ? 7 : 6); } } setFormData({...formData, driver_phone: masked}); }} data-testid="input-driver-phone" />
                                   <Phone size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
                               </div>
                           </div>
@@ -1277,7 +1277,7 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
                               </div>
                           </div>
                           <div className="relative"><label className={LABEL_CLASS}>Motorista 2° Veículo</label><div className="relative"><input type="text" className={INPUT_CLASS} placeholder="Nome do 2° condutor..." value={formData.driver_name_2} onChange={e => setFormData({...formData, driver_name_2: e.target.value.toUpperCase()})} data-testid="input-driver-name-2" /><User size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-blue-400" /></div></div>
-                          <div className="relative"><label className={LABEL_CLASS}>Telefone 2° Motorista</label><div className="relative"><input type="text" className={INPUT_CLASS} placeholder="(00) 00000-0000" value={formData.driver_phone_2} onChange={e => setFormData({...formData, driver_phone_2: e.target.value})} data-testid="input-driver-phone-2" /><Phone size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-blue-400 pointer-events-none" /></div></div>
+                          <div className="relative"><label className={LABEL_CLASS}>Telefone 2° Motorista</label><div className="relative"><input type="text" className={INPUT_CLASS} placeholder="(00) 00000-0000" maxLength={15} value={formData.driver_phone_2} onChange={e => { const digits = e.target.value.replace(/\D/g, '').slice(0, 11); let masked = ''; if (digits.length > 0) { masked = '(' + digits.slice(0, 2); if (digits.length > 2) { masked += ') ' + digits.slice(2, digits.length > 10 ? 7 : 6); if (digits.length > (digits.length > 10 ? 7 : 6)) masked += '-' + digits.slice(digits.length > 10 ? 7 : 6); } } setFormData({...formData, driver_phone_2: masked}); }} data-testid="input-driver-phone-2" /><Phone size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-blue-400 pointer-events-none" /></div></div>
                       </div>
                   )}
               </div>
