@@ -902,7 +902,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
       const hasAuditor = stages.includes('auditor');
       const hasFinanceiro = stages.includes('financeiro');
       const hasDiretoria = stages.includes('diretoria');
-      const isApprovedForBilling = hasFinanceiro || hasDiretoria;
+      const isApprovedForBilling = hasFinanceiro || hasDiretoria || (mission?.billing_approved === true);
       const isFullyApproved = hasDiretoria;
       const missing: string[] = [];
       if (!hasDiretoria) {
@@ -1025,7 +1025,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
           const updatedStages = newLog.map(l => l.stage);
           const hasFinanceiro = updatedStages.includes('financeiro');
           const hasDiretoria = updatedStages.includes('diretoria');
-          const isApprovedForBilling = hasFinanceiro || hasDiretoria;
+          const isApprovedForBilling = hasFinanceiro || hasDiretoria || (mission.billing_approved === true);
           const isFullyApproved = hasDiretoria;
           
           const canReleaseBilling = stage === 'financeiro' || stage === 'diretoria';
