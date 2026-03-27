@@ -355,12 +355,28 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
         } catch (error) { console.error(error); } finally { setIsLoadingData(false); }
     };
 
+    const fetchAllAgents = async (statusFilter?: string) => {
+        let allData: any[] = [];
+        let from = 0;
+        const pageSize = 1000;
+        while (true) {
+            let query = supabase.from('agents').select('*').order('name').range(from, from + pageSize - 1);
+            if (statusFilter) query = query.eq('status', statusFilter);
+            const { data, error } = await query;
+            if (error) throw error;
+            if (data) allData = allData.concat(data);
+            if (!data || data.length < pageSize) break;
+            from += pageSize;
+        }
+        return allData;
+    };
+
     const refreshAuxData = async (clientName: string, providerName: string, vId?: string, cId?: number) => {
-        const [pRes, vRes, aRes, allARes, ctRes, cvRes, dRes] = await Promise.all([
+        const [pRes, vRes, activeAgents, allAgents, ctRes, cvRes, dRes] = await Promise.all([
             supabase.from('providers').select('*').eq('status', 'Ativo').order('name'),
             supabase.from('vehicles').select('*').eq('status', 'Ativo'),
-            supabase.from('agents').select('*').eq('status', 'Ativo').order('name'),
-            supabase.from('agents').select('*').order('name'),
+            fetchAllAgents('Ativo'),
+            fetchAllAgents(),
             supabase.from('client_price_tables').select('*').eq('client', clientName),
             cId ? supabase.from('client_vehicles').select('*').eq('client_id', cId).order('plate') : { data: [] },
             supabase.from('missions').select('driver_name, driver_phone').not('driver_name', 'is', null).order('created_at', { ascending: false }).limit(200)
@@ -368,8 +384,8 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
         
         if (pRes.data) setProvidersList(pRes.data);
         if (vRes.data) setVehiclesList(vRes.data);
-        if (aRes.data) setAgentsList(aRes.data);
-        if (allARes.data) setAllAgentsList(allARes.data);
+        setAgentsList(activeAgents);
+        setAllAgentsList(allAgents);
         if (ctRes.data) setClientTables(ctRes.data);
         if (cvRes.data) setClientVehiclesList(cvRes.data as any);
         

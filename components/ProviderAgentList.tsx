@@ -31,10 +31,18 @@ const ProviderAgentList: React.FC<Props> = ({ onAdd, onEdit }) => {
     setIsLoading(true);
     setDbStatus(null);
     try {
-        const { data, error } = await supabase.from('agents').select('*').order('name');
-        if (error) throw error;
+        let allData: any[] = [];
+        let from = 0;
+        const pageSize = 1000;
+        while (true) {
+            const { data, error } = await supabase.from('agents').select('*').order('name').range(from, from + pageSize - 1);
+            if (error) throw error;
+            if (data) allData = allData.concat(data);
+            if (!data || data.length < pageSize) break;
+            from += pageSize;
+        }
         setDbStatus('ok');
-        if(data) setAgents(data as any);
+        setAgents(allData as any);
     } catch(e){ 
         console.error(e);
         setDbStatus('error');
