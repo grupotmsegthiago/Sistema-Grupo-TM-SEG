@@ -605,6 +605,7 @@ export const calculateMissionFinancials = (
                     clientLog = `CEVA Jundiaí >200km → ${logitech200.operation_type}`;
                 }
             }
+            is200kmAccompaniment = true;
         } else {
             const currentOp = normalize(appliedClientTable?.operation_type || '');
             if (currentOp.includes('LOGITECH') || currentOp.includes('200KM') || currentOp.includes('200 KM')) {
