@@ -27,7 +27,18 @@ declare const google: any;
 const parseNumber = (value: string | number | undefined | null): number => {
     if (!value) return 0;
     if (typeof value === 'number') return value;
-    let str = String(value).trim().replace(',', '.');
+    let str = String(value).trim();
+    if (str.includes(',') && str.includes('.')) {
+        const lastComma = str.lastIndexOf(',');
+        const lastDot = str.lastIndexOf('.');
+        if (lastComma > lastDot) {
+            str = str.replace(/\./g, '').replace(',', '.');
+        } else {
+            str = str.replace(/,/g, '');
+        }
+    } else if (str.includes(',')) {
+        str = str.replace(',', '.');
+    }
     const num = parseFloat(str);
     return isNaN(num) ? 0 : num;
 };

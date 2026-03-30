@@ -34,7 +34,13 @@ const parseNumber = (val: string | number | undefined | null): number => {
     if (!val) return 0;
     let str = String(val).trim();
     if (str.includes(',') && str.includes('.')) {
-         str = str.replace(/\./g, '').replace(',', '.');
+         const lastComma = str.lastIndexOf(',');
+         const lastDot = str.lastIndexOf('.');
+         if (lastComma > lastDot) {
+             str = str.replace(/\./g, '').replace(',', '.');
+         } else {
+             str = str.replace(/,/g, '');
+         }
     } else if (str.includes(',')) {
          str = str.replace(',', '.');
     }

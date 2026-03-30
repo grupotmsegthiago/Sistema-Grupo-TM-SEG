@@ -365,8 +365,21 @@ const VendorVerificationControl: React.FC<VendorVerificationControlProps> = ({ o
 
     const parseNumber = (v: string): number => {
         if (!v) return 0;
-        const cleaned = v.replace(/\./g, '').replace(',', '.');
-        return parseFloat(cleaned) || 0;
+        let str = v.trim();
+        if (str.includes(',') && str.includes('.')) {
+            const lastComma = str.lastIndexOf(',');
+            const lastDot = str.lastIndexOf('.');
+            if (lastComma > lastDot) {
+                str = str.replace(/\./g, '').replace(',', '.');
+            } else {
+                str = str.replace(/,/g, '');
+            }
+        } else if (str.includes(',')) {
+            str = str.replace(',', '.');
+        } else {
+            str = str.replace(/\./g, '').replace(',', '.');
+        }
+        return parseFloat(str) || 0;
     };
 
     const handleSaveVerification = async () => {
