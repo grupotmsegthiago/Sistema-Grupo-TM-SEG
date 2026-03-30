@@ -319,63 +319,74 @@ const FinancialTransactionList: React.FC = () => {
     }, [periodFilteredTransactions]);
 
     const renderFilters = () => (
-        <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-200 grid grid-cols-1 lg:grid-cols-12 gap-4 items-end no-print">
-            <div className="lg:col-span-5">
-                <label className="text-[10px] font-black text-gray-400 uppercase mb-1.5 block tracking-widest">Período</label>
-                <div className="flex gap-1 bg-gray-50 p-1 rounded-lg border border-gray-100">
-                    {[{id: 'DAY', label: 'Dia'}, {id: 'WEEK', label: 'Semana'}, {id: 'MONTH', label: 'Mês'}, {id: 'CUSTOM', label: 'Personalizado'}, {id: 'ALL', label: 'Tudo'}].map(p => (
-                        <button key={p.id} onClick={() => setViewPeriod(p.id as any)}
-                            className={`flex-1 px-2 py-1.5 text-[10px] font-black uppercase rounded-md transition-all ${viewPeriod === p.id ? 'bg-white text-red-700 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
-                        >{p.label}</button>
-                    ))}
-                </div>
-            </div>
-            {viewPeriod === 'CUSTOM' && (
-                <div className="lg:col-span-3 flex gap-2 animate-in slide-in-from-left-2">
-                    <div className="flex-1">
-                        <label className="text-[10px] font-bold text-gray-400 mb-1 block">Início</label>
-                        <input type="date" className="w-full p-2 border rounded-lg text-xs" value={customStartDate} onChange={e => setCustomStartDate(e.target.value)} data-testid="input-start-date" />
-                    </div>
-                    <div className="flex-1">
-                        <label className="text-[10px] font-bold text-gray-400 mb-1 block">Fim</label>
-                        <input type="date" className="w-full p-2 border rounded-lg text-xs" value={customEndDate} onChange={e => setCustomEndDate(e.target.value)} data-testid="input-end-date" />
+        <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-200 space-y-3 no-print">
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-end">
+                <div className="lg:col-span-5">
+                    <label className="text-[10px] font-black text-gray-400 uppercase mb-1.5 block tracking-widest">Período</label>
+                    <div className="flex gap-1 bg-gray-50 p-1 rounded-lg border border-gray-100">
+                        {[{id: 'DAY', label: 'Dia'}, {id: 'WEEK', label: 'Semana'}, {id: 'MONTH', label: 'Mês'}, {id: 'CUSTOM', label: 'Personalizado'}, {id: 'ALL', label: 'Tudo'}].map(p => (
+                            <button key={p.id} onClick={() => setViewPeriod(p.id as any)}
+                                className={`flex-1 px-2 py-1.5 text-[10px] font-black uppercase rounded-md transition-all ${viewPeriod === p.id ? 'bg-white text-red-700 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+                            >{p.label}</button>
+                        ))}
                     </div>
                 </div>
-            )}
-            <div className={`relative ${viewPeriod === 'CUSTOM' ? 'lg:col-span-1' : 'lg:col-span-4'}`}>
-                <label className="text-[10px] font-black text-gray-400 uppercase mb-1.5 block tracking-widest">Buscar</label>
-                <input type="text" placeholder="Fornecedor, cliente, descrição..." className="w-full pl-10 pr-4 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:border-red-500 outline-none" value={searchTerm} onChange={e => setSearchTerm(e.target.value)} data-testid="input-search-financial" />
-                <Search size={18} className="absolute left-3 bottom-2.5 text-gray-400" />
+                {viewPeriod === 'CUSTOM' && (
+                    <div className="lg:col-span-3 flex gap-2 animate-in slide-in-from-left-2">
+                        <div className="flex-1">
+                            <label className="text-[10px] font-bold text-gray-400 mb-1 block">Início</label>
+                            <input type="date" className="w-full p-2 border rounded-lg text-xs" value={customStartDate} onChange={e => setCustomStartDate(e.target.value)} data-testid="input-start-date" />
+                        </div>
+                        <div className="flex-1">
+                            <label className="text-[10px] font-bold text-gray-400 mb-1 block">Fim</label>
+                            <input type="date" className="w-full p-2 border rounded-lg text-xs" value={customEndDate} onChange={e => setCustomEndDate(e.target.value)} data-testid="input-end-date" />
+                        </div>
+                    </div>
+                )}
+                <div className={`relative ${viewPeriod === 'CUSTOM' ? 'lg:col-span-4' : 'lg:col-span-7'}`}>
+                    <label className="text-[10px] font-black text-gray-400 uppercase mb-1.5 block tracking-widest">Buscar</label>
+                    <input type="text" placeholder="Fornecedor, cliente, descrição..." className="w-full pl-10 pr-4 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:border-red-500 outline-none" value={searchTerm} onChange={e => setSearchTerm(e.target.value)} data-testid="input-search-financial" />
+                    <Search size={18} className="absolute left-3 bottom-2.5 text-gray-400" />
+                </div>
             </div>
-            <div className="lg:col-span-2 flex gap-1 bg-gray-100 p-1 rounded-lg">
-                {([['ALL', 'Tudo'], ['PENDING', 'Pendente'], ['PAID', 'Pago'], ['SCHEDULED', 'Agendado'], ['OVERDUE', 'Vencido']] as [StatusFilter, string][]).map(([id, label]) => (
-                    <button key={id} onClick={() => setStatusFilter(id)}
-                        className={`flex-1 py-1.5 text-[9px] font-black uppercase rounded transition-all ${
-                            statusFilter === id 
-                                ? id === 'PAID' ? 'bg-green-500 text-white shadow-sm' 
-                                : id === 'OVERDUE' ? 'bg-red-500 text-white shadow-sm' 
-                                : id === 'PENDING' ? 'bg-amber-500 text-white shadow-sm'
-                                : 'bg-white text-gray-900 shadow-sm'
-                                : 'text-gray-500'
-                        }`}
-                        data-testid={`btn-filter-${id.toLowerCase()}`}
-                    >{label}</button>
-                ))}
-            </div>
-            <div className="lg:col-span-1 flex gap-1 bg-gray-100 p-1 rounded-lg">
-                {([['ALL', 'Tudo'], ['PIX', 'PIX'], ['BOLETO', 'Boleto'], ['TRANSFERENCIA', 'Transf.']] as [typeof paymentMethodFilter, string][]).map(([id, label]) => (
-                    <button key={id} onClick={() => setPaymentMethodFilter(id)}
-                        className={`flex-1 py-1.5 text-[9px] font-black uppercase rounded transition-all ${
-                            paymentMethodFilter === id 
-                                ? id === 'PIX' ? 'bg-teal-500 text-white shadow-sm' 
-                                : id === 'BOLETO' ? 'bg-orange-500 text-white shadow-sm' 
-                                : id === 'TRANSFERENCIA' ? 'bg-indigo-500 text-white shadow-sm'
-                                : 'bg-white text-gray-900 shadow-sm'
-                                : 'text-gray-500'
-                        }`}
-                        data-testid={`btn-filter-pm-${id.toLowerCase()}`}
-                    >{label}</button>
-                ))}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+                <div>
+                    <label className="text-[10px] font-black text-gray-400 uppercase mb-1 block tracking-widest">Status</label>
+                    <div className="flex gap-1 bg-gray-100 p-1 rounded-lg">
+                        {([['ALL', 'Tudo'], ['PENDING', 'Pendente'], ['PAID', 'Pago'], ['SCHEDULED', 'Agendado'], ['OVERDUE', 'Vencido']] as [StatusFilter, string][]).map(([id, label]) => (
+                            <button key={id} onClick={() => setStatusFilter(id)}
+                                className={`flex-1 py-1.5 text-[10px] font-black uppercase rounded transition-all ${
+                                    statusFilter === id 
+                                        ? id === 'PAID' ? 'bg-green-500 text-white shadow-sm' 
+                                        : id === 'OVERDUE' ? 'bg-red-500 text-white shadow-sm' 
+                                        : id === 'PENDING' ? 'bg-amber-500 text-white shadow-sm'
+                                        : id === 'SCHEDULED' ? 'bg-blue-500 text-white shadow-sm'
+                                        : 'bg-white text-gray-900 shadow-sm'
+                                        : 'text-gray-500'
+                                }`}
+                                data-testid={`btn-filter-${id.toLowerCase()}`}
+                            >{label}</button>
+                        ))}
+                    </div>
+                </div>
+                <div>
+                    <label className="text-[10px] font-black text-gray-400 uppercase mb-1 block tracking-widest">Forma de Pagamento</label>
+                    <div className="flex gap-1 bg-gray-100 p-1 rounded-lg">
+                        {([['ALL', 'Tudo'], ['PIX', 'PIX'], ['BOLETO', 'Boleto'], ['TRANSFERENCIA', 'Transferência']] as [typeof paymentMethodFilter, string][]).map(([id, label]) => (
+                            <button key={id} onClick={() => setPaymentMethodFilter(id)}
+                                className={`flex-1 py-1.5 text-[10px] font-black uppercase rounded transition-all ${
+                                    paymentMethodFilter === id 
+                                        ? id === 'PIX' ? 'bg-teal-500 text-white shadow-sm' 
+                                        : id === 'BOLETO' ? 'bg-orange-500 text-white shadow-sm' 
+                                        : id === 'TRANSFERENCIA' ? 'bg-indigo-500 text-white shadow-sm'
+                                        : 'bg-white text-gray-900 shadow-sm'
+                                        : 'text-gray-500'
+                                }`}
+                                data-testid={`btn-filter-pm-${id.toLowerCase()}`}
+                            >{label}</button>
+                        ))}
+                    </div>
+                </div>
             </div>
         </div>
     );
