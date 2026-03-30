@@ -8,7 +8,7 @@ import {
   ClipboardList, FileSearch, CalendarClock, MapPin, Truck, Flag, XCircle, UserX, AlertOctagon, ToggleLeft, ToggleRight, Calendar,
   BarChart4, Globe, Building2, LayoutDashboard, User, ExternalLink, RefreshCw,
   Target, Clock, History, CalendarPlus, ShieldAlert, Mail, MessageCircle, ClipboardCheck,
-  FileBarChart, ArrowRight, Briefcase, Printer, Filter, List, Download, Link2
+  FileBarChart, ArrowRight, Briefcase, Printer, Filter, List, Download, Link2, TrendingDown
 } from 'lucide-react';
 import { GoogleMap, useLoadScript, Marker, InfoWindow } from '@react-google-maps/api';
 import { googleMapsLoadConfig } from '../lib/maps';
@@ -164,6 +164,7 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
   const [lastLogMap, setLastLogMap] = useState<Record<string, MissionLog>>({});
   const [resolvedClientName, setResolvedClientName] = useState('');
   const [showMyApprovalOnly, setShowMyApprovalOnly] = useState(false);
+  const [showNegativeMarginOnly, setShowNegativeMarginOnly] = useState(false);
   const [showTimeline, setShowTimeline] = useState(false);
 
   // Relógio para projeções
@@ -545,9 +546,20 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
     // 2. Use this base list for counting (Status Cards).
     // 3. Apply the specific "Status Tab" filter on top for the list view.
     
+    const parentMissionIds = useMemo(() => {
+        const ids = new Set<string>();
+        const source = allMissions.length > 0 ? allMissions : periodMissions;
+        for (const m of source) {
+            if (m.is_same_os && m.parent_mission_id) {
+                ids.add(m.parent_mission_id);
+            }
+        }
+        return ids;
+    }, [allMissions, periodMissions]);
+
     const filteredBySpecialCriteria = useMemo(() => {
         const isSearching = searchTerm && searchTerm.trim().length > 0;
-        const hasActiveSpecialFilters = showPendingOnly || showTomorrowOnly || showMyApprovalOnly;
+        const hasActiveSpecialFilters = showPendingOnly || showTomorrowOnly || showMyApprovalOnly || showNegativeMarginOnly;
         const isOsFiltering = osFilterTerm && osFilterTerm.trim().length > 0;
 
         const sourceMissions = (isOsFiltering || isSearching) ? allMissions : (showTomorrowOnly ? allMissions : periodMissions);
@@ -585,9 +597,18 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
                 if (mDate < tomorrow.getTime() || !isInitialStatus) return false;
             }
 
+            if (showNegativeMarginOnly) {
+                const rev = (mission.revenue_value || 0) + (mission.toll_value || 0);
+                const cost = (mission.is_same_os ? 0 : (mission.cost_value || 0)) + (mission.is_same_os ? 0 : (mission.toll_value_provider || 0));
+                const resultado = rev - cost;
+                const isNegative = rev > 0 && resultado < 0;
+                const isParent = parentMissionIds.has(mission.id);
+                if (!isNegative || isParent) return false;
+            }
+
             return true;
         });
-    }, [allMissions, periodMissions, searchTerm, osFilterTerm, showPendingOnly, showTomorrowOnly, showMyApprovalOnly]);
+    }, [allMissions, periodMissions, searchTerm, osFilterTerm, showPendingOnly, showTomorrowOnly, showMyApprovalOnly, showNegativeMarginOnly, parentMissionIds]);
 
     // Status Counts based on the FILTERED set (to sync counters with visible criteria)
     const statusCounts = useMemo(() => {
@@ -603,6 +624,17 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
     }, [filteredBySpecialCriteria]);
   
     // Counts for Badge Indicators (Global context)
+    const negativeMarginCount = useMemo(() => {
+        const source = periodMissions.length > 0 ? periodMissions : allMissions;
+        return source.filter(m => {
+            const rev = (m.revenue_value || 0) + (m.toll_value || 0);
+            const cost = (m.is_same_os ? 0 : (m.cost_value || 0)) + (m.is_same_os ? 0 : (m.toll_value_provider || 0));
+            const resultado = rev - cost;
+            const isNegative = rev > 0 && resultado < 0;
+            const isParent = parentMissionIds.has(m.id);
+            return isNegative && !isParent;
+        }).length;
+    }, [periodMissions, allMissions, parentMissionIds]);
     const pendingCount = useMemo(() => allMissions.filter(m => isMissionPending(m)).length, [allMissions]);
     const tomorrowCount = useMemo(() => {
         const tomorrow = new Date();
@@ -668,7 +700,7 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
     const filteredMissions = useMemo(() => {
         const isSearching = searchTerm && searchTerm.trim().length > 0;
         const isOsFiltering = osFilterTerm && osFilterTerm.trim().length > 0;
-        const hasActiveSpecialFilters = showPendingOnly || showTomorrowOnly || showMyApprovalOnly;
+        const hasActiveSpecialFilters = showPendingOnly || showTomorrowOnly || showMyApprovalOnly || showNegativeMarginOnly;
 
         if (showMyApprovalOnly && myApprovalMissions.length > 0) {
             return myApprovalMissions;
@@ -693,7 +725,7 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
             }
             return true;
         });
-    }, [filteredBySpecialCriteria, filterStatus, searchTerm, osFilterTerm, showPendingOnly, showTomorrowOnly, showMyApprovalOnly, myApprovalMissions]);
+    }, [filteredBySpecialCriteria, filterStatus, searchTerm, osFilterTerm, showPendingOnly, showTomorrowOnly, showMyApprovalOnly, showNegativeMarginOnly, myApprovalMissions]);
   
     const activeMapMissions = useMemo(() => {
         return allMissions.filter(m => {
@@ -989,7 +1021,7 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
   
         <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-10 gap-1.5">
             {/* BOX TOTAL: Reflete o volume absoluto do período conforme solicitado */}
-            <StatCard icon={Activity} title="Total" value={totalVolumeCount} bgColor="bg-gray-800" loading={isLoading} isActive={filterStatus === 'ALL' && !showPendingOnly && !showTomorrowOnly && !showMyApprovalOnly} onClick={() => { setFilterStatus('ALL'); setShowPendingOnly(false); setShowTomorrowOnly(false); setShowMyApprovalOnly(false); }} />
+            <StatCard icon={Activity} title="Total" value={totalVolumeCount} bgColor="bg-gray-800" loading={isLoading} isActive={filterStatus === 'ALL' && !showPendingOnly && !showTomorrowOnly && !showMyApprovalOnly && !showNegativeMarginOnly} onClick={() => { setFilterStatus('ALL'); setShowPendingOnly(false); setShowTomorrowOnly(false); setShowMyApprovalOnly(false); setShowNegativeMarginOnly(false); }} />
             {STATUS_CONFIG.filter(s => isRestrictedClientView ? s.id !== MissionStatus.PENDING : true).map((status) => ( <StatCard key={status.id} icon={status.icon} title={status.label} value={statusCounts[status.id] || 0} bgColor={status.color} loading={isLoading} isActive={filterStatus === status.id} onClick={() => { setFilterStatus(status.id); }} /> ))}
         </div>
   
@@ -1024,7 +1056,26 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
                     )}
 
                     <button onClick={() => setShowPendingOnly(!showPendingOnly)} className={`relative flex items-center gap-2 px-4 py-2.5 rounded-lg text-xs font-bold uppercase border transition-all ${showPendingOnly ? 'bg-orange-50 text-black border-orange-600 shadow-md' : pendingCount > 0 ? 'bg-orange-50 text-black border-orange-600 shadow-sm' : 'bg-white text-gray-600 border-gray-300 hover:bg-gray-50'}`}>{pendingCount > 0 ? ( <AlertTriangle size={16} className="text-black" /> ) : ( showPendingOnly ? <ToggleRight size={16} /> : <ToggleLeft size={16} /> )}{showPendingOnly ? 'Exibindo Pendências' : 'Filtrar Pendências'}{pendingCount > 0 && ( <span className="ml-1 px-1.5 py-0.5 rounded-full text-[9px] bg-white text-orange-700 font-bold">{pendingCount}</span> )}</button>
-                    
+
+                    {canSeeFinancials && (
+                        <button 
+                            data-testid="button-negative-margin"
+                            onClick={() => setShowNegativeMarginOnly(!showNegativeMarginOnly)} 
+                            className={`relative flex items-center gap-2 px-4 py-2.5 rounded-lg text-xs font-black uppercase border transition-all ${
+                                showNegativeMarginOnly 
+                                ? 'bg-red-600 text-white border-red-700 shadow-md scale-105 ring-2 ring-red-500/20' 
+                                : negativeMarginCount > 0 
+                                    ? 'bg-red-50 text-red-700 border-red-300 shadow-sm' 
+                                    : 'bg-white text-red-400 border-red-200 hover:bg-red-50'
+                            }`}
+                        >
+                            <TrendingDown size={16} />
+                            <span className="flex items-center gap-1.5">
+                                {showNegativeMarginOnly ? '% NEGATIVA (SEM MÃE)' : '% NEGATIVA'}
+                                {negativeMarginCount > 0 && <span className={`ml-1 px-1.5 py-0.5 rounded-full text-[9px] font-bold ${showNegativeMarginOnly ? 'bg-white text-red-700' : 'bg-red-600 text-white'}`}>{negativeMarginCount}</span>}
+                            </span>
+                        </button>
+                    )}
 
                     {myApprovalStage && myApprovalStage !== 'diretoria' && (
                         <button 
