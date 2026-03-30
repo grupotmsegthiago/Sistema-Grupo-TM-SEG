@@ -602,10 +602,9 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
                 const cost = mission.is_same_os ? 0 : (mission.cost_value || 0);
                 const toll = mission.toll_value || 0;
                 const resultado = rev - cost - toll;
-                const hasFinancialData = rev > 0 || cost > 0;
-                const isNegative = hasFinancialData && resultado < 0;
+                const lucroPerc = rev > 0 ? ((resultado / rev) * 100) : 0;
                 const isParent = parentMissionIds.has(mission.id);
-                if (!isNegative || isParent) return false;
+                if (lucroPerc >= 0 || isParent) return false;
             }
 
             return true;
@@ -633,10 +632,9 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
             const cost = m.is_same_os ? 0 : (m.cost_value || 0);
             const toll = m.toll_value || 0;
             const resultado = rev - cost - toll;
-            const hasFinancialData = rev > 0 || cost > 0;
-            const isNegative = hasFinancialData && resultado < 0;
+            const lucroPerc = rev > 0 ? ((resultado / rev) * 100) : 0;
             const isParent = parentMissionIds.has(m.id);
-            return isNegative && !isParent;
+            return lucroPerc < 0 && !isParent;
         }).length;
     }, [periodMissions, allMissions, parentMissionIds]);
     const pendingCount = useMemo(() => allMissions.filter(m => isMissionPending(m)).length, [allMissions]);
