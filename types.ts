@@ -348,6 +348,7 @@ export interface FinancialTransaction {
   updated_by?: string; 
   notes?: string;
   status_conciliacao?: 'PENDENTE' | 'CONCILIADO' | 'DIVERGENTE';
+  payment_method?: 'PIX' | 'BOLETO' | 'TRANSFERENCIA' | null;
 }
 
 export interface BrandIdentity {

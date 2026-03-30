@@ -23,6 +23,7 @@ const FinancialTransactionForm: React.FC<Props> = ({ onClose, onSuccess, id }) =
   const [entityType, setEntityType] = useState<'Client' | 'Provider' | 'Other' | 'Personal'>('Other');
   const [entityId, setEntityId] = useState('');
   const [notes, setNotes] = useState('');
+  const [paymentMethod, setPaymentMethod] = useState<'PIX' | 'BOLETO' | 'TRANSFERENCIA' | ''>('');
 
   const [recurrence, setRecurrence] = useState<'SINGLE' | 'INSTALLMENT' | 'FIXED'>('SINGLE');
   const [recurrenceCount, setRecurrenceCount] = useState<number>(2);
@@ -79,6 +80,7 @@ const FinancialTransactionForm: React.FC<Props> = ({ onClose, onSuccess, id }) =
           setEntityType(data.entity_type || 'Other');
           setEntityId(data.entity_id || '');
           setNotes(data.notes || '');
+          setPaymentMethod(data.payment_method || '');
           setRecurrence('SINGLE');
       }
   };
@@ -120,6 +122,7 @@ const FinancialTransactionForm: React.FC<Props> = ({ onClose, onSuccess, id }) =
               entity_id: entityId || null,
               entity_name: finalEntityName,
               notes,
+              payment_method: paymentMethod || null,
               updated_by: currentUser,
               status
           };
@@ -262,12 +265,23 @@ const FinancialTransactionForm: React.FC<Props> = ({ onClose, onSuccess, id }) =
                     </div>
                 </div>
             </div>
-            <div>
-                <label className="text-[10px] font-black text-gray-400 uppercase mb-1 block">Status de Liquidação</label>
-                <select className="w-full p-2.5 border rounded-lg text-sm bg-white uppercase font-bold" value={status} onChange={e => setStatus(e.target.value as any)}>
-                    <option value="PENDING">Aguardando (Agendado)</option>
-                    <option value="PAID">Liquidado (Pago/Recebido)</option>
-                </select>
+            <div className="grid grid-cols-2 gap-4">
+                <div>
+                    <label className="text-[10px] font-black text-gray-400 uppercase mb-1 block">Status de Liquidação</label>
+                    <select className="w-full p-2.5 border rounded-lg text-sm bg-white uppercase font-bold" value={status} onChange={e => setStatus(e.target.value as any)}>
+                        <option value="PENDING">Aguardando (Agendado)</option>
+                        <option value="PAID">Liquidado (Pago/Recebido)</option>
+                    </select>
+                </div>
+                <div>
+                    <label className="text-[10px] font-black text-gray-400 uppercase mb-1 flex items-center gap-1"><Wallet size={12}/> Forma de Pagamento</label>
+                    <select className="w-full p-2.5 border rounded-lg text-sm bg-white uppercase font-bold" value={paymentMethod} onChange={e => setPaymentMethod(e.target.value as any)} data-testid="select-payment-method">
+                        <option value="">Não informado</option>
+                        <option value="PIX">PIX</option>
+                        <option value="BOLETO">Boleto</option>
+                        <option value="TRANSFERENCIA">Transferência</option>
+                    </select>
+                </div>
             </div>
             <button disabled={isSaving} type="submit" className="w-full bg-gray-900 text-white font-black uppercase text-xs tracking-widest py-4 rounded-xl flex items-center justify-center gap-2 hover:bg-black transition-colors shadow-lg active:scale-95">
                 {isSaving ? <Loader2 size={18} className="animate-spin"/> : <Save size={18}/>}

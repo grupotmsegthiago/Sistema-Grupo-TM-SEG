@@ -50,6 +50,7 @@ const FinancialTransactionList: React.FC = () => {
     const [loading, setLoading] = useState(true);
     const [searchTerm, setSearchTerm] = useState('');
     const [statusFilter, setStatusFilter] = useState<StatusFilter>('ALL');
+    const [paymentMethodFilter, setPaymentMethodFilter] = useState<'ALL' | 'PIX' | 'BOLETO' | 'TRANSFERENCIA'>('ALL');
     const [viewPeriod, setViewPeriod] = useState<'DAY' | 'WEEK' | 'MONTH' | 'CUSTOM' | 'ALL'>('MONTH');
     const [customStartDate, setCustomStartDate] = useState(getTodayBR());
     const [customEndDate, setCustomEndDate] = useState(getTodayBR());
@@ -156,6 +157,8 @@ const FinancialTransactionList: React.FC = () => {
         else if (statusFilter === 'OVERDUE') list = list.filter(t => t.status === 'OVERDUE' || (t.status === 'PENDING' && t.due_date.split('T')[0] < todayStr));
         else if (statusFilter === 'SCHEDULED') list = list.filter(t => t.status === 'SCHEDULED');
 
+        if (paymentMethodFilter !== 'ALL') list = list.filter(t => t.payment_method === paymentMethodFilter);
+
         if (searchTerm.trim()) {
             const term = searchTerm.toLowerCase().trim();
             list = list.filter(t =>
@@ -166,7 +169,7 @@ const FinancialTransactionList: React.FC = () => {
         }
 
         return list;
-    }, [transactions, activeStep, viewPeriod, customStartDate, customEndDate, statusFilter, searchTerm]);
+    }, [transactions, activeStep, viewPeriod, customStartDate, customEndDate, statusFilter, paymentMethodFilter, searchTerm]);
 
     const handleStatusChange = async (t: FinancialTransaction, newStatus: TransactionStatus) => {
         if (newStatus === t.status) return;
@@ -344,7 +347,7 @@ const FinancialTransactionList: React.FC = () => {
                 <input type="text" placeholder="Fornecedor, cliente, descrição..." className="w-full pl-10 pr-4 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:border-red-500 outline-none" value={searchTerm} onChange={e => setSearchTerm(e.target.value)} data-testid="input-search-financial" />
                 <Search size={18} className="absolute left-3 bottom-2.5 text-gray-400" />
             </div>
-            <div className="lg:col-span-3 flex gap-1 bg-gray-100 p-1 rounded-lg">
+            <div className="lg:col-span-2 flex gap-1 bg-gray-100 p-1 rounded-lg">
                 {([['ALL', 'Tudo'], ['PENDING', 'Pendente'], ['PAID', 'Pago'], ['SCHEDULED', 'Agendado'], ['OVERDUE', 'Vencido']] as [StatusFilter, string][]).map(([id, label]) => (
                     <button key={id} onClick={() => setStatusFilter(id)}
                         className={`flex-1 py-1.5 text-[9px] font-black uppercase rounded transition-all ${
@@ -356,6 +359,21 @@ const FinancialTransactionList: React.FC = () => {
                                 : 'text-gray-500'
                         }`}
                         data-testid={`btn-filter-${id.toLowerCase()}`}
+                    >{label}</button>
+                ))}
+            </div>
+            <div className="lg:col-span-1 flex gap-1 bg-gray-100 p-1 rounded-lg">
+                {([['ALL', 'Tudo'], ['PIX', 'PIX'], ['BOLETO', 'Boleto'], ['TRANSFERENCIA', 'Transf.']] as [typeof paymentMethodFilter, string][]).map(([id, label]) => (
+                    <button key={id} onClick={() => setPaymentMethodFilter(id)}
+                        className={`flex-1 py-1.5 text-[9px] font-black uppercase rounded transition-all ${
+                            paymentMethodFilter === id 
+                                ? id === 'PIX' ? 'bg-teal-500 text-white shadow-sm' 
+                                : id === 'BOLETO' ? 'bg-orange-500 text-white shadow-sm' 
+                                : id === 'TRANSFERENCIA' ? 'bg-indigo-500 text-white shadow-sm'
+                                : 'bg-white text-gray-900 shadow-sm'
+                                : 'text-gray-500'
+                        }`}
+                        data-testid={`btn-filter-pm-${id.toLowerCase()}`}
                     >{label}</button>
                 ))}
             </div>
@@ -372,6 +390,7 @@ const FinancialTransactionList: React.FC = () => {
                             <th className="px-4 py-3">Descrição</th>
                             <th className="px-4 py-3">Favorecido</th>
                             <th className="px-4 py-3">Categoria</th>
+                            <th className="px-4 py-3 text-center">Forma Pgto</th>
                             <th className="px-4 py-3 text-center">Status</th>
                             <th className="px-4 py-3 text-right">Valor</th>
                             <th className="px-4 py-3 text-right no-print">Ações</th>
@@ -379,9 +398,9 @@ const FinancialTransactionList: React.FC = () => {
                     </thead>
                     <tbody className="divide-y divide-gray-100">
                         {loading ? (
-                            <tr><td colSpan={7} className="p-8 text-center"><Loader2 className="animate-spin mx-auto text-red-700"/></td></tr>
+                            <tr><td colSpan={8} className="p-8 text-center"><Loader2 className="animate-spin mx-auto text-red-700"/></td></tr>
                         ) : list.length === 0 ? (
-                            <tr><td colSpan={7} className="p-12 text-center text-gray-400 font-bold uppercase italic text-sm">Nenhum lançamento encontrado.</td></tr>
+                            <tr><td colSpan={8} className="p-12 text-center text-gray-400 font-bold uppercase italic text-sm">Nenhum lançamento encontrado.</td></tr>
                         ) : list.map(t => {
                             const isOverdue = t.status === 'PENDING' && t.due_date.split('T')[0] < getTodayBR();
                             return (
@@ -402,6 +421,28 @@ const FinancialTransactionList: React.FC = () => {
                                         <span className="text-[10px] font-bold text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded border border-indigo-100 uppercase">
                                             {t.category_name}
                                         </span>
+                                    </td>
+                                    <td className="px-4 py-3 text-center">
+                                        <select
+                                            value={t.payment_method || ''}
+                                            onChange={async (e) => {
+                                                const val = e.target.value || null;
+                                                setTransactions(prev => prev.map(item => item.id === t.id ? { ...item, payment_method: val as any } : item));
+                                                await supabase.from('financial_transactions').update({ payment_method: val }).eq('id', t.id);
+                                            }}
+                                            className={`px-2 py-1 rounded text-[10px] font-black uppercase border cursor-pointer outline-none ${
+                                                t.payment_method === 'PIX' ? 'bg-teal-50 text-teal-700 border-teal-200' :
+                                                t.payment_method === 'BOLETO' ? 'bg-orange-50 text-orange-700 border-orange-200' :
+                                                t.payment_method === 'TRANSFERENCIA' ? 'bg-indigo-50 text-indigo-700 border-indigo-200' :
+                                                'bg-gray-50 text-gray-400 border-gray-200'
+                                            }`}
+                                            data-testid={`select-payment-method-${t.id}`}
+                                        >
+                                            <option value="">—</option>
+                                            <option value="PIX">PIX</option>
+                                            <option value="BOLETO">Boleto</option>
+                                            <option value="TRANSFERENCIA">Transferência</option>
+                                        </select>
                                     </td>
                                     <td className="px-4 py-3 text-center">
                                         <select
