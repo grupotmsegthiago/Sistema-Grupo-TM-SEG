@@ -21,7 +21,7 @@ const formatCurrency = (val: number | null | undefined) => {
 };
 
 type Step = 'PAGAR' | 'RECEBER' | 'CONFERENCIA' | 'RELATORIO' | 'FECHAMENTO';
-type StatusFilter = 'ALL' | 'PENDING' | 'PAID' | 'OVERDUE';
+type StatusFilter = 'ALL' | 'PENDING' | 'PAID' | 'OVERDUE' | 'SCHEDULED';
 
 const STEPS: { id: Step; label: string; icon: React.ReactNode; description: string; number: number }[] = [
     { id: 'PAGAR', label: 'Contas a Pagar', icon: <ArrowDownCircle size={18}/>, description: 'Despesas e pagamentos a fornecedores', number: 1 },
@@ -143,7 +143,8 @@ const FinancialTransactionList: React.FC = () => {
 
         if (statusFilter === 'PENDING') list = list.filter(t => t.status === 'PENDING');
         else if (statusFilter === 'PAID') list = list.filter(t => t.status === 'PAID');
-        else if (statusFilter === 'OVERDUE') list = list.filter(t => t.status === 'PENDING' && t.due_date.split('T')[0] < todayStr);
+        else if (statusFilter === 'OVERDUE') list = list.filter(t => t.status === 'OVERDUE' || (t.status === 'PENDING' && t.due_date.split('T')[0] < todayStr));
+        else if (statusFilter === 'SCHEDULED') list = list.filter(t => t.status === 'SCHEDULED');
 
         if (searchTerm.trim()) {
             const term = searchTerm.toLowerCase().trim();
@@ -157,9 +158,11 @@ const FinancialTransactionList: React.FC = () => {
         return list;
     }, [transactions, activeStep, viewPeriod, customStartDate, customEndDate, statusFilter, searchTerm]);
 
-    const handleToggleStatus = async (t: FinancialTransaction) => {
-        const newStatus: TransactionStatus = t.status === 'PAID' ? 'PENDING' : 'PAID';
-        const updates = { status: newStatus, payment_date: newStatus === 'PAID' ? t.due_date : null };
+    const handleStatusChange = async (t: FinancialTransaction, newStatus: TransactionStatus) => {
+        if (newStatus === t.status) return;
+        const updates: any = { status: newStatus };
+        if (newStatus === 'PAID') updates.payment_date = t.due_date;
+        else if (t.status === 'PAID') updates.payment_date = null;
         const original = transactions.find(item => item.id === t.id);
         setTransactions(prev => prev.map(item => item.id === t.id ? { ...item, ...updates } : item));
         const { error } = await supabase.from('financial_transactions').update(updates).eq('id', t.id);
@@ -331,7 +334,7 @@ const FinancialTransactionList: React.FC = () => {
                 <Search size={18} className="absolute left-3 bottom-2.5 text-gray-400" />
             </div>
             <div className="lg:col-span-3 flex gap-1 bg-gray-100 p-1 rounded-lg">
-                {([['ALL', 'Tudo'], ['PENDING', 'Pendente'], ['PAID', 'Pago'], ['OVERDUE', 'Vencido']] as [StatusFilter, string][]).map(([id, label]) => (
+                {([['ALL', 'Tudo'], ['PENDING', 'Pendente'], ['PAID', 'Pago'], ['SCHEDULED', 'Agendado'], ['OVERDUE', 'Vencido']] as [StatusFilter, string][]).map(([id, label]) => (
                     <button key={id} onClick={() => setStatusFilter(id)}
                         className={`flex-1 py-1.5 text-[9px] font-black uppercase rounded transition-all ${
                             statusFilter === id 
@@ -390,9 +393,24 @@ const FinancialTransactionList: React.FC = () => {
                                         </span>
                                     </td>
                                     <td className="px-4 py-3 text-center">
-                                        <button onClick={() => handleToggleStatus(t)} className={`px-3 py-1 rounded-full text-[10px] font-black uppercase border transition-all ${t.status === 'PAID' ? 'bg-green-100 text-green-800 border-green-200' : isOverdue ? 'bg-red-100 text-red-700 border-red-200 animate-pulse' : 'bg-amber-50 text-amber-700 border-amber-200'}`} data-testid={`btn-toggle-status-${t.id}`}>
-                                            {t.status === 'PAID' ? 'Pago' : isOverdue ? 'Vencido' : 'Pendente'}
-                                        </button>
+                                        <select
+                                            value={t.status}
+                                            onChange={(e) => handleStatusChange(t, e.target.value as TransactionStatus)}
+                                            className={`px-2 py-1 rounded-full text-[10px] font-black uppercase border transition-all cursor-pointer outline-none ${
+                                                t.status === 'PAID' ? 'bg-green-100 text-green-800 border-green-200' :
+                                                t.status === 'OVERDUE' || isOverdue ? 'bg-red-100 text-red-700 border-red-200' :
+                                                t.status === 'SCHEDULED' ? 'bg-blue-100 text-blue-700 border-blue-200' :
+                                                t.status === 'CANCELLED' ? 'bg-gray-100 text-gray-500 border-gray-200' :
+                                                'bg-amber-50 text-amber-700 border-amber-200'
+                                            }`}
+                                            data-testid={`select-status-${t.id}`}
+                                        >
+                                            <option value="PENDING">Pendente</option>
+                                            <option value="PAID">Pago</option>
+                                            <option value="SCHEDULED">Agendado</option>
+                                            <option value="OVERDUE">Atrasado</option>
+                                            <option value="CANCELLED">Cancelado</option>
+                                        </select>
                                     </td>
                                     <td className={`px-4 py-3 text-right font-black font-mono text-sm ${t.type === 'INCOME' ? 'text-green-600' : 'text-red-600'}`}>
                                         {formatCurrency(t.amount)}

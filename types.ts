@@ -306,7 +306,7 @@ export interface SystemLog {
 }
 
 export type TransactionType = 'INCOME' | 'EXPENSE';
-export type TransactionStatus = 'PENDING' | 'PAID' | 'CANCELLED';
+export type TransactionStatus = 'PENDING' | 'PAID' | 'CANCELLED' | 'SCHEDULED' | 'OVERDUE';
 
 export interface FinancialAccount {
   id: string;
