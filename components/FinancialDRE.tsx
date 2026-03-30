@@ -60,38 +60,79 @@ const FinancialDRE: React.FC = () => {
         return all;
     };
 
+    const fetchAllMissions = async (start: string, end: string) => {
+        const all: any[] = [];
+        const PAGE = 1000;
+        let from = 0;
+        while (true) {
+            const { data, error } = await supabase
+                .from('missions')
+                .select('id, revenue_value, cost_value, toll_value, toll_value_provider, status, end_time, billing_approved, is_same_os')
+                .in('status', ['Concluída', 'Faturada'])
+                .gte('end_time', `${start}T00:00:00`)
+                .lte('end_time', `${end}T23:59:59`)
+                .range(from, from + PAGE - 1);
+            if (error) { console.error(error); break; }
+            if (!data || data.length === 0) break;
+            all.push(...data);
+            if (data.length < PAGE) break;
+            from += PAGE;
+        }
+        return all;
+    };
+
     const generateDRE = async () => {
         setLoading(true);
         try {
-            const transactions = await fetchAllTransactions(startDate, endDate);
+            const [transactions, missions] = await Promise.all([
+                fetchAllTransactions(startDate, endDate),
+                fetchAllMissions(startDate, endDate)
+            ]);
             const { data: categoriesData } = await supabase.from('financial_categories').select('*');
             const categories = (categoriesData || []) as FinancialCategory[];
 
             const sumByCategory = (catId: string) => transactions.filter(t => t.category_id === catId).reduce((acc, t) => acc + t.amount, 0);
             const sumByGroup = (group: string) => categories.filter(c => c.group === group).reduce((acc, cat) => acc + sumByCategory(cat.id), 0);
 
+            const missionRevenue = missions.reduce((acc: number, m: any) => acc + (m.revenue_value || 0), 0);
+            const missionTollClient = missions.reduce((acc: number, m: any) => acc + (m.toll_value || 0), 0);
+            const missionCost = missions.filter((m: any) => m.is_same_os !== true).reduce((acc: number, m: any) => acc + (m.cost_value || 0), 0);
+            const missionTollProvider = missions.reduce((acc: number, m: any) => acc + (m.toll_value_provider || m.toll_value || 0), 0);
+            const totalMissionCount = missions.length;
+
             const rows: DRERow[] = [];
-            const grossRevenue = sumByGroup('RECEITA_BRUTA');
+
+            const financialRevenue = sumByGroup('RECEITA_BRUTA');
+            const grossRevenue = missionRevenue + missionTollClient + financialRevenue;
             const deductions = sumByGroup('DEDUCOES');
             const netRevenue = grossRevenue - deductions;
-            const variableCosts = sumByGroup('CUSTOS_VARIAVEIS');
+
+            const financialVariableCosts = sumByGroup('CUSTOS_VARIAVEIS');
+            const variableCosts = missionCost + missionTollProvider + financialVariableCosts;
             const grossProfit = netRevenue - variableCosts;
             const fixedExpenses = sumByGroup('DESPESAS_FIXAS');
             const operationalResult = grossProfit - fixedExpenses;
             
-            // Ajustes não operacionais (Conciliações)
             const nonOperationalBalance = sumByGroup('NAO_OPERACIONAL');
 
             rows.push({ label: '(=) RECEITA OPERACIONAL BRUTA', value: grossRevenue, type: 'header', indent: 0, color: 'text-blue-700' });
+            rows.push({ label: `(+) RECEITA DE MISSÕES (${totalMissionCount} OS)`, value: missionRevenue, type: 'item', indent: 1 });
+            if (missionTollClient > 0) rows.push({ label: '(+) PEDÁGIO CLIENTE', value: missionTollClient, type: 'item', indent: 1 });
             categories.filter(c => c.group === 'RECEITA_BRUTA').forEach(c => {
                 const val = sumByCategory(c.id);
                 if (val !== 0) rows.push({ label: `(+) ${c.name}`, value: val, type: 'item', indent: 1 });
             });
 
             rows.push({ label: '(-) DEDUÇÕES E IMPOSTOS', value: deductions, type: 'header', indent: 0, color: 'text-red-600' });
+            categories.filter(c => c.group === 'DEDUCOES').forEach(c => {
+                const val = sumByCategory(c.id);
+                if (val !== 0) rows.push({ label: `(-) ${c.name}`, value: val, type: 'item', indent: 1 });
+            });
             rows.push({ label: '(=) RECEITA OPERACIONAL LÍQUIDA', value: netRevenue, type: 'subtotal', indent: 0, color: 'text-gray-900 bg-gray-50' });
 
             rows.push({ label: '(-) CUSTOS VARIÁVEIS (MISSÕES)', value: variableCosts, type: 'header', indent: 0, color: 'text-red-600' });
+            rows.push({ label: '(-) CUSTO FORNECEDORES (MISSÕES)', value: missionCost, type: 'item', indent: 1 });
+            if (missionTollProvider > 0) rows.push({ label: '(-) PEDÁGIO FORNECEDOR', value: missionTollProvider, type: 'item', indent: 1 });
             categories.filter(c => c.group === 'CUSTOS_VARIAVEIS').forEach(c => {
                 const val = sumByCategory(c.id);
                 if (val !== 0) rows.push({ label: `(-) ${c.name}`, value: val, type: 'item', indent: 1 });
@@ -108,6 +149,10 @@ const FinancialDRE: React.FC = () => {
             rows.push({ label: '(=) RESULTADO OPERACIONAL (EBITDA)', value: operationalResult, type: 'subtotal', indent: 0, color: 'text-gray-900 font-black bg-blue-50/50 border-y-2 border-blue-100' });
             
             rows.push({ label: '(+/-) AJUSTES E RENDIMENTOS NÃO OPERACIONAIS', value: nonOperationalBalance, type: 'header', indent: 0, color: 'text-purple-600' });
+            categories.filter(c => c.group === 'NAO_OPERACIONAL').forEach(c => {
+                const val = sumByCategory(c.id);
+                if (val !== 0) rows.push({ label: `(+/-) ${c.name}`, value: val, type: 'item', indent: 1 });
+            });
             rows.push({ label: '(=) RESULTADO LÍQUIDO FINAL', value: operationalResult + nonOperationalBalance, type: 'total', indent: 0, color: (operationalResult + nonOperationalBalance) >= 0 ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800' });
 
             setReport(rows);
