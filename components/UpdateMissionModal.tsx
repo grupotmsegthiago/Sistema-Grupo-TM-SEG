@@ -510,6 +510,26 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
     }, [editData.isSameOs, mission?.client, editData.provider, mission?.id]);
 
     useEffect(() => {
+        if (!editData.isSameOs || !parentOsSearch || parentOsSearch.length < 2) return;
+        const searchTerm = parentOsSearch.toUpperCase().replace('GTM-', '');
+        const alreadyFound = parentOsSuggestions.some(s => s.id.toUpperCase().includes(searchTerm));
+        if (alreadyFound) return;
+        const timer = setTimeout(async () => {
+            const searchId = parentOsSearch.toUpperCase().startsWith('GTM-') ? parentOsSearch.toUpperCase() : `GTM-${searchTerm}`;
+            const { data } = await supabase.from('missions').select('id, client, provider, origin, destination, status')
+                .ilike('id', `%${searchTerm}%`).neq('id', mission?.id || '').limit(10);
+            if (data && data.length > 0) {
+                setParentOsSuggestions(prev => {
+                    const existing = new Set(prev.map(p => p.id));
+                    const newItems = data.filter((d: any) => !existing.has(d.id));
+                    return [...prev, ...newItems];
+                });
+            }
+        }, 300);
+        return () => clearTimeout(timer);
+    }, [parentOsSearch, editData.isSameOs]);
+
+    useEffect(() => {
         const handleClickOutside = (event: MouseEvent) => {
             if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
                 setActiveDropdown(null);
