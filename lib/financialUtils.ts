@@ -593,29 +593,33 @@ export const calculateMissionFinancials = (
 
     if (isCevaClient && isJundiai && !isCancelled && !isManualOverride && allClientTablesForThisClient.length > 0) {
         if (referenceDistance > 200 || destHas200km) {
-            const currentOp = normalize(appliedClientTable?.operation_type || '');
-            const isAlreadyLogitech = currentOp.includes('LOGITECH') || currentOp.includes('200KM') || currentOp.includes('200 KM');
-            if (!isAlreadyLogitech) {
-                const logitech200 = allClientTablesForThisClient.find(t => {
-                    const op = normalize(t.operation_type || '');
-                    return (op.includes('LOGITECH') || op.includes('200KM') || op.includes('200 KM')) && t.franchise_km >= 200;
-                });
-                if (logitech200) {
-                    appliedClientTable = logitech200;
-                    clientLog = `CEVA Jundiaí >200km → ${logitech200.operation_type}`;
-                }
+            const logitech200 = allClientTablesForThisClient.find(t => {
+                const op = normalize(t.operation_type || '');
+                return (op.includes('LOGITECH') || op.includes('200KM') || op.includes('200 KM')) && t.franchise_km >= 200;
+            });
+            if (logitech200) {
+                appliedClientTable = logitech200;
+                clientLog = `CEVA Jundiaí >200km → ${logitech200.operation_type}`;
             }
             is200kmAccompaniment = true;
         } else {
-            const currentOp = normalize(appliedClientTable?.operation_type || '');
-            if (currentOp.includes('LOGITECH') || currentOp.includes('200KM') || currentOp.includes('200 KM')) {
-                const table100 = allClientTablesForThisClient.find(t => {
+            const table100 = allClientTablesForThisClient.find(t => {
+                const op = normalize(t.operation_type || '');
+                return (op.includes('ESTADO DE SP') || (op.includes('SP') && op.includes('RJ')))
+                    && !op.includes('LOGITECH') && !op.includes('200KM') && !op.includes('200 KM')
+                    && (t.franchise_km || 0) <= 100;
+            });
+            if (table100) {
+                appliedClientTable = table100;
+                clientLog = `CEVA Jundiaí ≤200km → ${table100.operation_type}`;
+            } else {
+                const tableFallback = allClientTablesForThisClient.find(t => {
                     const op = normalize(t.operation_type || '');
-                    return !op.includes('LOGITECH') && !op.includes('200KM') && !op.includes('200 KM') && t.franchise_km <= 200;
+                    return !op.includes('LOGITECH') && !op.includes('200KM') && !op.includes('200 KM') && (t.franchise_km || 0) <= 100;
                 });
-                if (table100) {
-                    appliedClientTable = table100;
-                    clientLog = `CEVA Jundiaí ≤200km → ${table100.operation_type}`;
+                if (tableFallback) {
+                    appliedClientTable = tableFallback;
+                    clientLog = `CEVA Jundiaí ≤200km (fallback) → ${tableFallback.operation_type}`;
                 }
             }
         }
@@ -960,7 +964,7 @@ export const calculateMissionFinancials = (
     let pExtraHrVal = round2(Math.max(0, pExcessHr * pUnitCostHour));
 
     const isLogitechTable = appliedTableName.includes('LOGITECH') || appliedTableName.includes('200KM') || appliedTableName.includes('200 KM');
-    if (isLogitechTable && !isZeroValueMission && tollValue === 0) {
+    if (isLogitechTable && !isZeroValueMission) {
         tollValue = 35;
     }
 
