@@ -540,7 +540,7 @@ const VendorVerificationControl: React.FC<VendorVerificationControlProps> = ({ o
     };
 
     const handleUnlock = async () => {
-        if (!selectedMission || !isDiretoria) return;
+        if (!selectedMission || !isAdmin) return;
         setVerifiedBy('');
         setVerifiedAt('');
         try {
@@ -680,7 +680,7 @@ const VendorVerificationControl: React.FC<VendorVerificationControlProps> = ({ o
                                         <div className="flex items-center gap-2 mb-1">
                                             <Receipt size={14} className="text-red-600" />
                                             <span className="text-[10px] font-black text-red-700 uppercase tracking-widest">Valores do Fornecedor</span>
-                                            {isLocked && !isDiretoria && <Lock size={12} className="text-red-400 ml-auto" />}
+                                            {isLocked && !isAdmin && <Lock size={12} className="text-red-400 ml-auto" />}
                                         </div>
                                         <div className="grid grid-cols-2 gap-3">
                                             <div>
@@ -689,7 +689,7 @@ const VendorVerificationControl: React.FC<VendorVerificationControlProps> = ({ o
                                                     type="text"
                                                     value={editCostValue}
                                                     onChange={e => setEditCostValue(e.target.value)}
-                                                    disabled={isLocked && !isDiretoria}
+                                                    disabled={isLocked && !isAdmin}
                                                     className="w-full px-3 py-2 bg-white border border-red-300 rounded-lg text-sm font-black text-red-700 text-right disabled:bg-gray-100 disabled:text-gray-500 disabled:cursor-not-allowed"
                                                     data-testid="input-edit-cost-value"
                                                 />
@@ -700,7 +700,7 @@ const VendorVerificationControl: React.FC<VendorVerificationControlProps> = ({ o
                                                     type="text"
                                                     value={editTollProviderValue}
                                                     onChange={e => setEditTollProviderValue(e.target.value)}
-                                                    disabled={isLocked && !isDiretoria}
+                                                    disabled={isLocked && !isAdmin}
                                                     className="w-full px-3 py-2 bg-white border border-red-300 rounded-lg text-sm font-black text-red-700 text-right disabled:bg-gray-100 disabled:text-gray-500 disabled:cursor-not-allowed"
                                                     data-testid="input-edit-toll-provider"
                                                 />
@@ -828,7 +828,7 @@ const VendorVerificationControl: React.FC<VendorVerificationControlProps> = ({ o
                                                     Verificado por <span className="font-black">{verifiedBy}</span> em <span className="font-black">{fmtDateTime(verifiedAt)}</span>
                                                 </p>
                                                 <p className="text-[9px] text-amber-600 font-bold mt-1">
-                                                    Somente Diretoria pode desbloquear esta OS.
+                                                    Somente Diretoria ou Controller podem editar/desbloquear esta OS.
                                                 </p>
                                             </div>
                                         </div>
@@ -847,13 +847,25 @@ const VendorVerificationControl: React.FC<VendorVerificationControlProps> = ({ o
                                             </button>
                                         )}
 
-                                        {isLocked && isDiretoria && (
+                                        {isLocked && isAdmin && (
+                                            <button
+                                                onClick={handleSaveVerification}
+                                                disabled={isSaving}
+                                                className="flex-1 flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 text-white font-black text-sm py-3 rounded-xl transition-colors disabled:opacity-50"
+                                                data-testid="button-save-locked"
+                                            >
+                                                {isSaving ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
+                                                Salvar Alterações
+                                            </button>
+                                        )}
+
+                                        {isLocked && isAdmin && (
                                             <button
                                                 onClick={handleUnlock}
                                                 className="flex-1 flex items-center justify-center gap-2 bg-amber-500 hover:bg-amber-600 text-white font-black text-sm py-3 rounded-xl transition-colors"
                                                 data-testid="button-unlock-verification"
                                             >
-                                                <Lock size={16} /> Desbloquear (Diretoria)
+                                                <Lock size={16} /> Desbloquear
                                             </button>
                                         )}
 
