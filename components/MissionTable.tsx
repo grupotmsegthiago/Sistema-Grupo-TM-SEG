@@ -1166,7 +1166,8 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
           {showTimeline && (
             <div className="border-b border-gray-200 bg-white">
               {(() => {
-                const missions = [...periodMissions].sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
+                const baseMissions = showNegativeMarginOnly ? filteredBySpecialCriteria : periodMissions;
+                const missions = [...baseMissions].sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
                 const fmtDate = (d: string | undefined) => d ? new Date(d).toLocaleDateString('pt-BR') : '-';
                 const fmtTime = (d: string | undefined) => d ? new Date(d).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) : '-';
                 const fmtMoney = (v: number) => v ? v.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '-';
