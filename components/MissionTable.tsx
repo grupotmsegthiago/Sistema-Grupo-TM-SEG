@@ -183,7 +183,7 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
   const isDirector = useMemo(() => {
     if (!currentUser) return false;
     const roleLower = (currentUser?.role || '').toLowerCase();
-    return ['diretoria', 'administrador'].includes(roleLower) || currentUser.permissions?.includes('*');
+    return ['diretoria', 'administrador', 'controller'].includes(roleLower) || currentUser.permissions?.includes('*');
   }, [currentUser]);
 
   const isAdmin = useMemo(() => {
@@ -199,7 +199,8 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
   const canSeeFinancials = useMemo(() => {
     if (!currentUser) return false;
     const nameLower = (currentUser.name || '').toLowerCase();
-    return nameLower.includes('daniel') || nameLower.includes('barbara') || nameLower.includes('bárbara') || nameLower.includes('thiago');
+    const roleLower = (currentUser.role || '').toLowerCase();
+    return nameLower.includes('daniel') || nameLower.includes('barbara') || nameLower.includes('bárbara') || nameLower.includes('thiago') || roleLower === 'controller';
   }, [currentUser]);
   
   const isCommercial = useMemo(() => {
