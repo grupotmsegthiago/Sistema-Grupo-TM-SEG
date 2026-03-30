@@ -86,7 +86,7 @@ const FinancialAccountManager: React.FC<Props> = ({ onClose }) => {
             const [accRes, catRes, snapRes] = await Promise.all([
                 supabase.from('financial_accounts').select('*').order('name'),
                 supabase.from('financial_categories').select('*'),
-                fetch(`/api/investment/snapshots-all?days=${days}`).then(r => r.json()),
+                fetch(`/api/investment/snapshots-all?days=${days}&_t=${Date.now()}`).then(r => r.json()),
             ]);
 
             const accData = accRes.data || [];
