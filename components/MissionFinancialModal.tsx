@@ -78,6 +78,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
   const [manualClientTableId, setManualClientTableId] = useState<string>('');
   const [manualProviderTableId, setManualProviderTableId] = useState<string>('');
   const [iblEnabled, setIblEnabled] = useState(false);
+  const [linkedMissions, setLinkedMissions] = useState<Array<{id: string; origin: string; destination: string; status: string; is_same_os: boolean; revenue_value: number; cost_value: number; start_time: string}>>([]);
 
   const [aiMaturity, setAiMaturity] = useState(0);
   const [suggestedToll, setSuggestedToll] = useState<number | null>(null);
@@ -514,6 +515,49 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                   } catch (e) { console.error('Erro ao restaurar ajustes:', e); }
               }
           }
+          const missionStartTime = mRes.data?.start_time;
+          if (missionStartTime && mRes.data) {
+              const mDate = new Date(missionStartTime);
+              const dayStart = new Date(mDate);
+              dayStart.setUTCHours(0, 0, 0, 0);
+              const dayEnd = new Date(mDate);
+              dayEnd.setUTCHours(23, 59, 59, 999);
+              
+              const linkedQueries = [];
+              linkedQueries.push(
+                  supabase.from('missions')
+                      .select('id,origin,destination,status,is_same_os,revenue_value,cost_value,start_time')
+                      .eq('client', mRes.data.client)
+                      .gte('start_time', dayStart.toISOString())
+                      .lte('start_time', dayEnd.toISOString())
+                      .neq('id', initialMission.id)
+              );
+              if (mRes.data.parent_mission_id) {
+                  linkedQueries.push(
+                      supabase.from('missions')
+                          .select('id,origin,destination,status,is_same_os,revenue_value,cost_value,start_time')
+                          .eq('id', mRes.data.parent_mission_id)
+                  );
+              }
+              linkedQueries.push(
+                  supabase.from('missions')
+                      .select('id,origin,destination,status,is_same_os,revenue_value,cost_value,start_time')
+                      .eq('parent_mission_id', initialMission.id)
+              );
+              const linkedResults = await Promise.all(linkedQueries);
+              const allLinked: any[] = [];
+              const seenIds = new Set<string>();
+              for (const r of linkedResults) {
+                  for (const m of (r.data || [])) {
+                      if (!seenIds.has(m.id)) {
+                          seenIds.add(m.id);
+                          allLinked.push(m);
+                      }
+                  }
+              }
+              setLinkedMissions(allLinked);
+          }
+
           if (ctRes.data) setClientTables(ctRes.data as any);
           if (ptRes.data) setProviderTables(ptRes.data as any);
           
@@ -1475,6 +1519,33 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                         <p className="font-bold text-amber-900 text-sm">Dados Congelados</p>
                         <p className="text-amber-700 text-xs">Aprovado por <strong>{mission.snapshot_approved_by}</strong> em {mission.snapshot_approved_at ? new Date(mission.snapshot_approved_at).toLocaleString('pt-BR') : '-'}</p>
                         <p className="text-amber-600 text-[10px] mt-0.5">Valores finais salvos. O boletim de medição reflete esta versão aprovada.</p>
+                    </div>
+                </div>
+            )}
+            {linkedMissions.length > 0 && (
+                <div data-testid="linked-missions-section" className="bg-indigo-50 border border-indigo-200 rounded-xl p-4 shadow-sm">
+                    <div className="flex items-center gap-2 mb-3">
+                        <div className="bg-indigo-600 p-1.5 rounded-lg"><Layers size={14} className="text-white" /></div>
+                        <p className="font-black text-indigo-900 text-xs uppercase tracking-wider">OS do Mesmo Cliente no Dia ({linkedMissions.length})</p>
+                    </div>
+                    <div className="space-y-2 max-h-[200px] overflow-y-auto">
+                        {linkedMissions.map((lm) => (
+                            <div key={lm.id} data-testid={`linked-mission-${lm.id}`} className={`flex items-center justify-between gap-3 p-2.5 rounded-lg border text-xs ${lm.is_same_os ? 'bg-blue-50 border-blue-300' : 'bg-white border-gray-200'}`}>
+                                <div className="flex items-center gap-2 min-w-0 flex-1">
+                                    <span className="font-black text-gray-800 shrink-0">{lm.id}</span>
+                                    {lm.is_same_os && <span className="text-[8px] font-black bg-blue-600 text-white px-1.5 py-0.5 rounded uppercase shrink-0">MESMA OS</span>}
+                                    <span className={`text-[8px] font-bold px-1.5 py-0.5 rounded uppercase shrink-0 ${lm.status === 'Concluída' ? 'bg-green-100 text-green-700' : lm.status === 'Cancelada' ? 'bg-red-100 text-red-700' : 'bg-gray-100 text-gray-600'}`}>{lm.status}</span>
+                                    <span className="text-gray-500 truncate" title={`${lm.origin} → ${lm.destination}`}>
+                                        {(lm.origin || '').split(',')[0]} → {(lm.destination || '').split(',')[0]}
+                                    </span>
+                                </div>
+                                <div className="flex items-center gap-3 shrink-0">
+                                    <span className="text-green-700 font-bold">{formatCurrency(lm.revenue_value || 0)}</span>
+                                    <span className="text-red-600 font-bold">{formatCurrency(lm.cost_value || 0)}</span>
+                                    <span className="text-gray-400 text-[9px]">{lm.start_time ? new Date(lm.start_time).toLocaleTimeString('pt-BR', {hour:'2-digit', minute:'2-digit'}) : '--:--'}</span>
+                                </div>
+                            </div>
+                        ))}
                     </div>
                 </div>
             )}
