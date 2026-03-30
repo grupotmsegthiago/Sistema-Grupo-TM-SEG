@@ -515,35 +515,26 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                   } catch (e) { console.error('Erro ao restaurar ajustes:', e); }
               }
           }
-          const missionStartTime = mRes.data?.start_time;
-          if (missionStartTime && mRes.data) {
-              const mDate = new Date(missionStartTime);
-              const dayStart = new Date(mDate);
-              dayStart.setUTCHours(0, 0, 0, 0);
-              const dayEnd = new Date(mDate);
-              dayEnd.setUTCHours(23, 59, 59, 999);
-              
+          if (mRes.data) {
               const linkedQueries = [];
               linkedQueries.push(
                   supabase.from('missions')
-                      .select('id,origin,destination,status,is_same_os,revenue_value,cost_value,start_time')
-                      .eq('client', mRes.data.client)
-                      .gte('start_time', dayStart.toISOString())
-                      .lte('start_time', dayEnd.toISOString())
-                      .neq('id', initialMission.id)
+                      .select('id,origin,destination,status,is_same_os,revenue_value,cost_value,start_time,parent_mission_id')
+                      .eq('parent_mission_id', initialMission.id)
               );
               if (mRes.data.parent_mission_id) {
                   linkedQueries.push(
                       supabase.from('missions')
-                          .select('id,origin,destination,status,is_same_os,revenue_value,cost_value,start_time')
+                          .select('id,origin,destination,status,is_same_os,revenue_value,cost_value,start_time,parent_mission_id')
                           .eq('id', mRes.data.parent_mission_id)
                   );
+                  linkedQueries.push(
+                      supabase.from('missions')
+                          .select('id,origin,destination,status,is_same_os,revenue_value,cost_value,start_time,parent_mission_id')
+                          .eq('parent_mission_id', mRes.data.parent_mission_id)
+                          .neq('id', initialMission.id)
+                  );
               }
-              linkedQueries.push(
-                  supabase.from('missions')
-                      .select('id,origin,destination,status,is_same_os,revenue_value,cost_value,start_time')
-                      .eq('parent_mission_id', initialMission.id)
-              );
               const linkedResults = await Promise.all(linkedQueries);
               const allLinked: any[] = [];
               const seenIds = new Set<string>();
@@ -1526,14 +1517,19 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                 <div data-testid="linked-missions-section" className="bg-indigo-50 border border-indigo-200 rounded-xl p-4 shadow-sm">
                     <div className="flex items-center gap-2 mb-3">
                         <div className="bg-indigo-600 p-1.5 rounded-lg"><Layers size={14} className="text-white" /></div>
-                        <p className="font-black text-indigo-900 text-xs uppercase tracking-wider">OS do Mesmo Cliente no Dia ({linkedMissions.length})</p>
+                        <p className="font-black text-indigo-900 text-xs uppercase tracking-wider">
+                            {mission.is_same_os ? 'OS Mãe e Irmãs Vinculadas' : 'OS Vinculadas (MESMA OS)'} ({linkedMissions.length})
+                        </p>
                     </div>
                     <div className="space-y-2 max-h-[200px] overflow-y-auto">
-                        {linkedMissions.map((lm) => (
-                            <div key={lm.id} data-testid={`linked-mission-${lm.id}`} className={`flex items-center justify-between gap-3 p-2.5 rounded-lg border text-xs ${lm.is_same_os ? 'bg-blue-50 border-blue-300' : 'bg-white border-gray-200'}`}>
+                        {linkedMissions.map((lm) => {
+                            const isParent = lm.id === mission.parent_mission_id;
+                            return (
+                            <div key={lm.id} data-testid={`linked-mission-${lm.id}`} className={`flex items-center justify-between gap-3 p-2.5 rounded-lg border text-xs ${isParent ? 'bg-amber-50 border-amber-300' : lm.is_same_os ? 'bg-blue-50 border-blue-300' : 'bg-white border-gray-200'}`}>
                                 <div className="flex items-center gap-2 min-w-0 flex-1">
                                     <span className="font-black text-gray-800 shrink-0">{lm.id}</span>
-                                    {lm.is_same_os && <span className="text-[8px] font-black bg-blue-600 text-white px-1.5 py-0.5 rounded uppercase shrink-0">MESMA OS</span>}
+                                    {isParent && <span className="text-[8px] font-black bg-amber-600 text-white px-1.5 py-0.5 rounded uppercase shrink-0">MÃE</span>}
+                                    {lm.is_same_os && !isParent && <span className="text-[8px] font-black bg-blue-600 text-white px-1.5 py-0.5 rounded uppercase shrink-0">MESMA OS</span>}
                                     <span className={`text-[8px] font-bold px-1.5 py-0.5 rounded uppercase shrink-0 ${lm.status === 'Concluída' ? 'bg-green-100 text-green-700' : lm.status === 'Cancelada' ? 'bg-red-100 text-red-700' : 'bg-gray-100 text-gray-600'}`}>{lm.status}</span>
                                     <span className="text-gray-500 truncate" title={`${lm.origin} → ${lm.destination}`}>
                                         {(lm.origin || '').split(',')[0]} → {(lm.destination || '').split(',')[0]}
@@ -1545,7 +1541,8 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                     <span className="text-gray-400 text-[9px]">{lm.start_time ? new Date(lm.start_time).toLocaleTimeString('pt-BR', {hour:'2-digit', minute:'2-digit'}) : '--:--'}</span>
                                 </div>
                             </div>
-                        ))}
+                            );
+                        })}
                     </div>
                 </div>
             )}
