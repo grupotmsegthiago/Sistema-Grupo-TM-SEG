@@ -457,9 +457,10 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
               const isVendorVerified = !!(mRes.data.verified_by && mRes.data.verified_at);
 
               if (hasSavedData) {
+                  const isSameOsMission = mRes.data.is_same_os === true;
                   const hasSeparateTollProvider = mRes.data.toll_value_provider != null;
-                  const totalCost = hasSeparateTollProvider ? savedCost + dbTollProvider : savedCost;
-                  if (!hasSeparateTollProvider && savedCost > 0) {
+                  const totalCost = isSameOsMission ? 0 : (hasSeparateTollProvider ? savedCost + dbTollProvider : savedCost);
+                  if (!isSameOsMission && !hasSeparateTollProvider && savedCost > 0) {
                       setTollEmbeddedInCost(true);
                   }
                   setUseSavedValues(true);
