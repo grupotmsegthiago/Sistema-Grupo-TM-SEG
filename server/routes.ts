@@ -1476,7 +1476,8 @@ export async function registerRoutes(
       const { data: providerTables } = await supabaseAdmin.from('provider_cost_tables').select('*');
       const { data: clients } = await supabaseAdmin.from('clients').select('*');
 
-      const clientData = (clients || []).find((c: any) => c.name === mission.client);
+      const missionClientTrimmed = (mission.client || '').trim().toUpperCase();
+      const clientData = (clients || []).find((c: any) => (c.name || '').trim().toUpperCase() === missionClientTrimmed);
       const { calculateMissionFinancials } = await import('../lib/financialUtils');
 
       const missionObj = {
