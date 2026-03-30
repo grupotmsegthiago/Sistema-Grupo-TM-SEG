@@ -587,8 +587,9 @@ export const calculateMissionFinancials = (
     const normalizedOrigin = normalize(mission.origin || '');
     const normalizedDest = normalize(mission.destination || '');
     const isJundiai = normalizedOrigin.includes('JUNDIAI');
-    const destHas200km = normalizedDest.includes('200KM') || normalizedDest.includes('200 KM');
+    const destHas200km = normalizedDest.includes('200KM') || normalizedDest.includes('200 KM') || normalizedDest.includes('ACOMPANHAMENTO');
     const referenceDistance = Math.max(totalDistance, distanceForCalculation);
+    let is200kmAccompaniment = destHas200km && !isZeroValueMission;
 
     if (isCevaClient && isJundiai && !isCancelled && !isManualOverride && allClientTablesForThisClient.length > 0) {
         if (referenceDistance > 200 || destHas200km) {
@@ -804,6 +805,16 @@ export const calculateMissionFinancials = (
         }
     }
 
+    if (is200kmAccompaniment && !manualTableOverrides?.providerTableId && filteredProviderTables.length > 0) {
+        const provider200 = filteredProviderTables.find(t => {
+            const op = normalize(t.operation_type || '');
+            return (op.includes('ATE 200') || op.includes('200 KM') || op.includes('200KM')) && t.franchise_km >= 200 && t.franchise_km <= 200;
+        });
+        if (provider200) {
+            appliedProviderTable = provider200;
+            providerLog = `Regra 200KM Acompanhamento → ${provider200.operation_type}`;
+        }
+    }
 
     const cBase = isRefused ? 0 : (manualTableOverrides?.customClientBase !== undefined 
         ? manualTableOverrides.customClientBase 
@@ -842,6 +853,9 @@ export const calculateMissionFinancials = (
     const originalDistanceForCalc = distanceForCalculation;
     const originalDurationHours = durationHours;
 
+    if (is200kmAccompaniment && !isZeroValueMission) {
+        distanceForCalculation = Math.min(distanceForCalculation, 200);
+    }
     if (isFixedDistanceClientRule && !isZeroValueMission) {
         distanceForCalculation = Math.min(distanceForCalculation, cFranchiseKm);
     }
@@ -870,6 +884,10 @@ export const calculateMissionFinancials = (
         ? manualTableOverrides.providerOpsOverride.durationHours 
         : originalDurationHours;
 
+    if (is200kmAccompaniment && !isZeroValueMission) {
+        providerDistForCalc = Math.min(providerDistForCalc, 200);
+    }
+
     const rawBaseCost = appliedProviderTable?.activation_cost || 0;
     const pBase = isRefused ? 0 : (manualTableOverrides?.customProviderBase !== undefined
         ? manualTableOverrides.customProviderBase
@@ -888,7 +906,7 @@ export const calculateMissionFinancials = (
     let pExcessKm = mission.is_same_os ? 0 : Math.max(0, providerDistForCalc - pFranchiseKm);
     let pExcessHr = mission.is_same_os ? 0 : Math.max(0, providerDurationForCalc - pFranchiseHr);
 
-    if (!mission.is_same_os && !isZeroValueMission && providerHasExtraKmCost && pExcessKm === 0) {
+    if (!mission.is_same_os && !isZeroValueMission && !is200kmAccompaniment && providerHasExtraKmCost && pExcessKm === 0) {
         const rawDist = manualTableOverrides?.providerOpsOverride 
             ? manualTableOverrides.providerOpsOverride.distanceKm 
             : originalDistanceForCalc;
