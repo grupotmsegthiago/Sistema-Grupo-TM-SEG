@@ -4,6 +4,23 @@ import { supabase } from '../lib/supabase';
 import { FinancialCategory, FinancialTransaction } from '../types';
 import { Calendar, FileText, Download, Loader2, Printer, TrendingUp, DollarSign, RefreshCw } from 'lucide-react';
 
+const getTodayBR = (): string => {
+    const now = new Date();
+    const brDate = new Date(now.toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' }));
+    const y = brDate.getFullYear();
+    const m = String(brDate.getMonth() + 1).padStart(2, '0');
+    const d = String(brDate.getDate()).padStart(2, '0');
+    return `${y}-${m}-${d}`;
+};
+
+const getMonthStartBR = (): string => {
+    const now = new Date();
+    const brDate = new Date(now.toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' }));
+    const y = brDate.getFullYear();
+    const m = String(brDate.getMonth() + 1).padStart(2, '0');
+    return `${y}-${m}-01`;
+};
+
 interface DRERow {
     label: string;
     value: number;
@@ -13,8 +30,8 @@ interface DRERow {
 }
 
 const FinancialDRE: React.FC = () => {
-    const [startDate, setStartDate] = useState(new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0]);
-    const [endDate, setEndDate] = useState(new Date().toISOString().split('T')[0]);
+    const [startDate, setStartDate] = useState(getMonthStartBR());
+    const [endDate, setEndDate] = useState(getTodayBR());
     const [report, setReport] = useState<DRERow[]>([]);
     const [loading, setLoading] = useState(false);
 
@@ -22,13 +39,32 @@ const FinancialDRE: React.FC = () => {
         generateDRE();
     }, []);
 
+    const fetchAllTransactions = async (start: string, end: string): Promise<FinancialTransaction[]> => {
+        const all: FinancialTransaction[] = [];
+        const PAGE = 1000;
+        let from = 0;
+        while (true) {
+            const { data, error } = await supabase
+                .from('financial_transactions')
+                .select('*')
+                .eq('status', 'PAID')
+                .gte('due_date', start)
+                .lte('due_date', `${end}T23:59:59`)
+                .range(from, from + PAGE - 1);
+            if (error) { console.error(error); break; }
+            if (!data || data.length === 0) break;
+            all.push(...(data as FinancialTransaction[]));
+            if (data.length < PAGE) break;
+            from += PAGE;
+        }
+        return all;
+    };
+
     const generateDRE = async () => {
         setLoading(true);
         try {
-            const { data: transactionsData } = await supabase.from('financial_transactions').select('*').gte('payment_date', `${startDate}T00:00:00`).lte('payment_date', `${endDate}T23:59:59`).eq('status', 'PAID');
+            const transactions = await fetchAllTransactions(startDate, endDate);
             const { data: categoriesData } = await supabase.from('financial_categories').select('*');
-
-            const transactions = (transactionsData || []) as FinancialTransaction[];
             const categories = (categoriesData || []) as FinancialCategory[];
 
             const sumByCategory = (catId: string) => transactions.filter(t => t.category_id === catId).reduce((acc, t) => acc + t.amount, 0);
@@ -107,7 +143,7 @@ const FinancialDRE: React.FC = () => {
                         <img src="/logo.png" alt="TMSEG" className="h-12 object-contain" />
                         <div className="text-right">
                             <h1 className="text-2xl font-black text-gray-900 uppercase">Demonstrativo de Resultado</h1>
-                            <p className="text-sm font-bold text-gray-500">{new Date(startDate).toLocaleDateString('pt-BR')} a {new Date(endDate).toLocaleDateString('pt-BR')}</p>
+                            <p className="text-sm font-bold text-gray-500">{new Date(startDate + 'T12:00:00').toLocaleDateString('pt-BR')} a {new Date(endDate + 'T12:00:00').toLocaleDateString('pt-BR')}</p>
                         </div>
                     </div>
 
