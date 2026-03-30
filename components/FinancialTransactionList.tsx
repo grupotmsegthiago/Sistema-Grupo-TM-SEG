@@ -20,6 +20,15 @@ const formatCurrency = (val: number | null | undefined) => {
     return val.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 };
 
+const getTodayBR = (): string => {
+    const now = new Date();
+    const brDate = new Date(now.toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' }));
+    const y = brDate.getFullYear();
+    const m = String(brDate.getMonth() + 1).padStart(2, '0');
+    const d = String(brDate.getDate()).padStart(2, '0');
+    return `${y}-${m}-${d}`;
+};
+
 type Step = 'PAGAR' | 'RECEBER' | 'CONFERENCIA' | 'RELATORIO' | 'FECHAMENTO';
 type StatusFilter = 'ALL' | 'PENDING' | 'PAID' | 'OVERDUE' | 'SCHEDULED';
 
@@ -42,8 +51,8 @@ const FinancialTransactionList: React.FC = () => {
     const [searchTerm, setSearchTerm] = useState('');
     const [statusFilter, setStatusFilter] = useState<StatusFilter>('ALL');
     const [viewPeriod, setViewPeriod] = useState<'DAY' | 'WEEK' | 'MONTH' | 'CUSTOM' | 'ALL'>('MONTH');
-    const [customStartDate, setCustomStartDate] = useState(new Date().toISOString().split('T')[0]);
-    const [customEndDate, setCustomEndDate] = useState(new Date().toISOString().split('T')[0]);
+    const [customStartDate, setCustomStartDate] = useState(getTodayBR());
+    const [customEndDate, setCustomEndDate] = useState(getTodayBR());
     const [canAccessReconciliation, setCanAccessReconciliation] = useState(false);
     const [closingNotes, setClosingNotes] = useState('');
     const [closingConfirmed, setClosingConfirmed] = useState(false);
@@ -112,8 +121,8 @@ const FinancialTransactionList: React.FC = () => {
 
         let list = typeFilter ? transactions.filter(t => t.type === typeFilter) : transactions;
 
-        const now = new Date();
-        const todayStr = now.toISOString().split('T')[0];
+        const todayStr = getTodayBR();
+        const now = new Date(todayStr + 'T12:00:00');
 
         if (viewPeriod === 'DAY') {
             list = list.filter(t => t.due_date.split('T')[0] === todayStr);
@@ -123,15 +132,16 @@ const FinancialTransactionList: React.FC = () => {
             sunday.setDate(now.getDate() - day);
             const saturday = new Date(sunday);
             saturday.setDate(sunday.getDate() + 6);
-            const weekStart = sunday.toISOString().split('T')[0];
-            const weekEnd = saturday.toISOString().split('T')[0];
+            const fmt = (dt: Date) => { const y = dt.getFullYear(); const m = String(dt.getMonth()+1).padStart(2,'0'); const d = String(dt.getDate()).padStart(2,'0'); return `${y}-${m}-${d}`; };
+            const weekStart = fmt(sunday);
+            const weekEnd = fmt(saturday);
             list = list.filter(t => {
                 const d = t.due_date.split('T')[0];
                 return d >= weekStart && d <= weekEnd;
             });
         } else if (viewPeriod === 'MONTH') {
             list = list.filter(t => {
-                const d = new Date(t.due_date);
+                const d = new Date(t.due_date + 'T12:00:00');
                 return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
             });
         } else if (viewPeriod === 'CUSTOM') {
@@ -198,7 +208,7 @@ const FinancialTransactionList: React.FC = () => {
                         .eq('status', 'PENDING');
 
                     if (matchingTx && matchingTx.length > 0) {
-                        const now = new Date().toISOString().split('T')[0];
+                        const now = getTodayBR();
                         const userName = JSON.parse(localStorage.getItem('userData') || '{}').name || 'Sistema';
                         for (const tx of matchingTx) {
                             await supabase.from('financial_transactions')
@@ -215,7 +225,7 @@ const FinancialTransactionList: React.FC = () => {
                             .eq('status', 'PENDING');
 
                         if (fallbackTx && fallbackTx.length > 0) {
-                            const now = new Date().toISOString().split('T')[0];
+                            const now = getTodayBR();
                             const userName = JSON.parse(localStorage.getItem('userData') || '{}').name || 'Sistema';
                             for (const tx of fallbackTx) {
                                 await supabase.from('financial_transactions')
@@ -257,14 +267,14 @@ const FinancialTransactionList: React.FC = () => {
         const blob = new Blob(["\ufeff" + csvContent], { type: 'text/csv;charset=utf-8;' });
         const link = document.createElement("a");
         link.href = URL.createObjectURL(blob);
-        link.download = `FECHAMENTO_${activeStep}_${new Date().toISOString().split('T')[0]}.csv`;
+        link.download = `FECHAMENTO_${activeStep}_${getTodayBR()}.csv`;
         link.click();
     };
 
     const periodFilteredTransactions = useMemo(() => {
         let list = [...transactions];
-        const now = new Date();
-        const todayStr = now.toISOString().split('T')[0];
+        const todayStr = getTodayBR();
+        const now = new Date(todayStr + 'T12:00:00');
         if (viewPeriod === 'DAY') {
             list = list.filter(t => t.due_date.split('T')[0] === todayStr);
         } else if (viewPeriod === 'WEEK') {
@@ -273,11 +283,12 @@ const FinancialTransactionList: React.FC = () => {
             sunday.setDate(now.getDate() - day);
             const saturday = new Date(sunday);
             saturday.setDate(sunday.getDate() + 6);
-            const weekStart = sunday.toISOString().split('T')[0];
-            const weekEnd = saturday.toISOString().split('T')[0];
+            const fmt = (dt: Date) => { const y = dt.getFullYear(); const m = String(dt.getMonth()+1).padStart(2,'0'); const d = String(dt.getDate()).padStart(2,'0'); return `${y}-${m}-${d}`; };
+            const weekStart = fmt(sunday);
+            const weekEnd = fmt(saturday);
             list = list.filter(t => { const d = t.due_date.split('T')[0]; return d >= weekStart && d <= weekEnd; });
         } else if (viewPeriod === 'MONTH') {
-            list = list.filter(t => { const d = new Date(t.due_date); return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear(); });
+            list = list.filter(t => { const d = new Date(t.due_date + 'T12:00:00'); return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear(); });
         } else if (viewPeriod === 'CUSTOM') {
             list = list.filter(t => { const d = t.due_date.split('T')[0]; return d >= customStartDate && d <= customEndDate; });
         }
@@ -295,12 +306,12 @@ const FinancialTransactionList: React.FC = () => {
     }, [periodFilteredTransactions]);
 
     const overduePagar = useMemo(() => {
-        const today = new Date().toISOString().split('T')[0];
+        const today = getTodayBR();
         return periodFilteredTransactions.filter(t => t.type === 'EXPENSE' && t.status === 'PENDING' && t.due_date.split('T')[0] < today);
     }, [periodFilteredTransactions]);
 
     const overdueReceber = useMemo(() => {
-        const today = new Date().toISOString().split('T')[0];
+        const today = getTodayBR();
         return periodFilteredTransactions.filter(t => t.type === 'INCOME' && t.status === 'PENDING' && t.due_date.split('T')[0] < today);
     }, [periodFilteredTransactions]);
 
@@ -372,7 +383,7 @@ const FinancialTransactionList: React.FC = () => {
                         ) : list.length === 0 ? (
                             <tr><td colSpan={7} className="p-12 text-center text-gray-400 font-bold uppercase italic text-sm">Nenhum lançamento encontrado.</td></tr>
                         ) : list.map(t => {
-                            const isOverdue = t.status === 'PENDING' && t.due_date.split('T')[0] < new Date().toISOString().split('T')[0];
+                            const isOverdue = t.status === 'PENDING' && t.due_date.split('T')[0] < getTodayBR();
                             return (
                                 <tr key={t.id} className={`hover:bg-gray-50 transition-colors ${isOverdue ? 'bg-red-50/50' : ''}`}>
                                     <td className="px-4 py-3">
@@ -542,7 +553,7 @@ const FinancialTransactionList: React.FC = () => {
                 );
 
             case 'RELATORIO': {
-                const todayStr = new Date().toISOString().split('T')[0];
+                const todayStr = getTodayBR();
                 const paidExpenses = transactions.filter(t => t.type === 'EXPENSE' && t.status === 'PAID');
                 const paidIncomes = transactions.filter(t => t.type === 'INCOME' && t.status === 'PAID');
                 const overdueExpenses = transactions.filter(t => t.type === 'EXPENSE' && t.status === 'PENDING' && t.due_date.split('T')[0] < todayStr);
