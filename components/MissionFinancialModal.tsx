@@ -914,6 +914,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
       if (nameLower.includes('daniel')) return { stage: 'auditor', label: 'Aprovado pelo Auditor' };
       if (roleLower === 'administrador' || nameLower.includes('barbara') || nameLower.includes('bárbara')) return { stage: 'financeiro', label: 'Aprovado pelo Financeiro' };
       if (roleLower === 'diretoria' || nameLower.includes('thiago')) return { stage: 'diretoria', label: 'Aprovado pela Diretoria' };
+      if (roleLower === 'controller') return { stage: 'controller', label: 'Aprovado pelo Controller' };
       return { stage: 'operacional', label: `Aprovado por ${userName}` };
   };
 
@@ -924,7 +925,8 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
       const hasAuditor = stages.includes('auditor');
       const hasFinanceiro = stages.includes('financeiro');
       const hasDiretoria = stages.includes('diretoria');
-      const isApprovedForBilling = hasFinanceiro || hasDiretoria || (mission?.billing_approved === true);
+      const hasController = stages.includes('controller');
+      const isApprovedForBilling = hasFinanceiro || hasDiretoria || hasController || (mission?.billing_approved === true);
       const isFullyApproved = hasDiretoria;
       const missing: string[] = [];
       if (!hasDiretoria) {
@@ -954,6 +956,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
           if (uName.includes('daniel')) currentUserStage = 'auditor';
           else if (uRole === 'administrador' || uName.includes('barbara') || uName.includes('bárbara')) currentUserStage = 'financeiro';
           else if (uRole === 'diretoria' || uName.includes('thiago')) currentUserStage = 'diretoria';
+          else if (uRole === 'controller') currentUserStage = 'controller';
       } catch {}
 
       let blockedForCurrentUser = false;
@@ -966,13 +969,13 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
 
       const lockedByDiretoria = hasDiretoria && currentUserStage !== 'diretoria' && (() => { try { const u = JSON.parse(localStorage.getItem('userData') || '{}'); const r = (u.role || '').toLowerCase(); return r !== 'controller' && r !== 'administrador'; } catch { return true; } })();
 
-      return { hasAuditor, hasFinanceiro, hasDiretoria, isFullyApproved, isApprovedForBilling, missing, waitingDays, hasPartial, blockedForCurrentUser, blockedMessage, currentUserStage, lockedByDiretoria };
+      return { hasAuditor, hasFinanceiro, hasDiretoria, hasController, isFullyApproved, isApprovedForBilling, missing, waitingDays, hasPartial, blockedForCurrentUser, blockedMessage, currentUserStage, lockedByDiretoria };
   }, [approvalLog, mission?.endTime]);
 
   const handleUpdate = async (approve: boolean) => {
       if (!mission) return;
-      if (isSnapshotFrozen && !isController && currentApprovalStatus.currentUserStage !== 'diretoria' && currentApprovalStatus.currentUserStage !== 'financeiro') {
-          showNotification('Bloqueado', `Dados Congelados — Aprovado por ${mission.snapshot_approved_by}. Somente Financeiro ou Diretoria podem editar.`, 'error');
+      if (isSnapshotFrozen && !isController && currentApprovalStatus.currentUserStage !== 'diretoria' && currentApprovalStatus.currentUserStage !== 'financeiro' && currentApprovalStatus.currentUserStage !== 'controller') {
+          showNotification('Bloqueado', `Dados Congelados — Aprovado por ${mission.snapshot_approved_by}. Somente Financeiro, Controller ou Diretoria podem editar.`, 'error');
           return;
       }
       if (currentApprovalStatus.lockedByDiretoria) {
@@ -1047,10 +1050,11 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
           const updatedStages = newLog.map(l => l.stage);
           const hasFinanceiro = updatedStages.includes('financeiro');
           const hasDiretoria = updatedStages.includes('diretoria');
-          const isApprovedForBilling = hasFinanceiro || hasDiretoria || (mission.billing_approved === true);
+          const hasController = updatedStages.includes('controller');
+          const isApprovedForBilling = hasFinanceiro || hasDiretoria || hasController || (mission.billing_approved === true);
           const isFullyApproved = hasDiretoria;
           
-          const canReleaseBilling = stage === 'financeiro' || stage === 'diretoria';
+          const canReleaseBilling = stage === 'financeiro' || stage === 'diretoria' || stage === 'controller';
           const shouldSnapshot = approve && canReleaseBilling && !mission.snapshot_approved_by;
           
           const r2 = (v: number) => Math.round(v * 100) / 100;
@@ -2363,10 +2367,10 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                             <div className="flex flex-wrap gap-2">
                                 {approvalLog.map((log, i) => (
                                     <div key={i} className="flex items-center gap-2 bg-white px-3 py-1.5 rounded-lg border border-emerald-200 shadow-sm" data-testid={`approval-log-${i}`}>
-                                        <CheckCircle2 size={12} className={log.stage === 'auditor' ? 'text-amber-500' : log.stage === 'financeiro' ? 'text-blue-500' : 'text-emerald-600'} />
+                                        <CheckCircle2 size={12} className={log.stage === 'auditor' ? 'text-amber-500' : log.stage === 'financeiro' ? 'text-blue-500' : log.stage === 'controller' ? 'text-purple-500' : 'text-emerald-600'} />
                                         <div>
                                             <span className="text-[10px] font-black text-gray-800">
-                                                {log.stage === 'auditor' ? 'Auditor' : log.stage === 'financeiro' ? 'Financeiro' : log.stage === 'diretoria' ? 'Diretoria' : log.stage}
+                                                {log.stage === 'auditor' ? 'Auditor' : log.stage === 'financeiro' ? 'Financeiro' : log.stage === 'diretoria' ? 'Diretoria' : log.stage === 'controller' ? 'Controller' : log.stage}
                                             </span>
                                             <span className="text-[9px] text-gray-500 ml-1">({log.user})</span>
                                             <p className="text-[8px] text-gray-400 font-mono">{new Date(log.date).toLocaleString('pt-BR')}</p>
@@ -2431,6 +2435,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                         <div className="flex gap-1.5">
                                             <span className={`text-[9px] font-black px-1.5 py-0.5 rounded ${currentApprovalStatus.hasAuditor ? 'bg-amber-100 text-amber-700' : 'bg-gray-100 text-gray-400'}`}>AUD</span>
                                             <span className={`text-[9px] font-black px-1.5 py-0.5 rounded ${currentApprovalStatus.hasFinanceiro ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-400'}`}>FIN</span>
+                                            <span className={`text-[9px] font-black px-1.5 py-0.5 rounded ${currentApprovalStatus.hasController ? 'bg-purple-100 text-purple-700' : 'bg-gray-100 text-gray-400'}`}>CTR</span>
                                             <span className={`text-[9px] font-black px-1.5 py-0.5 rounded ${currentApprovalStatus.hasDiretoria ? 'bg-emerald-100 text-emerald-700' : 'bg-gray-100 text-gray-400'}`}>DIR</span>
                                         </div>
                                     </div>
