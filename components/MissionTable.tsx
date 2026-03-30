@@ -598,10 +598,12 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
             }
 
             if (showNegativeMarginOnly) {
-                const rev = (mission.revenue_value || 0) + (mission.toll_value || 0);
-                const cost = (mission.is_same_os ? 0 : (mission.cost_value || 0)) + (mission.is_same_os ? 0 : (mission.toll_value_provider || 0));
-                const resultado = rev - cost;
-                const isNegative = rev > 0 && resultado < 0;
+                const rev = mission.revenue_value || 0;
+                const cost = mission.is_same_os ? 0 : (mission.cost_value || 0);
+                const toll = mission.toll_value || 0;
+                const resultado = rev - cost - toll;
+                const hasFinancialData = rev > 0 || cost > 0;
+                const isNegative = hasFinancialData && resultado < 0;
                 const isParent = parentMissionIds.has(mission.id);
                 if (!isNegative || isParent) return false;
             }
@@ -627,10 +629,12 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
     const negativeMarginCount = useMemo(() => {
         const source = periodMissions.length > 0 ? periodMissions : allMissions;
         return source.filter(m => {
-            const rev = (m.revenue_value || 0) + (m.toll_value || 0);
-            const cost = (m.is_same_os ? 0 : (m.cost_value || 0)) + (m.is_same_os ? 0 : (m.toll_value_provider || 0));
-            const resultado = rev - cost;
-            const isNegative = rev > 0 && resultado < 0;
+            const rev = m.revenue_value || 0;
+            const cost = m.is_same_os ? 0 : (m.cost_value || 0);
+            const toll = m.toll_value || 0;
+            const resultado = rev - cost - toll;
+            const hasFinancialData = rev > 0 || cost > 0;
+            const isNegative = hasFinancialData && resultado < 0;
             const isParent = parentMissionIds.has(m.id);
             return isNegative && !isParent;
         }).length;
