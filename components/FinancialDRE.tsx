@@ -30,7 +30,7 @@ interface DRERow {
 }
 
 const FinancialDRE: React.FC = () => {
-    const [startDate, setStartDate] = useState(getMonthStartBR());
+    const [startDate, setStartDate] = useState('2026-02-15');
     const [endDate, setEndDate] = useState(getTodayBR());
     const [report, setReport] = useState<DRERow[]>([]);
     const [loading, setLoading] = useState(false);
