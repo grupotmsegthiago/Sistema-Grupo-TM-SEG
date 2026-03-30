@@ -578,7 +578,7 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
                 const matchesSearch = 
                     (mission.id || '').toLowerCase().includes(searchLower) || 
                     (mission.client || '').toLowerCase().includes(searchLower) || 
-                    (mission.vehicleId || '').toLowerCase().includes(searchLower) || 
+                    String(mission.vehicleId || '').toLowerCase().includes(searchLower) || 
                     (mission.provider || '').toLowerCase().includes(searchLower) || 
                     (mission.clientVehicle?.plate || '').toLowerCase().includes(searchLower) || 
                     (mission.driver_name || '').toLowerCase().includes(searchLower);
