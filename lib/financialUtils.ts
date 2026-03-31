@@ -791,6 +791,8 @@ export const calculateMissionFinancials = (
             if (!missionIsVelada && isVeladaT) return false;
             if (op.includes('PRONTA RESPOSTA') || op.includes('PRONTA')) return false;
             if (!isCancelled && isCancelT) return false;
+            const tIs200Table = op.includes('200KM') || op.includes('200 KM') || op.includes('ATE 200') || (t.franchise_km || 0) >= 200;
+            if (tIs200Table && providerDistReference <= 200) return false;
             return true;
         });
 
@@ -807,6 +809,22 @@ export const calculateMissionFinancials = (
             const oldName = appliedProviderTable.operation_type;
             appliedProviderTable = cheapest.table;
             providerLog = `Menor Custo: ${cheapest.table.operation_type} (R$${cheapest.total}) vs ${oldName} (R$${currentCost.total})`;
+        }
+    }
+
+    if (!manualTableOverrides?.providerTableId && appliedProviderTable && filteredProviderTables.length > 1) {
+        const appliedOp = normalize(appliedProviderTable.operation_type || '');
+        const appliedIs200 = appliedOp.includes('200KM') || appliedOp.includes('200 KM') || appliedOp.includes('ATE 200') || (appliedProviderTable.franchise_km >= 200);
+        if (appliedIs200 && providerDistReference <= 200) {
+            const table100Fallback = filteredProviderTables.find(t => {
+                const op = normalize(t.operation_type || '');
+                const tFr = t.franchise_km || 0;
+                return tFr >= 100 && tFr < 200 && (op.includes('100KM') || op.includes('100 KM') || op.includes('ATE 100') || tFr === 100);
+            });
+            if (table100Fallback) {
+                appliedProviderTable = table100Fallback;
+                providerLog = `KM ≤200 → Tabela 100KM (${table100Fallback.operation_type})`;
+            }
         }
     }
 
