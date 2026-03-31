@@ -91,6 +91,11 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
         const role = (currentUser.role || '').toLowerCase();
         return ['diretoria', 'administrador', 'avançado', 'avancado'].includes(role) || (currentUser.permissions && currentUser.permissions.includes('*'));
     }, [currentUser]);
+    const canEditTimes = useMemo(() => {
+        if (!currentUser) return false;
+        const role = (currentUser.role || '').toLowerCase();
+        return ['diretoria', 'administrador'].includes(role) || (currentUser.permissions && currentUser.permissions.includes('*'));
+    }, [currentUser]);
 
     // Listas de Dados
     const [providersList, setProvidersList] = useState<ProviderData[]>([]);
@@ -1701,14 +1706,14 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
                                     <div className="flex-1 lg:w-44">
                                         <label className={LABEL_CLASS}>Data Inicial</label>
                                         <div className="relative">
-                                            <input type="date" className={INPUT_CLASS} value={editData.startDate} onChange={e => setEditData({...editData, startDate: e.target.value})} />
+                                            <input type="date" className={`${INPUT_CLASS} ${!canEditTimes ? 'opacity-60 cursor-not-allowed' : ''}`} value={editData.startDate} onChange={e => canEditTimes && setEditData({...editData, startDate: e.target.value})} disabled={!canEditTimes} />
                                             <Calendar size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-300 pointer-events-none" />
                                         </div>
                                     </div>
                                     <div className="flex-1 lg:w-28">
                                         <label className={LABEL_CLASS}>Hora Inicial</label>
                                         <div className="relative">
-                                            <input type="time" step="1" className={INPUT_CLASS} value={editData.startTime} onChange={e => setEditData({...editData, startTime: e.target.value})} />
+                                            <input type="time" step="1" className={`${INPUT_CLASS} ${!canEditTimes ? 'opacity-60 cursor-not-allowed' : ''}`} value={editData.startTime} onChange={e => canEditTimes && setEditData({...editData, startTime: e.target.value})} disabled={!canEditTimes} />
                                             <Clock size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-300 pointer-events-none" />
                                         </div>
                                     </div>
@@ -1763,9 +1768,11 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
                                         <div className="relative">
                                             <input 
                                                 type="date" 
-                                                className={`transition-all ${!isEndTimeLocked ? 'bg-indigo-50 border-indigo-200' : 'bg-white border-gray-200'} ${INPUT_CLASS}`} 
+                                                className={`transition-all ${!isEndTimeLocked ? 'bg-indigo-50 border-indigo-200' : 'bg-white border-gray-200'} ${INPUT_CLASS} ${!canEditTimes ? 'opacity-60 cursor-not-allowed' : ''}`} 
                                                 value={editData.endDate} 
+                                                disabled={!canEditTimes}
                                                 onChange={e => {
+                                                    if (!canEditTimes) return;
                                                     setEditData({...editData, endDate: e.target.value});
                                                     setIsEndTimeLocked(true);
                                                 }} 
@@ -1779,9 +1786,11 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
                                             <input 
                                                 type="time" 
                                                 step="1" 
-                                                className={`transition-all ${!isEndTimeLocked ? 'bg-indigo-50 border-indigo-200' : 'bg-white border-gray-200'} ${INPUT_CLASS}`} 
+                                                className={`transition-all ${!isEndTimeLocked ? 'bg-indigo-50 border-indigo-200' : 'bg-white border-gray-200'} ${INPUT_CLASS} ${!canEditTimes ? 'opacity-60 cursor-not-allowed' : ''}`} 
                                                 value={editData.endTime} 
+                                                disabled={!canEditTimes}
                                                 onChange={e => {
+                                                    if (!canEditTimes) return;
                                                     setEditData({...editData, endTime: e.target.value});
                                                     setIsEndTimeLocked(true);
                                                 }} 
@@ -1792,6 +1801,7 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
                                             <span className="absolute -top-4 right-0 text-[7px] font-black text-indigo-600 animate-pulse uppercase">Tempo Real</span>
                                         )}
                                     </div>
+                                    {canEditTimes && (
                                     <div className="flex items-center">
                                         <button 
                                             type="button"
@@ -1802,6 +1812,7 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
                                             {isEndTimeLocked ? <RefreshCw size={14} /> : <Zap size={14} fill="currentColor" />}
                                         </button>
                                     </div>
+                                    )}
                                     {!hideProviderInfo && (
                                     <div className="flex-1 lg:w-36">
                                         <label className={LABEL_CLASS}>KM Final</label>
