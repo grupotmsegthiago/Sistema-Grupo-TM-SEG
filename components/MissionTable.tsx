@@ -601,11 +601,8 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
             if (showNegativeMarginOnly) {
                 const rev = mission.revenue_value || 0;
                 const cost = mission.is_same_os ? 0 : (mission.cost_value || 0);
-                const toll = mission.toll_value || 0;
-                const resultado = rev - cost - toll;
-                const lucroPerc = rev > 0 ? ((resultado / rev) * 100) : 0;
-                const isParent = parentMissionIds.has(mission.id);
-                if (lucroPerc >= 0 || isParent) return false;
+                const resultado = rev - cost;
+                if (resultado >= 0) return false;
             }
 
             return true;
@@ -631,11 +628,8 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
         return source.filter(m => {
             const rev = m.revenue_value || 0;
             const cost = m.is_same_os ? 0 : (m.cost_value || 0);
-            const toll = m.toll_value || 0;
-            const resultado = rev - cost - toll;
-            const lucroPerc = rev > 0 ? ((resultado / rev) * 100) : 0;
-            const isParent = parentMissionIds.has(m.id);
-            return lucroPerc < 0 && !isParent;
+            const resultado = rev - cost;
+            return resultado < 0;
         }).length;
     }, [periodMissions, allMissions, parentMissionIds]);
     const pendingCount = useMemo(() => allMissions.filter(m => isMissionPending(m)).length, [allMissions]);
@@ -1074,7 +1068,7 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
                         >
                             <TrendingDown size={16} />
                             <span className="flex items-center gap-1.5">
-                                {showNegativeMarginOnly ? '% NEGATIVA (SEM MÃE)' : '% NEGATIVA'}
+                                {showNegativeMarginOnly ? 'RESULTADO NEGATIVO' : 'RESULTADO NEGATIVO'}
                                 {negativeMarginCount > 0 && <span className={`ml-1 px-1.5 py-0.5 rounded-full text-[9px] font-bold ${showNegativeMarginOnly ? 'bg-white text-red-700' : 'bg-red-600 text-white'}`}>{negativeMarginCount}</span>}
                             </span>
                         </button>
