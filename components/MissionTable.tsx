@@ -560,19 +560,25 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
 
     const negativeLinkedIds = useMemo(() => {
         const linkedIds = new Set<string>();
-        const source = allMissions.length > 0 ? allMissions : periodMissions;
-        const negativeMissions = source.filter(m => {
+        const allSource = allMissions.length > 0 ? allMissions : periodMissions;
+        const negativeMissions = allSource.filter(m => {
             const rev = m.revenue_value || 0;
             const cost = m.is_same_os ? 0 : (m.cost_value || 0);
             return (rev - cost) < 0;
         });
-        for (const m of negativeMissions) {
+        const negativeIds = new Set(negativeMissions.map(m => m.id));
+        for (const m of allSource) {
             if (m.is_same_os && m.parent_mission_id) {
-                linkedIds.add(m.parent_mission_id);
+                if (negativeIds.has(m.parent_mission_id)) {
+                    linkedIds.add(m.id);
+                }
+                if (negativeIds.has(m.id)) {
+                    linkedIds.add(m.parent_mission_id);
+                }
             }
-            if (parentMissionIds.has(m.id)) {
-                for (const child of source) {
-                    if (child.parent_mission_id === m.id && child.is_same_os) {
+            if (parentMissionIds.has(m.id) && negativeIds.has(m.id)) {
+                for (const child of allSource) {
+                    if (child.parent_mission_id === m.id) {
                         linkedIds.add(child.id);
                     }
                 }
@@ -586,7 +592,7 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
         const hasActiveSpecialFilters = showPendingOnly || showTomorrowOnly || showMyApprovalOnly || showNegativeMarginOnly;
         const isOsFiltering = osFilterTerm && osFilterTerm.trim().length > 0;
 
-        const sourceMissions = (isOsFiltering || isSearching) ? allMissions : (showTomorrowOnly ? allMissions : periodMissions);
+        const sourceMissions = (isOsFiltering || isSearching || showNegativeMarginOnly) ? allMissions : (showTomorrowOnly ? allMissions : periodMissions);
 
         return sourceMissions.filter(mission => {
             if (isOsFiltering) {
