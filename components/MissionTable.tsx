@@ -558,6 +558,29 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
         return ids;
     }, [allMissions, periodMissions]);
 
+    const negativeLinkedIds = useMemo(() => {
+        const linkedIds = new Set<string>();
+        const source = allMissions.length > 0 ? allMissions : periodMissions;
+        const negativeMissions = source.filter(m => {
+            const rev = m.revenue_value || 0;
+            const cost = m.is_same_os ? 0 : (m.cost_value || 0);
+            return (rev - cost) < 0;
+        });
+        for (const m of negativeMissions) {
+            if (m.is_same_os && m.parent_mission_id) {
+                linkedIds.add(m.parent_mission_id);
+            }
+            if (parentMissionIds.has(m.id)) {
+                for (const child of source) {
+                    if (child.parent_mission_id === m.id && child.is_same_os) {
+                        linkedIds.add(child.id);
+                    }
+                }
+            }
+        }
+        return linkedIds;
+    }, [allMissions, periodMissions, parentMissionIds]);
+
     const filteredBySpecialCriteria = useMemo(() => {
         const isSearching = searchTerm && searchTerm.trim().length > 0;
         const hasActiveSpecialFilters = showPendingOnly || showTomorrowOnly || showMyApprovalOnly || showNegativeMarginOnly;
@@ -602,12 +625,14 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
                 const rev = mission.revenue_value || 0;
                 const cost = mission.is_same_os ? 0 : (mission.cost_value || 0);
                 const resultado = rev - cost;
-                if (resultado >= 0) return false;
+                const isNegative = resultado < 0;
+                const isLinkedToNegative = negativeLinkedIds.has(mission.id);
+                if (!isNegative && !isLinkedToNegative) return false;
             }
 
             return true;
         });
-    }, [allMissions, periodMissions, searchTerm, osFilterTerm, showPendingOnly, showTomorrowOnly, showMyApprovalOnly, showNegativeMarginOnly, parentMissionIds]);
+    }, [allMissions, periodMissions, searchTerm, osFilterTerm, showPendingOnly, showTomorrowOnly, showMyApprovalOnly, showNegativeMarginOnly, parentMissionIds, negativeLinkedIds]);
 
     // Status Counts based on the FILTERED set (to sync counters with visible criteria)
     const statusCounts = useMemo(() => {
