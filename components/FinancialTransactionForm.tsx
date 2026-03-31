@@ -155,20 +155,36 @@ const FinancialTransactionForm: React.FC<Props> = ({ onClose, onSuccess, id }) =
               basePayload.payment_method = paymentMethod;
           }
 
+          const tryWithPaymentMethod = async (payload: any) => {
+              const { error } = await supabase.from('financial_transactions').insert(payload);
+              if (error && error.message?.includes('payment_method')) {
+                  const cleaned = (Array.isArray(payload) ? payload : [payload]).map(({ payment_method, ...rest }: any) => rest);
+                  const { error: err2 } = await supabase.from('financial_transactions').insert(cleaned);
+                  if (err2) throw new Error(err2.message);
+              } else if (error) {
+                  throw new Error(error.message);
+              }
+          };
+
+          const tryUpdateWithPaymentMethod = async (payload: any, recordId: string) => {
+              const { error } = await supabase.from('financial_transactions').update(payload).eq('id', recordId);
+              if (error && error.message?.includes('payment_method')) {
+                  const { payment_method, ...rest } = payload;
+                  const { error: err2 } = await supabase.from('financial_transactions').update(rest).eq('id', recordId);
+                  if (err2) throw new Error(err2.message);
+              } else if (error) {
+                  throw new Error(error.message);
+              }
+          };
+
           if (id) {
-              const resp = await fetch(`/api/financial-transactions/${id}`, {
-                  method: 'PUT',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({
-                      ...basePayload,
-                      description,
-                      amount: parsedAmount,
-                      due_date: dueDate,
-                      payment_date: status === 'PAID' ? dueDate : null,
-                  })
-              });
-              const result = await resp.json();
-              if (!result.success) throw new Error(result.error || 'Erro ao atualizar lançamento');
+              await tryUpdateWithPaymentMethod({
+                  ...basePayload,
+                  description,
+                  amount: parsedAmount,
+                  due_date: dueDate,
+                  payment_date: status === 'PAID' ? dueDate : null,
+              }, id);
           } else {
               const payloadsToInsert = [];
               const totalItems = recurrence !== 'SINGLE' ? recurrenceCount : 1;
@@ -196,13 +212,7 @@ const FinancialTransactionForm: React.FC<Props> = ({ onClose, onSuccess, id }) =
                       payment_date: currentStatus === 'PAID' ? itemDateStr : null
                   });
               }
-              const resp = await fetch('/api/financial-transactions', {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify(payloadsToInsert)
-              });
-              const result = await resp.json();
-              if (!result.success) throw new Error(result.error || 'Erro ao criar lançamento');
+              await tryWithPaymentMethod(payloadsToInsert);
           }
           onSuccess();
       } catch (e: any) {
