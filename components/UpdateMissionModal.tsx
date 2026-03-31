@@ -834,8 +834,8 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
             }]);
             
             const dateObj = new Date(startIso);
-            const dateStr = dateObj.toLocaleDateString('pt-BR');
-            const timeStr = dateObj.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+            const dateStr = dateObj.toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' });
+            const timeStr = dateObj.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', timeZone: 'America/Sao_Paulo' });
             
             const formatFL = (name?: string) => { 
                 if (!name || name === '---' || name === '') return 'N/A'; 

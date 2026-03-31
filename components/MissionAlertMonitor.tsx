@@ -543,7 +543,7 @@ const MissionAlertMonitor: React.FC = () => {
 
                                     {!detail && a.acknowledged && (
                                         <div className="mt-1.5 text-[8px] font-bold text-green-700 flex items-center gap-1">
-                                            <CheckCircle2 size={9} /> {a.acknowledgedBy} {a.acknowledgedAt ? new Date(a.acknowledgedAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) : ''}
+                                            <CheckCircle2 size={9} /> {a.acknowledgedBy} {a.acknowledgedAt ? new Date(a.acknowledgedAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', timeZone: 'America/Sao_Paulo' }) : ''}
                                         </div>
                                     )}
 
@@ -739,7 +739,7 @@ const MissionAlertMonitor: React.FC = () => {
                                     <CheckCircle2 size={16} />
                                     <div>
                                         <p className="font-black">Viatura confirmada na origem</p>
-                                        <p className="text-[10px] text-green-600">por {detail.acknowledgedBy} às {detail.acknowledgedAt ? new Date(detail.acknowledgedAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) : '—'}</p>
+                                        <p className="text-[10px] text-green-600">por {detail.acknowledgedBy} às {detail.acknowledgedAt ? new Date(detail.acknowledgedAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', timeZone: 'America/Sao_Paulo' }) : '—'}</p>
                                     </div>
                                 </div>
                             )}

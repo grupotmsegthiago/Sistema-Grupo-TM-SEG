@@ -345,7 +345,7 @@ const AlvaraControl: React.FC = () => {
                                                 {date ? (
                                                     <div className={`inline-flex flex-col items-center p-2 rounded-lg border ${isVencido ? 'bg-red-50 border-red-200 text-red-700' : 'bg-green-50 border-green-200 text-green-700'}`}>
                                                         <Calendar size={14} className="mb-1" />
-                                                        <span className="text-xs font-black font-mono">{date.toLocaleDateString('pt-BR')}</span>
+                                                        <span className="text-xs font-black font-mono">{date.toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' })}</span>
                                                     </div>
                                                 ) : (
                                                     <span className="text-gray-300 font-black text-[10px] uppercase">Pendente</span>

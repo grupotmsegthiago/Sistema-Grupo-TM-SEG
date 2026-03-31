@@ -287,7 +287,7 @@ const ClientExecutiveDashboard: React.FC<Props> = ({ missions }) => {
     );
 
     const periodLabel = period === 'CUSTOM' && customStart && customEnd
-        ? `${new Date(customStart + 'T00:00:00').toLocaleDateString('pt-BR')} a ${new Date(customEnd + 'T00:00:00').toLocaleDateString('pt-BR')}`
+        ? `${new Date(customStart + 'T00:00:00').toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' })} a ${new Date(customEnd + 'T00:00:00').toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' })}`
         : PERIOD_LABELS[period];
 
     return (
@@ -297,7 +297,7 @@ const ClientExecutiveDashboard: React.FC<Props> = ({ missions }) => {
                     <div className="p-2 text-white rounded-lg" style={{ backgroundColor: CEVA_PRIMARY }}><BarChart3 size={16} /></div>
                     <div>
                         <h3 className="text-sm font-black text-gray-900 uppercase tracking-wider">Painel Gerencial</h3>
-                        <p className="text-[11px] font-bold text-gray-400">{periodLabel} &middot; Atualizado {lastUpdate.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}</p>
+                        <p className="text-[11px] font-bold text-gray-400">{periodLabel} &middot; Atualizado {lastUpdate.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', timeZone: 'America/Sao_Paulo' })}</p>
                     </div>
                 </div>
                 <div className="flex flex-wrap items-center gap-2">

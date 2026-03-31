@@ -188,7 +188,7 @@ const FinancialDRE: React.FC = () => {
                         <img src="/logo.png" alt="TMSEG" className="h-12 object-contain" />
                         <div className="text-right">
                             <h1 className="text-2xl font-black text-gray-900 uppercase">Demonstrativo de Resultado</h1>
-                            <p className="text-sm font-bold text-gray-500">{new Date(startDate + 'T12:00:00').toLocaleDateString('pt-BR')} a {new Date(endDate + 'T12:00:00').toLocaleDateString('pt-BR')}</p>
+                            <p className="text-sm font-bold text-gray-500">{new Date(startDate + 'T12:00:00').toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' })} a {new Date(endDate + 'T12:00:00').toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' })}</p>
                         </div>
                     </div>
 

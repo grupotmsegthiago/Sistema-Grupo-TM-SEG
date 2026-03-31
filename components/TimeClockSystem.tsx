@@ -185,7 +185,7 @@ const TimeClockSystem: React.FC = () => {
                     <div className="bg-white rounded-[2.5rem] border border-gray-200 shadow-sm flex-1 overflow-hidden flex flex-col">
                         <div className="p-5 bg-gray-900 text-white flex justify-between items-center">
                             <h3 className="text-[10px] font-black uppercase tracking-widest flex items-center gap-2"><History size={14} className="text-red-500"/> Ciclo de Hoje</h3>
-                            <span className="text-[10px] font-bold text-gray-400">{new Date().toLocaleDateString('pt-BR')}</span>
+                            <span className="text-[10px] font-bold text-gray-400">{new Date().toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' })}</span>
                         </div>
                         <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-gray-50/50">
                             {['IN', 'BREAK_START', 'BREAK_END', 'OUT'].map((type, idx) => {

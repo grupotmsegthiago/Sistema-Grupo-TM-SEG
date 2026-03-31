@@ -383,7 +383,7 @@ const ClientList: React.FC<ClientListProps> = ({ onAddClient, onEdit }) => {
                         <div className="flex flex-col items-center">
                             <div className="flex items-center gap-1 text-[10px] font-black text-gray-700 uppercase">
                                 <Calendar size={12} className="text-red-600" />
-                                {client.created_at ? new Date(client.created_at).toLocaleDateString('pt-BR') : '-'}
+                                {client.created_at ? new Date(client.created_at).toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' }) : '-'}
                             </div>
                             <div className="flex items-center gap-1 text-[9px] font-black text-blue-700 uppercase mt-1.5 bg-blue-50 px-2 py-1 rounded-lg border border-blue-100 shadow-sm min-w-[90px] justify-center">
                                 <User size={10} className="text-blue-500" />

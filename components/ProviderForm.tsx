@@ -744,7 +744,7 @@ const ProviderForm: React.FC<ProviderFormProps> = ({ onBack, onNavigateToVehicle
                                             <div className="flex flex-col items-center gap-0.5">
                                                 <span className="bg-green-600 text-white px-1.5 py-0.5 rounded text-[8px] font-black uppercase flex items-center gap-1 shadow-sm"><Check size={8} strokeWidth={4} /> Ativo</span>
                                                 {table.last_adjustment_date && (
-                                                    <span className="text-[7px] text-green-700 font-bold flex items-center gap-0.5"><Calendar size={7} /> {new Date(table.last_adjustment_date).toLocaleDateString('pt-BR')}</span>
+                                                    <span className="text-[7px] text-green-700 font-bold flex items-center gap-0.5"><Calendar size={7} /> {new Date(table.last_adjustment_date).toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' })}</span>
                                                 )}
                                             </div>
                                         ) : (

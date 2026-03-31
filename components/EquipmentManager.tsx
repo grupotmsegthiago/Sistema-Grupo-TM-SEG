@@ -351,7 +351,7 @@ const EquipmentManager: React.FC = () => {
               <div className="bg-slate-50 rounded-xl border border-slate-200 p-3 space-y-1.5 max-h-40 overflow-y-auto">
                 {editData.history.map((h, i) => (
                   <div key={i} className="flex items-center gap-2 text-[11px]">
-                    <span className="text-slate-400 font-mono shrink-0">{new Date(h.date).toLocaleDateString('pt-BR')} {new Date(h.date).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}</span>
+                    <span className="text-slate-400 font-mono shrink-0">{new Date(h.date).toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' })} {new Date(h.date).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', timeZone: 'America/Sao_Paulo' })}</span>
                     <span className="font-bold text-slate-700">{h.action}</span>
                   </div>
                 ))}

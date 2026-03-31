@@ -123,7 +123,7 @@ const VehicleTechnologyList: React.FC<Props> = ({ onAdd, onEdit }) => {
                    </div>
                 </td>
                 <td className="px-6 py-4 text-xs text-gray-500">
-                    {new Date(item.created_at).toLocaleDateString('pt-BR')}
+                    {new Date(item.created_at).toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' })}
                 </td>
                 <td className="px-6 py-4 text-right">
                   <div className="flex justify-end gap-2">

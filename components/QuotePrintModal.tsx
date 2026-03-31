@@ -267,7 +267,7 @@ const QuotePrintModal: React.FC<Props> = ({ quote, onClose, waypoints = [] }) =>
                     <div className="text-right">
                         <h1 className="text-2xl font-black uppercase tracking-tighter text-slate-900 leading-tight">SIMULAÇÃO DE SERVIÇO -<br/><span className="text-red-700">Intermediação</span></h1>
                         <div className="flex items-center justify-end gap-2 text-gray-400 font-bold text-[10px] mt-4 uppercase">
-                            <Calendar size={12}/> São Paulo, {new Date().toLocaleDateString('pt-BR')}
+                            <Calendar size={12}/> São Paulo, {new Date().toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' })}
                         </div>
                     </div>
                 </div>

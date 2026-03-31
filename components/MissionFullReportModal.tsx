@@ -96,7 +96,7 @@ const MissionFullReportModal: React.FC<Props> = ({ mission, onClose, hideProvide
     const formatDateTime = (iso?: string) => {
         if (!iso) return '—';
         const d = new Date(iso);
-        return `${d.toLocaleDateString('pt-BR')} ${d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`;
+        return `${d.toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' })} ${d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', timeZone: 'America/Sao_Paulo' })}`;
     };
 
     const translateField = (field: string) => {

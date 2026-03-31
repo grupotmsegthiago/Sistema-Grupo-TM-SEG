@@ -442,10 +442,10 @@ const ExecutiveDashboard: React.FC<Props> = ({ missions, isDirector, clientTable
         const sysKm = (startKm != null && endKm != null && endKm > startKm) ? endKm - startKm : (sm.traveled_km ?? sm.traveledKm ?? null);
         const st = sm.startTime ?? sm.start_time;
         const et = sm.endTime ?? sm.end_time;
-        const sysHoraInicio = st ? new Date(st).toLocaleTimeString('pt-BR', { hour:'2-digit', minute:'2-digit' }) : '';
-        const sysHoraFim = et ? new Date(et).toLocaleTimeString('pt-BR', { hour:'2-digit', minute:'2-digit' }) : '';
-        const sysDataInicial = st ? new Date(st).toLocaleDateString('pt-BR') : '';
-        const sysDataFinal = et ? new Date(et).toLocaleDateString('pt-BR') : '';
+        const sysHoraInicio = st ? new Date(st).toLocaleTimeString('pt-BR', { hour:'2-digit', minute:'2-digit', timeZone: 'America/Sao_Paulo' }) : '';
+        const sysHoraFim = et ? new Date(et).toLocaleTimeString('pt-BR', { hour:'2-digit', minute:'2-digit', timeZone: 'America/Sao_Paulo' }) : '';
+        const sysDataInicial = st ? new Date(st).toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' }) : '';
+        const sysDataFinal = et ? new Date(et).toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' }) : '';
         const sysToll = Math.max(0, sm.toll_value || 0);
         const sysActivation = sm.revenue_value || 0;
         const sysStartKm = startKm;
@@ -587,7 +587,7 @@ const ExecutiveDashboard: React.FC<Props> = ({ missions, isDirector, clientTable
                 }
                 if (typeof val === 'number' && val >= 1) {
                     const d = new Date((val - 25569) * 86400 * 1000);
-                    if (!isNaN(d.getTime())) return d.toLocaleTimeString('pt-BR', { hour:'2-digit', minute:'2-digit' });
+                    if (!isNaN(d.getTime())) return d.toLocaleTimeString('pt-BR', { hour:'2-digit', minute:'2-digit', timeZone: 'America/Sao_Paulo' });
                 }
                 return String(val).trim();
             };
@@ -596,7 +596,7 @@ const ExecutiveDashboard: React.FC<Props> = ({ missions, isDirector, clientTable
                 if (val == null) return '';
                 if (typeof val === 'number') {
                     const d = new Date((val - 25569) * 86400 * 1000);
-                    if (!isNaN(d.getTime())) return d.toLocaleDateString('pt-BR');
+                    if (!isNaN(d.getTime())) return d.toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' });
                 }
                 return String(val).trim();
             };
@@ -1200,7 +1200,7 @@ const ExecutiveDashboard: React.FC<Props> = ({ missions, isDirector, clientTable
     );
 
     const periodLabel = period === 'CUSTOM' && customStart && customEnd
-        ? `${new Date(customStart + 'T00:00:00').toLocaleDateString('pt-BR')} a ${new Date(customEnd + 'T00:00:00').toLocaleDateString('pt-BR')}`
+        ? `${new Date(customStart + 'T00:00:00').toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' })} a ${new Date(customEnd + 'T00:00:00').toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' })}`
         : PERIOD_LABELS[period];
 
     const renderPieLabel = ({ name, value, percent, cx, x }: any) => {
@@ -1219,7 +1219,7 @@ const ExecutiveDashboard: React.FC<Props> = ({ missions, isDirector, clientTable
                     <div className="p-2 bg-gray-900 text-white rounded-lg"><Activity size={16} /></div>
                     <div>
                         <h3 className="text-sm font-black text-gray-900 uppercase tracking-wider">Dashboard Executivo</h3>
-                        <p className="text-[11px] font-bold text-gray-400">{periodLabel} &middot; Atualizado {lastUpdate.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}</p>
+                        <p className="text-[11px] font-bold text-gray-400">{periodLabel} &middot; Atualizado {lastUpdate.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', timeZone: 'America/Sao_Paulo' })}</p>
                     </div>
                 </div>
                 <div className="flex flex-wrap items-center gap-2">

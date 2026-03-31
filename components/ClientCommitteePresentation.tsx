@@ -354,7 +354,7 @@ const ClientCommitteePresentation: React.FC<Props> = ({ missions, clientName }) 
                                 </div>
                                 <div className="text-right">
                                     <p className="text-white/30 text-[8px] font-bold uppercase">Documento Confidencial</p>
-                                    <p className="text-white/20 text-[8px]">Gerado em {new Date().toLocaleDateString('pt-BR')}</p>
+                                    <p className="text-white/20 text-[8px]">Gerado em {new Date().toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' })}</p>
                                 </div>
                             </div>
                         </div>

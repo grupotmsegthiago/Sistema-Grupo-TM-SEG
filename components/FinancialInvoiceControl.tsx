@@ -45,7 +45,7 @@ const fmtBRL = (v: number) => v.toLocaleString('pt-BR', { style: 'currency', cur
 const fmtDate = (d: string) => {
   if (!d) return '-';
   const dt = new Date(d + (d.length === 10 ? 'T12:00:00' : ''));
-  return dt.toLocaleDateString('pt-BR');
+  return dt.toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' });
 };
 
 const FinancialInvoiceControl: React.FC = () => {

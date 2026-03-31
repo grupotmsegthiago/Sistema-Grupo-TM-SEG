@@ -362,8 +362,8 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
               setEditEndKm(mRes.data.end_km ? String(mRes.data.end_km) : '');
               const st = mRes.data.start_time ? new Date(mRes.data.start_time) : null;
               const et = mRes.data.end_time ? new Date(mRes.data.end_time) : null;
-              setEditStartTime(st ? `${st.toLocaleDateString('en-CA')}T${st.toLocaleTimeString('pt-BR', { hour:'2-digit', minute:'2-digit' })}` : '');
-              setEditEndTime(et ? `${et.toLocaleDateString('en-CA')}T${et.toLocaleTimeString('pt-BR', { hour:'2-digit', minute:'2-digit' })}` : '');
+              setEditStartTime(st ? `${st.toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' })}T${st.toLocaleTimeString('pt-BR', { hour:'2-digit', minute:'2-digit', timeZone: 'America/Sao_Paulo' })}` : '');
+              setEditEndTime(et ? `${et.toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' })}T${et.toLocaleTimeString('pt-BR', { hour:'2-digit', minute:'2-digit', timeZone: 'America/Sao_Paulo' })}` : '');
               setIsEditingOpsData(false);
 
               let provOpsEdited = mRes.data.provider_ops_edited === true;
@@ -423,8 +423,8 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
 
               setProvEditStartKm(pStartKm ? String(pStartKm) : '');
               setProvEditEndKm(pEndKm ? String(pEndKm) : '');
-              setProvEditStartTime(pStartTime ? `${pStartTime.toLocaleDateString('en-CA')}T${pStartTime.toLocaleTimeString('pt-BR', { hour:'2-digit', minute:'2-digit' })}` : '');
-              setProvEditEndTime(pEndTime ? `${pEndTime.toLocaleDateString('en-CA')}T${pEndTime.toLocaleTimeString('pt-BR', { hour:'2-digit', minute:'2-digit' })}` : '');
+              setProvEditStartTime(pStartTime ? `${pStartTime.toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' })}T${pStartTime.toLocaleTimeString('pt-BR', { hour:'2-digit', minute:'2-digit', timeZone: 'America/Sao_Paulo' })}` : '');
+              setProvEditEndTime(pEndTime ? `${pEndTime.toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' })}T${pEndTime.toLocaleTimeString('pt-BR', { hour:'2-digit', minute:'2-digit', timeZone: 'America/Sao_Paulo' })}` : '');
               setIsEditingProvOpsData(false);
 
               setRevenueEditReason(loadedRevReason);
@@ -517,7 +517,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                       if (details.iblEnabled !== undefined) setIblEnabled(details.iblEnabled);
 
                       const savedDate = new Date(adj.created_at);
-                      const dateStr = savedDate.toLocaleDateString('pt-BR') + ' ' + savedDate.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+                      const dateStr = savedDate.toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' }) + ' ' + savedDate.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', timeZone: 'America/Sao_Paulo' });
                       setSavedByInfo(`${adj.user_name} (${dateStr})`);
                   } catch (e) { console.error('Erro ao restaurar ajustes:', e); }
               }
@@ -1207,7 +1207,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
           }]);
 
           const now = new Date();
-          const dateStr = now.toLocaleDateString('pt-BR') + ' ' + now.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+          const dateStr = now.toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' }) + ' ' + now.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', timeZone: 'America/Sao_Paulo' });
           const verifiedLabel = `${userName} (${dateStr})`;
           setSavedByInfo(verifiedLabel);
 
@@ -1549,7 +1549,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                 <div className="flex items-center gap-3 shrink-0">
                                     <span className="text-green-700 font-bold">{formatCurrency(lm.revenue_value || 0)}</span>
                                     <span className="text-red-600 font-bold">{formatCurrency(lm.cost_value || 0)}</span>
-                                    <span className="text-gray-400 text-[9px]">{lm.start_time ? new Date(lm.start_time).toLocaleTimeString('pt-BR', {hour:'2-digit', minute:'2-digit'}) : '--:--'}</span>
+                                    <span className="text-gray-400 text-[9px]">{lm.start_time ? new Date(lm.start_time).toLocaleTimeString('pt-BR', {hour:'2-digit', minute:'2-digit', timeZone: 'America/Sao_Paulo'}) : '--:--'}</span>
                                 </div>
                             </div>
                             );

@@ -23,7 +23,7 @@ const fmtDate = (d: string | null | undefined) => {
             return `${day}/${m}/${y}`;
         }
         const dt = new Date(d);
-        return dt.toLocaleDateString('pt-BR');
+        return dt.toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' });
     } catch { return d; }
 };
 
@@ -1315,16 +1315,16 @@ const VendorVerificationControl: React.FC<VendorVerificationControlProps> = ({ o
                                                 <div className="text-[10px] font-bold text-gray-700 max-w-[160px] truncate" title={m.destination}>{m.destination || '—'}</div>
                                             </td>
                                             <td className="px-4 py-3 text-center">
-                                                <span className="text-[10px] font-bold text-gray-700">{m.start_time ? new Date(m.start_time).toLocaleDateString('pt-BR') : '—'}</span>
+                                                <span className="text-[10px] font-bold text-gray-700">{m.start_time ? new Date(m.start_time).toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' }) : '—'}</span>
                                             </td>
                                             <td className="px-4 py-3 text-center">
-                                                <span className="text-[10px] font-bold text-gray-700">{m.end_time ? new Date(m.end_time).toLocaleDateString('pt-BR') : '—'}</span>
+                                                <span className="text-[10px] font-bold text-gray-700">{m.end_time ? new Date(m.end_time).toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' }) : '—'}</span>
                                             </td>
                                             <td className="px-4 py-3 text-center">
-                                                <span className="text-[10px] font-bold text-gray-700">{m.start_time ? new Date(m.start_time).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) : '—'}</span>
+                                                <span className="text-[10px] font-bold text-gray-700">{m.start_time ? new Date(m.start_time).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', timeZone: 'America/Sao_Paulo' }) : '—'}</span>
                                             </td>
                                             <td className="px-4 py-3 text-center">
-                                                <span className="text-[10px] font-bold text-gray-700">{m.end_time ? new Date(m.end_time).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) : '—'}</span>
+                                                <span className="text-[10px] font-bold text-gray-700">{m.end_time ? new Date(m.end_time).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', timeZone: 'America/Sao_Paulo' }) : '—'}</span>
                                             </td>
                                             <td className="px-4 py-3 text-center">
                                                 <span className="text-[10px] font-bold text-gray-700">{m.start_km != null ? Number(m.start_km).toLocaleString('pt-BR') : '—'}</span>

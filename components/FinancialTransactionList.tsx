@@ -257,7 +257,7 @@ const FinancialTransactionList: React.FC = () => {
 
     const exportToCSV = () => {
         const data = filteredByStep.map(t => ({
-            date: new Date(t.due_date + 'T12:00:00').toLocaleDateString('pt-BR'),
+            date: new Date(t.due_date + 'T12:00:00').toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' }),
             description: t.description,
             entity: t.entity_name || 'Geral',
             amount: t.amount.toFixed(2),
@@ -418,7 +418,7 @@ const FinancialTransactionList: React.FC = () => {
                                 <tr key={t.id} className={`hover:bg-gray-50 transition-colors ${isOverdue ? 'bg-red-50/50' : ''}`}>
                                     <td className="px-4 py-3">
                                         <span className={`text-xs font-mono font-bold ${isOverdue ? 'text-red-600' : 'text-gray-500'}`}>
-                                            {new Date(t.due_date + 'T12:00:00').toLocaleDateString('pt-BR')}
+                                            {new Date(t.due_date + 'T12:00:00').toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' })}
                                         </span>
                                         {isOverdue && <span className="block text-[8px] font-black text-red-500 uppercase">Vencido</span>}
                                     </td>
@@ -644,7 +644,7 @@ const FinancialTransactionList: React.FC = () => {
                                         <table className="w-full text-left">
                                             <thead><tr className="text-[9px] font-black text-red-800 uppercase bg-red-100"><th className="px-3 py-2">Vencimento</th><th className="px-3 py-2">Descrição</th><th className="px-3 py-2">Favorecido</th><th className="px-3 py-2 text-right">Valor</th></tr></thead>
                                             <tbody>{overdueExpenses.map(t => (
-                                                <tr key={t.id} className="border-t border-red-200"><td className="px-3 py-2 text-[10px] font-mono text-red-600">{new Date(t.due_date + 'T12:00:00').toLocaleDateString('pt-BR')}</td><td className="px-3 py-2 text-[10px] font-bold uppercase text-gray-700">{t.description}</td><td className="px-3 py-2 text-[10px] text-gray-500">{t.entity_name || '-'}</td><td className="px-3 py-2 text-[10px] font-black font-mono text-red-600 text-right">{formatCurrency(t.amount)}</td></tr>
+                                                <tr key={t.id} className="border-t border-red-200"><td className="px-3 py-2 text-[10px] font-mono text-red-600">{new Date(t.due_date + 'T12:00:00').toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' })}</td><td className="px-3 py-2 text-[10px] font-bold uppercase text-gray-700">{t.description}</td><td className="px-3 py-2 text-[10px] text-gray-500">{t.entity_name || '-'}</td><td className="px-3 py-2 text-[10px] font-black font-mono text-red-600 text-right">{formatCurrency(t.amount)}</td></tr>
                                             ))}</tbody>
                                         </table>
                                     </div>
@@ -657,7 +657,7 @@ const FinancialTransactionList: React.FC = () => {
                                         <table className="w-full text-left">
                                             <thead><tr className="text-[9px] font-black text-red-800 uppercase bg-red-100"><th className="px-3 py-2">Vencimento</th><th className="px-3 py-2">Descrição</th><th className="px-3 py-2">Favorecido</th><th className="px-3 py-2 text-right">Valor</th></tr></thead>
                                             <tbody>{overdueIncomes.map(t => (
-                                                <tr key={t.id} className="border-t border-red-200"><td className="px-3 py-2 text-[10px] font-mono text-red-600">{new Date(t.due_date + 'T12:00:00').toLocaleDateString('pt-BR')}</td><td className="px-3 py-2 text-[10px] font-bold uppercase text-gray-700">{t.description}</td><td className="px-3 py-2 text-[10px] text-gray-500">{t.entity_name || '-'}</td><td className="px-3 py-2 text-[10px] font-black font-mono text-red-600 text-right">{formatCurrency(t.amount)}</td></tr>
+                                                <tr key={t.id} className="border-t border-red-200"><td className="px-3 py-2 text-[10px] font-mono text-red-600">{new Date(t.due_date + 'T12:00:00').toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' })}</td><td className="px-3 py-2 text-[10px] font-bold uppercase text-gray-700">{t.description}</td><td className="px-3 py-2 text-[10px] text-gray-500">{t.entity_name || '-'}</td><td className="px-3 py-2 text-[10px] font-black font-mono text-red-600 text-right">{formatCurrency(t.amount)}</td></tr>
                                             ))}</tbody>
                                         </table>
                                     </div>

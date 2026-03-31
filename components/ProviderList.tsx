@@ -272,7 +272,7 @@ const ProviderList: React.FC<ProviderListProps> = ({ onAddProvider, onEdit }) =>
                         <div className="flex flex-col items-center">
                             <div className="flex items-center gap-1 text-[10px] font-black text-gray-700 uppercase">
                                 <Calendar size={12} className="text-red-600" />
-                                {item.created_at ? new Date(item.created_at).toLocaleDateString('pt-BR') : '-'}
+                                {item.created_at ? new Date(item.created_at).toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' }) : '-'}
                             </div>
                             <div className="flex items-center gap-1 text-[9px] font-black text-indigo-700 uppercase mt-1.5 bg-indigo-50 px-2 py-1 rounded-lg border border-indigo-100 shadow-sm min-w-[90px] justify-center">
                                 <User size={10} className="text-indigo-500" />

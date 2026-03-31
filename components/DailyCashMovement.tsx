@@ -294,7 +294,7 @@ const DailyCashMovement: React.FC = () => {
                                             <tr key={t.id} className="hover:bg-gray-50/50 transition-colors group">
                                                 <td className="px-6 py-4">
                                                     <div className="text-xs font-mono font-bold text-gray-500 bg-gray-100 px-2 py-1 rounded w-fit">
-                                                        {new Date(t.due_date).toLocaleDateString('pt-BR')}
+                                                        {new Date(t.due_date).toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' })}
                                                     </div>
                                                 </td>
                                                 <td className="px-6 py-4">

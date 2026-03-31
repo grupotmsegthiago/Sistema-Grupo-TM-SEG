@@ -60,8 +60,8 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
   const [canViewFinancials, setCanViewFinancials] = useState(false);
   
   const now = new Date();
-  const defaultDate = now.toLocaleDateString('en-CA'); 
-  const defaultTime = now.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+  const defaultDate = now.toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' }); 
+  const defaultTime = now.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', timeZone: 'America/Sao_Paulo' });
 
   const [formData, setFormData] = useState({
     client: '', provider: '', origin: '', destination: '', totalDistance: '', estimatedTime: '',
@@ -1634,7 +1634,7 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
                       <div className="p-4 bg-orange-50 border-2 border-orange-200 rounded-xl space-y-3 animate-in slide-in-from-top-2">
                           <p className="text-[11px] font-black text-orange-800 uppercase tracking-wider flex items-center gap-2"><Clock size={14} /> Esta missão é imediata ou agendada?</p>
                           <div className="grid grid-cols-2 gap-3">
-                              <button type="button" onClick={() => { const now = new Date(); setFormData(prev => ({ ...prev, scheduledDate: now.toLocaleDateString('en-CA'), scheduledTime: now.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) })); setScheduleMode('immediate'); }} className="py-4 bg-red-700 text-white rounded-xl font-black text-xs uppercase tracking-wider hover:bg-red-800 transition-all active:scale-95 flex flex-col items-center gap-2 shadow-md" data-testid="button-schedule-immediate">
+                              <button type="button" onClick={() => { const now = new Date(); setFormData(prev => ({ ...prev, scheduledDate: now.toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' }), scheduledTime: now.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', timeZone: 'America/Sao_Paulo' }) })); setScheduleMode('immediate'); }} className="py-4 bg-red-700 text-white rounded-xl font-black text-xs uppercase tracking-wider hover:bg-red-800 transition-all active:scale-95 flex flex-col items-center gap-2 shadow-md" data-testid="button-schedule-immediate">
                                   <Zap size={20} />
                                   <span>Imediata</span>
                                   <span className="text-[9px] font-medium opacity-70 normal-case">Saída agora</span>

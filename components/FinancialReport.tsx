@@ -345,7 +345,7 @@ const FinancialReport: React.FC = () => {
                                 filteredData.map(item => (
                                     <tr key={item.id} className="hover:bg-gray-50 transition-colors">
                                         <td className="p-4 text-gray-600 font-mono text-xs">
-                                            {new Date(item.due_date).toLocaleDateString('pt-BR')}
+                                            {new Date(item.due_date).toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' })}
                                         </td>
                                         <td className="p-4 font-medium text-gray-800">
                                             {item.description}
@@ -360,7 +360,7 @@ const FinancialReport: React.FC = () => {
                                                     {item.updated_by || item.created_by || 'SISTEMA'}
                                                 </span>
                                                 <span className="text-[10px] text-gray-400 font-mono mt-0.5">
-                                                    {new Date(item.created_at).toLocaleDateString('pt-BR')} {new Date(item.created_at).toLocaleTimeString('pt-BR', {hour: '2-digit', minute:'2-digit'})}
+                                                    {new Date(item.created_at).toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' })} {new Date(item.created_at).toLocaleTimeString('pt-BR', {hour: '2-digit', minute:'2-digit', timeZone: 'America/Sao_Paulo'})}
                                                 </span>
                                             </div>
                                         </td>

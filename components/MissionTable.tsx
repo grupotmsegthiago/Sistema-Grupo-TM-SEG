@@ -126,8 +126,8 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
   const [clientsData, setClientsData] = useState<Client[]>([]);
   const [agentPhonesMap, setAgentPhonesMap] = useState<Record<string, string>>({});
   
-  const [customStartDate, setCustomStartDate] = useState<string>(new Date().toISOString().split('T')[0]);
-  const [customEndDate, setCustomEndDate] = useState<string>(new Date().toISOString().split('T')[0]);
+  const [customStartDate, setCustomStartDate] = useState<string>(() => { const d = new Date(); return d.toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' }); });
+  const [customEndDate, setCustomEndDate] = useState<string>(() => { const d = new Date(); return d.toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' }); });
   
   const [showAnalyticsDash, setShowAnalyticsDash] = useState(false);
   const [showClientDash, setShowClientDash] = useState(false);
@@ -854,8 +854,8 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
     
     const handleCopyMission = async (mission: Mission) => {
         const dateObj = new Date(mission.startTime || mission.createdAt);
-        const dateStr = dateObj.toLocaleDateString('pt-BR');
-        const timeStr = dateObj.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+        const dateStr = dateObj.toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' });
+        const timeStr = dateObj.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', timeZone: 'America/Sao_Paulo' });
         const formatFL = (name?: string) => { 
             if (!name || name === '---' || name === '') return 'N/A'; 
             const parts = name.trim().split(' '); 
@@ -1194,8 +1194,8 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
               {(() => {
                 const baseMissions = showNegativeMarginOnly ? filteredBySpecialCriteria : periodMissions;
                 const missions = [...baseMissions].sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
-                const fmtDate = (d: string | undefined) => d ? new Date(d).toLocaleDateString('pt-BR') : '-';
-                const fmtTime = (d: string | undefined) => d ? new Date(d).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) : '-';
+                const fmtDate = (d: string | undefined) => d ? new Date(d).toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' }) : '-';
+                const fmtTime = (d: string | undefined) => d ? new Date(d).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', timeZone: 'America/Sao_Paulo' }) : '-';
                 const fmtMoney = (v: number) => v ? v.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '-';
                 const extractRoute = (origin: string, dest: string) => {
                   const getCity = (addr: string) => {

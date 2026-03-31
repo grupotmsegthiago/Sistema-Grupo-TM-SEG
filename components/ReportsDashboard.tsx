@@ -596,7 +596,7 @@ const ReportsDashboard: React.FC = () => {
 
                             const grouped: Record<string, any[]> = {};
                             filtered.forEach(m => {
-                                const dateKey = new Date(m.created_at).toLocaleDateString('pt-BR');
+                                const dateKey = new Date(m.created_at).toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' });
                                 if (!grouped[dateKey]) grouped[dateKey] = [];
                                 grouped[dateKey].push(m);
                             });
@@ -670,7 +670,7 @@ const ReportsDashboard: React.FC = () => {
                                                     {dayMissions.map((m: any) => {
                                                         globalCounter++;
                                                         const st = statusLabel(m.status);
-                                                        const hora = new Date(m.created_at).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+                                                        const hora = new Date(m.created_at).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', timeZone: 'America/Sao_Paulo' });
                                                         const revTotal = (m.revenue_value || 0) + (m.toll_value || 0);
                                                         const costTotal = (m.cost_value || 0) + (m.toll_value || 0);
                                                         

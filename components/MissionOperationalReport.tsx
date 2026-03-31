@@ -26,8 +26,8 @@ interface TimelineEvent {
     description: string;
 }
 
-const fmtDate = (d: any) => d ? new Date(d).toLocaleDateString('pt-BR') : '—';
-const fmtTime = (d: any) => d ? new Date(d).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) : '—';
+const fmtDate = (d: any) => d ? new Date(d).toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' }) : '—';
+const fmtTime = (d: any) => d ? new Date(d).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', timeZone: 'America/Sao_Paulo' }) : '—';
 const fmtDateTime = (d: any) => d ? `${fmtDate(d)} às ${fmtTime(d)}` : '—';
 
 const PhotoUploadBox = ({ label, preview, onUpload, onRemove, icon: Icon }: { label: string; preview: string | null; onUpload: (f: File) => void; onRemove: () => void; icon: any }) => {

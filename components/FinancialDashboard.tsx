@@ -339,7 +339,7 @@ const FinancialDashboard: React.FC = () => {
                               <div className="flex-1 min-w-0">
                                   <p className="text-xs font-black text-gray-800 truncate uppercase leading-tight">{t.description}</p>
                                   <div className="flex items-center gap-2 text-[9px] text-gray-400 font-bold">
-                                      <Calendar size={10}/> {new Date(t.payment_date || t.due_date).toLocaleDateString('pt-BR')}
+                                      <Calendar size={10}/> {new Date(t.payment_date || t.due_date).toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' })}
                                       <span className="text-gray-300">•</span>
                                       <span className="truncate">{t.account_name}</span>
                                   </div>
