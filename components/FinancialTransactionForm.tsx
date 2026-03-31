@@ -156,14 +156,19 @@ const FinancialTransactionForm: React.FC<Props> = ({ onClose, onSuccess, id }) =
           }
 
           if (id) {
-              const { error } = await supabase.from('financial_transactions').update({
-                  ...basePayload,
-                  description,
-                  amount: parsedAmount,
-                  due_date: dueDate,
-                  payment_date: status === 'PAID' ? dueDate : null,
-              }).eq('id', id);
-              if (error) throw new Error(error.message || 'Erro ao atualizar lançamento');
+              const resp = await fetch(`/api/financial-transactions/${id}`, {
+                  method: 'PUT',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({
+                      ...basePayload,
+                      description,
+                      amount: parsedAmount,
+                      due_date: dueDate,
+                      payment_date: status === 'PAID' ? dueDate : null,
+                  })
+              });
+              const result = await resp.json();
+              if (!result.success) throw new Error(result.error || 'Erro ao atualizar lançamento');
           } else {
               const payloadsToInsert = [];
               const totalItems = recurrence !== 'SINGLE' ? recurrenceCount : 1;
@@ -191,8 +196,13 @@ const FinancialTransactionForm: React.FC<Props> = ({ onClose, onSuccess, id }) =
                       payment_date: currentStatus === 'PAID' ? itemDateStr : null
                   });
               }
-              const { error } = await supabase.from('financial_transactions').insert(payloadsToInsert);
-              if (error) throw new Error(error.message || 'Erro ao criar lançamento');
+              const resp = await fetch('/api/financial-transactions', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify(payloadsToInsert)
+              });
+              const result = await resp.json();
+              if (!result.success) throw new Error(result.error || 'Erro ao criar lançamento');
           }
           onSuccess();
       } catch (e: any) {

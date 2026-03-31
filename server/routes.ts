@@ -70,6 +70,44 @@ export async function registerRoutes(
     res.json({ status: 'ok', timestamp: Date.now(), uptime: process.uptime() });
   });
 
+  app.post('/api/financial-transactions', async (req: Request, res: Response) => {
+    let pool;
+    try {
+      pool = getDbPool();
+      const items = Array.isArray(req.body) ? req.body : [req.body];
+      const results = [];
+      for (const item of items) {
+        const result = await pool.query(
+          `INSERT INTO financial_transactions (type, description, amount, due_date, payment_date, category_id, category_name, account_id, account_name, entity_type, entity_id, entity_name, notes, payment_method, status, created_by, updated_by)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17) RETURNING *`,
+          [item.type, item.description, item.amount, item.due_date, item.payment_date || null, item.category_id, item.category_name || null, item.account_id || null, item.account_name || null, item.entity_type || null, item.entity_id || null, item.entity_name || null, item.notes || null, item.payment_method || null, item.status || 'PENDING', item.created_by || null, item.updated_by || null]
+        );
+        results.push(result.rows[0]);
+      }
+      res.json({ success: true, data: results });
+    } catch (e: any) {
+      console.error('[API] Erro ao criar transação:', e.message);
+      res.status(500).json({ success: false, error: e.message });
+    } finally { pool?.end().catch(() => {}); }
+  });
+
+  app.put('/api/financial-transactions/:id', async (req: Request, res: Response) => {
+    let pool;
+    try {
+      pool = getDbPool();
+      const { id } = req.params;
+      const item = req.body;
+      const result = await pool.query(
+        `UPDATE financial_transactions SET type=$1, description=$2, amount=$3, due_date=$4, payment_date=$5, category_id=$6, category_name=$7, account_id=$8, account_name=$9, entity_type=$10, entity_id=$11, entity_name=$12, notes=$13, payment_method=$14, status=$15, updated_by=$16 WHERE id=$17 RETURNING *`,
+        [item.type, item.description, item.amount, item.due_date, item.payment_date || null, item.category_id, item.category_name || null, item.account_id || null, item.account_name || null, item.entity_type || null, item.entity_id || null, item.entity_name || null, item.notes || null, item.payment_method || null, item.status || 'PENDING', item.updated_by || null, id]
+      );
+      res.json({ success: true, data: result.rows[0] });
+    } catch (e: any) {
+      console.error('[API] Erro ao atualizar transação:', e.message);
+      res.status(500).json({ success: false, error: e.message });
+    } finally { pool?.end().catch(() => {}); }
+  });
+
   app.get('/sw.js', (_req: Request, res: Response) => {
     const swPath = path.resolve(process.cwd(), 'client', 'public', 'sw.js');
     if (fs.existsSync(swPath)) {
