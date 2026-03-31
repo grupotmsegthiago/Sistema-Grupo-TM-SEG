@@ -138,7 +138,7 @@ const FinancialTransactionForm: React.FC<Props> = ({ onClose, onSuccess, id }) =
 
           // Ajuste de data: se o status for PAID, o payment_date deve ser IGUAL ao due_date para não haver discrepância
           // a menos que o usuário utilize a conciliação bancária depois.
-          const basePayload = {
+          const basePayload: Record<string, any> = {
               type,
               category_id: categoryId,
               category_name: category?.name,
@@ -148,10 +148,12 @@ const FinancialTransactionForm: React.FC<Props> = ({ onClose, onSuccess, id }) =
               entity_id: entityId || null,
               entity_name: finalEntityName,
               notes,
-              payment_method: paymentMethod || null,
               updated_by: currentUser,
               status
           };
+          if (paymentMethod) {
+              basePayload.payment_method = paymentMethod;
+          }
 
           if (id) {
               const { error } = await supabase.from('financial_transactions').update({

@@ -57,7 +57,8 @@ export async function registerRoutes(
         await migrationPool.query(`ALTER TABLE system_users ADD COLUMN IF NOT EXISTS password_reset_token TEXT`);
         await migrationPool.query(`ALTER TABLE system_users ADD COLUMN IF NOT EXISTS password_reset_expires TIMESTAMPTZ`);
         await migrationPool.query(`ALTER TABLE financial_transactions ADD COLUMN IF NOT EXISTS payment_method TEXT`);
-        console.log('[Migration] Colunas verificadas/criadas com sucesso');
+        await migrationPool.query(`NOTIFY pgrst, 'reload schema'`);
+        console.log('[Migration] Colunas verificadas/criadas com sucesso (schema cache refreshed)');
         await migrationPool.end();
       }
     } catch (migErr: any) {
