@@ -17,8 +17,11 @@ export interface CalculatedFinancials {
     iblFee: number; 
     effectiveStartLabel: string;
     isMinimumActivationRule: boolean;
+    hasClientTable: boolean;
+    hasProviderTable: boolean;
     client: {
       total: number;
+      serviceTotal: number;
       base: number;
       extraKmVal: number;
       extraHrVal: number;
@@ -36,6 +39,7 @@ export interface CalculatedFinancials {
     };
     provider: {
       total: number;
+      serviceTotal: number;
       base: number;
       extraKmVal: number;
       extraHrVal: number;
@@ -993,8 +997,10 @@ export const calculateMissionFinancials = (
         iblFee = round2(serviceSubtotal * 0.12);
     }
 
-    const totalRevenue = round2(serviceSubtotal + iblFee + tollValue);
-    const totalCost = round2(pBase + pExtraKmVal + pExtraHrVal + tollValue);
+    const clientServiceTotal = round2(serviceSubtotal + iblFee);
+    const totalRevenue = round2(clientServiceTotal + tollValue);
+    const providerServiceTotal = round2(pBase + pExtraKmVal + pExtraHrVal);
+    const totalCost = round2(providerServiceTotal + tollValue);
 
     return {
         realTraveledKm, durationHours, tollValue, isCompleted: isFinished, hasValidKms,
@@ -1004,8 +1010,10 @@ export const calculateMissionFinancials = (
         calculationMemory: isMinimumActivationRule ? 'Acionamento Mínimo (≤200km/≤2h)' : isVelada ? 'Regra Velada' : 'Regra Padrão',
         iblFee, effectiveStartLabel: startLabel,
         isMinimumActivationRule,
+        hasClientTable: !!appliedClientTable,
+        hasProviderTable: !!appliedProviderTable,
         client: { 
-            total: totalRevenue, base: cBase, extraKmVal: cExtraKmVal, extraHrVal: cExtraHrVal, 
+            total: totalRevenue, serviceTotal: clientServiceTotal, base: cBase, extraKmVal: cExtraKmVal, extraHrVal: cExtraHrVal, 
             excessKm: cExcessKm, 
             excessHours: cExcessHr,
             excessHoursReal: cExcessHrReal,
@@ -1019,7 +1027,7 @@ export const calculateMissionFinancials = (
             detectionLog: clientLog
         },
         provider: { 
-            total: totalCost, base: pBase, extraKmVal: pExtraKmVal, extraHrVal: pExtraHrVal, 
+            total: totalCost, serviceTotal: providerServiceTotal, base: pBase, extraKmVal: pExtraKmVal, extraHrVal: pExtraHrVal, 
             excessKm: pExcessKm, 
             excessHours: pExcessHr,
             excessHoursReal: pExcessHrReal,

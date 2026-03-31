@@ -1,0 +1,39 @@
+Preciso que você refine e padronize todo o sistema de faturamento e auditoria da TM SEG. Atualmente, os valores estão inconsistentes e 'flutuando' porque não há uma fonte única de verdade para os cálculos.
+
+Implemente as seguintes diretrizes obrigatórias:
+
+Fonte Única de Cálculo (Single Source of Truth):
+
+Todo cálculo financeiro DEVE passar pela função calculateMissionFinancials no arquivo lib/financialUtils.ts.
+
+Nenhum componente (como MissionFinancialModal.tsx) deve fazer contas de soma ou multiplicação de faturamento manualmente. Ele deve apenas exibir o que essa função retorna.
+
+Lógica Dinâmica de Tabelas de Preço:
+
+O sistema deve buscar a tabela específica do cliente (client_price_tables) vinculada à missão.
+
+Regra da Franquia: * Valor_Base: Pego da coluna fixed_value da tabela.
+
+KM_Extra: Se KM_Real > franchise_km, então (KM_Real - franchise_km) * extra_km_value. Caso contrário, 0.
+
+Hora_Extra: Se Tempo_Real > franchise_time, então (Tempo_Real - franchise_time) * extra_hour_value. Caso contrário, 0.
+
+Faturamento_Total = Valor_Base + KM_Extra + Hora_Extra + Pedágios.
+
+Persistência Imutável (Fim da Flutuação de Dados):
+
+Ao clicar em 'Salvar' ou 'Aprovar', os valores calculados (systemCalculatedRevenue e systemCalculatedCost) devem ser gravados permanentemente no campo details (JSON) da tabela de logs e nos campos de valor da missão.
+
+Importante: Salve também o table_id utilizado no cálculo dentro desse JSON. Isso garante que, se a tabela mudar no futuro, o valor desta OS antiga permaneça congelado com a regra da época.
+
+Interface de Auditoria:
+
+Mantenha os alertas visuais (Card Vermelho/Verde) que comparam o que o sistema calculou com o que o usuário (Controller) digitou.
+
+Se o usuário alterar um valor manualmente, o sistema deve marcar billing_verified_by e registrar a divergência.
+
+Tratamento de Erros:
+
+Se um cliente não tiver tabela cadastrada, a modal deve exibir um aviso: '⚠️ Erro: Cliente sem Tabela de Preços. O cálculo automático foi desativado.'
+
+Tarefa: Refatore o financialUtils.ts e o handleSave da modal de faturamento para seguir rigorosamente essa lógica matemática e de banco de dados."

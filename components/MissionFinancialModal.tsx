@@ -850,7 +850,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
     useEffect(() => {
       if (financialData && mission) {
           const isVendorLocked = !!(mission.verified_by && mission.verified_at);
-          const provTotalWithCorrectToll = financialData.provider.base + financialData.provider.extraKmVal + financialData.provider.extraHrVal + parseNumber(tollProviderInput);
+          const provTotalWithCorrectToll = financialData.provider.serviceTotal + parseNumber(tollProviderInput);
           if (!useSavedValuesRef.current && !isSavingRef.current && !isVendorLocked) {
               setRevenueInput(financialData.client.total.toLocaleString('pt-BR', {minimumFractionDigits: 2, maximumFractionDigits: 2}));
               setCostInput(provTotalWithCorrectToll.toLocaleString('pt-BR', {minimumFractionDigits: 2, maximumFractionDigits: 2}));
@@ -915,9 +915,9 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
       setUseSavedValues(false);
       userManuallyEditedRef.current = false;
       if (financialData && mission) {
-          const newRevenue = financialData.client.total;
           const toll = parseNumber(tollInput);
-          const revServiceOnly = newRevenue - toll;
+          const revServiceOnly = financialData.client.serviceTotal;
+          const newRevenue = revServiceOnly + toll;
           setRevenueInput(newRevenue.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
           
           const r2 = (v: number) => Math.round(v * 100) / 100;
@@ -964,8 +964,8 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
       if (financialData && mission) {
           const isSameOs = mission.is_same_os === true;
           const tollProv = isSameOs ? 0 : parseNumber(tollProviderInput);
-          const newCost = isSameOs ? 0 : (financialData.provider.base + financialData.provider.extraKmVal + financialData.provider.extraHrVal + tollProv);
-          const costServiceOnly = isSameOs ? 0 : (newCost - tollProv);
+          const costServiceOnly = isSameOs ? 0 : financialData.provider.serviceTotal;
+          const newCost = isSameOs ? 0 : (costServiceOnly + tollProv);
           setCostInput(newCost.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
           
           const r2 = (v: number) => Math.round(v * 100) / 100;
@@ -1081,8 +1081,10 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
       const originalRevenue = (mission.revenue_value || 0) + (mission.toll_value || 0);
       const revTotal = isController ? originalRevenue : parseNumber(revenueInput);
       const costTotal = parseNumber(costInput);
-      const calcRevTotal = financialData ? (financialData.client.base + financialData.client.extraKmVal + financialData.client.extraHrVal + (financialData.iblFee || 0) + parseNumber(tollInput)) : 0;
-      const calcCostTotal = financialData ? (financialData.provider.base + financialData.provider.extraKmVal + financialData.provider.extraHrVal + parseNumber(tollProviderInput)) : 0;
+      const toll = isController ? (mission.toll_value || 0) : parseNumber(tollInput);
+      const tollProv = parseNumber(tollProviderInput) || toll;
+      const calcRevTotal = financialData ? (financialData.client.serviceTotal + toll) : 0;
+      const calcCostTotal = financialData ? (financialData.provider.serviceTotal + tollProv) : 0;
       const revDivergent = isController ? false : Math.abs(revTotal - calcRevTotal) > 1;
       const costDivergent = Math.abs(costTotal - calcCostTotal) > 1;
 
@@ -1106,12 +1108,6 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
           
           const { stage: captureStage } = getApprovalStage(userName, userRole);
           await captureModalScreenshot(approve ? captureStage : 'save', userName);
-
-          const toll = isController ? (mission.toll_value || 0) : parseNumber(tollInput);
-          let tollProv = parseNumber(tollProviderInput);
-          if (tollProv === 0 && toll > 0) {
-              tollProv = toll;
-          }
 
           const revServiceOnly = revTotal - toll; 
           const costServiceOnly = costTotal - tollProv;
@@ -1176,7 +1172,8 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                       ? `${(mission.origin || '').split(',')[0].trim()} X ${(mission.destination || '').split(',')[0].trim()}`
                       : (usedTable?.route_name || '-'),
                   tableName: usedTable?.operation_type || '-',
-                  tableId: manualClientTableId || financialData.client.tableId || null,
+                  clientTableId: manualClientTableId || financialData.client.tableId || null,
+                  providerTableId: manualProviderTableId || financialData.provider.tableId || null,
                   activationFee: usedTable?.activation_fee ?? financialData.client.base,
                   franchiseKm: usedTable?.franchise_km ?? 0,
                   franchiseHours: usedTable?.franchise_hours ?? 0,
@@ -1190,9 +1187,11 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                   durationHours: financialData.durationHours,
                   tollVal: toll,
                   tollProvider: tollProv,
-                  revenueServiceOnly: revServiceOnly,
-                  costServiceOnly: costServiceOnly,
-                  totalGeral: revServiceOnly + toll,
+                  systemCalculatedRevenue: r2(calcRevTotal),
+                  systemCalculatedCost: r2(calcCostTotal),
+                  revenueServiceOnly: r2(revServiceOnly),
+                  costServiceOnly: r2(costServiceOnly),
+                  totalGeral: r2(revServiceOnly + toll),
                   iblFee: financialData.iblFee || 0
               };
               basePayload.snapshot_data = snapshotObj;
@@ -1209,6 +1208,15 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
 
           const fullPayload = { ...basePayload, toll_value_provider: isSameOs ? 0 : r2(tollProv), ...reasonFields };
           let result = await supabase.from('missions').update(fullPayload).eq('id', mission.id).select('id, revenue_value, cost_value, toll_value, last_update').single();
+          if (!result.error && shouldSnapshot && basePayload.snapshot_data) {
+              await supabase.from('system_logs').insert([{
+                  user_name: userName,
+                  action_type: 'SNAPSHOT',
+                  entity: 'BillingSnapshot',
+                  entity_id: mission.id,
+                  details: JSON.stringify({ ...basePayload.snapshot_data, approved_by: userName, approved_at: basePayload.snapshot_approved_at })
+              }]);
+          }
           if (result.error && result.error.message?.includes('does not exist')) {
               const { snapshot_data, snapshot_approved_by, snapshot_approved_at, ...payloadWithoutSnapshot } = fullPayload;
               result = await supabase.from('missions').update(payloadWithoutSnapshot).eq('id', mission.id).select('id, revenue_value, cost_value, toll_value, last_update').single();
@@ -1276,11 +1284,13 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
               }]);
           }
 
-          const sysCalcCost = financialData ? (financialData.provider.base + financialData.provider.extraKmVal + financialData.provider.extraHrVal + tollProv) : null;
-          const sysCalcRevenue = financialData ? financialData.client.total : null;
+          const sysCalcCost = calcCostTotal;
+          const sysCalcRevenue = calcRevTotal;
           const adjustmentDetails = JSON.stringify({
-              clientTableId: manualClientTableId || null,
-              providerTableId: manualProviderTableId || null,
+              clientTableId: manualClientTableId || financialData?.client.tableId || null,
+              providerTableId: manualProviderTableId || financialData?.provider.tableId || null,
+              clientTableName: financialData?.client.tableName || null,
+              providerTableName: financialData?.provider.tableName || null,
               customClientBase: customClientBase || null,
               customClientKm: customClientKm || null,
               customClientHour: customClientHour || null,
@@ -1288,12 +1298,14 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
               customProviderKm: customProviderKm || null,
               customProviderHour: customProviderHour || null,
               iblEnabled: iblEnabled,
-              revenueTotal: revTotal,
-              costTotal: costTotal,
-              tollValue: toll,
-              tollProviderValue: tollProv,
-              systemCalculatedCost: sysCalcCost,
-              systemCalculatedRevenue: sysCalcRevenue
+              revenueTotal: r2(revTotal),
+              costTotal: r2(costTotal),
+              tollValue: r2(toll),
+              tollProviderValue: r2(tollProv),
+              systemCalculatedRevenue: r2(sysCalcRevenue),
+              systemCalculatedCost: r2(sysCalcCost),
+              revenueDivergent: revDivergent,
+              costDivergent: costDivergent
           });
 
           await supabase.from('system_logs').delete().eq('entity', 'BillingAdjustment').eq('entity_id', mission.id);
@@ -1726,6 +1738,29 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
             ) : financialData && (
                 <div className="space-y-6 animate-in slide-in-from-bottom-4 duration-500">
                     
+                    {!financialData.hasClientTable && (
+                        <div className="bg-red-50 border-2 border-red-400 rounded-xl p-4 shadow-md" data-testid="alert-no-client-table">
+                            <div className="flex items-start gap-3">
+                                <div className="p-2 bg-red-100 rounded-lg shrink-0"><AlertTriangle size={20} className="text-red-700" /></div>
+                                <div className="flex-1 min-w-0">
+                                    <p className="text-xs font-black text-red-800 uppercase tracking-wider mb-1">Erro: Cliente sem Tabela de Preços</p>
+                                    <p className="text-[10px] text-red-700 font-bold leading-relaxed">O cálculo automático de faturamento foi desativado pois não existe tabela de preços cadastrada para este cliente. Cadastre uma tabela em "Tabelas de Preço" antes de faturar.</p>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+                    {!financialData.hasProviderTable && (
+                        <div className="bg-orange-50 border-2 border-orange-400 rounded-xl p-4 shadow-md" data-testid="alert-no-provider-table">
+                            <div className="flex items-start gap-3">
+                                <div className="p-2 bg-orange-100 rounded-lg shrink-0"><AlertTriangle size={20} className="text-orange-700" /></div>
+                                <div className="flex-1 min-w-0">
+                                    <p className="text-xs font-black text-orange-800 uppercase tracking-wider mb-1">Aviso: Fornecedor sem Tabela de Custo</p>
+                                    <p className="text-[10px] text-orange-700 font-bold leading-relaxed">Não existe tabela de custo cadastrada para este fornecedor. O custo será calculado como zero até que uma tabela seja cadastrada.</p>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
                     {(() => {
                         const audit = auditMissionFinancials(mission, clientTables, providerTables, clientData);
                         if (!audit.isInconsistent) return null;
@@ -2391,7 +2426,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                             </div>
                             {(() => {
                                 const ibl = financialData.iblFee || 0;
-                                const calcTotal = financialData.client.base + financialData.client.extraKmVal + financialData.client.extraHrVal + ibl + parseNumber(tollInput);
+                                const calcTotal = financialData.client.serviceTotal + parseNumber(tollInput);
                                 const savedTotal = parseNumber(revenueInput);
                                 const isDivergent = Math.abs(calcTotal - savedTotal) > 1;
                                 return (
@@ -2470,7 +2505,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                 </div>
                             )}
                             {(() => {
-                                const currentCalcCost = financialData.provider.base + financialData.provider.extraKmVal + financialData.provider.extraHrVal + parseNumber(tollProviderInput);
+                                const currentCalcCost = financialData.provider.serviceTotal + parseNumber(tollProviderInput);
                                 const currentSavedCost = parseNumber(costInput);
                                 const sysRef = systemCalculatedCost ?? currentCalcCost;
                                 const controllerRef = controllerSavedCost ?? currentSavedCost;
@@ -2515,7 +2550,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                 );
                             })()}
                             {(() => {
-                                const calcTotal = financialData.provider.base + financialData.provider.extraKmVal + financialData.provider.extraHrVal + parseNumber(tollProviderInput);
+                                const calcTotal = financialData.provider.serviceTotal + parseNumber(tollProviderInput);
                                 const savedTotal = parseNumber(costInput);
                                 const isDivergent = Math.abs(calcTotal - savedTotal) > 1;
                                 return (
