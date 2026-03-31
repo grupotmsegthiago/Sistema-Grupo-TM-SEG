@@ -4,7 +4,7 @@ import { Mission, ClientPriceTable, ProviderCostTable, MissionStatus, Client } f
 import { supabase } from '../lib/supabase';
 import { useNotification } from '../lib/NotificationContext';
 import { calculateMissionFinancials, auditMissionFinancials, extractUF, UF_TO_REGION } from '../lib/financialUtils';
-import { X, Calculator, Loader2, Save, CheckCircle2, TrendingUp, Landmark, Zap, RotateCcw, Building2, Briefcase, Plus, Users, MapPin, ArrowRight, BrainCircuit, AlertTriangle, AlertCircle, Edit2, Info, RefreshCw, Clock, Pencil, Lock, ShieldCheck, Camera, Image as ImageIcon, Link2, Layers } from 'lucide-react';
+import { X, Calculator, Loader2, Save, CheckCircle2, TrendingUp, Landmark, Zap, RotateCcw, Building2, Briefcase, Plus, Users, MapPin, ArrowRight, BrainCircuit, AlertTriangle, AlertCircle, Edit2, Info, RefreshCw, Clock, Pencil, Lock, ShieldCheck, Camera, Image as ImageIcon, Link2, Layers, Scale } from 'lucide-react';
 import ProviderCostForm from './ProviderCostForm';
 import ClientPriceForm from './ClientPriceForm';
 import { formatProviderName } from '../lib/utils';
@@ -98,6 +98,11 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
   const [isCalculatingToll, setIsCalculatingToll] = useState(false);
   const [tollEmbeddedInCost, setTollEmbeddedInCost] = useState(false);
   const [approvalLog, setApprovalLog] = useState<Array<{user: string; role: string; stage: string; date: string}>>([]);
+  const [systemCalculatedCost, setSystemCalculatedCost] = useState<number | null>(null);
+  const [systemCalculatedRevenue, setSystemCalculatedRevenue] = useState<number | null>(null);
+  const [controllerSavedCost, setControllerSavedCost] = useState<number | null>(null);
+  const [controllerSavedRevenue, setControllerSavedRevenue] = useState<number | null>(null);
+  const [controllerSaveInfo, setControllerSaveInfo] = useState<{user: string; date: string} | null>(null);
   const [useSavedValues, _setUseSavedValues] = useState(false);
   const useSavedValuesRef = React.useRef(false);
   const setUseSavedValues = (val: boolean) => { useSavedValuesRef.current = val; _setUseSavedValues(val); };
@@ -516,9 +521,15 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                       if (details.customProviderHour) setCustomProviderHour(details.customProviderHour);
                       if (details.iblEnabled !== undefined) setIblEnabled(details.iblEnabled);
 
+                      if (details.systemCalculatedCost != null) setSystemCalculatedCost(details.systemCalculatedCost);
+                      if (details.systemCalculatedRevenue != null) setSystemCalculatedRevenue(details.systemCalculatedRevenue);
+                      if (details.costTotal != null) setControllerSavedCost(details.costTotal);
+                      if (details.revenueTotal != null) setControllerSavedRevenue(details.revenueTotal);
+
                       const savedDate = new Date(adj.created_at);
                       const dateStr = savedDate.toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' }) + ' ' + savedDate.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', timeZone: 'America/Sao_Paulo' });
                       setSavedByInfo(`${adj.user_name} (${dateStr})`);
+                      setControllerSaveInfo({ user: adj.user_name, date: dateStr });
                   } catch (e) { console.error('Erro ao restaurar ajustes:', e); }
               }
           }
@@ -1181,6 +1192,8 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
               }]);
           }
 
+          const sysCalcCost = financialData ? (financialData.provider.base + financialData.provider.extraKmVal + financialData.provider.extraHrVal + tollProv) : null;
+          const sysCalcRevenue = financialData ? financialData.client.total : null;
           const adjustmentDetails = JSON.stringify({
               clientTableId: manualClientTableId || null,
               providerTableId: manualProviderTableId || null,
@@ -1194,7 +1207,9 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
               revenueTotal: revTotal,
               costTotal: costTotal,
               tollValue: toll,
-              tollProviderValue: tollProv
+              tollProviderValue: tollProv,
+              systemCalculatedCost: sysCalcCost,
+              systemCalculatedRevenue: sysCalcRevenue
           });
 
           await supabase.from('system_logs').delete().eq('entity', 'BillingAdjustment').eq('entity_id', mission.id);
@@ -1524,39 +1539,101 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                     </div>
                 </div>
             )}
-            {linkedMissions.length > 0 && (
-                <div data-testid="linked-missions-section" className="bg-indigo-50 border border-indigo-200 rounded-xl p-4 shadow-sm">
-                    <div className="flex items-center gap-2 mb-3">
-                        <div className="bg-indigo-600 p-1.5 rounded-lg"><Layers size={14} className="text-white" /></div>
-                        <p className="font-black text-indigo-900 text-xs uppercase tracking-wider">
-                            {mission.is_same_os ? 'OS Mãe e Irmãs Vinculadas' : 'OS Vinculadas (MESMA OS)'} ({linkedMissions.length})
-                        </p>
-                    </div>
-                    <div className="space-y-2 max-h-[200px] overflow-y-auto">
+            {linkedMissions.length > 0 && (() => {
+                const isCurrentParent = !mission.is_same_os && !mission.parent_mission_id && linkedMissions.some(lm => lm.is_same_os);
+                const isCurrentChild = mission.is_same_os && !!mission.parent_mission_id;
+                const children = linkedMissions.filter(lm => lm.is_same_os && lm.id !== mission.parent_mission_id);
+                const parentMission = mission.parent_mission_id ? linkedMissions.find(lm => lm.id === mission.parent_mission_id) : null;
+                const totalGroupRevenue = (isCurrentParent ? safeNumber(mission.revenue_value) : 0) + linkedMissions.reduce((s, lm) => s + safeNumber(lm.revenue_value), 0);
+                const totalGroupCost = (isCurrentParent ? safeNumber(mission.cost_value) : 0);
+                return (
+                <div data-testid="linked-missions-section" className={`rounded-xl p-4 shadow-sm border-2 ${isCurrentParent ? 'bg-amber-50/80 border-amber-400' : 'bg-indigo-50 border-indigo-200'}`}>
+                    {isCurrentParent && (
+                        <div className="flex items-center gap-2 mb-3 bg-amber-600 text-white px-3 py-2 rounded-lg">
+                            <Layers size={16} />
+                            <span className="text-xs font-black uppercase tracking-wider">ESTA OS É A OS MÃE</span>
+                            <span className="text-[9px] bg-amber-800 px-2 py-0.5 rounded-full ml-auto font-bold">{children.length} filha{children.length !== 1 ? 's' : ''} vinculada{children.length !== 1 ? 's' : ''}</span>
+                        </div>
+                    )}
+                    {isCurrentChild && parentMission && (
+                        <div className="flex items-center gap-2 mb-3 bg-blue-600 text-white px-3 py-2 rounded-lg">
+                            <Link2 size={16} />
+                            <span className="text-xs font-black uppercase tracking-wider">ESTA OS É FILHA (MESMA OS)</span>
+                            <span className="text-[9px] bg-blue-800 px-2 py-0.5 rounded-full ml-auto font-bold">MÃE: {parentMission.id}</span>
+                        </div>
+                    )}
+                    {!isCurrentParent && !isCurrentChild && (
+                        <div className="flex items-center gap-2 mb-3">
+                            <div className="bg-indigo-600 p-1.5 rounded-lg"><Layers size={14} className="text-white" /></div>
+                            <p className="font-black text-indigo-900 text-xs uppercase tracking-wider">
+                                OS Vinculadas ({linkedMissions.length})
+                            </p>
+                        </div>
+                    )}
+                    <div className="space-y-2 max-h-[250px] overflow-y-auto">
                         {linkedMissions.map((lm) => {
                             const isParent = lm.id === mission.parent_mission_id;
+                            const lmCost = lm.is_same_os ? 0 : safeNumber(lm.cost_value);
+                            const lmRevenue = safeNumber(lm.revenue_value);
+                            const lmMargin = lmRevenue - lmCost;
                             return (
-                            <div key={lm.id} data-testid={`linked-mission-${lm.id}`} className={`flex items-center justify-between gap-3 p-2.5 rounded-lg border text-xs ${isParent ? 'bg-amber-50 border-amber-300' : lm.is_same_os ? 'bg-blue-50 border-blue-300' : 'bg-white border-gray-200'}`}>
-                                <div className="flex items-center gap-2 min-w-0 flex-1">
-                                    <span className="font-black text-gray-800 shrink-0">{lm.id}</span>
-                                    {isParent && <span className="text-[8px] font-black bg-amber-600 text-white px-1.5 py-0.5 rounded uppercase shrink-0">MÃE</span>}
-                                    {lm.is_same_os && !isParent && <span className="text-[8px] font-black bg-blue-600 text-white px-1.5 py-0.5 rounded uppercase shrink-0">MESMA OS</span>}
-                                    <span className={`text-[8px] font-bold px-1.5 py-0.5 rounded uppercase shrink-0 ${lm.status === 'Concluída' ? 'bg-green-100 text-green-700' : lm.status === 'Cancelada' ? 'bg-red-100 text-red-700' : 'bg-gray-100 text-gray-600'}`}>{lm.status}</span>
-                                    <span className="text-gray-500 truncate" title={`${lm.origin} → ${lm.destination}`}>
+                            <div key={lm.id} data-testid={`linked-mission-${lm.id}`} className={`p-2.5 rounded-lg border text-xs ${isParent ? 'bg-amber-50 border-amber-300' : lm.is_same_os ? 'bg-blue-50 border-blue-300' : 'bg-white border-gray-200'}`}>
+                                <div className="flex items-center justify-between gap-3">
+                                    <div className="flex items-center gap-2 min-w-0 flex-1">
+                                        <span className="font-black text-gray-800 shrink-0">{lm.id}</span>
+                                        {isParent && <span className="text-[8px] font-black bg-amber-600 text-white px-1.5 py-0.5 rounded uppercase shrink-0">MÃE</span>}
+                                        {lm.is_same_os && !isParent && <span className="text-[8px] font-black bg-blue-600 text-white px-1.5 py-0.5 rounded uppercase shrink-0">MESMA OS</span>}
+                                        <span className={`text-[8px] font-bold px-1.5 py-0.5 rounded uppercase shrink-0 ${lm.status === 'Concluída' ? 'bg-green-100 text-green-700' : lm.status === 'Cancelada' ? 'bg-red-100 text-red-700' : 'bg-gray-100 text-gray-600'}`}>{lm.status}</span>
+                                    </div>
+                                    <span className="text-gray-400 text-[9px] shrink-0">{lm.start_time ? new Date(lm.start_time).toLocaleTimeString('pt-BR', {hour:'2-digit', minute:'2-digit', timeZone: 'America/Sao_Paulo'}) : '--:--'}</span>
+                                </div>
+                                <div className="flex items-center justify-between mt-1.5">
+                                    <span className="text-gray-500 truncate text-[10px]" title={`${lm.origin} → ${lm.destination}`}>
                                         {(lm.origin || '').split(',')[0]} → {(lm.destination || '').split(',')[0]}
                                     </span>
-                                </div>
-                                <div className="flex items-center gap-3 shrink-0">
-                                    <span className="text-green-700 font-bold">{formatCurrency(lm.revenue_value || 0)}</span>
-                                    <span className="text-red-600 font-bold">{formatCurrency(lm.cost_value || 0)}</span>
-                                    <span className="text-gray-400 text-[9px]">{lm.start_time ? new Date(lm.start_time).toLocaleTimeString('pt-BR', {hour:'2-digit', minute:'2-digit', timeZone: 'America/Sao_Paulo'}) : '--:--'}</span>
+                                    <div className="flex items-center gap-3 shrink-0">
+                                        <div className="text-right">
+                                            <span className="text-[8px] text-gray-400 block">Receita</span>
+                                            <span className="text-green-700 font-bold">{formatCurrency(lmRevenue)}</span>
+                                        </div>
+                                        <div className="text-right">
+                                            <span className="text-[8px] text-gray-400 block">Custo</span>
+                                            <span className={`font-bold ${lm.is_same_os ? 'text-gray-400' : 'text-red-600'}`}>{lm.is_same_os ? 'R$ 0,00' : formatCurrency(lmCost)}</span>
+                                        </div>
+                                        <div className="text-right">
+                                            <span className="text-[8px] text-gray-400 block">Margem</span>
+                                            <span className={`font-bold ${lmMargin >= 0 ? 'text-green-700' : 'text-red-700'}`}>{formatCurrency(lmMargin)}</span>
+                                        </div>
+                                    </div>
                                 </div>
                             </div>
                             );
                         })}
                     </div>
+                    {isCurrentParent && children.length > 0 && (
+                        <div className="mt-3 pt-3 border-t-2 border-amber-300">
+                            <div className="flex items-center justify-between text-[10px]">
+                                <span className="font-black text-amber-800 uppercase">Consolidado do Grupo (Mãe + {children.length} filha{children.length !== 1 ? 's' : ''})</span>
+                            </div>
+                            <div className="grid grid-cols-3 gap-2 mt-2">
+                                <div className="bg-green-100 rounded-lg p-2 text-center">
+                                    <p className="text-[8px] font-bold text-green-600 uppercase">Receita Total</p>
+                                    <p className="text-sm font-black text-green-800">{formatCurrency(totalGroupRevenue)}</p>
+                                </div>
+                                <div className="bg-red-100 rounded-lg p-2 text-center">
+                                    <p className="text-[8px] font-bold text-red-600 uppercase">Custo (só mãe)</p>
+                                    <p className="text-sm font-black text-red-800">{formatCurrency(totalGroupCost)}</p>
+                                </div>
+                                <div className={`rounded-lg p-2 text-center ${(totalGroupRevenue - totalGroupCost) >= 0 ? 'bg-emerald-100' : 'bg-red-100'}`}>
+                                    <p className={`text-[8px] font-bold uppercase ${(totalGroupRevenue - totalGroupCost) >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>Margem Grupo</p>
+                                    <p className={`text-sm font-black ${(totalGroupRevenue - totalGroupCost) >= 0 ? 'text-emerald-800' : 'text-red-800'}`}>{formatCurrency(totalGroupRevenue - totalGroupCost)}</p>
+                                </div>
+                            </div>
+                        </div>
+                    )}
                 </div>
-            )}
+                );
+            })()}
             {isLoading ? (
                 <div className="flex flex-col items-center justify-center py-20 gap-4">
                     <Loader2 size={48} className="animate-spin text-red-600" />
@@ -2308,6 +2385,51 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                     <span className="text-[9px] font-black text-blue-800">VERIFICADO PELO CONTROLLER — Valor travado. Somente Diretoria pode alterar.</span>
                                 </div>
                             )}
+                            {(() => {
+                                const currentCalcCost = financialData.provider.base + financialData.provider.extraKmVal + financialData.provider.extraHrVal + parseNumber(tollProviderInput);
+                                const currentSavedCost = parseNumber(costInput);
+                                const sysRef = systemCalculatedCost ?? currentCalcCost;
+                                const controllerRef = controllerSavedCost ?? currentSavedCost;
+                                const hasDivergence = Math.abs(sysRef - controllerRef) > 1 && controllerSavedCost != null;
+                                const diffValue = controllerRef - sysRef;
+                                const diffPercent = sysRef > 0 ? ((diffValue / sysRef) * 100) : 0;
+                                const isOvercharge = diffValue > 0;
+                                if (!hasDivergence) return null;
+                                return (
+                                    <div data-testid="audit-cost-comparison" className={`mb-2 p-3 rounded-xl border-2 ${isOvercharge ? 'bg-red-50 border-red-300' : 'bg-green-50 border-green-300'}`}>
+                                        <div className="flex items-center gap-2 mb-2">
+                                            <div className={`p-1.5 rounded-lg ${isOvercharge ? 'bg-red-100' : 'bg-green-100'}`}>
+                                                <Scale size={14} className={isOvercharge ? 'text-red-700' : 'text-green-700'} />
+                                            </div>
+                                            <span className={`text-[9px] font-black uppercase tracking-wider ${isOvercharge ? 'text-red-800' : 'text-green-800'}`}>
+                                                Auditoria de Custo — {isOvercharge ? 'Valor acima do calculado' : 'Valor abaixo do calculado'}
+                                            </span>
+                                        </div>
+                                        <div className="grid grid-cols-2 gap-2 text-[9px]">
+                                            <div className="bg-white/80 rounded-lg p-2 border border-gray-200">
+                                                <p className="font-bold text-gray-500 uppercase mb-0.5">Sistema calculou</p>
+                                                <p className="font-black text-gray-900 text-sm">{formatCurrency(sysRef)}</p>
+                                                <p className="text-gray-400 text-[8px]">Cálculo automático (tabela)</p>
+                                            </div>
+                                            <div className={`rounded-lg p-2 border ${isOvercharge ? 'bg-red-100/80 border-red-200' : 'bg-green-100/80 border-green-200'}`}>
+                                                <p className={`font-bold uppercase mb-0.5 ${isOvercharge ? 'text-red-600' : 'text-green-600'}`}>Controller salvou</p>
+                                                <p className={`font-black text-sm ${isOvercharge ? 'text-red-900' : 'text-green-900'}`}>{formatCurrency(controllerRef)}</p>
+                                                {controllerSaveInfo && <p className={`text-[8px] ${isOvercharge ? 'text-red-400' : 'text-green-400'}`}>{controllerSaveInfo.user} — {controllerSaveInfo.date}</p>}
+                                            </div>
+                                        </div>
+                                        <div className={`mt-2 flex items-center justify-center gap-2 py-1.5 rounded-lg ${isOvercharge ? 'bg-red-200/60' : 'bg-green-200/60'}`}>
+                                            <span className={`text-xs font-black ${isOvercharge ? 'text-red-800' : 'text-green-800'}`}>
+                                                Diferença: {isOvercharge ? '+' : ''}{formatCurrency(diffValue)} ({isOvercharge ? '+' : ''}{diffPercent.toFixed(1)}%)
+                                            </span>
+                                        </div>
+                                        <p className={`text-[8px] mt-1.5 font-bold ${isOvercharge ? 'text-red-500' : 'text-green-500'}`}>
+                                            {isOvercharge 
+                                                ? '⚠ Valor salvo é MAIOR que o cálculo do sistema. Verificar se houve erro do fornecedor (cobrança indevida) ou ajuste justificado pelo controller.'
+                                                : '✓ Valor salvo é MENOR que o cálculo do sistema. O controller aplicou um desconto/correção.'}
+                                        </p>
+                                    </div>
+                                );
+                            })()}
                             {(() => {
                                 const calcTotal = financialData.provider.base + financialData.provider.extraKmVal + financialData.provider.extraHrVal + parseNumber(tollProviderInput);
                                 const savedTotal = parseNumber(costInput);
