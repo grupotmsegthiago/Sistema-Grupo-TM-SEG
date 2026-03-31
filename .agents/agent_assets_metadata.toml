@@ -6,3 +6,9 @@ id = "J_1mZRAC1maS7FRaJ6ss9"
 uri = "file://export/CONTAS_PAGAR_RECEBER_MODULO.md"
 type = "text"
 title = "Módulo Contas a Pagar / Receber - Documentação Completa"
+
+[[outputs]]
+id = "0F5GiU1sEfjwdrUTrYKJX"
+uri = "file://attached_assets/AUDITORIA_FATURAMENTO_CODIGO_COMPLETO.md"
+type = "text"
+title = "Código Completo - Auditoria de Faturamento TMSEGo"
