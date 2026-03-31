@@ -12,11 +12,18 @@ interface Props {
   id?: string | null;
 }
 
+const getTodayBR = (): string => {
+    const now = new Date();
+    const brStr = now.toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' });
+    const brDate = new Date(brStr);
+    return `${brDate.getFullYear()}-${String(brDate.getMonth() + 1).padStart(2, '0')}-${String(brDate.getDate()).padStart(2, '0')}`;
+};
+
 const FinancialTransactionForm: React.FC<Props> = ({ onClose, onSuccess, id }) => {
   const [type, setType] = useState<TransactionType>('EXPENSE');
   const [description, setDescription] = useState('');
   const [amount, setAmount] = useState('');
-  const [dueDate, setDueDate] = useState(new Date().toISOString().split('T')[0]);
+  const [dueDate, setDueDate] = useState(getTodayBR());
   const [categoryId, setCategoryId] = useState('');
   const [accountId, setAccountId] = useState(''); 
   const [status, setStatus] = useState<'PENDING' | 'PAID'>('PENDING');
@@ -85,10 +92,29 @@ const FinancialTransactionForm: React.FC<Props> = ({ onClose, onSuccess, id }) =
       }
   };
 
+  const parseAmountBR = (val: string): number => {
+      if (!val) return 0;
+      const cleaned = val.trim();
+      const hasComma = cleaned.includes(',');
+      const hasDot = cleaned.includes('.');
+      if (hasComma && hasDot) {
+          const lastComma = cleaned.lastIndexOf(',');
+          const lastDot = cleaned.lastIndexOf('.');
+          if (lastComma > lastDot) {
+              return parseFloat(cleaned.replace(/\./g, '').replace(',', '.'));
+          } else {
+              return parseFloat(cleaned.replace(/,/g, ''));
+          }
+      } else if (hasComma) {
+          return parseFloat(cleaned.replace(',', '.'));
+      }
+      return parseFloat(cleaned);
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
       e.preventDefault();
       
-      const parsedAmount = parseFloat(amount);
+      const parsedAmount = parseAmountBR(amount);
       if (isNaN(parsedAmount) || parsedAmount <= 0) {
           alert("Por favor, insira um valor válido.");
           return;
@@ -128,18 +154,18 @@ const FinancialTransactionForm: React.FC<Props> = ({ onClose, onSuccess, id }) =
           };
 
           if (id) {
-              await supabase.from('financial_transactions').update({
+              const { error } = await supabase.from('financial_transactions').update({
                   ...basePayload,
                   description,
                   amount: parsedAmount,
                   due_date: dueDate,
                   payment_date: status === 'PAID' ? dueDate : null,
               }).eq('id', id);
+              if (error) throw new Error(error.message || 'Erro ao atualizar lançamento');
           } else {
               const payloadsToInsert = [];
               const totalItems = recurrence !== 'SINGLE' ? recurrenceCount : 1;
-              const baseDate = new Date(dueDate);
-              baseDate.setMinutes(baseDate.getMinutes() + baseDate.getTimezoneOffset());
+              const baseDate = new Date(dueDate + 'T12:00:00');
 
               for (let i = 0; i < totalItems; i++) {
                   const itemDate = new Date(baseDate);
@@ -163,7 +189,8 @@ const FinancialTransactionForm: React.FC<Props> = ({ onClose, onSuccess, id }) =
                       payment_date: currentStatus === 'PAID' ? itemDateStr : null
                   });
               }
-              await supabase.from('financial_transactions').insert(payloadsToInsert);
+              const { error } = await supabase.from('financial_transactions').insert(payloadsToInsert);
+              if (error) throw new Error(error.message || 'Erro ao criar lançamento');
           }
           onSuccess();
       } catch (e: any) {
