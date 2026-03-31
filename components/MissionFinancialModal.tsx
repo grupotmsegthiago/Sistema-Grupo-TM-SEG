@@ -147,34 +147,93 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
   const [isCapturing, setIsCapturing] = useState(false);
 
   const captureModalScreenshot = async (stageName: string, userName: string): Promise<string | null> => {
-    const modalEl = modalContentRef.current?.closest('.flex.flex-col') as HTMLElement;
-    if (!modalEl || !mission) return null;
+    if (!mission) return null;
+    const contentEl = modalContentRef.current;
+    if (!contentEl) {
+      console.warn('[Screenshot] modalContentRef não encontrado');
+      return null;
+    }
     try {
       setIsCapturing(true);
-      await new Promise(r => setTimeout(r, 200));
+      await new Promise(r => setTimeout(r, 300));
+
+      const originalScrollTop = contentEl.scrollTop;
+      const originalOverflow = contentEl.style.overflow;
+      const originalMaxH = contentEl.style.maxHeight;
+      const originalH = contentEl.style.height;
+
+      contentEl.scrollTop = 0;
+      contentEl.style.overflow = 'visible';
+      contentEl.style.maxHeight = 'none';
+      contentEl.style.height = 'auto';
+
+      await new Promise(r => setTimeout(r, 100));
       
-      const canvas = await html2canvas(modalEl, {
-        scale: 1,
+      const canvas = await html2canvas(contentEl, {
+        scale: 0.75,
         useCORS: true,
         allowTaint: true,
-        backgroundColor: '#ffffff',
+        backgroundColor: '#f9fafb',
         logging: false,
+        windowWidth: contentEl.scrollWidth,
+        windowHeight: contentEl.scrollHeight,
         ignoreElements: (el) => el.getAttribute('data-html2canvas-ignore') === 'true'
       });
-      
-      const resizedCanvas = document.createElement('canvas');
-      const maxWidth = 800;
-      const ratio = Math.min(maxWidth / canvas.width, 1);
-      resizedCanvas.width = canvas.width * ratio;
-      resizedCanvas.height = canvas.height * ratio;
-      const ctx = resizedCanvas.getContext('2d');
-      if (ctx) {
-        ctx.drawImage(canvas, 0, 0, resizedCanvas.width, resizedCanvas.height);
+
+      contentEl.style.overflow = originalOverflow;
+      contentEl.style.maxHeight = originalMaxH;
+      contentEl.style.height = originalH;
+      contentEl.scrollTop = originalScrollTop;
+
+      const maxWidth = 600;
+      const maxHeight = 4000;
+      let finalW = canvas.width;
+      let finalH = canvas.height;
+      if (finalW > maxWidth) {
+        const r = maxWidth / finalW;
+        finalW = maxWidth;
+        finalH = Math.round(canvas.height * r);
+      }
+      if (finalH > maxHeight) {
+        finalH = maxHeight;
       }
       
-      const base64 = resizedCanvas.toDataURL('image/jpeg', 0.6);
+      const resizedCanvas = document.createElement('canvas');
+      resizedCanvas.width = finalW;
+      resizedCanvas.height = finalH;
+      const ctx = resizedCanvas.getContext('2d');
+      if (ctx) {
+        ctx.drawImage(canvas, 0, 0, finalW, finalH);
+      }
+      
+      let base64 = resizedCanvas.toDataURL('image/jpeg', 0.45);
 
-      await supabase.from('system_logs').insert([{
+      const sizeKB = Math.round(base64.length * 0.75 / 1024);
+      if (sizeKB > 800) {
+        base64 = resizedCanvas.toDataURL('image/jpeg', 0.25);
+      }
+      
+      const finalSizeKB = Math.round(base64.length * 0.75 / 1024);
+      if (finalSizeKB > 2000) {
+        console.warn(`[Screenshot] Imagem muito grande (${finalSizeKB}KB), salvando metadados sem print`);
+        await supabase.from('system_logs').insert([{
+          user_name: userName,
+          action_type: 'APPROVAL_SCREENSHOT',
+          entity: 'BillingApproval',
+          entity_id: mission.id,
+          details: JSON.stringify({
+            stage: stageName,
+            user: userName,
+            date: new Date().toISOString(),
+            missionId: mission.id,
+            screenshot: null,
+            error: `Imagem excedeu limite de tamanho (${finalSizeKB}KB)`
+          })
+        }]);
+        return null;
+      }
+
+      const { error: insertError } = await supabase.from('system_logs').insert([{
         user_name: userName,
         action_type: 'APPROVAL_SCREENSHOT',
         entity: 'BillingApproval',
@@ -184,13 +243,38 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
           user: userName,
           date: new Date().toISOString(),
           missionId: mission.id,
-          screenshot: base64
+          screenshot: base64,
+          sizeKB: finalSizeKB
         })
       }]);
       
+      if (insertError) {
+        console.error('[Screenshot] Erro ao salvar no banco:', insertError);
+        showNotification('Atenção', `Print de aprovação não foi salvo: ${insertError.message}`, 'error');
+        return null;
+      }
+      
+      console.log(`[Screenshot] Captura salva com sucesso (${finalSizeKB}KB) - ${stageName}`);
       return base64;
-    } catch (e) {
-      console.error('Erro ao capturar screenshot:', e);
+    } catch (e: any) {
+      console.error('[Screenshot] Erro ao capturar:', e);
+      showNotification('Atenção', 'Não foi possível capturar o print de aprovação. Os dados financeiros foram salvos normalmente.', 'error');
+      try {
+        await supabase.from('system_logs').insert([{
+          user_name: userName,
+          action_type: 'APPROVAL_SCREENSHOT',
+          entity: 'BillingApproval',
+          entity_id: mission.id,
+          details: JSON.stringify({
+            stage: stageName,
+            user: userName,
+            date: new Date().toISOString(),
+            missionId: mission.id,
+            screenshot: null,
+            error: e?.message || 'Falha na captura'
+          })
+        }]);
+      } catch {}
       return null;
     } finally {
       setIsCapturing(false);
