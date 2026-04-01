@@ -475,8 +475,12 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
         }
     };
 
-    const reverseGeocode = async (lat: number, lng: number) => {
-        if (!isLoaded) return;
+    const reverseGeocode = async (lat: number, lng: number): Promise<string> => {
+        const fallbackAddress = `LAT ${lat.toFixed(6)}, LNG ${lng.toFixed(6)}`;
+        if (!isLoaded) {
+            setEditData(prev => ({ ...prev, currentLocationName: fallbackAddress }));
+            return fallbackAddress;
+        }
         const geocoder = new google.maps.Geocoder();
         try {
             const response = await geocoder.geocode({ location: { lat, lng } });
@@ -490,24 +494,30 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
                     if (c.types.includes('administrative_area_level_1')) state = c.short_name;
                 });
                 
-                const formatted = `${street ? street + ', ' : ''}${city} - ${state}`.toUpperCase();
-                setEditData(prev => ({ ...prev, currentLocationName: formatted }));
+                const formatted = `${street ? street + ', ' : ''}${city} - ${state}`.toUpperCase().trim();
+                const finalAddress = (formatted && formatted !== ' - ' && formatted !== '-') ? formatted : fallbackAddress;
+                setEditData(prev => ({ ...prev, currentLocationName: finalAddress }));
+                return finalAddress;
             }
+            setEditData(prev => ({ ...prev, currentLocationName: fallbackAddress }));
+            return fallbackAddress;
         } catch (e) {
-            console.error("Geocoding fail", e);
+            console.error("[LOCATION] Geocoding falhou, usando coordenadas brutas:", e);
+            setEditData(prev => ({ ...prev, currentLocationName: fallbackAddress }));
+            return fallbackAddress;
         }
     };
 
-    const handleLocationInputChange = (val: string) => {
+    const handleLocationInputChange = async (val: string) => {
         setEditData(prev => ({ ...prev, currentLocationName: val }));
         const coords = extractCoordinates(val);
         if (coords) {
             const standardLink = `https://www.google.com/maps?q=${coords.lat},${coords.lng}&z=17&hl=pt-BR`;
             setCurrentPreviewCoords(coords);
             setEditData(prev => ({ ...prev, mapLink: standardLink }));
-            reverseGeocode(coords.lat, coords.lng);
+            const resolvedAddress = await reverseGeocode(coords.lat, coords.lng);
             calculateProgressFromCoords(coords.lat, coords.lng);
-            showNotification('GPS Identificado', 'Link convertido para formato padrão e coordenadas sincronizadas.', 'success');
+            showNotification('GPS Identificado', `Endereço: ${resolvedAddress}. Link e localização sincronizados.`, 'success');
         }
     };
 
@@ -715,7 +725,30 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
         setIsUpdating(true);
         try {
             const finalDescription = editData.description.trim().toUpperCase();
-            const finalLocationToSave = editData.currentLocationName ? `${finalDescription} | ${editData.currentLocationName.toUpperCase()}` : finalDescription;
+
+            let resolvedLocationName = editData.currentLocationName || '';
+            if (!resolvedLocationName && editData.mapLink) {
+                const coords = extractCoordinates(editData.mapLink);
+                if (coords) {
+                    resolvedLocationName = await reverseGeocode(coords.lat, coords.lng);
+                }
+            }
+            if (!resolvedLocationName && editData.mapLink) {
+                const coords = extractCoordinates(editData.mapLink);
+                if (coords) {
+                    resolvedLocationName = `LAT ${coords.lat.toFixed(6)}, LNG ${coords.lng.toFixed(6)}`;
+                }
+            }
+
+            const locationData = {
+                address: resolvedLocationName.toUpperCase(),
+                mapLink: editData.mapLink,
+                coordinates: extractCoordinates(editData.mapLink)
+            };
+
+            const finalLocationToSave = locationData.address 
+                ? `${finalDescription}${finalDescription ? ' | ' : ''}${locationData.address}` 
+                : finalDescription;
             
             let finalDestination = editData.destination;
             const isVtcClient = (mission.client || '').toUpperCase().includes('VTC');
@@ -790,7 +823,7 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
             
             const updateData: any = {
                 status: finalStatus,
-                map_link: editData.mapLink,
+                map_link: locationData.mapLink,
                 current_location: finalLocationToSave,
                 last_update: new Date().toISOString(),
                 updated_by: currentUser.name,
@@ -813,9 +846,39 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
                 destination: finalDestination.toUpperCase()
             };
 
-            const { error, data: updatedRow } = await supabase.from('missions').update(updateData).eq('id', mission.id).select('id, last_update').single();
-            if (error) throw error;
-            if (!updatedRow) throw new Error('Falha na persistência: registro não retornado após UPDATE');
+            console.log(`[LOCATION] Enviando localização para OS ${mission.id}:`, {
+                map_link: updateData.map_link,
+                current_location: updateData.current_location,
+                address: locationData.address,
+                coordinates: locationData.coordinates
+            });
+
+            let saveResult: any = null;
+            let saveError: any = null;
+            for (let attempt = 1; attempt <= 3; attempt++) {
+                const { error, data: updatedRow } = await supabase.from('missions').update(updateData).eq('id', mission.id).select('id, last_update, current_location, map_link').single();
+                if (!error && updatedRow) {
+                    saveResult = updatedRow;
+                    saveError = null;
+                    break;
+                }
+                saveError = error;
+                if (attempt < 3) {
+                    console.warn(`[LOCATION] Tentativa ${attempt}/3 falhou para OS ${mission.id}, retentando...`, error?.message);
+                    await new Promise(r => setTimeout(r, 1000 * attempt));
+                }
+            }
+            if (saveError) throw saveError;
+            if (!saveResult) throw new Error('Falha na persistência: registro não retornado após UPDATE');
+
+            if (saveResult.current_location !== updateData.current_location || saveResult.map_link !== updateData.map_link) {
+                console.error('[LOCATION] Divergência pós-salvamento!', {
+                    enviado: { current_location: updateData.current_location, map_link: updateData.map_link },
+                    banco: { current_location: saveResult.current_location, map_link: saveResult.map_link }
+                });
+            } else {
+                console.log(`[LOCATION] OS ${mission.id} salva com sucesso — endereço: "${saveResult.current_location}", link: "${saveResult.map_link}"`);
+            }
 
             const isRevertFromCompleted = isCompletedMission && finalStatus === MissionStatus.IN_TRANSIT;
             
