@@ -592,7 +592,8 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
         const hasActiveSpecialFilters = showPendingOnly || showTomorrowOnly || showMyApprovalOnly || showNegativeMarginOnly;
         const isOsFiltering = osFilterTerm && osFilterTerm.trim().length > 0;
 
-        const sourceMissions = showTomorrowOnly ? allMissions : periodMissions;
+        const needsAllMissions = showTomorrowOnly || showMyApprovalOnly || showNegativeMarginOnly;
+        const sourceMissions = needsAllMissions ? allMissions : periodMissions;
 
         return sourceMissions.filter(mission => {
             if (isOsFiltering) {
