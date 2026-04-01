@@ -3234,6 +3234,113 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
     }
   });
 
+  const geocodeMemCache: Record<string, { data: any; ts: number }> = {};
+  const geocodeInflight: Record<string, Promise<any>> = {};
+  const GEOCODE_CACHE_TTL = 3600000;
+  const GEOCODE_MAX_CACHE = 500;
+  let lastNominatimCall = 0;
+  const NOMINATIM_MIN_INTERVAL = 1100;
+  let nominatimQueue: Array<{ resolve: (v: any) => void; lat: number; lng: number }> = [];
+  let nominatimProcessing = false;
+
+  const stateAbbrevMap: Record<string, string> = {
+    'acre': 'AC', 'alagoas': 'AL', 'amapá': 'AP', 'amazonas': 'AM', 'bahia': 'BA',
+    'ceará': 'CE', 'distrito federal': 'DF', 'espírito santo': 'ES', 'goiás': 'GO',
+    'maranhão': 'MA', 'mato grosso': 'MT', 'mato grosso do sul': 'MS', 'minas gerais': 'MG',
+    'pará': 'PA', 'paraíba': 'PB', 'paraná': 'PR', 'pernambuco': 'PE', 'piauí': 'PI',
+    'rio de janeiro': 'RJ', 'rio grande do norte': 'RN', 'rio grande do sul': 'RS',
+    'rondônia': 'RO', 'roraima': 'RR', 'santa catarina': 'SC', 'são paulo': 'SP',
+    'sergipe': 'SE', 'tocantins': 'TO'
+  };
+
+  const formatNominatimAddress = (a: any) => {
+    const street = a.road || '';
+    const number = a.house_number || '';
+    const neighborhood = a.suburb || a.neighbourhood || '';
+    const city = a.city || a.town || a.municipality || '';
+    const rawState = (a.state || '').trim().toLowerCase();
+    const state = stateAbbrevMap[rawState] || (rawState.length === 2 ? rawState.toUpperCase() : rawState.substring(0, 2).toUpperCase());
+    const parts = [
+      street ? (number ? `${street}, ${number}` : street) : '',
+      neighborhood,
+      city ? (state ? `${city}/${state}` : city) : state
+    ].filter(Boolean);
+    return { formatted: parts.join(' - ').toUpperCase().trim(), street, number, neighborhood, city, state };
+  };
+
+  const callNominatimThrottled = (lat: number, lng: number): Promise<any> => {
+    return new Promise((resolve) => {
+      nominatimQueue.push({ resolve, lat, lng });
+      processNominatimQueue();
+    });
+  };
+
+  const callPhotonFallback = async (lat: number, lng: number): Promise<any> => {
+    try {
+      const url = `https://photon.komoot.io/reverse?lat=${lat}&lon=${lng}`;
+      const resp = await fetch(url, { headers: { 'User-Agent': 'TMSEGo/1.0' } });
+      const data = await resp.json();
+      if (data && data.features && data.features.length > 0) {
+        const props = data.features[0].properties;
+        const street = props.name || props.street || '';
+        const number = props.housenumber || '';
+        const neighborhood = props.district || props.locality || '';
+        const city = props.city || props.town || '';
+        const rawState = (props.state || '').trim().toLowerCase();
+        const state = stateAbbrevMap[rawState] || (rawState.length === 2 ? rawState.toUpperCase() : rawState.substring(0, 2).toUpperCase());
+        const parts = [
+          street ? (number ? `${street}, ${number}` : street) : '',
+          neighborhood,
+          city ? (state ? `${city}/${state}` : city) : state
+        ].filter(Boolean);
+        const formatted = parts.join(' - ').toUpperCase().trim();
+        if (formatted) {
+          console.log(`[GEOCODE] Photon: (${lat}, ${lng}) → "${formatted}"`);
+          return { address: { road: street, house_number: number, suburb: neighborhood, city, state: props.state || '' }, display_name: formatted, _source: 'photon', _formatted: formatted, _components: { street, number, neighborhood, city, state } };
+        }
+      }
+    } catch (e: any) {
+      console.warn(`[GEOCODE] Photon falhou: ${e.message}`);
+    }
+    return null;
+  };
+
+  const processNominatimQueue = async () => {
+    if (nominatimProcessing || nominatimQueue.length === 0) return;
+    nominatimProcessing = true;
+    while (nominatimQueue.length > 0) {
+      const item = nominatimQueue.shift()!;
+      const now = Date.now();
+      const waitTime = Math.max(0, NOMINATIM_MIN_INTERVAL - (now - lastNominatimCall));
+      if (waitTime > 0) await new Promise(r => setTimeout(r, waitTime));
+      lastNominatimCall = Date.now();
+      try {
+        const nUrl = `https://nominatim.openstreetmap.org/reverse?lat=${item.lat}&lon=${item.lng}&format=json&addressdetails=1&accept-language=pt-BR`;
+        const nResp = await fetch(nUrl, { headers: { 'User-Agent': 'TMSEGo/1.0 (contato@grupotmseg.com.br)' } });
+        if (nResp.status === 429) {
+          console.warn(`[GEOCODE] Nominatim 429 rate limit para (${item.lat}, ${item.lng}), tentando Photon...`);
+          const fallbackResult = await callPhotonFallback(item.lat, item.lng);
+          item.resolve(fallbackResult);
+          continue;
+        }
+        const text = await nResp.text();
+        try {
+          const nData = JSON.parse(text);
+          item.resolve(nData);
+        } catch {
+          console.warn(`[GEOCODE] Nominatim resposta inválida para (${item.lat}, ${item.lng}), tentando Photon...`);
+          const fallbackResult = await callPhotonFallback(item.lat, item.lng);
+          item.resolve(fallbackResult);
+        }
+      } catch (e: any) {
+        console.warn(`[GEOCODE] Nominatim erro de rede: ${e.message}, tentando Photon...`);
+        const fallbackResult = await callPhotonFallback(item.lat, item.lng);
+        item.resolve(fallbackResult);
+      }
+    }
+    nominatimProcessing = false;
+  };
+
   app.get('/api/reverse-geocode', async (req: Request, res: Response) => {
     try {
       const lat = parseFloat(req.query.lat as string);
@@ -3242,97 +3349,58 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
         return res.status(400).json({ success: false, error: 'lat e lng são obrigatórios' });
       }
 
-      const googleApiKey = process.env.GOOGLE_API_KEY || '';
-      let data: any = null;
-
-      if (googleApiKey) {
-        try {
-          const gUrl = `https://maps.googleapis.com/maps/api/geocode/json?latlng=${lat},${lng}&key=${googleApiKey}&language=pt-BR&region=BR`;
-          const gResp = await fetch(gUrl);
-          data = await gResp.json();
-          if (data.status === 'REQUEST_DENIED') {
-            console.warn('[GEOCODE] Google API key negada, tentando Nominatim...', data.error_message);
-            data = null;
-          }
-        } catch (e: any) {
-          console.warn('[GEOCODE] Google API falhou, tentando Nominatim...', e.message);
-          data = null;
-        }
+      const cacheKey = `${lat.toFixed(6)},${lng.toFixed(6)}`;
+      const cached = geocodeMemCache[cacheKey];
+      if (cached && (Date.now() - cached.ts) < GEOCODE_CACHE_TTL) {
+        return res.json(cached.data);
       }
 
-      if (!data || !data.results || data.results.length === 0) {
-        try {
-          const nUrl = `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json&addressdetails=1&accept-language=pt-BR`;
-          const nResp = await fetch(nUrl, { headers: { 'User-Agent': 'TMSEGo/1.0' } });
-          const nData = await nResp.json();
-          if (nData && nData.address) {
-            const a = nData.address;
-            const street = a.road || '';
-            const number = a.house_number || '';
-            const neighborhood = a.suburb || a.neighbourhood || '';
-            const city = a.city || a.town || a.municipality || '';
-            const stateAbbrevMap: Record<string, string> = {
-              'acre': 'AC', 'alagoas': 'AL', 'amapá': 'AP', 'amazonas': 'AM', 'bahia': 'BA',
-              'ceará': 'CE', 'distrito federal': 'DF', 'espírito santo': 'ES', 'goiás': 'GO',
-              'maranhão': 'MA', 'mato grosso': 'MT', 'mato grosso do sul': 'MS', 'minas gerais': 'MG',
-              'pará': 'PA', 'paraíba': 'PB', 'paraná': 'PR', 'pernambuco': 'PE', 'piauí': 'PI',
-              'rio de janeiro': 'RJ', 'rio grande do norte': 'RN', 'rio grande do sul': 'RS',
-              'rondônia': 'RO', 'roraima': 'RR', 'santa catarina': 'SC', 'são paulo': 'SP',
-              'sergipe': 'SE', 'tocantins': 'TO'
-            };
-            const rawState = (a.state || '').trim().toLowerCase();
-            const state = stateAbbrevMap[rawState] || (rawState.length === 2 ? rawState.toUpperCase() : rawState.substring(0, 2).toUpperCase());
+      if (geocodeInflight[cacheKey]) {
+        const inflightResult = await geocodeInflight[cacheKey];
+        return res.json(inflightResult || { success: false, error: 'Nenhum resultado encontrado' });
+      }
 
-            const parts = [
-              street ? (number ? `${street}, ${number}` : street) : '',
-              neighborhood,
-              city ? (state ? `${city}/${state}` : city) : state
-            ].filter(Boolean);
-            const formatted = parts.join(' - ').toUpperCase().trim();
-
-            console.log(`[GEOCODE] Nominatim: (${lat}, ${lng}) → "${formatted}"`);
-            return res.json({
+      const resolveGeocode = async (): Promise<any> => {
+        const nData = await callNominatimThrottled(lat, lng);
+        if (nData) {
+          if (nData._source && nData._formatted) {
+            const result = {
               success: true,
-              address: formatted,
-              fullAddress: nData.display_name || '',
-              components: { street, number, neighborhood, city, state }
-            });
+              address: nData._formatted,
+              fullAddress: nData.display_name || nData._formatted,
+              components: nData._components
+            };
+            const cacheKeys = Object.keys(geocodeMemCache);
+            if (cacheKeys.length >= GEOCODE_MAX_CACHE) {
+              const oldest = cacheKeys.sort((a, b) => geocodeMemCache[a].ts - geocodeMemCache[b].ts).slice(0, 50);
+              oldest.forEach(k => delete geocodeMemCache[k]);
+            }
+            geocodeMemCache[cacheKey] = { data: result, ts: Date.now() };
+            return result;
           }
-        } catch (e: any) {
-          console.error('[GEOCODE] Nominatim também falhou:', e.message);
+          if (nData.address) {
+            const { formatted, street, number, neighborhood, city, state } = formatNominatimAddress(nData.address);
+            if (formatted) {
+              console.log(`[GEOCODE] Nominatim: (${lat}, ${lng}) → "${formatted}"`);
+              const result = {
+                success: true,
+                address: formatted,
+                fullAddress: nData.display_name || '',
+                components: { street, number, neighborhood, city, state }
+              };
+              geocodeMemCache[cacheKey] = { data: result, ts: Date.now() };
+              return result;
+            }
+          }
         }
-        return res.json({ success: false, error: 'Nenhum resultado encontrado' });
-      }
+        return null;
+      };
 
-      if (data.results && data.results.length > 0) {
-        const result = data.results[0];
-        let street = '', number = '', neighborhood = '', city = '', state = '';
+      geocodeInflight[cacheKey] = resolveGeocode();
+      const finalResult = await geocodeInflight[cacheKey];
+      delete geocodeInflight[cacheKey];
 
-        result.address_components.forEach((c: any) => {
-          if (c.types.includes('route')) street = c.long_name;
-          if (c.types.includes('street_number')) number = c.long_name;
-          if (c.types.includes('sublocality_level_1') || c.types.includes('sublocality')) neighborhood = c.long_name;
-          if (c.types.includes('administrative_area_level_2')) city = c.long_name;
-          if (c.types.includes('administrative_area_level_1')) state = c.short_name;
-        });
-
-        const parts = [
-          street ? (number ? `${street}, ${number}` : street) : '',
-          neighborhood,
-          city ? (state ? `${city}/${state}` : city) : state
-        ].filter(Boolean);
-        const formatted = parts.join(' - ').toUpperCase().trim();
-
-        console.log(`[GEOCODE] Reverse: (${lat}, ${lng}) → "${formatted}"`);
-        return res.json({ 
-          success: true, 
-          address: formatted || result.formatted_address?.toUpperCase() || '',
-          fullAddress: result.formatted_address || '',
-          components: { street, number, neighborhood, city, state }
-        });
-      }
-
-      return res.json({ success: false, error: 'Nenhum resultado encontrado' });
+      return res.json(finalResult || { success: false, error: 'Nenhum resultado encontrado' });
     } catch (err: any) {
       console.error('[GEOCODE] Erro:', err.message);
       return res.status(500).json({ success: false, error: err.message });

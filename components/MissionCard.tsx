@@ -18,24 +18,31 @@ import { applyRegionSuffix, calculateMissionFinancials, auditMissionFinancials }
 import { formatProviderName, resolveLocationDisplay, extractCoordinates } from '../lib/utils';
 
 const geocodeCache: Record<string, string> = {};
+const geocodePending: Record<string, Promise<string>> = {};
 
 const reverseGeocodeAddress = async (lat: number, lng: number): Promise<string> => {
     const cacheKey = `${lat.toFixed(6)},${lng.toFixed(6)}`;
     const cached = geocodeCache[cacheKey];
     if (cached) return cached;
-    
-    try {
-        const resp = await fetch(`/api/reverse-geocode?lat=${lat}&lng=${lng}`);
-        const data = await resp.json();
-        if (data.success && data.address) {
-            geocodeCache[cacheKey] = data.address;
-            return data.address;
+    if (geocodePending[cacheKey]) return geocodePending[cacheKey];
+
+    const promise = (async () => {
+        try {
+            const resp = await fetch(`/api/reverse-geocode?lat=${lat}&lng=${lng}`);
+            const data = await resp.json();
+            if (data.success && data.address) {
+                geocodeCache[cacheKey] = data.address;
+                delete geocodePending[cacheKey];
+                return data.address;
+            }
+        } catch (e) {
+            console.warn('[LOCATION] Card geocode failed:', e);
         }
-    } catch (e) {
-        console.warn('[LOCATION] Card geocode failed:', e);
-    }
-    const fallback = `LAT ${lat.toFixed(4)}, LNG ${lng.toFixed(4)}`;
-    return fallback;
+        delete geocodePending[cacheKey];
+        return '';
+    })();
+    geocodePending[cacheKey] = promise;
+    return promise;
 };
 
 interface MissionCardProps {
@@ -219,7 +226,7 @@ const MissionCardComponent: React.FC<MissionCardProps> = ({
         }
         setResolvedAddress(null);
         reverseGeocodeAddress(lat, lng).then(addr => {
-            if (!cancelled) setResolvedAddress(addr);
+            if (!cancelled) setResolvedAddress(addr || 'LOCALIZAÇÃO VIA GPS');
         });
         return () => { cancelled = true; };
     }, [locationInfo.needsGeocode, locationInfo.coords?.lat, locationInfo.coords?.lng]);

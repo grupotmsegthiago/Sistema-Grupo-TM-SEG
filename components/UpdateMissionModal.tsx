@@ -512,23 +512,25 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
         }
     };
 
-    const reverseGeocode = async (lat: number, lng: number): Promise<string> => {
+    const reverseGeocode = async (lat: number, lng: number, retries = 2): Promise<string> => {
         const fallbackAddress = `LAT ${lat.toFixed(6)}, LNG ${lng.toFixed(6)}`;
-        try {
-            const resp = await fetch(`/api/reverse-geocode?lat=${lat}&lng=${lng}`);
-            const data = await resp.json();
-            if (data.success && data.address) {
-                const finalAddress = data.address;
-                setEditData(prev => ({ ...prev, currentLocationName: finalAddress }));
-                console.log(`[LOCATION] Reverse geocode: (${lat}, ${lng}) → "${finalAddress}"`);
-                return finalAddress;
+        for (let attempt = 0; attempt <= retries; attempt++) {
+            try {
+                if (attempt > 0) await new Promise(r => setTimeout(r, 1500 * attempt));
+                const resp = await fetch(`/api/reverse-geocode?lat=${lat}&lng=${lng}`);
+                const data = await resp.json();
+                if (data.success && data.address) {
+                    const finalAddress = data.address;
+                    setEditData(prev => ({ ...prev, currentLocationName: finalAddress }));
+                    console.log(`[LOCATION] Reverse geocode: (${lat}, ${lng}) → "${finalAddress}"`);
+                    return finalAddress;
+                }
+                console.warn('[LOCATION] Geocoder sem resultados para:', lat, lng, data.error);
+            } catch (e) {
+                console.error("[LOCATION] Geocoding falhou (tentativa " + (attempt + 1) + "):", e);
             }
-            console.warn('[LOCATION] Geocoder sem resultados para:', lat, lng, data.error);
-            return fallbackAddress;
-        } catch (e) {
-            console.error("[LOCATION] Geocoding falhou:", e);
-            return fallbackAddress;
         }
+        return fallbackAddress;
     };
 
     const handleLocationInputChange = async (val: string) => {
@@ -538,9 +540,15 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
             const standardLink = `https://www.google.com/maps?q=${coords.lat},${coords.lng}&z=17&hl=pt-BR`;
             setCurrentPreviewCoords(coords);
             setEditData(prev => ({ ...prev, mapLink: standardLink }));
+            showNotification('GPS Identificado', 'Resolvendo endereço...', 'success');
             const resolvedAddress = await reverseGeocode(coords.lat, coords.lng);
             calculateProgressFromCoords(coords.lat, coords.lng);
-            showNotification('GPS Identificado', `Endereço: ${resolvedAddress}. Link e localização sincronizados.`, 'success');
+            const isRealAddress = resolvedAddress && !/^LAT\s/i.test(resolvedAddress);
+            if (isRealAddress) {
+                showNotification('GPS Identificado', `Endereço: ${resolvedAddress}. Link e localização sincronizados.`, 'success');
+            } else {
+                showNotification('GPS Identificado', 'Coordenadas capturadas. O endereço será resolvido ao salvar.', 'success');
+            }
         }
     };
 

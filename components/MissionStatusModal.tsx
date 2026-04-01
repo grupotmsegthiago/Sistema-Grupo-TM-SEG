@@ -114,19 +114,33 @@ const MissionStatusModal: React.FC<Props> = ({
         setGeocodedAddress('LOCALIZAÇÃO VIA GPS');
         return;
     }
+    let cancelled = false;
     const { lat, lng } = locationAnalysis.coords;
-    fetch(`/api/reverse-geocode?lat=${lat}&lng=${lng}`)
-      .then(r => r.json())
-      .then(data => {
-        if (data.success && data.address) {
-            setGeocodedAddress(data.address);
-        } else {
-            setGeocodedAddress(`LAT ${lat.toFixed(4)}, LNG ${lng.toFixed(4)}`);
-        }
-      })
-      .catch(() => {
-        setGeocodedAddress(`LAT ${lat.toFixed(4)}, LNG ${lng.toFixed(4)}`);
-      });
+    const attemptGeocode = (retries = 2) => {
+      if (cancelled) return;
+      fetch(`/api/reverse-geocode?lat=${lat}&lng=${lng}`)
+        .then(r => r.json())
+        .then(data => {
+          if (cancelled) return;
+          if (data.success && data.address) {
+              setGeocodedAddress(data.address);
+          } else if (retries > 0) {
+              setTimeout(() => attemptGeocode(retries - 1), 2000);
+          } else {
+              setGeocodedAddress('LOCALIZAÇÃO VIA GPS');
+          }
+        })
+        .catch(() => {
+          if (cancelled) return;
+          if (retries > 0) {
+              setTimeout(() => attemptGeocode(retries - 1), 2000);
+          } else {
+              setGeocodedAddress('LOCALIZAÇÃO VIA GPS');
+          }
+        });
+    };
+    attemptGeocode();
+    return () => { cancelled = true; };
   }, [locationAnalysis.needsGeocode, locationAnalysis.coords?.lat, locationAnalysis.coords?.lng]);
 
   const locationParsed = useMemo(() => ({
