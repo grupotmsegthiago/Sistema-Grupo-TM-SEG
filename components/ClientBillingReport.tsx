@@ -677,8 +677,8 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
                     status: 'CONCLUÍDO',
                     startDate: fmtDate(m.start_time),
                     startTime: fmtTime(m.start_time),
-                    viatura: m.company_vehicle?.plate || m.vehicle_id || '-',
-                    cargoPlate: m._clientVehicle?.plate || '-',
+                    viatura: m.company_vehicle ? `${m.company_vehicle.model || ''} ${m.company_vehicle.plate || ''}`.trim() || '-' : m.vehicle_id || '-',
+                    cargoPlate: m._clientVehicle ? `${m._clientVehicle.model || ''} ${m._clientVehicle.plate || ''}`.trim() || '-' : '-',
                     endDate: fmtDate(m.end_time),
                     endTime: fmtTime(m.end_time),
                     kmStart: m.start_km ?? 0,
@@ -751,8 +751,8 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
                 status: 'CONCLUÍDO',
                 startDate: fmtDate(m.start_time),
                 startTime: fmtTime(m.start_time),
-                viatura: m.company_vehicle?.plate || m.vehicle_id || '-',
-                cargoPlate,
+                viatura: m.company_vehicle ? `${m.company_vehicle.model || ''} ${m.company_vehicle.plate || ''}`.trim() || '-' : m.vehicle_id || '-',
+                cargoPlate: cargoPlate !== '-' && m._clientVehicle ? `${m._clientVehicle.model || ''} ${m._clientVehicle.plate || ''}`.trim() || '-' : cargoPlate,
                 endDate: fmtDate(m.end_time),
                 endTime: fmtTime(m.end_time),
                 kmStart: m.start_km ?? 0,
@@ -879,13 +879,14 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
 
     const cellStyle: React.CSSProperties = {
         border: '1px solid #e5c4c4',
-        padding: '7px',
+        padding: '7px 8px',
         fontSize: '13px',
         fontFamily: "'Inter', 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif",
         textAlign: 'center',
         whiteSpace: 'nowrap',
         color: '#1f2937',
         lineHeight: '1.35',
+        letterSpacing: '0.3px',
         WebkitPrintColorAdjust: 'exact' as any,
         printColorAdjust: 'exact' as any,
     };
@@ -900,7 +901,7 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
         fontSize: '11px',
         textTransform: 'uppercase' as const,
         color: '#7f1d1d',
-        padding: '5px 5px',
+        padding: '7px 8px',
     };
     const groupHeaderStyle: React.CSSProperties = {
         ...headerStyle,
@@ -2166,8 +2167,8 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
                                 <col style={{ minWidth: '65px' }} />
                                 <col style={{ minWidth: '70px' }} />
                                 <col style={{ minWidth: '60px' }} />
-                                <col style={{ minWidth: '75px' }} />
-                                <col style={{ minWidth: '75px' }} />
+                                <col style={{ minWidth: '110px' }} />
+                                <col style={{ minWidth: '110px' }} />
                                 <col style={{ minWidth: '70px' }} />
                                 <col style={{ minWidth: '60px' }} />
                                 <col style={{ minWidth: '70px' }} />
@@ -2176,14 +2177,14 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
                                 <col style={{ minWidth: '60px' }} />
                                 <col style={{ minWidth: '60px' }} />
                                 <col style={{ minWidth: '60px' }} />
-                                <col style={{ minWidth: '55px' }} />
                                 <col style={{ minWidth: '65px' }} />
-                                <col style={{ minWidth: '75px' }} />
-                                <col style={{ minWidth: '55px' }} />
-                                <col style={{ minWidth: '65px' }} />
-                                <col style={{ minWidth: '75px' }} />
                                 <col style={{ minWidth: '80px' }} />
-                                <col style={{ minWidth: '95px' }} />
+                                <col style={{ minWidth: '85px' }} />
+                                <col style={{ minWidth: '65px' }} />
+                                <col style={{ minWidth: '80px' }} />
+                                <col style={{ minWidth: '85px' }} />
+                                <col style={{ minWidth: '85px' }} />
+                                <col style={{ minWidth: '100px' }} />
                             </colgroup>
                             <thead>
                                 <tr className="group-hdr">
