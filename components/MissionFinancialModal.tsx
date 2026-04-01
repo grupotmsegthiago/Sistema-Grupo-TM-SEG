@@ -107,6 +107,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
   const useSavedValuesRef = React.useRef(false);
   const setUseSavedValues = (val: boolean) => { useSavedValuesRef.current = val; _setUseSavedValues(val); };
   const isSavingRef = React.useRef(false);
+  const userManuallyEditedRef = React.useRef(false);
   const [savedByInfo, setSavedByInfo] = useState<string | null>(null);
 
   const [editStartKm, setEditStartKm] = useState('');
@@ -557,6 +558,11 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                   if (!isSameOsMission && !hasSeparateTollProvider && savedCost > 0) {
                       setTollEmbeddedInCost(true);
                   }
+                  const revWithToll = savedRev + dbToll;
+                  const costWithToll = isSameOsMission ? 0 : (savedCost + dbTollProvider);
+                  setRevenueInput(revWithToll.toLocaleString('pt-BR', {minimumFractionDigits: 2, maximumFractionDigits: 2}));
+                  setCostInput(costWithToll.toLocaleString('pt-BR', {minimumFractionDigits: 2, maximumFractionDigits: 2}));
+                  userManuallyEditedRef.current = true;
               }
               if (mRes.data.billing_verified_by) {
                   setSavedByInfo(`Salvo por ${mRes.data.billing_verified_by}`);
@@ -840,13 +846,12 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
       });
   }, [mission, clientTables, providerTables, clientData, manualClientTableId, manualProviderTableId, iblEnabled, tollInput, customProviderKm, customProviderHour, customClientKm, customClientHour, customClientBase, customProviderBase, providerOpsOverride]);
 
-    const userManuallyEditedRef = React.useRef(false);
-
     useEffect(() => {
       if (financialData && mission) {
           const isVendorLocked = !!(mission.verified_by && mission.verified_at);
           const provTotalWithCorrectToll = financialData.provider.serviceTotal + parseNumber(tollProviderInput);
-          if (!isSavingRef.current && !isVendorLocked && !userManuallyEditedRef.current) {
+          const hasSavedValues = (mission.revenue_value != null && mission.revenue_value > 0) || (mission.cost_value != null && mission.cost_value > 0) || !!mission.billing_verified_by;
+          if (!isSavingRef.current && !isVendorLocked && !userManuallyEditedRef.current && !hasSavedValues) {
               setRevenueInput(financialData.client.total.toLocaleString('pt-BR', {minimumFractionDigits: 2, maximumFractionDigits: 2}));
               setCostInput(provTotalWithCorrectToll.toLocaleString('pt-BR', {minimumFractionDigits: 2, maximumFractionDigits: 2}));
           }

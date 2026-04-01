@@ -3550,5 +3550,42 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
     }
   });
 
+  app.post('/api/admin/restore-batch', async (req: Request, res: Response) => {
+    try {
+      const { items } = req.body;
+      if (!items || !Array.isArray(items)) {
+        return res.status(400).json({ error: 'items array required [{id, revenue, cost}]' });
+      }
+      const supabaseUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || '';
+      const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.VITE_SUPABASE_ANON_KEY || '';
+      const results: any[] = [];
+      let restored = 0;
+      for (const item of items) {
+        const updateResp = await fetch(`${supabaseUrl}/rest/v1/missions?id=eq.${item.id}`, {
+          method: 'PATCH',
+          headers: {
+            'apikey': supabaseKey,
+            'Authorization': `Bearer ${supabaseKey}`,
+            'Content-Type': 'application/json',
+            'Prefer': 'return=minimal'
+          },
+          body: JSON.stringify({
+            revenue_value: Math.round(item.revenue * 100) / 100,
+            cost_value: Math.round(item.cost * 100) / 100
+          })
+        });
+        if (updateResp.ok) {
+          restored++;
+          results.push({ id: item.id, status: 'restored' });
+        } else {
+          results.push({ id: item.id, status: 'error', error: await updateResp.text() });
+        }
+      }
+      return res.json({ total: items.length, restored, results });
+    } catch (err: any) {
+      return res.status(500).json({ error: err.message });
+    }
+  });
+
   return httpServer;
 }
