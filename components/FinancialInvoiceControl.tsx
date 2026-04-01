@@ -118,11 +118,13 @@ const FinancialInvoiceControl: React.FC = () => {
     if (!confirm(`Confirma o CANCELAMENTO da fatura NF ${inv.number}?\n\nIsso irá:\n- Alterar status para CANCELADA\n- Remover o título do Contas a Receber`)) return;
     setCancellingId(inv.id);
     try {
-      await supabase.from('financial_invoices').update({ status: 'CANCELADA' }).eq('id', inv.id);
-      await supabase.from('financial_transactions')
+      const { error: invErr } = await supabase.from('financial_invoices').update({ status: 'CANCELADA' }).eq('id', inv.id);
+      if (invErr) { alert('Erro ao cancelar fatura: ' + invErr.message); setCancellingId(null); return; }
+      const { error: txErr } = await supabase.from('financial_transactions')
         .update({ status: 'CANCELLED' })
         .ilike('description', `%${inv.number}%`)
         .eq('status', 'PENDING');
+      if (txErr) console.error('Erro ao cancelar lançamento vinculado:', txErr);
 
       if (inv.asaas_payment_id) {
         try {

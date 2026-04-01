@@ -227,7 +227,8 @@ const ClientRouteList: React.FC<Props> = ({ onAdd, onEdit, clientName, embedded 
               const rawDist = parseFloat(route.distance);
               const bestMatch = clientTables.sort((a, b) => a.franchise_km - b.franchise_km).find(t => t.franchise_km >= rawDist) || clientTables[clientTables.length-1];
               if (bestMatch) {
-                  await supabase.from('client_routes').update({ toll_cost: bestMatch.activation_fee }).eq('id', route.id);
+                  const { error } = await supabase.from('client_routes').update({ toll_cost: bestMatch.activation_fee }).eq('id', route.id);
+                  if (error) console.error('Erro ao atualizar rota:', route.id, error);
               }
           }
           fetchRoutes();

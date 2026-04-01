@@ -438,8 +438,14 @@ const FinancialTransactionList: React.FC = () => {
                                             value={t.payment_method || ''}
                                             onChange={async (e) => {
                                                 const val = e.target.value || null;
+                                                const original = t.payment_method;
                                                 setTransactions(prev => prev.map(item => item.id === t.id ? { ...item, payment_method: val as any } : item));
-                                                await supabase.from('financial_transactions').update({ payment_method: val }).eq('id', t.id);
+                                                const { error } = await supabase.from('financial_transactions').update({ payment_method: val }).eq('id', t.id);
+                                                if (error) {
+                                                    console.error('Erro ao salvar forma de pagamento:', error);
+                                                    setTransactions(prev => prev.map(item => item.id === t.id ? { ...item, payment_method: original as any } : item));
+                                                    alert('Erro ao salvar forma de pagamento. A coluna pode não existir no banco.');
+                                                }
                                             }}
                                             className={`px-2 py-1 rounded text-[10px] font-black uppercase border cursor-pointer outline-none ${
                                                 t.payment_method === 'PIX' ? 'bg-teal-50 text-teal-700 border-teal-200' :

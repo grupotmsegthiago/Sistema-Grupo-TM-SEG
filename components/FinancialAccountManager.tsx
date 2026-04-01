@@ -194,9 +194,11 @@ const FinancialAccountManager: React.FC<Props> = ({ onClose }) => {
         try {
             const val = parseFloat(formData.initial_balance);
             if (editingId) {
-                await supabase.from('financial_accounts').update({ name: formData.name, initial_balance: val, bank_name: formData.bank_name }).eq('id', editingId);
+                const { error } = await supabase.from('financial_accounts').update({ name: formData.name, initial_balance: val, bank_name: formData.bank_name }).eq('id', editingId);
+                if (error) { alert('Erro ao salvar conta: ' + error.message); setIsSaving(false); return; }
             } else {
-                await supabase.from('financial_accounts').insert([{ name: formData.name, initial_balance: val, bank_name: formData.bank_name, status: 'Ativo' }]);
+                const { error } = await supabase.from('financial_accounts').insert([{ name: formData.name, initial_balance: val, bank_name: formData.bank_name, status: 'Ativo' }]);
+                if (error) { alert('Erro ao criar conta: ' + error.message); setIsSaving(false); return; }
             }
             setEditingId(null);
             setShowForm(false);

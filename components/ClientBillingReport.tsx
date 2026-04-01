@@ -1105,7 +1105,11 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
                 emailList.push(email.trim().toLowerCase());
             }
             const newVal = emailList.join(', ');
-            await supabase.from('clients').update({ medicao_email: newVal }).eq('id', parseInt(clientId));
+            const { error } = await supabase.from('clients').update({ medicao_email: newVal }).eq('id', parseInt(clientId));
+            if (error) {
+                console.error('Erro ao salvar e-mail medição:', error);
+                alert('Erro ao salvar e-mail de medição: ' + error.message);
+            }
         } catch (err) {
             console.error('Erro ao salvar e-mail medição:', err);
         }

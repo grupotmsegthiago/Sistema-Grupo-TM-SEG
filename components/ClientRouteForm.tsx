@@ -147,7 +147,13 @@ const ClientRouteForm: React.FC<Props> = ({ onSuccess, id }) => {
     e.preventDefault(); setIsSaving(true);
     try {
         const payload = { code: formData.code, name: formData.name, client: formData.client, origin: formData.origin, destination: waypoints.length > 0 ? `${formData.destination} (Via: ${waypoints.join(' -> ')})` : formData.destination, distance: formData.distance, toll_cost: parseFloat(formData.price) || 0 };
-        if (id) await supabase.from('client_routes').update(payload).eq('id', id); else await supabase.from('client_routes').insert([payload]);
+        if (id) {
+            const { error } = await supabase.from('client_routes').update(payload).eq('id', id);
+            if (error) throw new Error('Erro ao salvar rota: ' + error.message);
+        } else {
+            const { error } = await supabase.from('client_routes').insert([payload]);
+            if (error) throw new Error('Erro ao criar rota: ' + error.message);
+        }
         showNotification('Sucesso', 'Rota salva!', 'success'); onSuccess();
     } catch (err: any) { showNotification('Erro', err.message, 'error'); } finally { setIsSaving(false); }
   };

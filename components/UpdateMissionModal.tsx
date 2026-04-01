@@ -608,7 +608,8 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
             const { data: urlData } = supabase.storage.from('mission-evidence').getPublicUrl(filePath);
             const imageUrl = urlData.publicUrl || '';
 
-            await supabase.from('missions').update({ mirroring_evidence_url: imageUrl }).eq('id', mission.id);
+            const { error: mErr } = await supabase.from('missions').update({ mirroring_evidence_url: imageUrl }).eq('id', mission.id);
+            if (mErr) { console.error('Erro ao salvar URL do espelhamento:', mErr); alert('Erro ao salvar evidência de espelhamento.'); }
             setMirroringExistingUrl(imageUrl);
 
             try {

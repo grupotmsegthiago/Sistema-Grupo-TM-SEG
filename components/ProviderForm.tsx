@@ -352,7 +352,8 @@ const ProviderForm: React.FC<ProviderFormProps> = ({ onBack, onNavigateToVehicle
             alvara_url: formData.alvaraUrl
        };
        if (id) {
-           await supabase.from('providers').update(payload).eq('id', id);
+           const { error } = await supabase.from('providers').update(payload).eq('id', id);
+           if (error) throw new Error('Erro ao salvar fornecedor: ' + error.message);
            await logAction('UPDATE', 'Provider', id, `Fornecedor atualizado: ${formData.name}`);
        } else {
            payload.created_by = currentUser?.name || 'SISTEMA';
@@ -380,8 +381,13 @@ const ProviderForm: React.FC<ProviderFormProps> = ({ onBack, onNavigateToVehicle
               cost_per_extra_hour: parseFloat(costFormData.cost_per_extra_hour) || 0,
               cancellation_fee: parseFloat(costFormData.cancellation_fee) || 0,
           };
-          if (editingCostId) await supabase.from('provider_cost_tables').update(payload).eq('id', editingCostId);
-          else await supabase.from('provider_cost_tables').insert([payload]);
+          if (editingCostId) {
+              const { error } = await supabase.from('provider_cost_tables').update(payload).eq('id', editingCostId);
+              if (error) throw new Error('Erro ao salvar tabela de custos: ' + error.message);
+          } else {
+              const { error } = await supabase.from('provider_cost_tables').insert([payload]);
+              if (error) throw new Error('Erro ao criar tabela de custos: ' + error.message);
+          }
           
           setEditingCostId(null);
           setCostFormData({ operation_type: '', activation_cost: '', franchise_hours: '', franchise_km: '', cost_per_extra_km: '', cost_per_extra_hour: '', cancellation_fee: '' });

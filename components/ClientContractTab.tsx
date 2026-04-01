@@ -185,13 +185,14 @@ const ClientContractTab: React.FC<Props> = ({
       };
 
       if (editingId) {
-        await supabase.from('system_logs').update({
+        const { error } = await supabase.from('system_logs').update({
           details: JSON.stringify(payload),
           action_type: 'UPDATE',
         }).eq('id', editingId);
+        if (error) { showNotification('Erro ao salvar contrato: ' + error.message, 'error'); setIsSaving(false); return; }
         showNotification('Contrato atualizado com sucesso!', 'success');
       } else {
-        await supabase.from('system_logs').insert([{
+        const { error } = await supabase.from('system_logs').insert([{
           user_name: user.name,
           action_type: 'CREATE',
           entity: 'ClientContract',
@@ -199,6 +200,7 @@ const ClientContractTab: React.FC<Props> = ({
           details: JSON.stringify(payload),
           created_at: new Date().toISOString(),
         }]);
+        if (error) { showNotification('Erro ao criar contrato: ' + error.message, 'error'); setIsSaving(false); return; }
         showNotification('Contrato registrado com sucesso!', 'success');
       }
 
@@ -213,7 +215,8 @@ const ClientContractTab: React.FC<Props> = ({
 
   const handleDelete = async (id: string) => {
     if (!confirm('Deseja realmente excluir este contrato?')) return;
-    await supabase.from('system_logs').delete().eq('id', id);
+    const { error } = await supabase.from('system_logs').delete().eq('id', id);
+    if (error) { showNotification('Erro ao excluir contrato: ' + error.message, 'error'); return; }
     showNotification('Contrato excluído.', 'success');
     fetchContracts();
   };
@@ -226,10 +229,11 @@ const ClientContractTab: React.FC<Props> = ({
     delete (payload as any).id;
     delete (payload as any).created_at;
     delete (payload as any).created_by;
-    await supabase.from('system_logs').update({
+    const { error } = await supabase.from('system_logs').update({
       details: JSON.stringify(payload),
       action_type: 'UPDATE',
     }).eq('id', contract.id);
+    if (error) { showNotification('Erro ao alterar status: ' + error.message, 'error'); return; }
     showNotification(`Status alterado para ${STATUS_CONFIG[newStatus]?.label || newStatus}`, 'success');
     fetchContracts();
   };

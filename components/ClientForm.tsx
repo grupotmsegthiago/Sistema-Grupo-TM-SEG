@@ -400,8 +400,13 @@ const ClientForm: React.FC<ClientFormProps> = ({
               price_per_extra_km: parseCurrency(priceFormData.price_per_extra_km),
               price_per_extra_hour: parseCurrency(priceFormData.price_per_extra_hour),
           };
-          if (editingPriceId) await supabase.from('client_price_tables').update(payload).eq('id', editingPriceId);
-          else await supabase.from('client_price_tables').insert([payload]);
+          if (editingPriceId) {
+              const { error } = await supabase.from('client_price_tables').update(payload).eq('id', editingPriceId);
+              if (error) throw new Error('Erro ao salvar tabela de preço: ' + error.message);
+          } else {
+              const { error } = await supabase.from('client_price_tables').insert([payload]);
+              if (error) throw new Error('Erro ao criar tabela de preço: ' + error.message);
+          }
           
           setEditingPriceId(null);
           setPriceRegion(''); setPriceDescription('');

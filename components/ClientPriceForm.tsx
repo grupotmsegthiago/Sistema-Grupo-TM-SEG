@@ -105,11 +105,13 @@ const ClientPriceForm: React.FC<Props> = ({ onBack, onSuccess, id }) => {
             price_per_extra_hour: parseCurrency(formData.price_per_extra_hour)
         };
         if (id) {
-            await supabase.from('client_price_tables').update(payload).eq('id', id);
+            const { error } = await supabase.from('client_price_tables').update(payload).eq('id', id);
+            if (error) throw new Error('Erro ao salvar tabela de preço: ' + error.message);
             if (onSuccess) onSuccess(id);
             else onBack();
         } else {
-            const { data: inserted } = await supabase.from('client_price_tables').insert([payload]).select('id');
+            const { data: inserted, error } = await supabase.from('client_price_tables').insert([payload]).select('id');
+            if (error) throw new Error('Erro ao criar tabela de preço: ' + error.message);
             const newId = inserted?.[0]?.id?.toString();
             if (onSuccess) onSuccess(newId);
             else onBack();

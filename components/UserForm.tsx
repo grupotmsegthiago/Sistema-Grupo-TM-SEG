@@ -275,7 +275,8 @@ const UserForm: React.FC<UserFormProps> = ({ onBack, userType, id }) => {
               payload.permissions = selectedPermissions;
           }
           if (id) {
-              await supabase.from('system_users').update(payload).eq('id', id);
+              const { error: updErr } = await supabase.from('system_users').update(payload).eq('id', id);
+              if (updErr) throw new Error('Erro ao salvar usuário: ' + updErr.message);
               if (userType === 'internal') await saveEquipmentData(id);
               await logAction('UPDATE', 'User', id, `Usuário atualizado: ${payload.name}`);
               showNotification('Sucesso', 'Usuário atualizado.', 'success');
