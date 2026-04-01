@@ -177,9 +177,9 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
     const isOccurrenceRequired = isRequirementActive || editData.status === MissionStatus.REFUSED;
     const isGoogleLinkRequired = isRequirementActive;
 
-    // Efeito para Relógio em Tempo Real nos campos de Fim de Viagem
     useEffect(() => {
-        if (!isOpen || isEndTimeLocked || (mission && [MissionStatus.COMPLETED, MissionStatus.CANCELLED, MissionStatus.REFUSED, MissionStatus.PENDING].includes(mission.status as MissionStatus) && mission.endTime)) return;
+        if (!isOpen || isEndTimeLocked) return;
+        if (!canEditTimes && mission && [MissionStatus.COMPLETED, MissionStatus.CANCELLED, MissionStatus.REFUSED, MissionStatus.PENDING].includes(mission.status as MissionStatus) && mission.endTime) return;
 
         // VERIFICAÇÃO DE AGENDAMENTO FUTURO
         // Se a data de início estiver no futuro, NÃO ativa o relógio de Tempo Real
@@ -202,7 +202,7 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
         }, 1000);
 
         return () => clearInterval(interval);
-    }, [isOpen, isEndTimeLocked, mission, editData.startDate, editData.startTime]);
+    }, [isOpen, isEndTimeLocked, mission, editData.startDate, editData.startTime, canEditTimes]);
 
     // Função auxiliar para validar KM (Apenas Ponto)
     const handleKmInput = (field: 'startKm' | 'endKm', value: string) => {
@@ -668,7 +668,7 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
         const isTransitionToInTransit = editData.status === MissionStatus.IN_TRANSIT && 
             [MissionStatus.ORIGIN, MissionStatus.SCHEDULED, MissionStatus.DOCUMENTATION, MissionStatus.SOLICITED].includes(originalStatus as MissionStatus);
         
-        if (isTransitionToInTransit) {
+        if (isTransitionToInTransit && !canEditTimes) {
             const now = new Date();
             const scheduledStart = new Date(`${editData.startDate}T${editData.startTime}`);
             if (now < scheduledStart) {
@@ -682,7 +682,7 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
         let endIso = null;
         if (editData.endDate && editData.endTime) {
             endIso = new Date(`${editData.endDate}T${editData.endTime}`).toISOString();
-             if (new Date(endIso) < new Date(startIso)) {
+             if (new Date(endIso) < new Date(startIso) && !canEditTimes) {
                 alert("ERRO DE CRONOLOGIA: A data/hora de término não pode ser anterior ao início da missão.\n\nPor favor, verifique se a data final está correta.");
                 return;
             }
