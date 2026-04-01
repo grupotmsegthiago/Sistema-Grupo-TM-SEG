@@ -19,62 +19,24 @@ import { formatProviderName, resolveLocationDisplay, extractCoordinates } from '
 
 const geocodeCache: Record<string, string> = {};
 
-const waitForGoogleMaps = (): Promise<boolean> => {
-    if (typeof google !== 'undefined' && google?.maps?.Geocoder) return Promise.resolve(true);
-    return new Promise(resolve => {
-        let attempts = 0;
-        const check = () => {
-            attempts++;
-            if (typeof google !== 'undefined' && google?.maps?.Geocoder) return resolve(true);
-            if (attempts >= 20) return resolve(false);
-            setTimeout(check, 500);
-        };
-        setTimeout(check, 500);
-    });
-};
-
 const reverseGeocodeAddress = async (lat: number, lng: number): Promise<string> => {
     const cacheKey = `${lat.toFixed(6)},${lng.toFixed(6)}`;
     const cached = geocodeCache[cacheKey];
     if (cached) return cached;
     
-    const mapsReady = await waitForGoogleMaps();
-    if (!mapsReady) {
-        return `LAT ${lat.toFixed(4)}, LNG ${lng.toFixed(4)}`;
-    }
-
     try {
-        const geocoder = new google.maps.Geocoder();
-        const response = await geocoder.geocode({ location: { lat, lng } });
-        if (response.results && response.results[0]) {
-            const res = response.results[0];
-            let street = '', number = '', neighborhood = '', city = '', state = '';
-            res.address_components.forEach((c: any) => {
-                if (c.types.includes('route')) street = c.long_name;
-                if (c.types.includes('street_number')) number = c.long_name;
-                if (c.types.includes('sublocality_level_1') || c.types.includes('sublocality')) neighborhood = c.long_name;
-                if (c.types.includes('administrative_area_level_2')) city = c.long_name;
-                if (c.types.includes('administrative_area_level_1')) state = c.short_name;
-            });
-            const parts = [
-                street ? (number ? `${street}, ${number}` : street) : '',
-                neighborhood,
-                city,
-                state
-            ].filter(Boolean);
-            const formatted = parts.join(', ').toUpperCase().trim();
-            if (formatted && formatted !== ',') {
-                geocodeCache[cacheKey] = formatted;
-                return formatted;
-            }
+        const resp = await fetch(`/api/reverse-geocode?lat=${lat}&lng=${lng}`);
+        const data = await resp.json();
+        if (data.success && data.address) {
+            geocodeCache[cacheKey] = data.address;
+            return data.address;
         }
     } catch (e) {
         console.warn('[LOCATION] Card geocode failed:', e);
     }
-    return `LAT ${lat.toFixed(4)}, LNG ${lng.toFixed(4)}`;
+    const fallback = `LAT ${lat.toFixed(4)}, LNG ${lng.toFixed(4)}`;
+    return fallback;
 };
-
-declare const google: any;
 
 interface MissionCardProps {
     mission: Mission;

@@ -514,51 +514,16 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
 
     const reverseGeocode = async (lat: number, lng: number): Promise<string> => {
         const fallbackAddress = `LAT ${lat.toFixed(6)}, LNG ${lng.toFixed(6)}`;
-        if (!isLoaded) {
-            console.warn('[LOCATION] Google Maps não carregado, aguardando até 10s...');
-            const ready = await new Promise<boolean>(resolve => {
-                let attempts = 0;
-                const check = () => {
-                    attempts++;
-                    if (typeof google !== 'undefined' && google?.maps?.Geocoder) return resolve(true);
-                    if (attempts >= 20) return resolve(false);
-                    setTimeout(check, 500);
-                };
-                setTimeout(check, 500);
-            });
-            if (!ready) {
-                console.error('[LOCATION] Google Maps não carregou após 10s');
-                return fallbackAddress;
-            }
-        }
-        const geocoder = new google.maps.Geocoder();
         try {
-            const response = await geocoder.geocode({ location: { lat, lng } });
-            if (response.results && response.results[0]) {
-                const res = response.results[0];
-                let street = '', number = '', neighborhood = '', city = '', state = '';
-                
-                res.address_components.forEach((c: any) => {
-                    if (c.types.includes('route')) street = c.long_name;
-                    if (c.types.includes('street_number')) number = c.long_name;
-                    if (c.types.includes('sublocality_level_1') || c.types.includes('sublocality')) neighborhood = c.long_name;
-                    if (c.types.includes('administrative_area_level_2')) city = c.long_name;
-                    if (c.types.includes('administrative_area_level_1')) state = c.short_name;
-                });
-                
-                const parts = [
-                    street ? (number ? `${street}, ${number}` : street) : '',
-                    neighborhood,
-                    city,
-                    state
-                ].filter(Boolean);
-                const formatted = parts.join(', ').toUpperCase().trim();
-                const finalAddress = (formatted && formatted !== ',') ? formatted : fallbackAddress;
+            const resp = await fetch(`/api/reverse-geocode?lat=${lat}&lng=${lng}`);
+            const data = await resp.json();
+            if (data.success && data.address) {
+                const finalAddress = data.address;
                 setEditData(prev => ({ ...prev, currentLocationName: finalAddress }));
                 console.log(`[LOCATION] Reverse geocode: (${lat}, ${lng}) → "${finalAddress}"`);
                 return finalAddress;
             }
-            console.warn('[LOCATION] Geocoder sem resultados para:', lat, lng);
+            console.warn('[LOCATION] Geocoder sem resultados para:', lat, lng, data.error);
             return fallbackAddress;
         } catch (e) {
             console.error("[LOCATION] Geocoding falhou:", e);

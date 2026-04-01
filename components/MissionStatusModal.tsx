@@ -114,31 +114,20 @@ const MissionStatusModal: React.FC<Props> = ({
         setGeocodedAddress('LOCALIZAÇÃO VIA GPS');
         return;
     }
-    if (!isLoaded) {
-        setGeocodedAddress(null);
-        return;
-    }
     const { lat, lng } = locationAnalysis.coords;
-    const geocoder = new google.maps.Geocoder();
-    geocoder.geocode({ location: { lat, lng } }).then((response: any) => {
-        if (response.results && response.results[0]) {
-            const res = response.results[0];
-            let street = '', number = '', neighborhood = '', city = '', state = '';
-            res.address_components.forEach((c: any) => {
-                if (c.types.includes('route')) street = c.long_name;
-                if (c.types.includes('street_number')) number = c.long_name;
-                if (c.types.includes('sublocality_level_1') || c.types.includes('sublocality')) neighborhood = c.long_name;
-                if (c.types.includes('administrative_area_level_2')) city = c.long_name;
-                if (c.types.includes('administrative_area_level_1')) state = c.short_name;
-            });
-            const addrParts = [street ? (number ? `${street}, ${number}` : street) : '', neighborhood, city, state].filter(Boolean);
-            const formatted = addrParts.join(', ').toUpperCase().trim();
-            setGeocodedAddress(formatted || `LAT ${lat.toFixed(4)}, LNG ${lng.toFixed(4)}`);
+    fetch(`/api/reverse-geocode?lat=${lat}&lng=${lng}`)
+      .then(r => r.json())
+      .then(data => {
+        if (data.success && data.address) {
+            setGeocodedAddress(data.address);
+        } else {
+            setGeocodedAddress(`LAT ${lat.toFixed(4)}, LNG ${lng.toFixed(4)}`);
         }
-    }).catch(() => {
+      })
+      .catch(() => {
         setGeocodedAddress(`LAT ${lat.toFixed(4)}, LNG ${lng.toFixed(4)}`);
-    });
-  }, [locationAnalysis.needsGeocode, locationAnalysis.coords?.lat, locationAnalysis.coords?.lng, isLoaded]);
+      });
+  }, [locationAnalysis.needsGeocode, locationAnalysis.coords?.lat, locationAnalysis.coords?.lng]);
 
   const locationParsed = useMemo(() => ({
     fullAddress: locationAnalysis.needsGeocode ? (geocodedAddress || 'Resolvendo endereço...') : (locationAnalysis.rawAddress || 'AGUARDANDO ATUALIZAÇÃO'),
