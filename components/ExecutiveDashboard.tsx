@@ -309,26 +309,46 @@ const ExecutiveDashboard: React.FC<Props> = ({ missions, isDirector, clientTable
                 return { ...m, rev, cost, profit: rev - cost };
             }
 
-            const isCancelledMission = m.status === MissionStatus.CANCELLED;
-            const missionObj: Mission = {
-                ...m,
-                startKm: m.startKm ?? m.start_km,
-                endKm: m.endKm ?? m.end_km,
-                startTime: m.startTime ?? m.start_time,
-                endTime: m.endTime ?? m.end_time,
-                ...(isCancelledMission ? { status: MissionStatus.COMPLETED } : {})
-            };
-            const clientName = (m.originalClientName || m.client || '').trim();
-            const matchedClient = clientsData.find(c => c.name === clientName);
-            const financials = calculateMissionFinancials(
-                missionObj,
-                clientTables,
-                providerTables,
-                matchedClient,
-                new Date()
-            );
-            const rev = financials.client.total || 0;
-            const cost = financials.provider.total || 0;
+            if (hasStoredRevenue && hasStoredCost) {
+                const rev = (m.revenue_value || 0) + Math.max(0, m.toll_value || 0);
+                const tollProv = Math.max(0, m.toll_value_provider != null ? m.toll_value_provider : (m.toll_value || 0));
+                const cost = (m.cost_value || 0) + tollProv;
+                return { ...m, rev, cost, profit: rev - cost };
+            }
+
+            let rev = 0;
+            let cost = 0;
+
+            if (hasStoredRevenue) {
+                rev = (m.revenue_value || 0) + Math.max(0, m.toll_value || 0);
+            }
+            if (hasStoredCost) {
+                const tollProv = Math.max(0, m.toll_value_provider != null ? m.toll_value_provider : (m.toll_value || 0));
+                cost = (m.cost_value || 0) + tollProv;
+            }
+
+            if (!hasStoredRevenue || !hasStoredCost) {
+                const isCancelledMission = m.status === MissionStatus.CANCELLED;
+                const missionObj: Mission = {
+                    ...m,
+                    startKm: m.startKm ?? m.start_km,
+                    endKm: m.endKm ?? m.end_km,
+                    startTime: m.startTime ?? m.start_time,
+                    endTime: m.endTime ?? m.end_time,
+                    ...(isCancelledMission ? { status: MissionStatus.COMPLETED } : {})
+                };
+                const clientName = (m.originalClientName || m.client || '').trim();
+                const matchedClient = clientsData.find(c => c.name === clientName);
+                const financials = calculateMissionFinancials(
+                    missionObj,
+                    clientTables,
+                    providerTables,
+                    matchedClient,
+                    new Date()
+                );
+                if (!hasStoredRevenue) rev = financials.client.total || 0;
+                if (!hasStoredCost) cost = financials.provider.total || 0;
+            }
 
             return { ...m, rev, cost, profit: rev - cost };
         });
@@ -348,17 +368,24 @@ const ExecutiveDashboard: React.FC<Props> = ({ missions, isDirector, clientTable
         let rev = 0, cost = 0;
         const isVerifiedFull = !!(fullMission.billing_approved || fullMission.billing_verified_by);
         const hasSaved = isVerifiedFull && (hasStoredRev || hasStoredCost || fullMission.revenue_value === 0 || fullMission.cost_value === 0);
-        if (hasSaved) {
+        if (hasSaved || (hasStoredRev && hasStoredCost)) {
             rev = (fullMission.revenue_value || 0) + Math.max(0, fullMission.toll_value || 0);
             const tollProv = Math.max(0, fullMission.toll_value_provider != null ? fullMission.toll_value_provider : (fullMission.toll_value || 0));
             cost = (fullMission.cost_value || 0) + tollProv;
         } else {
-            const missionObj: Mission = { ...fullMission, startKm: fullMission.startKm ?? fullMission.start_km, endKm: fullMission.endKm ?? fullMission.end_km, startTime: fullMission.startTime ?? fullMission.start_time, endTime: fullMission.endTime ?? fullMission.end_time };
-            const clientName = (fullMission.originalClientName || fullMission.client || '').trim();
-            const matchedClient = clientsData.find((c: any) => c.name === clientName);
-            const financials = calculateMissionFinancials(missionObj, clientTables, providerTables, matchedClient, new Date());
-            rev = financials.client.total || 0;
-            cost = financials.provider.total || 0;
+            if (hasStoredRev) rev = (fullMission.revenue_value || 0) + Math.max(0, fullMission.toll_value || 0);
+            if (hasStoredCost) {
+                const tollProv = Math.max(0, fullMission.toll_value_provider != null ? fullMission.toll_value_provider : (fullMission.toll_value || 0));
+                cost = (fullMission.cost_value || 0) + tollProv;
+            }
+            if (!hasStoredRev || !hasStoredCost) {
+                const missionObj: Mission = { ...fullMission, startKm: fullMission.startKm ?? fullMission.start_km, endKm: fullMission.endKm ?? fullMission.end_km, startTime: fullMission.startTime ?? fullMission.start_time, endTime: fullMission.endTime ?? fullMission.end_time };
+                const clientName = (fullMission.originalClientName || fullMission.client || '').trim();
+                const matchedClient = clientsData.find((c: any) => c.name === clientName);
+                const financials = calculateMissionFinancials(missionObj, clientTables, providerTables, matchedClient, new Date());
+                if (!hasStoredRev) rev = financials.client.total || 0;
+                if (!hasStoredCost) cost = financials.provider.total || 0;
+            }
         }
         return { ...fullMission, rev, cost, profit: rev - cost };
     }, [missionFinancials, missions, clientTables, providerTables, clientsData]);
