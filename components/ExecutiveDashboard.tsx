@@ -191,11 +191,13 @@ const ExecutiveDashboard: React.FC<Props> = ({ missions, isDirector, clientTable
                 const canSnapshot = (stage === 'financeiro' || stage === 'diretoria') && !mission.snapshot_approved_by;
 
                 if (isApprovedForBilling) {
-                    const updatePayload: any = {
+                    const basePayload: any = {
                         billing_approved: true,
                         billing_verified_by: displayName,
                         last_update: new Date().toISOString()
                     };
+
+                    let updateSuccess = false;
 
                     if (canSnapshot) {
                         const snapshotObj: any = {
@@ -220,23 +222,38 @@ const ExecutiveDashboard: React.FC<Props> = ({ missions, isDirector, clientTable
                             totalGeral: (mission.revenue_value || 0) + (mission.toll_value || 0),
                             iblFee: 0
                         };
-                        updatePayload.snapshot_data = snapshotObj;
-                        updatePayload.snapshot_approved_by = displayName;
-                        updatePayload.snapshot_approved_at = new Date().toISOString();
+                        const fullPayload = { ...basePayload, snapshot_data: snapshotObj, snapshot_approved_by: displayName, snapshot_approved_at: new Date().toISOString() };
+                        const { error: updateErr } = await supabase.from('missions').update(fullPayload).eq('id', mission.id);
+                        if (updateErr) {
+                            const { error: retryErr } = await supabase.from('missions').update(basePayload).eq('id', mission.id);
+                            if (!retryErr) {
+                                updateSuccess = true;
+                                await supabase.from('system_logs').insert([{
+                                    user_name: displayName,
+                                    action_type: 'SNAPSHOT',
+                                    entity: 'BillingSnapshot',
+                                    entity_id: mission.id,
+                                    details: JSON.stringify({ ...snapshotObj, approved_by: displayName, approved_at: new Date().toISOString() })
+                                }]);
+                            } else {
+                                console.error('Erro ao gravar billing_approved:', mission.id, retryErr);
+                                failed++;
+                                continue;
+                            }
+                        } else {
+                            updateSuccess = true;
+                        }
+                    } else {
+                        const { error: updateErr } = await supabase.from('missions').update(basePayload).eq('id', mission.id);
+                        if (updateErr) {
+                            console.error('Erro ao gravar billing_approved:', mission.id, updateErr);
+                            failed++;
+                            continue;
+                        }
+                        updateSuccess = true;
                     }
 
-                    const { error: updateErr } = await supabase.from('missions').update(updatePayload).eq('id', mission.id);
-                    if (updateErr && updateErr.message?.includes('does not exist') && canSnapshot) {
-                        const { snapshot_data, snapshot_approved_by, snapshot_approved_at, ...basicPayload } = updatePayload;
-                        await supabase.from('missions').update(basicPayload).eq('id', mission.id);
-                        await supabase.from('system_logs').insert([{
-                            user_name: displayName,
-                            action_type: 'SNAPSHOT',
-                            entity: 'BillingSnapshot',
-                            entity_id: mission.id,
-                            details: JSON.stringify({ ...snapshotObj, approved_by: displayName, approved_at: new Date().toISOString() })
-                        }]);
-                    }
+                    if (!updateSuccess) { failed++; continue; }
                 }
 
                 success++;
