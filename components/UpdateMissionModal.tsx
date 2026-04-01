@@ -373,6 +373,29 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
             setMirroringExistingUrl(m.mirroring_evidence_url || '');
 
             refreshAuxData(m.client, m.provider, m.vehicle_id?.toString(), clientObj?.id);
+
+            const currentLoc = (m.current_location || '').trim();
+            const locParts = currentLoc.split('|').map((p: string) => p.trim());
+            const locSegment = locParts.length > 1 ? locParts[locParts.length - 1] : currentLoc;
+            const isLocUrl = /^https?:\/\//i.test(locSegment) || /maps\?q=/i.test(locSegment);
+            const isLocEmpty = !currentLoc || currentLoc === 'Solicitação Criada';
+            const needsEnrichment = isLocEmpty || isLocUrl;
+
+            if (needsEnrichment) {
+                const enrichCoords = extractCoordinates(locSegment) || coords;
+                if (enrichCoords) {
+                    reverseGeocode(enrichCoords.lat, enrichCoords.lng).then(resolvedAddr => {
+                        if (resolvedAddr) {
+                            console.log(`[LOCATION] Auto-enriquecimento OS ${m.id}: "${resolvedAddr}"`);
+                        }
+                    }).catch(() => {});
+                }
+            } else if (locSegment && !isLocEmpty) {
+                const cleanAddr = locSegment.replace(/\s*-?\s*BRASIL$/i, '').replace(/,\s*$/, '').trim();
+                if (cleanAddr) {
+                    setEditData(prev => ({ ...prev, currentLocationName: cleanAddr }));
+                }
+            }
         } catch (error) { console.error(error); } finally { setIsLoadingData(false); }
     };
 

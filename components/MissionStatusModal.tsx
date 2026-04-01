@@ -3,7 +3,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { Mission, MissionLog, MissionStatus } from '../types';
 import { useLoadScript, GoogleMap, DirectionsRenderer, Marker } from '@react-google-maps/api';
 import { googleMapsLoadConfig } from '../lib/maps';
-import { extractCoordinates } from '../lib/utils';
+import { extractCoordinates, resolveLocationDisplay } from '../lib/utils';
 // Added AlertTriangle to the imports below
 import { X, MapPin, Flag, Truck, User, Phone, Briefcase, Car, Shield, BarChart3, Navigation, ExternalLink, Edit, Package, Loader2, Target, CheckCircle2, Activity, AlertTriangle } from 'lucide-react';
 
@@ -96,11 +96,14 @@ const MissionStatusModal: React.FC<Props> = ({
     let status = parts.length > 1 ? parts[0] : '';
     let fullAddr = parts.length > 1 ? parts[1] : parts[0];
 
+    const { displayText } = resolveLocationDisplay(fullAddr, mission.mapLink);
+    const finalAddr = displayText || fullAddr.toUpperCase().replace(/^,\s*/, '');
+
     return { 
-        fullAddress: fullAddr.toUpperCase().replace(/^,\s*/, ''), 
+        fullAddress: finalAddr, 
         status: status.toUpperCase() 
     };
-  }, [mission?.currentLocation]);
+  }, [mission?.currentLocation, mission?.mapLink]);
 
   if (!isOpen || !mission) return null;
 

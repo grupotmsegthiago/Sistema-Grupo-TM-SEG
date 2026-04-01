@@ -15,7 +15,7 @@ const WhatsAppIcon = ({ size = 14 }: { size?: number }) => (
 import MissionTimer from './MissionTimer';
 import { useNotification } from '../lib/NotificationContext';
 import { applyRegionSuffix, calculateMissionFinancials, auditMissionFinancials } from '../lib/financialUtils';
-import { formatProviderName } from '../lib/utils';
+import { formatProviderName, resolveLocationDisplay } from '../lib/utils';
 
 interface MissionCardProps {
     mission: Mission;
@@ -712,18 +712,15 @@ Qualquer dúvida, estamos a disposição.
                         </div>
 
                         {(() => {
-                            const loc = mission.currentLocation || '';
-                            const parts = loc.split('|');
-                            const locationPart = parts.length > 1 ? parts[parts.length - 1].trim() : loc.trim();
-                            const cityName = locationPart ? locationPart.replace(/\s*-?\s*BRASIL$/i, '').replace(/,\s*$/, '').trim() : '';
-                            return cityName ? (
+                            const { displayText, isLink } = resolveLocationDisplay(mission.currentLocation || '', mission.mapLink);
+                            return displayText ? (
                                 <div className="relative flex items-center gap-3 z-10">
                                     <div className="w-4 h-4 rounded-full bg-yellow-500 shadow-md flex items-center justify-center ring-4 ring-white shrink-0">
                                         <Truck size={8} className="text-white" />
                                     </div>
                                     <div className="text-[9px] min-w-0 flex-1">
                                         <span className="font-black text-yellow-500 uppercase tracking-widest block leading-none mb-1">Ponto B (Última Localização)</span>
-                                        <span className="font-black text-yellow-700 uppercase truncate block" data-testid="text-last-location-city" title={cityName}>{cityName}</span>
+                                        <span className={`font-black uppercase truncate block ${isLink ? 'text-yellow-600 italic' : 'text-yellow-700'}`} data-testid="text-last-location-city" title={displayText}>{displayText}</span>
                                     </div>
                                 </div>
                             ) : null;
