@@ -554,14 +554,9 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
               if (hasSavedData) {
                   const isSameOsMission = mRes.data.is_same_os === true;
                   const hasSeparateTollProvider = mRes.data.toll_value_provider != null;
-                  const totalCost = isSameOsMission ? 0 : (hasSeparateTollProvider ? savedCost + dbTollProvider : savedCost);
                   if (!isSameOsMission && !hasSeparateTollProvider && savedCost > 0) {
                       setTollEmbeddedInCost(true);
                   }
-                  setUseSavedValues(true);
-                  const totalRev = savedRev + dbToll;
-                  setRevenueInput(totalRev.toLocaleString('pt-BR', {minimumFractionDigits: 2, maximumFractionDigits: 2}));
-                  setCostInput(totalCost.toLocaleString('pt-BR', {minimumFractionDigits: 2, maximumFractionDigits: 2}));
               }
               if (mRes.data.billing_verified_by) {
                   setSavedByInfo(`Salvo por ${mRes.data.billing_verified_by}`);
@@ -851,7 +846,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
       if (financialData && mission) {
           const isVendorLocked = !!(mission.verified_by && mission.verified_at);
           const provTotalWithCorrectToll = financialData.provider.serviceTotal + parseNumber(tollProviderInput);
-          if (!useSavedValuesRef.current && !isSavingRef.current && !isVendorLocked) {
+          if (!isSavingRef.current && !isVendorLocked && !userManuallyEditedRef.current) {
               setRevenueInput(financialData.client.total.toLocaleString('pt-BR', {minimumFractionDigits: 2, maximumFractionDigits: 2}));
               setCostInput(provTotalWithCorrectToll.toLocaleString('pt-BR', {minimumFractionDigits: 2, maximumFractionDigits: 2}));
           }
@@ -2439,7 +2434,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                             <span>+ {formatCurrency(parseNumber(tollInput))} <span className={isDivergent ? 'text-amber-400' : 'text-green-400'}>(pedágio)</span></span>
                                             <span className="font-black">= {formatCurrency(calcTotal)}</span>
                                         </div>
-                                        {isDivergent && <span className="text-[8px] text-amber-600 font-black">⚠ Valor exibido ({formatCurrency(savedTotal)}) difere da tabela ({formatCurrency(calcTotal)}). Clique "Recalcular" para corrigir.</span>}
+
                                     </div>
                                 );
                             })()}
@@ -2562,7 +2557,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                             <span>+ {formatCurrency(parseNumber(tollProviderInput))} <span className={isDivergent ? 'text-amber-400' : 'text-blue-400'}>(pedágio)</span></span>
                                             <span className="font-black">= {formatCurrency(calcTotal)}</span>
                                         </div>
-                                        {isDivergent && <span className="text-[8px] text-amber-600 font-black">⚠ Valor exibido ({formatCurrency(savedTotal)}) difere da tabela ({formatCurrency(calcTotal)}). Clique "Recalcular" para corrigir.</span>}
+
                                     </div>
                                 );
                             })()}
