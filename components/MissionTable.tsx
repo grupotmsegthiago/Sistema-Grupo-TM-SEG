@@ -164,6 +164,7 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
   const [lastLogMap, setLastLogMap] = useState<Record<string, MissionLog>>({});
   const [resolvedClientName, setResolvedClientName] = useState('');
   const [showMyApprovalOnly, setShowMyApprovalOnly] = useState(false);
+  const [approvalViewStage, setApprovalViewStage] = useState<'auditor' | 'financeiro' | null>(null);
   const [showNegativeMarginOnly, setShowNegativeMarginOnly] = useState(false);
   const [showTimeline, setShowTimeline] = useState(false);
 
@@ -714,6 +715,8 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
     const myApprovalMissions = useMemo(() => {
         if (!myApprovalStage) return [];
         if (myApprovalStage === 'diretoria') {
+            if (approvalViewStage === 'auditor') return pendingByStage.auditor;
+            if (approvalViewStage === 'financeiro') return pendingByStage.financeiro;
             const allIds = new Set([
                 ...pendingByStage.auditor.map(m => m.id),
                 ...pendingByStage.financeiro.map(m => m.id),
@@ -722,7 +725,7 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
             return eligibleApprovalMissions.filter(m => allIds.has(m.id));
         }
         return pendingByStage[myApprovalStage] || [];
-    }, [myApprovalStage, pendingByStage, eligibleApprovalMissions]);
+    }, [myApprovalStage, pendingByStage, eligibleApprovalMissions, approvalViewStage]);
 
     const myApprovalCount = myApprovalMissions.length;
   
@@ -1050,7 +1053,7 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
   
         <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-10 gap-1.5">
             {/* BOX TOTAL: Reflete o volume absoluto do período conforme solicitado */}
-            <StatCard icon={Activity} title="Total" value={totalVolumeCount} bgColor="bg-gray-800" loading={isLoading} isActive={filterStatus === 'ALL' && !showPendingOnly && !showTomorrowOnly && !showMyApprovalOnly && !showNegativeMarginOnly} onClick={() => { setFilterStatus('ALL'); setShowPendingOnly(false); setShowTomorrowOnly(false); setShowMyApprovalOnly(false); setShowNegativeMarginOnly(false); }} />
+            <StatCard icon={Activity} title="Total" value={totalVolumeCount} bgColor="bg-gray-800" loading={isLoading} isActive={filterStatus === 'ALL' && !showPendingOnly && !showTomorrowOnly && !showMyApprovalOnly && !showNegativeMarginOnly} onClick={() => { setFilterStatus('ALL'); setShowPendingOnly(false); setShowTomorrowOnly(false); setShowMyApprovalOnly(false); setApprovalViewStage(null); setShowNegativeMarginOnly(false); }} />
             {STATUS_CONFIG.filter(s => isRestrictedClientView ? s.id !== MissionStatus.PENDING : true).map((status) => ( <StatCard key={status.id} icon={status.icon} title={status.label} value={statusCounts[status.id] || 0} bgColor={status.color} loading={isLoading} isActive={filterStatus === status.id} onClick={() => { setFilterStatus(status.id); }} /> ))}
         </div>
   
@@ -1134,9 +1137,13 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
                         <>
                         <button 
                             data-testid="button-approvals-daniel"
-                            onClick={() => setShowMyApprovalOnly(!showMyApprovalOnly)} 
+                            onClick={() => { 
+                                const isActive = showMyApprovalOnly && approvalViewStage === 'auditor';
+                                setShowMyApprovalOnly(!isActive); 
+                                setApprovalViewStage(!isActive ? 'auditor' : null); 
+                            }} 
                             className={`relative flex items-center gap-2 px-4 py-2.5 rounded-lg text-xs font-black uppercase border transition-all ${
-                                showMyApprovalOnly 
+                                showMyApprovalOnly && approvalViewStage === 'auditor'
                                 ? 'bg-emerald-600 text-white border-emerald-700 shadow-md scale-105 ring-2 ring-emerald-500/20' 
                                 : pendingByStage.auditor.length > 0 
                                     ? 'bg-emerald-50 text-emerald-700 border-emerald-300 shadow-sm animate-pulse' 
@@ -1151,9 +1158,13 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
                         </button>
                         <button 
                             data-testid="button-approvals-barbara"
-                            onClick={() => setShowMyApprovalOnly(!showMyApprovalOnly)} 
+                            onClick={() => { 
+                                const isActive = showMyApprovalOnly && approvalViewStage === 'financeiro';
+                                setShowMyApprovalOnly(!isActive); 
+                                setApprovalViewStage(!isActive ? 'financeiro' : null); 
+                            }} 
                             className={`relative flex items-center gap-2 px-4 py-2.5 rounded-lg text-xs font-black uppercase border transition-all ${
-                                showMyApprovalOnly 
+                                showMyApprovalOnly && approvalViewStage === 'financeiro'
                                 ? 'bg-amber-600 text-white border-amber-700 shadow-md scale-105 ring-2 ring-amber-500/20' 
                                 : pendingByStage.financeiro.length > 0 
                                     ? 'bg-amber-50 text-amber-700 border-amber-300 shadow-sm animate-pulse' 
