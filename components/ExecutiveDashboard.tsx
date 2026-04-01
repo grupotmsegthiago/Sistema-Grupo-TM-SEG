@@ -175,22 +175,27 @@ const ExecutiveDashboard: React.FC<Props> = ({ missions, isDirector, clientTable
                 const { data: existingLogs } = await supabase.from('system_logs').select('details').eq('entity', 'BillingApproval').eq('entity_id', mission.id);
                 const existingStages = (existingLogs || []).map((l: any) => { try { return JSON.parse(l.details).stage; } catch { return ''; } });
 
-                if (existingStages.includes(stage)) { success++; continue; }
+                const alreadyLogged = existingStages.includes(stage);
+                const missionAlreadyApproved = mission.billing_approved === true;
 
-                const logEntry = { user: displayName, role: userData.role || '', stage, date: new Date().toISOString() };
-                await supabase.from('system_logs').insert([{
-                    user_name: displayName,
-                    action_type: stage,
-                    entity: 'BillingApproval',
-                    entity_id: mission.id,
-                    details: JSON.stringify(logEntry)
-                }]);
+                if (alreadyLogged && missionAlreadyApproved) { success++; continue; }
 
-                const allStages = [...existingStages, stage];
+                if (!alreadyLogged) {
+                    const logEntry = { user: displayName, role: userData.role || '', stage, date: new Date().toISOString() };
+                    await supabase.from('system_logs').insert([{
+                        user_name: displayName,
+                        action_type: stage,
+                        entity: 'BillingApproval',
+                        entity_id: mission.id,
+                        details: JSON.stringify(logEntry)
+                    }]);
+                }
+
+                const allStages = alreadyLogged ? existingStages : [...existingStages, stage];
                 const isApprovedForBilling = allStages.includes('financeiro') || allStages.includes('diretoria');
                 const canSnapshot = (stage === 'financeiro' || stage === 'diretoria') && !mission.snapshot_approved_by;
 
-                if (isApprovedForBilling) {
+                if (isApprovedForBilling && !missionAlreadyApproved) {
                     const basePayload: any = {
                         billing_approved: true,
                         billing_verified_by: displayName,
