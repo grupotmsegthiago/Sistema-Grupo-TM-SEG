@@ -3407,5 +3407,148 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
     }
   });
 
+  app.post('/api/admin/recalculate-batch', async (req: Request, res: Response) => {
+    try {
+      const { missionIds, dryRun = true } = req.body;
+      if (!missionIds || !Array.isArray(missionIds) || missionIds.length === 0) {
+        return res.status(400).json({ error: 'missionIds array required' });
+      }
+
+      const supabaseUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || '';
+      const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.VITE_SUPABASE_ANON_KEY || '';
+      const sb = createClient(supabaseUrl, supabaseKey);
+
+      const { data: clientTables } = await sb.from('client_price_tables').select('*');
+      const { data: providerTables } = await sb.from('provider_cost_tables').select('*');
+      const { data: clients } = await sb.from('clients').select('*');
+
+      const results: any[] = [];
+      let totalOldRevenue = 0, totalNewRevenue = 0;
+      let totalOldCost = 0, totalNewCost = 0;
+      let updated = 0, errors = 0;
+
+      for (const mId of missionIds) {
+        try {
+          const { data: mData, error: mErr } = await sb.from('missions').select('*').eq('id', mId).single();
+          if (mErr || !mData) { results.push({ id: mId, error: 'Not found' }); errors++; continue; }
+
+          const clientName = mData.client || '';
+          const clientData = (clients || []).find((c: any) => 
+            c.name === clientName || c.trading_name === clientName || 
+            (c.name || '').toUpperCase() === clientName.toUpperCase() ||
+            (c.trading_name || '').toUpperCase() === clientName.toUpperCase()
+          );
+
+          const mission: any = {
+            id: mData.id,
+            client: mData.client,
+            provider: mData.provider,
+            origin: mData.origin,
+            destination: mData.destination,
+            status: mData.status,
+            startKm: mData.start_km,
+            endKm: mData.end_km,
+            startTime: mData.start_time,
+            endTime: mData.end_time,
+            createdAt: mData.created_at,
+            totalDistance: mData.total_distance,
+            agent1: mData.agent1,
+            agent2: mData.agent2,
+            mission_type: mData.mission_type,
+            is_same_os: mData.is_same_os,
+            parent_mission_id: mData.parent_mission_id,
+            toll_value: mData.toll_value,
+            toll_value_provider: mData.toll_value_provider,
+            revenue_value: mData.revenue_value,
+            cost_value: mData.cost_value,
+            billing_approved: mData.billing_approved,
+            provider_ops_edited: mData.provider_ops_edited,
+            provider_start_km: mData.provider_start_km,
+            provider_end_km: mData.provider_end_km,
+            provider_start_time: mData.provider_start_time,
+            provider_end_time: mData.provider_end_time,
+          };
+
+          const calc = calculateMissionFinancials(
+            mission,
+            (clientTables || []) as any,
+            (providerTables || []) as any,
+            clientData as any
+          );
+
+          const r2 = (v: number) => Math.round(v * 100) / 100;
+          const newRevenue = r2(calc.client.serviceTotal);
+          const newCost = mission.is_same_os ? 0 : r2(calc.provider.serviceTotal);
+          const oldRevenue = mData.revenue_value || 0;
+          const oldCost = mData.cost_value || 0;
+
+          totalOldRevenue += oldRevenue;
+          totalNewRevenue += newRevenue;
+          totalOldCost += oldCost;
+          totalNewCost += newCost;
+
+          const entry: any = {
+            id: mId,
+            client: mData.client,
+            provider: mData.provider,
+            oldRevenue, newRevenue, diffRevenue: r2(newRevenue - oldRevenue),
+            oldCost, newCost, diffCost: r2(newCost - oldCost),
+            clientTable: calc.client.tableName || 'N/A',
+            providerTable: calc.provider.tableName || 'N/A',
+            km: calc.realTraveledKm,
+            hours: calc.durationHours,
+          };
+
+          if (!dryRun) {
+            const { error: upErr } = await sb.from('missions').update({
+              revenue_value: newRevenue,
+              cost_value: newCost,
+              last_update: new Date().toISOString()
+            }).eq('id', mId);
+            
+            if (upErr) { entry.updateError = upErr.message; errors++; }
+            else { updated++; }
+
+            await sb.from('system_logs').insert([{
+              user_name: 'SISTEMA (Recálculo em Massa)',
+              action_type: 'BATCH_RECALCULATE',
+              entity: 'Mission',
+              entity_id: mId,
+              details: JSON.stringify({
+                oldRevenue, newRevenue, oldCost, newCost,
+                clientTable: calc.client.tableId,
+                providerTable: calc.provider.tableId
+              })
+            }]);
+          }
+
+          results.push(entry);
+        } catch (e: any) {
+          results.push({ id: mId, error: e.message });
+          errors++;
+        }
+      }
+
+      return res.json({
+        mode: dryRun ? 'DRY_RUN (simulação)' : 'EXECUTED',
+        total: missionIds.length,
+        updated,
+        errors,
+        summary: {
+          oldTotalRevenue: Math.round(totalOldRevenue * 100) / 100,
+          newTotalRevenue: Math.round(totalNewRevenue * 100) / 100,
+          diffRevenue: Math.round((totalNewRevenue - totalOldRevenue) * 100) / 100,
+          oldTotalCost: Math.round(totalOldCost * 100) / 100,
+          newTotalCost: Math.round(totalNewCost * 100) / 100,
+          diffCost: Math.round((totalNewCost - totalOldCost) * 100) / 100,
+        },
+        results
+      });
+    } catch (err: any) {
+      console.error('[BATCH RECALCULATE] Error:', err);
+      return res.status(500).json({ error: err.message });
+    }
+  });
+
   return httpServer;
 }
