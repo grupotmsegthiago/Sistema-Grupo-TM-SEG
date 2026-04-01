@@ -94,7 +94,7 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
     const canEditTimes = useMemo(() => {
         if (!currentUser) return false;
         const role = (currentUser.role || '').toLowerCase();
-        return ['diretoria', 'administrador'].includes(role) || (currentUser.permissions && currentUser.permissions.includes('*'));
+        return ['diretoria', 'administrador', 'avançado', 'avancado'].includes(role) || (currentUser.permissions && currentUser.permissions.includes('*'));
     }, [currentUser]);
 
     // Listas de Dados
