@@ -92,13 +92,15 @@ const DailyGoalThermometer: React.FC<Props> = ({ viewPeriod = 'TODAY', customSta
 
             if (hasSavedValues) {
                  totalRevenue += (m.revenue_value || 0) + Math.max(0, m.toll_value || 0);
-                 totalCost += (m.cost_value || 0);
+                 const tollProv = Math.max(0, m.toll_value_provider != null ? m.toll_value_provider : (m.toll_value || 0));
+                 totalCost += (m.cost_value || 0) + tollProv;
                  return;
             }
 
             if (hasStoredRevenue && hasStoredCost) {
                  totalRevenue += (m.revenue_value || 0) + Math.max(0, m.toll_value || 0);
-                 totalCost += (m.cost_value || 0);
+                 const tollProv = Math.max(0, m.toll_value_provider != null ? m.toll_value_provider : (m.toll_value || 0));
+                 totalCost += (m.cost_value || 0) + tollProv;
                  return;
             }
 
@@ -107,7 +109,8 @@ const DailyGoalThermometer: React.FC<Props> = ({ viewPeriod = 'TODAY', customSta
             }
 
             if (hasStoredCost) {
-                 totalCost += (m.cost_value || 0);
+                 const tollProv = Math.max(0, m.toll_value_provider != null ? m.toll_value_provider : (m.toll_value || 0));
+                 totalCost += (m.cost_value || 0) + tollProv;
             }
 
             if (!hasStoredRevenue || !hasStoredCost) {
