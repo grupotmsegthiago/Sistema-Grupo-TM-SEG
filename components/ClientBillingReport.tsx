@@ -160,17 +160,43 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
         setReportGenerated(false);
         try {
             const clientObj = clients.find(c => c.id.toString() === selectedClient);
-            const clientName = clientObj?.name;
-            const { data: missionData, error } = await supabase
-                .from('missions')
-                .select('*, company_vehicle:vehicles(*)')
-                .eq('client', clientName)
-                .or('billing_approved.eq.true,billing_verified_by.not.is.null')
-                .gte('created_at', `${startDate}T00:00:00`)
-                .lte('created_at', `${endDate}T23:59:59`)
-                .neq('status', 'Recusada')
-                .order('created_at', { ascending: true });
-            if (error) throw error;
+            const clientName = clientObj?.name || '';
+            const escapedClientName = clientName.replace(/[%_\\]/g, '\\$&');
+            const rangeStart = `${startDate}T00:00:00`;
+            const rangeEnd = `${endDate}T23:59:59`;
+
+            const [byCreated, byStart] = await Promise.all([
+                supabase
+                    .from('missions')
+                    .select('*, company_vehicle:vehicles(*)')
+                    .ilike('client', escapedClientName)
+                    .in('status', ['Concluída', 'Auditada', 'Em Viagem'])
+                    .gte('created_at', rangeStart)
+                    .lte('created_at', rangeEnd)
+                    .neq('status', 'Recusada')
+                    .order('created_at', { ascending: true }),
+                supabase
+                    .from('missions')
+                    .select('*, company_vehicle:vehicles(*)')
+                    .ilike('client', escapedClientName)
+                    .in('status', ['Concluída', 'Auditada', 'Em Viagem'])
+                    .not('start_time', 'is', null)
+                    .gte('start_time', rangeStart)
+                    .lte('start_time', rangeEnd)
+                    .neq('status', 'Recusada')
+                    .order('created_at', { ascending: true })
+            ]);
+
+            const queryError = byCreated.error || byStart.error;
+            if (queryError) throw queryError;
+
+            const seen = new Set<string>();
+            const missionData: any[] = [];
+            [...(byCreated.data || []), ...(byStart.data || [])].forEach(m => {
+                if (!seen.has(m.id)) { seen.add(m.id); missionData.push(m); }
+            });
+            missionData.sort((a: any, b: any) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
+            const error = null;
 
             const clientVehicleIds = [...new Set((missionData || []).map((m: any) => m.client_vehicle).filter((id: any) => id))];
             let clientVehiclesMap: Record<string, any> = {};
@@ -560,7 +586,7 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
         wrapper.id = 'print-content';
         wrapper.appendChild(cloned);
 
-        printWindow.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>Boletim de Medição</title><link href="https://fonts.googleapis.com/css2?family=Dancing+Script:wght@700&display=swap" rel="stylesheet"><style>${printCSS}</style></head><body></body></html>`);
+        printWindow.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>Boletim de Medição</title><link href="https://fonts.googleapis.com/css2?family=Dancing+Script:wght@700&family=Inter:wght@400;600;700;800;900&family=Roboto+Mono:wght@400;700&display=swap" rel="stylesheet"><style>${printCSS}</style></head><body></body></html>`);
         printWindow.document.body.appendChild(wrapper);
         printWindow.document.close();
 
@@ -853,9 +879,9 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
 
     const cellStyle: React.CSSProperties = {
         border: '1px solid #e5c4c4',
-        padding: '5px 7px',
+        padding: '7px',
         fontSize: '13px',
-        fontFamily: "'Segoe UI', Tahoma, Geneva, Verdana, sans-serif",
+        fontFamily: "'Inter', 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif",
         textAlign: 'center',
         whiteSpace: 'nowrap',
         color: '#1f2937',
@@ -865,6 +891,8 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
     };
     const cellRight: React.CSSProperties = { ...cellStyle, textAlign: 'right' };
     const cellBold: React.CSSProperties = { ...cellStyle, fontWeight: 800, color: '#111827' };
+    const cellMono: React.CSSProperties = { ...cellStyle, fontFamily: "'Roboto Mono', 'Courier New', monospace" };
+    const cellMonoBold: React.CSSProperties = { ...cellMono, fontWeight: 800, color: '#111827' };
     const headerStyle: React.CSSProperties = {
         ...cellStyle,
         backgroundColor: '#fecaca',
@@ -2212,24 +2240,24 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
                                             <td style={cellStyle}>{fmtBRL(r.unitKm)}</td>
                                             <td style={cellStyle}>{r.startDate}</td>
                                             <td style={cellStyle}>{r.startTime}</td>
-                                            <td style={{ ...cellStyle, fontFamily: 'monospace' }}>{r.viatura}</td>
-                                            <td style={{ ...cellStyle, fontFamily: 'monospace' }}>{r.cargoPlate}</td>
+                                            <td style={{ ...cellMono }}>{r.viatura}</td>
+                                            <td style={{ ...cellMono }}>{r.cargoPlate}</td>
                                             <td style={cellStyle}>{r.endDate}</td>
                                             <td style={cellStyle}>{r.endTime}</td>
-                                            <td style={{ ...cellStyle, backgroundColor: bgKm }}>{fmtNum(r.kmStart)}</td>
-                                            <td style={{ ...cellStyle, backgroundColor: bgKm }}>{fmtNum(r.kmEnd)}</td>
-                                            <td style={{ ...cellBold, backgroundColor: bgKm }}>{fmtNum(r.kmTotal)}</td>
-                                            <td style={{ ...cellStyle, backgroundColor: bgHr }}>{r.timeStart}</td>
-                                            <td style={{ ...cellStyle, backgroundColor: bgHr }}>{r.timeEnd}</td>
-                                            <td style={{ ...cellBold, backgroundColor: bgHr }}>{r.timeTotal}</td>
-                                            <td style={{ ...cellStyle, backgroundColor: bgKmExc }}>{r.kmExtraQtd > 0 ? fmtNum(r.kmExtraQtd) : '-'}</td>
-                                            <td style={{ ...cellStyle, backgroundColor: bgKmExc }}>{r.kmExtraQtd > 0 ? fmtBRL(r.kmExtraUnit) : '-'}</td>
-                                            <td style={{ ...cellStyle, backgroundColor: bgKmExc }}>{r.kmExtraTotal > 0 ? fmtBRL(r.kmExtraTotal) : 'R$ 0,00'}</td>
-                                            <td style={{ ...cellStyle, backgroundColor: bgHrExc }}>{r.hrExtraQtd > 0 ? fmtHHMM(r.hrExtraQtd) : '-'}</td>
-                                            <td style={{ ...cellStyle, backgroundColor: bgHrExc }}>{r.hrExtraQtd > 0 ? fmtBRL(r.hrExtraUnit) : '-'}</td>
-                                            <td style={{ ...cellStyle, backgroundColor: bgHrExc }}>{r.hrExtraTotal > 0 ? fmtBRL(r.hrExtraTotal) : 'R$ 0,00'}</td>
-                                            <td style={{ ...cellStyle, backgroundColor: bgVal }}>{r.tollVal > 0 ? fmtBRL(r.tollVal) : 'R$ 0,00'}</td>
-                                            <td style={{ ...cellBold, backgroundColor: bgVal }}>{fmtBRL(r.totalGeral)}</td>
+                                            <td style={{ ...cellMono, backgroundColor: bgKm }}>{fmtNum(r.kmStart)}</td>
+                                            <td style={{ ...cellMono, backgroundColor: bgKm }}>{fmtNum(r.kmEnd)}</td>
+                                            <td style={{ ...cellMonoBold, backgroundColor: bgKm }}>{fmtNum(r.kmTotal)}</td>
+                                            <td style={{ ...cellMono, backgroundColor: bgHr }}>{r.timeStart}</td>
+                                            <td style={{ ...cellMono, backgroundColor: bgHr }}>{r.timeEnd}</td>
+                                            <td style={{ ...cellMonoBold, backgroundColor: bgHr }}>{r.timeTotal}</td>
+                                            <td style={{ ...cellMono, backgroundColor: bgKmExc }}>{r.kmExtraQtd > 0 ? fmtNum(r.kmExtraQtd) : '-'}</td>
+                                            <td style={{ ...cellMono, backgroundColor: bgKmExc }}>{r.kmExtraQtd > 0 ? fmtBRL(r.kmExtraUnit) : '-'}</td>
+                                            <td style={{ ...cellMono, backgroundColor: bgKmExc }}>{r.kmExtraTotal > 0 ? fmtBRL(r.kmExtraTotal) : 'R$ 0,00'}</td>
+                                            <td style={{ ...cellMono, backgroundColor: bgHrExc }}>{r.hrExtraQtd > 0 ? fmtHHMM(r.hrExtraQtd) : '-'}</td>
+                                            <td style={{ ...cellMono, backgroundColor: bgHrExc }}>{r.hrExtraQtd > 0 ? fmtBRL(r.hrExtraUnit) : '-'}</td>
+                                            <td style={{ ...cellMono, backgroundColor: bgHrExc }}>{r.hrExtraTotal > 0 ? fmtBRL(r.hrExtraTotal) : 'R$ 0,00'}</td>
+                                            <td style={{ ...cellMono, backgroundColor: bgVal }}>{r.tollVal > 0 ? fmtBRL(r.tollVal) : 'R$ 0,00'}</td>
+                                            <td style={{ ...cellMonoBold, backgroundColor: bgVal }}>{fmtBRL(r.totalGeral)}</td>
                                         </tr>
                                     ))
                                 )}
