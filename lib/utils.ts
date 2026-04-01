@@ -35,22 +35,23 @@ export const extractCoordinates = (url: string): { lat: number; lng: number } | 
   return null;
 };
 
-export const resolveLocationDisplay = (currentLocation: string, mapLink?: string): { displayText: string; isLink: boolean } => {
+export const isCoordsFallback = (text: string): boolean => {
+  return /^LAT\s*-?\d+\.\d+,?\s*LNG\s*-?\d+\.\d+$/i.test(text.trim());
+};
+
+export const resolveLocationDisplay = (currentLocation: string, mapLink?: string): { displayText: string; isLink: boolean; needsGeocode: boolean; coords: { lat: number; lng: number } | null } => {
   const loc = (currentLocation || '').trim();
   const isGoogleLink = /^https?:\/\/(www\.)?google\.com\/maps/i.test(loc) || /maps\?q=/i.test(loc);
   
   if (isGoogleLink) {
     const coords = extractCoordinates(loc);
-    if (coords) {
-      return { displayText: `LAT ${coords.lat.toFixed(4)}, LNG ${coords.lng.toFixed(4)}`, isLink: true };
-    }
-    return { displayText: 'LOCALIZAÇÃO VIA GPS', isLink: true };
+    return { displayText: '', isLink: true, needsGeocode: true, coords };
   }
 
   if (!loc && mapLink) {
     const coords = extractCoordinates(mapLink);
     if (coords) {
-      return { displayText: `LAT ${coords.lat.toFixed(4)}, LNG ${coords.lng.toFixed(4)}`, isLink: true };
+      return { displayText: '', isLink: true, needsGeocode: true, coords };
     }
   }
 
@@ -58,20 +59,25 @@ export const resolveLocationDisplay = (currentLocation: string, mapLink?: string
   const locationPart = parts.length > 1 ? parts[parts.length - 1].trim() : loc.trim();
   
   if (!locationPart || locationPart === 'Solicitação Criada' || locationPart === 'AUTO CARGA BLOQUEADO') {
-    return { displayText: '', isLink: false };
+    return { displayText: '', isLink: false, needsGeocode: false, coords: null };
+  }
+
+  if (isCoordsFallback(locationPart)) {
+    const latMatch = locationPart.match(/LAT\s*(-?\d+\.\d+)/i);
+    const lngMatch = locationPart.match(/LNG\s*(-?\d+\.\d+)/i);
+    if (latMatch && lngMatch) {
+      return { displayText: '', isLink: true, needsGeocode: true, coords: { lat: parseFloat(latMatch[1]), lng: parseFloat(lngMatch[1]) } };
+    }
   }
 
   const isAlsoLink = /^https?:\/\//i.test(locationPart);
   if (isAlsoLink) {
     const coords = extractCoordinates(locationPart);
-    if (coords) {
-      return { displayText: `LAT ${coords.lat.toFixed(4)}, LNG ${coords.lng.toFixed(4)}`, isLink: true };
-    }
-    return { displayText: 'LOCALIZAÇÃO VIA GPS', isLink: true };
+    return { displayText: '', isLink: true, needsGeocode: true, coords };
   }
 
   const cleaned = locationPart.replace(/\s*-?\s*BRASIL$/i, '').replace(/,\s*$/, '').trim();
-  return { displayText: cleaned, isLink: false };
+  return { displayText: cleaned, isLink: false, needsGeocode: false, coords: null };
 };
 
 // Fórmula de Haversine para calcular distância em KM entre dois pontos

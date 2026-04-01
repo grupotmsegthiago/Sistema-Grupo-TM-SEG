@@ -378,15 +378,29 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
             const locParts = currentLoc.split('|').map((p: string) => p.trim());
             const locSegment = locParts.length > 1 ? locParts[locParts.length - 1] : currentLoc;
             const isLocUrl = /^https?:\/\//i.test(locSegment) || /maps\?q=/i.test(locSegment);
+            const isLocCoordsFallback = /^LAT\s*-?\d+\.\d+,?\s*LNG\s*-?\d+\.\d+$/i.test(locSegment.trim());
             const isLocEmpty = !currentLoc || currentLoc === 'Solicitação Criada';
-            const needsEnrichment = isLocEmpty || isLocUrl;
+            const needsEnrichment = isLocEmpty || isLocUrl || isLocCoordsFallback;
 
             if (needsEnrichment) {
-                const enrichCoords = extractCoordinates(locSegment) || coords;
+                let enrichCoords = extractCoordinates(locSegment) || coords;
+                if (!enrichCoords && isLocCoordsFallback) {
+                    const latM = locSegment.match(/LAT\s*(-?\d+\.\d+)/i);
+                    const lngM = locSegment.match(/LNG\s*(-?\d+\.\d+)/i);
+                    if (latM && lngM) enrichCoords = { lat: parseFloat(latM[1]), lng: parseFloat(lngM[1]) };
+                }
                 if (enrichCoords) {
-                    reverseGeocode(enrichCoords.lat, enrichCoords.lng).then(resolvedAddr => {
-                        if (resolvedAddr) {
+                    reverseGeocode(enrichCoords.lat, enrichCoords.lng).then(async (resolvedAddr) => {
+                        if (resolvedAddr && !/^LAT\s/i.test(resolvedAddr)) {
                             console.log(`[LOCATION] Auto-enriquecimento OS ${m.id}: "${resolvedAddr}"`);
+                            const statusPart = locParts.length > 1 ? locParts[0] : '';
+                            const newLocation = statusPart 
+                                ? `${statusPart} | ${resolvedAddr.toUpperCase()}` 
+                                : resolvedAddr.toUpperCase();
+                            const { error } = await supabase.from('missions').update({ current_location: newLocation }).eq('id', m.id);
+                            if (!error) {
+                                console.log(`[LOCATION] OS ${m.id} enriquecida no banco: "${newLocation}"`);
+                            }
                         }
                     }).catch(() => {});
                 }
@@ -501,32 +515,53 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
     const reverseGeocode = async (lat: number, lng: number): Promise<string> => {
         const fallbackAddress = `LAT ${lat.toFixed(6)}, LNG ${lng.toFixed(6)}`;
         if (!isLoaded) {
-            setEditData(prev => ({ ...prev, currentLocationName: fallbackAddress }));
-            return fallbackAddress;
+            console.warn('[LOCATION] Google Maps não carregado, aguardando até 10s...');
+            const ready = await new Promise<boolean>(resolve => {
+                let attempts = 0;
+                const check = () => {
+                    attempts++;
+                    if (typeof google !== 'undefined' && google?.maps?.Geocoder) return resolve(true);
+                    if (attempts >= 20) return resolve(false);
+                    setTimeout(check, 500);
+                };
+                setTimeout(check, 500);
+            });
+            if (!ready) {
+                console.error('[LOCATION] Google Maps não carregou após 10s');
+                return fallbackAddress;
+            }
         }
         const geocoder = new google.maps.Geocoder();
         try {
             const response = await geocoder.geocode({ location: { lat, lng } });
             if (response.results && response.results[0]) {
                 const res = response.results[0];
-                let street = '', city = '', state = '';
+                let street = '', number = '', neighborhood = '', city = '', state = '';
                 
                 res.address_components.forEach((c: any) => {
                     if (c.types.includes('route')) street = c.long_name;
+                    if (c.types.includes('street_number')) number = c.long_name;
+                    if (c.types.includes('sublocality_level_1') || c.types.includes('sublocality')) neighborhood = c.long_name;
                     if (c.types.includes('administrative_area_level_2')) city = c.long_name;
                     if (c.types.includes('administrative_area_level_1')) state = c.short_name;
                 });
                 
-                const formatted = `${street ? street + ', ' : ''}${city} - ${state}`.toUpperCase().trim();
-                const finalAddress = (formatted && formatted !== ' - ' && formatted !== '-') ? formatted : fallbackAddress;
+                const parts = [
+                    street ? (number ? `${street}, ${number}` : street) : '',
+                    neighborhood,
+                    city,
+                    state
+                ].filter(Boolean);
+                const formatted = parts.join(', ').toUpperCase().trim();
+                const finalAddress = (formatted && formatted !== ',') ? formatted : fallbackAddress;
                 setEditData(prev => ({ ...prev, currentLocationName: finalAddress }));
+                console.log(`[LOCATION] Reverse geocode: (${lat}, ${lng}) → "${finalAddress}"`);
                 return finalAddress;
             }
-            setEditData(prev => ({ ...prev, currentLocationName: fallbackAddress }));
+            console.warn('[LOCATION] Geocoder sem resultados para:', lat, lng);
             return fallbackAddress;
         } catch (e) {
-            console.error("[LOCATION] Geocoding falhou, usando coordenadas brutas:", e);
-            setEditData(prev => ({ ...prev, currentLocationName: fallbackAddress }));
+            console.error("[LOCATION] Geocoding falhou:", e);
             return fallbackAddress;
         }
     };
@@ -750,12 +785,22 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
             const finalDescription = editData.description.trim().toUpperCase();
 
             let resolvedLocationName = editData.currentLocationName || '';
-            if (!resolvedLocationName && editData.mapLink) {
+            
+            const isCoordsFallbackValue = /^LAT\s*-?\d+\.\d+,?\s*LNG\s*-?\d+\.\d+$/i.test(resolvedLocationName.trim());
+            const isUrlValue = /^https?:\/\//i.test(resolvedLocationName.trim());
+            
+            if ((!resolvedLocationName || isCoordsFallbackValue || isUrlValue) && editData.mapLink) {
                 const coords = extractCoordinates(editData.mapLink);
                 if (coords) {
-                    resolvedLocationName = await reverseGeocode(coords.lat, coords.lng);
+                    const geocoded = await reverseGeocode(coords.lat, coords.lng);
+                    if (geocoded && !/^LAT\s/i.test(geocoded)) {
+                        resolvedLocationName = geocoded;
+                    } else if (!resolvedLocationName) {
+                        resolvedLocationName = geocoded;
+                    }
                 }
             }
+            
             if (!resolvedLocationName && editData.mapLink) {
                 const coords = extractCoordinates(editData.mapLink);
                 if (coords) {

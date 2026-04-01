@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { Mission, MissionLog, MissionStatus } from '../types';
 import { useLoadScript, GoogleMap, DirectionsRenderer, Marker } from '@react-google-maps/api';
 import { googleMapsLoadConfig } from '../lib/maps';
@@ -85,25 +85,65 @@ const MissionStatusModal: React.FC<Props> = ({
     }
   }, [isOpen, isLoaded, mission, refreshTrigger]);
 
-  const locationParsed = useMemo(() => {
-    if (!mission?.currentLocation) return { fullAddress: 'AGUARDANDO ATUALIZAÇÃO', status: '' };
+  const [geocodedAddress, setGeocodedAddress] = useState<string | null>(null);
+
+  const locationAnalysis = useMemo(() => {
+    if (!mission?.currentLocation) return { status: '', rawAddress: '', needsGeocode: false, coords: null as { lat: number; lng: number } | null };
     const raw = mission.currentLocation;
     if (raw.includes('Solicitação Criada') || raw.includes('AUTO CARGA BLOQUEADO')) {
-        return { fullAddress: 'AGUARDANDO INÍCIO', status: '' };
+        return { status: '', rawAddress: 'AGUARDANDO INÍCIO', needsGeocode: false, coords: null };
     }
 
     const parts = raw.split('|').map(p => p.trim());
-    let status = parts.length > 1 ? parts[0] : '';
-    let fullAddr = parts.length > 1 ? parts[1] : parts[0];
+    const statusPart = parts.length > 1 ? parts[0] : '';
+    const addrPart = parts.length > 1 ? parts[1] : parts[0];
 
-    const { displayText } = resolveLocationDisplay(fullAddr, mission.mapLink);
-    const finalAddr = displayText || fullAddr.toUpperCase().replace(/^,\s*/, '');
-
-    return { 
-        fullAddress: finalAddr, 
-        status: status.toUpperCase() 
-    };
+    const resolved = resolveLocationDisplay(addrPart, mission.mapLink);
+    if (resolved.needsGeocode && resolved.coords) {
+        return { status: statusPart.toUpperCase(), rawAddress: '', needsGeocode: true, coords: resolved.coords };
+    }
+    return { status: statusPart.toUpperCase(), rawAddress: resolved.displayText || addrPart.toUpperCase().replace(/^,\s*/, ''), needsGeocode: false, coords: null };
   }, [mission?.currentLocation, mission?.mapLink]);
+
+  useEffect(() => {
+    if (!locationAnalysis.needsGeocode) {
+        setGeocodedAddress(null);
+        return;
+    }
+    if (!locationAnalysis.coords) {
+        setGeocodedAddress('LOCALIZAÇÃO VIA GPS');
+        return;
+    }
+    if (!isLoaded) {
+        setGeocodedAddress(null);
+        return;
+    }
+    const { lat, lng } = locationAnalysis.coords;
+    const geocoder = new google.maps.Geocoder();
+    geocoder.geocode({ location: { lat, lng } }).then((response: any) => {
+        if (response.results && response.results[0]) {
+            const res = response.results[0];
+            let street = '', number = '', neighborhood = '', city = '', state = '';
+            res.address_components.forEach((c: any) => {
+                if (c.types.includes('route')) street = c.long_name;
+                if (c.types.includes('street_number')) number = c.long_name;
+                if (c.types.includes('sublocality_level_1') || c.types.includes('sublocality')) neighborhood = c.long_name;
+                if (c.types.includes('administrative_area_level_2')) city = c.long_name;
+                if (c.types.includes('administrative_area_level_1')) state = c.short_name;
+            });
+            const addrParts = [street ? (number ? `${street}, ${number}` : street) : '', neighborhood, city, state].filter(Boolean);
+            const formatted = addrParts.join(', ').toUpperCase().trim();
+            setGeocodedAddress(formatted || `LAT ${lat.toFixed(4)}, LNG ${lng.toFixed(4)}`);
+        }
+    }).catch(() => {
+        setGeocodedAddress(`LAT ${lat.toFixed(4)}, LNG ${lng.toFixed(4)}`);
+    });
+  }, [locationAnalysis.needsGeocode, locationAnalysis.coords?.lat, locationAnalysis.coords?.lng, isLoaded]);
+
+  const locationParsed = useMemo(() => ({
+    fullAddress: locationAnalysis.needsGeocode ? (geocodedAddress || 'Resolvendo endereço...') : (locationAnalysis.rawAddress || 'AGUARDANDO ATUALIZAÇÃO'),
+    status: locationAnalysis.status
+  }), [locationAnalysis, geocodedAddress]);
 
   if (!isOpen || !mission) return null;
 

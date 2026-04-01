@@ -1,5 +1,5 @@
 
-import React, { memo, useMemo, useState, useRef } from 'react';
+import React, { memo, useMemo, useState, useRef, useEffect, useCallback } from 'react';
 import { Mission, MissionStatus, MissionLog, ClientPriceTable, ProviderCostTable, Client } from '../types';
 import { supabase } from '../lib/supabase';
 import { 
@@ -15,7 +15,66 @@ const WhatsAppIcon = ({ size = 14 }: { size?: number }) => (
 import MissionTimer from './MissionTimer';
 import { useNotification } from '../lib/NotificationContext';
 import { applyRegionSuffix, calculateMissionFinancials, auditMissionFinancials } from '../lib/financialUtils';
-import { formatProviderName, resolveLocationDisplay } from '../lib/utils';
+import { formatProviderName, resolveLocationDisplay, extractCoordinates } from '../lib/utils';
+
+const geocodeCache: Record<string, string> = {};
+
+const waitForGoogleMaps = (): Promise<boolean> => {
+    if (typeof google !== 'undefined' && google?.maps?.Geocoder) return Promise.resolve(true);
+    return new Promise(resolve => {
+        let attempts = 0;
+        const check = () => {
+            attempts++;
+            if (typeof google !== 'undefined' && google?.maps?.Geocoder) return resolve(true);
+            if (attempts >= 20) return resolve(false);
+            setTimeout(check, 500);
+        };
+        setTimeout(check, 500);
+    });
+};
+
+const reverseGeocodeAddress = async (lat: number, lng: number): Promise<string> => {
+    const cacheKey = `${lat.toFixed(6)},${lng.toFixed(6)}`;
+    const cached = geocodeCache[cacheKey];
+    if (cached) return cached;
+    
+    const mapsReady = await waitForGoogleMaps();
+    if (!mapsReady) {
+        return `LAT ${lat.toFixed(4)}, LNG ${lng.toFixed(4)}`;
+    }
+
+    try {
+        const geocoder = new google.maps.Geocoder();
+        const response = await geocoder.geocode({ location: { lat, lng } });
+        if (response.results && response.results[0]) {
+            const res = response.results[0];
+            let street = '', number = '', neighborhood = '', city = '', state = '';
+            res.address_components.forEach((c: any) => {
+                if (c.types.includes('route')) street = c.long_name;
+                if (c.types.includes('street_number')) number = c.long_name;
+                if (c.types.includes('sublocality_level_1') || c.types.includes('sublocality')) neighborhood = c.long_name;
+                if (c.types.includes('administrative_area_level_2')) city = c.long_name;
+                if (c.types.includes('administrative_area_level_1')) state = c.short_name;
+            });
+            const parts = [
+                street ? (number ? `${street}, ${number}` : street) : '',
+                neighborhood,
+                city,
+                state
+            ].filter(Boolean);
+            const formatted = parts.join(', ').toUpperCase().trim();
+            if (formatted && formatted !== ',') {
+                geocodeCache[cacheKey] = formatted;
+                return formatted;
+            }
+        }
+    } catch (e) {
+        console.warn('[LOCATION] Card geocode failed:', e);
+    }
+    return `LAT ${lat.toFixed(4)}, LNG ${lng.toFixed(4)}`;
+};
+
+declare const google: any;
 
 interface MissionCardProps {
     mission: Mission;
@@ -175,6 +234,33 @@ const MissionCardComponent: React.FC<MissionCardProps> = ({
     const [pendingFiles, setPendingFiles] = useState<{ file: File; preview: string }[]>([]);
     const [fullScreenImage, setFullScreenImage] = useState<string | null>(null);
     const uploadFileInputRef = useRef<HTMLInputElement>(null);
+    const [resolvedAddress, setResolvedAddress] = useState<string | null>(null);
+    
+    const locationInfo = useMemo(() => resolveLocationDisplay(mission.currentLocation || '', mission.mapLink), [mission.currentLocation, mission.mapLink]);
+
+    useEffect(() => {
+        if (!locationInfo.needsGeocode) {
+            setResolvedAddress(null);
+            return;
+        }
+        if (!locationInfo.coords) {
+            setResolvedAddress('LOCALIZAÇÃO VIA GPS');
+            return;
+        }
+        let cancelled = false;
+        const { lat, lng } = locationInfo.coords;
+        const cacheKey = `${lat.toFixed(6)},${lng.toFixed(6)}`;
+        const cached = geocodeCache[cacheKey];
+        if (cached) {
+            setResolvedAddress(cached);
+            return;
+        }
+        setResolvedAddress(null);
+        reverseGeocodeAddress(lat, lng).then(addr => {
+            if (!cancelled) setResolvedAddress(addr);
+        });
+        return () => { cancelled = true; };
+    }, [locationInfo.needsGeocode, locationInfo.coords?.lat, locationInfo.coords?.lng]);
     const hasEvidence = evidenceList && evidenceList.length > 0;
     const missionCreatedAt = mission.createdAt ? new Date(mission.createdAt) : null;
     const requiresEvidence = missionCreatedAt ? missionCreatedAt >= EVIDENCE_REQUIRED_DATE : false;
@@ -712,15 +798,21 @@ Qualquer dúvida, estamos a disposição.
                         </div>
 
                         {(() => {
-                            const { displayText, isLink } = resolveLocationDisplay(mission.currentLocation || '', mission.mapLink);
-                            return displayText ? (
+                            const finalAddress = locationInfo.needsGeocode ? resolvedAddress : locationInfo.displayText;
+                            const isLoading = locationInfo.needsGeocode && !resolvedAddress;
+                            const isCoordOnly = finalAddress && /^LAT\s/i.test(finalAddress);
+                            return (finalAddress || isLoading) ? (
                                 <div className="relative flex items-center gap-3 z-10">
                                     <div className="w-4 h-4 rounded-full bg-yellow-500 shadow-md flex items-center justify-center ring-4 ring-white shrink-0">
                                         <Truck size={8} className="text-white" />
                                     </div>
                                     <div className="text-[9px] min-w-0 flex-1">
                                         <span className="font-black text-yellow-500 uppercase tracking-widest block leading-none mb-1">Ponto B (Última Localização)</span>
-                                        <span className={`font-black uppercase truncate block ${isLink ? 'text-yellow-600 italic' : 'text-yellow-700'}`} data-testid="text-last-location-city" title={displayText}>{displayText}</span>
+                                        {isLoading ? (
+                                            <span className="font-bold text-yellow-400 italic truncate block" data-testid="text-last-location-city">Resolvendo endereço...</span>
+                                        ) : (
+                                            <span className={`font-black uppercase truncate block ${isCoordOnly ? 'text-yellow-600 italic text-[8px]' : 'text-yellow-700'}`} data-testid="text-last-location-city" title={finalAddress || ''}>{finalAddress}</span>
+                                        )}
                                     </div>
                                 </div>
                             ) : null;
