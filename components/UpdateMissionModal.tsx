@@ -1116,6 +1116,7 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
                 } catch (chErr) { console.error('[Email] Erro ao enviar notificação de alteração ao fornecedor:', chErr); }
             }
 
+            setEditData(prev => ({ ...prev, currentLocationName: '', mapLink: '' }));
             onSuccess(report);
         } catch (error: any) { alert(error.message); } finally { setIsUpdating(false); }
     };
