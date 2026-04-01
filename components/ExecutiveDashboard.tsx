@@ -118,6 +118,7 @@ const ExecutiveDashboard: React.FC<Props> = ({ missions, isDirector, clientTable
     const [recalcResults, setRecalcResults] = useState<any>(null);
     const [isBatchApproving, setIsBatchApproving] = useState(false);
     const [batchApprovalResult, setBatchApprovalResult] = useState<{ success: number; failed: number } | null>(null);
+    const [batchApprovedIds, setBatchApprovedIds] = useState<Set<string>>(new Set());
 
     const handleRefresh = useCallback(() => {
         setRefreshKey(k => k + 1);
@@ -248,8 +249,9 @@ const ExecutiveDashboard: React.FC<Props> = ({ missions, isDirector, clientTable
         setBatchApprovalResult({ success, failed });
         setIsBatchApproving(false);
 
+        const approvedOsIds = new Set(conferidas.map(c => c.osId));
+        setBatchApprovedIds(prev => new Set([...prev, ...approvedOsIds]));
         if (excelComparison) {
-            const approvedOsIds = new Set(conferidas.map(c => c.osId));
             setExcelComparison(excelComparison.map(c => 
                 approvedOsIds.has(c.osId) ? { ...c, isApproved: true } : c
             ));
@@ -401,10 +403,9 @@ const ExecutiveDashboard: React.FC<Props> = ({ missions, isDirector, clientTable
             if (!systemMission) return c;
             const newSysRev = systemMission.rev || 0;
             const newSysCost = systemMission.cost || 0;
-            const newIsApproved = systemMission.billing_approved === true;
+            const newIsApproved = systemMission.billing_approved === true || batchApprovedIds.has(c.osId) || !!c.isApproved;
             const valuesChanged = Math.abs(newSysRev - c.sysRev) >= 0.01 || Math.abs(newSysCost - c.sysCost) >= 0.01;
-            const approvalChanged = newIsApproved !== !!c.isApproved;
-            if (!valuesChanged && !approvalChanged) return c;
+            if (!valuesChanged) return c;
             hasChanges = true;
             if (valuesChanged) newAdjustedIds.add(c.osId);
             const isSameOs = systemMission?.is_same_os === true;
@@ -1306,7 +1307,7 @@ const ExecutiveDashboard: React.FC<Props> = ({ missions, isDirector, clientTable
                                 className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-50 text-emerald-700 rounded-lg text-[10px] font-black uppercase hover:bg-emerald-100 transition-all disabled:opacity-50" data-testid="button-refresh-excel">
                                 <RefreshCw size={11} className={isRefreshingExcel ? 'animate-spin' : ''} /> {isRefreshingExcel ? 'Atualizando...' : 'Atualizar'}
                             </button>
-                            <button onClick={() => { setExcelComparison(null); setExcelAiAnalysis(null); setShowExcelPanel(false); setAdjustedOsIds(new Set()); setPastedText(''); }}
+                            <button onClick={() => { setExcelComparison(null); setExcelAiAnalysis(null); setShowExcelPanel(false); setAdjustedOsIds(new Set()); setBatchApprovedIds(new Set()); setPastedText(''); }}
                                 className="px-3 py-1.5 bg-gray-100 text-gray-600 rounded-lg text-[10px] font-black uppercase hover:bg-gray-200 transition-all" data-testid="button-clear-excel">
                                 Limpar
                             </button>
