@@ -166,8 +166,8 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
             const clientObj = clients.find(c => c.id.toString() === selectedClient);
             const clientName = clientObj?.name || '';
             const escapedClientName = clientName.replace(/[%_\\]/g, '\\$&');
-            const rangeStart = `${startDate}T00:00:00`;
-            const rangeEnd = `${endDate}T23:59:59`;
+            const rangeStart = `${startDate}T03:00:00.000Z`;
+            const rangeEnd = new Date(new Date(`${endDate}T03:00:00.000Z`).getTime() + 86400000 - 1).toISOString();
 
             const { data: missionDataRaw, error } = await supabase
                 .from('missions')
@@ -254,23 +254,11 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
         setChartsLoading(true);
         setChartsGenerated(false);
         try {
-            const rangeStart = `${startDate}T00:00:00`;
-            const rangeEnd = `${endDate}T23:59:59`;
-            const [byCreated, byStart] = await Promise.all([
-                supabase.from('missions').select('*').neq('status', 'Recusada')
-                    .gte('created_at', rangeStart).lte('created_at', rangeEnd),
-                supabase.from('missions').select('*').neq('status', 'Recusada')
-                    .not('start_time', 'is', null)
-                    .gte('start_time', rangeStart).lte('start_time', rangeEnd)
-            ]);
-            const error = byCreated.error || byStart.error;
+            const rangeStart = `${startDate}T03:00:00.000Z`;
+            const rangeEnd = new Date(new Date(`${endDate}T03:00:00.000Z`).getTime() + 86400000 - 1).toISOString();
+            const { data: missionData, error } = await supabase.from('missions').select('*').neq('status', 'Recusada')
+                .gte('created_at', rangeStart).lte('created_at', rangeEnd).order('created_at', { ascending: true });
             if (error) throw error;
-            const seen = new Set<string>();
-            const missionData: any[] = [];
-            [...(byCreated.data || []), ...(byStart.data || [])].forEach(m => {
-                if (!seen.has(m.id)) { seen.add(m.id); missionData.push(m); }
-            });
-            missionData.sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
 
             const [ptRes, pctRes] = await Promise.all([
                 supabase.from('client_price_tables').select('*'),
