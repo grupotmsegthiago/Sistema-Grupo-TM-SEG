@@ -1,10 +1,11 @@
 const ASAAS_BASE_URL = 'https://api.asaas.com/v3';
 
-const ASAAS_COMPANIES: Record<string, { apiKey: string; cnpj: string; name: string; nf: { serviceDescription: string; issRate: number; retainIss: boolean; cofins?: number; csll?: number; inss?: number; ir?: number; pis?: number } }> = {
+const ASAAS_COMPANIES: Record<string, { apiKey: string; cnpj: string; name: string; aliases: string[]; nf: { serviceDescription: string; issRate: number; retainIss: boolean; cofins?: number; csll?: number; inss?: number; ir?: number; pis?: number } }> = {
   'TM GESTÃO': {
     apiKey: process.env.ASAAS_API_KEY || '',
     cnpj: '60485843000157',
     name: 'TM GESTÃO',
+    aliases: ['TM GESTAO', 'TM GESTÃO', 'GESTAO', 'GESTÃO'],
     nf: {
       serviceDescription: 'Intermediação de Escolta Armada e Fiscal de Rota',
       issRate: 5,
@@ -15,6 +16,7 @@ const ASAAS_COMPANIES: Record<string, { apiKey: string; cnpj: string; name: stri
     apiKey: process.env.ASAAS_API_KEY_TMSECURITY || '',
     cnpj: '60508931000127',
     name: 'TM SECURITY GESTÃO CORPORATIVA LTDA',
+    aliases: ['TM SECURITY', 'TM SEGURANÇA', 'TM SEGURANCA', 'TMSECURITY', 'TMSEGURANCA', 'TMSEGURANÇA', 'SECURITY', 'SEGURANÇA', 'SEGURANCA'],
     nf: {
       serviceDescription: 'Intermediação de Escolta Armada e Fiscal de Rota',
       issRate: 5,
@@ -25,11 +27,13 @@ const ASAAS_COMPANIES: Record<string, { apiKey: string; cnpj: string; name: stri
 
 function resolveCompanyEntry(company?: string) {
   if (company) {
-    const upper = company.toUpperCase();
-    for (const [key, val] of Object.entries(ASAAS_COMPANIES)) {
-      if (upper.includes(key) || upper.includes(val.cnpj) || val.name.toUpperCase().includes(upper)) {
-        return val;
-      }
+    const upper = company.toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+    for (const [, val] of Object.entries(ASAAS_COMPANIES)) {
+      const normalizedAliases = val.aliases.map(a => a.toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g, ''));
+      if (normalizedAliases.some(alias => upper.includes(alias) || alias.includes(upper))) return val;
+      if (upper.includes(val.cnpj)) return val;
+      const normalizedName = val.name.toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+      if (normalizedName.includes(upper) || upper.includes(normalizedName)) return val;
     }
   }
   return ASAAS_COMPANIES['TM GESTÃO'];
@@ -275,19 +279,24 @@ async function resolveMunicipalService(company?: string): Promise<MunicipalServi
   if (municipalServiceCache[key]) return municipalServiceCache[key];
   try {
     const services = await listMunicipalServices(company);
+    console.log(`[Asaas] Serviços municipais encontrados para ${key}: ${services.length} item(s)`);
+    services.forEach((s: any, i: number) => {
+      console.log(`[Asaas]   [${i}] ID=${s.id} | Código=${s.code || s.municipalServiceCode || '-'} | ${(s.description || s.name || '-').substring(0, 100)}`);
+    });
     if (services.length > 0) {
       const preferred = services.find((s: any) => {
         const desc = (s.description || s.name || '').toLowerCase();
         const code = String(s.code || s.municipalServiceCode || '');
-        return code.includes('03115') || desc.includes('assessoria') || desc.includes('consultoria') || desc.includes('escolta') || desc.includes('segurança') || desc.includes('vigilância');
+        return code.includes('03115') || code.includes('17.01') || desc.includes('assessoria') || desc.includes('consultoria') || desc.includes('escolta') || desc.includes('segurança') || desc.includes('vigilância') || desc.includes('seguranca');
       }) || services[0];
+      const rawName = String(preferred.description || preferred.name || '');
       const info: MunicipalServiceInfo = {
         id: String(preferred.id),
         code: String(preferred.code || preferred.municipalServiceCode || ''),
-        name: String(preferred.description || preferred.name || ''),
+        name: rawName.length > 200 ? rawName.substring(0, 200) : rawName,
       };
       municipalServiceCache[key] = info;
-      console.log(`[Asaas] Serviço municipal resolvido para ${key}: ID=${info.id} | Código=${info.code} | ${info.name}`);
+      console.log(`[Asaas] Serviço municipal selecionado para ${key}: ID=${info.id} | Código=${info.code} | ${info.name}`);
       return info;
     }
   } catch (e: any) {
@@ -325,9 +334,10 @@ export async function scheduleInvoice(params: {
     pis: params.taxes?.pis ?? nfConfig.pis ?? 0,
   };
   const municipalService = await resolveMunicipalService(params.company);
+  const rawDesc = params.serviceDescription || nfConfig.serviceDescription;
   const body: any = {
     payment: params.paymentId,
-    serviceDescription: params.serviceDescription || nfConfig.serviceDescription,
+    serviceDescription: rawDesc.length > 250 ? rawDesc.substring(0, 247) + '...' : rawDesc,
     taxes,
   };
   if (params.municipalServiceId) {
