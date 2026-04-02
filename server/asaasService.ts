@@ -1,5 +1,7 @@
 const ASAAS_BASE_URL = 'https://api.asaas.com/v3';
 
+const GRUPO_TMSEG_WALLET_ID = '6641fec4-8476-48e3-90a8-3db6b14f538c';
+
 interface CompanyConfig {
   apiKey: string;
   cnpj: string;
@@ -221,19 +223,31 @@ export async function createPayment(params: {
   externalReference?: string;
   billingType?: 'BOLETO' | 'PIX' | 'UNDEFINED';
   company?: string;
+  splitWalletId?: string;
 }): Promise<AsaasPayment> {
+  const body: any = {
+    customer: params.customerId,
+    billingType: params.billingType || 'UNDEFINED',
+    value: params.value,
+    dueDate: params.dueDate,
+    description: params.description || 'Referente aos serviços de Intermediação de Escolta Armada e Fiscal de Rota — Grupo TM SEG',
+    externalReference: params.externalReference || undefined,
+    interest: { value: 2, type: 'PERCENTAGE' },
+    fine: { value: 1, type: 'PERCENTAGE' },
+  };
+  const walletId = params.splitWalletId || GRUPO_TMSEG_WALLET_ID;
+  if (walletId) {
+    body.split = [
+      {
+        walletId,
+        percentualValue: 100,
+      },
+    ];
+    console.log(`[Asaas] Split configurado: 100% → walletId ${walletId}`);
+  }
   return asaasFetch('/payments', {
     method: 'POST',
-    body: JSON.stringify({
-      customer: params.customerId,
-      billingType: params.billingType || 'UNDEFINED',
-      value: params.value,
-      dueDate: params.dueDate,
-      description: params.description || 'Referente aos serviços de Intermediação de Escolta Armada e Fiscal de Rota — Grupo TM SEG',
-      externalReference: params.externalReference || undefined,
-      interest: { value: 2, type: 'PERCENTAGE' },
-      fine: { value: 1, type: 'PERCENTAGE' },
-    }),
+    body: JSON.stringify(body),
   }, params.company);
 }
 
