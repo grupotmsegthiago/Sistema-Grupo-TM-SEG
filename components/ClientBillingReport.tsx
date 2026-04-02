@@ -170,7 +170,7 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
                     .from('missions')
                     .select('*, company_vehicle:vehicles(*)')
                     .ilike('client', escapedClientName)
-                    .not('status', 'in', '("Cancelada","Recusada")')
+                    .neq('status', 'Recusada')
                     .gte('created_at', rangeStart)
                     .lte('created_at', rangeEnd)
                     .order('created_at', { ascending: true }),
@@ -178,7 +178,7 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
                     .from('missions')
                     .select('*, company_vehicle:vehicles(*)')
                     .ilike('client', escapedClientName)
-                    .not('status', 'in', '("Cancelada","Recusada")')
+                    .neq('status', 'Recusada')
                     .not('start_time', 'is', null)
                     .gte('start_time', rangeStart)
                     .lte('start_time', rangeEnd)
