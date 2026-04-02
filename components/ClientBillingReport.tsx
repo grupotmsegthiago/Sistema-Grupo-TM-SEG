@@ -174,9 +174,10 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
                 .select('*, company_vehicle:vehicles(*)')
                 .ilike('client', escapedClientName)
                 .neq('status', 'Recusada')
-                .gte('created_at', rangeStart)
-                .lte('created_at', rangeEnd)
-                .order('created_at', { ascending: true });
+                .not('start_time', 'is', null)
+                .gte('start_time', rangeStart)
+                .lte('start_time', rangeEnd)
+                .order('start_time', { ascending: true });
 
             if (error) throw error;
 
@@ -257,7 +258,7 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
             const rangeStart = `${startDate}T03:00:00.000Z`;
             const rangeEnd = new Date(new Date(`${endDate}T03:00:00.000Z`).getTime() + 86400000 - 1).toISOString();
             const { data: missionData, error } = await supabase.from('missions').select('*').neq('status', 'Recusada')
-                .gte('created_at', rangeStart).lte('created_at', rangeEnd).order('created_at', { ascending: true });
+                .not('start_time', 'is', null).gte('start_time', rangeStart).lte('start_time', rangeEnd).order('start_time', { ascending: true });
             if (error) throw error;
 
             const [ptRes, pctRes] = await Promise.all([
