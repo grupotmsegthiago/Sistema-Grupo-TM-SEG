@@ -445,7 +445,15 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
           }
           
           if (mRes.data) {
-              const fullMission = { ...initialMission, ...mRes.data };
+              const d = mRes.data;
+              const fullMission = {
+                  ...initialMission,
+                  ...d,
+                  startKm: d.start_km ?? initialMission.startKm,
+                  endKm: d.end_km ?? initialMission.endKm,
+                  startTime: d.start_time ?? initialMission.startTime,
+                  endTime: d.end_time ?? initialMission.endTime,
+              };
               setMission(fullMission);
 
               setEditStartKm(mRes.data.start_km ? String(mRes.data.start_km) : '');
