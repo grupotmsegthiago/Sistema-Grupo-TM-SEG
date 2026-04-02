@@ -869,23 +869,20 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
             const sheet = sheetMap.get(id);
             if (!sheet) { onlySystem.push(sys); return; }
             matched.push({ id, sys, sheet });
-            const fields: { label: string; sysVal: number; sheetVal: number; isCurrency: boolean }[] = [];
-            const diffs: string[] = [];
-            const addField = (label: string, sysV: number, sheetV: number, isCurrency: boolean, threshold: number) => {
-                if (Math.abs(sysV - sheetV) > threshold) {
-                    fields.push({ label, sysVal: sysV, sheetVal: sheetV, isCurrency });
-                    diffs.push(isCurrency ? `${label}: Sistema R$ ${sysV.toFixed(2)} × Planilha R$ ${sheetV.toFixed(2)}` : `${label}: Sistema ${sysV.toFixed(0)} × Planilha ${sheetV.toFixed(0)}`);
-                }
+            const allFields: { label: string; sysVal: number; sheetVal: number; isCurrency: boolean; isDiff: boolean }[] = [];
+            const buildField = (label: string, sysV: number, sheetV: number, isCurrency: boolean, threshold: number) => {
+                const isDiff = Math.abs(sysV - sheetV) > threshold;
+                allFields.push({ label, sysVal: sysV, sheetVal: sheetV, isCurrency, isDiff });
             };
-            addField('Valor Base', sys.activationFee, sheet.activationFee, true, 0.02);
-            addField('Pedágio', sys.tollVal, sheet.tollCol, true, 0.02);
-            addField('KM Total', sys.kmTotal, sheet.kmTotal, false, 1);
-            addField('KM Extra R$', sys.kmExtraTotal, sheet.kmExtraTotal, true, 0.02);
-            addField('Hr Extra R$', sys.hrExtraTotal, sheet.hrExtraTotal, true, 0.02);
-            addField('Total', sys.totalGeral, sheet.totalCol, true, 0.02);
+            buildField('Valor Base', sys.activationFee, sheet.activationFee, true, 0.02);
+            buildField('Pedágio', sys.tollVal, sheet.tollCol, true, 0.02);
+            buildField('KM Total', sys.kmTotal, sheet.kmTotal, false, 1);
+            buildField('Hr Extra R$', sys.hrExtraTotal, sheet.hrExtraTotal, true, 0.02);
+            buildField('Total', sys.totalGeral, sheet.totalCol, true, 0.02);
             if (sheet.totalCol === 0) return;
             if (Math.abs(sys.totalGeral - sheet.totalCol) <= 5) return;
-            if (diffs.length > 0) divergences.push({ id, diffs, fields, sysTot: sys.totalGeral, sheetTot: sheet.totalCol, sys, sheet });
+            const hasDiff = allFields.some(f => f.isDiff);
+            if (hasDiff) divergences.push({ id, fields: allFields, sysTot: sys.totalGeral, sheetTot: sheet.totalCol, sys, sheet });
         });
         sheetMap.forEach((sheet, id) => { if (!systemMap.has(id)) onlySheet.push(sheet); });
 
@@ -2537,44 +2534,39 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
 
                                     {pasteResult.divergences.length > 0 && (
                                         <div className="mb-4">
-                                            <h4 className="font-black text-red-700 uppercase text-[10px] tracking-widest mb-3 flex items-center gap-1">
+                                            <h4 className="font-black text-gray-300 uppercase text-[10px] tracking-widest mb-3 flex items-center gap-1 bg-gradient-to-r from-gray-800 to-gray-900 px-3 py-2 rounded-lg">
                                                 <ArrowLeftRight size={12} /> Divergências Encontradas ({pasteResult.divergences.length})
                                             </h4>
-                                            <div className="space-y-3 max-h-[400px] overflow-y-auto pr-1">
+                                            <div className="space-y-4 max-h-[400px] overflow-y-auto pr-1">
                                                 {pasteResult.divergences.map((d: any, i: number) => (
-                                                    <div key={i} className="border border-red-200 rounded-xl overflow-hidden" data-testid={`divergence-row-${d.id}`}>
-                                                        <div className="bg-gradient-to-r from-gray-900 to-red-900 px-4 py-2 flex items-center justify-between">
-                                                            <span className="font-black text-white text-xs tracking-wide">OS GTM-{d.id}</span>
-                                                            <span className="bg-red-500 text-white font-black text-[9px] px-2 py-0.5 rounded-full">
+                                                    <div key={i} className="border border-gray-700 rounded-xl overflow-hidden shadow-md" data-testid={`divergence-row-${d.id}`}>
+                                                        <div className="bg-gradient-to-r from-[#0f1729] to-[#1a2744] px-4 py-2.5 flex items-center justify-between">
+                                                            <span className="font-black text-white text-sm tracking-wide">OS GTM-{d.id}</span>
+                                                            <span className="bg-red-600 text-white font-black text-[10px] px-3 py-1 rounded-full shadow">
                                                                 {fmtBRL(Math.abs(d.sysTot - d.sheetTot))}
                                                             </span>
                                                         </div>
-                                                        <table className="w-full text-[11px]">
+                                                        <table className="w-full text-xs border-collapse">
                                                             <thead>
-                                                                <tr className="bg-gray-100">
-                                                                    <th className="text-left px-3 py-1.5 font-black text-gray-600 uppercase text-[9px] tracking-wider w-[30%]">Campo</th>
-                                                                    <th className="text-right px-3 py-1.5 font-black text-gray-900 uppercase text-[9px] tracking-wider w-[28%]">Sistema</th>
-                                                                    <th className="text-center px-1 py-1.5 w-[6%]"></th>
-                                                                    <th className="text-right px-3 py-1.5 font-black text-gray-900 uppercase text-[9px] tracking-wider w-[28%]">Planilha</th>
-                                                                    <th className="text-center px-2 py-1.5 w-[8%]"></th>
+                                                                <tr className="bg-gray-100 border-b border-gray-200">
+                                                                    <th className="text-left px-4 py-2 font-black text-gray-500 uppercase text-[9px] tracking-widest w-[30%]">Campo</th>
+                                                                    <th className="text-right px-4 py-2 font-black text-gray-800 uppercase text-[9px] tracking-widest w-[30%]">Sistema</th>
+                                                                    <th className="text-right px-4 py-2 font-black text-gray-800 uppercase text-[9px] tracking-widest w-[30%]">Planilha</th>
+                                                                    <th className="text-center px-2 py-2 w-[10%]"></th>
                                                                 </tr>
                                                             </thead>
                                                             <tbody>
-                                                                {(d.fields || []).map((f: any, j: number) => {
-                                                                    const sysHigher = f.sysVal > f.sheetVal;
-                                                                    return (
-                                                                        <tr key={j} className={j % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
-                                                                            <td className="px-3 py-1.5 font-bold text-gray-700">{f.label}</td>
-                                                                            <td className={`px-3 py-1.5 text-right font-mono font-bold ${sysHigher ? 'text-red-700 bg-red-50' : 'text-gray-700'}`}>
-                                                                                {f.isCurrency ? fmtBRL(f.sysVal) : f.sysVal.toLocaleString('pt-BR')}
-                                                                            </td>
-                                                                            <td className="text-center px-1 py-1.5">
-                                                                                <ArrowRight size={10} className="text-gray-400 mx-auto" />
-                                                                            </td>
-                                                                            <td className={`px-3 py-1.5 text-right font-mono font-bold ${!sysHigher ? 'text-red-700 bg-red-50' : 'text-gray-700'}`}>
-                                                                                {f.isCurrency ? fmtBRL(f.sheetVal) : f.sheetVal.toLocaleString('pt-BR')}
-                                                                            </td>
-                                                                            <td className="text-center px-2 py-1.5">
+                                                                {(d.fields || []).map((f: any, j: number) => (
+                                                                    <tr key={j} className={`${j % 2 === 0 ? 'bg-white' : 'bg-gray-50'} border-b border-gray-100`}>
+                                                                        <td className="px-4 py-2 font-semibold text-gray-600 italic text-[11px]">{f.label}</td>
+                                                                        <td className={`px-4 py-2 text-right font-mono font-bold text-[11px] ${f.isDiff ? 'text-red-700' : 'text-gray-800'}`}>
+                                                                            {f.isCurrency ? fmtBRL(f.sysVal) : f.sysVal.toLocaleString('pt-BR')}
+                                                                        </td>
+                                                                        <td className={`px-4 py-2 text-right font-mono font-bold text-[11px] ${f.isDiff ? 'text-red-700' : 'text-gray-800'}`}>
+                                                                            {f.isCurrency ? fmtBRL(f.sheetVal) : f.sheetVal.toLocaleString('pt-BR')}
+                                                                        </td>
+                                                                        <td className="text-center px-2 py-2">
+                                                                            {f.isDiff && (
                                                                                 <button
                                                                                     onClick={() => setEditingDivergence({ id: d.id, missionId: `GTM-${d.id}`, field: f.label, currentValue: f.sysVal, isCurrency: f.isCurrency })}
                                                                                     className="p-1 rounded hover:bg-red-100 text-gray-400 hover:text-red-600 transition-colors"
@@ -2583,10 +2575,10 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
                                                                                 >
                                                                                     <Pencil size={10} />
                                                                                 </button>
-                                                                            </td>
-                                                                        </tr>
-                                                                    );
-                                                                })}
+                                                                            )}
+                                                                        </td>
+                                                                    </tr>
+                                                                ))}
                                                             </tbody>
                                                         </table>
                                                     </div>
