@@ -37,7 +37,7 @@ const ASAAS_COMPANIES: Record<string, CompanyConfig> = {
   },
   'TM SECURITY': {
     apiKey: process.env.ASAAS_API_KEY_TMSECURITY || '',
-    cnpj: '60508931000127',
+    cnpj: '28804378000167',
     name: 'Tm Seguranca Consultoria & Tecnologia Integrada Ltda',
     aliases: ['TM SECURITY', 'TM SEGURANÇA', 'TM SEGURANCA', 'TMSECURITY', 'TMSEGURANCA', 'TMSEGURANÇA', 'SECURITY', 'SEGURANÇA', 'SEGURANCA', 'TM SEGURANCA CONSULTORIA'],
     nf: {
