@@ -1158,12 +1158,14 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
           
           const r2 = (v: number) => Math.round(v * 100) / 100;
           const isSameOs = mission.is_same_os === true;
+          const existingSnapshot = mission.snapshot_data && typeof mission.snapshot_data === 'object' && Object.keys(mission.snapshot_data).length > 0;
           const basePayload: any = {
               revenue_value: r2(revServiceOnly),
               cost_value: isSameOs ? 0 : r2(costServiceOnly),
               toll_value: r2(toll),
               billing_approved: isApprovedForBilling,
-              last_update: new Date().toISOString()
+              last_update: new Date().toISOString(),
+              ...((!shouldSnapshot && !existingSnapshot) ? { snapshot_data: null } : {})
           };
           if (approve && canReleaseBilling) {
               basePayload.billing_verified_by = userName;
@@ -1225,11 +1227,12 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                   details: JSON.stringify({ ...basePayload.snapshot_data, approved_by: userName, approved_at: basePayload.snapshot_approved_at })
               }]);
           }
-          if (result.error && result.error.message?.includes('does not exist')) {
+          if (result.error && (result.error.message?.includes('does not exist') || result.error.message?.includes('check_snapshot_not_empty'))) {
               const { snapshot_data, snapshot_approved_by, snapshot_approved_at, ...payloadWithoutSnapshot } = fullPayload;
+              payloadWithoutSnapshot.snapshot_data = null;
               result = await supabase.from('missions').update(payloadWithoutSnapshot).eq('id', mission.id).select('id, revenue_value, cost_value, toll_value, last_update').single();
               if (result.error && result.error.message?.includes('does not exist')) {
-                  const { toll_value_provider, ...payloadMin } = payloadWithoutSnapshot;
+                  const { toll_value_provider, snapshot_data: _sd, ...payloadMin } = payloadWithoutSnapshot;
                   result = await supabase.from('missions').update(payloadMin).eq('id', mission.id).select('id, revenue_value, cost_value, toll_value, last_update').single();
               }
               if (snapshot_data && !result.error) {

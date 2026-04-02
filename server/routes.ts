@@ -54,6 +54,8 @@ export async function registerRoutes(
         await migrationPool.query(`ALTER TABLE missions ADD COLUMN IF NOT EXISTS snapshot_data JSONB`);
         await migrationPool.query(`ALTER TABLE missions ADD COLUMN IF NOT EXISTS snapshot_approved_by TEXT`);
         await migrationPool.query(`ALTER TABLE missions ADD COLUMN IF NOT EXISTS snapshot_approved_at TIMESTAMPTZ`);
+        await migrationPool.query(`ALTER TABLE missions DROP CONSTRAINT IF EXISTS check_snapshot_not_empty`);
+        await migrationPool.query(`UPDATE missions SET snapshot_data = NULL WHERE snapshot_data = '{}'::jsonb`);
         await migrationPool.query(`ALTER TABLE system_users ADD COLUMN IF NOT EXISTS password_reset_token TEXT`);
         await migrationPool.query(`ALTER TABLE system_users ADD COLUMN IF NOT EXISTS password_reset_expires TIMESTAMPTZ`);
         await migrationPool.query(`ALTER TABLE financial_transactions ADD COLUMN IF NOT EXISTS payment_method TEXT`);
