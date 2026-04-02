@@ -3007,6 +3007,19 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
           step.steps.apiKey = { ok: true, detail: 'API Key configurada' };
         } catch (e: any) { step.steps.apiKey = { ok: false, detail: e.message }; }
         try {
+          const accountRes = await fetch('https://api.asaas.com/v3/myAccount', {
+            headers: { 'Content-Type': 'application/json', 'access_token': getAsaasCompanies().find(c => c.name === comp)?.apiKey || '' },
+          });
+          const accountData = await accountRes.json();
+          step.steps.account = {
+            ok: accountRes.ok,
+            walletId: accountData.walletId || accountData.id || '-',
+            name: accountData.name || accountData.tradingName || '-',
+            cpfCnpj: accountData.cpfCnpj || '-',
+            email: accountData.email || '-',
+          };
+        } catch (e: any) { step.steps.account = { ok: false, detail: e.message }; }
+        try {
           const services = await listMunicipalServices(comp);
           step.steps.municipalServices = {
             ok: services.length > 0,

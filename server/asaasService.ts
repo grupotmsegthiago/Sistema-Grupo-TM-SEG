@@ -106,8 +106,13 @@ export interface AsaasBankSlip {
 }
 
 async function asaasFetch(endpoint: string, options: RequestInit = {}, company?: string): Promise<any> {
-  const apiKey = resolveApiKey(company);
+  const entry = resolveCompanyEntry(company);
+  const apiKey = entry.apiKey;
   if (!apiKey) throw new Error('ASAAS_API_KEY não configurada para a empresa selecionada');
+  const keyPrefix = apiKey.substring(0, 12) + '...';
+  if (options.method && options.method !== 'GET') {
+    console.log(`[Asaas] ${options.method} ${endpoint} | Empresa: ${entry.name} | CNPJ: ${entry.cnpj} | Key: ${keyPrefix}`);
+  }
   const url = `${ASAAS_BASE_URL}${endpoint}`;
   const res = await fetch(url, {
     ...options,
@@ -392,11 +397,12 @@ export function isAsaasConfigured(): boolean {
   return Object.values(ASAAS_COMPANIES).some(c => !!c.apiKey);
 }
 
-export function getAsaasCompanies(): { key: string; name: string; cnpj: string; configured: boolean }[] {
+export function getAsaasCompanies(): { key: string; name: string; cnpj: string; configured: boolean; apiKey: string }[] {
   return Object.entries(ASAAS_COMPANIES).map(([key, val]) => ({
     key,
     name: val.name,
     cnpj: val.cnpj,
     configured: !!val.apiKey,
+    apiKey: val.apiKey,
   }));
 }
