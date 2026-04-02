@@ -35,11 +35,24 @@ const ASAAS_COMPANIES: Record<string, CompanyConfig> = {
       municipalServiceName: '03115 | 17.01 - Assessoria ou consultoria de qualquer natureza',
     },
   },
-  'TM SECURITY': {
+  'TM SEGURANCA': {
     apiKey: process.env.ASAAS_API_KEY_TMSECURITY || '',
     cnpj: '28804378000167',
     name: 'Tm Seguranca Consultoria & Tecnologia Integrada Ltda',
-    aliases: ['TM SECURITY', 'TM SEGURANÇA', 'TM SEGURANCA', 'TMSECURITY', 'TMSEGURANCA', 'TMSEGURANÇA', 'SECURITY', 'SEGURANÇA', 'SEGURANCA', 'TM SEGURANCA CONSULTORIA'],
+    aliases: ['TM SEGURANÇA', 'TM SEGURANCA', 'TMSEGURANCA', 'TMSEGURANÇA', 'SEGURANÇA', 'SEGURANCA', 'TM SEGURANCA CONSULTORIA'],
+    nf: {
+      serviceDescription: 'Intermediação de Escolta Armada e Fiscal de Rota',
+      issRate: 5,
+      retainIss: false,
+      municipalServiceCode: '03115',
+      municipalServiceName: '03115 | 17.01 - Assessoria ou consultoria de qualquer natureza',
+    },
+  },
+  'TM SECURITY': {
+    apiKey: process.env.ASAAS_API_KEY_TMSECURITY_60 || '',
+    cnpj: '60508931000127',
+    name: 'TM Security Gestão Corporativa Ltda',
+    aliases: ['TM SECURITY', 'TMSECURITY', 'SECURITY', 'TM SECURITY GESTAO', 'TM SECURITY GESTÃO'],
     nf: {
       serviceDescription: 'Intermediação de Escolta Armada e Fiscal de Rota',
       issRate: 5,
