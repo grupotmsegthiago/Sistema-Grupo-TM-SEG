@@ -785,73 +785,114 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
         if (!pasteText.trim() || rowsData.length === 0) return;
         const lines = pasteText.trim().split('\n').map(l => l.split('\t'));
         const sheetRows: any[] = [];
+        const skipKw = ['TOTAL', 'BOLETIM', 'GERAL', 'REFERENTE', 'Nº', 'ROTA', 'TABELA', 'ACORDADA', 'INFORMAÇÕES', 'VALOR', 'PEDÁGIO', 'KILOMETRAGEM', 'HORÁRIOS', 'EXCEDENTE', 'VIAGEM'];
+        const isHeader = (cols: string[]) => {
+            const joined = cols.map(c => (c || '').trim().toUpperCase()).join(' ');
+            return joined.includes('ROTA') && (joined.includes('TOTAL') || joined.includes('VALOR') || joined.includes('PEDÁGIO'));
+        };
+        const isMissionStart = (cols: string[]) => {
+            const first = (cols[0] || '').trim();
+            if (!first) return false;
+            const num = first.match(/^\d{3,6}$/);
+            if (!num) return false;
+            if (skipKw.some(kw => first.toUpperCase().includes(kw))) return false;
+            return true;
+        };
 
-        let headerIdxMap: Record<string, number> | null = null;
+        const missionGroups: string[][][] = [];
+        let currentGroup: string[][] = [];
+
         for (const cols of lines) {
-            const joined = cols.map(c => (c || '').trim().toUpperCase()).join('|');
-            if (joined.includes('ROTA') && (joined.includes('TOTAL') || joined.includes('VALOR'))) {
-                const upperCols = cols.map(c => (c || '').trim().toUpperCase());
-                const map: Record<string, number> = {};
-                upperCols.forEach((c, i) => {
-                    if (c === 'Nº' || c === 'NO' || c === 'N°' || c === 'OS') map['id'] = i;
-                    if (c === 'ROTA') map['route'] = i;
-                    if (c === 'VALOR' && !map['activationFee']) map['activationFee'] = i;
-                });
-                const lastTotalIdx = upperCols.lastIndexOf('TOTAL');
-                if (lastTotalIdx >= 0) map['total'] = lastTotalIdx;
-                const pedagioIdx = upperCols.findIndex(c => c.includes('PEDÁGIO') || c.includes('PEDAGIO'));
-                if (pedagioIdx >= 0) map['toll'] = pedagioIdx;
-                const kmTotalIdxes = upperCols.reduce((acc: number[], c, i) => { if (c === 'TOTAL') acc.push(i); return acc; }, []);
-                if (kmTotalIdxes.length >= 3) map['kmTotal'] = kmTotalIdxes[0];
-                const allTotalIdxes = upperCols.reduce((acc: number[], c, i) => { if (c === 'TOTAL') acc.push(i); return acc; }, []);
-                if (allTotalIdxes.length >= 4) map['kmExtraTotal'] = allTotalIdxes[2];
-                if (allTotalIdxes.length >= 5) map['hrExtraTotal'] = allTotalIdxes[3];
-                if (Object.keys(map).length >= 3) headerIdxMap = map;
-                continue;
+            if (isHeader(cols)) continue;
+            if (isMissionStart(cols)) {
+                if (currentGroup.length > 0) missionGroups.push(currentGroup);
+                currentGroup = [cols];
+            } else if (currentGroup.length > 0) {
+                currentGroup.push(cols);
             }
         }
+        if (currentGroup.length > 0) missionGroups.push(currentGroup);
 
-        for (const cols of lines) {
-            const firstCol = (cols[0] || '').trim();
-            if (!firstCol) continue;
-            const numMatch = firstCol.match(/\d+/);
-            if (!numMatch) continue;
-            const id = numMatch[0];
-            if (['TOTAL', 'BOLETIM', 'GERAL', 'REFERENTE', 'Nº', 'ROTA', 'TABELA', 'ACORDADA', 'INFORMAÇÕES'].some(kw => firstCol.toUpperCase().includes(kw))) continue;
-            if (cols.length < 3) continue;
+        const isSingleLineFormat = missionGroups.length > 0 && missionGroups.every(g => g.length === 1) && missionGroups[0][0].length >= 20;
 
-            let totalCol: number, tollCol: number, activationFee: number, route: string;
-            let kmTotal: number, kmExtraTotal: number, hrExtraTotal: number;
+        for (const group of missionGroups) {
+            const firstCols = group[0];
+            const id = (firstCols[0] || '').trim().match(/\d+/)![0];
 
-            if (headerIdxMap) {
-                totalCol = headerIdxMap['total'] !== undefined ? parseBRLNumber(cols[headerIdxMap['total']]) : parseBRLNumber(cols[cols.length - 1]);
-                tollCol = headerIdxMap['toll'] !== undefined ? parseBRLNumber(cols[headerIdxMap['toll']]) : parseBRLNumber(cols[cols.length - 2]);
-                activationFee = headerIdxMap['activationFee'] !== undefined ? parseBRLNumber(cols[headerIdxMap['activationFee']]) : (cols.length >= 3 ? parseBRLNumber(cols[2]) : 0);
-                route = headerIdxMap['route'] !== undefined ? (cols[headerIdxMap['route']] || '').trim() : (cols[1] || '').trim();
-                kmTotal = headerIdxMap['kmTotal'] !== undefined ? parseBRLNumber(cols[headerIdxMap['kmTotal']]) : (cols.length >= 16 ? parseBRLNumber(cols[15]) : 0);
-                kmExtraTotal = headerIdxMap['kmExtraTotal'] !== undefined ? parseBRLNumber(cols[headerIdxMap['kmExtraTotal']]) : (cols.length >= 22 ? parseBRLNumber(cols[21]) : 0);
-                hrExtraTotal = headerIdxMap['hrExtraTotal'] !== undefined ? parseBRLNumber(cols[headerIdxMap['hrExtraTotal']]) : (cols.length >= 25 ? parseBRLNumber(cols[24]) : 0);
-            } else if (cols.length >= 25) {
-                route = (cols[1] || '').trim();
-                activationFee = parseBRLNumber(cols[2]);
-                kmTotal = parseBRLNumber(cols[15]);
-                kmExtraTotal = parseBRLNumber(cols[21]);
-                hrExtraTotal = parseBRLNumber(cols[24]);
-                tollCol = parseBRLNumber(cols[25]);
-                totalCol = parseBRLNumber(cols[cols.length - 1]);
+            if (isSingleLineFormat || (group.length === 1 && firstCols.length >= 20)) {
+                const cols = firstCols;
+                let route: string, activationFee: number, totalCol: number, tollCol: number;
+                let kmTotal: number, kmExtraTotal: number, hrExtraTotal: number;
+                if (cols.length >= 27) {
+                    route = (cols[1] || '').trim();
+                    activationFee = parseBRLNumber(cols[2]);
+                    kmTotal = parseBRLNumber(cols[15]);
+                    kmExtraTotal = parseBRLNumber(cols[21]);
+                    hrExtraTotal = parseBRLNumber(cols[24]);
+                    tollCol = parseBRLNumber(cols[cols.length - 2]);
+                    totalCol = parseBRLNumber(cols[cols.length - 1]);
+                } else {
+                    route = (cols[1] || '').trim();
+                    totalCol = parseBRLNumber(cols[cols.length - 1]);
+                    tollCol = cols.length >= 3 ? parseBRLNumber(cols[cols.length - 2]) : 0;
+                    activationFee = cols.length >= 3 ? parseBRLNumber(cols[2]) : 0;
+                    kmTotal = cols.length >= 16 ? parseBRLNumber(cols[15]) : 0;
+                    kmExtraTotal = cols.length >= 22 ? parseBRLNumber(cols[21]) : 0;
+                    hrExtraTotal = cols.length >= 25 ? parseBRLNumber(cols[24]) : 0;
+                }
+                sheetRows.push({ id, route, activationFee, startDate: '', endDate: '', kmTotal, kmExtraTotal, hrExtraTotal, tollCol, totalCol, raw: cols });
             } else {
-                route = (cols[1] || '').trim();
-                totalCol = parseBRLNumber(cols[cols.length - 1]);
-                tollCol = cols.length >= 3 ? parseBRLNumber(cols[cols.length - 2]) : 0;
-                activationFee = cols.length >= 3 ? parseBRLNumber(cols[2]) : 0;
-                kmTotal = cols.length >= 16 ? parseBRLNumber(cols[15]) : 0;
-                kmExtraTotal = cols.length >= 22 ? parseBRLNumber(cols[21]) : 0;
-                hrExtraTotal = cols.length >= 25 ? parseBRLNumber(cols[24]) : 0;
-            }
+                const allCells = group.flatMap(g => g).map(c => (c || '').trim()).filter(c => c !== '');
+                const route = (firstCols[1] || '').trim();
 
-            const startDate = (cols.length >= 8 ? cols[7] : '').trim();
-            const endDate = (cols.length >= 12 ? cols[11] : '').trim();
-            sheetRows.push({ id, route, activationFee, startDate, endDate, kmTotal, kmExtraTotal, hrExtraTotal, tollCol, totalCol, raw: cols });
+                const brlValues: number[] = [];
+                allCells.forEach(c => {
+                    if (c.match(/^R\$\s*[\d.,]+$/) || c.match(/^R\$\s*-$/)) {
+                        brlValues.push(parseBRLNumber(c));
+                    }
+                });
+
+                const numericCells: { val: number; raw: string }[] = [];
+                allCells.forEach(c => {
+                    const v = parseBRLNumber(c);
+                    if (v > 0 || c.match(/^R\$/)) numericCells.push({ val: v, raw: c });
+                });
+
+                const lastTwoSame = brlValues.length >= 2 && Math.abs(brlValues[brlValues.length - 1] - brlValues[brlValues.length - 2]) < 0.01;
+                const totalCol = brlValues.length > 0 ? brlValues[brlValues.length - 1] : 0;
+
+                let activationFee = 0;
+                for (const c of allCells) {
+                    if (c.match(/^R\$\s*[\d.,]+$/) && parseBRLNumber(c) > 50 && parseBRLNumber(c) < 10000) {
+                        activationFee = parseBRLNumber(c);
+                        break;
+                    }
+                }
+
+                let tollCol = 0;
+                const tollCandidate = lastTwoSame ? brlValues[brlValues.length - 3] || 0 : brlValues[brlValues.length - 2] || 0;
+                if (tollCandidate > 0 && tollCandidate < totalCol) tollCol = tollCandidate;
+
+                let kmTotal = 0;
+                for (const c of allCells) {
+                    const cleaned = c.replace(/\./g, '').replace(',', '.');
+                    const num = parseFloat(cleaned);
+                    if (!isNaN(num) && num >= 10 && num <= 9999 && !c.includes('R$') && !c.includes(':') && !c.includes('/')) {
+                        const possibleKm = num;
+                        if (possibleKm > kmTotal && possibleKm < 5000) kmTotal = possibleKm;
+                    }
+                }
+
+                const hrExtraTotal = brlValues.length >= 4 ? (() => {
+                    for (let i = brlValues.length - 3; i >= 2; i--) {
+                        if (brlValues[i] > 0 && brlValues[i] !== totalCol && brlValues[i] !== activationFee && brlValues[i] !== tollCol) return brlValues[i];
+                    }
+                    return 0;
+                })() : 0;
+
+                const kmExtraTotal = 0;
+                sheetRows.push({ id, route, activationFee, startDate: '', endDate: '', kmTotal, kmExtraTotal, hrExtraTotal, tollCol, totalCol, raw: allCells });
+            }
         }
 
         const systemMap = new window.Map<string, any>();
@@ -869,20 +910,21 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
             const sheet = sheetMap.get(id);
             if (!sheet) { onlySystem.push(sys); return; }
             matched.push({ id, sys, sheet });
-            const allFields: { label: string; sysVal: number; sheetVal: number; isCurrency: boolean; isDiff: boolean }[] = [];
-            const buildField = (label: string, sysV: number, sheetV: number, isCurrency: boolean, threshold: number) => {
-                const isDiff = Math.abs(sysV - sheetV) > threshold;
-                allFields.push({ label, sysVal: sysV, sheetVal: sheetV, isCurrency, isDiff });
+            const fields: { label: string; sysVal: number; sheetVal: number; isCurrency: boolean }[] = [];
+            const diffs: string[] = [];
+            const addField = (label: string, sysV: number, sheetV: number, isCurrency: boolean, threshold: number) => {
+                if (Math.abs(sysV - sheetV) > threshold) {
+                    fields.push({ label, sysVal: sysV, sheetVal: sheetV, isCurrency });
+                    diffs.push(isCurrency ? `${label}: Sistema R$ ${sysV.toFixed(2)} × Planilha R$ ${sheetV.toFixed(2)}` : `${label}: Sistema ${sysV.toFixed(0)} × Planilha ${sheetV.toFixed(0)}`);
+                }
             };
-            buildField('Valor Base', sys.activationFee, sheet.activationFee, true, 0.02);
-            buildField('Pedágio', sys.tollVal, sheet.tollCol, true, 0.02);
-            buildField('KM Total', sys.kmTotal, sheet.kmTotal, false, 1);
-            buildField('Hr Extra R$', sys.hrExtraTotal, sheet.hrExtraTotal, true, 0.02);
-            buildField('Total', sys.totalGeral, sheet.totalCol, true, 0.02);
-            if (sheet.totalCol === 0) return;
-            if (Math.abs(sys.totalGeral - sheet.totalCol) <= 5) return;
-            const hasDiff = allFields.some(f => f.isDiff);
-            if (hasDiff) divergences.push({ id, fields: allFields, sysTot: sys.totalGeral, sheetTot: sheet.totalCol, sys, sheet });
+            addField('Valor Base', sys.activationFee, sheet.activationFee, true, 0.02);
+            addField('Pedágio', sys.tollVal, sheet.tollCol, true, 0.02);
+            addField('KM Total', sys.kmTotal, sheet.kmTotal, false, 1);
+            addField('KM Extra R$', sys.kmExtraTotal, sheet.kmExtraTotal, true, 0.02);
+            addField('Hr Extra R$', sys.hrExtraTotal, sheet.hrExtraTotal, true, 0.02);
+            addField('Total', sys.totalGeral, sheet.totalCol, true, 0.02);
+            if (diffs.length > 0) divergences.push({ id, diffs, fields, sysTot: sys.totalGeral, sheetTot: sheet.totalCol, sys, sheet });
         });
         sheetMap.forEach((sheet, id) => { if (!systemMap.has(id)) onlySheet.push(sheet); });
 
@@ -2534,39 +2576,44 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
 
                                     {pasteResult.divergences.length > 0 && (
                                         <div className="mb-4">
-                                            <h4 className="font-black text-gray-300 uppercase text-[10px] tracking-widest mb-3 flex items-center gap-1 bg-gradient-to-r from-gray-800 to-gray-900 px-3 py-2 rounded-lg">
+                                            <h4 className="font-black text-red-700 uppercase text-[10px] tracking-widest mb-3 flex items-center gap-1">
                                                 <ArrowLeftRight size={12} /> Divergências Encontradas ({pasteResult.divergences.length})
                                             </h4>
-                                            <div className="space-y-4 max-h-[400px] overflow-y-auto pr-1">
+                                            <div className="space-y-3 max-h-[400px] overflow-y-auto pr-1">
                                                 {pasteResult.divergences.map((d: any, i: number) => (
-                                                    <div key={i} className="border border-gray-700 rounded-xl overflow-hidden shadow-md" data-testid={`divergence-row-${d.id}`}>
-                                                        <div className="bg-gradient-to-r from-[#0f1729] to-[#1a2744] px-4 py-2.5 flex items-center justify-between">
-                                                            <span className="font-black text-white text-sm tracking-wide">OS GTM-{d.id}</span>
-                                                            <span className="bg-red-600 text-white font-black text-[10px] px-3 py-1 rounded-full shadow">
+                                                    <div key={i} className="border border-red-200 rounded-xl overflow-hidden" data-testid={`divergence-row-${d.id}`}>
+                                                        <div className="bg-gradient-to-r from-gray-900 to-red-900 px-4 py-2 flex items-center justify-between">
+                                                            <span className="font-black text-white text-xs tracking-wide">OS GTM-{d.id}</span>
+                                                            <span className="bg-red-500 text-white font-black text-[9px] px-2 py-0.5 rounded-full">
                                                                 {fmtBRL(Math.abs(d.sysTot - d.sheetTot))}
                                                             </span>
                                                         </div>
-                                                        <table className="w-full text-xs border-collapse">
+                                                        <table className="w-full text-[11px]">
                                                             <thead>
-                                                                <tr className="bg-gray-100 border-b border-gray-200">
-                                                                    <th className="text-left px-4 py-2 font-black text-gray-500 uppercase text-[9px] tracking-widest w-[30%]">Campo</th>
-                                                                    <th className="text-right px-4 py-2 font-black text-gray-800 uppercase text-[9px] tracking-widest w-[30%]">Sistema</th>
-                                                                    <th className="text-right px-4 py-2 font-black text-gray-800 uppercase text-[9px] tracking-widest w-[30%]">Planilha</th>
-                                                                    <th className="text-center px-2 py-2 w-[10%]"></th>
+                                                                <tr className="bg-gray-100">
+                                                                    <th className="text-left px-3 py-1.5 font-black text-gray-600 uppercase text-[9px] tracking-wider w-[30%]">Campo</th>
+                                                                    <th className="text-right px-3 py-1.5 font-black text-gray-900 uppercase text-[9px] tracking-wider w-[28%]">Sistema</th>
+                                                                    <th className="text-center px-1 py-1.5 w-[6%]"></th>
+                                                                    <th className="text-right px-3 py-1.5 font-black text-gray-900 uppercase text-[9px] tracking-wider w-[28%]">Planilha</th>
+                                                                    <th className="text-center px-2 py-1.5 w-[8%]"></th>
                                                                 </tr>
                                                             </thead>
                                                             <tbody>
-                                                                {(d.fields || []).map((f: any, j: number) => (
-                                                                    <tr key={j} className={`${j % 2 === 0 ? 'bg-white' : 'bg-gray-50'} border-b border-gray-100`}>
-                                                                        <td className="px-4 py-2 font-semibold text-gray-600 italic text-[11px]">{f.label}</td>
-                                                                        <td className={`px-4 py-2 text-right font-mono font-bold text-[11px] ${f.isDiff ? 'text-red-700' : 'text-gray-800'}`}>
-                                                                            {f.isCurrency ? fmtBRL(f.sysVal) : f.sysVal.toLocaleString('pt-BR')}
-                                                                        </td>
-                                                                        <td className={`px-4 py-2 text-right font-mono font-bold text-[11px] ${f.isDiff ? 'text-red-700' : 'text-gray-800'}`}>
-                                                                            {f.isCurrency ? fmtBRL(f.sheetVal) : f.sheetVal.toLocaleString('pt-BR')}
-                                                                        </td>
-                                                                        <td className="text-center px-2 py-2">
-                                                                            {f.isDiff && (
+                                                                {(d.fields || []).map((f: any, j: number) => {
+                                                                    const sysHigher = f.sysVal > f.sheetVal;
+                                                                    return (
+                                                                        <tr key={j} className={j % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
+                                                                            <td className="px-3 py-1.5 font-bold text-gray-700">{f.label}</td>
+                                                                            <td className={`px-3 py-1.5 text-right font-mono font-bold ${sysHigher ? 'text-red-700 bg-red-50' : 'text-gray-700'}`}>
+                                                                                {f.isCurrency ? fmtBRL(f.sysVal) : f.sysVal.toLocaleString('pt-BR')}
+                                                                            </td>
+                                                                            <td className="text-center px-1 py-1.5">
+                                                                                <ArrowRight size={10} className="text-gray-400 mx-auto" />
+                                                                            </td>
+                                                                            <td className={`px-3 py-1.5 text-right font-mono font-bold ${!sysHigher ? 'text-red-700 bg-red-50' : 'text-gray-700'}`}>
+                                                                                {f.isCurrency ? fmtBRL(f.sheetVal) : f.sheetVal.toLocaleString('pt-BR')}
+                                                                            </td>
+                                                                            <td className="text-center px-2 py-1.5">
                                                                                 <button
                                                                                     onClick={() => setEditingDivergence({ id: d.id, missionId: `GTM-${d.id}`, field: f.label, currentValue: f.sysVal, isCurrency: f.isCurrency })}
                                                                                     className="p-1 rounded hover:bg-red-100 text-gray-400 hover:text-red-600 transition-colors"
@@ -2575,10 +2622,10 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
                                                                                 >
                                                                                     <Pencil size={10} />
                                                                                 </button>
-                                                                            )}
-                                                                        </td>
-                                                                    </tr>
-                                                                ))}
+                                                                            </td>
+                                                                        </tr>
+                                                                    );
+                                                                })}
                                                             </tbody>
                                                         </table>
                                                     </div>
@@ -2617,30 +2664,26 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
                                         </div>
                                     )}
 
-                                    {(() => {
-                                        const totSys = pasteResult.matched.reduce((s: number, m: any) => s + (m.sys?.totalGeral || 0), 0) + pasteResult.onlySystem.reduce((s: number, d: any) => s + (d.totalGeral || 0), 0);
-                                        const totSheet = pasteResult.matched.reduce((s: number, m: any) => s + (m.sheet?.totalCol || 0), 0) + pasteResult.onlySheet.reduce((s: number, d: any) => s + (d.totalCol || 0), 0);
-                                        const diff = totSys - totSheet;
-                                        return (
-                                            <div className="mb-4 bg-gradient-to-r from-gray-900 to-gray-800 rounded-xl p-4">
-                                                <h4 className="font-black text-gray-400 uppercase text-[9px] tracking-widest mb-3">Resumo Financeiro</h4>
-                                                <div className="grid grid-cols-3 gap-3 text-center">
-                                                    <div>
-                                                        <div className="text-[8px] font-bold text-gray-500 uppercase mb-1">Total Sistema</div>
-                                                        <div className="text-sm font-black text-white">{fmtBRL(totSys)}</div>
-                                                    </div>
-                                                    <div>
-                                                        <div className="text-[8px] font-bold text-gray-500 uppercase mb-1">Total Planilha</div>
-                                                        <div className="text-sm font-black text-white">{fmtBRL(totSheet)}</div>
-                                                    </div>
-                                                    <div>
-                                                        <div className="text-[8px] font-bold text-gray-500 uppercase mb-1">Diferença</div>
-                                                        <div className={`text-sm font-black ${Math.abs(diff) < 0.01 ? 'text-green-400' : 'text-red-400'}`}>{fmtBRL(diff)}</div>
-                                                    </div>
-                                                </div>
+                                    <div className="mb-4 bg-gradient-to-r from-gray-900 to-gray-800 rounded-xl p-4">
+                                        <h4 className="font-black text-gray-400 uppercase text-[9px] tracking-widest mb-3">Resumo Financeiro</h4>
+                                        <div className="grid grid-cols-3 gap-3 text-center">
+                                            <div>
+                                                <div className="text-[8px] font-bold text-gray-500 uppercase mb-1">Total Sistema</div>
+                                                <div className="text-sm font-black text-white">{fmtBRL(pasteResult.divergences.reduce((s: number, d: any) => s + d.sysTot, 0) + pasteResult.onlySystem.reduce((s: number, d: any) => s + (d.totalGeral || 0), 0))}</div>
                                             </div>
-                                        );
-                                    })()}
+                                            <div>
+                                                <div className="text-[8px] font-bold text-gray-500 uppercase mb-1">Total Planilha</div>
+                                                <div className="text-sm font-black text-white">{fmtBRL(pasteResult.divergences.reduce((s: number, d: any) => s + d.sheetTot, 0) + pasteResult.onlySheet.reduce((s: number, d: any) => s + (d.totalCol || 0), 0))}</div>
+                                            </div>
+                                            <div>
+                                                <div className="text-[8px] font-bold text-gray-500 uppercase mb-1">Diferença</div>
+                                                {(() => {
+                                                    const totalDiff = (pasteResult.divergences.reduce((s: number, d: any) => s + d.sysTot, 0) + pasteResult.onlySystem.reduce((s: number, d: any) => s + (d.totalGeral || 0), 0)) - (pasteResult.divergences.reduce((s: number, d: any) => s + d.sheetTot, 0) + pasteResult.onlySheet.reduce((s: number, d: any) => s + (d.totalCol || 0), 0));
+                                                    return <div className={`text-sm font-black ${Math.abs(totalDiff) < 0.01 ? 'text-green-400' : 'text-red-400'}`}>{fmtBRL(totalDiff)}</div>;
+                                                })()}
+                                            </div>
+                                        </div>
+                                    </div>
 
                                     <div className="flex gap-3 mt-4">
                                         <button onClick={() => setPasteResult(null)} className="flex-1 bg-gradient-to-r from-gray-800 to-gray-900 hover:from-gray-700 hover:to-gray-800 text-white font-black uppercase text-xs tracking-widest py-3 rounded-xl flex items-center justify-center gap-2 border border-gray-700" data-testid="btn-paste-new-compare">
