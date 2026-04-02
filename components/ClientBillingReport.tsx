@@ -2680,26 +2680,30 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
                                         </div>
                                     )}
 
-                                    <div className="mb-4 bg-gradient-to-r from-gray-900 to-gray-800 rounded-xl p-4">
-                                        <h4 className="font-black text-gray-400 uppercase text-[9px] tracking-widest mb-3">Resumo Financeiro</h4>
-                                        <div className="grid grid-cols-3 gap-3 text-center">
-                                            <div>
-                                                <div className="text-[8px] font-bold text-gray-500 uppercase mb-1">Total Sistema</div>
-                                                <div className="text-sm font-black text-white">{fmtBRL(pasteResult.divergences.reduce((s: number, d: any) => s + d.sysTot, 0) + pasteResult.onlySystem.reduce((s: number, d: any) => s + (d.totalGeral || 0), 0))}</div>
+                                    {(() => {
+                                        const totSys = pasteResult.matched.reduce((s: number, m: any) => s + (m.sys?.totalGeral || 0), 0) + pasteResult.onlySystem.reduce((s: number, d: any) => s + (d.totalGeral || 0), 0);
+                                        const totSheet = pasteResult.matched.reduce((s: number, m: any) => s + (m.sheet?.totalCol || 0), 0) + pasteResult.onlySheet.reduce((s: number, d: any) => s + (d.totalCol || 0), 0);
+                                        const diff = totSys - totSheet;
+                                        return (
+                                            <div className="mb-4 bg-gradient-to-r from-gray-900 to-gray-800 rounded-xl p-4">
+                                                <h4 className="font-black text-gray-400 uppercase text-[9px] tracking-widest mb-3">Resumo Financeiro</h4>
+                                                <div className="grid grid-cols-3 gap-3 text-center">
+                                                    <div>
+                                                        <div className="text-[8px] font-bold text-gray-500 uppercase mb-1">Total Sistema</div>
+                                                        <div className="text-sm font-black text-white">{fmtBRL(totSys)}</div>
+                                                    </div>
+                                                    <div>
+                                                        <div className="text-[8px] font-bold text-gray-500 uppercase mb-1">Total Planilha</div>
+                                                        <div className="text-sm font-black text-white">{fmtBRL(totSheet)}</div>
+                                                    </div>
+                                                    <div>
+                                                        <div className="text-[8px] font-bold text-gray-500 uppercase mb-1">Diferença</div>
+                                                        <div className={`text-sm font-black ${Math.abs(diff) < 0.01 ? 'text-green-400' : 'text-red-400'}`}>{fmtBRL(diff)}</div>
+                                                    </div>
+                                                </div>
                                             </div>
-                                            <div>
-                                                <div className="text-[8px] font-bold text-gray-500 uppercase mb-1">Total Planilha</div>
-                                                <div className="text-sm font-black text-white">{fmtBRL(pasteResult.divergences.reduce((s: number, d: any) => s + d.sheetTot, 0) + pasteResult.onlySheet.reduce((s: number, d: any) => s + (d.totalCol || 0), 0))}</div>
-                                            </div>
-                                            <div>
-                                                <div className="text-[8px] font-bold text-gray-500 uppercase mb-1">Diferença</div>
-                                                {(() => {
-                                                    const totalDiff = (pasteResult.divergences.reduce((s: number, d: any) => s + d.sysTot, 0) + pasteResult.onlySystem.reduce((s: number, d: any) => s + (d.totalGeral || 0), 0)) - (pasteResult.divergences.reduce((s: number, d: any) => s + d.sheetTot, 0) + pasteResult.onlySheet.reduce((s: number, d: any) => s + (d.totalCol || 0), 0));
-                                                    return <div className={`text-sm font-black ${Math.abs(totalDiff) < 0.01 ? 'text-green-400' : 'text-red-400'}`}>{fmtBRL(totalDiff)}</div>;
-                                                })()}
-                                            </div>
-                                        </div>
-                                    </div>
+                                        );
+                                    })()}
 
                                     <div className="flex gap-3 mt-4">
                                         <button onClick={() => setPasteResult(null)} className="flex-1 bg-gradient-to-r from-gray-800 to-gray-900 hover:from-gray-700 hover:to-gray-800 text-white font-black uppercase text-xs tracking-widest py-3 rounded-xl flex items-center justify-center gap-2 border border-gray-700" data-testid="btn-paste-new-compare">
