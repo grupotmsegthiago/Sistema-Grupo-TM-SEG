@@ -785,73 +785,114 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
         if (!pasteText.trim() || rowsData.length === 0) return;
         const lines = pasteText.trim().split('\n').map(l => l.split('\t'));
         const sheetRows: any[] = [];
+        const skipKw = ['TOTAL', 'BOLETIM', 'GERAL', 'REFERENTE', 'Nº', 'ROTA', 'TABELA', 'ACORDADA', 'INFORMAÇÕES', 'VALOR', 'PEDÁGIO', 'KILOMETRAGEM', 'HORÁRIOS', 'EXCEDENTE', 'VIAGEM'];
+        const isHeader = (cols: string[]) => {
+            const joined = cols.map(c => (c || '').trim().toUpperCase()).join(' ');
+            return joined.includes('ROTA') && (joined.includes('TOTAL') || joined.includes('VALOR') || joined.includes('PEDÁGIO'));
+        };
+        const isMissionStart = (cols: string[]) => {
+            const first = (cols[0] || '').trim();
+            if (!first) return false;
+            const num = first.match(/^\d{3,6}$/);
+            if (!num) return false;
+            if (skipKw.some(kw => first.toUpperCase().includes(kw))) return false;
+            return true;
+        };
 
-        let headerIdxMap: Record<string, number> | null = null;
+        const missionGroups: string[][][] = [];
+        let currentGroup: string[][] = [];
+
         for (const cols of lines) {
-            const joined = cols.map(c => (c || '').trim().toUpperCase()).join('|');
-            if (joined.includes('ROTA') && (joined.includes('TOTAL') || joined.includes('VALOR'))) {
-                const upperCols = cols.map(c => (c || '').trim().toUpperCase());
-                const map: Record<string, number> = {};
-                upperCols.forEach((c, i) => {
-                    if (c === 'Nº' || c === 'NO' || c === 'N°' || c === 'OS') map['id'] = i;
-                    if (c === 'ROTA') map['route'] = i;
-                    if (c === 'VALOR' && !map['activationFee']) map['activationFee'] = i;
-                });
-                const lastTotalIdx = upperCols.lastIndexOf('TOTAL');
-                if (lastTotalIdx >= 0) map['total'] = lastTotalIdx;
-                const pedagioIdx = upperCols.findIndex(c => c.includes('PEDÁGIO') || c.includes('PEDAGIO'));
-                if (pedagioIdx >= 0) map['toll'] = pedagioIdx;
-                const kmTotalIdxes = upperCols.reduce((acc: number[], c, i) => { if (c === 'TOTAL') acc.push(i); return acc; }, []);
-                if (kmTotalIdxes.length >= 3) map['kmTotal'] = kmTotalIdxes[0];
-                const allTotalIdxes = upperCols.reduce((acc: number[], c, i) => { if (c === 'TOTAL') acc.push(i); return acc; }, []);
-                if (allTotalIdxes.length >= 4) map['kmExtraTotal'] = allTotalIdxes[2];
-                if (allTotalIdxes.length >= 5) map['hrExtraTotal'] = allTotalIdxes[3];
-                if (Object.keys(map).length >= 3) headerIdxMap = map;
-                continue;
+            if (isHeader(cols)) continue;
+            if (isMissionStart(cols)) {
+                if (currentGroup.length > 0) missionGroups.push(currentGroup);
+                currentGroup = [cols];
+            } else if (currentGroup.length > 0) {
+                currentGroup.push(cols);
             }
         }
+        if (currentGroup.length > 0) missionGroups.push(currentGroup);
 
-        for (const cols of lines) {
-            const firstCol = (cols[0] || '').trim();
-            if (!firstCol) continue;
-            const numMatch = firstCol.match(/\d+/);
-            if (!numMatch) continue;
-            const id = numMatch[0];
-            if (['TOTAL', 'BOLETIM', 'GERAL', 'REFERENTE', 'Nº', 'ROTA', 'TABELA', 'ACORDADA', 'INFORMAÇÕES'].some(kw => firstCol.toUpperCase().includes(kw))) continue;
-            if (cols.length < 3) continue;
+        const isSingleLineFormat = missionGroups.length > 0 && missionGroups.every(g => g.length === 1) && missionGroups[0][0].length >= 20;
 
-            let totalCol: number, tollCol: number, activationFee: number, route: string;
-            let kmTotal: number, kmExtraTotal: number, hrExtraTotal: number;
+        for (const group of missionGroups) {
+            const firstCols = group[0];
+            const id = (firstCols[0] || '').trim().match(/\d+/)![0];
 
-            if (headerIdxMap) {
-                totalCol = headerIdxMap['total'] !== undefined ? parseBRLNumber(cols[headerIdxMap['total']]) : parseBRLNumber(cols[cols.length - 1]);
-                tollCol = headerIdxMap['toll'] !== undefined ? parseBRLNumber(cols[headerIdxMap['toll']]) : parseBRLNumber(cols[cols.length - 2]);
-                activationFee = headerIdxMap['activationFee'] !== undefined ? parseBRLNumber(cols[headerIdxMap['activationFee']]) : (cols.length >= 3 ? parseBRLNumber(cols[2]) : 0);
-                route = headerIdxMap['route'] !== undefined ? (cols[headerIdxMap['route']] || '').trim() : (cols[1] || '').trim();
-                kmTotal = headerIdxMap['kmTotal'] !== undefined ? parseBRLNumber(cols[headerIdxMap['kmTotal']]) : (cols.length >= 16 ? parseBRLNumber(cols[15]) : 0);
-                kmExtraTotal = headerIdxMap['kmExtraTotal'] !== undefined ? parseBRLNumber(cols[headerIdxMap['kmExtraTotal']]) : (cols.length >= 22 ? parseBRLNumber(cols[21]) : 0);
-                hrExtraTotal = headerIdxMap['hrExtraTotal'] !== undefined ? parseBRLNumber(cols[headerIdxMap['hrExtraTotal']]) : (cols.length >= 25 ? parseBRLNumber(cols[24]) : 0);
-            } else if (cols.length >= 25) {
-                route = (cols[1] || '').trim();
-                activationFee = parseBRLNumber(cols[2]);
-                kmTotal = parseBRLNumber(cols[15]);
-                kmExtraTotal = parseBRLNumber(cols[21]);
-                hrExtraTotal = parseBRLNumber(cols[24]);
-                tollCol = parseBRLNumber(cols[25]);
-                totalCol = parseBRLNumber(cols[cols.length - 1]);
+            if (isSingleLineFormat || (group.length === 1 && firstCols.length >= 20)) {
+                const cols = firstCols;
+                let route: string, activationFee: number, totalCol: number, tollCol: number;
+                let kmTotal: number, kmExtraTotal: number, hrExtraTotal: number;
+                if (cols.length >= 27) {
+                    route = (cols[1] || '').trim();
+                    activationFee = parseBRLNumber(cols[2]);
+                    kmTotal = parseBRLNumber(cols[15]);
+                    kmExtraTotal = parseBRLNumber(cols[21]);
+                    hrExtraTotal = parseBRLNumber(cols[24]);
+                    tollCol = parseBRLNumber(cols[cols.length - 2]);
+                    totalCol = parseBRLNumber(cols[cols.length - 1]);
+                } else {
+                    route = (cols[1] || '').trim();
+                    totalCol = parseBRLNumber(cols[cols.length - 1]);
+                    tollCol = cols.length >= 3 ? parseBRLNumber(cols[cols.length - 2]) : 0;
+                    activationFee = cols.length >= 3 ? parseBRLNumber(cols[2]) : 0;
+                    kmTotal = cols.length >= 16 ? parseBRLNumber(cols[15]) : 0;
+                    kmExtraTotal = cols.length >= 22 ? parseBRLNumber(cols[21]) : 0;
+                    hrExtraTotal = cols.length >= 25 ? parseBRLNumber(cols[24]) : 0;
+                }
+                sheetRows.push({ id, route, activationFee, startDate: '', endDate: '', kmTotal, kmExtraTotal, hrExtraTotal, tollCol, totalCol, raw: cols });
             } else {
-                route = (cols[1] || '').trim();
-                totalCol = parseBRLNumber(cols[cols.length - 1]);
-                tollCol = cols.length >= 3 ? parseBRLNumber(cols[cols.length - 2]) : 0;
-                activationFee = cols.length >= 3 ? parseBRLNumber(cols[2]) : 0;
-                kmTotal = cols.length >= 16 ? parseBRLNumber(cols[15]) : 0;
-                kmExtraTotal = cols.length >= 22 ? parseBRLNumber(cols[21]) : 0;
-                hrExtraTotal = cols.length >= 25 ? parseBRLNumber(cols[24]) : 0;
-            }
+                const allCells = group.flatMap(g => g).map(c => (c || '').trim()).filter(c => c !== '');
+                const route = (firstCols[1] || '').trim();
 
-            const startDate = (cols.length >= 8 ? cols[7] : '').trim();
-            const endDate = (cols.length >= 12 ? cols[11] : '').trim();
-            sheetRows.push({ id, route, activationFee, startDate, endDate, kmTotal, kmExtraTotal, hrExtraTotal, tollCol, totalCol, raw: cols });
+                const brlValues: number[] = [];
+                allCells.forEach(c => {
+                    if (c.match(/^R\$\s*[\d.,]+$/) || c.match(/^R\$\s*-$/)) {
+                        brlValues.push(parseBRLNumber(c));
+                    }
+                });
+
+                const numericCells: { val: number; raw: string }[] = [];
+                allCells.forEach(c => {
+                    const v = parseBRLNumber(c);
+                    if (v > 0 || c.match(/^R\$/)) numericCells.push({ val: v, raw: c });
+                });
+
+                const lastTwoSame = brlValues.length >= 2 && Math.abs(brlValues[brlValues.length - 1] - brlValues[brlValues.length - 2]) < 0.01;
+                const totalCol = brlValues.length > 0 ? brlValues[brlValues.length - 1] : 0;
+
+                let activationFee = 0;
+                for (const c of allCells) {
+                    if (c.match(/^R\$\s*[\d.,]+$/) && parseBRLNumber(c) > 50 && parseBRLNumber(c) < 10000) {
+                        activationFee = parseBRLNumber(c);
+                        break;
+                    }
+                }
+
+                let tollCol = 0;
+                const tollCandidate = lastTwoSame ? brlValues[brlValues.length - 3] || 0 : brlValues[brlValues.length - 2] || 0;
+                if (tollCandidate > 0 && tollCandidate < totalCol) tollCol = tollCandidate;
+
+                let kmTotal = 0;
+                for (const c of allCells) {
+                    const cleaned = c.replace(/\./g, '').replace(',', '.');
+                    const num = parseFloat(cleaned);
+                    if (!isNaN(num) && num >= 10 && num <= 9999 && !c.includes('R$') && !c.includes(':') && !c.includes('/')) {
+                        const possibleKm = num;
+                        if (possibleKm > kmTotal && possibleKm < 5000) kmTotal = possibleKm;
+                    }
+                }
+
+                const hrExtraTotal = brlValues.length >= 4 ? (() => {
+                    for (let i = brlValues.length - 3; i >= 2; i--) {
+                        if (brlValues[i] > 0 && brlValues[i] !== totalCol && brlValues[i] !== activationFee && brlValues[i] !== tollCol) return brlValues[i];
+                    }
+                    return 0;
+                })() : 0;
+
+                const kmExtraTotal = 0;
+                sheetRows.push({ id, route, activationFee, startDate: '', endDate: '', kmTotal, kmExtraTotal, hrExtraTotal, tollCol, totalCol, raw: allCells });
+            }
         }
 
         const systemMap = new window.Map<string, any>();
