@@ -10,7 +10,7 @@ import { calculateMissionFinancials } from "../lib/financialUtils";
 import fs from "fs";
 import path from "path";
 import { sendMissionEmailToClient, sendMissionEmailToProvider, sendMissionResendToClient, sendMirroringEvidenceEmail, sendMissionChangeNotificationToClient, sendMissionChangeNotificationToProvider, sendWelcomeEmail, sendTestEmail, sendVerificationCodeEmail, sendPasswordResetEmail } from "./emailService";
-import { findOrCreateCustomer, createPayment, getPayment, getPaymentPixQrCode, getPaymentBankSlip, listPayments, deletePayment, mapAsaasStatus, isAsaasConfigured, getAsaasCompanies } from "./asaasService";
+import { findOrCreateCustomer, createPayment, getPayment, getPaymentPixQrCode, getPaymentBankSlip, listPayments, deletePayment, mapAsaasStatus, isAsaasConfigured, getAsaasCompanies, scheduleInvoice } from "./asaasService";
 
 const resend = new Resend(process.env.RESEND_API_KEY);
 
@@ -3077,8 +3077,21 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
 
           let pixData = null;
           let bankSlipData = null;
+          let invoiceData = null;
           try { pixData = await getPaymentPixQrCode(payment.id, issuerCompany); } catch (_) {}
           try { bankSlipData = await getPaymentBankSlip(payment.id, issuerCompany); } catch (_) {}
+          try {
+            invoiceData = await scheduleInvoice({
+              paymentId: payment.id,
+              serviceDescription: descText,
+              observations: `NF ref. ${externalRef}`,
+              externalReference: externalRef,
+              company: issuerCompany,
+            });
+            console.log(`[Asaas] NF agendada para cobrança ${payment.id}: ${invoiceData?.id || 'OK'} | Status: ${invoiceData?.status || '-'}`);
+          } catch (nfErr: any) {
+            console.log(`[Asaas] AVISO: Não foi possível agendar NF para ${payment.id}: ${nfErr.message}`);
+          }
 
           console.log(`[Asaas] Cobrança split criada: ${payment.id} | ${charge.name || clientName} | CNPJ: ${cleanCnpj} | R$ ${charge.value} | Venc: ${dueDate}`);
 
@@ -3092,6 +3105,7 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
             pix: pixData ? { qrCodeBase64: pixData.encodedImage, copyPaste: pixData.payload } : null,
             bankSlip: bankSlipData ? { barCode: bankSlipData.barCode, digitableLine: bankSlipData.identificationField, nossoNumero: bankSlipData.nossoNumero } : null,
             customer: { id: customer.id, name: customer.name, cpfCnpj: cleanCnpj },
+            invoice: invoiceData ? { id: invoiceData.id, status: invoiceData.status, number: invoiceData.number || null, pdfUrl: invoiceData.pdfUrl || null } : null,
           });
         }
         return res.json({ success: true, split: true, charges: results, totalValue: results.reduce((s, r) => s + r.payment.value, 0) });
@@ -3124,8 +3138,21 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
 
       let pixData = null;
       let bankSlipData = null;
+      let invoiceData = null;
       try { pixData = await getPaymentPixQrCode(payment.id, issuerCompany); } catch (e) { console.log('[Asaas] PIX QR não disponível para esta cobrança'); }
       try { bankSlipData = await getPaymentBankSlip(payment.id, issuerCompany); } catch (e) { console.log('[Asaas] Boleto não disponível para esta cobrança'); }
+      try {
+        invoiceData = await scheduleInvoice({
+          paymentId: payment.id,
+          serviceDescription: descText,
+          observations: `NF ref. ${externalRef}`,
+          externalReference: externalRef,
+          company: issuerCompany,
+        });
+        console.log(`[Asaas] NF agendada para cobrança ${payment.id}: ${invoiceData?.id || 'OK'} | Status: ${invoiceData?.status || '-'}`);
+      } catch (nfErr: any) {
+        console.log(`[Asaas] AVISO: Não foi possível agendar NF para ${payment.id}: ${nfErr.message}`);
+      }
 
       console.log(`[Asaas] Cobrança criada: ${payment.id} | ${clientName} | R$ ${value} | Venc: ${dueDate}`);
 
@@ -3152,6 +3179,7 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
           nossoNumero: bankSlipData.nossoNumero,
         } : null,
         customer: { id: customer.id, name: customer.name },
+        invoice: invoiceData ? { id: invoiceData.id, status: invoiceData.status, number: invoiceData.number || null, pdfUrl: invoiceData.pdfUrl || null } : null,
       });
     } catch (err: any) {
       console.error('[Asaas] Erro ao criar cobrança:', err.message);

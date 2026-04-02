@@ -1,28 +1,42 @@
 const ASAAS_BASE_URL = 'https://api.asaas.com/v3';
 
-const ASAAS_COMPANIES: Record<string, { apiKey: string; cnpj: string; name: string }> = {
+const ASAAS_COMPANIES: Record<string, { apiKey: string; cnpj: string; name: string; nf: { serviceDescription: string; issRate: number; retainIss: boolean; cofins?: number; csll?: number; inss?: number; ir?: number; pis?: number } }> = {
   'TM GESTÃO': {
     apiKey: process.env.ASAAS_API_KEY || '',
     cnpj: '60485843000157',
     name: 'TM GESTÃO',
+    nf: {
+      serviceDescription: 'Intermediação de Escolta Armada e Fiscal de Rota',
+      issRate: 5,
+      retainIss: false,
+    },
   },
   'TM SECURITY': {
     apiKey: process.env.ASAAS_API_KEY_TMSECURITY || '',
     cnpj: '60508931000127',
     name: 'TM SECURITY GESTÃO CORPORATIVA LTDA',
+    nf: {
+      serviceDescription: 'Intermediação de Escolta Armada e Fiscal de Rota',
+      issRate: 5,
+      retainIss: false,
+    },
   },
 };
 
-function resolveApiKey(company?: string): string {
+function resolveCompanyEntry(company?: string) {
   if (company) {
     const upper = company.toUpperCase();
     for (const [key, val] of Object.entries(ASAAS_COMPANIES)) {
       if (upper.includes(key) || upper.includes(val.cnpj) || val.name.toUpperCase().includes(upper)) {
-        return val.apiKey;
+        return val;
       }
     }
   }
-  return ASAAS_COMPANIES['TM GESTÃO'].apiKey;
+  return ASAAS_COMPANIES['TM GESTÃO'];
+}
+
+function resolveApiKey(company?: string): string {
+  return resolveCompanyEntry(company).apiKey;
 }
 
 const headers = (company?: string) => ({
@@ -241,6 +255,77 @@ export function mapAsaasStatus(status: string): string {
     AWAITING_RISK_ANALYSIS: 'EM_ANÁLISE',
   };
   return map[status] || status;
+}
+
+export async function listMunicipalServices(company?: string): Promise<any[]> {
+  const data = await asaasFetch('/municipalServices', {}, company);
+  return data?.data || [];
+}
+
+const municipalServiceCache: Record<string, string> = {};
+
+async function resolveMunicipalServiceId(company?: string): Promise<string | undefined> {
+  const key = company || '__default__';
+  if (municipalServiceCache[key]) return municipalServiceCache[key];
+  try {
+    const services = await listMunicipalServices(company);
+    if (services.length > 0) {
+      municipalServiceCache[key] = services[0].id;
+      console.log(`[Asaas] Serviço municipal resolvido para ${key}: ${services[0].id} - ${services[0].description || services[0].name || ''}`);
+      return services[0].id;
+    }
+  } catch (e: any) {
+    console.log(`[Asaas] Não foi possível buscar serviços municipais: ${e.message}`);
+  }
+  return undefined;
+}
+
+export async function scheduleInvoice(params: {
+  paymentId: string;
+  serviceDescription?: string;
+  observations?: string;
+  externalReference?: string;
+  company?: string;
+  municipalServiceId?: string;
+  taxes?: {
+    retainIss?: boolean;
+    iss?: number;
+    cofins?: number;
+    csll?: number;
+    inss?: number;
+    ir?: number;
+    pis?: number;
+  };
+}): Promise<any> {
+  const companyEntry = resolveCompanyEntry(params.company);
+  const nfConfig = companyEntry.nf;
+  const taxes = {
+    retainIss: params.taxes?.retainIss ?? nfConfig.retainIss,
+    iss: params.taxes?.iss ?? nfConfig.issRate,
+    cofins: params.taxes?.cofins ?? nfConfig.cofins ?? 0,
+    csll: params.taxes?.csll ?? nfConfig.csll ?? 0,
+    inss: params.taxes?.inss ?? nfConfig.inss ?? 0,
+    ir: params.taxes?.ir ?? nfConfig.ir ?? 0,
+    pis: params.taxes?.pis ?? nfConfig.pis ?? 0,
+  };
+  const municipalServiceId = params.municipalServiceId || await resolveMunicipalServiceId(params.company);
+  const body: any = {
+    payment: params.paymentId,
+    serviceDescription: params.serviceDescription || nfConfig.serviceDescription,
+    taxes,
+  };
+  if (municipalServiceId) body.municipalServiceId = municipalServiceId;
+  if (params.observations) body.observations = params.observations;
+  if (params.externalReference) body.externalReference = params.externalReference;
+  return asaasFetch('/invoices', { method: 'POST', body: JSON.stringify(body) }, params.company);
+}
+
+export async function getInvoice(invoiceId: string, company?: string): Promise<any> {
+  return asaasFetch(`/invoices/${invoiceId}`, {}, company);
+}
+
+export async function getInvoiceByPayment(paymentId: string, company?: string): Promise<any> {
+  return asaasFetch(`/invoices?payment=${paymentId}`, {}, company);
 }
 
 export function isAsaasConfigured(): boolean {

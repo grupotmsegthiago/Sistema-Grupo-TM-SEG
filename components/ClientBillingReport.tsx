@@ -1619,9 +1619,19 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
                                                         </div>
                                                     )}
                                                 </div>
+                                                {ch.invoice && (
+                                                    <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-2 flex items-center gap-2">
+                                                        <FileText size={12} className="text-emerald-600 shrink-0"/>
+                                                        <div className="flex-1 min-w-0">
+                                                            <p className="text-[8px] font-black text-emerald-700 uppercase">NF Agendada</p>
+                                                            <p className="text-[8px] text-emerald-600 font-mono">{ch.invoice.id} — {ch.invoice.status}</p>
+                                                        </div>
+                                                    </div>
+                                                )}
                                                 <div className="flex gap-2">
                                                     {ch.payment?.bankSlipUrl && <a href={ch.payment.bankSlipUrl} target="_blank" rel="noopener noreferrer" className="flex-1 text-center bg-orange-100 text-orange-700 font-black text-[8px] uppercase py-1.5 rounded-lg border border-orange-200">Boleto PDF</a>}
                                                     {ch.payment?.invoiceUrl && <a href={ch.payment.invoiceUrl} target="_blank" rel="noopener noreferrer" className="flex-1 text-center bg-blue-100 text-blue-700 font-black text-[8px] uppercase py-1.5 rounded-lg border border-blue-200">Fatura</a>}
+                                                    {ch.invoice?.pdfUrl && <a href={ch.invoice.pdfUrl} target="_blank" rel="noopener noreferrer" className="flex-1 text-center bg-emerald-100 text-emerald-700 font-black text-[8px] uppercase py-1.5 rounded-lg border border-emerald-200">NF PDF</a>}
                                                 </div>
                                             </div>
                                         ))}
@@ -1659,6 +1669,16 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
                                             )}
                                         </div>
 
+                                        {asaasResult.invoice && (
+                                            <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-3 flex items-center gap-2">
+                                                <FileText size={14} className="text-emerald-600 shrink-0"/>
+                                                <div className="flex-1 min-w-0">
+                                                    <p className="text-[9px] font-black text-emerald-700 uppercase">Nota Fiscal Agendada</p>
+                                                    <p className="text-[8px] text-emerald-600 font-mono">{asaasResult.invoice.id} — {asaasResult.invoice.status}</p>
+                                                </div>
+                                            </div>
+                                        )}
+
                                         <div className="flex gap-2">
                                             {asaasResult.payment.bankSlipUrl && (
                                                 <a href={asaasResult.payment.bankSlipUrl} target="_blank" rel="noopener noreferrer"
@@ -1672,6 +1692,13 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
                                                     className="flex-1 text-center bg-blue-100 text-blue-700 font-black text-[9px] uppercase py-2 rounded-lg hover:bg-blue-200 transition-colors border border-blue-200"
                                                     data-testid="link-asaas-invoice">
                                                     Fatura Online
+                                                </a>
+                                            )}
+                                            {asaasResult.invoice?.pdfUrl && (
+                                                <a href={asaasResult.invoice.pdfUrl} target="_blank" rel="noopener noreferrer"
+                                                    className="flex-1 text-center bg-emerald-100 text-emerald-700 font-black text-[9px] uppercase py-2 rounded-lg hover:bg-emerald-200 transition-colors border border-emerald-200"
+                                                    data-testid="link-asaas-nf-pdf">
+                                                    NF PDF
                                                 </a>
                                             )}
                                         </div>
