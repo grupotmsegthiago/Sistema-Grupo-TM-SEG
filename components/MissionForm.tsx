@@ -821,7 +821,8 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
                 driver_phone: formData.driver_phone,
                 driver_name_2: formData.driver_name_2 ? (formData.driver_name_2 || '').toUpperCase() : null,
                 driver_phone_2: formData.driver_phone_2 || null,
-                start_km: parseFloat(formData.startKm) || null
+                start_km: parseFloat(formData.startKm) || null,
+                snapshot_data: null, snapshot_approved_by: null, snapshot_approved_at: null
             }]);
             if (!error) saved = true; else if (error.code === '23505') attempts++; else throw error;
         }

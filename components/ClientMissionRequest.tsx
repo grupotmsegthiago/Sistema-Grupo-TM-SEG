@@ -82,7 +82,8 @@ const ClientMissionRequest: React.FC<Props> = ({ clientName, onClose, onSuccess 
                     driver_name: form.driverName ? form.driverName.toUpperCase() : null,
                     driver_phone: form.driverPhone || null,
                     client_vehicle: null,
-                    observations: form.observations || null
+                    observations: form.observations || null,
+                    snapshot_data: null, snapshot_approved_by: null, snapshot_approved_at: null
                 }]);
                 if (!error) {
                     saved = true;
