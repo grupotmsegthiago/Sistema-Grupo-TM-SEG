@@ -93,20 +93,54 @@ export async function createCustomer(params: {
   phone?: string;
   externalReference?: string;
   company?: string;
+  postalCode?: string;
+  address?: string;
+  addressNumber?: string;
+  complement?: string;
+  province?: string;
+  city?: string;
+  state?: string;
 }): Promise<AsaasCustomer> {
   const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
   const validEmail = params.email && emailRegex.test(params.email.trim()) ? params.email.trim() : undefined;
-  return asaasFetch('/customers', {
-    method: 'POST',
-    body: JSON.stringify({
-      name: params.name,
-      cpfCnpj: params.cpfCnpj.replace(/\D/g, ''),
-      email: validEmail,
-      phone: params.phone || undefined,
-      externalReference: params.externalReference || undefined,
-      notificationDisabled: false,
-    }),
-  }, params.company);
+  const body: any = {
+    name: params.name,
+    cpfCnpj: params.cpfCnpj.replace(/\D/g, ''),
+    email: validEmail,
+    phone: params.phone || undefined,
+    externalReference: params.externalReference || undefined,
+    notificationDisabled: false,
+  };
+  if (params.postalCode) body.postalCode = params.postalCode.replace(/\D/g, '');
+  if (params.address) body.address = params.address;
+  if (params.addressNumber) body.addressNumber = params.addressNumber;
+  if (params.complement) body.complement = params.complement;
+  if (params.province) body.province = params.province;
+  if (params.city) body.city = params.city;
+  if (params.state) body.state = params.state;
+  return asaasFetch('/customers', { method: 'POST', body: JSON.stringify(body) }, params.company);
+}
+
+export async function updateCustomerAddress(customerId: string, params: {
+  postalCode?: string;
+  address?: string;
+  addressNumber?: string;
+  complement?: string;
+  province?: string;
+  city?: string;
+  state?: string;
+  company?: string;
+}): Promise<any> {
+  const body: any = {};
+  if (params.postalCode) body.postalCode = params.postalCode.replace(/\D/g, '');
+  if (params.address) body.address = params.address;
+  if (params.addressNumber) body.addressNumber = params.addressNumber;
+  if (params.complement) body.complement = params.complement;
+  if (params.province) body.province = params.province;
+  if (params.city) body.city = params.city;
+  if (params.state) body.state = params.state;
+  if (Object.keys(body).length === 0) return null;
+  return asaasFetch(`/customers/${customerId}`, { method: 'PUT', body: JSON.stringify(body) }, params.company);
 }
 
 export async function findOrCreateCustomer(params: {
@@ -115,9 +149,21 @@ export async function findOrCreateCustomer(params: {
   email?: string;
   phone?: string;
   company?: string;
+  postalCode?: string;
+  address?: string;
+  addressNumber?: string;
+  complement?: string;
+  province?: string;
+  city?: string;
+  state?: string;
 }): Promise<AsaasCustomer> {
   const existing = await findCustomerByCpfCnpj(params.cpfCnpj, params.company);
-  if (existing) return existing;
+  if (existing) {
+    if (params.postalCode) {
+      try { await updateCustomerAddress(existing.id, params); } catch (e) { console.log('[Asaas] Aviso ao atualizar endereço:', (e as any).message); }
+    }
+    return existing;
+  }
   return createCustomer(params);
 }
 

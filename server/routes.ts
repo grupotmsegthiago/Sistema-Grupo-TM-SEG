@@ -2999,6 +2999,27 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
     try {
       const { clientName, clientCpfCnpj, clientEmail, value, dueDate, description, invoiceNumber, issuerCompany, charges } = req.body;
 
+      const lookupCnpj = clientCpfCnpj || (charges?.[0]?.cpfCnpj) || '';
+      const cleanLookup = String(lookupCnpj).replace(/\D/g, '');
+      let clientAddress: any = {};
+      if (cleanLookup) {
+        const { data: clientData } = await supabase.from('clients').select('zip_code, street, number, complement, neighborhood, city, state, phone').or(`cnpj.ilike.%${cleanLookup}%`).limit(1).single();
+        if (clientData) {
+          clientAddress = {
+            postalCode: clientData.zip_code || undefined,
+            address: clientData.street || undefined,
+            addressNumber: clientData.number || undefined,
+            complement: clientData.complement || undefined,
+            province: clientData.neighborhood || undefined,
+            city: clientData.city || undefined,
+            state: clientData.state || undefined,
+          };
+          if (!clientData.zip_code) console.log(`[Asaas] AVISO: Cliente CNPJ ${cleanLookup} sem CEP cadastrado — boleto pode falhar`);
+        } else {
+          console.log(`[Asaas] AVISO: Nenhum cliente encontrado no banco para CNPJ ${cleanLookup} — endereço não será enviado ao Asaas`);
+        }
+      }
+
       if (charges && Array.isArray(charges) && charges.length > 0) {
         if (!dueDate || !/^\d{4}-\d{2}-\d{2}$/.test(dueDate)) {
           return res.status(400).json({ error: 'Vencimento inválido' });
@@ -3017,11 +3038,28 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
           const charge = validCharges[i];
           const cleanCnpj = String(charge.cpfCnpj).replace(/\D/g, '');
 
+          let chargeAddress = clientAddress;
+          if (cleanCnpj !== cleanLookup) {
+            const { data: chargeClient } = await supabase.from('clients').select('zip_code, street, number, complement, neighborhood, city, state, phone').or(`cnpj.ilike.%${cleanCnpj}%`).limit(1).single();
+            if (chargeClient) {
+              chargeAddress = {
+                postalCode: chargeClient.zip_code || undefined,
+                address: chargeClient.street || undefined,
+                addressNumber: chargeClient.number || undefined,
+                complement: chargeClient.complement || undefined,
+                province: chargeClient.neighborhood || undefined,
+                city: chargeClient.city || undefined,
+                state: chargeClient.state || undefined,
+              };
+            }
+          }
+
           const customer = await findOrCreateCustomer({
             name: charge.name || clientName || 'Cliente',
             cpfCnpj: cleanCnpj,
             email: charge.email || clientEmail || undefined,
             company: issuerCompany,
+            ...chargeAddress,
           });
 
           const externalRef = invoiceNumber ? `NF-${invoiceNumber}-S${i + 1}-${cleanCnpj.slice(-4)}` : `TMSEG-${Date.now()}-S${i + 1}-${cleanCnpj.slice(-4)}`;
@@ -3068,6 +3106,7 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
         cpfCnpj: clientCpfCnpj,
         email: clientEmail || undefined,
         company: issuerCompany,
+        ...clientAddress,
       });
 
       const externalRef = invoiceNumber ? `NF-${invoiceNumber}` : `TMSEG-${Date.now()}`;
