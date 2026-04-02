@@ -262,17 +262,33 @@ export async function listMunicipalServices(company?: string): Promise<any[]> {
   return data?.data || [];
 }
 
-const municipalServiceCache: Record<string, string> = {};
+interface MunicipalServiceInfo {
+  id: string;
+  code: string;
+  name: string;
+}
 
-async function resolveMunicipalServiceId(company?: string): Promise<string | undefined> {
+const municipalServiceCache: Record<string, MunicipalServiceInfo> = {};
+
+async function resolveMunicipalService(company?: string): Promise<MunicipalServiceInfo | undefined> {
   const key = company || '__default__';
   if (municipalServiceCache[key]) return municipalServiceCache[key];
   try {
     const services = await listMunicipalServices(company);
     if (services.length > 0) {
-      municipalServiceCache[key] = services[0].id;
-      console.log(`[Asaas] Serviço municipal resolvido para ${key}: ${services[0].id} - ${services[0].description || services[0].name || ''}`);
-      return services[0].id;
+      const preferred = services.find((s: any) => {
+        const desc = (s.description || s.name || '').toLowerCase();
+        const code = String(s.code || s.municipalServiceCode || '');
+        return code.includes('03115') || desc.includes('assessoria') || desc.includes('consultoria') || desc.includes('escolta') || desc.includes('segurança') || desc.includes('vigilância');
+      }) || services[0];
+      const info: MunicipalServiceInfo = {
+        id: String(preferred.id),
+        code: String(preferred.code || preferred.municipalServiceCode || ''),
+        name: String(preferred.description || preferred.name || ''),
+      };
+      municipalServiceCache[key] = info;
+      console.log(`[Asaas] Serviço municipal resolvido para ${key}: ID=${info.id} | Código=${info.code} | ${info.name}`);
+      return info;
     }
   } catch (e: any) {
     console.log(`[Asaas] Não foi possível buscar serviços municipais: ${e.message}`);
@@ -308,13 +324,19 @@ export async function scheduleInvoice(params: {
     ir: params.taxes?.ir ?? nfConfig.ir ?? 0,
     pis: params.taxes?.pis ?? nfConfig.pis ?? 0,
   };
-  const municipalServiceId = params.municipalServiceId || await resolveMunicipalServiceId(params.company);
+  const municipalService = await resolveMunicipalService(params.company);
   const body: any = {
     payment: params.paymentId,
     serviceDescription: params.serviceDescription || nfConfig.serviceDescription,
     taxes,
   };
-  if (municipalServiceId) body.municipalServiceId = municipalServiceId;
+  if (params.municipalServiceId) {
+    body.municipalServiceId = params.municipalServiceId;
+  } else if (municipalService) {
+    body.municipalServiceId = municipalService.id;
+    body.municipalServiceCode = municipalService.code;
+    body.municipalServiceName = municipalService.name;
+  }
   if (params.observations) body.observations = params.observations;
   if (params.externalReference) body.externalReference = params.externalReference;
   return asaasFetch('/invoices', { method: 'POST', body: JSON.stringify(body) }, params.company);
