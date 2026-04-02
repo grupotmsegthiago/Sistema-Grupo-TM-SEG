@@ -369,65 +369,55 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
             setAccidentCount(portalMissions.filter(m => (m.currentLocation || '').includes('ACIDENTE')).length);
 
             const completedIds = mapped.filter(m => m.status === MissionStatus.COMPLETED && !m.billing_approved).map(m => m.id);
-            if (completedIds.length > 0) {
-                const { data: approvalLogs } = await supabase.from('system_logs')
-                    .select('entity_id, action_type, details, created_at')
-                    .eq('entity', 'BillingApproval')
-                    .in('entity_id', completedIds);
-                if (approvalLogs) {
-                    const map: Record<string, { stage: string; date: string }[]> = {};
-                    approvalLogs.forEach((l: any) => {
-                        if (!map[l.entity_id]) map[l.entity_id] = [];
-                        try {
-                            const parsed = JSON.parse(l.details);
-                            map[l.entity_id].push({ stage: parsed.stage || l.action_type, date: parsed.date || l.created_at });
-                        } catch {
-                            map[l.entity_id].push({ stage: l.action_type, date: l.created_at });
-                        }
-                    });
-                    setApprovalMap(map);
-                }
-            }
-
             const allIds = mapped.map(m => m.id);
-            if (allIds.length > 0) {
-                const batchSize = 200;
-                const evMap: Record<string, { url: string; uploadedBy: string; uploadedAt: string }[]> = {};
-                for (let i = 0; i < allIds.length; i += batchSize) {
-                    const batch = allIds.slice(i, i + batchSize);
-                    const { data: evidenceLogs } = await supabase.from('system_logs')
-                        .select('entity_id, details')
-                        .eq('entity', 'MissionEvidence')
-                        .in('entity_id', batch);
-                    if (evidenceLogs) {
-                        evidenceLogs.forEach((l: any) => {
-                            if (!evMap[l.entity_id]) evMap[l.entity_id] = [];
-                            try {
-                                const parsed = JSON.parse(l.details);
-                                evMap[l.entity_id].push({ url: parsed.publicUrl || '', uploadedBy: parsed.uploadedBy || '', uploadedAt: parsed.uploadedAt || '' });
-                            } catch {}
-                        });
-                    }
-                }
-                setEvidenceMap(evMap);
-            }
+            const batchSize = 200;
 
-            const logMap: Record<string, MissionLog> = {};
-            const logBatchSize = 200;
-            for (let i = 0; i < allIds.length; i += logBatchSize) {
-                const batch = allIds.slice(i, i + logBatchSize);
-                const { data: lastLogs } = await supabase
-                    .from('mission_logs')
-                    .select('*')
-                    .in('mission_id', batch)
-                    .order('created_at', { ascending: false });
-                if (lastLogs) {
-                    lastLogs.forEach((l: any) => {
+            const fetchApprovalLogs = async () => {
+                if (completedIds.length === 0) return;
+                const map: Record<string, { stage: string; date: string }[]> = {};
+                const batches = [];
+                for (let i = 0; i < completedIds.length; i += batchSize) batches.push(completedIds.slice(i, i + batchSize));
+                const results = await Promise.all(batches.map(batch => supabase.from('system_logs').select('entity_id, action_type, details, created_at').eq('entity', 'BillingApproval').in('entity_id', batch)));
+                results.forEach(({ data }) => {
+                    (data || []).forEach((l: any) => {
+                        if (!map[l.entity_id]) map[l.entity_id] = [];
+                        try { const parsed = JSON.parse(l.details); map[l.entity_id].push({ stage: parsed.stage || l.action_type, date: parsed.date || l.created_at }); }
+                        catch { map[l.entity_id].push({ stage: l.action_type, date: l.created_at }); }
+                    });
+                });
+                setApprovalMap(map);
+            };
+
+            const fetchEvidenceLogs = async () => {
+                if (allIds.length === 0) return;
+                const evMap: Record<string, { url: string; uploadedBy: string; uploadedAt: string }[]> = {};
+                const batches = [];
+                for (let i = 0; i < allIds.length; i += batchSize) batches.push(allIds.slice(i, i + batchSize));
+                const results = await Promise.all(batches.map(batch => supabase.from('system_logs').select('entity_id, details').eq('entity', 'MissionEvidence').in('entity_id', batch)));
+                results.forEach(({ data }) => {
+                    (data || []).forEach((l: any) => {
+                        if (!evMap[l.entity_id]) evMap[l.entity_id] = [];
+                        try { const parsed = JSON.parse(l.details); evMap[l.entity_id].push({ url: parsed.publicUrl || '', uploadedBy: parsed.uploadedBy || '', uploadedAt: parsed.uploadedAt || '' }); } catch {}
+                    });
+                });
+                setEvidenceMap(evMap);
+            };
+
+            const fetchMissionLogs = async () => {
+                if (allIds.length === 0) return;
+                const logMap: Record<string, MissionLog> = {};
+                const batches = [];
+                for (let i = 0; i < allIds.length; i += batchSize) batches.push(allIds.slice(i, i + batchSize));
+                const results = await Promise.all(batches.map(batch => supabase.from('mission_logs').select('*').in('mission_id', batch).order('created_at', { ascending: false })));
+                results.forEach(({ data }) => {
+                    (data || []).forEach((l: any) => {
                         if (!logMap[l.mission_id]) logMap[l.mission_id] = l as MissionLog;
                     });
-                }
-            }
-            setLastLogMap(logMap);
+                });
+                setLastLogMap(logMap);
+            };
+
+            await Promise.all([fetchApprovalLogs(), fetchEvidenceLogs(), fetchMissionLogs()]);
         }
       } catch (error: any) {
         console.error('Error fetching missions:', error.message || error);
@@ -593,7 +583,7 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
         const hasActiveSpecialFilters = showPendingOnly || showTomorrowOnly || showMyApprovalOnly || showNegativeMarginOnly;
         const isOsFiltering = osFilterTerm && osFilterTerm.trim().length > 0;
 
-        const needsAllMissions = showTomorrowOnly || showMyApprovalOnly || showNegativeMarginOnly || isOsFiltering;
+        const needsAllMissions = showPendingOnly || showTomorrowOnly || showMyApprovalOnly || showNegativeMarginOnly || isOsFiltering;
         const sourceMissions = needsAllMissions ? allMissions : periodMissions;
 
         return sourceMissions.filter(mission => {
