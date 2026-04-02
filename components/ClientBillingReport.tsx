@@ -2309,7 +2309,7 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
                         <div className="sign-box" style={{ textAlign: 'center', width: '280px' }}>
                             <div style={{ borderTop: '1.5px solid #7f1d1d', paddingTop: '4px', marginTop: '34px' }}>
                                 <div className="sign-role" style={{ fontSize: '12px', fontWeight: 900, textTransform: 'uppercase' as const, color: '#7f1d1d', letterSpacing: '1px' }}>GRUPO TM SEG</div>
-                                <div className="sign-cnpj" style={{ fontSize: '10px', fontWeight: 600, color: '#b91c1c', letterSpacing: '0.5px', marginTop: '2px' }}>CNPJ: 55.232.834/0001-49</div>
+                                <div className="sign-cnpj" style={{ fontSize: '10px', fontWeight: 600, color: '#b91c1c', letterSpacing: '0.5px', marginTop: '2px' }}>CNPJ: 28.804.378/0001-67</div>
                             </div>
                         </div>
                         <div style={{ textAlign: 'center', flex: 1, padding: '0 40px' }}>
