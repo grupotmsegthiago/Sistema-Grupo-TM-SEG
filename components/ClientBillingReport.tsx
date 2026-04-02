@@ -49,6 +49,10 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
     const [asaasSplitMode, setAsaasSplitMode] = useState(false);
     const [asaasSplitCharges, setAsaasSplitCharges] = useState<{name: string; cpfCnpj: string; email: string; value: string}[]>([]);
 
+    const [showPasteModal, setShowPasteModal] = useState(false);
+    const [pasteText, setPasteText] = useState('');
+    const [pasteResult, setPasteResult] = useState<{ matched: any[]; onlySystem: any[]; onlySheet: any[]; divergences: any[] } | null>(null);
+
     useEffect(() => {
         fetch('/api/asaas/status').then(r => r.json()).then(d => setAsaasConfigured(d.configured)).catch(() => {});
     }, []);
@@ -628,6 +632,29 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
         return `${hrs.toString().padStart(2, '0')}:${mins.toString().padStart(2, '0')}`;
     };
 
+    const parseBRLNumber = (s: string): number => {
+        if (!s || s === '-') return 0;
+        const clean = s.replace(/[R$\s]/g, '').trim();
+        if (!clean) return 0;
+        const hasDot = clean.includes('.');
+        const hasComma = clean.includes(',');
+        if (hasComma && hasDot) {
+            if (clean.lastIndexOf(',') > clean.lastIndexOf('.')) return parseFloat(clean.replace(/\./g, '').replace(',', '.')) || 0;
+            return parseFloat(clean.replace(/,/g, '')) || 0;
+        }
+        if (hasComma) {
+            const afterComma = clean.split(',').pop() || '';
+            if (afterComma.length <= 2) return parseFloat(clean.replace(',', '.')) || 0;
+            return parseFloat(clean.replace(/,/g, '')) || 0;
+        }
+        if (hasDot) {
+            const afterDot = clean.split('.').pop() || '';
+            if (afterDot.length === 3) return parseFloat(clean.replace(/\./g, '')) || 0;
+            return parseFloat(clean) || 0;
+        }
+        return parseFloat(clean) || 0;
+    };
+
     const clientData = clients.find(c => c.id.toString() === selectedClient);
     const displayClientName = clientData ? (clientData.trading_name || clientData.name) : '';
 
@@ -780,6 +807,58 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
     }, [missions, priceTables, providerTables, clientData, displayClientName, billingAdjustments]);
 
     const grandTotal = useMemo(() => rowsData.reduce((s, r) => s + r.totalGeral, 0), [rowsData]);
+
+    const handlePasteCompare = useCallback(() => {
+        if (!pasteText.trim() || rowsData.length === 0) return;
+        const lines = pasteText.trim().split('\n').map(l => l.split('\t'));
+        const sheetRows: any[] = [];
+        for (const cols of lines) {
+            const firstCol = (cols[0] || '').trim();
+            if (!firstCol) continue;
+            const numMatch = firstCol.match(/\d+/);
+            if (!numMatch) continue;
+            const id = numMatch[0];
+            if (['TOTAL', 'BOLETIM', 'GERAL', 'REFERENTE', 'Nº', 'ROTA', 'TABELA'].some(kw => firstCol.toUpperCase().includes(kw))) continue;
+            const totalCol = cols.length >= 2 ? parseBRLNumber(cols[cols.length - 1]) : 0;
+            const tollCol = cols.length >= 3 ? parseBRLNumber(cols[cols.length - 2]) : 0;
+            const route = (cols[1] || '').trim();
+            const activationFee = cols.length >= 3 ? parseBRLNumber(cols[2]) : 0;
+            const startDate = (cols.length >= 8 ? cols[7] : '').trim();
+            const endDate = (cols.length >= 12 ? cols[11] : '').trim();
+            const kmTotal = cols.length >= 16 ? parseBRLNumber(cols[15]) : 0;
+            const kmExtraTotal = cols.length >= 22 ? parseBRLNumber(cols[21]) : 0;
+            const hrExtraTotal = cols.length >= 25 ? parseBRLNumber(cols[24]) : 0;
+            sheetRows.push({ id, route, activationFee, startDate, endDate, kmTotal, kmExtraTotal, hrExtraTotal, tollCol, totalCol, raw: cols });
+        }
+
+        const systemMap = new window.Map<string, any>();
+        rowsData.forEach(r => { systemMap.set(r.id.replace(/\D/g, ''), r); });
+        const sheetMap = new window.Map<string, any>();
+        const seenSheetIds = new Set<string>();
+        sheetRows.forEach(r => { if (!seenSheetIds.has(r.id)) { seenSheetIds.add(r.id); sheetMap.set(r.id, r); } });
+
+        const matched: any[] = [];
+        const divergences: any[] = [];
+        const onlySystem: any[] = [];
+        const onlySheet: any[] = [];
+
+        systemMap.forEach((sys, id) => {
+            const sheet = sheetMap.get(id);
+            if (!sheet) { onlySystem.push(sys); return; }
+            matched.push({ id, sys, sheet });
+            const diffs: string[] = [];
+            if (Math.abs(sys.totalGeral - sheet.totalCol) > 0.02) diffs.push(`Total: Sistema R$ ${sys.totalGeral.toFixed(2)} × Planilha R$ ${sheet.totalCol.toFixed(2)}`);
+            if (Math.abs(sys.tollVal - sheet.tollCol) > 0.02) diffs.push(`Pedágio: Sistema R$ ${sys.tollVal.toFixed(2)} × Planilha R$ ${sheet.tollCol.toFixed(2)}`);
+            if (Math.abs(sys.activationFee - sheet.activationFee) > 0.02) diffs.push(`Valor Base: Sistema R$ ${sys.activationFee.toFixed(2)} × Planilha R$ ${sheet.activationFee.toFixed(2)}`);
+            if (Math.abs(sys.kmTotal - sheet.kmTotal) > 1) diffs.push(`KM Total: Sistema ${sys.kmTotal.toFixed(0)} × Planilha ${sheet.kmTotal.toFixed(0)}`);
+            if (Math.abs(sys.kmExtraTotal - sheet.kmExtraTotal) > 0.02) diffs.push(`KM Extra R$: Sistema R$ ${sys.kmExtraTotal.toFixed(2)} × Planilha R$ ${sheet.kmExtraTotal.toFixed(2)}`);
+            if (Math.abs(sys.hrExtraTotal - sheet.hrExtraTotal) > 0.02) diffs.push(`Hr Extra R$: Sistema R$ ${sys.hrExtraTotal.toFixed(2)} × Planilha R$ ${sheet.hrExtraTotal.toFixed(2)}`);
+            if (diffs.length > 0) divergences.push({ id, diffs, sysTot: sys.totalGeral, sheetTot: sheet.totalCol });
+        });
+        sheetMap.forEach((sheet, id) => { if (!systemMap.has(id)) onlySheet.push(sheet); });
+
+        setPasteResult({ matched, onlySystem, onlySheet, divergences });
+    }, [pasteText, rowsData]);
 
     const fmtBRLExcel = (v: number) => v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 
@@ -1917,6 +1996,9 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
                                     <button onClick={openInvoiceModal} className="bg-red-700 hover:bg-red-800 text-white px-4 py-2.5 rounded-lg text-sm font-bold shadow-sm flex items-center justify-center gap-2" data-testid="btn-generate-invoice">
                                         <Receipt size={18} /> Gerar Fatura
                                     </button>
+                                    <button onClick={() => { setShowPasteModal(true); setPasteText(''); setPasteResult(null); }} className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2.5 rounded-lg text-sm font-bold shadow-sm flex items-center justify-center gap-2" data-testid="btn-paste-spreadsheet">
+                                        <ScanLine size={18} /> Colar Planilha
+                                    </button>
                                     <button onClick={handleExportExcel} className="bg-emerald-700 hover:bg-emerald-800 text-white px-4 py-2.5 rounded-lg text-sm font-bold shadow-sm flex items-center justify-center gap-2">
                                         <FileSpreadsheet size={18} /> Excel
                                     </button>
@@ -2338,6 +2420,145 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
                 </div>
             )}
             {renderInvoiceModal()}
+
+            {showPasteModal && (
+                <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4" data-testid="paste-modal-overlay">
+                    <div className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl max-h-[90vh] overflow-hidden flex flex-col">
+                        <div className="bg-gradient-to-r from-blue-700 to-blue-900 px-6 py-4 flex items-center justify-between">
+                            <h3 className="font-black text-white uppercase text-xs tracking-widest flex items-center gap-2"><ScanLine size={16} /> Comparar Planilha do Cliente</h3>
+                            <button onClick={() => setShowPasteModal(false)} className="text-white/70 hover:text-white" data-testid="btn-close-paste-modal"><X size={20} /></button>
+                        </div>
+                        <div className="p-6 overflow-y-auto flex-1">
+                            {!pasteResult ? (
+                                <div>
+                                    <p className="text-sm text-gray-600 mb-3 font-semibold">Cole abaixo os dados copiados da planilha do cliente (selecione as linhas no Excel e use Ctrl+C, depois Ctrl+V aqui):</p>
+                                    <textarea
+                                        className="w-full h-48 border-2 border-blue-200 rounded-xl p-3 text-xs font-mono focus:ring-2 focus:ring-blue-400 focus:border-blue-400"
+                                        placeholder="Selecione as linhas de dados no Excel (sem cabeçalho) e cole aqui com Ctrl+V..."
+                                        value={pasteText}
+                                        onChange={e => setPasteText(e.target.value)}
+                                        data-testid="textarea-paste-spreadsheet"
+                                    />
+                                    <div className="mt-4 flex gap-3">
+                                        <button
+                                            onClick={handlePasteCompare}
+                                            disabled={!pasteText.trim()}
+                                            className="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-black uppercase text-xs tracking-widest py-3 rounded-xl flex items-center justify-center gap-2 disabled:opacity-40"
+                                            data-testid="btn-compare-spreadsheet"
+                                        >
+                                            <Search size={16} /> Comparar com Sistema
+                                        </button>
+                                        <button onClick={() => setShowPasteModal(false)} className="px-6 bg-gray-200 hover:bg-gray-300 text-gray-700 font-bold text-xs uppercase py-3 rounded-xl">Cancelar</button>
+                                    </div>
+                                </div>
+                            ) : (
+                                <div>
+                                    <div className="grid grid-cols-4 gap-3 mb-5">
+                                        <div className="bg-blue-50 border border-blue-200 rounded-xl p-3 text-center">
+                                            <div className="text-2xl font-black text-blue-700">{pasteResult.matched.length}</div>
+                                            <div className="text-[9px] font-bold text-blue-600 uppercase">Correspondentes</div>
+                                        </div>
+                                        <div className={`border rounded-xl p-3 text-center ${pasteResult.divergences.length > 0 ? 'bg-red-50 border-red-200' : 'bg-green-50 border-green-200'}`}>
+                                            <div className={`text-2xl font-black ${pasteResult.divergences.length > 0 ? 'text-red-700' : 'text-green-700'}`}>{pasteResult.divergences.length}</div>
+                                            <div className={`text-[9px] font-bold uppercase ${pasteResult.divergences.length > 0 ? 'text-red-600' : 'text-green-600'}`}>Divergências</div>
+                                        </div>
+                                        <div className={`border rounded-xl p-3 text-center ${pasteResult.onlySystem.length > 0 ? 'bg-orange-50 border-orange-200' : 'bg-green-50 border-green-200'}`}>
+                                            <div className={`text-2xl font-black ${pasteResult.onlySystem.length > 0 ? 'text-orange-700' : 'text-green-700'}`}>{pasteResult.onlySystem.length}</div>
+                                            <div className={`text-[9px] font-bold uppercase ${pasteResult.onlySystem.length > 0 ? 'text-orange-600' : 'text-green-600'}`}>Só no Sistema</div>
+                                        </div>
+                                        <div className={`border rounded-xl p-3 text-center ${pasteResult.onlySheet.length > 0 ? 'bg-purple-50 border-purple-200' : 'bg-green-50 border-green-200'}`}>
+                                            <div className={`text-2xl font-black ${pasteResult.onlySheet.length > 0 ? 'text-purple-700' : 'text-green-700'}`}>{pasteResult.onlySheet.length}</div>
+                                            <div className={`text-[9px] font-bold uppercase ${pasteResult.onlySheet.length > 0 ? 'text-purple-600' : 'text-green-600'}`}>Só na Planilha</div>
+                                        </div>
+                                    </div>
+
+                                    {pasteResult.divergences.length === 0 && pasteResult.onlySystem.length === 0 && pasteResult.onlySheet.length === 0 && (
+                                        <div className="bg-green-50 border border-green-300 rounded-xl p-4 text-center mb-4">
+                                            <CheckCircle2 size={32} className="mx-auto text-green-600 mb-2" />
+                                            <p className="font-black text-green-700 uppercase text-sm">Nenhuma divergência encontrada!</p>
+                                            <p className="text-xs text-green-600 mt-1">Os dados do sistema e da planilha estão 100% compatíveis.</p>
+                                        </div>
+                                    )}
+
+                                    {pasteResult.divergences.length > 0 && (
+                                        <div className="mb-4">
+                                            <h4 className="font-black text-red-700 uppercase text-[10px] tracking-widest mb-2 flex items-center gap-1"><AlertCircle size={12} /> Divergências Encontradas</h4>
+                                            <div className="space-y-2 max-h-60 overflow-y-auto">
+                                                {pasteResult.divergences.map((d: any, i: number) => (
+                                                    <div key={i} className="bg-red-50 border border-red-200 rounded-lg p-3" data-testid={`divergence-row-${d.id}`}>
+                                                        <div className="flex items-center justify-between mb-1">
+                                                            <span className="font-black text-red-800 text-xs">OS GTM-{d.id}</span>
+                                                            <span className="text-[9px] font-bold text-red-600">Diferença: R$ {Math.abs(d.sysTot - d.sheetTot).toFixed(2)}</span>
+                                                        </div>
+                                                        {d.diffs.map((diff: string, j: number) => (
+                                                            <div key={j} className="text-[10px] text-red-700 font-semibold pl-2 border-l-2 border-red-300 ml-1 mb-0.5">{diff}</div>
+                                                        ))}
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {pasteResult.onlySystem.length > 0 && (
+                                        <div className="mb-4">
+                                            <h4 className="font-black text-orange-700 uppercase text-[10px] tracking-widest mb-2 flex items-center gap-1"><AlertCircle size={12} /> Missões só no Sistema (não constam na planilha)</h4>
+                                            <div className="bg-orange-50 border border-orange-200 rounded-lg p-3">
+                                                <div className="flex flex-wrap gap-2">
+                                                    {pasteResult.onlySystem.map((s: any, i: number) => (
+                                                        <span key={i} className="bg-orange-200 text-orange-800 font-black text-[10px] px-2 py-1 rounded">GTM-{s.id} ({fmtBRL(s.totalGeral)})</span>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {pasteResult.onlySheet.length > 0 && (
+                                        <div className="mb-4">
+                                            <h4 className="font-black text-purple-700 uppercase text-[10px] tracking-widest mb-2 flex items-center gap-1"><AlertCircle size={12} /> Missões só na Planilha (não constam no sistema)</h4>
+                                            <div className="bg-purple-50 border border-purple-200 rounded-lg p-3">
+                                                <div className="flex flex-wrap gap-2">
+                                                    {pasteResult.onlySheet.map((s: any, i: number) => (
+                                                        <span key={i} className="bg-purple-200 text-purple-800 font-black text-[10px] px-2 py-1 rounded">OS {s.id} (R$ {s.totalCol.toFixed(2)})</span>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {pasteResult.divergences.length > 0 && (
+                                        <div className="mb-4 bg-gray-50 border border-gray-200 rounded-xl p-3">
+                                            <h4 className="font-black text-gray-700 uppercase text-[10px] tracking-widest mb-2">Resumo Financeiro</h4>
+                                            <div className="grid grid-cols-3 gap-3 text-center">
+                                                <div>
+                                                    <div className="text-[9px] font-bold text-gray-500 uppercase">Total Sistema</div>
+                                                    <div className="text-sm font-black text-gray-800">{fmtBRL(pasteResult.divergences.reduce((s: number, d: any) => s + d.sysTot, 0))}</div>
+                                                </div>
+                                                <div>
+                                                    <div className="text-[9px] font-bold text-gray-500 uppercase">Total Planilha</div>
+                                                    <div className="text-sm font-black text-gray-800">{fmtBRL(pasteResult.divergences.reduce((s: number, d: any) => s + d.sheetTot, 0))}</div>
+                                                </div>
+                                                <div>
+                                                    <div className="text-[9px] font-bold text-gray-500 uppercase">Diferença</div>
+                                                    <div className={`text-sm font-black ${Math.abs(pasteResult.divergences.reduce((s: number, d: any) => s + d.sysTot - d.sheetTot, 0)) < 0.01 ? 'text-green-700' : 'text-red-700'}`}>
+                                                        {fmtBRL(pasteResult.divergences.reduce((s: number, d: any) => s + d.sysTot - d.sheetTot, 0))}
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    <div className="flex gap-3 mt-4">
+                                        <button onClick={() => setPasteResult(null)} className="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-black uppercase text-xs tracking-widest py-3 rounded-xl flex items-center justify-center gap-2" data-testid="btn-paste-new-compare">
+                                            <ScanLine size={16} /> Nova Comparação
+                                        </button>
+                                        <button onClick={() => setShowPasteModal(false)} className="px-6 bg-gray-200 hover:bg-gray-300 text-gray-700 font-bold text-xs uppercase py-3 rounded-xl">Fechar</button>
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 };
