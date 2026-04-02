@@ -938,6 +938,8 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
             addField('KM Extra R$', sys.kmExtraTotal, sheet.kmExtraTotal, true, 0.02);
             addField('Hr Extra R$', sys.hrExtraTotal, sheet.hrExtraTotal, true, 0.02);
             addField('Total', sys.totalGeral, sheet.totalCol, true, 0.02);
+            if (sheet.totalCol === 0) return;
+            if (Math.abs(sys.totalGeral - sheet.totalCol) <= 5) return;
             if (diffs.length > 0) divergences.push({ id, diffs, fields, sysTot: sys.totalGeral, sheetTot: sheet.totalCol, sys, sheet });
         });
         sheetMap.forEach((sheet, id) => { if (!systemMap.has(id)) onlySheet.push(sheet); });
