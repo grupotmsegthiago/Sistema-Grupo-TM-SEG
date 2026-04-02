@@ -258,7 +258,7 @@ export function mapAsaasStatus(status: string): string {
 }
 
 export async function listMunicipalServices(company?: string): Promise<any[]> {
-  const data = await asaasFetch('/municipalServices', {}, company);
+  const data = await asaasFetch('/invoices/municipalServices', {}, company);
   return data?.data || [];
 }
 
