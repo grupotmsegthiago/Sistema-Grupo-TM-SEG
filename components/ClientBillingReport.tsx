@@ -170,20 +170,18 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
                     .from('missions')
                     .select('*, company_vehicle:vehicles(*)')
                     .ilike('client', escapedClientName)
-                    .in('status', ['Concluída', 'Auditada', 'Em Viagem'])
+                    .not('status', 'in', '("Cancelada","Recusada")')
                     .gte('created_at', rangeStart)
                     .lte('created_at', rangeEnd)
-                    .neq('status', 'Recusada')
                     .order('created_at', { ascending: true }),
                 supabase
                     .from('missions')
                     .select('*, company_vehicle:vehicles(*)')
                     .ilike('client', escapedClientName)
-                    .in('status', ['Concluída', 'Auditada', 'Em Viagem'])
+                    .not('status', 'in', '("Cancelada","Recusada")')
                     .not('start_time', 'is', null)
                     .gte('start_time', rangeStart)
                     .lte('start_time', rangeEnd)
-                    .neq('status', 'Recusada')
                     .order('created_at', { ascending: true })
             ]);
 
@@ -675,6 +673,8 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
                     unitKm: snap.unitKm ?? 0,
                     tollLabel: 'À PARTE',
                     status: 'CONCLUÍDO',
+                    missionStatus: m.status || 'Concluída',
+                    isApproved: ['Concluída', 'Auditada', 'Em Viagem'].includes(m.status),
                     startDate: fmtDate(m.start_time),
                     startTime: fmtTime(m.start_time),
                     viatura: m.company_vehicle ? `${m.company_vehicle.model || ''} ${m.company_vehicle.plate || ''}`.trim() || '-' : m.vehicle_id || '-',
@@ -749,6 +749,8 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
                 unitKm,
                 tollLabel: 'À PARTE',
                 status: 'CONCLUÍDO',
+                missionStatus: m.status || 'Concluída',
+                isApproved: ['Concluída', 'Auditada', 'Em Viagem'].includes(m.status),
                 startDate: fmtDate(m.start_time),
                 startTime: fmtTime(m.start_time),
                 viatura: m.company_vehicle ? `${m.company_vehicle.model || ''} ${m.company_vehicle.plate || ''}`.trim() || '-' : m.vehicle_id || '-',
@@ -810,7 +812,7 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
         const subtitleRow = ['REFERENTE A INTERMEDIAÇÃO DE SEGURANÇA E MONITORAMENTO DE CARGAS'];
 
         const dataRows = rowsData.map(r => [
-            r.id,
+            !r.isApproved ? `[${r.missionStatus.toUpperCase()}] ${r.id}` : r.id,
             r.route,
             fmtBRLExcel(r.activationFee),
             r.franchiseHoursFmt,
@@ -2184,6 +2186,12 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
                                 <span style={{ fontSize: '10px', fontWeight: 700, color: '#92400e', textTransform: 'uppercase' }}>Dados Congelados — Documento Mestre para Faturamento</span>
                             </div>
                         )}
+                        {rowsData.some(r => !r.isApproved) && (
+                            <div data-testid="boletim-pending-header" style={{ marginTop: '6px', display: 'inline-flex', alignItems: 'center', gap: '6px', background: '#fef9c3', border: '1px solid #eab308', borderRadius: '6px', padding: '4px 12px' }}>
+                                <span style={{ fontSize: '10px', fontWeight: 900, color: '#92400e', backgroundColor: '#fde68a', borderRadius: '3px', padding: '0 4px' }}>!</span>
+                                <span style={{ fontSize: '10px', fontWeight: 700, color: '#92400e', textTransform: 'uppercase' }}>Linhas amarelas = Missões emitidas mas ainda não aprovadas/concluídas</span>
+                            </div>
+                        )}
                     </div>
 
                     <div className="report-table-scroll" style={{ overflowX: 'auto', maxHeight: '75vh', overflowY: 'auto', WebkitOverflowScrolling: 'touch', border: '1.5px solid #b91c1c', borderRadius: '8px' }}>
@@ -2262,8 +2270,12 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
                                     <tr><td colSpan={27} style={{ ...cellStyle, padding: '20px', fontSize: '14px', fontWeight: 700, color: '#9ca3af' }}>NENHUMA MISSÃO NO PERÍODO.</td></tr>
                                 ) : (
                                     rowsData.map((r, i) => (
-                                        <tr key={i} title={r.frozen ? `Dados Congelados - Aprovado por ${r.frozenBy}` : ''}>
-                                            <td style={cellBold}>{r.frozen && <Lock size={8} style={{ display: 'inline', marginRight: '2px', color: '#92400e' }} />}{r.id}</td>
+                                        <tr key={i} title={r.frozen ? `Dados Congelados - Aprovado por ${r.frozenBy}` : !r.isApproved ? `Status: ${r.missionStatus} (não aprovada)` : ''} style={!r.isApproved ? { backgroundColor: '#fef9c3' } : undefined}>
+                                            <td style={cellBold}>
+                                                {r.frozen && <Lock size={8} style={{ display: 'inline', marginRight: '2px', color: '#92400e' }} />}
+                                                {!r.isApproved && <span style={{ display: 'inline-block', fontSize: '7px', fontWeight: 900, color: '#92400e', backgroundColor: '#fde68a', borderRadius: '3px', padding: '0 3px', marginRight: '2px', verticalAlign: 'middle' }}>{r.missionStatus.toUpperCase()}</span>}
+                                                {r.id}
+                                            </td>
                                             <td className="route-cell" style={{ ...cellStyle, textAlign: 'left', whiteSpace: 'normal', wordWrap: 'break-word', wordBreak: 'break-word', overflowWrap: 'break-word', lineHeight: '1.25', fontSize: '12px', maxWidth: '320px' }} title={r.route}>{r.route}</td>
                                             <td style={cellStyle}>{fmtBRL(r.activationFee)}</td>
                                             <td style={cellStyle}>{r.franchiseHoursFmt}</td>
