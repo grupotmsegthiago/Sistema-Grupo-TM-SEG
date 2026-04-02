@@ -2,6 +2,11 @@
 @tailwind components;
 @tailwind utilities;
 
+@keyframes blink-pending {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.3; }
+}
+
 /* LIGHT MODE */
 :root {
   --button-outline: rgba(0,0,0, .10);
