@@ -793,15 +793,9 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
         const isMissionStart = (cols: string[]) => {
             const first = (cols[0] || '').trim();
             if (!first) return false;
-            const num = first.match(/^\d{3,5}$/);
+            const num = first.match(/^\d{3,6}$/);
             if (!num) return false;
-            const osNum = parseInt(first, 10);
-            if (osNum < 100 || osNum > 19999) return false;
             if (skipKw.some(kw => first.toUpperCase().includes(kw))) return false;
-            // A segunda coluna deve conter letras (rota/descrição), não ser número puro (odômetro)
-            const second = (cols[1] || '').trim();
-            if (!second) return false;
-            if (/^\d[\d.,]*$/.test(second)) return false;
             return true;
         };
 
@@ -2602,93 +2596,56 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
                                                 <ArrowLeftRight size={12} /> Divergências Encontradas ({pasteResult.divergences.length})
                                             </h4>
                                             <div className="space-y-3 max-h-[400px] overflow-y-auto pr-1">
-                                                {pasteResult.divergences.map((d: any, i: number) => {
-                                                    const allFields = ['Valor Base', 'Pedágio', 'KM Total', 'KM Extra R$', 'Hr Extra R$', 'Total'];
-                                                    const fieldMap: Record<string, any> = {};
-                                                    (d.fields || []).forEach((f: any) => { fieldMap[f.label] = f; });
-                                                    const sysData: Record<string, number> = {
-                                                        'Valor Base': d.sys?.activationFee || 0,
-                                                        'Pedágio': d.sys?.tollVal || 0,
-                                                        'KM Total': d.sys?.kmTotal || 0,
-                                                        'KM Extra R$': d.sys?.kmExtraTotal || 0,
-                                                        'Hr Extra R$': d.sys?.hrExtraTotal || 0,
-                                                        'Total': d.sysTot || 0,
-                                                    };
-                                                    const sheetData: Record<string, number> = {
-                                                        'Valor Base': d.sheet?.activationFee || 0,
-                                                        'Pedágio': d.sheet?.tollCol || 0,
-                                                        'KM Total': d.sheet?.kmTotal || 0,
-                                                        'KM Extra R$': d.sheet?.kmExtraTotal || 0,
-                                                        'Hr Extra R$': d.sheet?.hrExtraTotal || 0,
-                                                        'Total': d.sheetTot || 0,
-                                                    };
-                                                    const isCurrency = (l: string) => l !== 'KM Total';
-                                                    const fmt = (l: string, v: number) => isCurrency(l) ? fmtBRL(v) : v.toLocaleString('pt-BR');
-                                                    const hasDiff = (l: string) => !!fieldMap[l];
-                                                    return (
-                                                        <div key={i} className="border border-red-200 rounded-xl overflow-hidden" data-testid={`divergence-row-${d.id}`}>
-                                                            <div className="bg-gradient-to-r from-gray-900 to-red-900 px-4 py-2 flex items-center justify-between">
-                                                                <span className="font-black text-white text-xs tracking-wide">OS GTM-{d.id}</span>
-                                                                <span className="bg-red-500 text-white font-black text-[9px] px-2 py-0.5 rounded-full">
-                                                                    Dif: {fmtBRL(Math.abs(d.sysTot - d.sheetTot))}
-                                                                </span>
-                                                            </div>
-                                                            <div className="grid grid-cols-2 divide-x divide-gray-200">
-                                                                {/* Coluna SISTEMA */}
-                                                                <div>
-                                                                    <div className="bg-gray-100 px-3 py-1 text-center">
-                                                                        <span className="font-black text-gray-700 uppercase text-[9px] tracking-wider">Sistema</span>
-                                                                    </div>
-                                                                    {allFields.map((label, j) => {
-                                                                        const val = sysData[label];
-                                                                        if (label !== 'Total' && val === 0 && sheetData[label] === 0) return null;
-                                                                        const diff = hasDiff(label);
-                                                                        const sysHigher = sysData[label] > sheetData[label];
-                                                                        const isTotal = label === 'Total';
-                                                                        return (
-                                                                            <div key={j} className={`px-3 py-1.5 flex items-center justify-between ${isTotal ? 'border-t border-gray-200 bg-gray-50' : j % 2 === 0 ? 'bg-white' : 'bg-gray-50'}`}>
-                                                                                <span className={`text-[10px] font-bold ${isTotal ? 'text-gray-900' : 'text-gray-500'}`}>{label}</span>
-                                                                                <span className={`text-[11px] font-mono font-bold ${diff && sysHigher ? 'text-red-700' : diff ? 'text-gray-400' : 'text-gray-800'}`}>
-                                                                                    {fmt(label, val)}
-                                                                                </span>
-                                                                            </div>
-                                                                        );
-                                                                    })}
-                                                                </div>
-                                                                {/* Coluna PLANILHA */}
-                                                                <div>
-                                                                    <div className="bg-gray-100 px-3 py-1 text-center">
-                                                                        <span className="font-black text-gray-700 uppercase text-[9px] tracking-wider">Planilha</span>
-                                                                    </div>
-                                                                    {allFields.map((label, j) => {
-                                                                        const val = sheetData[label];
-                                                                        if (label !== 'Total' && val === 0 && sysData[label] === 0) return null;
-                                                                        const diff = hasDiff(label);
-                                                                        const sheetHigher = sheetData[label] > sysData[label];
-                                                                        const isTotal = label === 'Total';
-                                                                        return (
-                                                                            <div key={j} className={`px-3 py-1.5 flex items-center justify-between gap-1 ${isTotal ? 'border-t border-gray-200 bg-gray-50' : j % 2 === 0 ? 'bg-white' : 'bg-gray-50'}`}>
-                                                                                <span className={`text-[11px] font-mono font-bold flex-1 text-right ${diff && sheetHigher ? 'text-red-700' : diff ? 'text-gray-400' : 'text-gray-800'}`}>
-                                                                                    {fmt(label, val)}
-                                                                                </span>
-                                                                                {diff && (
-                                                                                    <button
-                                                                                        onClick={() => setEditingDivergence({ id: d.id, missionId: `GTM-${d.id}`, field: label, currentValue: sysData[label], isCurrency: isCurrency(label) })}
-                                                                                        className="p-0.5 rounded hover:bg-red-100 text-gray-300 hover:text-red-600 transition-colors flex-shrink-0"
-                                                                                        title="Editar no sistema"
-                                                                                        data-testid={`edit-field-${d.id}-${j}`}
-                                                                                    >
-                                                                                        <Pencil size={9} />
-                                                                                    </button>
-                                                                                )}
-                                                                            </div>
-                                                                        );
-                                                                    })}
-                                                                </div>
-                                                            </div>
+                                                {pasteResult.divergences.map((d: any, i: number) => (
+                                                    <div key={i} className="border border-red-200 rounded-xl overflow-hidden" data-testid={`divergence-row-${d.id}`}>
+                                                        <div className="bg-gradient-to-r from-gray-900 to-red-900 px-4 py-2 flex items-center justify-between">
+                                                            <span className="font-black text-white text-xs tracking-wide">OS GTM-{d.id}</span>
+                                                            <span className="bg-red-500 text-white font-black text-[9px] px-2 py-0.5 rounded-full">
+                                                                {fmtBRL(Math.abs(d.sysTot - d.sheetTot))}
+                                                            </span>
                                                         </div>
-                                                    );
-                                                })}
+                                                        <table className="w-full text-[11px]">
+                                                            <thead>
+                                                                <tr className="bg-gray-100">
+                                                                    <th className="text-left px-3 py-1.5 font-black text-gray-600 uppercase text-[9px] tracking-wider w-[30%]">Campo</th>
+                                                                    <th className="text-right px-3 py-1.5 font-black text-gray-900 uppercase text-[9px] tracking-wider w-[28%]">Sistema</th>
+                                                                    <th className="text-center px-1 py-1.5 w-[6%]"></th>
+                                                                    <th className="text-right px-3 py-1.5 font-black text-gray-900 uppercase text-[9px] tracking-wider w-[28%]">Planilha</th>
+                                                                    <th className="text-center px-2 py-1.5 w-[8%]"></th>
+                                                                </tr>
+                                                            </thead>
+                                                            <tbody>
+                                                                {(d.fields || []).map((f: any, j: number) => {
+                                                                    const sysHigher = f.sysVal > f.sheetVal;
+                                                                    return (
+                                                                        <tr key={j} className={j % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
+                                                                            <td className="px-3 py-1.5 font-bold text-gray-700">{f.label}</td>
+                                                                            <td className={`px-3 py-1.5 text-right font-mono font-bold ${sysHigher ? 'text-red-700 bg-red-50' : 'text-gray-700'}`}>
+                                                                                {f.isCurrency ? fmtBRL(f.sysVal) : f.sysVal.toLocaleString('pt-BR')}
+                                                                            </td>
+                                                                            <td className="text-center px-1 py-1.5">
+                                                                                <ArrowRight size={10} className="text-gray-400 mx-auto" />
+                                                                            </td>
+                                                                            <td className={`px-3 py-1.5 text-right font-mono font-bold ${!sysHigher ? 'text-red-700 bg-red-50' : 'text-gray-700'}`}>
+                                                                                {f.isCurrency ? fmtBRL(f.sheetVal) : f.sheetVal.toLocaleString('pt-BR')}
+                                                                            </td>
+                                                                            <td className="text-center px-2 py-1.5">
+                                                                                <button
+                                                                                    onClick={() => setEditingDivergence({ id: d.id, missionId: `GTM-${d.id}`, field: f.label, currentValue: f.sysVal, isCurrency: f.isCurrency })}
+                                                                                    className="p-1 rounded hover:bg-red-100 text-gray-400 hover:text-red-600 transition-colors"
+                                                                                    title="Editar no sistema"
+                                                                                    data-testid={`edit-field-${d.id}-${j}`}
+                                                                                >
+                                                                                    <Pencil size={10} />
+                                                                                </button>
+                                                                            </td>
+                                                                        </tr>
+                                                                    );
+                                                                })}
+                                                            </tbody>
+                                                        </table>
+                                                    </div>
+                                                ))}
                                             </div>
                                         </div>
                                     )}
@@ -2723,32 +2680,26 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
                                         </div>
                                     )}
 
-                                    {(() => {
-                                        const totSys = pasteResult.matched.reduce((s: number, m: any) => s + (m.sys?.totalGeral || 0), 0)
-                                            + pasteResult.onlySystem.reduce((s: number, d: any) => s + (d.totalGeral || 0), 0);
-                                        const totSheet = pasteResult.matched.reduce((s: number, m: any) => s + (m.sheet?.totalCol || 0), 0)
-                                            + pasteResult.onlySheet.reduce((s: number, d: any) => s + (d.totalCol || 0), 0);
-                                        const diff = totSys - totSheet;
-                                        return (
-                                            <div className="mb-4 bg-gradient-to-r from-gray-900 to-gray-800 rounded-xl p-4">
-                                                <h4 className="font-black text-gray-400 uppercase text-[9px] tracking-widest mb-3">Resumo Financeiro</h4>
-                                                <div className="grid grid-cols-3 gap-3 text-center">
-                                                    <div>
-                                                        <div className="text-[8px] font-bold text-gray-500 uppercase mb-1">Total Sistema</div>
-                                                        <div className="text-sm font-black text-white">{fmtBRL(totSys)}</div>
-                                                    </div>
-                                                    <div>
-                                                        <div className="text-[8px] font-bold text-gray-500 uppercase mb-1">Total Planilha</div>
-                                                        <div className="text-sm font-black text-white">{fmtBRL(totSheet)}</div>
-                                                    </div>
-                                                    <div>
-                                                        <div className="text-[8px] font-bold text-gray-500 uppercase mb-1">Diferença</div>
-                                                        <div className={`text-sm font-black ${Math.abs(diff) < 0.01 ? 'text-green-400' : 'text-red-400'}`}>{fmtBRL(diff)}</div>
-                                                    </div>
-                                                </div>
+                                    <div className="mb-4 bg-gradient-to-r from-gray-900 to-gray-800 rounded-xl p-4">
+                                        <h4 className="font-black text-gray-400 uppercase text-[9px] tracking-widest mb-3">Resumo Financeiro</h4>
+                                        <div className="grid grid-cols-3 gap-3 text-center">
+                                            <div>
+                                                <div className="text-[8px] font-bold text-gray-500 uppercase mb-1">Total Sistema</div>
+                                                <div className="text-sm font-black text-white">{fmtBRL(pasteResult.divergences.reduce((s: number, d: any) => s + d.sysTot, 0) + pasteResult.onlySystem.reduce((s: number, d: any) => s + (d.totalGeral || 0), 0))}</div>
                                             </div>
-                                        );
-                                    })()}
+                                            <div>
+                                                <div className="text-[8px] font-bold text-gray-500 uppercase mb-1">Total Planilha</div>
+                                                <div className="text-sm font-black text-white">{fmtBRL(pasteResult.divergences.reduce((s: number, d: any) => s + d.sheetTot, 0) + pasteResult.onlySheet.reduce((s: number, d: any) => s + (d.totalCol || 0), 0))}</div>
+                                            </div>
+                                            <div>
+                                                <div className="text-[8px] font-bold text-gray-500 uppercase mb-1">Diferença</div>
+                                                {(() => {
+                                                    const totalDiff = (pasteResult.divergences.reduce((s: number, d: any) => s + d.sysTot, 0) + pasteResult.onlySystem.reduce((s: number, d: any) => s + (d.totalGeral || 0), 0)) - (pasteResult.divergences.reduce((s: number, d: any) => s + d.sheetTot, 0) + pasteResult.onlySheet.reduce((s: number, d: any) => s + (d.totalCol || 0), 0));
+                                                    return <div className={`text-sm font-black ${Math.abs(totalDiff) < 0.01 ? 'text-green-400' : 'text-red-400'}`}>{fmtBRL(totalDiff)}</div>;
+                                                })()}
+                                            </div>
+                                        </div>
+                                    </div>
 
                                     <div className="flex gap-3 mt-4">
                                         <button onClick={() => setPasteResult(null)} className="flex-1 bg-gradient-to-r from-gray-800 to-gray-900 hover:from-gray-700 hover:to-gray-800 text-white font-black uppercase text-xs tracking-widest py-3 rounded-xl flex items-center justify-center gap-2 border border-gray-700" data-testid="btn-paste-new-compare">
