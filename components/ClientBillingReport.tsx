@@ -53,6 +53,7 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
     const [pasteText, setPasteText] = useState('');
     const [pasteResult, setPasteResult] = useState<{ matched: any[]; onlySystem: any[]; onlySheet: any[]; divergences: any[] } | null>(null);
     const [editingDivergence, setEditingDivergence] = useState<{ id: string; missionId: string; field: string; currentValue: number; isCurrency: boolean } | null>(null);
+    const [boletimFilter, setBoletimFilter] = useState<'todas' | 'aprovadas' | 'pendentes'>('todas');
 
     useEffect(() => {
         fetch('/api/asaas/status').then(r => r.json()).then(d => setAsaasConfigured(d.configured)).catch(() => {});
@@ -2248,9 +2249,26 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
                             </div>
                         )}
                         {rowsData.some(r => !r.isApproved) && (
-                            <div data-testid="boletim-pending-header" style={{ marginTop: '6px', display: 'inline-flex', alignItems: 'center', gap: '6px', background: '#fce4e4', border: '1px solid #dc2626', borderRadius: '6px', padding: '4px 12px' }}>
-                                <span style={{ fontSize: '10px', fontWeight: 900, color: '#fff', backgroundColor: '#dc2626', borderRadius: '3px', padding: '0 4px' }}>!</span>
-                                <span style={{ fontSize: '10px', fontWeight: 700, color: '#991b1b', textTransform: 'uppercase' }}>Linhas piscando = Missões emitidas mas ainda não aprovadas/concluídas</span>
+                            <div data-testid="boletim-pending-header" style={{ marginTop: '6px', display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                                <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', background: '#fce4e4', border: '1px solid #dc2626', borderRadius: '6px', padding: '4px 12px' }}>
+                                    <span style={{ fontSize: '10px', fontWeight: 900, color: '#fff', backgroundColor: '#dc2626', borderRadius: '3px', padding: '0 4px' }}>!</span>
+                                    <span style={{ fontSize: '10px', fontWeight: 700, color: '#991b1b', textTransform: 'uppercase' }}>Linhas piscando = Missões pendentes</span>
+                                </div>
+                                <div style={{ display: 'inline-flex', gap: '3px', background: '#f3f4f6', borderRadius: '6px', padding: '2px', border: '1px solid #d1d5db' }}>
+                                    {([['todas', 'Todas'], ['aprovadas', 'Aprovadas'], ['pendentes', 'Pendentes']] as const).map(([val, label]) => (
+                                        <button
+                                            key={val}
+                                            onClick={() => setBoletimFilter(val)}
+                                            data-testid={`filter-${val}`}
+                                            style={{
+                                                fontSize: '9px', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '0.5px',
+                                                padding: '3px 10px', borderRadius: '4px', border: 'none', cursor: 'pointer', transition: 'all 0.15s',
+                                                backgroundColor: boletimFilter === val ? (val === 'pendentes' ? '#dc2626' : '#111827') : 'transparent',
+                                                color: boletimFilter === val ? '#fff' : '#6b7280',
+                                            }}
+                                        >{label} {val === 'pendentes' ? `(${rowsData.filter(r => !r.isApproved).length})` : val === 'aprovadas' ? `(${rowsData.filter(r => r.isApproved).length})` : `(${rowsData.length})`}</button>
+                                    ))}
+                                </div>
                             </div>
                         )}
                     </div>
@@ -2329,10 +2347,12 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
                                 </tr>
                             </thead>
                             <tbody>
-                                {rowsData.length === 0 ? (
-                                    <tr><td colSpan={28} style={{ ...cellStyle, padding: '20px', fontSize: '14px', fontWeight: 700, color: '#9ca3af' }}>NENHUMA MISSÃO NO PERÍODO.</td></tr>
+                                {(() => {
+                                    const filtered = boletimFilter === 'aprovadas' ? rowsData.filter(r => r.isApproved) : boletimFilter === 'pendentes' ? rowsData.filter(r => !r.isApproved) : rowsData;
+                                    return filtered.length === 0 ? (
+                                    <tr><td colSpan={28} style={{ ...cellStyle, padding: '20px', fontSize: '14px', fontWeight: 700, color: '#9ca3af' }}>{boletimFilter !== 'todas' ? `NENHUMA MISSÃO ${boletimFilter === 'aprovadas' ? 'APROVADA' : 'PENDENTE'} NO PERÍODO.` : 'NENHUMA MISSÃO NO PERÍODO.'}</td></tr>
                                 ) : (
-                                    rowsData.map((r, i) => (
+                                    filtered.map((r, i) => (
                                         <tr key={i} title={r.frozen ? `Dados Congelados - Aprovado por ${r.frozenBy}` : !r.isApproved ? `Status: ${r.missionStatus} (não aprovada)` : ''} style={!r.isApproved ? { backgroundColor: '#fce4e4', animation: 'blink-pending 2s ease-in-out infinite' } : undefined}>
                                             <td style={{ ...cellStyle, fontSize: '9px', color: '#9ca3af', textAlign: 'center', padding: '2px' }}>{i + 1}</td>
                                             <td style={{ ...cellBold, cursor: 'pointer' }} onClick={(e) => handleOpenOS(`GTM-${r.id}`, e)} data-testid={`boletim-open-os-${r.id}`}>
@@ -2368,7 +2388,8 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
                                             <td style={{ ...cellMonoBold, backgroundColor: bgVal }}>{fmtBRL(r.totalGeral)}</td>
                                         </tr>
                                     ))
-                                )}
+                                );
+                                })()}
                             </tbody>
                             {rowsData.length > 0 && (
                                 <tfoot>
