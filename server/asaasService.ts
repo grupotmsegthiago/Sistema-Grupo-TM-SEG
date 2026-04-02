@@ -235,15 +235,14 @@ export async function createPayment(params: {
     interest: { value: 2, type: 'PERCENTAGE' },
     fine: { value: 1, type: 'PERCENTAGE' },
   };
-  const walletId = params.splitWalletId || GRUPO_TMSEG_WALLET_ID;
-  if (walletId) {
+  if (params.splitWalletId) {
     body.split = [
       {
-        walletId,
+        walletId: params.splitWalletId,
         percentualValue: 100,
       },
     ];
-    console.log(`[Asaas] Split configurado: 100% → walletId ${walletId}`);
+    console.log(`[Asaas] Split configurado: 100% → walletId ${params.splitWalletId}`);
   }
   return asaasFetch('/payments', {
     method: 'POST',
