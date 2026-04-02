@@ -842,55 +842,69 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
                 }
                 sheetRows.push({ id, route, activationFee, startDate: '', endDate: '', kmTotal, kmExtraTotal, hrExtraTotal, tollCol, totalCol, raw: cols });
             } else {
-                const allCells = group.flatMap(g => g).map(c => (c || '').trim()).filter(c => c !== '');
                 const route = (firstCols[1] || '').trim();
 
-                const brlValues: number[] = [];
-                allCells.forEach(c => {
-                    if (c.match(/^R\$\s*[\d.,]+$/) || c.match(/^R\$\s*-$/)) {
-                        brlValues.push(parseBRLNumber(c));
+                // A última linha de cada grupo é sempre o resumo financeiro:
+                // [0]=Extra R$ | [1]=Valor Base | [2]=Pedágio | [3]=Total | [4]=Total (repetido)
+                const lastRow = group[group.length - 1].map(c => (c || '').trim());
+
+                // Detectar colunas BRL da última linha (ignora 0s e timestamps)
+                const isMoneyCell = (c: string) => {
+                    if (!c) return false;
+                    if (c.match(/^R\$\s*[\d.,]+$/) || c.match(/^R\$\s*-$/)) return true;
+                    return false;
+                };
+                const finMoneyIdxs = lastRow.reduce((acc: number[], c, i) => { if (isMoneyCell(c)) acc.push(i); return acc; }, []);
+
+                let activationFee = 0, tollCol = 0, totalCol = 0, hrExtraTotal = 0;
+
+                if (finMoneyIdxs.length >= 4) {
+                    // Formato padrão: [extra] [base] [pedágio] [total] [total]
+                    // Verificar se os dois últimos são iguais (total repetido)
+                    const lastIdx = finMoneyIdxs[finMoneyIdxs.length - 1];
+                    const secondLastIdx = finMoneyIdxs[finMoneyIdxs.length - 2];
+                    const totalSame = Math.abs(parseBRLNumber(lastRow[lastIdx]) - parseBRLNumber(lastRow[secondLastIdx])) < 0.02;
+                    if (totalSame) {
+                        totalCol = parseBRLNumber(lastRow[lastIdx]);
+                        tollCol = parseBRLNumber(lastRow[finMoneyIdxs[finMoneyIdxs.length - 3]]);
+                        activationFee = parseBRLNumber(lastRow[finMoneyIdxs[finMoneyIdxs.length - 4]]);
+                        hrExtraTotal = finMoneyIdxs.length >= 5 ? parseBRLNumber(lastRow[finMoneyIdxs[finMoneyIdxs.length - 5]]) : 0;
+                    } else {
+                        totalCol = parseBRLNumber(lastRow[lastIdx]);
+                        tollCol = parseBRLNumber(lastRow[finMoneyIdxs[finMoneyIdxs.length - 2]]);
+                        activationFee = parseBRLNumber(lastRow[finMoneyIdxs[finMoneyIdxs.length - 3]]);
+                        hrExtraTotal = finMoneyIdxs.length >= 4 ? parseBRLNumber(lastRow[finMoneyIdxs[finMoneyIdxs.length - 4]]) : 0;
                     }
-                });
-
-                const numericCells: { val: number; raw: string }[] = [];
-                allCells.forEach(c => {
-                    const v = parseBRLNumber(c);
-                    if (v > 0 || c.match(/^R\$/)) numericCells.push({ val: v, raw: c });
-                });
-
-                const lastTwoSame = brlValues.length >= 2 && Math.abs(brlValues[brlValues.length - 1] - brlValues[brlValues.length - 2]) < 0.01;
-                const totalCol = brlValues.length > 0 ? brlValues[brlValues.length - 1] : 0;
-
-                let activationFee = 0;
-                for (const c of allCells) {
-                    if (c.match(/^R\$\s*[\d.,]+$/) && parseBRLNumber(c) > 50 && parseBRLNumber(c) < 10000) {
-                        activationFee = parseBRLNumber(c);
-                        break;
-                    }
+                } else if (finMoneyIdxs.length === 3) {
+                    totalCol = parseBRLNumber(lastRow[finMoneyIdxs[2]]);
+                    tollCol = parseBRLNumber(lastRow[finMoneyIdxs[1]]);
+                    activationFee = parseBRLNumber(lastRow[finMoneyIdxs[0]]);
+                } else if (finMoneyIdxs.length > 0) {
+                    totalCol = parseBRLNumber(lastRow[finMoneyIdxs[finMoneyIdxs.length - 1]]);
                 }
 
-                let tollCol = 0;
-                const tollCandidate = lastTwoSame ? brlValues[brlValues.length - 3] || 0 : brlValues[brlValues.length - 2] || 0;
-                if (tollCandidate > 0 && tollCandidate < totalCol) tollCol = tollCandidate;
+                // Se activationFee parece ser uma taxa (valor baixo), verificar na linha 1
+                if (activationFee < 50 || activationFee === tollCol) {
+                    const firstBRL = firstCols.find(c => isMoneyCell(c) && parseBRLNumber(c) > 50);
+                    if (firstBRL) activationFee = parseBRLNumber(firstBRL);
+                }
 
+                // KM total da linha 1 (campo logo após horário de início, posição ~6)
                 let kmTotal = 0;
-                for (const c of allCells) {
-                    const cleaned = c.replace(/\./g, '').replace(',', '.');
-                    const num = parseFloat(cleaned);
-                    if (!isNaN(num) && num >= 10 && num <= 9999 && !c.includes('R$') && !c.includes(':') && !c.includes('/')) {
-                        const possibleKm = num;
-                        if (possibleKm > kmTotal && possibleKm < 5000) kmTotal = possibleKm;
+                const contractedKm = firstCols.find((c, i) => i >= 4 && i <= 10 && c.match(/^\d{1,4}$/) && parseInt(c) >= 10 && parseInt(c) <= 5000);
+                if (contractedKm) kmTotal = parseInt(contractedKm);
+                if (kmTotal === 0) {
+                    for (const c of firstCols) {
+                        const cleaned = c.replace(/\./g, '').replace(',', '.');
+                        const num = parseFloat(cleaned);
+                        if (!isNaN(num) && num >= 10 && num <= 9999 && !c.includes('R$') && !c.includes(':') && !c.includes('/') && !c.includes('0/')) {
+                            if (num > kmTotal) kmTotal = num;
+                        }
                     }
                 }
-
-                const hrExtraTotal = brlValues.length >= 4 ? (() => {
-                    for (let i = brlValues.length - 3; i >= 2; i--) {
-                        if (brlValues[i] > 0 && brlValues[i] !== totalCol && brlValues[i] !== activationFee && brlValues[i] !== tollCol) return brlValues[i];
-                    }
-                    return 0;
-                })() : 0;
 
                 const kmExtraTotal = 0;
+                const allCells = group.flatMap(g => g).map(c => (c || '').trim()).filter(c => c !== '');
                 sheetRows.push({ id, route, activationFee, startDate: '', endDate: '', kmTotal, kmExtraTotal, hrExtraTotal, tollCol, totalCol, raw: allCells });
             }
         }
