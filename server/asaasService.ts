@@ -1,6 +1,25 @@
 const ASAAS_BASE_URL = 'https://api.asaas.com/v3';
 
-const ASAAS_COMPANIES: Record<string, { apiKey: string; cnpj: string; name: string; aliases: string[]; nf: { serviceDescription: string; issRate: number; retainIss: boolean; cofins?: number; csll?: number; inss?: number; ir?: number; pis?: number } }> = {
+interface CompanyConfig {
+  apiKey: string;
+  cnpj: string;
+  name: string;
+  aliases: string[];
+  nf: {
+    serviceDescription: string;
+    issRate: number;
+    retainIss: boolean;
+    municipalServiceCode?: string;
+    municipalServiceName?: string;
+    cofins?: number;
+    csll?: number;
+    inss?: number;
+    ir?: number;
+    pis?: number;
+  };
+}
+
+const ASAAS_COMPANIES: Record<string, CompanyConfig> = {
   'TM GESTÃO': {
     apiKey: process.env.ASAAS_API_KEY || '',
     cnpj: '60485843000157',
@@ -10,6 +29,8 @@ const ASAAS_COMPANIES: Record<string, { apiKey: string; cnpj: string; name: stri
       serviceDescription: 'Intermediação de Escolta Armada e Fiscal de Rota',
       issRate: 5,
       retainIss: false,
+      municipalServiceCode: '03115',
+      municipalServiceName: '03115 | 17.01 - Assessoria ou consultoria de qualquer natureza',
     },
   },
   'TM SECURITY': {
@@ -21,6 +42,8 @@ const ASAAS_COMPANIES: Record<string, { apiKey: string; cnpj: string; name: stri
       serviceDescription: 'Intermediação de Escolta Armada e Fiscal de Rota',
       issRate: 5,
       retainIss: false,
+      municipalServiceCode: '03115',
+      municipalServiceName: '03115 | 17.01 - Assessoria ou consultoria de qualquer natureza',
     },
   },
 };
@@ -333,7 +356,6 @@ export async function scheduleInvoice(params: {
     ir: params.taxes?.ir ?? nfConfig.ir ?? 0,
     pis: params.taxes?.pis ?? nfConfig.pis ?? 0,
   };
-  const municipalService = await resolveMunicipalService(params.company);
   const rawDesc = params.serviceDescription || nfConfig.serviceDescription;
   const body: any = {
     payment: params.paymentId,
@@ -342,10 +364,16 @@ export async function scheduleInvoice(params: {
   };
   if (params.municipalServiceId) {
     body.municipalServiceId = params.municipalServiceId;
-  } else if (municipalService) {
-    body.municipalServiceId = municipalService.id;
-    body.municipalServiceCode = municipalService.code;
-    body.municipalServiceName = municipalService.name;
+  } else if (nfConfig.municipalServiceCode) {
+    body.municipalServiceCode = nfConfig.municipalServiceCode;
+    if (nfConfig.municipalServiceName) body.municipalServiceName = nfConfig.municipalServiceName;
+  } else {
+    const municipalService = await resolveMunicipalService(params.company);
+    if (municipalService) {
+      body.municipalServiceId = municipalService.id;
+      body.municipalServiceCode = municipalService.code;
+      body.municipalServiceName = municipalService.name;
+    }
   }
   if (params.observations) body.observations = params.observations;
   if (params.externalReference) body.externalReference = params.externalReference;

@@ -10,7 +10,7 @@ import { calculateMissionFinancials } from "../lib/financialUtils";
 import fs from "fs";
 import path from "path";
 import { sendMissionEmailToClient, sendMissionEmailToProvider, sendMissionResendToClient, sendMirroringEvidenceEmail, sendMissionChangeNotificationToClient, sendMissionChangeNotificationToProvider, sendWelcomeEmail, sendTestEmail, sendVerificationCodeEmail, sendPasswordResetEmail } from "./emailService";
-import { findOrCreateCustomer, createPayment, getPayment, getPaymentPixQrCode, getPaymentBankSlip, listPayments, deletePayment, mapAsaasStatus, isAsaasConfigured, getAsaasCompanies, scheduleInvoice } from "./asaasService";
+import { findOrCreateCustomer, createPayment, getPayment, getPaymentPixQrCode, getPaymentBankSlip, listPayments, deletePayment, mapAsaasStatus, isAsaasConfigured, getAsaasCompanies, scheduleInvoice, listMunicipalServices } from "./asaasService";
 
 const resend = new Resend(process.env.RESEND_API_KEY);
 
@@ -2993,6 +2993,43 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
 
   app.get("/api/asaas/status", (_req: Request, res: Response) => {
     res.json({ configured: isAsaasConfigured() });
+  });
+
+  app.get("/api/asaas/test-nf", async (req: Request, res: Response) => {
+    try {
+      const company = (req.query.company as string) || undefined;
+      const companies = getAsaasCompanies();
+      const results: any[] = [];
+      const testCompanies = company ? [company] : companies.filter(c => c.configured).map(c => c.name);
+      for (const comp of testCompanies) {
+        const step: any = { company: comp, steps: {} };
+        try {
+          step.steps.apiKey = { ok: true, detail: 'API Key configurada' };
+        } catch (e: any) { step.steps.apiKey = { ok: false, detail: e.message }; }
+        try {
+          const services = await listMunicipalServices(comp);
+          step.steps.municipalServices = {
+            ok: services.length > 0,
+            count: services.length,
+            services: services.map((s: any) => ({
+              id: s.id,
+              code: s.code || s.municipalServiceCode || '-',
+              description: (s.description || s.name || '-').substring(0, 120),
+            })),
+          };
+        } catch (e: any) { step.steps.municipalServices = { ok: false, detail: e.message }; }
+        try {
+          const testCustomer = await findOrCreateCustomer({ name: 'TESTE DIAGNÓSTICO', cpfCnpj: '00000000000', company: comp });
+          step.steps.customerApi = { ok: false, detail: 'CPF teste não deveria criar — API aceitou CPF inválido' };
+        } catch (e: any) {
+          step.steps.customerApi = { ok: true, detail: 'API de clientes respondendo (rejeitou CPF inválido corretamente)' };
+        }
+        results.push(step);
+      }
+      res.json({ success: true, timestamp: new Date().toISOString(), results });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
   });
 
   app.post("/api/asaas/create-charge", async (req: Request, res: Response) => {
