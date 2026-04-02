@@ -169,36 +169,18 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
             const rangeStart = `${startDate}T00:00:00`;
             const rangeEnd = `${endDate}T23:59:59`;
 
-            const [byCreated, byStart] = await Promise.all([
-                supabase
-                    .from('missions')
-                    .select('*, company_vehicle:vehicles(*)')
-                    .ilike('client', escapedClientName)
-                    .neq('status', 'Recusada')
-                    .gte('created_at', rangeStart)
-                    .lte('created_at', rangeEnd)
-                    .order('created_at', { ascending: true }),
-                supabase
-                    .from('missions')
-                    .select('*, company_vehicle:vehicles(*)')
-                    .ilike('client', escapedClientName)
-                    .neq('status', 'Recusada')
-                    .not('start_time', 'is', null)
-                    .gte('start_time', rangeStart)
-                    .lte('start_time', rangeEnd)
-                    .order('created_at', { ascending: true })
-            ]);
+            const { data: missionDataRaw, error } = await supabase
+                .from('missions')
+                .select('*, company_vehicle:vehicles(*)')
+                .ilike('client', escapedClientName)
+                .neq('status', 'Recusada')
+                .gte('created_at', rangeStart)
+                .lte('created_at', rangeEnd)
+                .order('created_at', { ascending: true });
 
-            const queryError = byCreated.error || byStart.error;
-            if (queryError) throw queryError;
+            if (error) throw error;
 
-            const seen = new Set<string>();
-            const missionData: any[] = [];
-            [...(byCreated.data || []), ...(byStart.data || [])].forEach(m => {
-                if (!seen.has(m.id)) { seen.add(m.id); missionData.push(m); }
-            });
-            missionData.sort((a: any, b: any) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
-            const error = null;
+            const missionData: any[] = missionDataRaw || [];
 
             const clientVehicleIds = [...new Set((missionData || []).map((m: any) => m.client_vehicle).filter((id: any) => id))];
             let clientVehiclesMap: Record<string, any> = {};
