@@ -842,56 +842,62 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
                 }
                 sheetRows.push({ id, route, activationFee, startDate: '', endDate: '', kmTotal, kmExtraTotal, hrExtraTotal, tollCol, totalCol, raw: cols });
             } else {
-                const allCells = group.flatMap(g => g).map(c => (c || '').trim()).filter(c => c !== '');
-                const route = (firstCols[1] || '').trim();
-
-                const brlValues: number[] = [];
-                allCells.forEach(c => {
-                    if (c.match(/^R\$\s*[\d.,]+$/) || c.match(/^R\$\s*-$/)) {
-                        brlValues.push(parseBRLNumber(c));
-                    }
-                });
-
-                const numericCells: { val: number; raw: string }[] = [];
-                allCells.forEach(c => {
-                    const v = parseBRLNumber(c);
-                    if (v > 0 || c.match(/^R\$/)) numericCells.push({ val: v, raw: c });
-                });
-
-                const lastTwoSame = brlValues.length >= 2 && Math.abs(brlValues[brlValues.length - 1] - brlValues[brlValues.length - 2]) < 0.01;
-                const totalCol = brlValues.length > 0 ? brlValues[brlValues.length - 1] : 0;
-
-                let activationFee = 0;
-                for (const c of allCells) {
-                    if (c.match(/^R\$\s*[\d.,]+$/) && parseBRLNumber(c) > 50 && parseBRLNumber(c) < 10000) {
-                        activationFee = parseBRLNumber(c);
-                        break;
+                const maxCols = Math.max(...group.map(g => g.length));
+                const mergedCols: string[] = new Array(maxCols).fill('');
+                for (let col = 0; col < maxCols; col++) {
+                    for (const row of group) {
+                        const val = (row[col] || '').trim();
+                        if (val && !mergedCols[col]) {
+                            mergedCols[col] = val;
+                        }
                     }
                 }
 
-                let tollCol = 0;
-                const tollCandidate = lastTwoSame ? brlValues[brlValues.length - 3] || 0 : brlValues[brlValues.length - 2] || 0;
-                if (tollCandidate > 0 && tollCandidate < totalCol) tollCol = tollCandidate;
+                const route = (mergedCols[1] || '').trim();
+                let activationFee: number, totalCol: number, tollCol: number;
+                let kmTotal: number, kmExtraTotal: number, hrExtraTotal: number;
 
-                let kmTotal = 0;
-                for (const c of allCells) {
-                    const cleaned = c.replace(/\./g, '').replace(',', '.');
-                    const num = parseFloat(cleaned);
-                    if (!isNaN(num) && num >= 10 && num <= 9999 && !c.includes('R$') && !c.includes(':') && !c.includes('/')) {
-                        const possibleKm = num;
-                        if (possibleKm > kmTotal && possibleKm < 5000) kmTotal = possibleKm;
+                if (maxCols >= 20) {
+                    activationFee = parseBRLNumber(mergedCols[2]);
+                    kmTotal = parseBRLNumber(mergedCols[15]);
+                    kmExtraTotal = parseBRLNumber(mergedCols[21] || mergedCols[20] || '');
+                    hrExtraTotal = parseBRLNumber(mergedCols[24] || mergedCols[23] || '');
+                    tollCol = parseBRLNumber(mergedCols[mergedCols.length - 2] || '');
+                    totalCol = parseBRLNumber(mergedCols[mergedCols.length - 1] || '');
+                } else {
+                    const allCells = mergedCols.filter(c => c !== '');
+                    const brlValues: number[] = [];
+                    allCells.forEach(c => {
+                        if (c.match(/^R\$\s*[\d.,]+$/) || c.match(/^R\$\s*-$/)) {
+                            brlValues.push(parseBRLNumber(c));
+                        }
+                    });
+
+                    totalCol = brlValues.length > 0 ? brlValues[brlValues.length - 1] : 0;
+                    activationFee = brlValues.length > 0 ? brlValues[0] : 0;
+                    const lastTwoSame = brlValues.length >= 2 && Math.abs(brlValues[brlValues.length - 1] - brlValues[brlValues.length - 2]) < 0.01;
+                    const tollCandidate = lastTwoSame ? brlValues[brlValues.length - 3] || 0 : brlValues[brlValues.length - 2] || 0;
+                    tollCol = (tollCandidate > 0 && tollCandidate < totalCol) ? tollCandidate : 0;
+
+                    kmTotal = 0;
+                    for (const c of allCells) {
+                        const cleaned = c.replace(/\./g, '').replace(',', '.');
+                        const num = parseFloat(cleaned);
+                        if (!isNaN(num) && num >= 10 && num <= 9999 && !c.includes('R$') && !c.includes(':') && !c.includes('/')) {
+                            if (num > kmTotal && num < 5000) kmTotal = num;
+                        }
                     }
+
+                    kmExtraTotal = 0;
+                    hrExtraTotal = brlValues.length >= 4 ? (() => {
+                        for (let i = brlValues.length - 3; i >= 2; i--) {
+                            if (brlValues[i] > 0 && brlValues[i] !== totalCol && brlValues[i] !== activationFee && brlValues[i] !== tollCol) return brlValues[i];
+                        }
+                        return 0;
+                    })() : 0;
                 }
 
-                const hrExtraTotal = brlValues.length >= 4 ? (() => {
-                    for (let i = brlValues.length - 3; i >= 2; i--) {
-                        if (brlValues[i] > 0 && brlValues[i] !== totalCol && brlValues[i] !== activationFee && brlValues[i] !== tollCol) return brlValues[i];
-                    }
-                    return 0;
-                })() : 0;
-
-                const kmExtraTotal = 0;
-                sheetRows.push({ id, route, activationFee, startDate: '', endDate: '', kmTotal, kmExtraTotal, hrExtraTotal, tollCol, totalCol, raw: allCells });
+                sheetRows.push({ id, route, activationFee, startDate: '', endDate: '', kmTotal, kmExtraTotal, hrExtraTotal, tollCol, totalCol, raw: mergedCols });
             }
         }
 
