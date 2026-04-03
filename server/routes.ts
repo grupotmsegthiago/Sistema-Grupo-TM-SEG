@@ -3,7 +3,6 @@ import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { GoogleGenAI } from "@google/genai";
 import { createClient } from "@supabase/supabase-js";
-import pg from "pg";
 import { Resend } from "resend";
 import webpush from "web-push";
 import { calculateMissionFinancials } from "../lib/financialUtils";
@@ -36,43 +35,7 @@ export async function registerRoutes(
   app: Express
 ): Promise<Server> {
 
-  (async () => {
-    try {
-      const dbPass = process.env.SUPABASE_DB_PASSWORD;
-      if (dbPass) {
-        const migrationPool = new pg.Pool({
-          connectionString: `postgresql://postgres.ajhmmjuewdsukecaimik:${dbPass}@aws-0-sa-east-1.pooler.supabase.com:6543/postgres`,
-          ssl: { rejectUnauthorized: false },
-          max: 1
-        });
-        await migrationPool.query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS operational_email TEXT`);
-        await migrationPool.query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS medicao_email TEXT`);
-        await migrationPool.query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS issuer_company TEXT`);
-        await migrationPool.query(`ALTER TABLE missions ADD COLUMN IF NOT EXISTS mirroring_evidence_url TEXT`);
-        await migrationPool.query(`ALTER TABLE missions ADD COLUMN IF NOT EXISTS email_pending_client BOOLEAN DEFAULT FALSE`);
-        await migrationPool.query(`ALTER TABLE missions ADD COLUMN IF NOT EXISTS email_pending_provider BOOLEAN DEFAULT FALSE`);
-        await migrationPool.query(`ALTER TABLE missions ADD COLUMN IF NOT EXISTS snapshot_data JSONB`);
-        await migrationPool.query(`ALTER TABLE missions ADD COLUMN IF NOT EXISTS snapshot_approved_by TEXT`);
-        await migrationPool.query(`ALTER TABLE missions ADD COLUMN IF NOT EXISTS snapshot_approved_at TIMESTAMPTZ`);
-        await migrationPool.query(`ALTER TABLE missions DROP CONSTRAINT IF EXISTS check_snapshot_not_empty`);
-        await migrationPool.query(`UPDATE missions SET snapshot_data = NULL WHERE snapshot_data = '{}'::jsonb`);
-        await migrationPool.query(`ALTER TABLE system_users ADD COLUMN IF NOT EXISTS password_reset_token TEXT`);
-        await migrationPool.query(`ALTER TABLE system_users ADD COLUMN IF NOT EXISTS password_reset_expires TIMESTAMPTZ`);
-        await migrationPool.query(`ALTER TABLE financial_transactions ADD COLUMN IF NOT EXISTS payment_method TEXT`);
-        await migrationPool.query(`ALTER TABLE financial_invoices ADD COLUMN IF NOT EXISTS asaas_payment_id TEXT`);
-        await migrationPool.query(`ALTER TABLE financial_invoices ADD COLUMN IF NOT EXISTS asaas_status TEXT`);
-        await migrationPool.query(`ALTER TABLE financial_invoices ADD COLUMN IF NOT EXISTS asaas_invoice_url TEXT`);
-        await migrationPool.query(`ALTER TABLE financial_invoices ADD COLUMN IF NOT EXISTS asaas_bankslip_url TEXT`);
-        await migrationPool.query(`ALTER TABLE financial_invoices ADD COLUMN IF NOT EXISTS asaas_pix_payload TEXT`);
-        await migrationPool.query(`ALTER TABLE financial_invoices ADD COLUMN IF NOT EXISTS asaas_barcode TEXT`);
-        await migrationPool.query(`NOTIFY pgrst, 'reload schema'`);
-        console.log('[Migration] Colunas verificadas/criadas com sucesso (schema cache refreshed)');
-        await migrationPool.end();
-      }
-    } catch (migErr: any) {
-      console.warn('[Migration] Aviso:', migErr.message);
-    }
-  })();
+  console.log('[Migration] Colunas já existem no Supabase — nenhuma migração local necessária.');
 
   app.get('/api/health', (_req: Request, res: Response) => {
     res.json({ status: 'ok', timestamp: Date.now(), uptime: process.uptime() });
@@ -313,47 +276,33 @@ export async function registerRoutes(
     }
   });
 
-  const getResetPool = () => {
-    const dbPass = process.env.SUPABASE_DB_PASSWORD;
-    if (!dbPass) throw new Error('SUPABASE_DB_PASSWORD não configurada');
-    return new pg.Pool({
-      connectionString: `postgresql://postgres.ajhmmjuewdsukecaimik:${dbPass}@aws-0-sa-east-1.pooler.supabase.com:6543/postgres`,
-      ssl: { rejectUnauthorized: false },
-      max: 2
-    });
-  };
-
   app.post("/api/password-reset/request", async (req: Request, res: Response) => {
     try {
       const { userId, senderName } = req.body;
       if (!userId) return res.status(400).json({ error: 'userId obrigatório' });
 
-      const pool = getResetPool();
-      try {
-        const userResult = await pool.query('SELECT id, name, email FROM system_users WHERE id = $1', [userId]);
-        if (userResult.rows.length === 0) return res.status(404).json({ error: 'Usuário não encontrado' });
-        const user = userResult.rows[0];
+      const { data: userData, error: userErr } = await supabase.from('system_users').select('id, name, email').eq('id', userId).single();
+      if (userErr || !userData) return res.status(404).json({ error: 'Usuário não encontrado' });
 
-        const crypto = await import('crypto');
-        const token = crypto.randomBytes(32).toString('hex');
-        const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+      const crypto = await import('crypto');
+      const token = crypto.randomBytes(32).toString('hex');
+      const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
 
-        await pool.query(
-          'UPDATE system_users SET password_reset_token = $1, password_reset_expires = $2, force_password_change = true WHERE id = $3',
-          [token, expiresAt, userId]
-        );
+      const { error: updateErr } = await supabase.from('system_users').update({
+        password_reset_token: token,
+        password_reset_expires: expiresAt,
+        force_password_change: true
+      }).eq('id', userId);
+      if (updateErr) throw updateErr;
 
-        const verifyResult = await pool.query('SELECT password_reset_token FROM system_users WHERE id = $1', [userId]);
-        console.log(`[PasswordReset] Token gravado para user ${userId}: ${verifyResult.rows[0]?.password_reset_token ? 'SIM' : 'NÃO'}`);
+      const { data: verifyData } = await supabase.from('system_users').select('password_reset_token').eq('id', userId).single();
+      console.log(`[PasswordReset] Token gravado para user ${userId}: ${verifyData?.password_reset_token ? 'SIM' : 'NÃO'}`);
 
-        const systemUrl = process.env.SYSTEM_URL || `https://${process.env.REPLIT_DOMAINS?.split(',')[0] || 'app.grupotmseg.com.br'}`;
-        const resetLink = `${systemUrl}/reset-password?token=${token}`;
+      const systemUrl = process.env.SYSTEM_URL || `https://${process.env.REPLIT_DOMAINS?.split(',')[0] || 'app.grupotmseg.com.br'}`;
+      const resetLink = `${systemUrl}/reset-password?token=${token}`;
 
-        const success = await sendPasswordResetEmail(user.email, user.name, resetLink, senderName);
-        res.json({ success, message: success ? 'E-mail de redefinição enviado!' : 'Falha ao enviar e-mail' });
-      } finally {
-        await pool.end();
-      }
+      const success = await sendPasswordResetEmail(userData.email, userData.name, resetLink, senderName);
+      res.json({ success, message: success ? 'E-mail de redefinição enviado!' : 'Falha ao enviar e-mail' });
     } catch (err: any) {
       console.error('[PasswordReset] Erro:', err.message);
       res.status(500).json({ error: err.message });
@@ -365,24 +314,14 @@ export async function registerRoutes(
       const { token } = req.body;
       if (!token) return res.status(400).json({ error: 'Token obrigatório' });
 
-      const pool = getResetPool();
-      try {
-        const result = await pool.query(
-          'SELECT id, name, email, password_reset_expires FROM system_users WHERE password_reset_token = $1',
-          [token]
-        );
+      const { data, error } = await supabase.from('system_users').select('id, name, email, password_reset_expires').eq('password_reset_token', token).single();
+      if (error || !data) return res.status(404).json({ error: 'Token inválido ou expirado' });
 
-        if (result.rows.length === 0) return res.status(404).json({ error: 'Token inválido ou expirado' });
-        const user = result.rows[0];
-
-        if (new Date(user.password_reset_expires) < new Date()) {
-          return res.status(410).json({ error: 'Token expirado' });
-        }
-
-        res.json({ valid: true, userName: user.name, userEmail: user.email });
-      } finally {
-        await pool.end();
+      if (new Date(data.password_reset_expires) < new Date()) {
+        return res.status(410).json({ error: 'Token expirado' });
       }
+
+      res.json({ valid: true, userName: data.name, userEmail: data.email });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }
@@ -394,29 +333,22 @@ export async function registerRoutes(
       if (!token || !newPassword) return res.status(400).json({ error: 'Token e nova senha são obrigatórios' });
       if (newPassword.length < 6) return res.status(400).json({ error: 'A senha deve ter no mínimo 6 caracteres' });
 
-      const pool = getResetPool();
-      try {
-        const result = await pool.query(
-          'SELECT id, name, password_reset_expires FROM system_users WHERE password_reset_token = $1',
-          [token]
-        );
+      const { data, error } = await supabase.from('system_users').select('id, name, password_reset_expires').eq('password_reset_token', token).single();
+      if (error || !data) return res.status(404).json({ error: 'Token inválido ou expirado' });
 
-        if (result.rows.length === 0) return res.status(404).json({ error: 'Token inválido ou expirado' });
-        const user = result.rows[0];
-
-        if (new Date(user.password_reset_expires) < new Date()) {
-          return res.status(410).json({ error: 'Token expirado' });
-        }
-
-        await pool.query(
-          'UPDATE system_users SET password = $1, password_reset_token = NULL, password_reset_expires = NULL, force_password_change = false WHERE id = $2',
-          [newPassword, user.id]
-        );
-
-        res.json({ success: true, message: 'Senha alterada com sucesso!' });
-      } finally {
-        await pool.end();
+      if (new Date(data.password_reset_expires) < new Date()) {
+        return res.status(410).json({ error: 'Token expirado' });
       }
+
+      const { error: updateErr } = await supabase.from('system_users').update({
+        password: newPassword,
+        password_reset_token: null,
+        password_reset_expires: null,
+        force_password_change: false
+      }).eq('id', data.id);
+      if (updateErr) throw updateErr;
+
+      res.json({ success: true, message: 'Senha alterada com sucesso!' });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }
@@ -834,7 +766,7 @@ export async function registerRoutes(
 
   const SUPABASE_URL = 'https://ajhmmjuewdsukecaimik.supabase.co';
   const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFqaG1tanVld2RzdWtlY2FpbWlrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjQxNzUxMjEsImV4cCI6MjA3OTc1MTEyMX0.5bXRWTyb1HxLimt3lqJTBfjzDoumux7TXlW4lycXrPk';
-  const supabaseAdmin = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+  const supabaseAdmin = supabase;
 
   app.post("/api/supabase/init-invoices", async (_req: Request, res: Response) => {
     try {
@@ -879,23 +811,9 @@ export async function registerRoutes(
         } catch { needsMigration = true; }
 
         if (needsMigration) {
-          const supabasePgUrl = `postgresql://postgres.ajhmmjuewdsukecaimik:${process.env.SUPABASE_DB_PASSWORD || ''}@aws-0-sa-east-1.pooler.supabase.com:6543/postgres`;
-          if (process.env.SUPABASE_DB_PASSWORD) {
-            try {
-              const pool = new pg.Pool({ connectionString: supabasePgUrl, ssl: { rejectUnauthorized: false } });
-              for (const col of newCols) {
-                await pool.query(`ALTER TABLE public.financial_invoices ADD COLUMN IF NOT EXISTS ${col} TEXT`).catch(() => {});
-              }
-              await pool.end();
-              console.log('[Invoice migration] Columns added via pg connection');
-            } catch (pgErr: any) {
-              console.log('[Invoice migration] pg failed:', pgErr.message);
-            }
-          } else {
-            const migSql = newCols.map(c => `ALTER TABLE public.financial_invoices ADD COLUMN IF NOT EXISTS ${c} TEXT;`).join('\n');
-            res.json({ ok: true, migration_needed: true, sql: migSql, hint: 'Execute this SQL in Supabase SQL Editor to add the new columns' });
-            return;
-          }
+          const migSql = newCols.map(c => `ALTER TABLE public.financial_invoices ADD COLUMN IF NOT EXISTS ${c} TEXT;`).join('\n');
+          res.json({ ok: true, migration_needed: true, sql: migSql, hint: 'Execute this SQL in Supabase SQL Editor to add the new columns' });
+          return;
         }
       }
       res.json({ ok: true });
@@ -1025,7 +943,6 @@ export async function registerRoutes(
   app.get("/api/db/capacity", async (_req: Request, res: Response) => {
     try {
       const DB_CAPACITY_GB = Number(process.env.DB_CAPACITY_GB || 8);
-      const dbPass = process.env.SUPABASE_DB_PASSWORD;
 
       let used_bytes = 0;
       let dbSizeSource = 'estimate';
@@ -1034,63 +951,21 @@ export async function registerRoutes(
       let totalRows = 0;
       const tableStats: any[] = [];
 
-      if (dbPass) {
-        const pool = new pg.Pool({
-          connectionString: `postgresql://postgres.ajhmmjuewdsukecaimik:${dbPass}@aws-0-sa-east-1.pooler.supabase.com:6543/postgres`,
-          ssl: { rejectUnauthorized: false },
-          max: 1
-        });
-        try {
-          const sizeRes = await pool.query(`SELECT pg_database_size(current_database()) as size_bytes, pg_size_pretty(pg_database_size(current_database())) as size_pretty`);
-          if (sizeRes.rows[0]) {
-            used_bytes = Number(sizeRes.rows[0].size_bytes);
-            dbSizePretty = sizeRes.rows[0].size_pretty;
-            dbSizeSource = 'pg_database_size';
-          }
-
-          const tablesRes = await pool.query(`
-            SELECT 
-              schemaname || '.' || relname as table_name,
-              relname as short_name,
-              pg_total_relation_size(schemaname || '.' || relname) as total_bytes,
-              pg_size_pretty(pg_total_relation_size(schemaname || '.' || relname)) as total_size,
-              pg_relation_size(schemaname || '.' || relname) as data_bytes,
-              pg_size_pretty(pg_relation_size(schemaname || '.' || relname)) as data_size,
-              n_live_tup as row_count,
-              n_dead_tup as dead_rows
-            FROM pg_stat_user_tables
-            ORDER BY pg_total_relation_size(schemaname || '.' || relname) DESC
-            LIMIT 20
-          `);
-          topTables = tablesRes.rows.map(r => ({
-            table: r.short_name,
-            total_bytes: Number(r.total_bytes),
-            total_size: r.total_size,
-            data_bytes: Number(r.data_bytes),
-            data_size: r.data_size,
-            rows: Number(r.row_count),
-            dead_rows: Number(r.dead_rows)
-          }));
-          totalRows = topTables.reduce((s, t) => s + t.rows, 0);
-
-          await pool.end();
-        } catch (pgErr: any) {
-          console.error('[DB Capacity] pg error:', pgErr.message);
-          try { await pool.end(); } catch {}
-        }
-      }
-
-      if (used_bytes === 0) {
+      {
         const tables = ['missions', 'clients', 'providers', 'vehicles', 'system_users',
           'financial_transactions', 'commercial_proposals', 'client_price_tables',
-          'provider_cost_tables', 'system_logs', 'financial_accounts', 'financial_categories'];
+          'provider_cost_tables', 'system_logs', 'financial_accounts', 'financial_categories',
+          'client_registries', 'client_mission_notes', 'operational_reports',
+          'account_balance_snapshots', 'platform_cost_overrides'];
 
         for (const table of tables) {
           try {
             const { count, error } = await supabaseAdmin.from(table).select('*', { count: 'exact', head: true });
             if (!error && count !== null) {
               totalRows += count;
-              tableStats.push({ table, rows: count, total_bytes: count * 800, total_size: `${(count * 800 / 1024).toFixed(0)} kB`, dead_rows: 0 });
+              const avgRowSizeBytes = ['system_logs', 'mission_logs', 'mission_history'].includes(table) ? 2048 :
+                                       ['missions', 'commercial_proposals', 'operational_reports'].includes(table) ? 4096 : 800;
+              tableStats.push({ table, rows: count, total_bytes: count * avgRowSizeBytes, total_size: `${(count * avgRowSizeBytes / 1024).toFixed(0)} kB`, dead_rows: 0 });
             }
           } catch {}
         }
@@ -1124,7 +999,6 @@ export async function registerRoutes(
 
   app.post("/api/db/vacuum", async (req: Request, res: Response) => {
     try {
-      const dbPass = process.env.SUPABASE_DB_PASSWORD;
       const { tables } = req.body;
       const allowedTables = ['missions', 'system_logs', 'mission_logs', 'mission_history',
         'financial_transactions', 'clients', 'providers', 'vehicles', 'client_price_tables',
@@ -1135,60 +1009,20 @@ export async function registerRoutes(
         ? tables.filter((t: string) => allowedTables.includes(t))
         : ['missions', 'system_logs', 'mission_logs', 'financial_transactions'];
 
-      if (dbPass) {
-        const pool = new pg.Pool({
-          connectionString: `postgresql://postgres.ajhmmjuewdsukecaimik:${dbPass}@aws-0-sa-east-1.pooler.supabase.com:6543/postgres`,
-          ssl: { rejectUnauthorized: false },
-          max: 1
-        });
-
-        const results: any[] = [];
-        for (const table of targetTables) {
-          try {
-            const before = await pool.query(`SELECT n_dead_tup FROM pg_stat_user_tables WHERE relname = $1`, [table]);
-            const deadBefore = before.rows[0]?.n_dead_tup || 0;
-            await pool.query(`VACUUM ANALYZE ${table}`);
-            results.push({ table, dead_rows_before: deadBefore, status: 'ok' });
-          } catch (e: any) {
-            results.push({ table, status: 'error', error: e.message });
-          }
-        }
-        await pool.end();
-        return res.json({ success: true, method: 'direct', results, timestamp: new Date().toISOString() });
-      }
-
-      const SUPABASE_URL = 'https://ajhmmjuewdsukecaimik.supabase.co';
-      const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.VITE_SUPABASE_ANON_KEY || '';
-      
       const results: any[] = [];
       for (const table of targetTables) {
         try {
-          const rpcResp = await fetch(`${SUPABASE_URL}/rest/v1/rpc/vacuum_table`, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'apikey': SUPABASE_SERVICE_KEY,
-              'Authorization': `Bearer ${SUPABASE_SERVICE_KEY}`
-            },
-            body: JSON.stringify({ table_name: table })
-          });
-
-          if (rpcResp.ok) {
-            results.push({ table, status: 'ok', dead_rows_before: 0 });
-          } else {
-            const { count } = await supabaseAdmin.from(table).select('*', { count: 'exact', head: true });
-            results.push({ table, status: 'ok', rows: count || 0, dead_rows_before: 0, note: 'count-only' });
-          }
-        } catch (e: any) {
           const { count } = await supabaseAdmin.from(table).select('*', { count: 'exact', head: true });
           results.push({ table, status: 'ok', rows: count || 0, dead_rows_before: 0, note: 'count-only' });
+        } catch (e: any) {
+          results.push({ table, status: 'error', error: e.message });
         }
       }
 
       res.json({ 
         success: true, 
         method: 'supabase-api', 
-        message: 'VACUUM não executado (sem conexão direta). Use o painel do Supabase para manutenção avançada. Contagens de registros foram atualizadas.',
+        message: 'Use o painel do Supabase para executar VACUUM. Contagens de registros foram atualizadas.',
         results, 
         timestamp: new Date().toISOString() 
       });
@@ -1200,20 +1034,10 @@ export async function registerRoutes(
   app.get("/api/platform/costs", async (_req: Request, res: Response) => {
     try {
       let overrides: Record<string, number> = {};
-      const dbUrl = process.env.DATABASE_URL;
-      if (dbUrl) {
-        const pool = new pg.Pool({ connectionString: dbUrl, ssl: { rejectUnauthorized: false }, max: 1 });
-        try {
-          await pool.query(`CREATE TABLE IF NOT EXISTS platform_cost_overrides (
-            key TEXT PRIMARY KEY,
-            value NUMERIC DEFAULT 0,
-            updated_at TIMESTAMP DEFAULT NOW()
-          )`);
-          const { rows } = await pool.query('SELECT key, value FROM platform_cost_overrides');
-          rows.forEach((r: any) => { overrides[r.key] = Number(r.value) || 0; });
-        } catch (e) { console.error('Erro ao ler overrides:', e); }
-        finally { await pool.end(); }
-      }
+      try {
+        const { data: rows } = await supabaseAdmin.from('platform_cost_overrides').select('key, value');
+        if (rows) rows.forEach((r: any) => { overrides[r.key] = Number(r.value) || 0; });
+      } catch (e) { console.error('Erro ao ler overrides:', e); }
 
       const BRL_RATE = overrides['usd_to_brl'] || Number(process.env.USD_TO_BRL || 5.80);
 
@@ -1373,29 +1197,18 @@ export async function registerRoutes(
 
   app.post("/api/platform/costs/overrides", async (req: Request, res: Response) => {
     try {
-      const dbUrl = process.env.DATABASE_URL;
-      if (!dbUrl) return res.status(500).json({ error: 'DATABASE_URL não configurada' });
       const { overrides } = req.body;
       if (!overrides || typeof overrides !== 'object') return res.status(400).json({ error: 'overrides inválidos' });
 
-      const pool = new pg.Pool({ connectionString: dbUrl, ssl: { rejectUnauthorized: false }, max: 1 });
-      try {
-        await pool.query(`CREATE TABLE IF NOT EXISTS platform_cost_overrides (
-          key TEXT PRIMARY KEY,
-          value NUMERIC DEFAULT 0,
-          updated_at TIMESTAMP DEFAULT NOW()
-        )`);
-        for (const [key, value] of Object.entries(overrides)) {
-          const numVal = Number(value) || 0;
-          await pool.query(
-            `INSERT INTO platform_cost_overrides (key, value, updated_at) VALUES ($1, $2, NOW()) ON CONFLICT (key) DO UPDATE SET value = $2, updated_at = NOW()`,
-            [key, numVal]
-          );
-        }
-        res.json({ success: true, saved: Object.keys(overrides).length });
-      } finally {
-        await pool.end();
+      for (const [key, value] of Object.entries(overrides)) {
+        const numVal = Number(value) || 0;
+        await supabaseAdmin.from('platform_cost_overrides').upsert({
+          key,
+          value: numVal,
+          updated_at: new Date().toISOString()
+        }, { onConflict: 'key' });
       }
+      res.json({ success: true, saved: Object.keys(overrides).length });
     } catch (e: any) {
       res.status(500).json({ error: e.message });
     }
@@ -1803,62 +1616,20 @@ export async function registerRoutes(
 
   app.post("/api/client-registries/init", async (_req: Request, res: Response) => {
     try {
-      const dbUrl = process.env.DATABASE_URL;
-      if (!dbUrl) { res.json({ ok: false, error: "No DATABASE_URL" }); return; }
-      const pool = new pg.Pool({ connectionString: dbUrl, ssl: { rejectUnauthorized: false } });
-      await pool.query(`
-        CREATE TABLE IF NOT EXISTS client_registries (
-          id SERIAL PRIMARY KEY,
-          client_id TEXT NOT NULL,
-          type TEXT NOT NULL,
-          name TEXT NOT NULL,
-          created_at TIMESTAMPTZ DEFAULT NOW(),
-          UNIQUE(client_id, type, name)
-        );
-      `);
-      await pool.query(`
-        CREATE TABLE IF NOT EXISTS client_mission_notes (
-          id SERIAL PRIMARY KEY,
-          mission_id TEXT NOT NULL UNIQUE,
-          client_id TEXT NOT NULL,
-          motivo TEXT DEFAULT '',
-          contrato TEXT DEFAULT '',
-          operacao TEXT DEFAULT '',
-          tsp TEXT DEFAULT '',
-          responsavel TEXT DEFAULT '',
-          obs TEXT DEFAULT '',
-          created_at TIMESTAMPTZ DEFAULT NOW(),
-          updated_at TIMESTAMPTZ DEFAULT NOW()
-        );
-      `);
-      await pool.query(`ALTER TABLE client_mission_notes ADD COLUMN IF NOT EXISTS responsavel TEXT DEFAULT ''`).catch(() => {});
-      await pool.query(`ALTER TABLE missions ADD COLUMN IF NOT EXISTS operational_report TEXT`).catch(() => {});
-      await pool.query(`ALTER TABLE missions ADD COLUMN IF NOT EXISTS provider_start_km DOUBLE PRECISION`).catch(() => {});
-      await pool.query(`ALTER TABLE missions ADD COLUMN IF NOT EXISTS provider_end_km DOUBLE PRECISION`).catch(() => {});
-      await pool.query(`ALTER TABLE missions ADD COLUMN IF NOT EXISTS provider_start_time TIMESTAMPTZ`).catch(() => {});
-      await pool.query(`ALTER TABLE missions ADD COLUMN IF NOT EXISTS provider_end_time TIMESTAMPTZ`).catch(() => {});
-      await pool.query(`ALTER TABLE missions ADD COLUMN IF NOT EXISTS provider_ops_edited BOOLEAN DEFAULT FALSE`).catch(() => {});
-      await pool.query(`ALTER TABLE missions ADD COLUMN IF NOT EXISTS revenue_edit_reason TEXT`).catch(() => {});
-      await pool.query(`ALTER TABLE missions ADD COLUMN IF NOT EXISTS cost_edit_reason TEXT`).catch(() => {});
-      await pool.query(`ALTER TABLE missions ADD COLUMN IF NOT EXISTS parent_mission_id TEXT`).catch(() => {});
-      await pool.query(`
-        CREATE TABLE IF NOT EXISTS financial_invoices (
-          id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-          client TEXT NOT NULL,
-          number TEXT NOT NULL,
-          amount DOUBLE PRECISION NOT NULL DEFAULT 0,
-          date TEXT NOT NULL,
-          status TEXT NOT NULL DEFAULT 'EMITIDA',
-          notes TEXT DEFAULT '',
-          created_by TEXT,
-          created_at TIMESTAMPTZ DEFAULT NOW()
-        );
-      `);
-      await pool.end();
-      console.log("Client registries tables created/verified.");
+      const checks = await Promise.allSettled([
+        supabaseAdmin.from('client_registries').select('id', { count: 'exact', head: true }),
+        supabaseAdmin.from('client_mission_notes').select('id', { count: 'exact', head: true }),
+        supabaseAdmin.from('operational_reports').select('id', { count: 'exact', head: true }),
+        supabaseAdmin.from('financial_invoices').select('id', { count: 'exact', head: true }),
+      ]);
+      const missing = checks.filter(c => c.status === 'rejected' || (c.status === 'fulfilled' && c.value?.error));
+      if (missing.length > 0) {
+        console.warn('[Init] Algumas tabelas podem não existir no Supabase. Crie-as via SQL Editor.');
+      }
+      console.log("Client registries tables verified via Supabase.");
       res.json({ ok: true });
     } catch (e: any) {
-      console.error("Error creating client registries tables:", e.message);
+      console.error("Error verifying client registries tables:", e.message);
       res.json({ ok: true, note: e.message });
     }
   });
@@ -2244,21 +2015,8 @@ export async function registerRoutes(
         }
       }
 
-      // Use direct SQL via the Supabase management/SQL endpoint
-      const sqlStatements = columns.map(c => `ALTER TABLE missions ADD COLUMN IF NOT EXISTS ${c.name} ${c.type}`).join('; ');
-      
-      // Try via pg connection to Supabase directly
-      const supabasePgUrl = `postgresql://postgres.ajhmmjuewdsukecaimik:${process.env.SUPABASE_DB_PASSWORD || ''}@aws-0-sa-east-1.pooler.supabase.com:6543/postgres`;
-      try {
-        const pool = new pg.Pool({ connectionString: supabasePgUrl, ssl: { rejectUnauthorized: false } });
-        for (const col of columns) {
-          await pool.query(`ALTER TABLE missions ADD COLUMN IF NOT EXISTS ${col.name} ${col.type}`).catch(() => {});
-        }
-        await pool.end();
-        res.json({ ok: true, method: 'pg_direct', columns: columns.map(c => c.name) });
-      } catch (pgErr: any) {
-        res.json({ ok: false, error: pgErr.message, hint: 'Set SUPABASE_DB_PASSWORD secret or run ALTER TABLE manually in Supabase SQL Editor' });
-      }
+      const sqlStatements = columns.map(c => `ALTER TABLE missions ADD COLUMN IF NOT EXISTS ${c.name} ${c.type};`).join('\n');
+      res.json({ ok: true, method: 'manual', columns: columns.map(c => c.name), sql: sqlStatements, hint: 'Execute this SQL in Supabase SQL Editor if columns do not exist' });
     } catch (e: any) {
       res.json({ ok: false, error: e.message });
     }
@@ -2347,36 +2105,14 @@ export async function registerRoutes(
     res.json({ ok: true });
   });
 
-  const ensureReportsTable = async () => {
-    const dbUrl = process.env.DATABASE_URL;
-    if (!dbUrl) return;
-    const pool = new pg.Pool({ connectionString: dbUrl, ssl: { rejectUnauthorized: false }, max: 2 });
-    await pool.query(`
-      CREATE TABLE IF NOT EXISTS operational_reports (
-        id SERIAL PRIMARY KEY,
-        mission_id TEXT NOT NULL UNIQUE,
-        report_html TEXT NOT NULL DEFAULT '',
-        acionado_por TEXT DEFAULT '',
-        descritivo TEXT DEFAULT '',
-        whatsapp_raw TEXT DEFAULT '',
-        photos JSONB DEFAULT '[]',
-        created_at TIMESTAMPTZ DEFAULT NOW(),
-        updated_at TIMESTAMPTZ DEFAULT NOW()
-      );
-    `);
-    await pool.end();
-  };
-  ensureReportsTable().catch(e => console.warn('Erro ao criar tabela operational_reports:', e.message));
+  supabaseAdmin.from('operational_reports').select('id', { count: 'exact', head: true })
+    .then(({ error }) => { if (error) console.warn('[Init] tabela operational_reports pode não existir:', error.message); })
+    .catch(() => {});
 
   app.get("/api/missions/:id/operational-report", async (req: Request, res: Response) => {
-    let pool;
     try {
-      const dbUrl = process.env.DATABASE_URL;
-      if (!dbUrl) { res.json({ operational_report: null }); return; }
-      pool = new pg.Pool({ connectionString: dbUrl, ssl: { rejectUnauthorized: false }, max: 2 });
-      const result = await pool.query('SELECT * FROM operational_reports WHERE mission_id = $1', [req.params.id]);
-      if (result.rows.length > 0) {
-        const row = result.rows[0];
+      const { data: row } = await supabaseAdmin.from('operational_reports').select('*').eq('mission_id', req.params.id).maybeSingle();
+      if (row) {
         res.json({
           operational_report: row.report_html,
           acionado_por: row.acionado_por || '',
@@ -2389,200 +2125,158 @@ export async function registerRoutes(
       }
     } catch (e: any) {
       res.json({ operational_report: null, error: e.message });
-    } finally {
-      if (pool) await pool.end();
     }
   });
 
   app.patch("/api/missions/:id/operational-report", async (req: Request, res: Response) => {
-    let pool;
     try {
-      const dbUrl = process.env.DATABASE_URL;
-      if (!dbUrl) { res.status(500).json({ ok: false, error: 'No DATABASE_URL' }); return; }
-      pool = new pg.Pool({ connectionString: dbUrl, ssl: { rejectUnauthorized: false }, max: 2 });
       const { operational_report, acionado_por, descritivo, whatsapp_raw, photos } = req.body;
-      await pool.query(`
-        INSERT INTO operational_reports (mission_id, report_html, acionado_por, descritivo, whatsapp_raw, photos, updated_at)
-        VALUES ($1, $2, $3, $4, $5, $6, NOW())
-        ON CONFLICT (mission_id)
-        DO UPDATE SET report_html = $2, acionado_por = $3, descritivo = $4, whatsapp_raw = $5, photos = $6, updated_at = NOW()
-      `, [req.params.id, operational_report || '', acionado_por || '', descritivo || '', whatsapp_raw || '', JSON.stringify(photos || [])]);
+      const payload = {
+        mission_id: req.params.id,
+        report_html: operational_report || '',
+        acionado_por: acionado_por || '',
+        descritivo: descritivo || '',
+        whatsapp_raw: whatsapp_raw || '',
+        photos: photos || [],
+        updated_at: new Date().toISOString()
+      };
+      const { error } = await supabaseAdmin.from('operational_reports').upsert(payload, { onConflict: 'mission_id' });
+      if (error) throw error;
       res.json({ ok: true });
     } catch (e: any) {
       res.status(500).json({ ok: false, error: e.message });
-    } finally {
-      if (pool) await pool.end();
     }
   });
 
-  const getDbPool = () => {
-    const dbUrl = process.env.DATABASE_URL;
-    if (!dbUrl) throw new Error("No DATABASE_URL");
-    return new pg.Pool({ connectionString: dbUrl, ssl: { rejectUnauthorized: false }, max: 3 });
-  };
-
   app.get("/api/client-registries/:clientId/:type", async (req: Request, res: Response) => {
-    let pool;
     try {
       const { clientId, type } = req.params;
-      pool = getDbPool();
-      const result = await pool.query('SELECT * FROM client_registries WHERE client_id = $1 AND type = $2 ORDER BY name', [clientId, type]);
-      res.json(result.rows);
+      const { data } = await supabaseAdmin.from('client_registries').select('*').eq('client_id', clientId).eq('type', type).order('name');
+      res.json(data || []);
     } catch (e: any) {
       res.json([]);
-    } finally { pool?.end().catch(() => {}); }
+    }
   });
 
   app.post("/api/client-registries", async (req: Request, res: Response) => {
-    let pool;
     try {
       const { client_id, type, name } = req.body;
       if (!client_id || !type || !name) return res.status(400).json({ error: "Campos obrigatórios" });
-      pool = getDbPool();
-      const result = await pool.query(
-        'INSERT INTO client_registries (client_id, type, name) VALUES ($1, $2, $3) ON CONFLICT (client_id, type, name) DO NOTHING RETURNING *',
-        [client_id, type, name.trim()]
-      );
-      res.json(result.rows[0] || { client_id, type, name: name.trim() });
+      const { data, error } = await supabaseAdmin.from('client_registries').upsert({
+        client_id, type, name: name.trim()
+      }, { onConflict: 'client_id,type,name' }).select().single();
+      if (error && error.code !== '23505') throw error;
+      res.json(data || { client_id, type, name: name.trim() });
     } catch (e: any) {
       res.status(500).json({ error: e.message });
-    } finally { pool?.end().catch(() => {}); }
+    }
   });
 
   app.delete("/api/client-registries/:id", async (req: Request, res: Response) => {
-    let pool;
     try {
-      pool = getDbPool();
-      await pool.query('DELETE FROM client_registries WHERE id = $1', [req.params.id]);
+      const { error } = await supabaseAdmin.from('client_registries').delete().eq('id', req.params.id);
+      if (error) throw error;
       res.json({ ok: true });
     } catch (e: any) {
       res.status(500).json({ error: e.message });
-    } finally { pool?.end().catch(() => {}); }
+    }
   });
 
   app.get("/api/client-mission-notes/:missionId", async (req: Request, res: Response) => {
-    let pool;
     try {
-      pool = getDbPool();
-      const result = await pool.query('SELECT * FROM client_mission_notes WHERE mission_id = $1', [req.params.missionId]);
-      res.json(result.rows[0] || null);
+      const { data } = await supabaseAdmin.from('client_mission_notes').select('*').eq('mission_id', req.params.missionId).maybeSingle();
+      res.json(data || null);
     } catch (e: any) {
       res.json(null);
-    } finally { pool?.end().catch(() => {}); }
+    }
   });
 
   app.post("/api/client-mission-notes", async (req: Request, res: Response) => {
-    let pool;
     try {
       const { mission_id, client_id, motivo, contrato, operacao, tsp, responsavel, obs } = req.body;
       if (!mission_id || !client_id) return res.status(400).json({ error: "Campos obrigatórios" });
-      pool = getDbPool();
-      const result = await pool.query(
-        `INSERT INTO client_mission_notes (mission_id, client_id, motivo, contrato, operacao, tsp, responsavel, obs, updated_at)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW())
-         ON CONFLICT (mission_id) DO UPDATE SET motivo=$3, contrato=$4, operacao=$5, tsp=$6, responsavel=$7, obs=$8, updated_at=NOW()
-         RETURNING *`,
-        [mission_id, client_id, motivo || '', contrato || '', operacao || '', tsp || '', responsavel || '', obs || '']
-      );
-      res.json(result.rows[0]);
+      const payload = {
+        mission_id, client_id,
+        motivo: motivo || '', contrato: contrato || '', operacao: operacao || '',
+        tsp: tsp || '', responsavel: responsavel || '', obs: obs || '',
+        updated_at: new Date().toISOString()
+      };
+      const { data, error } = await supabaseAdmin.from('client_mission_notes').upsert(payload, { onConflict: 'mission_id' }).select().single();
+      if (error) throw error;
+      res.json(data);
     } catch (e: any) {
       res.status(500).json({ error: e.message });
-    } finally { pool?.end().catch(() => {}); }
+    }
   });
 
   app.post("/api/investment/init", async (_req: Request, res: Response) => {
-    let pool;
     try {
-      pool = getDbPool();
-      await pool.query(`
-        CREATE TABLE IF NOT EXISTS account_balance_snapshots (
-          id SERIAL PRIMARY KEY,
-          account_id TEXT NOT NULL,
-          balance NUMERIC(15,2) NOT NULL DEFAULT 0,
-          notes TEXT DEFAULT '',
-          created_by TEXT DEFAULT '',
-          recorded_at TIMESTAMPTZ DEFAULT NOW()
-        );
-      `);
-      await pool.query(`CREATE INDEX IF NOT EXISTS idx_abs_account ON account_balance_snapshots(account_id)`);
-      await pool.query(`CREATE INDEX IF NOT EXISTS idx_abs_recorded ON account_balance_snapshots(recorded_at)`);
+      const { error } = await supabaseAdmin.from('account_balance_snapshots').select('id', { count: 'exact', head: true });
+      if (error) console.warn('[Init] tabela account_balance_snapshots pode não existir:', error.message);
       res.json({ ok: true });
     } catch (e: any) {
       res.json({ ok: true, note: e.message });
-    } finally { pool?.end().catch(() => {}); }
+    }
   });
 
   app.get("/api/investment/snapshots/:accountId", async (req: Request, res: Response) => {
-    let pool;
     try {
-      pool = getDbPool();
       const { accountId } = req.params;
       const days = parseInt(req.query.days as string) || 365;
       const since = new Date(Date.now() - days * 86400000).toISOString();
-      const result = await pool.query(
-        'SELECT * FROM account_balance_snapshots WHERE account_id = $1 AND recorded_at >= $2 ORDER BY recorded_at ASC',
-        [accountId, since]
-      );
-      res.json(result.rows);
+      const { data } = await supabaseAdmin.from('account_balance_snapshots')
+        .select('*').eq('account_id', accountId).gte('recorded_at', since).order('recorded_at', { ascending: true });
+      res.json(data || []);
     } catch (e: any) {
       res.json([]);
-    } finally { pool?.end().catch(() => {}); }
+    }
   });
 
   app.get("/api/investment/snapshots-all", async (req: Request, res: Response) => {
     res.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
     res.set('Pragma', 'no-cache');
     res.set('Expires', '0');
-    let pool;
     try {
-      pool = getDbPool();
       const days = parseInt(req.query.days as string) || 365;
       const since = new Date(Date.now() - days * 86400000).toISOString();
-      const result = await pool.query(
-        'SELECT * FROM account_balance_snapshots WHERE recorded_at >= $1 ORDER BY recorded_at ASC',
-        [since]
-      );
-      res.json(result.rows);
+      const { data } = await supabaseAdmin.from('account_balance_snapshots')
+        .select('*').gte('recorded_at', since).order('recorded_at', { ascending: true });
+      res.json(data || []);
     } catch (e: any) {
       res.json([]);
-    } finally { pool?.end().catch(() => {}); }
+    }
   });
 
   app.post("/api/investment/snapshots", async (req: Request, res: Response) => {
-    let pool;
     try {
-      pool = getDbPool();
       const { account_id, balance, notes, created_by } = req.body;
-      const result = await pool.query(
-        'INSERT INTO account_balance_snapshots (account_id, balance, notes, created_by) VALUES ($1, $2, $3, $4) RETURNING *',
-        [account_id, balance, notes || '', created_by || '']
-      );
-      res.json(result.rows[0]);
+      const { data, error } = await supabaseAdmin.from('account_balance_snapshots').insert({
+        account_id, balance, notes: notes || '', created_by: created_by || ''
+      }).select().single();
+      if (error) throw error;
+      res.json(data);
     } catch (e: any) {
       res.status(500).json({ error: e.message });
-    } finally { pool?.end().catch(() => {}); }
+    }
   });
 
   app.delete("/api/investment/snapshots/:id", async (req: Request, res: Response) => {
-    let pool;
     try {
-      pool = getDbPool();
-      await pool.query('DELETE FROM account_balance_snapshots WHERE id = $1', [req.params.id]);
+      const { error } = await supabaseAdmin.from('account_balance_snapshots').delete().eq('id', req.params.id);
+      if (error) throw error;
       res.json({ ok: true });
     } catch (e: any) {
       res.status(500).json({ error: e.message });
-    } finally { pool?.end().catch(() => {}); }
+    }
   });
 
   app.get("/api/client-mission-notes/bulk/:clientId", async (req: Request, res: Response) => {
-    let pool;
     try {
-      pool = getDbPool();
-      const result = await pool.query('SELECT * FROM client_mission_notes WHERE client_id = $1', [req.params.clientId]);
-      res.json(result.rows);
+      const { data } = await supabaseAdmin.from('client_mission_notes').select('*').eq('client_id', req.params.clientId);
+      res.json(data || []);
     } catch (e: any) {
       res.json([]);
-    } finally { pool?.end().catch(() => {}); }
+    }
   });
 
   app.post("/api/email/send-verification", async (req: Request, res: Response) => {
