@@ -885,7 +885,9 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
                 gr_espelhamento: editData.gr_espelhamento,
                 client_vehicle: vehicleCargaId ? parseInt(vehicleCargaId) : null,
                 origin: editData.origin.toUpperCase(),
-                destination: finalDestination.toUpperCase()
+                destination: finalDestination.toUpperCase(),
+                toll_value: parseNumber(editData.tollValue),
+                total_distance: editData.totalDistance || null
             };
 
             console.log(`[LOCATION] Enviando localização para OS ${mission.id}:`, {
