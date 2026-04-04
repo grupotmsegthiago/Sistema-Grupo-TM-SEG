@@ -462,7 +462,7 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
               }
             })
             .subscribe();
-          const interval = setInterval(() => fetchMissions(true), 120000);
+          const interval = setInterval(() => fetchMissions(true), 60000);
           const handleExternalRefresh = () => fetchMissions(true);
           window.addEventListener('refreshMissions', handleExternalRefresh);
           return () => {
