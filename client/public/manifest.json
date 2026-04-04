@@ -1,7 +1,7 @@
 {
-  "name": "Grupo TMSEG - Sistema de Gestão",
-  "short_name": "TMSEG",
-  "description": "Sistema de Gestão Operacional - Grupo TMSEG",
+  "name": "Grupo TM SEG - Sistema de Gestão",
+  "short_name": "TM SEG",
+  "description": "Sistema de Gestão Operacional - Grupo TM SEG",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#0f172a",
@@ -9,10 +9,28 @@
   "orientation": "portrait-primary",
   "icons": [
     {
-      "src": "/favicon.png",
+      "src": "/icon-192.png",
       "sizes": "192x192",
       "type": "image/png",
-      "purpose": "any maskable"
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
     }
   ]
 }
