@@ -788,7 +788,7 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
         const skipKw = ['TOTAL', 'BOLETIM', 'GERAL', 'REFERENTE', 'Nº', 'ROTA', 'TABELA', 'ACORDADA', 'INFORMAÇÕES', 'VALOR', 'PEDÁGIO', 'KILOMETRAGEM', 'HORÁRIOS', 'EXCEDENTE', 'VIAGEM'];
         const isHeader = (cols: string[]) => {
             const joined = cols.map(c => (c || '').trim().toUpperCase()).join(' ');
-            return joined.includes('ROTA') && (joined.includes('TOTAL') || joined.includes('VALOR') || joined.includes('PEDÁGIO'));
+            return joined.includes('ROTA') && (joined.includes('TOTAL') || joined.includes('VALOR') || joined.includes('PEDÁGIO') || joined.includes('PEDAGIO'));
         };
         const isMissionStart = (cols: string[]) => {
             const first = (cols[0] || '').trim();
@@ -798,6 +798,46 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
             if (skipKw.some(kw => first.toUpperCase().includes(kw))) return false;
             return true;
         };
+
+        let colMap = { valor: 2, pedagio: 25, kmTotal: 15, kmExtra: 21, hrExtra: 24, total: 26 };
+
+        for (const cols of lines) {
+            if (isHeader(cols)) {
+                const upper = cols.map(c => (c || '').trim().toUpperCase());
+                const valorIndices: number[] = [];
+                const totalIndices: number[] = [];
+                let pedagioIdx = -1;
+                let totalClienteIdx = -1;
+
+                upper.forEach((h, i) => {
+                    if (h === 'VALOR') valorIndices.push(i);
+                    if (h === 'TOTAL') totalIndices.push(i);
+                    if (h === 'TOTAL CLIENTE' || h === 'TOTAL_CLIENTE') totalClienteIdx = i;
+                    if (h === 'PEDÁGIO' || h === 'PEDAGIO' || h === 'PEDAGGIO') pedagioIdx = i;
+                });
+
+                if (valorIndices.length >= 1) colMap.valor = valorIndices[0];
+                if (pedagioIdx >= 0) colMap.pedagio = pedagioIdx;
+
+                if (totalClienteIdx >= 0) {
+                    colMap.total = totalClienteIdx;
+                } else if (totalIndices.length >= 1) {
+                    colMap.total = totalIndices[totalIndices.length - 1];
+                }
+
+                if (totalIndices.length >= 5) {
+                    colMap.kmTotal = totalIndices[0];
+                    colMap.kmExtra = totalIndices[2];
+                    colMap.hrExtra = totalIndices[3];
+                } else if (totalIndices.length >= 3) {
+                    colMap.kmTotal = totalIndices[0];
+                    colMap.kmExtra = totalIndices.length >= 4 ? totalIndices[1] : totalIndices[0];
+                    colMap.hrExtra = totalIndices.length >= 4 ? totalIndices[2] : totalIndices[1];
+                }
+
+                break;
+            }
+        }
 
         const missionGroups: string[][][] = [];
         let currentGroup: string[][] = [];
@@ -813,39 +853,37 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
         }
         if (currentGroup.length > 0) missionGroups.push(currentGroup);
 
-        const isSingleLineFormat = missionGroups.length > 0 && missionGroups.every(g => g.length === 1) && missionGroups[0][0].length >= 20;
-
         for (const group of missionGroups) {
             const firstCols = group[0];
-            const id = (firstCols[0] || '').trim().match(/\d+/)![0];
+            const idMatch = (firstCols[0] || '').trim().match(/\d+/);
+            if (!idMatch) continue;
+            const id = idMatch[0];
 
-            {
-                let cols: string[];
-                if (isSingleLineFormat || (group.length === 1 && firstCols.length >= 20)) {
-                    cols = firstCols;
-                } else {
-                    const maxCols = Math.max(...group.map(g => g.length));
-                    cols = new Array(maxCols).fill('');
-                    for (let col = 0; col < maxCols; col++) {
-                        for (const row of group) {
-                            const val = (row[col] || '').trim();
-                            if (val && !cols[col]) {
-                                cols[col] = val;
-                            }
+            let cols: string[];
+            if (group.length === 1 && firstCols.length >= 10) {
+                cols = firstCols;
+            } else {
+                const maxCols = Math.max(...group.map(g => g.length));
+                cols = new Array(maxCols).fill('');
+                for (let col = 0; col < maxCols; col++) {
+                    for (const row of group) {
+                        const val = (row[col] || '').trim();
+                        if (val && !cols[col]) {
+                            cols[col] = val;
                         }
                     }
                 }
-
-                const route = (cols[1] || '').trim();
-                const activationFee = parseBRLNumber(cols[2] || '');
-                const kmTotal = parseBRLNumber(cols[15] || '');
-                const kmExtraTotal = parseBRLNumber(cols[21] || '');
-                const hrExtraTotal = parseBRLNumber(cols[24] || '');
-                const tollCol = parseBRLNumber(cols[25] || '');
-                const totalCol = parseBRLNumber(cols[26] || cols[cols.length - 1] || '');
-
-                sheetRows.push({ id, route, activationFee, startDate: '', endDate: '', kmTotal, kmExtraTotal, hrExtraTotal, tollCol, totalCol, raw: cols });
             }
+
+            const route = (cols[1] || '').trim();
+            const activationFee = parseBRLNumber(cols[colMap.valor] || '');
+            const kmTotal = parseBRLNumber(cols[colMap.kmTotal] || '');
+            const kmExtraTotal = parseBRLNumber(cols[colMap.kmExtra] || '');
+            const hrExtraTotal = parseBRLNumber(cols[colMap.hrExtra] || '');
+            const tollCol = parseBRLNumber(cols[colMap.pedagio] || '');
+            const totalCol = parseBRLNumber(cols[colMap.total] || cols[cols.length - 1] || '');
+
+            sheetRows.push({ id, route, activationFee, startDate: '', endDate: '', kmTotal, kmExtraTotal, hrExtraTotal, tollCol, totalCol, raw: cols });
         }
 
         const systemMap = new window.Map<string, any>();
@@ -2548,7 +2586,7 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
                                                                     <th className="text-left px-3 py-1.5 font-black text-gray-600 uppercase text-[9px] tracking-wider w-[30%]">Campo</th>
                                                                     <th className="text-right px-3 py-1.5 font-black text-gray-900 uppercase text-[9px] tracking-wider w-[28%]">Sistema</th>
                                                                     <th className="text-center px-1 py-1.5 w-[6%]"></th>
-                                                                    <th className="text-right px-3 py-1.5 font-black text-gray-900 uppercase text-[9px] tracking-wider w-[28%]">Planilha</th>
+                                                                    <th className="text-right px-3 py-1.5 font-black text-gray-900 uppercase text-[9px] tracking-wider w-[28%] bg-gray-50">Planilha</th>
                                                                     <th className="text-center px-2 py-1.5 w-[8%]"></th>
                                                                 </tr>
                                                             </thead>
@@ -2565,7 +2603,7 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
                                                                             <td className="text-center px-1 py-1.5">
                                                                                 {isDiff ? <ArrowRight size={10} className="text-red-400 mx-auto" /> : <Check size={10} className="text-green-500 mx-auto" />}
                                                                             </td>
-                                                                            <td className={`px-3 py-1.5 text-right font-mono font-bold ${isDiff && !sysHigher ? 'text-red-700 bg-red-50' : isDiff ? 'text-gray-700' : 'text-green-700'}`}>
+                                                                            <td className={`px-3 py-1.5 text-right font-mono font-bold bg-gray-50 ${isDiff ? 'text-red-700' : 'text-green-700'}`}>
                                                                                 {f.isCurrency ? fmtBRL(f.sheetVal) : f.sheetVal.toLocaleString('pt-BR')}
                                                                             </td>
                                                                             <td className="text-center px-2 py-1.5">
