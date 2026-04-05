@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { supabase } from '../lib/supabase';
 import { Mission, Client, ClientPriceTable, ProviderCostTable } from '../types';
-import { FileText, Search, Printer, Loader2, FileSpreadsheet, BarChart3, Users, Building2, ChevronDown, ChevronRight, List, ExternalLink, Receipt, Camera, Sparkles, X, AlertCircle, CheckCircle2, ScanLine, Image as ImageIcon, DollarSign, Plus, Trash2, GitBranch, Calendar, Lock, Pencil, ArrowRight, ArrowLeftRight } from 'lucide-react';
+import { FileText, Search, Printer, Loader2, FileSpreadsheet, BarChart3, Users, Building2, ChevronDown, ChevronRight, List, ExternalLink, Receipt, Camera, Sparkles, X, AlertCircle, CheckCircle2, ScanLine, Image as ImageIcon, DollarSign, Plus, Trash2, GitBranch, Calendar, Lock, Pencil, ArrowRight, ArrowLeftRight, Check } from 'lucide-react';
 import { calculateMissionFinancials, extractCityFromAddress } from '../lib/financialUtils';
 import { generateContent } from '../lib/gemini';
 import {
@@ -916,11 +916,12 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
             const sheet = sheetMap.get(id);
             if (!sheet) { onlySystem.push(sys); return; }
             matched.push({ id, sys, sheet });
-            const fields: { label: string; sysVal: number; sheetVal: number; isCurrency: boolean }[] = [];
+            const fields: { label: string; sysVal: number; sheetVal: number; isCurrency: boolean; isDivergent: boolean }[] = [];
             const diffs: string[] = [];
             const addField = (label: string, sysV: number, sheetV: number, isCurrency: boolean, threshold: number) => {
-                if (Math.abs(sysV - sheetV) > threshold) {
-                    fields.push({ label, sysVal: sysV, sheetVal: sheetV, isCurrency });
+                const isDivergent = Math.abs(sysV - sheetV) > threshold;
+                fields.push({ label, sysVal: sysV, sheetVal: sheetV, isCurrency, isDivergent });
+                if (isDivergent) {
                     diffs.push(isCurrency ? `${label}: Sistema R$ ${sysV.toFixed(2)} × Planilha R$ ${sheetV.toFixed(2)}` : `${label}: Sistema ${sysV.toFixed(0)} × Planilha ${sheetV.toFixed(0)}`);
                 }
             };
@@ -2607,27 +2608,30 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
                                                             <tbody>
                                                                 {(d.fields || []).map((f: any, j: number) => {
                                                                     const sysHigher = f.sysVal > f.sheetVal;
+                                                                    const isDiff = f.isDivergent !== false && Math.abs(f.sysVal - f.sheetVal) > 0.02;
                                                                     return (
                                                                         <tr key={j} className={j % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
-                                                                            <td className="px-3 py-1.5 font-bold text-gray-700">{f.label}</td>
-                                                                            <td className={`px-3 py-1.5 text-right font-mono font-bold ${sysHigher ? 'text-red-700 bg-red-50' : 'text-gray-700'}`}>
+                                                                            <td className={`px-3 py-1.5 font-bold ${isDiff ? 'text-red-700' : 'text-gray-700'}`}>{f.label}</td>
+                                                                            <td className={`px-3 py-1.5 text-right font-mono font-bold ${isDiff && sysHigher ? 'text-red-700 bg-red-50' : isDiff ? 'text-gray-700' : 'text-green-700'}`}>
                                                                                 {f.isCurrency ? fmtBRL(f.sysVal) : f.sysVal.toLocaleString('pt-BR')}
                                                                             </td>
                                                                             <td className="text-center px-1 py-1.5">
-                                                                                <ArrowRight size={10} className="text-gray-400 mx-auto" />
+                                                                                {isDiff ? <ArrowRight size={10} className="text-red-400 mx-auto" /> : <Check size={10} className="text-green-500 mx-auto" />}
                                                                             </td>
-                                                                            <td className={`px-3 py-1.5 text-right font-mono font-bold ${!sysHigher ? 'text-red-700 bg-red-50' : 'text-gray-700'}`}>
+                                                                            <td className={`px-3 py-1.5 text-right font-mono font-bold ${isDiff && !sysHigher ? 'text-red-700 bg-red-50' : isDiff ? 'text-gray-700' : 'text-green-700'}`}>
                                                                                 {f.isCurrency ? fmtBRL(f.sheetVal) : f.sheetVal.toLocaleString('pt-BR')}
                                                                             </td>
                                                                             <td className="text-center px-2 py-1.5">
-                                                                                <button
-                                                                                    onClick={() => setEditingDivergence({ id: d.id, missionId: `GTM-${d.id}`, field: f.label, currentValue: f.sysVal, isCurrency: f.isCurrency })}
-                                                                                    className="p-1 rounded hover:bg-red-100 text-gray-400 hover:text-red-600 transition-colors"
-                                                                                    title="Editar no sistema"
-                                                                                    data-testid={`edit-field-${d.id}-${j}`}
-                                                                                >
-                                                                                    <Pencil size={10} />
-                                                                                </button>
+                                                                                {isDiff && (
+                                                                                    <button
+                                                                                        onClick={() => setEditingDivergence({ id: d.id, missionId: `GTM-${d.id}`, field: f.label, currentValue: f.sysVal, isCurrency: f.isCurrency })}
+                                                                                        className="p-1 rounded hover:bg-red-100 text-gray-400 hover:text-red-600 transition-colors"
+                                                                                        title="Editar no sistema"
+                                                                                        data-testid={`edit-field-${d.id}-${j}`}
+                                                                                    >
+                                                                                        <Pencil size={10} />
+                                                                                    </button>
+                                                                                )}
                                                                             </td>
                                                                         </tr>
                                                                     );
