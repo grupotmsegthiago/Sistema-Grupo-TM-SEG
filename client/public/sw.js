@@ -1,4 +1,4 @@
-const CACHE_NAME = 'tmseg-v6';
+const CACHE_NAME = 'tmseg-v7';
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
