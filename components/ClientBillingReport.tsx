@@ -894,6 +894,7 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
 
         const matched: any[] = [];
         const divergences: any[] = [];
+        const validated: any[] = [];
         const onlySystem: any[] = [];
         const onlySheet: any[] = [];
 
@@ -901,6 +902,13 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
             const sheet = sheetMap.get(id);
             if (!sheet) { onlySystem.push(sys); return; }
             matched.push({ id, sys, sheet });
+
+            const totalMatch = Math.abs(sys.totalGeral - sheet.totalCol) <= 0.02;
+            if (totalMatch) {
+                validated.push({ id, sys, sheet });
+                return;
+            }
+
             const fields: { label: string; sysVal: number; sheetVal: number; isCurrency: boolean; isDivergent: boolean }[] = [];
             const diffs: string[] = [];
             const addField = (label: string, sysV: number, sheetV: number, isCurrency: boolean, threshold: number) => {
@@ -916,11 +924,11 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
             addField('KM Extra R$', sys.kmExtraTotal, sheet.kmExtraTotal, true, 0.02);
             addField('Hr Extra R$', sys.hrExtraTotal, sheet.hrExtraTotal, true, 0.02);
             addField('Total', sys.totalGeral, sheet.totalCol, true, 0.02);
-            if (diffs.length > 0) divergences.push({ id, diffs, fields, sysTot: sys.totalGeral, sheetTot: sheet.totalCol, sys, sheet });
+            divergences.push({ id, diffs, fields, sysTot: sys.totalGeral, sheetTot: sheet.totalCol, sys, sheet });
         });
         sheetMap.forEach((sheet, id) => { if (!systemMap.has(id)) onlySheet.push(sheet); });
 
-        setPasteResult({ matched, onlySystem, onlySheet, divergences });
+        setPasteResult({ matched, onlySystem, onlySheet, divergences, validated });
     }, [pasteText, rowsData]);
 
     const fmtBRLExcel = (v: number) => v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
@@ -2539,10 +2547,10 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
                                 </div>
                             ) : (
                                 <div>
-                                    <div className="grid grid-cols-4 gap-3 mb-5">
-                                        <div className="bg-blue-50 border border-blue-200 rounded-xl p-3 text-center">
-                                            <div className="text-2xl font-black text-blue-700">{pasteResult.matched.length}</div>
-                                            <div className="text-[9px] font-bold text-blue-600 uppercase">Correspondentes</div>
+                                    <div className="grid grid-cols-4 gap-3 mb-3">
+                                        <div className="bg-green-50 border border-green-200 rounded-xl p-3 text-center">
+                                            <div className="text-2xl font-black text-green-700">{(pasteResult.validated || []).length}</div>
+                                            <div className="text-[9px] font-bold text-green-600 uppercase">Validadas</div>
                                         </div>
                                         <div className={`border rounded-xl p-3 text-center ${pasteResult.divergences.length > 0 ? 'bg-red-50 border-red-200' : 'bg-green-50 border-green-200'}`}>
                                             <div className={`text-2xl font-black ${pasteResult.divergences.length > 0 ? 'text-red-700' : 'text-green-700'}`}>{pasteResult.divergences.length}</div>
@@ -2558,11 +2566,18 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
                                         </div>
                                     </div>
 
+                                    {(pasteResult.validated || []).length > 0 && (
+                                        <div className="bg-green-50 border border-green-200 rounded-lg px-4 py-2 mb-4 flex items-center gap-2">
+                                            <CheckCircle2 size={14} className="text-green-600 flex-shrink-0" />
+                                            <span className="text-xs text-green-700 font-semibold">{(pasteResult.validated || []).length} missões validadas automaticamente (Total igual)</span>
+                                        </div>
+                                    )}
+
                                     {pasteResult.divergences.length === 0 && pasteResult.onlySystem.length === 0 && pasteResult.onlySheet.length === 0 && (
                                         <div className="bg-green-50 border border-green-300 rounded-xl p-4 text-center mb-4">
                                             <CheckCircle2 size={32} className="mx-auto text-green-600 mb-2" />
                                             <p className="font-black text-green-700 uppercase text-sm">Nenhuma divergência encontrada!</p>
-                                            <p className="text-xs text-green-600 mt-1">Os dados do sistema e da planilha estão 100% compatíveis.</p>
+                                            <p className="text-xs text-green-600 mt-1">Todas as {(pasteResult.validated || []).length} OS foram validadas automaticamente.</p>
                                         </div>
                                     )}
 
@@ -2661,23 +2676,33 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
 
                                     <div className="mb-4 bg-gradient-to-r from-gray-900 to-gray-800 rounded-xl p-4">
                                         <h4 className="font-black text-gray-400 uppercase text-[9px] tracking-widest mb-3">Resumo Financeiro</h4>
-                                        <div className="grid grid-cols-3 gap-3 text-center">
-                                            <div>
-                                                <div className="text-[8px] font-bold text-gray-500 uppercase mb-1">Total Sistema</div>
-                                                <div className="text-sm font-black text-white">{fmtBRL(pasteResult.divergences.reduce((s: number, d: any) => s + d.sysTot, 0) + pasteResult.onlySystem.reduce((s: number, d: any) => s + (d.totalGeral || 0), 0))}</div>
-                                            </div>
-                                            <div>
-                                                <div className="text-[8px] font-bold text-gray-500 uppercase mb-1">Total Planilha</div>
-                                                <div className="text-sm font-black text-white">{fmtBRL(pasteResult.divergences.reduce((s: number, d: any) => s + d.sheetTot, 0) + pasteResult.onlySheet.reduce((s: number, d: any) => s + (d.totalCol || 0), 0))}</div>
-                                            </div>
-                                            <div>
-                                                <div className="text-[8px] font-bold text-gray-500 uppercase mb-1">Diferença</div>
-                                                {(() => {
-                                                    const totalDiff = (pasteResult.divergences.reduce((s: number, d: any) => s + d.sysTot, 0) + pasteResult.onlySystem.reduce((s: number, d: any) => s + (d.totalGeral || 0), 0)) - (pasteResult.divergences.reduce((s: number, d: any) => s + d.sheetTot, 0) + pasteResult.onlySheet.reduce((s: number, d: any) => s + (d.totalCol || 0), 0));
-                                                    return <div className={`text-sm font-black ${Math.abs(totalDiff) < 0.01 ? 'text-green-400' : 'text-red-400'}`}>{fmtBRL(totalDiff)}</div>;
-                                                })()}
-                                            </div>
-                                        </div>
+                                        {(() => {
+                                            const validatedSys = (pasteResult.validated || []).reduce((s: number, v: any) => s + v.sys.totalGeral, 0);
+                                            const validatedSheet = (pasteResult.validated || []).reduce((s: number, v: any) => s + v.sheet.totalCol, 0);
+                                            const divSys = pasteResult.divergences.reduce((s: number, d: any) => s + d.sysTot, 0);
+                                            const divSheet = pasteResult.divergences.reduce((s: number, d: any) => s + d.sheetTot, 0);
+                                            const onlySys = pasteResult.onlySystem.reduce((s: number, d: any) => s + (d.totalGeral || 0), 0);
+                                            const onlySheetTot = pasteResult.onlySheet.reduce((s: number, d: any) => s + (d.totalCol || 0), 0);
+                                            const totalSys = validatedSys + divSys + onlySys;
+                                            const totalSheet = validatedSheet + divSheet + onlySheetTot;
+                                            const totalDiff = totalSys - totalSheet;
+                                            return (
+                                                <div className="grid grid-cols-3 gap-3 text-center">
+                                                    <div>
+                                                        <div className="text-[8px] font-bold text-gray-500 uppercase mb-1">Total Sistema</div>
+                                                        <div className="text-sm font-black text-white">{fmtBRL(totalSys)}</div>
+                                                    </div>
+                                                    <div>
+                                                        <div className="text-[8px] font-bold text-gray-500 uppercase mb-1">Total Planilha</div>
+                                                        <div className="text-sm font-black text-white">{fmtBRL(totalSheet)}</div>
+                                                    </div>
+                                                    <div>
+                                                        <div className="text-[8px] font-bold text-gray-500 uppercase mb-1">Diferença</div>
+                                                        <div className={`text-sm font-black ${Math.abs(totalDiff) < 0.01 ? 'text-green-400' : 'text-red-400'}`}>{fmtBRL(totalDiff)}</div>
+                                                    </div>
+                                                </div>
+                                            );
+                                        })()}
                                     </div>
 
                                     <div className="flex gap-3 mt-4">
