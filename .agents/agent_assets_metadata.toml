@@ -18,3 +18,9 @@ id = "W4VckYU8IJ3mj4WBQnvNv"
 uri = "file://analise_selecao_tabelas.md"
 type = "text"
 title = "Análise Completa — Seleção de Tabelas de Preço e Custo"
+
+[[outputs]]
+id = "2sDxLJ6jbAyAFGpgpTBLt"
+uri = "file://MELHORIAS_4_5_6_ANALISE_FATURAMENTO.md"
+type = "text"
+title = "Relatório Completo — Melhorias 4, 5, 6 + Análise Faturamento"
