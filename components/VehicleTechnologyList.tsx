@@ -1,6 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
+import { logAction } from '../lib/logger';
 import { VehicleTechnology } from '../types';
 import { Plus, Search, Loader2, Trash2, RefreshCw, Pencil, Database, AlertTriangle, Radio } from 'lucide-react';
 
@@ -55,6 +56,7 @@ const VehicleTechnologyList: React.FC<Props> = ({ onAdd, onEdit }) => {
             throw new Error("Erro de permissão ou registro não encontrado.");
         }
         
+        await logAction('DELETE', 'VehicleTechnology', id, `Tecnologia excluída: ${name}`);
         setTechnologies(prev => prev.filter(t => t.id !== id));
         alert('Tecnologia removida com sucesso.');
     } catch (e: any) { 

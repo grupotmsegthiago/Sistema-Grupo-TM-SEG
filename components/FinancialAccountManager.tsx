@@ -2,6 +2,7 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { authFetch } from '../lib/authFetch';
 import { formatDateBR, formatDateTimeBR } from '../lib/dateUtils';
+import { logAction } from '../lib/logger';
 import { supabase } from '../lib/supabase';
 import { FinancialAccount, FinancialCategory } from '../types';
 import { Plus, Trash2, Landmark, Save, X, Loader2, Wallet, Pencil, TrendingUp, TrendingDown, RefreshCw, CheckCircle2, AlertCircle, Zap, PencilLine, Calculator, History, Sparkles, BarChart, DollarSign, ArrowUpRight, ArrowDownRight, Calendar, Clock, Eye, ChevronDown, ChevronUp, Brain, LineChart as LineChartIcon } from 'lucide-react';
@@ -211,7 +212,9 @@ const FinancialAccountManager: React.FC<Props> = ({ onClose }) => {
 
     const handleDeleteAccount = async (id: string) => {
         if (!confirm('Excluir conta bancária e todo histórico?')) return;
+        const acc = accounts.find(a => a.id === id);
         await supabase.from('financial_accounts').delete().eq('id', id);
+        await logAction('DELETE', 'FinancialAccount', id, `Conta bancária excluída: ${acc?.name || 'N/A'} — Banco: ${acc?.bank_name || 'N/A'}`);
         fetchData();
     };
 

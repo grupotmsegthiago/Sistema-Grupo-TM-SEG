@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
+import { logAction } from '../lib/logger';
 import { Plus, Search, MapPin, Navigation, Trash2, Loader2, RefreshCw, DollarSign, Database, AlertTriangle, Pencil, Lock, Calculator, Wand2, CheckSquare, Square, X, Edit2, Save, ArrowRight, Eraser, Globe } from 'lucide-react';
 import { ClientPriceTable } from '../types';
 import { identifyRegionFromText } from '../lib/financialUtils';
@@ -167,9 +168,11 @@ const ClientRouteList: React.FC<Props> = ({ onAdd, onEdit, clientName, embedded 
     if (!confirm(`TEM CERTEZA? Excluir a rota "${name}"?`)) return;
     setIsDeleting(id);
     try {
+        const route = routes.find(r => r.id === id);
         const { data, error } = await supabase.from('client_routes').delete().eq('id', id).select();
         if (error) throw error;
         if (!data || data.length === 0) throw new Error("Erro de permissão.");
+        await logAction('DELETE', 'ClientRoute', id, `Rota excluída: ${route?.client || 'N/A'} — ${route?.origin || '?'} → ${route?.destination || '?'}`);
         fetchRoutes();
     } catch (e: any) { alert(e.message); }
     finally { setIsDeleting(null); }
@@ -208,6 +211,7 @@ const ClientRouteList: React.FC<Props> = ({ onAdd, onEdit, clientName, embedded 
           if (idsToDelete.length === 0) { alert("Nenhuma duplicata."); return; }
           const { error } = await supabase.from('client_routes').delete().in('id', idsToDelete);
           if (error) throw error;
+          await logAction('DELETE', 'ClientRoute', 'bulk', `Exclusão de duplicatas: ${idsToDelete.length} rotas removidas`);
           alert(`Removidas ${idsToDelete.length} duplicatas.`);
           fetchRoutes();
       } catch (err: any) { alert(err.message); } finally { setIsCleaning(false); }

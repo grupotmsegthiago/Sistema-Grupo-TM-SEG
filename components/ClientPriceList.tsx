@@ -1,6 +1,7 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../lib/supabase';
+import { logAction } from '../lib/logger';
 import { ClientPriceTable } from '../types';
 import { Plus, Search, DollarSign, Clock, Gauge, Shield, RefreshCw, Pencil, Trash2, Loader2, Database, AlertTriangle, FileSpreadsheet, CheckSquare, Square, X, Save, Edit2, Lock, Zap, Percent, TrendingUp, Wand2 } from 'lucide-react';
 import ImportClientPriceModal from './ImportClientPriceModal';
@@ -192,8 +193,10 @@ const ClientPriceList: React.FC<Props> = ({ onAdd, onEdit }) => {
     if (!confirm('Deseja excluir esta tabela de preços?')) return;
     setIsDeleting(id);
     try {
+        const tbl = tables.find(t => t.id.toString() === id);
         const { error } = await supabase.from('client_price_tables').delete().eq('id', id);
         if (error) throw error;
+        await logAction('DELETE', 'ClientPriceTable', id, `Tabela de preço excluída: ${tbl?.client || 'N/A'} — ${tbl?.origin || '?'} → ${tbl?.destination || '?'} (R$ ${tbl?.price?.toFixed(2) || '0.00'})`);
         setTables(prev => prev.filter(t => t.id.toString() !== id));
     } catch(e: any) { alert('Erro ao excluir: ' + e.message); }
     finally { setIsDeleting(null) }
@@ -206,6 +209,7 @@ const ClientPriceList: React.FC<Props> = ({ onAdd, onEdit }) => {
       try {
           const { error } = await supabase.from('client_price_tables').delete().in('id', selectedIds);
           if (error) throw error;
+          await logAction('DELETE', 'ClientPriceTable', 'bulk', `Exclusão em massa: ${selectedIds.length} tabelas de preço removidas`);
           setTables(prev => prev.filter(t => !selectedIds.includes(t.id.toString())));
           setSelectedIds([]);
       } catch (e: any) { alert('Erro na exclusão em massa: ' + e.message); fetchTables(); } 

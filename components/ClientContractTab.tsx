@@ -215,8 +215,10 @@ const ClientContractTab: React.FC<Props> = ({
 
   const handleDelete = async (id: string) => {
     if (!confirm('Deseja realmente excluir este contrato?')) return;
+    const contract = contracts.find(c => c.id === id);
     const { error } = await supabase.from('system_logs').delete().eq('id', id);
     if (error) { showNotification('Erro ao excluir contrato: ' + error.message, 'error'); return; }
+    await logAction('DELETE', 'ClientContract', id, `Contrato excluído: ${contract?.client_name || 'N/A'} — ${contract?.contract_type || 'N/A'} (${contract?.status || 'N/A'})`);
     showNotification('Contrato excluído.', 'success');
     fetchContracts();
   };

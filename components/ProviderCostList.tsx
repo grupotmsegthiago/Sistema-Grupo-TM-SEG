@@ -1,6 +1,7 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../lib/supabase';
+import { logAction } from '../lib/logger';
 import { ProviderCostTable } from '../types';
 import { Plus, Search, DollarSign, Briefcase, Clock, Gauge, Shield, RefreshCw, Pencil, Trash2, Loader2, Database, AlertTriangle, FileSpreadsheet, Lock, Percent, Zap, Save, Wand2 } from 'lucide-react';
 import ImportProviderCostModal from './ImportProviderCostModal';
@@ -144,8 +145,10 @@ const ProviderCostList: React.FC<Props> = ({ onAdd, onEdit }) => {
     if (!confirm('Deseja excluir esta tabela de custos?')) return;
     setIsDeleting(id);
     try {
+        const tbl = tables.find(t => t.id.toString() === id);
         const { error } = await supabase.from('provider_cost_tables').delete().eq('id', id);
         if(error) throw error;
+        await logAction('DELETE', 'ProviderCostTable', id, `Tabela de custo excluída: ${tbl?.provider || 'N/A'} — ${tbl?.origin || '?'} → ${tbl?.destination || '?'} (R$ ${tbl?.cost?.toFixed(2) || '0.00'})`);
         fetchTables();
     } catch(e: any) { alert(e.message) }
     finally { setIsDeleting(null) }

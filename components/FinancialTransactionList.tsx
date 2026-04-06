@@ -2,6 +2,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { authFetch } from '../lib/authFetch';
 import { formatDateBR } from '../lib/dateUtils';
+import { logAction } from '../lib/logger';
 import { supabase } from '../lib/supabase';
 import { FinancialTransaction, TransactionType, TransactionStatus, FinancialAccount, FinancialCategory } from '../types';
 import { 
@@ -191,8 +192,10 @@ const FinancialTransactionList: React.FC = () => {
 
     const handleDeleteTransaction = async (id: string) => {
         if (!confirm("Excluir este lançamento?")) return;
+        const item = transactions.find(t => t.id === id);
         const { error } = await supabase.from('financial_transactions').delete().eq('id', id);
         if (error) { console.error(error); alert('Erro ao excluir lançamento.'); return; }
+        await logAction('DELETE', 'FinancialTransaction', id, `Transação excluída: ${item?.description || 'N/A'} (R$ ${item?.amount?.toFixed(2) || '0.00'}) — Venc: ${item?.due_date || 'N/A'}`);
         fetchTransactions();
     };
 
@@ -252,8 +255,10 @@ const FinancialTransactionList: React.FC = () => {
 
     const handleDeleteInvoice = async (id: string) => {
         if (!confirm("Excluir esta fatura?")) return;
+        const inv = invoices.find(i => i.id === id);
         const { error } = await supabase.from('financial_invoices').delete().eq('id', id);
         if (error) { console.error(error); alert('Erro ao excluir fatura.'); return; }
+        await logAction('DELETE', 'FinancialInvoice', id, `Fatura excluída: ${inv?.number || 'N/A'} — Cliente: ${inv?.client || 'N/A'} (R$ ${inv?.amount?.toFixed(2) || '0.00'})`);
         fetchInvoices();
     };
 
