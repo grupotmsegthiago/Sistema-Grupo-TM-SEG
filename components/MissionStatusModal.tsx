@@ -1,6 +1,7 @@
 
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { authFetch } from '../lib/authFetch';
+import { formatDateTimeBR } from '../lib/dateUtils';
 import { Mission, MissionLog, MissionStatus } from '../types';
 import { useLoadScript, GoogleMap, DirectionsRenderer, Marker } from '@react-google-maps/api';
 import { googleMapsLoadConfig } from '../lib/maps';
@@ -403,7 +404,7 @@ const MissionStatusModal: React.FC<Props> = ({
                             <div className="flex-1 pb-1">
                                 <div className="flex justify-between items-baseline mb-1">
                                     <p className="text-[11px] font-black text-gray-800 uppercase leading-none">{log.updated_by}</p>
-                                    <p className="text-[9px] text-gray-400 font-mono font-bold">{new Date(log.created_at).toLocaleString('pt-BR')}</p>
+                                    <p className="text-[9px] text-gray-400 font-mono font-bold">{formatDateTimeBR(log.created_at)}</p>
                                 </div>
                                 <p className="text-xs text-gray-600 leading-relaxed">{log.description}</p>
                                 {log.map_link && (

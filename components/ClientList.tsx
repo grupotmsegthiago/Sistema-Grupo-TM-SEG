@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Client } from '../types';
 import { supabase } from '../lib/supabase';
+import { formatDateBR } from '../lib/dateUtils';
 import { Plus, Search, Building2, Phone, Mail, Loader2, Trash2, RefreshCw, Pencil, Ban, CheckCircle2, Database, AlertTriangle, DollarSign, FileWarning, TrendingUp, Send, CheckCircle, Clock, ShieldCheck, User, Calendar, Hash, Fingerprint, Target, UserCheck, ToggleLeft, ToggleRight, Lock } from 'lucide-react';
 
 interface ClientListProps {
@@ -383,7 +384,7 @@ const ClientList: React.FC<ClientListProps> = ({ onAddClient, onEdit }) => {
                         <div className="flex flex-col items-center">
                             <div className="flex items-center gap-1 text-[10px] font-black text-gray-700 uppercase">
                                 <Calendar size={12} className="text-red-600" />
-                                {client.created_at ? new Date(client.created_at).toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' }) : '-'}
+                                {formatDateBR(client.created_at)}
                             </div>
                             <div className="flex items-center gap-1 text-[9px] font-black text-blue-700 uppercase mt-1.5 bg-blue-50 px-2 py-1 rounded-lg border border-blue-100 shadow-sm min-w-[90px] justify-center">
                                 <User size={10} className="text-blue-500" />

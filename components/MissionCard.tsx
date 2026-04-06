@@ -1,6 +1,7 @@
 
 import React, { memo, useMemo, useState, useRef, useEffect, useCallback } from 'react';
 import { authFetch } from '../lib/authFetch';
+import { formatDateBR, formatDateTimeBR } from '../lib/dateUtils';
 import { Mission, MissionStatus, MissionLog, ClientPriceTable, ProviderCostTable, Client } from '../types';
 import { supabase } from '../lib/supabase';
 import { 
@@ -431,7 +432,7 @@ const MissionCardComponent: React.FC<MissionCardProps> = ({
     const handlePrintClick = async (e: React.MouseEvent) => {
         e.stopPropagation();
         const dateObj = new Date(mission.startTime || mission.createdAt);
-        const dateStr = dateObj.toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' });
+        const dateStr = formatDateBR(dateObj);
         const timeStr = dateObj.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', timeZone: 'America/Sao_Paulo' });
         const trackerType = mission.vehicleData?.tracker_type || 'N/A';
         const trackerId = mission.vehicleData?.tracker_id || 'N/A';
@@ -677,7 +678,7 @@ Qualquer dúvida, estamos a disposição.
                                     <span className="font-black text-blue-400 uppercase tracking-wider">Última Atualização: </span>
                                     {(() => {
                                         const dt = lastLog ? new Date(lastLog.created_at) : mission.lastUpdate ? new Date(mission.lastUpdate) : null;
-                                        const dateStr = dt ? dt.toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' }) + ' ' + dt.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', timeZone: 'America/Sao_Paulo' }) : '---';
+                                        const dateStr = dt ? formatDateTimeBR(dt) : '---';
                                         const rawOccurrence = lastLog?.description || mission.currentLocation || '';
                                         const occurrence = rawOccurrence.includes('|') ? rawOccurrence.split('|')[0].trim() : rawOccurrence;
                                         return occurrence ? dateStr + ' - ' + occurrence : dateStr;

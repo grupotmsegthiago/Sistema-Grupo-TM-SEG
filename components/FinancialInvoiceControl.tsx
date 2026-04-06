@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { authFetch } from '../lib/authFetch';
+import { formatDateTimeBR } from '../lib/dateUtils';
 import { supabase } from '../lib/supabase';
 import {
   FileText, Search, Filter, RefreshCw, ExternalLink, Copy, CheckCircle2,
@@ -454,7 +455,7 @@ const FinancialInvoiceControl: React.FC = () => {
 
                     <div className="border-t pt-3 text-[10px] text-gray-400 flex justify-between">
                       <span>Criado por: {inv.created_by || '-'}</span>
-                      <span>Em: {inv.created_at ? new Date(inv.created_at).toLocaleString('pt-BR') : '-'}</span>
+                      <span>Em: {formatDateTimeBR(inv.created_at)}</span>
                     </div>
                   </>
                 );

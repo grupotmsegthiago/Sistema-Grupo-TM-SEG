@@ -1,6 +1,7 @@
 
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { authFetch } from '../lib/authFetch';
+import { formatDateBR, formatDateTimeBR } from '../lib/dateUtils';
 import { supabase } from '../lib/supabase';
 import { FinancialAccount, FinancialCategory } from '../types';
 import { Plus, Trash2, Landmark, Save, X, Loader2, Wallet, Pencil, TrendingUp, TrendingDown, RefreshCw, CheckCircle2, AlertCircle, Zap, PencilLine, Calculator, History, Sparkles, BarChart, DollarSign, ArrowUpRight, ArrowDownRight, Calendar, Clock, Eye, ChevronDown, ChevronUp, Brain, LineChart as LineChartIcon } from 'lucide-react';
@@ -39,8 +40,8 @@ const COLORS = ['#3B82F6', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6', '#EC4899'
 
 const formatBRL = (v: number) => v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 const formatPct = (v: number) => `${v >= 0 ? '+' : ''}${v.toFixed(2)}%`;
-const formatDate = (d: string) => new Date(d).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
-const formatDateTime = (d: string) => new Date(d).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' });
+const formatDate = (d: string) => formatDateBR(d);
+const formatDateTime = (d: string) => formatDateTimeBR(d);
 
 const FinancialAccountManager: React.FC<Props> = ({ onClose }) => {
     const [accounts, setAccounts] = useState<EnrichedAccount[]>([]);

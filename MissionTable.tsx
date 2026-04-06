@@ -2,6 +2,7 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { Mission, MissionStatus, MissionLog, User as UserType, Agent } from '../types';
 import { supabase } from '../lib/supabase';
+import { formatDateBR } from '../lib/dateUtils';
 import { useNotification } from '../lib/NotificationContext';
 import { logAction } from '../lib/logger';
 import { 
@@ -732,7 +733,7 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
   
   const handleCopyMission = async (mission: Mission) => {
       const dateObj = new Date(mission.startTime || mission.createdAt);
-      const dateStr = dateObj.toLocaleDateString('pt-BR');
+      const dateStr = formatDateBR(dateObj);
       const timeStr = dateObj.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
       const formatName = (name?: string) => name || 'N/A';
       const text = `*MONITORAMENTO GRUPO TMSEG*

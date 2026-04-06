@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { authFetch } from '../lib/authFetch';
+import { formatDateBR, formatDateTimeBR } from '../lib/dateUtils';
 import { supabase } from '../lib/supabase';
 import { MissionStatus } from '../types';
 import {
@@ -23,17 +24,13 @@ const fmtDate = (d: string | null | undefined) => {
             const [y, m, day] = d.split('-');
             return `${day}/${m}/${y}`;
         }
-        const dt = new Date(d);
-        return dt.toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' });
+        return formatDateBR(d);
     } catch { return d; }
 };
 
 const fmtDateTime = (d: string | null | undefined) => {
     if (!d) return '—';
-    try {
-        const dt = new Date(d);
-        return dt.toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
-    } catch { return d; }
+    return formatDateTimeBR(d);
 };
 
 interface VendorVerificationControlProps {
@@ -1316,10 +1313,10 @@ const VendorVerificationControl: React.FC<VendorVerificationControlProps> = ({ o
                                                 <div className="text-[10px] font-bold text-gray-700 max-w-[160px] truncate" title={m.destination}>{m.destination || '—'}</div>
                                             </td>
                                             <td className="px-4 py-3 text-center">
-                                                <span className="text-[10px] font-bold text-gray-700">{m.start_time ? new Date(m.start_time).toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' }) : '—'}</span>
+                                                <span className="text-[10px] font-bold text-gray-700">{formatDateBR(m.start_time)}</span>
                                             </td>
                                             <td className="px-4 py-3 text-center">
-                                                <span className="text-[10px] font-bold text-gray-700">{m.end_time ? new Date(m.end_time).toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' }) : '—'}</span>
+                                                <span className="text-[10px] font-bold text-gray-700">{formatDateBR(m.end_time)}</span>
                                             </td>
                                             <td className="px-4 py-3 text-center">
                                                 <span className="text-[10px] font-bold text-gray-700">{m.start_time ? new Date(m.start_time).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', timeZone: 'America/Sao_Paulo' }) : '—'}</span>
