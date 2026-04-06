@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useMemo } from 'react';
 import { supabase } from '../lib/supabase';
 import { 
     TrendingUp, TrendingDown, DollarSign, Wallet, Landmark, RefreshCw, 
@@ -8,6 +8,7 @@ import {
     Calendar, AlertTriangle, ChevronRight, Target
 } from 'lucide-react';
 import { FinancialTransaction, FinancialAccount, FinancialCategory } from '../types';
+import { useQuery } from '@tanstack/react-query';
 
 const formatCurrency = (val: number | null | undefined) => {
     if (val === null || val === undefined) return 'R$ 0,00';
@@ -15,29 +16,29 @@ const formatCurrency = (val: number | null | undefined) => {
 };
 
 const FinancialDashboard: React.FC = () => {
-  const [transactions, setTransactions] = useState<FinancialTransaction[]>([]);
-  const [accounts, setAccounts] = useState<FinancialAccount[]>([]);
-  const [categories, setCategories] = useState<FinancialCategory[]>([]);
-  const [loading, setLoading] = useState(true);
   const [period, setPeriod] = useState<'MONTH' | 'YEAR' | 'ALL' | 'CUSTOM'>('MONTH');
   const [customStartDate, setCustomStartDate] = useState(new Date().toISOString().split('T')[0]);
   const [customEndDate, setCustomEndDate] = useState(new Date().toISOString().split('T')[0]);
 
-  useEffect(() => { fetchData(); }, [period, customStartDate, customEndDate]);
-
-  const fetchData = async () => {
-    setLoading(true);
-    try {
+  const { data: financialData, isLoading: loading, refetch: fetchData } = useQuery({
+    queryKey: ['financial-dashboard'],
+    queryFn: async () => {
       const [accs, trans, cats] = await Promise.all([
         supabase.from('financial_accounts').select('*'),
         supabase.from('financial_transactions').select('*').order('due_date', { ascending: false }),
         supabase.from('financial_categories').select('*')
       ]);
-      if (accs.data) setAccounts(accs.data as any);
-      if (trans.data) setTransactions(trans.data as any);
-      if (cats.data) setCategories(cats.data as any);
-    } catch (e) { console.error(e); } finally { setLoading(false); }
-  };
+      return {
+        accounts: (accs.data || []) as FinancialAccount[],
+        transactions: (trans.data || []) as FinancialTransaction[],
+        categories: (cats.data || []) as FinancialCategory[],
+      };
+    },
+  });
+
+  const accounts = financialData?.accounts || [];
+  const transactions = financialData?.transactions || [];
+  const categories = financialData?.categories || [];
 
   const metrics = useMemo(() => {
     const now = new Date();

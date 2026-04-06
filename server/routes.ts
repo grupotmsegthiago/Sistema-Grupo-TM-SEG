@@ -42,6 +42,53 @@ function requireAuth(req: Request, res: Response, next: Function) {
   next();
 }
 
+const roleCache = new Map<string, { role: string; expiresAt: number }>();
+const ROLE_CACHE_TTL = 5 * 60 * 1000;
+
+function extractUserIdFromToken(token: string): string | null {
+  const match = token.match(/(?:tmseg-token|impersonation-token)-([a-f0-9-]+)-\d+/);
+  return match ? match[1] : null;
+}
+
+async function resolveUserRole(token: string): Promise<string | null> {
+  const cached = roleCache.get(token);
+  if (cached && cached.expiresAt > Date.now()) return cached.role;
+
+  const userId = extractUserIdFromToken(token);
+  if (!userId) return null;
+
+  try {
+    const sbUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || '';
+    const sbKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY || '';
+    const sb = createClient(sbUrl, sbKey);
+    const { data } = await sb.from('system_users').select('status, profiles:profile_id ( name )').eq('id', userId).single();
+    if (!data || data.status !== 'Ativo') return null;
+    const role = ((data.profiles as any)?.name || '').toLowerCase();
+    roleCache.set(token, { role, expiresAt: Date.now() + ROLE_CACHE_TTL });
+    return role;
+  } catch {
+    return null;
+  }
+}
+
+function requireRole(...allowedRoles: string[]) {
+  const normalized = allowedRoles.map(r => r.toLowerCase());
+  return async (req: Request, res: Response, next: Function) => {
+    const token = (req as any).authToken;
+    if (!token) return res.status(401).json({ error: 'Não autorizado' });
+
+    const role = await resolveUserRole(token);
+    if (!role) return res.status(403).json({ error: 'Permissão negada — usuário inativo ou não encontrado' });
+
+    if (normalized.includes(role) || normalized.includes('*')) {
+      (req as any).userRole = role;
+      return next();
+    }
+
+    return res.status(403).json({ error: `Permissão negada — requer: ${allowedRoles.join(', ')}` });
+  };
+}
+
 export async function registerRoutes(
   httpServer: Server,
   app: Express
@@ -366,7 +413,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/email/mission-scheduled", requireAuth, async (req: Request, res: Response) => {
+  app.post("/api/email/mission-scheduled", requireAuth, requireRole('administrador', 'diretoria', 'avançado', 'avancado', 'operador'), async (req: Request, res: Response) => {
     try {
       const { missionId, client, origin, destination, start_time, mission_type, vehiclePlate, senderName } = req.body;
       if (!missionId || !client) return res.status(400).json({ error: 'Campos missionId e client obrigatórios' });
@@ -466,7 +513,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/email/mission-solicited", requireAuth, async (req: Request, res: Response) => {
+  app.post("/api/email/mission-solicited", requireAuth, requireRole('administrador', 'diretoria', 'avançado', 'avancado', 'operador'), async (req: Request, res: Response) => {
     try {
       const { missionId, provider, vehiclePlate, origin, destination, start_time, mission_type, driver_name, driver_phone, senderName } = req.body;
       if (!missionId || !provider) return res.status(400).json({ error: 'Campos missionId e provider obrigatórios' });
@@ -525,7 +572,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/email/mission-change-client", requireAuth, async (req: Request, res: Response) => {
+  app.post("/api/email/mission-change-client", requireAuth, requireRole('administrador', 'diretoria', 'avançado', 'avancado', 'operador'), async (req: Request, res: Response) => {
     try {
       const { missionId, client, origin, destination, start_time, mission_type, vehiclePlate, changes, senderName } = req.body;
       if (!missionId || !client || !changes?.length) return res.status(400).json({ error: 'Dados obrigatórios ausentes' });
@@ -546,7 +593,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/email/mission-change-provider", requireAuth, async (req: Request, res: Response) => {
+  app.post("/api/email/mission-change-provider", requireAuth, requireRole('administrador', 'diretoria', 'avançado', 'avancado', 'operador'), async (req: Request, res: Response) => {
     try {
       const { missionId, provider, origin, destination, start_time, mission_type, vehiclePlate, changes, senderName } = req.body;
       if (!missionId || !provider || !changes?.length) return res.status(400).json({ error: 'Dados obrigatórios ausentes' });
@@ -564,7 +611,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/email/mirroring-evidence", requireAuth, async (req: Request, res: Response) => {
+  app.post("/api/email/mirroring-evidence", requireAuth, requireRole('administrador', 'diretoria', 'avançado', 'avancado', 'operador'), async (req: Request, res: Response) => {
     try {
       const { missionId, client, imageUrl, vehiclePlate, origin, destination, start_time, mission_type, senderName } = req.body;
       if (!missionId || !client || !imageUrl) return res.status(400).json({ error: 'Dados obrigatórios ausentes' });
@@ -616,7 +663,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/email/mission-resend-client", requireAuth, async (req: Request, res: Response) => {
+  app.post("/api/email/mission-resend-client", requireAuth, requireRole('administrador', 'diretoria', 'avançado', 'avancado', 'operador'), async (req: Request, res: Response) => {
     try {
       const { missionId, senderName } = req.body;
       if (!missionId) return res.status(400).json({ error: 'ID da missão obrigatório' });
@@ -1858,7 +1905,7 @@ export async function registerRoutes(
       }
   });
 
-  app.post("/api/admin/fix-mission-toll", requireAuth, async (req: Request, res: Response) => {
+  app.post("/api/admin/fix-mission-toll", requireAuth, requireRole('administrador', 'diretoria'), async (req: Request, res: Response) => {
     try {
       const { missionId, tollValue, revenueValue } = req.body;
       if (!missionId) return res.status(400).json({ error: 'missionId obrigatório' });
@@ -1878,7 +1925,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/admin/inject-operacional-email", requireAuth, async (_req: Request, res: Response) => {
+  app.post("/api/admin/inject-operacional-email", requireAuth, requireRole('administrador', 'diretoria'), async (_req: Request, res: Response) => {
     try {
       const OPERACIONAL = 'operacional@grupotmseg.com.br';
       const log: string[] = [];
@@ -1948,7 +1995,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/admin/cleanup-history", requireAuth, async (_req: Request, res: Response) => {
+  app.post("/api/admin/cleanup-history", requireAuth, requireRole('administrador', 'diretoria'), async (_req: Request, res: Response) => {
       try {
           const results = await runHistoryCleanup();
           res.json({ ok: true, ...results });
@@ -1957,7 +2004,7 @@ export async function registerRoutes(
       }
   });
 
-  app.get("/api/admin/cleanup-preview", requireAuth, async (_req: Request, res: Response) => {
+  app.get("/api/admin/cleanup-preview", requireAuth, requireRole('administrador', 'diretoria'), async (_req: Request, res: Response) => {
       try {
           const threeMonthsAgo = new Date();
           threeMonthsAgo.setMonth(threeMonthsAgo.getMonth() - 3);
@@ -2346,7 +2393,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/billing/recalculate-all", requireAuth, async (req: Request, res: Response) => {
+  app.post("/api/billing/recalculate-all", requireAuth, requireRole('administrador', 'diretoria', 'financeiro'), async (req: Request, res: Response) => {
     try {
       const { dryRun = true } = req.body;
 
@@ -2699,11 +2746,11 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
   // ASAAS INTEGRATION ROUTES
   // ═══════════════════════════════════════════════════════
 
-  app.get("/api/asaas/status", requireAuth, (_req: Request, res: Response) => {
+  app.get("/api/asaas/status", requireAuth, requireRole('administrador', 'diretoria', 'financeiro'), (_req: Request, res: Response) => {
     res.json({ configured: isAsaasConfigured() });
   });
 
-  app.get("/api/asaas/test-nf", requireAuth, async (req: Request, res: Response) => {
+  app.get("/api/asaas/test-nf", requireAuth, requireRole('administrador', 'diretoria', 'financeiro'), async (req: Request, res: Response) => {
     try {
       const company = (req.query.company as string) || undefined;
       const companies = getAsaasCompanies();
@@ -2753,7 +2800,7 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
     }
   });
 
-  app.post("/api/asaas/create-charge", requireAuth, async (req: Request, res: Response) => {
+  app.post("/api/asaas/create-charge", requireAuth, requireRole('administrador', 'diretoria', 'financeiro'), async (req: Request, res: Response) => {
     try {
       const { clientName, clientCpfCnpj, clientEmail, value, dueDate, description, invoiceNumber, issuerCompany, charges } = req.body;
 
@@ -2945,7 +2992,7 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
     }
   });
 
-  app.get("/api/asaas/payment/:id", requireAuth, async (req: Request, res: Response) => {
+  app.get("/api/asaas/payment/:id", requireAuth, requireRole('administrador', 'diretoria', 'financeiro'), async (req: Request, res: Response) => {
     try {
       const company = req.query.company as string || undefined;
       const payment = await getPayment(req.params.id, company);
@@ -2965,7 +3012,7 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
     }
   });
 
-  app.get("/api/asaas/payments", requireAuth, async (req: Request, res: Response) => {
+  app.get("/api/asaas/payments", requireAuth, requireRole('administrador', 'diretoria', 'financeiro'), async (req: Request, res: Response) => {
     try {
       const { status, externalReference, offset, limit, company } = req.query;
       const result = await listPayments({
@@ -2982,7 +3029,7 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
     }
   });
 
-  app.post("/api/asaas/sync-payment-status", requireAuth, async (req: Request, res: Response) => {
+  app.post("/api/asaas/sync-payment-status", requireAuth, requireRole('administrador', 'diretoria', 'financeiro'), async (req: Request, res: Response) => {
     try {
       const { paymentId, invoiceId, company } = req.body;
       if (!paymentId) return res.status(400).json({ error: 'paymentId obrigatório' });
@@ -3020,7 +3067,7 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
     }
   });
 
-  app.delete("/api/asaas/payment/:id", requireAuth, async (req: Request, res: Response) => {
+  app.delete("/api/asaas/payment/:id", requireAuth, requireRole('administrador', 'diretoria', 'financeiro'), async (req: Request, res: Response) => {
     try {
       const company = req.query.company as string || undefined;
       await deletePayment(req.params.id, company);
@@ -3238,7 +3285,7 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
     }
   });
 
-  app.post('/api/admin/recalculate-batch', requireAuth, async (req: Request, res: Response) => {
+  app.post('/api/admin/recalculate-batch', requireAuth, requireRole('administrador', 'diretoria'), async (req: Request, res: Response) => {
     try {
       const { missionIds, dryRun = true } = req.body;
       if (!missionIds || !Array.isArray(missionIds) || missionIds.length === 0) {
@@ -3381,7 +3428,7 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
     }
   });
 
-  app.post('/api/admin/restore-batch', requireAuth, async (req: Request, res: Response) => {
+  app.post('/api/admin/restore-batch', requireAuth, requireRole('administrador', 'diretoria'), async (req: Request, res: Response) => {
     try {
       const { items } = req.body;
       if (!items || !Array.isArray(items)) {

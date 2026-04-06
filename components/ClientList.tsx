@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { Client } from '../types';
 import { supabase } from '../lib/supabase';
 import { formatDateBR } from '../lib/dateUtils';
+import { useQuery } from '@tanstack/react-query';
 import { Plus, Search, Building2, Phone, Mail, Loader2, Trash2, RefreshCw, Pencil, Ban, CheckCircle2, Database, AlertTriangle, DollarSign, FileWarning, TrendingUp, Send, CheckCircle, Clock, ShieldCheck, User, Calendar, Hash, Fingerprint, Target, UserCheck, ToggleLeft, ToggleRight, Lock } from 'lucide-react';
 
 interface ClientListProps {
@@ -16,15 +17,12 @@ interface ClientWithTableStatus extends Client {
 
 const ClientList: React.FC<ClientListProps> = ({ onAddClient, onEdit }) => {
   const [searchTerm, setSearchTerm] = useState('');
-  const [dbClients, setDbClients] = useState<ClientWithTableStatus[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
   const [isDeleting, setIsDeleting] = useState<string | null>(null);
   const [isToggling, setIsToggling] = useState<string | null>(null);
   const [isTogglingRule, setIsTogglingRule] = useState<string | null>(null);
   const [isAdmin, setIsAdmin] = useState(false);
   const [isDirector, setIsDirector] = useState(false);
   const [isCommercial, setIsCommercial] = useState(false);
-  const [dbStatus, setDbStatus] = useState<'ok' | 'error' | null>(null);
   const [lockedClientId, setLockedClientId] = useState<number | null>(null);
   const [userNamesMap, setUserNamesMap] = useState<Record<string, string>>({});
   const [currentUser, setCurrentUser] = useState<any>(null);
@@ -68,10 +66,7 @@ const ClientList: React.FC<ClientListProps> = ({ onAddClient, onEdit }) => {
     } catch (e) { console.error(e); }
   };
 
-  async function fetchClients() {
-    setIsLoading(true);
-    setDbStatus(null);
-    try {
+  const fetchClientsQueryFn = async (): Promise<ClientWithTableStatus[]> => {
       let query = supabase
         .from('clients')
         .select('*')
@@ -96,43 +91,35 @@ const ClientList: React.FC<ClientListProps> = ({ onAddClient, onEdit }) => {
         .select('client');
       
       const clientsWithTableSet = new Set(priceData?.map((item: any) => item.client) || []);
-      
-      setDbStatus('ok');
 
-      if (data) {
-          const mappedClients: ClientWithTableStatus[] = data.map((item: any) => ({
-              id: item.id.toString(),
-              name: item.name,
-              trading_name: item.trading_name, 
-              cnpj: item.cnpj,
-              contactName: item.contact_name,
-              email: item.email,
-              phone: item.phone,
-              status: item.status,
-              address: item.address,
-              adjustment_2026_applied: !!item.adjustment_2026_applied,
-              proposal_2026_sent: !!item.proposal_2026_sent,
-              full_extra_hour_after_16_min: !!item.full_extra_hour_after_16_min,
-              hasPriceTable: clientsWithTableSet.has(item.name),
-              created_at: item.created_at,
-              created_by: item.created_by,
-              is_prospect: !!item.is_prospect
-          }));
-          setDbClients(mappedClients);
-      }
-    } catch (e) {
-       console.error("Erro de conexão:", e);
-       setDbStatus('error');
-    } finally {
-      setIsLoading(false);
-    }
-  }
+      return (data || []).map((item: any) => ({
+          id: item.id.toString(),
+          name: item.name,
+          trading_name: item.trading_name, 
+          cnpj: item.cnpj,
+          contactName: item.contact_name,
+          email: item.email,
+          phone: item.phone,
+          status: item.status,
+          address: item.address,
+          adjustment_2026_applied: !!item.adjustment_2026_applied,
+          proposal_2026_sent: !!item.proposal_2026_sent,
+          full_extra_hour_after_16_min: !!item.full_extra_hour_after_16_min,
+          hasPriceTable: clientsWithTableSet.has(item.name),
+          created_at: item.created_at,
+          created_by: item.created_by,
+          is_prospect: !!item.is_prospect
+      }));
+  };
 
-  useEffect(() => {
-    if (currentUser) {
-        fetchClients();
-    }
-  }, [lockedClientId, isCommercial, currentUser]);
+  const { data: dbClients = [], isLoading, isError: clientsError, refetch: refetchClients } = useQuery<ClientWithTableStatus[]>({
+    queryKey: ['clients', lockedClientId, isCommercial, currentUser?.id],
+    queryFn: fetchClientsQueryFn,
+    enabled: !!currentUser,
+  });
+
+  const dbStatus = clientsError ? 'error' : (!isLoading ? 'ok' : null);
+  const fetchClients = () => { refetchClients(); };
 
   const handleToggleStatus = async (id: string, currentStatus: string, name: string) => {
       const newStatus = currentStatus === 'Ativo' ? 'Inativo' : 'Ativo';
@@ -142,7 +129,7 @@ const ClientList: React.FC<ClientListProps> = ({ onAddClient, onEdit }) => {
       try {
           const { error } = await supabase.from('clients').update({ status: newStatus }).eq('id', id);
           if (error) throw error;
-          setDbClients(prev => prev.map(c => c.id === id ? { ...c, status: newStatus as any } : c));
+          refetchClients();
       } catch (e: any) {
           alert('Erro ao alterar status: ' + e.message);
       } finally {
@@ -163,7 +150,7 @@ const ClientList: React.FC<ClientListProps> = ({ onAddClient, onEdit }) => {
       const newVal = !currentVal;
       
       // Atualização Otimista
-      setDbClients(prev => prev.map(c => c.id === id ? { ...c, full_extra_hour_after_16_min: newVal } : c));
+      refetchClients();
 
       try {
           const { error } = await supabase.from('clients').update({ full_extra_hour_after_16_min: newVal }).eq('id', id);
@@ -172,7 +159,7 @@ const ClientList: React.FC<ClientListProps> = ({ onAddClient, onEdit }) => {
           console.error(e);
           alert('Erro ao alterar regra: ' + e.message);
           // Reverter em caso de erro
-          setDbClients(prev => prev.map(c => c.id === id ? { ...c, full_extra_hour_after_16_min: currentVal } : c));
+          refetchClients();
       } finally {
           setIsTogglingRule(null);
       }
@@ -185,7 +172,7 @@ const ClientList: React.FC<ClientListProps> = ({ onAddClient, onEdit }) => {
         const { error } = await supabase.from('clients').update({ status: 'Inativo' }).eq('id', id);
         if (error) throw error;
         alert('Cliente inativado com sucesso. O registro permanece no banco de dados.');
-        setDbClients(prev => prev.map(c => c.id === id ? { ...c, status: 'Inativo' as any } : c));
+        refetchClients();
     } catch (error: any) {
         alert('Erro ao inativar: ' + error.message);
     } finally {

@@ -7,6 +7,8 @@ import ResetPassword from './components/ResetPassword';
 import { APP_VERSION } from './constants';
 import { supabase } from './lib/supabase';
 import { RefreshCw } from 'lucide-react';
+import { QueryClientProvider } from '@tanstack/react-query';
+import { queryClient } from './lib/queryClient';
 
 // Contexto
 import { NotificationProvider } from './lib/NotificationContext';
@@ -289,6 +291,7 @@ const App: React.FC = () => {
   };
 
   return (
+    <QueryClientProvider client={queryClient}>
     <NotificationProvider>
         <div className="flex min-h-screen-ios overflow-x-hidden overflow-y-auto font-sans text-gray-800 relative" style={{ maxWidth: '100vw' }}>
         
@@ -318,6 +321,7 @@ const App: React.FC = () => {
         {billingMissionId && billingMission && ( <MissionFinancialModal isOpen={true} onClose={() => { setBillingMissionId(null); setBillingMission(null); }} mission={billingMission} onUpdate={() => { setBillingMissionId(null); setBillingMission(null); window.dispatchEvent(new CustomEvent('refreshMissions')); }} /> )}
         </div>
     </NotificationProvider>
+    </QueryClientProvider>
   );
 };
 

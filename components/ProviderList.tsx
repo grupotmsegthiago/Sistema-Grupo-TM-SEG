@@ -3,6 +3,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../lib/supabase';
 import { formatDateBR } from '../lib/dateUtils';
 import { ProviderData } from '../types';
+import { useQuery } from '@tanstack/react-query';
 import { Plus, Search, User, Briefcase, Car, Loader2, Trash2, RefreshCw, AlertTriangle, Pencil, Ban, CheckCircle2, Calendar, Database, FileSpreadsheet, DollarSign, FileWarning, Check, Hash, Fingerprint } from 'lucide-react';
 import ImportProviderModal from './ImportProviderModal';
 
@@ -19,14 +20,11 @@ interface ProviderWithTableStatus extends ProviderData {
 
 const ProviderList: React.FC<ProviderListProps> = ({ onAddProvider, onEdit }) => {
   const [searchTerm, setSearchTerm] = useState('');
-  const [dbProviders, setDbProviders] = useState<ProviderWithTableStatus[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
   const [isDeleting, setIsDeleting] = useState<string | null>(null);
   const [isToggling, setIsToggling] = useState<string | null>(null);
   const [isAdmin, setIsAdmin] = useState(false);
   const [isDirector, setIsDirector] = useState(false);
   const [currentUser, setCurrentUser] = useState<any>(null);
-  const [dbStatus, setDbStatus] = useState<'ok' | 'error' | null>(null);
   const [userNamesMap, setUserNamesMap] = useState<Record<string, string>>({});
   
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
@@ -48,7 +46,6 @@ const ProviderList: React.FC<ProviderListProps> = ({ onAddProvider, onEdit }) =>
         }
     }
     fetchInternalUsers();
-    fetchProviders();
   }, []);
 
   const fetchInternalUsers = async () => {
@@ -67,46 +64,28 @@ const ProviderList: React.FC<ProviderListProps> = ({ onAddProvider, onEdit }) =>
       return role === 'administrador' || role === 'avançado' || role === 'avancado' || role === 'diretoria';
   }, [currentUser]);
 
-  async function fetchProviders() {
-    setIsLoading(true);
-    setDbStatus(null);
-    try {
-      // Usamos uma consulta que falha graciosamente caso colunas novas não existam
-      const { data: providersData, error: providersError } = await supabase
-        .from('providers')
-        .select('*')
-        .order('name', { ascending: true });
+  const { data: dbProviders = [], isLoading, isError: providersError, refetch: refetchProviders } = useQuery<ProviderWithTableStatus[]>({
+    queryKey: ['providers'],
+    queryFn: async () => {
+      let providersData: any[] | null = null;
+      const { data, error } = await supabase.from('providers').select('*').order('name', { ascending: true });
       
-      if (providersError) {
-          if (providersError.message?.includes('schema cache')) {
+      if (error) {
+          if (error.message?.includes('schema cache')) {
                const { data: fallbackData, error: fbError } = await supabase
                  .from('providers')
                  .select('id, name, trading_name, cnpj, type, contact_name, status')
                  .order('name', { ascending: true });
-               
                if (fbError) throw fbError;
-               processProviders(fallbackData);
+               providersData = fallbackData;
           } else {
-              throw providersError;
+              throw error;
           }
       } else {
-          processProviders(providersData);
+          providersData = data;
       }
-      
-      setDbStatus('ok');
-    } catch (e) { 
-        console.error("Erro ao carregar fornecedores:", e);
-        setDbStatus('error');
-    } finally { 
-        setIsLoading(false); 
-    }
-  }
 
-  const processProviders = async (providersData: any[]) => {
-      if (!providersData) {
-        setDbProviders([]);
-        return;
-      }
+      if (!providersData) return [];
 
       const [
           { data: vehiclesData },
@@ -118,12 +97,12 @@ const ProviderList: React.FC<ProviderListProps> = ({ onAddProvider, onEdit }) =>
           supabase.from('provider_cost_tables').select('provider')
       ]);
 
-      const vehicleCounts = (vehiclesData || []).reduce((acc, v) => {
+      const vehicleCounts = (vehiclesData || []).reduce((acc: any, v: any) => {
           acc[v.provider] = (acc[v.provider] || 0) + 1;
           return acc;
       }, {} as Record<string, number>);
 
-      const agentCounts = (agentsData || []).reduce((acc, a) => {
+      const agentCounts = (agentsData || []).reduce((acc: any, a: any) => {
           acc[a.provider] = (acc[a.provider] || 0) + 1;
           return acc;
       }, {} as Record<string, number>);
@@ -132,23 +111,17 @@ const ProviderList: React.FC<ProviderListProps> = ({ onAddProvider, onEdit }) =>
 
       const mapped: ProviderWithTableStatus[] = providersData.map((item: any) => {
          let computedStatus = item.status;
-         
-         // Lógica de Vencimento de Alvará
          if (item.status !== 'Bloqueado' && item.alvara_validity) {
              const [year, month, day] = item.alvara_validity.split('-').map(Number);
-             const validityDate = new Date(year, month - 1, day, 12, 0, 0); // Meio dia para evitar timezone offset
-             
+             const validityDate = new Date(year, month - 1, day, 12, 0, 0);
              const today = new Date();
              today.setHours(0,0,0,0);
-             
              if (validityDate < today) {
                  computedStatus = 'Alvará Vencido';
              } else if (computedStatus === 'Alvará Vencido') {
-                 // Correção automática: Se a data é válida mas o status estava vencido, assume Ativo visualmente
                  computedStatus = 'Ativo';
              }
          }
-         
          return {
             id: item.id.toString(),
             name: item.name,
@@ -170,8 +143,12 @@ const ProviderList: React.FC<ProviderListProps> = ({ onAddProvider, onEdit }) =>
           const nameB = (b.trading_name || b.name || '').toUpperCase();
           return nameA.localeCompare(nameB, 'pt-BR');
       });
-      setDbProviders(mapped);
-  };
+      return mapped;
+    },
+  });
+
+  const dbStatus = providersError ? 'error' : (!isLoading ? 'ok' : null);
+  const fetchProviders = () => { refetchProviders(); };
 
   const handleToggleStatus = async (id: string, currentStatus: string, name: string) => {
       const newStatus = (currentStatus === 'Ativo') ? 'Bloqueado' : 'Ativo';

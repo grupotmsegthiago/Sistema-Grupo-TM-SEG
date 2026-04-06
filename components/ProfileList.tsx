@@ -3,6 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { Plus, Shield, Loader2, Pencil, Trash2, RefreshCw, Database, AlertTriangle } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { AccessProfile } from '../types';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 
 interface Props {
   onAdd: () => void;
@@ -10,12 +11,10 @@ interface Props {
 }
 
 const ProfileList: React.FC<Props> = ({ onAdd, onEdit }) => {
-  const [profiles, setProfiles] = useState<AccessProfile[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const queryClientRQ = useQueryClient();
   const [isAdmin, setIsAdmin] = useState(false);
   const [isDirector, setIsDirector] = useState(false);
   const [isDeleting, setIsDeleting] = useState<string | null>(null);
-  const [dbStatus, setDbStatus] = useState<'ok' | 'error' | null>(null);
 
   useEffect(() => {
     const storedUser = localStorage.getItem('userData');
@@ -28,24 +27,20 @@ const ProfileList: React.FC<Props> = ({ onAdd, onEdit }) => {
             setIsDirector(true);
         }
     }
-    load();
   }, []);
 
-  async function load() {
-    setIsLoading(true);
-    setDbStatus(null);
-    try {
+  const { data: profiles = [], isLoading, isError, refetch } = useQuery<AccessProfile[]>({
+    queryKey: ['profiles'],
+    queryFn: async () => {
         const { data, error } = await supabase.from('profiles').select('*').order('name');
         if (error) throw error;
-        setDbStatus('ok');
-        if (data) setProfiles(data);
-    } catch (e) {
-        console.error(e);
-        setDbStatus('error');
-    } finally {
-        setIsLoading(false);
-    }
-  }
+        return data || [];
+    },
+  });
+
+  const dbStatus = isError ? 'error' : (profiles.length >= 0 && !isLoading ? 'ok' : null);
+
+  const load = () => { refetch(); };
 
   const handleDelete = async (id: string, name: string) => {
       // Proteção contra exclusão de perfis base
@@ -102,8 +97,7 @@ const ProfileList: React.FC<Props> = ({ onAdd, onEdit }) => {
           }
           
           alert('Perfil excluído com sucesso.');
-          // Atualização otimista
-          setProfiles(prev => prev.filter(p => p.id !== id));
+          queryClientRQ.invalidateQueries({ queryKey: ['profiles'] });
 
       } catch (e: any) {
           console.error(e);
