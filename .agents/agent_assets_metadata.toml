@@ -30,3 +30,9 @@ id = "4oVAi8UNSNgHrC0PP0ePC"
 uri = "file://ULTIMAS_ALTERACOES_COMPLETAS.md"
 type = "text"
 title = "Relatório Completo — Últimas 7 Alterações"
+
+[[outputs]]
+id = "oLH6dE3FrNS4cGmTzDxJs"
+uri = "file://RELATORIO_SESSAO_COMPLETO.md"
+type = "text"
+title = "Relatório Completo da Sessão"
