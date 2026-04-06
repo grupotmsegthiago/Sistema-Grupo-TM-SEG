@@ -1,0 +1,77 @@
+Preciso que você faça 3 correções de segurança no projeto. Não altere nada além do que está descrito. Faça uma por vez e confirme cada uma:
+
+---
+
+CORREÇÃO 1 — Remover chave Supabase hardcoded do server/routes.ts
+
+No arquivo server/routes.ts, existe uma instância do createClient com URL e chave hardcodadas no código (em torno da linha 155). Substitua por variáveis de ambiente:
+
+ANTES:
+const supabase = createClient(
+  'https://ajhmmjuewdsukecaimik.supabase.co',
+  'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...'
+);
+
+DEPOIS:
+const supabase = createClient(
+  process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || '',
+  process.env.SUPABASE_SERVICE_KEY || process.env.VITE_SUPABASE_ANON_KEY || ''
+);
+
+Adicione também no Secrets do Replit as variáveis SUPABASE_URL e SUPABASE_SERVICE_KEY com os mesmos valores que estavam hardcodados.
+
+---
+
+CORREÇÃO 2 — Middleware de autenticação no backend
+
+No arquivo server/routes.ts, logo após a linha dos imports (antes da função registerRoutes), adicione este middleware:
+
+function requireAuth(req: Request, res: Response, next: Function) {
+  const authHeader = req.headers['authorization'];
+  const token = authHeader?.replace('Bearer ', '') || req.headers['x-auth-token'] as string;
+  
+  if (!token) {
+    return res.status(401).json({ error: 'Não autorizado' });
+  }
+  
+  // Valida que o token existe (é o authToken do sistema)
+  // Como o sistema usa token customizado em localStorage, apenas verifica presença
+  // Para segurança real futura, validar JWT aqui
+  (req as any).authToken = token;
+  next();
+}
+
+Depois aplique esse middleware SOMENTE nestas rotas sensíveis (não em /api/health, /sw.js, /manifest.json, /api/push/vapid-key):
+- /api/ai/*  (todas as rotas de IA)
+- /api/email/* (todas as rotas de email)
+- /api/report/* (relatórios)
+- /api/asaas/* (pagamentos)
+- /api/reverse-geocode
+
+Exemplo de como aplicar:
+app.post('/api/ai/chat', requireAuth, async (req, res) => { ... })
+
+---
+
+CORREÇÃO 3 — Enviar authToken nas chamadas fetch do frontend
+
+Nos arquivos que fazem fetch para /api/ (como AIChatbot.tsx, BillingAuditor.tsx, etc.), substitua:
+
+ANTES:
+fetch('/api/ai/chat', { method: 'POST', body: ... })
+
+DEPOIS:
+const token = localStorage.getItem('authToken') || '';
+fetch('/api/ai/chat', {
+  method: 'POST',
+  headers: {
+    'Content-Type': 'application/json',
+    'Authorization': `Bearer ${token}`
+  },
+  body: ...
+})
+
+Faça um grep para encontrar todos os fetch('/api/ no projeto:
+grep -rn "fetch('/api/" . --include="*.tsx" --include="*.ts" | grep -v node_modules | grep -v cache | grep -v attached
+
+Liste todos os arquivos encontrados e aplique a correção em cada um.
