@@ -431,10 +431,15 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
       setIsLoading(true);
       try {
           const clientName = initialMission.originalClientName || initialMission.client;
+          const providerName = (initialMission.provider || '').trim();
+          let ptQuery = supabase.from('provider_cost_tables').select('*');
+          if (providerName) {
+              ptQuery = ptQuery.or(`provider.ilike.%${providerName}%,provider.eq.${providerName}`);
+          }
           const [mRes, ctRes, ptRes, clRes] = await Promise.all([
               supabase.from('missions').select('*').eq('id', initialMission.id).single(),
               supabase.from('client_price_tables').select('*').eq('client', clientName),
-              supabase.from('provider_cost_tables').select('*'),
+              ptQuery,
               supabase.from('clients').select('*').ilike('name', clientName || '').single()
           ]);
           if (clRes.data) {
@@ -668,7 +673,12 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
 
   const handleNewCostTableSuccess = async (newTableId?: string) => {
       if (!mission) return;
-      const { data } = await supabase.from('provider_cost_tables').select('*');
+      const provName = (mission.provider || '').trim();
+      let ptRefreshQuery = supabase.from('provider_cost_tables').select('*');
+      if (provName) {
+          ptRefreshQuery = ptRefreshQuery.or(`provider.ilike.%${provName}%,provider.eq.${provName}`);
+      }
+      const { data } = await ptRefreshQuery;
       if (data) {
           setProviderTables(data as any);
           setCustomProviderBase('');

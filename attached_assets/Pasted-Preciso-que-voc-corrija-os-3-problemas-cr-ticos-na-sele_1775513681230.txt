@@ -1,0 +1,65 @@
+Preciso que você corrija os 3 problemas críticos na seleção de tabelas 
+do arquivo lib/financialUtils.ts. Não altere nada além do descrito.
+Faça uma correção por vez e confirme que compilou sem erros.
+
+---
+
+CORREÇÃO A — Remover otimização de menor custo para fornecedor
+
+O sistema atualmente, após selecionar a tabela de fornecedor por score,
+troca pela tabela de menor custo total. Isso causa seleção errada de tabela.
+
+Encontre o bloco comentado como "menor custo" ou "lowest cost" ou 
+"Menor Custo" no lib/financialUtils.ts (aproximadamente linhas 746-817).
+
+A lógica faz algo assim:
+- Calcula custo total para TODAS as tabelas candidatas
+- Seleciona a de menor custo total
+- Sobrescreve a tabela que foi selecionada por score
+
+REMOVA essa lógica de substituição por menor custo.
+Mantenha apenas a seleção por score (selectStrictTable).
+
+EXCEÇÃO: Se houver um override manual de tabela (tableId informado pelo
+operador), mantenha o override — nunca substitua escolha manual.
+
+---
+
+CORREÇÃO B — Auditoria respeitar overrides manuais
+
+A função auditMissionFinancials() recalcula sem considerar overrides manuais.
+
+Encontre essa função e adicione esta verificação NO INÍCIO:
+
+Se a missão tiver os campos:
+- billing_adjustment (ou revenue_edit_reason ou cost_edit_reason preenchidos)
+- ou snapshot_approved_by preenchido
+
+Então a auditoria deve retornar { hasDeviation: false, isManualOverride: true }
+sem fazer o recálculo, pois o valor foi intencionalmente ajustado por um operador.
+
+---
+
+CORREÇÃO C — Filtrar tabelas de fornecedor por nome antes de carregar
+
+Atualmente o sistema carrega TODAS as provider_cost_tables do banco e 
+filtra por JavaScript. Isso causa erros de matching.
+
+No MissionFinancialModal.tsx, na query que busca provider_cost_tables,
+adicione filtro por nome do fornecedor:
+
+ANTES:
+supabase.from('provider_cost_tables').select('*')
+
+DEPOIS:
+supabase.from('provider_cost_tables').select('*')
+  .or(`provider.ilike.%${providerName}%,provider.eq.${providerName}`)
+
+Onde providerName vem do campo mission.provider.
+
+Se providerName estiver vazio, mantenha sem filtro (comportamento atual).
+
+---
+
+Após cada correção, mostre qual trecho exato foi alterado e confirme
+que o servidor está rodando sem erros.
