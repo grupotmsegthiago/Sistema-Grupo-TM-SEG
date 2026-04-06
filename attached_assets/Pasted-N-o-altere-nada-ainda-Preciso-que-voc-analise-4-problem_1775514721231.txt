@@ -1,0 +1,58 @@
+Não altere nada ainda. Preciso que você analise 4 problemas 
+críticos de faturamento e me mostre o código relevante de cada um.
+
+---
+
+PROBLEMA 1 — Missão RECUSADA aparecendo na medição/relatório
+
+No arquivo components/ClientBillingReport.tsx (ou similar de medição):
+- Quais status de OS são incluídos no relatório de medição?
+- Existe filtro que exclui OS com status "Recusada" ou "Cancelada"?
+- Mostre a query exata que busca as missões para o relatório
+
+---
+
+PROBLEMA 2 — Pedágio duplicado automático
+
+No lib/financialUtils.ts:
+- Existe alguma lógica que adiciona pedágio automaticamente 
+  para tabelas de 200km ou distância fixa?
+- Como o campo toll_value é calculado ou preenchido?
+
+No components/MissionFinancialModal.tsx ou UpdateMissionModal.tsx:
+- Como o pedágio é salvo? É somado automaticamente em algum momento?
+- Existe risco de o pedágio ser somado duas vezes 
+  (uma automática + uma manual)?
+
+grep -rn "toll\|pedagio\|pedágio" lib/financialUtils.ts | head -30
+
+---
+
+PROBLEMA 3 — Alteração de pedágio pós-auditoria não reflete na medição
+
+O sistema tem snapshot de dados congelados (snapshot_data).
+Quando um operador altera o pedágio APÓS a aprovação da auditoria:
+- O snapshot é recriado ou permanece com o valor antigo?
+- O relatório de medição usa o snapshot ou os valores atuais da missão?
+
+grep -rn "snapshot\|toll_value\|pedagio" components/ClientBillingReport.tsx | head -30
+
+cat components/ClientBillingReport.tsx | head -100
+
+---
+
+PROBLEMA 4 — Hora extra em dobro
+
+No lib/financialUtils.ts, como é calculada a hora extra?
+- A fórmula usa (horas_real - franquia) × preço_hora?
+- Existe algum multiplicador ou fator que poderia dobrar o valor?
+- A hora extra do cliente e do fornecedor são calculadas de forma independente?
+
+grep -rn "extraHr\|extra_hour\|excessHour\|price_per_extra_hour" lib/financialUtils.ts | head -30
+
+---
+
+Após analisar cada problema, me diga:
+1. Qual é a causa raiz de cada um?
+2. Qual arquivo precisa ser corrigido?
+3. Qual a complexidade de cada correção?
