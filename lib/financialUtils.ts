@@ -879,6 +879,11 @@ export const calculateMissionFinancials = (
     const cExcessHrReal = cExcessHr;
     const pExcessHrReal = pExcessHr;
 
+    // REGRA DE ARREDONDAMENTO DE HORA EXTRA:
+    // Se o cliente tem full_extra_hour_after_16_min = true, qualquer fração > 15 minutos
+    // é arredondada para a hora cheia seguinte. Ex: 1h16min extra → 2h extra.
+    // Isso NÃO é bug — é comportamento configurável por cliente na tabela `clients`.
+    // Pode parecer "hora extra em dobro" mas é o arredondamento contratual.
     const applyRoundingRule = (hours: number) => {
         if (hours <= 0) return 0;
         const integer = Math.floor(hours);
@@ -912,7 +917,7 @@ export const calculateMissionFinancials = (
     let pExtraHrVal = round2(Math.max(0, pExcessHr * pUnitCostHour));
 
     const isLogitechTable = appliedTableName.includes('LOGITECH') || appliedTableName.includes('200KM') || appliedTableName.includes('200 KM');
-    if (isLogitechTable && !isZeroValueMission) {
+    if (isLogitechTable && !isZeroValueMission && tollValue === 0) {
         tollValue = 35;
     }
 

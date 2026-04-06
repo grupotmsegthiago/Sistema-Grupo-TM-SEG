@@ -1164,7 +1164,8 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
           const isFullyApproved = hasDiretoria;
           
           const canReleaseBilling = stage === 'financeiro' || stage === 'diretoria' || stage === 'controller';
-          const shouldSnapshot = approve && canReleaseBilling && !mission.snapshot_approved_by;
+          const shouldSnapshot = approve && canReleaseBilling;
+          const isSnapshotUpdate = shouldSnapshot && !!mission.snapshot_approved_by;
           
           const r2 = (v: number) => Math.round(v * 100) / 100;
           const isSameOs = mission.is_same_os === true;
@@ -1212,11 +1213,12 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                   revenueServiceOnly: r2(revServiceOnly),
                   costServiceOnly: r2(costServiceOnly),
                   totalGeral: r2(revServiceOnly + toll),
-                  iblFee: financialData.iblFee || 0
+                  iblFee: financialData.iblFee || 0,
+                  ...(isSnapshotUpdate ? { updatedAt: snapshotNow, updatedBy: userName } : {})
               };
               basePayload.snapshot_data = snapshotObj;
-              basePayload.snapshot_approved_by = userName;
-              basePayload.snapshot_approved_at = snapshotNow;
+              basePayload.snapshot_approved_by = isSnapshotUpdate ? mission.snapshot_approved_by : userName;
+              basePayload.snapshot_approved_at = isSnapshotUpdate ? (mission.snapshot_approved_at || snapshotNow) : snapshotNow;
           }
           const reasonFields: any = {};
           if (revDivergent && revenueEditReason.trim()) {

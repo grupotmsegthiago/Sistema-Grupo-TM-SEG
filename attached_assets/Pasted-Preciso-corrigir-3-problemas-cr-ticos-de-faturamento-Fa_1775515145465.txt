@@ -1,0 +1,86 @@
+Preciso corrigir 3 problemas críticos de faturamento. 
+Faça um por vez e confirme antes de continuar.
+
+---
+
+CORREÇÃO 1 — Missão CANCELADA aparecendo na medição (BAIXA)
+
+No arquivo components/ClientBillingReport.tsx, existem 2 queries 
+que têm .neq('status', 'Recusada') mas NÃO filtram Cancelada.
+
+Nas linhas ~179 e ~263, adicione após o .neq existente:
+
+.neq('status', 'Recusada')
+.neq('status', 'Cancelada')  // ← ADICIONAR ESTA LINHA
+
+Confirme que as 2 queries foram corrigidas.
+
+---
+
+CORREÇÃO 2 — Pedágio R$35 fixo conflita com pedágio manual (MÉDIA)
+
+No arquivo lib/financialUtils.ts, existe um override que força 
+tollValue = 35 para tabelas LOGITECH/200KM (linha ~916).
+
+O problema: se o operador salvou pedágio diferente (ex: R$50), 
+o override sobrescreve para R$35, gerando inconsistência.
+
+Corrija assim: o override só deve ser aplicado se toll_value 
+da missão for 0 ou null (ou seja, o operador ainda não preencheu).
+Se o operador já preencheu um valor, respeitar o valor salvo.
+
+ANTES:
+if (isLogitechTable && !isZeroValueMission) {
+    tollValue = 35;
+}
+
+DEPOIS:
+const operatorFilledToll = safeNumber(mission.toll_value) > 0;
+if (isLogitechTable && !isZeroValueMission && !operatorFilledToll) {
+    tollValue = 35;  // Sugestão apenas se operador não preencheu
+}
+
+---
+
+CORREÇÃO 3 — Snapshot não atualiza pedágio pós-aprovação (MÉDIA)
+
+No arquivo components/MissionFinancialModal.tsx, linha ~1167:
+
+PROBLEMA: O snapshot só é criado quando não existe um anterior
+(!mission.snapshot_approved_by). Alterações de pedágio após 
+aprovação atualizam toll_value na missão mas não no snapshot.
+
+SOLUÇÃO: Quando o usuário salva (sem aprovar) e já existe snapshot,
+atualizar APENAS o campo toll no snapshot_data existente:
+
+Após salvar com sucesso (no bloco de salvamento, após o update),
+adicione esta lógica:
+
+// Se já existe snapshot e o pedágio mudou, atualizar snapshot
+if (mission.snapshot_approved_by && mission.snapshot_data) {
+  const existingSnap = mission.snapshot_data;
+  const tollChanged = existingSnap.tollVal !== toll;
+  if (tollChanged) {
+    const updatedSnap = {
+      ...existingSnap,
+      tollVal: toll,
+      tollProvider: tollProv,
+      totalGeral: r2((existingSnap.revenueServiceOnly ?? 0) + toll),
+    };
+    await supabase
+      .from('missions')
+      .update({ snapshot_data: updatedSnap })
+      .eq('id', mission.id);
+  }
+}
+
+Confirme que compilou sem erros após cada correção.
+
+---
+
+PROBLEMA 4 — Hora extra em dobro NÃO é bug no código.
+É comportamento da configuração full_extra_hour_after_16_min 
+do cliente combinado com franquia curta. Não altere nada.
+Apenas adicione um comentário explicativo na linha do 
+applyRoundingRule em financialUtils.ts:
+// Arredondamento: >15min de excesso = 1 hora cheia (configurado por cliente)
