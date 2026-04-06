@@ -1,5 +1,6 @@
 
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import { authFetch } from '../lib/authFetch';
 import { supabase } from '../lib/supabase';
 import { FinancialAccount, FinancialCategory } from '../types';
 import { Plus, Trash2, Landmark, Save, X, Loader2, Wallet, Pencil, TrendingUp, TrendingDown, RefreshCw, CheckCircle2, AlertCircle, Zap, PencilLine, Calculator, History, Sparkles, BarChart, DollarSign, ArrowUpRight, ArrowDownRight, Calendar, Clock, Eye, ChevronDown, ChevronUp, Brain, LineChart as LineChartIcon } from 'lucide-react';
@@ -67,7 +68,7 @@ const FinancialAccountManager: React.FC<Props> = ({ onClose }) => {
 
     useEffect(() => {
         const init = async () => {
-            await fetch('/api/investment/init', { method: 'POST' });
+            await authFetch('/api/investment/init', { method: 'POST' });
             setDbReady(true);
         };
         init();
@@ -86,7 +87,7 @@ const FinancialAccountManager: React.FC<Props> = ({ onClose }) => {
             const [accRes, catRes, snapRes] = await Promise.all([
                 supabase.from('financial_accounts').select('*').order('name'),
                 supabase.from('financial_categories').select('*'),
-                fetch(`/api/investment/snapshots-all?days=${days}&_t=${Date.now()}`).then(r => r.json()),
+                authFetch(`/api/investment/snapshots-all?days=${days}&_t=${Date.now()}`).then(r => r.json()),
             ]);
 
             const accData = accRes.data || [];
@@ -147,7 +148,7 @@ const FinancialAccountManager: React.FC<Props> = ({ onClose }) => {
         setIsProcessingUpdate(true);
         try {
             const userName = JSON.parse(localStorage.getItem('userData') || '{}').name || '';
-            await fetch('/api/investment/snapshots', {
+            await authFetch('/api/investment/snapshots', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ account_id: updateAccountId, balance: newBal, notes: '', created_by: userName }),
@@ -184,7 +185,7 @@ const FinancialAccountManager: React.FC<Props> = ({ onClose }) => {
 
     const handleDeleteSnapshot = async (id: number) => {
         if (!confirm('Excluir este registro de saldo?')) return;
-        await fetch(`/api/investment/snapshots/${id}`, { method: 'DELETE' });
+        await authFetch(`/api/investment/snapshots/${id}`, { method: 'DELETE' });
         fetchData();
     };
 
@@ -246,9 +247,8 @@ ${JSON.stringify(summaryData, null, 2)}
 
 Responda de forma concisa e profissional, em português, formatado com markdown.`;
 
-            const response = await fetch('/api/chat', {
+            const response = await authFetch('/api/chat', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ message: prompt }),
             });
 

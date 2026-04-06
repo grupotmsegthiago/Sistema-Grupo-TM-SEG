@@ -1,5 +1,6 @@
 
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import { authFetch } from '../lib/authFetch';
 import { Mission, MissionLog, MissionStatus } from '../types';
 import { useLoadScript, GoogleMap, DirectionsRenderer, Marker } from '@react-google-maps/api';
 import { googleMapsLoadConfig } from '../lib/maps';
@@ -118,7 +119,7 @@ const MissionStatusModal: React.FC<Props> = ({
     const { lat, lng } = locationAnalysis.coords;
     const attemptGeocode = (retries = 2) => {
       if (cancelled) return;
-      fetch(`/api/reverse-geocode?lat=${lat}&lng=${lng}`)
+      authFetch(`/api/reverse-geocode?lat=${lat}&lng=${lng}`)
         .then(r => r.json())
         .then(data => {
           if (cancelled) return;

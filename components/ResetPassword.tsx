@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { authFetch } from '../lib/authFetch';
 import { KeyRound, Eye, EyeOff, Loader2, CheckCircle2, AlertCircle, ShieldCheck } from 'lucide-react';
 
 interface ResetPasswordProps {
@@ -24,7 +25,7 @@ const ResetPassword: React.FC<ResetPasswordProps> = ({ token, onComplete }) => {
 
   const validateToken = async () => {
     try {
-      const res = await fetch('/api/password-reset/validate', {
+      const res = await authFetch('/api/password-reset/validate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ token }),
@@ -59,7 +60,7 @@ const ResetPassword: React.FC<ResetPasswordProps> = ({ token, onComplete }) => {
 
     setIsSaving(true);
     try {
-      const res = await fetch('/api/password-reset/confirm', {
+      const res = await authFetch('/api/password-reset/confirm', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ token, newPassword }),

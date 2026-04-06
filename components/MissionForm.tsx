@@ -2,6 +2,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { ArrowLeft, Save, MapPin, Flag, FileText, Building2, Ruler, Loader2, Plus, X, Navigation, Calendar, ShieldCheck, DollarSign, Calculator, Briefcase, TrendingUp, TrendingDown, ArrowRight, Check, ChevronDown, Package, Info, Siren, Clock, Tag, Layers, Truck, Search, User, Phone, AlertCircle, AlertTriangle, CheckCircle2, Zap, Shield, ShieldAlert, Paperclip, Image, Trash2, Clipboard, Mail } from 'lucide-react';
 import { MissionStatus, Client, ClientRoute, ClientPriceTable, ProviderData, ProviderCostTable, ClientVehicleDB } from '../types';
+import { authFetch } from '../lib/authFetch';
 import { supabase } from '../lib/supabase';
 import { logAction } from '../lib/logger';
 import { useNotification } from '../lib/NotificationContext';
@@ -587,7 +588,7 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
 
   const calculateTollGemini = async (origin: string, destination: string): Promise<{ value: number; count: number; tolls: any[]; observacoes?: string; confianca?: string; provider?: string } | null> => {
       try {
-          const resp = await fetch('/api/toll/gemini-estimate', {
+          const resp = await authFetch('/api/toll/gemini-estimate', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({ origin, destination }),
@@ -607,7 +608,7 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
   const calculateTollFromAPI = async (origin: string, destination: string): Promise<{ value: number; count: number; tolls: any[]; apiError?: string; distance?: number; duration?: string; provider?: string; observacoes?: string; confianca?: string } | null> => {
       try {
           setIsCalculatingToll(true);
-          const resp = await fetch('/api/toll/calculate', {
+          const resp = await authFetch('/api/toll/calculate', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({ origin, destination }),
@@ -996,7 +997,7 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
                     try {
                       if (emailConfirmDialog.providerPayload) {
                         try {
-                          const provRes = await fetch('/api/email/mission-solicited', {
+                          const provRes = await authFetch('/api/email/mission-solicited', {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify(emailConfirmDialog.providerPayload)
@@ -1008,7 +1009,7 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
                       }
                       if (emailConfirmDialog.clientPayload) {
                         try {
-                          const clientRes = await fetch('/api/email/mission-scheduled', {
+                          const clientRes = await authFetch('/api/email/mission-scheduled', {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify(emailConfirmDialog.clientPayload)

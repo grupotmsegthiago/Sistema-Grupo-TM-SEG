@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { Mission, MissionStatus, MissionLog, User as UserType, Agent, Client, ClientPriceTable, ProviderCostTable } from '../types';
+import { authFetch } from '../lib/authFetch';
 import { supabase } from '../lib/supabase';
 import { useNotification } from '../lib/NotificationContext';
 import { logAction } from '../lib/logger';
@@ -890,9 +891,8 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
     const handleCopyEmail = async (mission: Mission) => {
         setIsSendingEmail(mission.id);
         try {
-            const res = await fetch('/api/email/mission-resend-client', {
+            const res = await authFetch('/api/email/mission-resend-client', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ missionId: mission.id, senderName: JSON.parse(localStorage.getItem('userData') || '{}').name || undefined })
             });
             const data = await res.json();

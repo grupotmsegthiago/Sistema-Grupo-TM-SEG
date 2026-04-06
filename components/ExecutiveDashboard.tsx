@@ -1,5 +1,6 @@
 import React, { useMemo, useState, useCallback, useRef, useEffect } from 'react';
 import { Mission, MissionStatus, Client, ClientPriceTable, ProviderCostTable } from '../types';
+import { authFetch } from '../lib/authFetch';
 import { calculateMissionFinancials } from '../lib/financialUtils';
 import {
     BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
@@ -288,7 +289,7 @@ const ExecutiveDashboard: React.FC<Props> = ({ missions, isDirector, clientTable
         setIsRecalculating(true);
         setRecalcResults(null);
         try {
-            const resp = await fetch('/api/billing/recalculate-all', {
+            const resp = await authFetch('/api/billing/recalculate-all', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ dryRun }),
@@ -842,9 +843,8 @@ const ExecutiveDashboard: React.FC<Props> = ({ missions, isDirector, clientTable
                         return entry;
                     });
 
-                    const res = await fetch('/api/gemini/generate', {
+                    const res = await authFetch('/api/gemini/generate', {
                         method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({
                             prompt: `Você é auditor financeiro da TM SEG (empresa de escolta armada). Analise as divergências entre a planilha Excel do fornecedor/cliente e o sistema de gestão.\n\nA planilha segue este layout:\n- Nº (OS), ROTA, CLIENTE, FORNECEDOR, OPERAÇÃO (CTS/PADLOCK/etc), VALOR (base/acionamento)\n- HR FRANQ (horas franquia), KM FRANQ (km franquia), HR EXTRA, KM EXTRA\n- PEDÁGIO, DATA INICIAL, HORA INICIAL, DATA FINAL, HORA FINAL\n- KM INICIAL (odômetro), KM FINAL (odômetro), KM TOTAL\n- TOTAL FINAL (valor a faturar = base + extras + despesas)\n\nPara CADA OS divergente, faça análise DETALHADA campo a campo:\n\n1. **KM**: Compare KM Total da planilha vs sistema. Se diferente, o KM extra pode estar errado.\n2. **Horários**: Compare Hora Inicial e Hora Final. Se diferente, a hora extra pode estar errada.\n3. **Valor Base/Acionamento**: Se o valor base da planilha difere, pode ser tabela de preço errada.\n4. **KM Franquia vs KM Extra**: Se a franquia de KM da planilha difere da tabela do sistema, o cálculo de KM extra muda.\n5. **HR Franquia vs HR Extra**: Se a franquia de horas difere, o cálculo de hora extra muda.\n6. **Pedágio**: Valores diferentes impactam o total.\n7. **Total**: Compare receita/custo total.\n\nPara cada OS, diga EXATAMENTE:\n- Qual(is) campo(s) está(ão) divergente(s)\n- Valor na planilha vs valor no sistema\n- Ação corretiva recomendada (ex: "ajustar KM final de 45.230 para 45.180", "corrigir hora inicial de 08:30 para 09:15", "aplicar tabela de 200km ao invés de 300km", etc.)\n\nSeja DIRETO e OBJETIVO. Use português do Brasil. Valores em R$. Organize por OS.\n\nDivergências:\n${JSON.stringify(summaryData, null, 2)}\n\nResumo: ${comparisons.length} OS na planilha, ${divergences.length} com divergência, ${comparisons.filter(c => !c.found).length} não encontradas no sistema.`,
                             stream: false
@@ -1063,9 +1063,8 @@ const ExecutiveDashboard: React.FC<Props> = ({ missions, isDirector, clientTable
                 const divergences = comparisons.filter(c => !c.found || !c.revMatch || !c.costMatch);
                 const matched = comparisons.filter(c => c.found && c.revMatch && c.costMatch);
 
-                const res = await fetch('/api/gemini/generate', {
+                const res = await authFetch('/api/gemini/generate', {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
                         prompt: `Você é auditor financeiro da TM SEG (empresa de escolta armada). O usuário colou dados de uma planilha e precisa que você analise LINHA POR LINHA comparando com o sistema de gestão.\n\n## DADOS COMPARADOS (Planilha vs Sistema)\n${JSON.stringify(analysisData, null, 2)}\n\n## RESUMO RÁPIDO\n- Total de OS na planilha: ${comparisons.length}\n- OS conferidas (valores batem): ${matched.length}\n- OS com divergência: ${divergences.filter(d => d.found).length}\n- OS não encontradas no sistema: ${divergences.filter(d => !d.found).length}\n\n## INSTRUÇÕES\nPara CADA OS da planilha, diga se CONFERE ou se há DIVERGÊNCIA.\n\nPara cada OS DIVERGENTE, analise campo a campo:\n1. **Receita**: Planilha vs Sistema — se diferente, investigue valor base, KM extra, hora extra\n2. **KM**: Compare KM Total. Se diferente, verifique KM inicial/final e KM extra\n3. **Horários**: Compare hora início e fim. Se diferente, pode impactar hora extra\n4. **Pedágio**: Valores diferentes?\n5. **Custo**: Se informado, compare custo total\n\nPara cada divergência, recomende ação corretiva ESPECÍFICA.\n\nSeja DIRETO e OBJETIVO. Use português do Brasil. Valores em R$. Organize por OS.\nAo final, dê um resumo executivo com o impacto financeiro total das divergências.`,
                         stream: false

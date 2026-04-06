@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import { authFetch } from '../lib/authFetch';
 import { supabase } from '../lib/supabase';
 import { MissionStatus } from '../types';
 import {
@@ -345,7 +346,7 @@ const VendorVerificationControl: React.FC<VendorVerificationControlProps> = ({ o
 
         try {
             const [verRes] = await Promise.all([
-                fetch(`/api/vendor-verification/${mission.id}`).then(r => r.json()),
+                authFetch(`/api/vendor-verification/${mission.id}`).then(r => r.json()),
                 loadAttachments(mission.id)
             ]);
             if (verRes.ok && verRes.data) {
@@ -403,7 +404,7 @@ const VendorVerificationControl: React.FC<VendorVerificationControlProps> = ({ o
         const newTollProvValue = parseNumber(editTollProviderValue);
 
         try {
-            const res = await fetch(`/api/vendor-verification/${selectedMission.id}`, {
+            const res = await authFetch(`/api/vendor-verification/${selectedMission.id}`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -500,7 +501,7 @@ const VendorVerificationControl: React.FC<VendorVerificationControlProps> = ({ o
 
         for (const missionId of selectedIds) {
             try {
-                const res = await fetch(`/api/vendor-verification/${missionId}`, {
+                const res = await authFetch(`/api/vendor-verification/${missionId}`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
@@ -544,7 +545,7 @@ const VendorVerificationControl: React.FC<VendorVerificationControlProps> = ({ o
         setVerifiedBy('');
         setVerifiedAt('');
         try {
-            await fetch(`/api/vendor-verification/${selectedMission.id}`, {
+            await authFetch(`/api/vendor-verification/${selectedMission.id}`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({

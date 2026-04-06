@@ -30,6 +30,18 @@ const ai = new GoogleGenAI({
   },
 });
 
+function requireAuth(req: Request, res: Response, next: Function) {
+  const authHeader = req.headers['authorization'];
+  const token = authHeader?.replace('Bearer ', '') || req.headers['x-auth-token'] as string;
+
+  if (!token) {
+    return res.status(401).json({ error: 'Não autorizado' });
+  }
+
+  (req as any).authToken = token;
+  next();
+}
+
 export async function registerRoutes(
   httpServer: Server,
   app: Express
@@ -143,8 +155,8 @@ export async function registerRoutes(
   });
 
   const supabase = createClient(
-    'https://ajhmmjuewdsukecaimik.supabase.co',
-    'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFqaG1tanVld2RzdWtlY2FpbWlrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjQxNzUxMjEsImV4cCI6MjA3OTc1MTEyMX0.5bXRWTyb1HxLimt3lqJTBfjzDoumux7TXlW4lycXrPk'
+    process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || '',
+    process.env.SUPABASE_SERVICE_KEY || process.env.VITE_SUPABASE_ANON_KEY || ''
   );
 
   async function findClientEmail(clientName: string): Promise<{ email: string; data: any }> {
@@ -220,7 +232,7 @@ export async function registerRoutes(
     .subscribe();
 
   // ── Email API Endpoints ──
-  app.post("/api/email/test", async (req: Request, res: Response) => {
+  app.post("/api/email/test", requireAuth, async (req: Request, res: Response) => {
     try {
       const { to } = req.body;
       if (!to) return res.status(400).json({ error: 'Campo "to" obrigatório' });
@@ -231,7 +243,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/email/test-mission-emails", async (req: Request, res: Response) => {
+  app.post("/api/email/test-mission-emails", requireAuth, async (req: Request, res: Response) => {
     try {
       const { to } = req.body;
       if (!to) return res.status(400).json({ error: 'Campo "to" obrigatório' });
@@ -264,7 +276,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/email/welcome", async (req: Request, res: Response) => {
+  app.post("/api/email/welcome", requireAuth, async (req: Request, res: Response) => {
     try {
       const { name, email, password, userType, profileName, verificationCode } = req.body;
       if (!name || !email || !password) return res.status(400).json({ error: 'Campos name, email e password são obrigatórios' });
@@ -354,7 +366,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/email/mission-scheduled", async (req: Request, res: Response) => {
+  app.post("/api/email/mission-scheduled", requireAuth, async (req: Request, res: Response) => {
     try {
       const { missionId, client, origin, destination, start_time, mission_type, vehiclePlate, senderName } = req.body;
       if (!missionId || !client) return res.status(400).json({ error: 'Campos missionId e client obrigatórios' });
@@ -454,7 +466,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/email/mission-solicited", async (req: Request, res: Response) => {
+  app.post("/api/email/mission-solicited", requireAuth, async (req: Request, res: Response) => {
     try {
       const { missionId, provider, vehiclePlate, origin, destination, start_time, mission_type, driver_name, driver_phone, senderName } = req.body;
       if (!missionId || !provider) return res.status(400).json({ error: 'Campos missionId e provider obrigatórios' });
@@ -513,7 +525,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/email/mission-change-client", async (req: Request, res: Response) => {
+  app.post("/api/email/mission-change-client", requireAuth, async (req: Request, res: Response) => {
     try {
       const { missionId, client, origin, destination, start_time, mission_type, vehiclePlate, changes, senderName } = req.body;
       if (!missionId || !client || !changes?.length) return res.status(400).json({ error: 'Dados obrigatórios ausentes' });
@@ -534,7 +546,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/email/mission-change-provider", async (req: Request, res: Response) => {
+  app.post("/api/email/mission-change-provider", requireAuth, async (req: Request, res: Response) => {
     try {
       const { missionId, provider, origin, destination, start_time, mission_type, vehiclePlate, changes, senderName } = req.body;
       if (!missionId || !provider || !changes?.length) return res.status(400).json({ error: 'Dados obrigatórios ausentes' });
@@ -552,7 +564,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/email/mirroring-evidence", async (req: Request, res: Response) => {
+  app.post("/api/email/mirroring-evidence", requireAuth, async (req: Request, res: Response) => {
     try {
       const { missionId, client, imageUrl, vehiclePlate, origin, destination, start_time, mission_type, senderName } = req.body;
       if (!missionId || !client || !imageUrl) return res.status(400).json({ error: 'Dados obrigatórios ausentes' });
@@ -604,7 +616,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/email/mission-resend-client", async (req: Request, res: Response) => {
+  app.post("/api/email/mission-resend-client", requireAuth, async (req: Request, res: Response) => {
     try {
       const { missionId, senderName } = req.body;
       if (!missionId) return res.status(400).json({ error: 'ID da missão obrigatório' });
@@ -667,7 +679,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/gemini/generate", async (req: Request, res: Response) => {
+  app.post("/api/gemini/generate", requireAuth, async (req: Request, res: Response) => {
     try {
       const { contents, config, stream } = req.body;
       const model = req.body.model || "gemini-2.5-flash";
@@ -711,7 +723,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/chat", async (req: Request, res: Response) => {
+  app.post("/api/chat", requireAuth, async (req: Request, res: Response) => {
     try {
       const { message, history, image } = req.body;
       const systemInstruction = "Você é o assistente oficial de logística e segurança do Grupo TMSEG. Responda de forma profissional e técnica.";
@@ -1846,7 +1858,7 @@ export async function registerRoutes(
       }
   });
 
-  app.post("/api/admin/fix-mission-toll", async (req: Request, res: Response) => {
+  app.post("/api/admin/fix-mission-toll", requireAuth, async (req: Request, res: Response) => {
     try {
       const { missionId, tollValue, revenueValue } = req.body;
       if (!missionId) return res.status(400).json({ error: 'missionId obrigatório' });
@@ -1866,7 +1878,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/admin/inject-operacional-email", async (_req: Request, res: Response) => {
+  app.post("/api/admin/inject-operacional-email", requireAuth, async (_req: Request, res: Response) => {
     try {
       const OPERACIONAL = 'operacional@grupotmseg.com.br';
       const log: string[] = [];
@@ -1936,7 +1948,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/admin/cleanup-history", async (_req: Request, res: Response) => {
+  app.post("/api/admin/cleanup-history", requireAuth, async (_req: Request, res: Response) => {
       try {
           const results = await runHistoryCleanup();
           res.json({ ok: true, ...results });
@@ -1945,7 +1957,7 @@ export async function registerRoutes(
       }
   });
 
-  app.get("/api/admin/cleanup-preview", async (_req: Request, res: Response) => {
+  app.get("/api/admin/cleanup-preview", requireAuth, async (_req: Request, res: Response) => {
       try {
           const threeMonthsAgo = new Date();
           threeMonthsAgo.setMonth(threeMonthsAgo.getMonth() - 3);
@@ -2279,7 +2291,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/email/send-verification", async (req: Request, res: Response) => {
+  app.post("/api/email/send-verification", requireAuth, async (req: Request, res: Response) => {
     try {
       const { email, userName } = req.body;
       if (!email) return res.status(400).json({ error: "E-mail obrigatório" });
@@ -2310,7 +2322,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/email/verify-code", async (req: Request, res: Response) => {
+  app.post("/api/email/verify-code", requireAuth, async (req: Request, res: Response) => {
     try {
       const { sessionId, code } = req.body;
       if (!sessionId || !code) return res.status(400).json({ verified: false, error: "Dados incompletos" });
@@ -2334,7 +2346,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/billing/recalculate-all", async (req: Request, res: Response) => {
+  app.post("/api/billing/recalculate-all", requireAuth, async (req: Request, res: Response) => {
     try {
       const { dryRun = true } = req.body;
 
@@ -2502,7 +2514,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post('/api/toll/calculate', async (req: Request, res: Response) => {
+  app.post('/api/toll/calculate', requireAuth, async (req: Request, res: Response) => {
     try {
       if (!RAPIDAPI_TOLL_KEY) {
         return res.json({ success: false, apiError: 'RAPIDAPI_TOLL_KEY não configurada no servidor' });
@@ -2594,7 +2606,7 @@ export async function registerRoutes(
   // TOLL ESTIMATION VIA GEMINI AI
   // ═══════════════════════════════════════════════════════
 
-  app.post('/api/toll/gemini-estimate', async (req: Request, res: Response) => {
+  app.post('/api/toll/gemini-estimate', requireAuth, async (req: Request, res: Response) => {
     try {
       const { origin, destination } = req.body;
       if (!origin || !destination) {
@@ -2687,11 +2699,11 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
   // ASAAS INTEGRATION ROUTES
   // ═══════════════════════════════════════════════════════
 
-  app.get("/api/asaas/status", (_req: Request, res: Response) => {
+  app.get("/api/asaas/status", requireAuth, (_req: Request, res: Response) => {
     res.json({ configured: isAsaasConfigured() });
   });
 
-  app.get("/api/asaas/test-nf", async (req: Request, res: Response) => {
+  app.get("/api/asaas/test-nf", requireAuth, async (req: Request, res: Response) => {
     try {
       const company = (req.query.company as string) || undefined;
       const companies = getAsaasCompanies();
@@ -2741,7 +2753,7 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
     }
   });
 
-  app.post("/api/asaas/create-charge", async (req: Request, res: Response) => {
+  app.post("/api/asaas/create-charge", requireAuth, async (req: Request, res: Response) => {
     try {
       const { clientName, clientCpfCnpj, clientEmail, value, dueDate, description, invoiceNumber, issuerCompany, charges } = req.body;
 
@@ -2933,7 +2945,7 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
     }
   });
 
-  app.get("/api/asaas/payment/:id", async (req: Request, res: Response) => {
+  app.get("/api/asaas/payment/:id", requireAuth, async (req: Request, res: Response) => {
     try {
       const company = req.query.company as string || undefined;
       const payment = await getPayment(req.params.id, company);
@@ -2953,7 +2965,7 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
     }
   });
 
-  app.get("/api/asaas/payments", async (req: Request, res: Response) => {
+  app.get("/api/asaas/payments", requireAuth, async (req: Request, res: Response) => {
     try {
       const { status, externalReference, offset, limit, company } = req.query;
       const result = await listPayments({
@@ -2970,7 +2982,7 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
     }
   });
 
-  app.post("/api/asaas/sync-payment-status", async (req: Request, res: Response) => {
+  app.post("/api/asaas/sync-payment-status", requireAuth, async (req: Request, res: Response) => {
     try {
       const { paymentId, invoiceId, company } = req.body;
       if (!paymentId) return res.status(400).json({ error: 'paymentId obrigatório' });
@@ -3008,7 +3020,7 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
     }
   });
 
-  app.delete("/api/asaas/payment/:id", async (req: Request, res: Response) => {
+  app.delete("/api/asaas/payment/:id", requireAuth, async (req: Request, res: Response) => {
     try {
       const company = req.query.company as string || undefined;
       await deletePayment(req.params.id, company);
@@ -3160,7 +3172,7 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
     nominatimProcessing = false;
   };
 
-  app.get('/api/reverse-geocode', async (req: Request, res: Response) => {
+  app.get('/api/reverse-geocode', requireAuth, async (req: Request, res: Response) => {
     try {
       const lat = parseFloat(req.query.lat as string);
       const lng = parseFloat(req.query.lng as string);
@@ -3226,7 +3238,7 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
     }
   });
 
-  app.post('/api/admin/recalculate-batch', async (req: Request, res: Response) => {
+  app.post('/api/admin/recalculate-batch', requireAuth, async (req: Request, res: Response) => {
     try {
       const { missionIds, dryRun = true } = req.body;
       if (!missionIds || !Array.isArray(missionIds) || missionIds.length === 0) {
@@ -3369,7 +3381,7 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
     }
   });
 
-  app.post('/api/admin/restore-batch', async (req: Request, res: Response) => {
+  app.post('/api/admin/restore-batch', requireAuth, async (req: Request, res: Response) => {
     try {
       const { items } = req.body;
       if (!items || !Array.isArray(items)) {

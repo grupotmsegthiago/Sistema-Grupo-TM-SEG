@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { authFetch } from '../lib/authFetch';
 import { Bell, BellRing, X, AlertTriangle } from 'lucide-react';
 
 type DiagStatus = 'idle' | 'sent' | 'denied' | 'no-api' | 'error';
@@ -45,7 +46,7 @@ const PushNotificationManager = () => {
         if (!('serviceWorker' in navigator) || !('PushManager' in window)) return null;
 
         try {
-            const vapidRes = await fetch('/api/push/vapid-key');
+            const vapidRes = await authFetch('/api/push/vapid-key');
             const { publicKey } = await vapidRes.json();
             if (!publicKey) return null;
 
@@ -60,7 +61,7 @@ const PushNotificationManager = () => {
             }
 
             const userData = JSON.parse(localStorage.getItem('userData') || '{}');
-            await fetch('/api/push/subscribe', {
+            await authFetch('/api/push/subscribe', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ subscription: sub.toJSON(), userId: userData.name || sub.endpoint })
@@ -120,7 +121,7 @@ const PushNotificationManager = () => {
         setDiagMsg('Enviando notificação pelo servidor...');
 
         try {
-            const res = await fetch('/api/push/test', {
+            const res = await authFetch('/api/push/test', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ subscription: sub.toJSON() })

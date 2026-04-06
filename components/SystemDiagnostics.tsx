@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { authFetch } from '../lib/authFetch';
 import { 
     X, Loader2, CheckCircle2, XCircle, AlertTriangle, Wifi, WifiOff, 
     Database, Server, Globe, Shield, Zap, Clock, HardDrive, RefreshCw,
@@ -80,7 +81,7 @@ const SystemDiagnostics: React.FC<Props> = ({ onClose }) => {
 
         await runTest(0, async () => {
             if (!navigator.onLine) return { status: 'error', detail: 'Sem conexão com a internet detectada' };
-            const lat = await measureLatency(() => fetch('/api/health', { cache: 'no-store' }).catch(() => fetch(window.location.origin, { cache: 'no-store' })));
+            const lat = await measureLatency(() => authFetch('/api/health', { cache: 'no-store' }).catch(() => fetch(window.location.origin, { cache: 'no-store' })));
             return { status: 'ok', latency: lat, detail: `Online — ${lat}ms` };
         });
 
@@ -96,7 +97,7 @@ const SystemDiagnostics: React.FC<Props> = ({ onClose }) => {
         await runTest(2, async () => {
             const pings: number[] = [];
             for (let i = 0; i < 3; i++) {
-                const lat = await measureLatency(() => fetch(`/api/health?t=${Date.now()}`, { cache: 'no-store' }).catch(() => {}));
+                const lat = await measureLatency(() => authFetch(`/api/health?t=${Date.now()}`, { cache: 'no-store' }).catch(() => {}));
                 pings.push(lat);
             }
             const avg = Math.round(pings.reduce((a, b) => a + b, 0) / pings.length);
@@ -115,7 +116,7 @@ const SystemDiagnostics: React.FC<Props> = ({ onClose }) => {
                     }
                     const newPings: number[] = [];
                     for (let i = 0; i < 3; i++) {
-                        const lat = await measureLatency(() => fetch(`/api/health?t=${Date.now()}`, { cache: 'no-store' }).catch(() => {}));
+                        const lat = await measureLatency(() => authFetch(`/api/health?t=${Date.now()}`, { cache: 'no-store' }).catch(() => {}));
                         newPings.push(lat);
                     }
                     const newAvg = Math.round(newPings.reduce((a, b) => a + b, 0) / newPings.length);
@@ -128,7 +129,7 @@ const SystemDiagnostics: React.FC<Props> = ({ onClose }) => {
         await runTest(3, async () => {
             try {
                 const lat = await measureLatency(async () => {
-                    const res = await fetch('/api/health', { cache: 'no-store' });
+                    const res = await authFetch('/api/health', { cache: 'no-store' });
                     if (!res.ok) throw new Error(`HTTP ${res.status}`);
                 });
                 return { status: lat < 500 ? 'ok' : 'warning', latency: lat, detail: `API respondendo em ${lat}ms` };
@@ -198,7 +199,7 @@ const SystemDiagnostics: React.FC<Props> = ({ onClose }) => {
         await runTest(9, async () => {
             try {
                 const lat = await measureLatency(async () => {
-                    const res = await fetch('/api/health', { cache: 'no-store' });
+                    const res = await authFetch('/api/health', { cache: 'no-store' });
                     if (!res.ok) throw new Error(`HTTP ${res.status}`);
                 });
                 return { status: 'ok', latency: lat, detail: `Gemini via backend disponível: ${lat}ms` };

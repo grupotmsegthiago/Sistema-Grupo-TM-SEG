@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { Mission, MissionStatus } from '../types';
+import { authFetch } from '../lib/authFetch';
 import { supabase } from '../lib/supabase';
 import { generateContent } from '../lib/gemini';
 import { googleMapsApiKey } from '../lib/maps';
@@ -108,7 +109,7 @@ const MissionOperationalReport: React.FC<Props> = ({ mission, onClose, isClientV
             setMissionLogs(logsRes.data || []);
 
             try {
-                const reportRes = await fetch(`/api/missions/${encodeURIComponent(mission.id)}/operational-report`);
+                const reportRes = await authFetch(`/api/missions/${encodeURIComponent(mission.id)}/operational-report`);
                 const reportData = await reportRes.json();
                 if (reportData?.operational_report) {
                     setGeneratedReport(reportData.operational_report);
@@ -156,7 +157,7 @@ const MissionOperationalReport: React.FC<Props> = ({ mission, onClose, isClientV
             localPhotos.filter(s => s.preview).forEach(s => {
                 photosPayload.push({ type: 'local', label: s.label, preview: s.preview! });
             });
-            const res = await fetch(`/api/missions/${encodeURIComponent(mission.id)}/operational-report`, {
+            const res = await authFetch(`/api/missions/${encodeURIComponent(mission.id)}/operational-report`, {
                 method: 'PATCH',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({

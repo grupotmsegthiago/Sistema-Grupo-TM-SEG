@@ -1,5 +1,6 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
+import { authFetch } from '../lib/authFetch';
 import { supabase } from '../lib/supabase';
 import { DATA_RETENTION } from '../constants';
 import { 
@@ -66,7 +67,7 @@ const MaintenanceDashboard: React.FC = () => {
     const fetchDbCapacity = useCallback(async () => {
         setCapacityLoading(true);
         try {
-            const resp = await fetch('/api/db/capacity');
+            const resp = await authFetch('/api/db/capacity');
             if (resp.ok) {
                 const data = await resp.json();
                 setDbCapacity(data);
@@ -81,7 +82,7 @@ const MaintenanceDashboard: React.FC = () => {
     const fetchPlatformCosts = useCallback(async () => {
         setCostsLoading(true);
         try {
-            const resp = await fetch('/api/platform/costs');
+            const resp = await authFetch('/api/platform/costs');
             if (resp.ok) {
                 const data = await resp.json();
                 setPlatformCosts(data);
@@ -165,7 +166,7 @@ const MaintenanceDashboard: React.FC = () => {
         setIsProcessing('VACUUM');
         setVacuumResults(null);
         try {
-            const resp = await fetch('/api/db/vacuum', {
+            const resp = await authFetch('/api/db/vacuum', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({})

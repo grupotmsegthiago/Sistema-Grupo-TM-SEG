@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Send, Bot, User, Loader2, Sparkles, AlertCircle, Image as ImageIcon, X } from 'lucide-react';
+import { authFetch } from '../lib/authFetch';
 
 interface Message {
   id: string;
@@ -57,9 +58,8 @@ const AIChatbot: React.FC = () => {
       if (currentImage) {
         const base64Data = currentImage.split(',')[1];
         const mimeType = currentImage.split(';')[0].split(':')[1];
-        const response = await fetch('/api/chat', {
+        const response = await authFetch('/api/chat', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             message: currentInput || "Analise esta imagem sob a ótica de segurança logística.",
             image: { data: base64Data, mimeType }
@@ -77,9 +77,8 @@ const AIChatbot: React.FC = () => {
           text: m.text
         }));
 
-        const response = await fetch('/api/chat', {
+        const response = await authFetch('/api/chat', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ message: currentInput, history })
         });
 

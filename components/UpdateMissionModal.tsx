@@ -1,6 +1,7 @@
 
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { Mission, MissionStatus, ProviderData, Agent, Vehicle, User as UserType, ClientPriceTable, ClientVehicleDB } from '../types';
+import { authFetch } from '../lib/authFetch';
 import { supabase } from '../lib/supabase';
 import { logAction } from '../lib/logger';
 import { useNotification } from '../lib/NotificationContext';
@@ -517,7 +518,7 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
         for (let attempt = 0; attempt <= retries; attempt++) {
             try {
                 if (attempt > 0) await new Promise(r => setTimeout(r, 1500 * attempt));
-                const resp = await fetch(`/api/reverse-geocode?lat=${lat}&lng=${lng}`);
+                const resp = await authFetch(`/api/reverse-geocode?lat=${lat}&lng=${lng}`);
                 const data = await resp.json();
                 if (data.success && data.address) {
                     const finalAddress = data.address;
@@ -614,7 +615,7 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
 
             try {
                 const vehiclePlate = searchVehicle || editData.client_vehicle_plate || '—';
-                await fetch('/api/email/mirroring-evidence', {
+                await authFetch('/api/email/mirroring-evidence', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
@@ -1067,7 +1068,7 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
                 const clientSafeChanges = providerChanges.filter(c => c.field !== 'Fornecedor');
                 if (clientSafeChanges.length > 0) {
                     try {
-                        await fetch('/api/email/mission-change-client', {
+                        await authFetch('/api/email/mission-change-client', {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify({
@@ -1102,7 +1103,7 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
 
             if (driverChanges.length > 0 && editData.provider) {
                 try {
-                    await fetch('/api/email/mission-change-provider', {
+                    await authFetch('/api/email/mission-change-provider', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({
@@ -1303,9 +1304,8 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
                                         setIsSendingConfirmedEmail(true);
                                         try {
                                             if (emailConfirmDialog.clientPayload) {
-                                                const emailRes = await fetch('/api/email/mission-scheduled', {
+                                                const emailRes = await authFetch('/api/email/mission-scheduled', {
                                                     method: 'POST',
-                                                    headers: { 'Content-Type': 'application/json' },
                                                     body: JSON.stringify(emailConfirmDialog.clientPayload)
                                                 });
                                                 const emailData = await emailRes.json();
@@ -1316,9 +1316,8 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
                                                 }
                                             }
                                             if (emailConfirmDialog.providerPayload) {
-                                                const emailRes = await fetch('/api/email/mission-solicited', {
+                                                const emailRes = await authFetch('/api/email/mission-solicited', {
                                                     method: 'POST',
-                                                    headers: { 'Content-Type': 'application/json' },
                                                     body: JSON.stringify(emailConfirmDialog.providerPayload)
                                                 });
                                                 const emailData = await emailRes.json();

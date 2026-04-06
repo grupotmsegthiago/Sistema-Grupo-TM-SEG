@@ -1,5 +1,6 @@
 import React, { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import { Mission, MissionStatus, ClientPriceTable, ProviderCostTable } from '../types';
+import { authFetch } from '../lib/authFetch';
 import { calculateMissionFinancials } from '../lib/financialUtils';
 import { FileText, Download, Calendar, Printer, Search, ChevronDown, Activity, Eye, Plus, X, Check, Loader2, Filter } from 'lucide-react';
 
@@ -159,10 +160,10 @@ const ClientReportsTab: React.FC<Props> = ({ missions, clientTables = [], provid
         if (!clientId) return;
         try {
             const [c, o, t, r] = await Promise.all([
-                fetch(`/api/client-registries/${encodeURIComponent(clientId)}/contrato`).then(r => r.json()),
-                fetch(`/api/client-registries/${encodeURIComponent(clientId)}/operacao`).then(r => r.json()),
-                fetch(`/api/client-registries/${encodeURIComponent(clientId)}/tsp`).then(r => r.json()),
-                fetch(`/api/client-registries/${encodeURIComponent(clientId)}/responsavel`).then(r => r.json()),
+                authFetch(`/api/client-registries/${encodeURIComponent(clientId)}/contrato`).then(r => r.json()),
+                authFetch(`/api/client-registries/${encodeURIComponent(clientId)}/operacao`).then(r => r.json()),
+                authFetch(`/api/client-registries/${encodeURIComponent(clientId)}/tsp`).then(r => r.json()),
+                authFetch(`/api/client-registries/${encodeURIComponent(clientId)}/responsavel`).then(r => r.json()),
             ]);
             setContratos(Array.isArray(c) ? c : []);
             setOperacoes(Array.isArray(o) ? o : []);
@@ -174,7 +175,7 @@ const ClientReportsTab: React.FC<Props> = ({ missions, clientTables = [], provid
     const fetchNotes = useCallback(async () => {
         if (!clientId) return;
         try {
-            const data = await fetch(`/api/client-mission-notes/bulk/${encodeURIComponent(clientId)}`).then(r => r.json());
+            const data = await authFetch(`/api/client-mission-notes/bulk/${encodeURIComponent(clientId)}`).then(r => r.json());
             if (Array.isArray(data)) {
                 const map: Record<string, MissionNote> = {};
                 data.forEach((n: any) => { map[n.mission_id] = n; });
@@ -186,7 +187,7 @@ const ClientReportsTab: React.FC<Props> = ({ missions, clientTables = [], provid
 
     useEffect(() => {
         if (clientId) {
-            fetch('/api/client-registries/init', { method: 'POST' }).catch(() => {});
+            authFetch('/api/client-registries/init', { method: 'POST' }).catch(() => {});
             fetchRegistries();
             fetchNotes();
         }
@@ -195,7 +196,7 @@ const ClientReportsTab: React.FC<Props> = ({ missions, clientTables = [], provid
     const addRegistry = async (type: string, name: string) => {
         if (!clientId) return;
         try {
-            await fetch('/api/client-registries', {
+            await authFetch('/api/client-registries', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ client_id: clientId, type, name })
@@ -211,7 +212,7 @@ const ClientReportsTab: React.FC<Props> = ({ missions, clientTables = [], provid
         setNotes(prev => ({ ...prev, [missionId]: updated }));
         setSavingNotes(prev => ({ ...prev, [missionId]: true }));
         try {
-            await fetch('/api/client-mission-notes', {
+            await authFetch('/api/client-mission-notes', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ mission_id: missionId, client_id: clientId, ...updated })

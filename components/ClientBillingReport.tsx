@@ -1,5 +1,6 @@
 
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import { authFetch } from '../lib/authFetch';
 import { supabase } from '../lib/supabase';
 import { Mission, Client, ClientPriceTable, ProviderCostTable } from '../types';
 import { FileText, Search, Printer, Loader2, FileSpreadsheet, BarChart3, Users, Building2, ChevronDown, ChevronRight, List, ExternalLink, Receipt, Camera, Sparkles, X, AlertCircle, CheckCircle2, ScanLine, Image as ImageIcon, DollarSign, Plus, Trash2, GitBranch, Calendar, Lock, Pencil, ArrowRight, ArrowLeftRight, Check } from 'lucide-react';
@@ -56,7 +57,7 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
     const [boletimFilter, setBoletimFilter] = useState<'todas' | 'aprovadas' | 'pendentes'>('todas');
 
     useEffect(() => {
-        fetch('/api/asaas/status').then(r => r.json()).then(d => setAsaasConfigured(d.configured)).catch(() => {});
+        authFetch('/api/asaas/status').then(r => r.json()).then(d => setAsaasConfigured(d.configured)).catch(() => {});
     }, []);
 
     useEffect(() => {
@@ -1372,9 +1373,8 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
             }
             setAsaasLoading(true);
             try {
-                const res = await fetch('/api/asaas/create-charge', {
+                const res = await authFetch('/api/asaas/create-charge', {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
                         clientName: clientObj?.trading_name || clientObj?.name || 'Cliente',
                         clientEmail: invoiceMedicaoEmail,
@@ -1410,9 +1410,8 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
 
         setAsaasLoading(true);
         try {
-            const res = await fetch('/api/asaas/create-charge', {
+            const res = await authFetch('/api/asaas/create-charge', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     clientName: clientObj.trading_name || clientObj.name,
                     clientCpfCnpj: clientObj.cnpj.replace(/\D/g, ''),

@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
+import { authFetch } from '../lib/authFetch';
 import { supabase } from '../lib/supabase';
 import {
   FileText, Search, Filter, RefreshCw, ExternalLink, Copy, CheckCircle2,
@@ -65,7 +66,7 @@ const FinancialInvoiceControl: React.FC = () => {
   const fetchInvoices = useCallback(async () => {
     setLoading(true);
     try {
-      await fetch('/api/supabase/init-invoices', { method: 'POST' });
+      await authFetch('/api/supabase/init-invoices', { method: 'POST' });
       const { data, error } = await supabase
         .from('financial_invoices')
         .select('*')
@@ -95,7 +96,7 @@ const FinancialInvoiceControl: React.FC = () => {
     if (!inv.asaas_payment_id) return;
     setSyncingId(inv.id);
     try {
-      const res = await fetch('/api/asaas/sync-payment-status', {
+      const res = await authFetch('/api/asaas/sync-payment-status', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -128,7 +129,7 @@ const FinancialInvoiceControl: React.FC = () => {
 
       if (inv.asaas_payment_id) {
         try {
-          await fetch(`/api/asaas/payment/${inv.asaas_payment_id}?company=${encodeURIComponent(inv.issuer_company || '')}`, { method: 'DELETE' });
+          await authFetch(`/api/asaas/payment/${inv.asaas_payment_id}?company=${encodeURIComponent(inv.issuer_company || '')}`, { method: 'DELETE' });
         } catch {}
       }
       await fetchInvoices();

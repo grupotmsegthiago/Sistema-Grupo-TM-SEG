@@ -1,5 +1,6 @@
 
 import React, { memo, useMemo, useState, useRef, useEffect, useCallback } from 'react';
+import { authFetch } from '../lib/authFetch';
 import { Mission, MissionStatus, MissionLog, ClientPriceTable, ProviderCostTable, Client } from '../types';
 import { supabase } from '../lib/supabase';
 import { 
@@ -28,7 +29,7 @@ const reverseGeocodeAddress = async (lat: number, lng: number): Promise<string> 
 
     const promise = (async () => {
         try {
-            const resp = await fetch(`/api/reverse-geocode?lat=${lat}&lng=${lng}`);
+            const resp = await authFetch(`/api/reverse-geocode?lat=${lat}&lng=${lng}`);
             const data = await resp.json();
             if (data.success && data.address) {
                 geocodeCache[cacheKey] = data.address;

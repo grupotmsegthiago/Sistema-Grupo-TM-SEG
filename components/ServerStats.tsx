@@ -1,5 +1,6 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
+import { authFetch } from '../lib/authFetch';
 import { 
   Activity, Database, Zap, Clock, Server, RefreshCw, Truck, Play, 
   Loader2, ExternalLink, HelpCircle, MessageSquare, Map as MapIcon, 
@@ -115,12 +116,12 @@ const ServerStats: React.FC = () => {
       if (!silent) setMonitorLoading(true);
       try {
           const [statusRes, dbRes, storageRes, healthRes, linksRes, capRes] = await Promise.allSettled([
-              fetch('/api/supabase/status').then(r => r.json()),
-              fetch('/api/supabase/db-metrics').then(r => r.json()),
-              fetch('/api/supabase/storage-usage').then(r => r.json()),
-              fetch('/api/supabase/health-check').then(r => r.json()),
-              fetch('/api/supabase/billing-links').then(r => r.json()),
-              fetch('/api/db/capacity').then(r => r.json()),
+              authFetch('/api/supabase/status').then(r => r.json()),
+              authFetch('/api/supabase/db-metrics').then(r => r.json()),
+              authFetch('/api/supabase/storage-usage').then(r => r.json()),
+              authFetch('/api/supabase/health-check').then(r => r.json()),
+              authFetch('/api/supabase/billing-links').then(r => r.json()),
+              authFetch('/api/db/capacity').then(r => r.json()),
           ]);
           if (statusRes.status === 'fulfilled') setSupaStatus(statusRes.value);
           if (dbRes.status === 'fulfilled') setDbMetrics(dbRes.value);
@@ -129,7 +130,7 @@ const ServerStats: React.FC = () => {
           if (linksRes.status === 'fulfilled') setBillingLinks(linksRes.value);
           if (capRes.status === 'fulfilled') setDbCapacity(capRes.value);
           try {
-              const costsResp = await fetch('/api/platform/costs');
+              const costsResp = await authFetch('/api/platform/costs');
               if (costsResp.ok) setPlatformCosts(await costsResp.json());
           } catch {}
       } catch (err) {

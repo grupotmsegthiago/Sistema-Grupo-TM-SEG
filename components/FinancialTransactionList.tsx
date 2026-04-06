@@ -1,5 +1,6 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
+import { authFetch } from '../lib/authFetch';
 import { supabase } from '../lib/supabase';
 import { FinancialTransaction, TransactionType, TransactionStatus, FinancialAccount, FinancialCategory } from '../types';
 import { 
@@ -95,12 +96,12 @@ const FinancialTransactionList: React.FC = () => {
         if (error) {
             if (error.code === '42P01') {
                 console.warn('financial_invoices table does not exist yet. Attempting init...');
-                try { await fetch('/api/supabase/init-invoices', { method: 'POST' }); } catch {}
+                try { await authFetch('/api/supabase/init-invoices', { method: 'POST' }); } catch {}
             }
             return;
         }
         if (data) setInvoices(data as any);
-        try { await fetch('/api/supabase/init-invoices', { method: 'POST' }); } catch {}
+        try { await authFetch('/api/supabase/init-invoices', { method: 'POST' }); } catch {}
     };
 
     const fetchTransactions = async () => {

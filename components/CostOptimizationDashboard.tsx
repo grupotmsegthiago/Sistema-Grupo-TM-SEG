@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { authFetch } from '../lib/authFetch';
 import { supabase } from '../lib/supabase';
 import { generateContent } from '../lib/gemini';
 import { 
@@ -97,7 +98,7 @@ const CostOptimizationDashboard: React.FC = () => {
 
     const fetchPlatformCosts = async () => {
         try {
-            const resp = await fetch('/api/platform/costs');
+            const resp = await authFetch('/api/platform/costs');
             if (resp.ok) {
                 const data = await resp.json();
                 setPlatformCosts(data);
@@ -124,7 +125,7 @@ const CostOptimizationDashboard: React.FC = () => {
     const saveCostOverrides = async () => {
         setSavingCosts(true);
         try {
-            const resp = await fetch('/api/platform/costs/overrides', {
+            const resp = await authFetch('/api/platform/costs/overrides', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ overrides: costForm }),

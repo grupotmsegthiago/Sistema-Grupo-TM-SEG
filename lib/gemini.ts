@@ -1,11 +1,12 @@
+import { authFetch } from './authFetch';
+
 export async function generateContent(options: {
   contents: any;
   config?: any;
   model?: string;
 }): Promise<string> {
-  const response = await fetch('/api/gemini/generate', {
+  const response = await authFetch('/api/gemini/generate', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       contents: options.contents,
       config: options.config,
@@ -27,9 +28,8 @@ export async function generateContentStream(options: {
   model?: string;
   onChunk: (text: string) => void;
 }): Promise<string> {
-  const response = await fetch('/api/gemini/generate', {
+  const response = await authFetch('/api/gemini/generate', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       contents: options.contents,
       config: options.config,
