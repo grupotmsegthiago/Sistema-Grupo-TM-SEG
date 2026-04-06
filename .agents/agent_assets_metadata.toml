@@ -12,3 +12,9 @@ id = "0F5GiU1sEfjwdrUTrYKJX"
 uri = "file://attached_assets/AUDITORIA_FATURAMENTO_CODIGO_COMPLETO.md"
 type = "text"
 title = "Código Completo - Auditoria de Faturamento TMSEGo"
+
+[[outputs]]
+id = "W4VckYU8IJ3mj4WBQnvNv"
+uri = "file://analise_selecao_tabelas.md"
+type = "text"
+title = "Análise Completa — Seleção de Tabelas de Preço e Custo"
