@@ -1,0 +1,97 @@
+Você é um engenheiro sênior. Preciso que você faça 3 melhorias no projeto. 
+Faça UMA por vez, confirme que funcionou, depois vá para a próxima.
+NÃO altere lógica de negócio — apenas as melhorias descritas.
+
+---
+
+MELHORIA 1 — Função centralizada de datas com timezone America/Sao_Paulo
+
+Crie o arquivo lib/dateUtils.ts com este conteúdo:
+
+const TZ = 'America/Sao_Paulo';
+
+export const nowBR = (): Date => {
+  return new Date(new Date().toLocaleString('en-US', { timeZone: TZ }));
+};
+
+export const formatDateBR = (date: string | Date | null | undefined): string => {
+  if (!date) return '—';
+  try {
+    return new Date(date).toLocaleDateString('pt-BR', { timeZone: TZ });
+  } catch { return '—'; }
+};
+
+export const formatDateTimeBR = (date: string | Date | null | undefined): string => {
+  if (!date) return '—';
+  try {
+    return new Date(date).toLocaleString('pt-BR', { timeZone: TZ });
+  } catch { return '—'; }
+};
+
+export const toISOBR = (): string => {
+  return new Date().toLocaleString('sv-SE', { timeZone: TZ }).replace(' ', 'T');
+};
+
+Depois rode este grep para encontrar onde datas são tratadas individualmente:
+grep -rn "new Date()\|toLocaleDateString\|toLocaleString" . --include="*.tsx" --include="*.ts" | grep -v node_modules | grep -v cache | grep -v attached | grep -v ".local" | grep -v ".bun" | grep -v dateUtils
+
+Liste os resultados e substitua os casos mais críticos (componentes financeiros e de missões) pelas funções do dateUtils.ts. NÃO mexa em componentes de UI simples ainda.
+
+---
+
+MELHORIA 2 — Logs de exclusão no Supabase
+
+Rode este grep para encontrar todos os .delete() sem log:
+grep -rn "\.delete()" . --include="*.tsx" --include="*.ts" | grep -v node_modules | grep -v cache | grep -v attached | grep -v ".local"
+
+Para cada .delete() encontrado nos arquivos de components/ que NÃO tenha um system_logs.insert logo depois, adicione o log assim:
+
+// Exemplo de padrão a seguir:
+const { error } = await supabase.from('TABELA').delete().eq('id', itemId);
+if (!error) {
+  const userData = JSON.parse(localStorage.getItem('userData') || '{}');
+  await supabase.from('system_logs').insert([{
+    action_type: 'DELETE',
+    entity: 'ENTIDADE',
+    entity_id: String(itemId),
+    user_id: userData.id || null,
+    user_name: userData.name || 'Sistema',
+    details: `Registro excluído: ${itemId}`,
+    created_at: new Date().toISOString()
+  }]);
+}
+
+Liste quais arquivos foram modificados.
+
+---
+
+MELHORIA 3 — Reconexão automática do Realtime
+
+No arquivo components/MissionTable.tsx, encontre o canal 'missions-changes' e adicione handler de status assim:
+
+ANTES (padrão atual):
+const channel = supabase
+  .channel('missions-changes')
+  .on('postgres_changes', { event: '*', schema: 'public', table: 'missions' }, handler)
+  .subscribe();
+
+DEPOIS:
+const channel = supabase
+  .channel('missions-changes')
+  .on('postgres_changes', { event: '*', schema: 'public', table: 'missions' }, handler)
+  .subscribe((status) => {
+    if (status === 'SUBSCRIBED') {
+      console.log('[Realtime] Canal missions conectado');
+    }
+    if (status === 'CLOSED' || status === 'CHANNEL_ERROR') {
+      console.warn('[Realtime] Canal missions desconectado — reconectando em 3s...');
+      setTimeout(() => {
+        supabase.removeChannel(channel);
+        // O useEffect vai recriar o canal no próximo render
+      }, 3000);
+    }
+  });
+
+Aplique o mesmo padrão no arquivo lib/NotificationContext.tsx no canal 'global-system-broadcast'.
+
+Após cada melhoria, confirme que o servidor continua rodando sem erros.
