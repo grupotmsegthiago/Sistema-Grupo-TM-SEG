@@ -500,7 +500,16 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
               const m = payload.new;
               showNotification('Nova Solicitação', `${m.client || 'Cliente'} criou OS ${m.id}`, 'info');
           })
-          .subscribe();
+          .subscribe((status: string) => {
+              if (status === 'SUBSCRIBED') {
+                console.log('[Realtime] Canal solicitation_alerts reconectado — recarregando dados...');
+                fetchMissions(true);
+              }
+              if (status === 'CLOSED' || status === 'CHANNEL_ERROR') {
+                console.warn('[Realtime] Canal solicitation_alerts desconectado — tentando reconexão em 3s...');
+                setTimeout(() => { channel.subscribe(); }, 3000);
+              }
+          });
       return () => { supabase.removeChannel(channel); };
   }, [isRestrictedClientView, currentUser, showNotification]);
 

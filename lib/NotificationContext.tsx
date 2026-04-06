@@ -138,7 +138,15 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
           }
         }
       )
-      .subscribe();
+      .subscribe((status: string) => {
+        if (status === 'SUBSCRIBED') {
+          console.log('[Realtime] Canal global-system-broadcast reconectado.');
+        }
+        if (status === 'CLOSED' || status === 'CHANNEL_ERROR') {
+          console.warn('[Realtime] Canal global-system-broadcast desconectado — tentando reconexão em 3s...');
+          setTimeout(() => { channel.subscribe(); }, 3000);
+        }
+      });
 
     return () => {
       supabase.removeChannel(channel);

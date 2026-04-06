@@ -450,7 +450,16 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
                 fetchMissions(true);
               }
             )
-            .subscribe();
+            .subscribe((status: string) => {
+              if (status === 'SUBSCRIBED') {
+                console.log('[Realtime] Canal missions reconectado — recarregando dados...');
+                fetchMissions(true);
+              }
+              if (status === 'CLOSED' || status === 'CHANNEL_ERROR') {
+                console.warn('[Realtime] Canal missions desconectado — tentando reconexão em 3s...');
+                setTimeout(() => { channel.subscribe(); }, 3000);
+              }
+            });
           const broadcastChannel = supabase
             .channel('mission-updates')
             .on('broadcast', { event: 'mission_updated' }, ({ payload }) => {
@@ -462,7 +471,12 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
                 );
               }
             })
-            .subscribe();
+            .subscribe((status: string) => {
+              if (status === 'CLOSED' || status === 'CHANNEL_ERROR') {
+                console.warn('[Realtime] Canal broadcast desconectado — tentando reconexão em 3s...');
+                setTimeout(() => { broadcastChannel.subscribe(); }, 3000);
+              }
+            });
           const interval = setInterval(() => fetchMissions(true), 60000);
           const handleExternalRefresh = () => fetchMissions(true);
           window.addEventListener('refreshMissions', handleExternalRefresh);
