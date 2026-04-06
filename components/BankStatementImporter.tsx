@@ -231,6 +231,17 @@ const BankStatementImporter: React.FC<Props> = ({ onClose, onSuccess }) => {
           const { error: delErr } = await supabase.from('financial_transactions').delete().eq('id', item.linked_transaction_id);
           if (delErr) throw delErr;
 
+          const userData = JSON.parse(localStorage.getItem('userData') || '{}');
+          await supabase.from('system_logs').insert([{
+              action_type: 'DELETE',
+              entity: 'BankStatement',
+              entity_id: String(item.linked_transaction_id),
+              user_id: userData.id || null,
+              user_name: userData.name || 'Sistema',
+              details: `Registro excluído: Lançamento ${item.description || 'N/A'} (R$ ${item.amount?.toFixed(2) || '0.00'})`,
+              created_at: new Date().toISOString()
+          }]);
+
           setResults(prev => prev.map(r => r.id === item.id ? { 
               ...r, 
               status: 'MISSING', 

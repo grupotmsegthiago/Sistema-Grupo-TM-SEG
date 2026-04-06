@@ -98,6 +98,17 @@ const QuoteList: React.FC<Props> = ({ onAdd, onEdit, clientName, embedded = fals
         const { data, error } = await supabase.from('quotes').delete().eq('id', id).select();
         if(error) throw error;
         if (!data || data.length === 0) throw new Error("Erro de permissão.");
+        const deletedQuote = data[0];
+        const userData = JSON.parse(localStorage.getItem('userData') || '{}');
+        await supabase.from('system_logs').insert([{
+            action_type: 'DELETE',
+            entity: 'Quote',
+            entity_id: String(id),
+            user_id: userData.id || null,
+            user_name: userData.name || 'Sistema',
+            details: `Registro excluído: ${deletedQuote?.client_name || 'N/A'} — ${deletedQuote?.origin || '?'} → ${deletedQuote?.destination || '?'}`,
+            created_at: new Date().toISOString()
+        }]);
         fetchQuotes();
     } catch(e: any) { alert(e.message) }
     finally { setIsDeleting(null) }

@@ -96,6 +96,17 @@ const ProfileList: React.FC<Props> = ({ onAdd, onEdit }) => {
               throw new Error("Erro de permissão: O banco de dados recusou a exclusão.");
           }
           
+          const userData = JSON.parse(localStorage.getItem('userData') || '{}');
+          await supabase.from('system_logs').insert([{
+              action_type: 'DELETE',
+              entity: 'Profile',
+              entity_id: String(id),
+              user_id: userData.id || null,
+              user_name: userData.name || 'Sistema',
+              details: `Registro excluído: ${name}`,
+              created_at: new Date().toISOString()
+          }]);
+
           alert('Perfil excluído com sucesso.');
           queryClientRQ.invalidateQueries({ queryKey: ['profiles'] });
 
