@@ -36,3 +36,9 @@ id = "oLH6dE3FrNS4cGmTzDxJs"
 uri = "file://RELATORIO_SESSAO_COMPLETO.md"
 type = "text"
 title = "Relatório Completo da Sessão"
+
+[[outputs]]
+id = "wRrAS8zIQx2K25ZS6WcTp"
+uri = "file://IMPLANTACAO_ASSISTENTE_IA_TABELA.md"
+type = "text"
+title = "Documento de Implantação — Assistente IA para Tabela de Preços"
