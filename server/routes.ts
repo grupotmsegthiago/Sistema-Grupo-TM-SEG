@@ -1527,7 +1527,6 @@ export async function registerRoutes(
       ]);
 
       const { calculateMissionFinancials } = await import('../lib/financialUtils');
-      const clientData = (clients || []).find((c: any) => (c.name || '').trim().toUpperCase() === clientName.trim().toUpperCase()) || null;
       const now = new Date();
       let updated = 0, skipped = 0, errCount = 0;
       const changes: any[] = [];
@@ -1536,17 +1535,30 @@ export async function registerRoutes(
         try {
           if (raw.billing_approved) { skipped++; continue; }
 
+          await supabaseAdmin.from('system_logs').delete().eq('entity', 'BillingAdjustment').eq('entity_id', raw.id);
+
+          const missionClientTrimmed = (raw.client || '').trim().toUpperCase();
+          const clientData = (clients || []).find((c: any) => (c.name || '').trim().toUpperCase() === missionClientTrimmed) || null;
+
           const m = { ...raw, startKm: raw.start_km, endKm: raw.end_km, startTime: raw.start_time, endTime: raw.end_time, agentCount: raw.agent_count || 1, is_same_os: raw.is_same_os || false };
           const calc = calculateMissionFinancials(m, clientTables || [], providerTables || [], clientData, now);
           if (!calc) { skipped++; continue; }
 
           const newRevenue = calc.client.total || 0;
           const newCost = calc.provider.total || 0;
+          const newToll = calc.tollValue || raw.toll_value || 0;
           const oldRevenue = raw.revenue_value || 0;
           const oldCost = raw.cost_value || 0;
 
+          await supabaseAdmin.from('missions').update({
+            revenue_value: newRevenue,
+            cost_value: newCost,
+            toll_value: newToll,
+            billing_verified_by: null,
+            snapshot_approved_by: null,
+          }).eq('id', raw.id);
+
           if (Math.abs(newRevenue - oldRevenue) > 0.01 || Math.abs(newCost - oldCost) > 0.01) {
-            await supabaseAdmin.from('missions').update({ revenue_value: newRevenue, cost_value: newCost }).eq('id', raw.id);
             changes.push({ id: raw.id, oldRev: oldRevenue, newRev: newRevenue, oldCost: oldCost, newCost: newCost });
             updated++;
           } else {
