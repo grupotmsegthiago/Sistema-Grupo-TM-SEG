@@ -1,6 +1,7 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../lib/supabase';
+import { useRealtimeRefresh } from '../lib/RealtimeProvider';
 import { logAction } from '../lib/logger';
 import { ClientPriceTable } from '../types';
 import { Plus, Search, DollarSign, Clock, Gauge, Shield, RefreshCw, Pencil, Trash2, Loader2, Database, AlertTriangle, FileSpreadsheet, CheckSquare, Square, X, Save, Edit2, Lock, Zap, Percent, TrendingUp, Wand2 } from 'lucide-react';
@@ -76,6 +77,8 @@ const ClientPriceList: React.FC<Props> = ({ onAdd, onEdit }) => {
     }
     fetchTables();
   }, []);
+
+  useRealtimeRefresh('client_price_tables', () => fetchTables());
 
   const fetchTables = async () => {
     setIsLoading(true);

@@ -1,6 +1,7 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../lib/supabase';
+import { useRealtimeRefresh } from '../lib/RealtimeProvider';
 import { FinancialTransaction, FinancialAccount } from '../types';
 import { 
     Calendar, ArrowUpCircle, ArrowDownCircle, Landmark, 
@@ -29,6 +30,8 @@ const DailyCashMovement: React.FC = () => {
     useEffect(() => {
         fetchData();
     }, [startDate, endDate]);
+
+    useRealtimeRefresh(['financial_transactions', 'financial_accounts'], () => fetchData());
 
     const fetchData = async () => {
         setLoading(true);

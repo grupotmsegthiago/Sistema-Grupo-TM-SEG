@@ -1,6 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
+import { useRealtimeRefresh } from '../lib/RealtimeProvider';
 import { Quote } from '../types';
 import { Plus, Search, FileText, Calendar, DollarSign, MapPin, RefreshCw, Loader2, Trash2, Pencil, Database, AlertTriangle, Lock } from 'lucide-react';
 
@@ -50,6 +51,8 @@ const QuoteList: React.FC<Props> = ({ onAdd, onEdit, clientName, embedded = fals
     }
     fetchQuotes();
   }, [clientName]);
+
+  useRealtimeRefresh('quotes', () => fetchQuotes());
 
   const fetchQuotes = async () => {
     const user = currentUser || JSON.parse(localStorage.getItem('userData') || '{}');

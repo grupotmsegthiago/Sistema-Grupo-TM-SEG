@@ -1,6 +1,7 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../lib/supabase';
+import { useRealtimeRefresh } from '../lib/RealtimeProvider';
 import { ProviderData } from '../types';
 import { 
     ShieldCheck, Calendar, FileText, Search, Loader2, 
@@ -30,6 +31,8 @@ const AlvaraControl: React.FC = () => {
         }
         fetchData();
     }, []);
+
+    useRealtimeRefresh('providers', () => fetchData());
 
     const canEditAlvara = useMemo(() => {
         if (!currentUser) return false;

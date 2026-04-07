@@ -1,6 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
+import { useRealtimeRefresh } from '../lib/RealtimeProvider';
 import { Plus, Search, MoreVertical, Truck, Ban, CheckCircle2, Trash2, Loader2, RefreshCw, Database, AlertTriangle, Pencil, Check } from 'lucide-react';
 
 interface Props {
@@ -44,11 +45,12 @@ const ClientVehicleList: React.FC<Props> = ({ onAddVehicle, onEdit, onSelect, cl
   }, []);
 
   useEffect(() => {
-      // Bloqueia fetch inicial se ainda estiver identificando o usuário
       if (!isInitializing) {
           fetchVehicles();
       }
   }, [clientId, lockedClientId, isInitializing, isCommercial]);
+
+  useRealtimeRefresh('client_vehicles', () => { if (!isInitializing) fetchVehicles(); });
 
   const fetchVehicles = async () => {
     const user = currentUser || JSON.parse(localStorage.getItem('userData') || '{}');

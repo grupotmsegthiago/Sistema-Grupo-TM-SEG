@@ -1,6 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
+import { useRealtimeRefresh } from '../lib/RealtimeProvider';
 import { APP_VERSION } from '../constants';
 import { 
   Plus, Shield, Loader2, RefreshCw, Pencil, Eye, EyeOff, 
@@ -154,6 +155,8 @@ const UserList: React.FC<UserListProps> = ({ onAddUser, onEdit, userType }) => {
   useEffect(() => {
     fetchUsers();
   }, [userType]);
+
+  useRealtimeRefresh('system_users', () => fetchUsers());
 
   const togglePassword = (id: string) => {
       setRevealedPasswords(prev => ({

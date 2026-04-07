@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
+import { useRealtimeRefresh } from '../lib/RealtimeProvider';
 import { VehicleStatus, Vehicle } from '../types';
 import { Plus, Search, Filter, ShieldCheck, Wrench, Ban, RefreshCw, Trash2, Loader2, Database, AlertTriangle, Radio, Pencil } from 'lucide-react';
 
@@ -26,6 +27,8 @@ const VehicleList: React.FC<VehicleListProps> = ({ onAddVehicle, onEdit }) => {
     }
     fetchVehicles();
   }, []);
+
+  useRealtimeRefresh('vehicles', () => fetchVehicles());
 
   const fetchVehicles = async () => {
       setIsLoading(true);

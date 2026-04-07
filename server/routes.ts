@@ -301,6 +301,28 @@ export async function registerRoutes(
     process.env.SUPABASE_SERVICE_KEY || process.env.VITE_SUPABASE_ANON_KEY || ''
   );
 
+  (async () => {
+    const realtimeTables = [
+      'missions', 'clients', 'providers', 'vehicles', 'agents', 'profiles',
+      'client_price_tables', 'client_routes', 'client_vehicles', 'provider_cost_tables',
+      'financial_transactions', 'financial_accounts', 'financial_categories', 'financial_invoices',
+      'quotes', 'commercial_proposals', 'support_agents', 'time_clock',
+      'vehicle_technologies', 'system_users', 'whatsapp_messages', 'system_logs', 'mission_logs'
+    ];
+    try {
+      const tableList = realtimeTables.map(t => `public.${t}`).join(', ');
+      await supabase.rpc('exec_sql', { sql: `ALTER PUBLICATION supabase_realtime ADD TABLE ${tableList};` });
+      console.log('[Realtime] Publicação habilitada para', realtimeTables.length, 'tabelas');
+    } catch (e: any) {
+      const msg = e?.message || '';
+      if (msg.includes('already member') || msg.includes('already exists')) {
+        console.log('[Realtime] Tabelas já estão na publicação supabase_realtime');
+      } else {
+        console.warn('[Realtime] Publicação não configurada (pode requerer permissão admin):', msg.substring(0, 120));
+      }
+    }
+  })();
+
   async function findClientEmail(clientName: string): Promise<{ email: string; data: any }> {
     const { data: byName } = await supabase.from('clients').select('operational_email, email, trading_name, name, status').eq('name', clientName);
     let clientData = byName?.find(c => c.status === 'Ativo') || byName?.[0] || null;

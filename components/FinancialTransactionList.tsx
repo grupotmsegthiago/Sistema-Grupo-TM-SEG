@@ -4,6 +4,7 @@ import { authFetch } from '../lib/authFetch';
 import { formatDateBR } from '../lib/dateUtils';
 import { logAction } from '../lib/logger';
 import { supabase } from '../lib/supabase';
+import { useRealtimeRefresh } from '../lib/RealtimeProvider';
 import { FinancialTransaction, TransactionType, TransactionStatus, FinancialAccount, FinancialCategory } from '../types';
 import { 
   Plus, Search, Edit, Trash2, RefreshCw, 
@@ -71,6 +72,8 @@ const FinancialTransactionList: React.FC = () => {
         fetchClients();
         fetchInvoices();
     }, []);
+
+    useRealtimeRefresh(['financial_transactions', 'financial_accounts', 'financial_invoices'], () => { fetchTransactions(); fetchAccounts(); });
 
     const checkAccess = () => {
         const storedUser = localStorage.getItem('userData');

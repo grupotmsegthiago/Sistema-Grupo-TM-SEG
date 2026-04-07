@@ -1,6 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
+import { useRealtimeRefresh } from '../lib/RealtimeProvider';
 import { formatDateBR } from '../lib/dateUtils';
 import { FinancialCategory, FinancialTransaction } from '../types';
 import { Calendar, FileText, Download, Loader2, Printer, TrendingUp, DollarSign, RefreshCw } from 'lucide-react';
@@ -39,6 +40,8 @@ const FinancialDRE: React.FC = () => {
     useEffect(() => {
         generateDRE();
     }, []);
+
+    useRealtimeRefresh(['financial_transactions', 'financial_categories', 'missions'], () => generateDRE());
 
     const fetchAllTransactions = async (start: string, end: string): Promise<FinancialTransaction[]> => {
         const all: FinancialTransaction[] = [];

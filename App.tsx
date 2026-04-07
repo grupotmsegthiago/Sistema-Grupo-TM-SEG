@@ -12,6 +12,7 @@ import { queryClient } from './lib/queryClient';
 
 // Contexto
 import { NotificationProvider } from './lib/NotificationContext';
+import { RealtimeProvider } from './lib/RealtimeProvider';
 
 // Componentes
 import Dashboard from './components/Dashboard'; 
@@ -292,6 +293,7 @@ const App: React.FC = () => {
 
   return (
     <QueryClientProvider client={queryClient}>
+    <RealtimeProvider>
     <NotificationProvider>
         <div className="flex min-h-screen-ios overflow-x-hidden overflow-y-auto font-sans text-gray-800 relative" style={{ maxWidth: '100vw' }}>
         
@@ -321,6 +323,7 @@ const App: React.FC = () => {
         {billingMissionId && billingMission && ( <MissionFinancialModal isOpen={true} onClose={() => { setBillingMissionId(null); setBillingMission(null); }} mission={billingMission} onUpdate={() => { setBillingMissionId(null); setBillingMission(null); window.dispatchEvent(new CustomEvent('refreshMissions')); }} /> )}
         </div>
     </NotificationProvider>
+    </RealtimeProvider>
     </QueryClientProvider>
   );
 };

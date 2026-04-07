@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo, useCallback } from 'react';
 import { authFetch } from '../lib/authFetch';
 import { formatDateTimeBR } from '../lib/dateUtils';
 import { supabase } from '../lib/supabase';
+import { useRealtimeRefresh } from '../lib/RealtimeProvider';
 import {
   FileText, Search, Filter, RefreshCw, ExternalLink, Copy, CheckCircle2,
   AlertCircle, Clock, XCircle, DollarSign, Receipt, Eye, Loader2,
@@ -92,6 +93,8 @@ const FinancialInvoiceControl: React.FC = () => {
   }, []);
 
   useEffect(() => { fetchInvoices(); }, [fetchInvoices]);
+
+  useRealtimeRefresh('financial_invoices', () => fetchInvoices());
 
   const handleSyncStatus = async (inv: Invoice) => {
     if (!inv.asaas_payment_id) return;

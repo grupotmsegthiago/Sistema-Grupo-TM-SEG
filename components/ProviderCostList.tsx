@@ -1,6 +1,7 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../lib/supabase';
+import { useRealtimeRefresh } from '../lib/RealtimeProvider';
 import { logAction } from '../lib/logger';
 import { ProviderCostTable } from '../types';
 import { Plus, Search, DollarSign, Briefcase, Clock, Gauge, Shield, RefreshCw, Pencil, Trash2, Loader2, Database, AlertTriangle, FileSpreadsheet, Lock, Percent, Zap, Save, Wand2 } from 'lucide-react';
@@ -50,6 +51,8 @@ const ProviderCostList: React.FC<Props> = ({ onAdd, onEdit }) => {
     }
     fetchTables();
   }, []);
+
+  useRealtimeRefresh('provider_cost_tables', () => fetchTables());
 
   const fetchTables = async () => {
     setIsLoading(true);

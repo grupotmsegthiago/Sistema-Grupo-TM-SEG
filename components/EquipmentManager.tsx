@@ -2,6 +2,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Monitor, Plus, Search, Trash2, Save, Loader2, Camera, X, ArrowLeft, Edit3, User, Package, ChevronDown, Image as ImageIcon } from 'lucide-react';
 import { supabase } from '../lib/supabase';
+import { useRealtimeRefresh } from '../lib/RealtimeProvider';
 import { useNotification } from '../lib/NotificationContext';
 
 interface EquipmentRecord {
@@ -87,6 +88,8 @@ const EquipmentManager: React.FC = () => {
   }, []);
 
   useEffect(() => { loadData(); }, [loadData]);
+
+  useRealtimeRefresh('system_logs', () => loadData());
 
   const saveAll = async (updatedList: EquipmentRecord[], typesOverride?: { value: string; label: string }[]) => {
     setIsSaving(true);

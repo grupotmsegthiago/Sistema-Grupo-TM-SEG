@@ -1,6 +1,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { supabase } from '../lib/supabase';
+import { useRealtimeRefresh } from '../lib/RealtimeProvider';
 import { WHATSAPP_API_CONFIG } from '../constants';
 import { Search, Send, Loader2, MessageCircle, User, Phone, CheckCheck, RefreshCw, AlertTriangle, ShieldCheck, Shield, Users } from 'lucide-react';
 
@@ -38,6 +39,8 @@ const WhatsAppChat: React.FC = () => {
     useEffect(() => {
         fetchAllContacts();
     }, []);
+
+    useRealtimeRefresh('whatsapp_messages', () => fetchAllContacts());
 
     // Carregar Mensagens e Inscrever no Realtime
     useEffect(() => {

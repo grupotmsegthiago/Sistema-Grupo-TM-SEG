@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
+import { useRealtimeRefresh } from '../lib/RealtimeProvider';
 import { logAction } from '../lib/logger';
 import { Plus, Search, MapPin, Navigation, Trash2, Loader2, RefreshCw, DollarSign, Database, AlertTriangle, Pencil, Lock, Calculator, Wand2, CheckSquare, Square, X, Edit2, Save, ArrowRight, Eraser, Globe } from 'lucide-react';
 import { ClientPriceTable } from '../types';
@@ -73,6 +74,8 @@ const ClientRouteList: React.FC<Props> = ({ onAdd, onEdit, clientName, embedded 
         fetchRoutes();
     }
   }, [clientName, lockedClientName, isInitializing, isCommercial]); 
+
+  useRealtimeRefresh('client_routes', () => { if (!isInitializing) fetchRoutes(); });
 
   const fetchRoutes = async () => {
     const user = currentUser || JSON.parse(localStorage.getItem('userData') || '{}');

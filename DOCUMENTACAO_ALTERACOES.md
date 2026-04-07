@@ -3,6 +3,37 @@
 
 ---
 
+## 07/04/2026 20:35 (Brasília) - REAL-TIME GLOBAL — SINCRONIZACAO EM TEMPO REAL (#055)
+
+**Descricao:** Implementacao de sincronizacao em tempo real para 100% do sistema. Todos os usuarios conectados recebem atualizacoes instantaneas quando qualquer dado muda no banco de dados Supabase.
+
+### Arquitetura
+
+1. **RealtimeProvider** (`lib/RealtimeProvider.tsx`): Componente central que envolve toda a app. Assina `postgres_changes` (INSERT/UPDATE/DELETE) em 23 tabelas Supabase via canal unico `global-realtime-sync`.
+2. **Mapeamento tabela→cache**: Cada tabela tem queryKeys associados que sao invalidados automaticamente (TanStack Query). Ex: `financial_transactions` invalida `['financial-dashboard']` e `['financial_transactions']`.
+3. **Eventos customizados**: Cada mudanca de tabela dispara `supabase:{tableName}` no `window`. Isso permite que componentes que NAO usam TanStack Query tambem reajam.
+4. **Hook `useRealtimeRefresh(tables, callback)`**: Componentes que fazem fetch direto podem ouvir mudancas em tabelas especificas. Debounce de 500ms para evitar overload.
+5. **Publicacao Supabase**: Server startup (`routes.ts`) executa `ALTER PUBLICATION supabase_realtime ADD TABLE ...` para garantir que todas as tabelas estao habilitadas para real-time.
+6. **Polling reduzido**: Polling antigo de 30s/60s reduzido para 5 min (fallback de seguranca).
+
+### Componentes Atualizados
+
+- VehicleList, UserList, ProviderAgentList, ClientVehicleList, ClientRouteList
+- FinancialAccountManager, FinancialTransactionList, FinancialInvoiceControl, FinancialDRE, DailyCashMovement
+- VehicleTechnologyList, QuoteList, ClientPriceList, ProviderCostList
+- AlvaraControl, EquipmentManager, WhatsAppChat, RHPointReport
+- MissionTable (ambas versoes) — via `refreshMissions` event
+- ClientBillingReport, VendorVerificationControl — via `refreshMissions` event
+- ProfileList, FinancialDashboard, ClientList, ProviderList — via TanStack Query invalidation
+
+### Tabelas Monitoradas (23)
+
+missions, clients, providers, vehicles, agents, profiles, client_price_tables, client_routes, client_vehicles, provider_cost_tables, financial_transactions, financial_accounts, financial_categories, financial_invoices, quotes, commercial_proposals, support_agents, time_clock, vehicle_technologies, system_users, whatsapp_messages, system_logs, mission_logs
+
+**Status:** ✅ Concluido
+
+---
+
 ## 07/04/2026 20:15 (Brasília) - EXTERMINIO DE RECALCULO NO COMPARADOR (#054)
 
 **Descricao:** O ClientBillingReport.tsx (comparador e relatorio) priorizava `snapshot_data.totalGeral` antigo sobre o `revenue_value` editado manualmente. Quando o usuario salvava R$ 0,01, o comparador exibia R$ 608,10 (valor do snapshot congelado).

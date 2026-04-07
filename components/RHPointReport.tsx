@@ -1,6 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
+import { useRealtimeRefresh } from '../lib/RealtimeProvider';
 import { Search, Download, Calendar, User, FileText, Loader2, MapPin, CheckCircle2, ShieldCheck, Printer } from 'lucide-react';
 
 const RHPointReport: React.FC = () => {
@@ -15,6 +16,8 @@ const RHPointReport: React.FC = () => {
         fetchUsers();
         fetchLogs();
     }, [startDate, endDate, selectedUser]);
+
+    useRealtimeRefresh('time_clock', () => fetchLogs());
 
     const fetchUsers = async () => {
         const { data } = await supabase.from('system_users').select('id, name').order('name');

@@ -4,6 +4,7 @@ import { authFetch } from '../lib/authFetch';
 import { formatDateBR, formatDateTimeBR } from '../lib/dateUtils';
 import { logAction } from '../lib/logger';
 import { supabase } from '../lib/supabase';
+import { useRealtimeRefresh } from '../lib/RealtimeProvider';
 import { FinancialAccount, FinancialCategory } from '../types';
 import { Plus, Trash2, Landmark, Save, X, Loader2, Wallet, Pencil, TrendingUp, TrendingDown, RefreshCw, CheckCircle2, AlertCircle, Zap, PencilLine, Calculator, History, Sparkles, BarChart, DollarSign, ArrowUpRight, ArrowDownRight, Calendar, Clock, Eye, ChevronDown, ChevronUp, Brain, LineChart as LineChartIcon } from 'lucide-react';
 import { LineChart, Line, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend, PieChart, Pie, Cell, ComposedChart, Bar } from 'recharts';
@@ -95,6 +96,8 @@ const FinancialAccountManager: React.FC<Props> = ({ onClose }) => {
             fetchAsaasBalances();
         }
     }, [dbReady, periodFilter]);
+
+    useRealtimeRefresh(['financial_accounts', 'financial_categories', 'financial_transactions'], () => { if (dbReady) fetchData(); });
 
     const fetchData = async () => {
         setIsLoading(true);

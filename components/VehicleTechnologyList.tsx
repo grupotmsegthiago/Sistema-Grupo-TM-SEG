@@ -1,6 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
+import { useRealtimeRefresh } from '../lib/RealtimeProvider';
 import { logAction } from '../lib/logger';
 import { VehicleTechnology } from '../types';
 import { Plus, Search, Loader2, Trash2, RefreshCw, Pencil, Database, AlertTriangle, Radio } from 'lucide-react';
@@ -28,6 +29,8 @@ const VehicleTechnologyList: React.FC<Props> = ({ onAdd, onEdit }) => {
     }
     fetchData();
   }, []);
+
+  useRealtimeRefresh('vehicle_technologies', () => fetchData());
 
   const fetchData = async () => {
     setIsLoading(true);

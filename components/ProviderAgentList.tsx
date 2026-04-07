@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
+import { useRealtimeRefresh } from '../lib/RealtimeProvider';
 import { Agent } from '../types';
 import { Plus, Search, MoreVertical, User, ShieldCheck, RefreshCw, Pencil, Trash2, Loader2, Phone, CreditCard, FileText, Database, AlertTriangle } from 'lucide-react';
 
@@ -26,6 +27,8 @@ const ProviderAgentList: React.FC<Props> = ({ onAdd, onEdit }) => {
     }
     fetchAgents();
   }, []);
+
+  useRealtimeRefresh('agents', () => fetchAgents());
   
   const fetchAgents = async () => {
     setIsLoading(true);
