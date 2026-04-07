@@ -573,6 +573,12 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
 
               const isVendorVerified = !!(mRes.data.verified_by && mRes.data.verified_at);
 
+              const hasManualEditReason = !!(mRes.data.revenue_edit_reason || mRes.data.cost_edit_reason);
+              const hasVerifiedSave = !!mRes.data.billing_verified_by;
+              if (hasManualEditReason || hasVerifiedSave) {
+                  userManuallyEditedRef.current = true;
+                  setUseSavedValues(true);
+              }
               if (hasSavedData) {
                   const isSameOsMission = mRes.data.is_same_os === true;
                   const hasSeparateTollProvider = mRes.data.toll_value_provider != null;
@@ -586,12 +592,6 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                   if (savedCost > 0) {
                       const costTotal = savedCost + dbTollProvider;
                       setCostInput(costTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
-                  }
-                  const hasManualEditReason = !!(mRes.data.revenue_edit_reason || mRes.data.cost_edit_reason);
-                  const hasVerifiedSave = !!mRes.data.billing_verified_by;
-                  if (hasManualEditReason || hasVerifiedSave) {
-                      userManuallyEditedRef.current = true;
-                      setUseSavedValues(true);
                   }
               }
               if (mRes.data.billing_verified_by) {
@@ -886,7 +886,9 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
           const isVendorLocked = !!(mission.verified_by && mission.verified_at);
           const provTotalWithCorrectToll = financialData.provider.serviceTotal + parseNumber(tollProviderInput);
           const hasManualOverride = userManuallyEditedRef.current || useSavedValuesRef.current;
-          const shouldSync = !isSavingRef.current && !isVendorLocked && !hasManualOverride;
+          const hasSavedManualEdit = !!(mission.revenue_edit_reason || mission.cost_edit_reason);
+          const hasVerifiedSave = !!mission.billing_verified_by;
+          const shouldSync = !isSavingRef.current && !isVendorLocked && !hasManualOverride && !hasSavedManualEdit && !hasVerifiedSave;
           if (shouldSync) {
               const newRevStr = financialData.client.total.toLocaleString('pt-BR', {minimumFractionDigits: 2, maximumFractionDigits: 2});
               const newCostStr = provTotalWithCorrectToll.toLocaleString('pt-BR', {minimumFractionDigits: 2, maximumFractionDigits: 2});
@@ -973,6 +975,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
       setCustomClientHour('');
       setUseSavedValues(false);
       userManuallyEditedRef.current = false;
+      setMission(prev => prev ? { ...prev, revenue_edit_reason: null, cost_edit_reason: null, billing_verified_by: null } : prev);
       if (financialData && mission) {
           const toll = parseNumber(tollInput);
           const revServiceOnly = financialData.client.serviceTotal;
@@ -1020,6 +1023,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
       setCustomProviderHour('');
       setUseSavedValues(false);
       userManuallyEditedRef.current = false;
+      setMission(prev => prev ? { ...prev, revenue_edit_reason: null, cost_edit_reason: null, billing_verified_by: null } : prev);
       if (financialData && mission) {
           const isSameOs = mission.is_same_os === true;
           const tollProv = isSameOs ? 0 : parseNumber(tollProviderInput);
@@ -2393,6 +2397,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                             setCustomProviderHour('');
                                             setUseSavedValues(false);
                                             userManuallyEditedRef.current = false;
+                                            setMission(prev => prev ? { ...prev, revenue_edit_reason: null, cost_edit_reason: null, billing_verified_by: null } : prev);
                                             setManualProviderTableId('');
                                             await supabase.from('system_logs').delete().eq('entity', 'BillingAdjustment').eq('entity_id', mission.id);
                                             setTimeout(() => {
