@@ -655,63 +655,6 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
             const snap = m.snapshot_data;
             const isFrozen = !!(m.snapshot_approved_by && snap);
 
-            if (isFrozen) {
-                const refCidades = snap.route || (() => {
-                    const cidadeOrigem = extractCityFromAddress(m.origin || '');
-                    const cidadeDestino = extractCityFromAddress(m.destination || '');
-                    return cidadeOrigem && cidadeDestino
-                        ? `${cidadeOrigem} X ${cidadeDestino}`
-                        : cidadeOrigem || cidadeDestino || m.region || '-';
-                })();
-                return {
-                    id: (m.id || '').replace('GTM-', ''),
-                    route: refCidades,
-                    client: displayClientName,
-                    activationFee: snap.activationFee ?? 0,
-                    franchiseHours: snap.franchiseHours ?? 0,
-                    franchiseKm: snap.franchiseKm ?? 0,
-                    unitHr: snap.unitHr ?? 0,
-                    unitKm: snap.unitKm ?? 0,
-                    tollLabel: 'À PARTE',
-                    status: 'CONCLUÍDO',
-                    missionStatus: m.status || 'Concluída',
-                    isApproved: ['Concluída', 'Auditada', 'Em Viagem'].includes(m.status),
-                    startDate: fmtDate(m.start_time),
-                    startTime: fmtTime(m.start_time),
-                    viatura: m.company_vehicle ? `${m.company_vehicle.model || ''} ${m.company_vehicle.plate || ''}`.trim() || '-' : m.vehicle_id || '-',
-                    cargoPlate: m._clientVehicle ? `${m._clientVehicle.model || ''} ${m._clientVehicle.plate || ''}`.trim() || '-' : '-',
-                    endDate: fmtDate(m.end_time),
-                    endTime: fmtTime(m.end_time),
-                    kmStart: m.start_km ?? 0,
-                    kmEnd: m.end_km ?? 0,
-                    kmTotal: (snap.kmTotal ?? 0) > 0 ? (snap.kmTotal ?? 0)
-                        : ((m.start_km > 0 && m.end_km > 0 && m.end_km >= m.start_km) ? (m.end_km - m.start_km) : (m.total_distance || m.traveled_distance || 0)),
-                    timeStart: fmtTime(m.start_time),
-                    timeEnd: fmtTime(m.end_time),
-                    timeTotal: fmtHHMM(snap.durationHours ?? 0),
-                    kmExtraQtd: snap.kmExtraQtd ?? 0,
-                    kmExtraUnit: snap.unitKm ?? 0,
-                    kmExtraTotal: snap.kmExtraTotal ?? 0,
-                    hrExtraQtd: snap.hrExtraQtd ?? 0,
-                    hrExtraUnit: snap.unitHr ?? 0,
-                    hrExtraTotal: snap.hrExtraTotal ?? 0,
-                    escoltaVal: snap.activationFee ?? 0,
-                    tollVal: snap.tollVal ?? 0,
-                    totalGeral: (() => {
-                        const base = snap.activationFee ?? 0;
-                        const kmEx = snap.kmExtraTotal ?? 0;
-                        const hrEx = snap.hrExtraTotal ?? 0;
-                        const toll = snap.tollVal ?? 0;
-                        const sumComponents = base + kmEx + hrEx + toll;
-                        if (sumComponents > 0) return sumComponents;
-                        return snap.totalGeral ?? ((snap.revenueServiceOnly ?? 0) + toll);
-                    })(),
-                    franchiseHoursFmt: fmtFranchiseHr(snap.franchiseHours ?? 0),
-                    frozen: true,
-                    frozenBy: m.snapshot_approved_by
-                };
-            }
-
             const adj = billingAdjustments[m.id];
             const overrides = adj ? {
                 clientTableId: adj.clientTableId || undefined,
@@ -725,19 +668,69 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
             } : undefined;
             const fin = calculateMissionFinancials(m, priceTables, providerTables, clientData, new Date(), overrides);
 
-            if (hasSnap && snapRow) {
+            if (isFrozen && snap) {
                 const liveKmExtra = fin.client.extraKmVal || 0;
                 const liveHrExtra = fin.client.extraHrVal || 0;
                 const liveServiceTotal = fin.client.serviceTotal || 0;
                 const liveToll = Math.max(0, m.toll_value || 0);
                 const liveTotal = liveServiceTotal > 0 ? liveServiceTotal + liveToll : 0;
+                const snapBase = snap.activationFee ?? 0;
+                const snapKmEx = snap.kmExtraTotal ?? 0;
+                const snapHrEx = snap.hrExtraTotal ?? 0;
+                const snapToll = snap.tollVal ?? 0;
+                const snapTotal = snap.totalGeral ?? (snapBase + snapKmEx + snapHrEx + snapToll);
 
-                if (liveKmExtra > (snapRow.kmExtraTotal || 0)) snapRow.kmExtraTotal = liveKmExtra;
-                if (liveHrExtra > (snapRow.hrExtraTotal || 0)) snapRow.hrExtraTotal = liveHrExtra;
-                if (liveTotal > (snapRow.totalGeral || 0)) {
-                    snapRow.totalGeral = liveTotal;
-                }
-                return snapRow;
+                const kmTotal = (snap.kmTotal ?? 0) > 0 ? (snap.kmTotal ?? 0)
+                    : ((m.start_km > 0 && m.end_km > 0 && m.end_km >= m.start_km) ? (m.end_km - m.start_km) : (m.total_distance || m.traveled_distance || 0));
+
+                const bestKmExtra = Math.max(liveKmExtra, snapKmEx);
+                const bestHrExtra = Math.max(liveHrExtra, snapHrEx);
+                const bestTotal = Math.max(liveTotal, snapTotal, snapBase + bestKmExtra + bestHrExtra + snapToll);
+
+                const refCidades2 = snap.route || (() => {
+                    const co = extractCityFromAddress(m.origin || '');
+                    const cd = extractCityFromAddress(m.destination || '');
+                    return co && cd ? `${co} X ${cd}` : co || cd || m.region || '-';
+                })();
+
+                return {
+                    id: (m.id || '').replace('GTM-', ''),
+                    route: refCidades2,
+                    client: displayClientName,
+                    activationFee: snapBase,
+                    franchiseHours: snap.franchiseHours ?? 0,
+                    franchiseKm: snap.franchiseKm ?? 0,
+                    unitHr: snap.unitHr ?? 0,
+                    unitKm: snap.unitKm ?? 0,
+                    tollLabel: 'À PARTE',
+                    status: 'CONCLUÍDO',
+                    missionStatus: m.status || 'Concluída',
+                    isApproved: true,
+                    startDate: fmtDate(m.start_time),
+                    startTime: fmtTime(m.start_time),
+                    viatura: m.company_vehicle ? `${m.company_vehicle.model || ''} ${m.company_vehicle.plate || ''}`.trim() || '-' : m.vehicle_id || '-',
+                    cargoPlate: m._clientVehicle ? `${m._clientVehicle.model || ''} ${m._clientVehicle.plate || ''}`.trim() || '-' : '-',
+                    endDate: fmtDate(m.end_time),
+                    endTime: fmtTime(m.end_time),
+                    kmStart: m.start_km ?? 0,
+                    kmEnd: m.end_km ?? 0,
+                    kmTotal,
+                    timeStart: fmtTime(m.start_time),
+                    timeEnd: fmtTime(m.end_time),
+                    timeTotal: fmtHHMM(snap.durationHours ?? 0),
+                    kmExtraQtd: snap.kmExtraQtd ?? fin.client.excessKm ?? 0,
+                    kmExtraUnit: snap.unitKm ?? 0,
+                    kmExtraTotal: bestKmExtra,
+                    hrExtraQtd: snap.hrExtraQtd ?? fin.client.excessHours ?? 0,
+                    hrExtraUnit: snap.unitHr ?? 0,
+                    hrExtraTotal: bestHrExtra,
+                    escoltaVal: snapBase,
+                    tollVal: snapToll,
+                    totalGeral: bestTotal,
+                    franchiseHoursFmt: fmtFranchiseHr(snap.franchiseHours ?? 0),
+                    frozen: true,
+                    frozenBy: m.snapshot_approved_by
+                };
             }
             const usedTable = priceTables.find(t => t.id.toString() === fin.client.tableId);
             const franchiseKm = usedTable?.franchise_km ?? 0;
