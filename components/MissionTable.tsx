@@ -942,6 +942,36 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
           </div>
 
 
+          {!isRestrictedClientView && canSeeFinancials && ['diretoria', 'administrador', 'ceo', 'financeiro'].includes((currentUser?.role || '').toLowerCase()) && (
+            <button
+              data-testid="btn-sync-emergency"
+              onClick={async () => {
+                if (isRecalculating) return;
+                setIsRecalculating(true);
+                try {
+                  const resp = await authFetch('/api/recalculate-all', { method: 'POST', headers: { 'Content-Type': 'application/json' } });
+                  const data = await resp.json();
+                  if (data.success) {
+                    showNotification('Sincronização Concluída', `${data.updated} OS corrigidas de ${data.total} analisadas.`, 'success');
+                    fetchMissions(true);
+                  } else {
+                    showNotification('Erro', data.error || 'Falha na sincronização', 'error');
+                  }
+                } catch (e: any) {
+                  showNotification('Erro', e.message, 'error');
+                } finally {
+                  setIsRecalculating(false);
+                }
+              }}
+              className="flex items-center gap-2 px-5 py-3 bg-orange-500 hover:bg-orange-600 text-white rounded-xl text-xs font-black uppercase transition-all shadow-lg border-2 border-orange-600 disabled:opacity-50 animate-pulse"
+              disabled={isRecalculating}
+              title="Recalcular TODAS as OS não-aprovadas e corrigir valores no banco"
+            >
+              {isRecalculating ? <Loader2 size={18} className="animate-spin" /> : <RefreshCw size={18} />}
+              {isRecalculating ? 'SINCRONIZANDO...' : '⚠️ SINCRONIZAR VALORES REAIS'}
+            </button>
+          )}
+
           {!isRestrictedClientView && (
           <div className="flex-1 w-full max-w-[450px]">
              <DailyGoalThermometer 

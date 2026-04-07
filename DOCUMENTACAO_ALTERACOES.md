@@ -3,6 +3,41 @@
 
 ---
 
+## 07/04/2026 17:30 - EXECUCAO FORCADA DE LIMPEZA + BOTAO DE EMERGENCIA
+
+**Descricao:** Disparo manual do script de recalculo para limpar valores divergentes. Verificacao da OS GTM-4371 confirmou correcao automatica pelo auto-save (R$ 9.310 → R$ 1.400). Botao de emergencia "SINCRONIZAR VALORES REAIS" adicionado em destaque maximo no topo do dashboard.
+
+### 1. Campos Implementados / UI
+
+- **Botao "⚠️ SINCRONIZAR VALORES REAIS"** — Laranja vibrante (`bg-orange-500`), pulsante (`animate-pulse`), com borda dupla e sombra. Posicionado no TOPO do header principal do dashboard, ao lado do termometro de meta, visivel para Diretoria/Administrador/CEO/Financeiro
+  - Icone `RefreshCw` (18px) normal, `Loader2` com spin durante processamento
+  - Label muda para "SINCRONIZANDO..." durante execucao
+  - Disabled durante processamento para evitar duplo clique
+
+### 2. Comportamento e Logica
+
+- **Script de limpeza (fix_all_now.ts):** Executado diretamente no servidor sem autenticacao — analisou 1.094 missoes nao-aprovadas. Resultado: 0 divergencias encontradas (auto-save ja havia corrigido)
+- **Verificacao OS GTM-4371:** Banco confirmou `revenue_value: 1400`, `cost_value: 960.3`, `toll_value: 35` — valores corretos pela tabela de preco vigente (CEVA Jundiap/200KM, provider TORRES 950km)
+- **Nota tecnica:** CEVA LOGISTICA nao possui tabelas no `price_tables` — calculo usa regras hardcoded em `financialUtils.ts` (linha ~598). A funcao retorna `serviceTotal: 0` quando nao ha tabela, o que impede o recalculo automatico para novas CEVA sem tabela cadastrada
+- Script temporario removido apos execucao
+
+### 3. Banco de Dados
+
+- Nenhuma alteracao de schema
+- OS GTM-4371 verificada: valores ja corrigidos pelo auto-save (R$ 9.310 → R$ 1.400 receita, R$ 4.561 → R$ 960 custo)
+- Log `BULK_RECALCULATE` registrado em `system_logs` pelo script
+
+### 4. Arquivos Alterados
+
+- `components/MissionTable.tsx`
+  - Linhas ~948-976: Novo botao "SINCRONIZAR VALORES REAIS" no topo do dashboard (laranja pulsante)
+  - Botao do relatorio mantido como backup secundario
+- `scripts/fix_all_now.ts` — Criado e removido (execucao unica)
+
+**Status:** Executado via script de servidor. Botao de emergencia implementado.
+
+---
+
 ## 07/04/2026 14:30 - SINCRONIZACAO DE CALCULOS REAIS VS EXIBIDOS (PARTE 1)
 
 **Descricao:** Thiago identificou que os campos de Valor Final Cliente (R$ 9.345,00) e Pagamento Fornecedor (R$ 4.561,42) nao refletiam a soma real dos itens do breakdown (Base + KM + Hora + Pedagio), permanecendo fixos com valores antigos gravados no banco de dados.
