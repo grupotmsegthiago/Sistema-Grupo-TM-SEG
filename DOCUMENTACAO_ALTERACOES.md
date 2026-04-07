@@ -3,6 +3,37 @@
 
 ---
 
+## 07/04/2026 23:59 - CORRECAO DE MATCH NUMERICO DE OS
+
+**Descricao:** Implementada limpeza de caracteres nao-numericos na comparacao de OS para permitir match entre 'GTM-XXXX' e 'XXXX'. Funcao `extractOsFromVal` unificada e flexibilizada com `replace(/\D/g, '')`.
+
+### 1. Campos Implementados / UI
+
+- Nenhuma alteracao visual
+
+### 2. Comportamento e Logica
+
+- **Match numerico unificado:** Funcao `extractOsFromVal` extraida e reutilizada em `isMissionStart` e na extracao de ID. Remove TODOS caracteres nao-numericos antes de comparar
+- **isMissionStart flexibilizado:** Agora usa `extractOsFromVal` ao inves de regex rigida `^\d{3,6}$`, aceitando formatos como "4076", "OS-4076", "GTM4076"
+- **Logs de diagnostico:** 3 console.logs adicionados — parsing completo (total linhas/grupos/OS extraidas), sistema IDs, planilha IDs. Facilita identificar quais OS nao deram match
+- **Impacto:** Reducao da falsa divergencia de R$ 30k ao vincular corretamente missoes que antes eram jogadas em "SO NO SISTEMA"
+
+### 3. Banco de Dados
+
+- Nenhuma alteracao
+
+### 4. Arquivos Alterados
+
+- `components/ClientBillingReport.tsx`
+  - Linhas ~799-804: `extractOsFromVal` unificada
+  - Linhas ~805-811: `isMissionStart` usando `extractOsFromVal`
+  - Linhas ~849-851: Extracao de ID usando `extractOsFromVal`
+  - Linhas ~886-894: Logs de diagnostico para parsing e match
+
+**Status:** Implementado e funcional
+
+---
+
 ## 07/04/2026 23:55 - AJUSTE DE INDICES PARA COLAGEM MANUAL (B8)
 
 **Descricao:** Indices subtraidos em -1 para compensar a colagem que inicia na Coluna B (OS). O usuario copia a partir da Coluna B, entao a primeira coluna colada ja eh a OS.

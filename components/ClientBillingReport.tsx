@@ -793,13 +793,17 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
             const joined = cols.map(c => (c || '').trim().toUpperCase()).join(' ');
             return joined.includes('ROTA') && (joined.includes('TOTAL') || joined.includes('VALOR') || joined.includes('PEDÁGIO') || joined.includes('PEDAGIO'));
         };
+        const extractOsFromVal = (val: string): string | null => {
+            if (!val) return null;
+            const clean = val.replace(/\D/g, '');
+            if (clean.length >= 3 && clean.length <= 6) return clean;
+            return null;
+        };
         const isMissionStart = (cols: string[]) => {
-            for (let ci = 0; ci <= 1; ci++) {
-                const val = (cols[ci] || '').trim();
-                if (!val) continue;
-                const num = val.match(/^\d{3,6}$/);
-                if (num && !skipKw.some(kw => val.toUpperCase().includes(kw))) return true;
-            }
+            const val0 = (cols[0] || '').trim();
+            if (extractOsFromVal(val0) && !skipKw.some(kw => val0.toUpperCase().includes(kw))) return true;
+            const val1 = (cols[1] || '').trim();
+            if (extractOsFromVal(val1) && !skipKw.some(kw => val1.toUpperCase().includes(kw))) return true;
             return false;
         };
 
@@ -839,14 +843,9 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
 
         for (const group of missionGroups) {
             const firstCols = group[0];
-            const extractOsNumber = (val: string): string | null => {
-                const clean = val.replace(/\D/g, '');
-                if (clean.length >= 3 && clean.length <= 6) return clean;
-                return null;
-            };
-            let id = extractOsNumber((firstCols[colMap.os] || '').trim());
-            if (!id) id = extractOsNumber((firstCols[0] || '').trim());
-            if (!id) id = extractOsNumber((firstCols[1] || '').trim());
+            let id = extractOsFromVal((firstCols[colMap.os] || '').trim());
+            if (!id) id = extractOsFromVal((firstCols[0] || '').trim());
+            if (!id) id = extractOsFromVal((firstCols[1] || '').trim());
             if (!id) {
                 console.log('[ClientBillingReport] OS não reconhecida, cols[0]:', (firstCols[0] || '').trim(), 'cols[1]:', (firstCols[1] || '').trim());
                 continue;
@@ -881,11 +880,15 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
             sheetRows.push({ id, route, activationFee, startDate: '', endDate: '', kmTotal, kmExtraTotal, hrExtraTotal, tollCol, totalCol, raw: cols });
         }
 
+        console.log('[ClientBillingReport] Parsing completo:', { totalLinhas: lines.length, gruposMissao: missionGroups.length, osExtraidas: sheetRows.length, osIds: sheetRows.map(r => r.id) });
+
         const systemMap = new window.Map<string, any>();
         rowsData.forEach(r => { systemMap.set(r.id.replace(/\D/g, ''), r); });
+        console.log('[ClientBillingReport] Sistema IDs:', Array.from(systemMap.keys()));
         const sheetMap = new window.Map<string, any>();
         const seenSheetIds = new Set<string>();
         sheetRows.forEach(r => { if (!seenSheetIds.has(r.id)) { seenSheetIds.add(r.id); sheetMap.set(r.id, r); } });
+        console.log('[ClientBillingReport] Planilha IDs:', Array.from(sheetMap.keys()));
 
         const matched: any[] = [];
         const divergences: any[] = [];
