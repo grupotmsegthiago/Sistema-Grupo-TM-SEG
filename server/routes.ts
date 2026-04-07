@@ -1534,8 +1534,6 @@ export async function registerRoutes(
 
       for (const raw of (missions || [])) {
         try {
-          if (raw.billing_approved) { skipped++; continue; }
-
           await supabaseAdmin.from('system_logs').delete().eq('entity', 'BillingAdjustment').eq('entity_id', raw.id);
 
           const missionClientTrimmed = (raw.client || '').trim().toUpperCase();
@@ -1551,19 +1549,59 @@ export async function registerRoutes(
           const oldRevenue = raw.revenue_value || 0;
           const oldCost = raw.cost_value || 0;
 
+          const snapData = {
+            activationFee: calc.client.base || 0,
+            kmExtraTotal: calc.client.extraKmVal || 0,
+            hrExtraTotal: calc.client.extraHrVal || 0,
+            kmExtraQtd: calc.client.excessKm || 0,
+            hrExtraQtd: calc.client.excessHours || 0,
+            tollVal: newToll,
+            franchiseKm: calc.client.franchiseKm || 0,
+            franchiseHours: calc.client.franchiseHours || 0,
+            unitKm: calc.client.unitKm || 0,
+            unitHr: calc.client.unitHr || 0,
+            kmTotal: raw.end_km && raw.start_km ? (raw.end_km - raw.start_km) : (raw.total_distance || 0),
+            durationHours: calc.client.durationHours || 0,
+            revenueServiceOnly: calc.client.serviceTotal || newRevenue,
+            costServiceOnly: calc.provider.serviceTotal || newCost,
+            totalGeral: newRevenue + newToll,
+            clientTableId: calc.client.tableId || null,
+            providerTableId: calc.provider.tableId || null,
+            tableName: calc.client.tableName || '',
+            route: (() => {
+              const co = (raw.origin || '').split(',')[0].split('-')[0].trim();
+              const cd = (raw.destination || '').split(',')[0].split('-')[0].trim();
+              return co && cd ? `${co} X ${cd}` : co || cd || raw.region || '-';
+            })(),
+            approved_by: 'Sistema (Recalcular e Comparar)',
+            approved_at: new Date().toISOString(),
+            tollProvider: calc.tollValue || 0,
+            systemCalculatedRevenue: newRevenue,
+            systemCalculatedCost: newCost,
+          };
+
           await supabaseAdmin.from('missions').update({
             revenue_value: newRevenue,
             cost_value: newCost,
             toll_value: newToll,
-            billing_verified_by: null,
-            snapshot_approved_by: null,
+            snapshot_data: snapData,
+            snapshot_approved_by: 'Sistema (Recalcular e Comparar)',
+            snapshot_approved_at: new Date().toISOString(),
           }).eq('id', raw.id);
 
+          await supabaseAdmin.from('system_logs').insert({
+            entity: 'BillingSnapshot',
+            entity_id: raw.id,
+            action_type: 'snapshot_save',
+            details: JSON.stringify(snapData),
+            created_by: 'Sistema (Recalcular e Comparar)',
+          });
+
           if (Math.abs(newRevenue - oldRevenue) > 0.01 || Math.abs(newCost - oldCost) > 0.01) {
-            changes.push({ id: raw.id, oldRev: oldRevenue, newRev: newRevenue, oldCost: oldCost, newCost: newCost });
+            changes.push({ id: raw.id, oldRev: oldRevenue, newRev: newRevenue, oldCost: oldCost, newCost: newCost, toll: newToll });
             updated++;
           } else {
-            skipped++;
+            updated++;
           }
         } catch { errCount++; }
       }

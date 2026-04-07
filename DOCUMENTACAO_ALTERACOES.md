@@ -3,6 +3,34 @@
 
 ---
 
+## 07/04/2026 14:30 (Brasília) - BOTAO RECALCULAR E COMPARAR ATUALIZA TODAS AS OS (#041)
+
+**Descricao:** Corrigido o botao "Recalcular e Comparar" que nao atualizava no banco de dados. O sistema agora recalcula TODAS as OS do periodo (inclusive as ja aprovadas), salva os novos valores no banco, gera snapshot automatico, e recarrega o comparativo atualizado.
+
+### 1. Campos Implementados / UI
+
+- Nenhuma alteracao visual — botao ja existia
+
+### 2. Comportamento e Logica
+
+- **Removida barreira billing_approved**: Antes, missoes com billing_approved=true eram puladas (skipped). Agora TODAS as missoes do periodo sao recalculadas
+- **Snapshot automatico**: Cada missao recalculada recebe um novo snapshot_data com todos os valores financeiros (activationFee, kmExtraTotal, hrExtraTotal, tollVal, totalGeral, etc)
+- **snapshot_approved_by**: Marcado como "Sistema (Recalcular e Comparar)" para rastreabilidade
+- **system_logs**: Cada recalculo gera um log de auditoria com entity=BillingSnapshot
+- **Filtro parcial**: Corrigido filtro de busca para usar `%nome%` (parcial) em vez de match exato
+
+### 3. Banco de Dados
+
+- Nenhuma alteracao de schema — usa campos existentes (snapshot_data, snapshot_approved_by, snapshot_approved_at, revenue_value, cost_value, toll_value)
+
+### 4. Arquivos Alterados
+
+- `server/routes.ts` — Rota `/api/billing/recalculate-client` reescrita: sem barreira, com snapshot, com log de auditoria, com filtro parcial
+
+**Status:** ✅ CONCLUIDO E TESTADO
+
+---
+
 ## 07/04/2026 14:15 (Brasília) - TRAVAMENTO DE VALORES AUDITADOS NO COMPARADOR (#040)
 
 **Descricao:** Eliminado COMPLETAMENTE o recalculo automatico na tela de comparacao para missoes auditadas (frozen). O sistema agora le EXCLUSIVAMENTE os valores salvos no snapshot financeiro do banco de dados, sem nenhuma chamada a `calculateMissionFinancials` para missoes frozen.
