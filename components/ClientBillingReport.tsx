@@ -698,71 +698,13 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
             const snap = m.snapshot_data;
             const isFrozen = !!(m.snapshot_approved_by && snap);
 
-            const adj = billingAdjustments[m.id];
-            const snapshotTableOverride = (isFrozen && snap?.clientTableId) ? { clientTableId: snap.clientTableId } : {};
-            const overrides = adj ? {
-                clientTableId: adj.clientTableId || undefined,
-                providerTableId: adj.providerTableId || undefined,
-                customClientBase: adj.customClientBase ? Number(adj.customClientBase) : undefined,
-                customClientUnitKm: adj.customClientKm ? Number(adj.customClientKm) : undefined,
-                customClientUnitHour: adj.customClientHour ? Number(adj.customClientHour) : undefined,
-                customProviderBase: adj.customProviderBase ? Number(adj.customProviderBase) : undefined,
-                customProviderUnitKm: adj.customProviderKm ? Number(adj.customProviderKm) : undefined,
-                customProviderUnitHour: adj.customProviderHour ? Number(adj.customProviderHour) : undefined,
-                ...snapshotTableOverride,
-            } : (Object.keys(snapshotTableOverride).length > 0 ? snapshotTableOverride : undefined);
-            const fin = calculateMissionFinancials(m, priceTables, providerTables, clientData, new Date(), overrides as any);
-
             if (isFrozen && snap) {
-                const snapToll = Math.max(snap.tollVal ?? 0, m.toll_value ?? 0);
-                const auditedTable = priceTables.find((t: any) => t.id.toString() === (snap.clientTableId || fin.client.tableId));
-
-                const dbRevenueValue = m.revenue_value ?? 0;
-                const dbTollValue = m.toll_value ?? 0;
-
-                const snapBase = snap.activationFee ?? 0;
-                const snapKmEx = snap.kmExtraTotal ?? 0;
-                const snapHrEx = snap.hrExtraTotal ?? 0;
-                const snapTotalGeral = snap.totalGeral ?? 0;
-                const tableBase = auditedTable?.activation_fee ?? 0;
-
-                let useBase: number, useKmEx: number, useHrEx: number, useTotal: number;
-
-                const dbHasHigherValue = dbRevenueValue > 0 && dbRevenueValue > snapTotalGeral;
-
-                if (dbHasHigherValue) {
-                    const baseForCalc = tableBase > 0 ? tableBase : (fin.client.base ?? snapBase);
-                    const serviceMinusBase = dbRevenueValue - baseForCalc;
-                    const liveKmEx = fin.client.extraKmVal ?? 0;
-                    const liveHrEx = fin.client.extraHrVal ?? 0;
-                    const liveExtrasSum = liveKmEx + liveHrEx;
-
-                    if (liveExtrasSum > 0 && Math.abs(liveExtrasSum - serviceMinusBase) < 5) {
-                        useBase = baseForCalc;
-                        useKmEx = liveKmEx;
-                        useHrEx = liveHrEx;
-                    } else {
-                        useBase = baseForCalc;
-                        const remainder = dbRevenueValue - baseForCalc;
-                        useKmEx = fin.client.extraKmVal ?? 0;
-                        useHrEx = remainder > useKmEx ? (remainder - useKmEx) : 0;
-                    }
-                    useTotal = dbRevenueValue + snapToll;
-                } else if (snapKmEx > 0 || snapHrEx > 0) {
-                    useBase = tableBase > 0 ? tableBase : snapBase;
-                    useKmEx = snapKmEx;
-                    useHrEx = snapHrEx;
-                    useTotal = snapTotalGeral > 0 ? snapTotalGeral : (useBase + useKmEx + useHrEx + snapToll);
-                    if (useTotal <= snapToll && snapTotalGeral > 0) useTotal = snapTotalGeral;
-                } else {
-                    useBase = tableBase > 0 ? tableBase : snapBase;
-                    useKmEx = 0;
-                    useHrEx = 0;
-                    useTotal = snapTotalGeral > 0 ? snapTotalGeral : (useBase + snapToll);
-                    if (dbRevenueValue > 0 && dbRevenueValue === snapTotalGeral) {
-                        useTotal = dbRevenueValue + snapToll;
-                    }
-                }
+                const useBase = snap.activationFee ?? 0;
+                const useKmEx = snap.kmExtraTotal ?? 0;
+                const useHrEx = snap.hrExtraTotal ?? 0;
+                const useToll = m.toll_value ?? snap.tollVal ?? 0;
+                const snapTotal = snap.totalGeral ?? 0;
+                const useTotal = snapTotal > 0 ? snapTotal : (useBase + useKmEx + useHrEx + useToll);
 
                 const kmTotal = (snap.kmTotal ?? 0) > 0 ? (snap.kmTotal ?? 0)
                     : ((m.start_km > 0 && m.end_km > 0 && m.end_km >= m.start_km) ? (m.end_km - m.start_km) : (m.total_distance || m.traveled_distance || 0));
@@ -798,20 +740,33 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
                     timeStart: fmtTime(m.start_time),
                     timeEnd: fmtTime(m.end_time),
                     timeTotal: fmtHHMM(snap.durationHours ?? 0),
-                    kmExtraQtd: snap.kmExtraQtd ?? fin.client.excessKm ?? 0,
+                    kmExtraQtd: snap.kmExtraQtd ?? 0,
                     kmExtraUnit: snap.unitKm ?? 0,
                     kmExtraTotal: useKmEx,
-                    hrExtraQtd: snap.hrExtraQtd ?? fin.client.excessHours ?? 0,
+                    hrExtraQtd: snap.hrExtraQtd ?? 0,
                     hrExtraUnit: snap.unitHr ?? 0,
                     hrExtraTotal: useHrEx,
                     escoltaVal: useBase,
-                    tollVal: snapToll,
+                    tollVal: useToll,
                     totalGeral: useTotal,
                     franchiseHoursFmt: fmtFranchiseHr(snap.franchiseHours ?? 0),
                     frozen: true,
                     frozenBy: m.snapshot_approved_by
                 };
             }
+
+            const adj = billingAdjustments[m.id];
+            const overrides = adj ? {
+                clientTableId: adj.clientTableId || undefined,
+                providerTableId: adj.providerTableId || undefined,
+                customClientBase: adj.customClientBase ? Number(adj.customClientBase) : undefined,
+                customClientUnitKm: adj.customClientKm ? Number(adj.customClientKm) : undefined,
+                customClientUnitHour: adj.customClientHour ? Number(adj.customClientHour) : undefined,
+                customProviderBase: adj.customProviderBase ? Number(adj.customProviderBase) : undefined,
+                customProviderUnitKm: adj.customProviderKm ? Number(adj.customProviderKm) : undefined,
+                customProviderUnitHour: adj.customProviderHour ? Number(adj.customProviderHour) : undefined,
+            } : undefined;
+            const fin = calculateMissionFinancials(m, priceTables, providerTables, clientData, new Date(), overrides);
             const usedTable = priceTables.find(t => t.id.toString() === fin.client.tableId);
             const franchiseKm = usedTable?.franchise_km ?? 0;
             const franchiseHours = usedTable?.franchise_hours ?? 0;

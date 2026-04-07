@@ -3,6 +3,39 @@
 
 ---
 
+## 07/04/2026 14:15 (Brasília) - TRAVAMENTO DE VALORES AUDITADOS NO COMPARADOR (#040)
+
+**Descricao:** Eliminado COMPLETAMENTE o recalculo automatico na tela de comparacao para missoes auditadas (frozen). O sistema agora le EXCLUSIVAMENTE os valores salvos no snapshot financeiro do banco de dados, sem nenhuma chamada a `calculateMissionFinancials` para missoes frozen.
+
+### 1. Campos Implementados / UI
+
+- Nenhuma alteracao visual
+
+### 2. Comportamento e Logica
+
+- **ZERO calculo para frozen**: A funcao `calculateMissionFinancials` NAO eh mais chamada para missoes que tem snapshot. Os dados vem 100% do snapshot
+- **activationFee**: Lido direto de `snap.activationFee`
+- **kmExtraTotal**: Lido direto de `snap.kmExtraTotal`
+- **hrExtraTotal**: Lido direto de `snap.hrExtraTotal`
+- **tollVal**: Lido de `m.toll_value` (banco) ou `snap.tollVal` como fallback
+- **totalGeral**: Lido de `snap.totalGeral` — se zero, soma os componentes
+- **kmExtraQtd / hrExtraQtd**: Lidos direto do snapshot, sem fallback para calculo live
+- **calculateMissionFinancials**: Movido para DEPOIS do bloco frozen — so eh chamado para missoes NAO auditadas
+
+### 3. Banco de Dados
+
+- Nenhuma alteracao no banco de dados
+
+### 4. Arquivos Alterados
+
+- `components/ClientBillingReport.tsx` — Bloco frozen totalmente reescrito: leitura pura do snapshot, sem calculo
+
+**Status:** ✅ CONCLUIDO E TESTADO
+
+**Impacto:** Fim definitivo das divergencias entre Modal Financeiro e Tela de Comparativo. OS GTM-4030 e todas as demais missoes auditadas exibem exatamente o que foi salvo.
+
+---
+
 ## 07/04/2026 14:55 (Brasília) - EMAIL AUTOMÁTICO DE COBRANÇA COM NF E BOLETO (#039)
 
 **Descricao:** Implementado envio automático de email de cobrança ao cliente quando uma cobrança é criada no Asaas. O email inclui boleto bancário (link + linha digitável), PIX (QR Code + copia e cola) e NF de Serviço (link para PDF), tudo no mesmo email com layout profissional.
