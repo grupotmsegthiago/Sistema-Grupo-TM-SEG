@@ -799,6 +799,9 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
                 ? calculatedServiceTotal + tollVal 
                 : (activationFee + kmExtraTotal + hrExtraTotal + tollVal) || ((m.revenue_value || 0) + tollVal);
             const totalGeral = isBillingLocked ? ((m.revenue_value || 0) + tollVal) : calcTotal;
+            if (isBillingLocked) {
+                console.log(`[LOCKED] ${m.id}: rev=${m.revenue_value} toll=${tollVal} total=${totalGeral} (calcTotal seria ${calcTotal})`);
+            }
 
             const cargoPlate = m._clientVehicle?.plate || '-';
 
