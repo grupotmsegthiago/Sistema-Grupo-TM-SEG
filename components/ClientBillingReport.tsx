@@ -705,37 +705,51 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
                 const snapToll = Math.max(snap.tollVal ?? 0, m.toll_value ?? 0);
                 const auditedTable = priceTables.find((t: any) => t.id.toString() === (snap.clientTableId || fin.client.tableId));
 
+                const dbRevenueValue = m.revenue_value ?? 0;
+                const dbTollValue = m.toll_value ?? 0;
+
                 const snapBase = snap.activationFee ?? 0;
                 const snapKmEx = snap.kmExtraTotal ?? 0;
                 const snapHrEx = snap.hrExtraTotal ?? 0;
-                const snapServiceOnly = snap.revenueServiceOnly ?? 0;
                 const snapTotalGeral = snap.totalGeral ?? 0;
                 const tableBase = auditedTable?.activation_fee ?? 0;
 
-                const snapIsConsolidated = snapBase > 0 && snapKmEx === 0 && snapHrEx === 0 && tableBase > 0 && Math.abs(snapBase - tableBase) > 1;
-
                 let useBase: number, useKmEx: number, useHrEx: number, useTotal: number;
 
-                if (snapIsConsolidated && fin.client.serviceTotal > 0) {
-                    useBase = tableBase;
-                    useKmEx = fin.client.extraKmVal ?? 0;
-                    useHrEx = fin.client.extraHrVal ?? 0;
-                    useTotal = fin.client.serviceTotal + snapToll;
-                } else if (snapServiceOnly > 0) {
+                const dbHasHigherValue = dbRevenueValue > 0 && dbRevenueValue > snapTotalGeral;
+
+                if (dbHasHigherValue) {
+                    const baseForCalc = tableBase > 0 ? tableBase : (fin.client.base ?? snapBase);
+                    const serviceMinusBase = dbRevenueValue - baseForCalc;
+                    const liveKmEx = fin.client.extraKmVal ?? 0;
+                    const liveHrEx = fin.client.extraHrVal ?? 0;
+                    const liveExtrasSum = liveKmEx + liveHrEx;
+
+                    if (liveExtrasSum > 0 && Math.abs(liveExtrasSum - serviceMinusBase) < 5) {
+                        useBase = baseForCalc;
+                        useKmEx = liveKmEx;
+                        useHrEx = liveHrEx;
+                    } else {
+                        useBase = baseForCalc;
+                        const remainder = dbRevenueValue - baseForCalc;
+                        useKmEx = fin.client.extraKmVal ?? 0;
+                        useHrEx = remainder > useKmEx ? (remainder - useKmEx) : 0;
+                    }
+                    useTotal = dbRevenueValue + snapToll;
+                } else if (snapKmEx > 0 || snapHrEx > 0) {
                     useBase = tableBase > 0 ? tableBase : snapBase;
                     useKmEx = snapKmEx;
                     useHrEx = snapHrEx;
-                    useTotal = snapServiceOnly + snapToll;
-                } else if (snapTotalGeral > 0) {
-                    useBase = tableBase > 0 ? tableBase : snapBase;
-                    useKmEx = snapKmEx;
-                    useHrEx = snapHrEx;
-                    useTotal = snapTotalGeral > snapToll ? snapTotalGeral : (snapTotalGeral + snapToll);
+                    useTotal = snapTotalGeral > 0 ? snapTotalGeral : (useBase + useKmEx + useHrEx + snapToll);
+                    if (useTotal <= snapToll && snapTotalGeral > 0) useTotal = snapTotalGeral;
                 } else {
                     useBase = tableBase > 0 ? tableBase : snapBase;
-                    useKmEx = snapKmEx;
-                    useHrEx = snapHrEx;
-                    useTotal = useBase + useKmEx + useHrEx + snapToll;
+                    useKmEx = 0;
+                    useHrEx = 0;
+                    useTotal = snapTotalGeral > 0 ? snapTotalGeral : (useBase + snapToll);
+                    if (dbRevenueValue > 0 && dbRevenueValue === snapTotalGeral) {
+                        useTotal = dbRevenueValue + snapToll;
+                    }
                 }
 
                 const kmTotal = (snap.kmTotal ?? 0) > 0 ? (snap.kmTotal ?? 0)

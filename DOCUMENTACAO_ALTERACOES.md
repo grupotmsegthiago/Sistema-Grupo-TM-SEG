@@ -3,6 +3,36 @@
 
 ---
 
+## 07/04/2026 13:55 (Brasília) - FIX DEFINITIVO: PRIORIDADE DE VALOR SALVO - FIM DO LEGACY MISMATCH (#038)
+
+**Descricao:** O comparador agora le diretamente os campos financeiros salvos no banco de dados (revenue_value + toll_value), ignorando calculos automaticos divergentes. Quando revenue_value do banco eh maior que o totalGeral do snapshot, o sistema usa revenue_value como verdade absoluta e decompoe os extras (KM Extra e Hr Extra) usando o motor financeiro com a tabela correta.
+
+### 1. Campos Implementados / UI
+
+- Nenhuma alteracao visual
+
+### 2. Comportamento e Logica
+
+- **Prioridade ao banco de dados**: Se `revenue_value` salvo na missao eh maior que o `totalGeral` do snapshot, o comparador usa `revenue_value` como total de servico (sem pedagio), decompondo Base/KM Extra/Hr Extra
+- **Decomposicao inteligente**: Extrai base da tabela de preco, calcula excedentes via motor financeiro, e valida se a soma dos extras bate com `revenue_value - base`
+- **Fallback robusto**: Se snapshot tem kmEx/hrEx preenchidos, usa diretamente. Se snapshot limpo e revenue_value = totalGeral, mantem snapshot
+- **Pedagio independente**: Sempre somado ao total, nunca misturado com servico
+- **Fuso horario**: Logs agora registrados em Horario de Brasilia (GMT-3)
+
+### 3. Banco de Dados
+
+- Nenhuma alteracao no banco de dados
+
+### 4. Arquivos Alterados
+
+- `components/ClientBillingReport.tsx` — Logica de prioridade revenue_value > snapshot, decomposicao de extras, fuso horario
+
+**Status:** ✅ CONCLUIDO E TESTADO
+
+**Impacto:** OS GTM-3822 (R$ 3.014,00 de Hr Extra) e GTM-4253 agora refletem exatamente o que foi auditado no modal
+
+---
+
 ## 07/04/2026 13:45 - ELIMINAÇÃO DO ERRO 'LEGACY MISMATCH' (#037)
 
 **Descricao:** Travamento de integridade entre Modal de Auditoria e Comparativo. O sistema agora prioriza os valores auditados salvos no snapshot, usando obrigatoriamente a tabela selecionada no modal (clientTableId do snapshot) como override no motor financeiro. Resolve divergencias onde Hora Extra aparecia R$ 0 no comparativo mesmo tendo sido salva corretamente no modal (ex: GTM-3822 com R$ 3.014,00 de Hr Extra ignorada).
