@@ -578,6 +578,14 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                   if (!isSameOsMission && !hasSeparateTollProvider && savedCost > 0) {
                       setTollEmbeddedInCost(true);
                   }
+                  if (savedRev > 0) {
+                      const revTotal = savedRev + dbToll;
+                      setRevenueInput(revTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
+                  }
+                  if (savedCost > 0) {
+                      const costTotal = savedCost + dbTollProvider;
+                      setCostInput(costTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
+                  }
               }
               if (mRes.data.billing_verified_by) {
                   setSavedByInfo(`Salvo por ${mRes.data.billing_verified_by}`);
