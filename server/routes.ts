@@ -1633,7 +1633,6 @@ export async function registerRoutes(
         await supabaseAdmin.from('missions').update({
           snapshot_approved_by: null,
           snapshot_approved_at: null,
-          snapshot_data: null,
         }).eq('id', m.id);
         repaired++;
       }
