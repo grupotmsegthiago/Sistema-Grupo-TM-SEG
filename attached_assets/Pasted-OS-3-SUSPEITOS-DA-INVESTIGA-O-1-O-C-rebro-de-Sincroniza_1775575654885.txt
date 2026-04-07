@@ -1,0 +1,36 @@
+OS 3 SUSPEITOS DA INVESTIGAÇÃO
+1. O "Cérebro" de Sincronização (useEffect)
+No arquivo MissionFinancialModal.tsx, existe um useEffect que monitora as mudanças de KM, Horas e Pedágio.
+
+O Erro: Se esse useEffect estiver rodando depois que você digita o valor manual, ele sobrescreve o seu número com o cálculo automático da tabela de preços.
+
+A Investigação: Verifique se o setRevenueInput está dentro de um bloco que roda toda vez que o modal abre.
+
+2. A Trava de Segurança (useSavedValues)
+Lembra que às 17:00 nós removemos a linha setUseSavedValues(true)?
+
+O Problema: Sem essa trava, o sistema entende que o valor que manda é sempre o Cálculo Real (Base + KM + Hora + Pedágio).
+
+Consequência: Você altera o botão, clica em salvar, o banco até recebe o dado, mas quando você reabre, o componente faz a conta de novo e ignora o que estava salvo no banco.
+
+3. O handleUpdate(false) no Backend
+Quando você clica em atualizar, o frontend manda o JSON para a rota PATCH /api/missions/:id.
+
+O Problema: Se a função calculateMissionFinancials() estiver sendo chamada dentro da rota de salvamento no server/routes.ts, o servidor recalcula tudo antes de gravar no banco, jogando fora a sua alteração manual.
+
+📡 COMANDO DE "DETECTOR DE BUGS" PARA O AGENT:
+Mickael, peça para o Agent fazer essa varredura agora:
+
+"Agent, faça uma investigação técnica no MissionFinancialModal.tsx e no server/routes.ts sobre o revenueInput.
+
+Detecte e corrija os seguintes pontos:
+
+Conflito de Sobrescrita: O useEffect de sincronização está ignorando valores editados manualmente? Se o usuário alterou o input, o recálculo automático deve ser pausado.
+
+Validação de Persistência: Verifique se no handleUpdate, o valor de revenue_value enviado no payload é exatamente o que está no estado revenueInput.
+
+Recálculo no Servidor: Na rota de atualização de Missão, o backend está recalculando os valores financeiros por conta própria? Se sim, isso está matando a edição manual do Mickael. Remova qualquer recálculo automático no momento do Save manual.
+
+Logs de Comparação: Adicione um console.log('[DEBUG-SAVE]', { manual: revenueInput, db: mission.revenue_value }) antes do authFetch para termos certeza de que o dado está saindo correto do navegador.
+
+Me diga: o valor chega a ser enviado para o servidor ou ele 'reseta' antes de enviar?"
