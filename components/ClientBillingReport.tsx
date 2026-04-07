@@ -896,6 +896,13 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
             const tollCol = parseBRLNumber(cols[colMap.pedagio] || '');
             const totalCol = parseBRLNumber(cols[colMap.total] || cols[cols.length - 1] || '');
 
+            if (id === '4233') {
+                console.log('[DEBUG OS 4233] totalCols:', cols.length);
+                console.log('[DEBUG OS 4233] hrExtra idx:', colMap.hrExtra, 'raw:', cols[colMap.hrExtra], 'parsed:', hrExtraTotal);
+                console.log('[DEBUG OS 4233] cols[34..42]:', cols.slice(34, 43).map((c: string, i: number) => `[${34+i}]=${c}`));
+                console.log('[DEBUG OS 4233] group rows:', group.length);
+            }
+
             sheetRows.push({ id, route, activationFee, startDate: '', endDate: '', kmTotal, kmExtraTotal, hrExtraTotal, tollCol, totalCol, raw: cols });
         }
 
