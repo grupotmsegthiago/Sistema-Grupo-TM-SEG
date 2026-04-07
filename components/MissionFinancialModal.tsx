@@ -892,12 +892,16 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
 
     useEffect(() => {
       if (financialData && mission && !isLoading) {
-          if (!dbValuesLoadedRef.current && !userManuallyEditedRef.current) {
+          const canAutoFill = !dbValuesLoadedRef.current && !userManuallyEditedRef.current && !isSavingRef.current;
+          if (canAutoFill) {
               const provTotalWithCorrectToll = financialData.provider.serviceTotal + parseNumber(tollProviderInput);
               const newRevStr = financialData.client.total.toLocaleString('pt-BR', {minimumFractionDigits: 2, maximumFractionDigits: 2});
               const newCostStr = provTotalWithCorrectToll.toLocaleString('pt-BR', {minimumFractionDigits: 2, maximumFractionDigits: 2});
               setRevenueInput(newRevStr);
               setCostInput(newCostStr);
+              console.log('[AUTOFILL] Preenchido automaticamente — rev:', newRevStr, 'cost:', newCostStr);
+          } else {
+              console.log('[AUTOFILL] BLOQUEADO — dbLoaded:', dbValuesLoadedRef.current, 'manualEdit:', userManuallyEditedRef.current, 'saving:', isSavingRef.current);
           }
           
           if (financialData.provider.tableId) {
@@ -923,9 +927,11 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
       setTollInput(val);
       setTollSource('MANUAL (Editando...)');
       setTollConfirmed(true);
-      const currentRev = parseNumber(revenueInput);
-      const updatedRev = currentRev - oldToll + newToll;
-      setRevenueInput(updatedRev.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
+      if (!userManuallyEditedRef.current) {
+          const currentRev = parseNumber(revenueInput);
+          const updatedRev = currentRev - oldToll + newToll;
+          setRevenueInput(updatedRev.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
+      }
       if (parseNumber(tollProviderInput) === 0 && newToll > 0) {
           const oldTollProv = parseNumber(tollProviderInput);
           setTollProviderInput(val);
@@ -1277,10 +1283,15 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                   details: JSON.stringify({ ...basePayload.snapshot_data, approved_by: userName, approved_at: basePayload.snapshot_approved_at })
               }]);
           }
+          if (result.error) {
+              console.error('[SAVE DEBUG] ERRO na 1ª tentativa:', result.error.message, result.error.details, result.error.hint, result.error.code);
+          }
           if (result.error && (result.error.message?.includes('does not exist') || result.error.message?.includes('check_snapshot_not_empty'))) {
+              console.log('[SAVE DEBUG] Retry sem snapshot_data...');
               const { snapshot_data, snapshot_approved_by, snapshot_approved_at, ...payloadWithoutSnapshot } = fullPayload;
               delete payloadWithoutSnapshot.snapshot_data;
               result = await supabase.from('missions').update(payloadWithoutSnapshot).eq('id', mission.id).select('id, revenue_value, cost_value, toll_value, last_update').single();
+              console.log('[SAVE DEBUG] Retry result:', result.error, result.data);
               if (result.error && (result.error.message?.includes('does not exist') || result.error.message?.includes('check_snapshot_not_empty'))) {
                   const { toll_value_provider, snapshot_data: _sd, ...payloadMin } = payloadWithoutSnapshot;
                   delete payloadMin.snapshot_data;
@@ -1401,6 +1412,8 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
           setApprovalLog(newLog);
           
           setUseSavedValues(true);
+          dbValuesLoadedRef.current = true;
+          userManuallyEditedRef.current = true;
 
           setMission(prev => prev ? {
               ...prev,
