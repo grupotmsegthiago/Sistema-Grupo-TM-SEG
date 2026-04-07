@@ -3,6 +3,33 @@
 
 ---
 
+## 07/04/2026 20:30 (Brasília) - TOTAL SISTEMA LIDO DIRETO DO BANCO (#049)
+
+**Descricao:** O comparador de planilha e o resumo financeiro agora leem `revenue_value + toll_value` diretamente do array `missions` (dados do Supabase), em vez de depender do calculo intermediario `rowsData.totalGeral` que podia estar desatualizado por cache do navegador. Isso elimina definitivamente a divergencia de R$24,20 e qualquer problema futuro de cache no Total Sistema.
+
+### 1. Campos Implementados / UI
+
+- Nenhuma alteracao visual
+
+### 2. Comportamento e Logica
+
+- **grandTotal**: Calculado via `missions.reduce(rev + toll)` direto do banco. Fallback para `rowsData` se nenhuma missao tem `revenue_value`.
+- **handlePasteCompare**: Cria `missionDbMap` a partir de `missions` e sobrescreve `totalGeral` no `systemMap` com `revenue_value + toll_value` do banco.
+- **Resumo Financeiro**: `totalSys` calculado direto de `missions.reduce()`, independente de qualquer rowsData.
+- **Divergencias individuais**: `sysTot` agora reflete o valor do banco, nao o calculo frontend.
+
+### 3. Banco de Dados
+
+- Nenhuma alteracao
+
+### 4. Arquivos Alterados
+
+- `components/ClientBillingReport.tsx` — grandTotal, handlePasteCompare e Resumo Financeiro leem do banco
+
+**Status:** ✅ Concluido
+
+---
+
 ## 07/04/2026 17:40 (Brasília) - CORRECAO DE DIVERGENCIA RESIDUAL R$24,20 (#048)
 
 **Descricao:** O comparador agora espelha o valor total auditado (revenue_value) das OS 4112 e 4113, eliminando o erro de arredondamento de hora extra. A causa era que o navegador nao carregava o codigo novo do #046. Adicionado marcador de versao BUILD v048 para forcar recompilacao do Vite e confirmar visualmente que o codigo correto esta rodando.
@@ -1032,31 +1059,4 @@
   - Se divergencia > R$1 entre calculo e valor salvo: atualiza `revenue_value`, `cost_value`, `toll_value`, `toll_value_provider`, `last_update`
   - Registra log `BULK_RECALCULATE` em `system_logs` com totais (analisadas, corrigidas, puladas, erros)
   - Retorna JSON com `{ total, updated, skipped, errors, details[] }`
-- **Botao no frontend (MissionTable.tsx):** Chama `authFetch('/api/recalculate-all', { method: 'POST' })`, exibe notificacao com resultado e dispara `fetchMissions(true)` para atualizar a grid
-
-### 3. Banco de Dados
-
-- Nenhuma alteracao de schema
-- Campos atualizados em massa: `revenue_value`, `cost_value`, `toll_value`, `toll_value_provider`, `last_update`
-- Log registrado: `system_logs` com `action_type: 'BULK_RECALCULATE'`, `entity: 'Mission'`, `entity_id: 'ALL'`
-- **Escopo:** Apenas missoes com `billing_approved = false` e `revenue_value > 0` e status diferente de Cancelada/Recusada
-
-### 4. Arquivos Alterados
-
-- `components/MissionFinancialModal.tsx`
-  - Linhas ~578-584: Removidas `setRevenueInput(...)`, `setCostInput(...)`, `setUseSavedValues(true)` do bloco `if (hasSavedData)`
-- `components/MissionTable.tsx`
-  - Linha ~174: Adicionado state `isRecalculating`
-  - Linhas ~1305-1332: Adicionado botao "Recalcular Tudo" no header do relatorio (visivel para diretoria/administrador)
-- `server/routes.ts`
-  - Linhas ~106-193: Nova rota `POST /api/recalculate-all` com logica de recalculo em massa usando `calculateMissionFinancials()`
-
-**Status:** Implementado e funcional
-
----
-
-## LEGENDA DE STATUS
-
-- **Implementado e funcional** — Alteracao feita, testada e em producao
-- **Pendente** — Analise feita, aguardando aprovacao do Thiago para executar
-- **Em andamento** — Execucao iniciada, nao finalizada
+- **Botao no frontend (MissionTa

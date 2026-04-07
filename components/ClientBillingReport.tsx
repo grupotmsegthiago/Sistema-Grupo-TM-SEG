@@ -848,7 +848,14 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
         });
     }, [missions, priceTables, providerTables, clientData, displayClientName, billingAdjustments]);
 
-    const grandTotal = useMemo(() => rowsData.reduce((s, r) => s + r.totalGeral, 0), [rowsData]);
+    const grandTotal = useMemo(() => {
+        const dbTotal = missions.reduce((s: number, m: any) => {
+            const rev = m.revenue_value || 0;
+            const toll = Math.max(0, m.toll_value || 0);
+            return s + (rev > 0 ? rev + toll : 0);
+        }, 0);
+        return dbTotal > 0 ? dbTotal : rowsData.reduce((s, r) => s + r.totalGeral, 0);
+    }, [missions, rowsData]);
 
     const [pendingRecompare, setPendingRecompare] = useState(false);
 
@@ -962,13 +969,26 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
 
         console.log('[ClientBillingReport] Parsing completo:', { totalLinhas: lines.length, gruposMissao: missionGroups.length, osExtraidas: sheetRows.length, osIds: sheetRows.map(r => r.id) });
 
+        const missionDbMap = new window.Map<string, any>();
+        missions.forEach((m: any) => {
+            const numId = (m.id || '').replace(/\D/g, '');
+            const rev = m.revenue_value || 0;
+            const toll = Math.max(0, m.toll_value || 0);
+            missionDbMap.set(numId, { rev, toll, dbTotal: rev > 0 ? rev + toll : 0 });
+        });
+
         const systemMap = new window.Map<string, any>();
-        rowsData.forEach(r => { systemMap.set(r.id.replace(/\D/g, ''), r); });
-        console.log('[ClientBillingReport] Sistema IDs:', Array.from(systemMap.keys()));
+        rowsData.forEach(r => {
+            const numId = r.id.replace(/\D/g, '');
+            const db = missionDbMap.get(numId);
+            const correctedTotal = (db && db.dbTotal > 0) ? db.dbTotal : r.totalGeral;
+            systemMap.set(numId, { ...r, totalGeral: correctedTotal });
+        });
+        console.log('[v048] Sistema IDs:', Array.from(systemMap.keys()));
         const sheetMap = new window.Map<string, any>();
         const seenSheetIds = new Set<string>();
         sheetRows.forEach(r => { if (!seenSheetIds.has(r.id)) { seenSheetIds.add(r.id); sheetMap.set(r.id, r); } });
-        console.log('[ClientBillingReport] Planilha IDs:', Array.from(sheetMap.keys()));
+        console.log('[v048] Planilha IDs:', Array.from(sheetMap.keys()));
 
         const matched: any[] = [];
         const divergences: any[] = [];
@@ -2768,13 +2788,14 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
                                     <div className="mb-4 bg-gradient-to-r from-gray-900 to-gray-800 rounded-xl p-4">
                                         <h4 className="font-black text-gray-400 uppercase text-[9px] tracking-widest mb-3">Resumo Financeiro</h4>
                                         {(() => {
-                                            const validatedSys = (pasteResult.validated || []).reduce((s: number, v: any) => s + v.sys.totalGeral, 0);
+                                            const totalSys = missions.reduce((s: number, m: any) => {
+                                                const rev = m.revenue_value || 0;
+                                                const toll = Math.max(0, m.toll_value || 0);
+                                                return s + (rev > 0 ? rev + toll : 0);
+                                            }, 0);
                                             const validatedSheet = (pasteResult.validated || []).reduce((s: number, v: any) => s + v.sheet.totalCol, 0);
-                                            const divSys = pasteResult.divergences.reduce((s: number, d: any) => s + d.sysTot, 0);
                                             const divSheet = pasteResult.divergences.reduce((s: number, d: any) => s + d.sheetTot, 0);
-                                            const onlySys = pasteResult.onlySystem.reduce((s: number, d: any) => s + (d.totalGeral || 0), 0);
                                             const onlySheetTot = pasteResult.onlySheet.reduce((s: number, d: any) => s + (d.totalCol || 0), 0);
-                                            const totalSys = validatedSys + divSys + onlySys;
                                             const totalSheet = validatedSheet + divSheet + onlySheetTot;
                                             const totalDiff = totalSys - totalSheet;
                                             return (
