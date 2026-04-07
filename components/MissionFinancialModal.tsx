@@ -582,6 +582,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                   const costWithToll = isSameOsMission ? 0 : (savedCost + dbTollProvider);
                   setRevenueInput(revWithToll.toLocaleString('pt-BR', {minimumFractionDigits: 2, maximumFractionDigits: 2}));
                   setCostInput(costWithToll.toLocaleString('pt-BR', {minimumFractionDigits: 2, maximumFractionDigits: 2}));
+                  setUseSavedValues(true);
                   userManuallyEditedRef.current = true;
               }
               if (mRes.data.billing_verified_by) {
@@ -876,7 +877,8 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
           const isVendorLocked = !!(mission.verified_by && mission.verified_at);
           const provTotalWithCorrectToll = financialData.provider.serviceTotal + parseNumber(tollProviderInput);
           const hasSavedValues = (mission.revenue_value != null && mission.revenue_value > 0) || (mission.cost_value != null && mission.cost_value > 0) || !!mission.billing_verified_by;
-          if (!isSavingRef.current && !isVendorLocked && !userManuallyEditedRef.current && !hasSavedValues) {
+          const shouldSync = !isSavingRef.current && !isVendorLocked && !userManuallyEditedRef.current;
+          if (shouldSync && (!hasSavedValues || !useSavedValuesRef.current)) {
               setRevenueInput(financialData.client.total.toLocaleString('pt-BR', {minimumFractionDigits: 2, maximumFractionDigits: 2}));
               setCostInput(provTotalWithCorrectToll.toLocaleString('pt-BR', {minimumFractionDigits: 2, maximumFractionDigits: 2}));
           }
@@ -895,7 +897,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
               }
           }
       }
-    }, [financialData, memoryLoaded, mission, tollProviderInput]); 
+    }, [financialData, memoryLoaded, mission, tollProviderInput, useSavedValues]); 
 
 
   const handleTollChange = (val: string) => {
@@ -2180,6 +2182,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                                     setCustomProviderBase(''); setCustomProviderKm(''); setCustomProviderHour('');
                                                     setUseSavedValues(false);
                                                 }
+                                                userManuallyEditedRef.current = false;
                                                 setAiSuggestion(null);
                                             }}
                                             className="px-3 py-1.5 bg-purple-600 text-white text-[10px] font-bold rounded-lg hover:bg-purple-700 transition-all shadow-md active:scale-95"
@@ -2207,7 +2210,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                     <select 
                                         className={`w-full p-2 bg-gray-50 border border-gray-200 rounded-lg text-xs font-bold text-gray-700 uppercase outline-none focus:border-blue-500 ${isController ? 'pointer-events-none opacity-60' : ''}`}
                                         value={manualClientTableId || ''}
-                                        onChange={(e) => { if (!isController) { setManualClientTableId(e.target.value); setCustomClientBase(''); setCustomClientKm(''); setCustomClientHour(''); setUseSavedValues(false); } }}
+                                        onChange={(e) => { if (!isController) { setManualClientTableId(e.target.value); setCustomClientBase(''); setCustomClientKm(''); setCustomClientHour(''); setUseSavedValues(false); userManuallyEditedRef.current = false; } }}
                                         disabled={isController}
                                     >
                                         <option value="">Automático (IA Detectando)</option>
@@ -2379,7 +2382,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                     <select 
                                         className={`w-full p-2 bg-gray-50 border rounded-lg text-xs font-bold text-gray-700 uppercase outline-none focus:border-red-500 ${isZeroCostError ? 'border-red-300 bg-red-50 text-red-900 animate-pulse' : 'border-gray-200'}`}
                                         value={manualProviderTableId || ''}
-                                        onChange={(e) => { setManualProviderTableId(e.target.value); setCustomProviderBase(''); setCustomProviderKm(''); setCustomProviderHour(''); setUseSavedValues(false); }}
+                                        onChange={(e) => { setManualProviderTableId(e.target.value); setCustomProviderBase(''); setCustomProviderKm(''); setCustomProviderHour(''); setUseSavedValues(false); userManuallyEditedRef.current = false; }}
                                         disabled={mission.is_same_os}
                                     >
                                         <option value="">{mission.is_same_os ? 'Custo Zero (Mesma OS)' : 'IA Detectando Melhor Custo...'}</option>
