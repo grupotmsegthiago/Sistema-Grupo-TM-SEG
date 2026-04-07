@@ -1514,7 +1514,8 @@ export async function registerRoutes(
       const rangeStart = startDate ? `${startDate}T03:00:00.000Z` : undefined;
       const rangeEnd = endDate ? new Date(new Date(`${endDate}T03:00:00.000Z`).getTime() + 86400000 - 1).toISOString() : undefined;
 
-      let query = supabaseAdmin.from('missions').select('*').ilike('client', clientName).neq('status', 'Recusada');
+      const escapedName = clientName.replace(/[%_\\]/g, '\\$&');
+      let query = supabaseAdmin.from('missions').select('*').ilike('client', `%${escapedName}%`).neq('status', 'Recusada');
       if (rangeStart) query = query.gte('start_time', rangeStart);
       if (rangeEnd) query = query.lte('start_time', rangeEnd);
       const { data: missions, error: mErr } = await query;
