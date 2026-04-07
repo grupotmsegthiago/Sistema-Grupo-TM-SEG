@@ -3,6 +3,36 @@
 
 ---
 
+## 07/04/2026 - PERMISSAO OPERADORES EDITAR DATA/HORA FINAL DA OS
+
+**Descricao:** Operadores (role `operacional` / `operador`) agora podem editar a data e hora final das OS nos dois modais: MissionFinancialModal e UpdateMissionModal. Os demais campos (KM Inicial, KM Final, Hora Inicial) permanecem somente leitura para operadores.
+
+### 1. Campos Implementados / UI
+
+- **MissionFinancialModal**: Botao "Editar Data/Hora" visivel para operadores. Somente campo "Hora Final" fica editavel; demais campos (KM, Hora Inicial) permanecem como texto
+- **UpdateMissionModal**: Campos "Data Final" e "Hora Final" desbloqueados para operadores. Botao de travar/destravar horario em tempo real tambem disponivel
+- Botao de editar para operadores mostra "Editar Data/Hora" em vez de "Editar" para maior clareza
+
+### 2. Comportamento e Logica
+
+- Nova permissao `canEditEndTimeOnly` (MissionFinancialModal): true para roles `operacional`, `operador`, alem dos roles ja existentes
+- Nova permissao `canEditEndTime` (UpdateMissionModal): true para roles `operacional`, `operador`, alem dos roles ja existentes (`canEditTimes`)
+- Campos de KM e Hora Inicial continuam protegidos por `canEditOpsData` / `canEditTimes` (somente admin/diretoria/avancado/controller)
+- useEffect do relogio em tempo real agora usa `canEditEndTime` para operadores tambem poderem usar
+
+### 3. Banco de Dados
+
+- Nenhuma alteracao no banco de dados
+
+### 4. Arquivos Alterados
+
+- `components/MissionFinancialModal.tsx` — nova permissao `canEditEndTimeOnly`, condicoes de renderizacao ajustadas
+- `components/UpdateMissionModal.tsx` — nova permissao `canEditEndTime`, campos Data/Hora Final e botao lock/unlock desbloqueados
+
+**Status:** ✅ CONCLUIDO E TESTADO
+
+---
+
 ## 07/04/2026 15:35 - FIX PERSISTENCIA EDICAO MANUAL revenueInput / costInput
 
 **Descricao:** Correcao do bug onde a edicao manual do VALOR FINAL CLIENTE (revenueInput) e CUSTO FORNECEDOR (costInput) era sobrescrita pelo useEffect de sincronizacao ao reabrir a OS. O calculo automatico agora respeita valores editados e salvos manualmente.

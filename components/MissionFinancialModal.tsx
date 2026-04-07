@@ -146,6 +146,9 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
       return ['diretoria', 'administrador', 'avançado', 'avancado', 'controller'].includes(userRoleLower) || u.permissions?.includes('*');
     } catch { return false; }
   }, [userRoleLower]);
+  const canEditEndTimeOnly = useMemo(() => {
+    return canEditOpsData || ['operacional', 'operador'].includes(userRoleLower);
+  }, [canEditOpsData, userRoleLower]);
   const canEditClientData = canEditOpsData && !isController;
   
 
@@ -1981,8 +1984,8 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                 <div className="bg-green-50/50 border border-green-200 rounded-xl p-3">
                                     <div className="flex items-center justify-between mb-3">
                                         <p className="text-[10px] font-black text-green-700 uppercase tracking-widest flex items-center gap-1.5"><MapPin size={12}/> Dados Cliente</p>
-                                        {canEditClientData && !isEditingOpsData && (
-                                            <button onClick={() => setIsEditingOpsData(true)} className="flex items-center gap-1 px-2 py-1 text-[9px] font-black text-green-600 bg-green-100 rounded-lg hover:bg-green-200 uppercase tracking-wider transition-all" data-testid="button-edit-ops-data"><Edit2 size={10}/> Editar</button>
+                                        {(canEditClientData || canEditEndTimeOnly) && !isEditingOpsData && (
+                                            <button onClick={() => setIsEditingOpsData(true)} className="flex items-center gap-1 px-2 py-1 text-[9px] font-black text-green-600 bg-green-100 rounded-lg hover:bg-green-200 uppercase tracking-wider transition-all" data-testid="button-edit-ops-data"><Edit2 size={10}/> {canEditClientData ? 'Editar' : 'Editar Data/Hora'}</button>
                                         )}
                                         {isEditingOpsData && (
                                             <div className="flex gap-2">
@@ -1994,7 +1997,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                     <div className="grid grid-cols-2 gap-2">
                                         <div>
                                             <p className="text-[9px] font-bold text-gray-400 uppercase mb-1">Hora Inicial</p>
-                                            {isEditingOpsData ? (
+                                            {isEditingOpsData && canEditOpsData ? (
                                                 <input type="datetime-local" value={editStartTime} onChange={e => setEditStartTime(e.target.value)} className="w-full text-xs font-bold text-gray-700 border border-gray-300 rounded-lg px-2 py-1.5 focus:ring-2 focus:ring-green-500/20 focus:border-green-500 outline-none" data-testid="input-start-time" />
                                             ) : (
                                                 <p className="text-sm font-bold text-gray-700 font-mono">{mission.startTime ? new Date(mission.startTime).toLocaleString('pt-BR', { day:'2-digit', month:'2-digit', year:'2-digit', hour:'2-digit', minute:'2-digit' }) : '---'}</p>
@@ -2002,7 +2005,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                         </div>
                                         <div>
                                             <p className="text-[9px] font-bold text-gray-400 uppercase mb-1">KM Inicial</p>
-                                            {isEditingOpsData ? (
+                                            {isEditingOpsData && canEditOpsData ? (
                                                 <input type="number" step="0.1" value={editStartKm} onChange={e => setEditStartKm(e.target.value)} placeholder="0" className="w-full text-xs font-bold text-gray-700 border border-gray-300 rounded-lg px-2 py-1.5 focus:ring-2 focus:ring-green-500/20 focus:border-green-500 outline-none" data-testid="input-start-km" />
                                             ) : (
                                                 <p className="text-sm font-bold text-gray-700 font-mono">{mission.startKm ? `${safeNumber(mission.startKm).toLocaleString('pt-BR')} km` : '---'}</p>
@@ -2018,7 +2021,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                         </div>
                                         <div>
                                             <p className="text-[9px] font-bold text-gray-400 uppercase mb-1">KM Final</p>
-                                            {isEditingOpsData ? (
+                                            {isEditingOpsData && canEditOpsData ? (
                                                 <input type="number" step="0.1" value={editEndKm} onChange={e => setEditEndKm(e.target.value)} placeholder="0" className="w-full text-xs font-bold text-gray-700 border border-gray-300 rounded-lg px-2 py-1.5 focus:ring-2 focus:ring-green-500/20 focus:border-green-500 outline-none" data-testid="input-end-km" />
                                             ) : (
                                                 <p className="text-sm font-bold text-gray-700 font-mono">{mission.endKm ? `${safeNumber(mission.endKm).toLocaleString('pt-BR')} km` : '---'}</p>

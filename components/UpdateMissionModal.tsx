@@ -97,6 +97,12 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
         const role = (currentUser.role || '').toLowerCase();
         return ['diretoria', 'administrador', 'avançado', 'avancado'].includes(role) || (currentUser.permissions && currentUser.permissions.includes('*'));
     }, [currentUser]);
+    const canEditEndTime = useMemo(() => {
+        if (canEditTimes) return true;
+        if (!currentUser) return false;
+        const role = (currentUser.role || '').toLowerCase();
+        return ['operacional', 'operador'].includes(role);
+    }, [currentUser, canEditTimes]);
 
     // Listas de Dados
     const [providersList, setProvidersList] = useState<ProviderData[]>([]);
@@ -180,7 +186,7 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
 
     useEffect(() => {
         if (!isOpen || isEndTimeLocked) return;
-        if (!canEditTimes && mission && [MissionStatus.COMPLETED, MissionStatus.CANCELLED, MissionStatus.REFUSED, MissionStatus.PENDING].includes(mission.status as MissionStatus) && mission.endTime) return;
+        if (!canEditEndTime && mission && [MissionStatus.COMPLETED, MissionStatus.CANCELLED, MissionStatus.REFUSED, MissionStatus.PENDING].includes(mission.status as MissionStatus) && mission.endTime) return;
 
         // VERIFICAÇÃO DE AGENDAMENTO FUTURO
         // Se a data de início estiver no futuro, NÃO ativa o relógio de Tempo Real
@@ -203,7 +209,7 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
         }, 1000);
 
         return () => clearInterval(interval);
-    }, [isOpen, isEndTimeLocked, mission, editData.startDate, editData.startTime, canEditTimes]);
+    }, [isOpen, isEndTimeLocked, mission, editData.startDate, editData.startTime, canEditEndTime]);
 
     // Função auxiliar para validar KM (Apenas Ponto)
     const handleKmInput = (field: 'startKm' | 'endKm', value: string) => {
@@ -1873,11 +1879,11 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
                                         <div className="relative">
                                             <input 
                                                 type="date" 
-                                                className={`transition-all ${!isEndTimeLocked ? 'bg-indigo-50 border-indigo-200' : 'bg-white border-gray-200'} ${INPUT_CLASS} ${!canEditTimes ? 'opacity-60 cursor-not-allowed' : ''}`} 
+                                                className={`transition-all ${!isEndTimeLocked ? 'bg-indigo-50 border-indigo-200' : 'bg-white border-gray-200'} ${INPUT_CLASS} ${!canEditEndTime ? 'opacity-60 cursor-not-allowed' : ''}`} 
                                                 value={editData.endDate} 
-                                                disabled={!canEditTimes}
+                                                disabled={!canEditEndTime}
                                                 onChange={e => {
-                                                    if (!canEditTimes) return;
+                                                    if (!canEditEndTime) return;
                                                     setEditData({...editData, endDate: e.target.value});
                                                     setIsEndTimeLocked(true);
                                                 }} 
@@ -1891,11 +1897,11 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
                                             <input 
                                                 type="time" 
                                                 step="1" 
-                                                className={`transition-all ${!isEndTimeLocked ? 'bg-indigo-50 border-indigo-200' : 'bg-white border-gray-200'} ${INPUT_CLASS} ${!canEditTimes ? 'opacity-60 cursor-not-allowed' : ''}`} 
+                                                className={`transition-all ${!isEndTimeLocked ? 'bg-indigo-50 border-indigo-200' : 'bg-white border-gray-200'} ${INPUT_CLASS} ${!canEditEndTime ? 'opacity-60 cursor-not-allowed' : ''}`} 
                                                 value={editData.endTime} 
-                                                disabled={!canEditTimes}
+                                                disabled={!canEditEndTime}
                                                 onChange={e => {
-                                                    if (!canEditTimes) return;
+                                                    if (!canEditEndTime) return;
                                                     setEditData({...editData, endTime: e.target.value});
                                                     setIsEndTimeLocked(true);
                                                 }} 
@@ -1906,7 +1912,7 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
                                             <span className="absolute -top-4 right-0 text-[7px] font-black text-indigo-600 animate-pulse uppercase">Tempo Real</span>
                                         )}
                                     </div>
-                                    {canEditTimes && (
+                                    {canEditEndTime && (
                                     <div className="flex items-center">
                                         <button 
                                             type="button"
