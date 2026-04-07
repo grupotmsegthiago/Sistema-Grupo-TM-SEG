@@ -66,6 +66,9 @@ const FinancialAccountManager: React.FC<Props> = ({ onClose }) => {
     const [aiAnalysis, setAiAnalysis] = useState<string | null>(null);
     const [isAnalyzing, setIsAnalyzing] = useState(false);
 
+    const [asaasBalances, setAsaasBalances] = useState<{ company: string; name: string; balance: number; pendingBalance: number; error?: string }[]>([]);
+    const [asaasLoading, setAsaasLoading] = useState(false);
+
     const [dbReady, setDbReady] = useState(false);
 
     useEffect(() => {
@@ -76,9 +79,20 @@ const FinancialAccountManager: React.FC<Props> = ({ onClose }) => {
         init();
     }, []);
 
+    const fetchAsaasBalances = useCallback(async () => {
+        setAsaasLoading(true);
+        try {
+            const res = await authFetch('/api/asaas/balances');
+            const data = await res.json();
+            if (data.balances) setAsaasBalances(data.balances);
+        } catch {}
+        setAsaasLoading(false);
+    }, []);
+
     useEffect(() => {
         if (dbReady) {
             fetchData();
+            fetchAsaasBalances();
         }
     }, [dbReady, periodFilter]);
 
@@ -615,6 +629,42 @@ Responda de forma concisa e profissional, em português, formatado com markdown.
                     })() : <p className="text-gray-400 mt-1">-</p>}
                 </div>
             </div>
+
+            {asaasBalances.length > 0 && (
+                <div className="bg-gradient-to-r from-green-50 to-emerald-50 border border-green-200 rounded-xl p-4">
+                    <div className="flex items-center justify-between mb-3">
+                        <h4 className="text-xs font-black uppercase text-green-800 flex items-center gap-2" data-testid="title-asaas-balances">
+                            <DollarSign size={14}/> Saldo Asaas — Contas Operacionais
+                        </h4>
+                        <button onClick={fetchAsaasBalances} disabled={asaasLoading} className="text-[10px] font-bold text-green-600 hover:text-green-800 flex items-center gap-1" data-testid="btn-refresh-asaas">
+                            {asaasLoading ? <Loader2 size={12} className="animate-spin"/> : <RefreshCw size={12}/>} Atualizar
+                        </button>
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                        {asaasBalances.map(b => (
+                            <div key={b.company} className="bg-white rounded-lg p-3 border border-green-100 shadow-sm" data-testid={`asaas-balance-${b.company}`}>
+                                <p className="text-[10px] font-black text-gray-500 uppercase tracking-wider">{b.company}</p>
+                                {b.error ? (
+                                    <p className="text-xs text-red-500 mt-1">{b.error}</p>
+                                ) : (
+                                    <>
+                                        <p className={`text-lg font-black mt-1 ${b.balance >= 0 ? 'text-green-700' : 'text-red-600'}`}>{formatBRL(b.balance)}</p>
+                                        {b.pendingBalance > 0 && (
+                                            <p className="text-[10px] text-amber-600 font-bold mt-0.5">Pendente: {formatBRL(b.pendingBalance)}</p>
+                                        )}
+                                    </>
+                                )}
+                            </div>
+                        ))}
+                    </div>
+                    <p className="text-[9px] text-gray-400 mt-2 text-right">
+                        Total disponível: <span className="font-black text-green-700">{formatBRL(asaasBalances.reduce((s, b) => s + (b.error ? 0 : b.balance), 0))}</span>
+                        {asaasBalances.some(b => b.pendingBalance > 0) && (
+                            <> | Pendente total: <span className="font-bold text-amber-600">{formatBRL(asaasBalances.reduce((s, b) => s + (b.error ? 0 : b.pendingBalance), 0))}</span></>
+                        )}
+                    </p>
+                </div>
+            )}
 
             {combinedChartData.length >= 2 && (
                 <div className="bg-gray-50 p-5 rounded-xl border border-gray-200">

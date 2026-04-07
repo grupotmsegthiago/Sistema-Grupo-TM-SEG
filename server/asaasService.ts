@@ -419,6 +419,32 @@ export async function getInvoiceByPayment(paymentId: string, company?: string): 
   return asaasFetch(`/invoices?payment=${paymentId}`, {}, company);
 }
 
+export async function getBalance(company?: string): Promise<any> {
+  return asaasFetch('/finance/balance', {}, company);
+}
+
+export async function getAllBalances(): Promise<{ company: string; name: string; balance: number; pendingBalance: number; error?: string }[]> {
+  const results: { company: string; name: string; balance: number; pendingBalance: number; error?: string }[] = [];
+  for (const [key, val] of Object.entries(ASAAS_COMPANIES)) {
+    if (!val.apiKey) {
+      results.push({ company: key, name: val.name, balance: 0, pendingBalance: 0, error: 'API Key não configurada' });
+      continue;
+    }
+    try {
+      const data = await asaasFetch('/finance/balance', {}, key);
+      results.push({
+        company: key,
+        name: val.name,
+        balance: data.balance || 0,
+        pendingBalance: data.totalPending || 0,
+      });
+    } catch (err: any) {
+      results.push({ company: key, name: val.name, balance: 0, pendingBalance: 0, error: err.message });
+    }
+  }
+  return results;
+}
+
 export function isAsaasConfigured(): boolean {
   return Object.values(ASAAS_COMPANIES).some(c => !!c.apiKey);
 }
