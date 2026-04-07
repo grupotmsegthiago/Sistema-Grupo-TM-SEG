@@ -725,8 +725,11 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
                 const useKmEx = snap.kmExtraTotal ?? 0;
                 const useHrEx = snap.hrExtraTotal ?? 0;
                 const useToll = m.toll_value ?? snap.tollVal ?? 0;
+                const dbRevenue = m.revenue_value ?? 0;
+                const dbTotal = dbRevenue + Math.max(0, m.toll_value || 0);
+                const wasManuallyEdited = !!(m.billing_verified_by || m.revenue_edit_reason);
                 const snapTotal = snap.totalGeral ?? 0;
-                const useTotal = snapTotal > 0 ? snapTotal : (useBase + useKmEx + useHrEx + useToll);
+                const useTotal = wasManuallyEdited ? dbTotal : (snapTotal > 0 ? snapTotal : (useBase + useKmEx + useHrEx + useToll));
 
                 const kmTotal = (snap.kmTotal ?? 0) > 0 ? (snap.kmTotal ?? 0)
                     : ((m.start_km > 0 && m.end_km > 0 && m.end_km >= m.start_km) ? (m.end_km - m.start_km) : (m.total_distance || m.traveled_distance || 0));
@@ -860,13 +863,12 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
     }, [missions, priceTables, providerTables, clientData, displayClientName, billingAdjustments]);
 
     const grandTotal = useMemo(() => {
-        const dbTotal = missions.reduce((s: number, m: any) => {
-            const rev = m.revenue_value || 0;
+        return missions.reduce((s: number, m: any) => {
+            const rev = m.revenue_value ?? 0;
             const toll = Math.max(0, m.toll_value || 0);
-            return s + (rev > 0 ? rev + toll : 0);
+            return s + rev + toll;
         }, 0);
-        return dbTotal > 0 ? dbTotal : rowsData.reduce((s, r) => s + r.totalGeral, 0);
-    }, [missions, rowsData]);
+    }, [missions]);
 
     const [pendingRecompare, setPendingRecompare] = useState(false);
 
@@ -983,16 +985,18 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
         const missionDbMap = new window.Map<string, any>();
         missions.forEach((m: any) => {
             const numId = (m.id || '').replace(/\D/g, '');
-            const rev = m.revenue_value || 0;
+            const rev = m.revenue_value ?? 0;
             const toll = Math.max(0, m.toll_value || 0);
-            missionDbMap.set(numId, { rev, toll, dbTotal: rev > 0 ? rev + toll : 0 });
+            const isVerified = !!(m.billing_verified_by || m.billing_approved);
+            const hasDbValue = rev > 0 || (rev === 0 && isVerified);
+            missionDbMap.set(numId, { rev, toll, dbTotal: hasDbValue ? rev + toll : 0, hasDbValue });
         });
 
         const systemMap = new window.Map<string, any>();
         rowsData.forEach(r => {
             const numId = r.id.replace(/\D/g, '');
             const db = missionDbMap.get(numId);
-            const correctedTotal = (db && db.dbTotal > 0) ? db.dbTotal : r.totalGeral;
+            const correctedTotal = (db && db.hasDbValue) ? db.dbTotal : r.totalGeral;
             systemMap.set(numId, { ...r, totalGeral: correctedTotal });
         });
         console.log('[v048] Sistema IDs:', Array.from(systemMap.keys()));
@@ -2800,9 +2804,9 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
                                         <h4 className="font-black text-gray-400 uppercase text-[9px] tracking-widest mb-3">Resumo Financeiro</h4>
                                         {(() => {
                                             const totalSys = missions.reduce((s: number, m: any) => {
-                                                const rev = m.revenue_value || 0;
+                                                const rev = m.revenue_value ?? 0;
                                                 const toll = Math.max(0, m.toll_value || 0);
-                                                return s + (rev > 0 ? rev + toll : 0);
+                                                return s + rev + toll;
                                             }, 0);
                                             const validatedSheet = (pasteResult.validated || []).reduce((s: number, v: any) => s + v.sheet.totalCol, 0);
                                             const divSheet = pasteResult.divergences.reduce((s: number, d: any) => s + d.sheetTot, 0);

@@ -899,9 +899,6 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
               const newCostStr = provTotalWithCorrectToll.toLocaleString('pt-BR', {minimumFractionDigits: 2, maximumFractionDigits: 2});
               setRevenueInput(newRevStr);
               setCostInput(newCostStr);
-              console.log('[AUTOFILL] Preenchido automaticamente — rev:', newRevStr, 'cost:', newCostStr);
-          } else {
-              console.log('[AUTOFILL] BLOQUEADO — dbLoaded:', dbValuesLoadedRef.current, 'manualEdit:', userManuallyEditedRef.current, 'saving:', isSavingRef.current);
           }
           
           if (financialData.provider.tableId) {
@@ -1268,12 +1265,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
           }
 
           const fullPayload = { ...basePayload, toll_value_provider: isSameOs ? 0 : r2(tollProv), ...reasonFields };
-          console.log('[SAVE DEBUG] missionId:', mission.id, 'payload:', JSON.stringify(fullPayload));
-          console.log('[SAVE DEBUG] revenueInput:', revenueInput, '→ revTotal:', revTotal, '→ revServiceOnly:', revServiceOnly);
-          console.log('[SAVE DEBUG] costInput:', costInput, '→ costTotal:', costTotal, '→ costServiceOnly:', costServiceOnly);
-          console.log('[SAVE DEBUG] toll:', toll, 'tollProv:', tollProv, 'approve:', approve);
           let result = await supabase.from('missions').update(fullPayload).eq('id', mission.id).select('id, revenue_value, cost_value, toll_value, last_update').single();
-          console.log('[SAVE DEBUG] result.error:', result.error, 'result.data:', result.data);
           if (!result.error && shouldSnapshot && basePayload.snapshot_data) {
               await supabase.from('system_logs').insert([{
                   user_name: userName,
@@ -1283,15 +1275,10 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                   details: JSON.stringify({ ...basePayload.snapshot_data, approved_by: userName, approved_at: basePayload.snapshot_approved_at })
               }]);
           }
-          if (result.error) {
-              console.error('[SAVE DEBUG] ERRO na 1ª tentativa:', result.error.message, result.error.details, result.error.hint, result.error.code);
-          }
           if (result.error && (result.error.message?.includes('does not exist') || result.error.message?.includes('check_snapshot_not_empty'))) {
-              console.log('[SAVE DEBUG] Retry sem snapshot_data...');
               const { snapshot_data, snapshot_approved_by, snapshot_approved_at, ...payloadWithoutSnapshot } = fullPayload;
               delete payloadWithoutSnapshot.snapshot_data;
               result = await supabase.from('missions').update(payloadWithoutSnapshot).eq('id', mission.id).select('id, revenue_value, cost_value, toll_value, last_update').single();
-              console.log('[SAVE DEBUG] Retry result:', result.error, result.data);
               if (result.error && (result.error.message?.includes('does not exist') || result.error.message?.includes('check_snapshot_not_empty'))) {
                   const { toll_value_provider, snapshot_data: _sd, ...payloadMin } = payloadWithoutSnapshot;
                   delete payloadMin.snapshot_data;
@@ -1327,13 +1314,18 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
 
           if (!shouldSnapshot && mission.snapshot_approved_by && mission.snapshot_data) {
               const existingSnap = mission.snapshot_data as any;
+              const revenueChanged = existingSnap.revenueServiceOnly !== revServiceOnly;
+              const costChanged = existingSnap.costServiceOnly !== costServiceOnly;
               const tollChanged = existingSnap.tollVal !== toll;
-              if (tollChanged) {
+              const tollProvChanged = existingSnap.tollProvider !== tollProv;
+              if (revenueChanged || costChanged || tollChanged || tollProvChanged) {
                   const updatedSnap = {
                       ...existingSnap,
-                      tollVal: toll,
-                      tollProvider: tollProv,
-                      totalGeral: r2((existingSnap.revenueServiceOnly ?? 0) + toll),
+                      revenueServiceOnly: r2(revServiceOnly),
+                      costServiceOnly: r2(costServiceOnly),
+                      tollVal: r2(toll),
+                      tollProvider: r2(tollProv),
+                      totalGeral: r2(revServiceOnly + toll),
                   };
                   await supabase.from('missions').update({ snapshot_data: updatedSnap }).eq('id', mission.id);
               }
@@ -1442,16 +1434,11 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
               showNotification('Sucesso', `Ajustes Salvos por ${userName}`, 'success');
           }
           
-          console.log('[SAVE DEBUG] SUCESSO — revenue_value salvo:', result.data?.revenue_value, 'cost_value salvo:', result.data?.cost_value, 'toll:', result.data?.toll_value);
           if (onUpdate) onUpdate();
           window.dispatchEvent(new CustomEvent('refreshMissions'));
           if (!approve || isFullyApproved) onClose();
       } catch (e: any) {
-          console.error('[ERRO DE SAVE] message:', e.message);
-          console.error('[ERRO DE SAVE] details:', e.details);
-          console.error('[ERRO DE SAVE] hint:', e.hint);
-          console.error('[ERRO DE SAVE] code:', e.code);
-          console.error('[ERRO DE SAVE] full error:', JSON.stringify(e, null, 2));
+          console.error('[SAVE ERROR]', e.message, e.details, e.hint);
           alert(`Erro ao salvar: ${e.message || 'Erro desconhecido'}`);
       } finally { setIsUpdating(false); isSavingRef.current = false; }
   };

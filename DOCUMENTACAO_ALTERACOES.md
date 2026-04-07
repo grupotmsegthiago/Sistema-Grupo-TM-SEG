@@ -3,6 +3,32 @@
 
 ---
 
+## 07/04/2026 20:15 (Brasília) - EXTERMINIO DE RECALCULO NO COMPARADOR (#054)
+
+**Descricao:** O ClientBillingReport.tsx (comparador e relatorio) priorizava `snapshot_data.totalGeral` antigo sobre o `revenue_value` editado manualmente. Quando o usuario salvava R$ 0,01, o comparador exibia R$ 608,10 (valor do snapshot congelado).
+
+### Correcoes
+
+1. **Comparador rowsData**: Quando a missao tem snapshot MAS foi manualmente editada (billing_verified_by ou revenue_edit_reason existem), usa `revenue_value + toll_value` do banco em vez de `snapshot_data.totalGeral`.
+2. **Comparador missionDbMap**: Aceita `revenue_value = 0` como valor valido quando `billing_verified_by` ou `billing_approved` existem.
+3. **grandTotal**: Simplificado para SEMPRE usar `revenue_value + toll_value` do banco. Sem fallback para calculo.
+4. **Resumo Financeiro**: Mesma correcao aplicada ao bloco de totais na UI do comparador.
+5. **MissionFinancialModal snapshot sync**: Quando o usuario salva manualmente (approve=false) e a missao tem snapshot, atualiza `snapshot_data.totalGeral` e `snapshot_data.revenueServiceOnly` com os novos valores. Antes so atualizava quando pedagio mudava.
+6. **Debug logs removidos**: Limpeza dos console.log de debug ([SAVE DEBUG], [AUTOFILL], [ERRO DE SAVE]).
+
+### Regra
+
+**REGRA SUPREMA**: O comparador NAO pensa, NAO calcula. Ele exibe `revenue_value + toll_value` do banco. Se no banco esta R$ 0,01, ele mostra R$ 0,01. O snapshot so e usado para campos de detalhamento (km extra, hr extra, base), NUNCA para totalGeral quando houve edicao manual.
+
+### Arquivos Alterados
+
+- `components/ClientBillingReport.tsx` — rowsData snapshot logic, missionDbMap, grandTotal, Resumo Financeiro
+- `components/MissionFinancialModal.tsx` — snapshot sync no handleUpdate, debug log cleanup
+
+**Status:** ✅ Concluido
+
+---
+
 ## 07/04/2026 19:50 (Brasília) - SOLUCAO DEFINITIVA: VALORES SALVOS INVIOLAVEIS (#053)
 
 **Descricao:** Solucao definitiva para impedir que o modal financeiro sobrescreva valores salvos no banco com calculos automaticos. Implementado `dbValuesLoadedRef` — um bloqueio binario absoluto que impede qualquer sincronizacao do calculo quando existem dados salvos.
