@@ -3,6 +3,43 @@
 
 ---
 
+## 07/04/2026 - CORREÇÃO DE ATUALIZAÇÃO DE PROGRESSO (TELEMETRIA)
+
+**Descricao:** Resolvido bug onde a barra de progresso permanecia em 0% mesmo com distancia total (ex: 782,8 km) e localizacao ativas. O sistema agora calcula progresso dinamicamente para missoes em transito.
+
+### 1. Campos Implementados / UI
+
+- Barra de progresso no MissionCard agora sobe gradualmente para missoes "Em Transito" mesmo sem dados de KM Final
+- Progresso baseado em tempo decorrido vs tempo estimado quando KM nao esta disponivel
+- Progresso minimo de 1-10% apos 5 minutos em transito (mesmo sem distancia total)
+- Limite de seguranca: progresso por tempo nunca ultrapassa 95% (somente KM real ou status "Concluida" chegam a 100%)
+
+### 2. Comportamento e Logica
+
+- **Hierarquia de calculo de progresso (prioridade)**:
+  1. Status Concluida → 100%
+  2. Status Cancelada/Recusada → valor salvo no banco
+  3. Ocorrencia indica destino (DESTINO, ENTREGUE, etc.) → 100%
+  4. KM rodado real (endKm - startKm) / distancia planejada → porcentagem real
+  5. **NOVO**: Tempo decorrido / tempo estimado → porcentagem baseada em tempo (max 95%)
+  6. **NOVO**: Fallback minimo — apos 5 min em transito, mostra 1-10% baseado em tempo
+  7. Campo `progress` do banco como ultimo fallback
+- **Parsing de tempo estimado**: Suporta formatos "Xh", "Xmin", "Xh Ymin"
+- **Velocidade media padrao**: Quando nao ha tempo estimado, usa 60 km/h para estimar duracao
+
+### 3. Banco de Dados
+
+- Nenhuma alteracao no banco de dados. Os campos `progress`, `traveled_distance` e `total_distance` continuam iguais
+- Futuro: integrar TrucksControl para alimentar `traveled_distance` automaticamente via GPS
+
+### 4. Arquivos Alterados
+
+- `components/MissionCard.tsx` — Motor de calculo de progresso reescrito com fallback por tempo
+
+**Status:** ✅ CONCLUIDO E TESTADO
+
+---
+
 ## 07/04/2026 - PERMISSAO OPERADORES EDITAR DATA/HORA FINAL DA OS
 
 **Descricao:** Operadores (role `operacional` / `operador`) agora podem editar a data e hora final das OS nos dois modais: MissionFinancialModal e UpdateMissionModal. Os demais campos (KM Inicial, KM Final, Hora Inicial) permanecem somente leitura para operadores.

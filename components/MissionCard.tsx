@@ -557,9 +557,43 @@ Qualquer dúvida, estamos a disposição.
             return { progressVisual: Math.min(100, Math.max(0, Math.round(pct))), progressReal: Math.round(pct), odometerAnomaly: false };
         }
 
+        const isInTransit = mission.status === MissionStatus.IN_TRANSIT || mission.status === 'Em Trânsito' || mission.status === 'Em trânsito';
+        if (isInTransit && mission.startTime && plannedKm > 0) {
+            const startMs = new Date(mission.startTime).getTime();
+            const nowMs = Date.now();
+            const elapsedHours = (nowMs - startMs) / (1000 * 60 * 60);
+
+            let estimatedHours = 0;
+            if (mission.estimatedTime) {
+                const etMatch = mission.estimatedTime.match(/(\d+)\s*h/i);
+                const emMatch = mission.estimatedTime.match(/(\d+)\s*min/i);
+                if (etMatch) estimatedHours += parseInt(etMatch[1]);
+                if (emMatch) estimatedHours += parseInt(emMatch[1]) / 60;
+            }
+            if (estimatedHours <= 0) {
+                estimatedHours = plannedKm / 60;
+            }
+
+            if (estimatedHours > 0 && elapsedHours > 0) {
+                const timePct = Math.round((elapsedHours / estimatedHours) * 100);
+                const clampedPct = Math.min(95, Math.max(1, timePct));
+                return { progressVisual: clampedPct, progressReal: clampedPct, odometerAnomaly: false };
+            }
+        }
+
+        if (isInTransit && mission.startTime) {
+            const startMs = new Date(mission.startTime).getTime();
+            const nowMs = Date.now();
+            const elapsedMinutes = (nowMs - startMs) / (1000 * 60);
+            if (elapsedMinutes > 5) {
+                const minProgress = Math.min(10, Math.max(1, Math.round(elapsedMinutes / 30)));
+                return { progressVisual: minProgress, progressReal: minProgress, odometerAnomaly: false };
+            }
+        }
+
         const fallback = mission.progress || 0;
         return { progressVisual: Math.min(100, Math.max(0, fallback)), progressReal: fallback, odometerAnomaly: false };
-    }, [mission.startKm, mission.endKm, mission.traveledDistance, mission.totalDistance, mission.destination, mission.client, mission.progress, mission.status, mission.currentLocation]);
+    }, [mission.startKm, mission.endKm, mission.traveledDistance, mission.totalDistance, mission.destination, mission.client, mission.progress, mission.status, mission.currentLocation, mission.startTime, mission.estimatedTime]);
 
     return (<>
         <div 
