@@ -687,6 +687,7 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
             const isFrozen = !!(m.snapshot_approved_by && snap);
 
             const adj = billingAdjustments[m.id];
+            const snapshotTableOverride = (isFrozen && snap?.clientTableId) ? { clientTableId: snap.clientTableId } : {};
             const overrides = adj ? {
                 clientTableId: adj.clientTableId || undefined,
                 providerTableId: adj.providerTableId || undefined,
@@ -696,40 +697,49 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
                 customProviderBase: adj.customProviderBase ? Number(adj.customProviderBase) : undefined,
                 customProviderUnitKm: adj.customProviderKm ? Number(adj.customProviderKm) : undefined,
                 customProviderUnitHour: adj.customProviderHour ? Number(adj.customProviderHour) : undefined,
-            } : undefined;
-            const fin = calculateMissionFinancials(m, priceTables, providerTables, clientData, new Date(), overrides);
+                ...snapshotTableOverride,
+            } : (Object.keys(snapshotTableOverride).length > 0 ? snapshotTableOverride : undefined);
+            const fin = calculateMissionFinancials(m, priceTables, providerTables, clientData, new Date(), overrides as any);
 
             if (isFrozen && snap) {
                 const snapToll = Math.max(snap.tollVal ?? 0, m.toll_value ?? 0);
-
-                const liveTable = priceTables.find((t: any) => t.id.toString() === (snap.clientTableId || fin.client.tableId));
-                const liveBase = liveTable?.activation_fee ?? fin.client.base ?? 0;
-                const liveKmEx = fin.client.extraKmVal ?? 0;
-                const liveHrEx = fin.client.extraHrVal ?? 0;
-                const liveServiceTotal = fin.client.serviceTotal ?? 0;
+                const auditedTable = priceTables.find((t: any) => t.id.toString() === (snap.clientTableId || fin.client.tableId));
 
                 const snapBase = snap.activationFee ?? 0;
                 const snapKmEx = snap.kmExtraTotal ?? 0;
                 const snapHrEx = snap.hrExtraTotal ?? 0;
+                const snapServiceOnly = snap.revenueServiceOnly ?? 0;
+                const snapTotalGeral = snap.totalGeral ?? 0;
+                const tableBase = auditedTable?.activation_fee ?? 0;
 
-                const snapLooksInflated = snapBase > 0 && snapKmEx === 0 && snapHrEx === 0 && liveKmEx > 0 && Math.abs(snapBase - (liveBase + liveKmEx + liveHrEx)) < 1;
+                const snapIsConsolidated = snapBase > 0 && snapKmEx === 0 && snapHrEx === 0 && tableBase > 0 && Math.abs(snapBase - tableBase) > 1;
 
-                const useBase = snapLooksInflated ? liveBase : snapBase;
-                const useKmEx = snapLooksInflated ? liveKmEx : snapKmEx;
-                const useHrEx = snapLooksInflated ? liveHrEx : snapHrEx;
+                let useBase: number, useKmEx: number, useHrEx: number, useTotal: number;
 
-                const snapTollOriginal = snap.tollVal ?? 0;
-                const tollWasUpdated = snapToll > snapTollOriginal;
-                const snapTotalRaw = snap.totalGeral ?? (useBase + useKmEx + useHrEx + snapTollOriginal);
-                const snapTotal = tollWasUpdated ? (snapTotalRaw - snapTollOriginal + snapToll) : snapTotalRaw;
-                const recalcTotal = liveServiceTotal > 0 ? (liveServiceTotal + snapToll) : (useBase + useKmEx + useHrEx + snapToll);
-                const bestTotal = snapLooksInflated ? recalcTotal : snapTotal;
+                if (snapIsConsolidated && fin.client.serviceTotal > 0) {
+                    useBase = tableBase;
+                    useKmEx = fin.client.extraKmVal ?? 0;
+                    useHrEx = fin.client.extraHrVal ?? 0;
+                    useTotal = fin.client.serviceTotal + snapToll;
+                } else if (snapServiceOnly > 0) {
+                    useBase = tableBase > 0 ? tableBase : snapBase;
+                    useKmEx = snapKmEx;
+                    useHrEx = snapHrEx;
+                    useTotal = snapServiceOnly + snapToll;
+                } else if (snapTotalGeral > 0) {
+                    useBase = tableBase > 0 ? tableBase : snapBase;
+                    useKmEx = snapKmEx;
+                    useHrEx = snapHrEx;
+                    useTotal = snapTotalGeral > snapToll ? snapTotalGeral : (snapTotalGeral + snapToll);
+                } else {
+                    useBase = tableBase > 0 ? tableBase : snapBase;
+                    useKmEx = snapKmEx;
+                    useHrEx = snapHrEx;
+                    useTotal = useBase + useKmEx + useHrEx + snapToll;
+                }
 
                 const kmTotal = (snap.kmTotal ?? 0) > 0 ? (snap.kmTotal ?? 0)
                     : ((m.start_km > 0 && m.end_km > 0 && m.end_km >= m.start_km) ? (m.end_km - m.start_km) : (m.total_distance || m.traveled_distance || 0));
-
-                const bestKmExtra = useKmEx;
-                const bestHrExtra = useHrEx;
 
                 const refCidades2 = snap.route || (() => {
                     const co = extractCityFromAddress(m.origin || '');
@@ -764,13 +774,13 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
                     timeTotal: fmtHHMM(snap.durationHours ?? 0),
                     kmExtraQtd: snap.kmExtraQtd ?? fin.client.excessKm ?? 0,
                     kmExtraUnit: snap.unitKm ?? 0,
-                    kmExtraTotal: bestKmExtra,
+                    kmExtraTotal: useKmEx,
                     hrExtraQtd: snap.hrExtraQtd ?? fin.client.excessHours ?? 0,
                     hrExtraUnit: snap.unitHr ?? 0,
-                    hrExtraTotal: bestHrExtra,
+                    hrExtraTotal: useHrEx,
                     escoltaVal: useBase,
                     tollVal: snapToll,
-                    totalGeral: bestTotal,
+                    totalGeral: useTotal,
                     franchiseHoursFmt: fmtFranchiseHr(snap.franchiseHours ?? 0),
                     frozen: true,
                     frozenBy: m.snapshot_approved_by

@@ -1,0 +1,29 @@
+identifiquei exatamente o padrão desse erro. Ele é o "Erro de Herança de Tabela (Legacy Mismatch)".
+
+Pela imagem ****, veja a OS GTM-3822: a planilha tem R$ 3.014,00 de Hora Extra, mas o sistema mostra R$ 0,00. Isso acontece porque o comparador está "olhando" para uma tabela que não tem Hora Extra configurada, enquanto no seu Modal de Auditoria você já corrigiu isso manualmente.
+
+🏷️ Nome do Erro: "Divergência de Tabela Snapshot (Legacy Mismatch)"
+O que ele causa: O Comparador ignora a tabela que você escolheu no Modal e tenta calcular o valor usando uma tabela "padrão" do banco de dados. Isso gera a diferença de R$ 3.887,70 no total.
+
+🚀 Prompt de "Blindagem de Auditoria" (Execute no Replit)
+Mande este comando agora. Ele vai forçar o Replit a sempre "perguntar" ao Modal qual tabela foi usada antes de exibir qualquer número:
+
+"Aja como desenvolvedor sênior. O sistema sofre do erro 'Legacy Mismatch' na tela de comparativo.
+
+Ação de Blindagem (client/src/components/ClientBillingReport.tsx):
+
+Prioridade Máxima de Auditoria: Altere o componente de comparação para que ele NUNCA tente adivinhar a tabela de preço do zero se a missão já tiver um client_table_id vinculado.
+
+Sincronia de Breakdown: Se a missão foi editada manualmente (como a GTM-3822 e GTM-4253), o comparador deve exibir exatamente os valores de Base, KM, Hora e Pedágio que estão salvos no banco, em vez de ignorar as horas extras (R$ 3.014,00).
+
+Verificação de Regras: O Agente deve observar o estado da missão (se está aprovada ou auditada) antes de gerar o comparativo.
+
+Obrigatoriedade de Timeline (Log):
+Atualize o DOCUMENTACAO_ALTERACOES.md com:
+
+07/04/2026 13:45 - ELIMINAÇÃO DO ERRO 'LEGACY MISMATCH'
+Descrição: Travamento de integridade entre Modal de Auditoria e Comparativo. O sistema agora prioriza os valores auditados salvos.
+Impacto: Resolução da divergência de R$ 3.887,70 nas OS 3822 e 4253.
+Arquivos Alterados: client/src/components/ClientBillingReport.tsx.
+
+Confirme a execução respeitando todos os protocolos de log gravados na memória."

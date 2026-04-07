@@ -3,6 +3,35 @@
 
 ---
 
+## 07/04/2026 13:45 - ELIMINAÇÃO DO ERRO 'LEGACY MISMATCH' (#037)
+
+**Descricao:** Travamento de integridade entre Modal de Auditoria e Comparativo. O sistema agora prioriza os valores auditados salvos no snapshot, usando obrigatoriamente a tabela selecionada no modal (clientTableId do snapshot) como override no motor financeiro. Resolve divergencias onde Hora Extra aparecia R$ 0 no comparativo mesmo tendo sido salva corretamente no modal (ex: GTM-3822 com R$ 3.014,00 de Hr Extra ignorada).
+
+### 1. Campos Implementados / UI
+
+- Nenhuma alteracao visual
+
+### 2. Comportamento e Logica
+
+- **Override de tabela obrigatorio**: Se missao frozen tem `clientTableId` no snapshot, esse ID eh passado como override ao `calculateMissionFinancials`, impedindo que o motor "adivinhe" a tabela errada
+- **Prioridade absoluta do snapshot**: Valores auditados (hrExtraTotal, kmExtraTotal, activationFee, revenueServiceOnly, totalGeral) sao usados diretamente do snapshot
+- **Decomposicao inteligente**: Snapshots consolidados (activationFee com tudo junto, kmEx=0, hrEx=0) sao detectados e decompostos usando o calculo live COM a tabela correta
+- **Cascata de totais**: Usa revenueServiceOnly+toll > totalGeral > componentes decompostos, garantindo consistencia
+
+### 3. Banco de Dados
+
+- Nenhuma alteracao no banco de dados
+
+### 4. Arquivos Alterados
+
+- `components/ClientBillingReport.tsx` — Override de tabela via snapshot, logica de prioridade absoluta do snapshot, decomposicao com tabela auditada
+
+**Status:** ✅ CONCLUIDO E TESTADO
+
+**Impacto:** Resolucao da divergencia de R$ 3.887,70 nas OS GTM-3822 e GTM-4253
+
+---
+
 ## 07/04/2026 - SINCRONIZAÇÃO TELA COMPARAÇÃO vs MOTOR FINANCEIRO (#036)
 
 **Descricao:** Corrigido bug onde a tela "Comparar Planilha do Cliente" exibia valores divergentes (ex: Valor Base R$ 1.492,56 e KM Extra R$ 0,00 em vez de Base R$ 702 + KM Extra R$ 790,56 = Total R$ 1.502,66). Causa raiz dupla: (1) Math.max inflava totais; (2) snapshots antigos salvaram activationFee com serviceTotal incluso e kmExtraTotal=0.
