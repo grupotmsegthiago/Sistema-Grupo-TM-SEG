@@ -1,0 +1,36 @@
+Documento de Alteração Técnica #007
+Solicitação: Sincronização Global de OS e Correção de Custo Fornecedor (CEVA/Logitech)
+Status: ⏳ Aguardando Prompt no Replit
+
+O que você pediu	Ação no Replit	Arquivos Afetados
+Sincronizar Grid	O valor na tela de listagem (R$ 9.310,00) deve ser atualizado assim que o modal for salvo.	MissionTable.tsx e server/routes.ts
+Regra Fornecedor	Aplicar automaticamente a regra de custo vinculada à CEVA/Logitech para o fornecedor (Torres).	lib/financialUtils.ts
+Atualização de Estado	Garantir que o valor "Salvo" no banco seja o mesmo exibido no quadrado verde.	MissionFinancialModal.tsx
+Resultado Esperado: Ao abrir a OS 4371, os valores de custo e receita devem bater com a regra da CEVA, e ao fechar, a lista principal deve atualizar o valor de R$ 9.310,00 para o valor correto.
+
+🚀 Prompt de Correção Estrutural e Timeline (.md)
+Copie e cole este comando no Replit:
+
+"Acesse os arquivos client/src/components/MissionFinancialModal.tsx e lib/financialUtils.ts.
+
+Ações Necessárias:
+
+Correção de Regra Fornecedor: Na OS 4371 (CEVA/Logitech), o sistema não está puxando o custo correto para o fornecedor Torres. Ajuste o financialUtils.ts para que, ao detectar o cliente CEVA LOGISTICA, ele aplique a regra de custo correspondente automaticamente no modal.
+
+Sincronização de Valores: O valor exibido na lista principal (R$ 9.310,00) está divergente do valor interno (R$ 1.435,00). Garanta que a função handleSave no modal dispare uma atualização que reflita imediatamente na MissionTable.tsx.
+
+Obrigatoriedade — Timeline de Alteração (.md):
+Atualize o arquivo REPOSITORIO_ALTERACOES.md na raiz com:
+
+🕒 Timeline de Alterações - [DATA DE HOJE]
+Solicitação do Thiago: Correção da regra de custo CEVA/Logitech e sincronização de valores entre modal e grid.
+
+Mudanças Técnicas: >    - Ajuste no motor de cálculo em financialUtils.ts.
+
+Correção do trigger de salvamento em MissionFinancialModal.tsx.
+
+Impacto: Fim das discrepâncias de valores entre a tela de monitoramento e o faturamento da OS.
+
+Aguarde meu OK após confirmar a criação do Log."
+
+Thiago, você quer que eu peça para o Replit forçar um "Refresh" automático em todas as missões da CEVA para garantir que nenhuma outra esteja com esse valor de R$ 9.310,00 travado? Isso limparia o seu dashboard de uma vez.

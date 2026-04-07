@@ -877,8 +877,31 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
           const provTotalWithCorrectToll = financialData.provider.serviceTotal + parseNumber(tollProviderInput);
           const shouldSync = !isSavingRef.current && !isVendorLocked && !userManuallyEditedRef.current;
           if (shouldSync) {
-              setRevenueInput(financialData.client.total.toLocaleString('pt-BR', {minimumFractionDigits: 2, maximumFractionDigits: 2}));
-              setCostInput(provTotalWithCorrectToll.toLocaleString('pt-BR', {minimumFractionDigits: 2, maximumFractionDigits: 2}));
+              const newRevStr = financialData.client.total.toLocaleString('pt-BR', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+              const newCostStr = provTotalWithCorrectToll.toLocaleString('pt-BR', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+              setRevenueInput(newRevStr);
+              setCostInput(newCostStr);
+
+              const r2 = (v: number) => Math.round(v * 100) / 100;
+              const calcRevService = r2(financialData.client.serviceTotal);
+              const calcCostService = r2(mission.is_same_os ? 0 : financialData.provider.serviceTotal);
+              const savedRev = r2(mission.revenue_value || 0);
+              const savedCost = r2(mission.cost_value || 0);
+              const revDiff = Math.abs(calcRevService - savedRev);
+              const costDiff = Math.abs(calcCostService - savedCost);
+              if ((revDiff > 1 || costDiff > 1) && !mission.billing_approved && calcRevService > 0) {
+                  const toll = parseNumber(tollInput);
+                  const tollProv = parseNumber(tollProviderInput);
+                  supabase.from('missions').update({
+                      revenue_value: calcRevService,
+                      cost_value: calcCostService,
+                      toll_value: r2(toll),
+                      toll_value_provider: r2(mission.is_same_os ? 0 : tollProv),
+                      last_update: new Date().toISOString()
+                  }).eq('id', mission.id).then(() => {
+                      if (onUpdate) onUpdate();
+                  });
+              }
           }
           
           if (financialData.provider.tableId) {
