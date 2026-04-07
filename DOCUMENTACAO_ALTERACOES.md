@@ -3,6 +3,33 @@
 
 ---
 
+## 07/04/2026 15:35 - FIX PERSISTENCIA EDICAO MANUAL revenueInput / costInput
+
+**Descricao:** Correcao do bug onde a edicao manual do VALOR FINAL CLIENTE (revenueInput) e CUSTO FORNECEDOR (costInput) era sobrescrita pelo useEffect de sincronizacao ao reabrir a OS. O calculo automatico agora respeita valores editados e salvos manualmente.
+
+### 1. Campos Implementados / UI
+
+- Nenhuma alteracao visual. Comportamento interno dos campos verde (cliente) e azul (fornecedor) corrigido
+
+### 2. Comportamento e Logica
+
+- **Protecao contra sobrescrita**: useEffect de sincronizacao agora verifica `revenue_edit_reason`, `cost_edit_reason`, `billing_verified_by`, `userManuallyEditedRef` e `useSavedValuesRef` antes de sobrescrever valores. Se qualquer flag de edicao manual estiver ativo, o calculo automatico NAO sobrescreve
+- **billing_verified_by no Salvar Ajustes**: Antes so era setado ao Aprovar. Agora tambem eh setado ao clicar "Salvar Ajustes" (handleUpdate(false)), protegendo os dados na reabertura
+- **Inicializacao com valores salvos**: Ao abrir OS com dados salvos (revenue_edit_reason ou billing_verified_by), o sistema seta `userManuallyEditedRef=true` e `useSavedValues=true` para proteger os inputs
+- **Reset no Recalcular**: Ao clicar "Recalcular" ou trocar tabela, flags de edicao manual sao resetados e o calculo automatico volta a funcionar
+
+### 3. Banco de Dados
+
+- Nenhuma alteracao de schema. O campo `billing_verified_by` agora eh preenchido em todos os saves (nao so em aprovacoes)
+
+### 4. Arquivos Alterados
+
+- `components/MissionFinancialModal.tsx` — useEffect sincronizacao (shouldSync), loadData (protecao valores salvos), handleUpdate (billing_verified_by), setMission (billing_verified_by)
+
+**Status:** CONCLUIDO
+
+---
+
 ## 07/04/2026 14:52 - FIX KM EXTRA MISSOES CANCELADAS + BOTAO RECALCULAR E COMPARAR
 
 **Descricao:** Correcao do calculo de KM Extra para missoes com status "Cancelada" que possuem KM rodado registrado. Anteriormente o sistema zerava a distancia para TODAS as missoes canceladas, resultando em KM Extra = R$ 0. Agora, se a missao tem start_km/end_km validos, calcula normalmente. Tambem adicionado botao "Recalcular e Comparar" no comparador de planilha.

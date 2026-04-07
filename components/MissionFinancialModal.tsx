@@ -435,6 +435,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
   const loadData = async () => {
       if (!initialMission?.id || isSavingRef.current) return;
       userManuallyEditedRef.current = false;
+      setUseSavedValues(false);
       setIsLoading(true);
       try {
           const clientName = initialMission.originalClientName || initialMission.client;
@@ -585,6 +586,12 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                   if (savedCost > 0) {
                       const costTotal = savedCost + dbTollProvider;
                       setCostInput(costTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
+                  }
+                  const hasManualEditReason = !!(mRes.data.revenue_edit_reason || mRes.data.cost_edit_reason);
+                  const hasVerifiedSave = !!mRes.data.billing_verified_by;
+                  if (hasManualEditReason || hasVerifiedSave) {
+                      userManuallyEditedRef.current = true;
+                      setUseSavedValues(true);
                   }
               }
               if (mRes.data.billing_verified_by) {
@@ -878,7 +885,10 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
       if (financialData && mission) {
           const isVendorLocked = !!(mission.verified_by && mission.verified_at);
           const provTotalWithCorrectToll = financialData.provider.serviceTotal + parseNumber(tollProviderInput);
-          const shouldSync = !isSavingRef.current && !isVendorLocked && !userManuallyEditedRef.current;
+          const hasManualOverride = userManuallyEditedRef.current || useSavedValuesRef.current;
+          const hasSavedManualEdit = !!(mission.revenue_edit_reason || mission.cost_edit_reason);
+          const hasVerifiedSave = !!mission.billing_verified_by;
+          const shouldSync = !isSavingRef.current && !isVendorLocked && !hasManualOverride && !hasSavedManualEdit && !hasVerifiedSave;
           if (shouldSync) {
               const newRevStr = financialData.client.total.toLocaleString('pt-BR', {minimumFractionDigits: 2, maximumFractionDigits: 2});
               const newCostStr = provTotalWithCorrectToll.toLocaleString('pt-BR', {minimumFractionDigits: 2, maximumFractionDigits: 2});
@@ -1213,7 +1223,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
           if (approve && canReleaseBilling) {
               basePayload.billing_verified_by = userName;
           }
-          if (isApprovedForBilling && !basePayload.billing_verified_by) {
+          if (!basePayload.billing_verified_by) {
               basePayload.billing_verified_by = userName;
           }
 
@@ -1401,7 +1411,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
               toll_value: toll,
               toll_value_provider: tollProv,
               billing_approved: isApprovedForBilling,
-              ...(approve && canReleaseBilling ? { billing_verified_by: userName } : {}),
+              billing_verified_by: userName,
               ...(shouldSnapshot ? { snapshot_data: basePayload.snapshot_data, snapshot_approved_by: userName, snapshot_approved_at: basePayload.snapshot_approved_at } : {}),
               last_update: basePayload.last_update,
               ...(reasonFields.revenue_edit_reason ? { revenue_edit_reason: reasonFields.revenue_edit_reason } : {}),
