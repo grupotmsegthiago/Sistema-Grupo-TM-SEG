@@ -3104,6 +3104,24 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
               company: issuerCompany,
             });
             console.log(`[Asaas] NF agendada para cobrança ${payment.id}: ${invoiceData?.id || 'OK'} | Status: ${invoiceData?.status || '-'}`);
+
+            if (invoiceData?.id && !invoiceData?.pdfUrl) {
+              for (let attempt = 0; attempt < 5; attempt++) {
+                await new Promise(r => setTimeout(r, 3000));
+                try {
+                  const nfCheck = await getInvoiceByPayment(payment.id, issuerCompany);
+                  const nfList = nfCheck?.data || (Array.isArray(nfCheck) ? nfCheck : []);
+                  const authorized = nfList.find((n: any) => n.status === 'AUTHORIZED') || nfList.find((n: any) => n.pdfUrl) || nfList[0];
+                  if (authorized?.pdfUrl) {
+                    invoiceData.pdfUrl = authorized.pdfUrl;
+                    invoiceData.status = authorized.status;
+                    invoiceData.number = authorized.number || invoiceData.number;
+                    console.log(`[Asaas] NF PDF disponível após ${attempt + 1} tentativa(s): ${authorized.pdfUrl}`);
+                    break;
+                  }
+                } catch {}
+              }
+            }
           } catch (nfErr: any) {
             console.log(`[Asaas] AVISO: Não foi possível agendar NF para ${payment.id}: ${nfErr.message}`);
           }
@@ -3146,6 +3164,7 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
                 nfNumber: invoiceData?.number || undefined,
               });
               chargeResult.emailSent = true;
+              chargeResult.nfIncludedInEmail = !!invoiceData?.pdfUrl;
             } catch (emailErr: any) {
               console.log(`[Asaas] AVISO: Email de cobrança não enviado para ${recipientEmail}: ${emailErr.message}`);
               chargeResult.emailSent = false;
@@ -3168,7 +3187,7 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
       });
 
       const externalRef = invoiceNumber ? `NF-${invoiceNumber}` : `TMSEG-${Date.now()}`;
-      const descText = description || `Referente aos serviços de Intermediação de Escolta Armada e Fiscal de Rota — ${issuerCompany || 'Grupo TM SEG'}`;
+      const descText = description || `Ref. aos Serviços de Intermediação de Escolta Armada`;
 
       const payment = await createPayment({
         customerId: customer.id,
@@ -3194,6 +3213,24 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
           company: issuerCompany,
         });
         console.log(`[Asaas] NF agendada para cobrança ${payment.id}: ${invoiceData?.id || 'OK'} | Status: ${invoiceData?.status || '-'}`);
+
+        if (invoiceData?.id && !invoiceData?.pdfUrl) {
+          for (let attempt = 0; attempt < 5; attempt++) {
+            await new Promise(r => setTimeout(r, 3000));
+            try {
+              const nfCheck = await getInvoiceByPayment(payment.id, issuerCompany);
+              const nfList = nfCheck?.data || (Array.isArray(nfCheck) ? nfCheck : []);
+              const authorized = nfList.find((n: any) => n.status === 'AUTHORIZED') || nfList.find((n: any) => n.pdfUrl) || nfList[0];
+              if (authorized?.pdfUrl) {
+                invoiceData.pdfUrl = authorized.pdfUrl;
+                invoiceData.status = authorized.status;
+                invoiceData.number = authorized.number || invoiceData.number;
+                console.log(`[Asaas] NF PDF disponível após ${attempt + 1} tentativa(s): ${authorized.pdfUrl}`);
+                break;
+              }
+            } catch {}
+          }
+        }
       } catch (nfErr: any) {
         console.log(`[Asaas] AVISO: Não foi possível agendar NF para ${payment.id}: ${nfErr.message}`);
       }

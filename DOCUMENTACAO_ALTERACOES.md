@@ -3,6 +3,34 @@
 
 ---
 
+## 07/04/2026 15:00 (Brasília) - NF PDF NO EMAIL DE COBRANCA (#042)
+
+**Descricao:** O email de cobranca agora aguarda ate 15 segundos (5 tentativas x 3s) para que o Asaas processe a NF e gere o PDF. Assim o email enviado ao cliente ja contem o link da NF junto com boleto e PIX — tudo num email so.
+
+### 1. Campos Implementados / UI
+
+- Nenhuma alteracao visual — email ja tinha o bloco de NF (botao amarelo "Baixar NF em PDF")
+
+### 2. Comportamento e Logica
+
+- **Retry para NF PDF**: Apos agendar a NF no Asaas, se o PDF nao estiver disponivel imediatamente, o sistema faz ate 5 tentativas (intervalo de 3s) consultando `getInvoiceByPayment` ate obter o pdfUrl
+- **Prioridade AUTHORIZED**: Busca primeiro NF com status AUTHORIZED, depois qualquer uma com pdfUrl
+- **Cobranca split e single**: Ambos os fluxos (multi-charge e single) implementam o retry
+- **nfIncludedInEmail**: Campo adicionado ao resultado da cobranca split para rastreabilidade
+- **descText fallback corrigido**: Cobranca single agora usa "Ref. aos Servicos de Intermediacao de Escolta Armada"
+
+### 3. Banco de Dados
+
+- Nenhuma alteracao de schema
+
+### 4. Arquivos Alterados
+
+- `server/routes.ts` — Retry de NF PDF nos fluxos de cobranca split e single
+
+**Status:** ✅ Concluido
+
+---
+
 ## 07/04/2026 14:30 (Brasília) - BOTAO RECALCULAR E COMPARAR ATUALIZA TODAS AS OS (#041)
 
 **Descricao:** Corrigido o botao "Recalcular e Comparar" que nao atualizava no banco de dados. O sistema agora recalcula TODAS as OS do periodo (inclusive as ja aprovadas), salva os novos valores no banco, gera snapshot automatico, e recarrega o comparativo atualizado.
