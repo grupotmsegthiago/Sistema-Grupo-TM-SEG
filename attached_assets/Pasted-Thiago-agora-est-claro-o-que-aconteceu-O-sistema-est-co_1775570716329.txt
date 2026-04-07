@@ -1,0 +1,37 @@
+Thiago, agora está claro o que aconteceu. O sistema está com dois problemas de sincronia: ele está lendo a coluna errada de Hora Extra no comparador e, dentro da OS 4076, o valor total está "preso" em um cálculo antigo (R$ 710,74) enquanto o correto deveria ser R$ 962,68 (como mostra a sua própria auditoria na imagem).
+
+Vou unificar a solução em um único comando para o Replit resolver os dois problemas de uma vez: a mira da coluna e a força do cálculo real.
+
+🚀 Prompt Único: Correção de Alinhamento e Recálculo Real
+Copie e cole este comando no Agent do Replit:
+
+"Aja como um desenvolvedor Full Stack sênior e realize as seguintes correções críticas nos componentes financeiros:
+
+1. Correção de Mapeamento (client/src/components/ClientBillingReport.tsx):
+
+No colMap, altere o índice de extraHourValue (Hora Extra R$). Ele deve apontar para o índice 35 (que corresponde à Coluna AL do Excel, já que a colagem inicia na Coluna B).
+
+Isso garantirá que o valor de R$ 163,30 seja lido corretamente no comparador.
+
+2. Correção de Sincronia de Valores (client/src/components/MissionFinancialModal.tsx):
+
+Garanta que o campo Valor Final Cliente (R$ 962,68) seja a única fonte de verdade para o salvamento.
+
+Remova qualquer lógica que ainda mantenha o valor residual de R$ 710,74. O sistema deve forçar o recálculo baseado na soma real: Base (699,84) + KM Excedente (251,94) + Pedágio (10,90) = R$ 962,68.
+
+3. Registro em DOCUMENTACAO_ALTERACOES.md:
+
+07/04/2026 11:15 - CORREÇÃO INTEGRAL: COLUNA AL + SINCRO 962,68
+Descrição: Ajuste do índice de Hora Extra para Coluna AL e eliminação de valor residual (710,74) na OS 4076.
+Impacto: Comparativo agora lê R$ 163,30 e o valor final da missão reflete o cálculo real de auditoria.
+
+Após salvar tudo, informe apenas: 'Sistema alinhado com a Coluna AL e valores residuais eliminados. Pode testar o comparativo.'"
+
+🛡️ O que isso resolve para você agora:
+Na Tela de Comparação: A seta que você desenhou vai finalmente apontar para os R$ 163,30 (Coluna AL).
+
+No Resumo Financeiro: O valor de R$ 710,74 vai sumir e ser substituído pelos R$ 962,68 corretos.
+
+Resultado Final: A OS GTM-4076 vai ficar Verde (Validada) porque os dois lados (Sistema e Planilha) vão falar a mesma língua.
+
+Thiago, assim que o Replit confirmar, dê um F5, abra a OS 4076 e clique em "Salvar Ajustes" para ele carimbar o valor novo. Depois, me conte se ela ficou verdinha no relatório!

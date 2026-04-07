@@ -3,6 +3,33 @@
 
 ---
 
+## 08/04/2026 00:15 - CORRECAO INTEGRAL: COLUNA AL (INDICE 35) + VERIFICACAO DE CALCULO
+
+**Descricao:** Ajuste do indice de Hora Extra para Coluna AL (indice 35 com offset de colagem). Verificacao do calculo de totalGeral no MissionFinancialModal — o valor R$ 710,74 reflete dados reais no banco (sem hora extra registrada), nao um bug de calculo.
+
+### 1. Campos Implementados / UI
+
+- Nenhuma alteracao visual
+
+### 2. Comportamento e Logica
+
+- **Hora Extra R$:** Indice ajustado para 35 (Coluna AL com offset -1 da colagem a partir de B)
+- **Calculo totalGeral:** Confirmado como `revServiceOnly + toll` onde revServiceOnly = base + kmExtra + hrExtra. O valor R$ 710,74 da OS 4076 eh correto no banco (base 699,84 + pedagio 10,90, sem hora extra). Para corrigir, o usuario precisa salvar a missao com os valores atualizados
+- **Mapeamento:** os:0, franquiaKm:8, kmTotal:24, hrExtra:**35**, kmExtraRs:32, valorBase:37, pedagio:38, total:41
+
+### 3. Banco de Dados
+
+- Nenhuma alteracao
+
+### 4. Arquivos Alterados
+
+- `components/ClientBillingReport.tsx`
+  - Linha ~813: hrExtra ajustado de 36 para 35
+
+**Status:** Implementado e funcional
+
+---
+
 ## 07/04/2026 23:59 - AJUSTE DE COLUNA: HORA EXTRA (AL)
 
 **Descricao:** Mudanca do indice de leitura de Hora Extra R$ da coluna AK para a coluna AL para alinhar com o Boletim de Medicao.
