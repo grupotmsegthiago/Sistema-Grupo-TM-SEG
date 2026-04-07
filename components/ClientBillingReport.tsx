@@ -802,52 +802,21 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
             return true;
         };
 
-        let colMap = { valor: 2, pedagio: 40, kmTotal: 25, kmExtra: 33, hrExtra: 36, total: 41 };
+        let colMap = { os: 0, franquiaKm: 8, kmTotal: 25, kmExtraRs: 33, hrExtra: 36, valorBase: 38, pedagio: 40, total: 43 };
 
         for (const cols of lines) {
             if (isHeader(cols)) {
                 const upper = cols.map(c => (c || '').trim().toUpperCase());
-                const valorIndices: number[] = [];
-                const totalIndices: number[] = [];
-                let pedagioIdx = -1;
-                let totalClienteIdx = -1;
-                let kmTotalIdx = -1;
-                let kmExtraIdx = -1;
-                let hrExtraIdx = -1;
 
                 upper.forEach((h, i) => {
-                    if (h === 'VALOR') valorIndices.push(i);
-                    if (h === 'TOTAL') totalIndices.push(i);
-                    if (h === 'TOTAL CLIENTE' || h === 'TOTAL_CLIENTE') totalClienteIdx = i;
-                    if (h === 'PEDÁGIO' || h === 'PEDAGIO' || h === 'PEDAGGIO') pedagioIdx = i;
-                    if (h === 'KM TOTAL' || h === 'KM_TOTAL' || h === 'KM RODADO' || h === 'KM PERCORRIDO') kmTotalIdx = i;
-                    if (h === 'KM EXTRA' || h === 'KM_EXTRA' || h === 'EXCEDENTE KM') kmExtraIdx = i;
-                    if (h === 'HR EXTRA' || h === 'HR_EXTRA' || h === 'HORA EXTRA' || h === 'EXCEDENTE HR') hrExtraIdx = i;
+                    if (h === 'PEDÁGIO' || h === 'PEDAGIO') colMap.pedagio = i;
+                    if (h === 'KM TOTAL' || h === 'KM_TOTAL' || h === 'KM RODADO' || h === 'KM PERCORRIDO') colMap.kmTotal = i;
+                    if (h === 'KM EXTRA' || h === 'KM_EXTRA' || h === 'EXCEDENTE KM') colMap.kmExtraRs = i;
+                    if (h === 'HR EXTRA' || h === 'HR_EXTRA' || h === 'HORA EXTRA' || h === 'EXCEDENTE HR') colMap.hrExtra = i;
+                    if (h === 'VALOR' || h === 'VALOR BASE' || h === 'ACIONAMENTO') colMap.valorBase = i;
+                    if (h === 'TOTAL CLIENTE' || h === 'TOTAL_CLIENTE' || h === 'TOTAL FINAL') colMap.total = i;
+                    if (h === 'FRANQUIA' || h === 'FRANQUIA KM' || h === 'FR. KM') colMap.franquiaKm = i;
                 });
-
-                if (valorIndices.length >= 1) colMap.valor = valorIndices[0];
-                if (pedagioIdx >= 0) colMap.pedagio = pedagioIdx;
-                if (kmTotalIdx >= 0) colMap.kmTotal = kmTotalIdx;
-                if (kmExtraIdx >= 0) colMap.kmExtra = kmExtraIdx;
-                if (hrExtraIdx >= 0) colMap.hrExtra = hrExtraIdx;
-
-                if (totalClienteIdx >= 0) {
-                    colMap.total = totalClienteIdx;
-                } else if (totalIndices.length >= 1) {
-                    colMap.total = totalIndices[totalIndices.length - 1];
-                }
-
-                if (kmTotalIdx < 0 || kmExtraIdx < 0 || hrExtraIdx < 0) {
-                    if (totalIndices.length >= 5) {
-                        if (kmTotalIdx < 0) colMap.kmTotal = totalIndices[0];
-                        if (kmExtraIdx < 0) colMap.kmExtra = totalIndices[2];
-                        if (hrExtraIdx < 0) colMap.hrExtra = totalIndices[3];
-                    } else if (totalIndices.length >= 3) {
-                        if (kmTotalIdx < 0) colMap.kmTotal = totalIndices[0];
-                        if (kmExtraIdx < 0) colMap.kmExtra = totalIndices.length >= 4 ? totalIndices[1] : totalIndices[0];
-                        if (hrExtraIdx < 0) colMap.hrExtra = totalIndices.length >= 4 ? totalIndices[2] : totalIndices[1];
-                    }
-                }
 
                 break;
             }
@@ -890,10 +859,11 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
             }
 
             const route = (cols[1] || '').trim();
-            const activationFee = parseBRLNumber(cols[colMap.valor] || '');
+            const activationFee = parseBRLNumber(cols[colMap.valorBase] || '');
             const kmTotal = parseBRLNumber(cols[colMap.kmTotal] || '');
-            const kmExtraQtdSheet = parseBRLNumber(cols[31] || '');
-            const kmExtraTotal = kmExtraQtdSheet === 0 ? 0 : parseBRLNumber(cols[colMap.kmExtra] || '');
+            const franquiaKmSheet = parseBRLNumber(cols[colMap.franquiaKm] || '');
+            const kmExtraRaw = parseBRLNumber(cols[colMap.kmExtraRs] || '');
+            const kmExtraTotal = (kmTotal > 0 && franquiaKmSheet > 0 && kmTotal <= franquiaKmSheet) ? 0 : kmExtraRaw;
             const hrExtraTotal = parseBRLNumber(cols[colMap.hrExtra] || '');
             const tollCol = parseBRLNumber(cols[colMap.pedagio] || '');
             const totalCol = parseBRLNumber(cols[colMap.total] || cols[cols.length - 1] || '');

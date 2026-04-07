@@ -3,6 +3,45 @@
 
 ---
 
+## 07/04/2026 21:00 - REESTRUTURACAO DE MAPEAMENTO DE COLUNAS (BOLETIM)
+
+**Descricao:** Alinhamento total do importador com a planilha padrao do cliente. Mapeamento definitivo por letra de coluna: A (OS), Z (KM Total), I (Franquia KM), AH (KM Extra R$), AM (Valor Base), AO (Pedagio), AR (Total Final Cliente).
+
+### 1. Campos Implementados / UI
+
+- Nenhuma alteracao visual adicional (destaque azul/vermelho mantido da v2)
+
+### 2. Comportamento e Logica
+
+- **Mapeamento definitivo por indice:**
+  - `os: 0` (Col A) — Numero da OS
+  - `franquiaKm: 8` (Col I) — Franquia KM da tabela
+  - `kmTotal: 25` (Col Z) — KM Total percorrido
+  - `kmExtraRs: 33` (Col AH) — Valor KM Extra em R$
+  - `hrExtra: 36` (Col AK) — Valor Hr Extra em R$
+  - `valorBase: 38` (Col AM) — Valor Base / Acionamento
+  - `pedagio: 40` (Col AO) — Pedagio
+  - `total: 43` (Col AR) — Total Final Cliente
+- **Regra de franquia:** Se KM Total (Col Z) <= Franquia KM (Col I), o KM Extra R$ e forcado para R$ 0,00 automaticamente (substitui regra anterior da Col AF)
+- **Auto-deteccao por header:** Se a planilha tiver headers nomeados (PEDAGIO, KM TOTAL, KM EXTRA, etc.), o sistema detecta automaticamente e sobrescreve os defaults
+- **Parser simplificado:** Removida logica legada de deteccao por posicao de "TOTAL" — agora usa apenas indices fixos + deteccao por nome
+
+### 3. Banco de Dados
+
+- Nenhuma alteracao de schema
+
+### 4. Arquivos Alterados
+
+- `components/ClientBillingReport.tsx`
+  - Linha ~808: colMap reescrito com indices fixos por letra de coluna
+  - Linhas ~810-826: Deteccao por header simplificada (apenas nomes especificos)
+  - Linhas ~864-872: Leitura de dados usando novos indices (valorBase, kmExtraRs, franquiaKm)
+  - Linha ~869: Regra de franquia — se kmTotal <= franquiaKm, kmExtra = 0
+
+**Status:** Implementado e funcional
+
+---
+
 ## 07/04/2026 20:15 - AJUSTE DE MAPEAMENTO V2: COMPARATIVO SISTEMA VS PLANILHA
 
 **Descricao:** Alinhamento fino de colunas para eliminar falsas divergencias no relatorio de faturamento. Regra da Coluna AF implementada e destaque visual azul para campos validados.
