@@ -3,6 +3,40 @@
 
 ---
 
+## 07/04/2026 23:00 - MAPEAMENTO INTEGRAL A-AQ (LAYOUT DEFINITIVO)
+
+**Descricao:** Reconfiguracao completa do indexador de colunas para bater com a planilha de conferencia. OS na Coluna B, valores financeiros em AD, AH, AM, AN e AQ.
+
+### 1. Campos Implementados / UI
+
+- Nenhuma alteracao visual
+
+### 2. Comportamento e Logica
+
+- **Mapeamento definitivo (indices 0-based):**
+  - `os: 1` (Col B) — Numero da OS
+  - `franquiaKm: 9` (Col J) — Franquia KM
+  - `kmTotal: 25` (Col Z) — KM Total percorrido
+  - `hrExtra: 29` (Col AD) — Hora Extra R$
+  - `kmExtraRs: 33` (Col AH) — KM Extra R$
+  - `valorBase: 38` (Col AM) — Valor Base / Acionamento
+  - `pedagio: 39` (Col AN) — Pedagio
+  - `total: 42` (Col AQ) — Total Final Cliente
+- **Correcao critica:** Pedagio movido de AO (40) para AN (39). Total movido de AR (43) para AQ (42)
+
+### 3. Banco de Dados
+
+- Nenhuma alteracao
+
+### 4. Arquivos Alterados
+
+- `components/ClientBillingReport.tsx`
+  - Linha ~809: colMap com indices definitivos baseados no layout A-AQ
+
+**Status:** Implementado e funcional
+
+---
+
 ## 07/04/2026 21:45 - CORRECAO DE OFFSET: OS INICIA NA COLUNA B
 
 **Descricao:** A planilha do cliente tem a OS na Coluna B (nao A). Todos os indices foram deslocados em +1 para compensar a coluna vazia/auxiliar na posicao A.
