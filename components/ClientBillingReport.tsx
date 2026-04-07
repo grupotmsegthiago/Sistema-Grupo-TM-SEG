@@ -731,7 +731,10 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
             const hrExtraTotal = fin.client.extraHrVal;
             const durationHours = fin.durationHours;
             const tollVal = Math.max(0, m.toll_value || 0);
-            const totalGeral = (m.revenue_value || 0) + tollVal;
+            const calculatedServiceTotal = fin.client.serviceTotal || 0;
+            const totalGeral = calculatedServiceTotal > 0 
+                ? calculatedServiceTotal + tollVal 
+                : (m.revenue_value || 0) + tollVal;
 
             const cargoPlate = m._clientVehicle?.plate || '-';
 
