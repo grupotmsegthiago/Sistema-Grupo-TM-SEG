@@ -42,3 +42,9 @@ id = "wRrAS8zIQx2K25ZS6WcTp"
 uri = "file://IMPLANTACAO_ASSISTENTE_IA_TABELA.md"
 type = "text"
 title = "Documento de Implantação — Assistente IA para Tabela de Preços"
+
+[[outputs]]
+id = "CIF2sxyJZig79onurh4JE"
+uri = "file://MAPA_ENGENHARIA_REVERSA_TMSEG.md"
+type = "text"
+title = "Mapa de Engenharia Reversa — TMSEGo v3.1.5"
