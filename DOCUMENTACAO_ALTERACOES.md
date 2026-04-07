@@ -87,6 +87,48 @@
 
 ---
 
+## 07/04/2026 16:00 - SINCRONIZACAO CRITICA DE VALORES FINANCEIROS (PARTE 3)
+
+**Descricao:** Correcao de divergencia entre valor salvo (R$ 9.345,00 / R$ 9.310,00) e valor real calculado (R$ 1.435,00). O campo de input verde ainda exibia por um instante o valor antigo do banco antes do useEffect sobrescrever com o calculo correto. Eliminado o residuo de carga de valores salvos nos inputs.
+
+### 1. Campos Implementados / UI
+
+- **Input Verde "Valor Final Cliente"** — Agora exibe EXCLUSIVAMENTE o resultado do calculo matematico (Base + KM + Hora + Pedagio). Nao carrega mais valores do banco como placeholder inicial
+- **Input Azul "Pagamento Fornecedor"** — Mesmo comportamento: calculo matematico tem prioridade absoluta
+- Eliminado flash visual do valor antigo ao abrir o modal (antes: mostrava R$9.310 por ~200ms, depois recalculava para R$1.435)
+
+### 2. Comportamento e Logica
+
+- **Eliminacao de residuo:** Removidas as linhas que carregavam `savedRev + dbToll` e `savedCost + dbTollProvider` nos inputs (`setRevenueInput` e `setCostInput`) durante a inicializacao
+- **Removido `setUseSavedValues(true)`** da inicializacao — nao ha mais conceito de "usar valores salvos" como default
+- **Prioridade matematica:** O useEffect de sincronizacao (linha ~878) e a UNICA fonte de verdade para os inputs. Ele calcula `financialData.client.total` e `financialData.provider.serviceTotal + tollProvider` e seta diretamente nos inputs
+- **Auto-save mantido:** Quando o calculo diverge do banco e a OS nao esta aprovada, o banco e atualizado silenciosamente e a grid e refreshada via `onUpdate()`
+- **Fluxo completo ao abrir modal:**
+  1. Modal abre → inputs comecam vazios (string vazia)
+  2. Dados carregam do banco (toll, tabelas, missao)
+  3. `financialData` e calculado via `useMemo`
+  4. useEffect detecta `shouldSync = true` → seta inputs com calculo correto
+  5. Se valor calculado diverge do banco e OS nao aprovada → auto-save silencioso
+  6. Grid atualiza via `onUpdate()`
+
+### 3. Banco de Dados
+
+- Nenhuma alteracao de schema
+- Auto-save silencioso continua atualizando `revenue_value`, `cost_value`, `toll_value`, `toll_value_provider` para OS nao-aprovadas com divergencia
+
+### 4. Arquivos Alterados
+
+- `components/MissionFinancialModal.tsx`
+  - Linhas ~578-584: Removidas 4 linhas do bloco `if (hasSavedData)`:
+    - Removido `setRevenueInput(revWithToll.toLocaleString(...))`
+    - Removido `setCostInput(costWithToll.toLocaleString(...))`
+    - Removido `setUseSavedValues(true)`
+    - Mantido apenas `setTollEmbeddedInCost(true)` (logica de pedagio embutido)
+
+**Status:** Implementado e funcional
+
+---
+
 ## LEGENDA DE STATUS
 
 - **Implementado e funcional** — Alteracao feita, testada e em producao
