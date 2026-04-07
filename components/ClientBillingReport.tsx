@@ -839,10 +839,18 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
 
         for (const group of missionGroups) {
             const firstCols = group[0];
-            let idMatch = (firstCols[0] || '').trim().match(/^\d{3,6}$/);
-            if (!idMatch) idMatch = (firstCols[1] || '').trim().match(/^\d{3,6}$/);
-            if (!idMatch) continue;
-            const id = idMatch[0];
+            const extractOsNumber = (val: string): string | null => {
+                const clean = val.replace(/\D/g, '');
+                if (clean.length >= 3 && clean.length <= 6) return clean;
+                return null;
+            };
+            let id = extractOsNumber((firstCols[colMap.os] || '').trim());
+            if (!id) id = extractOsNumber((firstCols[0] || '').trim());
+            if (!id) id = extractOsNumber((firstCols[1] || '').trim());
+            if (!id) {
+                console.log('[ClientBillingReport] OS não reconhecida, cols[0]:', (firstCols[0] || '').trim(), 'cols[1]:', (firstCols[1] || '').trim());
+                continue;
+            }
 
             let cols: string[];
             if (group.length === 1 && firstCols.length >= 10) {
@@ -913,7 +921,12 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
             addField('Total', sys.totalGeral, sheet.totalCol, true, 0.02);
             divergences.push({ id, diffs, fields, sysTot: sys.totalGeral, sheetTot: sheet.totalCol, sys, sheet });
         });
-        sheetMap.forEach((sheet, id) => { if (!systemMap.has(id)) onlySheet.push(sheet); });
+        sheetMap.forEach((sheet, id) => {
+            if (!systemMap.has(id)) {
+                console.log('[ClientBillingReport] OS da planilha sem match no sistema:', id, '| Coluna B raw:', sheet.raw?.[colMap.os] || '(vazio)');
+                onlySheet.push(sheet);
+            }
+        });
 
         setPasteResult({ matched, onlySystem, onlySheet, divergences, validated });
     }, [pasteText, rowsData]);

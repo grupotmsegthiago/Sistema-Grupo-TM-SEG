@@ -3,6 +3,35 @@
 
 ---
 
+## 07/04/2026 23:30 - AUDITORIA DE INDICES E BLINDAGEM DE COLUNAS
+
+**Descricao:** Verificacao e travamento dos indices de leitura (0-based) para colunas B, Z, AD, AH, AM, AN e AQ. Logica de match de OS reforcada com limpeza de caracteres nao-numericos.
+
+### 1. Campos Implementados / UI
+
+- Nenhuma alteracao visual
+
+### 2. Comportamento e Logica
+
+- **Indices confirmados:** os:1(B), kmTotal:25(Z), hrExtra:29(AD), kmExtraRs:33(AH), valorBase:38(AM), pedagio:39(AN), total:42(AQ)
+- **Match de OS reforcado:** Nova funcao `extractOsNumber` que remove TODOS caracteres nao-numericos (suporta "GTM-4076", "4076", "OS4076" etc). Busca prioritaria em cols[colMap.os] (indice 1), fallback para cols[0] e cols[1]
+- **Log de diagnostico:** console.log emitido quando OS da planilha nao encontra match no sistema (mostra valor raw da Coluna B)
+- **Log de OS nao reconhecida:** console.log emitido quando uma linha tem dados mas o numero da OS nao pode ser extraido
+
+### 3. Banco de Dados
+
+- Nenhuma alteracao
+
+### 4. Arquivos Alterados
+
+- `components/ClientBillingReport.tsx`
+  - Linhas ~845-856: extractOsNumber com limpeza de caracteres + fallback triplo
+  - Linhas ~927-932: Log de OS sem match no sistema
+
+**Status:** Indices confirmados e logica de match de OS reforcada
+
+---
+
 ## 07/04/2026 23:00 - MAPEAMENTO INTEGRAL A-AQ (LAYOUT DEFINITIVO)
 
 **Descricao:** Reconfiguracao completa do indexador de colunas para bater com a planilha de conferencia. OS na Coluna B, valores financeiros em AD, AH, AM, AN e AQ.
