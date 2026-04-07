@@ -1262,7 +1262,12 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
           }
 
           const fullPayload = { ...basePayload, toll_value_provider: isSameOs ? 0 : r2(tollProv), ...reasonFields };
+          console.log('[SAVE DEBUG] missionId:', mission.id, 'payload:', JSON.stringify(fullPayload));
+          console.log('[SAVE DEBUG] revenueInput:', revenueInput, '→ revTotal:', revTotal, '→ revServiceOnly:', revServiceOnly);
+          console.log('[SAVE DEBUG] costInput:', costInput, '→ costTotal:', costTotal, '→ costServiceOnly:', costServiceOnly);
+          console.log('[SAVE DEBUG] toll:', toll, 'tollProv:', tollProv, 'approve:', approve);
           let result = await supabase.from('missions').update(fullPayload).eq('id', mission.id).select('id, revenue_value, cost_value, toll_value, last_update').single();
+          console.log('[SAVE DEBUG] result.error:', result.error, 'result.data:', result.data);
           if (!result.error && shouldSnapshot && basePayload.snapshot_data) {
               await supabase.from('system_logs').insert([{
                   user_name: userName,
@@ -1424,10 +1429,18 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
               showNotification('Sucesso', `Ajustes Salvos por ${userName}`, 'success');
           }
           
+          console.log('[SAVE DEBUG] SUCESSO — revenue_value salvo:', result.data?.revenue_value, 'cost_value salvo:', result.data?.cost_value, 'toll:', result.data?.toll_value);
           if (onUpdate) onUpdate();
           window.dispatchEvent(new CustomEvent('refreshMissions'));
           if (!approve || isFullyApproved) onClose();
-      } catch (e: any) { alert(e.message); } finally { setIsUpdating(false); isSavingRef.current = false; }
+      } catch (e: any) {
+          console.error('[ERRO DE SAVE] message:', e.message);
+          console.error('[ERRO DE SAVE] details:', e.details);
+          console.error('[ERRO DE SAVE] hint:', e.hint);
+          console.error('[ERRO DE SAVE] code:', e.code);
+          console.error('[ERRO DE SAVE] full error:', JSON.stringify(e, null, 2));
+          alert(`Erro ao salvar: ${e.message || 'Erro desconhecido'}`);
+      } finally { setIsUpdating(false); isSavingRef.current = false; }
   };
 
   const filteredProviderTables = useMemo(() => {
