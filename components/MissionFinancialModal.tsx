@@ -886,9 +886,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
           const isVendorLocked = !!(mission.verified_by && mission.verified_at);
           const provTotalWithCorrectToll = financialData.provider.serviceTotal + parseNumber(tollProviderInput);
           const hasManualOverride = userManuallyEditedRef.current || useSavedValuesRef.current;
-          const hasSavedManualEdit = !!(mission.revenue_edit_reason || mission.cost_edit_reason);
-          const hasVerifiedSave = !!mission.billing_verified_by;
-          const shouldSync = !isSavingRef.current && !isVendorLocked && !hasManualOverride && !hasSavedManualEdit && !hasVerifiedSave;
+          const shouldSync = !isSavingRef.current && !isVendorLocked && !hasManualOverride;
           if (shouldSync) {
               const newRevStr = financialData.client.total.toLocaleString('pt-BR', {minimumFractionDigits: 2, maximumFractionDigits: 2});
               const newCostStr = provTotalWithCorrectToll.toLocaleString('pt-BR', {minimumFractionDigits: 2, maximumFractionDigits: 2});
