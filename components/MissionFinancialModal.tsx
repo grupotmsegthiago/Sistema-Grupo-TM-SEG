@@ -989,6 +989,9 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
               await supabase.from('missions').update({
                   revenue_value: r2(revServiceOnly),
                   toll_value: r2(toll),
+                  revenue_edit_reason: null,
+                  cost_edit_reason: null,
+                  billing_verified_by: null,
                   last_update: new Date().toISOString()
               }).eq('id', mission.id);
               
@@ -1038,6 +1041,9 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
               await supabase.from('missions').update({
                   cost_value: r2(costServiceOnly),
                   toll_value_provider: r2(tollProv),
+                  revenue_edit_reason: null,
+                  cost_edit_reason: null,
+                  billing_verified_by: null,
                   last_update: new Date().toISOString()
               }).eq('id', mission.id);
               
@@ -2246,7 +2252,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                     <select 
                                         className={`w-full p-2 bg-gray-50 border border-gray-200 rounded-lg text-xs font-bold text-gray-700 uppercase outline-none focus:border-blue-500 ${isController ? 'pointer-events-none opacity-60' : ''}`}
                                         value={manualClientTableId || ''}
-                                        onChange={(e) => { if (!isController) { setManualClientTableId(e.target.value); setCustomClientBase(''); setCustomClientKm(''); setCustomClientHour(''); setUseSavedValues(false); userManuallyEditedRef.current = false; } }}
+                                        onChange={(e) => { if (!isController) { setManualClientTableId(e.target.value); setCustomClientBase(''); setCustomClientKm(''); setCustomClientHour(''); setUseSavedValues(false); userManuallyEditedRef.current = false; setMission(prev => prev ? { ...prev, revenue_edit_reason: null, cost_edit_reason: null, billing_verified_by: null } : prev); if (mission) supabase.from('missions').update({ revenue_edit_reason: null, cost_edit_reason: null, billing_verified_by: null }).eq('id', mission.id); } }}
                                         disabled={isController}
                                     >
                                         <option value="">Automático (IA Detectando)</option>
@@ -2399,6 +2405,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                             userManuallyEditedRef.current = false;
                                             setMission(prev => prev ? { ...prev, revenue_edit_reason: null, cost_edit_reason: null, billing_verified_by: null } : prev);
                                             setManualProviderTableId('');
+                                            await supabase.from('missions').update({ revenue_edit_reason: null, cost_edit_reason: null, billing_verified_by: null }).eq('id', mission.id);
                                             await supabase.from('system_logs').delete().eq('entity', 'BillingAdjustment').eq('entity_id', mission.id);
                                             setTimeout(() => {
                                                 setManualProviderTableId(currentTableId);
@@ -2420,7 +2427,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                     <select 
                                         className={`w-full p-2 bg-gray-50 border rounded-lg text-xs font-bold text-gray-700 uppercase outline-none focus:border-red-500 ${isZeroCostError ? 'border-red-300 bg-red-50 text-red-900 animate-pulse' : 'border-gray-200'}`}
                                         value={manualProviderTableId || ''}
-                                        onChange={(e) => { setManualProviderTableId(e.target.value); setCustomProviderBase(''); setCustomProviderKm(''); setCustomProviderHour(''); setUseSavedValues(false); userManuallyEditedRef.current = false; }}
+                                        onChange={(e) => { setManualProviderTableId(e.target.value); setCustomProviderBase(''); setCustomProviderKm(''); setCustomProviderHour(''); setUseSavedValues(false); userManuallyEditedRef.current = false; setMission(prev => prev ? { ...prev, revenue_edit_reason: null, cost_edit_reason: null, billing_verified_by: null } : prev); if (mission) supabase.from('missions').update({ revenue_edit_reason: null, cost_edit_reason: null, billing_verified_by: null }).eq('id', mission.id); }}
                                         disabled={mission.is_same_os}
                                     >
                                         <option value="">{mission.is_same_os ? 'Custo Zero (Mesma OS)' : 'IA Detectando Melhor Custo...'}</option>
