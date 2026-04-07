@@ -583,7 +583,6 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                   setRevenueInput(revWithToll.toLocaleString('pt-BR', {minimumFractionDigits: 2, maximumFractionDigits: 2}));
                   setCostInput(costWithToll.toLocaleString('pt-BR', {minimumFractionDigits: 2, maximumFractionDigits: 2}));
                   setUseSavedValues(true);
-                  userManuallyEditedRef.current = true;
               }
               if (mRes.data.billing_verified_by) {
                   setSavedByInfo(`Salvo por ${mRes.data.billing_verified_by}`);
@@ -876,9 +875,8 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
       if (financialData && mission) {
           const isVendorLocked = !!(mission.verified_by && mission.verified_at);
           const provTotalWithCorrectToll = financialData.provider.serviceTotal + parseNumber(tollProviderInput);
-          const hasSavedValues = (mission.revenue_value != null && mission.revenue_value > 0) || (mission.cost_value != null && mission.cost_value > 0) || !!mission.billing_verified_by;
           const shouldSync = !isSavingRef.current && !isVendorLocked && !userManuallyEditedRef.current;
-          if (shouldSync && (!hasSavedValues || !useSavedValuesRef.current)) {
+          if (shouldSync) {
               setRevenueInput(financialData.client.total.toLocaleString('pt-BR', {minimumFractionDigits: 2, maximumFractionDigits: 2}));
               setCostInput(provTotalWithCorrectToll.toLocaleString('pt-BR', {minimumFractionDigits: 2, maximumFractionDigits: 2}));
           }
