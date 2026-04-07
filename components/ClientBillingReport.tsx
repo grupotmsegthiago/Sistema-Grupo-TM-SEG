@@ -132,6 +132,16 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
         setSelectedMonth(`${y}-${(m + 1).toString().padStart(2, '0')}`);
     }, []);
 
+    useEffect(() => {
+        const handleRefresh = () => {
+            if (reportGenerated && selectedClient) {
+                handleGenerate();
+            }
+        };
+        window.addEventListener('refreshMissions', handleRefresh);
+        return () => window.removeEventListener('refreshMissions', handleRefresh);
+    }, [reportGenerated, selectedClient, startDate, endDate]);
+
     const fetchClients = async () => {
         const { data } = await supabase.from('clients').select('*').eq('status', 'Ativo').order('name');
         if (data) setClients(data as any);
