@@ -684,7 +684,8 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
                     endTime: fmtTime(m.end_time),
                     kmStart: m.start_km ?? 0,
                     kmEnd: m.end_km ?? 0,
-                    kmTotal: snap.kmTotal ?? 0,
+                    kmTotal: (snap.kmTotal ?? 0) > 0 ? (snap.kmTotal ?? 0)
+                        : ((m.start_km > 0 && m.end_km > 0 && m.end_km >= m.start_km) ? (m.end_km - m.start_km) : (m.total_distance || m.traveled_distance || 0)),
                     timeStart: fmtTime(m.start_time),
                     timeEnd: fmtTime(m.end_time),
                     timeTotal: fmtHHMM(snap.durationHours ?? 0),
@@ -722,7 +723,8 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
             const unitKm = usedTable?.price_per_extra_km ?? 0;
             const unitHr = usedTable?.price_per_extra_hour ?? 0;
 
-            const kmTotal = fin.realTraveledKm;
+            const kmTotal = fin.realTraveledKm > 0 ? fin.realTraveledKm 
+                : ((m.start_km > 0 && m.end_km > 0 && m.end_km >= m.start_km) ? (m.end_km - m.start_km) : (m.total_distance || m.traveled_distance || 0));
             const kmExtraQtd = fin.client.excessKm;
             const kmExtraTotal = fin.client.extraKmVal;
             const hrExtraQtd = fin.client.excessHours;
@@ -800,7 +802,7 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
             return true;
         };
 
-        let colMap = { valor: 2, pedagio: 25, kmTotal: 15, kmExtra: 21, hrExtra: 24, total: 26 };
+        let colMap = { valor: 2, pedagio: 40, kmTotal: 25, kmExtra: 33, hrExtra: 36, total: 41 };
 
         for (const cols of lines) {
             if (isHeader(cols)) {
@@ -809,16 +811,25 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
                 const totalIndices: number[] = [];
                 let pedagioIdx = -1;
                 let totalClienteIdx = -1;
+                let kmTotalIdx = -1;
+                let kmExtraIdx = -1;
+                let hrExtraIdx = -1;
 
                 upper.forEach((h, i) => {
                     if (h === 'VALOR') valorIndices.push(i);
                     if (h === 'TOTAL') totalIndices.push(i);
                     if (h === 'TOTAL CLIENTE' || h === 'TOTAL_CLIENTE') totalClienteIdx = i;
                     if (h === 'PEDÁGIO' || h === 'PEDAGIO' || h === 'PEDAGGIO') pedagioIdx = i;
+                    if (h === 'KM TOTAL' || h === 'KM_TOTAL' || h === 'KM RODADO' || h === 'KM PERCORRIDO') kmTotalIdx = i;
+                    if (h === 'KM EXTRA' || h === 'KM_EXTRA' || h === 'EXCEDENTE KM') kmExtraIdx = i;
+                    if (h === 'HR EXTRA' || h === 'HR_EXTRA' || h === 'HORA EXTRA' || h === 'EXCEDENTE HR') hrExtraIdx = i;
                 });
 
                 if (valorIndices.length >= 1) colMap.valor = valorIndices[0];
                 if (pedagioIdx >= 0) colMap.pedagio = pedagioIdx;
+                if (kmTotalIdx >= 0) colMap.kmTotal = kmTotalIdx;
+                if (kmExtraIdx >= 0) colMap.kmExtra = kmExtraIdx;
+                if (hrExtraIdx >= 0) colMap.hrExtra = hrExtraIdx;
 
                 if (totalClienteIdx >= 0) {
                     colMap.total = totalClienteIdx;
@@ -826,14 +837,16 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
                     colMap.total = totalIndices[totalIndices.length - 1];
                 }
 
-                if (totalIndices.length >= 5) {
-                    colMap.kmTotal = totalIndices[0];
-                    colMap.kmExtra = totalIndices[2];
-                    colMap.hrExtra = totalIndices[3];
-                } else if (totalIndices.length >= 3) {
-                    colMap.kmTotal = totalIndices[0];
-                    colMap.kmExtra = totalIndices.length >= 4 ? totalIndices[1] : totalIndices[0];
-                    colMap.hrExtra = totalIndices.length >= 4 ? totalIndices[2] : totalIndices[1];
+                if (kmTotalIdx < 0 || kmExtraIdx < 0 || hrExtraIdx < 0) {
+                    if (totalIndices.length >= 5) {
+                        if (kmTotalIdx < 0) colMap.kmTotal = totalIndices[0];
+                        if (kmExtraIdx < 0) colMap.kmExtra = totalIndices[2];
+                        if (hrExtraIdx < 0) colMap.hrExtra = totalIndices[3];
+                    } else if (totalIndices.length >= 3) {
+                        if (kmTotalIdx < 0) colMap.kmTotal = totalIndices[0];
+                        if (kmExtraIdx < 0) colMap.kmExtra = totalIndices.length >= 4 ? totalIndices[1] : totalIndices[0];
+                        if (hrExtraIdx < 0) colMap.hrExtra = totalIndices.length >= 4 ? totalIndices[2] : totalIndices[1];
+                    }
                 }
 
                 break;

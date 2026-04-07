@@ -3,6 +3,37 @@
 
 ---
 
+## 07/04/2026 19:45 - AJUSTE DE MAPEAMENTO: COMPARATIVO SISTEMA VS PLANILHA
+
+**Descricao:** Correcao das colunas de leitura da planilha e do KM Total do sistema para eliminar falsas divergencias no comparativo. OS GTM-3761 mostrava KM Total = 0 no sistema apesar de ter start_km=3282 e end_km=3384 (102km).
+
+### 1. Campos Implementados / UI
+
+- Nenhuma alteracao visual. Correcao de dados internos do comparativo.
+
+### 2. Comportamento e Logica
+
+- **KM Total do sistema (fallback):** Quando `realTraveledKm` retorna 0 (ou snapshot com kmTotal=0), o sistema agora faz fallback: 1) calcula `end_km - start_km` se ambos existem, 2) usa `total_distance` ou `traveled_distance`. Aplicado tanto para missoes ao vivo (linha ~728) quanto para missoes com snapshot congelado (linha ~690)
+- **Mapeamento de colunas da planilha atualizado:**
+  - Defaults atualizados: `kmTotal: 25` (Col Z), `kmExtra: 33` (Col AH), `hrExtra: 36`, `pedagio: 40` (Col AO), `total: 41`
+  - Deteccao por nome de header: agora reconhece "KM TOTAL", "KM RODADO", "KM PERCORRIDO", "KM EXTRA", "EXCEDENTE KM", "HR EXTRA", "HORA EXTRA", "EXCEDENTE HR" alem dos headers "TOTAL" ja existentes
+  - Headers nomeados tem prioridade sobre deteccao por posicao de "TOTAL"
+
+### 3. Banco de Dados
+
+- Nenhuma alteracao de schema
+
+### 4. Arquivos Alterados
+
+- `components/ClientBillingReport.tsx`
+  - Linha ~690: Fallback de kmTotal para missoes com snapshot (snap.kmTotal → start_km/end_km → total_distance)
+  - Linha ~728: Fallback de kmTotal para missoes ao vivo (realTraveledKm → start_km/end_km → total_distance)
+  - Linhas ~808-856: colMap defaults atualizados + deteccao de headers nomeados (KM TOTAL, KM EXTRA, HR EXTRA, PEDAGIO)
+
+**Status:** Implementado e funcional
+
+---
+
 ## 07/04/2026 19:15 - PRIORIDADE MAXIMA: OPERACAO LOGITECH (CEVA/JUNDIAI)
 
 **Descricao:** Garantir que toda saida de Jundiai para o cliente CEVA seja tarifada pela tabela de 200km (Operacao Logitech), independente da quilometragem real da rota. Pedagio fixo atualizado de R$ 35 para R$ 38 para cliente e fornecedor.
