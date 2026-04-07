@@ -3,6 +3,41 @@
 
 ---
 
+## 07/04/2026 23:55 - AJUSTE DE INDICES PARA COLAGEM MANUAL (B8)
+
+**Descricao:** Indices subtraidos em -1 para compensar a colagem que inicia na Coluna B (OS). O usuario copia a partir da Coluna B, entao a primeira coluna colada ja eh a OS.
+
+### 1. Campos Implementados / UI
+
+- Nenhuma alteracao visual
+
+### 2. Comportamento e Logica
+
+- **Indices ajustados (0-based, colagem a partir de B):**
+  - `os: 0` — Primeira coluna colada = Numero da OS
+  - `franquiaKm: 8` — Franquia KM
+  - `kmTotal: 24` — KM Total (era Z no Excel = indice 24 a partir de B)
+  - `hrExtra: 28` — Hora Extra R$ (era AD no Excel = indice 28 a partir de B)
+  - `kmExtraRs: 32` — KM Extra R$ (era AH no Excel = indice 32 a partir de B)
+  - `valorBase: 37` — Valor Base (era AM no Excel = indice 37 a partir de B)
+  - `pedagio: 38` — Pedagio (era AN no Excel = indice 38 a partir de B)
+  - `total: 41` — Total Final (era AQ no Excel = indice 41 a partir de B)
+- **Rota:** Ajustada para cols[1] (segunda coluna colada = Coluna C no Excel)
+
+### 3. Banco de Dados
+
+- Nenhuma alteracao
+
+### 4. Arquivos Alterados
+
+- `components/ClientBillingReport.tsx`
+  - Linha ~809: colMap com indices -1 para colagem manual
+  - Linha ~874: route ajustado para cols[1]
+
+**Status:** Implementado e funcional
+
+---
+
 ## 07/04/2026 23:30 - AUDITORIA DE INDICES E BLINDAGEM DE COLUNAS
 
 **Descricao:** Verificacao e travamento dos indices de leitura (0-based) para colunas B, Z, AD, AH, AM, AN e AQ. Logica de match de OS reforcada com limpeza de caracteres nao-numericos.

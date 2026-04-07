@@ -803,7 +803,7 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
             return false;
         };
 
-        let colMap = { os: 1, franquiaKm: 9, kmTotal: 25, hrExtra: 29, kmExtraRs: 33, valorBase: 38, pedagio: 39, total: 42 };
+        let colMap = { os: 0, franquiaKm: 8, kmTotal: 24, hrExtra: 28, kmExtraRs: 32, valorBase: 37, pedagio: 38, total: 41 };
 
         for (const cols of lines) {
             if (isHeader(cols)) {
@@ -868,7 +868,7 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
                 }
             }
 
-            const route = (cols[2] || cols[1] || '').trim();
+            const route = (cols[1] || '').trim();
             const activationFee = parseBRLNumber(cols[colMap.valorBase] || '');
             const kmTotal = parseBRLNumber(cols[colMap.kmTotal] || '');
             const franquiaKmSheet = parseBRLNumber(cols[colMap.franquiaKm] || '');
