@@ -3,6 +3,37 @@
 
 ---
 
+## 07/04/2026 21:45 - CORRECAO DE OFFSET: OS INICIA NA COLUNA B
+
+**Descricao:** A planilha do cliente tem a OS na Coluna B (nao A). Todos os indices foram deslocados em +1 para compensar a coluna vazia/auxiliar na posicao A.
+
+### 1. Campos Implementados / UI
+
+- Nenhuma alteracao visual
+
+### 2. Comportamento e Logica
+
+- **Offset +1:** Todos os indices do colMap deslocados: `os: 1` (Col B), `franquiaKm: 9` (Col J), `kmTotal: 26` (Col AA), `hrExtra: 30` (Col AE), `kmExtraRs: 34` (Col AI), `valorBase: 39` (Col AN), `pedagio: 41` (Col AP), `total: 44` (Col AS)
+- **Deteccao de OS flexivel:** `isMissionStart` agora verifica tanto `cols[0]` quanto `cols[1]` para encontrar o numero da OS (suporta planilhas com e sem coluna auxiliar em A)
+- **Extracao de ID flexivel:** `idMatch` tenta `cols[0]` primeiro, depois `cols[1]` como fallback
+- **Rota:** Leitura ajustada para `cols[2]` com fallback para `cols[1]`
+
+### 3. Banco de Dados
+
+- Nenhuma alteracao
+
+### 4. Arquivos Alterados
+
+- `components/ClientBillingReport.tsx`
+  - Linha ~809: colMap com offset +1
+  - Linhas ~799-807: isMissionStart verifica cols[0] e cols[1]
+  - Linhas ~845-848: idMatch com fallback cols[0] → cols[1]
+  - Linha ~866: route lido de cols[2] com fallback
+
+**Status:** Implementado e funcional
+
+---
+
 ## 07/04/2026 21:30 - MAPEAMENTO DE PRECISAO (COLUNAS Z, AH, AD)
 
 **Descricao:** Fixacao definitiva da coluna Hora Extra de AK (36) para AD (29) para bater com a planilha de auditoria do cliente.

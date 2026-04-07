@@ -794,15 +794,16 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
             return joined.includes('ROTA') && (joined.includes('TOTAL') || joined.includes('VALOR') || joined.includes('PEDÁGIO') || joined.includes('PEDAGIO'));
         };
         const isMissionStart = (cols: string[]) => {
-            const first = (cols[0] || '').trim();
-            if (!first) return false;
-            const num = first.match(/^\d{3,6}$/);
-            if (!num) return false;
-            if (skipKw.some(kw => first.toUpperCase().includes(kw))) return false;
-            return true;
+            for (let ci = 0; ci <= 1; ci++) {
+                const val = (cols[ci] || '').trim();
+                if (!val) continue;
+                const num = val.match(/^\d{3,6}$/);
+                if (num && !skipKw.some(kw => val.toUpperCase().includes(kw))) return true;
+            }
+            return false;
         };
 
-        let colMap = { os: 0, franquiaKm: 8, kmTotal: 25, hrExtra: 29, kmExtraRs: 33, valorBase: 38, pedagio: 40, total: 43 };
+        let colMap = { os: 1, franquiaKm: 9, kmTotal: 26, hrExtra: 30, kmExtraRs: 34, valorBase: 39, pedagio: 41, total: 44 };
 
         for (const cols of lines) {
             if (isHeader(cols)) {
@@ -838,7 +839,8 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
 
         for (const group of missionGroups) {
             const firstCols = group[0];
-            const idMatch = (firstCols[0] || '').trim().match(/\d+/);
+            let idMatch = (firstCols[0] || '').trim().match(/^\d{3,6}$/);
+            if (!idMatch) idMatch = (firstCols[1] || '').trim().match(/^\d{3,6}$/);
             if (!idMatch) continue;
             const id = idMatch[0];
 
@@ -858,7 +860,7 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
                 }
             }
 
-            const route = (cols[1] || '').trim();
+            const route = (cols[2] || cols[1] || '').trim();
             const activationFee = parseBRLNumber(cols[colMap.valorBase] || '');
             const kmTotal = parseBRLNumber(cols[colMap.kmTotal] || '');
             const franquiaKmSheet = parseBRLNumber(cols[colMap.franquiaKm] || '');
