@@ -166,7 +166,7 @@ Se não houver tabelas disponíveis para cliente ou fornecedor, use null no camp
 
     const rawText = await generateContent({
       contents: [{ role: 'user', parts: [{ text: prompt }] }],
-      config: { maxOutputTokens: 1024, temperature: 0.1 },
+      config: { maxOutputTokens: 2048, temperature: 0.1 },
       model: 'gemini-2.5-flash'
     });
 
