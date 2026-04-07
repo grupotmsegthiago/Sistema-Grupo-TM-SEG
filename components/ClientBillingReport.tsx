@@ -697,7 +697,15 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
                     hrExtraTotal: snap.hrExtraTotal ?? 0,
                     escoltaVal: snap.activationFee ?? 0,
                     tollVal: snap.tollVal ?? 0,
-                    totalGeral: snap.totalGeral ?? ((snap.revenueServiceOnly ?? 0) + (snap.tollVal ?? 0)),
+                    totalGeral: (() => {
+                        const base = snap.activationFee ?? 0;
+                        const kmEx = snap.kmExtraTotal ?? 0;
+                        const hrEx = snap.hrExtraTotal ?? 0;
+                        const toll = snap.tollVal ?? 0;
+                        const sumComponents = base + kmEx + hrEx + toll;
+                        if (sumComponents > 0) return sumComponents;
+                        return snap.totalGeral ?? ((snap.revenueServiceOnly ?? 0) + toll);
+                    })(),
                     franchiseHoursFmt: fmtFranchiseHr(snap.franchiseHours ?? 0),
                     frozen: true,
                     frozenBy: m.snapshot_approved_by
