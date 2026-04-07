@@ -3,6 +3,35 @@
 
 ---
 
+## 07/04/2026 21:30 - MAPEAMENTO DE PRECISAO (COLUNAS Z, AH, AD)
+
+**Descricao:** Fixacao definitiva da coluna Hora Extra de AK (36) para AD (29) para bater com a planilha de auditoria do cliente.
+
+### 1. Campos Implementados / UI
+
+- Nenhuma alteracao visual
+
+### 2. Comportamento e Logica
+
+- **Hora Extra R$:** Coluna corrigida de AK (indice 36) para AD (indice 29). Agora o comparador identifica R$ 163,30 corretamente
+- **Mapeamento final completo:**
+  - `os: 0` (Col A), `franquiaKm: 8` (Col I), `kmTotal: 25` (Col Z)
+  - `hrExtra: 29` (Col AD), `kmExtraRs: 33` (Col AH)
+  - `valorBase: 38` (Col AM), `pedagio: 40` (Col AO), `total: 43` (Col AR)
+
+### 3. Banco de Dados
+
+- Nenhuma alteracao
+
+### 4. Arquivos Alterados
+
+- `components/ClientBillingReport.tsx`
+  - Linha ~808: hrExtra corrigido de 36 para 29
+
+**Status:** Implementado e funcional
+
+---
+
 ## 07/04/2026 21:00 - REESTRUTURACAO DE MAPEAMENTO DE COLUNAS (BOLETIM)
 
 **Descricao:** Alinhamento total do importador com a planilha padrao do cliente. Mapeamento definitivo por letra de coluna: A (OS), Z (KM Total), I (Franquia KM), AH (KM Extra R$), AM (Valor Base), AO (Pedagio), AR (Total Final Cliente).
