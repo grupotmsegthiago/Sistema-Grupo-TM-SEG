@@ -100,6 +100,101 @@ export async function registerRoutes(
     res.json({ status: 'ok', timestamp: Date.now(), uptime: process.uptime() });
   });
 
+  app.post('/api/recalculate-all', requireAuth, requireRole('diretoria', 'administrador', 'ceo', 'financeiro'), async (req: Request, res: Response) => {
+    try {
+      const sbUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || '';
+      const sbKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY || '';
+      const sb = createClient(sbUrl, sbKey);
+
+      let allMissions: any[] = [];
+      let from = 0;
+      while (true) {
+        const { data } = await sb.from('missions')
+          .select('*')
+          .eq('billing_approved', false)
+          .gt('revenue_value', 0)
+          .not('status', 'in', '("Cancelada","Recusada")')
+          .range(from, from + 999);
+        if (!data || data.length === 0) break;
+        allMissions = allMissions.concat(data);
+        if (data.length < 1000) break;
+        from += 1000;
+      }
+
+      const { data: clientTablesRaw } = await sb.from('price_tables').select('*');
+      const { data: providerTablesRaw } = await sb.from('provider_cost_tables').select('*');
+      const { data: clientsRaw } = await sb.from('clients').select('*');
+
+      const clientTables = (clientTablesRaw || []).map((t: any) => ({
+        id: String(t.id), client: t.client, operation_type: t.operation_type,
+        activation_fee: t.activation_fee || t.activation_price || 0,
+        franchise_hours: t.franchise_hours || t.hour_franchise || 0,
+        franchise_km: t.franchise_km || t.km_franchise || 0,
+        price_per_extra_km: t.price_per_extra_km || t.extra_km_price || 0,
+        price_per_extra_hour: t.price_per_extra_hour || t.extra_hour_price || 0,
+      }));
+      const providerTables = (providerTablesRaw || []).map((t: any) => ({
+        id: String(t.id), provider: t.provider, operation_type: t.operation_type,
+        activation_cost: t.activation_cost || t.activation_price || 0,
+        franchise_hours: t.franchise_hours || t.hour_franchise || 0,
+        franchise_km: t.franchise_km || t.km_franchise || 0,
+        cost_per_extra_km: t.cost_per_extra_km || t.extra_km_price || 0,
+        cost_per_extra_hour: t.cost_per_extra_hour || t.extra_hour_price || 0,
+        cancellation_fee: t.cancellation_fee || 0,
+      }));
+
+      const r2 = (v: number) => Math.round(v * 100) / 100;
+      let updated = 0, skipped = 0, errors = 0;
+      const details: any[] = [];
+
+      for (const m of allMissions) {
+        try {
+          const clientMatch = (clientsRaw || []).find((c: any) => c.name === m.client || c.trading_name === m.client);
+          const fd = calculateMissionFinancials(m, clientTables, providerTables, clientMatch);
+
+          if (!fd || fd.client.serviceTotal <= 0) { skipped++; continue; }
+
+          const calcRev = r2(fd.client.serviceTotal);
+          const calcCost = r2(m.is_same_os ? 0 : fd.provider.serviceTotal);
+          const savedRev = r2(m.revenue_value || 0);
+          const savedCost = r2(m.cost_value || 0);
+          const revDiff = Math.abs(calcRev - savedRev);
+          const costDiff = Math.abs(calcCost - savedCost);
+
+          if (revDiff > 1 || costDiff > 1) {
+            const toll = m.toll_value || 0;
+            const tollProv = m.toll_value_provider != null ? m.toll_value_provider : toll;
+            await sb.from('missions').update({
+              revenue_value: calcRev,
+              cost_value: calcCost,
+              toll_value: r2(toll),
+              toll_value_provider: r2(m.is_same_os ? 0 : tollProv),
+              last_update: new Date().toISOString()
+            }).eq('id', m.id);
+            updated++;
+            details.push({ id: m.id, client: m.client, oldRev: savedRev, newRev: calcRev, oldCost: savedCost, newCost: calcCost, revDiff: r2(revDiff), costDiff: r2(costDiff) });
+          } else {
+            skipped++;
+          }
+        } catch (e: any) {
+          errors++;
+        }
+      }
+
+      await sb.from('system_logs').insert([{
+        user_name: (req as any).userName || 'Sistema',
+        action_type: 'BULK_RECALCULATE',
+        entity: 'Mission',
+        entity_id: 'ALL',
+        details: JSON.stringify({ total: allMissions.length, updated, skipped, errors, timestamp: new Date().toISOString() })
+      }]);
+
+      res.json({ success: true, total: allMissions.length, updated, skipped, errors, details: details.slice(0, 50) });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
 
   app.get('/sw.js', (_req: Request, res: Response) => {
     const swPath = path.resolve(process.cwd(), 'client', 'public', 'sw.js');

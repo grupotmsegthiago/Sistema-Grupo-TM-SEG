@@ -168,6 +168,7 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
   const [approvalViewStage, setApprovalViewStage] = useState<'auditor' | 'financeiro' | null>(null);
   const [showNegativeMarginOnly, setShowNegativeMarginOnly] = useState(false);
   const [showTimeline, setShowTimeline] = useState(false);
+  const [isRecalculating, setIsRecalculating] = useState(false);
 
   // Relógio para projeções
   const [currentTime, setCurrentTime] = useState(new Date());
@@ -1298,6 +1299,34 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
                         >
                           <Download size={13} /> Excel
                         </button>
+                        {canSeeFinancials && ['diretoria', 'administrador'].includes((currentUser?.role || '').toLowerCase()) && (
+                          <button
+                            data-testid="btn-recalculate-all"
+                            onClick={async () => {
+                              if (isRecalculating) return;
+                              setIsRecalculating(true);
+                              try {
+                                const resp = await authFetch('/api/recalculate-all', { method: 'POST', headers: { 'Content-Type': 'application/json' } });
+                                const data = await resp.json();
+                                if (data.success) {
+                                  showNotification('Recálculo Concluído', `${data.updated} OS corrigidas de ${data.total} analisadas. ${data.skipped} sem divergência.`, 'success');
+                                  fetchMissions(true);
+                                } else {
+                                  showNotification('Erro', data.error || 'Falha no recálculo', 'error');
+                                }
+                              } catch (e: any) {
+                                showNotification('Erro', e.message, 'error');
+                              } finally {
+                                setIsRecalculating(false);
+                              }
+                            }}
+                            className="flex items-center gap-1.5 px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-[10px] font-bold transition-colors disabled:opacity-50"
+                            disabled={isRecalculating}
+                            title="Recalcular todas as OS não-aprovadas com valores divergentes"
+                          >
+                            {isRecalculating ? <Loader2 size={13} className="animate-spin" /> : <RefreshCw size={13} />} {isRecalculating ? 'Recalculando...' : 'Recalcular Tudo'}
+                          </button>
+                        )}
                       </div>
                       <div className="flex items-center gap-4 text-[10px] font-bold">
                         <span className="text-emerald-700">Concl: {missions.filter(m => m.status === MissionStatus.COMPLETED).length}</span>
