@@ -2392,6 +2392,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                             setCustomProviderKm('');
                                             setCustomProviderHour('');
                                             setUseSavedValues(false);
+                                            userManuallyEditedRef.current = false;
                                             setManualProviderTableId('');
                                             await supabase.from('system_logs').delete().eq('entity', 'BillingAdjustment').eq('entity_id', mission.id);
                                             setTimeout(() => {
