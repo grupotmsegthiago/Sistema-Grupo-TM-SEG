@@ -835,12 +835,17 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
                 upper.forEach((h, i) => {
                     if (h === 'PEDÁGIO' || h === 'PEDAGIO') colMap.pedagio = i;
                     if (h === 'KM TOTAL' || h === 'KM_TOTAL' || h === 'KM RODADO' || h === 'KM PERCORRIDO') colMap.kmTotal = i;
-                    if (h === 'KM EXTRA' || h === 'KM_EXTRA' || h === 'EXCEDENTE KM') colMap.kmExtraRs = i;
-                    if (h === 'HR EXTRA' || h === 'HR_EXTRA' || h === 'HORA EXTRA' || h === 'EXCEDENTE HR') colMap.hrExtra = i;
+                    if (h === 'KM EXTRA' || h === 'KM_EXTRA' || h === 'EXCEDENTE KM' || h === 'TOTAL KM EXTRA') colMap.kmExtraRs = i;
+                    if (h === 'TOTAL' && upper[i-1]?.includes('VALOR')) colMap.hrExtra = i;
+                    if (h === 'TOTAL HR EXTRA' || h === 'TOTAL HORA EXTRA' || h === 'TOTAL EXTRA HR' || h === 'TOTAL EXTRA') colMap.hrExtra = i;
+                    if (h === 'HR EXTRA' || h === 'HR_EXTRA' || h === 'HORA EXTRA' || h === 'EXCEDENTE HR') {
+                        if (!upper.some(u => u === 'TOTAL HR EXTRA' || u === 'TOTAL HORA EXTRA' || u === 'TOTAL EXTRA')) colMap.hrExtra = i;
+                    }
                     if (h === 'VALOR' || h === 'VALOR BASE' || h === 'ACIONAMENTO') colMap.valorBase = i;
                     if (h === 'TOTAL CLIENTE' || h === 'TOTAL_CLIENTE' || h === 'TOTAL FINAL') colMap.total = i;
                     if (h === 'FRANQUIA' || h === 'FRANQUIA KM' || h === 'FR. KM') colMap.franquiaKm = i;
                 });
+                console.log('[ClientBillingReport] Header detectado, colMap final:', JSON.stringify(colMap), 'Headers:', upper.join(' | '));
 
                 break;
             }
