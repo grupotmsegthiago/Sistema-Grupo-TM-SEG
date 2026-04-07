@@ -1534,6 +1534,14 @@ export async function registerRoutes(
 
       for (const raw of (missions || [])) {
         try {
+          if (raw.billing_approved && raw.snapshot_data && raw.snapshot_approved_by) {
+            const existingSnap = raw.snapshot_data;
+            if (existingSnap.totalGeral > 0) {
+              skipped++;
+              continue;
+            }
+          }
+
           await supabaseAdmin.from('system_logs').delete().eq('entity', 'BillingAdjustment').eq('entity_id', raw.id);
 
           const missionClientTrimmed = (raw.client || '').trim().toUpperCase();
@@ -1608,6 +1616,30 @@ export async function registerRoutes(
       }
 
       res.json({ total: (missions || []).length, updated, skipped, errors: errCount, changes });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.post("/api/billing/repair-snapshots", async (req: Request, res: Response) => {
+    try {
+      const { data: damaged } = await supabaseAdmin.from('missions')
+        .select('id, billing_approved, snapshot_approved_by')
+        .eq('snapshot_approved_by', 'Sistema (Recalcular e Comparar)')
+        .eq('billing_approved', true);
+
+      let repaired = 0;
+      for (const m of (damaged || [])) {
+        await supabaseAdmin.from('missions').update({
+          snapshot_approved_by: null,
+          snapshot_approved_at: null,
+          snapshot_data: null,
+        }).eq('id', m.id);
+        repaired++;
+      }
+
+      console.log(`[Repair] ${repaired} snapshots de missões billing_approved restaurados (removido snapshot do Recalcular)`);
+      res.json({ success: true, repaired, message: `${repaired} missões com billing_approved tiveram o snapshot do Recalcular removido. O comparador agora vai calcular em tempo real.` });
     } catch (e: any) {
       res.status(500).json({ error: e.message });
     }

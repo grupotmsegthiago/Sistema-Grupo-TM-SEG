@@ -3,6 +3,32 @@
 
 ---
 
+## 07/04/2026 17:00 (Brasília) - RECALCULAR PRESERVA MISSOES APROVADAS + REPARO (#044)
+
+**Descricao:** O botao "Recalcular e Comparar" (corrigido no #041) estava sobrescrevendo snapshots de missoes com billing_approved=true, destruindo valores que ja tinham sido verificados e estavam corretos. Agora o botao PULA missoes aprovadas que ja tem snapshot valido. Alem disso, 58 snapshots corrompidos foram reparados (snapshot removido, volta a calcular em tempo real).
+
+### 1. Campos Implementados / UI
+
+- Nenhuma alteracao visual
+
+### 2. Comportamento e Logica
+
+- **Blindagem billing_approved**: Missoes com billing_approved=true + snapshot existente + totalGeral > 0 sao PULADAS pelo Recalcular (preserva valores verificados)
+- **Rota de reparo**: POST `/api/billing/repair-snapshots` — remove snapshots de missoes billing_approved que foram corrompidos pelo "Sistema (Recalcular e Comparar)"
+- **58 missoes reparadas**: Snapshots corrompidos foram removidos, comparador volta a calcular em tempo real
+
+### 3. Banco de Dados
+
+- 58 missoes tiveram snapshot_data, snapshot_approved_by e snapshot_approved_at zerados
+
+### 4. Arquivos Alterados
+
+- `server/routes.ts` — blindagem no recalculate-client + rota repair-snapshots
+
+**Status:** ✅ Concluido
+
+---
+
 ## 07/04/2026 16:00 (Brasília) - BUG PEDAGIO DUPLICADO NO RECALCULAR (#043)
 
 **Descricao:** O botao "Recalcular e Comparar" estava gravando o totalGeral com pedagio duplicado no snapshot. A formula usava `calc.client.total + toll`, mas `calc.client.total` ja incluia o pedagio internamente (serviceTotal + toll). Resultado: pedágio contado duas vezes, gerando divergência no comparador.
