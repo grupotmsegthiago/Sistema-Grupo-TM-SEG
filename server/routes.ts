@@ -1534,12 +1534,9 @@ export async function registerRoutes(
 
       for (const raw of (missions || [])) {
         try {
-          if (raw.billing_approved && raw.snapshot_data && raw.snapshot_approved_by) {
-            const existingSnap = raw.snapshot_data;
-            if (existingSnap.totalGeral > 0) {
-              skipped++;
-              continue;
-            }
+          if (raw.billing_approved) {
+            skipped++;
+            continue;
           }
 
           await supabaseAdmin.from('system_logs').delete().eq('entity', 'BillingAdjustment').eq('entity_id', raw.id);
