@@ -3,6 +3,29 @@
 
 ---
 
+## 07/04/2026 19:50 (Brasília) - FIX RACE CONDITION NO MODAL FINANCEIRO (#053)
+
+**Descricao:** O Modal Financeiro tinha uma race condition onde o useEffect de sincronizacao do calculo (`financialData`) disparava ANTES dos dados do banco carregarem, sobrescrevendo o valor salvo com o valor calculado. Corrigido com 3 camadas de protecao.
+
+### Correcoes
+
+- Adicionado `!isLoading` ao guard do useEffect — bloqueia sincronizacao ate dados do banco carregarem
+- Adicionado `!hasSavedRevenue && !hasSavedCost` — se ja tem revenue/cost salvos no banco, NUNCA sobrescreve com calculo
+- `isLoading` adicionado ao array de dependencias do useEffect
+
+### Impacto
+
+- Missoes que ja foram salvas (revenue_value > 0 ou cost_value > 0) nao terao mais seus valores sobrescritos pelo calculo frontend ao reabrir o modal
+- Resolve o problema reportado na GTM-3828 onde o valor cliente era recalculado ao reabrir
+
+### Arquivo Alterado
+
+- `components/MissionFinancialModal.tsx` — useEffect de sincronizacao financeira (linha ~890)
+
+**Status:** ✅ Concluido
+
+---
+
 ## 07/04/2026 18:40 (Brasília) - UNIFICACAO GLOBAL DA FONTE DA VERDADE (#052)
 
 **Descricao:** Migracao completa da inteligencia financeira do Frontend para o Backend para todos os perfis de usuario. Eliminacao de divergencias entre maquinas e navegadores diferentes. O banco de dados agora governa 100% dos valores exibidos no sistema.

@@ -885,13 +885,15 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
   }, [mission, clientTables, providerTables, clientData, manualClientTableId, manualProviderTableId, iblEnabled, tollInput, customProviderKm, customProviderHour, customClientKm, customClientHour, customClientBase, customProviderBase, providerOpsOverride]);
 
     useEffect(() => {
-      if (financialData && mission) {
+      if (financialData && mission && !isLoading) {
           const isVendorLocked = !!(mission.verified_by && mission.verified_at);
           const provTotalWithCorrectToll = financialData.provider.serviceTotal + parseNumber(tollProviderInput);
           const hasManualOverride = userManuallyEditedRef.current || useSavedValuesRef.current;
           const hasSavedManualEdit = !!(mission.revenue_edit_reason || mission.cost_edit_reason);
           const hasVerifiedSave = !!mission.billing_verified_by;
-          const shouldSync = !isSavingRef.current && !isVendorLocked && !hasManualOverride && !hasSavedManualEdit && !hasVerifiedSave;
+          const hasSavedRevenue = (mission.revenue_value || 0) > 0;
+          const hasSavedCost = (mission.cost_value || 0) > 0;
+          const shouldSync = !isSavingRef.current && !isVendorLocked && !hasManualOverride && !hasSavedManualEdit && !hasVerifiedSave && !hasSavedRevenue && !hasSavedCost;
           if (shouldSync) {
               const newRevStr = financialData.client.total.toLocaleString('pt-BR', {minimumFractionDigits: 2, maximumFractionDigits: 2});
               const newCostStr = provTotalWithCorrectToll.toLocaleString('pt-BR', {minimumFractionDigits: 2, maximumFractionDigits: 2});
@@ -913,7 +915,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
               }
           }
       }
-    }, [financialData, memoryLoaded, mission, tollProviderInput, useSavedValues]); 
+    }, [financialData, memoryLoaded, mission, tollProviderInput, useSavedValues, isLoading]); 
 
 
   const handleTollChange = (val: string) => {
