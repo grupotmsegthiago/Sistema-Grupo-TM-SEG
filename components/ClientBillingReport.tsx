@@ -3,7 +3,7 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { authFetch } from '../lib/authFetch';
 import { supabase } from '../lib/supabase';
 import { Mission, Client, ClientPriceTable, ProviderCostTable } from '../types';
-import { FileText, Search, Printer, Loader2, FileSpreadsheet, BarChart3, Users, Building2, ChevronDown, ChevronRight, List, ExternalLink, Receipt, Camera, Sparkles, X, AlertCircle, CheckCircle2, ScanLine, Image as ImageIcon, DollarSign, Plus, Trash2, GitBranch, Calendar, Lock, Pencil, ArrowRight, ArrowLeftRight, Check } from 'lucide-react';
+import { FileText, Search, Printer, Loader2, FileSpreadsheet, BarChart3, Users, Building2, ChevronDown, ChevronRight, List, ExternalLink, Receipt, Camera, Sparkles, X, AlertCircle, CheckCircle2, ScanLine, Image as ImageIcon, DollarSign, Plus, Trash2, GitBranch, Calendar, Lock, Pencil, ArrowRight, ArrowLeftRight, Check, RefreshCw } from 'lucide-react';
 import { calculateMissionFinancials, extractCityFromAddress } from '../lib/financialUtils';
 import { generateContent } from '../lib/gemini';
 import {
@@ -55,6 +55,8 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
     const [pasteResult, setPasteResult] = useState<{ matched: any[]; onlySystem: any[]; onlySheet: any[]; divergences: any[] } | null>(null);
     const [editingDivergence, setEditingDivergence] = useState<{ id: string; missionId: string; field: string; currentValue: number; isCurrency: boolean } | null>(null);
     const [boletimFilter, setBoletimFilter] = useState<'todas' | 'aprovadas' | 'pendentes'>('todas');
+    const [isRecalculating, setIsRecalculating] = useState(false);
+    const [recalcResult, setRecalcResult] = useState<{ total: number; updated: number; skipped: number; errors: number } | null>(null);
 
     useEffect(() => {
         authFetch('/api/asaas/status').then(r => r.json()).then(d => setAsaasConfigured(d.configured)).catch(() => {});
@@ -250,6 +252,35 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
             alert("Erro ao gerar relatório.");
         } finally {
             setIsLoading(false);
+        }
+    };
+
+    const handleRecalculateAndCompare = async () => {
+        const clientObj = clients.find(c => c.id.toString() === selectedClient);
+        if (!clientObj) return;
+        setIsRecalculating(true);
+        setRecalcResult(null);
+        try {
+            const res = await authFetch('/api/billing/recalculate-client', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ clientName: clientObj.name, startDate, endDate }),
+            });
+            const data = await res.json();
+            setRecalcResult(data);
+
+            const savedPaste = pasteText;
+            setPasteResult(null);
+            await handleGenerate();
+            if (savedPaste.trim()) {
+                setPasteText(savedPaste);
+                setPendingRecompare(true);
+            }
+        } catch (err) {
+            console.error('Erro ao recalcular:', err);
+            alert('Erro ao recalcular missões.');
+        } finally {
+            setIsRecalculating(false);
         }
     };
 
@@ -803,6 +834,8 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
 
     const grandTotal = useMemo(() => rowsData.reduce((s, r) => s + r.totalGeral, 0), [rowsData]);
 
+    const [pendingRecompare, setPendingRecompare] = useState(false);
+
     const handlePasteCompare = useCallback(() => {
         if (!pasteText.trim() || rowsData.length === 0) return;
         const lines = pasteText.trim().split('\n').map(l => l.split('\t'));
@@ -964,6 +997,13 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
 
         setPasteResult({ matched, onlySystem, onlySheet, divergences, validated });
     }, [pasteText, rowsData]);
+
+    useEffect(() => {
+        if (pendingRecompare && pasteText.trim() && rowsData.length > 0 && !pasteResult) {
+            handlePasteCompare();
+            setPendingRecompare(false);
+        }
+    }, [pendingRecompare, rowsData, pasteText, pasteResult, handlePasteCompare]);
 
     const fmtBRLExcel = (v: number) => v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 
@@ -2737,11 +2777,31 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
                                         })()}
                                     </div>
 
+                                    {recalcResult && (
+                                        <div className="bg-green-50 border border-green-200 rounded-xl p-3 mt-3">
+                                            <div className="flex items-center gap-2 text-green-700 font-bold text-xs mb-1">
+                                                <CheckCircle2 size={14} /> Recálculo Concluído
+                                            </div>
+                                            <div className="text-[10px] text-green-600">
+                                                {recalcResult.total} missões processadas · {recalcResult.updated} atualizadas · {recalcResult.skipped} sem alteração{recalcResult.errors > 0 ? ` · ${recalcResult.errors} erros` : ''}
+                                            </div>
+                                        </div>
+                                    )}
+
                                     <div className="flex gap-3 mt-4">
-                                        <button onClick={() => setPasteResult(null)} className="flex-1 bg-gradient-to-r from-gray-800 to-gray-900 hover:from-gray-700 hover:to-gray-800 text-white font-black uppercase text-xs tracking-widest py-3 rounded-xl flex items-center justify-center gap-2 border border-gray-700" data-testid="btn-paste-new-compare">
+                                        <button
+                                            onClick={handleRecalculateAndCompare}
+                                            disabled={isRecalculating}
+                                            className="flex-1 bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-500 hover:to-blue-600 disabled:from-blue-400 disabled:to-blue-500 text-white font-black uppercase text-xs tracking-widest py-3 rounded-xl flex items-center justify-center gap-2 border border-blue-500"
+                                            data-testid="btn-recalculate-compare"
+                                        >
+                                            {isRecalculating ? <Loader2 size={16} className="animate-spin" /> : <RefreshCw size={16} />}
+                                            {isRecalculating ? 'Recalculando...' : 'Recalcular e Comparar'}
+                                        </button>
+                                        <button onClick={() => { setPasteResult(null); setRecalcResult(null); }} className="flex-1 bg-gradient-to-r from-gray-800 to-gray-900 hover:from-gray-700 hover:to-gray-800 text-white font-black uppercase text-xs tracking-widest py-3 rounded-xl flex items-center justify-center gap-2 border border-gray-700" data-testid="btn-paste-new-compare">
                                             <ScanLine size={16} /> Nova Comparação
                                         </button>
-                                        <button onClick={() => setShowPasteModal(false)} className="px-6 bg-gray-200 hover:bg-gray-300 text-gray-700 font-bold text-xs uppercase py-3 rounded-xl">Fechar</button>
+                                        <button onClick={() => setShowPasteModal(false)} className="px-6 bg-gray-200 hover:bg-gray-300 text-gray-700 font-bold text-xs uppercase py-3 rounded-xl" data-testid="btn-paste-close">Fechar</button>
                                     </div>
                                 </div>
                             )}

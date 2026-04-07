@@ -3,6 +3,35 @@
 
 ---
 
+## 07/04/2026 14:52 - FIX KM EXTRA MISSOES CANCELADAS + BOTAO RECALCULAR E COMPARAR
+
+**Descricao:** Correcao do calculo de KM Extra para missoes com status "Cancelada" que possuem KM rodado registrado. Anteriormente o sistema zerava a distancia para TODAS as missoes canceladas, resultando em KM Extra = R$ 0. Agora, se a missao tem start_km/end_km validos, calcula normalmente. Tambem adicionado botao "Recalcular e Comparar" no comparador de planilha.
+
+### 1. Campos Implementados / UI
+
+- **Botao "Recalcular e Comparar"**: Novo botao azul na modal de comparacao de planilha. Recalcula todas as missoes do cliente (cliente + fornecedor) no servidor e reexecuta a comparacao automaticamente
+- **Resumo de recalculo**: Card verde apos recalculo mostrando total processado, atualizado, sem alteracao, e erros
+
+### 2. Comportamento e Logica
+
+- **KM Extra em canceladas**: Regra `isZeroValueMission` agora verifica `!hasValidKms` — missoes canceladas COM km rodado registrado calculam KM extra normalmente
+- **Endpoint `/api/billing/recalculate-client`**: Novo POST que recebe clientName, startDate, endDate. Recalcula revenue_value e cost_value de todas as missoes nao-aprovadas do cliente no periodo
+- **Recomparacao automatica**: Apos recalculo, o relatorio eh regerado e a comparacao com planilha reexecutada via `pendingRecompare` flag + useEffect
+
+### 3. Banco de Dados
+
+- Nenhuma alteracao de schema. O endpoint atualiza `revenue_value` e `cost_value` nas missoes existentes
+
+### 4. Arquivos Alterados
+
+- `lib/financialUtils.ts` — Linha 278: `isZeroValueMission && !hasValidKms` (antes era so `isZeroValueMission`)
+- `server/routes.ts` — Novo endpoint POST `/api/billing/recalculate-client`
+- `components/ClientBillingReport.tsx` — Botao "Recalcular e Comparar", estados `isRecalculating`/`recalcResult`/`pendingRecompare`, handler `handleRecalculateAndCompare`
+
+**Status:** ✅ Implementado
+
+---
+
 ## 08/04/2026 00:15 - CORRECAO INTEGRAL: COLUNA AL (INDICE 35) + VERIFICACAO DE CALCULO
 
 **Descricao:** Ajuste do indice de Hora Extra para Coluna AL (indice 35 com offset de colagem). Verificacao do calculo de totalGeral no MissionFinancialModal — o valor R$ 710,74 reflete dados reais no banco (sem hora extra registrada), nao um bug de calculo.

@@ -1506,6 +1506,61 @@ export async function registerRoutes(
     }
   });
 
+  app.post("/api/billing/recalculate-client", async (req: Request, res: Response) => {
+    try {
+      const { clientName, startDate, endDate } = req.body;
+      if (!clientName) return res.status(400).json({ error: 'clientName obrigatório' });
+
+      const rangeStart = startDate ? `${startDate}T03:00:00.000Z` : undefined;
+      const rangeEnd = endDate ? new Date(new Date(`${endDate}T03:00:00.000Z`).getTime() + 86400000 - 1).toISOString() : undefined;
+
+      let query = supabaseAdmin.from('missions').select('*').ilike('client', clientName).neq('status', 'Recusada');
+      if (rangeStart) query = query.gte('start_time', rangeStart);
+      if (rangeEnd) query = query.lte('start_time', rangeEnd);
+      const { data: missions, error: mErr } = await query;
+      if (mErr) throw mErr;
+
+      const [{ data: clientTables }, { data: providerTables }, { data: clients }] = await Promise.all([
+        supabaseAdmin.from('client_price_tables').select('*'),
+        supabaseAdmin.from('provider_cost_tables').select('*'),
+        supabaseAdmin.from('clients').select('*'),
+      ]);
+
+      const { calculateMissionFinancials } = await import('../lib/financialUtils');
+      const clientData = (clients || []).find((c: any) => (c.name || '').trim().toUpperCase() === clientName.trim().toUpperCase()) || null;
+      const now = new Date();
+      let updated = 0, skipped = 0, errCount = 0;
+      const changes: any[] = [];
+
+      for (const raw of (missions || [])) {
+        try {
+          if (raw.billing_approved) { skipped++; continue; }
+
+          const m = { ...raw, startKm: raw.start_km, endKm: raw.end_km, startTime: raw.start_time, endTime: raw.end_time, agentCount: raw.agent_count || 1, is_same_os: raw.is_same_os || false };
+          const calc = calculateMissionFinancials(m, clientTables || [], providerTables || [], clientData, now);
+          if (!calc) { skipped++; continue; }
+
+          const newRevenue = calc.client.total || 0;
+          const newCost = calc.provider.total || 0;
+          const oldRevenue = raw.revenue_value || 0;
+          const oldCost = raw.cost_value || 0;
+
+          if (Math.abs(newRevenue - oldRevenue) > 0.01 || Math.abs(newCost - oldCost) > 0.01) {
+            await supabaseAdmin.from('missions').update({ revenue_value: newRevenue, cost_value: newCost }).eq('id', raw.id);
+            changes.push({ id: raw.id, oldRev: oldRevenue, newRev: newRevenue, oldCost: oldCost, newCost: newCost });
+            updated++;
+          } else {
+            skipped++;
+          }
+        } catch { errCount++; }
+      }
+
+      res.json({ total: (missions || []).length, updated, skipped, errors: errCount, changes });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
   app.post("/api/missions/scan-divergences", async (req: Request, res: Response) => {
     try {
       const fetchAll = async (table: string) => {
