@@ -431,11 +431,15 @@ const FinancialInvoiceControl: React.FC = () => {
                     )}
 
                     <div className="flex gap-2 flex-wrap">
-                      {inv.nf_image_url && (
+                      {inv.nf_image_url && inv.nf_image_url.includes('asaas.com') ? (
+                        <a href={inv.nf_image_url} target="_blank" rel="noreferrer" className="flex items-center gap-1.5 text-[10px] font-bold text-emerald-600 bg-emerald-50 px-3 py-2 rounded-lg border border-emerald-200 hover:bg-emerald-100" data-testid="link-nf-pdf">
+                          <FileText size={12} /> NF PDF
+                        </a>
+                      ) : inv.nf_image_url ? (
                         <button onClick={() => setShowImageModal(inv.nf_image_url!)} className="flex items-center gap-1.5 text-[10px] font-bold text-blue-600 bg-blue-50 px-3 py-2 rounded-lg border border-blue-200 hover:bg-blue-100">
                           <ImageIcon size={12} /> Ver Nota Fiscal
                         </button>
-                      )}
+                      ) : null}
                       {inv.boleto_image_url && (
                         <button onClick={() => setShowImageModal(inv.boleto_image_url!)} className="flex items-center gap-1.5 text-[10px] font-bold text-orange-600 bg-orange-50 px-3 py-2 rounded-lg border border-orange-200 hover:bg-orange-100">
                           <Receipt size={12} /> Ver Boleto

@@ -3344,16 +3344,31 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
       const statusBr = mapAsaasStatus(payment.status);
       const isPaid = ['RECEIVED', 'CONFIRMED', 'RECEIVED_IN_CASH'].includes(payment.status);
 
+      let nfPdfUrl: string | null = null;
+      try {
+        const invoicesResp = await getInvoiceByPayment(paymentId, company);
+        const invoicesList = invoicesResp?.data || (Array.isArray(invoicesResp) ? invoicesResp : []);
+        const nfData = invoicesList.find((i: any) => i.status === 'AUTHORIZED' || i.status === 'SCHEDULED') || invoicesList[0];
+        if (nfData?.pdfUrl) nfPdfUrl = nfData.pdfUrl;
+        console.log(`[Asaas Sync] NF para payment ${paymentId}: status=${nfData?.status || 'N/A'}, pdfUrl=${nfPdfUrl || 'N/A'}`);
+      } catch (nfErr: any) {
+        console.log(`[Asaas Sync] Erro ao buscar NF do payment ${paymentId}: ${nfErr.message}`);
+      }
+
       if (invoiceId) {
         const { data: inv } = await supabase.from('financial_invoices').select('id, asaas_payment_id').eq('id', invoiceId).single();
         if (!inv || (inv.asaas_payment_id && inv.asaas_payment_id !== paymentId)) {
           return res.status(400).json({ error: 'Invoice não vinculada a este paymentId' });
         }
         const newStatus = isPaid ? 'PAGA' : payment.status === 'OVERDUE' ? 'VENCIDA' : 'EMITIDA';
-        await supabase.from('financial_invoices').update({
+        const updateData: any = {
           status: newStatus,
           asaas_status: payment.status,
-        }).eq('id', invoiceId);
+        };
+        if (nfPdfUrl) updateData.nf_image_url = nfPdfUrl;
+        if (payment.invoiceUrl) updateData.asaas_invoice_url = payment.invoiceUrl;
+        if (payment.bankSlipUrl) updateData.asaas_bankslip_url = payment.bankSlipUrl;
+        await supabase.from('financial_invoices').update(updateData).eq('id', invoiceId);
 
         if (isPaid) {
           const { data: inv } = await supabase.from('financial_invoices').select('number, client').eq('id', invoiceId).single();
@@ -3367,7 +3382,7 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
         }
       }
 
-      res.json({ status: payment.status, statusBr, isPaid, value: payment.value });
+      res.json({ status: payment.status, statusBr, isPaid, value: payment.value, nfPdfUrl: nfPdfUrl || null });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }
