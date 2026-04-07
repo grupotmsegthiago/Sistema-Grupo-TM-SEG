@@ -8,8 +8,8 @@ import webpush from "web-push";
 import { calculateMissionFinancials } from "../lib/financialUtils";
 import fs from "fs";
 import path from "path";
-import { sendMissionEmailToClient, sendMissionEmailToProvider, sendMissionResendToClient, sendMirroringEvidenceEmail, sendMissionChangeNotificationToClient, sendMissionChangeNotificationToProvider, sendWelcomeEmail, sendTestEmail, sendVerificationCodeEmail, sendPasswordResetEmail } from "./emailService";
-import { findOrCreateCustomer, createPayment, getPayment, getPaymentPixQrCode, getPaymentBankSlip, listPayments, deletePayment, mapAsaasStatus, isAsaasConfigured, getAsaasCompanies, scheduleInvoice, listMunicipalServices } from "./asaasService";
+import { sendMissionEmailToClient, sendMissionEmailToProvider, sendMissionResendToClient, sendMirroringEvidenceEmail, sendMissionChangeNotificationToClient, sendMissionChangeNotificationToProvider, sendWelcomeEmail, sendTestEmail, sendVerificationCodeEmail, sendPasswordResetEmail, sendBillingEmail } from "./emailService";
+import { findOrCreateCustomer, createPayment, getPayment, getPaymentPixQrCode, getPaymentBankSlip, listPayments, deletePayment, mapAsaasStatus, isAsaasConfigured, getAsaasCompanies, scheduleInvoice, listMunicipalServices, getInvoiceByPayment } from "./asaasService";
 
 const resend = new Resend(process.env.RESEND_API_KEY);
 
@@ -3062,7 +3062,7 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
 
           console.log(`[Asaas] Cobrança split criada: ${payment.id} | ${charge.name || clientName} | CNPJ: ${cleanCnpj} | R$ ${charge.value} | Venc: ${dueDate}`);
 
-          results.push({
+          const chargeResult: any = {
             payment: {
               id: payment.id, status: payment.status, statusBr: mapAsaasStatus(payment.status),
               value: payment.value, dueDate: payment.dueDate,
@@ -3073,7 +3073,36 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
             bankSlip: bankSlipData ? { barCode: bankSlipData.barCode, digitableLine: bankSlipData.identificationField, nossoNumero: bankSlipData.nossoNumero } : null,
             customer: { id: customer.id, name: customer.name, cpfCnpj: cleanCnpj },
             invoice: invoiceData ? { id: invoiceData.id, status: invoiceData.status, number: invoiceData.number || null, pdfUrl: invoiceData.pdfUrl || null } : null,
-          });
+          };
+          results.push(chargeResult);
+
+          const recipientEmail = charge.email || clientEmail;
+          if (recipientEmail) {
+            try {
+              await sendBillingEmail({
+                clientName: charge.name || clientName || 'Cliente',
+                clientCnpj: cleanCnpj,
+                clientEmail: recipientEmail,
+                invoiceNumber: invoiceNumber || undefined,
+                issuerCompany: issuerCompany || 'Grupo TM SEG',
+                value: parseFloat(charge.value),
+                dueDate,
+                description: descText,
+                paymentId: payment.id,
+                boletoUrl: payment.bankSlipUrl || undefined,
+                pixPayload: pixData?.payload || undefined,
+                pixQrCodeBase64: pixData?.encodedImage || undefined,
+                boletoBarcode: bankSlipData?.barCode || undefined,
+                boletoDigitableLine: bankSlipData?.identificationField || undefined,
+                nfPdfUrl: invoiceData?.pdfUrl || undefined,
+                nfNumber: invoiceData?.number || undefined,
+              });
+              chargeResult.emailSent = true;
+            } catch (emailErr: any) {
+              console.log(`[Asaas] AVISO: Email de cobrança não enviado para ${recipientEmail}: ${emailErr.message}`);
+              chargeResult.emailSent = false;
+            }
+          }
         }
         return res.json({ success: true, split: true, charges: results, totalValue: results.reduce((s, r) => s + r.payment.value, 0) });
       }
@@ -3123,8 +3152,36 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
 
       console.log(`[Asaas] Cobrança criada: ${payment.id} | ${clientName} | R$ ${value} | Venc: ${dueDate}`);
 
+      let emailSent = false;
+      if (clientEmail) {
+        try {
+          await sendBillingEmail({
+            clientName: clientName || 'Cliente',
+            clientCnpj: clientCpfCnpj,
+            clientEmail,
+            invoiceNumber: invoiceNumber || undefined,
+            issuerCompany: issuerCompany || 'Grupo TM SEG',
+            value: parseFloat(value),
+            dueDate,
+            description: descText,
+            paymentId: payment.id,
+            boletoUrl: payment.bankSlipUrl || undefined,
+            pixPayload: pixData?.payload || undefined,
+            pixQrCodeBase64: pixData?.encodedImage || undefined,
+            boletoBarcode: bankSlipData?.barCode || undefined,
+            boletoDigitableLine: bankSlipData?.identificationField || undefined,
+            nfPdfUrl: invoiceData?.pdfUrl || undefined,
+            nfNumber: invoiceData?.number || undefined,
+          });
+          emailSent = true;
+        } catch (emailErr: any) {
+          console.log(`[Asaas] AVISO: Email de cobrança não enviado para ${clientEmail}: ${emailErr.message}`);
+        }
+      }
+
       res.json({
         success: true,
+        emailSent,
         payment: {
           id: payment.id,
           status: payment.status,
@@ -3150,6 +3207,54 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
       });
     } catch (err: any) {
       console.error('[Asaas] Erro ao criar cobrança:', err.message);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post("/api/asaas/send-billing-email", requireAuth, requireRole('administrador', 'diretoria', 'financeiro'), async (req: Request, res: Response) => {
+    try {
+      const { paymentId, clientName, clientCnpj, clientEmail, value, dueDate, description, invoiceNumber, issuerCompany } = req.body;
+      if (!paymentId || !clientEmail || !value || !dueDate) {
+        return res.status(400).json({ error: 'paymentId, clientEmail, value e dueDate são obrigatórios' });
+      }
+
+      const company = issuerCompany || undefined;
+      let pixData = null, bankSlipData = null, invoiceData = null;
+
+      try { pixData = await getPaymentPixQrCode(paymentId, company); } catch (_) {}
+      try { bankSlipData = await getPaymentBankSlip(paymentId, company); } catch (_) {}
+      try {
+        const invoicesResp = await getInvoiceByPayment(paymentId, company);
+        if (invoicesResp?.data?.length > 0) {
+          invoiceData = invoicesResp.data[0];
+        }
+      } catch (_) {}
+
+      let payment: any = null;
+      try { payment = await getPayment(paymentId, company); } catch (_) {}
+
+      const result = await sendBillingEmail({
+        clientName: clientName || 'Cliente',
+        clientCnpj: clientCnpj || '',
+        clientEmail,
+        invoiceNumber: invoiceNumber || undefined,
+        issuerCompany: issuerCompany || 'Grupo TM SEG',
+        value: parseFloat(value),
+        dueDate,
+        description: description || undefined,
+        paymentId,
+        boletoUrl: payment?.bankSlipUrl || undefined,
+        pixPayload: pixData?.payload || undefined,
+        pixQrCodeBase64: pixData?.encodedImage || undefined,
+        boletoBarcode: bankSlipData?.barCode || undefined,
+        boletoDigitableLine: bankSlipData?.identificationField || undefined,
+        nfPdfUrl: invoiceData?.pdfUrl || undefined,
+        nfNumber: invoiceData?.number || undefined,
+      });
+
+      res.json({ success: result.success, messageId: result.messageId || null, nfIncluded: !!invoiceData?.pdfUrl, boletoIncluded: !!(payment?.bankSlipUrl || bankSlipData), pixIncluded: !!pixData });
+    } catch (err: any) {
+      console.error('[Email] Erro ao enviar email de cobrança:', err.message);
       res.status(500).json({ error: err.message });
     }
   });

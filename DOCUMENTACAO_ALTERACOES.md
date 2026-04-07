@@ -3,6 +3,38 @@
 
 ---
 
+## 07/04/2026 14:55 (Brasília) - EMAIL AUTOMÁTICO DE COBRANÇA COM NF E BOLETO (#039)
+
+**Descricao:** Implementado envio automático de email de cobrança ao cliente quando uma cobrança é criada no Asaas. O email inclui boleto bancário (link + linha digitável), PIX (QR Code + copia e cola) e NF de Serviço (link para PDF), tudo no mesmo email com layout profissional.
+
+### 1. Campos Implementados / UI
+
+- Email de cobrança com layout profissional (header TM SEG, seções coloridas para Boleto/PIX/NF)
+- Link direto para download do boleto
+- QR Code PIX embutido no email
+- Link para download da NF em PDF
+- Linha digitável e código de barras do boleto
+
+### 2. Comportamento e Logica
+
+- **Envio automático**: Ao criar cobrança (single ou split), o sistema envia email para o cliente com todos os dados de pagamento e NF
+- **Rota de reenvio manual**: `POST /api/asaas/send-billing-email` permite reenviar email de cobrança para qualquer paymentId, buscando NF/PIX/boleto automaticamente da API Asaas
+- **CC financeiro**: Cópia para financeiro@grupotmseg.com.br + BCC thiago@grupotmseg.com.br
+- **Fallback**: Se email do cliente não estiver disponível, a cobrança é criada normalmente sem email
+
+### 3. Banco de Dados
+
+- Nenhuma alteracao no banco de dados
+
+### 4. Arquivos Alterados
+
+- `server/emailService.ts` — Nova função `sendBillingEmail` com template de cobrança (Boleto + PIX + NF)
+- `server/routes.ts` — Integração do email no fluxo de criação de cobrança (single e split) + rota `/api/asaas/send-billing-email` para reenvio manual
+
+**Status:** ✅ CONCLUIDO E TESTADO
+
+---
+
 ## 07/04/2026 13:55 (Brasília) - FIX DEFINITIVO: PRIORIDADE DE VALOR SALVO - FIM DO LEGACY MISMATCH (#038)
 
 **Descricao:** O comparador agora le diretamente os campos financeiros salvos no banco de dados (revenue_value + toll_value), ignorando calculos automaticos divergentes. Quando revenue_value do banco eh maior que o totalGeral do snapshot, o sistema usa revenue_value como verdade absoluta e decompoe os extras (KM Extra e Hr Extra) usando o motor financeiro com a tabela correta.

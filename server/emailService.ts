@@ -716,4 +716,103 @@ export async function sendPasswordResetEmail(
   }
 }
 
+export interface BillingEmailData {
+  clientName: string;
+  clientCnpj: string;
+  clientEmail: string;
+  invoiceNumber?: string;
+  issuerCompany: string;
+  value: number;
+  dueDate: string;
+  description?: string;
+  paymentId?: string;
+  boletoUrl?: string;
+  pixPayload?: string;
+  pixQrCodeBase64?: string;
+  boletoBarcode?: string;
+  boletoDigitableLine?: string;
+  nfPdfUrl?: string;
+  nfNumber?: string;
+}
+
+function formatCurrency(val: number): string {
+  return val.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+}
+
+function formatDueDate(dateStr: string): string {
+  try {
+    const [y, m, d] = dateStr.split('-');
+    return `${d}/${m}/${y}`;
+  } catch { return dateStr; }
+}
+
+export async function sendBillingEmail(data: BillingEmailData): Promise<{ success: boolean; messageId?: string }> {
+  const boletoBlock = data.boletoUrl ? `
+    <div style="background:#f0fdf4; border:2px solid #16a34a; border-radius:8px; padding:16px; margin:16px 0; text-align:center;">
+      <p style="margin:0 0 8px; font-size:14px; font-weight:700; color:#16a34a;">📄 BOLETO BANCÁRIO</p>
+      <a href="${data.boletoUrl}" target="_blank" style="display:inline-block; background:#16a34a; color:#fff; padding:10px 24px; border-radius:6px; text-decoration:none; font-weight:700; font-size:14px;">Visualizar / Imprimir Boleto</a>
+      ${data.boletoDigitableLine ? `<p style="margin:12px 0 0; font-size:11px; color:#555; word-break:break-all;"><strong>Linha Digitável:</strong> ${data.boletoDigitableLine}</p>` : ''}
+      ${data.boletoBarcode ? `<p style="margin:4px 0 0; font-size:11px; color:#555;"><strong>Código de Barras:</strong> ${data.boletoBarcode}</p>` : ''}
+    </div>
+  ` : '';
+
+  const pixBlock = (data.pixPayload || data.pixQrCodeBase64) ? `
+    <div style="background:#f0f9ff; border:2px solid #0284c7; border-radius:8px; padding:16px; margin:16px 0; text-align:center;">
+      <p style="margin:0 0 8px; font-size:14px; font-weight:700; color:#0284c7;">📱 PAGAMENTO VIA PIX</p>
+      ${data.pixQrCodeBase64 ? `<img src="data:image/png;base64,${data.pixQrCodeBase64}" alt="QR Code PIX" style="width:200px; height:200px; margin:8px auto; display:block; border-radius:8px;" />` : ''}
+      ${data.pixPayload ? `<p style="margin:8px 0 0; font-size:11px; color:#555; word-break:break-all;"><strong>Pix Copia e Cola:</strong> ${data.pixPayload}</p>` : ''}
+    </div>
+  ` : '';
+
+  const nfBlock = data.nfPdfUrl ? `
+    <div style="background:#fefce8; border:2px solid #ca8a04; border-radius:8px; padding:16px; margin:16px 0; text-align:center;">
+      <p style="margin:0 0 8px; font-size:14px; font-weight:700; color:#ca8a04;">📋 NOTA FISCAL DE SERVIÇO${data.nfNumber ? ` Nº ${data.nfNumber}` : ''}</p>
+      <a href="${data.nfPdfUrl}" target="_blank" style="display:inline-block; background:#ca8a04; color:#fff; padding:10px 24px; border-radius:6px; text-decoration:none; font-weight:700; font-size:14px;">Baixar NF em PDF</a>
+    </div>
+  ` : '';
+
+  const html = baseTemplate(`
+    <h2>💰 Cobrança — ${data.issuerCompany}</h2>
+    <p>Prezado(a) <strong>${data.clientName}</strong>,</p>
+    <p>Segue a cobrança referente aos serviços prestados conforme detalhamento abaixo:</p>
+    <table class="info-table">
+      <tr><td>Empresa Emissora</td><td><strong>${data.issuerCompany}</strong></td></tr>
+      <tr><td>Cliente</td><td>${data.clientName}</td></tr>
+      <tr><td>CNPJ</td><td>${data.clientCnpj}</td></tr>
+      ${data.invoiceNumber ? `<tr><td>Referência NF</td><td><span class="badge">${data.invoiceNumber}</span></td></tr>` : ''}
+      <tr><td>Descrição</td><td>${data.description || 'Intermediação de Escolta Armada e Fiscal de Rota'}</td></tr>
+      <tr><td>Valor</td><td style="font-size:18px; font-weight:900; color:#c0392b;">${formatCurrency(data.value)}</td></tr>
+      <tr><td>Vencimento</td><td><strong>${formatDueDate(data.dueDate)}</strong></td></tr>
+    </table>
+
+    ${boletoBlock}
+    ${pixBlock}
+    ${nfBlock}
+
+    <div class="highlight-box">
+      <p><strong>Observação:</strong> Em caso de dúvidas sobre esta cobrança, entre em contato pelo e-mail <a href="mailto:adm@grupotmseg.com.br">adm@grupotmseg.com.br</a>.</p>
+    </div>
+    <p>Atenciosamente,<br><strong>${data.issuerCompany}</strong></p>
+  `);
+
+  try {
+    const mailOptions: any = {
+      from: SMTP_FROM,
+      to: data.clientEmail,
+      cc: 'financeiro@grupotmseg.com.br',
+      bcc: 'thiago@grupotmseg.com.br',
+      subject: `Cobrança ${data.invoiceNumber ? `NF ${data.invoiceNumber} — ` : ''}${formatCurrency(data.value)} — Venc. ${formatDueDate(data.dueDate)} — ${data.issuerCompany}`,
+      html,
+    };
+
+    const info = await transporter.sendMail(mailOptions);
+    const messageId = info.messageId || '';
+    console.log(`[Email] Cobrança enviada → ${data.clientEmail} | ${data.clientName} | R$ ${data.value} | Venc: ${data.dueDate} | Message-ID: ${messageId}`);
+    return { success: true, messageId };
+  } catch (err: any) {
+    console.error(`[Email] Erro ao enviar cobrança para ${data.clientEmail}:`, err.message);
+    return { success: false };
+  }
+}
+
 export { transporter };
