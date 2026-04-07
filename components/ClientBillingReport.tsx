@@ -700,18 +700,36 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
             const fin = calculateMissionFinancials(m, priceTables, providerTables, clientData, new Date(), overrides);
 
             if (isFrozen && snap) {
+                const snapToll = Math.max(snap.tollVal ?? 0, m.toll_value ?? 0);
+
+                const liveTable = priceTables.find((t: any) => t.id.toString() === (snap.clientTableId || fin.client.tableId));
+                const liveBase = liveTable?.activation_fee ?? fin.client.base ?? 0;
+                const liveKmEx = fin.client.extraKmVal ?? 0;
+                const liveHrEx = fin.client.extraHrVal ?? 0;
+                const liveServiceTotal = fin.client.serviceTotal ?? 0;
+
                 const snapBase = snap.activationFee ?? 0;
                 const snapKmEx = snap.kmExtraTotal ?? 0;
                 const snapHrEx = snap.hrExtraTotal ?? 0;
-                const snapToll = snap.tollVal ?? 0;
-                const snapTotal = snap.totalGeral ?? (snapBase + snapKmEx + snapHrEx + snapToll);
+
+                const snapLooksInflated = snapBase > 0 && snapKmEx === 0 && snapHrEx === 0 && liveKmEx > 0 && Math.abs(snapBase - (liveBase + liveKmEx + liveHrEx)) < 1;
+
+                const useBase = snapLooksInflated ? liveBase : snapBase;
+                const useKmEx = snapLooksInflated ? liveKmEx : snapKmEx;
+                const useHrEx = snapLooksInflated ? liveHrEx : snapHrEx;
+
+                const snapTollOriginal = snap.tollVal ?? 0;
+                const tollWasUpdated = snapToll > snapTollOriginal;
+                const snapTotalRaw = snap.totalGeral ?? (useBase + useKmEx + useHrEx + snapTollOriginal);
+                const snapTotal = tollWasUpdated ? (snapTotalRaw - snapTollOriginal + snapToll) : snapTotalRaw;
+                const recalcTotal = liveServiceTotal > 0 ? (liveServiceTotal + snapToll) : (useBase + useKmEx + useHrEx + snapToll);
+                const bestTotal = snapLooksInflated ? recalcTotal : snapTotal;
 
                 const kmTotal = (snap.kmTotal ?? 0) > 0 ? (snap.kmTotal ?? 0)
                     : ((m.start_km > 0 && m.end_km > 0 && m.end_km >= m.start_km) ? (m.end_km - m.start_km) : (m.total_distance || m.traveled_distance || 0));
 
-                const bestKmExtra = snapKmEx;
-                const bestHrExtra = snapHrEx;
-                const bestTotal = snapTotal;
+                const bestKmExtra = useKmEx;
+                const bestHrExtra = useHrEx;
 
                 const refCidades2 = snap.route || (() => {
                     const co = extractCityFromAddress(m.origin || '');
@@ -723,7 +741,7 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
                     id: (m.id || '').replace('GTM-', ''),
                     route: refCidades2,
                     client: displayClientName,
-                    activationFee: snapBase,
+                    activationFee: useBase,
                     franchiseHours: snap.franchiseHours ?? 0,
                     franchiseKm: snap.franchiseKm ?? 0,
                     unitHr: snap.unitHr ?? 0,
@@ -750,7 +768,7 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
                     hrExtraQtd: snap.hrExtraQtd ?? fin.client.excessHours ?? 0,
                     hrExtraUnit: snap.unitHr ?? 0,
                     hrExtraTotal: bestHrExtra,
-                    escoltaVal: snapBase,
+                    escoltaVal: useBase,
                     tollVal: snapToll,
                     totalGeral: bestTotal,
                     franchiseHoursFmt: fmtFranchiseHr(snap.franchiseHours ?? 0),

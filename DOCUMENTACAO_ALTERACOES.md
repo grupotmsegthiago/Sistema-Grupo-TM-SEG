@@ -5,7 +5,7 @@
 
 ## 07/04/2026 - SINCRONIZAÇÃO TELA COMPARAÇÃO vs MOTOR FINANCEIRO (#036)
 
-**Descricao:** Corrigido bug onde a tela "Comparar Planilha do Cliente" exibia valores divergentes (ex: R$ 2.283,12) em vez do valor correto calculado pelo motor financeiro (R$ 1.502,66). Causa raiz: uso de Math.max entre calculo live e snapshot inflava valores quando o motor live encontrava tabela/multiplicador diferente.
+**Descricao:** Corrigido bug onde a tela "Comparar Planilha do Cliente" exibia valores divergentes (ex: Valor Base R$ 1.492,56 e KM Extra R$ 0,00 em vez de Base R$ 702 + KM Extra R$ 790,56 = Total R$ 1.502,66). Causa raiz dupla: (1) Math.max inflava totais; (2) snapshots antigos salvaram activationFee com serviceTotal incluso e kmExtraTotal=0.
 
 ### 1. Campos Implementados / UI
 
@@ -13,9 +13,11 @@
 
 ### 2. Comportamento e Logica
 
-- **Missoes frozen (aprovadas com snapshot)**: Removido Math.max entre calculo live e snapshot. Agora usa valores do snapshot diretamente (activationFee, kmExtraTotal, hrExtraTotal, totalGeral do snapshot). O snapshot eh a "fonte da verdade" para missoes aprovadas
-- **Missoes nao-frozen**: Quando calculatedServiceTotal = 0, o fallback agora tenta reconstruir a partir dos componentes (activationFee + kmExtraTotal + hrExtraTotal + tollVal) antes de cair no revenue_value do banco
-- **Eliminado Math.max que inflava valores**: bestKmExtra, bestHrExtra e bestTotal agora usam diretamente os valores do snapshot
+- **Deteccao de snapshot inflado**: Nova logica detecta snapshots onde activationFee contem o serviceTotal completo (base+km+hr) e kmExtraTotal=0 — indicando que o snapshot foi salvo com dados consolidados em vez de desmembrados
+- **Correcao automatica**: Quando snapshot inflado eh detectado, o sistema usa os valores do calculo live (activationFee da tabela real, kmExtra e hrExtra do motor financeiro) para desmembrar corretamente
+- **Pedagio robusto**: Agora usa Math.max entre pedagio do snapshot e pedagio salvo na missao (m.toll_value), corrigindo casos onde snapshot salvou tollVal=0 mas missao tem pedagio real
+- **Ajuste de total quando pedagio atualizado**: Se pedagio real > pedagio do snapshot, o totalGeral eh recalculado para incluir a diferenca
+- **Missoes nao-frozen**: Fallback melhorado — reconstroi total a partir dos componentes antes de cair no revenue_value
 
 ### 3. Banco de Dados
 
@@ -23,7 +25,7 @@
 
 ### 4. Arquivos Alterados
 
-- `components/ClientBillingReport.tsx` — Logica de rowsData frozen corrigida (removido Math.max), fallback nao-frozen melhorado
+- `components/ClientBillingReport.tsx` — Deteccao e correcao de snapshots inflados, pedagio robusto, fallback nao-frozen
 
 **Status:** ✅ CONCLUIDO E TESTADO
 
