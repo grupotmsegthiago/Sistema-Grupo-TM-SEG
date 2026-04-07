@@ -894,27 +894,6 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
               const newCostStr = provTotalWithCorrectToll.toLocaleString('pt-BR', {minimumFractionDigits: 2, maximumFractionDigits: 2});
               setRevenueInput(newRevStr);
               setCostInput(newCostStr);
-
-              const r2 = (v: number) => Math.round(v * 100) / 100;
-              const calcRevService = r2(financialData.client.serviceTotal);
-              const calcCostService = r2(mission.is_same_os ? 0 : financialData.provider.serviceTotal);
-              const savedRev = r2(mission.revenue_value || 0);
-              const savedCost = r2(mission.cost_value || 0);
-              const revDiff = Math.abs(calcRevService - savedRev);
-              const costDiff = Math.abs(calcCostService - savedCost);
-              if ((revDiff > 1 || costDiff > 1) && !mission.billing_approved && calcRevService > 0) {
-                  const toll = parseNumber(tollInput);
-                  const tollProv = parseNumber(tollProviderInput);
-                  supabase.from('missions').update({
-                      revenue_value: calcRevService,
-                      cost_value: calcCostService,
-                      toll_value: r2(toll),
-                      toll_value_provider: r2(mission.is_same_os ? 0 : tollProv),
-                      last_update: new Date().toISOString()
-                  }).eq('id', mission.id).then(() => {
-                      if (onUpdate) onUpdate();
-                  });
-              }
           }
           
           if (financialData.provider.tableId) {
@@ -2671,19 +2650,34 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                     </div>
                                 );
                             })()}
-                            <div className="flex items-baseline gap-2">
-                                <span className="text-sm font-bold text-green-600">R$</span>
-                                <input 
-                                    type="text" 
-                                    inputMode="decimal"
-                                    className={`w-full bg-white/60 border border-green-200 rounded-lg px-2 py-1 outline-none font-black text-3xl text-green-900 font-mono focus:ring-2 focus:ring-green-400 focus:border-green-400 ${!canEditClientData ? 'pointer-events-none opacity-70' : 'cursor-text'}`}
-                                    value={revenueInput} 
-                                    onChange={e => { if (canEditClientData) { userManuallyEditedRef.current = true; setUseSavedValues(true); setRevenueInput(e.target.value); setShowRevenueReasonInput(true); } }}
-                                    readOnly={!canEditClientData}
-                                    data-testid="input-revenue-total"
-                                />
-                            </div>
-                            <p className="text-[8px] text-green-600 font-bold mt-1 italic">{canEditClientData ? '* EDITÁVEL - DIRETORIA / ADMINISTRADOR (toque para editar)' : '* VALOR TOTAL CALCULADO BASEADO NAS FRANQUIAS E MEDIÇÃO'}</p>
+                            {(() => {
+                                const calcTotal = financialData ? financialData.client.total : 0;
+                                const inputVal = parseNumber(revenueInput);
+                                const isManualValue = inputVal > 0 && calcTotal > 0 && Math.abs(inputVal - calcTotal) > 1;
+                                return (
+                                    <>
+                                        <div className="flex items-baseline gap-2">
+                                            <span className={`text-sm font-bold ${isManualValue ? 'text-amber-600' : 'text-green-600'}`}>
+                                                {isManualValue ? '✍️ R$' : 'R$'}
+                                            </span>
+                                            <input 
+                                                type="text" 
+                                                inputMode="decimal"
+                                                className={`w-full bg-white/60 border rounded-lg px-2 py-1 outline-none font-black text-3xl font-mono focus:ring-2 ${isManualValue ? 'border-amber-400 text-amber-900 focus:ring-amber-400 focus:border-amber-400 bg-amber-50/40' : 'border-green-200 text-green-900 focus:ring-green-400 focus:border-green-400'} ${!canEditClientData ? 'pointer-events-none opacity-70' : 'cursor-text'}`}
+                                                value={revenueInput} 
+                                                onChange={e => { if (canEditClientData) { userManuallyEditedRef.current = true; setUseSavedValues(true); setRevenueInput(e.target.value); setShowRevenueReasonInput(true); } }}
+                                                readOnly={!canEditClientData}
+                                                data-testid="input-revenue-total"
+                                            />
+                                        </div>
+                                        <p className={`text-[8px] font-bold mt-1 italic ${isManualValue ? 'text-amber-600' : 'text-green-600'}`}>
+                                            {isManualValue 
+                                                ? `✍️ VALOR MANUAL — Cálculo automático: ${formatCurrency(calcTotal)}`
+                                                : (canEditClientData ? '* EDITÁVEL - DIRETORIA / ADMINISTRADOR (toque para editar)' : '* VALOR TOTAL CALCULADO BASEADO NAS FRANQUIAS E MEDIÇÃO')}
+                                        </p>
+                                    </>
+                                );
+                            })()}
                             {(showRevenueReasonInput || revenueEditReason) && (
                                 <div className="mt-2 p-2 bg-amber-50 border border-amber-200 rounded-lg">
                                     <label className="text-[9px] font-black text-amber-700 uppercase mb-1 block flex items-center gap-1"><AlertCircle size={10}/> Motivo da Alteração (Cliente)</label>
