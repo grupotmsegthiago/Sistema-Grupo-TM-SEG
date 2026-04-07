@@ -1,4 +1,4 @@
-
+// BUILD v048 - 2026-04-07 17:40 BRT
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { authFetch } from '../lib/authFetch';
 import { supabase } from '../lib/supabase';
@@ -797,7 +797,7 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
             const durationHours = fin.durationHours;
 
             const totalGeral = hasSavedRevenue ? (savedRevenue + tollVal) : (fin.client.serviceTotal > 0 ? fin.client.serviceTotal + tollVal : (activationFee + kmExtraTotal + hrExtraTotal + tollVal));
-            console.log(`[COMPARADOR] ${m.id}: hasSavedRevenue=${hasSavedRevenue} rev=${savedRevenue} toll=${tollVal} → totalGeral=${totalGeral}`);
+            console.log(`[v048] ${m.id}: hasSaved=${hasSavedRevenue} rev=${savedRevenue} toll=${tollVal} total=${totalGeral} | calcWouldBe=${fin.client.serviceTotal + tollVal}`);
 
             const cargoPlate = m._clientVehicle?.plate || '-';
 
