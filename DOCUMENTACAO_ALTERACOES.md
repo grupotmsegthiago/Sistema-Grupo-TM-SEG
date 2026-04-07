@@ -3,6 +3,35 @@
 
 ---
 
+## 07/04/2026 18:00 (Brasília) - COMPARADOR USA REVENUE_VALUE PARA BILLING_APPROVED (#045)
+
+**Descricao:** Correcao definitiva do comparador. Para missoes com billing_approved=true, o Total do sistema agora usa o revenue_value salvo no banco (valor efetivamente faturado) + toll_value, em vez de recalcular via calculateMissionFinancials. Isso garante que o Total do sistema SEMPRE bate com o que foi faturado, independentemente de divergencias nos componentes individuais (kmExtra, hrExtra). Tambem foram limpados TODOS os snapshots corrompidos pelo "Recalcular e Comparar" (42 missoes adicionais alem das 58 anteriores).
+
+### 1. Campos Implementados / UI
+
+- Nenhuma alteracao visual
+
+### 2. Comportamento e Logica
+
+- **3 paths no rowsData**: (1) Snapshot congelado (snapshot_approved_by + snap) → le snapshot. (2) billing_approved + revenue_value → calcula componentes mas Total = revenue_value + toll. (3) Missao normal → calcula tudo em tempo real
+- **isBillingLocked**: Flag para missoes billing_approved com revenue_value > 0 ou cost_value > 0
+- **Total blindado**: totalGeral = (revenue_value + tollVal) para billing_approved, independente do calculo
+- **Snapshots corrompidos**: Limpeza completa de TODOS os snapshot_approved_by = "Sistema (Recalcular e Comparar)" (billing_approved e nao billing_approved)
+- **Recalcular blindado**: Botao Recalcular agora PULA missoes billing_approved com snapshot valido
+
+### 3. Banco de Dados
+
+- 100 missoes tiveram snapshot_approved_by/at zerados (58 + 42 adicionais)
+
+### 4. Arquivos Alterados
+
+- `components/ClientBillingReport.tsx` — rowsData com 3 paths + totalGeral blindado
+- `server/routes.ts` — blindagem billing_approved no recalculate-client + rota repair-snapshots
+
+**Status:** ✅ Concluido
+
+---
+
 ## 07/04/2026 17:00 (Brasília) - RECALCULAR PRESERVA MISSOES APROVADAS + REPARO (#044)
 
 **Descricao:** O botao "Recalcular e Comparar" (corrigido no #041) estava sobrescrevendo snapshots de missoes com billing_approved=true, destruindo valores que ja tinham sido verificados e estavam corretos. Agora o botao PULA missoes aprovadas que ja tem snapshot valido. Alem disso, 58 snapshots corrompidos foram reparados (snapshot removido, volta a calcular em tempo real).

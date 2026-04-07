@@ -696,9 +696,10 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
     const rowsData = useMemo(() => {
         return missions.map(m => {
             const snap = m.snapshot_data;
-            const isFrozen = !!(m.snapshot_approved_by && snap);
+            const hasValidSnapshot = !!(m.snapshot_approved_by && snap);
+            const isBillingLocked = !!(m.billing_approved && (m.revenue_value > 0 || m.cost_value > 0));
 
-            if (isFrozen && snap) {
+            if (hasValidSnapshot && snap) {
                 const useBase = snap.activationFee ?? 0;
                 const useKmEx = snap.kmExtraTotal ?? 0;
                 const useHrEx = snap.hrExtraTotal ?? 0;
@@ -783,9 +784,11 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
             const durationHours = fin.durationHours;
             const tollVal = Math.max(0, m.toll_value || 0);
             const calculatedServiceTotal = fin.client.serviceTotal || 0;
-            const totalGeral = calculatedServiceTotal > 0 
+
+            const calcTotal = calculatedServiceTotal > 0 
                 ? calculatedServiceTotal + tollVal 
                 : (activationFee + kmExtraTotal + hrExtraTotal + tollVal) || ((m.revenue_value || 0) + tollVal);
+            const totalGeral = isBillingLocked ? ((m.revenue_value || 0) + tollVal) : calcTotal;
 
             const cargoPlate = m._clientVehicle?.plate || '-';
 
