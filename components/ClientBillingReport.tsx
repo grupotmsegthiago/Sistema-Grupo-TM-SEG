@@ -826,7 +826,7 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
             return false;
         };
 
-        let colMap = { os: 0, franquiaKm: 8, kmTotal: 24, kmExtraRs: 32, hrExtra: 36, valorBase: 37, pedagio: 38, total: 41 };
+        let colMap = { os: 0, franquiaKm: 8, kmTotal: 24, kmExtraRs: 32, hrExtra: 37, valorBase: 38, pedagio: 39, total: 42 };
 
         for (const cols of lines) {
             if (isHeader(cols)) {
