@@ -892,7 +892,8 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
             const route = (cols[1] || '').trim();
             const activationFee = parseBRLNumber(cols[colMap.valor] || '');
             const kmTotal = parseBRLNumber(cols[colMap.kmTotal] || '');
-            const kmExtraTotal = parseBRLNumber(cols[colMap.kmExtra] || '');
+            const kmExtraQtdSheet = parseBRLNumber(cols[31] || '');
+            const kmExtraTotal = kmExtraQtdSheet === 0 ? 0 : parseBRLNumber(cols[colMap.kmExtra] || '');
             const hrExtraTotal = parseBRLNumber(cols[colMap.hrExtra] || '');
             const tollCol = parseBRLNumber(cols[colMap.pedagio] || '');
             const totalCol = parseBRLNumber(cols[colMap.total] || cols[cols.length - 1] || '');
@@ -2623,14 +2624,14 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
                                                                     const isDiff = f.isDivergent !== false && Math.abs(f.sysVal - f.sheetVal) > 0.02;
                                                                     return (
                                                                         <tr key={j} className={j % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
-                                                                            <td className={`px-3 py-1.5 font-bold ${isDiff ? 'text-red-700' : 'text-gray-700'}`}>{f.label}</td>
-                                                                            <td className={`px-3 py-1.5 text-right font-mono font-bold ${isDiff && sysHigher ? 'text-red-700 bg-red-50' : isDiff ? 'text-gray-700' : 'text-green-700'}`}>
+                                                                            <td className={`px-3 py-1.5 font-bold ${isDiff ? 'text-red-700' : 'text-blue-700'}`}>{f.label}</td>
+                                                                            <td className={`px-3 py-1.5 text-right font-mono font-bold ${isDiff && sysHigher ? 'text-red-700 bg-red-50' : isDiff ? 'text-gray-700' : 'text-blue-700 bg-blue-50'}`}>
                                                                                 {f.isCurrency ? fmtBRL(f.sysVal) : f.sysVal.toLocaleString('pt-BR')}
                                                                             </td>
                                                                             <td className="text-center px-1 py-1.5">
-                                                                                {isDiff ? <ArrowRight size={10} className="text-red-400 mx-auto" /> : <Check size={10} className="text-green-500 mx-auto" />}
+                                                                                {isDiff ? <ArrowRight size={10} className="text-red-400 mx-auto" /> : <Check size={10} className="text-blue-500 mx-auto" />}
                                                                             </td>
-                                                                            <td className={`px-3 py-1.5 text-right font-mono font-bold bg-gray-50 ${isDiff ? 'text-red-700' : 'text-green-700'}`}>
+                                                                            <td className={`px-3 py-1.5 text-right font-mono font-bold ${isDiff ? 'text-red-700 bg-red-50' : 'text-blue-700 bg-blue-50'}`}>
                                                                                 {f.isCurrency ? fmtBRL(f.sheetVal) : f.sheetVal.toLocaleString('pt-BR')}
                                                                             </td>
                                                                             <td className="text-center px-2 py-1.5">

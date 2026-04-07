@@ -3,6 +3,34 @@
 
 ---
 
+## 07/04/2026 20:15 - AJUSTE DE MAPEAMENTO V2: COMPARATIVO SISTEMA VS PLANILHA
+
+**Descricao:** Alinhamento fino de colunas para eliminar falsas divergencias no relatorio de faturamento. Regra da Coluna AF implementada e destaque visual azul para campos validados.
+
+### 1. Campos Implementados / UI
+
+- **Destaque visual azul:** Campos onde Sistema = Planilha agora aparecem em azul (`text-blue-700 bg-blue-50`) com icone check azul, em vez de verde. Campos divergentes continuam em vermelho (`text-red-700 bg-red-50`)
+
+### 2. Comportamento e Logica
+
+- **Regra Coluna AF (indice 31):** Se a Coluna AF (KM Extra Qtd na planilha) for 0, o valor de KM Extra R$ (Coluna AH) e forcado para R$ 0,00 automaticamente. Evita falsa divergencia quando nao ha KM excedente
+- **Mapeamento mantido:** Coluna Z (25) = KM Total, Coluna AH (33) = KM Extra R$, Coluna AO (40) = Pedagio — ja implementados na v1
+
+### 3. Banco de Dados
+
+- Nenhuma alteracao de schema
+
+### 4. Arquivos Alterados
+
+- `components/ClientBillingReport.tsx`
+  - Linha ~898: Leitura da Coluna AF (indice 31) para verificar KM Extra Qtd = 0
+  - Linha ~899: Se AF = 0, kmExtraTotal forcado para 0
+  - Linhas ~2630-2637: Destaque visual azul para campos validados (Sistema = Planilha)
+
+**Status:** Implementado e funcional
+
+---
+
 ## 07/04/2026 19:45 - AJUSTE DE MAPEAMENTO: COMPARATIVO SISTEMA VS PLANILHA
 
 **Descricao:** Correcao das colunas de leitura da planilha e do KM Total do sistema para eliminar falsas divergencias no comparativo. OS GTM-3761 mostrava KM Total = 0 no sistema apesar de ter start_km=3282 e end_km=3384 (102km).

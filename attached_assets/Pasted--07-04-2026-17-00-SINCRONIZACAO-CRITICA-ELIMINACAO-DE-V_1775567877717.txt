@@ -1,0 +1,53 @@
+## 07/04/2026 17:00 - SINCRONIZACAO CRITICA - ELIMINACAO DE VALORES RESIDUAIS + RECALCULO EM MASSA
+
+**Descricao:** Correcao definitiva da divergencia entre valor salvo no banco (R$ 9.345,00 / R$ 9.310,00) e valor real calculado (R$ 1.435,00). Eliminado o carregamento de valores antigos do banco nos inputs. Criado mecanismo de recalculo em massa para corrigir TODAS as OS nao-aprovadas de uma vez, sem precisar abrir cada modal individualmente.
+
+### 1. Campos Implementados / UI
+
+- **Input Verde "Valor Final Cliente"** — Bloqueado para exibir APENAS resultado da soma real (Base + KM + Hora + Pedagio). Nao carrega mais valores do banco como placeholder
+- **Input Azul "Pagamento Fornecedor"** — Mesmo comportamento: calculo matematico tem prioridade absoluta
+- **Botao "Recalcular Tudo"** — Novo botao ambar (`bg-amber-600`) no header do relatorio de OS, visivel apenas para Diretoria/Administrador
+  - Icone `RefreshCw` (13px) normal, `Loader2` com animacao spin durante processamento
+  - Label: "Recalcular Tudo" / "Recalculando..."
+  - Disabled durante execucao para evitar duplo clique
+  - Notificacao verde ao concluir com contagem de OS corrigidas
+
+### 2. Comportamento e Logica
+
+- **Eliminacao de residuo (MissionFinancialModal.tsx):** Removidas as linhas que carregavam `savedRev + dbToll` e `savedCost + dbTollProvider` nos inputs durante a inicializacao. Removido `setUseSavedValues(true)`. O useEffect de sincronizacao e a UNICA fonte de verdade
+- **Rota backend POST /api/recalculate-all (server/routes.ts):**
+  - Protegida por `requireAuth` + `requireRole('diretoria', 'administrador', 'ceo', 'financeiro')`
+  - Carrega TODAS as missoes nao-aprovadas com revenue > 0 (paginacao de 1000 em 1000)
+  - Carrega todas as tabelas de preco (cliente e fornecedor) e dados de clientes
+  - Para cada missao, executa `calculateMissionFinancials()` — mesma funcao usada no frontend
+  - Se divergencia > R$1 entre calculo e valor salvo: atualiza `revenue_value`, `cost_value`, `toll_value`, `toll_value_provider`, `last_update`
+  - Registra log `BULK_RECALCULATE` em `system_logs` com totais (analisadas, corrigidas, puladas, erros)
+  - Retorna JSON com `{ total, updated, skipped, errors, details[] }`
+- **Botao no frontend (MissionTable.tsx):** Chama `authFetch('/api/recalculate-all', { method: 'POST' })`, exibe notificacao com resultado e dispara `fetchMissions(true)` para atualizar a grid
+
+### 3. Banco de Dados
+
+- Nenhuma alteracao de schema
+- Campos atualizados em massa: `revenue_value`, `cost_value`, `toll_value`, `toll_value_provider`, `last_update`
+- Log registrado: `system_logs` com `action_type: 'BULK_RECALCULATE'`, `entity: 'Mission'`, `entity_id: 'ALL'`
+- **Escopo:** Apenas missoes com `billing_approved = false` e `revenue_value > 0` e status diferente de Cancelada/Recusada
+
+### 4. Arquivos Alterados
+
+- `components/MissionFinancialModal.tsx`
+  - Linhas ~578-584: Removidas `setRevenueInput(...)`, `setCostInput(...)`, `setUseSavedValues(true)` do bloco `if (hasSavedData)`
+- `components/MissionTable.tsx`
+  - Linha ~174: Adicionado state `isRecalculating`
+  - Linhas ~1305-1332: Adicionado botao "Recalcular Tudo" no header do relatorio (visivel para diretoria/administrador)
+- `server/routes.ts`
+  - Linhas ~106-193: Nova rota `POST /api/recalculate-all` com logica de recalculo em massa usando `calculateMissionFinancials()`
+
+**Status:** Implementado e funcional
+
+---
+
+## LEGENDA DE STATUS
+
+- **Implementado e funcional** — Alteracao feita, testada e em producao
+- **Pendente** — Analise feita, aguardando aprovacao do Thiago para executar
+- **Em andamento** — Execucao iniciada, nao finalizada
