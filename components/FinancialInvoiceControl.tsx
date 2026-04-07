@@ -108,6 +108,9 @@ const FinancialInvoiceControl: React.FC = () => {
       });
       const result = await res.json();
       if (result.error) throw new Error(result.error);
+      const parts: string[] = [`Status: ${result.statusBr || result.status}`];
+      if (result.nfPdfUrl) parts.push('NF PDF atualizado');
+      alert(`Sincronizado!\n${parts.join('\n')}`);
       await fetchInvoices();
     } catch (e: any) {
       alert('Erro ao sincronizar: ' + e.message);

@@ -1377,6 +1377,9 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
             if (asaasData?.bankSlip?.digitableLine) invoicePayload.asaas_barcode = asaasData.bankSlip.digitableLine;
             if (asaasData?.charges?.[0]?.pix?.copyPaste) invoicePayload.asaas_pix_payload = asaasData.charges[0].pix.copyPaste;
 
+            const nfPdf = asaasData?.invoice?.pdfUrl || asaasData?.charges?.[0]?.invoice?.pdfUrl;
+            if (nfPdf) invoicePayload.nf_image_url = nfPdf;
+
             let { error } = await supabase.from('financial_invoices').insert(invoicePayload).select();
             if (error && error.code === '42703') {
                 const { nf_image_url, boleto_image_url, provider, issuer_company, boleto_due_date, asaas_payment_id, asaas_status, asaas_invoice_url, asaas_bankslip_url, asaas_pix_payload, asaas_barcode, ...basicPayload } = invoicePayload;
