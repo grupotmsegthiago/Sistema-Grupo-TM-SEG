@@ -700,11 +700,6 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
             const fin = calculateMissionFinancials(m, priceTables, providerTables, clientData, new Date(), overrides);
 
             if (isFrozen && snap) {
-                const liveKmExtra = fin.client.extraKmVal || 0;
-                const liveHrExtra = fin.client.extraHrVal || 0;
-                const liveServiceTotal = fin.client.serviceTotal || 0;
-                const liveToll = Math.max(0, m.toll_value || 0);
-                const liveTotal = liveServiceTotal > 0 ? liveServiceTotal + liveToll : 0;
                 const snapBase = snap.activationFee ?? 0;
                 const snapKmEx = snap.kmExtraTotal ?? 0;
                 const snapHrEx = snap.hrExtraTotal ?? 0;
@@ -714,9 +709,9 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
                 const kmTotal = (snap.kmTotal ?? 0) > 0 ? (snap.kmTotal ?? 0)
                     : ((m.start_km > 0 && m.end_km > 0 && m.end_km >= m.start_km) ? (m.end_km - m.start_km) : (m.total_distance || m.traveled_distance || 0));
 
-                const bestKmExtra = Math.max(liveKmExtra, snapKmEx);
-                const bestHrExtra = Math.max(liveHrExtra, snapHrEx);
-                const bestTotal = Math.max(liveTotal, snapTotal, snapBase + bestKmExtra + bestHrExtra + snapToll);
+                const bestKmExtra = snapKmEx;
+                const bestHrExtra = snapHrEx;
+                const bestTotal = snapTotal;
 
                 const refCidades2 = snap.route || (() => {
                     const co = extractCityFromAddress(m.origin || '');
@@ -781,7 +776,7 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
             const calculatedServiceTotal = fin.client.serviceTotal || 0;
             const totalGeral = calculatedServiceTotal > 0 
                 ? calculatedServiceTotal + tollVal 
-                : (m.revenue_value || 0) + tollVal;
+                : (activationFee + kmExtraTotal + hrExtraTotal + tollVal) || ((m.revenue_value || 0) + tollVal);
 
             const cargoPlate = m._clientVehicle?.plate || '-';
 

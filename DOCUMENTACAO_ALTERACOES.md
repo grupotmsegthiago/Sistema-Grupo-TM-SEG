@@ -3,6 +3,32 @@
 
 ---
 
+## 07/04/2026 - SINCRONIZAÇÃO TELA COMPARAÇÃO vs MOTOR FINANCEIRO (#036)
+
+**Descricao:** Corrigido bug onde a tela "Comparar Planilha do Cliente" exibia valores divergentes (ex: R$ 2.283,12) em vez do valor correto calculado pelo motor financeiro (R$ 1.502,66). Causa raiz: uso de Math.max entre calculo live e snapshot inflava valores quando o motor live encontrava tabela/multiplicador diferente.
+
+### 1. Campos Implementados / UI
+
+- Nenhuma alteracao visual — a correcao eh puramente na logica de dados exibidos
+
+### 2. Comportamento e Logica
+
+- **Missoes frozen (aprovadas com snapshot)**: Removido Math.max entre calculo live e snapshot. Agora usa valores do snapshot diretamente (activationFee, kmExtraTotal, hrExtraTotal, totalGeral do snapshot). O snapshot eh a "fonte da verdade" para missoes aprovadas
+- **Missoes nao-frozen**: Quando calculatedServiceTotal = 0, o fallback agora tenta reconstruir a partir dos componentes (activationFee + kmExtraTotal + hrExtraTotal + tollVal) antes de cair no revenue_value do banco
+- **Eliminado Math.max que inflava valores**: bestKmExtra, bestHrExtra e bestTotal agora usam diretamente os valores do snapshot
+
+### 3. Banco de Dados
+
+- Nenhuma alteracao no banco de dados
+
+### 4. Arquivos Alterados
+
+- `components/ClientBillingReport.tsx` — Logica de rowsData frozen corrigida (removido Math.max), fallback nao-frozen melhorado
+
+**Status:** ✅ CONCLUIDO E TESTADO
+
+---
+
 ## 07/04/2026 - CORREÇÃO DE ATUALIZAÇÃO DE PROGRESSO (TELEMETRIA)
 
 **Descricao:** Resolvido bug onde a barra de progresso permanecia em 0% mesmo com distancia total (ex: 782,8 km) e localizacao ativas. O sistema agora calcula progresso dinamicamente para missoes em transito.
