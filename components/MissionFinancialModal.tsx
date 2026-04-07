@@ -319,7 +319,8 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
           const hasRevenue = currentMission.revenue_value != null && currentMission.revenue_value > 0;
           const hasCost = currentMission.cost_value != null && currentMission.cost_value > 0;
           const hasVerifiedBy = !!currentMission.billing_verified_by;
-          const hasSavedData = hasRevenue || hasCost || hasVerifiedBy;
+          const hasApproved = !!currentMission.billing_approved;
+          const hasSavedData = hasRevenue || hasCost || hasVerifiedBy || hasApproved;
           if (currentMission.billing_approved && currentMission.toll_value !== null && currentMission.toll_value !== undefined) {
              setSuggestedToll(dbToll);
              setTollSource(dbToll === 0 ? 'APROVADO (R$ 0,00)' : 'VALOR APROVADO');
@@ -590,11 +591,12 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                   if (!isSameOsMission && !hasSeparateTollProvider && savedCost > 0) {
                       setTollEmbeddedInCost(true);
                   }
-                  if (savedRev > 0) {
+                  const hasVerifiedOrApproved = !!(mRes.data.billing_verified_by || mRes.data.billing_approved);
+                  if (savedRev > 0 || (savedRev === 0 && hasVerifiedOrApproved)) {
                       const revTotal = savedRev + dbToll;
                       setRevenueInput(revTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
                   }
-                  if (savedCost > 0) {
+                  if (savedCost > 0 || (savedCost === 0 && hasVerifiedOrApproved)) {
                       const costTotal = savedCost + dbTollProvider;
                       setCostInput(costTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
                   }
