@@ -109,6 +109,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
   const setUseSavedValues = (val: boolean) => { useSavedValuesRef.current = val; _setUseSavedValues(val); };
   const isSavingRef = React.useRef(false);
   const userManuallyEditedRef = React.useRef(false);
+  const dbValuesLoadedRef = React.useRef(false);
   const [savedByInfo, setSavedByInfo] = useState<string | null>(null);
 
   const [aiLoading, setAiLoading] = useState(false);
@@ -438,6 +439,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
   const loadData = async () => {
       if (!initialMission?.id || isSavingRef.current) return;
       userManuallyEditedRef.current = false;
+      dbValuesLoadedRef.current = false;
       setUseSavedValues(false);
       setIsLoading(true);
       try {
@@ -596,9 +598,11 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                       const costTotal = savedCost + dbTollProvider;
                       setCostInput(costTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
                   }
+                  dbValuesLoadedRef.current = true;
               }
               if (mRes.data.billing_verified_by) {
                   setSavedByInfo(`Salvo por ${mRes.data.billing_verified_by}`);
+                  dbValuesLoadedRef.current = true;
               }
               
               fetchHistoricalPatterns(fullMission, (ptRes.data || []) as ProviderCostTable[]);
@@ -886,15 +890,8 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
 
     useEffect(() => {
       if (financialData && mission && !isLoading) {
-          const isVendorLocked = !!(mission.verified_by && mission.verified_at);
-          const provTotalWithCorrectToll = financialData.provider.serviceTotal + parseNumber(tollProviderInput);
-          const hasManualOverride = userManuallyEditedRef.current || useSavedValuesRef.current;
-          const hasSavedManualEdit = !!(mission.revenue_edit_reason || mission.cost_edit_reason);
-          const hasVerifiedSave = !!mission.billing_verified_by;
-          const hasSavedRevenue = (mission.revenue_value || 0) > 0;
-          const hasSavedCost = (mission.cost_value || 0) > 0;
-          const shouldSync = !isSavingRef.current && !isVendorLocked && !hasManualOverride && !hasSavedManualEdit && !hasVerifiedSave && !hasSavedRevenue && !hasSavedCost;
-          if (shouldSync) {
+          if (!dbValuesLoadedRef.current) {
+              const provTotalWithCorrectToll = financialData.provider.serviceTotal + parseNumber(tollProviderInput);
               const newRevStr = financialData.client.total.toLocaleString('pt-BR', {minimumFractionDigits: 2, maximumFractionDigits: 2});
               const newCostStr = provTotalWithCorrectToll.toLocaleString('pt-BR', {minimumFractionDigits: 2, maximumFractionDigits: 2});
               setRevenueInput(newRevStr);
@@ -959,6 +956,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
       setCustomClientHour('');
       setUseSavedValues(false);
       userManuallyEditedRef.current = false;
+      dbValuesLoadedRef.current = false;
       setMission(prev => prev ? { ...prev, revenue_edit_reason: null, cost_edit_reason: null, billing_verified_by: null } : prev);
       if (financialData && mission) {
           const toll = parseNumber(tollInput);
@@ -1010,6 +1008,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
       setCustomProviderHour('');
       setUseSavedValues(false);
       userManuallyEditedRef.current = false;
+      dbValuesLoadedRef.current = false;
       setMission(prev => prev ? { ...prev, revenue_edit_reason: null, cost_edit_reason: null, billing_verified_by: null } : prev);
       if (financialData && mission) {
           const isSameOs = mission.is_same_os === true;

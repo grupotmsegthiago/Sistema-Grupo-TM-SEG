@@ -3,26 +3,28 @@
 
 ---
 
-## 07/04/2026 19:50 (Brasília) - FIX RACE CONDITION NO MODAL FINANCEIRO (#053)
+## 07/04/2026 19:50 (Brasília) - SOLUCAO DEFINITIVA: VALORES SALVOS INVIOLAVEIS (#053)
 
-**Descricao:** O Modal Financeiro tinha uma race condition onde o useEffect de sincronizacao do calculo (`financialData`) disparava ANTES dos dados do banco carregarem, sobrescrevendo o valor salvo com o valor calculado. Corrigido com 3 camadas de protecao.
+**Descricao:** Solucao definitiva para impedir que o modal financeiro sobrescreva valores salvos no banco com calculos automaticos. Implementado `dbValuesLoadedRef` — um bloqueio binario absoluto que impede qualquer sincronizacao do calculo quando existem dados salvos.
 
-### Correcoes
+### Arquitetura
 
-- Adicionado `!isLoading` ao guard do useEffect — bloqueia sincronizacao ate dados do banco carregarem
-- Adicionado `!hasSavedRevenue && !hasSavedCost` — se ja tem revenue/cost salvos no banco, NUNCA sobrescreve com calculo
-- `isLoading` adicionado ao array de dependencias do useEffect
+- `dbValuesLoadedRef = useRef(false)`: Comeca falso. Se o banco retorna revenue_value > 0 OU billing_verified_by, vira `true`.
+- **useEffect de sincronizacao**: So executa `setRevenueInput`/`setCostInput` se `dbValuesLoadedRef.current === false`.
+- **Resultado**: Missoes com valores salvos NUNCA tem seus inputs sobrescritos, independente de quantas vezes o `financialData` recalcule.
 
-### Impacto
+### Fluxo
 
-- Missoes que ja foram salvas (revenue_value > 0 ou cost_value > 0) nao terao mais seus valores sobrescritos pelo calculo frontend ao reabrir o modal
-- Resolve o problema reportado na GTM-3828 onde o valor cliente era recalculado ao reabrir
+1. Modal abre → `dbValuesLoadedRef = false`, `isLoading = true`
+2. Dados do banco carregam → se tem revenue/cost/verified → `dbValuesLoadedRef = true`, inputs setados com DB values
+3. `financialData` useMemo recalcula → useEffect dispara → verifica `dbValuesLoadedRef` → **true = NAO sobrescreve**
+4. Unica forma de desbloquear: clicar "Recalcular" (reseta `dbValuesLoadedRef = false`)
 
 ### Arquivo Alterado
 
-- `components/MissionFinancialModal.tsx` — useEffect de sincronizacao financeira (linha ~890)
+- `components/MissionFinancialModal.tsx` — dbValuesLoadedRef, useEffect guard, handleRecalculate
 
-**Status:** ✅ Concluido
+**Status:** ✅ Concluido (DEFINITIVO)
 
 ---
 
