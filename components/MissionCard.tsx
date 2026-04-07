@@ -363,32 +363,32 @@ const MissionCardComponent: React.FC<MissionCardProps> = ({
         const storedValue = (mission.revenue_value || 0) + dbToll;
         const hasStoredRevenue = (mission.revenue_value != null && mission.revenue_value > 0);
         
-        if (hasStoredRevenue || mission.billing_approved || hasBeenVerified) {
+        if (hasStoredRevenue) {
             return storedValue;
         }
         
-        if (financials) {
+        if (financials && mission.status === MissionStatus.IN_TRANSIT) {
             return financials.client.total;
         }
 
         return storedValue;
-    }, [mission.revenue_value, mission.toll_value, mission.billing_approved, hasBeenVerified, financials]);
+    }, [mission.revenue_value, mission.toll_value, mission.status, financials]);
 
     const displayCost = useMemo(() => {
         const tollProv = Math.max(0, mission.toll_value_provider != null ? mission.toll_value_provider : (mission.toll_value || 0));
         const storedValue = (mission.cost_value || 0) + tollProv;
         const hasStoredCost = (mission.cost_value != null && mission.cost_value > 0);
         
-        if (hasStoredCost || mission.billing_approved || hasBeenVerified) {
+        if (hasStoredCost) {
             return storedValue;
         }
 
-        if (financials) {
+        if (financials && mission.status === MissionStatus.IN_TRANSIT) {
             return financials.provider.total;
         }
         
         return storedValue;
-    }, [mission.cost_value, mission.toll_value, mission.toll_value_provider, mission.billing_approved, hasBeenVerified, financials]);
+    }, [mission.cost_value, mission.toll_value, mission.toll_value_provider, mission.status, financials]);
 
     const profitMargin = useMemo(() => {
         return displayRevenue > 0 ? ((displayRevenue - displayCost) / displayRevenue) * 100 : 0;

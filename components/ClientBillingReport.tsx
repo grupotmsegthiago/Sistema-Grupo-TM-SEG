@@ -139,7 +139,27 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
             }
         };
         window.addEventListener('refreshMissions', handleRefresh);
-        return () => window.removeEventListener('refreshMissions', handleRefresh);
+
+        const channel = supabase.channel('billing-financial-sync')
+            .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'missions' }, (payload: any) => {
+                const changed = payload.new;
+                const old = payload.old;
+                if (changed && old && (
+                    changed.revenue_value !== old.revenue_value ||
+                    changed.cost_value !== old.cost_value ||
+                    changed.toll_value !== old.toll_value
+                )) {
+                    if (reportGenerated && selectedClient) {
+                        handleGenerate();
+                    }
+                }
+            })
+            .subscribe();
+
+        return () => {
+            window.removeEventListener('refreshMissions', handleRefresh);
+            supabase.removeChannel(channel);
+        };
     }, [reportGenerated, selectedClient, startDate, endDate]);
 
     const fetchClients = async () => {
@@ -362,17 +382,9 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
             let revenue: number;
             let cost: number;
 
-            if (hasStoredRevenue && hasStoredCost) {
-                revenue = (m.revenue_value || 0) + Math.max(0, m.toll_value || 0);
-                const tollProv = Math.max(0, m.toll_value_provider != null ? m.toll_value_provider : (m.toll_value || 0));
-                cost = (m.cost_value || 0) + tollProv;
-            } else {
-                const clientTablesForM = allClientTables.filter(t => t.client === clientName);
-                const fin = calculateMissionFinancials(m, clientTablesForM, allProviderTables, clientObj);
-                revenue = hasStoredRevenue ? (m.revenue_value || 0) + Math.max(0, m.toll_value || 0) : (fin.client.total || 0);
-                const tollProv = Math.max(0, m.toll_value_provider != null ? m.toll_value_provider : (m.toll_value || 0));
-                cost = hasStoredCost ? (m.cost_value || 0) + tollProv : (fin.provider.total || 0);
-            }
+            revenue = (m.revenue_value || 0) + Math.max(0, m.toll_value || 0);
+            const tollProv = Math.max(0, m.toll_value_provider != null ? m.toll_value_provider : (m.toll_value || 0));
+            cost = (m.cost_value || 0) + tollProv;
             const mLucro = revenue - cost;
             const mPct = revenue > 0 ? Math.round((mLucro / revenue) * 100) : 0;
 
@@ -796,8 +808,7 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
             const hrExtraTotal = fin.client.extraHrVal;
             const durationHours = fin.durationHours;
 
-            const totalGeral = hasSavedRevenue ? (savedRevenue + tollVal) : (fin.client.serviceTotal > 0 ? fin.client.serviceTotal + tollVal : (activationFee + kmExtraTotal + hrExtraTotal + tollVal));
-            console.log(`[v048] ${m.id}: hasSaved=${hasSavedRevenue} rev=${savedRevenue} toll=${tollVal} total=${totalGeral} | calcWouldBe=${fin.client.serviceTotal + tollVal}`);
+            const totalGeral = savedRevenue + tollVal;
 
             const cargoPlate = m._clientVehicle?.plate || '-';
 

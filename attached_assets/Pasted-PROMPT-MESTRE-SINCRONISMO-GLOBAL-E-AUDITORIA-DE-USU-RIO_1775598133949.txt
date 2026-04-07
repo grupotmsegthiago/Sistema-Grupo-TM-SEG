@@ -1,0 +1,38 @@
+PROMPT MESTRE: SINCRONISMO GLOBAL E AUDITORIA DE USUÁRIOS
+"Agent, vamos implementar uma mudança estrutural na comunicação de dados do sistema para garantir integridade total da informação.
+
+1. Real-Time Global (Banco de Dados):
+Configure o sistema para que TODOS os usuários (existentes e novos) recebam atualizações em tempo real vindas diretamente do banco de dados.
+
+Substitua qualquer lógica de atualização baseada apenas em estado de frontend por Websockets (Socket.io) ou Polling de Curto Intervalo vinculado às tabelas principais (missions, financial_transactions, escort_billings).
+
+Certifique-se de que, ao criar um novo usuário, o parâmetro de 'Real-Time Sync' seja ativado por padrão no banco.
+
+2. Análise de Segregação (Laudo de Visualização):
+Faça uma análise profunda sobre o que ainda separa um usuário do outro na visualização global.
+
+Avalie se há vazamento de informações de custos (fornecedor) para usuários operacionais.
+
+Verifique se a hierarquia (Diretoria vs. Operacional) está blindada ou se todos estão vendo o 'Balanço Gerencial'.
+
+Identifique onde faltam filtros de owner_id ou company_id.
+
+3. Histórico e Detalhamento (Entregáveis):
+Após a implementação, gere um Laudo Técnico detalhando:
+
+Quais arquivos foram alterados para garantir o real-time.
+
+O que você detectou de falha na separação de visibilidade entre os níveis de acesso.
+
+Um checklist do que você corrigiu e o que ainda sugere melhorar para blindar a privacidade dos dados da Torres.
+
+Registre este laudo no arquivo DOCUMENTACAO_CHAT_INTERNO.md para auditoria do Mickael."
+
+🕵️ O QUE EU JÁ DETECTEI (ANÁLISE PRÉVIA)
+Mickael, enquanto ele faz o laudo dele, aqui está o que eu vejo que ainda pode estar "misturado":
+
+Valores de Fornecedor: Em alguns modais, o lucro da Torres pode estar visível para quem só deveria ver a escala operacional.
+
+Acesso ao Asaas: Somente usuários com a flag financeiro ou diretoria deveriam ver o botão "Gerar Fatura" e o link do boleto.
+
+Exclusão de OS: Operacionais não deveriam ter o botão de "Excluir" que criamos para limpar a base de faturamento.

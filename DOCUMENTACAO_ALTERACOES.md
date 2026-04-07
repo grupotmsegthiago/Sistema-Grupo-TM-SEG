@@ -3,6 +3,43 @@
 
 ---
 
+## 07/04/2026 18:40 (Brasília) - UNIFICACAO GLOBAL DA FONTE DA VERDADE (#052)
+
+**Descricao:** Migracao completa da inteligencia financeira do Frontend para o Backend para todos os perfis de usuario. Eliminacao de divergencias entre maquinas e navegadores diferentes. O banco de dados agora governa 100% dos valores exibidos no sistema.
+
+### 1. Componentes Corrigidos
+
+| Componente | Antes | Depois |
+|------------|-------|--------|
+| **ClientBillingReport.tsx** chartComputedData | Fallback para `calculateMissionFinancials` se `revenue_value = 0` | Sempre le `revenue_value + toll_value` do banco |
+| **ClientBillingReport.tsx** rowsData.totalGeral | Ternario com 3 caminhos (DB, fin.serviceTotal, base+km+hr) | Sempre `savedRevenue + tollVal` do banco |
+| **ClientBillingReport.tsx** Resumo Financeiro | Ja corrigido no #049 | Mantido — `missions.reduce(rev + toll)` |
+| **MissionCard.tsx** displayRevenue | Fallback para `financials.client.total` se nao tinha revenue | DB sempre priorizado. Calculo APENAS para `IN_TRANSIT` ativo |
+| **MissionCard.tsx** displayCost | Fallback para `financials.provider.total` | DB sempre priorizado. Calculo APENAS para `IN_TRANSIT` ativo |
+| **MissionTable.tsx** | Ja usava DB values | Confirmado — sem calculo frontend |
+| **MissionFinancialModal.tsx** | Calcula para preview antes de salvar | Mantido — necessario para funcao de edicao |
+
+### 2. Invalidacao de Cache (Supabase Realtime)
+
+- ClientBillingReport agora escuta `postgres_changes` na tabela `missions` via canal `billing-financial-sync`
+- Quando `revenue_value`, `cost_value` ou `toll_value` mudam no banco, o relatorio regenera automaticamente
+- Nao depende mais de F5, Ctrl+Shift+R ou limpeza de cache do navegador
+
+### 3. Regra Final
+
+- Frontend = espelho (Display Only) dos campos `revenue_value`, `cost_value`, `toll_value` do Supabase
+- Unica excecao: MissionCard mostra calculo estimado para missoes IN_TRANSIT que ainda nao foram salvas
+- MissionFinancialModal mantem calculo para preview/edicao, mas os valores salvos no banco sao lei
+
+### 4. Arquivos Alterados
+
+- `components/ClientBillingReport.tsx` — chartComputedData, rowsData.totalGeral, Supabase Realtime
+- `components/MissionCard.tsx` — displayRevenue, displayCost (DB-first)
+
+**Status:** ✅ Concluido
+
+---
+
 ## 07/04/2026 18:25 (Brasília) - CORRECAO GERAL DE TABELA DE CUSTO 100KM vs 200KM (#051)
 
 **Descricao:** Script executado para reverter custos inflados de R$ 800 para R$ 400 em missoes de curto percurso. O recalculo em massa de 01-07/04 aplicou a tabela LOGITECH 200KM (base R$800) em missoes que deveriam usar GERAL SP/RJ ATE 100KM (base R$400).
