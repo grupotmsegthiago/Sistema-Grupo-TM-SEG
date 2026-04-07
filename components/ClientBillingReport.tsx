@@ -170,14 +170,26 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
         try {
             const clientObj = clients.find(c => c.id.toString() === selectedClient);
             const clientName = clientObj?.name || '';
-            const escapedClientName = clientName.replace(/[%_\\]/g, '\\$&');
+            const tradingName = clientObj?.trading_name || '';
+            const escapedClientName = clientName.trim().replace(/[%_\\]/g, '\\$&');
+            const escapedTradingName = tradingName.trim().replace(/[%_\\]/g, '\\$&');
             const rangeStart = `${startDate}T03:00:00.000Z`;
             const rangeEnd = new Date(new Date(`${endDate}T03:00:00.000Z`).getTime() + 86400000 - 1).toISOString();
+
+            const clientFilters = [`client.ilike.%${escapedClientName}%`];
+            if (escapedTradingName && escapedTradingName !== escapedClientName) {
+                clientFilters.push(`client.ilike.%${escapedTradingName}%`);
+            }
+            const clientNameParts = escapedClientName.split(/\s+/).filter(p => p.length > 2);
+            if (clientNameParts.length >= 2) {
+                const coreFilter = clientNameParts.slice(0, 3).join('%');
+                clientFilters.push(`client.ilike.%${coreFilter}%`);
+            }
 
             const { data: missionDataRaw, error } = await supabase
                 .from('missions')
                 .select('*, company_vehicle:vehicles(*)')
-                .ilike('client', escapedClientName)
+                .or(clientFilters.join(','))
                 .neq('status', 'Recusada')
                 .not('start_time', 'is', null)
                 .gte('start_time', rangeStart)
