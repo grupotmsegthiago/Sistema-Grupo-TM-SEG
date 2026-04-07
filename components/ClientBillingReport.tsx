@@ -102,13 +102,13 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
         const clientNameUpper = `${selectedClient?.name || ''} ${selectedClient?.trading_name || ''}`.toUpperCase();
         let base: string;
         if (clientNameUpper.includes('CEVA')) {
-            base = 'CNAE 07930 — Intermediação / Agenciamento de Contrato';
+            base = 'Ref. aos Serviços de Intermediação de Agenciamento de Contrato';
         } else if (clientNameUpper.includes('AMAZON')) {
-            base = 'CNAE 06298 — Rastreamento e Monitoramento de Carga';
+            base = 'Ref. aos Serviços de Rastreamento e Monitoramento de Carga';
         } else {
-            base = 'CNAE 03115 — Assessoria ou consultoria de qualquer natureza, não contida em outros itens desta lista';
+            base = 'Ref. aos Serviços de Intermediação de Escolta Armada';
         }
-        setAsaasDescription(asaasPeriod ? `${base} — ${asaasPeriod}` : base);
+        setAsaasDescription(asaasPeriod ? `${base} - ${asaasPeriod}` : base);
     }, [asaasPeriod, showInvoiceModal, invoiceForm.client, clients]);
 
     const asaasSplitTotal = useMemo(() => {

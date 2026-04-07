@@ -3069,7 +3069,7 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
           });
 
           const externalRef = invoiceNumber ? `NF-${invoiceNumber}-S${i + 1}-${cleanCnpj.slice(-4)}` : `TMSEG-${Date.now()}-S${i + 1}-${cleanCnpj.slice(-4)}`;
-          const descText = description || `Referente aos serviços de Intermediação de Escolta Armada e Fiscal de Rota — ${issuerCompany || 'Grupo TM SEG'}`;
+          const descText = description || `Ref. aos Serviços de Intermediação de Escolta Armada`;
 
           const payment = await createPayment({
             customerId: customer.id,

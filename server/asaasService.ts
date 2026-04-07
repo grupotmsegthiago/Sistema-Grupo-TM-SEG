@@ -28,7 +28,7 @@ const ASAAS_COMPANIES: Record<string, CompanyConfig> = {
     name: 'TM GESTÃO',
     aliases: ['TM GESTAO', 'TM GESTÃO', 'GESTAO', 'GESTÃO'],
     nf: {
-      serviceDescription: 'Intermediação de Escolta Armada e Fiscal de Rota',
+      serviceDescription: 'Ref. aos Serviços de Intermediação de Escolta Armada',
       issRate: 5,
       retainIss: false,
       municipalServiceCode: '03115',
@@ -41,7 +41,7 @@ const ASAAS_COMPANIES: Record<string, CompanyConfig> = {
     name: 'Tm Seguranca Consultoria & Tecnologia Integrada Ltda',
     aliases: ['TM SEGURANÇA', 'TM SEGURANCA', 'TMSEGURANCA', 'TMSEGURANÇA', 'SEGURANÇA', 'SEGURANCA', 'TM SEGURANCA CONSULTORIA'],
     nf: {
-      serviceDescription: 'Intermediação de Escolta Armada e Fiscal de Rota',
+      serviceDescription: 'Ref. aos Serviços de Intermediação de Escolta Armada',
       issRate: 5,
       retainIss: false,
       municipalServiceCode: '03115',
@@ -54,7 +54,7 @@ const ASAAS_COMPANIES: Record<string, CompanyConfig> = {
     name: 'TM Security Gestão Corporativa Ltda',
     aliases: ['TM SECURITY', 'TMSECURITY', 'SECURITY', 'TM SECURITY GESTAO', 'TM SECURITY GESTÃO'],
     nf: {
-      serviceDescription: 'Intermediação de Escolta Armada e Fiscal de Rota',
+      serviceDescription: 'Ref. aos Serviços de Intermediação de Escolta Armada',
       issRate: 5,
       retainIss: false,
       municipalServiceCode: '03115',
