@@ -272,7 +272,7 @@ export const calculateMissionFinancials = (
     const totalDistance = safeNumber(mission.totalDistance || (mission as any).total_distance);
     let distanceForCalculation = hasValidKms ? realTraveledKm : totalDistance;
     
-    if (isZeroValueMission) {
+    if (isZeroValueMission && !hasValidKms) {
         distanceForCalculation = 0;
     }
     
@@ -888,14 +888,6 @@ export const calculateMissionFinancials = (
         pExcessHr = 0;
     }
 
-    const missionId = (mission as any).id || (mission as any).missionId || '';
-    if (String(missionId).includes('4233')) {
-        console.log('[DEBUG 4233] distanceForCalculation:', distanceForCalculation, 'cFranchiseKm:', cFranchiseKm, 'cExcessKm:', cExcessKm, 'cUnitPriceKm:', cUnitPriceKm);
-        console.log('[DEBUG 4233] isFixedDistanceClientRule:', isFixedDistanceClientRule, 'clientTableIs200km:', clientTableIs200km, 'clientTableIs100km:', clientTableIs100km, 'clientHasExtraKmPrice:', clientHasExtraKmPrice);
-        console.log('[DEBUG 4233] appliedTableName:', appliedTableName, 'price_per_extra_km:', appliedClientTable?.price_per_extra_km);
-        console.log('[DEBUG 4233] isMinimumActivationRule:', isMinimumActivationRule, 'realTraveledKm:', realTraveledKm, 'startKm:', startKm, 'endKm:', endKm);
-        console.log('[DEBUG 4233] is200kmAccompaniment:', is200kmAccompaniment, 'durationHours:', durationHours);
-    }
     let cExtraKmVal = round2(Math.max(0, cExcessKm * cUnitPriceKm));
     let cExtraHrVal = round2(Math.max(0, cExcessHr * cUnitPriceHour));
 
