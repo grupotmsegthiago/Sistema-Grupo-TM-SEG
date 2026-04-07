@@ -3,6 +3,37 @@
 
 ---
 
+## 07/04/2026 17:15 (Brasília) - SINCRONIZACAO TOTAL GRID-COMPARADOR (#046)
+
+**Descricao:** Eliminada toda logica complexa de snapshots/billing_approved/isBillingLocked para calculo do Total no comparador. REGRA UNICA: Se a missao tem revenue_value > 0 no banco (o mesmo valor que aparece na Grid Principal), o Total no comparador = revenue_value + toll_value. Sem excecao, sem calculo de motor, sem fallback. O comparador agora eh um espelho fiel da Grid Principal.
+
+### 1. Campos Implementados / UI
+
+- Nenhuma alteracao visual — mesma tela, valores corretos
+
+### 2. Comportamento e Logica
+
+- **REGRA DE OURO**: `totalGeral = hasSavedRevenue ? (savedRevenue + tollVal) : calculoEmTempoReal`
+- **Removido isBillingLocked**: Nao depende mais de billing_approved para decidir o Total
+- **Removido calcTotal complexo**: Nao usa mais calculatedServiceTotal vs componentes vs fallback
+- **hasSavedRevenue**: Simples check `revenue_value > 0` — se tem valor salvo, usa ele
+- **Log de debug**: Console.log `[COMPARADOR]` para cada missao mostrando de onde vem o Total
+- **Componentes individuais**: Valor Base, KM Extra, Hr Extra continuam vindo do calculo (para referencia), mas o TOTAL sempre vem do revenue_value salvo
+
+### 3. Banco de Dados
+
+- Nenhuma alteracao no banco
+
+### 4. Arquivos Alterados
+
+- `components/ClientBillingReport.tsx` — totalGeral simplificado: revenue_value + toll se disponivel
+
+**Status:** ✅ Concluido
+
+**Impacto:** Fim definitivo dos -R$ 24,20 e qualquer divergencia residual causada por calculos de fallback. O comparador agora le diretamente a receita da Grid.
+
+---
+
 ## 07/04/2026 18:00 (Brasília) - COMPARADOR USA REVENUE_VALUE PARA BILLING_APPROVED (#045)
 
 **Descricao:** Correcao definitiva do comparador. Para missoes com billing_approved=true, o Total do sistema agora usa o revenue_value salvo no banco (valor efetivamente faturado) + toll_value, em vez de recalcular via calculateMissionFinancials. Isso garante que o Total do sistema SEMPRE bate com o que foi faturado, independentemente de divergencias nos componentes individuais (kmExtra, hrExtra). Tambem foram limpados TODOS os snapshots corrompidos pelo "Recalcular e Comparar" (42 missoes adicionais alem das 58 anteriores).

@@ -1,0 +1,31 @@
+O log #045 confessa o crime: o sistema estava misturando o que é Cálculo de Tabela com o que é Valor Salvo, gerando snapshots corrompidos. Esse erro de -R$ 24,20 é o resto de um cálculo que o sistema "acha" que está certo, mas não está lendo a coluna correta ou está somando algo que não devia.
+
+Para resolver isso 100% agora, precisamos de uma intervenção de "Limpeza Total", parando de tentar consertar o que passou e travando a regra daqui para frente.
+
+📝 Diagnóstico do "Loop de Erros"
+Snapshots Corrompidos: O botão "Recalcular e Comparar" (#041 e #044) gerou uma bagunça de valores gravados que agora o comparador tenta ler como "verdade".
+
+Conflito de Identidade: O sistema não sabe se confia no revenue_value (valor bruto) ou no snapshot (detalhado).
+
+🚀 Prompt de Intervenção Definitiva (O Fim dos -R$ 24,20)
+Copie e cole este comando no Replit. Ele vai forçar o sistema a ser simples e direto:
+
+"Aja como Desenvolvedor Sênior. ORDEM MÁXIMA DO THIAGO:
+
+1. Unificação da Fonte de Verdade (client/src/components/ClientBillingReport.tsx):
+
+REGRA DE OURO: O Comparador deve exibir na coluna 'SISTEMA' o valor exato que o usuário vê na Grid Principal (MissionTable).
+
+Se a missão tem um revenue_value e um toll_value no banco, a soma simples desses dois campos é o que deve aparecer. IGNORE qualquer cálculo de motor ou snapshot complexo para missões que já possuem valor.
+
+2. Ajuste de Diferença Residual:
+
+Investigue especificamente por que existe uma diferença de R$ 24,20. Verifique se o sistema está subtraindo taxas (como o IBL de 12%) ou somando pedágios fantasmas no comparador que não existem na planilha.
+
+3. Registro de Log (Horário de Brasília):
+
+07/04/2026 17:15 — #046 SINCRONIZAÇÃO TOTAL GRID-COMPARADOR
+Descrição: Eliminada a lógica de snapshots corrompidos para exibição. O comparador agora é um espelho fiel da Grid Principal (Revenue + Toll).
+Impacto: Fim das divergências residuais (ex: R$ 24,20) causadas por cálculos de 'fallback'.
+
+Após salvar, informe: 'Sistema limpo. O comparador agora lê diretamente a receita da Grid.'"
