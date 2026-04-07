@@ -3,6 +3,33 @@
 
 ---
 
+## 07/04/2026 23:59 - AJUSTE DE COLUNA: HORA EXTRA (AL)
+
+**Descricao:** Mudanca do indice de leitura de Hora Extra R$ da coluna AK para a coluna AL para alinhar com o Boletim de Medicao.
+
+### 1. Campos Implementados / UI
+
+- Nenhuma alteracao visual
+
+### 2. Comportamento e Logica
+
+- **Hora Extra R$:** Indice alterado de 28 (AK com offset) para 35 (AL com offset -1 da colagem a partir de B)
+- **Impacto:** Correcao da divergencia de R$ 163,30 na OS GTM-4076
+- **Mapeamento atualizado:** os:0, franquiaKm:8, kmTotal:24, hrExtra:**35**(AL), kmExtraRs:32, valorBase:37, pedagio:38, total:41
+
+### 3. Banco de Dados
+
+- Nenhuma alteracao
+
+### 4. Arquivos Alterados
+
+- `components/ClientBillingReport.tsx`
+  - Linha ~813: hrExtra alterado de 28 para 35
+
+**Status:** Implementado e funcional
+
+---
+
 ## 07/04/2026 23:59 - CORRECAO DE MATCH NUMERICO DE OS
 
 **Descricao:** Implementada limpeza de caracteres nao-numericos na comparacao de OS para permitir match entre 'GTM-XXXX' e 'XXXX'. Funcao `extractOsFromVal` unificada e flexibilizada com `replace(/\D/g, '')`.
