@@ -3,6 +3,33 @@
 
 ---
 
+## 07/04/2026 16:00 (Brasília) - BUG PEDAGIO DUPLICADO NO RECALCULAR (#043)
+
+**Descricao:** O botao "Recalcular e Comparar" estava gravando o totalGeral com pedagio duplicado no snapshot. A formula usava `calc.client.total + toll`, mas `calc.client.total` ja incluia o pedagio internamente (serviceTotal + toll). Resultado: pedágio contado duas vezes, gerando divergência no comparador.
+
+### 1. Campos Implementados / UI
+
+- Nenhuma alteracao visual
+
+### 2. Comportamento e Logica
+
+- **totalGeral corrigido**: Agora usa `clientServiceOnly + newToll` (serviceTotal que NAO inclui toll + toll = correto)
+- **durationHours corrigido**: Usava `calc.client.durationHours` (nao existe), agora usa `calc.durationHours`
+- **unitKm/unitHr corrigidos**: Usava `calc.client.unitKm`/`unitHr` (nao existem), agora usa `calc.client.unitPriceKm`/`unitPriceHour`
+- **revenueServiceOnly/costServiceOnly**: Removido fallback para `newRevenue`/`newCost` (que incluiam toll), agora usa diretamente os serviceTotal corretos
+
+### 3. Banco de Dados
+
+- Snapshots existentes com pedagio duplicado devem ser recalculados pelo botao "Recalcular e Comparar"
+
+### 4. Arquivos Alterados
+
+- `server/routes.ts` — rota `/api/billing/recalculate-client`, correcao do calculo de snapshot
+
+**Status:** ✅ Concluido
+
+---
+
 ## 07/04/2026 15:00 (Brasília) - NF PDF NO EMAIL DE COBRANCA (#042)
 
 **Descricao:** O email de cobranca agora aguarda ate 15 segundos (5 tentativas x 3s) para que o Asaas processe a NF e gere o PDF. Assim o email enviado ao cliente ja contem o link da NF junto com boleto e PIX — tudo num email so.

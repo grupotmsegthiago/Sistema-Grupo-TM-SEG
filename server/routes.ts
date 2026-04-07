@@ -1548,6 +1548,7 @@ export async function registerRoutes(
           const newToll = calc.tollValue || raw.toll_value || 0;
           const oldRevenue = raw.revenue_value || 0;
           const oldCost = raw.cost_value || 0;
+          const clientServiceOnly = calc.client.serviceTotal || 0;
 
           const snapData = {
             activationFee: calc.client.base || 0,
@@ -1558,13 +1559,13 @@ export async function registerRoutes(
             tollVal: newToll,
             franchiseKm: calc.client.franchiseKm || 0,
             franchiseHours: calc.client.franchiseHours || 0,
-            unitKm: calc.client.unitKm || 0,
-            unitHr: calc.client.unitHr || 0,
+            unitKm: calc.client.unitPriceKm || 0,
+            unitHr: calc.client.unitPriceHour || 0,
             kmTotal: raw.end_km && raw.start_km ? (raw.end_km - raw.start_km) : (raw.total_distance || 0),
-            durationHours: calc.client.durationHours || 0,
-            revenueServiceOnly: calc.client.serviceTotal || newRevenue,
-            costServiceOnly: calc.provider.serviceTotal || newCost,
-            totalGeral: newRevenue + newToll,
+            durationHours: calc.durationHours || 0,
+            revenueServiceOnly: clientServiceOnly,
+            costServiceOnly: calc.provider.serviceTotal || 0,
+            totalGeral: clientServiceOnly + newToll,
             clientTableId: calc.client.tableId || null,
             providerTableId: calc.provider.tableId || null,
             tableName: calc.client.tableName || '',
