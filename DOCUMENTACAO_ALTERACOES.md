@@ -3,6 +3,37 @@
 
 ---
 
+## 07/04/2026 19:15 - PRIORIDADE MAXIMA: OPERACAO LOGITECH (CEVA/JUNDIAI)
+
+**Descricao:** Garantir que toda saida de Jundiai para o cliente CEVA seja tarifada pela tabela de 200km (Operacao Logitech), independente da quilometragem real da rota. Pedagio fixo atualizado de R$ 35 para R$ 38 para cliente e fornecedor.
+
+### 1. Campos Implementados / UI
+
+- Nenhuma alteracao visual. Regra transparente para o operador.
+
+### 2. Comportamento e Logica
+
+- **Regra Logitech Soberana (lib/financialUtils.ts):** Toda missao com `client.includes('CEVA')` AND `origin.includes('JUNDIAI')` agora SEMPRE aplica a tabela LOGITECH/200KM, independente da distancia real (950km, 1200km, qualquer valor). A condicao anterior `referenceDistance > 200` foi REMOVIDA — a regra e absoluta
+- **KM Excedente bloqueado:** Com `is200kmAccompaniment = true`, o sistema trava `distanceForCalculation` em `Math.min(distancia, 200)`, garantindo zero KM excedente no calculo do cliente
+- **Provider sincronizado:** O flag `is200kmAccompaniment` tambem forca o provider para a tabela "ATE 200KM" na linha ~739, e trava `providerDistForCalc` em 200km maximo (linha ~818)
+- **Pedagio fixo R$ 38:** Quando tabela Logitech/200KM e aplicada e tollValue == 0, o sistema injeta R$ 38 (antes era R$ 35). Valor compartilhado entre cliente e fornecedor (mesmo tollValue nas linhas ~910 e ~912)
+- **Log de deteccao:** clientLog agora exibe `REGRA LOGITECH SOBERANA: CEVA Jundiai → [tabela] (KM real ignorado)` para rastreabilidade
+
+### 3. Banco de Dados
+
+- Nenhuma alteracao de schema
+- Missoes CEVA/Jundiai terao valores recalculados automaticamente pelo auto-save ao abrir o modal
+
+### 4. Arquivos Alterados
+
+- `lib/financialUtils.ts`
+  - Linhas ~601-611: Bloco CEVA/Jundiai simplificado — removidas ramificacoes por distancia, regra Logitech SEMPRE aplicada
+  - Linha ~902: Pedagio default alterado de R$ 35 para R$ 38
+
+**Status:** Implementado e funcional
+
+---
+
 ## 07/04/2026 17:30 - EXECUCAO FORCADA DE LIMPEZA + BOTAO DE EMERGENCIA
 
 **Descricao:** Disparo manual do script de recalculo para limpar valores divergentes. Verificacao da OS GTM-4371 confirmou correcao automatica pelo auto-save (R$ 9.310 → R$ 1.400). Botao de emergencia "SINCRONIZAR VALORES REAIS" adicionado em destaque maximo no topo do dashboard.
