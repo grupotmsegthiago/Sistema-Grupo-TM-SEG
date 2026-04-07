@@ -1,0 +1,83 @@
+Implemente o Assistente IA para seleção de tabela conforme o plano.
+Faça em 3 etapas e confirme cada uma.
+
+---
+
+ETAPA 1 — Nova função em lib/gemini.ts
+
+Adicione a função suggestPriceTable() exportada com este prompt ao Gemini:
+
+export async function suggestPriceTable(options: {
+  mission: {
+    origin: string; destination: string; totalKm: number;
+    missionType: string; client: string; provider: string;
+    agentCount: number; originUF: string; region: string;
+  };
+  clientTables: Array<{ id: string; operation_type: string;
+    activation_fee: number; franchise_km: number; franchise_hours: number;
+    price_per_extra_km: number; price_per_extra_hour: number; }>;
+  providerTables: Array<{ id: string; operation_type: string;
+    activation_cost: number; franchise_km: number; franchise_hours: number;
+    cost_per_extra_km: number; cost_per_extra_hour: number; }>;
+}): Promise<{
+  clientSuggestion: { tableId: string; tableName: string; reason: string } | null;
+  providerSuggestion: { tableId: string; tableName: string; reason: string } | null;
+}>
+
+O prompt enviado ao Gemini deve incluir:
+- Dados da missão (origem, destino, km, tipo, agentes, UF, região)
+- Lista compacta das tabelas: id | operation_type | acionamento | franquia_km | franquia_h | km_extra | h_extra
+- Regras de negócio:
+  1. VELADA = escolta discreta (tabelas ARMADO/PRONTA RESPOSTA)
+  2. CARACTERIZADA = escolta visível (tabelas com faixa KM)
+  3. Franquia_km deve cobrir a distância (menor que cubra)
+  4. Evitar tabelas "EXCETO MG" para missões de MG/ES
+  5. Cidades da origem/destino no operation_type = match forte
+  6. Fornecedor MACOR = preferir tabelas com "MACOR" no nome
+  7. 02 ARMADOS = missão com 2+ agentes
+
+Resposta APENAS em JSON:
+{ "clientSuggestion": { "tableId": "...", "tableName": "...", "reason": "..." },
+  "providerSuggestion": { "tableId": "...", "tableName": "...", "reason": "..." } }
+
+Use try/catch — se falhar retorne { clientSuggestion: null, providerSuggestion: null }.
+
+---
+
+ETAPA 2 — Estados e função no MissionFinancialModal.tsx
+
+Adicione após os estados existentes:
+const [aiLoading, setAiLoading] = useState(false);
+const [aiSuggestion, setAiSuggestion] = useState<{
+  clientSuggestion: { tableId: string; tableName: string; reason: string } | null;
+  providerSuggestion: { tableId: string; tableName: string; reason: string } | null;
+} | null>(null);
+
+Adicione a função handleAiSuggest():
+- Coleta dados da missão já disponíveis no modal
+- Monta lista das clientTables e providerTables já carregadas
+- Chama suggestPriceTable() do gemini.ts
+- Seta aiSuggestion com o resultado
+- Usa setAiLoading(true/false) antes e depois
+
+---
+
+ETAPA 3 — UI no MissionFinancialModal.tsx
+
+1. Botão "IA" ao lado do select de tabela cliente E fornecedor:
+   - Ícone Sparkles do lucide-react
+   - Cor: bg-purple-600 hover:bg-purple-700 text-white
+   - Quando aiLoading: mostrar spinner, desabilitar botão
+   - onClick: handleAiSuggest()
+
+2. Card de sugestão (aparece quando aiSuggestion !== null):
+   - Fundo: bg-amber-50 border border-amber-300 rounded-xl p-4
+   - Título: "✨ SUGESTÃO DA IA" em negrito
+   - Mostrar sugestão cliente com nome da tabela e motivo
+   - Mostrar sugestão fornecedor com nome da tabela e motivo
+   - Botão "Aplicar": aplica manualClientTableId e manualProviderTableId
+     e fecha o card (setAiSuggestion(null))
+   - Botão "Ignorar": fecha o card (setAiSuggestion(null))
+   - Nota pequena: "Sugestão gerada por IA — confirme antes de aplicar"
+
+Confirme que compilou sem erros após cada etapa.

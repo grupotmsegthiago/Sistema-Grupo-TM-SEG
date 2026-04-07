@@ -4,7 +4,8 @@ import { Mission, ClientPriceTable, ProviderCostTable, MissionStatus, Client } f
 import { supabase } from '../lib/supabase';
 import { useNotification } from '../lib/NotificationContext';
 import { calculateMissionFinancials, auditMissionFinancials, extractUF, UF_TO_REGION } from '../lib/financialUtils';
-import { X, Calculator, Loader2, Save, CheckCircle2, TrendingUp, Landmark, Zap, RotateCcw, Building2, Briefcase, Plus, Users, MapPin, ArrowRight, BrainCircuit, AlertTriangle, AlertCircle, Edit2, Info, RefreshCw, Clock, Pencil, Lock, ShieldCheck, Camera, Image as ImageIcon, Link2, Layers, Scale } from 'lucide-react';
+import { X, Calculator, Loader2, Save, CheckCircle2, TrendingUp, Landmark, Zap, RotateCcw, Building2, Briefcase, Plus, Users, MapPin, ArrowRight, BrainCircuit, AlertTriangle, AlertCircle, Edit2, Info, RefreshCw, Clock, Pencil, Lock, ShieldCheck, Camera, Image as ImageIcon, Link2, Layers, Scale, Sparkles } from 'lucide-react';
+import { suggestPriceTable } from '../lib/gemini';
 import ProviderCostForm from './ProviderCostForm';
 import ClientPriceForm from './ClientPriceForm';
 import { formatProviderName } from '../lib/utils';
@@ -109,6 +110,12 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
   const isSavingRef = React.useRef(false);
   const userManuallyEditedRef = React.useRef(false);
   const [savedByInfo, setSavedByInfo] = useState<string | null>(null);
+
+  const [aiLoading, setAiLoading] = useState(false);
+  const [aiSuggestion, setAiSuggestion] = useState<{
+    clientSuggestion: { tableId: string; tableName: string; reason: string } | null;
+    providerSuggestion: { tableId: string; tableName: string; reason: string } | null;
+  } | null>(null);
 
   const [editStartKm, setEditStartKm] = useState('');
   const [editEndKm, setEditEndKm] = useState('');
@@ -1400,6 +1407,61 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
       return providerTables.filter(t => t.provider?.toUpperCase().trim() === normalizedProviderName);
   }, [providerTables, mission?.provider]);
 
+  const handleAiSuggest = async () => {
+      if (!mission || aiLoading) return;
+      setAiLoading(true);
+      setAiSuggestion(null);
+      try {
+          const originUF = extractUF(mission.origin || '');
+          const region = UF_TO_REGION[originUF] || '';
+          const totalKm = safeNumber(mission.totalDistance);
+          const agentCount = financialData?.agentCount || 1;
+
+          const clientTablesForAi = clientTables.map(t => ({
+              id: String(t.id),
+              operation_type: t.operation_type || '',
+              activation_fee: t.activation_fee || 0,
+              franchise_km: t.franchise_km || 0,
+              franchise_hours: t.franchise_hours || 0,
+              price_per_extra_km: t.price_per_extra_km || 0,
+              price_per_extra_hour: t.price_per_extra_hour || 0,
+          }));
+
+          const providerTablesForAi = filteredProviderTables.map(t => ({
+              id: String(t.id),
+              operation_type: t.operation_type || '',
+              activation_cost: t.activation_cost || 0,
+              franchise_km: t.franchise_km || 0,
+              franchise_hours: t.franchise_hours || 0,
+              cost_per_extra_km: t.cost_per_extra_km || 0,
+              cost_per_extra_hour: t.cost_per_extra_hour || 0,
+          }));
+
+          const result = await suggestPriceTable({
+              mission: {
+                  origin: mission.origin || '',
+                  destination: mission.destination || '',
+                  totalKm,
+                  missionType: mission.mission_type || 'CARACTERIZADA',
+                  client: mission.client || '',
+                  provider: mission.provider || '',
+                  agentCount,
+                  originUF,
+                  region,
+              },
+              clientTables: clientTablesForAi,
+              providerTables: providerTablesForAi,
+          });
+
+          setAiSuggestion(result);
+      } catch (err) {
+          console.error('AI Suggest error:', err);
+          setAiSuggestion(null);
+      } finally {
+          setAiLoading(false);
+      }
+  };
+
   if (!isOpen || !mission) return null;
 
   const isZeroCostError = financialData && financialData.provider.base === 0 && !mission.is_same_os && (financialData.realTraveledKm > 0 || financialData.durationHours > 0);
@@ -2068,6 +2130,69 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                         </div>
                     </div>
 
+                    {aiSuggestion && (
+                        <div className="mb-4 bg-amber-50 border border-amber-300 rounded-xl p-4 animate-in slide-in-from-top-2" data-testid="ai-suggestion-card">
+                            <div className="flex items-center gap-2 mb-3">
+                                <Sparkles size={16} className="text-amber-600" />
+                                <span className="text-sm font-black text-amber-800 uppercase tracking-wide">Sugestão da IA</span>
+                            </div>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-3">
+                                {aiSuggestion.clientSuggestion && (
+                                    <div className="bg-white/80 rounded-lg p-3 border border-blue-200">
+                                        <p className="text-[10px] font-black text-blue-600 uppercase mb-1">Cliente</p>
+                                        <p className="text-xs font-bold text-gray-800">{aiSuggestion.clientSuggestion.tableName}</p>
+                                        <p className="text-[10px] text-gray-500 mt-1 leading-relaxed">{aiSuggestion.clientSuggestion.reason}</p>
+                                    </div>
+                                )}
+                                {aiSuggestion.providerSuggestion && (
+                                    <div className="bg-white/80 rounded-lg p-3 border border-red-200">
+                                        <p className="text-[10px] font-black text-red-600 uppercase mb-1">Fornecedor</p>
+                                        <p className="text-xs font-bold text-gray-800">{aiSuggestion.providerSuggestion.tableName}</p>
+                                        <p className="text-[10px] text-gray-500 mt-1 leading-relaxed">{aiSuggestion.providerSuggestion.reason}</p>
+                                    </div>
+                                )}
+                                {!aiSuggestion.clientSuggestion && !aiSuggestion.providerSuggestion && (
+                                    <div className="col-span-2 text-center py-2">
+                                        <p className="text-xs text-gray-500">Não foi possível gerar uma sugestão. Verifique se existem tabelas cadastradas.</p>
+                                    </div>
+                                )}
+                            </div>
+                            <div className="flex items-center justify-between">
+                                <p className="text-[9px] text-amber-600 italic">Sugestão gerada por IA — confirme antes de aplicar</p>
+                                <div className="flex gap-2">
+                                    <button
+                                        onClick={() => setAiSuggestion(null)}
+                                        className="px-3 py-1.5 bg-gray-200 text-gray-700 text-[10px] font-bold rounded-lg hover:bg-gray-300 transition-all active:scale-95"
+                                        data-testid="button-ai-ignore"
+                                    >
+                                        Ignorar
+                                    </button>
+                                    {(aiSuggestion.clientSuggestion || aiSuggestion.providerSuggestion) && (
+                                        <button
+                                            onClick={() => {
+                                                if (aiSuggestion.clientSuggestion) {
+                                                    setManualClientTableId(aiSuggestion.clientSuggestion.tableId);
+                                                    setCustomClientBase(''); setCustomClientKm(''); setCustomClientHour('');
+                                                    setUseSavedValues(false);
+                                                }
+                                                if (aiSuggestion.providerSuggestion) {
+                                                    setManualProviderTableId(aiSuggestion.providerSuggestion.tableId);
+                                                    setCustomProviderBase(''); setCustomProviderKm(''); setCustomProviderHour('');
+                                                    setUseSavedValues(false);
+                                                }
+                                                setAiSuggestion(null);
+                                            }}
+                                            className="px-3 py-1.5 bg-purple-600 text-white text-[10px] font-bold rounded-lg hover:bg-purple-700 transition-all shadow-md active:scale-95"
+                                            data-testid="button-ai-apply"
+                                        >
+                                            <span className="flex items-center gap-1"><CheckCircle2 size={12} /> Aplicar</span>
+                                        </button>
+                                    )}
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                         
                         {/* COLUNA FATURAMENTO (CLIENTE) */}
@@ -2107,6 +2232,15 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                         data-testid="button-add-client-table"
                                     >
                                         <Plus size={14}/>
+                                    </button>
+                                    <button
+                                        onClick={handleAiSuggest}
+                                        disabled={aiLoading}
+                                        className="p-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-all shadow-md active:scale-95 disabled:opacity-50"
+                                        title="Sugerir Tabela com IA"
+                                        data-testid="button-ai-suggest"
+                                    >
+                                        {aiLoading ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}
                                     </button>
                                 </div>
                                 {/* LOG DE DETECÇÃO DA IA */}
@@ -2269,6 +2403,17 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                             title="Cadastrar Nova Tabela"
                                         >
                                             <Plus size={14}/>
+                                        </button>
+                                    )}
+                                    {!mission.is_same_os && (
+                                        <button
+                                            onClick={handleAiSuggest}
+                                            disabled={aiLoading}
+                                            className="p-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-all shadow-md active:scale-95 disabled:opacity-50"
+                                            title="Sugerir Tabela com IA"
+                                            data-testid="button-ai-suggest-provider"
+                                        >
+                                            {aiLoading ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}
                                         </button>
                                     )}
                                 </div>
