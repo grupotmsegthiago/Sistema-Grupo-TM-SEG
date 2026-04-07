@@ -724,6 +724,21 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
                 customProviderUnitHour: adj.customProviderHour ? Number(adj.customProviderHour) : undefined,
             } : undefined;
             const fin = calculateMissionFinancials(m, priceTables, providerTables, clientData, new Date(), overrides);
+
+            if (hasSnap && snapRow) {
+                const liveKmExtra = fin.client.extraKmVal || 0;
+                const liveHrExtra = fin.client.extraHrVal || 0;
+                const liveServiceTotal = fin.client.serviceTotal || 0;
+                const liveToll = Math.max(0, m.toll_value || 0);
+                const liveTotal = liveServiceTotal > 0 ? liveServiceTotal + liveToll : 0;
+
+                if (liveKmExtra > (snapRow.kmExtraTotal || 0)) snapRow.kmExtraTotal = liveKmExtra;
+                if (liveHrExtra > (snapRow.hrExtraTotal || 0)) snapRow.hrExtraTotal = liveHrExtra;
+                if (liveTotal > (snapRow.totalGeral || 0)) {
+                    snapRow.totalGeral = liveTotal;
+                }
+                return snapRow;
+            }
             const usedTable = priceTables.find(t => t.id.toString() === fin.client.tableId);
             const franchiseKm = usedTable?.franchise_km ?? 0;
             const franchiseHours = usedTable?.franchise_hours ?? 0;
