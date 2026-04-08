@@ -48,3 +48,9 @@ id = "CIF2sxyJZig79onurh4JE"
 uri = "file://MAPA_ENGENHARIA_REVERSA_TMSEG.md"
 type = "text"
 title = "Mapa de Engenharia Reversa — TMSEGo v3.1.5"
+
+[[outputs]]
+id = "iIUfbPVspefpaSkMk76ZP"
+uri = "file://export_relatorio/RelatorioOS_TMSEGo.tar.gz"
+type = "unspecified"
+title = "Relatório de OS - Código Fonte Completo"
