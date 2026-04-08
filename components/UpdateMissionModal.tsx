@@ -87,6 +87,11 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
         const role = (currentUser.role || '').toLowerCase();
         return role === 'diretoria';
     }, [currentUser]);
+    const canEditApproved = useMemo(() => {
+        if (!currentUser) return false;
+        const role = (currentUser.role || '').toLowerCase();
+        return ['diretoria', 'administrador', 'avançado', 'avancado'].includes(role) || (currentUser.permissions && currentUser.permissions.includes('*'));
+    }, [currentUser]);
     const canRevertStatus = useMemo(() => {
         if (!currentUser) return false;
         const role = (currentUser.role || '').toLowerCase();
@@ -656,17 +661,17 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
         e.preventDefault();
         if (!mission || !currentUser) return;
 
-        if (isCompletedMission && isBillingApproved && !isDiretoria) {
-            showNotification('Bloqueado', 'Esta OS já foi aprovada pela Diretoria. Nenhuma alteração de status é permitida.', 'error');
+        if (isCompletedMission && isBillingApproved && !canEditApproved) {
+            showNotification('Bloqueado', 'Esta OS já foi aprovada. Apenas Diretoria, Administrador ou Avançado podem alterar.', 'error');
             return;
         }
 
-        if (isCompletedMission && editData.status !== MissionStatus.COMPLETED && !canRevertStatus && !isDiretoria) {
+        if (isCompletedMission && editData.status !== MissionStatus.COMPLETED && !canRevertStatus && !canEditApproved) {
             showNotification('Sem Permissão', 'Apenas perfis Avançado, Administrador ou Diretoria podem reverter uma OS concluída.', 'error');
             return;
         }
 
-        if (isCompletedMission && !isDiretoria && canRevertStatus && editData.status !== MissionStatus.COMPLETED && editData.status !== MissionStatus.IN_TRANSIT) {
+        if (isCompletedMission && !canEditApproved && canRevertStatus && editData.status !== MissionStatus.COMPLETED && editData.status !== MissionStatus.IN_TRANSIT) {
             showNotification('Status Inválido', 'Uma OS concluída só pode ser revertida para "Em Viagem".', 'error');
             return;
         }
@@ -1460,16 +1465,16 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
                                 </div>
                             </div>
                         )}
-                        {isCompletedMission && isBillingApproved && !isDiretoria && (
+                        {isCompletedMission && isBillingApproved && !canEditApproved && (
                             <div className="flex items-center gap-2 px-4 py-3 bg-blue-50 border border-blue-200 rounded-xl mb-3" data-testid="billing-approved-lock">
                                 <ShieldCheck size={16} className="text-blue-600" />
-                                <span className="text-[10px] font-black text-blue-700 uppercase">OS aprovada pela Diretoria — status bloqueado</span>
+                                <span className="text-[10px] font-black text-blue-700 uppercase">OS aprovada — status bloqueado</span>
                             </div>
                         )}
-                        {isCompletedMission && isBillingApproved && isDiretoria && (
+                        {isCompletedMission && isBillingApproved && canEditApproved && (
                             <div className="flex items-center gap-2 px-4 py-3 bg-green-50 border border-green-200 rounded-xl mb-3" data-testid="billing-approved-diretoria">
                                 <ShieldCheck size={16} className="text-green-600" />
-                                <span className="text-[10px] font-black text-green-700 uppercase">OS aprovada — Diretoria pode alterar</span>
+                                <span className="text-[10px] font-black text-green-700 uppercase">OS aprovada — seu perfil pode alterar</span>
                             </div>
                         )}
                         {isCompletedMission && !isBillingApproved && canRevertStatus && (
@@ -1486,7 +1491,7 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
                         )}
                         <div className="flex flex-wrap gap-2 pb-4 border-b border-gray-100">
                             {operationalStatuses.map(s => {
-                                const isDisabled = isDiretoria ? false
+                                const isDisabled = canEditApproved ? false
                                     : isCompletedMission && isBillingApproved ? true
                                     : isCompletedMission && !canRevertStatus ? true
                                     : isCompletedMission && canRevertStatus && s !== MissionStatus.IN_TRANSIT && s !== MissionStatus.COMPLETED ? true
@@ -1499,7 +1504,7 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
                         <div className="mt-4 flex flex-wrap items-end gap-6">
                             <div className="flex gap-2">
                                 {restrictedStatuses.map(s => {
-                                    const isDisabled = isDiretoria ? false : isCompletedMission && (isBillingApproved || !canRevertStatus);
+                                    const isDisabled = canEditApproved ? false : isCompletedMission && (isBillingApproved || !canRevertStatus);
                                     return (
                                         <button key={s} type="button" onClick={() => !isDisabled && setEditData({...editData, status: s})} disabled={isDisabled} className={`px-5 py-2 rounded-xl text-[10px] font-black uppercase transition-all border ${editData.status === s ? 'bg-gray-900 text-white border-black shadow-md' : isDisabled ? 'bg-gray-100 text-gray-300 border-gray-100 cursor-not-allowed opacity-50' : 'bg-red-50 text-red-400 border-red-100 hover:bg-red-100'}`}>{s}</button>
                                     );
