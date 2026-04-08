@@ -962,7 +962,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
       setUseSavedValues(false);
       userManuallyEditedRef.current = false;
       dbValuesLoadedRef.current = false;
-      setMission(prev => prev ? { ...prev, revenue_edit_reason: null, cost_edit_reason: null, billing_verified_by: null } : prev);
+      setMission(prev => prev ? { ...prev, revenue_edit_reason: '', cost_edit_reason: '', billing_verified_by: null } : prev);
       if (financialData && mission) {
           const toll = parseNumber(tollInput);
           const revServiceOnly = financialData.client.serviceTotal;
@@ -973,14 +973,19 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
           try {
               const userData = JSON.parse(localStorage.getItem('userData') || '{}');
               const userName = userData.name || 'Usuário';
-              await supabase.from('missions').update({
+              const recalcPayload: any = {
                   revenue_value: r2(revServiceOnly),
                   toll_value: r2(toll),
-                  revenue_edit_reason: null,
-                  cost_edit_reason: null,
                   billing_verified_by: null,
                   last_update: new Date().toISOString()
-              }).eq('id', mission.id);
+              };
+              if (r2(revServiceOnly) === 0) {
+                  recalcPayload.revenue_edit_reason = `[${userName} - ${new Date().toLocaleString('pt-BR')}] Recalculado pelo sistema (valor zero)`;
+              } else {
+                  recalcPayload.revenue_edit_reason = '';
+              }
+              recalcPayload.cost_edit_reason = '';
+              await supabase.from('missions').update(recalcPayload).eq('id', mission.id);
               
               await supabase.from('system_logs').insert([{
                   user_name: userName,
@@ -1014,7 +1019,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
       setUseSavedValues(false);
       userManuallyEditedRef.current = false;
       dbValuesLoadedRef.current = false;
-      setMission(prev => prev ? { ...prev, revenue_edit_reason: null, cost_edit_reason: null, billing_verified_by: null } : prev);
+      setMission(prev => prev ? { ...prev, revenue_edit_reason: '', cost_edit_reason: '', billing_verified_by: null } : prev);
       if (financialData && mission) {
           const isSameOs = mission.is_same_os === true;
           const tollProv = isSameOs ? 0 : parseNumber(tollProviderInput);
@@ -1026,14 +1031,19 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
           try {
               const userData = JSON.parse(localStorage.getItem('userData') || '{}');
               const userName = userData.name || 'Usuário';
-              await supabase.from('missions').update({
+              const recalcProvPayload: any = {
                   cost_value: r2(costServiceOnly),
                   toll_value_provider: r2(tollProv),
-                  revenue_edit_reason: null,
-                  cost_edit_reason: null,
                   billing_verified_by: null,
                   last_update: new Date().toISOString()
-              }).eq('id', mission.id);
+              };
+              if (r2(costServiceOnly) === 0) {
+                  recalcProvPayload.cost_edit_reason = `[${userName} - ${new Date().toLocaleString('pt-BR')}] Recalculado pelo sistema (valor zero)`;
+              } else {
+                  recalcProvPayload.cost_edit_reason = '';
+              }
+              recalcProvPayload.revenue_edit_reason = '';
+              await supabase.from('missions').update(recalcProvPayload).eq('id', mission.id);
               
               await supabase.from('system_logs').insert([{
                   user_name: userName,
@@ -1262,6 +1272,12 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
           }
           if (costDivergent && costEditReason.trim()) {
               reasonFields.cost_edit_reason = `[${userName} - ${new Date().toLocaleString('pt-BR')}] ${costEditReason.trim()}`;
+          }
+          if (r2(revServiceOnly) === 0 && !reasonFields.revenue_edit_reason) {
+              reasonFields.revenue_edit_reason = `[${userName} - ${new Date().toLocaleString('pt-BR')}] Valor zero confirmado`;
+          }
+          if (r2(costServiceOnly) === 0 && !reasonFields.cost_edit_reason) {
+              reasonFields.cost_edit_reason = `[${userName} - ${new Date().toLocaleString('pt-BR')}] Valor zero confirmado`;
           }
 
           const fullPayload = { ...basePayload, toll_value_provider: isSameOs ? 0 : r2(tollProv), ...reasonFields };
@@ -2250,7 +2266,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                     <select 
                                         className={`w-full p-2 bg-gray-50 border border-gray-200 rounded-lg text-xs font-bold text-gray-700 uppercase outline-none focus:border-blue-500 ${isController ? 'pointer-events-none opacity-60' : ''}`}
                                         value={manualClientTableId || ''}
-                                        onChange={(e) => { if (!isController) { setManualClientTableId(e.target.value); setCustomClientBase(''); setCustomClientKm(''); setCustomClientHour(''); setUseSavedValues(false); userManuallyEditedRef.current = false; setMission(prev => prev ? { ...prev, revenue_edit_reason: null, cost_edit_reason: null, billing_verified_by: null } : prev); if (mission) supabase.from('missions').update({ revenue_edit_reason: null, cost_edit_reason: null, billing_verified_by: null }).eq('id', mission.id); } }}
+                                        onChange={(e) => { if (!isController) { setManualClientTableId(e.target.value); setCustomClientBase(''); setCustomClientKm(''); setCustomClientHour(''); setUseSavedValues(false); userManuallyEditedRef.current = false; setMission(prev => prev ? { ...prev, revenue_edit_reason: '', cost_edit_reason: '', billing_verified_by: null } : prev); if (mission) supabase.from('missions').update({ revenue_edit_reason: '', cost_edit_reason: '', billing_verified_by: null }).eq('id', mission.id); } }}
                                         disabled={isController}
                                     >
                                         <option value="">Automático (IA Detectando)</option>
@@ -2401,9 +2417,9 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                             setCustomProviderHour('');
                                             setUseSavedValues(false);
                                             userManuallyEditedRef.current = false;
-                                            setMission(prev => prev ? { ...prev, revenue_edit_reason: null, cost_edit_reason: null, billing_verified_by: null } : prev);
+                                            setMission(prev => prev ? { ...prev, revenue_edit_reason: '', cost_edit_reason: '', billing_verified_by: null } : prev);
                                             setManualProviderTableId('');
-                                            await supabase.from('missions').update({ revenue_edit_reason: null, cost_edit_reason: null, billing_verified_by: null }).eq('id', mission.id);
+                                            await supabase.from('missions').update({ revenue_edit_reason: '', cost_edit_reason: '', billing_verified_by: null }).eq('id', mission.id);
                                             await supabase.from('system_logs').delete().eq('entity', 'BillingAdjustment').eq('entity_id', mission.id);
                                             setTimeout(() => {
                                                 setManualProviderTableId(currentTableId);
@@ -2425,7 +2441,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                     <select 
                                         className={`w-full p-2 bg-gray-50 border rounded-lg text-xs font-bold text-gray-700 uppercase outline-none focus:border-red-500 ${isZeroCostError ? 'border-red-300 bg-red-50 text-red-900 animate-pulse' : 'border-gray-200'}`}
                                         value={manualProviderTableId || ''}
-                                        onChange={(e) => { setManualProviderTableId(e.target.value); setCustomProviderBase(''); setCustomProviderKm(''); setCustomProviderHour(''); setUseSavedValues(false); userManuallyEditedRef.current = false; setMission(prev => prev ? { ...prev, revenue_edit_reason: null, cost_edit_reason: null, billing_verified_by: null } : prev); if (mission) supabase.from('missions').update({ revenue_edit_reason: null, cost_edit_reason: null, billing_verified_by: null }).eq('id', mission.id); }}
+                                        onChange={(e) => { setManualProviderTableId(e.target.value); setCustomProviderBase(''); setCustomProviderKm(''); setCustomProviderHour(''); setUseSavedValues(false); userManuallyEditedRef.current = false; setMission(prev => prev ? { ...prev, revenue_edit_reason: '', cost_edit_reason: '', billing_verified_by: null } : prev); if (mission) supabase.from('missions').update({ revenue_edit_reason: '', cost_edit_reason: '', billing_verified_by: null }).eq('id', mission.id); }}
                                         disabled={mission.is_same_os}
                                     >
                                         <option value="">{mission.is_same_os ? 'Custo Zero (Mesma OS)' : 'IA Detectando Melhor Custo...'}</option>
