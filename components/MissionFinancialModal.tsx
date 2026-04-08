@@ -445,6 +445,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
       setIsLoading(true);
       try {
           const clientName = initialMission.originalClientName || initialMission.client;
+          const clientNameTrimmed = (clientName || '').trim();
           const providerName = (initialMission.provider || '').trim();
           let ptQuery = supabase.from('provider_cost_tables').select('*');
           if (providerName) {
@@ -452,9 +453,9 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
           }
           const [mRes, ctRes, ptRes, clRes] = await Promise.all([
               supabase.from('missions').select('*').eq('id', initialMission.id).single(),
-              supabase.from('client_price_tables').select('*').eq('client', clientName),
+              supabase.from('client_price_tables').select('*').or(`client.eq.${clientName},client.ilike.${clientNameTrimmed}%`),
               ptQuery,
-              supabase.from('clients').select('*').ilike('name', clientName || '').single()
+              supabase.from('clients').select('*').ilike('name', clientNameTrimmed || '').single()
           ]);
           if (clRes.data) {
               setClientData(clRes.data as Client);
