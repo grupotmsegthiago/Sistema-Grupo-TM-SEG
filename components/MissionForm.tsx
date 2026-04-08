@@ -675,7 +675,15 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
       let suggestedToll = 0;
       let tollSource = '';
 
-      if (route.toll_cost && route.toll_cost > 0) {
+      const clientUpper = (formData.client || '').toUpperCase();
+      const originUpper = (route.origin || '').toUpperCase();
+      const destUpper = (route.destination || '').toUpperCase();
+      const isCevaJundiai200km = clientUpper.includes('CEVA') && originUpper.includes('JUNDIA') && destUpper.includes('200KM');
+      if (isCevaJundiai200km) {
+          suggestedToll = 35;
+          tollSource = 'fixed';
+          showNotification('Regra CEVA', 'Pedágio fixo de R$ 35,00 aplicado (CEVA + Jundiaí + 200KM).', 'success');
+      } else if (route.toll_cost && route.toll_cost > 0) {
           suggestedToll = route.toll_cost;
           tollSource = 'fixed';
           showNotification('IA Logística', `Pedágio de R$ ${suggestedToll.toFixed(2)} aplicado via cadastro de rota fixa.`, 'success');

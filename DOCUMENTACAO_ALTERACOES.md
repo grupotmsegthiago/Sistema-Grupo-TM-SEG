@@ -3,6 +3,26 @@
 
 ---
 
+## 08/04/2026 00:00 (Brasília) - REGRA PEDAGIO CEVA + JUNDIAI + 200KM (#056)
+
+**Descricao:** OS GTM-4386 nasceu com pedagio de R$ 463,37 porque a API de pedagio recebeu "200KM DE ACOMPANHAMENTO" como destino (nao e um endereco real). Criada regra hardcoded no MissionForm.tsx.
+
+### Regra
+
+Se TODAS as condicoes forem verdadeiras:
+1. Cliente contem "CEVA" (case-insensitive)
+2. Origem contem "JUNDIA" (Jundiai, case-insensitive)
+3. Destino contem "200KM"
+
+Entao: pedagio fixo = R$ 35,00. Nao chama API de pedagio nem Gemini IA.
+
+### Arquivo Alterado
+- `components/MissionForm.tsx` — `handleRouteSelect()` — regra inserida ANTES de qualquer outra logica de pedagio (rota fixa, historico, API).
+
+**Status:** ✅ Concluido
+
+---
+
 ## 07/04/2026 20:35 (Brasília) - REAL-TIME GLOBAL — SINCRONIZACAO EM TEMPO REAL (#055)
 
 **Descricao:** Implementacao de sincronizacao em tempo real para 100% do sistema. Todos os usuarios conectados recebem atualizacoes instantaneas quando qualquer dado muda no banco de dados Supabase.
