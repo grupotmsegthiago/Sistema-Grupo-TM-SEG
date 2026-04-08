@@ -279,7 +279,7 @@ const FinancialInvoiceControl: React.FC = () => {
                   </th>
                   <th className="text-center px-4 py-3 text-[10px] font-black text-gray-400 uppercase">Vencimento</th>
                   <th className="text-center px-4 py-3 text-[10px] font-black text-gray-400 uppercase">Emissora</th>
-                  <th className="text-center px-4 py-3 text-[10px] font-black text-gray-400 uppercase">Asaas</th>
+                  <th className="text-center px-4 py-3 text-[10px] font-black text-gray-400 uppercase">Status NF</th>
                   <th className="text-center px-4 py-3 text-[10px] font-black text-gray-400 uppercase">Docs</th>
                   <th className="text-center px-4 py-3 text-[10px] font-black text-gray-400 uppercase">Ações</th>
                 </tr>
