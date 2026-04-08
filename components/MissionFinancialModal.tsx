@@ -446,6 +446,8 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
       try {
           const clientName = initialMission.originalClientName || initialMission.client;
           const clientNameTrimmed = (clientName || '').trim();
+          const ctWords = clientNameTrimmed.split(/\s+/).filter((w: string) => !['LTDA','LTDA.','S.A.','S.A','SA','S/A','S/A.','DO','DE','DA','E','DAS','DOS'].includes(w.toUpperCase()));
+          const ctShort = ctWords.length >= 2 ? ctWords[0] + ' ' + ctWords[1].substring(0, Math.min(6, ctWords[1].length)) : ctWords[0] || clientNameTrimmed;
           const providerName = (initialMission.provider || '').trim();
           let ptQuery = supabase.from('provider_cost_tables').select('*');
           if (providerName) {
@@ -453,9 +455,9 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
           }
           const [mRes, ctRes, ptRes, clRes] = await Promise.all([
               supabase.from('missions').select('*').eq('id', initialMission.id).single(),
-              supabase.from('client_price_tables').select('*').or(`client.eq.${clientName},client.ilike.${clientNameTrimmed}%`),
+              supabase.from('client_price_tables').select('*').or(`client.eq.${clientName},client.ilike.%${ctShort}%`),
               ptQuery,
-              supabase.from('clients').select('*').ilike('name', clientNameTrimmed || '').single()
+              supabase.from('clients').select('*').ilike('name', `%${ctShort}%`).single()
           ]);
           if (clRes.data) {
               setClientData(clRes.data as Client);

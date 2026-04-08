@@ -190,3 +190,11 @@ Total: 6 missoes corrigidas. Economia: R$2.520 (R$420 por missao).
 - Valores editados pelo usuario no Modal Financeiro sao lei absoluta
 
 **Status:** ✅ Concluido
+---
+
+### Fix #057 — Tabelas de faturamento CEVA não apareciam no MissionForm
+**Data**: 2026-04-08 20:50 BRT
+**Problema**: Ao criar missão e selecionar cliente CEVA, o dropdown 'Tabela de Faturamento' ficava vazio.
+**Causa raiz**: Nome na tabela `clients` = 'CEVA LOGISTICS LTDA', mas nas tabelas `client_price_tables` e `client_routes` = 'CEVA LOGISTICA  ' (nome diferente + espaços). Query usava `eq('client', formData.client)` — match exato falhava.
+**Solução**: Busca fuzzy usando primeira palavra + 6 primeiros chars da segunda (`CEVA LOGIST`), via `or(client.eq.X, client.ilike.%shortPrefix%)`. Testado sem conflitos para todos os 50+ clientes.
+**Arquivos**: `MissionForm.tsx` (linhas 330-337, 982), `MissionFinancialModal.tsx` (linhas 450-464)
