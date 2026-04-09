@@ -1403,8 +1403,80 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
             const clientObj = clients.find(c => c.id.toString() === invoiceForm.client);
             const clientName = clientObj?.name || clientObj?.trading_name || invoiceForm.client;
             const userName = JSON.parse(localStorage.getItem('userData') || '{}').name || 'Sistema';
-            const parsedAmt = parseFloat(invoiceForm.amount);
+            const dueDate = invoiceForm.boleto_due_date || invoiceForm.date;
+            const quinzenaDesc = getQuinzenaRef(invoiceForm.date, clientName);
 
+            const chargesList = asaasData?.charges;
+            if (chargesList && Array.isArray(chargesList) && chargesList.length > 0) {
+                let savedCount = 0;
+                for (let i = 0; i < chargesList.length; i++) {
+                    const ch = chargesList[i];
+                    const chPayment = ch.payment;
+                    const chNfNumber = chPayment?.id ? `ASAAS-${chPayment.id}` : `TMSEG-${Date.now()}-S${i + 1}`;
+                    const chValue = chPayment?.value || 0;
+                    const chClientName = ch.customer?.name || clientName;
+
+                    const invoicePayload: any = {
+                        client: chClientName,
+                        number: chNfNumber,
+                        amount: chValue,
+                        date: invoiceForm.date,
+                        status: 'EMITIDA',
+                        notes: `${invoiceForm.notes || ''} | CNPJ: ${ch.customer?.cpfCnpj || '-'}`.trim(),
+                        created_by: userName,
+                    };
+                    if (invoiceForm.provider) invoicePayload.provider = invoiceForm.provider;
+                    if (invoiceForm.issuer_company) invoicePayload.issuer_company = invoiceForm.issuer_company;
+                    if (invoiceForm.boleto_due_date) invoicePayload.boleto_due_date = invoiceForm.boleto_due_date;
+                    if (chPayment) {
+                        invoicePayload.asaas_payment_id = chPayment.id;
+                        invoicePayload.asaas_status = chPayment.status;
+                        invoicePayload.asaas_invoice_url = chPayment.invoiceUrl || '';
+                        invoicePayload.asaas_bankslip_url = chPayment.bankSlipUrl || '';
+                    }
+                    if (ch.pix?.copyPaste) invoicePayload.asaas_pix_payload = ch.pix.copyPaste;
+                    if (ch.bankSlip?.digitableLine) invoicePayload.asaas_barcode = ch.bankSlip.digitableLine;
+                    if (ch.invoice?.pdfUrl) invoicePayload.nf_image_url = ch.invoice.pdfUrl;
+
+                    let { error } = await supabase.from('financial_invoices').insert(invoicePayload).select();
+                    if (error && error.code === '42703') {
+                        const { nf_image_url, boleto_image_url, provider, issuer_company, boleto_due_date, asaas_payment_id, asaas_status, asaas_invoice_url, asaas_bankslip_url, asaas_pix_payload, asaas_barcode, ...basicPayload } = invoicePayload;
+                        const retry = await supabase.from('financial_invoices').insert(basicPayload).select();
+                        error = retry.error;
+                    }
+                    if (error) {
+                        console.error(`[AutoSave Invoice ${i + 1}]`, error);
+                        continue;
+                    }
+
+                    try {
+                        await supabase.from('financial_transactions').insert({
+                            description: `NF ${chNfNumber} — ${quinzenaDesc} — ${chClientName}`,
+                            amount: chValue,
+                            type: 'INCOME',
+                            status: 'PENDING',
+                            due_date: dueDate,
+                            entity_type: 'Client',
+                            entity_id: invoiceForm.client,
+                            entity_name: chClientName,
+                            notes: `Fatura NF ${chNfNumber} | CNPJ: ${ch.customer?.cpfCnpj || '-'} | Emissora: ${invoiceForm.issuer_company || '-'} | ${invoiceForm.notes || ''}`.trim(),
+                            created_by: userName,
+                        });
+                    } catch (e) {
+                        console.error(`[Auto Contas a Receber ${i + 1}]`, e);
+                    }
+                    savedCount++;
+                }
+
+                setAiStatus(`${chargesList.length} cobranças Asaas geradas + ${savedCount} faturas salvas + ${savedCount} contas a receber!`);
+                setTimeout(() => {
+                    setShowInvoiceModal(false);
+                    resetInvoiceForm();
+                }, 3000);
+                return;
+            }
+
+            const parsedAmt = parseFloat(invoiceForm.amount);
             const invoicePayload: any = {
                 client: clientName,
                 number: nfNumber || `TMSEG-${Date.now()}`,
@@ -1419,7 +1491,7 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
             if (invoiceForm.issuer_company) invoicePayload.issuer_company = invoiceForm.issuer_company;
             if (invoiceForm.boleto_due_date) invoicePayload.boleto_due_date = invoiceForm.boleto_due_date;
 
-            const payment = asaasData?.payment || asaasData?.charges?.[0]?.payment;
+            const payment = asaasData?.payment;
             if (payment) {
                 invoicePayload.asaas_payment_id = payment.id;
                 invoicePayload.asaas_status = payment.status;
@@ -1428,9 +1500,8 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
             }
             if (asaasData?.pix?.copyPaste) invoicePayload.asaas_pix_payload = asaasData.pix.copyPaste;
             if (asaasData?.bankSlip?.digitableLine) invoicePayload.asaas_barcode = asaasData.bankSlip.digitableLine;
-            if (asaasData?.charges?.[0]?.pix?.copyPaste) invoicePayload.asaas_pix_payload = asaasData.charges[0].pix.copyPaste;
 
-            const nfPdf = asaasData?.invoice?.pdfUrl || asaasData?.charges?.[0]?.invoice?.pdfUrl;
+            const nfPdf = asaasData?.invoice?.pdfUrl;
             if (nfPdf) invoicePayload.nf_image_url = nfPdf;
 
             let { error } = await supabase.from('financial_invoices').insert(invoicePayload).select();
@@ -1445,8 +1516,6 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
                 return;
             }
 
-            const dueDate = invoiceForm.boleto_due_date || invoiceForm.date;
-            const quinzenaDesc = getQuinzenaRef(invoiceForm.date, clientName);
             try {
                 await supabase.from('financial_transactions').insert({
                     description: `NF ${nfNumber} — ${quinzenaDesc}`,
