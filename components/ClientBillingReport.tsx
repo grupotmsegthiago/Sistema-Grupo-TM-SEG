@@ -4,7 +4,7 @@ import { authFetch } from '../lib/authFetch';
 import { supabase } from '../lib/supabase';
 import { Mission, Client, ClientPriceTable, ProviderCostTable } from '../types';
 import { FileText, Search, Printer, Loader2, FileSpreadsheet, BarChart3, Users, Building2, ChevronDown, ChevronRight, List, ExternalLink, Receipt, Camera, Sparkles, X, AlertCircle, CheckCircle2, ScanLine, Image as ImageIcon, DollarSign, Plus, Trash2, GitBranch, Calendar, Lock, Pencil, ArrowRight, ArrowLeftRight, Check, RefreshCw } from 'lucide-react';
-import { calculateMissionFinancials, extractCityFromAddress } from '../lib/financialUtils';
+import { calculateMissionFinancials, extractCityFromAddress, clientFuzzyFilter } from '../lib/financialUtils';
 import { generateContent } from '../lib/gemini';
 import {
     BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, LabelList
@@ -247,7 +247,7 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
             const missionIds = (missionData || []).map((m: any) => m.id).filter(Boolean);
 
             const [ptRes, pctRes, adjRes, snapRes] = await Promise.all([
-                supabase.from('client_price_tables').select('*').eq('client', clientName),
+                supabase.from('client_price_tables').select('*').or(clientFuzzyFilter(clientName)),
                 supabase.from('provider_cost_tables').select('*'),
                 missionIds.length > 0
                     ? supabase.from('system_logs').select('entity_id, details').eq('entity', 'BillingAdjustment').in('entity_id', missionIds).order('created_at', { ascending: false })

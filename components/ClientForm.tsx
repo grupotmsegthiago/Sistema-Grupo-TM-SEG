@@ -3,6 +3,7 @@ import { ArrowLeft, Save, Building2, Truck, Users, Search, Loader2, AlertTriangl
 import { Client, ClientPriceTable } from '../types';
 import { supabase } from '../lib/supabase';
 import { logAction } from '../lib/logger';
+import { clientFuzzyFilter } from '../lib/financialUtils';
 import { useNotification } from '../lib/NotificationContext';
 import ImportClientPriceModal from './ImportClientPriceModal';
 import ClientVehicleList from './ClientVehicleList';
@@ -264,7 +265,7 @@ const ClientForm: React.FC<ClientFormProps> = ({
   })();
 
   const fetchPriceTables = async (clientName: string) => {
-      const { data } = await supabase.from('client_price_tables').select('*').eq('client', clientName).order('franchise_km', { ascending: true });
+      const { data } = await supabase.from('client_price_tables').select('*').or(clientFuzzyFilter(clientName)).order('franchise_km', { ascending: true });
       if (data) setPriceTables(data as any);
       setSelectedPriceIds([]); 
   };
@@ -437,7 +438,7 @@ const ClientForm: React.FC<ClientFormProps> = ({
     if (!confirm(`Deseja copiar o tarifário de "${sourceClient.name}" para "${formData.name}"?`)) return;
     setIsSavingPrice(true);
     try {
-        const { data: sourceTables, error: fetchError } = await supabase.from('client_price_tables').select('*').eq('client', sourceClient.name);
+        const { data: sourceTables, error: fetchError } = await supabase.from('client_price_tables').select('*').or(clientFuzzyFilter(sourceClient.name));
         if (fetchError) throw fetchError;
         if (!sourceTables || sourceTables.length === 0) {
             alert("O cliente de origem não possui tabelas de preço.");

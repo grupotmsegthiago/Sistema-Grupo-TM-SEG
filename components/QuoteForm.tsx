@@ -4,6 +4,7 @@ import { ArrowLeft, Printer, MapPin, Calculator, Plus, Trash2, Loader2, Clock, G
 import { supabase } from '../lib/supabase';
 import { Client, ClientPriceTable, QuoteItem } from '../types';
 import { logAction } from '../lib/logger';
+import { clientFuzzyFilter } from '../lib/financialUtils';
 import { useLoadScript, Autocomplete } from '@react-google-maps/api';
 import { libraries, googleMapsApiKey, googleMapsLoadConfig } from '../lib/maps';
 import { useNotification } from '../lib/NotificationContext';
@@ -57,7 +58,7 @@ const QuoteForm: React.FC<Props> = ({ onBack, id }) => {
 
   useEffect(() => {
     if (formData.clientId) {
-        supabase.from('client_price_tables').select('*').eq('client', formData.clientName).then(({ data }) => {
+        supabase.from('client_price_tables').select('*').or(clientFuzzyFilter(formData.clientName)).then(({ data }) => {
             if (data) setTables((data as ClientPriceTable[]).filter(t => t.operation_type.toUpperCase().includes('CARACTERIZADA') || t.operation_type.toUpperCase().includes('VELADA')));
         });
     } else setTables([]);

@@ -3,7 +3,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { Mission, ClientPriceTable, ProviderCostTable, MissionStatus, Client } from '../types';
 import { supabase } from '../lib/supabase';
 import { useNotification } from '../lib/NotificationContext';
-import { calculateMissionFinancials, auditMissionFinancials, extractUF, UF_TO_REGION } from '../lib/financialUtils';
+import { calculateMissionFinancials, auditMissionFinancials, extractUF, UF_TO_REGION, clientFuzzyFilter, clientNameShort } from '../lib/financialUtils';
 import { X, Calculator, Loader2, Save, CheckCircle2, TrendingUp, Landmark, Zap, RotateCcw, Building2, Briefcase, Plus, Users, MapPin, ArrowRight, BrainCircuit, AlertTriangle, AlertCircle, Edit2, Info, RefreshCw, Clock, Pencil, Lock, ShieldCheck, Camera, Image as ImageIcon, Link2, Layers, Scale, Sparkles } from 'lucide-react';
 import { suggestPriceTable } from '../lib/gemini';
 import ProviderCostForm from './ProviderCostForm';
@@ -445,9 +445,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
       setIsLoading(true);
       try {
           const clientName = initialMission.originalClientName || initialMission.client;
-          const clientNameTrimmed = (clientName || '').trim();
-          const ctWords = clientNameTrimmed.split(/\s+/).filter((w: string) => !['LTDA','LTDA.','S.A.','S.A','SA','S/A','S/A.','DO','DE','DA','E','DAS','DOS'].includes(w.toUpperCase()));
-          const ctShort = ctWords.length >= 2 ? ctWords[0] + ' ' + ctWords[1].substring(0, Math.min(6, ctWords[1].length)) : ctWords[0] || clientNameTrimmed;
+          const ctShort = clientNameShort(clientName);
           const providerName = (initialMission.provider || '').trim();
           let ptQuery = supabase.from('provider_cost_tables').select('*');
           if (providerName) {
@@ -455,7 +453,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
           }
           const [mRes, ctRes, ptRes, clRes] = await Promise.all([
               supabase.from('missions').select('*').eq('id', initialMission.id).single(),
-              supabase.from('client_price_tables').select('*').or(`client.eq.${clientName},client.ilike.%${ctShort}%`),
+              supabase.from('client_price_tables').select('*').or(clientFuzzyFilter(clientName)),
               ptQuery,
               supabase.from('clients').select('*').ilike('name', `%${ctShort}%`).single()
           ]);

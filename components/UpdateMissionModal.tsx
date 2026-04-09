@@ -4,6 +4,7 @@ import { Mission, MissionStatus, ProviderData, Agent, Vehicle, User as UserType,
 import { authFetch } from '../lib/authFetch';
 import { supabase } from '../lib/supabase';
 import { logAction } from '../lib/logger';
+import { clientFuzzyFilter } from '../lib/financialUtils';
 import { useNotification } from '../lib/NotificationContext';
 import { 
   X, Activity, MapPin, Flag, Truck, Plus, Save, 
@@ -447,7 +448,7 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
             supabase.from('vehicles').select('*').eq('status', 'Ativo'),
             fetchAllAgents('Ativo'),
             fetchAllAgents(),
-            supabase.from('client_price_tables').select('*').eq('client', clientName),
+            supabase.from('client_price_tables').select('*').or(clientFuzzyFilter(clientName)),
             cId ? supabase.from('client_vehicles').select('*').eq('client_id', cId).order('plate') : { data: [] },
             supabase.from('missions').select('driver_name, driver_phone').not('driver_name', 'is', null).order('created_at', { ascending: false }).limit(200)
         ]);

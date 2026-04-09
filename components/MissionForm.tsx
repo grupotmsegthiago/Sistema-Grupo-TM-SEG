@@ -14,7 +14,7 @@ import ProviderForm from './ProviderForm';
 import ClientRouteForm from './ClientRouteForm';
 import ClientVehicleForm from './ClientVehicleForm';
 import { formatProviderName } from '../lib/utils';
-import { extractUF, UF_TO_REGION } from '../lib/financialUtils';
+import { extractUF, UF_TO_REGION, clientFuzzyFilter } from '../lib/financialUtils';
 
 const INPUT_CLASS = "w-full bg-white border border-gray-200 rounded-lg outline-none focus:ring-2 focus:ring-red-500/10 focus:border-red-500 text-sm h-11 transition-all text-gray-700 pl-12 pr-4";
 const LABEL_CLASS = "text-[10px] font-black text-gray-400 uppercase mb-1.5 block tracking-widest";
@@ -326,12 +326,9 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
 
   useEffect(() => {
     if (formData.client) {
-        const clientTrimmed = formData.client.trim();
-        const clientWords = clientTrimmed.split(/\s+/).filter(w => !['LTDA', 'LTDA.', 'S.A.', 'S.A', 'SA', 'S/A', 'S/A.', 'DO', 'DE', 'DA', 'E', 'DAS', 'DOS'].includes(w.toUpperCase()));
-        const shortPrefix = clientWords.length >= 2 ? clientWords[0] + ' ' + clientWords[1].substring(0, Math.min(6, clientWords[1].length)) : clientWords[0] || clientTrimmed;
-        const routeFilter = `client.eq.${formData.client},client.ilike.%${shortPrefix}%`;
-        supabase.from('client_routes').select('*').or(routeFilter).order('name').then(({ data }) => { if (data) setClientRoutes(data as any); });
-        supabase.from('client_price_tables').select('*').or(routeFilter).order('operation_type').then(({ data }) => { if (data) setClientPriceTables(data as any); });
+        const cFilter = clientFuzzyFilter(formData.client);
+        supabase.from('client_routes').select('*').or(cFilter).order('name').then(({ data }) => { if (data) setClientRoutes(data as any); });
+        supabase.from('client_price_tables').select('*').or(cFilter).order('operation_type').then(({ data }) => { if (data) setClientPriceTables(data as any); });
         fetchClientVehicles(formData.client);
     } else { setClientRoutes([]); setClientPriceTables([]); setDbClientVehicles([]); }
   }, [formData.client]);
@@ -976,7 +973,7 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
     <div className="max-w-4xl mx-auto space-y-6 pb-20 animate-in fade-in">
       {isClientModalOpen && (<div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in zoom-in-95"><div className="bg-[#f8fafc] rounded-2xl w-full max-w-5xl p-6 relative shadow-2xl overflow-y-auto max-h-[95vh]"><button onClick={() => setIsClientModalOpen(false)} className="absolute top-6 right-6 p-2 bg-white rounded-full shadow-sm hover:bg-red-50 text-gray-400 hover:text-red-600 transition-all z-10"><X size={20}/></button><ClientForm onBack={() => setIsClientModalOpen(false)} onSave={() => { setIsClientModalOpen(false); loadBasicData(); }} onAddVehicle={() => {}} onEditVehicle={() => {}} onAddRoute={() => {}} onEditRoute={() => {}} onAddQuote={() => {}} onEditQuote={() => {}} /></div></div>)}
       {isProviderModalOpen && (<div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in zoom-in-95"><div className="bg-[#f8fafc] rounded-2xl w-full max-w-5xl p-6 relative shadow-2xl overflow-y-auto max-h-[95vh]"><button onClick={() => setIsProviderModalOpen(false)} className="absolute top-6 right-6 p-2 bg-white rounded-full shadow-sm hover:bg-red-50 text-gray-400 hover:text-red-600 transition-all z-10"><X size={20}/></button><ProviderForm onBack={() => setIsProviderModalOpen(false)} onNavigateToVehicles={() => {}} /></div></div>)}
-      {isRouteModalOpen && (<div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in zoom-in-95"><div className="bg-[#f8fafc] rounded-2xl w-full max-w-5xl p-6 relative shadow-2xl overflow-y-auto max-h-[95vh]"><button onClick={() => setIsRouteModalOpen(false)} className="absolute top-6 right-6 p-2 bg-white rounded-full shadow-sm hover:bg-red-50 text-gray-400 hover:text-red-600 transition-all z-10"><X size={20}/></button><ClientRouteForm onSuccess={(newRouteId) => { setIsRouteModalOpen(false); if (formData.client) { const cw = formData.client.trim().split(/\s+/).filter((w: string) => !['LTDA','LTDA.','S.A.','S.A','SA','S/A','S/A.','DO','DE','DA','E','DAS','DOS'].includes(w.toUpperCase())); const sp = cw.length >= 2 ? cw[0] + ' ' + cw[1].substring(0, Math.min(6, cw[1].length)) : cw[0] || formData.client.trim(); supabase.from('client_routes').select('*').or(`client.eq.${formData.client},client.ilike.%${sp}%`).order('name').then(({ data }) => { if (data) { setClientRoutes(data as any); const newRoute = data.find((r: any) => r.id.toString() === newRouteId); if (newRoute) handleRouteSelect(newRoute); } }); } }} /></div></div>)}
+      {isRouteModalOpen && (<div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in zoom-in-95"><div className="bg-[#f8fafc] rounded-2xl w-full max-w-5xl p-6 relative shadow-2xl overflow-y-auto max-h-[95vh]"><button onClick={() => setIsRouteModalOpen(false)} className="absolute top-6 right-6 p-2 bg-white rounded-full shadow-sm hover:bg-red-50 text-gray-400 hover:text-red-600 transition-all z-10"><X size={20}/></button><ClientRouteForm onSuccess={(newRouteId) => { setIsRouteModalOpen(false); if (formData.client) { supabase.from('client_routes').select('*').or(clientFuzzyFilter(formData.client)).order('name').then(({ data }) => { if (data) { setClientRoutes(data as any); const newRoute = data.find((r: any) => r.id.toString() === newRouteId); if (newRoute) handleRouteSelect(newRoute); } }); } }} /></div></div>)}
       {isVehicleModalOpen && (<div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in zoom-in-95"><div className="bg-[#f8fafc] rounded-2xl w-full max-w-5xl p-6 relative shadow-2xl overflow-y-auto max-h-[95vh]"><button onClick={() => setIsVehicleModalOpen(false)} className="absolute top-6 right-6 p-2 bg-white rounded-full shadow-sm hover:bg-red-50 text-gray-400 hover:text-red-600 transition-all z-10"><X size={20}/></button><ClientVehicleForm embedded onBack={() => setIsVehicleModalOpen(false)} onSuccess={() => { setIsVehicleModalOpen(false); if(formData.client) fetchClientVehicles(formData.client); }} /></div></div>)}
 
       {emailConfirmDialog && (
