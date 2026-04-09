@@ -1373,6 +1373,8 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
         setBoletoFile(null);
         setNfPreview('');
         setBoletoPreview('');
+        setAsaasSplitMode(false);
+        setAsaasSplitCharges([]);
         setAiStatus('');
         setAsaasResult(null);
     };
@@ -1611,6 +1613,8 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
             number: '',
         }));
         setAsaasPeriod(periodRef);
+        setAsaasSplitMode(false);
+        setAsaasSplitCharges([]);
         setShowInvoiceModal(true);
     };
 
@@ -1784,7 +1788,7 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
                                 </p>
                                 <div className="bg-gray-50 border border-gray-200 rounded-xl p-3 mb-3 space-y-2">
                                     <div className="flex items-center gap-1.5 mb-1">
-                                        <p className="text-[8px] font-black text-gray-500 uppercase">Juros: 2% a.m. | Multa: 1%</p>
+                                        <p className="text-[8px] font-black text-gray-500 uppercase">Juros: 1% a.m. | Multa: 2%</p>
                                     </div>
                                     {(() => {
                                         const cl = clients.find(c => c.id.toString() === invoiceForm.client);
