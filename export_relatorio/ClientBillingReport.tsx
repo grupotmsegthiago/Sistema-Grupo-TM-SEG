@@ -4,7 +4,7 @@ import { authFetch } from '../lib/authFetch';
 import { supabase } from '../lib/supabase';
 import { Mission, Client, ClientPriceTable, ProviderCostTable } from '../types';
 import { FileText, Search, Printer, Loader2, FileSpreadsheet, BarChart3, Users, Building2, ChevronDown, ChevronRight, List, ExternalLink, Receipt, Camera, Sparkles, X, AlertCircle, CheckCircle2, ScanLine, Image as ImageIcon, DollarSign, Plus, Trash2, GitBranch, Calendar, Lock, Pencil, ArrowRight, ArrowLeftRight, Check, RefreshCw } from 'lucide-react';
-import { calculateMissionFinancials, extractCityFromAddress, clientFuzzyFilter } from '../lib/financialUtils';
+import { calculateMissionFinancials, extractCityFromAddress, clientFuzzyFilter, clientNameShort } from '../lib/financialUtils';
 import { generateContent } from '../lib/gemini';
 import {
     BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, LabelList
@@ -214,6 +214,10 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
             if (clientNameParts.length >= 2) {
                 const coreFilter = clientNameParts.slice(0, 3).join('%');
                 clientFilters.push(`client.ilike.%${coreFilter}%`);
+            }
+            const shortName = clientNameShort(clientName);
+            if (shortName) {
+                clientFilters.push(`client.ilike.%${shortName}%`);
             }
 
             const { data: missionDataRaw, error } = await supabase
