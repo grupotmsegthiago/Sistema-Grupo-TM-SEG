@@ -8,6 +8,7 @@ import webpush from "web-push";
 import { calculateMissionFinancials } from "../lib/financialUtils";
 import fs from "fs";
 import path from "path";
+import pg from "pg";
 import { sendMissionEmailToClient, sendMissionEmailToProvider, sendMissionResendToClient, sendMirroringEvidenceEmail, sendMissionChangeNotificationToClient, sendMissionChangeNotificationToProvider, sendWelcomeEmail, sendTestEmail, sendVerificationCodeEmail, sendPasswordResetEmail, sendBillingEmail } from "./emailService";
 import { findOrCreateCustomer, createPayment, getPayment, getPaymentPixQrCode, getPaymentBankSlip, listPayments, deletePayment, mapAsaasStatus, isAsaasConfigured, getAsaasCompanies, scheduleInvoice, listMunicipalServices, getInvoiceByPayment, getAllBalances } from "./asaasService";
 
@@ -2520,10 +2521,18 @@ export async function registerRoutes(
     }
   });
 
+  const pgPool = new pg.Pool({ connectionString: process.env.DATABASE_URL, max: 3 });
+
   app.post("/api/investment/init", async (_req: Request, res: Response) => {
     try {
-      const { error } = await supabaseAdmin.from('account_balance_snapshots').select('id', { count: 'exact', head: true });
-      if (error) console.warn('[Init] tabela account_balance_snapshots pode não existir:', error.message);
+      await pgPool.query(`CREATE TABLE IF NOT EXISTS public.account_balance_snapshots (
+        id serial PRIMARY KEY,
+        account_id text NOT NULL,
+        balance numeric(18,2) NOT NULL DEFAULT 0,
+        notes text DEFAULT '',
+        created_by text DEFAULT '',
+        recorded_at timestamptz DEFAULT now()
+      )`);
       res.json({ ok: true });
     } catch (e: any) {
       res.json({ ok: true, note: e.message });
@@ -2535,9 +2544,11 @@ export async function registerRoutes(
       const { accountId } = req.params;
       const days = parseInt(req.query.days as string) || 365;
       const since = new Date(Date.now() - days * 86400000).toISOString();
-      const { data } = await supabaseAdmin.from('account_balance_snapshots')
-        .select('*').eq('account_id', accountId).gte('recorded_at', since).order('recorded_at', { ascending: true });
-      res.json(data || []);
+      const { rows } = await pgPool.query(
+        'SELECT * FROM account_balance_snapshots WHERE account_id = $1 AND recorded_at >= $2 ORDER BY recorded_at ASC',
+        [accountId, since]
+      );
+      res.json(rows);
     } catch (e: any) {
       res.json([]);
     }
@@ -2550,9 +2561,11 @@ export async function registerRoutes(
     try {
       const days = parseInt(req.query.days as string) || 365;
       const since = new Date(Date.now() - days * 86400000).toISOString();
-      const { data } = await supabaseAdmin.from('account_balance_snapshots')
-        .select('*').gte('recorded_at', since).order('recorded_at', { ascending: true });
-      res.json(data || []);
+      const { rows } = await pgPool.query(
+        'SELECT * FROM account_balance_snapshots WHERE recorded_at >= $1 ORDER BY recorded_at ASC',
+        [since]
+      );
+      res.json(rows);
     } catch (e: any) {
       res.json([]);
     }
@@ -2561,11 +2574,11 @@ export async function registerRoutes(
   app.post("/api/investment/snapshots", async (req: Request, res: Response) => {
     try {
       const { account_id, balance, notes, created_by } = req.body;
-      const { data, error } = await supabaseAdmin.from('account_balance_snapshots').insert({
-        account_id, balance, notes: notes || '', created_by: created_by || ''
-      }).select().single();
-      if (error) throw error;
-      res.json(data);
+      const { rows } = await pgPool.query(
+        'INSERT INTO account_balance_snapshots (account_id, balance, notes, created_by) VALUES ($1, $2, $3, $4) RETURNING *',
+        [account_id, balance, notes || '', created_by || '']
+      );
+      res.json(rows[0]);
     } catch (e: any) {
       res.status(500).json({ error: e.message });
     }
@@ -2573,8 +2586,7 @@ export async function registerRoutes(
 
   app.delete("/api/investment/snapshots/:id", async (req: Request, res: Response) => {
     try {
-      const { error } = await supabaseAdmin.from('account_balance_snapshots').delete().eq('id', req.params.id);
-      if (error) throw error;
+      await pgPool.query('DELETE FROM account_balance_snapshots WHERE id = $1', [req.params.id]);
       res.json({ ok: true });
     } catch (e: any) {
       res.status(500).json({ error: e.message });
