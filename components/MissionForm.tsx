@@ -824,6 +824,7 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
                 mission_type: formData.missionType || 'Caracterizada', 
                 revenue_value: parseFloat(formData.revenueValue) || 0, cost_value: formData.isSameOs ? 0 : (parseFloat(formData.costValue) || 0),
                 toll_value: parseFloat(formData.tollValue) || 0,
+                valor_zero_motivo: formData.isSameOs ? 'MESMA OS' : ((!parseFloat(formData.costValue)) ? '' : ''),
                 ...(formData.isSameOs ? { is_same_os: true, parent_mission_id: formData.parentMissionId || null } : {}), current_location: 'Solicitação Criada',
                 client_vehicle: vehicleId ? parseInt(vehicleId) : null,
                 client_vehicle_2: formData.clientVehicleId2 ? parseInt(formData.clientVehicleId2) : null,

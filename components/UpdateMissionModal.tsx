@@ -892,6 +892,7 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
                 end_time: endIso,
                 is_same_os: editData.isSameOs,
                 parent_mission_id: editData.isSameOs ? (editData.parentMissionId || null) : null,
+                valor_zero_motivo: editData.isSameOs ? 'MESMA OS' : '',
                 progress: progressValue,
                 driver_name: editData.driver_name.toUpperCase(),
                 driver_phone: editData.driver_phone,
