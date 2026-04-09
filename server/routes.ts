@@ -945,6 +945,13 @@ export async function registerRoutes(
   const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFqaG1tanVld2RzdWtlY2FpbWlrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjQxNzUxMjEsImV4cCI6MjA3OTc1MTEyMX0.5bXRWTyb1HxLimt3lqJTBfjzDoumux7TXlW4lycXrPk';
   const supabaseAdmin = supabase;
 
+  try {
+    await supabaseAdmin.rpc('exec_sql', { sql: 'ALTER TABLE missions ADD COLUMN IF NOT EXISTS valor_zero_motivo TEXT DEFAULT \'\';' });
+    console.log('[Migration] Coluna valor_zero_motivo verificada/criada.');
+  } catch (e: any) {
+    console.log('[Migration] valor_zero_motivo:', e.message || 'ok');
+  }
+
   app.post("/api/supabase/init-invoices", async (_req: Request, res: Response) => {
     try {
       const { data, error } = await supabaseAdmin.from('financial_invoices').select('id', { count: 'exact', head: true });
