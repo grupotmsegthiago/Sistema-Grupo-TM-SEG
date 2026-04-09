@@ -245,8 +245,8 @@ export async function createPayment(params: {
     dueDate: params.dueDate,
     description: params.description || 'Referente aos serviços de Intermediação de Escolta Armada e Fiscal de Rota — Grupo TM SEG',
     externalReference: params.externalReference || undefined,
-    interest: { value: 2, type: 'PERCENTAGE' },
-    fine: { value: 1, type: 'PERCENTAGE' },
+    interest: { value: 1, type: 'PERCENTAGE' },
+    fine: { value: 2, type: 'PERCENTAGE' },
   };
   if (params.splitWalletId) {
     body.split = [
