@@ -858,10 +858,10 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
                 progressValue = editData.manualProgress;
             } else if (kmRodado > 0 && plannedDist > 0) {
                 progressValue = Math.min(100, Math.round((kmRodado / plannedDist) * 100));
-            } else if (plannedDist <= 0) {
-                progressValue = 0;
-            } else {
+            } else if (editData.manualProgress > 0) {
                 progressValue = editData.manualProgress;
+            } else {
+                progressValue = 0;
             }
 
             if (editData.provider && editData.provider.trim() !== '' && 

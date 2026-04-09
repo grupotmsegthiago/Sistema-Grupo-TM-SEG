@@ -530,6 +530,7 @@ Qualquer dúvida, estamos a disposição.
             return { progressVisual: 100, progressReal: 100, odometerAnomaly: false };
         }
 
+        const savedProgress = mission.progress || 0;
         const sKm = mission.startKm || 0;
         const eKm = mission.endKm || 0;
         const kmRodado = eKm > sKm ? (eKm - sKm) : (mission.traveledDistance || 0);
@@ -545,8 +546,7 @@ Qualquer dúvida, estamos a disposição.
         const hasAnomaly = plannedKm > 0 && kmRodado > 0 && kmRodado > plannedKm * 5;
 
         if (hasAnomaly) {
-            const safePct = mission.progress || 0;
-            return { progressVisual: Math.min(100, Math.max(0, safePct)), progressReal: safePct, odometerAnomaly: true };
+            return { progressVisual: Math.min(100, Math.max(0, savedProgress)), progressReal: savedProgress, odometerAnomaly: true };
         }
 
         if (kmRodado > 0 && plannedKm > 0) {
@@ -555,6 +555,10 @@ Qualquer dúvida, estamos a disposição.
                 return { progressVisual: 100, progressReal: Math.round(pct), odometerAnomaly: false };
             }
             return { progressVisual: Math.min(100, Math.max(0, Math.round(pct))), progressReal: Math.round(pct), odometerAnomaly: false };
+        }
+
+        if (savedProgress > 0) {
+            return { progressVisual: Math.min(100, Math.max(0, savedProgress)), progressReal: savedProgress, odometerAnomaly: false };
         }
 
         const isInTransit = mission.status === MissionStatus.IN_TRANSIT || mission.status === 'Em Trânsito' || mission.status === 'Em trânsito';
@@ -591,8 +595,7 @@ Qualquer dúvida, estamos a disposição.
             }
         }
 
-        const fallback = mission.progress || 0;
-        return { progressVisual: Math.min(100, Math.max(0, fallback)), progressReal: fallback, odometerAnomaly: false };
+        return { progressVisual: 0, progressReal: 0, odometerAnomaly: false };
     }, [mission.startKm, mission.endKm, mission.traveledDistance, mission.totalDistance, mission.destination, mission.client, mission.progress, mission.status, mission.currentLocation, mission.startTime, mission.estimatedTime]);
 
     return (<>
