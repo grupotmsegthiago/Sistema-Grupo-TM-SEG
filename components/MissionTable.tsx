@@ -298,16 +298,41 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
           
           const agentNames = [...new Set(missionsData.flatMap((m: any) => [m.agent1, m.agent2]).filter(n => n && n !== '---'))];
 
-          const [vehiclesRes, clientVehiclesRes, agentsRes] = await Promise.all([
+          const fetchAllAgentPhones = async () => {
+              if (agentNames.length === 0) return [];
+              let all: any[] = [];
+              let from = 0;
+              const pageSize = 1000;
+              while (true) {
+                  const { data } = await supabase.from('agents').select('name, phone').not('phone', 'is', null).range(from, from + pageSize - 1);
+                  if (data) all = all.concat(data);
+                  if (!data || data.length < pageSize) break;
+                  from += pageSize;
+              }
+              return all;
+          };
+
+          const [vehiclesRes, clientVehiclesRes, allAgentPhones] = await Promise.all([
               vehicleIds.length > 0 ? supabase.from('vehicles').select('*').in('id', vehicleIds) : { data: [] },
               clientVehicleIds.length > 0 ? supabase.from('client_vehicles').select('id, plate, model, brand, color').in('id', clientVehicleIds) : { data: [] },
-              agentNames.length > 0 ? supabase.from('agents').select('name, phone').in('name', agentNames) : { data: [] }
+              fetchAllAgentPhones()
           ]);
 
           const vehicleMap = (vehiclesRes.data || []).reduce((acc: any, v: any) => ({ ...acc, [v.id]: v }), {});
           const clientVehicleMap = (clientVehiclesRes.data || []).reduce((acc: any, v: any) => ({ ...acc, [v.id.toString()]: v }), {});
           
-          const phonesMap = (agentsRes.data || []).reduce((acc: any, a: any) => ({ ...acc, [a.name]: a.phone }), {});
+          const agentPhoneIndex = new Map<string, string>();
+          for (const a of allAgentPhones) {
+              if (a.name && a.phone) {
+                  agentPhoneIndex.set(a.name, a.phone);
+                  agentPhoneIndex.set(a.name.trim().toUpperCase(), a.phone);
+              }
+          }
+          const phonesMap: Record<string, string> = {};
+          for (const name of agentNames) {
+              const phone = agentPhoneIndex.get(name) || agentPhoneIndex.get(name.trim().toUpperCase());
+              if (phone) phonesMap[name] = phone;
+          }
           setAgentPhonesMap(phonesMap);
           
           const clientNameMap = (clientsRes.data || []).reduce((acc: any, c: any) => {
