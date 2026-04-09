@@ -3162,11 +3162,11 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
             invoiceData = await scheduleInvoice({
               paymentId: payment.id,
               serviceDescription: descText,
-              observations: `NF ref. ${externalRef}`,
+              observations: `${descText} | Ref. ${externalRef}`,
               externalReference: externalRef,
               company: issuerCompany,
             });
-            console.log(`[Asaas] NF agendada para cobrança ${payment.id}: ${invoiceData?.id || 'OK'} | Status: ${invoiceData?.status || '-'}`);
+            console.log(`[Asaas] NF agendada para cobrança ${payment.id}: ${invoiceData?.id || 'OK'} | Status: ${invoiceData?.status || '-'} | Desc: ${descText}`);
 
             if (invoiceData?.id && !invoiceData?.pdfUrl) {
               for (let attempt = 0; attempt < 5; attempt++) {
@@ -3271,11 +3271,11 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
         invoiceData = await scheduleInvoice({
           paymentId: payment.id,
           serviceDescription: descText,
-          observations: `NF ref. ${externalRef}`,
+          observations: `${descText} | Ref. ${externalRef}`,
           externalReference: externalRef,
           company: issuerCompany,
         });
-        console.log(`[Asaas] NF agendada para cobrança ${payment.id}: ${invoiceData?.id || 'OK'} | Status: ${invoiceData?.status || '-'}`);
+        console.log(`[Asaas] NF agendada para cobrança ${payment.id}: ${invoiceData?.id || 'OK'} | Status: ${invoiceData?.status || '-'} | Desc: ${descText}`);
 
         if (invoiceData?.id && !invoiceData?.pdfUrl) {
           for (let attempt = 0; attempt < 5; attempt++) {

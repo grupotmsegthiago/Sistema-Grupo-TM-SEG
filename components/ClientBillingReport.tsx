@@ -1880,10 +1880,10 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
                                             data-testid="display-asaas-period"/>
                                     </div>
                                     <div>
-                                        <label className="text-[8px] font-black text-gray-500 uppercase mb-0.5 block">Descrição da Cobrança (Automática)</label>
-                                        <textarea readOnly value={asaasDescription} rows={2}
-                                            className="w-full border border-gray-200 rounded-lg px-2 py-1.5 text-[10px] font-medium bg-white cursor-not-allowed resize-none"
-                                            data-testid="display-asaas-description"/>
+                                        <label className="text-[8px] font-black text-gray-500 uppercase mb-0.5 block">Descrição da Cobrança / NF</label>
+                                        <textarea value={asaasDescription} onChange={e => setAsaasDescription(e.target.value)} rows={2}
+                                            className="w-full border border-green-200 rounded-lg px-2 py-1.5 text-[10px] font-medium bg-white resize-none focus:border-green-400 focus:ring-1 focus:ring-green-200"
+                                            data-testid="input-asaas-description"/>
                                     </div>
                                 </div>
 
