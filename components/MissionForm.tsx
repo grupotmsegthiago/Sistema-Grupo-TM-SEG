@@ -824,7 +824,7 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
                 mission_type: formData.missionType || 'Caracterizada', 
                 revenue_value: parseFloat(formData.revenueValue) || 0, cost_value: formData.isSameOs ? 0 : (parseFloat(formData.costValue) || 0),
                 toll_value: parseFloat(formData.tollValue) || 0,
-                valor_zero_motivo: formData.isSameOs ? 'MESMA OS' : ((!parseFloat(formData.costValue)) ? '' : ''),
+                valor_zero_motivo: formData.isSameOs ? 'MESMA OS' : ((!parseFloat(formData.costValue)) ? 'AGUARDANDO DEFINIÇÃO' : ''),
                 ...(formData.isSameOs ? { is_same_os: true, parent_mission_id: formData.parentMissionId || null } : {}), current_location: 'Solicitação Criada',
                 client_vehicle: vehicleId ? parseInt(vehicleId) : null,
                 client_vehicle_2: formData.clientVehicleId2 ? parseInt(formData.clientVehicleId2) : null,
@@ -833,7 +833,7 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
                 driver_name_2: formData.driver_name_2 ? (formData.driver_name_2 || '').toUpperCase() : null,
                 driver_phone_2: formData.driver_phone_2 || null,
                 start_km: parseFloat(formData.startKm) || null,
-                snapshot_data: null, snapshot_approved_by: null, snapshot_approved_at: null
+                snapshot_data: '', snapshot_approved_by: null, snapshot_approved_at: null
             }]);
             if (!error) saved = true; else if (error.code === '23505') attempts++; else throw error;
         }
