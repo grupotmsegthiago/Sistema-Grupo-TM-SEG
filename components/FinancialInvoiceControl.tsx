@@ -31,6 +31,8 @@ interface Invoice {
   asaas_bankslip_url?: string;
   asaas_pix_payload?: string;
   asaas_barcode?: string;
+  nf_status?: string;
+  nf_number?: string;
 }
 
 type StatusFilter = 'ALL' | 'EMITIDA' | 'PAGA' | 'VENCIDA' | 'CANCELADA';
@@ -111,7 +113,15 @@ const FinancialInvoiceControl: React.FC = () => {
       });
       const result = await res.json();
       if (result.error) throw new Error(result.error);
-      const parts: string[] = [`Status: ${result.statusBr || result.status}`];
+      const parts: string[] = [`Pagamento: ${result.statusBr || result.status}`];
+      if (result.nfStatus) {
+        const nfLabel = result.nfStatus === 'AUTHORIZED' ? 'Autorizada'
+          : result.nfStatus === 'SCHEDULED' ? 'Agendada'
+          : result.nfStatus === 'PROCESSING' ? 'Processando'
+          : result.nfStatus === 'CANCELED' ? 'Cancelada'
+          : result.nfStatus;
+        parts.push(`NF: ${nfLabel}${result.nfNumber ? ` (Nº ${result.nfNumber})` : ''}`);
+      }
       if (result.nfPdfUrl) parts.push('NF PDF atualizado');
       alert(`Sincronizado!\n${parts.join('\n')}`);
       await fetchInvoices();
@@ -307,11 +317,33 @@ const FinancialInvoiceControl: React.FC = () => {
                       </td>
                       <td className="px-4 py-3 text-center text-[10px] font-bold text-gray-500 uppercase">{inv.issuer_company || '-'}</td>
                       <td className="px-4 py-3 text-center">
-                        {inv.asaas_payment_id ? (
-                          <span className="inline-flex items-center gap-1 text-[9px] font-bold text-green-600 bg-green-50 px-2 py-0.5 rounded-full border border-green-200">
-                            <CreditCard size={9} /> {inv.asaas_status || 'PENDING'}
-                          </span>
-                        ) : <span className="text-[10px] text-gray-300">—</span>}
+                        {inv.asaas_payment_id ? (() => {
+                          const ns = inv.nf_status?.toUpperCase();
+                          const nfLabel = ns === 'AUTHORIZED' ? 'Autorizada'
+                            : ns === 'SCHEDULED' ? 'Agendada'
+                            : ns === 'PROCESSING' ? 'Processando'
+                            : ns === 'CANCELED' ? 'Cancelada'
+                            : ns === 'ERROR' ? 'Erro'
+                            : ns === 'WAITING_CUSTOMER_ACCEPTANCE' ? 'Aguardando'
+                            : ns || 'Pendente';
+                          const nfColor = ns === 'AUTHORIZED' ? 'text-emerald-700 bg-emerald-50 border-emerald-200'
+                            : ns === 'SCHEDULED' ? 'text-blue-600 bg-blue-50 border-blue-200'
+                            : ns === 'PROCESSING' ? 'text-amber-600 bg-amber-50 border-amber-200'
+                            : ns === 'CANCELED' || ns === 'ERROR' ? 'text-red-600 bg-red-50 border-red-200'
+                            : 'text-gray-500 bg-gray-50 border-gray-200';
+                          const NfIcon = ns === 'AUTHORIZED' ? CheckCircle2
+                            : ns === 'CANCELED' || ns === 'ERROR' ? XCircle
+                            : ns === 'PROCESSING' || ns === 'SCHEDULED' ? Clock
+                            : AlertCircle;
+                          return (
+                            <div className="flex flex-col items-center gap-0.5">
+                              <span className={`inline-flex items-center gap-1 text-[9px] font-bold px-2 py-0.5 rounded-full border ${nfColor}`}>
+                                <NfIcon size={9} /> {nfLabel}
+                              </span>
+                              {inv.nf_number && <span className="text-[8px] text-gray-400 font-mono">Nº {inv.nf_number}</span>}
+                            </div>
+                          );
+                        })() : <span className="text-[10px] text-gray-300">—</span>}
                       </td>
                       <td className="px-4 py-3 text-center">
                         <div className="flex items-center justify-center gap-1">

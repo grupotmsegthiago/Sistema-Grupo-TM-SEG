@@ -1437,10 +1437,12 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
                     if (ch.pix?.copyPaste) invoicePayload.asaas_pix_payload = ch.pix.copyPaste;
                     if (ch.bankSlip?.digitableLine) invoicePayload.asaas_barcode = ch.bankSlip.digitableLine;
                     if (ch.invoice?.pdfUrl) invoicePayload.nf_image_url = ch.invoice.pdfUrl;
+                    if (ch.invoice?.status) invoicePayload.nf_status = ch.invoice.status;
+                    if (ch.invoice?.number) invoicePayload.nf_number = String(ch.invoice.number);
 
                     let { error } = await supabase.from('financial_invoices').insert(invoicePayload).select();
                     if (error && error.code === '42703') {
-                        const { nf_image_url, boleto_image_url, provider, issuer_company, boleto_due_date, asaas_payment_id, asaas_status, asaas_invoice_url, asaas_bankslip_url, asaas_pix_payload, asaas_barcode, ...basicPayload } = invoicePayload;
+                        const { nf_image_url, boleto_image_url, provider, issuer_company, boleto_due_date, asaas_payment_id, asaas_status, asaas_invoice_url, asaas_bankslip_url, asaas_pix_payload, asaas_barcode, nf_status, nf_number, ...basicPayload } = invoicePayload;
                         const retry = await supabase.from('financial_invoices').insert(basicPayload).select();
                         error = retry.error;
                     }
@@ -1503,10 +1505,12 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
 
             const nfPdf = asaasData?.invoice?.pdfUrl;
             if (nfPdf) invoicePayload.nf_image_url = nfPdf;
+            if (asaasData?.invoice?.status) invoicePayload.nf_status = asaasData.invoice.status;
+            if (asaasData?.invoice?.number) invoicePayload.nf_number = String(asaasData.invoice.number);
 
             let { error } = await supabase.from('financial_invoices').insert(invoicePayload).select();
             if (error && error.code === '42703') {
-                const { nf_image_url, boleto_image_url, provider, issuer_company, boleto_due_date, asaas_payment_id, asaas_status, asaas_invoice_url, asaas_bankslip_url, asaas_pix_payload, asaas_barcode, ...basicPayload } = invoicePayload;
+                const { nf_image_url, boleto_image_url, provider, issuer_company, boleto_due_date, asaas_payment_id, asaas_status, asaas_invoice_url, asaas_bankslip_url, asaas_pix_payload, asaas_barcode, nf_status, nf_number: _nfn, ...basicPayload } = invoicePayload;
                 const retry = await supabase.from('financial_invoices').insert(basicPayload).select();
                 error = retry.error;
             }

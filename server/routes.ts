@@ -949,7 +949,7 @@ export async function registerRoutes(
     try {
       const { data, error } = await supabaseAdmin.from('financial_invoices').select('id', { count: 'exact', head: true });
 
-      const newCols = ['nf_image_url', 'boleto_image_url', 'provider', 'issuer_company', 'boleto_due_date', 'asaas_payment_id', 'asaas_status', 'asaas_invoice_url', 'asaas_bankslip_url', 'asaas_pix_payload', 'asaas_barcode'];
+      const newCols = ['nf_image_url', 'boleto_image_url', 'provider', 'issuer_company', 'boleto_due_date', 'asaas_payment_id', 'asaas_status', 'asaas_invoice_url', 'asaas_bankslip_url', 'asaas_pix_payload', 'asaas_barcode', 'nf_status', 'nf_number'];
 
       if (error && error.code === '42P01') {
         const createSql = `
@@ -3444,8 +3444,15 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
     }
   });
 
+  let nfColsMigrated = false;
   app.post("/api/asaas/sync-payment-status", requireAuth, requireRole('administrador', 'diretoria', 'financeiro'), async (req: Request, res: Response) => {
     try {
+      if (!nfColsMigrated) {
+        try {
+          await supabaseAdmin.rpc('exec_sql', { sql: 'ALTER TABLE financial_invoices ADD COLUMN IF NOT EXISTS nf_status TEXT; ALTER TABLE financial_invoices ADD COLUMN IF NOT EXISTS nf_number TEXT;' });
+          nfColsMigrated = true;
+        } catch {}
+      }
       const { paymentId, invoiceId, company } = req.body;
       if (!paymentId) return res.status(400).json({ error: 'paymentId obrigatório' });
 
@@ -3454,12 +3461,16 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
       const isPaid = ['RECEIVED', 'CONFIRMED', 'RECEIVED_IN_CASH'].includes(payment.status);
 
       let nfPdfUrl: string | null = null;
+      let nfStatus: string | null = null;
+      let nfNumber: string | null = null;
       try {
         const invoicesResp = await getInvoiceByPayment(paymentId, company);
         const invoicesList = invoicesResp?.data || (Array.isArray(invoicesResp) ? invoicesResp : []);
-        const nfData = invoicesList.find((i: any) => i.status === 'AUTHORIZED' || i.status === 'SCHEDULED') || invoicesList[0];
+        const nfData = invoicesList.find((i: any) => i.status === 'AUTHORIZED') || invoicesList.find((i: any) => i.status === 'SCHEDULED') || invoicesList[0];
         if (nfData?.pdfUrl) nfPdfUrl = nfData.pdfUrl;
-        console.log(`[Asaas Sync] NF para payment ${paymentId}: status=${nfData?.status || 'N/A'}, pdfUrl=${nfPdfUrl || 'N/A'}`);
+        if (nfData?.status) nfStatus = nfData.status;
+        if (nfData?.number) nfNumber = String(nfData.number);
+        console.log(`[Asaas Sync] NF para payment ${paymentId}: status=${nfStatus || 'N/A'}, number=${nfNumber || 'N/A'}, pdfUrl=${nfPdfUrl || 'N/A'}`);
       } catch (nfErr: any) {
         console.log(`[Asaas Sync] Erro ao buscar NF do payment ${paymentId}: ${nfErr.message}`);
       }
@@ -3475,6 +3486,8 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
           asaas_status: payment.status,
         };
         if (nfPdfUrl) updateData.nf_image_url = nfPdfUrl;
+        if (nfStatus) updateData.nf_status = nfStatus;
+        if (nfNumber) updateData.nf_number = nfNumber;
         if (payment.invoiceUrl) updateData.asaas_invoice_url = payment.invoiceUrl;
         if (payment.bankSlipUrl) updateData.asaas_bankslip_url = payment.bankSlipUrl;
         await supabase.from('financial_invoices').update(updateData).eq('id', invoiceId);
@@ -3491,7 +3504,7 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
         }
       }
 
-      res.json({ status: payment.status, statusBr, isPaid, value: payment.value, nfPdfUrl: nfPdfUrl || null });
+      res.json({ status: payment.status, statusBr, isPaid, value: payment.value, nfPdfUrl: nfPdfUrl || null, nfStatus: nfStatus || null, nfNumber: nfNumber || null });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }
