@@ -61,6 +61,9 @@ import AIChatbot from './components/AIChatbot';
 import VehicleTechnologyList from './components/VehicleTechnologyList';
 import VehicleTechnologyForm from './components/VehicleTechnologyForm';
 
+// JURÍDICO
+import LegalDashboard from './components/LegalDashboard';
+
 // FINANCEIRO
 import FinancialDashboard from './components/FinancialDashboard';
 import FinancialTransactionList from './components/FinancialTransactionList';
@@ -285,6 +288,7 @@ const App: React.FC = () => {
       case 'server-stats': return <ServerStats />;
       case 'equipment-manager': return <EquipmentManager />;
       case 'system-logs': return <SystemLogs />;
+      case 'legal-dashboard': return <LegalDashboard />;
       case 'reports': return <ReportsDashboard />;
       case 'support-network': return <SupportMapFinder onNavigate={navigateTo} />;
       default: return <Dashboard />;

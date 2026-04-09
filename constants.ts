@@ -119,6 +119,7 @@ export const NAV_ITEMS: NavItem[] = [
       { name: 'Tecnologias (Rastreador)', id: 'provider-technologies' },
     ]
   },
+  { name: 'Jurídico', icon: 'Scale', id: 'legal-dashboard' },
   { name: 'Relatórios', icon: 'FileBarChart', id: 'reports' },
   { 
     name: 'Configurações', 

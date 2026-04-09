@@ -2,7 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { 
   LayoutDashboard, MapPin, Truck, Users, FileBarChart, Settings, 
-  Briefcase, UserCog, ChevronDown, ChevronRight, Circle, LogOut, DollarSign, Bot, Wallet, Map, MessageCircle
+  Briefcase, UserCog, ChevronDown, ChevronRight, Circle, LogOut, DollarSign, Bot, Wallet, Map, MessageCircle, Scale
 } from 'lucide-react';
 import { NAV_ITEMS, APP_VERSION } from '../constants';
 import { NavItem } from '../constants'; // Explicit import to avoid TS error if NAV_ITEMS interface isn't exported correctly
@@ -81,6 +81,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, activeScreen, onNavigate, onL
       case 'Bot': return <Bot size={24} />;
       case 'Wallet': return <Wallet size={24} />;
       case 'MessageCircle': return <MessageCircle size={24} />;
+      case 'Scale': return <Scale size={24} />;
       default: return <LayoutDashboard size={24} />;
     }
   };

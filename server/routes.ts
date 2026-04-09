@@ -3915,5 +3915,100 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
     }
   });
 
+  const DATAJUD_API_KEY = process.env.DATAJUD_API_KEY || '';
+  const DATAJUD_TRIBUNAIS: Record<string, string> = {
+    'TJSP': 'api_publica_tjsp', 'TJRJ': 'api_publica_tjrj', 'TJMG': 'api_publica_tjmg',
+    'TJRS': 'api_publica_tjrs', 'TJPR': 'api_publica_tjpr', 'TJSC': 'api_publica_tjsc',
+    'TJBA': 'api_publica_tjba', 'TJPE': 'api_publica_tjpe', 'TJCE': 'api_publica_tjce',
+    'TJGO': 'api_publica_tjgo', 'TJPA': 'api_publica_tjpa', 'TJMA': 'api_publica_tjma',
+    'TJMT': 'api_publica_tjmt', 'TJMS': 'api_publica_tjms', 'TJES': 'api_publica_tjes',
+    'TJAL': 'api_publica_tjal', 'TJRN': 'api_publica_tjrn', 'TJPB': 'api_publica_tjpb',
+    'TJSE': 'api_publica_tjse', 'TJPI': 'api_publica_tjpi', 'TJRO': 'api_publica_tjro',
+    'TJAC': 'api_publica_tjac', 'TJAM': 'api_publica_tjam', 'TJAP': 'api_publica_tjap',
+    'TJRR': 'api_publica_tjrr', 'TJTO': 'api_publica_tjto', 'TJDFT': 'api_publica_tjdft',
+    'TRF1': 'api_publica_trf1', 'TRF2': 'api_publica_trf2', 'TRF3': 'api_publica_trf3',
+    'TRF4': 'api_publica_trf4', 'TRF5': 'api_publica_trf5', 'TRF6': 'api_publica_trf6',
+    'TRT1': 'api_publica_trt1', 'TRT2': 'api_publica_trt2', 'TRT3': 'api_publica_trt3',
+    'TRT4': 'api_publica_trt4', 'TRT5': 'api_publica_trt5', 'TRT6': 'api_publica_trt6',
+    'TRT7': 'api_publica_trt7', 'TRT8': 'api_publica_trt8', 'TRT9': 'api_publica_trt9',
+    'TRT10': 'api_publica_trt10', 'TRT11': 'api_publica_trt11', 'TRT12': 'api_publica_trt12',
+    'TRT13': 'api_publica_trt13', 'TRT14': 'api_publica_trt14', 'TRT15': 'api_publica_trt15',
+    'TRT16': 'api_publica_trt16', 'TRT17': 'api_publica_trt17', 'TRT18': 'api_publica_trt18',
+    'TRT19': 'api_publica_trt19', 'TRT20': 'api_publica_trt20', 'TRT21': 'api_publica_trt21',
+    'TRT22': 'api_publica_trt22', 'TRT23': 'api_publica_trt23', 'TRT24': 'api_publica_trt24',
+    'STF': 'api_publica_stf', 'STJ': 'api_publica_stj', 'TST': 'api_publica_tst',
+  };
+
+  app.get("/api/datajud/tribunais", (_req: Request, res: Response) => {
+    res.json({ tribunais: Object.keys(DATAJUD_TRIBUNAIS) });
+  });
+
+  app.post("/api/datajud/consulta", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const { tribunal, numeroProcesso, query: searchQuery } = req.body;
+      if (!tribunal || !DATAJUD_TRIBUNAIS[tribunal]) {
+        return res.status(400).json({ error: 'Tribunal inválido ou não informado.' });
+      }
+      if (!numeroProcesso && !searchQuery) {
+        return res.status(400).json({ error: 'Informe o número do processo ou termo de busca.' });
+      }
+      if (!DATAJUD_API_KEY) {
+        return res.status(500).json({ error: 'API Key do DataJud não configurada no servidor.' });
+      }
+
+      const endpoint = DATAJUD_TRIBUNAIS[tribunal];
+      const url = `https://api-publica.datajud.cnj.jus.br/${endpoint}/_search`;
+
+      let body: any;
+      if (numeroProcesso) {
+        body = { query: { match: { numeroProcesso: numeroProcesso.replace(/[.\-\/]/g, '').replace(/(\d{7})(\d{2})(\d{4})(\d)(\d{2})(\d{4})/, '$1-$2.$3.$4.$5.$6') } }, size: 10 };
+      } else {
+        body = { query: { multi_match: { query: searchQuery, fields: ['*'] } }, size: 10 };
+      }
+
+      const resp = await fetch(url, {
+        method: 'POST',
+        headers: { 'Authorization': `APIKey ${DATAJUD_API_KEY}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
+      });
+
+      if (!resp.ok) {
+        const errText = await resp.text();
+        console.error('[DataJud] Erro:', resp.status, errText);
+        return res.status(resp.status).json({ error: `Erro na API do DataJud: ${resp.status}`, details: errText });
+      }
+
+      const data = await resp.json();
+      const hits = data.hits?.hits || [];
+      const results = hits.map((h: any) => {
+        const s = h._source || {};
+        return {
+          id: h._id,
+          numeroProcesso: s.numeroProcesso,
+          classe: s.classe?.nome || s.classeProcessual || '',
+          assuntos: (s.assuntos || []).map((a: any) => a.nome || a).filter(Boolean),
+          tribunal: s.tribunal || tribunal,
+          grau: s.grau || '',
+          orgaoJulgador: s.orgaoJulgador?.nome || '',
+          dataAjuizamento: s.dataAjuizamento || '',
+          dataUltimaAtualizacao: s.dataHoraUltimaAtualizacao || '',
+          nivelSigilo: s.nivelSigilo || 0,
+          formato: s.formato?.nome || '',
+          sistema: s.sistema?.nome || '',
+          movimentos: (s.movimentos || []).slice(0, 20).map((m: any) => ({
+            nome: m.nome || m.complementosTabelados?.map((c: any) => c.nome || c.descricao).join(', ') || '',
+            data: m.dataHora || '',
+            complemento: m.complementosTabelados?.map((c: any) => `${c.nome || ''}: ${c.descricao || ''}`).join(' | ') || ''
+          })),
+        };
+      });
+
+      res.json({ total: data.hits?.total?.value || results.length, results });
+    } catch (err: any) {
+      console.error('[DataJud] Exception:', err.message);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   return httpServer;
 }
