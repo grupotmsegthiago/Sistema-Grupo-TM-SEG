@@ -31,8 +31,8 @@ const ASAAS_COMPANIES: Record<string, CompanyConfig> = {
       serviceDescription: 'Ref. aos Serviços de Intermediação de Escolta Armada',
       issRate: 5,
       retainIss: false,
-      municipalServiceCode: '03115',
-      municipalServiceName: '03115 | 17.01 - Assessoria ou consultoria de qualquer natureza',
+      municipalServiceCode: '07930',
+      municipalServiceName: '07930 - Monitoramento e rastreamento a distância de veículos, cargas, pessoas e semoventes',
     },
   },
   'TM SEGURANCA': {
@@ -44,8 +44,8 @@ const ASAAS_COMPANIES: Record<string, CompanyConfig> = {
       serviceDescription: 'Ref. aos Serviços de Intermediação de Escolta Armada',
       issRate: 5,
       retainIss: false,
-      municipalServiceCode: '03115',
-      municipalServiceName: '03115 | 17.01 - Assessoria ou consultoria de qualquer natureza',
+      municipalServiceCode: '07930',
+      municipalServiceName: '07930 - Monitoramento e rastreamento a distância de veículos, cargas, pessoas e semoventes',
     },
   },
   'TM SECURITY': {
@@ -57,8 +57,8 @@ const ASAAS_COMPANIES: Record<string, CompanyConfig> = {
       serviceDescription: 'Ref. aos Serviços de Intermediação de Escolta Armada',
       issRate: 5,
       retainIss: false,
-      municipalServiceCode: '03115',
-      municipalServiceName: '03115 | 17.01 - Assessoria ou consultoria de qualquer natureza',
+      municipalServiceCode: '07930',
+      municipalServiceName: '07930 - Monitoramento e rastreamento a distância de veículos, cargas, pessoas e semoventes',
     },
   },
 };
@@ -341,7 +341,7 @@ async function resolveMunicipalService(company?: string): Promise<MunicipalServi
       const preferred = services.find((s: any) => {
         const desc = (s.description || s.name || '').toLowerCase();
         const code = String(s.code || s.municipalServiceCode || '');
-        return code.includes('03115') || code.includes('17.01') || desc.includes('assessoria') || desc.includes('consultoria') || desc.includes('escolta') || desc.includes('segurança') || desc.includes('vigilância') || desc.includes('seguranca');
+        return code.includes('07930') || code.includes('03115') || code.includes('17.01') || desc.includes('monitoramento') || desc.includes('rastreamento') || desc.includes('escolta') || desc.includes('segurança') || desc.includes('vigilância') || desc.includes('seguranca') || desc.includes('assessoria') || desc.includes('consultoria');
       }) || services[0];
       const rawName = String(preferred.description || preferred.name || '');
       const info: MunicipalServiceInfo = {

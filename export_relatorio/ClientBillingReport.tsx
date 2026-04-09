@@ -1785,8 +1785,8 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
                                     {(() => {
                                         const cl = clients.find(c => c.id.toString() === invoiceForm.client);
                                         const nm = `${cl?.name || ''} ${cl?.trading_name || ''}`.toUpperCase();
-                                        let cnaeCode = '03115';
-                                        let cnaeName = 'Assessoria ou consultoria de qualquer natureza, não contida em outros itens desta lista';
+                                        let cnaeCode = '07930';
+                                        let cnaeName = 'Monitoramento e rastreamento a distância de veículos, cargas, pessoas e semoventes';
                                         if (nm.includes('CEVA')) { cnaeCode = '07930'; cnaeName = 'Intermediação / Agenciamento de Contrato'; }
                                         else if (nm.includes('AMAZON')) { cnaeCode = '06298'; cnaeName = 'Rastreamento e Monitoramento de Carga'; }
                                         return (
