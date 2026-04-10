@@ -58,8 +58,20 @@ const formatProcessoNumber = (n: string) => {
 
 const CNPJ_EMPRESA = '28804378000167';
 const CNPJ_FORMATADO = '28.804.378/0001-67';
+const NOME_EMPRESA = 'TM SEGURANÇA';
 
-const TRIBUNAIS_CNPJ_BUSCA = ['TJSP', 'TJRJ', 'TJMG', 'TJPR', 'TJSC', 'TJRS', 'TJBA', 'TJGO', 'TJES', 'TJDFT', 'TRT2', 'TRT15', 'TRT1', 'TRT3', 'TRF3', 'TRF1', 'TRF2', 'STJ'];
+const CNPJ_TO_NOME: Record<string, string> = {
+  '28804378000167': 'TM SEGURANÇA',
+};
+
+const TRIBUNAIS_CNPJ_BUSCA = [
+  'TRT1', 'TRT2', 'TRT3', 'TRT4', 'TRT5', 'TRT6', 'TRT7', 'TRT8', 'TRT9', 'TRT10',
+  'TRT11', 'TRT12', 'TRT13', 'TRT14', 'TRT15', 'TRT16', 'TRT17', 'TRT18',
+  'TJSP', 'TJRJ', 'TJMG', 'TJPR', 'TJSC', 'TJRS', 'TJBA', 'TJGO', 'TJES', 'TJDFT',
+  'TJPE', 'TJCE', 'TJPA', 'TJMA', 'TJMT', 'TJMS',
+  'TRF1', 'TRF2', 'TRF3', 'TRF4', 'TRF5', 'TRF6',
+  'STJ', 'TST',
+];
 
 const LegalDashboard = () => {
   const [tribunal, setTribunal] = useState('TJSP');
@@ -98,6 +110,13 @@ const LegalDashboard = () => {
         setError('Informe um CNPJ/CPF válido.');
         return;
       }
+
+      const nomeEmpresa = CNPJ_TO_NOME[cnpj] || '';
+      if (!nomeEmpresa) {
+        setError('CNPJ não cadastrado. Para buscar por CNPJ desconhecido, use a Busca Textual com o nome da empresa.');
+        return;
+      }
+
       setLoading(true);
       setError('');
       setResults([]);
@@ -106,21 +125,28 @@ const LegalDashboard = () => {
 
       try {
         const allResults: Processo[] = [];
+        const dedup = new Set<string>();
         for (let i = 0; i < TRIBUNAIS_CNPJ_BUSCA.length; i++) {
           const trib = TRIBUNAIS_CNPJ_BUSCA[i];
           setMultiTribunalProgress(`Consultando ${trib} (${i + 1}/${TRIBUNAIS_CNPJ_BUSCA.length})...`);
           try {
-            const found = await searchSingleTribunal(trib, cnpj, false);
-            if (found.length > 0) allResults.push(...found);
+            const found = await searchSingleTribunal(trib, nomeEmpresa, false);
+            for (const p of found) {
+              const key = p.numeroProcesso || p.id;
+              if (!dedup.has(key)) {
+                dedup.add(key);
+                allResults.push(p);
+              }
+            }
           } catch { }
         }
         setMultiTribunalProgress('');
         setResults(allResults);
         setTotalResults(allResults.length);
         if (allResults.length === 0) {
-          setError(`Nenhum processo encontrado para o CNPJ ${cnpj} nos ${TRIBUNAIS_CNPJ_BUSCA.length} tribunais consultados.`);
+          setError(`Nenhum processo encontrado para "${nomeEmpresa}" (CNPJ ${cnpj}) nos ${TRIBUNAIS_CNPJ_BUSCA.length} tribunais consultados.`);
         }
-        setSearchHistory(prev => [{ tribunal: 'MULTI', query: `CNPJ: ${cnpj}`, date: new Date().toLocaleTimeString('pt-BR', { timeZone: 'America/Sao_Paulo' }), count: allResults.length }, ...prev].slice(0, 10));
+        setSearchHistory(prev => [{ tribunal: 'MULTI', query: `${nomeEmpresa} (${cnpj})`, date: new Date().toLocaleTimeString('pt-BR', { timeZone: 'America/Sao_Paulo' }), count: allResults.length }, ...prev].slice(0, 10));
       } catch (err: any) {
         setError(err.message || 'Falha na comunicação com o servidor.');
         setMultiTribunalProgress('');
@@ -311,25 +337,32 @@ const LegalDashboard = () => {
                 data-testid="input-numero-processo"
               />
             ) : searchType === 'cnpj' ? (
-              <div className="flex gap-2">
-                <input
-                  type="text"
-                  value={cnpjInput}
-                  onChange={e => setCnpjInput(e.target.value)}
-                  placeholder="00.000.000/0000-00"
-                  className="flex-1 border rounded-lg px-3 py-2.5 text-sm focus:ring-2 focus:ring-red-500 focus:border-red-500"
-                  onKeyDown={e => e.key === 'Enter' && handleSearch()}
-                  data-testid="input-cnpj"
-                />
-                <button
-                  type="button"
-                  onClick={() => setCnpjInput(CNPJ_EMPRESA)}
-                  className="px-3 py-2 bg-red-50 text-red-700 border border-red-200 rounded-lg text-xs font-semibold hover:bg-red-100 transition-colors whitespace-nowrap"
-                  data-testid="button-cnpj-tmseg"
-                  title={`Usar CNPJ Grupo TMSEG: ${CNPJ_FORMATADO}`}
-                >
-                  TMSEG
-                </button>
+              <div className="space-y-1.5">
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={cnpjInput}
+                    onChange={e => setCnpjInput(e.target.value)}
+                    placeholder="00.000.000/0000-00"
+                    className="flex-1 border rounded-lg px-3 py-2.5 text-sm focus:ring-2 focus:ring-red-500 focus:border-red-500"
+                    onKeyDown={e => e.key === 'Enter' && handleSearch()}
+                    data-testid="input-cnpj"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setCnpjInput(CNPJ_EMPRESA)}
+                    className="px-3 py-2 bg-red-50 text-red-700 border border-red-200 rounded-lg text-xs font-semibold hover:bg-red-100 transition-colors whitespace-nowrap"
+                    data-testid="button-cnpj-tmseg"
+                    title={`Usar CNPJ Grupo TMSEG: ${CNPJ_FORMATADO}`}
+                  >
+                    TMSEG
+                  </button>
+                </div>
+                {CNPJ_TO_NOME[cnpjInput.replace(/\D/g, '')] && (
+                  <p className="text-xs text-green-700 bg-green-50 border border-green-200 rounded px-2 py-1 flex items-center gap-1">
+                    <Building2 size={12} /> Buscará por: <strong>{CNPJ_TO_NOME[cnpjInput.replace(/\D/g, '')]}</strong> em {TRIBUNAIS_CNPJ_BUSCA.length} tribunais
+                  </p>
+                )}
               </div>
             ) : (
               <input
