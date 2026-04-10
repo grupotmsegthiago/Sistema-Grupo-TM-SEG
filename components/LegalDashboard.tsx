@@ -56,11 +56,17 @@ const formatProcessoNumber = (n: string) => {
   return n;
 };
 
+const CNPJ_EMPRESA = '28804378000167';
+const CNPJ_FORMATADO = '28.804.378/0001-67';
+
+const TRIBUNAIS_CNPJ_BUSCA = ['TJSP', 'TJRJ', 'TJMG', 'TJPR', 'TJSC', 'TJRS', 'TJBA', 'TJGO', 'TJES', 'TJDFT', 'TRT2', 'TRT15', 'TRT1', 'TRT3', 'TRF3', 'TRF1', 'TRF2', 'STJ'];
+
 const LegalDashboard = () => {
   const [tribunal, setTribunal] = useState('TJSP');
   const [numeroProcesso, setNumeroProcesso] = useState('');
-  const [searchType, setSearchType] = useState<'numero' | 'texto'>('numero');
+  const [searchType, setSearchType] = useState<'numero' | 'texto' | 'cnpj'>('numero');
   const [searchText, setSearchText] = useState('');
+  const [cnpjInput, setCnpjInput] = useState(CNPJ_EMPRESA);
   const [loading, setLoading] = useState(false);
   const [results, setResults] = useState<Processo[]>([]);
   const [error, setError] = useState('');
@@ -68,8 +74,63 @@ const LegalDashboard = () => {
   const [selectedProcesso, setSelectedProcesso] = useState<Processo | null>(null);
   const [searchHistory, setSearchHistory] = useState<{ tribunal: string; query: string; date: string; count: number }[]>([]);
   const [expandedGroup, setExpandedGroup] = useState('Justiça Estadual (TJ)');
+  const [multiTribunalProgress, setMultiTribunalProgress] = useState('');
+
+  const searchSingleTribunal = async (trib: string, query: string, isNumero: boolean) => {
+    const body: any = { tribunal: trib };
+    if (isNumero) body.numeroProcesso = query;
+    else body.query = query;
+
+    const resp = await authFetch('/api/datajud/consulta', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    const data = await resp.json();
+    if (!resp.ok) return [];
+    return (data.results || []).map((r: any) => ({ ...r, tribunal: trib }));
+  };
 
   const handleSearch = useCallback(async () => {
+    if (searchType === 'cnpj') {
+      const cnpj = cnpjInput.replace(/\D/g, '').trim();
+      if (!cnpj || cnpj.length < 11) {
+        setError('Informe um CNPJ/CPF válido.');
+        return;
+      }
+      setLoading(true);
+      setError('');
+      setResults([]);
+      setSelectedProcesso(null);
+      setTotalResults(0);
+
+      try {
+        const allResults: Processo[] = [];
+        for (let i = 0; i < TRIBUNAIS_CNPJ_BUSCA.length; i++) {
+          const trib = TRIBUNAIS_CNPJ_BUSCA[i];
+          setMultiTribunalProgress(`Consultando ${trib} (${i + 1}/${TRIBUNAIS_CNPJ_BUSCA.length})...`);
+          try {
+            const found = await searchSingleTribunal(trib, cnpj, false);
+            if (found.length > 0) allResults.push(...found);
+          } catch { }
+        }
+        setMultiTribunalProgress('');
+        setResults(allResults);
+        setTotalResults(allResults.length);
+        if (allResults.length === 0) {
+          setError(`Nenhum processo encontrado para o CNPJ ${cnpj} nos ${TRIBUNAIS_CNPJ_BUSCA.length} tribunais consultados.`);
+        }
+        setSearchHistory(prev => [{ tribunal: 'MULTI', query: `CNPJ: ${cnpj}`, date: new Date().toLocaleTimeString('pt-BR', { timeZone: 'America/Sao_Paulo' }), count: allResults.length }, ...prev].slice(0, 10));
+      } catch (err: any) {
+        setError(err.message || 'Falha na comunicação com o servidor.');
+        setMultiTribunalProgress('');
+      } finally {
+        setLoading(false);
+        setMultiTribunalProgress('');
+      }
+      return;
+    }
+
     const query = searchType === 'numero' ? numeroProcesso.trim() : searchText.trim();
     if (!query) {
       setError('Informe o número do processo ou termo de busca.');
@@ -114,7 +175,7 @@ const LegalDashboard = () => {
     } finally {
       setLoading(false);
     }
-  }, [tribunal, numeroProcesso, searchText, searchType]);
+  }, [tribunal, numeroProcesso, searchText, searchType, cnpjInput]);
 
   if (selectedProcesso) {
     return (
@@ -213,28 +274,31 @@ const LegalDashboard = () => {
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-12 gap-3">
-          <div className="md:col-span-3">
-            <label className="text-xs font-semibold text-gray-500 uppercase mb-1 block">Tribunal</label>
-            <select value={tribunal} onChange={e => setTribunal(e.target.value)} className="w-full border rounded-lg px-3 py-2.5 text-sm focus:ring-2 focus:ring-red-500 focus:border-red-500 bg-white" data-testid="select-tribunal">
-              {Object.entries(TRIBUNAIS_AGRUPADOS).map(([grupo, tribunais]) => (
-                <optgroup key={grupo} label={grupo}>
-                  {tribunais.map(t => <option key={t} value={t}>{t}</option>)}
-                </optgroup>
-              ))}
-            </select>
-          </div>
+          {searchType !== 'cnpj' && (
+            <div className="md:col-span-3">
+              <label className="text-xs font-semibold text-gray-500 uppercase mb-1 block">Tribunal</label>
+              <select value={tribunal} onChange={e => setTribunal(e.target.value)} className="w-full border rounded-lg px-3 py-2.5 text-sm focus:ring-2 focus:ring-red-500 focus:border-red-500 bg-white" data-testid="select-tribunal">
+                {Object.entries(TRIBUNAIS_AGRUPADOS).map(([grupo, tribunais]) => (
+                  <optgroup key={grupo} label={grupo}>
+                    {tribunais.map(t => <option key={t} value={t}>{t}</option>)}
+                  </optgroup>
+                ))}
+              </select>
+            </div>
+          )}
 
           <div className="md:col-span-2">
             <label className="text-xs font-semibold text-gray-500 uppercase mb-1 block">Tipo de Busca</label>
             <select value={searchType} onChange={e => setSearchType(e.target.value as any)} className="w-full border rounded-lg px-3 py-2.5 text-sm focus:ring-2 focus:ring-red-500 focus:border-red-500 bg-white" data-testid="select-search-type">
               <option value="numero">Nº do Processo</option>
               <option value="texto">Busca Textual</option>
+              <option value="cnpj">CNPJ / CPF</option>
             </select>
           </div>
 
-          <div className="md:col-span-5">
+          <div className={searchType === 'cnpj' ? 'md:col-span-8' : 'md:col-span-5'}>
             <label className="text-xs font-semibold text-gray-500 uppercase mb-1 block">
-              {searchType === 'numero' ? 'Número do Processo' : 'Termo de Busca'}
+              {searchType === 'numero' ? 'Número do Processo' : searchType === 'cnpj' ? 'CNPJ / CPF' : 'Termo de Busca'}
             </label>
             {searchType === 'numero' ? (
               <input
@@ -246,6 +310,27 @@ const LegalDashboard = () => {
                 onKeyDown={e => e.key === 'Enter' && handleSearch()}
                 data-testid="input-numero-processo"
               />
+            ) : searchType === 'cnpj' ? (
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={cnpjInput}
+                  onChange={e => setCnpjInput(e.target.value)}
+                  placeholder="00.000.000/0000-00"
+                  className="flex-1 border rounded-lg px-3 py-2.5 text-sm focus:ring-2 focus:ring-red-500 focus:border-red-500"
+                  onKeyDown={e => e.key === 'Enter' && handleSearch()}
+                  data-testid="input-cnpj"
+                />
+                <button
+                  type="button"
+                  onClick={() => setCnpjInput(CNPJ_EMPRESA)}
+                  className="px-3 py-2 bg-red-50 text-red-700 border border-red-200 rounded-lg text-xs font-semibold hover:bg-red-100 transition-colors whitespace-nowrap"
+                  data-testid="button-cnpj-tmseg"
+                  title={`Usar CNPJ Grupo TMSEG: ${CNPJ_FORMATADO}`}
+                >
+                  TMSEG
+                </button>
+              </div>
             ) : (
               <input
                 type="text"
@@ -271,6 +356,16 @@ const LegalDashboard = () => {
             </button>
           </div>
         </div>
+
+        {multiTribunalProgress && (
+          <div className="flex items-center gap-3 p-3 bg-blue-50 border border-blue-200 rounded-lg text-blue-800 text-sm">
+            <Loader2 size={16} className="animate-spin shrink-0" />
+            <span>{multiTribunalProgress}</span>
+            <div className="flex-1 bg-blue-200 rounded-full h-1.5 overflow-hidden">
+              <div className="bg-blue-600 h-full rounded-full transition-all duration-500" style={{ width: `${(TRIBUNAIS_CNPJ_BUSCA.indexOf(multiTribunalProgress.match(/\w+/)?.[1] || '') + 1) / TRIBUNAIS_CNPJ_BUSCA.length * 100}%` }} />
+            </div>
+          </div>
+        )}
 
         {error && (
           <div className="flex items-center gap-2 p-3 bg-amber-50 border border-amber-200 rounded-lg text-amber-800 text-sm">
