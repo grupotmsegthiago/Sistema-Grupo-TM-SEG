@@ -392,6 +392,7 @@ export async function scheduleInvoice(params: {
     payment: params.paymentId,
     serviceDescription: rawDesc.length > 250 ? rawDesc.substring(0, 247) + '...' : rawDesc,
     taxes,
+    effectiveDatePeriod: 'ON_PAYMENT_CREATION',
   };
   if (params.municipalServiceId) {
     body.municipalServiceId = params.municipalServiceId;
