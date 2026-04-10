@@ -815,4 +815,75 @@ export async function sendBillingEmail(data: BillingEmailData): Promise<{ succes
   }
 }
 
+export async function sendLegalReportEmail(to: string, processos: any[], searchDate: string): Promise<boolean> {
+  const processosHtml = processos.length === 0
+    ? '<p style="color:#999; font-style:italic; text-align:center; padding:20px;">Nenhum processo novo encontrado.</p>'
+    : processos.map((p: any, idx: number) => `
+      <tr style="border-bottom:1px solid #eee;">
+        <td style="padding:10px 14px; font-weight:600; color:#1a1a1a; font-size:13px;">${p.numeroProcesso || '—'}</td>
+        <td style="padding:10px 14px; color:#555; font-size:12px;">${p.tribunal || '—'}</td>
+        <td style="padding:10px 14px; color:#555; font-size:12px;">${p.classe || '—'}</td>
+        <td style="padding:10px 14px; color:#555; font-size:12px;">${p.orgaoJulgador || '—'}</td>
+        <td style="padding:10px 14px; color:#555; font-size:12px;">${p.dataAjuizamento ? new Date(p.dataAjuizamento).toLocaleDateString('pt-BR') : '—'}</td>
+        <td style="padding:10px 14px; color:#555; font-size:12px;">${(p.movimentos || []).length} mov.</td>
+      </tr>
+    `).join('');
+
+  const html = baseTemplate(`
+    <h2>Relatório Jurídico Diário</h2>
+    <div class="highlight-box">
+      <p><strong>Data da Consulta:</strong> ${searchDate}</p>
+      <p><strong>Empresa:</strong> TM SEGURANÇA CONSULTORIA & TECNOLOGIA INTEGRADA LTDA</p>
+      <p><strong>CNPJ:</strong> 28.804.378/0001-67</p>
+      <p><strong>Processos Encontrados:</strong> <span class="badge">${processos.length}</span></p>
+    </div>
+    ${processos.length > 0 ? `
+    <table style="width:100%; border-collapse:collapse; margin:16px 0; font-size:12px;">
+      <thead>
+        <tr style="background:#f8f9fa; border-bottom:2px solid #c0392b;">
+          <th style="padding:10px 14px; text-align:left; font-weight:700; color:#1a1a1a;">Nº Processo</th>
+          <th style="padding:10px 14px; text-align:left; font-weight:700; color:#1a1a1a;">Tribunal</th>
+          <th style="padding:10px 14px; text-align:left; font-weight:700; color:#1a1a1a;">Classe</th>
+          <th style="padding:10px 14px; text-align:left; font-weight:700; color:#1a1a1a;">Órgão Julgador</th>
+          <th style="padding:10px 14px; text-align:left; font-weight:700; color:#1a1a1a;">Ajuizamento</th>
+          <th style="padding:10px 14px; text-align:left; font-weight:700; color:#1a1a1a;">Mov.</th>
+        </tr>
+      </thead>
+      <tbody>${processosHtml}</tbody>
+    </table>
+    ${processos.map((p: any) => `
+      <div style="margin:16px 0; padding:12px 16px; background:#fafafa; border:1px solid #eee; border-radius:6px;">
+        <p style="margin:0 0 6px; font-weight:700; color:#1a1a1a; font-size:14px;">${p.numeroProcesso} — ${p.tribunal}</p>
+        <p style="margin:0 0 4px; font-size:12px; color:#555;"><strong>Classe:</strong> ${p.classe || '—'}</p>
+        <p style="margin:0 0 4px; font-size:12px; color:#555;"><strong>Assuntos:</strong> ${(p.assuntos || []).join(', ') || '—'}</p>
+        <p style="margin:0 0 4px; font-size:12px; color:#555;"><strong>Órgão Julgador:</strong> ${p.orgaoJulgador || '—'}</p>
+        ${(p.movimentos || []).length > 0 ? `
+          <p style="margin:8px 0 4px; font-size:11px; font-weight:600; color:#1a1a1a; text-transform:uppercase;">Últimas Movimentações:</p>
+          ${(p.movimentos || []).slice(0, 5).map((m: any) => `
+            <p style="margin:2px 0; font-size:11px; color:#666; padding-left:8px; border-left:2px solid #c0392b;">
+              ${m.data ? new Date(m.data).toLocaleDateString('pt-BR') : '—'} — ${m.nome || 'Movimentação'}
+            </p>
+          `).join('')}
+        ` : ''}
+      </div>
+    `).join('')}
+    ` : ''}
+    <p style="font-size:12px; color:#999; margin-top:24px;">Este relatório é gerado automaticamente pelo sistema TMSEGo. Para consultar detalhes completos, acesse o menu Jurídico no painel.</p>
+  `);
+
+  try {
+    await transporter.sendMail({
+      from: SMTP_FROM,
+      to,
+      subject: `Relatório Jurídico — ${processos.length} processo(s) — ${searchDate}`,
+      html,
+    });
+    console.log(`[Email] Relatório jurídico enviado → ${to} | ${processos.length} processos`);
+    return true;
+  } catch (err: any) {
+    console.error(`[Email] Erro ao enviar relatório jurídico:`, err.message);
+    return false;
+  }
+}
+
 export { transporter };

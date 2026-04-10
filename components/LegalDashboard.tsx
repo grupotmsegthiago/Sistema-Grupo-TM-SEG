@@ -86,6 +86,8 @@ const LegalDashboard = () => {
   const [selectedProcesso, setSelectedProcesso] = useState<Processo | null>(null);
   const [searchHistory, setSearchHistory] = useState<{ tribunal: string; query: string; date: string; count: number }[]>([]);
   const [expandedGroup, setExpandedGroup] = useState('Justiça Estadual (TJ)');
+  const [sendingReport, setSendingReport] = useState(false);
+  const [reportStatus, setReportStatus] = useState<{ success: boolean; message: string } | null>(null);
   const [multiTribunalProgress, setMultiTribunalProgress] = useState('');
 
   const searchSingleTribunal = async (trib: string, query: string, isNumero: boolean) => {
@@ -102,6 +104,24 @@ const LegalDashboard = () => {
     if (!resp.ok) return [];
     return (data.results || []).map((r: any) => ({ ...r, tribunal: trib }));
   };
+
+  const handleSendReport = useCallback(async () => {
+    setSendingReport(true);
+    setReportStatus(null);
+    try {
+      const resp = await authFetch('/api/datajud/relatorio-diario', { method: 'POST' });
+      const data = await resp.json();
+      if (data.success) {
+        setReportStatus({ success: true, message: `Relatório enviado para ${data.emailTo} com ${data.total} processo(s).` });
+      } else {
+        setReportStatus({ success: false, message: 'Falha ao enviar relatório. Tente novamente.' });
+      }
+    } catch (err: any) {
+      setReportStatus({ success: false, message: err.message || 'Erro ao enviar relatório.' });
+    } finally {
+      setSendingReport(false);
+    }
+  }, []);
 
   const handleSearch = useCallback(async () => {
     if (searchType === 'cnpj') {
@@ -290,6 +310,25 @@ const LegalDashboard = () => {
             <h1 className="text-2xl font-bold text-gray-900 tracking-tight">Jurídico</h1>
             <p className="text-sm text-gray-500">Consulta de Processos — DataJud / CNJ</p>
           </div>
+        </div>
+        <div className="flex flex-col items-end gap-1">
+          <button
+            type="button"
+            onClick={handleSendReport}
+            disabled={sendingReport}
+            className="flex items-center gap-2 px-4 py-2 bg-gray-900 text-white rounded-lg text-sm font-semibold hover:bg-gray-800 transition-colors disabled:opacity-50 disabled:cursor-not-allowed shadow-sm"
+            data-testid="button-send-legal-report"
+            title="Enviar relatório jurídico por e-mail agora"
+          >
+            {sendingReport ? <Loader2 size={16} className="animate-spin" /> : <FileText size={16} />}
+            {sendingReport ? 'Enviando...' : 'Enviar Relatório'}
+          </button>
+          <p className="text-[10px] text-gray-400">Automático diário às 07:00 → thiago@grupotmseg.com.br</p>
+          {reportStatus && (
+            <p className={`text-xs px-2 py-1 rounded ${reportStatus.success ? 'bg-green-50 text-green-700 border border-green-200' : 'bg-red-50 text-red-700 border border-red-200'}`}>
+              {reportStatus.message}
+            </p>
+          )}
         </div>
       </div>
 

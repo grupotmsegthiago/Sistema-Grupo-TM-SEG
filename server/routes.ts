@@ -9,7 +9,7 @@ import { calculateMissionFinancials } from "../lib/financialUtils";
 import fs from "fs";
 import path from "path";
 import pg from "pg";
-import { sendMissionEmailToClient, sendMissionEmailToProvider, sendMissionResendToClient, sendMirroringEvidenceEmail, sendMissionChangeNotificationToClient, sendMissionChangeNotificationToProvider, sendWelcomeEmail, sendTestEmail, sendVerificationCodeEmail, sendPasswordResetEmail, sendBillingEmail } from "./emailService";
+import { sendMissionEmailToClient, sendMissionEmailToProvider, sendMissionResendToClient, sendMirroringEvidenceEmail, sendMissionChangeNotificationToClient, sendMissionChangeNotificationToProvider, sendWelcomeEmail, sendTestEmail, sendVerificationCodeEmail, sendPasswordResetEmail, sendBillingEmail, sendLegalReportEmail } from "./emailService";
 import { findOrCreateCustomer, createPayment, getPayment, getPaymentPixQrCode, getPaymentBankSlip, listPayments, deletePayment, mapAsaasStatus, isAsaasConfigured, getAsaasCompanies, scheduleInvoice, listMunicipalServices, getInvoiceByPayment, getAllBalances } from "./asaasService";
 
 const resend = new Resend(process.env.RESEND_API_KEY);
@@ -4006,6 +4006,132 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
       res.json({ total: data.hits?.total?.value || results.length, results });
     } catch (err: any) {
       console.error('[DataJud] Exception:', err.message);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  const LEGAL_REPORT_TRIBUNAIS = [
+    'TJSP','TJRJ','TJMG','TJRS','TJPR','TJSC','TJBA','TJPE','TJCE','TJGO',
+    'TJPA','TJMA','TJMT','TJMS','TJES','TJAL','TJRN','TJPB','TJSE','TJPI',
+    'TJRO','TJAC','TJAM','TJAP','TJRR','TJTO','TJDFT',
+    'TRF1','TRF2','TRF3','TRF4','TRF5','TRF6',
+    'TRT1','TRT2','TRT3','TRT4','TRT5','TRT6','TRT7','TRT8','TRT9',
+    'TRT10','TRT11','TRT12','TRT13','TRT14','TRT15','TRT16','TRT17','TRT18',
+    'TRT19','TRT20','TRT21','TRT22','TRT23','TRT24',
+    'STF','STJ','TST',
+  ];
+  const LEGAL_SEARCH_NAME = 'TM SEGURANÇA';
+  const LEGAL_EMAIL_TO = 'thiago@grupotmseg.com.br';
+
+  async function runDailyLegalSearch(): Promise<{ total: number; processos: any[] }> {
+    if (!DATAJUD_API_KEY) {
+      console.error('[Jurídico Diário] DATAJUD_API_KEY não configurada');
+      return { total: 0, processos: [] };
+    }
+
+    const now = new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' });
+    console.log(`[Jurídico Diário] Iniciando busca automática — ${now}`);
+
+    const allProcessos: any[] = [];
+    const seen = new Set<string>();
+    let errors = 0;
+
+    for (const tribunal of LEGAL_REPORT_TRIBUNAIS) {
+      const endpoint = DATAJUD_TRIBUNAIS[tribunal];
+      if (!endpoint) continue;
+
+      try {
+        const url = `https://api-publica.datajud.cnj.jus.br/${endpoint}/_search`;
+        const body = { query: { multi_match: { query: LEGAL_SEARCH_NAME, fields: ['*'] } }, size: 10 };
+
+        const resp = await fetch(url, {
+          method: 'POST',
+          headers: { 'Authorization': `APIKey ${DATAJUD_API_KEY}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        });
+
+        if (!resp.ok) {
+          errors++;
+          continue;
+        }
+
+        const data = await resp.json();
+        const hits = data.hits?.hits || [];
+        for (const h of hits) {
+          const s = h._source || {};
+          const numProc = s.numeroProcesso || '';
+          if (seen.has(numProc)) continue;
+          seen.add(numProc);
+
+          allProcessos.push({
+            id: h._id,
+            numeroProcesso: numProc,
+            classe: s.classe?.nome || s.classeProcessual || '',
+            assuntos: (s.assuntos || []).map((a: any) => a.nome || a).filter(Boolean),
+            tribunal: s.tribunal || tribunal,
+            grau: s.grau || '',
+            orgaoJulgador: s.orgaoJulgador?.nome || '',
+            dataAjuizamento: s.dataAjuizamento || '',
+            dataUltimaAtualizacao: s.dataHoraUltimaAtualizacao || '',
+            movimentos: (s.movimentos || []).slice(0, 20).map((m: any) => ({
+              nome: m.nome || m.complementosTabelados?.map((c: any) => c.nome || c.descricao).join(', ') || '',
+              data: m.dataHora || '',
+              complemento: m.complementosTabelados?.map((c: any) => `${c.nome || ''}: ${c.descricao || ''}`).join(' | ') || '',
+            })),
+          });
+        }
+
+        await new Promise(r => setTimeout(r, 300));
+      } catch (err: any) {
+        errors++;
+      }
+    }
+
+    console.log(`[Jurídico Diário] Busca concluída: ${allProcessos.length} processos encontrados, ${errors} erros em tribunais`);
+    return { total: allProcessos.length, processos: allProcessos };
+  }
+
+  async function executeDailyLegalReport() {
+    try {
+      const { processos } = await runDailyLegalSearch();
+      const searchDate = new Date().toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' });
+      const sent = await sendLegalReportEmail(LEGAL_EMAIL_TO, processos, searchDate);
+      if (sent) {
+        console.log(`[Jurídico Diário] Relatório enviado com sucesso para ${LEGAL_EMAIL_TO}`);
+      } else {
+        console.error(`[Jurídico Diário] Falha ao enviar relatório para ${LEGAL_EMAIL_TO}`);
+      }
+    } catch (err: any) {
+      console.error(`[Jurídico Diário] Erro fatal:`, err.message);
+    }
+  }
+
+  function scheduleDailyLegalReport() {
+    const checkInterval = () => {
+      const now = new Date();
+      const brasiliaTime = new Date(now.toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' }));
+      const hour = brasiliaTime.getHours();
+      const minute = brasiliaTime.getMinutes();
+
+      if (hour === 7 && minute === 0) {
+        executeDailyLegalReport();
+      }
+    };
+
+    setInterval(checkInterval, 60 * 1000);
+    console.log('[Jurídico Diário] Agendamento ativo — relatório será enviado todos os dias às 07:00 (Brasília) para ' + LEGAL_EMAIL_TO);
+  }
+
+  scheduleDailyLegalReport();
+
+  app.post("/api/datajud/relatorio-diario", requireAuth, requireRole('administrador', 'diretoria'), async (_req: Request, res: Response) => {
+    try {
+      const { processos, total } = await runDailyLegalSearch();
+      const searchDate = new Date().toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' });
+      const sent = await sendLegalReportEmail(LEGAL_EMAIL_TO, processos, searchDate);
+      res.json({ success: sent, total, emailTo: LEGAL_EMAIL_TO, date: searchDate });
+    } catch (err: any) {
+      console.error('[Jurídico Diário] Erro manual:', err.message);
       res.status(500).json({ error: err.message });
     }
   });
