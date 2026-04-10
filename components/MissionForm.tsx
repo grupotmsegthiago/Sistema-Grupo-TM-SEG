@@ -327,8 +327,28 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
   useEffect(() => {
     if (formData.client) {
         const cFilter = clientFuzzyFilter(formData.client);
-        supabase.from('client_routes').select('*').or(cFilter).order('name').then(({ data }) => { if (data) setClientRoutes(data as any); });
-        supabase.from('client_price_tables').select('*').or(cFilter).order('operation_type').then(({ data }) => { if (data) setClientPriceTables(data as any); });
+        const firstWord = (formData.client || '').trim().split(/\s+/)[0];
+
+        supabase.from('client_routes').select('*').or(cFilter).order('name').then(async ({ data, error }) => {
+          if (error) console.error('[MissionForm] Erro client_routes:', error.message);
+          if (data && data.length > 0) { setClientRoutes(data as any); return; }
+          if (firstWord) {
+            const { data: fb } = await supabase.from('client_routes').select('*').ilike('client', `%${firstWord}%`).order('name');
+            if (fb && fb.length > 0) setClientRoutes(fb as any);
+            else setClientRoutes(data || []);
+          }
+        });
+
+        supabase.from('client_price_tables').select('*').or(cFilter).order('operation_type').then(async ({ data, error }) => {
+          if (error) console.error('[MissionForm] Erro client_price_tables:', error.message);
+          if (data && data.length > 0) { setClientPriceTables(data as any); return; }
+          if (firstWord) {
+            const { data: fb } = await supabase.from('client_price_tables').select('*').ilike('client', `%${firstWord}%`).order('operation_type');
+            if (fb && fb.length > 0) { console.log(`[MissionForm] price_tables fallback: ${fb.length} tabelas via ilike %${firstWord}%`); setClientPriceTables(fb as any); }
+            else setClientPriceTables(data || []);
+          }
+        });
+
         fetchClientVehicles(formData.client);
     } else { setClientRoutes([]); setClientPriceTables([]); setDbClientVehicles([]); }
   }, [formData.client]);
