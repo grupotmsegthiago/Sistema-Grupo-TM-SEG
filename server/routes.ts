@@ -952,6 +952,24 @@ export async function registerRoutes(
     console.log('[Migration] valor_zero_motivo:', e.message || 'ok');
   }
 
+  try {
+    await supabaseAdmin.rpc('exec_sql', { sql: `
+      CREATE TABLE IF NOT EXISTS monitored_processes (
+        id SERIAL PRIMARY KEY,
+        numero_processo TEXT NOT NULL UNIQUE,
+        tribunal TEXT NOT NULL,
+        apelido TEXT DEFAULT '',
+        ativo BOOLEAN DEFAULT true,
+        created_at TIMESTAMPTZ DEFAULT NOW(),
+        last_checked_at TIMESTAMPTZ,
+        last_movimentacao TEXT DEFAULT ''
+      );
+    `});
+    console.log('[Migration] Tabela monitored_processes verificada/criada.');
+  } catch (e: any) {
+    console.log('[Migration] monitored_processes:', e.message || 'ok');
+  }
+
   app.post("/api/supabase/init-invoices", async (_req: Request, res: Response) => {
     try {
       const { data, error } = await supabaseAdmin.from('financial_invoices').select('id', { count: 'exact', head: true });
@@ -3943,6 +3961,40 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
     res.json({ tribunais: Object.keys(DATAJUD_TRIBUNAIS) });
   });
 
+  app.get("/api/monitored-processes", requireAuth, async (_req: Request, res: Response) => {
+    try {
+      const { data, error } = await supabase.from('monitored_processes').select('*').order('created_at', { ascending: false });
+      if (error) throw error;
+      res.json(data || []);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post("/api/monitored-processes", requireAuth, requireRole('administrador', 'diretoria', 'avançado', 'avancado'), async (req: Request, res: Response) => {
+    try {
+      const { numero_processo, tribunal, apelido } = req.body;
+      if (!numero_processo || !tribunal) return res.status(400).json({ error: 'Número do processo e tribunal são obrigatórios.' });
+      const { data, error } = await supabase.from('monitored_processes').insert({ numero_processo, tribunal, apelido: apelido || '' }).select().single();
+      if (error) throw error;
+      console.log(`[Jurídico] Processo monitorado adicionado: ${numero_processo} (${tribunal})`);
+      res.json(data);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.delete("/api/monitored-processes/:id", requireAuth, requireRole('administrador', 'diretoria'), async (req: Request, res: Response) => {
+    try {
+      const { id } = req.params;
+      const { error } = await supabase.from('monitored_processes').delete().eq('id', id);
+      if (error) throw error;
+      res.json({ success: true });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   app.post("/api/datajud/consulta", requireAuth, async (req: Request, res: Response) => {
     try {
       const { tribunal, numeroProcesso, query: searchQuery } = req.body;
@@ -3963,9 +4015,10 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
       if (numeroProcesso) {
         body = { query: { match: { numeroProcesso: numeroProcesso.replace(/[.\-\/]/g, '').replace(/(\d{7})(\d{2})(\d{4})(\d)(\d{2})(\d{4})/, '$1-$2.$3.$4.$5.$6') } }, size: 10 };
       } else {
-        body = { query: { multi_match: { query: searchQuery, fields: ['*'] } }, size: 10 };
+        body = { query: { multi_match: { query: searchQuery, fields: ['*'], operator: 'and' } }, size: 10 };
       }
 
+      console.log(`[DataJud] Consultando ${tribunal}: ${JSON.stringify(body.query).slice(0, 200)}`);
       const resp = await fetch(url, {
         method: 'POST',
         headers: { 'Authorization': `APIKey ${DATAJUD_API_KEY}`, 'Content-Type': 'application/json' },
@@ -3974,12 +4027,20 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
 
       if (!resp.ok) {
         const errText = await resp.text();
-        console.error('[DataJud] Erro:', resp.status, errText);
+        console.error('[DataJud] Erro:', resp.status, errText.slice(0, 500));
         return res.status(resp.status).json({ error: `Erro na API do DataJud: ${resp.status}`, details: errText });
       }
 
       const data = await resp.json();
       const hits = data.hits?.hits || [];
+      console.log(`[DataJud] ${tribunal}: ${hits.length} resultados (total: ${data.hits?.total?.value || 0})`);
+
+      if (hits.length > 0) {
+        const firstSource = hits[0]._source || {};
+        const fieldKeys = Object.keys(firstSource);
+        console.log(`[DataJud] Campos disponíveis: ${fieldKeys.join(', ')}`);
+      }
+
       const results = hits.map((h: any) => {
         const s = h._source || {};
         return {
@@ -4010,17 +4071,6 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
     }
   });
 
-  const LEGAL_REPORT_TRIBUNAIS = [
-    'TJSP','TJRJ','TJMG','TJRS','TJPR','TJSC','TJBA','TJPE','TJCE','TJGO',
-    'TJPA','TJMA','TJMT','TJMS','TJES','TJAL','TJRN','TJPB','TJSE','TJPI',
-    'TJRO','TJAC','TJAM','TJAP','TJRR','TJTO','TJDFT',
-    'TRF1','TRF2','TRF3','TRF4','TRF5','TRF6',
-    'TRT1','TRT2','TRT3','TRT4','TRT5','TRT6','TRT7','TRT8','TRT9',
-    'TRT10','TRT11','TRT12','TRT13','TRT14','TRT15','TRT16','TRT17','TRT18',
-    'TRT19','TRT20','TRT21','TRT22','TRT23','TRT24',
-    'STF','STJ','TST',
-  ];
-  const LEGAL_SEARCH_NAME = 'TM SEGURANÇA';
   const LEGAL_EMAIL_TO = 'thiago@grupotmseg.com.br';
 
   async function runDailyLegalSearch(): Promise<{ total: number; processos: any[] }> {
@@ -4029,20 +4079,26 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
       return { total: 0, processos: [] };
     }
 
+    const { data: monitored } = await supabase.from('monitored_processes').select('*').eq('ativo', true);
+    if (!monitored || monitored.length === 0) {
+      console.log('[Jurídico Diário] Nenhum processo monitorado cadastrado.');
+      return { total: 0, processos: [] };
+    }
+
     const now = new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' });
-    console.log(`[Jurídico Diário] Iniciando busca automática — ${now}`);
+    console.log(`[Jurídico Diário] Consultando ${monitored.length} processos monitorados — ${now}`);
 
     const allProcessos: any[] = [];
-    const seen = new Set<string>();
     let errors = 0;
 
-    for (const tribunal of LEGAL_REPORT_TRIBUNAIS) {
-      const endpoint = DATAJUD_TRIBUNAIS[tribunal];
-      if (!endpoint) continue;
+    for (const proc of monitored) {
+      const endpoint = DATAJUD_TRIBUNAIS[proc.tribunal];
+      if (!endpoint) { errors++; continue; }
 
       try {
         const url = `https://api-publica.datajud.cnj.jus.br/${endpoint}/_search`;
-        const body = { query: { multi_match: { query: LEGAL_SEARCH_NAME, fields: ['*'] } }, size: 10 };
+        const numFormatado = proc.numero_processo.replace(/[.\-\/]/g, '').replace(/(\d{7})(\d{2})(\d{4})(\d)(\d{2})(\d{4})/, '$1-$2.$3.$4.$5.$6');
+        const body = { query: { match: { numeroProcesso: numFormatado } }, size: 5 };
 
         const resp = await fetch(url, {
           method: 'POST',
@@ -4050,44 +4106,48 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
           body: JSON.stringify(body),
         });
 
-        if (!resp.ok) {
-          errors++;
-          continue;
-        }
+        if (!resp.ok) { errors++; continue; }
 
         const data = await resp.json();
         const hits = data.hits?.hits || [];
+
         for (const h of hits) {
           const s = h._source || {};
-          const numProc = s.numeroProcesso || '';
-          if (seen.has(numProc)) continue;
-          seen.add(numProc);
-
-          allProcessos.push({
+          const resultado = {
             id: h._id,
-            numeroProcesso: numProc,
+            numeroProcesso: s.numeroProcesso || proc.numero_processo,
             classe: s.classe?.nome || s.classeProcessual || '',
             assuntos: (s.assuntos || []).map((a: any) => a.nome || a).filter(Boolean),
-            tribunal: s.tribunal || tribunal,
+            tribunal: s.tribunal || proc.tribunal,
             grau: s.grau || '',
             orgaoJulgador: s.orgaoJulgador?.nome || '',
             dataAjuizamento: s.dataAjuizamento || '',
             dataUltimaAtualizacao: s.dataHoraUltimaAtualizacao || '',
+            apelido: proc.apelido || '',
             movimentos: (s.movimentos || []).slice(0, 20).map((m: any) => ({
               nome: m.nome || m.complementosTabelados?.map((c: any) => c.nome || c.descricao).join(', ') || '',
               data: m.dataHora || '',
               complemento: m.complementosTabelados?.map((c: any) => `${c.nome || ''}: ${c.descricao || ''}`).join(' | ') || '',
             })),
-          });
+          };
+          allProcessos.push(resultado);
+
+          const lastMov = (s.movimentos || [])[0];
+          const lastMovStr = lastMov ? `${lastMov.dataHora || ''} - ${lastMov.nome || ''}` : '';
+          await supabase.from('monitored_processes').update({
+            last_checked_at: new Date().toISOString(),
+            last_movimentacao: lastMovStr,
+          }).eq('id', proc.id);
         }
 
         await new Promise(r => setTimeout(r, 300));
       } catch (err: any) {
         errors++;
+        console.error(`[Jurídico Diário] Erro ao consultar ${proc.numero_processo}:`, err.message);
       }
     }
 
-    console.log(`[Jurídico Diário] Busca concluída: ${allProcessos.length} processos encontrados, ${errors} erros em tribunais`);
+    console.log(`[Jurídico Diário] Busca concluída: ${allProcessos.length} processos encontrados, ${errors} erros`);
     return { total: allProcessos.length, processos: allProcessos };
   }
 

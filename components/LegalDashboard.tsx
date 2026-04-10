@@ -1,6 +1,6 @@
 
-import { useState, useCallback } from 'react';
-import { Scale, Search, ChevronDown, ChevronRight, Clock, Building2, FileText, AlertTriangle, Loader2, BookOpen, Gavel, Calendar, Hash, Eye, ArrowLeft, Download } from 'lucide-react';
+import { useState, useCallback, useEffect } from 'react';
+import { Scale, Search, ChevronDown, ChevronRight, Clock, Building2, FileText, AlertTriangle, Loader2, BookOpen, Gavel, Calendar, Hash, Eye, ArrowLeft, Download, Plus, Trash2, Bell, CheckCircle2 } from 'lucide-react';
 import { authFetch } from '../lib/authFetch';
 
 interface Movimento {
@@ -25,6 +25,17 @@ interface Processo {
   movimentos: Movimento[];
 }
 
+interface MonitoredProcess {
+  id: number;
+  numero_processo: string;
+  tribunal: string;
+  apelido: string;
+  ativo: boolean;
+  created_at: string;
+  last_checked_at: string | null;
+  last_movimentacao: string;
+}
+
 const TRIBUNAIS_AGRUPADOS = {
   'Tribunais Superiores': ['STF', 'STJ', 'TST'],
   'Justiça Estadual (TJ)': [
@@ -39,6 +50,8 @@ const TRIBUNAIS_AGRUPADOS = {
     'TRT20', 'TRT21', 'TRT22', 'TRT23', 'TRT24'
   ],
 };
+
+const ALL_TRIBUNAIS = Object.values(TRIBUNAIS_AGRUPADOS).flat();
 
 const formatDate = (d: string) => {
   if (!d) return '—';
@@ -56,29 +69,11 @@ const formatProcessoNumber = (n: string) => {
   return n;
 };
 
-const CNPJ_EMPRESA = '28804378000167';
-const CNPJ_FORMATADO = '28.804.378/0001-67';
-const NOME_EMPRESA = 'TM SEGURANÇA';
-
-const CNPJ_TO_NOME: Record<string, string> = {
-  '28804378000167': 'TM SEGURANÇA',
-};
-
-const TRIBUNAIS_CNPJ_BUSCA = [
-  'TRT1', 'TRT2', 'TRT3', 'TRT4', 'TRT5', 'TRT6', 'TRT7', 'TRT8', 'TRT9', 'TRT10',
-  'TRT11', 'TRT12', 'TRT13', 'TRT14', 'TRT15', 'TRT16', 'TRT17', 'TRT18',
-  'TJSP', 'TJRJ', 'TJMG', 'TJPR', 'TJSC', 'TJRS', 'TJBA', 'TJGO', 'TJES', 'TJDFT',
-  'TJPE', 'TJCE', 'TJPA', 'TJMA', 'TJMT', 'TJMS',
-  'TRF1', 'TRF2', 'TRF3', 'TRF4', 'TRF5', 'TRF6',
-  'STJ', 'TST',
-];
-
 const LegalDashboard = () => {
   const [tribunal, setTribunal] = useState('TJSP');
   const [numeroProcesso, setNumeroProcesso] = useState('');
-  const [searchType, setSearchType] = useState<'numero' | 'texto' | 'cnpj'>('numero');
+  const [searchType, setSearchType] = useState<'numero' | 'texto'>('numero');
   const [searchText, setSearchText] = useState('');
-  const [cnpjInput, setCnpjInput] = useState(CNPJ_EMPRESA);
   const [loading, setLoading] = useState(false);
   const [results, setResults] = useState<Processo[]>([]);
   const [error, setError] = useState('');
@@ -88,21 +83,56 @@ const LegalDashboard = () => {
   const [expandedGroup, setExpandedGroup] = useState('Justiça Estadual (TJ)');
   const [sendingReport, setSendingReport] = useState(false);
   const [reportStatus, setReportStatus] = useState<{ success: boolean; message: string } | null>(null);
-  const [multiTribunalProgress, setMultiTribunalProgress] = useState('');
 
-  const searchSingleTribunal = async (trib: string, query: string, isNumero: boolean) => {
-    const body: any = { tribunal: trib };
-    if (isNumero) body.numeroProcesso = query;
-    else body.query = query;
+  const [monitoredProcesses, setMonitoredProcesses] = useState<MonitoredProcess[]>([]);
+  const [loadingMonitored, setLoadingMonitored] = useState(false);
+  const [showAddForm, setShowAddForm] = useState(false);
+  const [newProcNumero, setNewProcNumero] = useState('');
+  const [newProcTribunal, setNewProcTribunal] = useState('TRT2');
+  const [newProcApelido, setNewProcApelido] = useState('');
+  const [addingProc, setAddingProc] = useState(false);
 
-    const resp = await authFetch('/api/datajud/consulta', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-    });
-    const data = await resp.json();
-    if (!resp.ok) return [];
-    return (data.results || []).map((r: any) => ({ ...r, tribunal: trib }));
+  const loadMonitoredProcesses = useCallback(async () => {
+    setLoadingMonitored(true);
+    try {
+      const resp = await authFetch('/api/monitored-processes');
+      const data = await resp.json();
+      if (Array.isArray(data)) setMonitoredProcesses(data);
+    } catch { }
+    setLoadingMonitored(false);
+  }, []);
+
+  useEffect(() => { loadMonitoredProcesses(); }, [loadMonitoredProcesses]);
+
+  const handleAddMonitored = async () => {
+    if (!newProcNumero.trim() || !newProcTribunal) return;
+    setAddingProc(true);
+    try {
+      const resp = await authFetch('/api/monitored-processes', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ numero_processo: newProcNumero.trim(), tribunal: newProcTribunal, apelido: newProcApelido.trim() }),
+      });
+      const data = await resp.json();
+      if (resp.ok) {
+        setMonitoredProcesses(prev => [data, ...prev]);
+        setNewProcNumero('');
+        setNewProcApelido('');
+        setShowAddForm(false);
+      } else {
+        setError(data.error || 'Erro ao adicionar processo.');
+      }
+    } catch (err: any) {
+      setError(err.message);
+    }
+    setAddingProc(false);
+  };
+
+  const handleDeleteMonitored = async (id: number) => {
+    try {
+      await authFetch(`/api/monitored-processes/${id}`, { method: 'DELETE' });
+      setMonitoredProcesses(prev => prev.filter(p => p.id !== id));
+    } catch { }
   };
 
   const handleSendReport = useCallback(async () => {
@@ -113,6 +143,7 @@ const LegalDashboard = () => {
       const data = await resp.json();
       if (data.success) {
         setReportStatus({ success: true, message: `Relatório enviado para ${data.emailTo} com ${data.total} processo(s).` });
+        loadMonitoredProcesses();
       } else {
         setReportStatus({ success: false, message: 'Falha ao enviar relatório. Tente novamente.' });
       }
@@ -121,62 +152,9 @@ const LegalDashboard = () => {
     } finally {
       setSendingReport(false);
     }
-  }, []);
+  }, [loadMonitoredProcesses]);
 
   const handleSearch = useCallback(async () => {
-    if (searchType === 'cnpj') {
-      const cnpj = cnpjInput.replace(/\D/g, '').trim();
-      if (!cnpj || cnpj.length < 11) {
-        setError('Informe um CNPJ/CPF válido.');
-        return;
-      }
-
-      const nomeEmpresa = CNPJ_TO_NOME[cnpj] || '';
-      if (!nomeEmpresa) {
-        setError('CNPJ não cadastrado. Para buscar por CNPJ desconhecido, use a Busca Textual com o nome da empresa.');
-        return;
-      }
-
-      setLoading(true);
-      setError('');
-      setResults([]);
-      setSelectedProcesso(null);
-      setTotalResults(0);
-
-      try {
-        const allResults: Processo[] = [];
-        const dedup = new Set<string>();
-        for (let i = 0; i < TRIBUNAIS_CNPJ_BUSCA.length; i++) {
-          const trib = TRIBUNAIS_CNPJ_BUSCA[i];
-          setMultiTribunalProgress(`Consultando ${trib} (${i + 1}/${TRIBUNAIS_CNPJ_BUSCA.length})...`);
-          try {
-            const found = await searchSingleTribunal(trib, nomeEmpresa, false);
-            for (const p of found) {
-              const key = p.numeroProcesso || p.id;
-              if (!dedup.has(key)) {
-                dedup.add(key);
-                allResults.push(p);
-              }
-            }
-          } catch { }
-        }
-        setMultiTribunalProgress('');
-        setResults(allResults);
-        setTotalResults(allResults.length);
-        if (allResults.length === 0) {
-          setError(`Nenhum processo encontrado para "${nomeEmpresa}" (CNPJ ${cnpj}) nos ${TRIBUNAIS_CNPJ_BUSCA.length} tribunais consultados.`);
-        }
-        setSearchHistory(prev => [{ tribunal: 'MULTI', query: `${nomeEmpresa} (${cnpj})`, date: new Date().toLocaleTimeString('pt-BR', { timeZone: 'America/Sao_Paulo' }), count: allResults.length }, ...prev].slice(0, 10));
-      } catch (err: any) {
-        setError(err.message || 'Falha na comunicação com o servidor.');
-        setMultiTribunalProgress('');
-      } finally {
-        setLoading(false);
-        setMultiTribunalProgress('');
-      }
-      return;
-    }
-
     const query = searchType === 'numero' ? numeroProcesso.trim() : searchText.trim();
     if (!query) {
       setError('Informe o número do processo ou termo de busca.');
@@ -221,7 +199,7 @@ const LegalDashboard = () => {
     } finally {
       setLoading(false);
     }
-  }, [tribunal, numeroProcesso, searchText, searchType, cnpjInput]);
+  }, [tribunal, numeroProcesso, searchText, searchType]);
 
   if (selectedProcesso) {
     return (
@@ -301,14 +279,14 @@ const LegalDashboard = () => {
 
   return (
     <div className="p-4 md:p-6 space-y-6 max-w-6xl mx-auto">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between flex-wrap gap-3">
         <div className="flex items-center gap-3">
           <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-gray-900 to-red-900 flex items-center justify-center shadow-lg">
             <Scale size={24} className="text-white" />
           </div>
           <div>
             <h1 className="text-2xl font-bold text-gray-900 tracking-tight">Jurídico</h1>
-            <p className="text-sm text-gray-500">Consulta de Processos — DataJud / CNJ</p>
+            <p className="text-sm text-gray-500">Consulta e Monitoramento — DataJud / CNJ</p>
           </div>
         </div>
         <div className="flex flex-col items-end gap-1">
@@ -333,37 +311,172 @@ const LegalDashboard = () => {
       </div>
 
       <div className="bg-white rounded-2xl border shadow-sm p-5 space-y-4">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <Bell size={18} className="text-red-500" />
+            <h2 className="font-semibold text-gray-800">Processos Monitorados</h2>
+            <span className="text-xs text-gray-400 bg-gray-100 px-2 py-0.5 rounded-full">{monitoredProcesses.length}</span>
+          </div>
+          <button
+            type="button"
+            onClick={() => setShowAddForm(!showAddForm)}
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-red-50 text-red-700 border border-red-200 rounded-lg text-xs font-semibold hover:bg-red-100 transition-colors"
+            data-testid="button-add-monitored"
+          >
+            <Plus size={14} /> Adicionar Processo
+          </button>
+        </div>
+
+        <p className="text-xs text-gray-500">
+          Cadastre os números dos processos da empresa. O sistema consulta cada um diariamente no DataJud e envia relatório por e-mail com as movimentações.
+        </p>
+
+        {showAddForm && (
+          <div className="bg-gray-50 rounded-xl border p-4 space-y-3">
+            <div className="grid grid-cols-1 md:grid-cols-12 gap-3">
+              <div className="md:col-span-3">
+                <label className="text-xs font-semibold text-gray-500 uppercase mb-1 block">Tribunal</label>
+                <select
+                  value={newProcTribunal}
+                  onChange={e => setNewProcTribunal(e.target.value)}
+                  className="w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-red-500 focus:border-red-500 bg-white"
+                  data-testid="select-new-tribunal"
+                >
+                  {Object.entries(TRIBUNAIS_AGRUPADOS).map(([grupo, tribunais]) => (
+                    <optgroup key={grupo} label={grupo}>
+                      {tribunais.map(t => <option key={t} value={t}>{t}</option>)}
+                    </optgroup>
+                  ))}
+                </select>
+              </div>
+              <div className="md:col-span-4">
+                <label className="text-xs font-semibold text-gray-500 uppercase mb-1 block">Nº do Processo</label>
+                <input
+                  type="text"
+                  value={newProcNumero}
+                  onChange={e => setNewProcNumero(e.target.value)}
+                  placeholder="0000000-00.0000.0.00.0000"
+                  className="w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-red-500 focus:border-red-500"
+                  data-testid="input-new-proc-numero"
+                />
+              </div>
+              <div className="md:col-span-3">
+                <label className="text-xs font-semibold text-gray-500 uppercase mb-1 block">Apelido (opcional)</label>
+                <input
+                  type="text"
+                  value={newProcApelido}
+                  onChange={e => setNewProcApelido(e.target.value)}
+                  placeholder="Ex: Trabalhista João"
+                  className="w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-red-500 focus:border-red-500"
+                  data-testid="input-new-proc-apelido"
+                />
+              </div>
+              <div className="md:col-span-2 flex items-end">
+                <button
+                  type="button"
+                  onClick={handleAddMonitored}
+                  disabled={addingProc || !newProcNumero.trim()}
+                  className="w-full bg-red-600 text-white py-2 px-3 rounded-lg font-semibold text-sm hover:bg-red-700 transition-colors disabled:opacity-50 flex items-center justify-center gap-1.5"
+                  data-testid="button-confirm-add"
+                >
+                  {addingProc ? <Loader2 size={14} className="animate-spin" /> : <Plus size={14} />}
+                  Salvar
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {loadingMonitored ? (
+          <div className="flex items-center justify-center py-6 text-gray-400">
+            <Loader2 size={20} className="animate-spin" />
+          </div>
+        ) : monitoredProcesses.length === 0 ? (
+          <div className="text-center py-6">
+            <Bell size={32} className="text-gray-200 mx-auto mb-2" />
+            <p className="text-sm text-gray-400">Nenhum processo monitorado. Clique em "Adicionar Processo" para começar.</p>
+          </div>
+        ) : (
+          <div className="space-y-2">
+            {monitoredProcesses.map(proc => (
+              <div key={proc.id} className="flex items-center justify-between bg-gray-50 rounded-xl border p-3 hover:bg-gray-100 transition-colors group" data-testid={`monitored-proc-${proc.id}`}>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 mb-0.5">
+                    <span className="px-2 py-0.5 bg-gray-200 text-gray-600 rounded text-[10px] font-bold">{proc.tribunal}</span>
+                    <span className="font-bold text-gray-900 text-sm tracking-wide">{formatProcessoNumber(proc.numero_processo)}</span>
+                    {proc.apelido && <span className="text-xs text-gray-500 italic">— {proc.apelido}</span>}
+                  </div>
+                  <div className="flex items-center gap-3 text-[11px] text-gray-400">
+                    {proc.last_checked_at ? (
+                      <span className="flex items-center gap-1"><CheckCircle2 size={10} className="text-green-500" /> Verificado: {formatDate(proc.last_checked_at)}</span>
+                    ) : (
+                      <span className="flex items-center gap-1"><Clock size={10} /> Aguardando primeira verificação</span>
+                    )}
+                    {proc.last_movimentacao && (
+                      <span className="truncate max-w-xs">Última mov.: {proc.last_movimentacao.slice(0, 60)}</span>
+                    )}
+                  </div>
+                </div>
+                <div className="flex items-center gap-2 shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setNumeroProcesso(proc.numero_processo);
+                      setTribunal(proc.tribunal);
+                      setSearchType('numero');
+                      setTimeout(() => handleSearch(), 100);
+                    }}
+                    className="p-1.5 rounded-lg text-gray-400 hover:bg-blue-50 hover:text-blue-600 transition-colors"
+                    title="Consultar agora"
+                    data-testid={`button-check-proc-${proc.id}`}
+                  >
+                    <Eye size={16} />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleDeleteMonitored(proc.id)}
+                    className="p-1.5 rounded-lg text-gray-400 hover:bg-red-50 hover:text-red-600 transition-colors opacity-0 group-hover:opacity-100"
+                    title="Remover monitoramento"
+                    data-testid={`button-delete-proc-${proc.id}`}
+                  >
+                    <Trash2 size={16} />
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <div className="bg-white rounded-2xl border shadow-sm p-5 space-y-4">
         <div className="flex items-center gap-3 mb-1">
           <Search size={18} className="text-gray-400" />
           <h2 className="font-semibold text-gray-800">Consultar Processo</h2>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-12 gap-3">
-          {searchType !== 'cnpj' && (
-            <div className="md:col-span-3">
-              <label className="text-xs font-semibold text-gray-500 uppercase mb-1 block">Tribunal</label>
-              <select value={tribunal} onChange={e => setTribunal(e.target.value)} className="w-full border rounded-lg px-3 py-2.5 text-sm focus:ring-2 focus:ring-red-500 focus:border-red-500 bg-white" data-testid="select-tribunal">
-                {Object.entries(TRIBUNAIS_AGRUPADOS).map(([grupo, tribunais]) => (
-                  <optgroup key={grupo} label={grupo}>
-                    {tribunais.map(t => <option key={t} value={t}>{t}</option>)}
-                  </optgroup>
-                ))}
-              </select>
-            </div>
-          )}
+          <div className="md:col-span-3">
+            <label className="text-xs font-semibold text-gray-500 uppercase mb-1 block">Tribunal</label>
+            <select value={tribunal} onChange={e => setTribunal(e.target.value)} className="w-full border rounded-lg px-3 py-2.5 text-sm focus:ring-2 focus:ring-red-500 focus:border-red-500 bg-white" data-testid="select-tribunal">
+              {Object.entries(TRIBUNAIS_AGRUPADOS).map(([grupo, tribunais]) => (
+                <optgroup key={grupo} label={grupo}>
+                  {tribunais.map(t => <option key={t} value={t}>{t}</option>)}
+                </optgroup>
+              ))}
+            </select>
+          </div>
 
           <div className="md:col-span-2">
             <label className="text-xs font-semibold text-gray-500 uppercase mb-1 block">Tipo de Busca</label>
             <select value={searchType} onChange={e => setSearchType(e.target.value as any)} className="w-full border rounded-lg px-3 py-2.5 text-sm focus:ring-2 focus:ring-red-500 focus:border-red-500 bg-white" data-testid="select-search-type">
               <option value="numero">Nº do Processo</option>
               <option value="texto">Busca Textual</option>
-              <option value="cnpj">CNPJ / CPF</option>
             </select>
           </div>
 
-          <div className={searchType === 'cnpj' ? 'md:col-span-8' : 'md:col-span-5'}>
+          <div className="md:col-span-5">
             <label className="text-xs font-semibold text-gray-500 uppercase mb-1 block">
-              {searchType === 'numero' ? 'Número do Processo' : searchType === 'cnpj' ? 'CNPJ / CPF' : 'Termo de Busca'}
+              {searchType === 'numero' ? 'Número do Processo' : 'Termo de Busca'}
             </label>
             {searchType === 'numero' ? (
               <input
@@ -375,40 +488,12 @@ const LegalDashboard = () => {
                 onKeyDown={e => e.key === 'Enter' && handleSearch()}
                 data-testid="input-numero-processo"
               />
-            ) : searchType === 'cnpj' ? (
-              <div className="space-y-1.5">
-                <div className="flex gap-2">
-                  <input
-                    type="text"
-                    value={cnpjInput}
-                    onChange={e => setCnpjInput(e.target.value)}
-                    placeholder="00.000.000/0000-00"
-                    className="flex-1 border rounded-lg px-3 py-2.5 text-sm focus:ring-2 focus:ring-red-500 focus:border-red-500"
-                    onKeyDown={e => e.key === 'Enter' && handleSearch()}
-                    data-testid="input-cnpj"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setCnpjInput(CNPJ_EMPRESA)}
-                    className="px-3 py-2 bg-red-50 text-red-700 border border-red-200 rounded-lg text-xs font-semibold hover:bg-red-100 transition-colors whitespace-nowrap"
-                    data-testid="button-cnpj-tmseg"
-                    title={`Usar CNPJ Grupo TMSEG: ${CNPJ_FORMATADO}`}
-                  >
-                    TMSEG
-                  </button>
-                </div>
-                {CNPJ_TO_NOME[cnpjInput.replace(/\D/g, '')] && (
-                  <p className="text-xs text-green-700 bg-green-50 border border-green-200 rounded px-2 py-1 flex items-center gap-1">
-                    <Building2 size={12} /> Buscará por: <strong>{CNPJ_TO_NOME[cnpjInput.replace(/\D/g, '')]}</strong> em {TRIBUNAIS_CNPJ_BUSCA.length} tribunais
-                  </p>
-                )}
-              </div>
             ) : (
               <input
                 type="text"
                 value={searchText}
                 onChange={e => setSearchText(e.target.value)}
-                placeholder="Ex: GRUPO TMSEG, furto, indenização..."
+                placeholder="Ex: furto, indenização..."
                 className="w-full border rounded-lg px-3 py-2.5 text-sm focus:ring-2 focus:ring-red-500 focus:border-red-500"
                 onKeyDown={e => e.key === 'Enter' && handleSearch()}
                 data-testid="input-search-text"
@@ -428,16 +513,6 @@ const LegalDashboard = () => {
             </button>
           </div>
         </div>
-
-        {multiTribunalProgress && (
-          <div className="flex items-center gap-3 p-3 bg-blue-50 border border-blue-200 rounded-lg text-blue-800 text-sm">
-            <Loader2 size={16} className="animate-spin shrink-0" />
-            <span>{multiTribunalProgress}</span>
-            <div className="flex-1 bg-blue-200 rounded-full h-1.5 overflow-hidden">
-              <div className="bg-blue-600 h-full rounded-full transition-all duration-500" style={{ width: `${(TRIBUNAIS_CNPJ_BUSCA.indexOf(multiTribunalProgress.match(/\w+/)?.[1] || '') + 1) / TRIBUNAIS_CNPJ_BUSCA.length * 100}%` }} />
-            </div>
-          </div>
-        )}
 
         {error && (
           <div className="flex items-center gap-2 p-3 bg-amber-50 border border-amber-200 rounded-lg text-amber-800 text-sm">
