@@ -912,7 +912,8 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
             let saveResult: any = null;
             let saveError: any = null;
             for (let attempt = 1; attempt <= 3; attempt++) {
-                const { error, data: updatedRow } = await supabase.from('missions').update(updateData).eq('id', mission.id).select('id, last_update, current_location, map_link').single();
+                const payload = attempt > 1 && saveError?.message?.includes('valor_zero_motivo') ? (() => { const d = { ...updateData }; delete d.valor_zero_motivo; return d; })() : updateData;
+                const { error, data: updatedRow } = await supabase.from('missions').update(payload).eq('id', mission.id).select('id, last_update, current_location, map_link').single();
                 if (!error && updatedRow) {
                     saveResult = updatedRow;
                     saveError = null;

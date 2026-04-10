@@ -946,10 +946,19 @@ export async function registerRoutes(
   const supabaseAdmin = supabase;
 
   try {
-    await supabaseAdmin.rpc('exec_sql', { sql: 'ALTER TABLE missions ADD COLUMN IF NOT EXISTS valor_zero_motivo TEXT DEFAULT \'\';' });
-    console.log('[Migration] Coluna valor_zero_motivo verificada/criada.');
+    await supabaseAdmin.rpc('exec_sql', { sql: "ALTER TABLE missions ADD COLUMN IF NOT EXISTS valor_zero_motivo TEXT DEFAULT ''; NOTIFY pgrst, 'reload schema';" });
+    console.log('[Migration] Coluna valor_zero_motivo verificada/criada + schema cache recarregado.');
   } catch (e: any) {
     console.log('[Migration] valor_zero_motivo:', e.message || 'ok');
+    try {
+      const sbUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || '';
+      const sbKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY || '';
+      await fetch(`${sbUrl}/rest/v1/rpc/exec_sql`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'apikey': sbKey, 'Authorization': `Bearer ${sbKey}` },
+        body: JSON.stringify({ sql: "ALTER TABLE missions ADD COLUMN IF NOT EXISTS valor_zero_motivo TEXT DEFAULT ''; NOTIFY pgrst, 'reload schema';" })
+      });
+    } catch {}
   }
 
   try {
