@@ -7,7 +7,8 @@ import {
   FileText, Search, Filter, RefreshCw, ExternalLink, Copy, CheckCircle2,
   AlertCircle, Clock, XCircle, DollarSign, Receipt, Eye, Loader2,
   Calendar, Building2, Hash, ArrowUpDown, ChevronDown, ChevronUp,
-  Ban, CreditCard, QrCode, Barcode, Download, X, ImageIcon, Trash2
+  Ban, CreditCard, QrCode, Barcode, Download, X, ImageIcon, Trash2,
+  Mail, Send
 } from 'lucide-react';
 
 interface Invoice {
@@ -66,6 +67,7 @@ const FinancialInvoiceControl: React.FC = () => {
   const [copiedField, setCopiedField] = useState<string | null>(null);
   const [showImageModal, setShowImageModal] = useState<string | null>(null);
   const [cancellingId, setCancellingId] = useState<string | null>(null);
+  const [sendingEmailId, setSendingEmailId] = useState<string | null>(null);
 
   const fetchInvoices = useCallback(async () => {
     setLoading(true);
@@ -123,6 +125,9 @@ const FinancialInvoiceControl: React.FC = () => {
         parts.push(`NF: ${nfLabel}${result.nfNumber ? ` (Nº ${result.nfNumber})` : ''}`);
       }
       if (result.nfPdfUrl) parts.push('NF PDF atualizado');
+      parts.push(`Boleto: ${result.hasBoleto ? 'Disponível ✓' : 'Pendente ✗'}`);
+      parts.push(`NF Fiscal: ${result.hasNf ? 'Disponível ✓' : 'Pendente ✗'}`);
+      if (result.emailReady) parts.push('\n📧 Email pronto para envio!');
       alert(`Sincronizado!\n${parts.join('\n')}`);
       await fetchInvoices();
     } catch (e: any) {
@@ -155,6 +160,43 @@ const FinancialInvoiceControl: React.FC = () => {
       alert('Erro ao cancelar: ' + e.message);
     } finally {
       setCancellingId(null);
+    }
+  };
+
+  const handleSendEmail = async (inv: Invoice) => {
+    const clientEmail = prompt('E-mail do cliente para envio da cobrança:');
+    if (!clientEmail || !clientEmail.includes('@')) {
+      if (clientEmail !== null) alert('E-mail inválido.');
+      return;
+    }
+    if (!confirm(`Enviar email de cobrança para:\n${clientEmail}\n\nFatura: NF ${inv.number}\nValor: ${fmtBRL(inv.amount)}\nCliente: ${inv.client}`)) return;
+    setSendingEmailId(inv.id);
+    try {
+      const res = await authFetch('/api/asaas/send-billing-email', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          paymentId: inv.asaas_payment_id,
+          clientName: inv.client,
+          clientEmail,
+          value: inv.amount,
+          dueDate: inv.boleto_due_date || inv.date,
+          invoiceNumber: inv.number,
+          issuerCompany: inv.issuer_company || '',
+          description: `Cobrança ref. NF ${inv.number}`,
+        }),
+      });
+      const result = await res.json();
+      if (result.error) throw new Error(result.error);
+      const details: string[] = ['Email enviado com sucesso!'];
+      if (result.boletoIncluded) details.push('✓ Boleto incluído');
+      if (result.nfIncluded) details.push('✓ Nota Fiscal incluída');
+      if (result.pixIncluded) details.push('✓ PIX incluído');
+      alert(details.join('\n'));
+    } catch (e: any) {
+      alert('Erro ao enviar email: ' + e.message);
+    } finally {
+      setSendingEmailId(null);
     }
   };
 
@@ -430,7 +472,29 @@ const FinancialInvoiceControl: React.FC = () => {
                         <div className="grid grid-cols-2 gap-3 text-xs">
                           <div><span className="text-gray-400 font-bold">ID:</span> <span className="font-mono text-gray-700">{inv.asaas_payment_id}</span></div>
                           <div><span className="text-gray-400 font-bold">Status:</span> <span className="font-bold text-green-700">{inv.asaas_status || '-'}</span></div>
+                          <div>
+                            <span className="text-gray-400 font-bold">Boleto:</span>{' '}
+                            <span className={`font-bold ${inv.asaas_bankslip_url ? 'text-green-600' : 'text-amber-500'}`}>
+                              {inv.asaas_bankslip_url ? 'Disponível' : 'Pendente'}
+                            </span>
+                          </div>
+                          <div>
+                            <span className="text-gray-400 font-bold">NF Fiscal:</span>{' '}
+                            <span className={`font-bold ${inv.nf_image_url ? 'text-green-600' : 'text-amber-500'}`}>
+                              {inv.nf_image_url ? (inv.nf_status === 'AUTHORIZED' ? 'Autorizada' : inv.nf_status || 'Disponível') : 'Pendente'}
+                            </span>
+                          </div>
                         </div>
+                        {inv.asaas_bankslip_url && inv.nf_image_url && (
+                          <div className="flex items-center gap-1.5 text-[10px] font-bold text-green-700 bg-green-100 px-3 py-1.5 rounded-lg">
+                            <CheckCircle2 size={10} /> Boleto e NF prontos para envio por email
+                          </div>
+                        )}
+                        {(!inv.asaas_bankslip_url || !inv.nf_image_url) && (
+                          <div className="flex items-center gap-1.5 text-[10px] font-bold text-amber-600 bg-amber-50 px-3 py-1.5 rounded-lg">
+                            <Clock size={10} /> Aguardando {!inv.asaas_bankslip_url ? 'boleto' : ''}{!inv.asaas_bankslip_url && !inv.nf_image_url ? ' e ' : ''}{!inv.nf_image_url ? 'NF fiscal' : ''} — sincronize o status
+                          </div>
+                        )}
                         <div className="flex flex-wrap gap-2">
                           {inv.asaas_invoice_url && (
                             <a href={inv.asaas_invoice_url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-[10px] font-bold text-blue-600 bg-blue-50 px-3 py-1.5 rounded-lg border border-blue-200 hover:bg-blue-100">
@@ -486,6 +550,22 @@ const FinancialInvoiceControl: React.FC = () => {
                       {inv.asaas_payment_id && inv.status !== 'PAGA' && inv.status !== 'CANCELADA' && (
                         <button onClick={() => handleSyncStatus(inv)} disabled={syncingId === inv.id} className="flex items-center gap-1.5 text-[10px] font-bold text-blue-600 bg-blue-50 px-3 py-2 rounded-lg border border-blue-200 hover:bg-blue-100">
                           {syncingId === inv.id ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} />} Sincronizar Status
+                        </button>
+                      )}
+                      {inv.asaas_payment_id && inv.status !== 'CANCELADA' && inv.status !== 'PAGA' && (
+                        <button
+                          onClick={() => handleSendEmail(inv)}
+                          disabled={sendingEmailId === inv.id || !inv.asaas_bankslip_url || !inv.nf_image_url}
+                          className={`flex items-center gap-1.5 text-[10px] font-bold px-3 py-2 rounded-lg border ${
+                            inv.asaas_bankslip_url && inv.nf_image_url
+                              ? 'text-green-700 bg-green-50 border-green-200 hover:bg-green-100'
+                              : 'text-gray-400 bg-gray-50 border-gray-200 cursor-not-allowed'
+                          }`}
+                          title={!inv.asaas_bankslip_url ? 'Boleto não disponível — sincronize primeiro' : !inv.nf_image_url ? 'NF não disponível — sincronize primeiro' : 'Enviar email com boleto + NF ao cliente'}
+                          data-testid={`btn-send-email-${inv.id}`}
+                        >
+                          {sendingEmailId === inv.id ? <Loader2 size={12} className="animate-spin" /> : <Mail size={12} />}
+                          Enviar Email
                         </button>
                       )}
                       {inv.status !== 'CANCELADA' && inv.status !== 'PAGA' && (

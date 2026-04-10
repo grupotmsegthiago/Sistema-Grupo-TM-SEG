@@ -3240,7 +3240,9 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
           results.push(chargeResult);
 
           const recipientEmail = charge.email || clientEmail;
-          if (recipientEmail) {
+          const splitHasBoleto = !!(payment.bankSlipUrl || bankSlipData);
+          const splitHasNf = !!(invoiceData?.pdfUrl);
+          if (recipientEmail && splitHasBoleto && splitHasNf) {
             try {
               await sendBillingEmail({
                 clientName: charge.name || clientName || 'Cliente',
@@ -3261,11 +3263,15 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
                 nfNumber: invoiceData?.number || undefined,
               });
               chargeResult.emailSent = true;
-              chargeResult.nfIncludedInEmail = !!invoiceData?.pdfUrl;
+              chargeResult.nfIncludedInEmail = true;
             } catch (emailErr: any) {
               console.log(`[Asaas] AVISO: Email de cobrança não enviado para ${recipientEmail}: ${emailErr.message}`);
               chargeResult.emailSent = false;
             }
+          } else {
+            chargeResult.emailSent = false;
+            chargeResult.emailPendingReason = !splitHasBoleto ? 'Boleto não disponível' : 'NF não disponível';
+            console.log(`[Asaas] Email split NÃO enviado para ${recipientEmail || 'N/A'} — boleto=${splitHasBoleto}, NF=${splitHasNf}`);
           }
         }
         return res.json({ success: true, split: true, charges: results, totalValue: results.reduce((s, r) => s + r.payment.value, 0) });
@@ -3334,8 +3340,10 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
 
       console.log(`[Asaas] Cobrança criada: ${payment.id} | ${clientName} | R$ ${value} | Venc: ${dueDate}`);
 
+      const hasBoleto = !!(payment.bankSlipUrl || bankSlipData);
+      const hasNf = !!(invoiceData?.pdfUrl);
       let emailSent = false;
-      if (clientEmail) {
+      if (clientEmail && hasBoleto && hasNf) {
         try {
           await sendBillingEmail({
             clientName: clientName || 'Cliente',
@@ -3359,11 +3367,14 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
         } catch (emailErr: any) {
           console.log(`[Asaas] AVISO: Email de cobrança não enviado para ${clientEmail}: ${emailErr.message}`);
         }
+      } else if (clientEmail) {
+        console.log(`[Asaas] Email NÃO enviado — aguardando: boleto=${hasBoleto}, NF=${hasNf}. Envio manual necessário após sincronização.`);
       }
 
       res.json({
         success: true,
         emailSent,
+        emailPendingReason: !emailSent && clientEmail ? (!hasBoleto ? 'Boleto não disponível ainda' : !hasNf ? 'NF não disponível ainda' : '') : undefined,
         payment: {
           id: payment.id,
           status: payment.status,
@@ -3415,6 +3426,17 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
       let payment: any = null;
       try { payment = await getPayment(paymentId, company); } catch (_) {}
 
+      const hasBoleto = !!(payment?.bankSlipUrl || bankSlipData);
+      const hasNf = !!(invoiceData?.pdfUrl);
+      const forceParam = req.body.force === true;
+
+      if (!hasBoleto && !forceParam) {
+        return res.status(400).json({ error: 'Boleto ainda não disponível. Sincronize o status primeiro.', hasBoleto: false, hasNf });
+      }
+      if (!hasNf && !forceParam) {
+        return res.status(400).json({ error: 'Nota Fiscal ainda não disponível. Sincronize o status primeiro.', hasBoleto, hasNf: false });
+      }
+
       const result = await sendBillingEmail({
         clientName: clientName || 'Cliente',
         clientCnpj: clientCnpj || '',
@@ -3434,7 +3456,7 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
         nfNumber: invoiceData?.number || undefined,
       });
 
-      res.json({ success: result.success, messageId: result.messageId || null, nfIncluded: !!invoiceData?.pdfUrl, boletoIncluded: !!(payment?.bankSlipUrl || bankSlipData), pixIncluded: !!pixData });
+      res.json({ success: result.success, messageId: result.messageId || null, nfIncluded: hasNf, boletoIncluded: hasBoleto, pixIncluded: !!pixData });
     } catch (err: any) {
       console.error('[Email] Erro ao enviar email de cobrança:', err.message);
       res.status(500).json({ error: err.message });
@@ -3509,6 +3531,13 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
         console.log(`[Asaas Sync] Erro ao buscar NF do payment ${paymentId}: ${nfErr.message}`);
       }
 
+      let pixData = null;
+      let bankSlipData = null;
+      if (!isPaid) {
+        try { pixData = await getPaymentPixQrCode(paymentId, company); } catch {}
+        try { bankSlipData = await getPaymentBankSlip(paymentId, company); } catch {}
+      }
+
       if (invoiceId) {
         const { data: inv } = await supabase.from('financial_invoices').select('id, asaas_payment_id').eq('id', invoiceId).single();
         if (!inv || (inv.asaas_payment_id && inv.asaas_payment_id !== paymentId)) {
@@ -3524,6 +3553,8 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
         if (nfNumber) updateData.nf_number = nfNumber;
         if (payment.invoiceUrl) updateData.asaas_invoice_url = payment.invoiceUrl;
         if (payment.bankSlipUrl) updateData.asaas_bankslip_url = payment.bankSlipUrl;
+        if (pixData?.payload) updateData.asaas_pix_payload = pixData.payload;
+        if (bankSlipData?.identificationField) updateData.asaas_barcode = bankSlipData.identificationField;
         await supabase.from('financial_invoices').update(updateData).eq('id', invoiceId);
 
         if (isPaid) {
@@ -3538,7 +3569,18 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
         }
       }
 
-      res.json({ status: payment.status, statusBr, isPaid, value: payment.value, nfPdfUrl: nfPdfUrl || null, nfStatus: nfStatus || null, nfNumber: nfNumber || null });
+      const hasBoleto = !!(payment.bankSlipUrl || bankSlipData);
+      const hasNf = !!nfPdfUrl;
+
+      res.json({
+        status: payment.status, statusBr, isPaid, value: payment.value,
+        nfPdfUrl: nfPdfUrl || null, nfStatus: nfStatus || null, nfNumber: nfNumber || null,
+        hasBoleto, hasNf,
+        bankSlipUrl: payment.bankSlipUrl || null,
+        boletoBarcode: bankSlipData?.identificationField || null,
+        pixPayload: pixData?.payload || null,
+        emailReady: hasBoleto && hasNf,
+      });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }
