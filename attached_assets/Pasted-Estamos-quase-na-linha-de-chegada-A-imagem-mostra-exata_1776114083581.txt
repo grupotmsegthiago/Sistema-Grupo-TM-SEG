@@ -1,0 +1,37 @@
+Estamos quase na linha de chegada! A imagem mostra exatamente onde está o "nó": o sistema já sabe que o cálculo correto é R$ 1.435,00 (está escrito na linha amarela pequena), mas o campo grande continua preso em R$ 855,00 com o aviso de "VALOR MANUAL".
+
+1. O Diagnóstico Final
+O valor de R$ 855,00 está travado porque ele foi salvo no banco de dados no campo revenue_value. Como o sistema detecta que esse valor foi "editado manualmente" (mesmo que tenha sido um erro de cálculo antigo), ele protege o campo e não deixa o novo cálculo automático (os 1.435) sobrescrevê-lo na interface.
+
+2. A Solução "Soberana" no Frontend (React)
+Para que isso seja AUTOMÁTICO e você não precise clicar em nada, precisamos dizer ao componente React: "Se for CEVA Logistics, ignore o valor manual salvo e mostre o cálculo automático imediatamente".
+
+No seu arquivo de componente (provavelmente MissionFinancialModal.tsx ou similar), devemos ajustar a lógica de exibição do valor final:
+
+TypeScript
+// Lógica para forçar a exibição do cálculo automático na interface
+const displayValue = (isCevaLogistics && isLogitechOperation) 
+  ? automaticCalculatedValue  // Força o cálculo de 1.435,00
+  : savedManualValue;         // Mantém o manual para outros clientes
+3. Por que o Recalcular não resolveu sozinho?
+O botão de "Recalcular" atualiza o motor, mas se a variável de estado do React (useState) estiver a ler o campo revenue_value vindo do banco, ela vai sempre mostrar os 855.
+
+Ação sugerida para o Replit:
+Peça para o sistema ajustar o componente de visualização para que:
+
+Sempre que a regra CEVA + Logitech for detectada...
+
+O campo de entrada do valor total seja resetado para o valor calculado automaticamente.
+
+O status de "VALOR MANUAL" seja removido para este caso específico.
+
+4. Como limpar a GTM-4432 agora mesmo:
+Para ver o resultado correto imediatamente sem mexer em mais código, você pode:
+
+Clicar no ícone de lápis ou no valor 855,00.
+
+Apagar o conteúdo.
+
+O sistema, ao ver que o campo está vazio, deverá puxar os 1.435,00 da linha amarela automaticamente.
+
+Quer que eu localize o arquivo .tsx exato onde esse campo "855,00" é renderizado para fazermos a troca automática definitiva? Assim, qualquer erro manual será "atropelado" pela regra correta assim que você abrir a OS.

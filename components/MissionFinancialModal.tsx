@@ -901,6 +901,21 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
               setRevenueInput(newRevStr);
               setCostInput(newCostStr);
           }
+
+          const isCevaLogitech = financialData.client?.detectionLog?.includes('LOGITECH SOBERANA');
+          if (isCevaLogitech && dbValuesLoadedRef.current && !isSavingRef.current) {
+              const calcRevTotal = financialData.client.total;
+              const currentInput = parseNumber(revenueInput);
+              if (calcRevTotal > 0 && Math.abs(currentInput - calcRevTotal) > 1) {
+                  setRevenueInput(calcRevTotal.toLocaleString('pt-BR', {minimumFractionDigits: 2, maximumFractionDigits: 2}));
+              }
+              const calcToll = financialData.tollValue || 0;
+              const currentToll = parseNumber(tollInput);
+              if (calcToll > 0 && Math.abs(currentToll - calcToll) > 0.5) {
+                  setTollInput(calcToll.toLocaleString('pt-BR', {minimumFractionDigits: 2, maximumFractionDigits: 2}));
+                  setTollProviderInput(calcToll.toLocaleString('pt-BR', {minimumFractionDigits: 2, maximumFractionDigits: 2}));
+              }
+          }
           
           if (financialData.provider.tableId) {
               if (!manualProviderTableId) {
