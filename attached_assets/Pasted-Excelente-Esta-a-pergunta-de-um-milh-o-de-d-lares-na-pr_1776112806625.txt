@@ -1,0 +1,51 @@
+Excelente! Esta é a pergunta de "um milhão de dólares" na programação de sistemas financeiros: Prioridade do Usuário vs. Rigidez do Contrato.
+
+Para que o sistema seja verdadeiramente automático e "limpe" os erros do passado (como os R$ 38,00 que ainda aparecem em missões antigas ou edições manuais equivocadas), o meu conselho como seu Ajudante de Programação é remover a trava.
+
+1. Panorama da Decisão
+Se você quer automação total, o código precisa ser Soberano.
+
+Com a trava (tollValue === 0): O sistema é passivo. Se houver qualquer lixo de memória ou valor antigo salvo (como os 38), ele não se mexe. É por isso que você sente que "não está automático".
+
+Sem a trava: O sistema é ativo. Ele lê "CEVA + Jundiaí" e imediatamente escreve "35". Isso elimina o "bug do recalcular" porque o motor financeiro corrige a tela em tempo real.
+
+2. O Programa e Instruções de Implementação
+Vamos ajustar o arquivo lib/financialUtils.ts para que ele force os R$ 35,00 sempre que a operação for detectada.
+
+O Código para aplicar:
+TypeScript
+/**
+ * DOCUMENTAÇÃO:
+ * Regra Soberana para Pedágio CEVA/Logitech.
+ * Removemos a verificação de (tollValue === 0) para garantir que 
+ * o sistema sempre aplique o valor de contrato de R$ 35,00,
+ * corrigindo automaticamente valores antigos ou erros manuais.
+ */
+
+if (isLogitechOperation) {
+  // Aplicamos os 35 reais sem exceções para esta regra específica
+  tollValue = 35.00;
+  
+  // Sincronizamos os dois lados do faturamento
+  missionFinancials.toll_client = 35.00;
+  missionFinancials.toll_supplier = 35.00;
+
+  console.log("✅ Regra Soberana: Pedágio fixado em R$ 35,00 (CEVA/Logitech)");
+}
+3. Instruções Detalhadas
+Para implementar isso no Replit de forma segura:
+
+Localização: Vá à linha 915 do arquivo lib/financialUtils.ts.
+
+Substituição: Remova o trecho && tollValue === 0 da condição if.
+
+Resultado Esperado: * Abra uma missão da CEVA que estava com R$ 38,00.
+
+Ao carregar ou ao mudar qualquer campo (como a KM), o sistema deve pular magicamente para R$ 35,00.
+
+O botão "Recalcular" não deve mais mostrar discrepância de pedágio.
+
+4. Método Educativo (Por que fazer isso?)
+Na programação, quando temos um contrato fixo (como parece ser o caso da CEVA/Logitech), permitir edição manual em campos que deveriam ser automáticos gera inconsistência de dados. Ao remover a trava, você transforma o seu código numa "lei": Se é CEVA em Jundiaí com 200km, o preço é 35. Ponto final.
+
+Isso economiza tempo de auditoria e evita que faturas saiam com valores errados por descuido humano.
