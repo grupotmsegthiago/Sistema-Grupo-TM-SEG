@@ -1,101 +1,66 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../lib/supabase';
-import { FinancialTransaction } from '../types';
+import { FinancialTransaction, FinancialCategory } from '../types';
 import { 
     FileText, Calendar, DollarSign, Download, Printer, Filter, 
-    ArrowUpCircle, ArrowDownCircle, ShieldAlert, Loader2, Search, TrendingUp, User 
+    ArrowUpCircle, ArrowDownCircle, ShieldAlert, Loader2, Search, TrendingUp, User,
+    AlertTriangle, BarChart3, Clock, ChevronRight, RefreshCw
 } from 'lucide-react';
 
-// Componente Interno de Gráfico SVG Simples
-const DailyEvolutionChart: React.FC<{ data: { date: string; income: number; expense: number }[] }> = ({ data }) => {
-    if (!data || data.length < 2) return (
-        <div className="h-64 flex flex-col items-center justify-center text-gray-400 bg-gray-50 rounded-xl border border-dashed border-gray-200">
-            <TrendingUp size={32} className="mb-2 opacity-50"/>
-            <p className="text-xs">Dados insuficientes para gerar o gráfico (mínimo 2 dias com movimento).</p>
+const formatCurrency = (val: number) => val.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+
+const getTodayBR = (): string => {
+    const now = new Date();
+    const brDate = new Date(now.toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' }));
+    const y = brDate.getFullYear();
+    const m = String(brDate.getMonth() + 1).padStart(2, '0');
+    const d = String(brDate.getDate()).padStart(2, '0');
+    return `${y}-${m}-${d}`;
+};
+
+const MONTH_NAMES = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
+const MONTH_NAMES_SHORT = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
+
+const MonthlyBarChart: React.FC<{ data: { month: string; value: number; monthIdx: number }[]; color: string; title: string; icon: React.ReactNode }> = ({ data, color, title, icon }) => {
+    if (!data || data.length === 0) return (
+        <div className="h-52 flex flex-col items-center justify-center text-gray-400 bg-gray-50 rounded-xl border border-dashed border-gray-200">
+            <BarChart3 size={28} className="mb-2 opacity-50"/>
+            <p className="text-xs">Sem dados para o período.</p>
         </div>
     );
 
-    const height = 100;
-    const width = 100;
-    
-    // Encontrar o valor máximo para escala
-    const maxVal = Math.max(...data.map(d => Math.max(d.income, d.expense)), 100); // Mínimo 100 para não quebrar escala
-    
-    // Helper para criar pontos
-    const createPoints = (key: 'income' | 'expense') => {
-        return data.map((d, i) => {
-            const x = (i / (data.length - 1)) * width;
-            const y = height - (d[key] / maxVal) * height; // Inverter Y pois SVG 0 é topo
-            return `${x},${y}`;
-        }).join(' ');
-    };
-
-    const incomePoints = createPoints('income');
-    const expensePoints = createPoints('expense');
+    const maxVal = Math.max(...data.map(d => d.value), 1);
 
     return (
-        <div className="w-full h-64 relative bg-white rounded-xl border border-gray-200 shadow-sm p-4 overflow-hidden group">
-            <div className="absolute top-4 left-4 z-10">
-                <h3 className="text-sm font-bold text-gray-700 uppercase flex items-center gap-2">
-                    <TrendingUp size={16} className="text-blue-600"/> Evolução Diária
-                </h3>
-            </div>
-
-            {/* Legenda */}
-            <div className="absolute top-4 right-4 z-10 flex gap-4 text-[10px] font-bold uppercase">
-                <div className="flex items-center gap-1"><div className="w-2 h-2 rounded-full bg-green-500"></div> Receitas</div>
-                <div className="flex items-center gap-1"><div className="w-2 h-2 rounded-full bg-red-500"></div> Despesas</div>
-            </div>
-
-            <svg viewBox={`0 0 ${width} ${height}`} className="w-full h-full overflow-visible" preserveAspectRatio="none">
-                {/* Grid Lines (Horizontal) */}
-                {[0, 25, 50, 75, 100].map(p => (
-                    <line key={p} x1="0" y1={p} x2="100" y2={p} stroke="#f3f4f6" strokeWidth="0.5" vectorEffect="non-scaling-stroke" />
-                ))}
-
-                {/* AREA INCOME */}
-                <polygon points={`0,100 ${incomePoints} 100,100`} fill="rgba(34, 197, 94, 0.1)" />
-                {/* LINE INCOME */}
-                <polyline points={incomePoints} fill="none" stroke="#22c55e" strokeWidth="2" vectorEffect="non-scaling-stroke" strokeLinecap="round" />
-
-                {/* AREA EXPENSE */}
-                <polygon points={`0,100 ${expensePoints} 100,100`} fill="rgba(239, 68, 68, 0.05)" />
-                {/* LINE EXPENSE */}
-                <polyline points={expensePoints} fill="none" stroke="#ef4444" strokeWidth="2" vectorEffect="non-scaling-stroke" strokeLinecap="round" strokeDasharray="4" />
-
-                {/* Hover Points (Interactive) - Simplified visual representation */}
+        <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5">
+            <h4 className="text-xs font-black text-gray-900 uppercase mb-4 flex items-center gap-2">{icon} {title}</h4>
+            <div className="flex items-end gap-2 h-40">
                 {data.map((d, i) => {
-                    const x = (i / (data.length - 1)) * width;
+                    const pct = (d.value / maxVal) * 100;
                     return (
-                        <g key={i} className="group/point">
-                            {/* Invisible interactive rect */}
-                            <rect x={x - 2} y="0" width="4" height="100" fill="transparent" className="cursor-pointer hover:fill-black/5" />
-                            
-                            {/* Tooltip on Hover */}
-                            <foreignObject x={x < 50 ? x : x - 25} y="0" width="30" height="100" className="opacity-0 group-hover/point:opacity-100 transition-opacity pointer-events-none">
-                                <div className="bg-gray-900 text-white text-[8px] p-1 rounded mt-2 w-max shadow-xl z-50">
-                                    <div className="font-bold border-b border-gray-700 mb-1 pb-1">{new Date(d.date + 'T12:00:00').toLocaleDateString(undefined, {day:'2-digit', month:'2-digit'})}</div>
-                                    <div className="text-green-400 font-mono">+ {d.income.toLocaleString('pt-BR', { notation: "compact" })}</div>
-                                    <div className="text-red-400 font-mono">- {d.expense.toLocaleString('pt-BR', { notation: "compact" })}</div>
-                                </div>
-                            </foreignObject>
-                        </g>
-                    )
+                        <div key={i} className="flex-1 flex flex-col items-center justify-end h-full group relative">
+                            <div className="absolute -top-1 opacity-0 group-hover:opacity-100 transition-opacity bg-gray-900 text-white text-[9px] px-2 py-1 rounded shadow-xl whitespace-nowrap z-10 font-mono pointer-events-none">
+                                {formatCurrency(d.value)}
+                            </div>
+                            <div 
+                                className="w-full rounded-t-md transition-all duration-500 min-h-[4px]"
+                                style={{ height: `${Math.max(pct, 3)}%`, backgroundColor: color, opacity: 0.85 }}
+                            />
+                            <p className="text-[9px] font-bold text-gray-500 mt-1.5 uppercase">{d.month}</p>
+                        </div>
+                    );
                 })}
-            </svg>
+            </div>
         </div>
     );
 };
 
 const FinancialReport: React.FC = () => {
     const [transactions, setTransactions] = useState<FinancialTransaction[]>([]);
+    const [categories, setCategories] = useState<FinancialCategory[]>([]);
     const [loading, setLoading] = useState(true);
     const [isDirector, setIsDirector] = useState(false);
-    
-    // Filtros
-    const [startDate, setStartDate] = useState(new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0]);
-    const [endDate, setEndDate] = useState(new Date().toISOString().split('T')[0]);
     const [filterType, setFilterType] = useState<'ALL' | 'INCOME' | 'EXPENSE'>('ALL');
     const [searchTerm, setSearchTerm] = useState('');
 
@@ -106,6 +71,7 @@ const FinancialReport: React.FC = () => {
             if (user.role === 'Diretoria' || user.permissions?.includes('*')) {
                 setIsDirector(true);
                 fetchData();
+                fetchCategories();
             } else {
                 setIsDirector(false);
                 setLoading(false);
@@ -113,77 +79,123 @@ const FinancialReport: React.FC = () => {
         } else {
             setLoading(false);
         }
-    }, [startDate, endDate]); // Recarrega ao mudar datas
+    }, []);
 
     const fetchData = async () => {
         setLoading(true);
         try {
-            // Busca ampla baseada nas datas
             const { data, error } = await supabase
                 .from('financial_transactions')
                 .select('*')
-                .gte('due_date', `${startDate}T00:00:00`)
-                .lte('due_date', `${endDate}T23:59:59`)
+                .gte('due_date', '2026-02-15')
                 .order('due_date', { ascending: false });
-
             if (error) throw error;
             setTransactions(data as FinancialTransaction[]);
         } catch (e) {
             console.error(e);
-            alert("Erro ao carregar dados do relatório.");
         } finally {
             setLoading(false);
         }
     };
 
-    // Filtros de Memória (Texto e Tipo)
-    const filteredData = useMemo(() => {
-        return transactions.filter(t => {
-            const matchesSearch = 
-                t.description.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                (t.category_name || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
-                (t.entity_name || '').toLowerCase().includes(searchTerm.toLowerCase());
-            
-            const matchesType = filterType === 'ALL' || t.type === filterType;
-
-            return matchesSearch && matchesType;
-        });
-    }, [transactions, searchTerm, filterType]);
-
-    // Totais
-    const totals = useMemo(() => {
-        const income = filteredData.filter(t => t.type === 'INCOME').reduce((acc, t) => acc + t.amount, 0);
-        const expense = filteredData.filter(t => t.type === 'EXPENSE').reduce((acc, t) => acc + t.amount, 0);
-        return {
-            income,
-            expense,
-            balance: income - expense
-        };
-    }, [filteredData]);
-
-    // Dados para o Gráfico (Agrupado por Data)
-    const chartData = useMemo(() => {
-        const grouped: Record<string, { income: number; expense: number }> = {};
-        
-        // Inicializar o range de datas seria ideal, mas para simplificar vamos usar as datas existentes nos dados
-        // ordenadas crescentemente.
-        
-        filteredData.forEach(t => {
-            const dateKey = t.due_date.split('T')[0]; // YYYY-MM-DD
-            if (!grouped[dateKey]) grouped[dateKey] = { income: 0, expense: 0 };
-            
-            if (t.type === 'INCOME') grouped[dateKey].income += t.amount;
-            else grouped[dateKey].expense += t.amount;
-        });
-
-        return Object.entries(grouped)
-            .map(([date, vals]) => ({ date, ...vals }))
-            .sort((a, b) => a.date.localeCompare(b.date)); // Ordem cronológica para o gráfico
-    }, [filteredData]);
-
-    const handlePrint = () => {
-        window.print();
+    const fetchCategories = async () => {
+        const { data } = await supabase.from('financial_categories').select('*');
+        if (data) setCategories(data as FinancialCategory[]);
     };
+
+    const investmentCategoryIds = useMemo(() => {
+        return new Set(categories.filter(c => c.group === 'INVESTIMENTOS').map(c => c.id));
+    }, [categories]);
+
+    const todayStr = getTodayBR();
+    const today = new Date(todayStr + 'T12:00:00');
+
+    const nonInvestTx = useMemo(() => {
+        return transactions.filter(t => !investmentCategoryIds.has(t.category_id));
+    }, [transactions, investmentCategoryIds]);
+
+    const pendingIncome = useMemo(() => nonInvestTx.filter(t => t.type === 'INCOME' && (t.status === 'PENDING' || t.status === 'SCHEDULED')), [nonInvestTx]);
+    const pendingExpense = useMemo(() => nonInvestTx.filter(t => t.type === 'EXPENSE' && (t.status === 'PENDING' || t.status === 'SCHEDULED')), [nonInvestTx]);
+
+    const aReceberFuture = useMemo(() => pendingIncome.filter(t => t.due_date.split('T')[0] >= todayStr), [pendingIncome, todayStr]);
+    const aPagarFuture = useMemo(() => pendingExpense.filter(t => t.due_date.split('T')[0] >= todayStr), [pendingExpense, todayStr]);
+    const overdueIncome = useMemo(() => pendingIncome.filter(t => t.due_date.split('T')[0] < todayStr), [pendingIncome, todayStr]);
+    const overdueExpense = useMemo(() => pendingExpense.filter(t => t.due_date.split('T')[0] < todayStr), [pendingExpense, todayStr]);
+
+    const receberByMonth = useMemo(() => {
+        const map: Record<string, { value: number; count: number; monthIdx: number; year: number }> = {};
+        aReceberFuture.forEach(t => {
+            const d = new Date(t.due_date + 'T12:00:00');
+            const key = `${d.getFullYear()}-${d.getMonth()}`;
+            if (!map[key]) map[key] = { value: 0, count: 0, monthIdx: d.getMonth(), year: d.getFullYear() };
+            map[key].value += t.amount;
+            map[key].count += 1;
+        });
+        return Object.values(map).sort((a, b) => a.year !== b.year ? a.year - b.year : a.monthIdx - b.monthIdx);
+    }, [aReceberFuture]);
+
+    const pagarByMonth = useMemo(() => {
+        const map: Record<string, { value: number; count: number; monthIdx: number; year: number }> = {};
+        aPagarFuture.forEach(t => {
+            const d = new Date(t.due_date + 'T12:00:00');
+            const key = `${d.getFullYear()}-${d.getMonth()}`;
+            if (!map[key]) map[key] = { value: 0, count: 0, monthIdx: d.getMonth(), year: d.getFullYear() };
+            map[key].value += t.amount;
+            map[key].count += 1;
+        });
+        return Object.values(map).sort((a, b) => a.year !== b.year ? a.year - b.year : a.monthIdx - b.monthIdx);
+    }, [aPagarFuture]);
+
+    const getWeekRanges = (items: FinancialTransaction[]) => {
+        const weeks: Record<string, { label: string; value: number; count: number; start: string; end: string }> = {};
+        items.forEach(t => {
+            const d = new Date(t.due_date.split('T')[0] + 'T12:00:00');
+            const dayOfWeek = d.getDay();
+            const sunday = new Date(d);
+            sunday.setDate(d.getDate() - dayOfWeek);
+            const saturday = new Date(sunday);
+            saturday.setDate(sunday.getDate() + 6);
+            const fmt = (dt: Date) => `${String(dt.getDate()).padStart(2,'0')}/${String(dt.getMonth()+1).padStart(2,'0')}`;
+            const key = sunday.toISOString().split('T')[0];
+            if (!weeks[key]) weeks[key] = { label: `${fmt(sunday)} — ${fmt(saturday)}`, value: 0, count: 0, start: key, end: saturday.toISOString().split('T')[0] };
+            weeks[key].value += t.amount;
+            weeks[key].count += 1;
+        });
+        return Object.values(weeks).sort((a, b) => a.start.localeCompare(b.start));
+    };
+
+    const receberByWeek = useMemo(() => getWeekRanges(aReceberFuture), [aReceberFuture]);
+    const pagarByWeek = useMemo(() => getWeekRanges(aPagarFuture), [aPagarFuture]);
+
+    const overdueByClient = useMemo(() => {
+        const map: Record<string, { client: string; value: number; count: number; oldestDue: string; maxDays: number }> = {};
+        [...overdueIncome, ...overdueExpense].forEach(t => {
+            const client = t.entity_name || t.description || 'Outros';
+            const dueDateStr = t.due_date.split('T')[0];
+            const dueDate = new Date(dueDateStr + 'T12:00:00');
+            const diffDays = Math.floor((today.getTime() - dueDate.getTime()) / (1000 * 60 * 60 * 24));
+            if (!map[client]) map[client] = { client, value: 0, count: 0, oldestDue: dueDateStr, maxDays: 0 };
+            map[client].value += t.amount;
+            map[client].count += 1;
+            if (diffDays > map[client].maxDays) {
+                map[client].maxDays = diffDays;
+                map[client].oldestDue = dueDateStr;
+            }
+        });
+        return Object.values(map).sort((a, b) => b.value - a.value);
+    }, [overdueIncome, overdueExpense, today]);
+
+    const paidIncome = useMemo(() => nonInvestTx.filter(t => t.type === 'INCOME' && t.status === 'PAID'), [nonInvestTx]);
+    const paidExpense = useMemo(() => nonInvestTx.filter(t => t.type === 'EXPENSE' && t.status === 'PAID'), [nonInvestTx]);
+
+    const totalRecebido = useMemo(() => paidIncome.reduce((a, t) => a + t.amount, 0), [paidIncome]);
+    const totalPago = useMemo(() => paidExpense.reduce((a, t) => a + t.amount, 0), [paidExpense]);
+    const totalAReceber = useMemo(() => aReceberFuture.reduce((a, t) => a + t.amount, 0), [aReceberFuture]);
+    const totalAPagar = useMemo(() => aPagarFuture.reduce((a, t) => a + t.amount, 0), [aPagarFuture]);
+    const totalInadimplencia = useMemo(() => [...overdueIncome, ...overdueExpense].reduce((a, t) => a + t.amount, 0), [overdueIncome, overdueExpense]);
+
+    const chartReceberData = useMemo(() => receberByMonth.map(m => ({ month: MONTH_NAMES_SHORT[m.monthIdx], value: m.value, monthIdx: m.monthIdx })), [receberByMonth]);
+    const chartPagarData = useMemo(() => pagarByMonth.map(m => ({ month: MONTH_NAMES_SHORT[m.monthIdx], value: m.value, monthIdx: m.monthIdx })), [pagarByMonth]);
 
     if (!isDirector) {
         return (
@@ -199,211 +211,241 @@ const FinancialReport: React.FC = () => {
 
     return (
         <div className="space-y-6 animate-fade-in pb-20">
-            <style>{`
-                @media print {
-                    .no-print { display: none !important; }
-                    .print-border { border: 1px solid #ddd; }
-                    body { background: white; }
-                    .print-header { display: block !important; margin-bottom: 20px; text-align: center; }
-                }
-                .print-header { display: none; }
-            `}</style>
+            <style>{`@media print { .no-print { display: none !important; } body { background: white; } }`}</style>
 
-            {/* Header de Impressão */}
-            <div className="print-header">
-                <h1 className="text-2xl font-bold uppercase">Relatório Financeiro Geral - TMSEG</h1>
-                <p className="text-sm text-gray-500">Período: {new Date(startDate).toLocaleDateString()} a {new Date(endDate).toLocaleDateString()}</p>
-            </div>
-
-            {/* Controles (Não imprime) */}
-            <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200 flex flex-col lg:flex-row justify-between items-center gap-4 no-print">
+            <div className="bg-white p-5 rounded-xl shadow-sm border border-gray-200 flex flex-col md:flex-row justify-between items-center gap-4 no-print">
                 <div>
                     <h2 className="text-xl font-bold text-gray-900 flex items-center gap-3">
-                        <FileText className="text-blue-700" /> Relatório Financeiro Geral
+                        <span className="w-1.5 h-6 bg-red-700 rounded-full"></span>
+                        Relatório Financeiro Geral
                     </h2>
-                    <p className="text-sm text-gray-500 mt-1">Visão completa de todas as movimentações salvas.</p>
+                    <p className="text-xs text-gray-500 mt-1 ml-4.5">Painel consolidado de contas a receber, a pagar, inadimplência e projeções.</p>
                 </div>
-                
-                <div className="flex flex-wrap items-end gap-3">
-                    <div>
-                        <label className="text-xs font-bold text-gray-500 uppercase block mb-1">De</label>
-                        <input type="date" className="p-2 border rounded-lg text-sm bg-gray-50" value={startDate} onChange={e => setStartDate(e.target.value)} />
-                    </div>
-                    <div>
-                        <label className="text-xs font-bold text-gray-500 uppercase block mb-1">Até</label>
-                        <input type="date" className="p-2 border rounded-lg text-sm bg-gray-50" value={endDate} onChange={e => setEndDate(e.target.value)} />
-                    </div>
-                    <button 
-                        onClick={fetchData} 
-                        className="p-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors shadow-sm"
-                        title="Atualizar Dados"
-                    >
-                        <Search size={20} />
-                    </button>
-                    <button 
-                        onClick={handlePrint} 
-                        className="flex items-center gap-2 bg-gray-800 hover:bg-gray-900 text-white px-4 py-2 rounded-lg text-sm font-bold shadow-sm transition-colors"
-                    >
-                        <Printer size={16} /> Imprimir / PDF
+                <div className="flex gap-2">
+                    <button onClick={fetchData} className="p-2.5 border rounded-lg hover:bg-gray-50 text-gray-500" data-testid="btn-refresh-report"><RefreshCw size={18} className={loading ? "animate-spin" : ""}/></button>
+                    <button onClick={() => window.print()} className="flex items-center gap-2 bg-gray-900 hover:bg-gray-800 text-white px-4 py-2 rounded-lg text-sm font-bold shadow-sm" data-testid="btn-print-report">
+                        <Printer size={16}/> Imprimir / PDF
                     </button>
                 </div>
             </div>
 
-            {/* Cards de Resumo */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div className="bg-white p-5 rounded-xl border border-gray-200 shadow-sm flex justify-between items-center">
-                    <div>
-                        <p className="text-xs font-bold text-gray-500 uppercase mb-1">Receitas (Período)</p>
-                        <h3 className="text-2xl font-black text-green-600">
-                            R$ {totals.income.toLocaleString('pt-BR', {minimumFractionDigits: 2, maximumFractionDigits: 2})}
-                        </h3>
+            {loading ? (
+                <div className="flex items-center justify-center h-64"><Loader2 className="animate-spin text-red-600" size={32}/></div>
+            ) : (
+                <>
+                    <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+                        <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm">
+                            <p className="text-[9px] font-black text-gray-400 uppercase mb-1">Já Recebido</p>
+                            <p className="text-lg font-black text-green-600 font-mono" data-testid="val-recebido">{formatCurrency(totalRecebido)}</p>
+                            <p className="text-[9px] text-green-500 font-bold">{paidIncome.length} título(s)</p>
+                        </div>
+                        <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm">
+                            <p className="text-[9px] font-black text-gray-400 uppercase mb-1">A Receber</p>
+                            <p className="text-lg font-black text-blue-600 font-mono" data-testid="val-a-receber">{formatCurrency(totalAReceber)}</p>
+                            <p className="text-[9px] text-blue-500 font-bold">{aReceberFuture.length} título(s)</p>
+                        </div>
+                        <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm">
+                            <p className="text-[9px] font-black text-gray-400 uppercase mb-1">Já Pago</p>
+                            <p className="text-lg font-black text-red-600 font-mono" data-testid="val-pago">{formatCurrency(totalPago)}</p>
+                            <p className="text-[9px] text-red-500 font-bold">{paidExpense.length} título(s)</p>
+                        </div>
+                        <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm">
+                            <p className="text-[9px] font-black text-gray-400 uppercase mb-1">A Pagar</p>
+                            <p className="text-lg font-black text-orange-600 font-mono" data-testid="val-a-pagar">{formatCurrency(totalAPagar)}</p>
+                            <p className="text-[9px] text-orange-500 font-bold">{aPagarFuture.length} título(s)</p>
+                        </div>
+                        <div className={`p-4 rounded-xl border-2 shadow-sm ${totalInadimplencia > 0 ? 'bg-red-50 border-red-300' : 'bg-green-50 border-green-300'}`}>
+                            <p className="text-[9px] font-black text-gray-500 uppercase mb-1 flex items-center gap-1"><AlertTriangle size={10}/> Inadimplência</p>
+                            <p className={`text-lg font-black font-mono ${totalInadimplencia > 0 ? 'text-red-700' : 'text-green-600'}`} data-testid="val-inadimplencia">{formatCurrency(totalInadimplencia)}</p>
+                            <p className="text-[9px] text-red-500 font-bold">{overdueIncome.length + overdueExpense.length} título(s) vencido(s)</p>
+                        </div>
                     </div>
-                    <div className="p-3 bg-green-50 rounded-full text-green-600"><ArrowUpCircle size={24}/></div>
-                </div>
-                
-                <div className="bg-white p-5 rounded-xl border border-gray-200 shadow-sm flex justify-between items-center">
-                    <div>
-                        <p className="text-xs font-bold text-gray-500 uppercase mb-1">Despesas (Período)</p>
-                        <h3 className="text-2xl font-black text-red-600">
-                            R$ {totals.expense.toLocaleString('pt-BR', {minimumFractionDigits: 2, maximumFractionDigits: 2})}
-                        </h3>
-                    </div>
-                    <div className="p-3 bg-red-50 rounded-full text-red-600"><ArrowDownCircle size={24}/></div>
-                </div>
 
-                <div className="bg-white p-5 rounded-xl border border-gray-200 shadow-sm flex justify-between items-center">
-                    <div>
-                        <p className="text-xs font-bold text-gray-500 uppercase mb-1">Resultado Líquido</p>
-                        <h3 className={`text-2xl font-black ${totals.balance >= 0 ? 'text-blue-700' : 'text-red-700'}`}>
-                            R$ {totals.balance.toLocaleString('pt-BR', {minimumFractionDigits: 2, maximumFractionDigits: 2})}
-                        </h3>
-                    </div>
-                    <div className="p-3 bg-gray-100 rounded-full text-gray-600"><DollarSign size={24}/></div>
-                </div>
-            </div>
-
-            {/* GRÁFICO DE EVOLUÇÃO DIÁRIA (NOVO) */}
-            <div className="no-print animate-in fade-in slide-in-from-bottom-2">
-                <DailyEvolutionChart data={chartData} />
-            </div>
-
-            {/* Filtros de Tabela e Tabela */}
-            <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden min-h-[500px]">
-                <div className="p-4 border-b border-gray-100 bg-gray-50 flex flex-col md:flex-row gap-4 justify-between items-center no-print">
-                    <div className="flex gap-2">
-                        <button 
-                            onClick={() => setFilterType('ALL')}
-                            className={`px-3 py-1.5 rounded-lg text-xs font-bold uppercase transition-all ${filterType === 'ALL' ? 'bg-gray-800 text-white' : 'bg-white border border-gray-300 text-gray-600 hover:bg-gray-100'}`}
-                        >
-                            Todos
-                        </button>
-                        <button 
-                            onClick={() => setFilterType('INCOME')}
-                            className={`px-3 py-1.5 rounded-lg text-xs font-bold uppercase transition-all ${filterType === 'INCOME' ? 'bg-green-600 text-white' : 'bg-white border border-gray-300 text-gray-600 hover:bg-green-50'}`}
-                        >
-                            Receitas
-                        </button>
-                        <button 
-                            onClick={() => setFilterType('EXPENSE')}
-                            className={`px-3 py-1.5 rounded-lg text-xs font-bold uppercase transition-all ${filterType === 'EXPENSE' ? 'bg-red-600 text-white' : 'bg-white border border-gray-300 text-gray-600 hover:bg-red-50'}`}
-                        >
-                            Despesas
-                        </button>
-                    </div>
-                    <div className="relative w-full md:w-64">
-                        <input 
-                            type="text" 
-                            placeholder="Filtrar lançamentos..." 
-                            className="w-full pl-9 pr-3 py-2 bg-white border border-gray-300 rounded-lg text-sm focus:border-blue-500 outline-none"
-                            value={searchTerm}
-                            onChange={e => setSearchTerm(e.target.value)}
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                        <MonthlyBarChart 
+                            data={chartReceberData} 
+                            color="#2563eb" 
+                            title="Previsão de Recebimentos por Mês" 
+                            icon={<ArrowUpCircle size={14} className="text-blue-600"/>}
                         />
-                        <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                        <MonthlyBarChart 
+                            data={chartPagarData} 
+                            color="#dc2626" 
+                            title="Previsão de Pagamentos por Mês" 
+                            icon={<ArrowDownCircle size={14} className="text-red-600"/>}
+                        />
                     </div>
-                </div>
 
-                <div className="overflow-x-auto">
-                    <table className="w-full text-left text-sm border-collapse">
-                        <thead className="bg-gray-100 text-gray-600 font-bold uppercase text-xs sticky top-0">
-                            <tr>
-                                <th className="p-4 border-b border-gray-200">Data Venc.</th>
-                                <th className="p-4 border-b border-gray-200">Descrição</th>
-                                <th className="p-4 border-b border-gray-200 text-blue-700">Responsável / Data</th>
-                                <th className="p-4 border-b border-gray-200">Categoria</th>
-                                <th className="p-4 border-b border-gray-200">Entidade / Vínculo</th>
-                                <th className="p-4 border-b border-gray-200">Conta / Banco</th>
-                                <th className="p-4 border-b border-gray-200">Status</th>
-                                <th className="p-4 border-b border-gray-200 text-right">Valor</th>
-                            </tr>
-                        </thead>
-                        <tbody className="divide-y divide-gray-100">
-                            {loading ? (
-                                <tr><td colSpan={8} className="p-10 text-center"><Loader2 className="animate-spin mx-auto text-blue-600"/></td></tr>
-                            ) : filteredData.length === 0 ? (
-                                <tr><td colSpan={8} className="p-10 text-center text-gray-500">Nenhum registro encontrado para este período.</td></tr>
-                            ) : (
-                                filteredData.map(item => (
-                                    <tr key={item.id} className="hover:bg-gray-50 transition-colors">
-                                        <td className="p-4 text-gray-600 font-mono text-xs">
-                                            {new Date(item.due_date).toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' })}
-                                        </td>
-                                        <td className="p-4 font-medium text-gray-800">
-                                            {item.description}
-                                            {item.notes && <div className="text-[10px] text-gray-400 mt-0.5 italic">{item.notes}</div>}
-                                        </td>
-                                        
-                                        {/* NOVA COLUNA DE RESPONSÁVEL / DATA */}
-                                        <td className="p-4 border-b border-gray-200">
-                                            <div className="flex flex-col">
-                                                <span className="text-xs font-bold text-gray-700 uppercase flex items-center gap-1">
-                                                    <User size={10} className="text-gray-400" />
-                                                    {item.updated_by || item.created_by || 'SISTEMA'}
-                                                </span>
-                                                <span className="text-[10px] text-gray-400 font-mono mt-0.5">
-                                                    {new Date(item.created_at).toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' })} {new Date(item.created_at).toLocaleTimeString('pt-BR', {hour: '2-digit', minute:'2-digit', timeZone: 'America/Sao_Paulo'})}
-                                                </span>
-                                            </div>
-                                        </td>
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                        <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+                            <div className="px-5 py-3 bg-blue-50 border-b border-blue-200">
+                                <h4 className="text-xs font-black text-blue-800 uppercase flex items-center gap-2"><ArrowUpCircle size={14}/> Contas a Receber — Por Mês</h4>
+                            </div>
+                            <table className="w-full text-left">
+                                <thead><tr className="text-[9px] font-black text-blue-700 uppercase bg-blue-50/50"><th className="px-4 py-2">Mês</th><th className="px-4 py-2 text-right">Valor</th><th className="px-4 py-2 text-right">Qtd.</th></tr></thead>
+                                <tbody>
+                                    {receberByMonth.map((m, i) => (
+                                        <tr key={i} className="border-t border-gray-100 hover:bg-blue-50/30"><td className="px-4 py-2 text-sm font-bold text-gray-700">{MONTH_NAMES[m.monthIdx]}</td><td className="px-4 py-2 text-sm font-mono text-blue-700 text-right">{formatCurrency(m.value)}</td><td className="px-4 py-2 text-sm text-gray-500 text-right">{m.count}</td></tr>
+                                    ))}
+                                    <tr className="bg-blue-50 border-t-2 border-blue-200"><td className="px-4 py-2 text-xs font-black text-blue-800 uppercase">Total Geral</td><td className="px-4 py-2 text-sm font-black font-mono text-blue-800 text-right">{formatCurrency(totalAReceber)}</td><td className="px-4 py-2 text-sm font-black text-blue-800 text-right">{aReceberFuture.length}</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
 
-                                        <td className="p-4 text-xs text-gray-600">
-                                            <span className="bg-gray-100 px-2 py-1 rounded border border-gray-200">
-                                                {item.category_name || 'Sem Categoria'}
-                                            </span>
-                                        </td>
-                                        <td className="p-4 text-xs text-gray-600">
-                                            {item.entity_name ? (
-                                                <>
-                                                    <span className="font-bold">{item.entity_name}</span>
-                                                    <span className="text-[10px] text-gray-400 block">{item.entity_type}</span>
-                                                </>
-                                            ) : '-'}
-                                        </td>
-                                        <td className="p-4 text-xs text-gray-600">
-                                            {item.account_name || '-'}
-                                        </td>
-                                        <td className="p-4">
-                                            <span className={`text-[10px] font-bold px-2 py-1 rounded border ${item.status === 'PAID' ? 'bg-green-50 text-green-700 border-green-200' : 'bg-yellow-50 text-yellow-700 border-yellow-200'}`}>
-                                                {item.status === 'PAID' ? 'PAGO' : 'PENDENTE'}
-                                            </span>
-                                        </td>
-                                        <td className={`p-4 text-right font-mono font-bold ${item.type === 'INCOME' ? 'text-green-600' : 'text-red-600'}`}>
-                                            {item.type === 'INCOME' ? '+' : '-'} R$ {item.amount.toLocaleString('pt-BR', {minimumFractionDigits: 2, maximumFractionDigits: 2})}
-                                        </td>
+                        <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+                            <div className="px-5 py-3 bg-red-50 border-b border-red-200">
+                                <h4 className="text-xs font-black text-red-800 uppercase flex items-center gap-2"><ArrowDownCircle size={14}/> Contas a Pagar — Por Mês</h4>
+                            </div>
+                            <table className="w-full text-left">
+                                <thead><tr className="text-[9px] font-black text-red-700 uppercase bg-red-50/50"><th className="px-4 py-2">Mês</th><th className="px-4 py-2 text-right">Valor</th><th className="px-4 py-2 text-right">Qtd.</th></tr></thead>
+                                <tbody>
+                                    {pagarByMonth.map((m, i) => (
+                                        <tr key={i} className="border-t border-gray-100 hover:bg-red-50/30"><td className="px-4 py-2 text-sm font-bold text-gray-700">{MONTH_NAMES[m.monthIdx]}</td><td className="px-4 py-2 text-sm font-mono text-red-700 text-right">{formatCurrency(m.value)}</td><td className="px-4 py-2 text-sm text-gray-500 text-right">{m.count}</td></tr>
+                                    ))}
+                                    <tr className="bg-red-50 border-t-2 border-red-200"><td className="px-4 py-2 text-xs font-black text-red-800 uppercase">Total Geral</td><td className="px-4 py-2 text-sm font-black font-mono text-red-800 text-right">{formatCurrency(totalAPagar)}</td><td className="px-4 py-2 text-sm font-black text-red-800 text-right">{aPagarFuture.length}</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                        <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+                            <div className="px-5 py-3 bg-blue-50 border-b border-blue-200">
+                                <h4 className="text-xs font-black text-blue-800 uppercase flex items-center gap-2"><Calendar size={14}/> Receber — Por Semana</h4>
+                            </div>
+                            <table className="w-full text-left">
+                                <thead><tr className="text-[9px] font-black text-blue-700 uppercase bg-blue-50/50"><th className="px-4 py-2">Semana (Dom — Sáb)</th><th className="px-4 py-2 text-right">Valor</th><th className="px-4 py-2 text-right">Qtd.</th></tr></thead>
+                                <tbody>
+                                    {receberByWeek.length === 0 ? (
+                                        <tr><td colSpan={3} className="px-4 py-6 text-center text-gray-400 text-xs">Nenhum título a receber no período.</td></tr>
+                                    ) : receberByWeek.map((w, i) => (
+                                        <tr key={i} className="border-t border-gray-100 hover:bg-blue-50/30"><td className="px-4 py-2 text-xs font-bold text-gray-600 font-mono">{w.label}</td><td className="px-4 py-2 text-sm font-mono text-blue-700 text-right">{formatCurrency(w.value)}</td><td className="px-4 py-2 text-sm text-gray-500 text-right">{w.count}</td></tr>
+                                    ))}
+                                    {receberByWeek.length > 0 && (
+                                        <tr className="bg-blue-50 border-t-2 border-blue-200"><td className="px-4 py-2 text-xs font-black text-blue-800 uppercase">Total</td><td className="px-4 py-2 text-sm font-black font-mono text-blue-800 text-right">{formatCurrency(receberByWeek.reduce((a, w) => a + w.value, 0))}</td><td className="px-4 py-2 text-sm font-black text-blue-800 text-right">{receberByWeek.reduce((a, w) => a + w.count, 0)}</td></tr>
+                                    )}
+                                </tbody>
+                            </table>
+                        </div>
+
+                        <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+                            <div className="px-5 py-3 bg-red-50 border-b border-red-200">
+                                <h4 className="text-xs font-black text-red-800 uppercase flex items-center gap-2"><Calendar size={14}/> Pagar — Por Semana</h4>
+                            </div>
+                            <table className="w-full text-left">
+                                <thead><tr className="text-[9px] font-black text-red-700 uppercase bg-red-50/50"><th className="px-4 py-2">Semana (Dom — Sáb)</th><th className="px-4 py-2 text-right">Valor</th><th className="px-4 py-2 text-right">Qtd.</th></tr></thead>
+                                <tbody>
+                                    {pagarByWeek.length === 0 ? (
+                                        <tr><td colSpan={3} className="px-4 py-6 text-center text-gray-400 text-xs">Nenhum título a pagar no período.</td></tr>
+                                    ) : pagarByWeek.map((w, i) => (
+                                        <tr key={i} className="border-t border-gray-100 hover:bg-red-50/30"><td className="px-4 py-2 text-xs font-bold text-gray-600 font-mono">{w.label}</td><td className="px-4 py-2 text-sm font-mono text-red-700 text-right">{formatCurrency(w.value)}</td><td className="px-4 py-2 text-sm text-gray-500 text-right">{w.count}</td></tr>
+                                    ))}
+                                    {pagarByWeek.length > 0 && (
+                                        <tr className="bg-red-50 border-t-2 border-red-200"><td className="px-4 py-2 text-xs font-black text-red-800 uppercase">Total</td><td className="px-4 py-2 text-sm font-black font-mono text-red-800 text-right">{formatCurrency(pagarByWeek.reduce((a, w) => a + w.value, 0))}</td><td className="px-4 py-2 text-sm font-black text-red-800 text-right">{pagarByWeek.reduce((a, w) => a + w.count, 0)}</td></tr>
+                                    )}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    {(overdueIncome.length > 0 || overdueExpense.length > 0) && (
+                        <div className="bg-white rounded-xl border-2 border-red-300 shadow-sm overflow-hidden">
+                            <div className="px-5 py-3 bg-red-100 border-b border-red-300">
+                                <h4 className="text-xs font-black text-red-800 uppercase flex items-center gap-2"><AlertTriangle size={14}/> Inadimplência — Títulos Vencidos</h4>
+                            </div>
+                            <table className="w-full text-left">
+                                <thead><tr className="text-[9px] font-black text-red-700 uppercase bg-red-50"><th className="px-4 py-2">Cliente / Favorecido</th><th className="px-4 py-2 text-right">Valor Total</th><th className="px-4 py-2 text-center">Vencimento Mais Antigo</th><th className="px-4 py-2 text-right">Dias Vencidos</th><th className="px-4 py-2 text-right">Qtd. Títulos</th></tr></thead>
+                                <tbody>
+                                    {overdueByClient.map((c, i) => {
+                                        const dueDate = new Date(c.oldestDue + 'T12:00:00');
+                                        return (
+                                            <tr key={i} className="border-t border-red-100 hover:bg-red-50/50">
+                                                <td className="px-4 py-2.5 text-sm font-bold text-gray-800">{c.client}</td>
+                                                <td className="px-4 py-2.5 text-sm font-mono font-bold text-red-700 text-right">{formatCurrency(c.value)}</td>
+                                                <td className="px-4 py-2.5 text-xs font-mono text-gray-500 text-center">{dueDate.toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' })}</td>
+                                                <td className="px-4 py-2.5 text-sm font-black text-red-600 text-right">{c.maxDays}</td>
+                                                <td className="px-4 py-2.5 text-sm text-gray-600 text-right">{c.count}</td>
+                                            </tr>
+                                        );
+                                    })}
+                                    <tr className="bg-red-100 border-t-2 border-red-300">
+                                        <td className="px-4 py-2 text-xs font-black text-red-800 uppercase">Total Inadimplência</td>
+                                        <td className="px-4 py-2 text-sm font-black font-mono text-red-800 text-right">{formatCurrency(totalInadimplencia)}</td>
+                                        <td className="px-4 py-2"></td>
+                                        <td className="px-4 py-2 text-sm font-black text-red-800 text-right">{overdueByClient.length > 0 ? Math.max(...overdueByClient.map(c => c.maxDays)) : 0}</td>
+                                        <td className="px-4 py-2 text-sm font-black text-red-800 text-right">{overdueIncome.length + overdueExpense.length}</td>
                                     </tr>
-                                ))
-                            )}
-                        </tbody>
-                        <tfoot className="bg-gray-50 font-bold border-t-2 border-gray-300">
-                            <tr>
-                                <td colSpan={7} className="p-4 text-right text-gray-700 uppercase">Total do Relatório:</td>
-                                <td className={`p-4 text-right font-mono ${totals.balance >= 0 ? 'text-blue-800' : 'text-red-800'}`}>
-                                    R$ {totals.balance.toLocaleString('pt-BR', {minimumFractionDigits: 2, maximumFractionDigits: 2})}
-                                </td>
-                            </tr>
-                        </tfoot>
-                    </table>
-                </div>
-            </div>
+                                </tbody>
+                            </table>
+                        </div>
+                    )}
+
+                    <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+                        <div className="px-5 py-3 bg-gray-50 border-b border-gray-200 flex flex-col md:flex-row justify-between items-center gap-3">
+                            <h4 className="text-xs font-black text-gray-700 uppercase flex items-center gap-2"><FileText size={14}/> Todos os Lançamentos</h4>
+                            <div className="flex gap-2 items-center no-print">
+                                <div className="flex gap-1">
+                                    {(['ALL','INCOME','EXPENSE'] as const).map(ft => (
+                                        <button key={ft} onClick={() => setFilterType(ft)} className={`px-3 py-1 rounded-lg text-[10px] font-bold uppercase transition-all ${filterType === ft ? (ft === 'INCOME' ? 'bg-green-600 text-white' : ft === 'EXPENSE' ? 'bg-red-600 text-white' : 'bg-gray-800 text-white') : 'bg-white border border-gray-300 text-gray-500 hover:bg-gray-50'}`} data-testid={`btn-filter-${ft.toLowerCase()}`}>
+                                            {ft === 'ALL' ? 'Todos' : ft === 'INCOME' ? 'Receitas' : 'Despesas'}
+                                        </button>
+                                    ))}
+                                </div>
+                                <div className="relative">
+                                    <input type="text" placeholder="Buscar..." className="pl-8 pr-3 py-1.5 border border-gray-300 rounded-lg text-xs w-48 focus:border-blue-500 outline-none" value={searchTerm} onChange={e => setSearchTerm(e.target.value)} data-testid="input-search-report"/>
+                                    <Search size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400"/>
+                                </div>
+                            </div>
+                        </div>
+                        <div className="overflow-x-auto max-h-[500px] overflow-y-auto">
+                            <table className="w-full text-left text-sm">
+                                <thead className="bg-gray-100 text-[9px] font-black text-gray-500 uppercase sticky top-0">
+                                    <tr>
+                                        <th className="px-4 py-2">Vencimento</th>
+                                        <th className="px-4 py-2">Descrição</th>
+                                        <th className="px-4 py-2">Responsável</th>
+                                        <th className="px-4 py-2">Categoria</th>
+                                        <th className="px-4 py-2">Entidade</th>
+                                        <th className="px-4 py-2">Status</th>
+                                        <th className="px-4 py-2 text-right">Valor</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-gray-100">
+                                    {(() => {
+                                        let list = nonInvestTx;
+                                        if (filterType !== 'ALL') list = list.filter(t => t.type === filterType);
+                                        if (searchTerm.trim()) {
+                                            const term = searchTerm.toLowerCase().trim();
+                                            list = list.filter(t => t.description.toLowerCase().includes(term) || (t.entity_name || '').toLowerCase().includes(term) || (t.category_name || '').toLowerCase().includes(term));
+                                        }
+                                        if (list.length === 0) return <tr><td colSpan={7} className="px-4 py-10 text-center text-gray-400 text-xs">Nenhum lançamento encontrado.</td></tr>;
+                                        return list.slice(0, 200).map(item => {
+                                            const isOverdue = item.status === 'PENDING' && item.due_date.split('T')[0] < todayStr;
+                                            return (
+                                                <tr key={item.id} className={`hover:bg-gray-50 ${isOverdue ? 'bg-red-50/50' : ''}`}>
+                                                    <td className="px-4 py-2 text-xs font-mono text-gray-600">{new Date(item.due_date).toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' })}</td>
+                                                    <td className="px-4 py-2 text-xs font-bold text-gray-800 uppercase max-w-[250px] truncate">{item.description}</td>
+                                                    <td className="px-4 py-2 text-[10px] text-gray-500 uppercase">{item.updated_by || item.created_by || 'SISTEMA'}</td>
+                                                    <td className="px-4 py-2 text-[10px]"><span className="bg-gray-100 px-2 py-0.5 rounded border border-gray-200">{item.category_name || '-'}</span></td>
+                                                    <td className="px-4 py-2 text-[10px] text-gray-600">{item.entity_name || '-'}</td>
+                                                    <td className="px-4 py-2">
+                                                        <span className={`text-[9px] font-bold px-2 py-0.5 rounded border ${item.status === 'PAID' ? 'bg-green-50 text-green-700 border-green-200' : isOverdue ? 'bg-red-50 text-red-700 border-red-200' : 'bg-yellow-50 text-yellow-700 border-yellow-200'}`}>
+                                                            {item.status === 'PAID' ? 'PAGO' : isOverdue ? 'VENCIDO' : 'PENDENTE'}
+                                                        </span>
+                                                    </td>
+                                                    <td className={`px-4 py-2 text-right font-mono font-bold text-xs ${item.type === 'INCOME' ? 'text-green-600' : 'text-red-600'}`}>
+                                                        {item.type === 'INCOME' ? '+' : '-'} {formatCurrency(item.amount)}
+                                                    </td>
+                                                </tr>
+                                            );
+                                        });
+                                    })()}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </>
+            )}
         </div>
     );
 };
