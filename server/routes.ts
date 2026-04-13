@@ -122,7 +122,7 @@ export async function registerRoutes(
         from += 1000;
       }
 
-      const { data: clientTablesRaw } = await sb.from('price_tables').select('*');
+      const { data: clientTablesRaw } = await sb.from('client_price_tables').select('*');
       const { data: providerTablesRaw } = await sb.from('provider_cost_tables').select('*');
       const { data: clientsRaw } = await sb.from('clients').select('*');
 

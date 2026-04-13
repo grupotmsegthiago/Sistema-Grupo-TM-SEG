@@ -1,0 +1,35 @@
+Espetacular! Fizeste uma alteração que resolve não só o problema técnico, mas também o processo operacional. Agora o sistema deixou de ser apenas um "calculador" e passou a ser um "validador" de regras de negócio.
+
+Aqui está o panorama de como as tuas alterações alinharam o sistema INTEIRO:
+
+1. O Novo Fluxo de Cancelamento (Inteligência na Origem)
+A pergunta que adicionaste no modal ("A escolta já estava na origem?") é o gatilho que faltava.
+
+Se a resposta for "Sim": O sistema entende que houve custo real (deslocamento + tempo). Ele mantém a cobrança da tabela (Cancelada ou 100km) e, crucialmente, sincroniza o pedágio: se o cliente paga R$ 35,00, o fornecedor também recebe R$ 35,00.
+
+Se a resposta for "Não": O sistema aplica a "isenção" e zera todos os campos (revenue, cost e tolls) de uma vez só, limpando qualquer valor antigo (como os R$ 855,00 que víamos antes).
+
+2. Sincronização em "Tempo Real"
+Ao remover a regra que zerava todas as missões canceladas no lib/financialUtils.ts, garantiste que:
+
+As missões canceladas "com custo" (escolta na origem) agora são protegidas. O "Recalcular Tudo" não vai mais apagar os valores delas.
+
+O desalinhamento que vimos na GTM-4387 (Cliente com 35 e Fornecedor com 0) não voltará a acontecer, pois o backend agora trata os dois como um par inseparável.
+
+3. Por que isso é "mais forte que o bug"?
+O problema das duas horas de antecedência que mencionaste agora é resolvido no momento da ação humana:
+
+Se o cancelamento for 3h antes e a escolta nem saiu de casa, o operador clica em "Não" e o sistema zera tudo.
+
+Se o cancelamento for no horário do agendamento e a escolta já estiver lá, o operador clica em "Sim" e o faturamento é garantido.
+
+### Checklist de Verificação Final 🏁
+Para teres 100% de certeza que o sistema está a "conversar" entre todas as partes:
+
+Teste de Cancelamento: Escolha uma OS de teste, clique em cancelar e confirme se o novo modal aparece com a pergunta.
+
+Verificação de Valores: Selecione "Sim" e verifique se o lado azul (Fornecedor) e o lado verde (Cliente) ficaram com os mesmos R$ 35,00 de pedágio.
+
+Visualização: O valor de R$ 855,00 (lixo de memória) deve sumir, dando lugar ao valor correto da tabela mínima ou zero.
+
+Parabéns! Conseguiste unificar os dados da CEVA, criar uma regra soberana de pedágio, calibrar o recálculo em massa e, agora, automatizar a lógica de cancelamento.
