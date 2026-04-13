@@ -203,7 +203,7 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
     if (!currentUser) return false;
     const nameLower = (currentUser.name || '').toLowerCase();
     const roleLower = (currentUser.role || '').toLowerCase();
-    return nameLower.includes('daniel') || nameLower.includes('barbara') || nameLower.includes('bárbara') || nameLower.includes('thiago') || roleLower === 'controller';
+    return nameLower.includes('daniel') || nameLower.includes('michelle') || nameLower.includes('barbara') || nameLower.includes('bárbara') || nameLower.includes('thiago') || roleLower === 'controller';
   }, [currentUser]);
   
   const isCommercial = useMemo(() => {
@@ -719,7 +719,7 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
         if (!currentUser) return null;
         const nameLower = (currentUser.name || '').toLowerCase();
         const roleLower = (currentUser.role || '').toLowerCase();
-        if (nameLower.includes('daniel')) return 'auditor';
+        if (nameLower.includes('daniel') || nameLower.includes('michelle')) return 'auditor';
         if (nameLower.includes('barbara') || nameLower.includes('bárbara') || roleLower === 'administrador') return 'financeiro';
         if (nameLower.includes('thiago') || roleLower === 'diretoria') return 'diretoria';
         return null;

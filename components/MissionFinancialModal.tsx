@@ -1074,7 +1074,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
   const getApprovalStage = (userName: string, userRole: string): { stage: string; label: string } => {
       const nameLower = (userName || '').toLowerCase();
       const roleLower = (userRole || '').toLowerCase();
-      if (nameLower.includes('daniel')) return { stage: 'auditor', label: 'Aprovado pelo Auditor' };
+      if (nameLower.includes('daniel') || nameLower.includes('michelle')) return { stage: 'auditor', label: 'Aprovado pelo Auditor' };
       if (roleLower === 'administrador' || nameLower.includes('barbara') || nameLower.includes('bárbara')) return { stage: 'financeiro', label: 'Aprovado pelo Financeiro' };
       if (roleLower === 'diretoria' || nameLower.includes('thiago')) return { stage: 'diretoria', label: 'Aprovado pela Diretoria' };
       if (roleLower === 'controller') return { stage: 'controller', label: 'Aprovado pelo Controller' };
@@ -1116,7 +1116,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
           const u = JSON.parse(localStorage.getItem('userData') || '{}');
           const uName = (u.name || '').toLowerCase();
           const uRole = (u.role || '').toLowerCase();
-          if (uName.includes('daniel')) currentUserStage = 'auditor';
+          if (uName.includes('daniel') || uName.includes('michelle')) currentUserStage = 'auditor';
           else if (uRole === 'administrador' || uName.includes('barbara') || uName.includes('bárbara')) currentUserStage = 'financeiro';
           else if (uRole === 'diretoria' || uName.includes('thiago')) currentUserStage = 'diretoria';
           else if (uRole === 'controller') currentUserStage = 'controller';

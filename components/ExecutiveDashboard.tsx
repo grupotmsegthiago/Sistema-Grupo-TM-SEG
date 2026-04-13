@@ -147,11 +147,11 @@ const ExecutiveDashboard: React.FC<Props> = ({ missions, isDirector, clientTable
         const userData = JSON.parse(localStorage.getItem('userData') || '{}');
         const userName = (userData.name || '').toLowerCase();
         const userRole = (userData.role || '').toLowerCase();
-        const isAllowed = userName.includes('daniel') || userName.includes('barbara') || userName.includes('bárbara') || userRole === 'administrador' || userRole === 'diretoria' || userName.includes('thiago');
+        const isAllowed = userName.includes('daniel') || userName.includes('michelle') || userName.includes('barbara') || userName.includes('bárbara') || userRole === 'administrador' || userRole === 'diretoria' || userName.includes('thiago');
         if (!isAllowed) return;
 
         let stage = 'operacional';
-        if (userName.includes('daniel')) stage = 'auditor';
+        if (userName.includes('daniel') || userName.includes('michelle')) stage = 'auditor';
         else if (userName.includes('barbara') || userName.includes('bárbara') || userRole === 'administrador') stage = 'financeiro';
         else if (userName.includes('thiago') || userRole === 'diretoria') stage = 'diretoria';
 
@@ -1575,11 +1575,11 @@ const ExecutiveDashboard: React.FC<Props> = ({ missions, isDirector, clientTable
                                 const userData = JSON.parse(localStorage.getItem('userData') || '{}');
                                 const uName = (userData.name || '').toLowerCase();
                                 const uRole = (userData.role || '').toLowerCase();
-                                const canApprove = uName.includes('daniel') || uName.includes('barbara') || uName.includes('bárbara') || uRole === 'administrador' || uRole === 'diretoria' || uName.includes('thiago');
+                                const canApprove = uName.includes('daniel') || uName.includes('michelle') || uName.includes('barbara') || uName.includes('bárbara') || uRole === 'administrador' || uRole === 'diretoria' || uName.includes('thiago');
                                 const conferidasCount = excelComparison!.filter(c => c.found && c.revMatch && c.costMatch && !c.isApproved && !adjustedOsIds.has(c.osId)).length;
                                 if (!canApprove || conferidasCount === 0) return null;
                                 let stageLabel = 'Aprovador';
-                                if (uName.includes('daniel')) stageLabel = 'Auditor';
+                                if (uName.includes('daniel') || uName.includes('michelle')) stageLabel = 'Auditor';
                                 else if (uName.includes('barbara') || uName.includes('bárbara') || uRole === 'administrador') stageLabel = 'Financeiro';
                                 else if (uName.includes('thiago') || uRole === 'diretoria') stageLabel = 'Diretoria';
                                 return (
