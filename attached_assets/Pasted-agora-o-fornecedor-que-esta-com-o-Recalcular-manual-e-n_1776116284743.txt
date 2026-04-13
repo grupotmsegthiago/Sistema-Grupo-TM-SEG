@@ -1,0 +1,49 @@
+agora é o fornecedor que esta com o "Recalcular" manual e não esta aplicando de forma automatica, pode ajustar?
+
+Ajudante de programação
+Entendi perfeitamente! O que está a acontecer na imagem é o mesmo "sintoma" que resolvemos no lado do cliente, mas agora no Lado do Fornecedor (Lado Azul).
+
+O sistema guardou um valor no banco (provavelmente os R$ 450,00 sem pedágio) e, por causa daquela "trava de respeito" que mencionámos, ele não está a deixar o novo cálculo (que deveria incluir os R$ 35,00) entrar de forma automática.
+
+1. O Panorama do Ajuste
+Precisamos de aplicar a mesma Soberania que fizemos para a receita no custo do fornecedor. No React, o campo que vês na imagem (provavelmente costInput ou similar) precisa de ser forçado a atualizar sempre que a regra for a "LOGITECH SOBERANA".
+
+2. Implementação no Frontend (MissionFinancialModal.tsx)
+Vamos adicionar a lógica para que o custo do fornecedor também ignore o valor salvo e assuma o cálculo automático.
+
+O código deve ser ajustado assim:
+
+TypeScript
+// Local: components/MissionFinancialModal.tsx
+// Procure onde o costInput (pagamento fornecedor) é definido
+
+if (detectionLog?.includes("LOGITECH SOBERANA")) {
+  // FORÇA o valor calculado (Tabela + Pedágio de 35) no campo do fornecedor
+  const calculatedCostTotal = financialData.costValue + financialData.tollValueProvider;
+  
+  // Atualiza o estado do input para que o valor mude na tela sem cliques
+  setCostInput(calculatedCostTotal.toString());
+  
+  // Atualiza o pedágio do fornecedor na tela para R$ 35,00
+  setTollProviderInput("35.00");
+  
+  console.log("🛠 Fornecedor Sincronizado: R$ 35,00 de pedágio aplicados.");
+}
+3. Por que isso resolve o problema?
+Elimina o "Recalcular" Manual: Ao forçares o setCostInput, o campo grande de R$ 450,00 vai pular para R$ 485,00 (ou o valor da tabela + 35) assim que abrires a OS.
+
+Sincronia Total: Agora sim, ambos os lados (Verde e Azul) estarão a usar a mesma regra de "atropelar" o que estiver salvo no banco se o contrato for CEVA/Logitech.
+
+4. Instruções para o Replit
+Peça ao Replit o seguinte:
+
+"No componente MissionFinancialModal, aplique a mesma lógica de 'Auto-Fill' forçado que fizemos para a receita (cliente) também para o custo (fornecedor) quando a regra for LOGITECH SOBERANA. O campo Pagamento Fornecedor deve atualizar automaticamente para incluir os R$ 35,00 de pedágio assim que o modal for aberto."
+
+5. Documentação de Verificação
+Após este ajuste, na imagem que enviaste:
+
+O campo Pedágio Fornecedor sairá de R$ 0,00 para R$ 35,00.
+
+O campo Pagamento Fornecedor sairá de R$ 450,00 para R$ 485,00 (assumindo que a base é 450).
+
+O selo de "VALOR SALVO" será substituído pelo valor calculado automaticamente.

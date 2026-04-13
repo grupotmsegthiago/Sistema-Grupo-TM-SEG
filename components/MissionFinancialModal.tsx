@@ -904,16 +904,22 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
 
           const isCevaLogitech = financialData.client?.detectionLog?.includes('LOGITECH SOBERANA');
           if (isCevaLogitech && dbValuesLoadedRef.current && !isSavingRef.current) {
+              const fmt = (v: number) => v.toLocaleString('pt-BR', {minimumFractionDigits: 2, maximumFractionDigits: 2});
               const calcRevTotal = financialData.client.total;
               const currentInput = parseNumber(revenueInput);
               if (calcRevTotal > 0 && Math.abs(currentInput - calcRevTotal) > 1) {
-                  setRevenueInput(calcRevTotal.toLocaleString('pt-BR', {minimumFractionDigits: 2, maximumFractionDigits: 2}));
+                  setRevenueInput(fmt(calcRevTotal));
               }
               const calcToll = financialData.tollValue || 0;
               const currentToll = parseNumber(tollInput);
               if (calcToll > 0 && Math.abs(currentToll - calcToll) > 0.5) {
-                  setTollInput(calcToll.toLocaleString('pt-BR', {minimumFractionDigits: 2, maximumFractionDigits: 2}));
-                  setTollProviderInput(calcToll.toLocaleString('pt-BR', {minimumFractionDigits: 2, maximumFractionDigits: 2}));
+                  setTollInput(fmt(calcToll));
+                  setTollProviderInput(fmt(calcToll));
+              }
+              const calcCostTotal = financialData.provider.total;
+              const currentCostInput = parseNumber(costInput);
+              if (calcCostTotal > 0 && Math.abs(currentCostInput - calcCostTotal) > 1) {
+                  setCostInput(fmt(calcCostTotal));
               }
           }
           
