@@ -162,18 +162,21 @@ export async function registerRoutes(
           const revDiff = Math.abs(calcRev - savedRev);
           const costDiff = Math.abs(calcCost - savedCost);
 
-          if (revDiff > 1 || costDiff > 1) {
-            const toll = m.toll_value || 0;
-            const tollProv = m.toll_value_provider != null ? m.toll_value_provider : toll;
+          const calcToll = r2(fd.tollValue || 0);
+          const oldToll = r2(m.toll_value || 0);
+          const tollDiff = Math.abs(calcToll - oldToll);
+
+          if (revDiff > 1 || costDiff > 1 || tollDiff > 0.5) {
+            const tollProv = m.is_same_os ? 0 : calcToll;
             await sb.from('missions').update({
               revenue_value: calcRev,
               cost_value: calcCost,
-              toll_value: r2(toll),
-              toll_value_provider: r2(m.is_same_os ? 0 : tollProv),
+              toll_value: calcToll,
+              toll_value_provider: r2(tollProv),
               last_update: new Date().toISOString()
             }).eq('id', m.id);
             updated++;
-            details.push({ id: m.id, client: m.client, oldRev: savedRev, newRev: calcRev, oldCost: savedCost, newCost: calcCost, revDiff: r2(revDiff), costDiff: r2(costDiff) });
+            details.push({ id: m.id, client: m.client, oldRev: savedRev, newRev: calcRev, oldCost: savedCost, newCost: calcCost, oldToll: oldToll, newToll: calcToll, revDiff: r2(revDiff), costDiff: r2(costDiff) });
           } else {
             skipped++;
           }

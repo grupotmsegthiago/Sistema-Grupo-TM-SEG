@@ -1,0 +1,86 @@
+quero rodar um script para atualizar todas as OS que tem esses apontamentos
+
+Ajudante de programação
+Excelente iniciativa! Como já alteramos o "motor" do sistema (financialUtils.ts), as novas missões já nascem certas. Mas para as antigas, precisamos de um script de migração que percorra a base de dados (Supabase) e force a atualização.
+
+Como o teu projeto usa TypeScript/Express no backend e Supabase como base de dados, o ideal é criar um script que utilize o cliente do Supabase para filtrar e atualizar em lote.
+
+1. Panorama Geral da Solução
+O script seguirá este algoritmo:
+
+Filtragem: Selecionar todas as OS onde o cliente é "CEVA LOGISTICS LTDA" e a origem contém "Jundiaí".
+
+Verificação de Tabela: Garantir que estamos a atuar apenas nas que usam a tabela "LOGITECH/200KM".
+
+Atualização: Sobrescrever os campos toll_client e toll_supplier para 35.00.
+
+2. O Programa (Script de Migração)
+Podes criar um arquivo temporário no teu Replit chamado scripts/migrateCevaTolls.ts:
+
+TypeScript
+import { createClient } from '@supabase/supabase-js';
+
+// Configurações do Supabase (as tuas variáveis de ambiente já devem ter isto)
+const supabase = createClient(
+  process.env.SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY! // Use a service role para bypassar RLS se necessário
+);
+
+async function atualizarPedagiosCeva() {
+  console.log("🚀 Iniciando migração de pedágios CEVA...");
+
+  // 1. Buscar as missões que se encaixam no critério
+  const { data: missions, error } = await supabase
+    .from('missions') // substitua pelo nome real da sua tabela de OS
+    .select('id, origin_city, client_name, toll_client, toll_supplier')
+    .ilike('client_name', '%CEVA LOGISTICS%')
+    .ilike('origin_city', '%JUNDIAI%');
+
+  if (error) {
+    console.error("❌ Erro ao buscar missões:", error);
+    return;
+  }
+
+  console.log(`🔍 Encontradas ${missions.length} missões para processar.`);
+
+  // 2. Atualizar uma por uma (ou em batch)
+  for (const mission of missions) {
+    const { error: updateError } = await supabase
+      .from('missions')
+      .update({
+        toll_client: 35.00,
+        toll_supplier: 35.00,
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', mission.id);
+
+    if (updateError) {
+      console.error(`❌ Erro na OS ${mission.id}:`, updateError);
+    } else {
+      console.log(`✅ OS ${mission.id} atualizada para R$ 35,00.`);
+    }
+  }
+
+  console.log("🏁 Migração concluída!");
+}
+
+atualizarPedagiosCeva();
+3. Instruções de Implementação e Execução
+Para rodar isto no Replit, segue estes passos:
+
+Cria o arquivo: Cria uma pasta scripts (se não existir) e o arquivo migrateCevaTolls.ts.
+
+Verifica os nomes das tabelas: No teu Supabase, confirma se a tabela se chama missions e se os campos são toll_client e toll_supplier.
+
+Execução: No terminal do Replit, corre o seguinte comando:
+
+Bash
+npx ts-node scripts/migrateCevaTolls.ts
+(Se o ts-node não estiver instalado, podes usar node --loader ts-node/esm ou verificar como o teu projeto corre scripts TypeScript).
+
+4. Documentação dos Cuidados
+Atenção: Como removemos a trava e tornámos a regra Soberana, este script é seguro porque o motor financeiro agora concorda com o que o banco de dados terá.
+
+Sugestão: Antes de rodar em todas, podes adicionar um .limit(5) na busca para testar se as primeiras 5 OS ficam perfeitas na interface.
+
+Este script vai "limpar" o histórico e garantir que quando o teu financeiro abrir as OS antigas, o valor de R$ 35,00 já esteja lá, sem precisar de clicar em "Recalcular".
