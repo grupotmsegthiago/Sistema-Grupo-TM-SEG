@@ -1030,4 +1030,46 @@ export async function sendApprovalPendingReport(to: string, missions: any[], rep
   }
 }
 
+export async function sendCancelledMissingInfoEmail(to: string, mission: any, missingFields: string[]): Promise<boolean> {
+  const now = new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' });
+
+  const fieldsHtml = missingFields.map(f => `<li style="padding:4px 0; color:#c0392b; font-weight:600;">${f}</li>`).join('');
+
+  const html = baseTemplate(`
+    <h2>⚠️ OS Cancelada com Dados Incompletos</h2>
+    <div class="highlight-box">
+      <p><strong>A missão abaixo foi cancelada, mas está com informações cruciais faltando para o cálculo financeiro.</strong></p>
+    </div>
+    <table class="info-table">
+      <tr><td>OS</td><td><strong>${mission.id || '—'}</strong></td></tr>
+      <tr><td>Cliente</td><td>${mission.client || '—'}</td></tr>
+      <tr><td>Origem</td><td>${mission.origin || '—'}</td></tr>
+      <tr><td>Destino</td><td>${mission.destination || '—'}</td></tr>
+      <tr><td>Data Agendamento</td><td>${mission.scheduledDate || mission.scheduled_date || '—'}</td></tr>
+      <tr><td>Status</td><td><span class="badge">CANCELADA</span></td></tr>
+      <tr><td>Cancelada em</td><td>${now}</td></tr>
+    </table>
+    <h3 style="color:#c0392b; margin-top:20px;">Campos Faltantes:</h3>
+    <ul style="list-style:none; padding-left:0;">
+      ${fieldsHtml}
+    </ul>
+    <p style="margin-top:16px; font-size:13px; color:#555;">Por favor, verifique e preencha os dados faltantes no sistema para garantir o correto faturamento.</p>
+    <p style="font-size:12px; color:#999; margin-top:24px;">Este alerta é gerado automaticamente pelo sistema TMSEGo.</p>
+  `);
+
+  try {
+    await transporter.sendMail({
+      from: SMTP_FROM,
+      to,
+      subject: `⚠️ OS ${mission.id} Cancelada — Dados Incompletos para Cálculo`,
+      html,
+    });
+    console.log(`[Email] Alerta de OS cancelada com dados faltantes enviado → ${to} | OS: ${mission.id}`);
+    return true;
+  } catch (err: any) {
+    console.error(`[Email] Erro ao enviar alerta de cancelamento:`, err.message);
+    return false;
+  }
+}
+
 export { transporter };

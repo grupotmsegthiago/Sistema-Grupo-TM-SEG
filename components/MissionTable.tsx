@@ -976,6 +976,17 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
             if (error) throw error;
             const motivo = cancelEscortAtOrigin ? 'Escolta na origem — valores mantidos' : 'Escolta NÃO na origem — valores zerados';
             await logAction('UPDATE', 'Mission', missionToDelete.id, `Missão cancelada por ${currentUser?.name}. ${motivo}`);
+
+            try {
+                const emailRes = await authFetch(`/api/missions/${missionToDelete.id}/cancel-missing-info-email`, { method: 'POST', headers: { 'Content-Type': 'application/json' } });
+                const emailData = await emailRes.json();
+                if (emailData.sent) {
+                    console.log(`[Cancel] Email enviado — campos faltantes: ${emailData.missingFields?.join(', ')}`);
+                }
+            } catch (emailErr) {
+                console.warn('[Cancel] Falha ao verificar/enviar email de dados faltantes:', emailErr);
+            }
+
             showNotification('Sucesso', `Missão cancelada. ${motivo}.`, 'success');
             setIsDeleteModalOpen(false);
             setMissionToDelete(null);

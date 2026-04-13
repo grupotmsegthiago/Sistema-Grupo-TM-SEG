@@ -9,7 +9,7 @@ import { calculateMissionFinancials } from "../lib/financialUtils";
 import fs from "fs";
 import path from "path";
 import pg from "pg";
-import { sendMissionEmailToClient, sendMissionEmailToProvider, sendMissionResendToClient, sendMirroringEvidenceEmail, sendMissionChangeNotificationToClient, sendMissionChangeNotificationToProvider, sendWelcomeEmail, sendTestEmail, sendVerificationCodeEmail, sendPasswordResetEmail, sendBillingEmail, sendLegalReportEmail, sendPendingInfoReport, sendApprovalPendingReport } from "./emailService";
+import { sendMissionEmailToClient, sendMissionEmailToProvider, sendMissionResendToClient, sendMirroringEvidenceEmail, sendMissionChangeNotificationToClient, sendMissionChangeNotificationToProvider, sendWelcomeEmail, sendTestEmail, sendVerificationCodeEmail, sendPasswordResetEmail, sendBillingEmail, sendLegalReportEmail, sendPendingInfoReport, sendApprovalPendingReport, sendCancelledMissingInfoEmail } from "./emailService";
 import { findOrCreateCustomer, createPayment, getPayment, getPaymentPixQrCode, getPaymentBankSlip, listPayments, deletePayment, mapAsaasStatus, isAsaasConfigured, getAsaasCompanies, scheduleInvoice, listMunicipalServices, getInvoiceByPayment, getAllBalances } from "./asaasService";
 
 const resend = new Resend(process.env.RESEND_API_KEY);
@@ -195,6 +195,43 @@ export async function registerRoutes(
 
       res.json({ success: true, total: allMissions.length, updated, skipped, errors, details: details.slice(0, 50) });
     } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.post('/api/missions/:id/cancel-missing-info-email', requireAuth, async (req: Request, res: Response) => {
+    try {
+      const missionId = req.params.id;
+      const sbUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || '';
+      const sbKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY || '';
+      const sb = createClient(sbUrl, sbKey);
+
+      const { data: mission } = await sb.from('missions').select('*').eq('id', missionId).single();
+      if (!mission) return res.status(404).json({ error: 'Missão não encontrada' });
+
+      const missingFields: string[] = [];
+      const endKm = Number(mission.end_km) || 0;
+      const startKm = Number(mission.start_km) || 0;
+      const endTime = mission.end_time || mission.endTime || '';
+      const startTime = mission.start_time || mission.startTime || '';
+
+      if (!endKm || endKm <= 0) missingFields.push('KM Final não informado');
+      if (!endTime) missingFields.push('Hora Final não informada');
+      if (!startKm || startKm <= 0) missingFields.push('KM Inicial não informado');
+      if (!startTime) missingFields.push('Hora Inicial não informada');
+      if (!mission.agent1 || mission.agent1 === '---' || mission.agent1 === 'N/A') missingFields.push('Agente 1 não informado');
+      if (!mission.provider || mission.provider === '---') missingFields.push('Fornecedor não informado');
+
+      if (missingFields.length === 0) {
+        return res.json({ success: true, sent: false, reason: 'Todos os dados cruciais estão preenchidos' });
+      }
+
+      const recipients = 'barbara@grupotmseg.com.br, michelle@grupotmseg.com.br, thiago@grupotmseg.com.br, daniel@grupotmseg.com.br';
+      const sent = await sendCancelledMissingInfoEmail(recipients, mission, missingFields);
+
+      res.json({ success: true, sent, missingFields });
+    } catch (e: any) {
+      console.error('[Cancel Email]', e.message);
       res.status(500).json({ error: e.message });
     }
   });
