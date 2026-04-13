@@ -63,6 +63,7 @@ const FinancialReport: React.FC = () => {
     const [isDirector, setIsDirector] = useState(false);
     const [filterType, setFilterType] = useState<'ALL' | 'INCOME' | 'EXPENSE'>('ALL');
     const [searchTerm, setSearchTerm] = useState('');
+    const [viewPeriod, setViewPeriod] = useState<'DIA' | 'SEMANA' | 'MES' | 'TRIMESTRE' | 'SEMESTRE' | 'ANUAL' | 'TODOS'>('TODOS');
 
     useEffect(() => {
         const storedUser = localStorage.getItem('userData');
@@ -114,8 +115,63 @@ const FinancialReport: React.FC = () => {
         return transactions.filter(t => !investmentCategoryIds.has(t.category_id));
     }, [transactions, investmentCategoryIds]);
 
-    const pendingIncome = useMemo(() => nonInvestTx.filter(t => t.type === 'INCOME' && (t.status === 'PENDING' || t.status === 'SCHEDULED')), [nonInvestTx]);
-    const pendingExpense = useMemo(() => nonInvestTx.filter(t => t.type === 'EXPENSE' && (t.status === 'PENDING' || t.status === 'SCHEDULED')), [nonInvestTx]);
+    const periodLabel = useMemo(() => {
+        const now = today;
+        const labels: Record<string, string> = {
+            DIA: now.toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' }),
+            SEMANA: 'Semana Atual',
+            MES: `${MONTH_NAMES[now.getMonth()]}/${now.getFullYear()}`,
+            TRIMESTRE: `${MONTH_NAMES[now.getMonth()]}—${MONTH_NAMES[Math.min(now.getMonth()+2, 11)]}/${now.getFullYear()}`,
+            SEMESTRE: `${MONTH_NAMES[now.getMonth()]}—${MONTH_NAMES[Math.min(now.getMonth()+5, 11)]}/${now.getFullYear()}`,
+            ANUAL: `${now.getFullYear()}`,
+            TODOS: 'Todos os períodos',
+        };
+        return labels[viewPeriod] || '';
+    }, [viewPeriod, today]);
+
+    const periodFilteredTx = useMemo(() => {
+        if (viewPeriod === 'TODOS') return nonInvestTx;
+        const now = today;
+        const getRange = (): [string, string] => {
+            const fmtDate = (d: Date) => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+            switch (viewPeriod) {
+                case 'DIA': return [todayStr, todayStr];
+                case 'SEMANA': {
+                    const dayOfWeek = now.getDay();
+                    const sunday = new Date(now.getTime() - dayOfWeek * 86400000);
+                    const saturday = new Date(sunday.getTime() + 6 * 86400000);
+                    return [fmtDate(sunday), fmtDate(saturday)];
+                }
+                case 'MES': {
+                    const start = new Date(now.getFullYear(), now.getMonth(), 1);
+                    const end = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+                    return [fmtDate(start), fmtDate(end)];
+                }
+                case 'TRIMESTRE': {
+                    const start = new Date(now.getFullYear(), now.getMonth(), 1);
+                    const end = new Date(now.getFullYear(), now.getMonth() + 3, 0);
+                    return [fmtDate(start), fmtDate(end)];
+                }
+                case 'SEMESTRE': {
+                    const start = new Date(now.getFullYear(), now.getMonth(), 1);
+                    const end = new Date(now.getFullYear(), now.getMonth() + 6, 0);
+                    return [fmtDate(start), fmtDate(end)];
+                }
+                case 'ANUAL': {
+                    return [`${now.getFullYear()}-01-01`, `${now.getFullYear()}-12-31`];
+                }
+                default: return ['2000-01-01', '2099-12-31'];
+            }
+        };
+        const [rangeStart, rangeEnd] = getRange();
+        return nonInvestTx.filter(t => {
+            const d = t.due_date.split('T')[0];
+            return d >= rangeStart && d <= rangeEnd;
+        });
+    }, [nonInvestTx, viewPeriod, today, todayStr]);
+
+    const pendingIncome = useMemo(() => periodFilteredTx.filter(t => t.type === 'INCOME' && (t.status === 'PENDING' || t.status === 'SCHEDULED')), [periodFilteredTx]);
+    const pendingExpense = useMemo(() => periodFilteredTx.filter(t => t.type === 'EXPENSE' && (t.status === 'PENDING' || t.status === 'SCHEDULED')), [periodFilteredTx]);
 
     const aReceberFuture = useMemo(() => pendingIncome.filter(t => t.due_date.split('T')[0] >= todayStr), [pendingIncome, todayStr]);
     const aPagarFuture = useMemo(() => pendingExpense.filter(t => t.due_date.split('T')[0] >= todayStr), [pendingExpense, todayStr]);
@@ -195,8 +251,8 @@ const FinancialReport: React.FC = () => {
         return Object.values(map).sort((a, b) => b.maxDays - a.maxDays);
     }, [overdueIncome, overdueExpense, today]);
 
-    const paidIncome = useMemo(() => nonInvestTx.filter(t => t.type === 'INCOME' && t.status === 'PAID'), [nonInvestTx]);
-    const paidExpense = useMemo(() => nonInvestTx.filter(t => t.type === 'EXPENSE' && t.status === 'PAID'), [nonInvestTx]);
+    const paidIncome = useMemo(() => periodFilteredTx.filter(t => t.type === 'INCOME' && t.status === 'PAID'), [periodFilteredTx]);
+    const paidExpense = useMemo(() => periodFilteredTx.filter(t => t.type === 'EXPENSE' && t.status === 'PAID'), [periodFilteredTx]);
 
     const totalRecebido = useMemo(() => paidIncome.reduce((a, t) => a + t.amount, 0), [paidIncome]);
     const totalPago = useMemo(() => paidExpense.reduce((a, t) => a + t.amount, 0), [paidExpense]);
@@ -236,6 +292,35 @@ const FinancialReport: React.FC = () => {
                     <button onClick={() => window.print()} className="flex items-center gap-2 bg-gray-900 hover:bg-gray-800 text-white px-4 py-2 rounded-lg text-sm font-bold shadow-sm" data-testid="btn-print-report">
                         <Printer size={16}/> Imprimir / PDF
                     </button>
+                </div>
+            </div>
+
+            <div className="bg-white p-3 rounded-xl shadow-sm border border-gray-200 no-print">
+                <div className="flex flex-wrap items-center gap-2">
+                    <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest mr-1">Período:</span>
+                    {([
+                        { id: 'DIA', label: 'Dia' },
+                        { id: 'SEMANA', label: 'Semana' },
+                        { id: 'MES', label: 'Mês' },
+                        { id: 'TRIMESTRE', label: 'Trimestre' },
+                        { id: 'SEMESTRE', label: 'Semestre' },
+                        { id: 'ANUAL', label: 'Anual' },
+                        { id: 'TODOS', label: 'Todos' },
+                    ] as { id: typeof viewPeriod; label: string }[]).map(p => (
+                        <button
+                            key={p.id}
+                            onClick={() => setViewPeriod(p.id)}
+                            className={`px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase transition-all ${
+                                viewPeriod === p.id
+                                    ? 'bg-gray-900 text-white shadow-md'
+                                    : 'bg-gray-50 border border-gray-200 text-gray-500 hover:bg-gray-100'
+                            }`}
+                            data-testid={`btn-period-${p.id.toLowerCase()}`}
+                        >
+                            {p.label}
+                        </button>
+                    ))}
+                    <span className="text-[10px] font-bold text-gray-400 ml-2">{periodLabel}</span>
                 </div>
             </div>
 
@@ -461,7 +546,7 @@ const FinancialReport: React.FC = () => {
                                 </thead>
                                 <tbody className="divide-y divide-gray-100">
                                     {(() => {
-                                        let list = nonInvestTx;
+                                        let list = periodFilteredTx;
                                         if (filterType !== 'ALL') list = list.filter(t => t.type === filterType);
                                         if (searchTerm.trim()) {
                                             const term = searchTerm.toLowerCase().trim();
