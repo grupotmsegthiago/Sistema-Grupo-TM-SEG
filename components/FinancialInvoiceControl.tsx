@@ -68,6 +68,9 @@ const FinancialInvoiceControl: React.FC = () => {
   const [showImageModal, setShowImageModal] = useState<string | null>(null);
   const [cancellingId, setCancellingId] = useState<string | null>(null);
   const [sendingEmailId, setSendingEmailId] = useState<string | null>(null);
+  const [showRetroModal, setShowRetroModal] = useState(false);
+  const [retroForm, setRetroForm] = useState({ client: '', number: '', amount: '', date: '', dueDate: '', notes: '', issuer_company: 'TM GESTÃO' });
+  const [savingRetro, setSavingRetro] = useState(false);
 
   const fetchInvoices = useCallback(async () => {
     setLoading(true);
@@ -254,6 +257,54 @@ const FinancialInvoiceControl: React.FC = () => {
 
   const openDetail = (inv: Invoice) => { setSelectedInvoice(inv); setShowDetail(true); };
 
+  const handleSaveRetro = async () => {
+    if (!retroForm.client.trim() || !retroForm.amount || !retroForm.date) {
+      alert('Preencha: Cliente, Valor e Data de Emissão.');
+      return;
+    }
+    setSavingRetro(true);
+    try {
+      const userData = JSON.parse(localStorage.getItem('userData') || '{}');
+      const nfNumber = retroForm.number.trim() || `RETRO-${Date.now()}`;
+      const invoicePayload = {
+        client: retroForm.client.trim(),
+        number: nfNumber,
+        amount: parseFloat(retroForm.amount.replace(/\./g, '').replace(',', '.')) || 0,
+        date: retroForm.date,
+        boleto_due_date: retroForm.dueDate || retroForm.date,
+        status: 'EMITIDA',
+        notes: `[RETROATIVO - Sem NF] ${retroForm.notes || ''}`.trim(),
+        created_by: userData?.name || 'Sistema',
+        issuer_company: retroForm.issuer_company || 'TM GESTÃO',
+      };
+      const { error } = await supabase.from('financial_invoices').insert(invoicePayload).select();
+      if (error) throw error;
+
+      const txPayload = {
+        description: `Fatura retroativa: ${retroForm.client.trim()} — ${nfNumber}`,
+        amount: invoicePayload.amount,
+        type: 'INCOME' as const,
+        status: 'PENDING' as const,
+        due_date: retroForm.dueDate || retroForm.date,
+        entity_name: retroForm.client.trim(),
+        entity_type: 'client' as const,
+        payment_method: 'boleto',
+        category_name: 'Faturamento',
+        created_by: userData?.name || 'Sistema',
+      };
+      await supabase.from('financial_transactions').insert(txPayload);
+
+      setShowRetroModal(false);
+      setRetroForm({ client: '', number: '', amount: '', date: '', dueDate: '', notes: '', issuer_company: 'TM GESTÃO' });
+      await fetchInvoices();
+      alert('Fatura retroativa lançada com sucesso!');
+    } catch (e: any) {
+      alert('Erro ao salvar: ' + e.message);
+    } finally {
+      setSavingRetro(false);
+    }
+  };
+
   return (
     <div className="p-4 max-w-[1600px] mx-auto" data-testid="financial-invoice-control">
       <div className="flex items-center justify-between mb-6">
@@ -263,9 +314,14 @@ const FinancialInvoiceControl: React.FC = () => {
           </h1>
           <p className="text-xs text-gray-400 font-semibold mt-1">Notas Fiscais, Boletos, Cobranças Asaas — Integrado ao Contas a Receber</p>
         </div>
-        <button onClick={fetchInvoices} disabled={loading} className="flex items-center gap-2 bg-red-700 hover:bg-red-800 text-white px-4 py-2 rounded-lg text-xs font-bold shadow-sm" data-testid="btn-refresh-invoices">
-          <RefreshCw size={14} className={loading ? 'animate-spin' : ''} /> Atualizar
-        </button>
+        <div className="flex gap-2">
+          <button onClick={() => setShowRetroModal(true)} className="flex items-center gap-2 bg-blue-700 hover:bg-blue-800 text-white px-4 py-2 rounded-lg text-xs font-bold shadow-sm" data-testid="btn-retro-invoice">
+            <Calendar size={14} /> Lançar Retroativo
+          </button>
+          <button onClick={fetchInvoices} disabled={loading} className="flex items-center gap-2 bg-red-700 hover:bg-red-800 text-white px-4 py-2 rounded-lg text-xs font-bold shadow-sm" data-testid="btn-refresh-invoices">
+            <RefreshCw size={14} className={loading ? 'animate-spin' : ''} /> Atualizar
+          </button>
+        </div>
       </div>
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
@@ -592,6 +648,67 @@ const FinancialInvoiceControl: React.FC = () => {
           <div className="relative max-w-4xl max-h-[90vh]" onClick={e => e.stopPropagation()}>
             <button onClick={() => setShowImageModal(null)} className="absolute -top-3 -right-3 bg-white rounded-full p-1.5 shadow-lg z-10"><X size={18} className="text-gray-600" /></button>
             <img src={showImageModal} alt="Documento" className="max-w-full max-h-[85vh] rounded-xl shadow-2xl object-contain" />
+          </div>
+        </div>
+      )}
+
+      {showRetroModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4" onClick={() => setShowRetroModal(false)}>
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg" onClick={e => e.stopPropagation()}>
+            <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
+              <div>
+                <h3 className="text-sm font-black text-gray-900 uppercase flex items-center gap-2"><Calendar size={16} className="text-blue-600"/> Lançar Fatura Retroativa</h3>
+                <p className="text-[10px] text-gray-400 font-bold mt-0.5">Sem emissão de NF — registro manual de cobrança</p>
+              </div>
+              <button onClick={() => setShowRetroModal(false)} className="p-1.5 hover:bg-gray-100 rounded-lg"><X size={16} className="text-gray-400"/></button>
+            </div>
+            <div className="p-6 space-y-4">
+              <div>
+                <label className="text-[10px] font-black text-gray-500 uppercase mb-1 block">Cliente *</label>
+                <input type="text" value={retroForm.client} onChange={e => setRetroForm(f => ({ ...f, client: e.target.value }))} placeholder="Nome do cliente" className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:border-blue-500 outline-none" data-testid="retro-client"/>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-[10px] font-black text-gray-500 uppercase mb-1 block">Nº NF / Referência</label>
+                  <input type="text" value={retroForm.number} onChange={e => setRetroForm(f => ({ ...f, number: e.target.value }))} placeholder="Ex: NF-001 ou REF-2026" className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:border-blue-500 outline-none" data-testid="retro-number"/>
+                </div>
+                <div>
+                  <label className="text-[10px] font-black text-gray-500 uppercase mb-1 block">Valor (R$) *</label>
+                  <input type="text" value={retroForm.amount} onChange={e => setRetroForm(f => ({ ...f, amount: e.target.value }))} placeholder="0,00" className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm font-mono focus:border-blue-500 outline-none" data-testid="retro-amount"/>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-[10px] font-black text-gray-500 uppercase mb-1 block">Data de Emissão *</label>
+                  <input type="date" value={retroForm.date} onChange={e => setRetroForm(f => ({ ...f, date: e.target.value }))} className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:border-blue-500 outline-none" data-testid="retro-date"/>
+                </div>
+                <div>
+                  <label className="text-[10px] font-black text-gray-500 uppercase mb-1 block">Vencimento</label>
+                  <input type="date" value={retroForm.dueDate} onChange={e => setRetroForm(f => ({ ...f, dueDate: e.target.value }))} className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:border-blue-500 outline-none" data-testid="retro-due-date"/>
+                </div>
+              </div>
+              <div>
+                <label className="text-[10px] font-black text-gray-500 uppercase mb-1 block">Empresa Emissora</label>
+                <select value={retroForm.issuer_company} onChange={e => setRetroForm(f => ({ ...f, issuer_company: e.target.value }))} className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:border-blue-500 outline-none" data-testid="retro-issuer">
+                  <option value="TM GESTÃO">TM GESTÃO</option>
+                  <option value="TM SECURITY">TM SECURITY</option>
+                  <option value="TM SEGURANÇA">TM SEGURANÇA</option>
+                </select>
+              </div>
+              <div>
+                <label className="text-[10px] font-black text-gray-500 uppercase mb-1 block">Observações</label>
+                <textarea value={retroForm.notes} onChange={e => setRetroForm(f => ({ ...f, notes: e.target.value }))} placeholder="Informações adicionais sobre esta fatura..." rows={2} className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:border-blue-500 outline-none resize-none" data-testid="retro-notes"/>
+              </div>
+              <div className="bg-amber-50 border border-amber-200 rounded-lg p-3">
+                <p className="text-[10px] font-bold text-amber-700 flex items-center gap-1.5"><AlertCircle size={12}/> Este lançamento NÃO emite Nota Fiscal. Será registrado como fatura em aberto no controle financeiro e no contas a receber.</p>
+              </div>
+            </div>
+            <div className="px-6 py-4 border-t border-gray-100 flex justify-end gap-2">
+              <button onClick={() => setShowRetroModal(false)} className="px-4 py-2 text-sm font-bold text-gray-500 hover:bg-gray-50 rounded-lg" data-testid="retro-cancel">Cancelar</button>
+              <button onClick={handleSaveRetro} disabled={savingRetro} className="flex items-center gap-2 bg-blue-700 hover:bg-blue-800 text-white px-5 py-2 rounded-lg text-sm font-bold shadow-sm disabled:opacity-50" data-testid="retro-save">
+                {savingRetro ? <Loader2 size={14} className="animate-spin"/> : <Receipt size={14}/>} {savingRetro ? 'Salvando...' : 'Lançar Fatura'}
+              </button>
+            </div>
           </div>
         </div>
       )}
