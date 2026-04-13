@@ -16,6 +16,7 @@ import {
   Building2, Truck, CircleDollarSign, Clock, Filter,
   Upload
 } from 'lucide-react';
+import ExcelJS from 'exceljs';
 import FinancialTransactionForm from './FinancialTransactionForm';
 import BankStatementImporter from './BankStatementImporter';
 
@@ -281,6 +282,287 @@ const FinancialTransactionList: React.FC = () => {
         const link = document.createElement("a");
         link.href = URL.createObjectURL(blob);
         link.download = `FECHAMENTO_${activeStep}_${getTodayBR()}.csv`;
+        link.click();
+    };
+
+    const exportControleExcel = async () => {
+        const todayStr = getTodayBR();
+        const today = new Date(todayStr + 'T12:00:00');
+        const MONTH_NAMES = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
+
+        const pending = transactions.filter(t => t.status === 'PENDING' || t.status === 'SCHEDULED');
+        const aVencer = pending.filter(t => t.due_date.split('T')[0] >= todayStr);
+        const vencidos = pending.filter(t => t.due_date.split('T')[0] < todayStr);
+
+        const aVencerByMonth: Record<string, { value: number; count: number; monthIdx: number; year: number }> = {};
+        aVencer.forEach(t => {
+            const d = new Date(t.due_date + 'T12:00:00');
+            const key = `${d.getFullYear()}-${d.getMonth()}`;
+            if (!aVencerByMonth[key]) aVencerByMonth[key] = { value: 0, count: 0, monthIdx: d.getMonth(), year: d.getFullYear() };
+            aVencerByMonth[key].value += t.amount;
+            aVencerByMonth[key].count += 1;
+        });
+        const sortedMonths = Object.entries(aVencerByMonth).sort((a, b) => {
+            if (a[1].year !== b[1].year) return a[1].year - b[1].year;
+            return a[1].monthIdx - b[1].monthIdx;
+        });
+
+        const vencidosByClient: Record<string, { value: number; count: number; items: FinancialTransaction[] }> = {};
+        vencidos.forEach(t => {
+            const client = t.entity_name || t.description || 'Outros';
+            if (!vencidosByClient[client]) vencidosByClient[client] = { value: 0, count: 0, items: [] };
+            vencidosByClient[client].value += t.amount;
+            vencidosByClient[client].count += 1;
+            vencidosByClient[client].items.push(t);
+        });
+
+        const currentMonthPending = aVencer.filter(t => {
+            const d = new Date(t.due_date + 'T12:00:00');
+            return d.getMonth() === today.getMonth() && d.getFullYear() === today.getFullYear();
+        });
+        const getWeekLabel = (dueDate: string): string => {
+            const d = new Date(dueDate + 'T12:00:00');
+            const dayOfMonth = d.getDate();
+            const todayDay = today.getDate();
+            const todaySunday = new Date(today);
+            todaySunday.setDate(todayDay - today.getDay());
+            const todaySaturday = new Date(todaySunday);
+            todaySaturday.setDate(todaySunday.getDate() + 6);
+            if (d >= todaySunday && d <= todaySaturday) return 'Semana Atual';
+            const nextSunday = new Date(todaySaturday);
+            nextSunday.setDate(todaySaturday.getDate() + 1);
+            const nextSaturday = new Date(nextSunday);
+            nextSaturday.setDate(nextSunday.getDate() + 6);
+            if (d >= nextSunday && d <= nextSaturday) return 'Próxima Semana';
+            if (dayOfMonth <= 7) return '1ª Semana';
+            if (dayOfMonth <= 14) return '2ª Semana';
+            if (dayOfMonth <= 21) return '3ª Semana';
+            return 'Última Semana';
+        };
+        const weekGroups: Record<string, { value: number; count: number }> = {};
+        currentMonthPending.forEach(t => {
+            const wk = getWeekLabel(t.due_date.split('T')[0]);
+            if (!weekGroups[wk]) weekGroups[wk] = { value: 0, count: 0 };
+            weekGroups[wk].value += t.amount;
+            weekGroups[wk].count += 1;
+        });
+        const weekOrder = ['1ª Semana','2ª Semana','3ª Semana','Semana Atual','Próxima Semana','Última Semana'];
+        const sortedWeeks = Object.entries(weekGroups).sort((a, b) => weekOrder.indexOf(a[0]) - weekOrder.indexOf(b[0]));
+
+        const wb = new ExcelJS.Workbook();
+        wb.creator = 'GRUPO TM SEG';
+        wb.created = new Date();
+        const ws = wb.addWorksheet('Controle Financeiro', { views: [{ showGridLines: false }] });
+
+        const fmtBRL = (v: number) => `R$ ${v.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+        const headerFill = (color: string): ExcelJS.Fill => ({ type: 'pattern', pattern: 'solid', fgColor: { argb: color } });
+        const thinBorder: Partial<ExcelJS.Borders> = { top: { style: 'thin', color: { argb: 'D1D5DB' } }, bottom: { style: 'thin', color: { argb: 'D1D5DB' } }, left: { style: 'thin', color: { argb: 'D1D5DB' } }, right: { style: 'thin', color: { argb: 'D1D5DB' } } };
+        const boldFont = (size: number, color = '1F2937'): Partial<ExcelJS.Font> => ({ bold: true, size, color: { argb: color } });
+
+        ws.columns = [
+            { width: 18 }, { width: 18 }, { width: 14 },
+            { width: 4 },
+            { width: 28 }, { width: 18 }, { width: 18 }, { width: 16 }, { width: 14 },
+        ];
+
+        let row = 1;
+        const titleRow = ws.getRow(row);
+        titleRow.getCell(1).value = 'CONTROLE FINANCEIRO — GRUPO TM SEG';
+        titleRow.getCell(1).font = { bold: true, size: 14, color: { argb: '7F1D1D' } };
+        ws.mergeCells(row, 1, row, 9);
+        row++;
+        const dateRow = ws.getRow(row);
+        dateRow.getCell(1).value = `Gerado em: ${formatDateBR(todayStr + 'T12:00:00')}`;
+        dateRow.getCell(1).font = { size: 9, color: { argb: '6B7280' }, italic: true };
+        ws.mergeCells(row, 1, row, 9);
+        row += 2;
+
+        const writeHeader = (r: number, cells: { col: number; val: string; color: string }[]) => {
+            const wsRow = ws.getRow(r);
+            cells.forEach(c => {
+                const cell = wsRow.getCell(c.col);
+                cell.value = c.val;
+                cell.font = boldFont(10, 'FFFFFF');
+                cell.fill = headerFill(c.color);
+                cell.border = thinBorder;
+                cell.alignment = { horizontal: c.val === 'Valor' || c.val === 'Qtd. Títulos' || c.val === 'Dias Vencidos' ? 'right' : 'left', vertical: 'middle' };
+            });
+            wsRow.height = 20;
+        };
+
+        writeHeader(row, [
+            { col: 1, val: 'À Vencer', color: '166534' },
+            { col: 2, val: '', color: '166534' },
+            { col: 3, val: '', color: '166534' },
+        ]);
+        ws.mergeCells(row, 1, row, 1);
+        row++;
+
+        writeHeader(row, [
+            { col: 1, val: 'Mês', color: '15803D' },
+            { col: 2, val: 'Valor', color: '15803D' },
+            { col: 3, val: 'Qtd. Títulos', color: '15803D' },
+        ]);
+        row++;
+
+        sortedMonths.forEach(([, data]) => {
+            const wsRow = ws.getRow(row);
+            wsRow.getCell(1).value = MONTH_NAMES[data.monthIdx];
+            wsRow.getCell(1).font = { size: 10, color: { argb: '1F2937' } };
+            wsRow.getCell(1).border = thinBorder;
+            wsRow.getCell(2).value = fmtBRL(data.value);
+            wsRow.getCell(2).font = { size: 10, color: { argb: '1F2937' } };
+            wsRow.getCell(2).alignment = { horizontal: 'right' };
+            wsRow.getCell(2).border = thinBorder;
+            wsRow.getCell(3).value = data.count;
+            wsRow.getCell(3).font = { size: 10, color: { argb: '1F2937' } };
+            wsRow.getCell(3).alignment = { horizontal: 'right' };
+            wsRow.getCell(3).border = thinBorder;
+            row++;
+        });
+
+        const totalAVencer = ws.getRow(row);
+        totalAVencer.getCell(1).value = 'Total Geral';
+        totalAVencer.getCell(1).font = boldFont(10, '166534');
+        totalAVencer.getCell(1).fill = headerFill('DCFCE7');
+        totalAVencer.getCell(1).border = thinBorder;
+        totalAVencer.getCell(2).value = fmtBRL(aVencer.reduce((a, t) => a + t.amount, 0));
+        totalAVencer.getCell(2).font = boldFont(10, '166534');
+        totalAVencer.getCell(2).fill = headerFill('DCFCE7');
+        totalAVencer.getCell(2).alignment = { horizontal: 'right' };
+        totalAVencer.getCell(2).border = thinBorder;
+        totalAVencer.getCell(3).value = aVencer.length;
+        totalAVencer.getCell(3).font = boldFont(10, '166534');
+        totalAVencer.getCell(3).fill = headerFill('DCFCE7');
+        totalAVencer.getCell(3).alignment = { horizontal: 'right' };
+        totalAVencer.getCell(3).border = thinBorder;
+
+        const vencidosHeaderRow = 4;
+        writeHeader(vencidosHeaderRow, [
+            { col: 5, val: 'Vencidos', color: '991B1B' },
+            { col: 6, val: '', color: '991B1B' },
+            { col: 7, val: '', color: '991B1B' },
+            { col: 8, val: '', color: '991B1B' },
+            { col: 9, val: '', color: '991B1B' },
+        ]);
+
+        const vencidosSubRow = 5;
+        writeHeader(vencidosSubRow, [
+            { col: 5, val: 'Cliente', color: 'DC2626' },
+            { col: 6, val: 'Valor', color: 'DC2626' },
+            { col: 7, val: 'Data do Vencimento', color: 'DC2626' },
+            { col: 8, val: 'Dias Vencidos', color: 'DC2626' },
+            { col: 9, val: 'Qtd. Títulos', color: 'DC2626' },
+        ]);
+
+        let vRow = 6;
+        const sortedClients = Object.entries(vencidosByClient).sort((a, b) => b[1].value - a[1].value);
+        sortedClients.forEach(([client, data]) => {
+            const oldestDue = data.items.sort((a, b) => a.due_date.localeCompare(b.due_date))[0];
+            const dueDateStr = oldestDue.due_date.split('T')[0];
+            const dueDate = new Date(dueDateStr + 'T12:00:00');
+            const diffDays = Math.floor((today.getTime() - dueDate.getTime()) / (1000 * 60 * 60 * 24));
+            const wsRow = ws.getRow(vRow);
+            wsRow.getCell(5).value = client;
+            wsRow.getCell(5).font = { size: 10, color: { argb: '1F2937' } };
+            wsRow.getCell(5).border = thinBorder;
+            wsRow.getCell(6).value = fmtBRL(data.value);
+            wsRow.getCell(6).font = { size: 10, color: { argb: '991B1B' } };
+            wsRow.getCell(6).alignment = { horizontal: 'right' };
+            wsRow.getCell(6).border = thinBorder;
+            wsRow.getCell(7).value = formatDateBR(dueDateStr + 'T12:00:00');
+            wsRow.getCell(7).font = { size: 10, color: { argb: '6B7280' } };
+            wsRow.getCell(7).alignment = { horizontal: 'center' };
+            wsRow.getCell(7).border = thinBorder;
+            wsRow.getCell(8).value = diffDays;
+            wsRow.getCell(8).font = { size: 10, color: { argb: 'DC2626' }, bold: true };
+            wsRow.getCell(8).alignment = { horizontal: 'right' };
+            wsRow.getCell(8).border = thinBorder;
+            wsRow.getCell(9).value = data.count;
+            wsRow.getCell(9).font = { size: 10, color: { argb: '1F2937' } };
+            wsRow.getCell(9).alignment = { horizontal: 'right' };
+            wsRow.getCell(9).border = thinBorder;
+            vRow++;
+        });
+
+        const totalVencidos = ws.getRow(vRow);
+        totalVencidos.getCell(5).value = 'Total Geral';
+        totalVencidos.getCell(5).font = boldFont(10, '991B1B');
+        totalVencidos.getCell(5).fill = headerFill('FEE2E2');
+        totalVencidos.getCell(5).border = thinBorder;
+        totalVencidos.getCell(6).value = fmtBRL(vencidos.reduce((a, t) => a + t.amount, 0));
+        totalVencidos.getCell(6).font = boldFont(10, '991B1B');
+        totalVencidos.getCell(6).fill = headerFill('FEE2E2');
+        totalVencidos.getCell(6).alignment = { horizontal: 'right' };
+        totalVencidos.getCell(6).border = thinBorder;
+        totalVencidos.getCell(7).value = '';
+        totalVencidos.getCell(7).fill = headerFill('FEE2E2');
+        totalVencidos.getCell(7).border = thinBorder;
+        const totalDiasVencidos = vencidos.length > 0 ? Math.max(...vencidos.map(t => { const dd = new Date(t.due_date.split('T')[0] + 'T12:00:00'); return Math.floor((today.getTime() - dd.getTime()) / (1000*60*60*24)); })) : 0;
+        totalVencidos.getCell(8).value = totalDiasVencidos;
+        totalVencidos.getCell(8).font = boldFont(10, '991B1B');
+        totalVencidos.getCell(8).fill = headerFill('FEE2E2');
+        totalVencidos.getCell(8).alignment = { horizontal: 'right' };
+        totalVencidos.getCell(8).border = thinBorder;
+        totalVencidos.getCell(9).value = vencidos.length;
+        totalVencidos.getCell(9).font = boldFont(10, '991B1B');
+        totalVencidos.getCell(9).fill = headerFill('FEE2E2');
+        totalVencidos.getCell(9).alignment = { horizontal: 'right' };
+        totalVencidos.getCell(9).border = thinBorder;
+
+        row += 3;
+        const mesLabel = MONTH_NAMES[today.getMonth()];
+        const mesRow = ws.getRow(row);
+        mesRow.getCell(1).value = 'Mês';
+        mesRow.getCell(1).font = boldFont(10, '6B7280');
+        mesRow.getCell(2).value = mesLabel;
+        mesRow.getCell(2).font = boldFont(11, '1F2937');
+        row += 2;
+
+        writeHeader(row, [
+            { col: 1, val: 'Semana', color: '1E40AF' },
+            { col: 2, val: 'Valor', color: '1E40AF' },
+            { col: 3, val: 'Qtd. Títulos', color: '1E40AF' },
+        ]);
+        row++;
+
+        sortedWeeks.forEach(([week, data]) => {
+            const wsRow = ws.getRow(row);
+            wsRow.getCell(1).value = week;
+            wsRow.getCell(1).font = { size: 10, color: { argb: '1F2937' } };
+            wsRow.getCell(1).border = thinBorder;
+            wsRow.getCell(2).value = fmtBRL(data.value);
+            wsRow.getCell(2).font = { size: 10, color: { argb: '1F2937' } };
+            wsRow.getCell(2).alignment = { horizontal: 'right' };
+            wsRow.getCell(2).border = thinBorder;
+            wsRow.getCell(3).value = data.count;
+            wsRow.getCell(3).font = { size: 10, color: { argb: '1F2937' } };
+            wsRow.getCell(3).alignment = { horizontal: 'right' };
+            wsRow.getCell(3).border = thinBorder;
+            row++;
+        });
+
+        const totalMes = ws.getRow(row);
+        totalMes.getCell(1).value = 'Total Geral';
+        totalMes.getCell(1).font = boldFont(10, '1E40AF');
+        totalMes.getCell(1).fill = headerFill('DBEAFE');
+        totalMes.getCell(1).border = thinBorder;
+        totalMes.getCell(2).value = fmtBRL(currentMonthPending.reduce((a, t) => a + t.amount, 0));
+        totalMes.getCell(2).font = boldFont(10, '1E40AF');
+        totalMes.getCell(2).fill = headerFill('DBEAFE');
+        totalMes.getCell(2).alignment = { horizontal: 'right' };
+        totalMes.getCell(2).border = thinBorder;
+        totalMes.getCell(3).value = currentMonthPending.length;
+        totalMes.getCell(3).font = boldFont(10, '1E40AF');
+        totalMes.getCell(3).fill = headerFill('DBEAFE');
+        totalMes.getCell(3).alignment = { horizontal: 'right' };
+        totalMes.getCell(3).border = thinBorder;
+
+        const buffer = await wb.xlsx.writeBuffer();
+        const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+        const link = document.createElement('a');
+        link.href = URL.createObjectURL(blob);
+        link.download = `CONTROLE_FINANCEIRO_${todayStr}.xlsx`;
         link.click();
     };
 
@@ -630,7 +912,12 @@ const FinancialTransactionList: React.FC = () => {
                 return (
                     <div className="space-y-4">
                         <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm">
-                            <h4 className="text-sm font-black text-gray-900 uppercase mb-4 flex items-center gap-2"><BarChart3 size={16} className="text-red-700"/> Relatório de Controle Financeiro</h4>
+                            <div className="flex justify-between items-center mb-4">
+                                <h4 className="text-sm font-black text-gray-900 uppercase flex items-center gap-2"><BarChart3 size={16} className="text-red-700"/> Relatório de Controle Financeiro</h4>
+                                <button onClick={exportControleExcel} className="flex items-center gap-2 bg-green-700 hover:bg-green-800 text-white px-4 py-2 rounded-lg text-xs font-bold transition-colors shadow-sm no-print" data-testid="btn-export-controle-excel">
+                                    <Download size={14}/> Exportar Planilha
+                                </button>
+                            </div>
                             <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
                                 <div className="p-4 bg-green-50 rounded-xl border border-green-200 text-center">
                                     <p className="text-[9px] font-black text-green-700 uppercase mb-1">Títulos Pagos (Despesas)</p>
