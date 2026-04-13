@@ -1668,12 +1668,12 @@ const ExecutiveDashboard: React.FC<Props> = ({ missions, isDirector, clientTable
                                         <tr>
                                             <th className="text-left px-3 py-2 font-black text-gray-600 uppercase">OS</th>
                                             <th className="text-left px-3 py-2 font-black text-gray-600 uppercase">Cliente</th>
-                                            <th className="text-right px-3 py-2 font-black text-gray-600 uppercase">Planilha Receita</th>
-                                            <th className="text-right px-3 py-2 font-black text-gray-600 uppercase">Sistema Receita</th>
-                                            <th className="text-right px-3 py-2 font-black text-gray-600 uppercase">Diff. Receita</th>
-                                            <th className="text-right px-3 py-2 font-black text-gray-600 uppercase">Planilha Custo</th>
-                                            <th className="text-right px-3 py-2 font-black text-gray-600 uppercase">Sistema Custo</th>
-                                            <th className="text-right px-3 py-2 font-black text-gray-600 uppercase">Diff. Custo</th>
+                                            <th className="text-right px-3 py-2 font-black text-green-700 uppercase bg-green-50/50">Planilha Receita</th>
+                                            <th className="text-right px-3 py-2 font-black text-green-700 uppercase bg-green-50/50">Sistema Receita</th>
+                                            <th className="text-right px-3 py-2 font-black text-green-700 uppercase bg-green-50/50 border-r-2 border-gray-300">Diff. Receita</th>
+                                            <th className="text-right px-3 py-2 font-black text-blue-700 uppercase bg-blue-50/50">Planilha Custo</th>
+                                            <th className="text-right px-3 py-2 font-black text-blue-700 uppercase bg-blue-50/50">Sistema Custo</th>
+                                            <th className="text-right px-3 py-2 font-black text-blue-700 uppercase bg-blue-50/50 border-r-2 border-gray-300">Diff. Custo</th>
                                             <th className="text-center px-3 py-2 font-black text-gray-600 uppercase">Status</th>
                                             <th className="text-center px-3 py-2 font-black text-gray-600 uppercase">Ação</th>
                                         </tr>
@@ -1697,14 +1697,14 @@ const ExecutiveDashboard: React.FC<Props> = ({ missions, isDirector, clientTable
                                                 >
                                                     <td className="px-3 py-2 font-black text-blue-600">{c.osId}</td>
                                                     <td className="px-3 py-2 font-bold text-gray-600 truncate max-w-[120px]">{(c.client || '').substring(0, 20)}</td>
-                                                    <td className={`px-3 py-2 text-right font-bold ${!c.revMatch && !isAdjusted ? 'text-red-600' : isAdjusted ? 'text-blue-700' : 'text-gray-700'}`}>{c.excelRev > 0 ? fmtBRL(c.excelRev) : '-'}</td>
-                                                    <td className={`px-3 py-2 text-right font-bold ${!c.revMatch && !isAdjusted ? 'text-red-600' : isAdjusted ? 'text-blue-700' : 'text-gray-700'}`}>{c.found ? fmtBRL(c.sysRev) : '-'}</td>
-                                                    <td className={`px-3 py-2 text-right font-bold ${c.revDiff > 10 && !isAdjusted ? 'text-red-600' : c.revDiff > 0.01 && !isAdjusted ? 'text-emerald-600' : isAdjusted ? 'text-blue-600' : 'text-gray-400'}`}>
+                                                    <td className={`px-3 py-2 text-right font-bold ${!c.revMatch && !isAdjusted ? 'text-red-600 bg-red-50' : isAdjusted ? 'text-blue-700' : 'text-gray-700'}`}>{c.excelRev > 0 ? fmtBRL(c.excelRev) : '-'}</td>
+                                                    <td className={`px-3 py-2 text-right font-bold ${!c.revMatch && !isAdjusted ? 'text-red-600 bg-red-50' : isAdjusted ? 'text-blue-700' : 'text-gray-700'}`}>{c.found ? fmtBRL(c.sysRev) : '-'}</td>
+                                                    <td className={`px-3 py-2 text-right font-bold border-r-2 border-gray-200 ${c.revDiff > 10 && !isAdjusted ? 'text-red-600 bg-red-50' : c.revDiff > 0.01 && !isAdjusted ? 'text-emerald-600' : isAdjusted ? 'text-blue-600' : 'text-gray-400'}`}>
                                                         {c.found && c.excelRev > 0 ? (c.revDiff > 0.01 ? <span className="flex items-center justify-end gap-1">{fmtBRL(c.revDiff)} {c.revMatch && !isAdjusted && <span className="text-[8px] font-black bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded-full whitespace-nowrap">CONFERIDO</span>}</span> : '-') : '-'}
                                                     </td>
-                                                    <td className={`px-3 py-2 text-right font-bold ${!c.costMatch && !isAdjusted ? 'text-red-600' : isAdjusted ? 'text-blue-700' : 'text-gray-700'}`}>{c.excelCost > 0 ? fmtBRL(c.excelCost) : '-'}</td>
-                                                    <td className={`px-3 py-2 text-right font-bold ${c.isSameOs ? 'text-gray-400' : !c.costMatch && !isAdjusted ? 'text-red-600' : isAdjusted ? 'text-blue-700' : 'text-gray-700'}`}>{c.found ? (c.isSameOs ? <span className="flex items-center justify-end gap-1">{fmtBRL(c.sysCost)} <span className="text-[8px] font-black bg-gray-200 text-gray-600 px-1.5 py-0.5 rounded-full whitespace-nowrap">MESMA OS</span></span> : fmtBRL(c.sysCost)) : '-'}</td>
-                                                    <td className={`px-3 py-2 text-right font-bold ${c.isSameOs ? 'text-gray-400' : c.costDiff > 10 && !isAdjusted ? 'text-red-600' : c.costDiff > 0.01 && !isAdjusted ? 'text-emerald-600' : isAdjusted ? 'text-blue-600' : 'text-gray-400'}`}>
+                                                    <td className={`px-3 py-2 text-right font-bold ${!c.costMatch && !isAdjusted ? 'text-red-600 bg-orange-50' : isAdjusted ? 'text-blue-700' : 'text-gray-700'}`}>{c.excelCost > 0 ? fmtBRL(c.excelCost) : '-'}</td>
+                                                    <td className={`px-3 py-2 text-right font-bold ${c.isSameOs ? 'text-gray-400' : !c.costMatch && !isAdjusted ? 'text-red-600 bg-orange-50' : isAdjusted ? 'text-blue-700' : 'text-gray-700'}`}>{c.found ? (c.isSameOs ? <span className="flex items-center justify-end gap-1">{fmtBRL(c.sysCost)} <span className="text-[8px] font-black bg-gray-200 text-gray-600 px-1.5 py-0.5 rounded-full whitespace-nowrap">MESMA OS</span></span> : fmtBRL(c.sysCost)) : '-'}</td>
+                                                    <td className={`px-3 py-2 text-right font-bold border-r-2 border-gray-200 ${c.isSameOs ? 'text-gray-400' : c.costDiff > 10 && !isAdjusted ? 'text-red-600 bg-orange-50' : c.costDiff > 0.01 && !isAdjusted ? 'text-emerald-600' : isAdjusted ? 'text-blue-600' : 'text-gray-400'}`}>
                                                         {c.isSameOs ? <span className="text-[8px] font-black bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded-full whitespace-nowrap">CONFERIDO</span> : c.found && c.excelCost > 0 ? (c.costDiff > 0.01 ? <span className="flex items-center justify-end gap-1">{fmtBRL(c.costDiff)} {c.costMatch && !isAdjusted && <span className="text-[8px] font-black bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded-full whitespace-nowrap">CONFERIDO</span>}</span> : '-') : '-'}
                                                     </td>
                                                     <td className="px-3 py-2 text-center">
@@ -1712,7 +1712,12 @@ const ExecutiveDashboard: React.FC<Props> = ({ missions, isDirector, clientTable
                                                          c.isApproved ? <span className="text-[9px] font-black bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-full flex items-center justify-center gap-1"><CheckCircle size={10} /> APROVADA</span> :
                                                          isAdjusted && c.revMatch && c.costMatch ? <span className="text-[9px] font-black bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full flex items-center justify-center gap-1"><CheckCircle size={10} /> AJUSTADO</span> :
                                                          isAdjusted ? <span className="text-[9px] font-black bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full flex items-center justify-center gap-1"><Edit2 size={10} /> ALTERADO</span> :
-                                                         hasIssue ? <span className="text-[9px] font-black bg-red-100 text-red-700 px-2 py-0.5 rounded-full flex items-center justify-center gap-1"><XOctagon size={10} /> DIVERGENTE</span> :
+                                                         hasIssue ? <div className="flex flex-col items-center gap-0.5">
+                                                            <span className="text-[9px] font-black bg-red-100 text-red-700 px-2 py-0.5 rounded-full flex items-center justify-center gap-1"><XOctagon size={10} /> DIVERGENTE</span>
+                                                            <span className="text-[7px] font-black text-red-500 uppercase tracking-wider">
+                                                                {!c.revMatch && !c.costMatch ? '↳ RECEITA + CUSTO' : !c.revMatch ? '↳ RECEITA' : '↳ CUSTO'}
+                                                            </span>
+                                                         </div> :
                                                          <span className="text-[9px] font-black bg-green-100 text-green-700 px-2 py-0.5 rounded-full flex items-center justify-center gap-1"><CheckCircle size={10} /> CONFERIDO</span>}
                                                     </td>
                                                     <td className="px-3 py-1.5 text-center">
