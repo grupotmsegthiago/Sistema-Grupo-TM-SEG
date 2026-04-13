@@ -961,4 +961,73 @@ export async function sendPendingInfoReport(to: string, missions: any[], reportD
   }
 }
 
+export async function sendApprovalPendingReport(to: string, missions: any[], reportDate: string): Promise<boolean> {
+  const missionsHtml = missions.length === 0
+    ? '<p style="color:#27ae60; font-style:italic; text-align:center; padding:20px; font-weight:600;">Nenhuma OS pendente de aprovação. Tudo em dia!</p>'
+    : missions.map((m: any, idx: number) => {
+      const bgColor = idx % 2 === 0 ? '#ffffff' : '#fafafa';
+      const createdDate = m.created_at ? new Date(m.created_at).toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' }) : '—';
+      const startDate = m.start_time ? new Date(m.start_time).toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' }) : '—';
+      return `
+        <tr style="background:${bgColor}; border-bottom:1px solid #eee;">
+          <td style="padding:8px 12px; font-weight:700; color:#7f1d1d; font-size:13px; white-space:nowrap;">${m.id || '—'}</td>
+          <td style="padding:8px 12px; color:#333; font-size:12px;">${m.client || '—'}</td>
+          <td style="padding:8px 12px; color:#333; font-size:12px;">${m.provider || '—'}</td>
+          <td style="padding:8px 12px; color:#555; font-size:11px;">${(m.origin || '—').substring(0, 35)}</td>
+          <td style="padding:8px 12px; color:#555; font-size:11px;">${(m.destination || '—').substring(0, 35)}</td>
+          <td style="padding:8px 12px; color:#555; font-size:11px; white-space:nowrap;">${startDate}</td>
+          <td style="padding:8px 12px; color:#555; font-size:11px; white-space:nowrap;">${createdDate}</td>
+          <td style="padding:8px 12px; text-align:center;">
+            <span style="display:inline-block; background:#fef3c7; color:#b45309; font-size:10px; font-weight:700; padding:2px 10px; border-radius:10px; border:1px solid #fde68a;">${m.status || 'Concluída'}</span>
+          </td>
+        </tr>
+      `;
+    }).join('');
+
+  const html = baseTemplate(`
+    <h2 style="color:#7f1d1d;">OS Pendentes de Aprovação</h2>
+    <div class="highlight-box">
+      <p><strong>Data do Relatório:</strong> ${reportDate}</p>
+      <p><strong>Total de OS Aguardando Aprovação:</strong> <span class="badge" style="background:#b45309;">${missions.length}</span></p>
+    </div>
+    <p style="font-size:13px; color:#333; margin:16px 0; line-height:1.6;">
+      Prezado Daniel,<br><br>
+      Segue abaixo a relação de <strong>Ordens de Serviço concluídas</strong> que estão aguardando a sua <strong>aprovação</strong> no sistema.
+      Por favor, analise e aprove as OS listadas para que possam seguir para o faturamento.
+    </p>
+    ${missions.length > 0 ? `
+    <table style="width:100%; border-collapse:collapse; margin:16px 0; font-size:12px; border:1px solid #e5e7eb; border-radius:8px; overflow:hidden;">
+      <thead>
+        <tr style="background:#7f1d1d;">
+          <th style="padding:10px 12px; text-align:left; font-weight:700; color:#fff; font-size:11px;">OS</th>
+          <th style="padding:10px 12px; text-align:left; font-weight:700; color:#fff; font-size:11px;">Cliente</th>
+          <th style="padding:10px 12px; text-align:left; font-weight:700; color:#fff; font-size:11px;">Fornecedor</th>
+          <th style="padding:10px 12px; text-align:left; font-weight:700; color:#fff; font-size:11px;">Origem</th>
+          <th style="padding:10px 12px; text-align:left; font-weight:700; color:#fff; font-size:11px;">Destino</th>
+          <th style="padding:10px 12px; text-align:left; font-weight:700; color:#fff; font-size:11px;">Data Viagem</th>
+          <th style="padding:10px 12px; text-align:left; font-weight:700; color:#fff; font-size:11px;">Criada</th>
+          <th style="padding:10px 12px; text-align:center; font-weight:700; color:#fff; font-size:11px;">Status</th>
+        </tr>
+      </thead>
+      <tbody>${missionsHtml}</tbody>
+    </table>
+    ` : ''}
+    <p style="font-size:12px; color:#999; margin-top:24px;">Este relatório é gerado automaticamente pelo sistema TMSEGo todos os dias às 07:30 (horário de Brasília).</p>
+  `);
+
+  try {
+    await transporter.sendMail({
+      from: SMTP_FROM,
+      to,
+      subject: `OS Pendentes de Aprovação — ${missions.length} OS — ${reportDate}`,
+      html,
+    });
+    console.log(`[Email] Relatório de aprovações enviado → ${to} | ${missions.length} OS`);
+    return true;
+  } catch (err: any) {
+    console.error(`[Email] Erro ao enviar relatório de aprovações:`, err.message);
+    return false;
+  }
+}
+
 export { transporter };

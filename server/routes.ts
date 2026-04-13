@@ -9,7 +9,7 @@ import { calculateMissionFinancials } from "../lib/financialUtils";
 import fs from "fs";
 import path from "path";
 import pg from "pg";
-import { sendMissionEmailToClient, sendMissionEmailToProvider, sendMissionResendToClient, sendMirroringEvidenceEmail, sendMissionChangeNotificationToClient, sendMissionChangeNotificationToProvider, sendWelcomeEmail, sendTestEmail, sendVerificationCodeEmail, sendPasswordResetEmail, sendBillingEmail, sendLegalReportEmail, sendPendingInfoReport } from "./emailService";
+import { sendMissionEmailToClient, sendMissionEmailToProvider, sendMissionResendToClient, sendMirroringEvidenceEmail, sendMissionChangeNotificationToClient, sendMissionChangeNotificationToProvider, sendWelcomeEmail, sendTestEmail, sendVerificationCodeEmail, sendPasswordResetEmail, sendBillingEmail, sendLegalReportEmail, sendPendingInfoReport, sendApprovalPendingReport } from "./emailService";
 import { findOrCreateCustomer, createPayment, getPayment, getPaymentPixQrCode, getPaymentBankSlip, listPayments, deletePayment, mapAsaasStatus, isAsaasConfigured, getAsaasCompanies, scheduleInvoice, listMunicipalServices, getInvoiceByPayment, getAllBalances } from "./asaasService";
 
 const resend = new Resend(process.env.RESEND_API_KEY);
@@ -4330,6 +4330,80 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
       res.json({ success: sent, total: pendingMissions.length, emailTo: PENDING_REPORT_EMAIL, date: reportDate });
     } catch (err: any) {
       console.error('[Pendências] Erro manual:', err.message);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  const APPROVAL_REPORT_EMAIL = 'daniel@grupotmseg.com.br';
+
+  async function findMissionsPendingApproval(): Promise<any[]> {
+    const allMissions: any[] = [];
+    let from = 0;
+    const pageSize = 1000;
+    while (true) {
+      const { data, error } = await supabase
+        .from('missions')
+        .select('id, client, provider, origin, destination, start_time, end_time, created_at, status')
+        .in('status', ['Concluída', 'Concluida'])
+        .range(from, from + pageSize - 1);
+      if (error) { console.error('[Aprovações] Erro ao buscar missions:', error.message); break; }
+      if (!data || data.length === 0) break;
+      allMissions.push(...data);
+      if (data.length < pageSize) break;
+      from += pageSize;
+    }
+    return allMissions;
+  }
+
+  async function executeDailyApprovalReport() {
+    const now = new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' });
+    console.log(`[Aprovações Diário] Iniciando busca — ${now}`);
+    try {
+      const pendingApproval = await findMissionsPendingApproval();
+      console.log(`[Aprovações Diário] ${pendingApproval.length} OS pendentes de aprovação`);
+
+      const reportDate = new Date().toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' });
+      if (pendingApproval.length > 0) {
+        const sent = await sendApprovalPendingReport(APPROVAL_REPORT_EMAIL, pendingApproval, reportDate);
+        if (sent) {
+          console.log(`[Aprovações Diário] Relatório enviado para ${APPROVAL_REPORT_EMAIL}`);
+        } else {
+          console.error(`[Aprovações Diário] Falha ao enviar para ${APPROVAL_REPORT_EMAIL}`);
+        }
+      } else {
+        console.log(`[Aprovações Diário] Nenhuma OS pendente — email não enviado.`);
+      }
+    } catch (err: any) {
+      console.error(`[Aprovações Diário] Erro fatal:`, err.message);
+    }
+  }
+
+  function scheduleDailyApprovalReport() {
+    const checkInterval = () => {
+      const now = new Date();
+      const brasiliaTime = new Date(now.toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' }));
+      const hour = brasiliaTime.getHours();
+      const minute = brasiliaTime.getMinutes();
+
+      if (hour === 7 && minute === 30) {
+        executeDailyApprovalReport();
+      }
+    };
+
+    setInterval(checkInterval, 60 * 1000);
+    console.log(`[Aprovações Diário] Agendamento ativo — relatório será enviado todos os dias às 07:30 (Brasília) para ${APPROVAL_REPORT_EMAIL}`);
+  }
+
+  scheduleDailyApprovalReport();
+
+  app.post("/api/relatorio-aprovacoes", requireAuth, requireRole('administrador', 'diretoria'), async (_req: Request, res: Response) => {
+    try {
+      const pendingApproval = await findMissionsPendingApproval();
+      const reportDate = new Date().toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' });
+      const sent = await sendApprovalPendingReport(APPROVAL_REPORT_EMAIL, pendingApproval, reportDate);
+      res.json({ success: sent, total: pendingApproval.length, emailTo: APPROVAL_REPORT_EMAIL, date: reportDate });
+    } catch (err: any) {
+      console.error('[Aprovações] Erro manual:', err.message);
       res.status(500).json({ error: err.message });
     }
   });
