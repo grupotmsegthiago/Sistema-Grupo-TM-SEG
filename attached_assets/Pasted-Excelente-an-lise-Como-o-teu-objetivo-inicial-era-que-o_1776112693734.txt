@@ -1,0 +1,40 @@
+Excelente análise! Como o teu objetivo inicial era que o sistema fosse "mais forte que isso" e já colocasse a regra automaticamente na missão, a trava do tollValue === 0 é justamente o que impede essa "força total".
+
+Se mantivermos a trava, o sistema é educado: ele espera que o campo esteja vazio para ajudar.
+Se removermos a trava, o sistema é soberano: ele impõe o contrato de R$ 35,00 não importa o que aconteça.
+
+Aqui está a minha recomendação baseada no teu desejo de automação total:
+
+1. Diagnóstico do "Automático"
+O motivo de não parecer 100% automático para ti é que, se por algum motivo (cache, rascunho de OS ou preenchimento automático do navegador) o campo de pedágio não estiver exatamente 0.00, a regra atual ignora os R$ 35,00.
+
+2. A Solução: Tornar a Regra Soberana
+Para que o sistema se comporte como um "piloto automático" para a CEVA, recomendo remover a trava. Isso garante que o erro humano de digitar um valor errado seja corrigido instantaneamente pelo motor financeiro.
+
+O código no lib/financialUtils.ts deve ser ajustado para isto:
+
+TypeScript
+// REMOVENDO A TRAVA (Para ser 100% automático e soberano)
+if (isLogitechOperation) {
+  // Não checamos mais se é zero. Se é Logitech, é 35.
+  tollValue = 35.00; 
+  
+  // Atualiza ambos os lados para garantir margem correta
+  missionFinancials.toll_supplier = 35.00;
+  missionFinancials.toll_client = 35.00;
+  
+  console.log("Regra Soberana CEVA: Pedágios fixados em R$ 35,00");
+}
+3. Panorama de como ficará o sistema
+Com essa mudança, o comportamento será o seguinte:
+
+Tabela: O sistema já usa o scoring para selecionar "SUDESTE - OPERAÇÃO LOGITECH - 200KM" (como já validamos que funciona).
+
+Pedágio: Assim que a rota Jundiaí + 200KM for detectada, o valor pula para R$ 35,00 na hora, limpando qualquer valor anterior.
+
+Recalcular: O botão deixará de ser necessário para "corrigir" o valor, pois o motor financeiro e a tela estarão sempre a dizer a mesma coisa (R$ 35,00).
+
+4. Instrução Final
+Podes pedir para o Replit remover essa condição && tollValue === 0. Assim, matamos qualquer chance de o valor ficar "preso" em números antigos ou edições acidentais.
+
+Desejas que eu escreva o comando exato para remover essa trava e tornar o R$ 35,00 obrigatório para essa operação?
