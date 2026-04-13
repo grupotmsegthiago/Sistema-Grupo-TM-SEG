@@ -147,19 +147,25 @@ const FinancialReport: React.FC = () => {
     }, [aPagarFuture]);
 
     const getWeekRanges = (items: FinancialTransaction[]) => {
-        const weeks: Record<string, { label: string; value: number; count: number; start: string; end: string }> = {};
+        const weeks: Record<string, { label: string; value: number; count: number; start: string; end: string; items: FinancialTransaction[] }> = {};
         items.forEach(t => {
-            const d = new Date(t.due_date.split('T')[0] + 'T12:00:00');
+            const parts = t.due_date.split('T')[0].split('-');
+            const year = parseInt(parts[0]);
+            const month = parseInt(parts[1]) - 1;
+            const day = parseInt(parts[2]);
+            const d = new Date(year, month, day, 12, 0, 0);
             const dayOfWeek = d.getDay();
-            const sunday = new Date(d);
-            sunday.setDate(d.getDate() - dayOfWeek);
-            const saturday = new Date(sunday);
-            saturday.setDate(sunday.getDate() + 6);
+            const sundayTs = d.getTime() - dayOfWeek * 86400000;
+            const saturdayTs = sundayTs + 6 * 86400000;
+            const sunday = new Date(sundayTs);
+            const saturday = new Date(saturdayTs);
             const fmt = (dt: Date) => `${String(dt.getDate()).padStart(2,'0')}/${String(dt.getMonth()+1).padStart(2,'0')}`;
-            const key = sunday.toISOString().split('T')[0];
-            if (!weeks[key]) weeks[key] = { label: `${fmt(sunday)} — ${fmt(saturday)}`, value: 0, count: 0, start: key, end: saturday.toISOString().split('T')[0] };
+            const keyFmt = (dt: Date) => `${dt.getFullYear()}-${String(dt.getMonth()+1).padStart(2,'0')}-${String(dt.getDate()).padStart(2,'0')}`;
+            const key = keyFmt(sunday);
+            if (!weeks[key]) weeks[key] = { label: `${fmt(sunday)} — ${fmt(saturday)}`, value: 0, count: 0, start: key, end: keyFmt(saturday), items: [] };
             weeks[key].value += t.amount;
             weeks[key].count += 1;
+            weeks[key].items.push(t);
         });
         return Object.values(weeks).sort((a, b) => a.start.localeCompare(b.start));
     };
@@ -168,21 +174,25 @@ const FinancialReport: React.FC = () => {
     const pagarByWeek = useMemo(() => getWeekRanges(aPagarFuture), [aPagarFuture]);
 
     const overdueByClient = useMemo(() => {
-        const map: Record<string, { client: string; value: number; count: number; oldestDue: string; maxDays: number }> = {};
-        [...overdueIncome, ...overdueExpense].forEach(t => {
+        const map: Record<string, { client: string; type: 'INCOME' | 'EXPENSE'; value: number; count: number; oldestDue: string; maxDays: number; items: FinancialTransaction[] }> = {};
+        const allOverdue = [...overdueIncome.map(t => ({ ...t, _overType: 'INCOME' as const })), ...overdueExpense.map(t => ({ ...t, _overType: 'EXPENSE' as const }))];
+        allOverdue.forEach(t => {
             const client = t.entity_name || t.description || 'Outros';
+            const typeKey = t._overType;
+            const groupKey = `${client}___${typeKey}`;
             const dueDateStr = t.due_date.split('T')[0];
             const dueDate = new Date(dueDateStr + 'T12:00:00');
             const diffDays = Math.floor((today.getTime() - dueDate.getTime()) / (1000 * 60 * 60 * 24));
-            if (!map[client]) map[client] = { client, value: 0, count: 0, oldestDue: dueDateStr, maxDays: 0 };
-            map[client].value += t.amount;
-            map[client].count += 1;
-            if (diffDays > map[client].maxDays) {
-                map[client].maxDays = diffDays;
-                map[client].oldestDue = dueDateStr;
+            if (!map[groupKey]) map[groupKey] = { client, type: typeKey, value: 0, count: 0, oldestDue: dueDateStr, maxDays: 0, items: [] };
+            map[groupKey].value += t.amount;
+            map[groupKey].count += 1;
+            map[groupKey].items.push(t);
+            if (diffDays > map[groupKey].maxDays) {
+                map[groupKey].maxDays = diffDays;
+                map[groupKey].oldestDue = dueDateStr;
             }
         });
-        return Object.values(map).sort((a, b) => b.value - a.value);
+        return Object.values(map).sort((a, b) => b.maxDays - a.maxDays);
     }, [overdueIncome, overdueExpense, today]);
 
     const paidIncome = useMemo(() => nonInvestTx.filter(t => t.type === 'INCOME' && t.status === 'PAID'), [nonInvestTx]);
@@ -318,9 +328,16 @@ const FinancialReport: React.FC = () => {
                                 <tbody>
                                     {receberByWeek.length === 0 ? (
                                         <tr><td colSpan={3} className="px-4 py-6 text-center text-gray-400 text-xs">Nenhum título a receber no período.</td></tr>
-                                    ) : receberByWeek.map((w, i) => (
-                                        <tr key={i} className="border-t border-gray-100 hover:bg-blue-50/30"><td className="px-4 py-2 text-xs font-bold text-gray-600 font-mono">{w.label}</td><td className="px-4 py-2 text-sm font-mono text-blue-700 text-right">{formatCurrency(w.value)}</td><td className="px-4 py-2 text-sm text-gray-500 text-right">{w.count}</td></tr>
-                                    ))}
+                                    ) : receberByWeek.map((w, i) => {
+                                        const isCurrent = todayStr >= w.start && todayStr <= w.end;
+                                        return (
+                                            <tr key={i} className={`border-t border-gray-100 hover:bg-blue-50/30 ${isCurrent ? 'bg-blue-50/50' : ''}`}>
+                                                <td className="px-4 py-2 text-xs font-bold text-gray-600 font-mono">{w.label}{isCurrent && <span className="ml-2 text-[8px] font-black text-blue-600 bg-blue-100 px-1.5 py-0.5 rounded">ATUAL</span>}</td>
+                                                <td className="px-4 py-2 text-sm font-mono text-blue-700 text-right">{formatCurrency(w.value)}</td>
+                                                <td className="px-4 py-2 text-sm text-gray-500 text-right">{w.count}</td>
+                                            </tr>
+                                        );
+                                    })}
                                     {receberByWeek.length > 0 && (
                                         <tr className="bg-blue-50 border-t-2 border-blue-200"><td className="px-4 py-2 text-xs font-black text-blue-800 uppercase">Total</td><td className="px-4 py-2 text-sm font-black font-mono text-blue-800 text-right">{formatCurrency(receberByWeek.reduce((a, w) => a + w.value, 0))}</td><td className="px-4 py-2 text-sm font-black text-blue-800 text-right">{receberByWeek.reduce((a, w) => a + w.count, 0)}</td></tr>
                                     )}
@@ -337,9 +354,16 @@ const FinancialReport: React.FC = () => {
                                 <tbody>
                                     {pagarByWeek.length === 0 ? (
                                         <tr><td colSpan={3} className="px-4 py-6 text-center text-gray-400 text-xs">Nenhum título a pagar no período.</td></tr>
-                                    ) : pagarByWeek.map((w, i) => (
-                                        <tr key={i} className="border-t border-gray-100 hover:bg-red-50/30"><td className="px-4 py-2 text-xs font-bold text-gray-600 font-mono">{w.label}</td><td className="px-4 py-2 text-sm font-mono text-red-700 text-right">{formatCurrency(w.value)}</td><td className="px-4 py-2 text-sm text-gray-500 text-right">{w.count}</td></tr>
-                                    ))}
+                                    ) : pagarByWeek.map((w, i) => {
+                                        const isCurrent = todayStr >= w.start && todayStr <= w.end;
+                                        return (
+                                            <tr key={i} className={`border-t border-gray-100 hover:bg-red-50/30 ${isCurrent ? 'bg-red-50/50' : ''}`}>
+                                                <td className="px-4 py-2 text-xs font-bold text-gray-600 font-mono">{w.label}{isCurrent && <span className="ml-2 text-[8px] font-black text-red-600 bg-red-100 px-1.5 py-0.5 rounded">ATUAL</span>}</td>
+                                                <td className="px-4 py-2 text-sm font-mono text-red-700 text-right">{formatCurrency(w.value)}</td>
+                                                <td className="px-4 py-2 text-sm text-gray-500 text-right">{w.count}</td>
+                                            </tr>
+                                        );
+                                    })}
                                     {pagarByWeek.length > 0 && (
                                         <tr className="bg-red-50 border-t-2 border-red-200"><td className="px-4 py-2 text-xs font-black text-red-800 uppercase">Total</td><td className="px-4 py-2 text-sm font-black font-mono text-red-800 text-right">{formatCurrency(pagarByWeek.reduce((a, w) => a + w.value, 0))}</td><td className="px-4 py-2 text-sm font-black text-red-800 text-right">{pagarByWeek.reduce((a, w) => a + w.count, 0)}</td></tr>
                                     )}
@@ -350,33 +374,58 @@ const FinancialReport: React.FC = () => {
 
                     {(overdueIncome.length > 0 || overdueExpense.length > 0) && (
                         <div className="bg-white rounded-xl border-2 border-red-300 shadow-sm overflow-hidden">
-                            <div className="px-5 py-3 bg-red-100 border-b border-red-300">
+                            <div className="px-5 py-3 bg-red-100 border-b border-red-300 flex justify-between items-center">
                                 <h4 className="text-xs font-black text-red-800 uppercase flex items-center gap-2"><AlertTriangle size={14}/> Inadimplência — Títulos Vencidos</h4>
+                                <span className="text-[10px] font-bold text-red-600 bg-red-200 px-2 py-0.5 rounded-full">{overdueIncome.length + overdueExpense.length} título(s)</span>
                             </div>
-                            <table className="w-full text-left">
-                                <thead><tr className="text-[9px] font-black text-red-700 uppercase bg-red-50"><th className="px-4 py-2">Cliente / Favorecido</th><th className="px-4 py-2 text-right">Valor Total</th><th className="px-4 py-2 text-center">Vencimento Mais Antigo</th><th className="px-4 py-2 text-right">Dias Vencidos</th><th className="px-4 py-2 text-right">Qtd. Títulos</th></tr></thead>
-                                <tbody>
-                                    {overdueByClient.map((c, i) => {
-                                        const dueDate = new Date(c.oldestDue + 'T12:00:00');
-                                        return (
-                                            <tr key={i} className="border-t border-red-100 hover:bg-red-50/50">
-                                                <td className="px-4 py-2.5 text-sm font-bold text-gray-800">{c.client}</td>
-                                                <td className="px-4 py-2.5 text-sm font-mono font-bold text-red-700 text-right">{formatCurrency(c.value)}</td>
-                                                <td className="px-4 py-2.5 text-xs font-mono text-gray-500 text-center">{dueDate.toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' })}</td>
-                                                <td className="px-4 py-2.5 text-sm font-black text-red-600 text-right">{c.maxDays}</td>
-                                                <td className="px-4 py-2.5 text-sm text-gray-600 text-right">{c.count}</td>
-                                            </tr>
-                                        );
-                                    })}
-                                    <tr className="bg-red-100 border-t-2 border-red-300">
-                                        <td className="px-4 py-2 text-xs font-black text-red-800 uppercase">Total Inadimplência</td>
-                                        <td className="px-4 py-2 text-sm font-black font-mono text-red-800 text-right">{formatCurrency(totalInadimplencia)}</td>
-                                        <td className="px-4 py-2"></td>
-                                        <td className="px-4 py-2 text-sm font-black text-red-800 text-right">{overdueByClient.length > 0 ? Math.max(...overdueByClient.map(c => c.maxDays)) : 0}</td>
-                                        <td className="px-4 py-2 text-sm font-black text-red-800 text-right">{overdueIncome.length + overdueExpense.length}</td>
-                                    </tr>
-                                </tbody>
-                            </table>
+
+                            {overdueByClient.map((group, gi) => {
+                                const sortedItems = [...group.items].sort((a, b) => a.due_date.localeCompare(b.due_date));
+                                return (
+                                    <div key={gi} className="border-b border-red-200 last:border-b-0">
+                                        <div className={`px-5 py-2.5 flex items-center justify-between ${group.type === 'INCOME' ? 'bg-orange-50' : 'bg-red-50/60'}`}>
+                                            <div className="flex items-center gap-3">
+                                                <span className={`text-[9px] font-black px-2 py-0.5 rounded border ${group.type === 'INCOME' ? 'bg-blue-50 text-blue-700 border-blue-200' : 'bg-red-50 text-red-700 border-red-200'}`}>
+                                                    {group.type === 'INCOME' ? 'A RECEBER' : 'A PAGAR'}
+                                                </span>
+                                                <span className="text-sm font-black text-gray-800 uppercase">{group.client}</span>
+                                                <span className="text-[10px] text-gray-400 font-bold">{group.count} título(s)</span>
+                                            </div>
+                                            <div className="flex items-center gap-4">
+                                                <span className="text-[10px] font-bold text-red-600">{group.maxDays} dias</span>
+                                                <span className="text-sm font-black font-mono text-red-700">{formatCurrency(group.value)}</span>
+                                            </div>
+                                        </div>
+                                        <table className="w-full text-left">
+                                            <thead><tr className="text-[8px] font-black text-gray-400 uppercase bg-gray-50/50"><th className="px-5 py-1.5 pl-10">Vencimento</th><th className="px-4 py-1.5">Descrição</th><th className="px-4 py-1.5">Categoria</th><th className="px-4 py-1.5 text-right">Dias</th><th className="px-4 py-1.5 text-right">Valor</th></tr></thead>
+                                            <tbody>
+                                                {sortedItems.map((item, ii) => {
+                                                    const dueDateStr = item.due_date.split('T')[0];
+                                                    const dueDate = new Date(dueDateStr + 'T12:00:00');
+                                                    const diffDays = Math.floor((today.getTime() - dueDate.getTime()) / (1000 * 60 * 60 * 24));
+                                                    return (
+                                                        <tr key={ii} className="border-t border-gray-100 hover:bg-red-50/30">
+                                                            <td className="px-5 py-2 pl-10 text-xs font-mono text-gray-600">{dueDate.toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' })}</td>
+                                                            <td className="px-4 py-2 text-xs font-bold text-gray-700 uppercase max-w-[300px] truncate">{item.description}</td>
+                                                            <td className="px-4 py-2 text-[10px]"><span className="bg-gray-100 px-1.5 py-0.5 rounded border border-gray-200 text-gray-500">{item.category_name || '-'}</span></td>
+                                                            <td className="px-4 py-2 text-xs font-black text-red-600 text-right">{diffDays}</td>
+                                                            <td className="px-4 py-2 text-xs font-bold font-mono text-red-700 text-right">{formatCurrency(item.amount)}</td>
+                                                        </tr>
+                                                    );
+                                                })}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                );
+                            })}
+
+                            <div className="px-5 py-3 bg-red-100 border-t-2 border-red-300 flex justify-between items-center">
+                                <span className="text-xs font-black text-red-800 uppercase">Total Inadimplência</span>
+                                <div className="flex items-center gap-6">
+                                    <span className="text-xs font-bold text-red-700">{overdueByClient.length > 0 ? Math.max(...overdueByClient.map(c => c.maxDays)) : 0} dias (máx.)</span>
+                                    <span className="text-sm font-black font-mono text-red-800">{formatCurrency(totalInadimplencia)}</span>
+                                </div>
+                            </div>
                         </div>
                     )}
 
