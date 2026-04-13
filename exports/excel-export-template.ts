@@ -15,6 +15,7 @@ export interface ExcelExportConfig {
   companyName?: string;
   companyCnpj?: string;
   logoBase64?: string;
+  logoPath?: string;
   footerLeft?: string;
   footerRight?: string;
 }
@@ -42,13 +43,72 @@ function applyBorder(cell: ExcelJS.Cell, color = COLORS.borderLight) {
   };
 }
 
+async function fetchLogoBase64(logoPath: string): Promise<string | null> {
+  try {
+    const resp = await fetch(logoPath);
+    if (!resp.ok) return null;
+    const blob = await resp.blob();
+    return new Promise((resolve) => {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        const result = reader.result as string;
+        const base64 = result.split(',')[1] || result;
+        resolve(base64);
+      };
+      reader.onerror = () => resolve(null);
+      reader.readAsDataURL(blob);
+    });
+  } catch {
+    return null;
+  }
+}
+
+function computeAutoWidths(
+  headers: string[],
+  rows: (string | number | null | undefined)[][],
+  totalsRow?: (string | number | null | undefined)[],
+  currencyColumns: number[] = [],
+): number[] {
+  const widths: number[] = headers.map(h => h.length + 2);
+
+  for (const row of rows) {
+    row.forEach((val, i) => {
+      if (i >= widths.length) return;
+      let len = 0;
+      if (val == null) {
+        len = 1;
+      } else if (typeof val === 'number' && currencyColumns.includes(i)) {
+        len = `R$ ${val.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`.length + 1;
+      } else {
+        len = String(val).length + 1;
+      }
+      if (len > widths[i]) widths[i] = len;
+    });
+  }
+
+  if (totalsRow) {
+    totalsRow.forEach((val, i) => {
+      if (i >= widths.length || val == null) return;
+      let len = 0;
+      if (typeof val === 'number' && currencyColumns.includes(i)) {
+        len = `R$ ${val.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`.length + 2;
+      } else {
+        len = String(val).length + 2;
+      }
+      if (len > widths[i]) widths[i] = len;
+    });
+  }
+
+  return widths.map(w => Math.max(w, 4));
+}
+
 export async function exportFormattedExcel(config: ExcelExportConfig): Promise<Blob> {
   const {
     title,
     subtitle,
     headers,
     headerGroups,
-    colWidths,
+    colWidths: manualColWidths,
     rows,
     totalsRow,
     currencyColumns = [],
@@ -57,46 +117,68 @@ export async function exportFormattedExcel(config: ExcelExportConfig): Promise<B
     sheetPassword,
     companyName = 'GRUPO TM SEG',
     companyCnpj,
-    logoBase64,
     footerLeft,
     footerRight,
   } = config;
+
+  let { logoBase64, logoPath } = config;
 
   const wb = new ExcelJS.Workbook();
   wb.creator = companyName;
   wb.created = new Date();
 
-  const ws = wb.addWorksheet(sheetName, {
-    views: [{ showGridLines: false }],
-  });
-
   const totalCols = Math.max(headers.length, 1);
 
-  ws.columns = headers.map((_, i) => ({
-    width: colWidths?.[i] ?? 15,
-  }));
+  const autoWidths = computeAutoWidths(headers, rows, totalsRow, currencyColumns);
+  const finalWidths = headers.map((_, i) => {
+    const manual = manualColWidths?.[i];
+    const auto = autoWidths[i];
+    return Math.max(manual ?? 0, auto);
+  });
+
+  const ws = wb.addWorksheet(sheetName, {
+    views: [{ showGridLines: false }],
+    pageSetup: {
+      orientation: 'landscape',
+      fitToPage: true,
+      fitToWidth: 1,
+      fitToHeight: 1,
+      paperSize: 9,
+      margins: {
+        left: 0.3, right: 0.3,
+        top: 0.4, bottom: 0.4,
+        header: 0.2, footer: 0.2,
+      },
+    },
+  });
+
+  ws.columns = finalWidths.map(w => ({ width: w }));
 
   let currentRow = 1;
 
   const darkBarRow = ws.getRow(currentRow);
-  darkBarRow.height = 40;
+  darkBarRow.height = 45;
   for (let c = 1; c <= totalCols; c++) {
     const cell = darkBarRow.getCell(c);
     cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: COLORS.darkBar } };
   }
 
+  if (!logoBase64 && !logoPath) {
+    logoPath = '/logo.png';
+  }
+  if (!logoBase64 && logoPath) {
+    logoBase64 = await fetchLogoBase64(logoPath);
+  }
   if (logoBase64) {
     try {
       const logoId = wb.addImage({ base64: logoBase64, extension: 'png' });
       ws.addImage(logoId, {
-        tl: { col: 0.2, row: 0.15 },
-        ext: { width: 100, height: 30 },
+        tl: { col: 0.15, row: 0.1 },
+        ext: { width: 130, height: 35 },
       });
     } catch {}
   }
 
-  const titleCell = darkBarRow.getCell(Math.max(1, Math.floor(totalCols / 2) - 1));
-  titleCell.value = '';
   currentRow++;
 
   const titleRow = ws.getRow(currentRow);
@@ -104,7 +186,7 @@ export async function exportFormattedExcel(config: ExcelExportConfig): Promise<B
   ws.mergeCells(currentRow, 1, currentRow, totalCols);
   const titleMerged = titleRow.getCell(1);
   titleMerged.value = title;
-  titleMerged.font = { bold: true, size: 14, color: { argb: COLORS.darkBar } };
+  titleMerged.font = { bold: true, size: 13, color: { argb: COLORS.darkBar } };
   titleMerged.alignment = { horizontal: 'center', vertical: 'middle' };
   for (let c = 1; c <= totalCols; c++) {
     titleRow.getCell(c).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: COLORS.white } };
@@ -113,22 +195,22 @@ export async function exportFormattedExcel(config: ExcelExportConfig): Promise<B
 
   if (subtitle) {
     const subRow = ws.getRow(currentRow);
-    subRow.height = 18;
+    subRow.height = 16;
     ws.mergeCells(currentRow, 1, currentRow, totalCols);
     const subCell = subRow.getCell(1);
     subCell.value = subtitle;
-    subCell.font = { size: 9, color: { argb: COLORS.textMuted }, italic: true };
+    subCell.font = { size: 8, color: { argb: COLORS.textMuted }, italic: true };
     subCell.alignment = { horizontal: 'center', vertical: 'middle' };
     currentRow++;
   }
 
   const spacer1 = ws.getRow(currentRow);
-  spacer1.height = 6;
+  spacer1.height = 5;
   currentRow++;
 
   if (headerGroups && headerGroups.length > 0) {
     const groupRow = ws.getRow(currentRow);
-    groupRow.height = 22;
+    groupRow.height = 20;
     let colOffset = 1;
     for (const group of headerGroups) {
       if (group.span > 1) {
@@ -136,9 +218,9 @@ export async function exportFormattedExcel(config: ExcelExportConfig): Promise<B
       }
       const cell = groupRow.getCell(colOffset);
       cell.value = group.label;
-      cell.font = { bold: true, size: 9, color: { argb: COLORS.white } };
+      cell.font = { bold: true, size: 8, color: { argb: COLORS.white } };
       cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: COLORS.headerGroupBg } };
-      cell.alignment = { horizontal: 'center', vertical: 'middle' };
+      cell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: false };
       for (let c = colOffset; c < colOffset + group.span; c++) {
         const gc = groupRow.getCell(c);
         gc.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: COLORS.headerGroupBg } };
@@ -150,20 +232,20 @@ export async function exportFormattedExcel(config: ExcelExportConfig): Promise<B
   }
 
   const headerRow = ws.getRow(currentRow);
-  headerRow.height = 24;
+  headerRow.height = 22;
   headers.forEach((h, i) => {
     const cell = headerRow.getCell(i + 1);
     cell.value = h;
-    cell.font = { bold: true, size: 9, color: { argb: COLORS.white } };
+    cell.font = { bold: true, size: 8, color: { argb: COLORS.white } };
     cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: COLORS.headerBg } };
-    cell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
+    cell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: false };
     applyBorder(cell, COLORS.darkBar);
   });
   currentRow++;
 
   rows.forEach((rowData, rowIdx) => {
     const dataRow = ws.getRow(currentRow);
-    dataRow.height = 20;
+    dataRow.height = 18;
     const isZebra = rowIdx % 2 === 1;
     const bgColor = isZebra ? COLORS.zebraDark : COLORS.zebraLight;
 
@@ -178,11 +260,12 @@ export async function exportFormattedExcel(config: ExcelExportConfig): Promise<B
         cell.value = val ?? '';
       }
 
-      cell.font = { size: 9, color: { argb: COLORS.textDark } };
+      cell.font = { size: 8, color: { argb: COLORS.textDark } };
       cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: bgColor } };
       cell.alignment = {
         horizontal: isCurrency ? 'right' : (typeof val === 'number' ? 'center' : 'left'),
         vertical: 'middle',
+        wrapText: false,
       };
       applyBorder(cell);
     });
@@ -201,7 +284,7 @@ export async function exportFormattedExcel(config: ExcelExportConfig): Promise<B
     currentRow++;
 
     const tRow = ws.getRow(currentRow);
-    tRow.height = 26;
+    tRow.height = 24;
     totalsRow.forEach((val, colIdx) => {
       const cell = tRow.getCell(colIdx + 1);
       const isCurrency = currencyColumns.includes(colIdx);
@@ -213,11 +296,12 @@ export async function exportFormattedExcel(config: ExcelExportConfig): Promise<B
         cell.value = val ?? '';
       }
 
-      cell.font = { bold: true, size: 10, color: { argb: COLORS.darkBar } };
+      cell.font = { bold: true, size: 9, color: { argb: COLORS.darkBar } };
       cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: COLORS.totalBg } };
       cell.alignment = {
         horizontal: isCurrency ? 'right' : (typeof val === 'number' ? 'center' : (colIdx === 0 ? 'right' : 'center')),
         vertical: 'middle',
+        wrapText: false,
       };
       applyBorder(cell, COLORS.totalBorder);
     });
@@ -239,7 +323,7 @@ export async function exportFormattedExcel(config: ExcelExportConfig): Promise<B
       if (companyCnpj) lines.push(`CNPJ: ${companyCnpj}`);
       if (footerLeft) lines.push(footerLeft);
       leftCell.value = lines.join('\n');
-      leftCell.font = { size: 8, color: { argb: COLORS.textMuted }, bold: true };
+      leftCell.font = { size: 7, color: { argb: COLORS.textMuted }, bold: true };
       leftCell.alignment = { horizontal: 'left', vertical: 'top', wrapText: true };
       leftCell.border = { top: { style: 'thin', color: { argb: COLORS.borderLight } } };
     }
@@ -248,12 +332,13 @@ export async function exportFormattedExcel(config: ExcelExportConfig): Promise<B
       ws.mergeCells(currentRow, midCol + 1, currentRow, totalCols);
       const rightCell = footRow.getCell(midCol + 1);
       rightCell.value = footerRight;
-      rightCell.font = { size: 8, color: { argb: COLORS.textMuted } };
+      rightCell.font = { size: 7, color: { argb: COLORS.textMuted } };
       rightCell.alignment = { horizontal: 'right', vertical: 'top', wrapText: true };
       rightCell.border = { top: { style: 'thin', color: { argb: COLORS.borderLight } } };
     }
   }
 
+  const lastDataRow = currentRow;
   for (let r = currentRow + 1; r <= currentRow + 20; r++) {
     for (let c = 1; c <= totalCols + 5; c++) {
       const cell = ws.getRow(r).getCell(c);
@@ -266,6 +351,9 @@ export async function exportFormattedExcel(config: ExcelExportConfig): Promise<B
       cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: COLORS.white } };
     }
   }
+
+  const lastColLetter = String.fromCharCode(64 + Math.min(totalCols, 26));
+  ws.pageSetup.printArea = `A1:${lastColLetter}${lastDataRow}`;
 
   if (sheetPassword) {
     await ws.protect(sheetPassword, {
