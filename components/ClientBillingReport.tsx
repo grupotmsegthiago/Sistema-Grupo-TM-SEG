@@ -136,10 +136,16 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
         setSelectedMonth(`${y}-${(m + 1).toString().padStart(2, '0')}`);
     }, []);
 
+    const handleGenerateRef = React.useRef<() => void>(() => {});
+    const reportGeneratedRef = React.useRef(reportGenerated);
+    reportGeneratedRef.current = reportGenerated;
+    const selectedClientRef = React.useRef(selectedClient);
+    selectedClientRef.current = selectedClient;
+
     useEffect(() => {
         const handleRefresh = () => {
-            if (reportGenerated && selectedClient) {
-                handleGenerate();
+            if (reportGeneratedRef.current && selectedClientRef.current) {
+                handleGenerateRef.current();
             }
         };
         window.addEventListener('refreshMissions', handleRefresh);
@@ -151,10 +157,15 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
                 if (changed && old && (
                     changed.revenue_value !== old.revenue_value ||
                     changed.cost_value !== old.cost_value ||
-                    changed.toll_value !== old.toll_value
+                    changed.toll_value !== old.toll_value ||
+                    changed.billing_release !== old.billing_release ||
+                    changed.reference_number !== old.reference_number ||
+                    changed.billing_approved !== old.billing_approved ||
+                    changed.snapshot_approved_by !== old.snapshot_approved_by ||
+                    changed.billing_verified_by !== old.billing_verified_by
                 )) {
-                    if (reportGenerated && selectedClient) {
-                        handleGenerate();
+                    if (reportGeneratedRef.current && selectedClientRef.current) {
+                        handleGenerateRef.current();
                     }
                 }
             })
@@ -164,7 +175,7 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
             window.removeEventListener('refreshMissions', handleRefresh);
             supabase.removeChannel(channel);
         };
-    }, [reportGenerated, selectedClient, startDate, endDate]);
+    }, []);
 
     const fetchClients = async () => {
         const { data } = await supabase.from('clients').select('*').eq('status', 'Ativo').order('name');
@@ -304,6 +315,7 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
             setIsLoading(false);
         }
     };
+    handleGenerateRef.current = handleGenerate;
 
     const handleRecalculateAndCompare = async () => {
         const clientObj = clients.find(c => c.id.toString() === selectedClient);
