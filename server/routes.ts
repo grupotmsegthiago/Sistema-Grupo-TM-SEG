@@ -236,6 +236,73 @@ export async function registerRoutes(
     }
   });
 
+  app.post('/api/missions/:id/loss-alert-email', requireAuth, async (req: Request, res: Response) => {
+    try {
+      const { missionId, client, provider, origin, destination, revenueTotal, costTotal, toll, tollProvider, resultado, userName } = req.body;
+
+      const LOSS_ALERT_EMAILS = 'barbara@grupotmseg.com.br, thiago@grupotmseg.com.br';
+      const now = new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' });
+      const r2 = (v: number) => (v || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+      const html = `<!DOCTYPE html>
+<html lang="pt-BR"><head><meta charset="UTF-8"><style>
+  body { margin:0; padding:0; background:#f4f4f4; font-family: 'Segoe UI', Arial, sans-serif; }
+  .container { max-width:600px; margin:0 auto; background:#fff; border-radius:8px; overflow:hidden; box-shadow:0 2px 12px rgba(0,0,0,0.08); }
+  .header { background:#1a1a1a; padding:28px 32px; text-align:center; }
+  .header h1 { color:#fff; font-size:22px; margin:0 0 4px; }
+  .header .accent { color:#c0392b; font-weight:700; }
+  .body-content { padding:32px; color:#333; line-height:1.7; font-size:14px; }
+  .info-table { width:100%; border-collapse:collapse; margin:16px 0; }
+  .info-table td { padding:10px 14px; border-bottom:1px solid #eee; }
+  .info-table td:first-child { font-weight:600; color:#1a1a1a; width:40%; }
+  .loss-box { background:#fdf2f2; border:2px solid #c0392b; padding:16px 20px; margin:16px 0; border-radius:8px; text-align:center; }
+  .loss-box .amount { font-size:28px; font-weight:800; color:#c0392b; }
+  .footer { background:#1a1a1a; padding:20px; text-align:center; border-top:3px solid #c0392b; }
+  .footer p { color:#999; font-size:12px; margin:4px 0; }
+</style></head><body>
+<div class="container">
+  <div class="header"><h1>GRUPO <span class="accent">TM SEG</span></h1></div>
+  <div class="body-content">
+    <h2 style="color:#c0392b;">⚠️ ALERTA: OS com Prejuízo Detectado</h2>
+    <p>A OS abaixo foi salva com <strong>resultado negativo</strong> e precisa de análise.</p>
+    <div class="loss-box">
+      <p style="margin:0 0 4px; font-size:13px; color:#666;">RESULTADO OPERACIONAL</p>
+      <div class="amount">-R$ ${r2(Math.abs(resultado))}</div>
+    </div>
+    <table class="info-table">
+      <tr><td>OS</td><td><strong>${missionId}</strong></td></tr>
+      <tr><td>Cliente</td><td>${client || '—'}</td></tr>
+      <tr><td>Fornecedor</td><td>${provider || '—'}</td></tr>
+      <tr><td>Origem</td><td>${origin || '—'}</td></tr>
+      <tr><td>Destino</td><td>${destination || '—'}</td></tr>
+      <tr><td>Receita (Serviço)</td><td>R$ ${r2(revenueTotal)}</td></tr>
+      <tr><td>Custo Fornecedor</td><td>R$ ${r2(costTotal)}</td></tr>
+      <tr><td>Pedágio Cliente</td><td>R$ ${r2(toll)}</td></tr>
+      <tr><td>Pedágio Fornecedor</td><td>R$ ${r2(tollProvider)}</td></tr>
+      <tr><td>Salvo por</td><td><strong>${userName || '—'}</strong></td></tr>
+      <tr><td>Data/Hora</td><td>${now}</td></tr>
+    </table>
+    <p style="font-size:12px; color:#999; margin-top:24px;">Este alerta é gerado automaticamente pelo sistema TMSEGo.</p>
+  </div>
+  <div class="footer"><p>Grupo TM SEG — Sistema TMSEGo</p></div>
+</div></body></html>`;
+
+      const { transporter } = await import('./emailService');
+      const SMTP_FROM = `"Grupo TM SEG" <adm@grupotmseg.com.br>`;
+      await transporter.sendMail({
+        from: SMTP_FROM,
+        to: LOSS_ALERT_EMAILS,
+        subject: `⚠️ PREJUÍZO: OS ${missionId} — Resultado -R$ ${r2(Math.abs(resultado))}`,
+        html,
+      });
+      console.log(`[Loss Alert] Email enviado → ${LOSS_ALERT_EMAILS} | OS: ${missionId} | Prejuízo: -R$ ${r2(Math.abs(resultado))}`);
+      res.json({ success: true, sent: true });
+    } catch (e: any) {
+      console.error('[Loss Alert]', e.message);
+      res.status(500).json({ error: e.message });
+    }
+  });
+
   app.post('/api/admin/unify-client-names', requireAuth, requireRole('diretoria', 'administrador'), async (req: Request, res: Response) => {
     try {
       const { correctName, variations, dryRun = true } = req.body;

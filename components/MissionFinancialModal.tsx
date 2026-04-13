@@ -2,6 +2,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Mission, ClientPriceTable, ProviderCostTable, MissionStatus, Client } from '../types';
 import { supabase } from '../lib/supabase';
+import { authFetch } from '../lib/authFetch';
 import { useNotification } from '../lib/NotificationContext';
 import { calculateMissionFinancials, auditMissionFinancials, extractUF, UF_TO_REGION, clientFuzzyFilter, clientNameShort } from '../lib/financialUtils';
 import { X, Calculator, Loader2, Save, CheckCircle2, TrendingUp, Landmark, Zap, RotateCcw, Building2, Briefcase, Plus, Users, MapPin, ArrowRight, BrainCircuit, AlertTriangle, AlertCircle, Edit2, Info, RefreshCw, Clock, Pencil, Lock, ShieldCheck, Camera, Image as ImageIcon, Link2, Layers, Scale, Sparkles } from 'lucide-react';
@@ -1472,6 +1473,32 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
               showNotification('Sucesso', `Ajustes Salvos por ${userName}`, 'success');
           }
           
+          const resultado = revServiceOnly - costServiceOnly - toll;
+          if (resultado < 0) {
+              try {
+                  await authFetch(`/api/missions/${mission.id}/loss-alert-email`, {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({
+                          missionId: mission.id,
+                          client: mission.client,
+                          provider: mission.provider,
+                          origin: mission.origin,
+                          destination: mission.destination,
+                          revenueTotal: r2(revServiceOnly),
+                          costTotal: r2(costServiceOnly),
+                          toll: r2(toll),
+                          tollProvider: r2(tollProv),
+                          resultado: r2(resultado),
+                          userName,
+                      })
+                  });
+                  console.log(`[Loss Alert] Email de prejuízo enviado para OS ${mission.id} — Resultado: R$ ${resultado.toFixed(2)}`);
+              } catch (lossErr) {
+                  console.warn('[Loss Alert] Falha ao enviar email:', lossErr);
+              }
+          }
+
           if (onUpdate) onUpdate();
           window.dispatchEvent(new CustomEvent('refreshMissions'));
           if (!approve || isFullyApproved) onClose();
