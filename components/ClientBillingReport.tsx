@@ -9,7 +9,6 @@ import { generateContent } from '../lib/gemini';
 import {
     BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, LabelList
 } from 'recharts';
-import * as XLSX from 'xlsx';
 
 interface ClientBillingReportProps { onNavigate?: (screen: string) => void; onOpenMission?: (missionId: string) => void; }
 const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, onOpenMission }) => {
@@ -1062,42 +1061,19 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
 
     const fmtBRLExcel = (v: number) => v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 
-    const handleExportExcel = useCallback(() => {
+    const handleExportExcel = useCallback(async () => {
         if (rowsData.length === 0) return;
 
-        const wb = XLSX.utils.book_new();
-
-        const headerGroup = [
-            'TABELA ACORDADA', '', '', '', '', '', '',
-            'INFORMAÇÕES DA VIAGEM', '', '', '', '', '',
-            'KILOMETRAGEM', '', '',
-            'HORÁRIOS', '', '',
-            'KM EXCEDENTE', '', '',
-            'HORA EXCEDENTE', '', '',
-            'VALORES', ''
-        ];
-        const headerSub = [
-            'Nº', 'ROTA', 'VALOR', 'HR FRANQ', 'KM FRANQ', 'HR EXTRA', 'KM EXTRA',
-            'DATA INÍCIO', 'HORA INÍCIO', 'VIATURA', 'VEÍC. ESCOLTADO', 'DATA FIM', 'HORA FIM',
-            'INICIAL', 'FINAL', 'TOTAL',
-            'INICIAL', 'FINAL', 'TOTAL',
-            'KM', 'VALOR', 'TOTAL',
-            'HORA', 'VALOR', 'TOTAL',
-            'PEDÁGIO', 'TOTAL'
-        ];
-
-        const titleRow = ['BOLETIM DE MEDIÇÃO'];
-        const periodRow = [getPeriodLabel()];
-        const subtitleRow = ['REFERENTE A INTERMEDIAÇÃO DE SEGURANÇA E MONITORAMENTO DE CARGAS'];
+        const { exportFormattedExcel } = await import('../exports/excel-export-template');
 
         const dataRows = rowsData.map(r => [
             !r.isApproved ? `[${r.missionStatus.toUpperCase()}] ${r.id}` : r.id,
             r.route,
-            fmtBRLExcel(r.activationFee),
+            r.activationFee,
             r.franchiseHoursFmt,
             r.franchiseKm > 0 ? fmtNum(r.franchiseKm) : '-',
-            fmtBRLExcel(r.unitHr),
-            fmtBRLExcel(r.unitKm),
+            r.unitHr,
+            r.unitKm,
             r.startDate,
             r.startTime,
             r.viatura,
@@ -1111,51 +1087,62 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
             r.timeEnd,
             r.timeTotal,
             r.kmExtraQtd > 0 ? fmtNum(r.kmExtraQtd) : '-',
-            r.kmExtraQtd > 0 ? fmtBRLExcel(r.kmExtraUnit) : '-',
-            r.kmExtraTotal > 0 ? fmtBRLExcel(r.kmExtraTotal) : 'R$ 0,00',
+            r.kmExtraQtd > 0 ? r.kmExtraUnit : '-',
+            r.kmExtraTotal > 0 ? r.kmExtraTotal : 0,
             r.hrExtraQtd > 0 ? fmtHHMM(r.hrExtraQtd) : '-',
-            r.hrExtraQtd > 0 ? fmtBRLExcel(r.hrExtraUnit) : '-',
-            r.hrExtraTotal > 0 ? fmtBRLExcel(r.hrExtraTotal) : 'R$ 0,00',
-            r.tollVal > 0 ? fmtBRLExcel(r.tollVal) : 'R$ 0,00',
-            fmtBRLExcel(r.totalGeral)
+            r.hrExtraQtd > 0 ? r.hrExtraUnit : '-',
+            r.hrExtraTotal > 0 ? r.hrExtraTotal : 0,
+            r.tollVal > 0 ? r.tollVal : 0,
+            r.totalGeral
         ]);
 
-        const totalRow = Array(27).fill('');
-        totalRow[0] = 'TOTAL';
-        totalRow[26] = fmtBRLExcel(grandTotal);
-
-        const allRows = [titleRow, periodRow, subtitleRow, [], headerGroup, headerSub, ...dataRows, [], totalRow];
-        const ws = XLSX.utils.aoa_to_sheet(allRows);
-
-        ws['!cols'] = [
-            { wch: 6 }, { wch: 30 }, { wch: 12 }, { wch: 7 }, { wch: 7 }, { wch: 12 }, { wch: 12 },
-            { wch: 12 }, { wch: 8 }, { wch: 10 }, { wch: 12 }, { wch: 12 }, { wch: 8 },
-            { wch: 9 }, { wch: 9 }, { wch: 8 },
-            { wch: 7 }, { wch: 7 }, { wch: 7 },
-            { wch: 6 }, { wch: 12 }, { wch: 12 },
-            { wch: 7 }, { wch: 12 }, { wch: 12 },
-            { wch: 12 }, { wch: 14 }
-        ];
-
-        ws['!merges'] = [
-            { s: { r: 0, c: 0 }, e: { r: 0, c: 26 } },
-            { s: { r: 1, c: 0 }, e: { r: 1, c: 26 } },
-            { s: { r: 2, c: 0 }, e: { r: 2, c: 26 } },
-            { s: { r: 4, c: 0 }, e: { r: 4, c: 6 } },
-            { s: { r: 4, c: 7 }, e: { r: 4, c: 12 } },
-            { s: { r: 4, c: 13 }, e: { r: 4, c: 15 } },
-            { s: { r: 4, c: 16 }, e: { r: 4, c: 18 } },
-            { s: { r: 4, c: 19 }, e: { r: 4, c: 21 } },
-            { s: { r: 4, c: 22 }, e: { r: 4, c: 24 } },
-            { s: { r: 4, c: 25 }, e: { r: 4, c: 26 } },
-        ];
+        const totalRowData: (string | number)[] = Array(27).fill('');
+        totalRowData[0] = 'TOTAL';
+        totalRowData[26] = grandTotal;
 
         const clientLabel = displayClientName || 'CLIENTE';
         const periodShort = startDate && endDate ? `${startDate.replace(/-/g, '')}_${endDate.replace(/-/g, '')}` : 'PERIODO';
-        const fileName = `Boletim_${clientLabel.replace(/[^a-zA-Z0-9]/g, '_').substring(0, 20)}_${periodShort}.xlsx`;
 
-        XLSX.utils.book_append_sheet(wb, ws, 'Boletim');
-        XLSX.writeFile(wb, fileName, { compression: true });
+        await exportFormattedExcel({
+            title: `BOLETIM DE MEDIÇÃO`,
+            subtitle: `${getPeriodLabel()} — REFERENTE A INTERMEDIAÇÃO DE SEGURANÇA E MONITORAMENTO DE CARGAS`,
+            headerGroups: [
+                { label: 'TABELA ACORDADA', span: 7 },
+                { label: 'INFORMAÇÕES DA VIAGEM', span: 6 },
+                { label: 'KILOMETRAGEM', span: 3 },
+                { label: 'HORÁRIOS', span: 3 },
+                { label: 'KM EXCEDENTE', span: 3 },
+                { label: 'HORA EXCEDENTE', span: 3 },
+                { label: 'VALORES', span: 2 },
+            ],
+            headers: [
+                'Nº', 'ROTA', 'VALOR', 'HR FRANQ', 'KM FRANQ', 'HR EXTRA', 'KM EXTRA',
+                'DATA INÍCIO', 'HORA INÍCIO', 'VIATURA', 'VEÍC. ESCOLTADO', 'DATA FIM', 'HORA FIM',
+                'INICIAL', 'FINAL', 'TOTAL',
+                'INICIAL', 'FINAL', 'TOTAL',
+                'KM', 'VALOR', 'TOTAL',
+                'HORA', 'VALOR', 'TOTAL',
+                'PEDÁGIO', 'TOTAL'
+            ],
+            colWidths: [
+                6, 30, 12, 7, 7, 12, 12,
+                12, 8, 10, 12, 12, 8,
+                9, 9, 8,
+                7, 7, 7,
+                6, 12, 12,
+                7, 12, 12,
+                12, 14
+            ],
+            rows: dataRows,
+            totalsRow: totalRowData,
+            currencyColumns: [2, 5, 6, 20, 21, 23, 24, 25, 26],
+            fileName: `Boletim_${clientLabel.replace(/[^a-zA-Z0-9]/g, '_').substring(0, 20)}_${periodShort}.xlsx`,
+            sheetName: 'Boletim',
+            companyName: 'GRUPO TM SEG',
+            companyCnpj: '28.804.378/0001-67',
+            footerLeft: 'DOCUMENTO GERADO ELETRONICAMENTE PELO GRUPO TM SEG',
+            footerRight: 'ASSINATURA / CARIMBO CLIENTE',
+        });
     }, [rowsData, grandTotal, displayClientName, startDate, endDate]);
 
     const cellStyle: React.CSSProperties = {
