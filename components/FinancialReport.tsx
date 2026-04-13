@@ -115,7 +115,7 @@ const FinancialReport: React.FC = () => {
         return transactions.filter(t => {
             if (investmentCategoryIds.has(t.category_id)) return false;
             const catName = (t.category_name || '').toLowerCase();
-            if (catName.includes('investimento') || catName.includes('investimentos') || catName.includes('aplicaç') || catName.includes('resgate')) return false;
+            if (catName.includes('investimento') || catName.includes('investimentos') || catName.includes('aplicaç') || catName.includes('resgate') || catName.includes('ajuste de saldo') || catName.includes('ajustes de saldo')) return false;
             return true;
         });
     }, [transactions, investmentCategoryIds]);
