@@ -142,7 +142,7 @@ export async function exportFormattedExcel(config: ExcelExportConfig): Promise<B
       orientation: 'landscape',
       fitToPage: true,
       fitToWidth: 1,
-      fitToHeight: 1,
+      fitToHeight: 0,
       paperSize: 9,
       margins: {
         left: 0.3, right: 0.3,
@@ -174,7 +174,7 @@ export async function exportFormattedExcel(config: ExcelExportConfig): Promise<B
     try {
       const logoId = wb.addImage({ base64: logoBase64, extension: 'png' });
       ws.addImage(logoId, {
-        tl: { col: 0.05, row: 0.05 },
+        tl: { col: 0.3, row: 0.05 },
         ext: { width: 65, height: 60 },
       });
     } catch {}
@@ -193,7 +193,7 @@ export async function exportFormattedExcel(config: ExcelExportConfig): Promise<B
     ws.mergeCells(currentRow, 1, currentRow, totalCols);
     const subCell = subRow.getCell(1);
     subCell.value = subtitle;
-    subCell.font = { size: 7, color: { argb: COLORS.textMuted }, italic: true };
+    subCell.font = { size: 9, color: { argb: COLORS.textMuted }, italic: true };
     subCell.alignment = { horizontal: 'center', vertical: 'middle' };
     for (let c = 1; c <= totalCols; c++) {
       subRow.getCell(c).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: COLORS.white } };
@@ -204,6 +204,8 @@ export async function exportFormattedExcel(config: ExcelExportConfig): Promise<B
   const spacer1 = ws.getRow(currentRow);
   spacer1.height = 4;
   currentRow++;
+
+  const headerStartRow = currentRow;
 
   if (headerGroups && headerGroups.length > 0) {
     const groupRow = ws.getRow(currentRow);
@@ -351,6 +353,7 @@ export async function exportFormattedExcel(config: ExcelExportConfig): Promise<B
 
   const lastColLetter = String.fromCharCode(64 + Math.min(totalCols, 26));
   ws.pageSetup.printArea = `A1:${lastColLetter}${lastDataRow}`;
+  ws.pageSetup.printTitlesRow = `${headerStartRow}:${headerStartRow + (headerGroups && headerGroups.length > 0 ? 1 : 0)}`;
 
   if (sheetPassword) {
     await ws.protect(sheetPassword, {
