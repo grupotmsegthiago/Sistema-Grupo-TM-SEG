@@ -44,6 +44,7 @@ import ClientVehicleList from './components/ClientVehicleList';
 import ClientVehicleForm from './components/ClientVehicleForm';
 import SystemLogs from './components/SystemLogs';
 import ReportsDashboard from './components/ReportsDashboard';
+import MissionReportPage from './components/MissionReportPage';
 import QuoteList from './components/QuoteList';
 import QuoteForm from './components/QuoteForm';
 import PublicAgentRegistration from './components/PublicAgentRegistration';
@@ -290,6 +291,7 @@ const App: React.FC = () => {
       case 'system-logs': return <SystemLogs />;
       case 'legal-dashboard': return <LegalDashboard />;
       case 'reports': return <ReportsDashboard />;
+      case 'mission-report': return <MissionReportPage />;
       case 'support-network': return <SupportMapFinder onNavigate={navigateTo} />;
       default: return <Dashboard />;
     }
