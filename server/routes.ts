@@ -9,7 +9,7 @@ import { calculateMissionFinancials } from "../lib/financialUtils";
 import fs from "fs";
 import path from "path";
 import pg from "pg";
-import { sendMissionEmailToClient, sendMissionEmailToProvider, sendMissionResendToClient, sendMirroringEvidenceEmail, sendMissionChangeNotificationToClient, sendMissionChangeNotificationToProvider, sendWelcomeEmail, sendTestEmail, sendVerificationCodeEmail, sendPasswordResetEmail, sendBillingEmail, sendLegalReportEmail } from "./emailService";
+import { sendMissionEmailToClient, sendMissionEmailToProvider, sendMissionResendToClient, sendMirroringEvidenceEmail, sendMissionChangeNotificationToClient, sendMissionChangeNotificationToProvider, sendWelcomeEmail, sendTestEmail, sendVerificationCodeEmail, sendPasswordResetEmail, sendBillingEmail, sendLegalReportEmail, sendPendingInfoReport } from "./emailService";
 import { findOrCreateCustomer, createPayment, getPayment, getPaymentPixQrCode, getPaymentBankSlip, listPayments, deletePayment, mapAsaasStatus, isAsaasConfigured, getAsaasCompanies, scheduleInvoice, listMunicipalServices, getInvoiceByPayment, getAllBalances } from "./asaasService";
 
 const resend = new Resend(process.env.RESEND_API_KEY);
@@ -4243,6 +4243,93 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
       res.json({ success: sent, total, emailTo: LEGAL_EMAIL_TO, date: searchDate });
     } catch (err: any) {
       console.error('[Jurídico Diário] Erro manual:', err.message);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  const PENDING_REPORT_EMAIL = 'michelle@grupotmseg.com.br';
+
+  async function findCompletedMissionsWithPendingInfo(): Promise<any[]> {
+    const allMissions: any[] = [];
+    let from = 0;
+    const pageSize = 1000;
+    while (true) {
+      const { data, error } = await supabase
+        .from('missions')
+        .select('id, client, provider, origin, destination, start_time, end_time, start_km, end_km, driver_name, client_vehicle, agent1, created_at, status')
+        .in('status', ['Concluída', 'Concluida', 'Aprovada'])
+        .range(from, from + pageSize - 1);
+      if (error) { console.error('[Pendências] Erro ao buscar missions:', error.message); break; }
+      if (!data || data.length === 0) break;
+      allMissions.push(...data);
+      if (data.length < pageSize) break;
+      from += pageSize;
+    }
+
+    return allMissions.filter((m: any) => {
+      const missing: boolean =
+        (!m.start_km && m.start_km !== 0) ||
+        (!m.end_km && m.end_km !== 0) ||
+        !m.start_time ||
+        !m.end_time ||
+        !m.origin ||
+        !m.destination ||
+        !m.driver_name ||
+        !m.client_vehicle ||
+        !m.agent1;
+      return missing;
+    });
+  }
+
+  async function executeDailyPendingReport() {
+    const now = new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' });
+    console.log(`[Pendências Diário] Iniciando busca — ${now}`);
+    try {
+      const pendingMissions = await findCompletedMissionsWithPendingInfo();
+      console.log(`[Pendências Diário] ${pendingMissions.length} OS concluídas com pendências encontradas`);
+
+      const reportDate = new Date().toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' });
+      if (pendingMissions.length > 0) {
+        const sent = await sendPendingInfoReport(PENDING_REPORT_EMAIL, pendingMissions, reportDate);
+        if (sent) {
+          console.log(`[Pendências Diário] Relatório enviado com sucesso para ${PENDING_REPORT_EMAIL}`);
+        } else {
+          console.error(`[Pendências Diário] Falha ao enviar relatório para ${PENDING_REPORT_EMAIL}`);
+        }
+      } else {
+        console.log(`[Pendências Diário] Nenhuma OS com pendências — email não enviado.`);
+      }
+    } catch (err: any) {
+      console.error(`[Pendências Diário] Erro fatal:`, err.message);
+    }
+  }
+
+  function scheduleDailyPendingReport() {
+    const checkInterval = () => {
+      const now = new Date();
+      const brasiliaTime = new Date(now.toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' }));
+      const hour = brasiliaTime.getHours();
+      const minute = brasiliaTime.getMinutes();
+
+      if (hour === 7 && minute === 30) {
+        executeDailyPendingReport();
+      }
+    };
+
+    setInterval(checkInterval, 60 * 1000);
+    console.log(`[Pendências Diário] Agendamento ativo — relatório será enviado todos os dias às 07:30 (Brasília) para ${PENDING_REPORT_EMAIL}`);
+  }
+
+  scheduleDailyPendingReport();
+
+  app.post("/api/relatorio-pendencias", requireAuth, requireRole('administrador', 'diretoria'), async (_req: Request, res: Response) => {
+    try {
+      const pendingMissions = await findCompletedMissionsWithPendingInfo();
+      const reportDate = new Date().toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' });
+      const sent = await sendPendingInfoReport(PENDING_REPORT_EMAIL, pendingMissions, reportDate);
+      res.json({ success: sent, total: pendingMissions.length, emailTo: PENDING_REPORT_EMAIL, date: reportDate });
+    } catch (err: any) {
+      console.error('[Pendências] Erro manual:', err.message);
       res.status(500).json({ error: err.message });
     }
   });

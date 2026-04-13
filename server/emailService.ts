@@ -886,4 +886,79 @@ export async function sendLegalReportEmail(to: string, processos: any[], searchD
   }
 }
 
+export async function sendPendingInfoReport(to: string, missions: any[], reportDate: string): Promise<boolean> {
+  const missionsHtml = missions.length === 0
+    ? '<p style="color:#27ae60; font-style:italic; text-align:center; padding:20px; font-weight:600;">Nenhuma OS com pendências encontrada. Parabéns!</p>'
+    : missions.map((m: any, idx: number) => {
+      const pendencias: string[] = [];
+      if (!m.start_km && m.start_km !== 0) pendencias.push('KM Inicial');
+      if (!m.end_km && m.end_km !== 0) pendencias.push('KM Final');
+      if (!m.start_time) pendencias.push('Hora Início');
+      if (!m.end_time) pendencias.push('Hora Fim');
+      if (!m.origin) pendencias.push('Origem');
+      if (!m.destination) pendencias.push('Destino');
+      if (!m.driver_name) pendencias.push('Motorista');
+      if (!m.client_vehicle) pendencias.push('Veículo Escoltado');
+      if (!m.agent1) pendencias.push('Agente 1');
+      const bgColor = idx % 2 === 0 ? '#ffffff' : '#fafafa';
+      return `
+        <tr style="background:${bgColor}; border-bottom:1px solid #eee;">
+          <td style="padding:8px 12px; font-weight:700; color:#7f1d1d; font-size:13px; white-space:nowrap;">${m.id || '—'}</td>
+          <td style="padding:8px 12px; color:#333; font-size:12px;">${m.client || '—'}</td>
+          <td style="padding:8px 12px; color:#333; font-size:12px;">${m.provider || '—'}</td>
+          <td style="padding:8px 12px; color:#555; font-size:11px;">${(m.origin || '—').substring(0, 40)}</td>
+          <td style="padding:8px 12px; color:#555; font-size:11px;">${(m.destination || '—').substring(0, 40)}</td>
+          <td style="padding:8px 12px; color:#555; font-size:11px;">${m.created_at ? new Date(m.created_at).toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' }) : '—'}</td>
+          <td style="padding:8px 12px;">
+            ${pendencias.map(p => `<span style="display:inline-block; background:#fef2f2; color:#dc2626; font-size:10px; font-weight:700; padding:2px 8px; border-radius:10px; margin:1px 2px; border:1px solid #fecaca;">${p}</span>`).join('')}
+          </td>
+        </tr>
+      `;
+    }).join('');
+
+  const html = baseTemplate(`
+    <h2 style="color:#7f1d1d;">Relatório de OS Concluídas com Pendências</h2>
+    <div class="highlight-box">
+      <p><strong>Data do Relatório:</strong> ${reportDate}</p>
+      <p><strong>Total de OS com Pendências:</strong> <span class="badge" style="background:#dc2626;">${missions.length}</span></p>
+    </div>
+    <p style="font-size:13px; color:#333; margin:16px 0; line-height:1.6;">
+      Prezada Michelle,<br><br>
+      Segue abaixo a relação de <strong>Ordens de Serviço concluídas</strong> que estão com <strong>informações pendentes</strong> no sistema.
+      Por favor, providencie a regularização dos dados faltantes o mais breve possível para garantir o correto faturamento e fechamento das OS.
+    </p>
+    ${missions.length > 0 ? `
+    <table style="width:100%; border-collapse:collapse; margin:16px 0; font-size:12px; border:1px solid #e5e7eb; border-radius:8px; overflow:hidden;">
+      <thead>
+        <tr style="background:#7f1d1d;">
+          <th style="padding:10px 12px; text-align:left; font-weight:700; color:#fff; font-size:11px;">OS</th>
+          <th style="padding:10px 12px; text-align:left; font-weight:700; color:#fff; font-size:11px;">Cliente</th>
+          <th style="padding:10px 12px; text-align:left; font-weight:700; color:#fff; font-size:11px;">Fornecedor</th>
+          <th style="padding:10px 12px; text-align:left; font-weight:700; color:#fff; font-size:11px;">Origem</th>
+          <th style="padding:10px 12px; text-align:left; font-weight:700; color:#fff; font-size:11px;">Destino</th>
+          <th style="padding:10px 12px; text-align:left; font-weight:700; color:#fff; font-size:11px;">Criada</th>
+          <th style="padding:10px 12px; text-align:left; font-weight:700; color:#fff; font-size:11px;">Pendências</th>
+        </tr>
+      </thead>
+      <tbody>${missionsHtml}</tbody>
+    </table>
+    ` : ''}
+    <p style="font-size:12px; color:#999; margin-top:24px;">Este relatório é gerado automaticamente pelo sistema TMSEGo todos os dias às 07:30 (horário de Brasília).</p>
+  `);
+
+  try {
+    await transporter.sendMail({
+      from: SMTP_FROM,
+      to,
+      subject: `Pendências em OS Concluídas — ${missions.length} OS — ${reportDate}`,
+      html,
+    });
+    console.log(`[Email] Relatório de pendências enviado → ${to} | ${missions.length} OS`);
+    return true;
+  } catch (err: any) {
+    console.error(`[Email] Erro ao enviar relatório de pendências:`, err.message);
+    return false;
+  }
+}
+
 export { transporter };
