@@ -156,56 +156,53 @@ export async function exportFormattedExcel(config: ExcelExportConfig): Promise<B
 
   let currentRow = 1;
 
-  const darkBarRow = ws.getRow(currentRow);
-  darkBarRow.height = 60;
-  for (let c = 1; c <= totalCols; c++) {
-    const cell = darkBarRow.getCell(c);
-    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: COLORS.darkBar } };
-  }
-
   if (!logoBase64 && !logoPath) {
     logoPath = '/logo.png';
   }
   if (!logoBase64 && logoPath) {
     logoBase64 = await fetchLogoBase64(logoPath);
   }
+
+  const row1 = ws.getRow(currentRow);
+  row1.height = 50;
+  for (let c = 1; c <= totalCols; c++) {
+    const cell = row1.getCell(c);
+    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: COLORS.white } };
+  }
+
   if (logoBase64) {
     try {
       const logoId = wb.addImage({ base64: logoBase64, extension: 'png' });
       ws.addImage(logoId, {
-        tl: { col: 0.1, row: 0.05 },
-        ext: { width: 72, height: 72 },
+        tl: { col: 0.05, row: 0.05 },
+        ext: { width: 65, height: 60 },
       });
     } catch {}
   }
 
-  currentRow++;
-
-  const titleRow = ws.getRow(currentRow);
-  titleRow.height = 28;
-  ws.mergeCells(currentRow, 1, currentRow, totalCols);
-  const titleMerged = titleRow.getCell(1);
-  titleMerged.value = title;
-  titleMerged.font = { bold: true, size: 13, color: { argb: COLORS.darkBar } };
-  titleMerged.alignment = { horizontal: 'center', vertical: 'middle' };
-  for (let c = 1; c <= totalCols; c++) {
-    titleRow.getCell(c).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: COLORS.white } };
-  }
+  ws.mergeCells(currentRow, 3, currentRow, totalCols);
+  const titleCell1 = row1.getCell(3);
+  titleCell1.value = title;
+  titleCell1.font = { bold: true, size: 14, color: { argb: COLORS.darkBar } };
+  titleCell1.alignment = { horizontal: 'center', vertical: 'middle' };
   currentRow++;
 
   if (subtitle) {
     const subRow = ws.getRow(currentRow);
-    subRow.height = 16;
+    subRow.height = 14;
     ws.mergeCells(currentRow, 1, currentRow, totalCols);
     const subCell = subRow.getCell(1);
     subCell.value = subtitle;
-    subCell.font = { size: 8, color: { argb: COLORS.textMuted }, italic: true };
+    subCell.font = { size: 7, color: { argb: COLORS.textMuted }, italic: true };
     subCell.alignment = { horizontal: 'center', vertical: 'middle' };
+    for (let c = 1; c <= totalCols; c++) {
+      subRow.getCell(c).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: COLORS.white } };
+    }
     currentRow++;
   }
 
   const spacer1 = ws.getRow(currentRow);
-  spacer1.height = 5;
+  spacer1.height = 4;
   currentRow++;
 
   if (headerGroups && headerGroups.length > 0) {
