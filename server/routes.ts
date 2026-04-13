@@ -1536,8 +1536,8 @@ export async function registerRoutes(
       const result = calculateMissionFinancials(missionObj, clientTables || [], providerTables || [], clientData);
 
       if (result && result.client && result.provider) {
-        const newRevenue = result.client.total || 0;
-        const newCost = result.provider.total || 0;
+        const newRevenue = result.client.serviceTotal || 0;
+        const newCost = mission.is_same_os ? 0 : (result.provider.serviceTotal || 0);
 
         await supabaseAdmin.from('missions').update({
           revenue_value: newRevenue,
@@ -1613,8 +1613,8 @@ export async function registerRoutes(
           const calc = calculateMissionFinancials(m, clientTables || [], providerTables || [], clientData, now);
           if (!calc) { skipped++; continue; }
 
-          const newRevenue = calc.client.total || 0;
-          const newCost = calc.provider.total || 0;
+          const newRevenue = calc.client.serviceTotal || 0;
+          const newCost = raw.is_same_os ? 0 : (calc.provider.serviceTotal || 0);
           const newToll = calc.tollValue || raw.toll_value || 0;
           const oldRevenue = raw.revenue_value || 0;
           const oldCost = raw.cost_value || 0;
@@ -1819,10 +1819,10 @@ export async function registerRoutes(
           if (diff > 10 && diff / savedCost > 0.03 && result.provider.excessKm > 0) {
             await supabaseAdmin.from('system_logs').delete().eq('entity', 'BillingAdjustment').eq('entity_id', m.id);
 
-            const newRevenue = result.client.total || 0;
+            const newRevenue = result.client.serviceTotal || 0;
             const { error: upErr } = await supabaseAdmin.from('missions').update({
               revenue_value: newRevenue,
-              cost_value: calcCost,
+              cost_value: m.is_same_os ? 0 : calcCost,
               toll_value: result.tollValue || m.toll_value || 0,
               billing_verified_by: null,
               snapshot_approved_by: null,
@@ -1917,8 +1917,8 @@ export async function registerRoutes(
           const clientData = (clients || []).find((c: any) => c.name === m.client);
           const financials = calculateMissionFinancials(missionObj, clientTables || [], providerTables || [], clientData);
 
-          const newRevenue = parseFloat((financials.client.total - financials.tollValue).toFixed(2));
-          const newCost = parseFloat((financials.provider.total - financials.tollValue).toFixed(2));
+          const newRevenue = financials.client.serviceTotal || 0;
+          const newCost = m.is_same_os ? 0 : (financials.provider.serviceTotal || 0);
 
           const oldRevenue = m.revenue_value || 0;
           const oldCost = m.cost_value || 0;
