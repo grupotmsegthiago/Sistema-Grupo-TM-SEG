@@ -112,7 +112,12 @@ const FinancialReport: React.FC = () => {
     const today = new Date(todayStr + 'T12:00:00');
 
     const nonInvestTx = useMemo(() => {
-        return transactions.filter(t => !investmentCategoryIds.has(t.category_id));
+        return transactions.filter(t => {
+            if (investmentCategoryIds.has(t.category_id)) return false;
+            const catName = (t.category_name || '').toLowerCase();
+            if (catName.includes('investimento') || catName.includes('investimentos') || catName.includes('aplicaç') || catName.includes('resgate')) return false;
+            return true;
+        });
     }, [transactions, investmentCategoryIds]);
 
     const periodLabel = useMemo(() => {
