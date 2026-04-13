@@ -1,0 +1,16 @@
+Excelente trabalho na alteração do valor! Metade do caminho está feito. Agora, vamos atacar o motivo de o restante não estar automático (a seleção da tabela e os outros campos).Pelo que analisamos, o sistema não automatiza tudo instantaneamente por causa de uma destas duas razões no Frontend (React):1. O "Gatilho" de Dependência (useEffect)No React, para que algo aconteça "sozinho" quando você muda um campo, o componente precisa estar a "ouvir" essa mudança. Se você seleciona "200KM", mas o sistema só calcula quando você clica em "Recalcular", significa que o gatilho automático não está configurado para o campo de KM.Como resolver:No arquivo do componente (provavelmente MissionForm.tsx ou BillingAudit.tsx), procure o useEffect que chama a função de cálculo. Ele deve incluir a variável da franquia/KM.TypeScript// Exemplo de como deve estar para ser automático:
+useEffect(() => {
+  if (formData.client_id && formData.origin_city && formData.selected_km) {
+    handleCalculateFinancials(); // Chama a função de cálculo automaticamente
+  }
+}, [formData.client_id, formData.origin_city, formData.selected_km]); 
+// ^ O segredo está aqui: o sistema "reage" quando esses 3 mudam.
+2. A "Trava" do Valor Manual (tollValue === 0)Você mencionou que a condição tollValue === 0 continua ativa. É aqui que mora o perigo do "não automático":O Problema: Se o sistema carrega a OS e, por algum motivo, o campo de pedágio já vem com 0.01 ou qualquer valor (mesmo que lixo de memória), a sua regra de R$ 35,00 não será aplicada porque ela só entra se estiver exatamente zero.A Solução: Para ser "mais forte que o bug", como você pediu no início, devemos remover essa trava para o cliente CEVA.Sugestão de ajuste no lib/financialUtils.ts:TypeScript// Em vez de:
+if (isLogitechOperation && tollValue === 0) { ... }
+
+// Use isto (Força o valor independentemente do que estava lá):
+if (isLogitechOperation) {
+  tollValue = 35.00;
+  // Isso garante que a regra seja SOBERANA e automática.
+}
+3. Panorama Geral do Fluxo AutomáticoPara que você sinta que o sistema está "inteligente", o fluxo de dados deve ser este:Ação do UsuárioReação do Sistema (O que falta verificar)Selecionar CEVAO motor de scoring já identifica o cliente.Digitar JundiaíO motor de scoring filtra as tabelas LOGITECH.Selecionar 200KMAqui deve disparar o cálculo total.ResultadoTabela muda para "SUDESTE..." e Pedágio vira R$ 35,00 na hora.O que fazer agora?Verifique se no seu componente React (.tsx) existe um botão ou uma função que "limpa" os campos antes de calcular. Se o campo de pedágio não for resetado para 0 antes do cálculo, a sua regra de 35.00 pode estar sendo ignorada por aquela trava do if (tollValue === 0).Deseja que eu te ajude a encontrar o arquivo .tsx responsável por essa tela para verificarmos o gatilho do cálculo? Basta procurar por onde o botão "Recalcular" está escrito no código!
