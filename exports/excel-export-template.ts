@@ -156,9 +156,8 @@ export async function exportFormattedExcel(config: ExcelExportConfig): Promise<B
 
   let currentRow = 1;
 
-  const logoRowHeight = 55;
   const darkBarRow = ws.getRow(currentRow);
-  darkBarRow.height = logoRowHeight;
+  darkBarRow.height = 60;
   for (let c = 1; c <= totalCols; c++) {
     const cell = darkBarRow.getCell(c);
     cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: COLORS.darkBar } };
@@ -172,12 +171,10 @@ export async function exportFormattedExcel(config: ExcelExportConfig): Promise<B
   }
   if (logoBase64) {
     try {
-      const logoH = 42;
-      const logoW = 46;
       const logoId = wb.addImage({ base64: logoBase64, extension: 'png' });
       ws.addImage(logoId, {
-        tl: { col: 0.2, row: 0.12 },
-        ext: { width: logoW, height: logoH },
+        tl: { col: 0.1, row: 0.05 },
+        ext: { width: 72, height: 72 },
       });
     } catch {}
   }
