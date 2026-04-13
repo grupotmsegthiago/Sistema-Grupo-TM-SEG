@@ -68,7 +68,7 @@ const FinancialReport: React.FC = () => {
         const storedUser = localStorage.getItem('userData');
         if (storedUser) {
             const user = JSON.parse(storedUser);
-            if (user.role === 'Diretoria' || user.permissions?.includes('*')) {
+            if (user.role === 'Diretoria' || user.role === 'Financeiro' || user.permissions?.includes('*')) {
                 setIsDirector(true);
                 fetchData();
                 fetchCategories();

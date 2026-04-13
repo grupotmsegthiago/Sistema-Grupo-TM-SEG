@@ -92,6 +92,10 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, activeScreen, onNavigate, onL
     
     if (itemId === 'monitoring-group' || itemId === 'missions' || itemId === 'mission-report') return true;
 
+    if (role === 'financeiro') {
+        if (itemId === 'finance-group' || itemId === 'fin-report') return true;
+    }
+
     if (role === 'comercial') {
         const forbiddenGroups = ['finance-group', 'settings-group'];
         if (forbiddenGroups.includes(itemId)) return false;
