@@ -291,7 +291,13 @@ const App: React.FC = () => {
       case 'system-logs': return <SystemLogs />;
       case 'legal-dashboard': return <LegalDashboard />;
       case 'reports': return <ReportsDashboard />;
-      case 'mission-report': return <MissionReportPage />;
+      case 'mission-report': {
+        const u = (() => { try { return JSON.parse(localStorage.getItem('userData') || '{}'); } catch { return {}; } })();
+        const nm = (u.name || '').toLowerCase();
+        const rl = (u.role || '').toLowerCase();
+        const allowed = ['daniel', 'barbara', 'bárbara', 'thiago'].some(n => nm.includes(n)) || rl === 'diretoria' || rl === 'administrador';
+        return allowed ? <MissionReportPage /> : <Dashboard />;
+      }
       case 'support-network': return <SupportMapFinder onNavigate={navigateTo} />;
       default: return <Dashboard />;
     }

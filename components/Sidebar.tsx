@@ -90,7 +90,15 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, activeScreen, onNavigate, onL
   const hasAccess = (itemId: string) => {
     const role = (currentUser?.role || '').toLowerCase();
     
-    if (itemId === 'monitoring-group' || itemId === 'missions' || itemId === 'mission-report') return true;
+    if (itemId === 'monitoring-group' || itemId === 'missions') return true;
+
+    if (itemId === 'mission-report') {
+      const nameLower = (currentUser?.name || '').toLowerCase();
+      const allowedNames = ['daniel', 'barbara', 'bárbara', 'thiago'];
+      if (allowedNames.some(n => nameLower.includes(n))) return true;
+      if (role === 'diretoria' || role === 'administrador') return true;
+      return false;
+    }
 
     if (role === 'financeiro') {
         if (itemId === 'finance-group' || itemId === 'fin-report') return true;
