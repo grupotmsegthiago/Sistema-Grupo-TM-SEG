@@ -16,7 +16,7 @@ interface SidebarProps {
 }
 
 const Sidebar: React.FC<SidebarProps> = ({ isOpen, activeScreen, onNavigate, onLogout }) => {
-  const [expandedMenus, setExpandedMenus] = useState<string[]>(['finance-group', 'commercial-group', 'clients-group', 'providers-group']);
+  const [expandedMenus, setExpandedMenus] = useState<string[]>(['monitoring-group', 'finance-group', 'commercial-group', 'clients-group', 'providers-group']);
   const [userPermissions, setUserPermissions] = useState<string[]>([]);
   const [isAdmin, setIsAdmin] = useState(false);
   const [currentUser, setCurrentUser] = useState<any>(null);
@@ -90,6 +90,8 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, activeScreen, onNavigate, onL
   const hasAccess = (itemId: string) => {
     const role = (currentUser?.role || '').toLowerCase();
     
+    if (itemId === 'monitoring-group' || itemId === 'missions' || itemId === 'mission-report') return true;
+
     if (role === 'comercial') {
         const forbiddenGroups = ['finance-group', 'settings-group'];
         if (forbiddenGroups.includes(itemId)) return false;

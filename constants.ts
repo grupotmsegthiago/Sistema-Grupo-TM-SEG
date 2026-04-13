@@ -74,8 +74,15 @@ export interface NavItem {
 
 export const NAV_ITEMS: NavItem[] = [
   { name: 'Página Inicial', icon: 'LayoutDashboard', id: 'dashboard' },
-  { name: 'Monitoramento', icon: 'MapPin', id: 'missions' },
-  { name: 'Relatório de OS', icon: 'FileBarChart', id: 'mission-report' },
+  { 
+    name: 'Monitoramento', 
+    icon: 'MapPin', 
+    id: 'monitoring-group',
+    children: [
+      { name: 'Painel de OS', id: 'missions' },
+      { name: 'Relatório de OS', id: 'mission-report' },
+    ]
+  },
   { name: 'Rede de Apoio (QRF)', icon: 'Map', id: 'support-network' },
   {
     name: 'Financeiro',

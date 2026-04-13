@@ -29,7 +29,7 @@ const MissionReportPage: React.FC = () => {
   const [isFinancialModalOpen, setIsFinancialModalOpen] = useState(false);
 
   useEffect(() => {
-    const stored = localStorage.getItem('user');
+    const stored = localStorage.getItem('userData');
     if (stored) setCurrentUser(JSON.parse(stored));
   }, []);
 
