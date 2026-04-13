@@ -107,8 +107,13 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
         } else {
             base = 'Ref. aos Serviços de Intermediação de Escolta Armada';
         }
-        setAsaasDescription(asaasPeriod ? `${base} - ${asaasPeriod}` : base);
-    }, [asaasPeriod, showInvoiceModal, invoiceForm.client, clients]);
+        let desc = asaasPeriod ? `${base} - ${asaasPeriod}` : base;
+        const libMatch = invoiceForm.notes.match(/LIB\. FATUR\.: ([A-Z0-9]+)/);
+        if (libMatch && clientNameUpper.includes('CEVA')) {
+            desc += ` — Lib. Fatur.: ${libMatch[1]}`;
+        }
+        setAsaasDescription(desc);
+    }, [asaasPeriod, showInvoiceModal, invoiceForm.client, invoiceForm.notes, clients]);
 
     const asaasSplitTotal = useMemo(() => {
         return asaasSplitCharges.reduce((sum, c) => sum + (parseFloat(c.value) || 0), 0);
@@ -699,6 +704,8 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
 
     const clientData = clients.find(c => c.id.toString() === selectedClient);
     const displayClientName = clientData ? (clientData.trading_name || clientData.name) : '';
+    const isCeslogBilling = (clientData?.name || '').toUpperCase().includes('CESLOG') || (clientData?.name || '').toUpperCase().includes('CESARI') || (clientData?.trading_name || '').toUpperCase().includes('CESLOG') || (clientData?.trading_name || '').toUpperCase().includes('CESARI');
+    const isCevaBilling = (clientData?.name || '').toUpperCase().includes('CEVA') || (clientData?.trading_name || '').toUpperCase().includes('CEVA');
 
     const getPeriodLabel = () => {
         if (!startDate || !endDate) return '';
@@ -779,7 +786,9 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
                     totalGeral: useTotal,
                     franchiseHoursFmt: fmtFranchiseHr(snap.franchiseHours ?? 0),
                     frozen: true,
-                    frozenBy: m.snapshot_approved_by
+                    frozenBy: m.snapshot_approved_by,
+                    referenceNumber: m.reference_number || '',
+                    billingRelease: m.billing_release || ''
                 };
             }
 
@@ -860,7 +869,9 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
                 totalGeral,
                 franchiseHoursFmt: fmtFranchiseHr(franchiseHours),
                 frozen: false,
-                frozenBy: null as string | null
+                frozenBy: null as string | null,
+                referenceNumber: m.reference_number || '',
+                billingRelease: m.billing_release || ''
             };
         });
     }, [missions, priceTables, providerTables, clientData, displayClientName, billingAdjustments]);
@@ -1066,48 +1077,87 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
 
         const { exportFormattedExcel } = await import('../exports/excel-export-template');
 
-        const dataRows = rowsData.map(r => [
-            !r.isApproved ? `[${r.missionStatus.toUpperCase()}] ${r.id}` : r.id,
-            r.route,
-            r.activationFee,
-            r.franchiseHoursFmt,
-            r.franchiseKm > 0 ? fmtNum(r.franchiseKm) : '-',
-            r.unitHr,
-            r.unitKm,
-            r.startDate,
-            r.startTime,
-            r.viatura,
-            r.cargoPlate,
-            r.endDate,
-            r.endTime,
-            r.kmStart > 0 ? fmtNum(r.kmStart) : '-',
-            r.kmEnd > 0 ? fmtNum(r.kmEnd) : '-',
-            r.kmTotal > 0 ? fmtNum(r.kmTotal) : '-',
-            r.timeStart,
-            r.timeEnd,
-            r.timeTotal,
-            r.kmExtraQtd > 0 ? fmtNum(r.kmExtraQtd) : '-',
-            r.kmExtraQtd > 0 ? r.kmExtraUnit : '-',
-            r.kmExtraTotal > 0 ? r.kmExtraTotal : 0,
-            r.hrExtraQtd > 0 ? fmtHHMM(r.hrExtraQtd) : '-',
-            r.hrExtraQtd > 0 ? r.hrExtraUnit : '-',
-            r.hrExtraTotal > 0 ? r.hrExtraTotal : 0,
-            r.tollVal > 0 ? r.tollVal : 0,
-            r.totalGeral
-        ]);
+        const extraColOffset = (isCeslogBilling ? 1 : 0) + (isCevaBilling ? 1 : 0);
 
-        const totalRowData: (string | number)[] = Array(27).fill('');
+        const dataRows = rowsData.map(r => {
+            const row: (string | number)[] = [
+                !r.isApproved ? `[${r.missionStatus.toUpperCase()}] ${r.id}` : r.id,
+            ];
+            if (isCeslogBilling) row.push(r.referenceNumber || '-');
+            if (isCevaBilling) row.push(r.billingRelease || '-');
+            row.push(
+                r.route,
+                r.activationFee,
+                r.franchiseHoursFmt,
+                r.franchiseKm > 0 ? fmtNum(r.franchiseKm) : '-',
+                r.unitHr,
+                r.unitKm,
+                r.startDate,
+                r.startTime,
+                r.viatura,
+                r.cargoPlate,
+                r.endDate,
+                r.endTime,
+                r.kmStart > 0 ? fmtNum(r.kmStart) : '-',
+                r.kmEnd > 0 ? fmtNum(r.kmEnd) : '-',
+                r.kmTotal > 0 ? fmtNum(r.kmTotal) : '-',
+                r.timeStart,
+                r.timeEnd,
+                r.timeTotal,
+                r.kmExtraQtd > 0 ? fmtNum(r.kmExtraQtd) : '-',
+                r.kmExtraQtd > 0 ? r.kmExtraUnit : '-',
+                r.kmExtraTotal > 0 ? r.kmExtraTotal : 0,
+                r.hrExtraQtd > 0 ? fmtHHMM(r.hrExtraQtd) : '-',
+                r.hrExtraQtd > 0 ? r.hrExtraUnit : '-',
+                r.hrExtraTotal > 0 ? r.hrExtraTotal : 0,
+                r.tollVal > 0 ? r.tollVal : 0,
+                r.totalGeral
+            );
+            return row;
+        });
+
+        const totalCols = 27 + extraColOffset;
+        const totalRowData: (string | number)[] = Array(totalCols).fill('');
         totalRowData[0] = 'TOTAL';
-        totalRowData[26] = grandTotal;
+        totalRowData[totalCols - 1] = grandTotal;
 
         const clientLabel = displayClientName || 'CLIENTE';
         const periodShort = startDate && endDate ? `${startDate.replace(/-/g, '')}_${endDate.replace(/-/g, '')}` : 'PERIODO';
+
+        const headers: string[] = ['Nº'];
+        if (isCeslogBilling) headers.push('REFERÊNCIA');
+        if (isCevaBilling) headers.push('LIB. FATUR.');
+        headers.push(
+            'ROTA', 'VALOR', 'HR FRANQ', 'KM FRANQ', 'HR EXTRA', 'KM EXTRA',
+            'DATA INÍCIO', 'HORA INÍCIO', 'VIATURA', 'VEÍC. ESCOLTADO', 'DATA FIM', 'HORA FIM',
+            'INICIAL', 'FINAL', 'TOTAL',
+            'INICIAL', 'FINAL', 'TOTAL',
+            'KM', 'VALOR', 'TOTAL',
+            'HORA', 'VALOR', 'TOTAL',
+            'PEDÁGIO', 'TOTAL'
+        );
+
+        const colWidths: number[] = [6];
+        if (isCeslogBilling) colWidths.push(14);
+        if (isCevaBilling) colWidths.push(12);
+        colWidths.push(
+            30, 12, 7, 7, 12, 12,
+            12, 8, 10, 12, 12, 8,
+            9, 9, 8,
+            7, 7, 7,
+            6, 12, 12,
+            7, 12, 12,
+            12, 14
+        );
+
+        const currBase = [2, 5, 6, 20, 21, 23, 24, 25, 26];
+        const currencyColumns = currBase.map(c => c + extraColOffset);
 
         await exportFormattedExcel({
             title: `BOLETIM DE MEDIÇÃO`,
             subtitle: `${getPeriodLabel()} — REFERENTE A INTERMEDIAÇÃO DE SEGURANÇA E MONITORAMENTO DE CARGAS`,
             headerGroups: [
-                { label: 'TABELA ACORDADA', span: 7 },
+                { label: 'TABELA ACORDADA', span: 7 + extraColOffset },
                 { label: 'INFORMAÇÕES DA VIAGEM', span: 6 },
                 { label: 'KILOMETRAGEM', span: 3 },
                 { label: 'HORÁRIOS', span: 3 },
@@ -1115,27 +1165,11 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
                 { label: 'HORA EXCEDENTE', span: 3 },
                 { label: 'VALORES', span: 2 },
             ],
-            headers: [
-                'Nº', 'ROTA', 'VALOR', 'HR FRANQ', 'KM FRANQ', 'HR EXTRA', 'KM EXTRA',
-                'DATA INÍCIO', 'HORA INÍCIO', 'VIATURA', 'VEÍC. ESCOLTADO', 'DATA FIM', 'HORA FIM',
-                'INICIAL', 'FINAL', 'TOTAL',
-                'INICIAL', 'FINAL', 'TOTAL',
-                'KM', 'VALOR', 'TOTAL',
-                'HORA', 'VALOR', 'TOTAL',
-                'PEDÁGIO', 'TOTAL'
-            ],
-            colWidths: [
-                6, 30, 12, 7, 7, 12, 12,
-                12, 8, 10, 12, 12, 8,
-                9, 9, 8,
-                7, 7, 7,
-                6, 12, 12,
-                7, 12, 12,
-                12, 14
-            ],
+            headers,
+            colWidths,
             rows: dataRows,
             totalsRow: totalRowData,
-            currencyColumns: [2, 5, 6, 20, 21, 23, 24, 25, 26],
+            currencyColumns,
             fileName: `Boletim_${clientLabel.replace(/[^a-zA-Z0-9]/g, '_').substring(0, 20)}_${periodShort}.xlsx`,
             sheetName: 'Boletim',
             companyName: 'GRUPO TM SEG',
@@ -1143,7 +1177,7 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
             footerLeft: 'DOCUMENTO GERADO ELETRONICAMENTE PELO GRUPO TM SEG',
             footerRight: 'ASSINATURA / CARIMBO CLIENTE',
         });
-    }, [rowsData, grandTotal, displayClientName, startDate, endDate]);
+    }, [rowsData, grandTotal, displayClientName, startDate, endDate, isCeslogBilling, isCevaBilling]);
 
     const cellStyle: React.CSSProperties = {
         border: '1px solid #e5c4c4',
@@ -1835,6 +1869,19 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
                                 </div>
                             </div>
                         </div>
+
+                        {isCevaBilling && (
+                            <div className="p-3 rounded-xl border-2 border-teal-400 bg-teal-50">
+                                <label className="text-[10px] font-black text-teal-700 uppercase mb-1 block flex items-center gap-1.5"><FileText size={10} /> Liberação de Faturamento (CEVA)</label>
+                                <input type="text" className="w-full p-2.5 border-2 border-teal-300 rounded-lg text-sm font-bold bg-white focus:ring-2 focus:ring-teal-400" placeholder="Ex: A001, B002..." value={invoiceForm.notes.match(/LIB\. FATUR\.: ([A-Z0-9]+)/)?.[1] || ''} onChange={e => {
+                                    const libVal = e.target.value.toUpperCase();
+                                    const currentNotes = invoiceForm.notes.replace(/\s*\|\s*LIB\. FATUR\.: [A-Z0-9]+/, '').replace(/LIB\. FATUR\.: [A-Z0-9]+\s*\|?\s*/, '');
+                                    const newNotes = libVal ? `LIB. FATUR.: ${libVal} | ${currentNotes}`.trim() : currentNotes;
+                                    setInvoiceForm({...invoiceForm, notes: newNotes});
+                                }} data-testid="input-billing-release-nf" />
+                                <p className="text-[8px] text-teal-600 font-bold mt-1">Este código aparecerá na referência da NF e no boletim de medição</p>
+                            </div>
+                        )}
 
                         <div>
                             <label className="text-[10px] font-black text-gray-400 uppercase mb-1 block">Observações (Auto-preenchida)</label>
@@ -2592,7 +2639,7 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
                             </colgroup>
                             <thead>
                                 <tr className="group-hdr">
-                                    <th style={groupHeaderStyle} colSpan={8}>TABELA ACORDADA</th>
+                                    <th style={groupHeaderStyle} colSpan={8 + (isCeslogBilling ? 1 : 0) + (isCevaBilling ? 1 : 0)}>TABELA ACORDADA</th>
                                     <th style={groupHeaderStyle} colSpan={6}>INFORMAÇÕES DA VIAGEM</th>
                                     <th style={grpKm} colSpan={3}>KILOMETRAGEM</th>
                                     <th style={grpHr} colSpan={3}>HORÁRIOS</th>
@@ -2603,6 +2650,8 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
                                 <tr className="sub-hdr">
                                     <th style={{ ...headerStyle, width: '30px', minWidth: '30px' }}>#</th>
                                     <th style={headerStyle}>Nº</th>
+                                    {isCeslogBilling && <th style={{ ...headerStyle, backgroundColor: '#7e22ce', color: '#fff' }}>REFERÊNCIA</th>}
+                                    {isCevaBilling && <th style={{ ...headerStyle, backgroundColor: '#0d9488', color: '#fff' }}>LIB. FATUR.</th>}
                                     <th style={{ ...headerStyle, textAlign: 'left' }}>ROTA</th>
                                     <th style={headerStyle}>VALOR</th>
                                     <th style={headerStyle}>HR FRANQ</th>
@@ -2635,7 +2684,7 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
                                 {(() => {
                                     const filtered = boletimFilter === 'aprovadas' ? rowsData.filter(r => r.isApproved) : boletimFilter === 'pendentes' ? rowsData.filter(r => !r.isApproved) : rowsData;
                                     return filtered.length === 0 ? (
-                                    <tr><td colSpan={28} style={{ ...cellStyle, padding: '20px', fontSize: '14px', fontWeight: 700, color: '#9ca3af' }}>{boletimFilter !== 'todas' ? `NENHUMA MISSÃO ${boletimFilter === 'aprovadas' ? 'APROVADA' : 'PENDENTE'} NO PERÍODO.` : 'NENHUMA MISSÃO NO PERÍODO.'}</td></tr>
+                                    <tr><td colSpan={28 + (isCeslogBilling ? 1 : 0) + (isCevaBilling ? 1 : 0)} style={{ ...cellStyle, padding: '20px', fontSize: '14px', fontWeight: 700, color: '#9ca3af' }}>{boletimFilter !== 'todas' ? `NENHUMA MISSÃO ${boletimFilter === 'aprovadas' ? 'APROVADA' : 'PENDENTE'} NO PERÍODO.` : 'NENHUMA MISSÃO NO PERÍODO.'}</td></tr>
                                 ) : (
                                     filtered.map((r, i) => (
                                         <tr key={i} title={r.frozen ? `Dados Congelados - Aprovado por ${r.frozenBy}` : !r.isApproved ? `Status: ${r.missionStatus} (não aprovada)` : ''} style={!r.isApproved ? { backgroundColor: '#fce4e4', animation: 'blink-pending 2s ease-in-out infinite' } : undefined}>
@@ -2645,6 +2694,8 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
                                                 {!r.isApproved && <span style={{ display: 'inline-block', fontSize: '7px', fontWeight: 900, color: '#fff', backgroundColor: '#dc2626', borderRadius: '3px', padding: '0 3px', marginRight: '2px', verticalAlign: 'middle' }}>{r.missionStatus.toUpperCase()}</span>}
                                                 <span style={{ color: '#1d4ed8', textDecoration: 'underline' }}>{r.id}</span>
                                             </td>
+                                            {isCeslogBilling && <td style={{ ...cellStyle, fontWeight: 700, color: '#7e22ce', fontSize: '11px' }}>{r.referenceNumber || '-'}</td>}
+                                            {isCevaBilling && <td style={{ ...cellStyle, fontWeight: 700, color: '#0d9488', fontSize: '11px' }}>{r.billingRelease || '-'}</td>}
                                             <td className="route-cell" style={{ ...cellStyle, textAlign: 'left', whiteSpace: 'normal', wordWrap: 'break-word', wordBreak: 'break-word', overflowWrap: 'break-word', lineHeight: '1.25', fontSize: '12px', maxWidth: '320px' }} title={r.route}>{r.route}</td>
                                             <td style={cellStyle}>{fmtBRL(r.activationFee)}</td>
                                             <td style={cellStyle}>{r.franchiseHoursFmt}</td>
@@ -2679,7 +2730,7 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
                             {rowsData.length > 0 && (
                                 <tfoot>
                                     <tr style={{ backgroundColor: '#7f1d1d', color: '#fff' }}>
-                                        <td colSpan={27} style={{ ...cellStyle, textAlign: 'right', fontWeight: 900, fontSize: '14px', color: '#fff', border: '1px solid #991b1b', padding: '8px 10px' }}>TOTAL</td>
+                                        <td colSpan={27 + (isCeslogBilling ? 1 : 0) + (isCevaBilling ? 1 : 0)} style={{ ...cellStyle, textAlign: 'right', fontWeight: 900, fontSize: '14px', color: '#fff', border: '1px solid #991b1b', padding: '8px 10px' }}>TOTAL</td>
                                         <td style={{ ...cellStyle, fontWeight: 900, fontSize: '15px', color: '#fff', border: '1px solid #991b1b', padding: '8px 10px' }}>{fmtBRL(grandTotal)}</td>
                                     </tr>
                                 </tfoot>

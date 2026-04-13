@@ -158,7 +158,8 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
         // Dados da Carga
         driver_name: '', driver_phone: '', gr_espelhamento: '',
         client_vehicle_id: '',
-        client_vehicle_plate: '', client_vehicle_model: ''
+        client_vehicle_plate: '', client_vehicle_model: '',
+        reference_number: '', billing_release: ''
     });
 
     const [currentPreviewCoords, setCurrentPreviewCoords] = useState<{ lat: number, lng: number } | null>(null);
@@ -375,7 +376,9 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
                 gr_espelhamento: m.gr_espelhamento || '',
                 client_vehicle_id: m.client_vehicle?.toString() || '',
                 client_vehicle_plate: mission.clientVehicle?.plate || '',
-                client_vehicle_model: mission.clientVehicle?.model || ''
+                client_vehicle_model: mission.clientVehicle?.model || '',
+                reference_number: m.reference_number || '',
+                billing_release: m.billing_release || ''
             });
 
             setSearchTerm(m.provider || '');
@@ -899,7 +902,9 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
                 gr_espelhamento: editData.gr_espelhamento,
                 client_vehicle: vehicleCargaId ? parseInt(vehicleCargaId) : null,
                 origin: editData.origin.toUpperCase(),
-                destination: finalDestination.toUpperCase()
+                destination: finalDestination.toUpperCase(),
+                reference_number: editData.reference_number || null,
+                billing_release: editData.billing_release || null
             };
 
             console.log(`[LOCATION] Enviando localização para OS ${mission.id}:`, {
@@ -1713,6 +1718,12 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
 
                             <div><label className={LABEL_CLASS}>Modelo Carga</label><input type="text" className={INPUT_CLASS} value={editData.client_vehicle_model} onChange={e => setEditData({...editData, client_vehicle_model: e.target.value.toUpperCase()})} /></div>
                             <div><label className={LABEL_CLASS}>GR / Espelhamento</label><input type="text" className={`${INPUT_CLASS} border-indigo-200 bg-indigo-50/20`} value={editData.gr_espelhamento} onChange={e => setEditData({...editData, gr_espelhamento: e.target.value.toUpperCase()})} /></div>
+                            {((mission?.client || '').toUpperCase().includes('CESLOG') || (mission?.client || '').toUpperCase().includes('CESARI')) && (
+                                <div><label className={LABEL_CLASS}><span className="text-purple-600 font-black">Nº Referência</span></label><input type="text" className={`${INPUT_CLASS} border-purple-300 bg-purple-50/30`} placeholder="Nº Referência CESLOG/CESARI" value={editData.reference_number} onChange={e => setEditData({...editData, reference_number: e.target.value})} data-testid="input-edit-reference-number" /></div>
+                            )}
+                            {((mission?.client || '').toUpperCase().includes('CEVA')) && (
+                                <div><label className={LABEL_CLASS}><span className="text-teal-600 font-black">Liberação de Faturamento</span></label><input type="text" className={`${INPUT_CLASS} border-teal-300 bg-teal-50/30`} placeholder="Ex: A001, B002..." value={editData.billing_release} onChange={e => setEditData({...editData, billing_release: e.target.value.toUpperCase()})} data-testid="input-edit-billing-release" /></div>
+                            )}
                         </div>
 
                         <div className="mt-4 pt-4 border-t border-indigo-100">

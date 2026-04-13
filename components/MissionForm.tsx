@@ -71,7 +71,8 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
     clientVehicleId: '', clientVehiclePlate: '', clientVehicleModel: '',
     clientVehicleId2: '', clientVehiclePlate2: '', clientVehicleModel2: '',
     driver_name: '', driver_phone: '', startKm: '',
-    driver_name_2: '', driver_phone_2: ''
+    driver_name_2: '', driver_phone_2: '',
+    reference_number: ''
   });
   
   const [isSaving, setIsSaving] = useState(false);
@@ -137,6 +138,7 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
   const step6Done = step5Done && (scheduleMode === 'immediate' || (scheduleMode === 'scheduled' && !!formData.scheduledDate && !!formData.scheduledTime && !isScheduledInPast));
 
   const isVtcClient = (formData.client || '').toUpperCase().includes('VTC');
+  const isCeslogClient = (formData.client || '').toUpperCase().includes('CESLOG') || (formData.client || '').toUpperCase().includes('CESARI');
   const hasClientRules = isVtcClient || (formData.client || '').toUpperCase().includes('CEVA');
 
   const stepComplete = {
@@ -816,6 +818,8 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!formData.client || (!formData.origin && !formData.destination)) return alert("Selecione o cliente e informe a origem e destino da rota.");
+    const clientUpper = (formData.client || '').toUpperCase();
+    if ((clientUpper.includes('CESLOG') || clientUpper.includes('CESARI')) && !formData.reference_number.trim()) return alert("Para clientes CESLOG/CESARI, o Nº da Referência é obrigatório.");
 
     const scheduledDateTime = new Date(`${formData.scheduledDate}T${formData.scheduledTime}:00`);
     const now = new Date();
@@ -854,7 +858,8 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
                 driver_name_2: formData.driver_name_2 ? (formData.driver_name_2 || '').toUpperCase() : null,
                 driver_phone_2: formData.driver_phone_2 || null,
                 start_km: parseFloat(formData.startKm) || null,
-                snapshot_data: '', snapshot_approved_by: null, snapshot_approved_at: null
+                snapshot_data: '', snapshot_approved_by: null, snapshot_approved_at: null,
+                reference_number: formData.reference_number || null
             };
             let { error } = await supabase.from('missions').insert([missionPayload]);
             if (error && error.message?.includes('valor_zero_motivo')) {
@@ -1220,6 +1225,13 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
                               </div>
                               <button type="button" onClick={() => { const nextVal = !formData.applyVtc02h; setFormData(prev => ({ ...prev, applyVtc02h: nextVal })); const route = clientRoutes.find(r => r.id.toString() === selectedRouteId); if (route) calculatePricing(route, undefined, manualRevenueTableId, '', { ceva200km: formData.applyCeva200km, vtc02h: nextVal, isSameOs: formData.isSameOs }); }} className={`px-4 py-2 rounded-lg text-[10px] font-black uppercase shadow-md transition-all active:scale-95 ${!formData.applyVtc02h ? 'bg-red-600 text-white hover:bg-red-700' : 'bg-blue-600 text-white'}`}>{!formData.applyVtc02h ? 'ATIVAR AGORA' : 'DESATIVAR'}</button>
                           </div>
+                      </div>
+                  )}
+                  {isCeslogClient && (
+                      <div className="p-4 rounded-xl border-2 border-purple-400 bg-purple-50 animate-in slide-in-from-top-2 duration-300">
+                          <label className={LABEL_CLASS}><span className="text-red-600">*</span> Nº da Referência (CESLOG/CESARI)</label>
+                          <input type="text" required className={INPUT_CLASS} placeholder="Informe o número da referência..." value={formData.reference_number} onChange={e => setFormData(prev => ({ ...prev, reference_number: e.target.value }))} data-testid="input-reference-number" />
+                          <p className="text-[9px] text-purple-600 font-bold mt-1">Campo obrigatório para clientes CESLOG e CESARI</p>
                       </div>
                   )}
               </div>

@@ -86,6 +86,9 @@ export interface Mission {
 
   email_pending_client?: boolean;
   email_pending_provider?: boolean;
+
+  reference_number?: string;
+  billing_release?: string;
 }
 
 export interface MissionHistory {
