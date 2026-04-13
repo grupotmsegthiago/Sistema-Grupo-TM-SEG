@@ -945,25 +945,28 @@ export async function registerRoutes(
   const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFqaG1tanVld2RzdWtlY2FpbWlrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjQxNzUxMjEsImV4cCI6MjA3OTc1MTEyMX0.5bXRWTyb1HxLimt3lqJTBfjzDoumux7TXlW4lycXrPk';
   const supabaseAdmin = supabase;
 
-  try {
-    await supabaseAdmin.rpc('exec_sql', { sql: `
-      ALTER TABLE missions ADD COLUMN IF NOT EXISTS valor_zero_motivo TEXT DEFAULT '';
-      ALTER TABLE missions ADD COLUMN IF NOT EXISTS reference_number TEXT DEFAULT '';
-      ALTER TABLE missions ADD COLUMN IF NOT EXISTS billing_release TEXT DEFAULT '';
-      NOTIFY pgrst, 'reload schema';
-    ` });
-    console.log('[Migration] Colunas valor_zero_motivo, reference_number, billing_release verificadas/criadas + schema cache recarregado.');
-  } catch (e: any) {
-    console.log('[Migration] colunas missions:', e.message || 'ok');
-    try {
-      const sbUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || '';
-      const sbKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY || '';
-      await fetch(`${sbUrl}/rest/v1/rpc/exec_sql`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'apikey': sbKey, 'Authorization': `Bearer ${sbKey}` },
-        body: JSON.stringify({ sql: "ALTER TABLE missions ADD COLUMN IF NOT EXISTS valor_zero_motivo TEXT DEFAULT ''; ALTER TABLE missions ADD COLUMN IF NOT EXISTS reference_number TEXT DEFAULT ''; ALTER TABLE missions ADD COLUMN IF NOT EXISTS billing_release TEXT DEFAULT ''; NOTIFY pgrst, 'reload schema';" })
+  const { error: colCheck } = await supabaseAdmin.from('missions').select('billing_release').limit(1);
+  if (colCheck && colCheck.message.includes('does not exist')) {
+    console.log('[Migration] ⚠️  Coluna billing_release NÃO existe na tabela missions.');
+    console.log('[Migration] Execute no Supabase SQL Editor:');
+    console.log("[Migration] ALTER TABLE missions ADD COLUMN IF NOT EXISTS valor_zero_motivo TEXT DEFAULT '';");
+    console.log("[Migration] ALTER TABLE missions ADD COLUMN IF NOT EXISTS reference_number TEXT DEFAULT '';");
+    console.log("[Migration] ALTER TABLE missions ADD COLUMN IF NOT EXISTS billing_release TEXT DEFAULT '';");
+    console.log("[Migration] NOTIFY pgrst, 'reload schema';");
+
+    app.post('/api/migration/add-mission-columns', async (_req: Request, res: Response) => {
+      res.json({
+        message: 'Execute o seguinte SQL no Supabase SQL Editor:',
+        sql: [
+          "ALTER TABLE missions ADD COLUMN IF NOT EXISTS valor_zero_motivo TEXT DEFAULT '';",
+          "ALTER TABLE missions ADD COLUMN IF NOT EXISTS reference_number TEXT DEFAULT '';",
+          "ALTER TABLE missions ADD COLUMN IF NOT EXISTS billing_release TEXT DEFAULT '';",
+          "NOTIFY pgrst, 'reload schema';"
+        ]
       });
-    } catch {}
+    });
+  } else {
+    console.log('[Migration] Colunas valor_zero_motivo, reference_number, billing_release verificadas/OK.');
   }
 
   try {
