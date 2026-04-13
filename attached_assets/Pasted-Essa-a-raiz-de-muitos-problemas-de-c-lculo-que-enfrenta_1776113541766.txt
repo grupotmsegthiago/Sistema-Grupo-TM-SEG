@@ -1,0 +1,69 @@
+Essa é a raiz de muitos problemas de cálculo que enfrentamos até agora! Como o sistema vincula as missões às tabelas de preço usando o nome por extenso (String) em vez de um ID fixo, qualquer espaço extra ou letra diferente faz a "IA de detecção" achar que são clientes distintos.
+
+Para unificar isso de forma profissional e evitar que o problema volte, o ideal é rodar uma Normalização de Dados.
+
+1. Panorama da Unificação
+O objetivo é transformar todas as variações (ex: "CEVA LOGISTICA ", "CEVA LOGISTICS") no nome padrão oficial: "CEVA LOGISTICS LTDA".
+
+Precisamos de atuar em três frentes:
+
+Limpeza Histórica: Atualizar todas as missões e tabelas antigas.
+
+Padronização de Cadastro: Garantir que o nome na tabela clients seja o soberano.
+
+Lógica de Comparação: Já demos um passo nisso com o normalize(), mas a unificação no banco é a solução definitiva.
+
+2. O Programa (Script de Unificação no Backend)
+Vou sugerir a criação de um endpoint temporário ou um script que podes rodar no terminal do Replit. Ele é mais seguro que o painel do Supabase porque permite adicionar um console.log para conferir o que está a ser alterado.
+
+Script sugerido (scripts/unificarClientes.ts):
+
+TypeScript
+/**
+ * SCRIPT DE UNIFICAÇÃO DE CLIENTE: CEVA
+ * Objetivo: Padronizar todas as variações para "CEVA LOGISTICS LTDA"
+ */
+
+async function unificarCeva() {
+  const NOME_CORRETO = "CEVA LOGISTICS LTDA";
+  const VARIACOES = ["CEVA LOGISTICA", "CEVA LOGISTICA ", "CEVA LOGISTICS"];
+
+  console.log("🛠 Iniciando unificação de cadastros...");
+
+  for (const nomeAntigo of VARIACOES) {
+    // 1. Atualiza a tabela de Missões (missions.client)
+    const { count: countMissions } = await supabase
+      .from('missions')
+      .update({ client: NOME_CORRETO })
+      .ilike('client', nomeAntigo); 
+
+    // 2. Atualiza as Tabelas de Preço (client_price_tables.client)
+    const { count: countTables } = await supabase
+      .from('client_price_tables')
+      .update({ client: NOME_CORRETO })
+      .ilike('client', nomeAntigo);
+
+    console.log(`✅ Variação "${nomeAntigo}": ${countMissions} missões e ${countTables} tabelas unificadas.`);
+  }
+
+  console.log("🏁 Unificação concluída com sucesso!");
+}
+3. Por que fazer isso agora?
+Fim das Tabelas Vazias: Aquela mensagem "Sem tabelas cadastradas" na GTM-4432 acontecia porque a missão estava como "CEVA LOGISTICA" e a tabela como "CEVA LOGISTICS LTDA".
+
+Relatórios Precisos: Quando puxares um relatório da CEVA, os valores não estarão mais divididos em duas linhas diferentes.
+
+Velocidade: O motor financeiro encontrará a tabela muito mais rápido se o nome for idêntico.
+
+4. Como implementar de forma fácil?
+Se não quiseres criar um arquivo novo, podes pedir ao Replit:
+
+"Crie um endpoint temporário em server/routes.ts chamado /api/admin/merge-ceva que mude todos os nomes de cliente 'CEVA LOGISTICA' para 'CEVA LOGISTICS LTDA' nas tabelas missions e client_price_tables."
+
+O que preferes:
+
+Que eu te ajude a criar esse botão de unificação na interface para usares sempre que houver duplicados?
+
+Ou queres que eu te oriente a fazer a troca manualmente via SQL no painel do Supabase (mais rápido, mas exige cuidado)?
+
+Dica: Depois de unificar, a GTM-4432 vai passar a reconhecer a tabela instantaneamente!

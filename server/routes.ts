@@ -199,6 +199,80 @@ export async function registerRoutes(
     }
   });
 
+  app.post('/api/admin/unify-client-names', requireAuth, requireRole('diretoria', 'administrador'), async (req: Request, res: Response) => {
+    try {
+      const { correctName, variations, dryRun = true } = req.body;
+      if (!correctName || !variations || !Array.isArray(variations) || variations.length === 0) {
+        return res.status(400).json({ error: 'correctName (string) e variations (string[]) são obrigatórios' });
+      }
+
+      const sbUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || '';
+      const sbKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY || '';
+      const sb = createClient(sbUrl, sbKey);
+
+      const tables = [
+        { table: 'missions', column: 'client' },
+        { table: 'client_price_tables', column: 'client' },
+        { table: 'client_routes', column: 'client' },
+      ];
+
+      const report: any[] = [];
+      let totalUpdated = 0;
+
+      for (const variation of variations) {
+        const trimmed = variation.trim();
+        if (trimmed === correctName) continue;
+
+        for (const { table, column } of tables) {
+          const { data: matches, error: countErr } = await sb
+            .from(table)
+            .select('id', { count: 'exact' })
+            .ilike(column, trimmed);
+
+          const count = matches?.length || 0;
+          if (count === 0) continue;
+
+          if (!dryRun) {
+            const { error: updateErr } = await sb
+              .from(table)
+              .update({ [column]: correctName, last_update: new Date().toISOString() })
+              .ilike(column, trimmed);
+
+            if (updateErr) {
+              report.push({ table, variation: trimmed, count, status: 'ERRO', error: updateErr.message });
+              continue;
+            }
+          }
+
+          report.push({ table, variation: trimmed, count, status: dryRun ? 'SIMULAÇÃO' : 'ATUALIZADO' });
+          totalUpdated += count;
+        }
+      }
+
+      if (!dryRun) {
+        await sb.from('audit_logs').insert([{
+          user_id: (req as any).user?.id || 'system',
+          action_type: 'UNIFY_CLIENT_NAMES',
+          entity: 'Client',
+          entity_id: correctName,
+          details: JSON.stringify({ correctName, variations, totalUpdated, report, timestamp: new Date().toISOString() })
+        }]);
+      }
+
+      res.json({
+        success: true,
+        dryRun,
+        correctName,
+        totalUpdated,
+        report,
+        message: dryRun
+          ? `Simulação: ${totalUpdated} registros seriam atualizados. Envie dryRun: false para executar.`
+          : `Unificação concluída: ${totalUpdated} registros atualizados para "${correctName}".`
+      });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
 
   app.get('/sw.js', (_req: Request, res: Response) => {
     const swPath = path.resolve(process.cwd(), 'client', 'public', 'sw.js');
