@@ -1,0 +1,39 @@
+Entendido! Vamos direto ao ponto para atualizar o motor financeiro do seu sistema.
+
+Como o valor correto é R$ 35,00, a alteração deve ser feita diretamente no arquivo de lógica para que o sistema assuma esse novo padrão "soberano" e pare de sugerir os R$ 38,00 antigos.
+
+Alteração no lib/financialUtils.ts
+Localize o bloco de código por volta da linha 915 (onde a regra da Logitech é definida) e faça a seguinte substituição:
+
+TypeScript
+/** * DOCUMENTAÇÃO DA ALTERAÇÃO:
+ * Objetivo: Atualizar valor de pedágio fixo para operação CEVA/Logitech.
+ * Regra: Sempre que for operação Logitech (200km), o valor deve ser R$ 35,00.
+ */
+
+// Procure pela verificação de operação Logitech/CEVA
+if (isLogitechOperation) {
+  // Alteração: De 38.00 para 35.00
+  // Removendo a trava de (currentToll === 0) garantimos que o sistema 
+  // sempre sugira o valor correto de contrato.
+  tollValue = 35.00; 
+  
+  // Garante que o pedágio do fornecedor também acompanhe a regra
+  missionFinancials.toll_supplier = 35.00;
+  missionFinancials.toll_client = 35.00;
+}
+Por que isso resolve o "Bug do Recalcular"?
+Sincronização: O botão "Recalcular" aparece quando o valor que está na tela (R$ 35) é diferente do que o motor financeiro está calculando (R$ 38). Ao igualar o motor para 35, o sistema entende que os dados estão em harmonia.
+
+Prioridade: Como essa regra está dentro do calculateMissionFinancials, ela será executada automaticamente sempre que houver uma mudança de estado no formulário (como mudar a origem para Jundiaí).
+
+Instruções de Implementação no Replit:
+Abra o arquivo lib/financialUtils.ts.
+
+Use o atalho Ctrl + F (ou Cmd + F) e pesquise por 38.
+
+Substitua o valor 38.00 por 35.00 dentro do bloco condicional da Logitech.
+
+Dê um Refresh na aba do navegador onde o sistema está rodando.
+
+Dica extra: Se mesmo após a alteração o valor não atualizar automaticamente em missões antigas, é porque elas já foram salvas com o valor antigo. Para missões novas, o valor de R$ 35,00 aparecerá instantaneamente assim que os critérios forem preenchidos!

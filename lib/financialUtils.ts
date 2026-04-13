@@ -912,7 +912,7 @@ export const calculateMissionFinancials = (
 
     const isLogitechTable = appliedTableName.includes('LOGITECH') || appliedTableName.includes('200KM') || appliedTableName.includes('200 KM');
     if (isLogitechTable && !isZeroValueMission && tollValue === 0) {
-        tollValue = 38;
+        tollValue = 35;
     }
 
     const serviceSubtotal = round2(cBase + cExtraKmVal + cExtraHrVal);
