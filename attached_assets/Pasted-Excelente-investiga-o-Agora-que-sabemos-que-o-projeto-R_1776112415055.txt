@@ -1,0 +1,73 @@
+Excelente investigação! Agora que sabemos que o projeto é React + TypeScript e que a lógica reside no lib/financialUtils.ts, o cenário mudou completamente: saímos da manipulação de tela (DOM) para a lógica de negócio pura.
+
+Como o sistema já tem esse "motor" de scoring, o "bug" do Recalcular que mencionaste provavelmente ocorre porque o estado do componente React não está a ser forçado a atualizar quando os critérios (CEVA + Jundiaí + 200KM) são atingidos, ou a regra no financialUtils.ts está a ser ignorada por alguma condição prévia.
+
+Aqui está o plano de ação e o código adequado para este ambiente:
+
+1. Panorama da Solução (Lógica TypeScript)
+Onde atuar: No arquivo lib/financialUtils.ts, dentro da função calculateMissionFinancials.
+
+O Ajuste: Vamos garantir que a regra seja "Soberana". Se as três condições baterem, o código irá ignorar outros valores e fixar a Tabela e o Pedágio (agora ajustado para R$ 35,00 conforme o teu pedido, sobrescrevendo os R$ 38,00 atuais).
+
+Resolução do Bug: Ao garantir que a função de cálculo retorne sempre estes valores fixos para este cenário, o React irá renderizar os dados corretos sem precisar do clique manual.
+
+2. Implementação do Código (Para o financialUtils.ts)
+Podes usar este trecho como base para substituir ou ajustar a regra por volta da linha 614:
+
+TypeScript
+// Definição de Tipos (TypeScript)
+interface FinancialResult {
+  client_price_table_id: number;
+  toll_client: number;
+  toll_supplier: number;
+  // ... outros campos
+}
+
+/**
+ * DOCUMENTAÇÃO:
+ * Ajuste da Regra Soberana para CEVA LOGISTICS - Operação Jundiaí 200KM.
+ * Local: lib/financialUtils.ts
+ */
+export const applyCevaSpecialRule = (
+  missionData: any, 
+  currentResult: FinancialResult
+): FinancialResult => {
+  
+  // 1. Verificação das condições exatas
+  const isCeva = missionData.client_name?.includes("CEVA LOGISTICS");
+  const isJundiai = missionData.origin_city?.toUpperCase().includes("JUNDIAI");
+  const is200km = missionData.selected_option === "200KM";
+
+  if (isCeva && isJundiai && is200km) {
+    return {
+      ...currentResult,
+      // Forçamos o pedágio para R$ 35,00 (substituindo os R$ 38,00 antigos)
+      toll_client: 35.00,
+      toll_supplier: 35.00,
+      
+      // A lógica de scoring deve ser ignorada aqui para garantir 
+      // que a tabela "SUDESTE - OPERAÇÃO LOGITECH - 200KM" seja a escolhida
+      // Se você tiver o ID exato, pode fixar aqui:
+      // client_price_table_id: 123 
+    };
+  }
+
+  return currentResult;
+};
+3. Instruções para implementar no Replit
+Como não estamos a usar document.getElementById, deves seguir estes passos dentro do código React:
+
+Ajuste de Valor: No lib/financialUtils.ts, procura onde está definido o valor fixo de 38.00 e altera para 35.00.
+
+Sincronização de Estado: No componente React que renderiza essa tela (provavelmente algo como MissionForm.tsx ou BillingAudit.tsx), garante que o useEffect que dispara o cálculo esteja a observar as mudanças nos campos de Origem e Franquia.
+
+Exemplo: useEffect(() => { calculate(); }, [client, origin, kmOption]);
+
+O "Bug" do Recalcular: Se o sistema ainda pede para "Recalcular", é porque o estado local do formulário (useState) não está a ser atualizado com o retorno da função calculateMissionFinancials. Garante que o resultado da função de utilidade esteja a fazer um setFormData ou similar.
+
+Documentação do Segmento
+Função: applyCevaSpecialRule
+Objetivo: Sobrescrever cálculos automáticos quando os critérios de contrato específico (CEVA/Jundiaí) são validados.
+Impacto: Garante conformidade financeira e elimina discrepâncias de pedágio entre cliente e fornecedor.
+
+O que achas de verificarmos agora o arquivo do componente Frontend para garantir que ele chama esse cálculo automaticamente assim que selecionas "200KM"?
