@@ -1,0 +1,55 @@
+Olá! Entendo perfeitamente a sua frustração. Olhando para as imagens da OS GTM-4432, o sistema está numa confusão de valores que ignora totalmente as regras que acabámos de configurar.
+
+1. O Diagnóstico do Erro
+Existem três problemas principais a acontecer aqui:
+
+O Pedágio de R$ 463,37: Este valor estranho não vem da nossa regra. Como a tabela do cliente está em "AUTOMÁTICO (IA DETECTANDO)" e o sistema diz "Sem tabelas cadastradas", o motor financeiro "perdeu-se". Ele provavelmente está a puxar um valor residual de algum cálculo de KM ou um rascunho antigo.
+
+A Tabela não selecionada: A nossa "Regra Soberana" depende de o sistema identificar a operação. Como ele não selecionou a tabela da Logitech, ele não disparou o gatilho dos R$ 35,00.
+
+Lado do Fornecedor (Azul): O fornecedor está com Pedágio R$ 0,00, confirmando que a automação não injetou os 35 reais lá.
+
+2. Por que o "Recalcular" está a falhar?
+O botão está "errado" porque ele está a tentar calcular com base no vazio (Acionamento R$ 0,00 no cliente). O sistema está a priorizar o "Valor Salvo" manualmente (R$ 1.283,37) em vez do cálculo real.
+
+3. A Solução (Ajuste no Motor Financeiro)
+Precisamos de tornar a regra ainda mais forte. Se o cliente é CEVA e o destino é aquele indicado na OS (200km de acompanhamento), o sistema não deve nem tentar "detectar" — ele deve impor.
+
+Vamos ajustar o lib/financialUtils.ts para forçar a tabela correta se a IA falhar:
+
+TypeScript
+/**
+ * AJUSTE DE EMERGÊNCIA: OS GTM-4432
+ * Local: lib/financialUtils.ts
+ */
+
+// 1. Forçar a identificação da tabela por texto se a IA falhar
+if (mission.client_name?.includes("CEVA") && mission.description?.includes("200KM")) {
+    // Forçamos o ID da tabela Logitech aqui se estiver vindo vazio
+    if (!currentTableId) {
+        currentTableId = ID_DA_TABELA_LOGITECH; 
+    }
+    
+    // 2. Limpeza total do pedágio "fantasma" de R$ 463,37
+    // Substituímos por R$ 35,00 fixos
+    tollValue = 35.00;
+    missionFinancials.toll_value = 35.00;
+    missionFinancials.toll_value_provider = 35.00;
+    
+    console.log("🛠 Ajuste GTM-4432: Removendo pedágio fantasma e fixando R$ 35.");
+}
+4. Instruções Passo-a-Passo para corrigir agora:
+No Replit: Vá ao arquivo lib/financialUtils.ts.
+
+Remova a trava de erro: Certifique-se de que não existe nenhum return antecipado quando "Cliente sem tabela de preços" acontece. Se for CEVA, ele deve continuar o cálculo.
+
+No Sistema (Interface): * Clique no dropdown de Tabela de Preço Aplicada no cliente.
+
+Selecione manualmente a tabela "SUDESTE - OPERAÇÃO LOGITECH - 200KM".
+
+Ao fazer isso, a nossa regra soberana de R$ 35,00 (que removemos a trava no passo anterior) deve "atropelar" esses R$ 463,37 e colocar o valor correto.
+
+O que causou os R$ 463,37?
+Provavelmente, como a tabela não foi encontrada, o sistema tentou somar algum custo extra ou quilometragem no campo errado de pedágio.
+
+Queres que eu te ajude a criar um "reset" automático para o campo de pedágio sempre que o cliente for CEVA, para que esse número de 463 nunca mais apareça?

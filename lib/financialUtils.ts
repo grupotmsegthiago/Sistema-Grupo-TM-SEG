@@ -611,8 +611,13 @@ export const calculateMissionFinancials = (
     const referenceDistance = Math.max(totalDistance, distanceForCalculation);
     let is200kmAccompaniment = destHas200km && !isZeroValueMission;
 
-    if (isCevaClient && isJundiai && !isCancelled && !isManualOverride && allClientTablesForThisClient.length > 0) {
-        const logitech200 = allClientTablesForThisClient.find(t => {
+    const cevaLogitech = isCevaClient && (isJundiai || destHas200km);
+    let cevaTablesPool = allClientTablesForThisClient;
+    if (isCevaClient && cevaTablesPool.length === 0) {
+        cevaTablesPool = clientTables.filter(t => normalize(t.client || '').includes('CEVA'));
+    }
+    if (cevaLogitech && !isCancelled && !isManualOverride && cevaTablesPool.length > 0) {
+        const logitech200 = cevaTablesPool.find(t => {
             const op = normalize(t.operation_type || '');
             return (op.includes('LOGITECH') || op.includes('200KM') || op.includes('200 KM')) && t.franchise_km >= 200;
         });
