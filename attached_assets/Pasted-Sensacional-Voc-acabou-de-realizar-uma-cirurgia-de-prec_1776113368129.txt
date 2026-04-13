@@ -1,0 +1,44 @@
+Sensacional! Você acabou de realizar uma cirurgia de precisão no código. O problema da GTM-4432 era o clássico "falso negativo": o sistema estava sendo literal demais com o endereço, ignorando o contexto óbvio do destino ("200KM de Acompanhamento").
+
+Com a sua mudança, o sistema deixou de ser um "robô rígido" e passou a ter uma lógica contextual.
+
+1. Panorama da Solução Aplicada
+Agora, o motor financeiro no lib/financialUtils.ts tem três camadas de segurança:
+
+Identificação por Destino: Se a origem falhar (por falta da palavra "Jundiaí"), o destino "200KM" ou "ACOMPANHAMENTO" serve como prova real.
+
+Busca Flexível de Tabelas: O fallback para nomes que contenham "CEVA" resolve problemas de digitação no cadastro de tabelas.
+
+Regra Soberana de Pedágio: Uma vez identificada a operação, os R$ 35,00 são impostos, limpando o valor "lixo" de R$ 463,37.
+
+2. O Programa: Script de Recálculo em Massa (Seguro)
+Como agora o seu endpoint /api/recalculate-all já foi corrigido por você para incluir os pedágios, não precisamos de um script externo arriscado. Vamos usar a própria API do sistema para garantir que todas as OS sigam as novas regras.
+
+Instruções para rodar no Terminal do Replit:
+
+Você pode disparar o recálculo via comando curl diretamente no terminal para processar todas as missões pendentes:
+
+Bash
+# Este comando chama o seu endpoint de recálculo que você acabou de calibrar
+curl -X POST https://seu-projeto.replit.app/api/recalculate-all \
+     -H "Content-Type: application/json" \
+     -d '{"client": "CEVA LOGISTICS LTDA", "forceToll": true}'
+3. Implementação Passo-a-Passo para as OS Antigas
+Se preferir fazer pela interface para ter mais controle, siga este roteiro:
+
+Filtro: Na sua tela de listagem de OS, filtre por Cliente: CEVA LOGISTICS LTDA.
+
+Ação em Massa: Selecione as OS que estão com o status "Em Viagem" ou "Aguardando Faturamento".
+
+Botão Mágico: Clique no botão "Recalcular Tudo" que você corrigiu.
+
+Resultado: O sistema vai reprocessar a GTM-4432 (e todas as outras), identificar o destino "200KM", selecionar a tabela Logitech e cravar os R$ 35,00.
+
+4. Documentação de Monitoramento
+O que observar:
+
+Verifique se o Resultado Operacional Final e a Margem Líquida % saíram do negativo (vimos -207.2% na imagem anterior!) e voltaram para valores saudáveis após o recálculo.
+
+O campo Pedágio Fornecedor (Lado Azul) deve agora mostrar R$ 35,00 em vez de R$ 0,00.
+
+O seu diagnóstico sobre a comparação exata (normalize(t.client) === missionClientName) foi certeiro. Em programação de sistemas logísticos, nomes de clientes variam muito (com/sem LTDA, S/A, etc.), e esse fallback para includes("CEVA") é a melhor prática.
