@@ -40,9 +40,7 @@ const MonthlyBarChart: React.FC<{ data: { month: string; value: number; monthIdx
                     const pct = (d.value / maxVal) * 100;
                     return (
                         <div key={i} className="flex-1 flex flex-col items-center justify-end h-full group relative">
-                            <div className="absolute -top-1 opacity-0 group-hover:opacity-100 transition-opacity bg-gray-900 text-white text-[9px] px-2 py-1 rounded shadow-xl whitespace-nowrap z-10 font-mono pointer-events-none">
-                                {formatCurrency(d.value)}
-                            </div>
+                            <p className="text-[8px] font-black font-mono text-gray-600 mb-0.5 whitespace-nowrap">{formatCurrency(d.value)}</p>
                             <div 
                                 className="w-full rounded-t-md transition-all duration-500 min-h-[4px]"
                                 style={{ height: `${Math.max(pct, 3)}%`, backgroundColor: color, opacity: 0.85 }}
@@ -63,7 +61,8 @@ const FinancialReport: React.FC = () => {
     const [isDirector, setIsDirector] = useState(false);
     const [filterType, setFilterType] = useState<'ALL' | 'INCOME' | 'EXPENSE'>('ALL');
     const [searchTerm, setSearchTerm] = useState('');
-    const [viewPeriod, setViewPeriod] = useState<'DIA' | 'SEMANA' | 'MES' | 'TRIMESTRE' | 'SEMESTRE' | 'ANUAL' | 'TODOS'>('TODOS');
+    const [viewPeriod, setViewPeriod] = useState<'DIA' | 'SEMANA' | 'MES' | 'TRIMESTRE' | 'SEMESTRE' | 'ANUAL' | 'TODOS'>('SEMANA');
+    const [cardFilter, setCardFilter] = useState<'ALL' | 'RECEBIDO' | 'PAGO' | 'A_RECEBER' | 'A_PAGAR'>('ALL');
 
     useEffect(() => {
         const storedUser = localStorage.getItem('userData');
@@ -333,32 +332,27 @@ const FinancialReport: React.FC = () => {
                 <div className="flex items-center justify-center h-64"><Loader2 className="animate-spin text-red-600" size={32}/></div>
             ) : (
                 <>
-                    <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
-                        <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm">
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                        <button onClick={() => setCardFilter(cardFilter === 'RECEBIDO' ? 'ALL' : 'RECEBIDO')} className={`p-4 rounded-xl border-2 shadow-sm text-left transition-all ${cardFilter === 'RECEBIDO' ? 'border-green-500 bg-green-50 ring-2 ring-green-200' : 'border-gray-200 bg-white hover:border-green-300'}`} data-testid="card-recebido">
                             <p className="text-[9px] font-black text-gray-400 uppercase mb-1">Já Recebido</p>
                             <p className="text-lg font-black text-green-600 font-mono" data-testid="val-recebido">{formatCurrency(totalRecebido)}</p>
                             <p className="text-[9px] text-green-500 font-bold">{paidIncome.length} título(s)</p>
-                        </div>
-                        <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm">
-                            <p className="text-[9px] font-black text-gray-400 uppercase mb-1">A Receber</p>
-                            <p className="text-lg font-black text-blue-600 font-mono" data-testid="val-a-receber">{formatCurrency(totalAReceber)}</p>
-                            <p className="text-[9px] text-blue-500 font-bold">{aReceberFuture.length} título(s)</p>
-                        </div>
-                        <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm">
+                        </button>
+                        <button onClick={() => setCardFilter(cardFilter === 'PAGO' ? 'ALL' : 'PAGO')} className={`p-4 rounded-xl border-2 shadow-sm text-left transition-all ${cardFilter === 'PAGO' ? 'border-red-500 bg-red-50 ring-2 ring-red-200' : 'border-gray-200 bg-white hover:border-red-300'}`} data-testid="card-pago">
                             <p className="text-[9px] font-black text-gray-400 uppercase mb-1">Já Pago</p>
                             <p className="text-lg font-black text-red-600 font-mono" data-testid="val-pago">{formatCurrency(totalPago)}</p>
                             <p className="text-[9px] text-red-500 font-bold">{paidExpense.length} título(s)</p>
-                        </div>
-                        <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm">
+                        </button>
+                        <button onClick={() => setCardFilter(cardFilter === 'A_RECEBER' ? 'ALL' : 'A_RECEBER')} className={`p-4 rounded-xl border-2 shadow-sm text-left transition-all ${cardFilter === 'A_RECEBER' ? 'border-blue-500 bg-blue-50 ring-2 ring-blue-200' : 'border-gray-200 bg-white hover:border-blue-300'}`} data-testid="card-a-receber">
+                            <p className="text-[9px] font-black text-gray-400 uppercase mb-1">A Receber</p>
+                            <p className="text-lg font-black text-blue-600 font-mono" data-testid="val-a-receber">{formatCurrency(totalAReceber)}</p>
+                            <p className="text-[9px] text-blue-500 font-bold">{aReceberFuture.length} título(s)</p>
+                        </button>
+                        <button onClick={() => setCardFilter(cardFilter === 'A_PAGAR' ? 'ALL' : 'A_PAGAR')} className={`p-4 rounded-xl border-2 shadow-sm text-left transition-all ${cardFilter === 'A_PAGAR' ? 'border-orange-500 bg-orange-50 ring-2 ring-orange-200' : 'border-gray-200 bg-white hover:border-orange-300'}`} data-testid="card-a-pagar">
                             <p className="text-[9px] font-black text-gray-400 uppercase mb-1">A Pagar</p>
                             <p className="text-lg font-black text-orange-600 font-mono" data-testid="val-a-pagar">{formatCurrency(totalAPagar)}</p>
                             <p className="text-[9px] text-orange-500 font-bold">{aPagarFuture.length} título(s)</p>
-                        </div>
-                        <div className={`p-4 rounded-xl border-2 shadow-sm ${totalInadimplencia > 0 ? 'bg-red-50 border-red-300' : 'bg-green-50 border-green-300'}`}>
-                            <p className="text-[9px] font-black text-gray-500 uppercase mb-1 flex items-center gap-1"><AlertTriangle size={10}/> Inadimplência</p>
-                            <p className={`text-lg font-black font-mono ${totalInadimplencia > 0 ? 'text-red-700' : 'text-green-600'}`} data-testid="val-inadimplencia">{formatCurrency(totalInadimplencia)}</p>
-                            <p className="text-[9px] text-red-500 font-bold">{overdueIncome.length + overdueExpense.length} título(s) vencido(s)</p>
-                        </div>
+                        </button>
                     </div>
 
                     <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
@@ -521,7 +515,7 @@ const FinancialReport: React.FC = () => {
 
                     <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
                         <div className="px-5 py-3 bg-gray-50 border-b border-gray-200 flex flex-col md:flex-row justify-between items-center gap-3">
-                            <h4 className="text-xs font-black text-gray-700 uppercase flex items-center gap-2"><FileText size={14}/> Todos os Lançamentos</h4>
+                            <h4 className="text-xs font-black text-gray-700 uppercase flex items-center gap-2"><FileText size={14}/> {cardFilter === 'ALL' ? 'Todos os Lançamentos' : cardFilter === 'RECEBIDO' ? 'Já Recebidos' : cardFilter === 'PAGO' ? 'Já Pagos' : cardFilter === 'A_RECEBER' ? 'A Receber' : 'A Pagar'}{cardFilter !== 'ALL' && <span onClick={() => setCardFilter('ALL')} className="ml-2 text-[9px] font-bold text-red-500 cursor-pointer hover:underline">✕ Limpar filtro</span>}</h4>
                             <div className="flex gap-2 items-center no-print">
                                 <div className="flex gap-1">
                                     {(['ALL','INCOME','EXPENSE'] as const).map(ft => (
@@ -552,6 +546,10 @@ const FinancialReport: React.FC = () => {
                                 <tbody className="divide-y divide-gray-100">
                                     {(() => {
                                         let list = periodFilteredTx;
+                                        if (cardFilter === 'RECEBIDO') list = list.filter(t => t.type === 'INCOME' && t.status === 'PAID');
+                                        else if (cardFilter === 'PAGO') list = list.filter(t => t.type === 'EXPENSE' && t.status === 'PAID');
+                                        else if (cardFilter === 'A_RECEBER') list = list.filter(t => t.type === 'INCOME' && (t.status === 'PENDING' || t.status === 'SCHEDULED') && t.due_date.split('T')[0] >= todayStr);
+                                        else if (cardFilter === 'A_PAGAR') list = list.filter(t => t.type === 'EXPENSE' && (t.status === 'PENDING' || t.status === 'SCHEDULED') && t.due_date.split('T')[0] >= todayStr);
                                         if (filterType !== 'ALL') list = list.filter(t => t.type === filterType);
                                         if (searchTerm.trim()) {
                                             const term = searchTerm.toLowerCase().trim();
