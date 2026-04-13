@@ -1072,4 +1072,61 @@ export async function sendCancelledMissingInfoEmail(to: string, mission: any, mi
   }
 }
 
+export async function sendDailyMissingInfoReport(to: string, missions: any[], reportDate: string): Promise<boolean> {
+  const missionsHtml = missions.map((m: any) => {
+    const missing: string[] = [];
+    if (!m.start_km && m.start_km !== 0) missing.push('KM Inicial');
+    if (!m.end_km && m.end_km !== 0) missing.push('KM Final');
+    if (!m.start_time) missing.push('Hora Inicial');
+    if (!m.end_time) missing.push('Hora Final');
+    if (!m.agent1 || m.agent1 === '---' || m.agent1 === 'N/A') missing.push('Agente');
+    if (!m.provider || m.provider === '---') missing.push('Fornecedor');
+    if (!m.origin) missing.push('Origem');
+    if (!m.destination) missing.push('Destino');
+    if (!m.driver_name) missing.push('Motorista');
+    if (!m.client_vehicle) missing.push('Veículo');
+    return `<tr>
+      <td style="padding:8px 12px; border-bottom:1px solid #eee; font-weight:600;">${m.id}</td>
+      <td style="padding:8px 12px; border-bottom:1px solid #eee;">${m.client || '—'}</td>
+      <td style="padding:8px 12px; border-bottom:1px solid #eee;">${m.status || '—'}</td>
+      <td style="padding:8px 12px; border-bottom:1px solid #eee;">${m.scheduled_date || m.created_at?.split('T')[0] || '—'}</td>
+      <td style="padding:8px 12px; border-bottom:1px solid #eee; color:#c0392b; font-weight:600;">${missing.join(', ')}</td>
+    </tr>`;
+  }).join('');
+
+  const html = baseTemplate(`
+    <h2>Relatório Diário — Missões com Dados Incompletos</h2>
+    <div class="highlight-box">
+      <p><strong>${missions.length} missão(ões)</strong> encontrada(s) com informações faltantes que impedem o cálculo financeiro correto.</p>
+    </div>
+    <table style="width:100%; border-collapse:collapse; margin:16px 0; font-size:13px;">
+      <thead>
+        <tr style="background:#1a1a1a; color:#fff;">
+          <th style="padding:10px 12px; text-align:left;">OS</th>
+          <th style="padding:10px 12px; text-align:left;">Cliente</th>
+          <th style="padding:10px 12px; text-align:left;">Status</th>
+          <th style="padding:10px 12px; text-align:left;">Data</th>
+          <th style="padding:10px 12px; text-align:left;">Campos Faltantes</th>
+        </tr>
+      </thead>
+      <tbody>${missionsHtml}</tbody>
+    </table>
+    <p style="font-size:12px; color:#999; margin-top:24px;">Este relatório é gerado automaticamente pelo sistema TMSEGo todos os dias às 08:00 (horário de Brasília).</p>
+  `);
+
+  try {
+    await transporter.sendMail({
+      from: SMTP_FROM,
+      to,
+      subject: `📋 Missões com Dados Incompletos — ${missions.length} OS — ${reportDate}`,
+      html,
+    });
+    console.log(`[Email] Relatório diário de dados faltantes enviado → ${to} | ${missions.length} OS`);
+    return true;
+  } catch (err: any) {
+    console.error(`[Email] Erro ao enviar relatório de dados faltantes:`, err.message);
+    return false;
+  }
+}
+
 export { transporter };

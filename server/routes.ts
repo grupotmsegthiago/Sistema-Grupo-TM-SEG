@@ -9,7 +9,7 @@ import { calculateMissionFinancials } from "../lib/financialUtils";
 import fs from "fs";
 import path from "path";
 import pg from "pg";
-import { sendMissionEmailToClient, sendMissionEmailToProvider, sendMissionResendToClient, sendMirroringEvidenceEmail, sendMissionChangeNotificationToClient, sendMissionChangeNotificationToProvider, sendWelcomeEmail, sendTestEmail, sendVerificationCodeEmail, sendPasswordResetEmail, sendBillingEmail, sendLegalReportEmail, sendPendingInfoReport, sendApprovalPendingReport, sendCancelledMissingInfoEmail } from "./emailService";
+import { sendMissionEmailToClient, sendMissionEmailToProvider, sendMissionResendToClient, sendMirroringEvidenceEmail, sendMissionChangeNotificationToClient, sendMissionChangeNotificationToProvider, sendWelcomeEmail, sendTestEmail, sendVerificationCodeEmail, sendPasswordResetEmail, sendBillingEmail, sendLegalReportEmail, sendPendingInfoReport, sendApprovalPendingReport, sendCancelledMissingInfoEmail, sendDailyMissingInfoReport } from "./emailService";
 import { findOrCreateCustomer, createPayment, getPayment, getPaymentPixQrCode, getPaymentBankSlip, listPayments, deletePayment, mapAsaasStatus, isAsaasConfigured, getAsaasCompanies, scheduleInvoice, listMunicipalServices, getInvoiceByPayment, getAllBalances } from "./asaasService";
 
 const resend = new Resend(process.env.RESEND_API_KEY);
@@ -4526,6 +4526,94 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
       res.json({ success: sent, total: pendingApproval.length, emailTo: APPROVAL_REPORT_EMAIL, date: reportDate });
     } catch (err: any) {
       console.error('[Aprovações] Erro manual:', err.message);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  const MISSING_INFO_REPORT_EMAILS = 'barbara@grupotmseg.com.br, michelle@grupotmseg.com.br, thiago@grupotmseg.com.br, daniel@grupotmseg.com.br';
+
+  async function findAllMissionsWithMissingInfo(): Promise<any[]> {
+    const allMissions: any[] = [];
+    let from = 0;
+    const pageSize = 1000;
+    while (true) {
+      const { data, error } = await supabase
+        .from('missions')
+        .select('id, client, provider, origin, destination, start_time, end_time, start_km, end_km, driver_name, client_vehicle, agent1, created_at, scheduled_date, status')
+        .not('status', 'in', '("Cancelada","Recusada")')
+        .range(from, from + pageSize - 1);
+      if (error) { console.error('[Dados Faltantes] Erro ao buscar missions:', error.message); break; }
+      if (!data || data.length === 0) break;
+      allMissions.push(...data);
+      if (data.length < pageSize) break;
+      from += pageSize;
+    }
+
+    return allMissions.filter((m: any) => {
+      const missing =
+        (!m.start_km && m.start_km !== 0) ||
+        (!m.end_km && m.end_km !== 0) ||
+        !m.start_time ||
+        !m.end_time ||
+        !m.agent1 || m.agent1 === '---' || m.agent1 === 'N/A' ||
+        !m.provider || m.provider === '---' ||
+        !m.origin ||
+        !m.destination ||
+        !m.driver_name ||
+        !m.client_vehicle;
+      return missing;
+    });
+  }
+
+  async function executeDailyMissingInfoReport() {
+    const now = new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' });
+    console.log(`[Dados Faltantes Diário] Iniciando busca — ${now}`);
+    try {
+      const missions = await findAllMissionsWithMissingInfo();
+      console.log(`[Dados Faltantes Diário] ${missions.length} OS com dados faltantes encontradas`);
+
+      const reportDate = new Date().toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' });
+      if (missions.length > 0) {
+        const sent = await sendDailyMissingInfoReport(MISSING_INFO_REPORT_EMAILS, missions, reportDate);
+        if (sent) {
+          console.log(`[Dados Faltantes Diário] Relatório enviado para ${MISSING_INFO_REPORT_EMAILS}`);
+        } else {
+          console.error(`[Dados Faltantes Diário] Falha ao enviar relatório`);
+        }
+      } else {
+        console.log(`[Dados Faltantes Diário] Nenhuma OS com dados faltantes — email não enviado.`);
+      }
+    } catch (err: any) {
+      console.error(`[Dados Faltantes Diário] Erro fatal:`, err.message);
+    }
+  }
+
+  function scheduleDailyMissingInfoReport() {
+    const checkInterval = () => {
+      const now = new Date();
+      const brasiliaTime = new Date(now.toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' }));
+      const hour = brasiliaTime.getHours();
+      const minute = brasiliaTime.getMinutes();
+
+      if (hour === 8 && minute === 0) {
+        executeDailyMissingInfoReport();
+      }
+    };
+
+    setInterval(checkInterval, 60 * 1000);
+    console.log(`[Dados Faltantes Diário] Agendamento ativo — relatório será enviado todos os dias às 08:00 (Brasília) para ${MISSING_INFO_REPORT_EMAILS}`);
+  }
+
+  scheduleDailyMissingInfoReport();
+
+  app.post("/api/relatorio-dados-faltantes", requireAuth, requireRole('administrador', 'diretoria'), async (_req: Request, res: Response) => {
+    try {
+      const missions = await findAllMissionsWithMissingInfo();
+      const reportDate = new Date().toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' });
+      const sent = await sendDailyMissingInfoReport(MISSING_INFO_REPORT_EMAILS, missions, reportDate);
+      res.json({ success: sent, total: missions.length, emailTo: MISSING_INFO_REPORT_EMAILS, date: reportDate });
+    } catch (err: any) {
+      console.error('[Dados Faltantes] Erro manual:', err.message);
       res.status(500).json({ error: err.message });
     }
   });
