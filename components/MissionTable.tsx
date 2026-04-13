@@ -150,6 +150,7 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
   const [missionToDelete, setMissionToDelete] = useState<Mission | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
   const [deletePassword, setDeletePassword] = useState('');
+  const [cancelEscortAtOrigin, setCancelEscortAtOrigin] = useState<boolean | null>(null);
   const [isHistoryModalOpen, setIsHistoryModalOpen] = useState(false);
   const [historyMissionId, setHistoryMissionId] = useState('');
   const [currentUser, setCurrentUser] = useState<UserType | null>(null);
@@ -889,7 +890,7 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
     const handleOpenStatusModal = async (mission: Mission) => { setMissionForStatusView(mission); setIsStatusModalOpen(true); const { data } = await supabase.from('mission_logs').select('*').eq('mission_id', mission.id).order('created_at', { ascending: false }); if (data) setMissionLogs(data as MissionLog[]); };
     const handleOpenFinancialModal = (mission: Mission) => { setMissionForFinancials(mission); setIsFinancialModalOpen(true); };
     const handleOpenPrintModal = (mission: Mission) => { setMissionForPrint(mission); setIsPrintModalOpen(true); };
-    const handleDeleteClick = (mission: Mission) => { setMissionToDelete(mission); setDeletePassword(''); setIsDeleteModalOpen(true); };
+    const handleDeleteClick = (mission: Mission) => { setMissionToDelete(mission); setDeletePassword(''); setCancelEscortAtOrigin(null); setIsDeleteModalOpen(true); };
     
     const handleCopyMission = async (mission: Mission) => {
         const dateObj = new Date(mission.startTime || mission.createdAt);
@@ -952,7 +953,40 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
         }
     };
     const handleCopyToClipboard = async (text: string, id: string, isReport = false) => { try { await navigator.clipboard.writeText(text); if(isReport) showNotification('Sucesso', 'Relatório WhatsApp Copiado!', 'success'); else { setCopiedId(id); setTimeout(() => setCopiedId(null), 2000); } } catch (err) { console.error(err); } };
-    const confirmDelete = async () => { if (!missionToDelete) return; setIsDeleting(true); try { const { error } = await supabase.from('missions').update({ status: 'Cancelada' }).eq('id', missionToDelete.id).select('id').single(); if (error) throw error; await logAction('UPDATE', 'Mission', missionToDelete.id, `Missão cancelada por ${currentUser?.name}`); showNotification('Sucesso', 'Missão cancelada com sucesso. O registro permanece no banco.', 'success'); setIsDeleteModalOpen(false); setMissionToDelete(null); fetchMissions(true); } catch (error: any) { showNotification('Erro', error.message, 'error'); } finally { setIsDeleting(false); } };
+    const confirmDelete = async () => {
+        if (!missionToDelete || cancelEscortAtOrigin === null) return;
+        setIsDeleting(true);
+        try {
+            const updateData: any = {
+                status: 'Cancelada',
+            };
+            if (!cancelEscortAtOrigin) {
+                updateData.revenue_value = 0;
+                updateData.cost_value = 0;
+                updateData.toll_value = 0;
+                updateData.toll_value_provider = 0;
+                updateData.valor_zero_motivo = 'Cancelada — escolta não estava na origem';
+            } else {
+                const currentToll = Number(missionToDelete.toll_value) || 0;
+                if (currentToll > 0) {
+                    updateData.toll_value_provider = currentToll;
+                }
+            }
+            const { error } = await supabase.from('missions').update(updateData).eq('id', missionToDelete.id).select('id').single();
+            if (error) throw error;
+            const motivo = cancelEscortAtOrigin ? 'Escolta na origem — valores mantidos' : 'Escolta NÃO na origem — valores zerados';
+            await logAction('UPDATE', 'Mission', missionToDelete.id, `Missão cancelada por ${currentUser?.name}. ${motivo}`);
+            showNotification('Sucesso', `Missão cancelada. ${motivo}.`, 'success');
+            setIsDeleteModalOpen(false);
+            setMissionToDelete(null);
+            setCancelEscortAtOrigin(null);
+            fetchMissions(true);
+        } catch (error: any) {
+            showNotification('Erro', error.message, 'error');
+        } finally {
+            setIsDeleting(false);
+        }
+    };
     const handleSearchHistory = async () => { if (!searchHistoryId.trim()) return; let sid = searchHistoryId.trim().toUpperCase(); if (!sid.startsWith('GTM-') && !isNaN(Number(sid))) sid = `GTM-${sid.padStart(4, '0')}`; setHistoryMissionId(sid); setIsHistoryModalOpen(true); };
     const handleViewHistory = (mission: Mission) => { setHistoryMissionId(mission.id); setIsHistoryModalOpen(true); };
   
@@ -1316,10 +1350,54 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
         {missionForOpReport && <MissionOperationalReport mission={missionForOpReport} onClose={() => setMissionForOpReport(null)} isClientView={isRestrictedClientView} isInternalEditor={isDirector || (currentUser?.role || '').toLowerCase() === 'avançado'} />}
         {isDeleteModalOpen && missionToDelete && (
             <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-in fade-in">
-                <div className="bg-white rounded-xl shadow-2xl w-full max-sm overflow-hidden border border-red-200">
-                    <div className="bg-red-50 p-4 border-b border-red-100 flex items-center gap-3"><div className="p-2 bg-red-100 rounded-full text-red-600"><Trash2 size={24} /></div><h3 className="text-lg font-bold text-red-900">Excluir?</h3></div>
-                    <div className="p-6 space-y-4"><p className="text-sm text-gray-600">Confirma exclusão de <strong>{missionToDelete.id}</strong>?</p>{!isDirector && (<div><label className="text-xs font-bold text-gray-500 mb-1 block">Senha</label><div className="relative"><input type="password" className="w-full p-2 pl-9 border rounded" value={deletePassword} onChange={(e) => setDeletePassword(e.target.value)} /><Lock size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" /></div></div>)}</div>
-                    <div className="p-4 bg-gray-50 flex justify-end gap-3 border-t"><button onClick={() => setIsDeleteModalOpen(false)} className="px-4 py-2 border rounded text-xs">Sair</button><button onClick={confirmDelete} disabled={isDeleting || (!isDirector && !deletePassword)} className="px-4 py-2 bg-red-600 text-white rounded-xs flex items-center gap-2">Confirmar</button></div>
+                <div className="bg-white rounded-xl shadow-2xl w-full max-w-md overflow-hidden border border-red-200">
+                    <div className="bg-red-50 p-4 border-b border-red-100 flex items-center gap-3">
+                        <div className="p-2 bg-red-100 rounded-full text-red-600"><Trash2 size={24} /></div>
+                        <h3 className="text-lg font-bold text-red-900">Cancelar OS {missionToDelete.id}?</h3>
+                    </div>
+                    <div className="p-6 space-y-4">
+                        <p className="text-sm text-gray-600">Confirma o cancelamento de <strong>{missionToDelete.id}</strong>?</p>
+                        <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 space-y-3">
+                            <p className="text-sm font-bold text-amber-900">A escolta já estava na origem?</p>
+                            <div className="flex gap-3">
+                                <button
+                                    data-testid="btn-cancel-escort-yes"
+                                    onClick={() => setCancelEscortAtOrigin(true)}
+                                    className={`flex-1 py-2.5 px-4 rounded-lg text-sm font-bold border-2 transition-all ${cancelEscortAtOrigin === true ? 'bg-green-600 text-white border-green-600 shadow-md' : 'bg-white text-gray-700 border-gray-300 hover:border-green-400'}`}
+                                >
+                                    Sim — cobrar valores
+                                </button>
+                                <button
+                                    data-testid="btn-cancel-escort-no"
+                                    onClick={() => setCancelEscortAtOrigin(false)}
+                                    className={`flex-1 py-2.5 px-4 rounded-lg text-sm font-bold border-2 transition-all ${cancelEscortAtOrigin === false ? 'bg-red-600 text-white border-red-600 shadow-md' : 'bg-white text-gray-700 border-gray-300 hover:border-red-400'}`}
+                                >
+                                    Não — zerar valores
+                                </button>
+                            </div>
+                            {cancelEscortAtOrigin === true && (
+                                <p className="text-xs text-green-800 bg-green-50 rounded p-2">Receita, custo e pedágio serão mantidos. Pedágio do fornecedor será igualado ao do cliente.</p>
+                            )}
+                            {cancelEscortAtOrigin === false && (
+                                <p className="text-xs text-red-800 bg-red-50 rounded p-2">Receita, custo e pedágio serão zerados (cliente e fornecedor).</p>
+                            )}
+                        </div>
+                        {!isDirector && (
+                            <div>
+                                <label className="text-xs font-bold text-gray-500 mb-1 block">Senha</label>
+                                <div className="relative">
+                                    <input type="password" className="w-full p-2 pl-9 border rounded" value={deletePassword} onChange={(e) => setDeletePassword(e.target.value)} />
+                                    <Lock size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                    <div className="p-4 bg-gray-50 flex justify-end gap-3 border-t">
+                        <button data-testid="btn-cancel-modal-close" onClick={() => setIsDeleteModalOpen(false)} className="px-4 py-2 border rounded text-xs">Sair</button>
+                        <button data-testid="btn-cancel-confirm" onClick={confirmDelete} disabled={isDeleting || cancelEscortAtOrigin === null || (!isDirector && !deletePassword)} className="px-4 py-2 bg-red-600 text-white rounded-lg text-sm font-bold flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed">
+                            {isDeleting ? 'Cancelando...' : 'Confirmar Cancelamento'}
+                        </button>
+                    </div>
                 </div>
             </div>
         )}

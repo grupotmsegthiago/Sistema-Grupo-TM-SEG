@@ -272,7 +272,8 @@ export const calculateMissionFinancials = (
     const isCancelled = mission.status === MissionStatus.CANCELLED;
     const isRefused = mission.status === MissionStatus.REFUSED;
     const isPending = mission.status === MissionStatus.PENDING;
-    const isZeroValueMission = isCancelled || isRefused;
+    const cancelledWithValues = isCancelled && (safeNumber(mission.revenue_value) > 0 || safeNumber(mission.cost_value) > 0);
+    const isZeroValueMission = (isCancelled && !cancelledWithValues) || isRefused;
     
     const getKm = (val: any) => typeof val === 'number' ? val : parseFloat(String(val || '0').replace(',', '.'));
     

@@ -1,0 +1,27 @@
+Entendido! Essa é uma regra de condicional de carência. Para o sistema "conversar" com o agendamento e o horário do cancelamento, precisamos de uma lógica que compare dois tempos: o Horário de Início (Agendamento) e o Horário de Cancelamento.Aqui está como vamos estruturar essa inteligência no sistema:1. Panorama da Solução (Lógica de Carência)O sistema deve calcular a diferença de tempo: $HorárioAgendamento - HorárioCancelamento$.Regra A (Cobra): Se o cancelamento ocorreu depois do agendamento ou até menos de 2h antes.Ação: Aplica tabela "Cancelada" (ou 100km) + Pedágio R$ 35,00.Regra B (Não Cobra): Se o cancelamento ocorreu com mais de 2h de antecedência.Ação: Valor Final = R$ 0,00 e Pedágio = R$ 0,00.2. Implementação no Motor (lib/financialUtils.ts)Vamos adicionar este cálculo de tempo para que o faturamento seja automático:TypeScript/**
+ * REGRA DE CARÊNCIA PARA CANCELAMENTO
+ */
+const calcularCustoCancelamento = (mission, financialData) => {
+  const agora = new Date();
+  const horarioAgendamento = new Date(mission.scheduled_at);
+  
+  // Calcula a diferença em milissegundos e converte para horas
+  const diffHoras = (horarioAgendamento.getTime() - agora.getTime()) / (1000 * 60 * 60);
+
+  if (diffHoras > 2) {
+    // REGRA: Mais de 2h de antecedência = GRÁTIS
+    return {
+      revenueValue: 0,
+      costValue: 0,
+      tollValue: 0,
+      tableApplied: "CANCELAMENTO ISENTO (>2h)"
+    };
+  } else {
+    // REGRA: Menos de 2h ou já passou do horário = COBRA TABELA MÍNIMA
+    return {
+      ...financialData, // Mantém o cálculo da tabela "Cancelada" ou "100km"
+      tollValue: 35.00  // Mantém o pedágio soberano
+    };
+  }
+}
+3. Por que isso é importante para o sistema INTEIRO?Para que os campos não fiquem "desalinhados" como na imagem GTM-4387 (onde o cliente mostra R$ 35 e o fornecedor R$ 0):Sincronia Financeira: Ao colocar essa lógica no motor, tanto o toll_value (cliente) quanto o toll_value_provider (fornecedor) serão zerados ou preenchidos ao mesmo tempo.Fim do Valor Manual: Como o motor agora entende o "porquê" do valor ser 0 ou 35, a linha amarela de cálculo automático vai bater exatamente com o que você quer, e o campo de "R$ 855,00" (que é o lixo de memória) será substituído pelo cálculo real.4. Instruções para o ReplitVocê deve pedir ao Replit para:Identificar o campo de "Status da OS": Garantir que quando estiver "Cancelada", ele dispare essa função de tempo.Acessar o Agendamento: O código precisa ler o campo scheduled_at (ou data_inicio) para fazer a conta das 2 horas.Remover a Memória: Forçar a limpeza do campo de valor manual caso a OS seja um cancelamento isento.Um detalhe na GTM-4387: O status ali está "EM VIAGEM", mas você disse que é um cancelamento. O sistema precisa que o status seja alterado para "CANCELADA" para que essa inteligência saiba que deve ignorar a tabela de "PRONTA RESPOSTA" e aplicar a regra das 2 horas.Podemos configurar para que, ao trocar o status para "Cancelada", o sistema já faça essa pergunta do horário automaticamente?
