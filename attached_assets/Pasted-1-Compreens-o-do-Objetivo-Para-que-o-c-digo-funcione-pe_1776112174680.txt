@@ -1,0 +1,76 @@
+1. Compreensão do Objetivo
+Para que o código funcione perfeitamente, preciso de confirmar alguns detalhes:
+
+A linguagem: O teu projeto no Replit usa JavaScript (ou TypeScript) no Front-end?
+
+Identificação: Consegues encontrar no teu código ou na base de dados qual é o ID numérico ou slug da tabela "SUDESTE - OPERAÇÃO LOGITECH - 200KM"? (Exemplo: id: 123 ou id: 'sudeste-logitech-200').
+
+Eventos: O sistema deve disparar esta regra quando o utilizador seleciona o Cliente ou quando a página carrega?
+
+2. Panorama Geral da Solução
+O plano consiste em criar uma Função de Observação (Watcher).
+
+Monitorização: O sistema ficará atento às mudanças nos campos "Cliente", "Origem" e "Franquia KM".
+
+Validação: Se Cliente == "CEVA...", Origem == "Jundiaí" e Opção == "200km", a regra dispara.
+
+Execução: * Força a seleção da tabela correta pelo ID.
+
+Sobrescreve os campos de pedágio (Cliente e Fornecedor) para R$ 35,00.
+
+Correção do "Bug" do Recalcular: Vamos chamar a função de cálculo (recalculate()) automaticamente ao final da regra, para que o utilizador não precise de clicar no botão.
+
+3. Implementação do Código
+Abaixo, apresento um exemplo de como este código deve ser estruturado. Podes adaptar os nomes das variáveis para os que já existem no teu projeto.
+
+JavaScript
+/**
+ * DOCUMENTAÇÃO:
+ * Esta função verifica as condições de faturamento para a CEVA LOGISTICS.
+ * Se as condições forem aceitas, ela automatiza a tabela e os pedágios.
+ */
+
+function aplicarRegraEspecialCeva(dadosFaturamento) {
+  // 1. Definição dos critérios (Ajuste os valores conforme o seu banco de dados)
+  const CLIENTE_ALVO = "CEVA LOGISTICS LTDA";
+  const ORIGEM_ALVO = "JUNDIAI/SP";
+  const KM_ALVO = "200KM";
+  const ID_TABELA_LOGITECH = 4433; // <-- SUBSTITUA PELO ID REAL DA TABELA
+
+  // 2. Verificação das condições
+  const isCeva = dadosFaturamento.cliente === CLIENTE_ALVO;
+  const isJundiai = dadosFaturamento.origem.toUpperCase() === ORIGEM_ALVO;
+  const is200km = dadosFaturamento.franquiaSelecionada === KM_ALVO;
+
+  if (isCeva && isJundiai && is200km) {
+    console.log("Regra especial CEVA detectada. Aplicando automação...");
+
+    // 3. Aplicação automática da Tabela
+    document.getElementById('tabela-select').value = ID_TABELA_LOGITECH;
+
+    // 4. Ajuste dos Pedágios (Cliente e Fornecedor)
+    // Forçamos o valor para 35.00
+    dadosFaturamento.pedagioCliente = 35.00;
+    dadosFaturamento.pedagioFornecedor = 35.00;
+
+    // 5. SOLUÇÃO DO "BUG" DO RECALCULAR
+    // Chamamos a função de cálculo interna do sistema imediatamente
+    executarCalculoFinal(); 
+  }
+}
+
+// Exemplo de função que deve existir no seu sistema para atualizar a tela
+function executarCalculoFinal() {
+  // Aqui o código deve disparar a mesma lógica do botão "Recalcular"
+  console.log("Sistema atualizado automaticamente sem cliques manuais.");
+}
+4. Instruções de Implementação no Replit
+Para aplicar isto no teu Replit, segue estes passos:
+
+Localize o arquivo de lógica: Procure por arquivos como script.js, billing.js ou onde as funções de cálculo de faturamento estão escritas.
+
+Identifique o ID da Tabela: No teu sistema, abra o "Inspecionar Elemento" (F12) no navegador, clique na lista de tabelas e veja qual é o value da opção "SUDESTE - OPERAÇÃO LOGITECH - 200KM". Use esse valor no código acima.
+
+Integração: Cole a função aplicarRegraEspecialCeva e certifique-se de que ela é chamada sempre que um dos campos (Cliente ou KM) for alterado (evento onChange).
+
+Forçar o Refresh: O "bug" que mencionaste acontece porque o estado da tela não atualiza quando o valor muda via código. Ao chamar a função de cálculo (o passo 5 do código) no final da regra, o sistema entenderá que os dados mudaram e atualizará o "Valor Final" e a "Margem Líquida" instantaneamente.
