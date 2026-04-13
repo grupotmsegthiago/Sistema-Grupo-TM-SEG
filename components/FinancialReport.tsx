@@ -204,8 +204,8 @@ const FinancialReport: React.FC = () => {
     const totalAPagar = useMemo(() => aPagarFuture.reduce((a, t) => a + t.amount, 0), [aPagarFuture]);
     const totalInadimplencia = useMemo(() => [...overdueIncome, ...overdueExpense].reduce((a, t) => a + t.amount, 0), [overdueIncome, overdueExpense]);
 
-    const chartReceberData = useMemo(() => receberByMonth.map(m => ({ month: MONTH_NAMES_SHORT[m.monthIdx], value: m.value, monthIdx: m.monthIdx })), [receberByMonth]);
-    const chartPagarData = useMemo(() => pagarByMonth.map(m => ({ month: MONTH_NAMES_SHORT[m.monthIdx], value: m.value, monthIdx: m.monthIdx })), [pagarByMonth]);
+    const chartReceberData = useMemo(() => receberByMonth.map(m => ({ month: `${MONTH_NAMES_SHORT[m.monthIdx]}/${String(m.year).slice(2)}`, value: m.value, monthIdx: m.monthIdx })), [receberByMonth]);
+    const chartPagarData = useMemo(() => pagarByMonth.map(m => ({ month: `${MONTH_NAMES_SHORT[m.monthIdx]}/${String(m.year).slice(2)}`, value: m.value, monthIdx: m.monthIdx })), [pagarByMonth]);
 
     if (!isDirector) {
         return (
@@ -295,7 +295,7 @@ const FinancialReport: React.FC = () => {
                                 <thead><tr className="text-[9px] font-black text-blue-700 uppercase bg-blue-50/50"><th className="px-4 py-2">Mês</th><th className="px-4 py-2 text-right">Valor</th><th className="px-4 py-2 text-right">Qtd.</th></tr></thead>
                                 <tbody>
                                     {receberByMonth.map((m, i) => (
-                                        <tr key={i} className="border-t border-gray-100 hover:bg-blue-50/30"><td className="px-4 py-2 text-sm font-bold text-gray-700">{MONTH_NAMES[m.monthIdx]}</td><td className="px-4 py-2 text-sm font-mono text-blue-700 text-right">{formatCurrency(m.value)}</td><td className="px-4 py-2 text-sm text-gray-500 text-right">{m.count}</td></tr>
+                                        <tr key={i} className="border-t border-gray-100 hover:bg-blue-50/30"><td className="px-4 py-2 text-sm font-bold text-gray-700">{MONTH_NAMES[m.monthIdx]}/{m.year}</td><td className="px-4 py-2 text-sm font-mono text-blue-700 text-right">{formatCurrency(m.value)}</td><td className="px-4 py-2 text-sm text-gray-500 text-right">{m.count}</td></tr>
                                     ))}
                                     <tr className="bg-blue-50 border-t-2 border-blue-200"><td className="px-4 py-2 text-xs font-black text-blue-800 uppercase">Total Geral</td><td className="px-4 py-2 text-sm font-black font-mono text-blue-800 text-right">{formatCurrency(totalAReceber)}</td><td className="px-4 py-2 text-sm font-black text-blue-800 text-right">{aReceberFuture.length}</td></tr>
                                 </tbody>
@@ -310,7 +310,7 @@ const FinancialReport: React.FC = () => {
                                 <thead><tr className="text-[9px] font-black text-red-700 uppercase bg-red-50/50"><th className="px-4 py-2">Mês</th><th className="px-4 py-2 text-right">Valor</th><th className="px-4 py-2 text-right">Qtd.</th></tr></thead>
                                 <tbody>
                                     {pagarByMonth.map((m, i) => (
-                                        <tr key={i} className="border-t border-gray-100 hover:bg-red-50/30"><td className="px-4 py-2 text-sm font-bold text-gray-700">{MONTH_NAMES[m.monthIdx]}</td><td className="px-4 py-2 text-sm font-mono text-red-700 text-right">{formatCurrency(m.value)}</td><td className="px-4 py-2 text-sm text-gray-500 text-right">{m.count}</td></tr>
+                                        <tr key={i} className="border-t border-gray-100 hover:bg-red-50/30"><td className="px-4 py-2 text-sm font-bold text-gray-700">{MONTH_NAMES[m.monthIdx]}/{m.year}</td><td className="px-4 py-2 text-sm font-mono text-red-700 text-right">{formatCurrency(m.value)}</td><td className="px-4 py-2 text-sm text-gray-500 text-right">{m.count}</td></tr>
                                     ))}
                                     <tr className="bg-red-50 border-t-2 border-red-200"><td className="px-4 py-2 text-xs font-black text-red-800 uppercase">Total Geral</td><td className="px-4 py-2 text-sm font-black font-mono text-red-800 text-right">{formatCurrency(totalAPagar)}</td><td className="px-4 py-2 text-sm font-black text-red-800 text-right">{aPagarFuture.length}</td></tr>
                                 </tbody>
