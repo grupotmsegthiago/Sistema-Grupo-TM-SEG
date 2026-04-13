@@ -5,9 +5,10 @@ import { supabase } from '../lib/supabase';
 import { useNotification } from '../lib/NotificationContext';
 import {
   Loader2, FileBarChart, Download, RefreshCw, Filter, List, Link2,
-  ClipboardCheck, Calendar, Search, X, ChevronDown
+  ClipboardCheck, Calendar, Search, X, ChevronDown, RotateCcw
 } from 'lucide-react';
 import MissionFinancialModal from './MissionFinancialModal';
+import { calculateMissionFinancials } from '../lib/financialUtils';
 
 const MissionReportPage: React.FC = () => {
   const { showNotification } = useNotification();
@@ -15,6 +16,10 @@ const MissionReportPage: React.FC = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [currentUser, setCurrentUser] = useState<any>(null);
   const [isRecalculating, setIsRecalculating] = useState(false);
+  const [recalcRowId, setRecalcRowId] = useState<string | null>(null);
+  const [clientPriceTables, setClientPriceTables] = useState<any[]>([]);
+  const [providerCostTables, setProviderCostTables] = useState<any[]>([]);
+  const [clientsData, setClientsData] = useState<any[]>([]);
 
   const [periodFilter, setPeriodFilter] = useState<'TODAY' | 'YESTERDAY' | 'WEEK' | 'MONTH' | 'YEAR' | 'CUSTOM' | 'ALL'>('WEEK');
   const [customStartDate, setCustomStartDate] = useState('');
@@ -71,11 +76,17 @@ const MissionReportPage: React.FC = () => {
         return all;
       };
 
-      const [missionsData, clientsRes, providersRes] = await Promise.all([
+      const [missionsData, clientsRes, providersRes, cptRes, pctRes, allClientsRes] = await Promise.all([
         fetchAllPages(),
         supabase.from('clients').select('name, trading_name'),
-        supabase.from('providers').select('name, trading_name')
+        supabase.from('providers').select('name, trading_name'),
+        supabase.from('client_price_tables').select('*'),
+        supabase.from('provider_cost_tables').select('*'),
+        supabase.from('clients').select('*'),
       ]);
+      setClientPriceTables(cptRes.data || []);
+      setProviderCostTables(pctRes.data || []);
+      setClientsData(allClientsRes.data || []);
 
       if (missionsData) {
         const clientVehicleIds = [...new Set(missionsData.map((m: any) => m.client_vehicle).filter((id: any) => id))];
@@ -245,6 +256,40 @@ const MissionReportPage: React.FC = () => {
     });
     return map;
   }, [filteredMissions]);
+
+  const tableInfoMap = useMemo(() => {
+    if (clientPriceTables.length === 0 && providerCostTables.length === 0) return new Map<string, { clientTable: string; providerTable: string }>();
+    const map = new Map<string, { clientTable: string; providerTable: string }>();
+    for (const m of filteredMissions) {
+      try {
+        const mObj = { ...m, startKm: m.startKm || m.start_km, endKm: m.endKm || m.end_km, startTime: m.startTime || m.start_time, endTime: m.endTime || m.end_time };
+        const clientMatch = clientsData.find((c: any) => c.name === (m as any).originalClientName || c.name === m.client);
+        const fd = calculateMissionFinancials(mObj, clientPriceTables, providerCostTables, clientMatch);
+        if (fd) {
+          map.set(m.id, { clientTable: fd.client.tableName || '-', providerTable: fd.provider.tableName || '-' });
+        }
+      } catch { /* skip */ }
+    }
+    return map;
+  }, [filteredMissions, clientPriceTables, providerCostTables, clientsData]);
+
+  const handleRecalcRow = async (missionId: string) => {
+    setRecalcRowId(missionId);
+    try {
+      const res = await authFetch(`/api/missions/${missionId}/force-recalculate`, { method: 'POST', headers: { 'Content-Type': 'application/json' } });
+      const data = await res.json();
+      if (data.success) {
+        showNotification('Sucesso', `OS ${missionId} recalculada: Receita R$ ${(data.new.revenue || 0).toFixed(2)} | Custo R$ ${(data.new.cost || 0).toFixed(2)}`, 'success');
+        fetchMissions(true);
+      } else {
+        showNotification('Erro', data.error || 'Falha ao recalcular', 'error');
+      }
+    } catch (err: any) {
+      showNotification('Erro', err.message || 'Falha na comunicação', 'error');
+    } finally {
+      setRecalcRowId(null);
+    }
+  };
 
   const totalRev = filteredMissions.reduce((s, m) => s + (m.revenue_value || 0), 0);
   const totalCost = filteredMissions.reduce((s, m) => s + (m.is_same_os ? 0 : (m.cost_value || 0)), 0);
@@ -608,8 +653,18 @@ const MissionReportPage: React.FC = () => {
                       <td className="px-3 py-2 border-r border-gray-100 whitespace-nowrap">{m.endTime ? fmtTime(m.endTime) : '-'}</td>
                       {canSeeFinancials && (
                         <>
-                          <td className="px-3 py-2 border-r border-gray-100 text-right font-bold text-green-700 whitespace-nowrap">{rev > 0 ? fmtMoney(rev) : '-'}</td>
-                          <td className="px-3 py-2 border-r border-gray-100 text-right font-bold text-blue-700 whitespace-nowrap">{cost > 0 ? fmtMoney(cost) : '-'}</td>
+                          <td className="px-3 py-2 border-r border-gray-100 text-right font-bold text-green-700 whitespace-nowrap" title={tableInfoMap.get(m.id)?.clientTable || ''}>
+                            <div className="flex flex-col items-end">
+                              <span>{rev > 0 ? fmtMoney(rev) : '-'}</span>
+                              {tableInfoMap.get(m.id) && <span className="text-[8px] text-green-500 font-normal truncate max-w-[100px]">{tableInfoMap.get(m.id)?.clientTable}</span>}
+                            </div>
+                          </td>
+                          <td className="px-3 py-2 border-r border-gray-100 text-right font-bold text-blue-700 whitespace-nowrap" title={tableInfoMap.get(m.id)?.providerTable || ''}>
+                            <div className="flex flex-col items-end">
+                              <span>{cost > 0 ? fmtMoney(cost) : '-'}</span>
+                              {tableInfoMap.get(m.id) && <span className="text-[8px] text-blue-500 font-normal truncate max-w-[100px]">{tableInfoMap.get(m.id)?.providerTable}</span>}
+                            </div>
+                          </td>
                           <td className="px-3 py-2 border-r border-gray-100 text-right text-orange-600 whitespace-nowrap">{toll > 0 ? fmtMoney(toll) : '-'}</td>
                           <td className={`px-3 py-2 border-r border-gray-100 text-right font-black whitespace-nowrap ${resultado >= 0 ? 'text-emerald-700' : 'text-red-600 bg-red-50'}`}>
                             {rev > 0 || cost > 0 ? fmtMoney(resultado) : '-'}
@@ -620,6 +675,16 @@ const MissionReportPage: React.FC = () => {
                         </>
                       )}
                       <td className="px-3 py-2 text-center">
+                        <div className="flex items-center gap-1 justify-center">
+                        <button
+                          data-testid={`btn-recalc-${m.id}`}
+                          onClick={(e) => { e.stopPropagation(); handleRecalcRow(m.id); }}
+                          disabled={recalcRowId === m.id}
+                          className="inline-flex items-center gap-0.5 px-1.5 py-1 rounded text-[9px] font-bold bg-orange-100 text-orange-700 hover:bg-orange-200 transition-colors disabled:opacity-50"
+                          title="Recalcular esta OS"
+                        >
+                          {recalcRowId === m.id ? <Loader2 size={10} className="animate-spin" /> : <RotateCcw size={10} />}
+                        </button>
                         <button
                           data-testid={`btn-financial-${m.id}`}
                           onClick={() => { setMissionForFinancials(m); setIsFinancialModalOpen(true); }}
@@ -633,6 +698,7 @@ const MissionReportPage: React.FC = () => {
                           <ClipboardCheck size={12} />
                           {m.billing_approved ? 'APROVADO' : 'CONFERIR'}
                         </button>
+                        </div>
                       </td>
                     </tr>
                   );
