@@ -1,0 +1,51 @@
+É frustrante ver que o valor de R$ 463,37 ainda está "preso" na tela, mesmo após as unificações no banco de dados. Como seu Ajudante de Programação, vou explicar exatamente por que isso está acontecendo e como resolver de vez.
+
+O Diagnóstico Final
+Olhando para a nova imagem da GTM-4432, perceba um detalhe crucial no campo de pedágio: ele tem um selo verde escrito "VALOR SALVO".
+
+O que isso significa tecnicamente?
+O sistema está priorizando o que foi gravado manualmente no banco de dados (toll_value) em vez de rodar a lógica do motor financeiro. Como esse valor de 463,37 foi salvo antes das nossas correções, ele se tornou um "valor estático". O botão "Recalcular" da tela, às vezes, não sobrescreve valores que o sistema entende como "editados pelo usuário".
+
+A Solução: Forçar o "Reset" no Banco
+Para limpar esses R$ 463,37 e fazer os R$ 35,00 aparecerem, precisamos de uma ação de "limpeza pesada".
+
+Passo 1: O "Pulo do Gato" na Interface
+Antes de mexer em código, tente isto na própria tela da imagem:
+
+Apague o valor 463,37 e digite 0.
+
+Clique em SALVAR AJUSTES.
+
+Agora, clique no botão verde RECALCULAR (aquele ao lado de "Valor Final Cliente").
+
+Como o valor agora é 0, a nossa Regra Soberana vai detectar o "vazio" e injetar os R$ 35,00 automaticamente.
+
+Passo 2: Ajuste "Soberano" no Código (Caso o Passo 1 falhe)
+Se você quer que o sistema ignore o "Valor Salvo" e force os 35 reais de qualquer jeito para a CEVA, precisamos de um pequeno ajuste no lib/financialUtils.ts.
+
+Vou sugerir que você adicione esta linha para garantir que a regra limpe o lixo:
+
+TypeScript
+// No arquivo lib/financialUtils.ts, dentro da lógica da CEVA:
+
+if (isLogitechOperation) {
+  // Esta linha garante que, mesmo que exista um "Valor Salvo" de 463,37, 
+  // o motor financeiro o substitua por 35.00 no momento do cálculo.
+  missionFinancials.toll_value = 35.00; 
+  missionFinancials.toll_value_provider = 35.00;
+  
+  // Isso força a interface a atualizar o campo.
+}
+Por que a Margem Líquida agora está em 30.7%?
+Note que, apesar do pedágio errado, a margem já melhorou (estava negativa!). Isso aconteceu porque a unificação do cliente funcionou e o sistema finalmente achou a tabela de R$ 1.400,00.
+
+O único "vilão" que sobrou é o pedágio de 463,37.
+
+Resumo da Ação:
+O seu sistema está com "memória" de valores antigos.
+
+Rode o Recalcular Tudo novamente (agora que o cliente está unificado, o script vai ter mais sucesso).
+
+Se a GTM-4432 persistir, use o Passo 1 acima (zerar e recalcular).
+
+Quer que eu te ajude a criar um script rápido que varra apenas as OS da CEVA e force o pedágio para 0, para que o motor financeiro as preencha corretamente com 35? Isso resolveria todas as OS "presas" como essa.
