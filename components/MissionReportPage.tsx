@@ -135,6 +135,7 @@ const MissionReportPage: React.FC = () => {
             revenue_value: m.revenue_value,
             cost_value: m.cost_value,
             toll_value: m.toll_value,
+            toll_value_provider: m.toll_value_provider,
             billing_approved: m.billing_approved,
             mission_type: m.mission_type || 'Caracterizada',
             is_same_os: m.is_same_os,
@@ -294,11 +295,12 @@ const MissionReportPage: React.FC = () => {
   const totalRev = filteredMissions.reduce((s, m) => s + (m.revenue_value || 0), 0);
   const totalCost = filteredMissions.reduce((s, m) => s + (m.is_same_os ? 0 : (m.cost_value || 0)), 0);
   const totalToll = filteredMissions.reduce((s, m) => s + (m.toll_value || 0), 0);
+  const totalTollProvider = filteredMissions.reduce((s, m) => s + (m.toll_value_provider != null ? m.toll_value_provider : (m.toll_value || 0)), 0);
 
   const handleExportCSV = () => {
     const sep = ';';
     const headers = ['#', 'OS', 'Status', 'Cliente', 'Veíc. Escoltado', 'Fornecedor', 'Viatura', 'Agentes', 'Rota', 'Data Inicial', 'Hora Inicial', 'Data Final', 'Hora Final'];
-    if (canSeeFinancials) headers.push('Receita', 'Custo', 'Pedágio', 'Resultado', '% Lucro');
+    if (canSeeFinancials) headers.push('Receita', 'Custo', 'Ped. Recebido', 'Ped. Pago', 'Resultado', '% Lucro');
 
     const exportParentIds = new Set<string>();
     filteredMissions.forEach(m => { if (m.is_same_os && m.parent_mission_id) exportParentIds.add(m.parent_mission_id); });
@@ -325,10 +327,12 @@ const MissionReportPage: React.FC = () => {
         m.endTime ? fmtTime(m.endTime) : '',
       ];
       if (canSeeFinancials) {
+        const tollProv = m.toll_value_provider != null ? m.toll_value_provider : toll;
         row.push(
           rev > 0 ? rev.toFixed(2).replace('.', ',') : '',
           cost > 0 ? cost.toFixed(2).replace('.', ',') : '',
           toll > 0 ? toll.toFixed(2).replace('.', ',') : '',
+          tollProv > 0 ? tollProv.toFixed(2).replace('.', ',') : '',
           resultado !== 0 ? resultado.toFixed(2).replace('.', ',') : '',
           rev > 0 ? ((resultado / rev) * 100).toFixed(1).replace('.', ',') + '%' : ''
         );
@@ -549,7 +553,8 @@ const MissionReportPage: React.FC = () => {
             <>
               <span className="border-l border-gray-300 pl-3 text-green-700">Receita Total: R$ {fmtMoney(totalRev)}</span>
               <span className="text-blue-700">Custo Total: R$ {fmtMoney(totalCost)}</span>
-              <span className="text-orange-700">Pedágio Total: R$ {fmtMoney(totalToll)}</span>
+              <span className="text-orange-700">Pedágio Recebido: R$ {fmtMoney(totalToll)}</span>
+              <span className="text-orange-500">Pedágio Pago: R$ {fmtMoney(totalTollProvider)}</span>
               <span className={`font-black ${totalRev - totalCost - totalToll >= 0 ? 'text-emerald-700' : 'text-red-700'}`}>
                 Resultado: R$ {fmtMoney(totalRev - totalCost - totalToll)}
               </span>
@@ -591,7 +596,8 @@ const MissionReportPage: React.FC = () => {
                     <>
                       <th className="px-3 py-2.5 text-right font-black border-r border-gray-700">RECEITA</th>
                       <th className="px-3 py-2.5 text-right font-black border-r border-gray-700">CUSTO</th>
-                      <th className="px-3 py-2.5 text-right font-black border-r border-gray-700">PEDÁGIO</th>
+                      <th className="px-3 py-2.5 text-right font-black border-r border-gray-700">PED. RECEB.</th>
+                      <th className="px-3 py-2.5 text-right font-black border-r border-gray-700">PED. PAGO</th>
                       <th className="px-3 py-2.5 text-right font-black border-r border-gray-700">RESULTADO</th>
                       <th className="px-3 py-2.5 text-right font-black border-r border-gray-700">% LUCRO</th>
                     </>
@@ -604,6 +610,7 @@ const MissionReportPage: React.FC = () => {
                   const rev = m.revenue_value || 0;
                   const cost = m.is_same_os ? 0 : (m.cost_value || 0);
                   const toll = m.toll_value || 0;
+                  const tollProvider = m.toll_value_provider != null ? m.toll_value_provider : toll;
                   const resultado = rev - cost - toll;
                   const lucroPerc = rev > 0 ? ((resultado / rev) * 100) : 0;
                   const placaEscoltado = m.clientVehicle?.plate || '-';
@@ -666,6 +673,7 @@ const MissionReportPage: React.FC = () => {
                             </div>
                           </td>
                           <td className="px-3 py-2 border-r border-gray-100 text-right text-orange-600 whitespace-nowrap">{toll > 0 ? fmtMoney(toll) : '-'}</td>
+                          <td className="px-3 py-2 border-r border-gray-100 text-right text-orange-500 whitespace-nowrap">{tollProvider > 0 ? fmtMoney(tollProvider) : '-'}</td>
                           <td className={`px-3 py-2 border-r border-gray-100 text-right font-black whitespace-nowrap ${resultado >= 0 ? 'text-emerald-700' : 'text-red-600 bg-red-50'}`}>
                             {rev > 0 || cost > 0 ? fmtMoney(resultado) : '-'}
                           </td>
@@ -711,6 +719,7 @@ const MissionReportPage: React.FC = () => {
                     <td className="px-3 py-2.5 text-right border-r border-gray-600 text-green-300">{fmtMoney(totalRev)}</td>
                     <td className="px-3 py-2.5 text-right border-r border-gray-600 text-blue-300">{fmtMoney(totalCost)}</td>
                     <td className="px-3 py-2.5 text-right border-r border-gray-600 text-orange-300">{fmtMoney(totalToll)}</td>
+                    <td className="px-3 py-2.5 text-right border-r border-gray-600 text-orange-200">{fmtMoney(totalTollProvider)}</td>
                     <td className="px-3 py-2.5 text-right border-r border-gray-600 text-emerald-300">{fmtMoney(totalRev - totalCost - totalToll)}</td>
                     <td className={`px-3 py-2.5 text-right border-r border-gray-600 ${totalRev > 0 ? (((totalRev - totalCost - totalToll) / totalRev * 100) >= 0 ? 'text-emerald-300' : 'text-red-300') : ''}`}>
                       {totalRev > 0 ? `${((totalRev - totalCost - totalToll) / totalRev * 100).toFixed(1)}%` : '-'}
