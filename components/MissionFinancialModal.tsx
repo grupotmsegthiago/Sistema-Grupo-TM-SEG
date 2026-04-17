@@ -1501,8 +1501,30 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
 
   const filteredProviderTables = useMemo(() => {
       if (!mission?.provider) return providerTables;
-      const normalizedProviderName = mission.provider.toUpperCase().trim();
-      return providerTables.filter(t => t.provider?.toUpperCase().trim() === normalizedProviderName);
+      const norm = (s: string) => (s || '')
+          .toUpperCase()
+          .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+          .replace(/[.,\/&\-]/g, ' ')
+          .replace(/\s+/g, ' ')
+          .trim();
+      const target = norm(mission.provider);
+      if (!target) return providerTables;
+      // 1) match exato
+      const exact = providerTables.filter(t => norm(t.provider || '') === target);
+      if (exact.length) return exact;
+      // 2) um contém o outro (mesmo padrão usado em lib/financialUtils.ts)
+      const contains = providerTables.filter(t => {
+          const tp = norm(t.provider || '');
+          return tp.length > 2 && (tp.includes(target) || target.includes(tp));
+      });
+      if (contains.length) return contains;
+      // 3) compartilha pelo menos uma palavra significativa (>2 chars)
+      const words = target.split(' ').filter(w => w.length > 2);
+      if (!words.length) return providerTables;
+      return providerTables.filter(t => {
+          const tp = norm(t.provider || '');
+          return tp.length > 2 && words.some(w => tp.includes(w));
+      });
   }, [providerTables, mission?.provider]);
 
   const handleAiSuggest = async () => {
