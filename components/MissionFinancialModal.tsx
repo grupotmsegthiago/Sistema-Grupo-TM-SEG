@@ -1146,11 +1146,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
 
       let blockedForCurrentUser = false;
       let blockedMessage = '';
-
-      if (currentUserStage === 'financeiro' && !hasAuditor) {
-          blockedForCurrentUser = true;
-          blockedMessage = 'Aguardando aprovação do Daniel (Auditor) antes do Financeiro.';
-      }
+      // Financeiro (Bárbara/administrador) pode aprovar qualquer OS independente da aprovação prévia do Auditor.
 
       const lockedByDiretoria = hasDiretoria && currentUserStage !== 'diretoria' && (() => { try { const u = JSON.parse(localStorage.getItem('userData') || '{}'); const r = (u.role || '').toLowerCase(); return r !== 'controller' && r !== 'administrador'; } catch { return true; } })();
 
@@ -1206,12 +1202,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
           
           const newLog = [...approvalLog];
           if (approve) {
-              if (stage === 'financeiro' && !newLog.some(l => l.stage === 'auditor')) {
-                  showNotification('Bloqueado', 'A aprovação do Daniel (Auditor) é necessária antes da aprovação do Financeiro.', 'error');
-                  setIsUpdating(false);
-                  isSavingRef.current = false;
-                  return;
-              }
+              // Financeiro pode aprovar a qualquer momento, independente de quem já aprovou ou não.
               const existingStages = newLog.map(l => l.stage);
               const alreadyApproved = newLog.some(l => l.stage === stage);
               if (!alreadyApproved) {
