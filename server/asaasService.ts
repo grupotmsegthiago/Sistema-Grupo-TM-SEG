@@ -440,7 +440,15 @@ export async function scheduleInvoice(params: {
     ir: params.taxes?.ir ?? nfConfig.ir ?? 0,
     pis: params.taxes?.pis ?? nfConfig.pis ?? 0,
   };
-  const rawDesc = params.serviceDescription || nfConfig.serviceDescription;
+  let rawDesc = clientDefaults?.serviceDescription || params.serviceDescription || nfConfig.serviceDescription;
+  // Sanitização preventiva: usuários às vezes colam "07930 | Serviços relacionados..."
+  // (código + nome do serviço municipal) no campo descrição. Isso quebra a NF
+  // (Prefeitura SP devolve NFe003). Detecta e substitui por descrição padrão.
+  const codePrefix = /^\s*\d{4,6}\s*[|\-–]/;
+  if (codePrefix.test(rawDesc)) {
+    console.log(`[Asaas NF] Descrição mal formatada detectada ("${rawDesc.substring(0, 60)}..."). Substituindo por padrão da empresa para evitar NFe003.`);
+    rawDesc = nfConfig.serviceDescription;
+  }
   const body: any = {
     payment: params.paymentId,
     serviceDescription: rawDesc.length > 250 ? rawDesc.substring(0, 247) + '...' : rawDesc,
