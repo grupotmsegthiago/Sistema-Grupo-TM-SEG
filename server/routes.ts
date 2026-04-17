@@ -3286,6 +3286,61 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
     res.json({ configured: isAsaasConfigured() });
   });
 
+  app.get("/api/nf/pending", requireAuth, requireRole('administrador', 'diretoria', 'financeiro'), async (_req: Request, res: Response) => {
+    try {
+      const { listPendingNfs } = await import('./nfRetryWorker');
+      const data = await listPendingNfs();
+      res.json({ success: true, count: data.length, items: data });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post("/api/nf/retry-now", requireAuth, requireRole('administrador', 'diretoria', 'financeiro'), async (_req: Request, res: Response) => {
+    try {
+      const { runRetryCycle } = await import('./nfRetryWorker');
+      const result = await runRetryCycle();
+      res.json({ success: true, ...result });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post("/api/nf/retry/:invoiceId", requireAuth, requireRole('administrador', 'diretoria', 'financeiro'), async (req: Request, res: Response) => {
+    try {
+      const { invoiceId } = req.params;
+      const { listPendingNfs, retryOne } = await import('./nfRetryWorker');
+      const all = await listPendingNfs();
+      let inv = all.find(i => i.id === invoiceId);
+      if (!inv) {
+        const sbUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || '';
+        const sbKey = process.env.SUPABASE_SERVICE_KEY || process.env.VITE_SUPABASE_ANON_KEY || '';
+        if (sbUrl && sbKey) {
+          const sb = createClient(sbUrl, sbKey);
+          const { data } = await sb.from('financial_invoices')
+            .select('id, client, asaas_payment_id, asaas_invoice_id, issuer_company, nf_status, nf_last_error, nf_retry_count, nf_retry_paused')
+            .eq('id', invoiceId).maybeSingle();
+          if (data) inv = data as any;
+        }
+      }
+      if (!inv) return res.status(404).json({ error: 'Fatura não encontrada' });
+      if (!inv.asaas_payment_id) return res.status(400).json({ error: 'Fatura sem ID Asaas — não pode reemitir.' });
+      if (inv.nf_retry_paused) {
+        const sbUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || '';
+        const sbKey = process.env.SUPABASE_SERVICE_KEY || process.env.VITE_SUPABASE_ANON_KEY || '';
+        if (sbUrl && sbKey) {
+          const sb = createClient(sbUrl, sbKey);
+          await sb.from('financial_invoices').update({ nf_retry_paused: false }).eq('id', inv.id);
+          inv.nf_retry_paused = false;
+        }
+      }
+      const result = await retryOne(inv);
+      res.json({ success: result.ok, ...result });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   app.get("/api/asaas/balances", requireAuth, requireRole('administrador', 'diretoria', 'financeiro', 'ceo'), async (_req: Request, res: Response) => {
     try {
       const balances = await getAllBalances();
@@ -3437,6 +3492,8 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
               observations: `${descText} | Ref. ${externalRef}`,
               externalReference: externalRef,
               company: issuerCompany,
+              clientCnpj: cleanCnpj,
+              clientName: charge.name || clientName,
             });
             console.log(`[Asaas] NF agendada para cobrança ${payment.id}: ${invoiceData?.id || 'OK'} | Status: ${invoiceData?.status || '-'} | Desc: ${descText}`);
 
@@ -3552,6 +3609,8 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
           observations: `${descText} | Ref. ${externalRef}`,
           externalReference: externalRef,
           company: issuerCompany,
+          clientCnpj: clientCpfCnpj,
+          clientName: clientName,
         });
         console.log(`[Asaas] NF agendada para cobrança ${payment.id}: ${invoiceData?.id || 'OK'} | Status: ${invoiceData?.status || '-'} | Desc: ${descText}`);
 

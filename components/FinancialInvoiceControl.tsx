@@ -67,6 +67,7 @@ const FinancialInvoiceControl: React.FC = () => {
   const [copiedField, setCopiedField] = useState<string | null>(null);
   const [showImageModal, setShowImageModal] = useState<string | null>(null);
   const [cancellingId, setCancellingId] = useState<string | null>(null);
+  const [retryingNfId, setRetryingNfId] = useState<string | null>(null);
   const [sendingEmailId, setSendingEmailId] = useState<string | null>(null);
   const [showRetroModal, setShowRetroModal] = useState(false);
   const [retroForm, setRetroForm] = useState({ client: '', number: '', amount: '', date: '', dueDate: '', notes: '', issuer_company: 'TM GESTÃO' });
@@ -163,6 +164,28 @@ const FinancialInvoiceControl: React.FC = () => {
       alert('Erro ao cancelar: ' + e.message);
     } finally {
       setCancellingId(null);
+    }
+  };
+
+  const handleRetryNf = async (inv: Invoice) => {
+    if (!inv.asaas_payment_id) return;
+    if (!confirm(`Reemitir Nota Fiscal da fatura ${inv.number}?`)) return;
+    setRetryingNfId(inv.id);
+    try {
+      const res = await authFetch(`/api/nf/retry/${inv.id}`, { method: 'POST' });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        alert(`NF reagendada com sucesso. Status atual: ${data.status || 'pendente — aguarde o ciclo de retry'}.`);
+      } else if (data.paused) {
+        alert(`NF pausada por erro permanente: ${data.error || 'verifique a descrição do serviço cadastrada para o cliente'}.`);
+      } else {
+        alert(`Não foi possível reemitir agora: ${data.error || data.status || 'erro desconhecido'}.`);
+      }
+      await fetchInvoices();
+    } catch (e: any) {
+      alert('Erro ao reemitir NF: ' + e.message);
+    } finally {
+      setRetryingNfId(null);
     }
   };
 
@@ -460,6 +483,17 @@ const FinancialInvoiceControl: React.FC = () => {
                           {inv.asaas_payment_id && (
                             <button onClick={() => handleSyncStatus(inv)} disabled={syncingId === inv.id} className="bg-blue-50 hover:bg-blue-100 text-blue-600 p-1.5 rounded-lg" title="Sincronizar status" data-testid={`btn-sync-${inv.id}`}>
                               {syncingId === inv.id ? <Loader2 size={13} className="animate-spin" /> : <RefreshCw size={13} />}
+                            </button>
+                          )}
+                          {inv.asaas_payment_id && (inv.nf_status?.toUpperCase() === 'ERROR' || (!inv.nf_image_url && inv.nf_status?.toUpperCase() !== 'AUTHORIZED')) && (
+                            <button
+                              onClick={() => handleRetryNf(inv)}
+                              disabled={retryingNfId === inv.id}
+                              className="bg-amber-50 hover:bg-amber-100 text-amber-700 p-1.5 rounded-lg"
+                              title="Reemitir NF (Asaas)"
+                              data-testid={`btn-retry-nf-${inv.id}`}
+                            >
+                              {retryingNfId === inv.id ? <Loader2 size={13} className="animate-spin" /> : <FileText size={13} />}
                             </button>
                           )}
                           {inv.status !== 'CANCELADA' && inv.status !== 'PAGA' && (

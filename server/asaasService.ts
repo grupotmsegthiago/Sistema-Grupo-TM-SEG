@@ -359,6 +359,56 @@ async function resolveMunicipalService(company?: string): Promise<MunicipalServi
   return undefined;
 }
 
+interface ClientNfDefaults {
+  serviceDescription?: string | null;
+  municipalServiceCode?: string | null;
+  municipalServiceName?: string | null;
+}
+
+const clientNfCache: Record<string, { value: ClientNfDefaults | null; ts: number }> = {};
+const CLIENT_NF_CACHE_TTL_MS = 60_000;
+
+async function lookupClientNfDefaults(cnpj?: string | null, name?: string | null): Promise<ClientNfDefaults | null> {
+  if (!cnpj && !name) return null;
+  const key = (cnpj || '').replace(/\D/g, '') || `name:${(name || '').toUpperCase().trim()}`;
+  const cached = clientNfCache[key];
+  if (cached && Date.now() - cached.ts < CLIENT_NF_CACHE_TTL_MS) return cached.value;
+  try {
+    const { createClient } = await import('@supabase/supabase-js');
+    const sbUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || '';
+    const sbKey = process.env.SUPABASE_SERVICE_KEY || process.env.VITE_SUPABASE_ANON_KEY || '';
+    if (!sbUrl || !sbKey) return null;
+    const supabase = createClient(sbUrl, sbKey);
+    let row: any = null;
+    if (cnpj) {
+      const cleanCnpj = cnpj.replace(/\D/g, '');
+      const { data } = await supabase.from('clients')
+        .select('nf_service_description, nf_municipal_service_code, nf_municipal_service_name')
+        .eq('cnpj', cleanCnpj).maybeSingle();
+      row = data;
+    }
+    if (!row && name) {
+      const { data } = await supabase.from('clients')
+        .select('nf_service_description, nf_municipal_service_code, nf_municipal_service_name')
+        .ilike('name', name.split(/[\s,.]+/)[0] + '%').limit(1).maybeSingle();
+      row = data;
+    }
+    const out: ClientNfDefaults | null = row ? {
+      serviceDescription: row.nf_service_description || null,
+      municipalServiceCode: row.nf_municipal_service_code || null,
+      municipalServiceName: row.nf_municipal_service_name || null,
+    } : null;
+    clientNfCache[key] = { value: out, ts: Date.now() };
+    return out;
+  } catch (e: any) {
+    if (e?.code === '42703') {
+      console.log('[Asaas NF] coluna nf_service_description ainda não existe — usando padrão da empresa.');
+    }
+    clientNfCache[key] = { value: null, ts: Date.now() };
+    return null;
+  }
+}
+
 export async function scheduleInvoice(params: {
   paymentId: string;
   serviceDescription?: string;
@@ -366,6 +416,8 @@ export async function scheduleInvoice(params: {
   externalReference?: string;
   company?: string;
   municipalServiceId?: string;
+  clientCnpj?: string;
+  clientName?: string;
   taxes?: {
     retainIss?: boolean;
     iss?: number;
@@ -378,6 +430,7 @@ export async function scheduleInvoice(params: {
 }): Promise<any> {
   const companyEntry = resolveCompanyEntry(params.company);
   const nfConfig = companyEntry.nf;
+  const clientDefaults = await lookupClientNfDefaults(params.clientCnpj, params.clientName);
   const taxes = {
     retainIss: params.taxes?.retainIss ?? nfConfig.retainIss,
     iss: params.taxes?.iss ?? nfConfig.issRate,

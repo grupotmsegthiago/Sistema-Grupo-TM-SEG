@@ -76,7 +76,10 @@ const ClientForm: React.FC<ClientFormProps> = ({
     adjustment_2026_applied: false,
     proposal_2026_sent: false,
     is_prospect: false,
-    issuer_company: ''
+    issuer_company: '',
+    nf_service_description: '',
+    nf_municipal_service_code: '',
+    nf_municipal_service_name: ''
   });
   
   const [osEmailInput, setOsEmailInput] = useState('');
@@ -165,7 +168,10 @@ const ClientForm: React.FC<ClientFormProps> = ({
                     adjustment_2026_applied: !!data.adjustment_2026_applied,
                     proposal_2026_sent: !!data.proposal_2026_sent,
                     is_prospect: !!data.is_prospect,
-                    issuer_company: data.issuer_company || ''
+                    issuer_company: data.issuer_company || '',
+                    nf_service_description: data.nf_service_description || '',
+                    nf_municipal_service_code: data.nf_municipal_service_code || '',
+                    nf_municipal_service_name: data.nf_municipal_service_name || ''
                 });
                 fetchPriceTables(data.name);
             }
@@ -356,7 +362,10 @@ const ClientForm: React.FC<ClientFormProps> = ({
         adjustment_2026_applied: formData.adjustment_2026_applied,
         proposal_2026_sent: formData.proposal_2026_sent,
         is_prospect: formData.is_prospect,
-        issuer_company: formData.issuer_company || null
+        issuer_company: formData.issuer_company || null,
+        nf_service_description: formData.nf_service_description?.trim() || null,
+        nf_municipal_service_code: formData.nf_municipal_service_code?.trim() || null,
+        nf_municipal_service_name: formData.nf_municipal_service_name?.trim() || null
       };
 
       if (id) {
@@ -639,6 +648,42 @@ const ClientForm: React.FC<ClientFormProps> = ({
                             <option value="TM SEGURANÇA">TM SEGURANÇA — CNPJ 60.508.931/0001-27</option>
                             <option value="TM SECURITY">TM SECURITY — CNPJ 60.508.931/0001-27</option>
                         </select>
+                    </div>
+                    <div className="space-y-1.5 md:col-span-2">
+                        <label className={LABEL_CLASS}>Descrição padrão do serviço (NF-e deste cliente)</label>
+                        <textarea
+                            className={INPUT_CLASS}
+                            rows={2}
+                            value={formData.nf_service_description}
+                            onChange={e => setFormData({...formData, nf_service_description: e.target.value})}
+                            placeholder="Ex.: Ref. aos Serviços de Intermediação de Escolta Armada — contrato XYZ"
+                            maxLength={250}
+                            data-testid="input-client-nf-service-description"
+                        />
+                        <span className="text-[10px] text-gray-400">Quando preenchido, sobrescreve a descrição padrão da empresa emissora. Use para evitar erros do tipo NFe003 (descrição do serviço municipal).</span>
+                    </div>
+                    <div className="space-y-1.5">
+                        <label className={LABEL_CLASS}>Código serviço municipal (NF)</label>
+                        <input
+                            type="text"
+                            className={INPUT_CLASS}
+                            value={formData.nf_municipal_service_code}
+                            onChange={e => setFormData({...formData, nf_municipal_service_code: e.target.value})}
+                            placeholder="Ex.: 07930"
+                            data-testid="input-client-nf-municipal-service-code"
+                        />
+                    </div>
+                    <div className="space-y-1.5">
+                        <label className={LABEL_CLASS}>Nome serviço municipal (NF)</label>
+                        <input
+                            type="text"
+                            className={INPUT_CLASS}
+                            value={formData.nf_municipal_service_name}
+                            onChange={e => setFormData({...formData, nf_municipal_service_name: e.target.value})}
+                            placeholder="Ex.: 07930 - Monitoramento e rastreamento..."
+                            maxLength={200}
+                            data-testid="input-client-nf-municipal-service-name"
+                        />
                     </div>
                     <div className="space-y-1.5 flex items-end">
                         <label className="group relative w-full cursor-pointer">
