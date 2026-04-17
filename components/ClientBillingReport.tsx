@@ -753,6 +753,32 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
                 const snapTotal = snap.totalGeral ?? 0;
                 const useTotal = wasManuallyEdited ? dbTotal : (snapTotal > 0 ? snapTotal : (useBase + useKmEx + useHrEx + useToll));
 
+                // FALLBACK p/ snapshots legados: se franquia zerada mas há cálculo possível,
+                // busca os dados da tabela real para exibição (totais financeiros permanecem congelados)
+                let snapFranchiseHours = snap.franchiseHours ?? 0;
+                let snapFranchiseKm = snap.franchiseKm ?? 0;
+                let snapUnitHr = snap.unitHr ?? 0;
+                let snapUnitKm = snap.unitKm ?? 0;
+                let snapHrExtraQtd = snap.hrExtraQtd ?? 0;
+                let snapKmExtraQtd = snap.kmExtraQtd ?? 0;
+                let snapDurationHours = snap.durationHours ?? 0;
+
+                if (snapFranchiseHours === 0 && snapFranchiseKm === 0 && snapUnitHr === 0 && snapUnitKm === 0) {
+                    try {
+                        const finFallback = calculateMissionFinancials(m, priceTables, providerTables, clientData, new Date());
+                        const tblFallback = priceTables.find(t => t.id.toString() === finFallback.client.tableId);
+                        if (tblFallback) {
+                            snapFranchiseHours = tblFallback.franchise_hours ?? 0;
+                            snapFranchiseKm = tblFallback.franchise_km ?? 0;
+                            snapUnitHr = tblFallback.price_per_extra_hour ?? 0;
+                            snapUnitKm = tblFallback.price_per_extra_km ?? 0;
+                            snapHrExtraQtd = finFallback.client.excessHours ?? 0;
+                            snapKmExtraQtd = finFallback.client.excessKm ?? 0;
+                            snapDurationHours = finFallback.durationHours ?? 0;
+                        }
+                    } catch (e) { /* mantém zeros se falhar */ }
+                }
+
                 const kmTotal = (snap.kmTotal ?? 0) > 0 ? (snap.kmTotal ?? 0)
                     : ((m.start_km > 0 && m.end_km > 0 && m.end_km >= m.start_km) ? (m.end_km - m.start_km) : (m.total_distance || m.traveled_distance || 0));
 
@@ -767,10 +793,10 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
                     route: refCidades2,
                     client: displayClientName,
                     activationFee: useBase,
-                    franchiseHours: snap.franchiseHours ?? 0,
-                    franchiseKm: snap.franchiseKm ?? 0,
-                    unitHr: snap.unitHr ?? 0,
-                    unitKm: snap.unitKm ?? 0,
+                    franchiseHours: snapFranchiseHours,
+                    franchiseKm: snapFranchiseKm,
+                    unitHr: snapUnitHr,
+                    unitKm: snapUnitKm,
                     tollLabel: 'À PARTE',
                     status: 'CONCLUÍDO',
                     missionStatus: m.status || 'Concluída',
@@ -786,17 +812,17 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
                     kmTotal,
                     timeStart: fmtTime(m.start_time),
                     timeEnd: fmtTime(m.end_time),
-                    timeTotal: fmtHHMM(snap.durationHours ?? 0),
-                    kmExtraQtd: snap.kmExtraQtd ?? 0,
-                    kmExtraUnit: snap.unitKm ?? 0,
+                    timeTotal: fmtHHMM(snapDurationHours),
+                    kmExtraQtd: snapKmExtraQtd,
+                    kmExtraUnit: snapUnitKm,
                     kmExtraTotal: useKmEx,
-                    hrExtraQtd: snap.hrExtraQtd ?? 0,
-                    hrExtraUnit: snap.unitHr ?? 0,
+                    hrExtraQtd: snapHrExtraQtd,
+                    hrExtraUnit: snapUnitHr,
                     hrExtraTotal: useHrEx,
                     escoltaVal: useBase,
                     tollVal: useToll,
                     totalGeral: useTotal,
-                    franchiseHoursFmt: fmtFranchiseHr(snap.franchiseHours ?? 0),
+                    franchiseHoursFmt: fmtFranchiseHr(snapFranchiseHours),
                     frozen: true,
                     frozenBy: m.snapshot_approved_by,
                     referenceNumber: m.reference_number || '',
