@@ -450,7 +450,10 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
           const providerName = (initialMission.provider || '').trim();
           let ptQuery = supabase.from('provider_cost_tables').select('*');
           if (providerName) {
-              ptQuery = ptQuery.or(`provider.ilike.%${providerName}%,provider.eq.${providerName}`);
+              // Usa só ilike — .or() quebra com vírgulas no valor (PGRST100).
+              // Pega o primeiro token significativo (>2 chars) para ampliar a busca.
+              const firstToken = providerName.split(/[\s,.\-\/]+/).find((w: string) => w.length > 2) || providerName;
+              ptQuery = ptQuery.ilike('provider', `%${firstToken}%`);
           }
           const [mRes, ctRes, ptRes, clRes] = await Promise.all([
               supabase.from('missions').select('*').eq('id', initialMission.id).single(),
