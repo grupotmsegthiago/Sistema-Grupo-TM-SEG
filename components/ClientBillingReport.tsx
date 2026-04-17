@@ -52,7 +52,10 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
     const [showPasteModal, setShowPasteModal] = useState(false);
     const [pasteText, setPasteText] = useState('');
     const [pasteResult, setPasteResult] = useState<{ matched: any[]; onlySystem: any[]; onlySheet: any[]; divergences: any[] } | null>(null);
-    const [editingDivergence, setEditingDivergence] = useState<{ id: string; missionId: string; field: string; currentValue: number; isCurrency: boolean } | null>(null);
+    const [editingDivergence, setEditingDivergence] = useState<{ id: string; missionId: string; field: string; currentValue: number; isCurrency: boolean; sheetValue?: number; sysTotal?: number; sheetTotal?: number } | null>(null);
+    const [divEditInput, setDivEditInput] = useState('');
+    const [divEditSaving, setDivEditSaving] = useState(false);
+    const [divEditError, setDivEditError] = useState('');
     const [boletimFilter, setBoletimFilter] = useState<'todas' | 'aprovadas' | 'pendentes'>('todas');
     const [isRecalculating, setIsRecalculating] = useState(false);
     const [recalcResult, setRecalcResult] = useState<{ total: number; updated: number; skipped: number; errors: number } | null>(null);
@@ -2907,7 +2910,11 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
                                                                             <td className="text-center px-2 py-1.5">
                                                                                 {isDiff && (
                                                                                     <button
-                                                                                        onClick={() => setEditingDivergence({ id: d.id, missionId: `GTM-${d.id}`, field: f.label, currentValue: f.sysVal, isCurrency: f.isCurrency })}
+                                                                                        onClick={() => {
+                                                                                            setEditingDivergence({ id: d.id, missionId: `GTM-${d.id}`, field: f.label, currentValue: f.sysVal, isCurrency: f.isCurrency, sheetValue: f.sheetVal, sysTotal: d.sysTot, sheetTotal: d.sheetTot });
+                                                                                            setDivEditInput((d.sheetTot ?? 0).toFixed(2).replace('.', ','));
+                                                                                            setDivEditError('');
+                                                                                        }}
                                                                                         className="p-1 rounded hover:bg-red-100 text-gray-400 hover:text-red-600 transition-colors"
                                                                                         title="Editar no sistema"
                                                                                         data-testid={`edit-field-${d.id}-${j}`}
@@ -3022,38 +3029,97 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
                 </div>
             )}
             {editingDivergence && (
-                <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/60" onClick={() => setEditingDivergence(null)}>
-                    <div className="bg-white rounded-2xl shadow-2xl w-[380px] overflow-hidden" onClick={(e) => e.stopPropagation()}>
+                <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/60" onClick={() => { if (!divEditSaving) setEditingDivergence(null); }}>
+                    <div className="bg-white rounded-2xl shadow-2xl w-[420px] overflow-hidden" onClick={(e) => e.stopPropagation()}>
                         <div className="bg-gradient-to-r from-gray-900 to-red-900 px-5 py-3 flex items-center justify-between">
                             <div>
-                                <div className="text-white font-black text-xs tracking-wide">Ajustar Valor</div>
-                                <div className="text-red-300 text-[10px] font-bold mt-0.5">OS {editingDivergence.missionId} — {editingDivergence.field}</div>
+                                <div className="text-white font-black text-xs tracking-wide">Aceitar Valor da Planilha</div>
+                                <div className="text-red-300 text-[10px] font-bold mt-0.5">OS {editingDivergence.missionId} — Divergência em {editingDivergence.field}</div>
                             </div>
-                            <button onClick={() => setEditingDivergence(null)} className="text-white/60 hover:text-white"><X size={16} /></button>
+                            <button onClick={() => setEditingDivergence(null)} className="text-white/60 hover:text-white" disabled={divEditSaving}><X size={16} /></button>
                         </div>
                         <div className="p-5">
-                            <div className="mb-4">
-                                <label className="block text-[10px] font-black text-gray-500 uppercase tracking-widest mb-1">Valor Atual no Sistema</label>
-                                <div className="text-lg font-black text-gray-800">
-                                    {editingDivergence.isCurrency ? fmtBRL(editingDivergence.currentValue) : editingDivergence.currentValue.toLocaleString('pt-BR')}
+                            <div className="grid grid-cols-2 gap-3 mb-4">
+                                <div className="bg-gray-50 border border-gray-200 rounded-lg p-3 text-center">
+                                    <div className="text-[9px] font-black text-gray-500 uppercase tracking-widest mb-1">Total Sistema</div>
+                                    <div className="text-base font-black text-gray-800">{fmtBRL(editingDivergence.sysTotal ?? 0)}</div>
+                                </div>
+                                <div className="bg-blue-50 border border-blue-300 rounded-lg p-3 text-center">
+                                    <div className="text-[9px] font-black text-blue-600 uppercase tracking-widest mb-1">Total Planilha</div>
+                                    <div className="text-base font-black text-blue-800">{fmtBRL(editingDivergence.sheetTotal ?? 0)}</div>
                                 </div>
                             </div>
-                            <p className="text-[10px] text-gray-500 mb-4 bg-gray-50 rounded-lg p-3 border border-gray-200">
-                                Para corrigir este valor, abra a tela de Auditoria de Faturamento onde poderá editar todos os campos financeiros da missão.
-                            </p>
+                            <div className="mb-4">
+                                <label className="block text-[10px] font-black text-gray-700 uppercase tracking-widest mb-1.5">Novo Total Geral (R$)</label>
+                                <input
+                                    type="text"
+                                    inputMode="decimal"
+                                    value={divEditInput}
+                                    onChange={(e) => { setDivEditInput(e.target.value); setDivEditError(''); }}
+                                    disabled={divEditSaving}
+                                    className="w-full px-4 py-2.5 border-2 border-gray-300 rounded-lg text-lg font-black text-gray-900 focus:border-blue-500 focus:outline-none font-mono"
+                                    placeholder="0,00"
+                                    data-testid="input-div-edit-value"
+                                />
+                                <p className="text-[10px] text-gray-500 mt-1.5">Este valor será gravado como o total cobrado da OS (Receita + Pedágio).</p>
+                            </div>
+                            {divEditError && (
+                                <div className="mb-3 bg-red-50 border border-red-300 rounded-lg p-2 text-[11px] font-bold text-red-700">{divEditError}</div>
+                            )}
                             <div className="flex gap-2">
+                                <button
+                                    onClick={async () => {
+                                        const newTotal = parseBRLNumber(divEditInput);
+                                        if (!isFinite(newTotal) || newTotal < 0) { setDivEditError('Informe um valor válido.'); return; }
+                                        const fullId = `GTM-${editingDivergence.id}`;
+                                        const m = missions.find((mm: any) => mm.id === fullId);
+                                        if (!m) { setDivEditError('Missão não encontrada.'); return; }
+                                        setDivEditSaving(true);
+                                        setDivEditError('');
+                                        try {
+                                            const userData = JSON.parse(localStorage.getItem('userData') || '{}');
+                                            const userName = userData.name || 'Usuário';
+                                            const tollVal = Math.max(0, m.toll_value || 0);
+                                            const newRevenue = Math.max(0, Math.round((newTotal - tollVal) * 100) / 100);
+                                            const reasonStamp = `[${userName} - ${new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' })}] Ajustado pela conferência da planilha do cliente (Total ${fmtBRL(newTotal)})`;
+                                            const { error } = await supabase.from('missions').update({
+                                                revenue_value: newRevenue,
+                                                billing_verified_by: userName,
+                                                billing_approved: true,
+                                                revenue_edit_reason: reasonStamp,
+                                                last_update: new Date().toISOString(),
+                                            }).eq('id', fullId);
+                                            if (error) { setDivEditError(error.message || 'Erro ao salvar.'); setDivEditSaving(false); return; }
+                                            setMissions(prev => prev.map((mm: any) => mm.id === fullId ? { ...mm, revenue_value: newRevenue, billing_verified_by: userName, billing_approved: true, revenue_edit_reason: reasonStamp } : mm));
+                                            setEditingDivergence(null);
+                                            setDivEditSaving(false);
+                                            setPendingRecompare(true);
+                                            setPasteResult(null);
+                                        } catch (err: any) {
+                                            setDivEditError(err?.message || 'Erro inesperado ao salvar.');
+                                            setDivEditSaving(false);
+                                        }
+                                    }}
+                                    disabled={divEditSaving}
+                                    className="flex-1 bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 disabled:opacity-50 text-white font-black uppercase text-[10px] tracking-widest py-2.5 rounded-lg flex items-center justify-center gap-2"
+                                    data-testid="btn-save-divergence"
+                                >
+                                    {divEditSaving ? <Loader2 size={12} className="animate-spin" /> : <Check size={12} />} {divEditSaving ? 'Salvando...' : 'Salvar e Recomparar'}
+                                </button>
                                 <button
                                     onClick={() => {
                                         const mId = editingDivergence.missionId;
                                         if (onOpenMission) onOpenMission(mId);
                                         setEditingDivergence(null);
                                     }}
-                                    className="flex-1 bg-gradient-to-r from-red-600 to-red-700 hover:from-red-700 hover:to-red-800 text-white font-black uppercase text-[10px] tracking-widest py-2.5 rounded-lg flex items-center justify-center gap-2"
+                                    disabled={divEditSaving}
+                                    className="px-3 bg-gradient-to-r from-gray-700 to-gray-800 hover:from-gray-800 hover:to-gray-900 text-white font-black uppercase text-[10px] tracking-widest py-2.5 rounded-lg flex items-center justify-center gap-1"
                                     data-testid="btn-open-audit-modal"
+                                    title="Abrir Auditoria de Faturamento"
                                 >
-                                    <ExternalLink size={12} /> Abrir Auditoria de Faturamento
+                                    <ExternalLink size={12} /> Auditoria
                                 </button>
-                                <button onClick={() => setEditingDivergence(null)} className="px-4 bg-gray-100 hover:bg-gray-200 text-gray-600 font-bold text-[10px] uppercase py-2.5 rounded-lg">Fechar</button>
+                                <button onClick={() => setEditingDivergence(null)} disabled={divEditSaving} className="px-3 bg-gray-100 hover:bg-gray-200 text-gray-600 font-bold text-[10px] uppercase py-2.5 rounded-lg">Cancelar</button>
                             </div>
                         </div>
                     </div>
