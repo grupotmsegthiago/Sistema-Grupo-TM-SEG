@@ -2875,11 +2875,25 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
                                             <div className="space-y-3 max-h-[400px] overflow-y-auto pr-1">
                                                 {pasteResult.divergences.map((d: any, i: number) => (
                                                     <div key={i} className="border border-red-200 rounded-xl overflow-hidden" data-testid={`divergence-row-${d.id}`}>
-                                                        <div className="bg-gradient-to-r from-gray-900 to-red-900 px-4 py-2 flex items-center justify-between">
+                                                        <div className="bg-gradient-to-r from-gray-900 to-red-900 px-4 py-2 flex items-center justify-between gap-2 flex-wrap">
                                                             <span className="font-black text-white text-xs tracking-wide">OS GTM-{d.id}</span>
-                                                            <span className="bg-red-500 text-white font-black text-[9px] px-2 py-0.5 rounded-full">
-                                                                {fmtBRL(Math.abs(d.sysTot - d.sheetTot))}
-                                                            </span>
+                                                            <div className="flex items-center gap-2">
+                                                                <span className="bg-red-500 text-white font-black text-[9px] px-2 py-0.5 rounded-full whitespace-nowrap">
+                                                                    {fmtBRL(Math.abs(d.sysTot - d.sheetTot))}
+                                                                </span>
+                                                                <button
+                                                                    onClick={() => {
+                                                                        setEditingDivergence({ id: d.id, missionId: `GTM-${d.id}`, field: 'Total', currentValue: d.sysTot, isCurrency: true, sheetValue: d.sheetTot, sysTotal: d.sysTot, sheetTotal: d.sheetTot });
+                                                                        setDivEditInput((d.sheetTot ?? 0).toFixed(2).replace('.', ','));
+                                                                        setDivEditError('');
+                                                                    }}
+                                                                    className="bg-blue-500 hover:bg-blue-400 active:bg-blue-600 text-white font-black text-[10px] uppercase tracking-wider px-3 py-1.5 rounded-md flex items-center gap-1 whitespace-nowrap shadow-sm"
+                                                                    data-testid={`btn-accept-sheet-${d.id}`}
+                                                                    title={`Gravar ${fmtBRL(d.sheetTot)} como total da OS`}
+                                                                >
+                                                                    <Check size={11} /> Aceitar {fmtBRL(d.sheetTot)}
+                                                                </button>
+                                                            </div>
                                                         </div>
                                                         <table className="w-full text-[11px]">
                                                             <thead>
