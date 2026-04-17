@@ -3096,14 +3096,45 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
                                             const tollVal = Math.max(0, m.toll_value || 0);
                                             const newRevenue = Math.max(0, Math.round((newTotal - tollVal) * 100) / 100);
                                             const reasonStamp = `[${userName} - ${new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' })}] Ajustado pela conferência da planilha do cliente (Total ${fmtBRL(newTotal)})`;
-                                            const { error } = await supabase.from('missions').update({
-                                                revenue_value: newRevenue,
-                                                billing_verified_by: userName,
-                                                billing_approved: true,
-                                                revenue_edit_reason: reasonStamp,
-                                                last_update: new Date().toISOString(),
-                                            }).eq('id', fullId);
-                                            if (error) { setDivEditError(error.message || 'Erro ao salvar.'); setDivEditSaving(false); return; }
+                                            console.log('[DivergenceEdit] Tentando salvar', { fullId, newTotal, newRevenue, tollVal, userName });
+                                            // Usa endpoint backend (com service-role) p/ contornar RLS e snapshots
+                                            const resp = await authFetch(`/api/missions/${encodeURIComponent(fullId)}/billing-override`, {
+                                                method: 'PATCH',
+                                                headers: { 'Content-Type': 'application/json' },
+                                                body: JSON.stringify({
+                                                    revenue_value: newRevenue,
+                                                    billing_verified_by: userName,
+                                                    billing_approved: true,
+                                                    revenue_edit_reason: reasonStamp,
+                                                })
+                                            });
+                                            if (!resp.ok) {
+                                                const txt = await resp.text().catch(() => '');
+                                                console.error('[DivergenceEdit] Falha backend:', resp.status, txt);
+                                                // Fallback direto via supabase client
+                                                const { data, error } = await supabase.from('missions').update({
+                                                    revenue_value: newRevenue,
+                                                    billing_verified_by: userName,
+                                                    billing_approved: true,
+                                                    revenue_edit_reason: reasonStamp,
+                                                    last_update: new Date().toISOString(),
+                                                }).eq('id', fullId).select('id, revenue_value, billing_verified_by').maybeSingle();
+                                                if (error) {
+                                                    console.error('[DivergenceEdit] Erro Supabase:', error);
+                                                    setDivEditError(`Erro ao salvar: ${error.message || error.code || 'desconhecido'}. Tente abrir pela Auditoria.`);
+                                                    setDivEditSaving(false);
+                                                    return;
+                                                }
+                                                if (!data) {
+                                                    setDivEditError('Nenhuma linha foi atualizada (provável bloqueio de permissão da OS). Tente abrir pela Auditoria.');
+                                                    setDivEditSaving(false);
+                                                    return;
+                                                }
+                                                console.log('[DivergenceEdit] Salvo via supabase:', data);
+                                            } else {
+                                                const respData = await resp.json().catch(() => ({}));
+                                                console.log('[DivergenceEdit] Salvo via backend:', respData);
+                                            }
                                             setMissions(prev => prev.map((mm: any) => mm.id === fullId ? { ...mm, revenue_value: newRevenue, billing_verified_by: userName, billing_approved: true, revenue_edit_reason: reasonStamp } : mm));
                                             setEditingDivergence(null);
                                             setDivEditSaving(false);

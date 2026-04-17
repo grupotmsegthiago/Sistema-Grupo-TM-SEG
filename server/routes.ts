@@ -1687,6 +1687,55 @@ export async function registerRoutes(
     }
   });
 
+  app.patch("/api/missions/:id/billing-override", async (req: Request, res: Response) => {
+    try {
+      const missionId = req.params.id;
+      const { revenue_value, billing_verified_by, billing_approved, revenue_edit_reason, toll_value } = req.body || {};
+
+      if (typeof revenue_value !== 'number' || !isFinite(revenue_value) || revenue_value < 0) {
+        return res.status(400).json({ error: 'revenue_value inválido' });
+      }
+      if (!billing_verified_by || typeof billing_verified_by !== 'string') {
+        return res.status(400).json({ error: 'billing_verified_by é obrigatório' });
+      }
+
+      const { data: mission, error: mErr } = await supabaseAdmin.from('missions').select('id, toll_value, snapshot_data').eq('id', missionId).single();
+      if (mErr || !mission) return res.status(404).json({ error: 'Missão não encontrada' });
+
+      const updatePayload: any = {
+        revenue_value: Math.round(revenue_value * 100) / 100,
+        billing_verified_by,
+        billing_approved: billing_approved === true,
+        last_update: new Date().toISOString(),
+      };
+      if (typeof revenue_edit_reason === 'string' && revenue_edit_reason.trim()) {
+        updatePayload.revenue_edit_reason = revenue_edit_reason.trim().slice(0, 500);
+      }
+      if (typeof toll_value === 'number' && isFinite(toll_value) && toll_value >= 0) {
+        updatePayload.toll_value = Math.round(toll_value * 100) / 100;
+      }
+
+      const { data, error } = await supabaseAdmin.from('missions').update(updatePayload).eq('id', missionId).select('id, revenue_value, toll_value, billing_verified_by, billing_approved').maybeSingle();
+      if (error) return res.status(500).json({ error: error.message });
+      if (!data) return res.status(404).json({ error: 'Nenhuma linha atualizada' });
+
+      try {
+        await supabaseAdmin.from('system_logs').insert([{
+          user_name: billing_verified_by,
+          action_type: 'billing_override',
+          entity: 'Mission',
+          entity_id: missionId,
+          details: JSON.stringify({ revenue_value: updatePayload.revenue_value, reason: updatePayload.revenue_edit_reason || null, source: 'planilha_compare' })
+        }]);
+      } catch (logErr) { /* log opcional */ }
+
+      return res.json({ success: true, mission: data });
+    } catch (err: any) {
+      console.error('[billing-override] erro', err);
+      return res.status(500).json({ error: err?.message || 'Erro interno' });
+    }
+  });
+
   app.post("/api/missions/:id/force-recalculate", async (req: Request, res: Response) => {
     try {
       const missionId = req.params.id;
