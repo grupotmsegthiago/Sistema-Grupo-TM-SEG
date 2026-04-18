@@ -9,7 +9,7 @@ import { calculateMissionFinancials } from "../lib/financialUtils";
 import fs from "fs";
 import path from "path";
 import pg from "pg";
-import { sendMissionEmailToClient, sendMissionEmailToProvider, sendMissionResendToClient, sendMirroringEvidenceEmail, sendMissionChangeNotificationToClient, sendMissionChangeNotificationToProvider, sendWelcomeEmail, sendTestEmail, sendVerificationCodeEmail, sendPasswordResetEmail, sendBillingEmail, sendLegalReportEmail, sendPendingInfoReport, sendApprovalPendingReport, sendCancelledMissingInfoEmail, sendDailyMissingInfoReport } from "./emailService";
+import { sendMissionEmailToClient, sendMissionEmailToProvider, sendMissionResendToClient, sendMirroringEvidenceEmail, sendMissionChangeNotificationToClient, sendMissionChangeNotificationToProvider, sendWelcomeEmail, sendTestEmail, sendVerificationCodeEmail, sendPasswordResetEmail, sendBillingEmail, sendLegalReportEmail, sendPendingInfoReport, sendApprovalPendingReport, sendCancelledMissingInfoEmail, sendDailyMissingInfoReport, sendStuckNfsReport } from "./emailService";
 import { findOrCreateCustomer, createPayment, getPayment, getPaymentPixQrCode, getPaymentBankSlip, listPayments, deletePayment, mapAsaasStatus, isAsaasConfigured, getAsaasCompanies, scheduleInvoice, listMunicipalServices, getInvoiceByPayment, getAllBalances } from "./asaasService";
 
 const resend = new Resend(process.env.RESEND_API_KEY);
@@ -3341,6 +3341,50 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
     }
   });
 
+  app.get("/api/nf/summary", requireAuth, requireRole('administrador', 'diretoria', 'financeiro'), async (_req: Request, res: Response) => {
+    try {
+      const sbUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || '';
+      const sbKey = process.env.SUPABASE_SERVICE_KEY || process.env.VITE_SUPABASE_ANON_KEY || '';
+      if (!sbUrl || !sbKey) return res.json({ success: true, summary: [], stuck: [] });
+      const sb = createClient(sbUrl, sbKey);
+      const { data, error } = await sb.from('financial_invoices')
+        .select('id, client, number, amount, issuer_company, nf_status, nf_retry_at, created_at, asaas_payment_id')
+        .not('asaas_payment_id', 'is', null);
+      if (error) return res.status(500).json({ error: error.message });
+      const byCompany: Record<string, any> = {};
+      const stuck: any[] = [];
+      const now = Date.now();
+      (data || []).forEach((r: any) => {
+        const c = r.issuer_company || '(sem emissora)';
+        if (!byCompany[c]) byCompany[c] = { company: c, total: 0, authorized: 0, synchronized: 0, scheduled: 0, error: 0, stuck: 0, canceled: 0, other: 0 };
+        byCompany[c].total++;
+        const s = (r.nf_status || '').toUpperCase();
+        if (s === 'AUTHORIZED') byCompany[c].authorized++;
+        else if (s === 'SYNCHRONIZED') {
+          byCompany[c].synchronized++;
+          const ref = r.nf_retry_at || r.created_at;
+          const ageH = ref ? (now - new Date(ref).getTime()) / 3600_000 : 0;
+          if (ageH >= 24) {
+            byCompany[c].stuck++;
+            stuck.push({ ...r, hours_stuck: Math.floor(ageH) });
+          }
+        } else if (s === 'SCHEDULED') byCompany[c].scheduled++;
+        else if (s === 'ERROR' || s === 'FAILED') byCompany[c].error++;
+        else if (s === 'STUCK') {
+          byCompany[c].stuck++;
+          const ref = r.nf_retry_at || r.created_at;
+          const ageH = ref ? (now - new Date(ref).getTime()) / 3600_000 : 0;
+          stuck.push({ ...r, hours_stuck: Math.floor(ageH) });
+        }
+        else if (s === 'CANCELED') byCompany[c].canceled++;
+        else byCompany[c].other++;
+      });
+      res.json({ success: true, summary: Object.values(byCompany), stuck });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   app.get("/api/asaas/balances", requireAuth, requireRole('administrador', 'diretoria', 'financeiro', 'ceo'), async (_req: Request, res: Response) => {
     try {
       const balances = await getAllBalances();
@@ -4789,6 +4833,56 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
       res.json({ success: sent, total: missions.length, emailTo: MISSING_INFO_REPORT_EMAILS, date: reportDate });
     } catch (err: any) {
       console.error('[Dados Faltantes] Erro manual:', err.message);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // ═══════════════════════════════════════════════════════
+  // NF Travadas — relatório diário às 09:00
+  // ═══════════════════════════════════════════════════════
+  const STUCK_NF_REPORT_EMAILS = 'thiago@grupotmseg.com.br, michelle@grupotmseg.com.br, daniel@grupotmseg.com.br';
+
+  async function executeDailyStuckNfReport() {
+    const now = new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' });
+    console.log(`[NF Travadas Diário] Iniciando varredura — ${now}`);
+    try {
+      const { listStuckNfs } = await import('./nfRetryWorker');
+      const items = await listStuckNfs();
+      console.log(`[NF Travadas Diário] ${items.length} NF(s) travadas encontradas`);
+      if (items.length > 0) {
+        const reportDate = new Date().toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' });
+        const sent = await sendStuckNfsReport(STUCK_NF_REPORT_EMAILS, items, reportDate);
+        if (sent) console.log(`[NF Travadas Diário] Relatório enviado para ${STUCK_NF_REPORT_EMAILS}`);
+      } else {
+        console.log(`[NF Travadas Diário] Sem NFs travadas — email não enviado.`);
+      }
+    } catch (err: any) {
+      console.error(`[NF Travadas Diário] Erro fatal:`, err.message);
+    }
+  }
+
+  function scheduleDailyStuckNfReport() {
+    const checkInterval = () => {
+      const now = new Date();
+      const brasiliaTime = new Date(now.toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' }));
+      if (brasiliaTime.getHours() === 9 && brasiliaTime.getMinutes() === 0) {
+        executeDailyStuckNfReport();
+      }
+    };
+    setInterval(checkInterval, 60 * 1000);
+    console.log(`[NF Travadas Diário] Agendamento ativo — relatório será enviado todos os dias às 09:00 (Brasília) para ${STUCK_NF_REPORT_EMAILS}`);
+  }
+
+  scheduleDailyStuckNfReport();
+
+  app.post("/api/relatorio-nfs-travadas", requireAuth, requireRole('administrador', 'diretoria', 'financeiro'), async (_req: Request, res: Response) => {
+    try {
+      const { listStuckNfs } = await import('./nfRetryWorker');
+      const items = await listStuckNfs();
+      const reportDate = new Date().toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' });
+      const sent = items.length > 0 ? await sendStuckNfsReport(STUCK_NF_REPORT_EMAILS, items, reportDate) : false;
+      res.json({ success: sent, total: items.length, emailTo: STUCK_NF_REPORT_EMAILS, date: reportDate });
+    } catch (err: any) {
       res.status(500).json({ error: err.message });
     }
   });

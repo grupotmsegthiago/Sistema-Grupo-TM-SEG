@@ -34,6 +34,11 @@ interface Invoice {
   asaas_barcode?: string;
   nf_status?: string;
   nf_number?: string;
+  nf_retry_at?: string;
+  nf_last_error?: string;
+  nf_retry_count?: number;
+  nf_retry_paused?: boolean;
+  created_at?: string;
 }
 
 type StatusFilter = 'ALL' | 'EMITIDA' | 'PAGA' | 'VENCIDA' | 'CANCELADA';
@@ -72,6 +77,30 @@ const FinancialInvoiceControl: React.FC = () => {
   const [showRetroModal, setShowRetroModal] = useState(false);
   const [retroForm, setRetroForm] = useState({ client: '', number: '', amount: '', date: '', dueDate: '', notes: '', issuer_company: 'TM GESTÃO' });
   const [savingRetro, setSavingRetro] = useState(false);
+  const [bulkRetrying, setBulkRetrying] = useState(false);
+
+  const handleBulkRetryNfs = async () => {
+    if (!confirm('Reemitir TODAS as NFs pendentes agora?\n\nIsso vai:\n• Tentar autorizar NFs em ERRO\n• Cancelar e reagendar NFs travadas em SYNCHRONIZED há > 6h\n• Marcar como TRAVADA e pausar as que estão em SYNCHRONIZED há > 24h')) return;
+    setBulkRetrying(true);
+    try {
+      const res = await authFetch('/api/nf/retry-now', { method: 'POST' });
+      const data = await res.json();
+      if (!res.ok || !data.success) throw new Error(data.error || 'Falha ao executar ciclo.');
+      const parts = [
+        `${data.processed || 0} fatura(s) processada(s)`,
+        `✓ ${data.ok || 0} OK`,
+        `⏸ ${data.paused || 0} pausada(s)`,
+        `🚨 ${data.stuck || 0} travada(s)`,
+        `✗ ${data.errors || 0} erro(s)`,
+      ];
+      alert('Ciclo de reemissão concluído!\n\n' + parts.join('\n'));
+      await fetchInvoices();
+    } catch (e: any) {
+      alert('Erro: ' + e.message);
+    } finally {
+      setBulkRetrying(false);
+    }
+  };
 
   const fetchInvoices = useCallback(async () => {
     setLoading(true);
@@ -338,6 +367,9 @@ const FinancialInvoiceControl: React.FC = () => {
           <p className="text-xs text-gray-400 font-semibold mt-1">Notas Fiscais, Boletos, Cobranças Asaas — Integrado ao Contas a Receber</p>
         </div>
         <div className="flex gap-2">
+          <button onClick={handleBulkRetryNfs} disabled={bulkRetrying} className="flex items-center gap-2 bg-amber-600 hover:bg-amber-700 text-white px-4 py-2 rounded-lg text-xs font-bold shadow-sm disabled:opacity-60" data-testid="btn-bulk-retry-nfs" title="Executa o ciclo do worker imediatamente — cancela e reagenda NFs travadas">
+            {bulkRetrying ? <Loader2 size={14} className="animate-spin" /> : <FileText size={14} />} Reemitir TODAS NFs pendentes
+          </button>
           <button onClick={() => setShowRetroModal(true)} className="flex items-center gap-2 bg-blue-700 hover:bg-blue-800 text-white px-4 py-2 rounded-lg text-xs font-bold shadow-sm" data-testid="btn-retro-invoice">
             <Calendar size={14} /> Lançar Retroativo
           </button>
@@ -440,28 +472,40 @@ const FinancialInvoiceControl: React.FC = () => {
                       <td className="px-4 py-3 text-center">
                         {inv.asaas_payment_id ? (() => {
                           const ns = inv.nf_status?.toUpperCase();
-                          const nfLabel = ns === 'AUTHORIZED' ? 'Autorizada'
-                            : ns === 'SCHEDULED' ? 'Agendada'
-                            : ns === 'PROCESSING' ? 'Processando'
-                            : ns === 'CANCELED' ? 'Cancelada'
-                            : ns === 'ERROR' ? 'Erro'
-                            : ns === 'WAITING_CUSTOMER_ACCEPTANCE' ? 'Aguardando'
-                            : ns || 'Pendente';
-                          const nfColor = ns === 'AUTHORIZED' ? 'text-emerald-700 bg-emerald-50 border-emerald-200'
-                            : ns === 'SCHEDULED' ? 'text-blue-600 bg-blue-50 border-blue-200'
-                            : ns === 'PROCESSING' ? 'text-amber-600 bg-amber-50 border-amber-200'
-                            : ns === 'CANCELED' || ns === 'ERROR' ? 'text-red-600 bg-red-50 border-red-200'
+                          const ref = inv.nf_retry_at || inv.created_at;
+                          const ageH = ref ? Math.floor((Date.now() - new Date(ref).getTime()) / 3600_000) : null;
+                          const isStuckSync = ns === 'SYNCHRONIZED' && ageH !== null && ageH >= 24;
+                          const effectiveStatus = isStuckSync ? 'STUCK' : ns;
+                          const nfLabel = effectiveStatus === 'AUTHORIZED' ? 'Autorizada'
+                            : effectiveStatus === 'SCHEDULED' ? 'Agendada'
+                            : effectiveStatus === 'SYNCHRONIZED' ? 'Em fila Prefeitura'
+                            : effectiveStatus === 'STUCK' ? 'TRAVADA — verificar Asaas'
+                            : effectiveStatus === 'PROCESSING' ? 'Processando'
+                            : effectiveStatus === 'CANCELED' ? 'Cancelada'
+                            : effectiveStatus === 'ERROR' ? 'Erro'
+                            : effectiveStatus === 'WAITING_CUSTOMER_ACCEPTANCE' ? 'Aguardando'
+                            : effectiveStatus || 'Pendente';
+                          const nfColor = effectiveStatus === 'AUTHORIZED' ? 'text-emerald-700 bg-emerald-50 border-emerald-200'
+                            : effectiveStatus === 'SCHEDULED' ? 'text-blue-600 bg-blue-50 border-blue-200'
+                            : effectiveStatus === 'SYNCHRONIZED' ? 'text-indigo-600 bg-indigo-50 border-indigo-200'
+                            : effectiveStatus === 'STUCK' ? 'text-white bg-red-600 border-red-700 animate-pulse'
+                            : effectiveStatus === 'PROCESSING' ? 'text-amber-600 bg-amber-50 border-amber-200'
+                            : effectiveStatus === 'CANCELED' || effectiveStatus === 'ERROR' ? 'text-red-600 bg-red-50 border-red-200'
                             : 'text-gray-500 bg-gray-50 border-gray-200';
-                          const NfIcon = ns === 'AUTHORIZED' ? CheckCircle2
-                            : ns === 'CANCELED' || ns === 'ERROR' ? XCircle
-                            : ns === 'PROCESSING' || ns === 'SCHEDULED' ? Clock
+                          const NfIcon = effectiveStatus === 'AUTHORIZED' ? CheckCircle2
+                            : effectiveStatus === 'STUCK' ? AlertCircle
+                            : effectiveStatus === 'CANCELED' || effectiveStatus === 'ERROR' ? XCircle
+                            : effectiveStatus === 'PROCESSING' || effectiveStatus === 'SCHEDULED' || effectiveStatus === 'SYNCHRONIZED' ? Clock
                             : AlertCircle;
                           return (
                             <div className="flex flex-col items-center gap-0.5">
-                              <span className={`inline-flex items-center gap-1 text-[9px] font-bold px-2 py-0.5 rounded-full border ${nfColor}`}>
+                              <span className={`inline-flex items-center gap-1 text-[9px] font-bold px-2 py-0.5 rounded-full border ${nfColor}`} title={inv.nf_last_error || ''}>
                                 <NfIcon size={9} /> {nfLabel}
                               </span>
                               {inv.nf_number && <span className="text-[8px] text-gray-400 font-mono">Nº {inv.nf_number}</span>}
+                              {(effectiveStatus === 'SYNCHRONIZED' || effectiveStatus === 'STUCK') && ageH !== null && ageH >= 1 && (
+                                <span className={`text-[8px] font-bold ${isStuckSync ? 'text-red-600' : 'text-indigo-500'}`}>há {ageH}h</span>
+                              )}
                             </div>
                           );
                         })() : <span className="text-[10px] text-gray-300">—</span>}

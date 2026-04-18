@@ -477,6 +477,10 @@ export async function getInvoice(invoiceId: string, company?: string): Promise<a
   return asaasFetch(`/invoices/${invoiceId}`, {}, company);
 }
 
+export async function cancelInvoice(invoiceId: string, company?: string): Promise<any> {
+  return asaasFetch(`/invoices/${invoiceId}/cancel`, { method: 'POST' }, company);
+}
+
 export async function getInvoiceByPayment(paymentId: string, company?: string): Promise<any> {
   return asaasFetch(`/invoices?payment=${paymentId}`, {}, company);
 }

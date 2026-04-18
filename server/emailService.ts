@@ -1129,4 +1129,59 @@ export async function sendDailyMissingInfoReport(to: string, missions: any[], re
   }
 }
 
+export async function sendStuckNfsReport(to: string, items: any[], reportDate: string): Promise<boolean> {
+  if (!items || items.length === 0) return false;
+  const byCompany: Record<string, any[]> = {};
+  items.forEach(it => {
+    const k = it.issuer_company || '(sem emissora)';
+    if (!byCompany[k]) byCompany[k] = [];
+    byCompany[k].push(it);
+  });
+  const fmtBRL = (v: number) => Number(v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+  const blocks = Object.entries(byCompany).map(([company, list]) => {
+    const rows = list.map(it => `<tr>
+      <td style="padding:8px 12px; border-bottom:1px solid #eee; font-weight:600;">${it.number || it.id?.substring(0, 8)}</td>
+      <td style="padding:8px 12px; border-bottom:1px solid #eee;">${it.client || '—'}</td>
+      <td style="padding:8px 12px; border-bottom:1px solid #eee; text-align:right;">${fmtBRL(it.amount)}</td>
+      <td style="padding:8px 12px; border-bottom:1px solid #eee; text-align:center;">${it.hours_stuck || '—'}h</td>
+      <td style="padding:8px 12px; border-bottom:1px solid #eee; color:#c0392b; font-weight:600;">${it.nf_status || '—'}</td>
+    </tr>`).join('');
+    return `<h3 style="margin-top:20px; color:#c0392b;">${company} — ${list.length} NF(s) travada(s)</h3>
+      <table style="width:100%; border-collapse:collapse; margin:8px 0; font-size:13px;">
+        <thead><tr style="background:#1a1a1a; color:#fff;">
+          <th style="padding:10px 12px; text-align:left;">NF</th>
+          <th style="padding:10px 12px; text-align:left;">Cliente</th>
+          <th style="padding:10px 12px; text-align:right;">Valor</th>
+          <th style="padding:10px 12px; text-align:center;">Tempo travada</th>
+          <th style="padding:10px 12px; text-align:left;">Status</th>
+        </tr></thead>
+        <tbody>${rows}</tbody>
+      </table>`;
+  }).join('');
+
+  const html = baseTemplate(`
+    <h2>NFs Travadas — Verificação Necessária no Asaas</h2>
+    <div class="highlight-box">
+      <p><strong>${items.length} NF(s)</strong> permanecem em andamento há mais de 24 horas sem autorização da Prefeitura.</p>
+      <p style="margin-top:8px;">Causa provável: configuração da empresa emissora no Asaas (Inscrição Municipal, certificado digital ou habilitação na Prefeitura). Verifique o painel do Asaas das empresas listadas abaixo.</p>
+    </div>
+    ${blocks}
+    <p style="font-size:12px; color:#999; margin-top:24px;">Relatório gerado automaticamente pelo TMSEGo. Faturas listadas estão pausadas para retentativas até o problema ser resolvido. Use o botão "Reemitir NF" no controle financeiro após corrigir a configuração.</p>
+  `);
+
+  try {
+    await transporter.sendMail({
+      from: SMTP_FROM,
+      to,
+      subject: `🚨 NFs travadas no Asaas — ${items.length} pendente(s) — ${reportDate}`,
+      html,
+    });
+    console.log(`[Email] Relatório de NFs travadas enviado → ${to} | ${items.length} NF(s)`);
+    return true;
+  } catch (err: any) {
+    console.error(`[Email] Erro ao enviar relatório de NFs travadas:`, err.message);
+    return false;
+  }
+}
+
 export { transporter };
