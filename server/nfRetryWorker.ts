@@ -286,7 +286,7 @@ export async function retryOne(inv: PendingInvoice, opts?: { clientCnpj?: string
     await markInvoice(inv.id, {
       nf_status: newInv?.status || 'SCHEDULED',
       asaas_invoice_id: newInv?.id || inv.asaas_invoice_id,
-      nf_retry_count: nextCount,
+      nf_retry_count: reissueCount,
       nf_retry_at: new Date().toISOString(),
       nf_last_error: null,
     });
@@ -296,7 +296,7 @@ export async function retryOne(inv: PendingInvoice, opts?: { clientCnpj?: string
     const paused = isNonRetryable(msg);
     await markInvoice(inv.id, {
       nf_status: 'ERROR',
-      nf_retry_count: nextCount,
+      nf_retry_count: reissueCount,
       nf_retry_at: new Date().toISOString(),
       nf_last_error: msg.substring(0, 500),
       nf_retry_paused: paused,
