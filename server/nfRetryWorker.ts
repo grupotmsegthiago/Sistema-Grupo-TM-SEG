@@ -129,7 +129,12 @@ function ageHoursSince(iso?: string | null): number {
 export async function retryOne(inv: PendingInvoice, opts?: { clientCnpj?: string; serviceDescription?: string }): Promise<{ ok: boolean; status?: string; pdfUrl?: string; number?: string; error?: string; paused?: boolean; action?: string }> {
   const company = inv.issuer_company || undefined;
   const paymentId = inv.asaas_payment_id!;
-  const nextCount = (inv.nf_retry_count || 0) + 1;
+  // IMPORTANTE: nf_retry_count conta APENAS tentativas reais de reemissão
+  // (scheduleInvoice ou cancel+reschedule). Polling passivo (SYNCHRONIZED em
+  // janela normal, SCHEDULED, PROCESSING_CANCELLATION) NÃO incrementa o
+  // contador — caso contrário o limite de 3 reemissões em SYNC seria atingido
+  // só com polling, e a escalação para STUCK em 24h ficaria bloqueada.
+  const reissueCount = (inv.nf_retry_count || 0) + 1;
 
   // 1) Verifica estado atual no Asaas
   let currentInvoice: any = null;
@@ -142,7 +147,8 @@ export async function retryOne(inv: PendingInvoice, opts?: { clientCnpj?: string
       currentInvoice = items.find((n: any) => n.status === 'AUTHORIZED' || n.pdfUrl) || items[0] || null;
     }
   } catch (e: any) {
-    await markInvoice(inv.id, { nf_retry_count: nextCount, nf_retry_at: new Date().toISOString(), nf_last_error: e.message });
+    // Falha de comunicação/consulta — não incrementa contador (não é tentativa real de reemissão).
+    await markInvoice(inv.id, { nf_retry_at: new Date().toISOString(), nf_last_error: e.message.substring(0, 500) });
     return { ok: false, error: e.message };
   }
 
@@ -179,7 +185,7 @@ export async function retryOne(inv: PendingInvoice, opts?: { clientCnpj?: string
       return { ok: false, paused: true, status: 'STUCK', action: 'stuck-alert' };
     }
 
-    // 3b) Engasgada > 6h — cancela e reemite (até MAX_SYNC_RETRIES)
+    // 3b) Engasgada > 6h — cancela e reemite (até MAX_SYNC_RETRIES tentativas REAIS de reemissão)
     if (ageH >= STUCK_HOURS_RETRY && syncRetries < MAX_SYNC_RETRIES) {
       let cancelled = false;
       try {
@@ -189,12 +195,12 @@ export async function retryOne(inv: PendingInvoice, opts?: { clientCnpj?: string
       } catch (e: any) {
         // CRÍTICO: se a NF está em "Processando emissão" / status que impede cancelamento,
         // NÃO podemos criar uma nova — risco de NF duplicada quando a original completar.
-        // Apenas registramos e aguardamos próximo ciclo.
+        // Apenas registramos e aguardamos próximo ciclo. NÃO incrementa contador
+        // (não foi tentativa real de reemissão — foi bloqueada antes).
         console.log(`[NF Retry] não foi possível cancelar ${currentInvoice.id}: ${e.message} — aguardando próximo ciclo (sem criar duplicata).`);
         await markInvoice(inv.id, {
           nf_status: 'SYNCHRONIZED',
           asaas_invoice_id: currentInvoice.id,
-          nf_retry_count: nextCount,
           nf_retry_at: new Date().toISOString(),
           nf_last_error: `Cancelamento bloqueado: ${e.message}`.substring(0, 500),
         });
@@ -211,10 +217,11 @@ export async function retryOne(inv: PendingInvoice, opts?: { clientCnpj?: string
           clientName: inv.client,
           serviceDescription: opts?.serviceDescription,
         });
+        // Tentativa REAL de reemissão concluída — incrementa contador.
         await markInvoice(inv.id, {
           nf_status: newInv?.status || 'SCHEDULED',
           asaas_invoice_id: newInv?.id || null,
-          nf_retry_count: nextCount,
+          nf_retry_count: reissueCount,
           nf_retry_at: new Date().toISOString(),
           nf_last_error: null,
         });
@@ -222,9 +229,10 @@ export async function retryOne(inv: PendingInvoice, opts?: { clientCnpj?: string
       } catch (e: any) {
         const msg = e.message || String(e);
         const paused = isNonRetryable(msg);
+        // Reemissão tentada e falhou — também conta.
         await markInvoice(inv.id, {
           nf_status: 'ERROR',
-          nf_retry_count: nextCount,
+          nf_retry_count: reissueCount,
           nf_retry_at: new Date().toISOString(),
           nf_last_error: msg.substring(0, 500),
           nf_retry_paused: paused,
@@ -233,22 +241,22 @@ export async function retryOne(inv: PendingInvoice, opts?: { clientCnpj?: string
       }
     }
 
-    // 3c) SYNCHRONIZED ainda dentro da janela normal — só registra
+    // 3c) SYNCHRONIZED ainda dentro da janela normal — só registra estado.
+    // NÃO incrementa contador: é polling passivo, e bloquearia a escalação para STUCK em 24h.
     await markInvoice(inv.id, {
       nf_status: 'SYNCHRONIZED',
       asaas_invoice_id: currentInvoice.id,
-      nf_retry_count: nextCount,
       nf_retry_at: inv.nf_retry_at || new Date().toISOString(),
     });
     return { ok: false, status: 'SYNCHRONIZED', action: 'wait' };
   }
 
-  // 4) Em andamento legítimo (SCHEDULED, processando cancelamento) — só registra
+  // 4) Em andamento legítimo (SCHEDULED, processando cancelamento) — só registra estado.
+  // NÃO incrementa contador (polling passivo).
   if (currentInvoice && ['SCHEDULED', 'PROCESSING_CANCELLATION'].includes(currentInvoice.status)) {
     await markInvoice(inv.id, {
       nf_status: currentInvoice.status,
       asaas_invoice_id: currentInvoice.id,
-      nf_retry_count: nextCount,
       nf_retry_at: new Date().toISOString(),
     });
     return { ok: false, status: currentInvoice.status, action: 'wait' };
