@@ -38,7 +38,6 @@ interface Invoice {
   nf_last_error?: string;
   nf_retry_count?: number;
   nf_retry_paused?: boolean;
-  created_at?: string;
 }
 
 type StatusFilter = 'ALL' | 'EMITIDA' | 'PAGA' | 'VENCIDA' | 'CANCELADA';
