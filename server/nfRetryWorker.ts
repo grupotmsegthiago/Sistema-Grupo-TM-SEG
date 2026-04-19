@@ -16,11 +16,45 @@ const NON_RETRYABLE_PATTERNS = [
   /CNPJ inv[aá]lido/i,
   /endere[cç]o.*incompleto/i,
   /CEP.*inv[aá]lido/i,
+  /inscri[cç][aã]o municipal/i,
+  /tomador.*n[aã]o.*habilitad/i,
+];
+
+// Erros transitórios conhecidos da Prefeitura/Asaas — vale cancelar+reagendar.
+const RETRYABLE_PREFEITURA_PATTERNS = [
+  /sobrecarregad/i,
+  /tente novamente/i,
+  /servidor.*prefeitura/i,
+  /timeout/i,
+  /tempo limite/i,
+  /indispon[ií]vel/i,
 ];
 
 function isNonRetryable(errorMessage: string): boolean {
   if (!errorMessage) return false;
+  // Se é claramente um erro transitório da prefeitura, NÃO é permanente.
+  if (RETRYABLE_PREFEITURA_PATTERNS.some(rx => rx.test(errorMessage))) return false;
   return NON_RETRYABLE_PATTERNS.some(rx => rx.test(errorMessage));
+}
+
+// Extrai uma string de erro a partir do payload do Asaas.
+// `errorMessages` pode ser array [{code, description}], string ou ausente.
+// Também usa `statusDescription` (mensagem da Prefeitura) como fallback rico.
+function extractAsaasErrorText(invoice: any): string {
+  if (!invoice) return '';
+  const parts: string[] = [];
+  if (invoice.statusDescription) parts.push(String(invoice.statusDescription));
+  const em = invoice.errorMessages;
+  if (Array.isArray(em)) {
+    for (const e of em) {
+      if (typeof e === 'string') parts.push(e);
+      else if (e && (e.description || e.code)) parts.push([e.code, e.description].filter(Boolean).join(': '));
+    }
+  } else if (typeof em === 'string' && em) {
+    parts.push(em);
+  }
+  if (invoice.error && typeof invoice.error === 'string') parts.push(invoice.error);
+  return parts.join(' | ').substring(0, 500);
 }
 
 function getSupabase() {
@@ -262,8 +296,87 @@ export async function retryOne(inv: PendingInvoice, opts?: { clientCnpj?: string
     return { ok: false, status: currentInvoice.status, action: 'wait' };
   }
 
+  // 4b) Asaas marcou a NF como ERROR (rejeitada pela Prefeitura).
+  // Sem tratar isso, o worker tenta criar uma nova e bate em
+  // "Já existe uma nota fiscal agendada para essa cobrança." — loop.
+  // Se for erro permanente (NFe003, Inscrição Municipal, etc.) → pausa.
+  // Se for transitório (prefeitura sobrecarregada, timeout, etc.) → cancela
+  // a NF errada e reagenda, respeitando MAX_SYNC_RETRIES.
+  if (currentInvoice && currentInvoice.status === 'ERROR') {
+    const asaasErr = extractAsaasErrorText(currentInvoice) || inv.nf_last_error || '';
+    const errorRetries = inv.nf_retry_count || 0;
+    if (isNonRetryable(asaasErr)) {
+      await markInvoice(inv.id, {
+        nf_status: 'ERROR',
+        asaas_invoice_id: currentInvoice.id,
+        nf_retry_paused: true,
+        nf_last_error: asaasErr.substring(0, 500),
+        nf_retry_at: new Date().toISOString(),
+      });
+      console.log(`[NF Retry] ERROR permanente em ${currentInvoice.id} — pausada. Motivo: ${asaasErr.substring(0,120)}`);
+      return { ok: false, paused: true, status: 'ERROR', action: 'paused-validation' };
+    }
+    if (errorRetries >= MAX_SYNC_RETRIES) {
+      await markInvoice(inv.id, {
+        nf_status: 'STUCK',
+        asaas_invoice_id: currentInvoice.id,
+        nf_retry_paused: true,
+        nf_last_error: `Após ${errorRetries} tentativas a Prefeitura ainda devolve erro: ${asaasErr.substring(0,300)}`,
+        nf_retry_at: new Date().toISOString(),
+      });
+      console.log(`[NF Retry] STUCK por erro recorrente em ${currentInvoice.id} (${errorRetries} tentativas) — fatura ${inv.id}`);
+      return { ok: false, paused: true, status: 'STUCK', action: 'stuck-after-errors' };
+    }
+    // Cancela a NF em ERROR e tenta de novo.
+    let cancelled = false;
+    try {
+      await cancelInvoice(currentInvoice.id, company);
+      cancelled = true;
+      console.log(`[NF Retry] cancelada NF ERROR ${currentInvoice.id} (Prefeitura: "${asaasErr.substring(0,80)}") — fatura ${inv.id}`);
+    } catch (e: any) {
+      console.log(`[NF Retry] não foi possível cancelar ${currentInvoice.id} em ERROR: ${e.message} — aguardando próximo ciclo.`);
+      await markInvoice(inv.id, {
+        nf_status: 'ERROR',
+        asaas_invoice_id: currentInvoice.id,
+        nf_retry_at: new Date().toISOString(),
+        nf_last_error: `Cancelamento bloqueado: ${e.message}`.substring(0, 500),
+      });
+      return { ok: false, status: 'ERROR', action: 'cancel-blocked', error: e.message };
+    }
+    if (cancelled) {
+      try {
+        const newInv = await scheduleInvoice({
+          paymentId,
+          company,
+          clientCnpj: opts?.clientCnpj,
+          clientName: inv.client,
+          serviceDescription: opts?.serviceDescription,
+        });
+        await markInvoice(inv.id, {
+          nf_status: newInv?.status || 'SCHEDULED',
+          asaas_invoice_id: newInv?.id || null,
+          nf_retry_count: reissueCount,
+          nf_retry_at: new Date().toISOString(),
+          nf_last_error: null,
+        });
+        return { ok: true, status: newInv?.status, action: 'cancel-and-reschedule' };
+      } catch (e: any) {
+        const msg = e.message || String(e);
+        const paused = isNonRetryable(msg);
+        await markInvoice(inv.id, {
+          nf_status: 'ERROR',
+          nf_retry_count: reissueCount,
+          nf_retry_at: new Date().toISOString(),
+          nf_last_error: msg.substring(0, 500),
+          nf_retry_paused: paused,
+        });
+        return { ok: false, error: msg, paused };
+      }
+    }
+  }
+
   // 5) Erro permanente (validação) — pausa
-  const errMsg = currentInvoice?.errorMessages || currentInvoice?.error || inv.nf_last_error || '';
+  const errMsg = extractAsaasErrorText(currentInvoice) || inv.nf_last_error || '';
   if (isNonRetryable(errMsg)) {
     await markInvoice(inv.id, {
       nf_status: 'ERROR',
