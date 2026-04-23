@@ -348,24 +348,19 @@ async function sendDailyAccountsReport() {
     const now = nowSP();
     const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
 
-    const [{ data: payToday }, { data: recToday }, { data: payOver }, { data: recOver }] = await Promise.all([
+    const [{ data: payToday }, { data: recToday }] = await Promise.all([
       sb.from('financial_transactions').select('id,description,amount,due_date,entity_name,category_name,status,type')
         .eq('type','EXPENSE').eq('status','PENDING').eq('due_date',todayStr).order('amount',{ ascending:false }),
       sb.from('financial_transactions').select('id,description,amount,due_date,entity_name,category_name,status,type')
         .eq('type','INCOME').eq('status','PENDING').eq('due_date',todayStr).order('amount',{ ascending:false }),
-      sb.from('financial_transactions').select('id,description,amount,due_date,entity_name,category_name,status,type')
-        .eq('type','EXPENSE').eq('status','PENDING').lt('due_date',todayStr).order('due_date',{ ascending:true }),
-      sb.from('financial_transactions').select('id,description,amount,due_date,entity_name,category_name,status,type')
-        .eq('type','INCOME').eq('status','PENDING').lt('due_date',todayStr).order('due_date',{ ascending:true }),
     ]);
 
     const sum = (arr: TxRow[] | null | undefined) => (arr || []).reduce((s, x) => s + (Number(x.amount) || 0), 0);
     const totPay = sum(payToday); const totRec = sum(recToday);
-    const totPayOver = sum(payOver); const totRecOver = sum(recOver);
 
     const inner = `
       <h2 style="margin:0 0 4px;font-size:18px;color:#0f172a;">Resumo do Dia — ${fmtDateBR(now)}</h2>
-      <p style="margin:0 0 18px;font-size:13px;color:#475569;">Contas com vencimento hoje + títulos em atraso.</p>
+      <p style="margin:0 0 18px;font-size:13px;color:#475569;">Contas a pagar e a receber com vencimento hoje.</p>
 
       <div style="display:flex;gap:12px;margin-bottom:20px;">
         <div style="flex:1;background:#fef2f2;border:1px solid #fecaca;border-radius:10px;padding:14px;">
@@ -390,9 +385,6 @@ async function sendDailyAccountsReport() {
 
       <h3 style="margin:22px 0 8px;font-size:15px;color:#15803d;">A Receber Hoje (${brl(totRec)})</h3>
       ${renderTxTable(recToday || [], 'Nenhum recebimento com vencimento hoje.')}
-
-      ${(payOver || []).length ? `<h3 style="margin:22px 0 8px;font-size:15px;color:#b45309;">⚠ Pagamentos em Atraso (${brl(totPayOver)} — ${(payOver || []).length})</h3>${renderTxTable((payOver || []).slice(0, 30), '')}` : ''}
-      ${(recOver || []).length ? `<h3 style="margin:22px 0 8px;font-size:15px;color:#b45309;">⚠ Recebimentos em Atraso (${brl(totRecOver)} — ${(recOver || []).length})</h3>${renderTxTable((recOver || []).slice(0, 30), '')}` : ''}
     `;
 
     const subject = `Resumo Diário — ${fmtDateBR(now)} | A Pagar ${brl(totPay)} · A Receber ${brl(totRec)}`;
