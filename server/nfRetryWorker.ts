@@ -143,11 +143,65 @@ export async function listStuckNfs(): Promise<PendingInvoice[]> {
   }
 }
 
-async function markInvoice(id: string, patch: Record<string, any>) {
+interface NfHistoryEntry {
+  ts: string;
+  action: string;
+  status?: string | null;
+  message?: string | null;
+}
+
+const HISTORY_MAX_ENTRIES = 50;
+let nfHistoryColumnReady: boolean | null = null;
+
+async function ensureNfHistoryColumn(sb: any): Promise<boolean> {
+  if (nfHistoryColumnReady !== null) return nfHistoryColumnReady;
+  try {
+    const { error } = await sb.from('financial_invoices').select('nf_history').limit(1);
+    if (!error) { nfHistoryColumnReady = true; return true; }
+    if (error.code !== '42703') { nfHistoryColumnReady = true; return true; }
+  } catch {}
+  try {
+    await sb.rpc('exec_sql', { sql: "ALTER TABLE financial_invoices ADD COLUMN IF NOT EXISTS nf_history JSONB DEFAULT '[]'::jsonb;" });
+    nfHistoryColumnReady = true;
+    console.log('[NF Retry] coluna nf_history criada (ou já existia).');
+    return true;
+  } catch (e: any) {
+    console.log('[NF Retry] não foi possível criar nf_history (siga manual via Supabase SQL Editor):', e?.message || e);
+    nfHistoryColumnReady = false;
+    return false;
+  }
+}
+
+async function markInvoice(id: string, patch: Record<string, any>, history?: { action: string; status?: string | null; message?: string | null }) {
   const sb = getSupabase();
   if (!sb) return;
   try {
-    await sb.from('financial_invoices').update(patch).eq('id', id);
+    let finalPatch: Record<string, any> = patch;
+    if (history) {
+      const hasCol = await ensureNfHistoryColumn(sb);
+      if (hasCol) {
+        try {
+          const { data } = await sb.from('financial_invoices').select('nf_history').eq('id', id).maybeSingle();
+          const existing: NfHistoryEntry[] = Array.isArray((data as any)?.nf_history) ? (data as any).nf_history : [];
+          const entry: NfHistoryEntry = {
+            ts: new Date().toISOString(),
+            action: history.action,
+            status: history.status || null,
+            message: history.message ? String(history.message).substring(0, 500) : null,
+          };
+          finalPatch = { ...patch, nf_history: [...existing, entry].slice(-HISTORY_MAX_ENTRIES) };
+        } catch (e: any) {
+          if (e?.code !== '42703') console.log('[NF Retry] erro ao montar histórico:', e.message);
+        }
+      }
+    }
+    const { error } = await sb.from('financial_invoices').update(finalPatch).eq('id', id);
+    if (error && error.code === '42703' && (finalPatch as any).nf_history) {
+      const { nf_history, ...rest } = finalPatch as any;
+      await sb.from('financial_invoices').update(rest).eq('id', id);
+    } else if (error && error.code !== '42703') {
+      console.log('[NF Retry] erro ao gravar status:', error.message);
+    }
   } catch (e: any) {
     if (e?.code !== '42703') console.log('[NF Retry] erro ao gravar status:', e.message);
   }
@@ -182,7 +236,7 @@ export async function retryOne(inv: PendingInvoice, opts?: { clientCnpj?: string
     }
   } catch (e: any) {
     // Falha de comunicação/consulta — não incrementa contador (não é tentativa real de reemissão).
-    await markInvoice(inv.id, { nf_retry_at: new Date().toISOString(), nf_last_error: e.message.substring(0, 500) });
+    await markInvoice(inv.id, { nf_retry_at: new Date().toISOString(), nf_last_error: e.message.substring(0, 500) }, { action: 'lookup-error', message: e.message });
     return { ok: false, error: e.message };
   }
 
@@ -197,7 +251,7 @@ export async function retryOne(inv: PendingInvoice, opts?: { clientCnpj?: string
       nf_last_error: null,
       nf_retry_at: new Date().toISOString(),
       nf_retry_paused: false,
-    });
+    }, { action: 'authorized', status: 'AUTHORIZED', message: currentInvoice.number ? `NF nº ${currentInvoice.number} autorizada` : 'NF autorizada' });
     return { ok: true, status: 'AUTHORIZED', pdfUrl: currentInvoice.pdfUrl, number: currentInvoice.number, action: 'authorized' };
   }
 
@@ -214,7 +268,7 @@ export async function retryOne(inv: PendingInvoice, opts?: { clientCnpj?: string
         nf_retry_paused: true,
         nf_last_error: `NF em SYNCHRONIZED há ${Math.floor(ageH)}h sem autorização — verifique configuração da empresa emissora no Asaas (Inscrição Municipal / certificado).`.substring(0, 500),
         nf_retry_at: new Date().toISOString(),
-      });
+      }, { action: 'stuck-alert', status: 'STUCK', message: `Travada há ${Math.floor(ageH)}h em SYNCHRONIZED (${company || 'default'}) — pausada para verificação manual.` });
       console.log(`[NF Retry] STUCK: fatura ${inv.id} (${inv.client}) travada há ${Math.floor(ageH)}h em ${company || 'default'}`);
       return { ok: false, paused: true, status: 'STUCK', action: 'stuck-alert' };
     }
@@ -237,7 +291,7 @@ export async function retryOne(inv: PendingInvoice, opts?: { clientCnpj?: string
           asaas_invoice_id: currentInvoice.id,
           nf_retry_at: new Date().toISOString(),
           nf_last_error: `Cancelamento bloqueado: ${e.message}`.substring(0, 500),
-        });
+        }, { action: 'cancel-blocked', status: 'SYNCHRONIZED', message: `Não foi possível cancelar NF travada: ${e.message}` });
         return { ok: false, status: 'SYNCHRONIZED', action: 'cancel-blocked', error: e.message };
       }
       if (!cancelled) {
@@ -258,7 +312,7 @@ export async function retryOne(inv: PendingInvoice, opts?: { clientCnpj?: string
           nf_retry_count: reissueCount,
           nf_retry_at: new Date().toISOString(),
           nf_last_error: null,
-        });
+        }, { action: 'cancel-and-reschedule', status: newInv?.status || 'SCHEDULED', message: `Tentativa ${reissueCount}/${MAX_SYNC_RETRIES}: NF cancelada (engasgada há ${Math.floor(ageH)}h) e reagendada.` });
         return { ok: true, status: newInv?.status, action: 'cancel-and-reschedule' };
       } catch (e: any) {
         const msg = e.message || String(e);
@@ -270,7 +324,7 @@ export async function retryOne(inv: PendingInvoice, opts?: { clientCnpj?: string
           nf_retry_at: new Date().toISOString(),
           nf_last_error: msg.substring(0, 500),
           nf_retry_paused: paused,
-        });
+        }, { action: 'cancel-and-reschedule-failed', status: 'ERROR', message: `Tentativa ${reissueCount}/${MAX_SYNC_RETRIES} falhou: ${msg}${paused ? ' (pausada)' : ''}` });
         return { ok: false, error: msg, paused };
       }
     }
@@ -383,7 +437,7 @@ export async function retryOne(inv: PendingInvoice, opts?: { clientCnpj?: string
       nf_retry_paused: true,
       nf_last_error: String(errMsg).substring(0, 500),
       nf_retry_at: new Date().toISOString(),
-    });
+    }, { action: 'paused-validation', status: 'ERROR', message: `Pausada por erro de validação: ${errMsg}` });
     return { ok: false, paused: true, error: errMsg, action: 'paused-validation' };
   }
 
@@ -402,7 +456,7 @@ export async function retryOne(inv: PendingInvoice, opts?: { clientCnpj?: string
       nf_retry_count: reissueCount,
       nf_retry_at: new Date().toISOString(),
       nf_last_error: null,
-    });
+    }, { action: 'scheduled', status: newInv?.status || 'SCHEDULED', message: `Tentativa ${reissueCount}: NF agendada (${company || 'default'}).` });
     return { ok: true, status: newInv?.status, action: 'scheduled' };
   } catch (e: any) {
     const msg = e.message || String(e);
@@ -413,7 +467,7 @@ export async function retryOne(inv: PendingInvoice, opts?: { clientCnpj?: string
       nf_retry_at: new Date().toISOString(),
       nf_last_error: msg.substring(0, 500),
       nf_retry_paused: paused,
-    });
+    }, { action: 'schedule-failed', status: 'ERROR', message: `Tentativa ${reissueCount} falhou: ${msg}${paused ? ' (pausada)' : ''}` });
     return { ok: false, error: msg, paused };
   }
 }
@@ -440,6 +494,13 @@ export function startNfRetryWorker() {
   if (workerStarted) return;
   workerStarted = true;
   console.log(`[NF Retry] worker ativo — ciclo a cada ${RETRY_INTERVAL_MS / 60000} min (cancela SYNC>${STUCK_HOURS_RETRY}h, alerta SYNC>${STUCK_HOURS_ALERT}h)`);
+  // Garante que a coluna nf_history existe antes do primeiro ciclo, para que o
+  // histórico de reemissões fique sempre disponível (e não dependa de uma
+  // gravação posterior para criar a coluna sob demanda).
+  const sb = getSupabase();
+  if (sb) {
+    ensureNfHistoryColumn(sb).catch(e => console.log('[NF Retry] aviso ensureNfHistoryColumn:', e?.message || e));
+  }
   setTimeout(() => { runRetryCycle().catch(e => console.log('[NF Retry] erro:', e.message)); }, 60_000);
   setInterval(() => { runRetryCycle().catch(e => console.log('[NF Retry] erro:', e.message)); }, RETRY_INTERVAL_MS);
 }

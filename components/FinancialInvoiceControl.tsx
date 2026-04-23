@@ -38,7 +38,27 @@ interface Invoice {
   nf_last_error?: string;
   nf_retry_count?: number;
   nf_retry_paused?: boolean;
+  nf_history?: NfHistoryEntry[];
 }
+
+interface NfHistoryEntry {
+  ts: string;
+  action: string;
+  status?: string | null;
+  message?: string | null;
+}
+
+const HISTORY_ACTION_LABEL: Record<string, { label: string; color: string; bg: string; border: string; icon: any }> = {
+  'authorized': { label: 'Autorizada', color: 'text-emerald-700', bg: 'bg-emerald-50', border: 'border-emerald-200', icon: CheckCircle2 },
+  'scheduled': { label: 'Agendada', color: 'text-blue-700', bg: 'bg-blue-50', border: 'border-blue-200', icon: Clock },
+  'cancel-and-reschedule': { label: 'Cancelada e reagendada', color: 'text-indigo-700', bg: 'bg-indigo-50', border: 'border-indigo-200', icon: RefreshCw },
+  'cancel-and-reschedule-failed': { label: 'Falha ao reagendar', color: 'text-red-700', bg: 'bg-red-50', border: 'border-red-200', icon: XCircle },
+  'cancel-blocked': { label: 'Cancelamento bloqueado', color: 'text-amber-700', bg: 'bg-amber-50', border: 'border-amber-200', icon: Ban },
+  'schedule-failed': { label: 'Falha ao agendar', color: 'text-red-700', bg: 'bg-red-50', border: 'border-red-200', icon: XCircle },
+  'paused-validation': { label: 'Pausada (validação)', color: 'text-orange-700', bg: 'bg-orange-50', border: 'border-orange-200', icon: AlertCircle },
+  'stuck-alert': { label: 'TRAVADA — alerta', color: 'text-white', bg: 'bg-red-600', border: 'border-red-700', icon: AlertCircle },
+  'lookup-error': { label: 'Falha de consulta', color: 'text-gray-700', bg: 'bg-gray-100', border: 'border-gray-200', icon: AlertCircle },
+};
 
 type StatusFilter = 'ALL' | 'EMITIDA' | 'PAGA' | 'VENCIDA' | 'CANCELADA';
 type SortField = 'date' | 'amount' | 'number' | 'client' | 'status';
@@ -707,6 +727,49 @@ const FinancialInvoiceControl: React.FC = () => {
                         </button>
                       )}
                     </div>
+
+                    {inv.asaas_payment_id && (
+                      <div className="border border-gray-200 rounded-xl p-4 bg-gray-50/50">
+                        <div className="flex items-center justify-between mb-3">
+                          <p className="text-[9px] font-black text-gray-700 uppercase tracking-widest flex items-center gap-1.5">
+                            <Clock size={10} /> Histórico de Reemissões da NF
+                          </p>
+                          <span className="text-[9px] font-bold text-gray-400">
+                            {inv.nf_history?.length || 0} evento(s)
+                            {typeof inv.nf_retry_count === 'number' && ` · ${inv.nf_retry_count} tentativa(s) reais`}
+                          </span>
+                        </div>
+                        {inv.nf_history && inv.nf_history.length > 0 ? (
+                          <ol className="relative border-l-2 border-gray-200 ml-2 space-y-3" data-testid="nf-history-timeline">
+                            {[...inv.nf_history].slice().reverse().map((h, idx) => {
+                              const cfg = HISTORY_ACTION_LABEL[h.action] || { label: h.action, color: 'text-gray-700', bg: 'bg-gray-100', border: 'border-gray-200', icon: Clock };
+                              const HIcon = cfg.icon;
+                              return (
+                                <li key={`${h.ts}-${idx}`} className="ml-4" data-testid={`nf-history-item-${idx}`}>
+                                  <span className={`absolute -left-[7px] flex items-center justify-center w-3 h-3 rounded-full border-2 ${cfg.bg} ${cfg.border}`} />
+                                  <div className="flex flex-wrap items-center gap-2 mb-0.5">
+                                    <span className={`inline-flex items-center gap-1 text-[9px] font-bold px-2 py-0.5 rounded-full border ${cfg.color} ${cfg.bg} ${cfg.border}`}>
+                                      <HIcon size={9} /> {cfg.label}
+                                    </span>
+                                    {h.status && (
+                                      <span className="text-[9px] font-mono text-gray-400">{h.status}</span>
+                                    )}
+                                    <span className="text-[9px] text-gray-400 ml-auto font-mono">{formatDateTimeBR(h.ts)}</span>
+                                  </div>
+                                  {h.message && <p className="text-[10px] text-gray-600 leading-snug">{h.message}</p>}
+                                </li>
+                              );
+                            })}
+                          </ol>
+                        ) : (
+                          <p className="text-[10px] text-gray-400 italic">
+                            Nenhum evento registrado ainda.{typeof inv.nf_retry_count === 'number' && inv.nf_retry_count > 0
+                              ? ' (Eventos anteriores à atualização do sistema não ficam no histórico — futuras tentativas serão registradas aqui.)'
+                              : ''}
+                          </p>
+                        )}
+                      </div>
+                    )}
 
                     <div className="border-t pt-3 text-[10px] text-gray-400 flex justify-between">
                       <span>Criado por: {inv.created_by || '-'}</span>
