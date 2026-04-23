@@ -97,6 +97,21 @@ const FinancialInvoiceControl: React.FC = () => {
   const [retroForm, setRetroForm] = useState({ client: '', number: '', amount: '', date: '', dueDate: '', notes: '', issuer_company: 'TM GESTÃO' });
   const [savingRetro, setSavingRetro] = useState(false);
   const [bulkRetrying, setBulkRetrying] = useState(false);
+  const [issuerSummary, setIssuerSummary] = useState<Array<{ company: string; total: number; authorized: number; synchronized: number; scheduled: number; error: number; stuck: number; canceled: number; other: number }>>([]);
+  const [issuerFilter, setIssuerFilter] = useState<string | null>(null);
+  const [issuerStateFilter, setIssuerStateFilter] = useState<'total' | 'authorized' | 'scheduled' | 'stuck' | null>(null);
+
+  const fetchIssuerSummary = useCallback(async () => {
+    try {
+      const res = await authFetch('/api/nf/summary');
+      const data = await res.json();
+      if (data?.success && Array.isArray(data.summary)) {
+        setIssuerSummary(data.summary);
+      }
+    } catch (e) {
+      console.error('[InvoiceControl] Summary fetch error', e);
+    }
+  }, []);
 
   const handleBulkRetryNfs = async () => {
     if (!confirm('Reemitir TODAS as NFs pendentes agora?\n\nIsso vai:\n• Tentar autorizar NFs em ERRO\n• Cancelar e reagendar NFs travadas em SYNCHRONIZED há > 6h\n• Marcar como TRAVADA e pausar as que estão em SYNCHRONIZED há > 24h')) return;
@@ -148,9 +163,9 @@ const FinancialInvoiceControl: React.FC = () => {
     }
   }, []);
 
-  useEffect(() => { fetchInvoices(); }, [fetchInvoices]);
+  useEffect(() => { fetchInvoices(); fetchIssuerSummary(); }, [fetchInvoices, fetchIssuerSummary]);
 
-  useRealtimeRefresh('financial_invoices', () => fetchInvoices());
+  useRealtimeRefresh('financial_invoices', () => { fetchInvoices(); fetchIssuerSummary(); });
 
   const handleSyncStatus = async (inv: Invoice) => {
     if (!inv.asaas_payment_id) return;
@@ -294,6 +309,29 @@ const FinancialInvoiceControl: React.FC = () => {
   const filtered = useMemo(() => {
     let list = [...invoices];
     if (statusFilter !== 'ALL') list = list.filter(i => i.status === statusFilter);
+    if (issuerFilter) {
+      list = list.filter(i => (i.issuer_company || '(sem emissora)') === issuerFilter);
+    }
+    if (issuerStateFilter) {
+      const now = Date.now();
+      list = list.filter(i => {
+        if (!i.asaas_payment_id) return false;
+        const ns = (i.nf_status || '').toUpperCase();
+        if (issuerStateFilter === 'total') return true;
+        if (issuerStateFilter === 'authorized') return ns === 'AUTHORIZED';
+        if (issuerStateFilter === 'scheduled') return ns === 'SCHEDULED';
+        if (issuerStateFilter === 'stuck') {
+          if (ns === 'STUCK') return true;
+          if (ns === 'SYNCHRONIZED') {
+            const ref = i.nf_retry_at || i.created_at;
+            const ageH = ref ? (now - new Date(ref).getTime()) / 3600_000 : 0;
+            return ageH >= 24;
+          }
+          return false;
+        }
+        return true;
+      });
+    }
     if (searchTerm) {
       const term = searchTerm.toLowerCase();
       list = list.filter(i =>
@@ -314,7 +352,7 @@ const FinancialInvoiceControl: React.FC = () => {
       return sortDir === 'asc' ? cmp : -cmp;
     });
     return list;
-  }, [invoices, statusFilter, searchTerm, sortField, sortDir]);
+  }, [invoices, statusFilter, searchTerm, sortField, sortDir, issuerFilter, issuerStateFilter]);
 
   const toggleSort = (field: SortField) => {
     if (sortField === field) setSortDir(d => d === 'asc' ? 'desc' : 'asc');
@@ -392,11 +430,77 @@ const FinancialInvoiceControl: React.FC = () => {
           <button onClick={() => setShowRetroModal(true)} className="flex items-center gap-2 bg-blue-700 hover:bg-blue-800 text-white px-4 py-2 rounded-lg text-xs font-bold shadow-sm" data-testid="btn-retro-invoice">
             <Calendar size={14} /> Lançar Retroativo
           </button>
-          <button onClick={fetchInvoices} disabled={loading} className="flex items-center gap-2 bg-red-700 hover:bg-red-800 text-white px-4 py-2 rounded-lg text-xs font-bold shadow-sm" data-testid="btn-refresh-invoices">
+          <button onClick={() => { fetchInvoices(); fetchIssuerSummary(); }} disabled={loading} className="flex items-center gap-2 bg-red-700 hover:bg-red-800 text-white px-4 py-2 rounded-lg text-xs font-bold shadow-sm" data-testid="btn-refresh-invoices">
             <RefreshCw size={14} className={loading ? 'animate-spin' : ''} /> Atualizar
           </button>
         </div>
       </div>
+
+      {issuerSummary.length > 0 && (
+        <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-4 mb-6" data-testid="issuer-health-panel">
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center gap-2">
+              <Building2 size={14} className="text-red-600" />
+              <span className="text-[11px] font-black text-gray-700 uppercase tracking-wide">Saúde das emissoras de NF</span>
+            </div>
+            {(issuerFilter || issuerStateFilter) && (
+              <button
+                onClick={() => { setIssuerFilter(null); setIssuerStateFilter(null); }}
+                className="text-[10px] font-black text-red-600 bg-red-50 px-3 py-1.5 rounded-lg border border-red-200 flex items-center gap-1"
+                data-testid="btn-clear-issuer-filter"
+              >
+                <X size={10} /> Limpar emissora{issuerFilter ? `: ${issuerFilter}` : ''}{issuerStateFilter ? ` / ${issuerStateFilter}` : ''}
+              </button>
+            )}
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
+            {issuerSummary.map(s => {
+              const stuckTotal = (s.stuck || 0);
+              const isActive = issuerFilter === s.company;
+              const toggle = (state: 'total' | 'authorized' | 'scheduled' | 'stuck') => {
+                if (issuerFilter === s.company && issuerStateFilter === state) {
+                  setIssuerFilter(null); setIssuerStateFilter(null);
+                } else {
+                  setIssuerFilter(s.company); setIssuerStateFilter(state);
+                }
+              };
+              const cell = (label: string, value: number, state: 'total' | 'authorized' | 'scheduled' | 'stuck', cls: string, blink = false) => (
+                <button
+                  onClick={() => toggle(state)}
+                  className={`flex flex-col items-center justify-center rounded-lg px-2 py-2 border transition-all ${cls} ${isActive && issuerStateFilter === state ? 'ring-2 ring-offset-1 ring-gray-700' : ''} ${blink && value > 0 ? 'animate-pulse' : ''}`}
+                  data-testid={`issuer-cell-${s.company}-${state}`}
+                  title={`${s.company} — ${label}`}
+                >
+                  <span className="text-[8px] font-black uppercase opacity-80">{label}</span>
+                  <span className="text-base font-black leading-tight">{value}</span>
+                </button>
+              );
+              return (
+                <div
+                  key={s.company}
+                  className={`rounded-xl p-3 border-2 transition-all ${isActive ? 'border-red-400 bg-red-50/30' : stuckTotal > 0 ? 'border-red-200 bg-red-50/20' : 'border-gray-100 bg-white'}`}
+                  data-testid={`issuer-card-${s.company}`}
+                >
+                  <div className="flex items-center justify-between mb-2">
+                    <div className="text-[11px] font-black text-gray-800 uppercase tracking-wide truncate" title={s.company}>{s.company}</div>
+                    {stuckTotal > 0 && (
+                      <span className="inline-flex items-center gap-1 text-[9px] font-black text-white bg-red-600 px-2 py-0.5 rounded-full animate-pulse">
+                        <AlertCircle size={9} /> ATENÇÃO
+                      </span>
+                    )}
+                  </div>
+                  <div className="grid grid-cols-4 gap-1.5">
+                    {cell('Total', s.total, 'total', 'text-gray-700 bg-gray-50 border-gray-200 hover:bg-gray-100')}
+                    {cell('Autoriz.', s.authorized, 'authorized', 'text-emerald-700 bg-emerald-50 border-emerald-200 hover:bg-emerald-100')}
+                    {cell('Em fila', s.scheduled, 'scheduled', 'text-blue-700 bg-blue-50 border-blue-200 hover:bg-blue-100')}
+                    {cell('Travadas', stuckTotal, 'stuck', 'text-white bg-red-600 border-red-700 hover:bg-red-700', true)}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
         <button onClick={() => setStatusFilter(statusFilter === 'EMITIDA' ? 'ALL' : 'EMITIDA')} className={`rounded-xl p-4 border-2 transition-all text-left ${statusFilter === 'EMITIDA' ? 'border-amber-400 bg-amber-50 ring-2 ring-amber-200' : 'border-gray-100 bg-white hover:border-amber-200'}`} data-testid="filter-emitida">
