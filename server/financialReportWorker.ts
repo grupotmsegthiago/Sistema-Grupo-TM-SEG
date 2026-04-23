@@ -1,5 +1,7 @@
 import { createClient } from '@supabase/supabase-js';
 import nodemailer from 'nodemailer';
+import { calculateMissionFinancials } from '../lib/financialUtils';
+import { MissionStatus, type Mission, type ClientPriceTable, type ProviderCostTable, type Client } from '../types';
 
 const RECIPIENT = 'thiago@grupotmseg.com.br';
 const EMAIL_USER = process.env.EMAIL_USER || 'adm@grupotmseg.com.br';
@@ -32,12 +34,7 @@ function nowSP(): Date {
   return new Date(s);
 }
 
-function startOfDaySP(d: Date): Date {
-  const x = new Date(d);
-  x.setHours(0, 0, 0, 0);
-  return x;
-}
-
+function startOfDaySP(d: Date): Date { const x = new Date(d); x.setHours(0,0,0,0); return x; }
 function startOfWeekSP(d: Date): Date {
   const x = startOfDaySP(d);
   const day = x.getDay();
@@ -45,39 +42,11 @@ function startOfWeekSP(d: Date): Date {
   x.setDate(x.getDate() + diff);
   return x;
 }
+function startOfMonthSP(d: Date): Date { const x = startOfDaySP(d); x.setDate(1); return x; }
+function startOfYearSP(d: Date): Date { const x = startOfDaySP(d); x.setMonth(0,1); return x; }
 
-function startOfMonthSP(d: Date): Date {
-  const x = startOfDaySP(d);
-  x.setDate(1);
-  return x;
-}
-
-function startOfYearSP(d: Date): Date {
-  const x = startOfDaySP(d);
-  x.setMonth(0, 1);
-  return x;
-}
-
-function endOfDaySP(d: Date): Date {
-  const x = new Date(d);
-  x.setHours(23, 59, 59, 999);
-  return x;
-}
-
-function spToUtcIso(spLocal: Date): string {
-  const localStr = spLocal.toLocaleString('en-US', { timeZone: TZ });
-  const offsetMs = new Date(localStr).getTime() - spLocal.getTime();
-  return new Date(spLocal.getTime() - offsetMs).toISOString();
-}
-
-function fmtDateBR(d: Date): string {
-  return d.toLocaleDateString('pt-BR', { timeZone: TZ });
-}
-
-function fmtDateTimeBR(d: Date): string {
-  return d.toLocaleString('pt-BR', { timeZone: TZ });
-}
-
+function fmtDateBR(d: Date): string { return d.toLocaleDateString('pt-BR', { timeZone: TZ }); }
+function fmtDateTimeBR(d: Date): string { return d.toLocaleString('pt-BR', { timeZone: TZ }); }
 function fmtDueDate(s: string | null | undefined): string {
   if (!s) return '-';
   const d = new Date(s.length === 10 ? `${s}T12:00:00` : s);
@@ -87,14 +56,14 @@ function fmtDueDate(s: string | null | undefined): string {
 function htmlTemplate(title: string, inner: string): string {
   return `<!DOCTYPE html><html lang="pt-BR"><head><meta charset="utf-8"></head>
 <body style="font-family:Arial,sans-serif;background:#f4f4f7;margin:0;padding:24px;color:#222;">
-  <div style="max-width:720px;margin:auto;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 2px 12px rgba(0,0,0,.06);">
+  <div style="max-width:760px;margin:auto;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 2px 12px rgba(0,0,0,.06);">
     <div style="background:#0f172a;color:#fff;padding:20px 24px;">
       <h1 style="margin:0;font-size:20px;">Grupo TM SEG</h1>
       <p style="margin:4px 0 0;font-size:13px;opacity:.85;">${title}</p>
     </div>
     <div style="padding:24px;">${inner}</div>
     <div style="padding:14px 24px;background:#f8fafc;font-size:11px;color:#64748b;border-top:1px solid #e2e8f0;">
-      Relatório automático — ${fmtDateTimeBR(new Date())} (Brasília)
+      Relatório automático — ${fmtDateTimeBR(new Date())} (Brasília). Mesma regra de cálculo do dashboard "Monitoramento de Missões".
     </div>
   </div>
 </body></html>`;
@@ -109,24 +78,119 @@ interface PeriodSummary {
   margin: number;
 }
 
-async function fetchRevenueSummary(): Promise<{ periods: PeriodSummary[]; topClients: Array<{ client: string; revenue: number; count: number }> }> {
+interface MissionRevenue {
+  client: string;
+  ts: number;
+  revenue: number;
+  cost: number;
+  source: 'saved' | 'estimated';
+}
+
+function tsSP(s: string | null | undefined): number {
+  if (!s) return 0;
+  return new Date(new Date(s).toLocaleString('en-US', { timeZone: TZ })).getTime();
+}
+
+function computeMissionRevenue(
+  m: any,
+  clientTables: ClientPriceTable[],
+  providerTables: ProviderCostTable[],
+  clientsData: Client[],
+  currentTime: Date
+): MissionRevenue | null {
+  if (m.status === MissionStatus.REFUSED) return null;
+
+  const dateRef = m.start_time || m.created_at;
+  if (!dateRef) return null;
+  const ts = tsSP(dateRef);
+  const client = (m.client || 'SEM CLIENTE').toString();
+
+  const hasStoredRevenue = (m.revenue_value != null && m.revenue_value > 0);
+  const hasStoredCost = (m.cost_value != null && m.cost_value > 0);
+  const isVerified = !!(m.billing_approved || m.billing_verified_by);
+  const hasSavedValues = isVerified && (hasStoredRevenue || hasStoredCost || m.revenue_value === 0 || m.cost_value === 0);
+
+  if (hasSavedValues) {
+    const tollProv = Math.max(0, m.toll_value_provider != null ? m.toll_value_provider : (m.toll_value || 0));
+    return {
+      client, ts,
+      revenue: (m.revenue_value || 0) + Math.max(0, m.toll_value || 0),
+      cost: (m.cost_value || 0) + tollProv,
+      source: 'saved',
+    };
+  }
+  if (hasStoredRevenue && hasStoredCost) {
+    const tollProv = Math.max(0, m.toll_value_provider != null ? m.toll_value_provider : (m.toll_value || 0));
+    return {
+      client, ts,
+      revenue: (m.revenue_value || 0) + Math.max(0, m.toll_value || 0),
+      cost: (m.cost_value || 0) + tollProv,
+      source: 'saved',
+    };
+  }
+
+  let revenue = 0, cost = 0;
+  if (hasStoredRevenue) revenue = (m.revenue_value || 0) + Math.max(0, m.toll_value || 0);
+  if (hasStoredCost) {
+    const tollProv = Math.max(0, m.toll_value_provider != null ? m.toll_value_provider : (m.toll_value || 0));
+    cost = (m.cost_value || 0) + tollProv;
+  }
+
+  if (!hasStoredRevenue || !hasStoredCost) {
+    const isCancelled = m.status === MissionStatus.CANCELLED;
+    const missionObj: Mission = {
+      ...m,
+      startKm: m.start_km, endKm: m.end_km,
+      startTime: m.start_time, endTime: m.end_time,
+      createdAt: m.created_at,
+      lastUpdate: m.last_update,
+      totalDistance: m.total_distance,
+      ...(isCancelled ? { status: MissionStatus.COMPLETED } : {}),
+    } as any;
+    const matchedClient = clientsData.find(c => c.name === client.trim());
+    try {
+      const fin = calculateMissionFinancials(missionObj, clientTables, providerTables, matchedClient, currentTime);
+      if (!hasStoredRevenue) revenue = fin.client.total || 0;
+      if (!hasStoredCost) cost = fin.provider.total || 0;
+    } catch (e) {
+      // ignore individual mission calc errors
+    }
+  }
+
+  return { client, ts, revenue, cost, source: hasStoredRevenue ? 'saved' : 'estimated' };
+}
+
+async function fetchAllReferenceData() {
+  const sb = getSupabase();
+  const [{ data: ct }, { data: pt }, { data: cl }] = await Promise.all([
+    sb.from('client_price_tables').select('*'),
+    sb.from('provider_cost_tables').select('*'),
+    sb.from('clients').select('*'),
+  ]);
+  return {
+    clientTables: (ct || []) as ClientPriceTable[],
+    providerTables: (pt || []) as ProviderCostTable[],
+    clients: (cl || []) as Client[],
+  };
+}
+
+async function fetchRevenueSummary() {
   const sb = getSupabase();
   const now = nowSP();
   const startYear = startOfYearSP(now);
-  const startYearIso = spToUtcIso(startYear);
-
-  const { data, error } = await sb
-    .from('missions')
-    .select('id,client,start_time,created_at,revenue_value,cost_value')
-    .or(`start_time.gte.${startYearIso},and(start_time.is.null,created_at.gte.${startYearIso})`)
-    .not('revenue_value', 'is', null);
-
-  if (error) throw error;
-
-  const startDay = startOfDaySP(now).getTime();
-  const startWeek = startOfWeekSP(now).getTime();
-  const startMonth = startOfMonthSP(now).getTime();
   const startYearMs = startYear.getTime();
+  const startMonthMs = startOfMonthSP(now).getTime();
+  const startWeekMs = startOfWeekSP(now).getTime();
+  const startDayMs = startOfDaySP(now).getTime();
+
+  const startYearIso = new Date(startYear.getTime() - new Date().getTimezoneOffset() * 60000).toISOString();
+
+  const [{ data: missions, error }, refs] = await Promise.all([
+    sb.from('missions').select('*')
+      .or(`start_time.gte.${startYearIso},and(start_time.is.null,created_at.gte.${startYearIso})`),
+    fetchAllReferenceData(),
+  ]);
+  if (error) throw error;
 
   const buckets = {
     day: { count: 0, revenue: 0, cost: 0 },
@@ -134,25 +198,29 @@ async function fetchRevenueSummary(): Promise<{ periods: PeriodSummary[]; topCli
     month: { count: 0, revenue: 0, cost: 0 },
     year: { count: 0, revenue: 0, cost: 0 },
   };
-  const clientAgg = new Map<string, { revenue: number; count: number }>();
+  const dayByClient = new Map<string, { revenue: number; count: number }>();
+  const yearByClient = new Map<string, { revenue: number; count: number }>();
 
-  for (const m of data || []) {
-    const dateStr = m.start_time || m.created_at;
-    if (!dateStr) continue;
-    const ts = new Date(new Date(dateStr).toLocaleString('en-US', { timeZone: TZ })).getTime();
-    const rev = Number(m.revenue_value) || 0;
-    const cost = Number(m.cost_value) || 0;
-    if (rev <= 0) continue;
-    if (ts >= startYearMs) {
-      buckets.year.count++; buckets.year.revenue += rev; buckets.year.cost += cost;
-      const key = (m.client || 'SEM CLIENTE').toUpperCase();
-      const cur = clientAgg.get(key) || { revenue: 0, count: 0 };
-      cur.revenue += rev; cur.count++;
-      clientAgg.set(key, cur);
+  const currentTime = new Date();
+  for (const m of (missions || [])) {
+    const r = computeMissionRevenue(m, refs.clientTables, refs.providerTables, refs.clients, currentTime);
+    if (!r) continue;
+    if (r.ts >= startYearMs) {
+      buckets.year.count++; buckets.year.revenue += r.revenue; buckets.year.cost += r.cost;
+      const k = r.client.toUpperCase();
+      const cur = yearByClient.get(k) || { revenue: 0, count: 0 };
+      cur.revenue += r.revenue; cur.count++;
+      yearByClient.set(k, cur);
     }
-    if (ts >= startMonth) { buckets.month.count++; buckets.month.revenue += rev; buckets.month.cost += cost; }
-    if (ts >= startWeek)  { buckets.week.count++;  buckets.week.revenue += rev;  buckets.week.cost += cost;  }
-    if (ts >= startDay)   { buckets.day.count++;   buckets.day.revenue += rev;   buckets.day.cost += cost;   }
+    if (r.ts >= startMonthMs) { buckets.month.count++; buckets.month.revenue += r.revenue; buckets.month.cost += r.cost; }
+    if (r.ts >= startWeekMs)  { buckets.week.count++;  buckets.week.revenue += r.revenue;  buckets.week.cost += r.cost; }
+    if (r.ts >= startDayMs) {
+      buckets.day.count++; buckets.day.revenue += r.revenue; buckets.day.cost += r.cost;
+      const k = r.client.toUpperCase();
+      const cur = dayByClient.get(k) || { revenue: 0, count: 0 };
+      cur.revenue += r.revenue; cur.count++;
+      dayByClient.set(k, cur);
+    }
   }
 
   const mk = (label: string, b: { count: number; revenue: number; cost: number }): PeriodSummary => {
@@ -161,24 +229,26 @@ async function fetchRevenueSummary(): Promise<{ periods: PeriodSummary[]; topCli
     return { label, count: b.count, revenue: b.revenue, cost: b.cost, profit, margin };
   };
 
-  const periods = [
-    mk('Hoje', buckets.day),
-    mk('Esta Semana', buckets.week),
-    mk('Este Mês', buckets.month),
-    mk('Este Ano', buckets.year),
-  ];
-
-  const topClients = Array.from(clientAgg.entries())
-    .map(([client, v]) => ({ client, revenue: v.revenue, count: v.count }))
-    .sort((a, b) => b.revenue - a.revenue)
-    .slice(0, 5);
-
-  return { periods, topClients };
+  return {
+    periods: [
+      mk('Hoje', buckets.day),
+      mk('Esta Semana', buckets.week),
+      mk('Este Mês', buckets.month),
+      mk('Este Ano', buckets.year),
+    ],
+    dayByClient: Array.from(dayByClient.entries())
+      .map(([client, v]) => ({ client, ...v }))
+      .sort((a, b) => b.revenue - a.revenue),
+    yearByClient: Array.from(yearByClient.entries())
+      .map(([client, v]) => ({ client, ...v }))
+      .sort((a, b) => b.revenue - a.revenue)
+      .slice(0, 10),
+  };
 }
 
 async function sendRevenueReport() {
   try {
-    const { periods, topClients } = await fetchRevenueSummary();
+    const { periods, dayByClient, yearByClient } = await fetchRevenueSummary();
     const rows = periods.map(p => `
       <tr>
         <td style="padding:10px 12px;border-bottom:1px solid #e2e8f0;font-weight:600;">${p.label}</td>
@@ -189,46 +259,55 @@ async function sendRevenueReport() {
         <td style="padding:10px 12px;border-bottom:1px solid #e2e8f0;text-align:right;">${p.margin.toFixed(1)}%</td>
       </tr>`).join('');
 
-    const topRows = topClients.length
-      ? topClients.map((c, i) => `
+    const dayRows = dayByClient.length
+      ? dayByClient.map((c, i) => `
         <tr>
           <td style="padding:8px 12px;border-bottom:1px solid #e2e8f0;">${i + 1}. ${c.client}</td>
           <td style="padding:8px 12px;border-bottom:1px solid #e2e8f0;text-align:right;">${c.count} OS</td>
           <td style="padding:8px 12px;border-bottom:1px solid #e2e8f0;text-align:right;font-weight:600;">${brl(c.revenue)}</td>
         </tr>`).join('')
-      : `<tr><td colspan="3" style="padding:14px;text-align:center;color:#64748b;">Nenhum cliente com faturamento no ano.</td></tr>`;
+      : `<tr><td colspan="3" style="padding:14px;text-align:center;color:#64748b;">Nenhuma OS hoje.</td></tr>`;
 
+    const yearRows = yearByClient.length
+      ? yearByClient.map((c, i) => `
+        <tr>
+          <td style="padding:8px 12px;border-bottom:1px solid #e2e8f0;">${i + 1}. ${c.client}</td>
+          <td style="padding:8px 12px;border-bottom:1px solid #e2e8f0;text-align:right;">${c.count} OS</td>
+          <td style="padding:8px 12px;border-bottom:1px solid #e2e8f0;text-align:right;font-weight:600;">${brl(c.revenue)}</td>
+        </tr>`).join('')
+      : '';
+
+    const totalDay = dayByClient.reduce((s, c) => s + c.revenue, 0);
     const inner = `
       <h2 style="margin:0 0 12px;font-size:18px;color:#0f172a;">Faturamento por Período</h2>
-      <p style="margin:0 0 16px;font-size:13px;color:#475569;">Base: missões com data de início (ou criação) no período. Valores brutos.</p>
+      <p style="margin:0 0 16px;font-size:13px;color:#475569;">Inclui valores salvos + estimativa via tabelas de preço (mesma regra do dashboard). Pedágio incluso. Status REFUSED ignorado.</p>
       <table style="width:100%;border-collapse:collapse;font-size:13px;">
-        <thead>
-          <tr style="background:#f1f5f9;">
-            <th style="padding:10px 12px;text-align:left;">Período</th>
-            <th style="padding:10px 12px;text-align:right;">OS</th>
-            <th style="padding:10px 12px;text-align:right;">Faturamento</th>
-            <th style="padding:10px 12px;text-align:right;">Custo</th>
-            <th style="padding:10px 12px;text-align:right;">Lucro</th>
-            <th style="padding:10px 12px;text-align:right;">Margem</th>
-          </tr>
-        </thead>
+        <thead><tr style="background:#f1f5f9;">
+          <th style="padding:10px 12px;text-align:left;">Período</th>
+          <th style="padding:10px 12px;text-align:right;">OS</th>
+          <th style="padding:10px 12px;text-align:right;">Faturamento</th>
+          <th style="padding:10px 12px;text-align:right;">Custo</th>
+          <th style="padding:10px 12px;text-align:right;">Lucro</th>
+          <th style="padding:10px 12px;text-align:right;">Margem</th>
+        </tr></thead>
         <tbody>${rows}</tbody>
       </table>
-      <h3 style="margin:24px 0 8px;font-size:15px;color:#0f172a;">Top 5 Clientes (Ano)</h3>
+
+      <h3 style="margin:24px 0 8px;font-size:15px;color:#0f172a;">Faturamento de Hoje por Cliente — ${brl(totalDay)}</h3>
       <table style="width:100%;border-collapse:collapse;font-size:13px;">
-        <tbody>${topRows}</tbody>
-      </table>`;
+        <tbody>${dayRows}</tbody>
+      </table>
+
+      ${yearRows ? `<h3 style="margin:24px 0 8px;font-size:15px;color:#0f172a;">Top 10 Clientes (Ano)</h3>
+      <table style="width:100%;border-collapse:collapse;font-size:13px;">
+        <tbody>${yearRows}</tbody>
+      </table>` : ''}`;
 
     const subject = `Faturamento — ${fmtDateBR(new Date())} ${new Date().toLocaleTimeString('pt-BR', { timeZone: TZ, hour: '2-digit', minute: '2-digit' })}`;
-    await transporter.sendMail({
-      from: SMTP_FROM,
-      to: RECIPIENT,
-      subject,
-      html: htmlTemplate('Relatório de Faturamento (6h)', inner),
-    });
-    console.log(`[FinReport] Relatório de faturamento enviado → ${RECIPIENT}`);
+    await transporter.sendMail({ from: SMTP_FROM, to: RECIPIENT, subject, html: htmlTemplate('Relatório de Faturamento (6h)', inner) });
+    console.log(`[FinReport] Faturamento enviado → ${RECIPIENT}`);
   } catch (err: any) {
-    console.error('[FinReport] Erro ao enviar faturamento:', err.message);
+    console.error('[FinReport] Erro faturamento:', err.message);
   }
 }
 
@@ -269,29 +348,16 @@ async function sendDailyAccountsReport() {
     const now = nowSP();
     const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
 
-    const { data: payToday } = await sb
-      .from('financial_transactions')
-      .select('id,description,amount,due_date,entity_name,category_name,status,type')
-      .eq('type', 'EXPENSE').eq('status', 'PENDING').eq('due_date', todayStr)
-      .order('amount', { ascending: false });
-
-    const { data: recToday } = await sb
-      .from('financial_transactions')
-      .select('id,description,amount,due_date,entity_name,category_name,status,type')
-      .eq('type', 'INCOME').eq('status', 'PENDING').eq('due_date', todayStr)
-      .order('amount', { ascending: false });
-
-    const { data: payOver } = await sb
-      .from('financial_transactions')
-      .select('id,description,amount,due_date,entity_name,category_name,status,type')
-      .eq('type', 'EXPENSE').eq('status', 'PENDING').lt('due_date', todayStr)
-      .order('due_date', { ascending: true });
-
-    const { data: recOver } = await sb
-      .from('financial_transactions')
-      .select('id,description,amount,due_date,entity_name,category_name,status,type')
-      .eq('type', 'INCOME').eq('status', 'PENDING').lt('due_date', todayStr)
-      .order('due_date', { ascending: true });
+    const [{ data: payToday }, { data: recToday }, { data: payOver }, { data: recOver }] = await Promise.all([
+      sb.from('financial_transactions').select('id,description,amount,due_date,entity_name,category_name,status,type')
+        .eq('type','EXPENSE').eq('status','PENDING').eq('due_date',todayStr).order('amount',{ ascending:false }),
+      sb.from('financial_transactions').select('id,description,amount,due_date,entity_name,category_name,status,type')
+        .eq('type','INCOME').eq('status','PENDING').eq('due_date',todayStr).order('amount',{ ascending:false }),
+      sb.from('financial_transactions').select('id,description,amount,due_date,entity_name,category_name,status,type')
+        .eq('type','EXPENSE').eq('status','PENDING').lt('due_date',todayStr).order('due_date',{ ascending:true }),
+      sb.from('financial_transactions').select('id,description,amount,due_date,entity_name,category_name,status,type')
+        .eq('type','INCOME').eq('status','PENDING').lt('due_date',todayStr).order('due_date',{ ascending:true }),
+    ]);
 
     const sum = (arr: TxRow[] | null | undefined) => (arr || []).reduce((s, x) => s + (Number(x.amount) || 0), 0);
     const totPay = sum(payToday); const totRec = sum(recToday);
@@ -299,7 +365,7 @@ async function sendDailyAccountsReport() {
 
     const inner = `
       <h2 style="margin:0 0 4px;font-size:18px;color:#0f172a;">Resumo do Dia — ${fmtDateBR(now)}</h2>
-      <p style="margin:0 0 18px;font-size:13px;color:#475569;">Contas a pagar e a receber com vencimento hoje, e títulos em atraso.</p>
+      <p style="margin:0 0 18px;font-size:13px;color:#475569;">Contas com vencimento hoje + títulos em atraso.</p>
 
       <div style="display:flex;gap:12px;margin-bottom:20px;">
         <div style="flex:1;background:#fef2f2;border:1px solid #fecaca;border-radius:10px;padding:14px;">
@@ -330,15 +396,10 @@ async function sendDailyAccountsReport() {
     `;
 
     const subject = `Resumo Diário — ${fmtDateBR(now)} | A Pagar ${brl(totPay)} · A Receber ${brl(totRec)}`;
-    await transporter.sendMail({
-      from: SMTP_FROM,
-      to: RECIPIENT,
-      subject,
-      html: htmlTemplate('Resumo Diário Financeiro (07:00)', inner),
-    });
-    console.log(`[FinReport] Resumo diário enviado → ${RECIPIENT} (pagar=${brl(totPay)} receber=${brl(totRec)})`);
+    await transporter.sendMail({ from: SMTP_FROM, to: RECIPIENT, subject, html: htmlTemplate('Resumo Diário Financeiro (07:00)', inner) });
+    console.log(`[FinReport] Resumo diário → ${RECIPIENT} (pagar=${brl(totPay)} receber=${brl(totRec)})`);
   } catch (err: any) {
-    console.error('[FinReport] Erro ao enviar resumo diário:', err.message);
+    console.error('[FinReport] Erro resumo diário:', err.message);
   }
 }
 
@@ -370,7 +431,7 @@ function tick() {
 }
 
 export function startFinancialReportWorker() {
-  console.log(`[FinReport] Worker iniciado — destino: ${RECIPIENT} (faturamento a cada 6h, resumo diário 07:00 BRT)`);
+  console.log(`[FinReport] Worker ativo — ${RECIPIENT} (faturamento 6/6h, resumo diário 07:00 BRT)`);
   setInterval(tick, 60_000);
   tick();
 }
