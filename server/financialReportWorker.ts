@@ -356,11 +356,13 @@ async function sendDailyAccountsReport() {
     const now = nowSP();
     const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
 
-    const [{ data: payAll }, { data: recAll }] = await Promise.all([
+    const { getAllBalances } = await import('./asaasService');
+    const [{ data: payAll }, { data: recAll }, asaasBalances] = await Promise.all([
       sb.from('financial_transactions').select('id,description,amount,due_date,payment_date,entity_name,category_name,status,type')
         .eq('type','EXPENSE').in('status',['PENDING','PAID']).eq('due_date',todayStr).order('status',{ ascending:true }).order('amount',{ ascending:false }),
       sb.from('financial_transactions').select('id,description,amount,due_date,payment_date,entity_name,category_name,status,type')
         .eq('type','INCOME').in('status',['PENDING','PAID']).eq('due_date',todayStr).order('status',{ ascending:true }).order('amount',{ ascending:false }),
+      getAllBalances().catch((e: any) => { console.error('[FinReport] Asaas balances erro:', e?.message); return []; }),
     ]);
 
     const isInternalAdjustment = (t: any) => {
@@ -383,9 +385,33 @@ async function sendDailyAccountsReport() {
     const totPayPaid = sum(payPaid); const totRecPaid = sum(recPaid);
 
     const saldo = totRec - totPay;
+
+    const totAsaas = (asaasBalances || []).reduce((s: number, b: any) => s + (Number(b.balance) || 0), 0);
+    const totAsaasPending = (asaasBalances || []).reduce((s: number, b: any) => s + (Number(b.pendingBalance) || 0), 0);
+    const asaasRows = (asaasBalances || []).map((b: any) => {
+      if (b.error) {
+        return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;margin-bottom:6px;background:#fef2f2;border-left:3px solid #b91c1c;border-radius:6px;">
+          <tr><td style="padding:8px 10px;">
+            <div style="font-size:12px;font-weight:700;color:#0f172a;">${b.name}</div>
+            <div style="font-size:11px;color:#b91c1c;margin-top:2px;">⚠ ${b.error}</div>
+          </td></tr></table>`;
+      }
+      return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;margin-bottom:6px;background:#eff6ff;border-left:3px solid #2563eb;border-radius:6px;">
+        <tr><td style="padding:8px 10px;">
+          <div style="font-size:12px;font-weight:700;color:#0f172a;">${b.name}</div>
+          <div style="font-size:18px;font-weight:800;color:#1d4ed8;margin-top:2px;">${brl(Number(b.balance) || 0)}</div>
+          ${Number(b.pendingBalance) > 0 ? `<div style="font-size:10px;color:#475569;margin-top:2px;">+ ${brl(Number(b.pendingBalance))} a liberar</div>` : ''}
+        </td></tr></table>`;
+    }).join('');
+
     const inner = `
       <div style="font-size:17px;font-weight:700;color:#0f172a;margin-bottom:2px;">Resumo do Dia — ${fmtDateBR(now)}</div>
       <div style="font-size:12px;color:#475569;margin-bottom:14px;">Contas com vencimento hoje (pagas e pendentes).</div>
+
+      <div style="font-size:14px;font-weight:700;color:#1d4ed8;margin:0 0 8px;">💳 Saldo nas Contas Asaas · ${brl(totAsaas)}${totAsaasPending > 0 ? ` <span style="font-size:11px;color:#475569;font-weight:500;">(+${brl(totAsaasPending)} a liberar)</span>` : ''}</div>
+      ${asaasRows || '<div style="padding:10px;background:#f1f5f9;border-radius:6px;color:#475569;font-size:12px;">Não foi possível consultar os saldos do Asaas agora.</div>'}
+
+      <div style="height:18px;"></div>
 
       <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse:separate;border-spacing:0 6px;margin-bottom:14px;">
         <tr><td style="background:#fef2f2;border-left:4px solid #b91c1c;border-radius:6px;padding:10px 12px;">
