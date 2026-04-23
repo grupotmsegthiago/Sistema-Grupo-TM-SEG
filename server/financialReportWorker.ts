@@ -328,17 +328,26 @@ interface TxRow {
   type: string | null;
 }
 
-function renderTxList(rows: TxRow[], emptyMsg: string, accentColor: string): string {
+function renderTxList(rows: any[], emptyMsg: string, accentColor: string): string {
   if (!rows.length) return `<div style="padding:12px;background:#f1f5f9;border-radius:8px;color:#475569;font-size:13px;">${emptyMsg}</div>`;
-  return rows.map(t => `
-    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;margin-bottom:6px;background:#fafafa;border-left:3px solid ${accentColor};border-radius:6px;">
+  return rows.map(t => {
+    const isPaid = t.status === 'PAID';
+    const bg = isPaid ? '#f0fdf4' : '#fafafa';
+    const border = isPaid ? '#16a34a' : accentColor;
+    const badge = isPaid
+      ? `<span style="display:inline-block;background:#16a34a;color:#fff;font-size:9px;font-weight:800;padding:2px 6px;border-radius:10px;letter-spacing:.5px;">PAGO${t.payment_date ? ' ' + fmtDueDate(t.payment_date) : ''}</span>`
+      : `<span style="display:inline-block;background:#f59e0b;color:#fff;font-size:9px;font-weight:800;padding:2px 6px;border-radius:10px;letter-spacing:.5px;">PENDENTE</span>`;
+    return `
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;margin-bottom:6px;background:${bg};border-left:3px solid ${border};border-radius:6px;">
       <tr><td style="padding:8px 10px;">
-        <div style="font-size:14px;font-weight:700;color:${accentColor};margin-bottom:2px;">${brl(Number(t.amount) || 0)}</div>
+        <div style="margin-bottom:4px;">${badge}</div>
+        <div style="font-size:14px;font-weight:700;color:${isPaid ? '#16a34a' : accentColor};margin-bottom:2px;${isPaid ? 'text-decoration:line-through;opacity:.85;' : ''}">${brl(Number(t.amount) || 0)}</div>
         <div style="font-size:12px;color:#0f172a;font-weight:600;">${(t.entity_name || '—').toString().slice(0, 60)}</div>
         <div style="font-size:11px;color:#475569;margin-top:2px;">${(t.description || '—').toString().slice(0, 80)}</div>
         <div style="font-size:10px;color:#64748b;margin-top:4px;">Vence ${fmtDueDate(t.due_date)} · ${t.category_name || 'sem categoria'}</div>
       </td></tr>
-    </table>`).join('');
+    </table>`;
+  }).join('');
 }
 
 async function sendDailyAccountsReport() {
@@ -347,43 +356,51 @@ async function sendDailyAccountsReport() {
     const now = nowSP();
     const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
 
-    const [{ data: payToday }, { data: recToday }] = await Promise.all([
-      sb.from('financial_transactions').select('id,description,amount,due_date,entity_name,category_name,status,type')
-        .eq('type','EXPENSE').eq('status','PENDING').eq('due_date',todayStr).order('amount',{ ascending:false }),
-      sb.from('financial_transactions').select('id,description,amount,due_date,entity_name,category_name,status,type')
-        .eq('type','INCOME').eq('status','PENDING').eq('due_date',todayStr).order('amount',{ ascending:false }),
+    const [{ data: payAll }, { data: recAll }] = await Promise.all([
+      sb.from('financial_transactions').select('id,description,amount,due_date,payment_date,entity_name,category_name,status,type')
+        .eq('type','EXPENSE').in('status',['PENDING','PAID']).eq('due_date',todayStr).order('status',{ ascending:true }).order('amount',{ ascending:false }),
+      sb.from('financial_transactions').select('id,description,amount,due_date,payment_date,entity_name,category_name,status,type')
+        .eq('type','INCOME').in('status',['PENDING','PAID']).eq('due_date',todayStr).order('status',{ ascending:true }).order('amount',{ ascending:false }),
     ]);
 
-    const sum = (arr: TxRow[] | null | undefined) => (arr || []).reduce((s, x) => s + (Number(x.amount) || 0), 0);
-    const totPay = sum(payToday); const totRec = sum(recToday);
+    const payToday = payAll || [];
+    const recToday = recAll || [];
+    const payPending = payToday.filter(t => t.status === 'PENDING');
+    const payPaid    = payToday.filter(t => t.status === 'PAID');
+    const recPending = recToday.filter(t => t.status === 'PENDING');
+    const recPaid    = recToday.filter(t => t.status === 'PAID');
+
+    const sum = (arr: any[]) => arr.reduce((s, x) => s + (Number(x.amount) || 0), 0);
+    const totPay = sum(payPending); const totRec = sum(recPending);
+    const totPayPaid = sum(payPaid); const totRecPaid = sum(recPaid);
 
     const saldo = totRec - totPay;
     const inner = `
       <div style="font-size:17px;font-weight:700;color:#0f172a;margin-bottom:2px;">Resumo do Dia — ${fmtDateBR(now)}</div>
-      <div style="font-size:12px;color:#475569;margin-bottom:14px;">Contas com vencimento hoje.</div>
+      <div style="font-size:12px;color:#475569;margin-bottom:14px;">Contas com vencimento hoje (pagas e pendentes).</div>
 
       <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse:separate;border-spacing:0 6px;margin-bottom:14px;">
         <tr><td style="background:#fef2f2;border-left:4px solid #b91c1c;border-radius:6px;padding:10px 12px;">
-          <div style="font-size:10px;color:#991b1b;text-transform:uppercase;letter-spacing:.5px;font-weight:700;">A Pagar Hoje</div>
+          <div style="font-size:10px;color:#991b1b;text-transform:uppercase;letter-spacing:.5px;font-weight:700;">A Pagar Hoje (Pendentes)</div>
           <div style="font-size:22px;color:#b91c1c;font-weight:800;margin-top:2px;">${brl(totPay)}</div>
-          <div style="font-size:10px;color:#7f1d1d;">${(payToday || []).length} título(s)</div>
+          <div style="font-size:10px;color:#7f1d1d;">${payPending.length} pendente(s) · <span style="color:#16a34a;">${payPaid.length} já pago(s) (${brl(totPayPaid)})</span></div>
         </td></tr>
         <tr><td style="background:#ecfdf5;border-left:4px solid #15803d;border-radius:6px;padding:10px 12px;">
-          <div style="font-size:10px;color:#065f46;text-transform:uppercase;letter-spacing:.5px;font-weight:700;">A Receber Hoje</div>
+          <div style="font-size:10px;color:#065f46;text-transform:uppercase;letter-spacing:.5px;font-weight:700;">A Receber Hoje (Pendentes)</div>
           <div style="font-size:22px;color:#15803d;font-weight:800;margin-top:2px;">${brl(totRec)}</div>
-          <div style="font-size:10px;color:#064e3b;">${(recToday || []).length} título(s)</div>
+          <div style="font-size:10px;color:#064e3b;">${recPending.length} pendente(s) · <span style="color:#16a34a;">${recPaid.length} já recebido(s) (${brl(totRecPaid)})</span></div>
         </td></tr>
         <tr><td style="background:#f8fafc;border-left:4px solid #334155;border-radius:6px;padding:10px 12px;">
-          <div style="font-size:10px;color:#334155;text-transform:uppercase;letter-spacing:.5px;font-weight:700;">Saldo do Dia (Receber − Pagar)</div>
+          <div style="font-size:10px;color:#334155;text-transform:uppercase;letter-spacing:.5px;font-weight:700;">Saldo Pendente (Receber − Pagar)</div>
           <div style="font-size:22px;color:${saldo >= 0 ? '#15803d' : '#b91c1c'};font-weight:800;margin-top:2px;">${brl(saldo)}</div>
         </td></tr>
       </table>
 
-      <div style="font-size:14px;font-weight:700;color:#b91c1c;margin:16px 0 8px;">A Pagar Hoje · ${brl(totPay)}</div>
-      ${renderTxList(payToday || [], 'Nenhum pagamento com vencimento hoje.', '#b91c1c')}
+      <div style="font-size:14px;font-weight:700;color:#b91c1c;margin:16px 0 8px;">A Pagar Hoje · ${payToday.length} título(s)</div>
+      ${renderTxList(payToday, 'Nenhum pagamento com vencimento hoje.', '#b91c1c')}
 
-      <div style="font-size:14px;font-weight:700;color:#15803d;margin:18px 0 8px;">A Receber Hoje · ${brl(totRec)}</div>
-      ${renderTxList(recToday || [], 'Nenhum recebimento com vencimento hoje.', '#15803d')}
+      <div style="font-size:14px;font-weight:700;color:#15803d;margin:18px 0 8px;">A Receber Hoje · ${recToday.length} título(s)</div>
+      ${renderTxList(recToday, 'Nenhum recebimento com vencimento hoje.', '#15803d')}
     `;
 
     const subject = `Resumo Diário — ${fmtDateBR(now)} | A Pagar ${brl(totPay)} · A Receber ${brl(totRec)}`;
