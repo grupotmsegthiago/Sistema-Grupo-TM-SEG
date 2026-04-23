@@ -54,18 +54,18 @@ function fmtDueDate(s: string | null | undefined): string {
 }
 
 function htmlTemplate(title: string, inner: string): string {
-  return `<!DOCTYPE html><html lang="pt-BR"><head><meta charset="utf-8"></head>
-<body style="font-family:Arial,sans-serif;background:#f4f4f7;margin:0;padding:24px;color:#222;">
-  <div style="max-width:760px;margin:auto;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 2px 12px rgba(0,0,0,.06);">
-    <div style="background:#0f172a;color:#fff;padding:20px 24px;">
-      <h1 style="margin:0;font-size:20px;">Grupo TM SEG</h1>
-      <p style="margin:4px 0 0;font-size:13px;opacity:.85;">${title}</p>
-    </div>
-    <div style="padding:24px;">${inner}</div>
-    <div style="padding:14px 24px;background:#f8fafc;font-size:11px;color:#64748b;border-top:1px solid #e2e8f0;">
-      Relatório automático — ${fmtDateTimeBR(new Date())} (Brasília). Mesma regra de cálculo do dashboard "Monitoramento de Missões".
-    </div>
-  </div>
+  return `<!DOCTYPE html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
+<body style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;background:#f4f4f7;margin:0;padding:8px;color:#222;">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:680px;margin:auto;background:#fff;border-radius:10px;border-collapse:separate;border-spacing:0;">
+    <tr><td style="background:#0f172a;color:#fff;padding:16px 16px;border-radius:10px 10px 0 0;">
+      <div style="font-size:18px;font-weight:700;">Grupo TM SEG</div>
+      <div style="font-size:12px;opacity:.85;margin-top:2px;">${title}</div>
+    </td></tr>
+    <tr><td style="padding:14px 12px;">${inner}</td></tr>
+    <tr><td style="padding:10px 12px;background:#f8fafc;font-size:10px;color:#64748b;border-top:1px solid #e2e8f0;border-radius:0 0 10px 10px;">
+      ${fmtDateTimeBR(new Date())} (Brasília) — mesma regra do dashboard.
+    </td></tr>
+  </table>
 </body></html>`;
 }
 
@@ -185,12 +185,18 @@ async function fetchRevenueSummary() {
 
   const startYearIso = new Date(startYear.getTime() - new Date().getTimezoneOffset() * 60000).toISOString();
 
-  const [{ data: missions, error }, refs] = await Promise.all([
-    sb.from('missions').select('*')
-      .or(`start_time.gte.${startYearIso},and(start_time.is.null,created_at.gte.${startYearIso})`),
-    fetchAllReferenceData(),
-  ]);
-  if (error) throw error;
+  const refs = await fetchAllReferenceData();
+  const PAGE = 1000;
+  let missions: any[] = [];
+  for (let offset = 0; ; offset += PAGE) {
+    const { data, error } = await sb.from('missions').select('*')
+      .or(`start_time.gte.${startYearIso},and(start_time.is.null,created_at.gte.${startYearIso})`)
+      .range(offset, offset + PAGE - 1);
+    if (error) throw error;
+    if (!data || data.length === 0) break;
+    missions = missions.concat(data);
+    if (data.length < PAGE) break;
+  }
 
   const buckets = {
     day: { count: 0, revenue: 0, cost: 0 },
@@ -322,24 +328,17 @@ interface TxRow {
   type: string | null;
 }
 
-function renderTxTable(rows: TxRow[], emptyMsg: string): string {
-  if (!rows.length) return `<p style="padding:12px;background:#f1f5f9;border-radius:8px;color:#475569;font-size:13px;margin:0;">${emptyMsg}</p>`;
-  const trs = rows.map(t => `
-    <tr>
-      <td style="padding:8px 10px;border-bottom:1px solid #e2e8f0;">${fmtDueDate(t.due_date)}</td>
-      <td style="padding:8px 10px;border-bottom:1px solid #e2e8f0;">${(t.entity_name || '-').toString().slice(0, 50)}</td>
-      <td style="padding:8px 10px;border-bottom:1px solid #e2e8f0;">${(t.description || '-').toString().slice(0, 60)}</td>
-      <td style="padding:8px 10px;border-bottom:1px solid #e2e8f0;">${t.category_name || '-'}</td>
-      <td style="padding:8px 10px;border-bottom:1px solid #e2e8f0;text-align:right;font-weight:600;">${brl(Number(t.amount) || 0)}</td>
-    </tr>`).join('');
-  return `<table style="width:100%;border-collapse:collapse;font-size:12px;">
-    <thead><tr style="background:#f1f5f9;">
-      <th style="padding:8px 10px;text-align:left;">Vencimento</th>
-      <th style="padding:8px 10px;text-align:left;">Cliente/Fornecedor</th>
-      <th style="padding:8px 10px;text-align:left;">Descrição</th>
-      <th style="padding:8px 10px;text-align:left;">Categoria</th>
-      <th style="padding:8px 10px;text-align:right;">Valor</th>
-    </tr></thead><tbody>${trs}</tbody></table>`;
+function renderTxList(rows: TxRow[], emptyMsg: string, accentColor: string): string {
+  if (!rows.length) return `<div style="padding:12px;background:#f1f5f9;border-radius:8px;color:#475569;font-size:13px;">${emptyMsg}</div>`;
+  return rows.map(t => `
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;margin-bottom:6px;background:#fafafa;border-left:3px solid ${accentColor};border-radius:6px;">
+      <tr><td style="padding:8px 10px;">
+        <div style="font-size:14px;font-weight:700;color:${accentColor};margin-bottom:2px;">${brl(Number(t.amount) || 0)}</div>
+        <div style="font-size:12px;color:#0f172a;font-weight:600;">${(t.entity_name || '—').toString().slice(0, 60)}</div>
+        <div style="font-size:11px;color:#475569;margin-top:2px;">${(t.description || '—').toString().slice(0, 80)}</div>
+        <div style="font-size:10px;color:#64748b;margin-top:4px;">Vence ${fmtDueDate(t.due_date)} · ${t.category_name || 'sem categoria'}</div>
+      </td></tr>
+    </table>`).join('');
 }
 
 async function sendDailyAccountsReport() {
@@ -358,33 +357,33 @@ async function sendDailyAccountsReport() {
     const sum = (arr: TxRow[] | null | undefined) => (arr || []).reduce((s, x) => s + (Number(x.amount) || 0), 0);
     const totPay = sum(payToday); const totRec = sum(recToday);
 
+    const saldo = totRec - totPay;
     const inner = `
-      <h2 style="margin:0 0 4px;font-size:18px;color:#0f172a;">Resumo do Dia — ${fmtDateBR(now)}</h2>
-      <p style="margin:0 0 18px;font-size:13px;color:#475569;">Contas a pagar e a receber com vencimento hoje.</p>
+      <div style="font-size:17px;font-weight:700;color:#0f172a;margin-bottom:2px;">Resumo do Dia — ${fmtDateBR(now)}</div>
+      <div style="font-size:12px;color:#475569;margin-bottom:14px;">Contas com vencimento hoje.</div>
 
-      <div style="display:flex;gap:12px;margin-bottom:20px;">
-        <div style="flex:1;background:#fef2f2;border:1px solid #fecaca;border-radius:10px;padding:14px;">
-          <div style="font-size:11px;color:#991b1b;text-transform:uppercase;letter-spacing:.5px;font-weight:700;">A Pagar Hoje</div>
-          <div style="font-size:22px;color:#b91c1c;font-weight:800;margin-top:4px;">${brl(totPay)}</div>
-          <div style="font-size:11px;color:#7f1d1d;margin-top:2px;">${(payToday || []).length} título(s)</div>
-        </div>
-        <div style="flex:1;background:#ecfdf5;border:1px solid #bbf7d0;border-radius:10px;padding:14px;">
-          <div style="font-size:11px;color:#065f46;text-transform:uppercase;letter-spacing:.5px;font-weight:700;">A Receber Hoje</div>
-          <div style="font-size:22px;color:#15803d;font-weight:800;margin-top:4px;">${brl(totRec)}</div>
-          <div style="font-size:11px;color:#064e3b;margin-top:2px;">${(recToday || []).length} título(s)</div>
-        </div>
-        <div style="flex:1;background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:14px;">
-          <div style="font-size:11px;color:#334155;text-transform:uppercase;letter-spacing:.5px;font-weight:700;">Saldo do Dia</div>
-          <div style="font-size:22px;color:${(totRec - totPay) >= 0 ? '#15803d' : '#b91c1c'};font-weight:800;margin-top:4px;">${brl(totRec - totPay)}</div>
-          <div style="font-size:11px;color:#475569;margin-top:2px;">Receber − Pagar</div>
-        </div>
-      </div>
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse:separate;border-spacing:0 6px;margin-bottom:14px;">
+        <tr><td style="background:#fef2f2;border-left:4px solid #b91c1c;border-radius:6px;padding:10px 12px;">
+          <div style="font-size:10px;color:#991b1b;text-transform:uppercase;letter-spacing:.5px;font-weight:700;">A Pagar Hoje</div>
+          <div style="font-size:22px;color:#b91c1c;font-weight:800;margin-top:2px;">${brl(totPay)}</div>
+          <div style="font-size:10px;color:#7f1d1d;">${(payToday || []).length} título(s)</div>
+        </td></tr>
+        <tr><td style="background:#ecfdf5;border-left:4px solid #15803d;border-radius:6px;padding:10px 12px;">
+          <div style="font-size:10px;color:#065f46;text-transform:uppercase;letter-spacing:.5px;font-weight:700;">A Receber Hoje</div>
+          <div style="font-size:22px;color:#15803d;font-weight:800;margin-top:2px;">${brl(totRec)}</div>
+          <div style="font-size:10px;color:#064e3b;">${(recToday || []).length} título(s)</div>
+        </td></tr>
+        <tr><td style="background:#f8fafc;border-left:4px solid #334155;border-radius:6px;padding:10px 12px;">
+          <div style="font-size:10px;color:#334155;text-transform:uppercase;letter-spacing:.5px;font-weight:700;">Saldo do Dia (Receber − Pagar)</div>
+          <div style="font-size:22px;color:${saldo >= 0 ? '#15803d' : '#b91c1c'};font-weight:800;margin-top:2px;">${brl(saldo)}</div>
+        </td></tr>
+      </table>
 
-      <h3 style="margin:0 0 8px;font-size:15px;color:#b91c1c;">A Pagar Hoje (${brl(totPay)})</h3>
-      ${renderTxTable(payToday || [], 'Nenhum pagamento com vencimento hoje.')}
+      <div style="font-size:14px;font-weight:700;color:#b91c1c;margin:16px 0 8px;">A Pagar Hoje · ${brl(totPay)}</div>
+      ${renderTxList(payToday || [], 'Nenhum pagamento com vencimento hoje.', '#b91c1c')}
 
-      <h3 style="margin:22px 0 8px;font-size:15px;color:#15803d;">A Receber Hoje (${brl(totRec)})</h3>
-      ${renderTxTable(recToday || [], 'Nenhum recebimento com vencimento hoje.')}
+      <div style="font-size:14px;font-weight:700;color:#15803d;margin:18px 0 8px;">A Receber Hoje · ${brl(totRec)}</div>
+      ${renderTxList(recToday || [], 'Nenhum recebimento com vencimento hoje.', '#15803d')}
     `;
 
     const subject = `Resumo Diário — ${fmtDateBR(now)} | A Pagar ${brl(totPay)} · A Receber ${brl(totRec)}`;
