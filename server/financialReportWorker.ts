@@ -363,8 +363,16 @@ async function sendDailyAccountsReport() {
         .eq('type','INCOME').in('status',['PENDING','PAID']).eq('due_date',todayStr).order('status',{ ascending:true }).order('amount',{ ascending:false }),
     ]);
 
-    const payToday = payAll || [];
-    const recToday = recAll || [];
+    const isInternalAdjustment = (t: any) => {
+      const cat = String(t?.category_name || '').toUpperCase();
+      const desc = String(t?.description || '').toUpperCase();
+      return cat.includes('AJUSTE DE SALDO')
+        || cat.includes('RENDIMENTO')
+        || desc.includes('RENDIMENTO DE INVESTIMENTO')
+        || desc.includes('DESVALORIZA');
+    };
+    const payToday = (payAll || []).filter(t => !isInternalAdjustment(t));
+    const recToday = (recAll || []).filter(t => !isInternalAdjustment(t));
     const payPending = payToday.filter(t => t.status === 'PENDING');
     const payPaid    = payToday.filter(t => t.status === 'PAID');
     const recPending = recToday.filter(t => t.status === 'PENDING');
