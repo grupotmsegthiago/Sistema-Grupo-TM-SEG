@@ -1,5 +1,7 @@
 import { createClient } from '@supabase/supabase-js';
 import nodemailer from 'nodemailer';
+import * as fs from 'fs';
+import * as path from 'path';
 import { calculateMissionFinancials } from '../lib/financialUtils';
 import { MissionStatus, type Mission, type ClientPriceTable, type ProviderCostTable, type Client } from '../types';
 
@@ -445,27 +447,56 @@ async function sendDailyAccountsReport() {
   }
 }
 
-let lastRevenueSlot = '';
-let lastDailyDate = '';
+const STATE_DIR = path.join(process.cwd(), '.local', 'state');
+const STATE_FILE = path.join(STATE_DIR, 'finreport.json');
+
+interface FinReportState { lastRevenueSlot: string; lastDailyDate: string; }
+
+function loadState(): FinReportState {
+  try {
+    if (fs.existsSync(STATE_FILE)) return JSON.parse(fs.readFileSync(STATE_FILE, 'utf-8'));
+  } catch (e: any) { console.error('[FinReport] loadState erro:', e.message); }
+  return { lastRevenueSlot: '', lastDailyDate: '' };
+}
+
+function saveState(s: FinReportState) {
+  try {
+    if (!fs.existsSync(STATE_DIR)) fs.mkdirSync(STATE_DIR, { recursive: true });
+    fs.writeFileSync(STATE_FILE, JSON.stringify(s, null, 2));
+  } catch (e: any) { console.error('[FinReport] saveState erro:', e.message); }
+}
+
+let state: FinReportState = loadState();
+
+async function runDaily(dateKey: string) {
+  state.lastDailyDate = dateKey;
+  saveState(state);
+  await sendDailyAccountsReport();
+}
+
+async function runRevenue(slot: string) {
+  state.lastRevenueSlot = slot;
+  saveState(state);
+  await sendRevenueReport();
+}
 
 function tick() {
   try {
     const now = nowSP();
     const hour = now.getHours();
-    const minute = now.getMinutes();
     const dateKey = `${now.getFullYear()}-${now.getMonth()}-${now.getDate()}`;
 
-    if (hour === 7 && minute < 5 && lastDailyDate !== dateKey) {
-      lastDailyDate = dateKey;
-      void sendDailyAccountsReport();
+    // Resumo diário 07:00 — catch-up: dispara qualquer hora >=7 se ainda não foi enviado hoje
+    if (hour >= 7 && state.lastDailyDate !== dateKey) {
+      void runDaily(dateKey);
     }
 
-    if ([0, 6, 12, 18].includes(hour) && minute < 5) {
-      const slot = `${dateKey}-${hour}`;
-      if (lastRevenueSlot !== slot) {
-        lastRevenueSlot = slot;
-        void sendRevenueReport();
-      }
+    // Faturamento 6/6h (00, 06, 12, 18) — catch-up: dispara o slot mais recente já passado
+    const slots = [0, 6, 12, 18];
+    const currentSlot = [...slots].reverse().find(s => hour >= s) ?? 0;
+    const slotKey = `${dateKey}-${currentSlot}`;
+    if (state.lastRevenueSlot !== slotKey) {
+      void runRevenue(slotKey);
     }
   } catch (e: any) {
     console.error('[FinReport] tick erro:', e.message);
@@ -473,7 +504,7 @@ function tick() {
 }
 
 export function startFinancialReportWorker() {
-  console.log(`[FinReport] Worker ativo — ${RECIPIENT} (faturamento 6/6h, resumo diário 07:00 BRT)`);
+  console.log(`[FinReport] Worker ativo — ${RECIPIENT} (faturamento 6/6h, resumo diário 07:00 BRT) | estado: dailySent=${state.lastDailyDate} revenueSlot=${state.lastRevenueSlot}`);
   setInterval(tick, 60_000);
   tick();
 }
