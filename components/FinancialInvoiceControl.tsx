@@ -39,6 +39,9 @@ interface Invoice {
   nf_retry_count?: number;
   nf_retry_paused?: boolean;
   nf_history?: NfHistoryEntry[];
+  nf_provider?: string;
+  plugnotas_invoice_id?: string;
+  plugnotas_protocol?: string;
 }
 
 interface NfHistoryEntry {
@@ -58,7 +61,14 @@ const HISTORY_ACTION_LABEL: Record<string, { label: string; color: string; bg: s
   'paused-validation': { label: 'Pausada (validação)', color: 'text-orange-700', bg: 'bg-orange-50', border: 'border-orange-200', icon: AlertCircle },
   'stuck-alert': { label: 'TRAVADA — alerta', color: 'text-white', bg: 'bg-red-600', border: 'border-red-700', icon: AlertCircle },
   'lookup-error': { label: 'Falha de consulta', color: 'text-gray-700', bg: 'bg-gray-100', border: 'border-gray-200', icon: AlertCircle },
+  'provider-failover': { label: 'Failover Asaas → PlugNotas', color: 'text-cyan-700', bg: 'bg-cyan-50', border: 'border-cyan-200', icon: RefreshCw },
 };
+
+interface ProviderPreferences {
+  [companyKey: string]: 'ASAAS' | 'PLUGNOTAS';
+}
+
+interface PlugNotasCompany { key: string; name: string; cnpj: string; }
 
 type StatusFilter = 'ALL' | 'EMITIDA' | 'PAGA' | 'VENCIDA' | 'CANCELADA';
 type SortField = 'date' | 'amount' | 'number' | 'client' | 'status';
@@ -97,9 +107,15 @@ const FinancialInvoiceControl: React.FC = () => {
   const [retroForm, setRetroForm] = useState({ client: '', number: '', amount: '', date: '', dueDate: '', notes: '', issuer_company: 'TM GESTÃO' });
   const [savingRetro, setSavingRetro] = useState(false);
   const [bulkRetrying, setBulkRetrying] = useState(false);
-  const [issuerSummary, setIssuerSummary] = useState<Array<{ company: string; total: number; authorized: number; synchronized: number; scheduled: number; error: number; stuck: number; canceled: number; other: number }>>([]);
+  const [issuerSummary, setIssuerSummary] = useState<Array<{ company: string; total: number; authorized: number; synchronized: number; scheduled: number; error: number; stuck: number; canceled: number; other: number; asaas?: number; plugnotas?: number }>>([]);
   const [issuerFilter, setIssuerFilter] = useState<string | null>(null);
   const [issuerStateFilter, setIssuerStateFilter] = useState<'total' | 'authorized' | 'scheduled' | 'stuck' | null>(null);
+  const [providerPrefs, setProviderPrefs] = useState<ProviderPreferences>({});
+  const [plugnotasCompanies, setPlugnotasCompanies] = useState<PlugNotasCompany[]>([]);
+  const [plugnotasConfigured, setPlugnotasConfigured] = useState(false);
+  const [savingPrefs, setSavingPrefs] = useState(false);
+  const [reissuePlugnotasId, setReissuePlugnotasId] = useState<string | null>(null);
+  const [providerByPipeline, setProviderByPipeline] = useState<Record<string, { total: number; authorized: number; error: number; stuck: number; processing: number }>>({});
 
   const fetchIssuerSummary = useCallback(async () => {
     try {
@@ -108,10 +124,79 @@ const FinancialInvoiceControl: React.FC = () => {
       if (data?.success && Array.isArray(data.summary)) {
         setIssuerSummary(data.summary);
       }
+      if (data?.byProvider) setProviderByPipeline(data.byProvider);
     } catch (e) {
       console.error('[InvoiceControl] Summary fetch error', e);
     }
   }, []);
+
+  const fetchProviderPreferences = useCallback(async () => {
+    try {
+      const res = await authFetch('/api/nf/provider-preferences');
+      const data = await res.json();
+      if (data?.success) {
+        setProviderPrefs(data.preferences || {});
+        setPlugnotasCompanies(Array.isArray(data.companies) ? data.companies : []);
+        setPlugnotasConfigured(!!data.plugnotasConfigured);
+      }
+    } catch (e) {
+      console.error('[InvoiceControl] Provider prefs fetch error', e);
+    }
+  }, []);
+
+  const handleSaveProviderPrefs = async (newPrefs: ProviderPreferences) => {
+    setSavingPrefs(true);
+    try {
+      const res = await authFetch('/api/nf/provider-preferences', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ preferences: newPrefs }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) throw new Error(data.error || 'Falha ao salvar preferências');
+      setProviderPrefs(newPrefs);
+    } catch (e: any) {
+      alert('Erro ao salvar preferências: ' + e.message);
+    } finally {
+      setSavingPrefs(false);
+    }
+  };
+
+  const handleReissueViaPlugNotas = async (inv: Invoice) => {
+    if (!plugnotasConfigured) {
+      alert('PlugNotas ainda não está configurado — defina o token nas configurações do projeto antes de fazer failover.');
+      return;
+    }
+    if (!confirm(
+      `Reemitir esta NF via PlugNotas?\n\n` +
+      `• Cliente: ${inv.client}\n` +
+      `• NF: ${inv.number}\n` +
+      `• Valor: ${fmtBRL(inv.amount)}\n` +
+      `• Emissora: ${inv.issuer_company || '—'}\n\n` +
+      `O sistema vai tentar CANCELAR a NF Asaas atual (se existir) e emitir uma nova pelo PlugNotas. ` +
+      `Use isso quando o Asaas estiver travado e você precisar liberar a NF agora.`
+    )) return;
+    setReissuePlugnotasId(inv.id);
+    try {
+      const res = await authFetch(`/api/nf/reissue-plugnotas/${inv.id}`, { method: 'POST' });
+      const data = await res.json();
+      if (!res.ok || !data.success) throw new Error(data.error || 'Falha ao reemitir');
+      const lines = [
+        '✅ NF enviada ao PlugNotas!',
+        `Status: ${data.status || 'PROCESSING'}`,
+        `ID: ${data.plugnotasId || data.idIntegracao}`,
+      ];
+      if (data.asaasCancelled) lines.push('• NF Asaas anterior foi cancelada.');
+      else if (data.asaasCancelError) lines.push(`• Atenção: não foi possível cancelar NF Asaas (${data.asaasCancelError}). Verifique no painel Asaas.`);
+      alert(lines.join('\n'));
+      await fetchInvoices();
+      await fetchIssuerSummary();
+    } catch (e: any) {
+      alert('Erro: ' + e.message);
+    } finally {
+      setReissuePlugnotasId(null);
+    }
+  };
 
   const handleBulkRetryNfs = async () => {
     if (!confirm('Reemitir TODAS as NFs pendentes agora?\n\nIsso vai:\n• Tentar autorizar NFs em ERRO\n• Cancelar e reagendar NFs travadas em SYNCHRONIZED há > 6h\n• Marcar como TRAVADA e pausar as que estão em SYNCHRONIZED há > 24h')) return;
@@ -163,7 +248,7 @@ const FinancialInvoiceControl: React.FC = () => {
     }
   }, []);
 
-  useEffect(() => { fetchInvoices(); fetchIssuerSummary(); }, [fetchInvoices, fetchIssuerSummary]);
+  useEffect(() => { fetchInvoices(); fetchIssuerSummary(); fetchProviderPreferences(); }, [fetchInvoices, fetchIssuerSummary, fetchProviderPreferences]);
 
   useRealtimeRefresh('financial_invoices', () => { fetchInvoices(); fetchIssuerSummary(); });
 
@@ -495,12 +580,90 @@ const FinancialInvoiceControl: React.FC = () => {
                     {cell('Em fila', s.scheduled, 'scheduled', 'text-blue-700 bg-blue-50 border-blue-200 hover:bg-blue-100')}
                     {cell('Travadas', stuckTotal, 'stuck', 'text-white bg-red-600 border-red-700 hover:bg-red-700', true)}
                   </div>
+                  {(s.asaas !== undefined || s.plugnotas !== undefined) && (
+                    <div className="flex items-center justify-between mt-2 pt-2 border-t border-gray-100">
+                      <span className="inline-flex items-center gap-1 text-[8px] font-bold px-1.5 py-0.5 rounded-full bg-violet-50 text-violet-700 border border-violet-200" title="Faturas emitidas via Asaas">
+                        ASAAS · {s.asaas || 0}
+                      </span>
+                      <span className="inline-flex items-center gap-1 text-[8px] font-bold px-1.5 py-0.5 rounded-full bg-cyan-50 text-cyan-700 border border-cyan-200" title="Faturas emitidas via PlugNotas">
+                        PLUGNOTAS · {s.plugnotas || 0}
+                      </span>
+                    </div>
+                  )}
                 </div>
               );
             })}
           </div>
         </div>
       )}
+
+      {/* Card de preferências de emissora (Asaas vs PlugNotas) */}
+      <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-4 mb-6" data-testid="provider-prefs-card">
+        <div className="flex items-center justify-between mb-3">
+          <div className="flex items-center gap-2">
+            <Send size={14} className="text-cyan-600" />
+            <span className="text-[11px] font-black text-gray-700 uppercase tracking-wide">Emissora padrão de NF por empresa</span>
+          </div>
+          <span className={`inline-flex items-center gap-1 text-[10px] font-black px-2 py-0.5 rounded-full ${plugnotasConfigured ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-gray-100 text-gray-500 border border-gray-200'}`}>
+            <span className={`w-1.5 h-1.5 rounded-full ${plugnotasConfigured ? 'bg-emerald-500' : 'bg-gray-400'}`} />
+            PlugNotas {plugnotasConfigured ? 'configurado' : 'não configurado'}
+          </span>
+        </div>
+        <p className="text-[10px] text-gray-500 mb-3">
+          O <b>Asaas</b> continua emitindo o boleto e (por padrão) a NF. Marque uma empresa como <b>PlugNotas</b> apenas para emitir a NF por lá em <i>novas</i> faturas. Para reemitir uma fatura específica, use o botão "Reemitir via PlugNotas" na linha da fatura.
+        </p>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+          {(plugnotasCompanies.length > 0 ? plugnotasCompanies : [{ key: 'TM GESTAO', name: 'TM GESTÃO', cnpj: '60485843000157' }, { key: 'TM SECURITY', name: 'TM SECURITY', cnpj: '60508931000127' }, { key: 'TM SEGURANCA', name: 'TM SEGURANÇA', cnpj: '28804378000167' }]).map(c => {
+            const current = providerPrefs[c.key] || 'ASAAS';
+            return (
+              <div key={c.key} className="border border-gray-100 rounded-lg p-3" data-testid={`pref-row-${c.key}`}>
+                <div className="text-[11px] font-black text-gray-800 uppercase">{c.name}</div>
+                <div className="text-[9px] font-mono text-gray-400 mb-2">{c.cnpj}</div>
+                <div className="flex gap-1">
+                  <button
+                    onClick={() => handleSaveProviderPrefs({ ...providerPrefs, [c.key]: 'ASAAS' })}
+                    disabled={savingPrefs}
+                    className={`flex-1 text-[10px] font-black px-2 py-1.5 rounded-md border transition-all ${current === 'ASAAS' ? 'bg-violet-600 text-white border-violet-700' : 'bg-white text-violet-700 border-violet-200 hover:bg-violet-50'}`}
+                    data-testid={`pref-asaas-${c.key}`}
+                  >ASAAS</button>
+                  <button
+                    onClick={() => handleSaveProviderPrefs({ ...providerPrefs, [c.key]: 'PLUGNOTAS' })}
+                    disabled={savingPrefs || !plugnotasConfigured}
+                    className={`flex-1 text-[10px] font-black px-2 py-1.5 rounded-md border transition-all ${current === 'PLUGNOTAS' ? 'bg-cyan-600 text-white border-cyan-700' : 'bg-white text-cyan-700 border-cyan-200 hover:bg-cyan-50'} ${!plugnotasConfigured ? 'opacity-50 cursor-not-allowed' : ''}`}
+                    title={!plugnotasConfigured ? 'Configure o token PlugNotas primeiro' : ''}
+                    data-testid={`pref-plugnotas-${c.key}`}
+                  >PLUGNOTAS</button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+        {(providerByPipeline.ASAAS?.total || providerByPipeline.PLUGNOTAS?.total) ? (
+          <div className="mt-3 grid grid-cols-2 gap-2">
+            <div className="bg-violet-50 border border-violet-100 rounded-md p-2 text-[10px]">
+              <span className="font-black text-violet-700 uppercase">Asaas:</span>
+              <span className="ml-1 text-violet-600 font-mono">
+                {providerByPipeline.ASAAS?.total || 0} totais ·{' '}
+                {providerByPipeline.ASAAS?.authorized || 0} autorizadas ·{' '}
+                {providerByPipeline.ASAAS?.processing || 0} fila ·{' '}
+                <b className={providerByPipeline.ASAAS?.stuck ? 'text-red-600' : ''}>{providerByPipeline.ASAAS?.stuck || 0} travadas</b> ·{' '}
+                {providerByPipeline.ASAAS?.error || 0} erros
+              </span>
+            </div>
+            <div className="bg-cyan-50 border border-cyan-100 rounded-md p-2 text-[10px]">
+              <span className="font-black text-cyan-700 uppercase">PlugNotas:</span>
+              <span className="ml-1 text-cyan-600 font-mono">
+                {providerByPipeline.PLUGNOTAS?.total || 0} totais ·{' '}
+                {providerByPipeline.PLUGNOTAS?.authorized || 0} autorizadas ·{' '}
+                {providerByPipeline.PLUGNOTAS?.processing || 0} fila ·{' '}
+                <b className={providerByPipeline.PLUGNOTAS?.stuck ? 'text-red-600' : ''}>{providerByPipeline.PLUGNOTAS?.stuck || 0} travadas</b> ·{' '}
+                {providerByPipeline.PLUGNOTAS?.error || 0} erros
+              </span>
+            </div>
+          </div>
+        ) : null}
+      </div>
+
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
         <button onClick={() => setStatusFilter(statusFilter === 'EMITIDA' ? 'ALL' : 'EMITIDA')} className={`rounded-xl p-4 border-2 transition-all text-left ${statusFilter === 'EMITIDA' ? 'border-amber-400 bg-amber-50 ring-2 ring-amber-200' : 'border-gray-100 bg-white hover:border-amber-200'}`} data-testid="filter-emitida">
@@ -591,9 +754,18 @@ const FinancialInvoiceControl: React.FC = () => {
                           <span className={isOverdue ? 'text-red-600 font-bold' : 'text-gray-600'}>{fmtDate(inv.boleto_due_date)}</span>
                         ) : <span className="text-gray-300">-</span>}
                       </td>
-                      <td className="px-4 py-3 text-center text-[10px] font-bold text-gray-500 uppercase">{inv.issuer_company || '-'}</td>
+                      <td className="px-4 py-3 text-center text-[10px] font-bold text-gray-500 uppercase">
+                        <div className="flex flex-col items-center gap-0.5">
+                          <span>{inv.issuer_company || '-'}</span>
+                          {(inv.nf_provider || (inv.plugnotas_invoice_id ? 'PLUGNOTAS' : (inv.asaas_payment_id ? 'ASAAS' : null))) && (
+                            <span className={`inline-flex items-center text-[8px] font-black px-1.5 py-0.5 rounded-full border ${(inv.nf_provider || (inv.plugnotas_invoice_id ? 'PLUGNOTAS' : 'ASAAS')) === 'PLUGNOTAS' ? 'bg-cyan-50 text-cyan-700 border-cyan-200' : 'bg-violet-50 text-violet-700 border-violet-200'}`} data-testid={`provider-chip-${inv.id}`}>
+                              {(inv.nf_provider || (inv.plugnotas_invoice_id ? 'PLUGNOTAS' : 'ASAAS'))}
+                            </span>
+                          )}
+                        </div>
+                      </td>
                       <td className="px-4 py-3 text-center">
-                        {inv.asaas_payment_id ? (() => {
+                        {(inv.asaas_payment_id || inv.plugnotas_invoice_id) ? (() => {
                           const ns = inv.nf_status?.toUpperCase();
                           const ref = inv.nf_retry_at || inv.created_at;
                           const ageH = ref ? Math.floor((Date.now() - new Date(ref).getTime()) / 3600_000) : null;
@@ -661,6 +833,17 @@ const FinancialInvoiceControl: React.FC = () => {
                               data-testid={`btn-retry-nf-${inv.id}`}
                             >
                               {retryingNfId === inv.id ? <Loader2 size={13} className="animate-spin" /> : <FileText size={13} />}
+                            </button>
+                          )}
+                          {inv.status !== 'CANCELADA' && inv.nf_status?.toUpperCase() !== 'AUTHORIZED' && plugnotasConfigured && (
+                            <button
+                              onClick={() => handleReissueViaPlugNotas(inv)}
+                              disabled={reissuePlugnotasId === inv.id}
+                              className="bg-cyan-50 hover:bg-cyan-100 text-cyan-700 p-1.5 rounded-lg"
+                              title="Reemitir via PlugNotas (failover)"
+                              data-testid={`btn-reissue-plugnotas-${inv.id}`}
+                            >
+                              {reissuePlugnotasId === inv.id ? <Loader2 size={13} className="animate-spin" /> : <Send size={13} />}
                             </button>
                           )}
                           {inv.status !== 'CANCELADA' && inv.status !== 'PAGA' && (
@@ -825,12 +1008,43 @@ const FinancialInvoiceControl: React.FC = () => {
                           Enviar Email
                         </button>
                       )}
+                      {inv.status !== 'CANCELADA' && inv.nf_status?.toUpperCase() !== 'AUTHORIZED' && plugnotasConfigured && (
+                        <button
+                          onClick={() => handleReissueViaPlugNotas(inv)}
+                          disabled={reissuePlugnotasId === inv.id}
+                          className="flex items-center gap-1.5 text-[10px] font-bold text-cyan-700 bg-cyan-50 px-3 py-2 rounded-lg border border-cyan-200 hover:bg-cyan-100"
+                          title="Failover: cancela NF Asaas (se houver) e emite no PlugNotas"
+                          data-testid={`btn-reissue-plugnotas-detail-${inv.id}`}
+                        >
+                          {reissuePlugnotasId === inv.id ? <Loader2 size={12} className="animate-spin" /> : <Send size={12} />} Reemitir via PlugNotas
+                        </button>
+                      )}
                       {inv.status !== 'CANCELADA' && inv.status !== 'PAGA' && (
                         <button onClick={() => handleCancelInvoice(inv)} disabled={cancellingId === inv.id} className="flex items-center gap-1.5 text-[10px] font-bold text-red-600 bg-red-50 px-3 py-2 rounded-lg border border-red-200 hover:bg-red-100 ml-auto">
                           {cancellingId === inv.id ? <Loader2 size={12} className="animate-spin" /> : <Ban size={12} />} Cancelar Fatura
                         </button>
                       )}
                     </div>
+
+                    {(inv.nf_provider === 'PLUGNOTAS' || inv.plugnotas_invoice_id) && (
+                      <div className="border border-cyan-200 bg-cyan-50/40 rounded-xl p-4 space-y-2">
+                        <p className="text-[9px] font-black text-cyan-700 uppercase tracking-widest flex items-center gap-1.5">
+                          <Send size={10} /> Emissora atual: PlugNotas
+                        </p>
+                        {inv.plugnotas_invoice_id && (
+                          <div className="text-[10px] flex items-center gap-2">
+                            <span className="font-black text-gray-500 uppercase">ID PlugNotas:</span>
+                            <span className="font-mono text-gray-700">{inv.plugnotas_invoice_id}</span>
+                          </div>
+                        )}
+                        {inv.plugnotas_protocol && (
+                          <div className="text-[10px] flex items-center gap-2">
+                            <span className="font-black text-gray-500 uppercase">Protocolo Prefeitura:</span>
+                            <span className="font-mono text-gray-700">{inv.plugnotas_protocol}</span>
+                          </div>
+                        )}
+                      </div>
+                    )}
 
                     {inv.asaas_payment_id && (
                       <div className="border border-gray-200 rounded-xl p-4 bg-gray-50/50">

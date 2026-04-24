@@ -1,5 +1,14 @@
 import { createClient } from '@supabase/supabase-js';
 import { scheduleInvoice, getInvoiceByPayment, getInvoice, cancelInvoice } from './asaasService';
+import {
+  consultNfseByIntegration,
+  consultNfseById,
+  cancelNfse as plugCancelNfse,
+  issueNfse as plugIssueNfse,
+  mapPlugNotasStatusToNf,
+  extractPlugNotasError,
+  isPlugNotasConfigured,
+} from './plugnotasService';
 
 const RETRY_INTERVAL_MS = 15 * 60 * 1000;
 const MAX_RETRIES = 30;
@@ -78,6 +87,9 @@ interface PendingInvoice {
   nf_retry_paused: boolean | null;
   nf_retry_at?: string | null;
   created_at?: string | null;
+  nf_provider?: string | null;
+  plugnotas_invoice_id?: string | null;
+  plugnotas_protocol?: string | null;
 }
 
 const PENDING_NF_STATUSES = ['ERROR', 'FAILED', 'PENDING', 'SCHEDULED', 'RETRY', 'SYNCHRONIZED'];
@@ -90,8 +102,7 @@ export async function listPendingNfs(): Promise<PendingInvoice[]> {
     // antigas que nunca tiveram o ciclo). Filtragem fina (idade, paused, retries) é feita
     // em retryOne para aproveitar a info de dateCreated do Asaas.
     const { data, error } = await sb.from('financial_invoices')
-      .select('id, client, number, amount, asaas_payment_id, asaas_invoice_id, issuer_company, nf_status, nf_last_error, nf_retry_count, nf_retry_paused, nf_retry_at, created_at')
-      .not('asaas_payment_id', 'is', null)
+      .select('id, client, number, amount, asaas_payment_id, asaas_invoice_id, issuer_company, nf_status, nf_last_error, nf_retry_count, nf_retry_paused, nf_retry_at, created_at, nf_provider, plugnotas_invoice_id, plugnotas_protocol')
       .or(`nf_status.is.null,nf_status.in.(${PENDING_NF_STATUSES.join(',')})`)
       .or('nf_retry_paused.is.null,nf_retry_paused.eq.false')
       .or(`nf_retry_count.is.null,nf_retry_count.lt.${MAX_RETRIES}`)
@@ -118,8 +129,7 @@ export async function listStuckNfs(): Promise<PendingInvoice[]> {
   if (!sb) return [];
   try {
     const { data, error } = await sb.from('financial_invoices')
-      .select('id, client, number, amount, asaas_payment_id, asaas_invoice_id, issuer_company, nf_status, nf_last_error, nf_retry_count, nf_retry_at, created_at')
-      .not('asaas_payment_id', 'is', null)
+      .select('id, client, number, amount, asaas_payment_id, asaas_invoice_id, issuer_company, nf_status, nf_last_error, nf_retry_count, nf_retry_at, created_at, nf_provider, plugnotas_invoice_id')
       .in('nf_status', ['STUCK', 'SYNCHRONIZED'])
       .limit(200);
     if (error) {
@@ -214,7 +224,84 @@ function ageHoursSince(iso?: string | null): number {
   return (Date.now() - t) / 3600_000;
 }
 
+async function retryOnePlugNotas(inv: PendingInvoice): Promise<{ ok: boolean; status?: string; pdfUrl?: string; number?: string; error?: string; paused?: boolean; action?: string }> {
+  if (!isPlugNotasConfigured()) {
+    return { ok: false, error: 'PlugNotas não configurado — defina o token.' };
+  }
+  if (!inv.plugnotas_invoice_id) {
+    await markInvoice(inv.id, {
+      nf_status: 'ERROR',
+      nf_retry_paused: true,
+      nf_last_error: 'NF marcada como PLUGNOTAS mas sem plugnotas_invoice_id — reemita pelo botão.',
+      nf_retry_at: new Date().toISOString(),
+    }, { action: 'paused-validation', status: 'ERROR', message: 'PLUGNOTAS sem ID — pausada.' });
+    return { ok: false, paused: true, action: 'paused-validation' };
+  }
+  let current: any;
+  try {
+    current = await consultNfseById(inv.plugnotas_invoice_id);
+  } catch (e: any) {
+    await markInvoice(inv.id, { nf_retry_at: new Date().toISOString(), nf_last_error: String(e.message).substring(0, 500) }, { action: 'lookup-error', message: e.message });
+    return { ok: false, error: e.message };
+  }
+  const status = mapPlugNotasStatusToNf(current?.status || current?.situacao);
+  if (status === 'AUTHORIZED') {
+    const pdfUrl = current?.linkPdf || current?.pdfUrl || null;
+    await markInvoice(inv.id, {
+      nf_status: 'AUTHORIZED',
+      nf_number: current?.numero || current?.number || inv.number,
+      nf_image_url: pdfUrl || inv.plugnotas_invoice_id,
+      plugnotas_protocol: current?.protocoloPrefeitura?.numero || current?.protocolo || null,
+      nf_last_error: null,
+      nf_retry_at: new Date().toISOString(),
+      nf_retry_paused: false,
+    }, { action: 'authorized', status: 'AUTHORIZED', message: `NF PlugNotas autorizada${current?.numero ? ` (Nº ${current.numero})` : ''}` });
+    return { ok: true, status: 'AUTHORIZED', pdfUrl, number: current?.numero, action: 'authorized' };
+  }
+  if (status === 'ERROR') {
+    const errMsg = extractPlugNotasError(current) || 'Rejeitada na Prefeitura';
+    const retries = inv.nf_retry_count || 0;
+    if (retries >= MAX_SYNC_RETRIES || isNonRetryable(errMsg)) {
+      await markInvoice(inv.id, {
+        nf_status: 'ERROR',
+        nf_retry_paused: true,
+        nf_last_error: errMsg.substring(0, 500),
+        nf_retry_at: new Date().toISOString(),
+      }, { action: 'paused-validation', status: 'ERROR', message: `PlugNotas pausada: ${errMsg}` });
+      return { ok: false, paused: true, error: errMsg, action: 'paused-validation' };
+    }
+    await markInvoice(inv.id, {
+      nf_status: 'ERROR',
+      nf_last_error: errMsg.substring(0, 500),
+      nf_retry_at: new Date().toISOString(),
+    }, { action: 'schedule-failed', status: 'ERROR', message: errMsg });
+    return { ok: false, error: errMsg };
+  }
+  const ageH = ageHoursSince(inv.nf_retry_at || inv.created_at);
+  if ((status === 'PROCESSING' || status === 'SCHEDULED') && ageH >= STUCK_HOURS_ALERT) {
+    await markInvoice(inv.id, {
+      nf_status: 'STUCK',
+      nf_retry_paused: true,
+      nf_last_error: `NF PlugNotas em ${status} há ${Math.floor(ageH)}h — verifique o painel PlugNotas.`,
+      nf_retry_at: new Date().toISOString(),
+    }, { action: 'stuck-alert', status: 'STUCK', message: `PlugNotas travada há ${Math.floor(ageH)}h em ${status}.` });
+    return { ok: false, paused: true, status: 'STUCK', action: 'stuck-alert' };
+  }
+  await markInvoice(inv.id, {
+    nf_status: status || 'PROCESSING',
+    nf_retry_at: new Date().toISOString(),
+  });
+  return { ok: false, status, action: 'wait' };
+}
+
 export async function retryOne(inv: PendingInvoice, opts?: { clientCnpj?: string; serviceDescription?: string }): Promise<{ ok: boolean; status?: string; pdfUrl?: string; number?: string; error?: string; paused?: boolean; action?: string }> {
+  const provider = (inv.nf_provider || 'ASAAS').toUpperCase();
+  if (provider === 'PLUGNOTAS') {
+    return retryOnePlugNotas(inv);
+  }
+  if (!inv.asaas_payment_id) {
+    return { ok: false, error: 'Fatura sem asaas_payment_id e provider != PLUGNOTAS.' };
+  }
   const company = inv.issuer_company || undefined;
   const paymentId = inv.asaas_payment_id!;
   // IMPORTANTE: nf_retry_count conta APENAS tentativas reais de reemissão

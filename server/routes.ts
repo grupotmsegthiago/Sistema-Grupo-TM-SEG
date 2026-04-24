@@ -1168,6 +1168,19 @@ export async function registerRoutes(
     console.log('[Migration] monitored_processes:', e.message || 'ok');
   }
 
+  // ── Migration PlugNotas: colunas multi-provider em financial_invoices ──
+  try {
+    await supabaseAdmin.rpc('exec_sql', { sql: `
+      ALTER TABLE financial_invoices ADD COLUMN IF NOT EXISTS nf_provider TEXT DEFAULT 'ASAAS';
+      ALTER TABLE financial_invoices ADD COLUMN IF NOT EXISTS plugnotas_invoice_id TEXT;
+      ALTER TABLE financial_invoices ADD COLUMN IF NOT EXISTS plugnotas_protocol TEXT;
+      UPDATE financial_invoices SET nf_provider = 'ASAAS' WHERE nf_provider IS NULL;
+    `});
+    console.log('[Migration] Colunas PlugNotas (nf_provider, plugnotas_invoice_id, plugnotas_protocol) verificadas/criadas.');
+  } catch (e: any) {
+    console.log('[Migration] PlugNotas columns:', e.message || 'ok');
+  }
+
   app.post("/api/supabase/init-invoices", async (_req: Request, res: Response) => {
     try {
       const { data, error } = await supabaseAdmin.from('financial_invoices').select('id', { count: 'exact', head: true });
@@ -3345,33 +3358,42 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
     try {
       const sbUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || '';
       const sbKey = process.env.SUPABASE_SERVICE_KEY || process.env.VITE_SUPABASE_ANON_KEY || '';
-      if (!sbUrl || !sbKey) return res.json({ success: true, summary: [], stuck: [] });
+      if (!sbUrl || !sbKey) return res.json({ success: true, summary: [], stuck: [], byProvider: {} });
       const sb = createClient(sbUrl, sbKey);
       const { data, error } = await sb.from('financial_invoices')
-        .select('id, client, number, amount, issuer_company, nf_status, nf_retry_at, created_at, asaas_payment_id')
-        .not('asaas_payment_id', 'is', null);
+        .select('id, client, number, amount, issuer_company, nf_status, nf_retry_at, created_at, asaas_payment_id, nf_provider, plugnotas_invoice_id');
       if (error) return res.status(500).json({ error: error.message });
       const byCompany: Record<string, any> = {};
+      const byProvider: Record<string, { total: number; authorized: number; error: number; stuck: number; processing: number }> = {
+        ASAAS: { total: 0, authorized: 0, error: 0, stuck: 0, processing: 0 },
+        PLUGNOTAS: { total: 0, authorized: 0, error: 0, stuck: 0, processing: 0 },
+      };
       const stuck: any[] = [];
       const now = Date.now();
       (data || []).forEach((r: any) => {
+        // ignora linhas sem qualquer ID de provider (faturas retroativas sem NF)
+        if (!r.asaas_payment_id && !r.plugnotas_invoice_id) return;
         const c = r.issuer_company || '(sem emissora)';
-        if (!byCompany[c]) byCompany[c] = { company: c, total: 0, authorized: 0, synchronized: 0, scheduled: 0, error: 0, stuck: 0, canceled: 0, other: 0 };
+        const provider = (r.nf_provider || 'ASAAS').toUpperCase();
+        if (!byCompany[c]) byCompany[c] = { company: c, total: 0, authorized: 0, synchronized: 0, scheduled: 0, error: 0, stuck: 0, canceled: 0, other: 0, asaas: 0, plugnotas: 0 };
         byCompany[c].total++;
+        if (provider === 'PLUGNOTAS') byCompany[c].plugnotas++; else byCompany[c].asaas++;
+        const bp = byProvider[provider] || (byProvider[provider] = { total: 0, authorized: 0, error: 0, stuck: 0, processing: 0 });
+        bp.total++;
         const s = (r.nf_status || '').toUpperCase();
-        if (s === 'AUTHORIZED') byCompany[c].authorized++;
+        if (s === 'AUTHORIZED') { byCompany[c].authorized++; bp.authorized++; }
         else if (s === 'SYNCHRONIZED') {
           byCompany[c].synchronized++;
           const ref = r.nf_retry_at || r.created_at;
           const ageH = ref ? (now - new Date(ref).getTime()) / 3600_000 : 0;
           if (ageH >= 24) {
-            byCompany[c].stuck++;
+            byCompany[c].stuck++; bp.stuck++;
             stuck.push({ ...r, hours_stuck: Math.floor(ageH) });
-          }
-        } else if (s === 'SCHEDULED') byCompany[c].scheduled++;
-        else if (s === 'ERROR' || s === 'FAILED') byCompany[c].error++;
+          } else { bp.processing++; }
+        } else if (s === 'SCHEDULED' || s === 'PROCESSING') { byCompany[c].scheduled++; bp.processing++; }
+        else if (s === 'ERROR' || s === 'FAILED') { byCompany[c].error++; bp.error++; }
         else if (s === 'STUCK') {
-          byCompany[c].stuck++;
+          byCompany[c].stuck++; bp.stuck++;
           const ref = r.nf_retry_at || r.created_at;
           const ageH = ref ? (now - new Date(ref).getTime()) / 3600_000 : 0;
           stuck.push({ ...r, hours_stuck: Math.floor(ageH) });
@@ -3379,8 +3401,220 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
         else if (s === 'CANCELED') byCompany[c].canceled++;
         else byCompany[c].other++;
       });
-      res.json({ success: true, summary: Object.values(byCompany), stuck });
+      res.json({ success: true, summary: Object.values(byCompany), stuck, byProvider });
     } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // ═══════════════════════════════════════════════════════
+  // PLUGNOTAS — Provider de NFS-e alternativo (coexistência com Asaas)
+  // ═══════════════════════════════════════════════════════
+
+  app.get("/api/plugnotas/status", requireAuth, requireRole('administrador', 'diretoria', 'financeiro'), async (_req: Request, res: Response) => {
+    try {
+      const { isPlugNotasConfigured, getPlugNotasEnv, listPlugNotasCompanies, testPlugNotasConnection } = await import('./plugnotasService');
+      const configured = isPlugNotasConfigured();
+      const env = getPlugNotasEnv();
+      const companies = listPlugNotasCompanies();
+      let connectionTest: any = null;
+      if (configured) {
+        try { connectionTest = await testPlugNotasConnection(); } catch (e: any) { connectionTest = { ok: false, error: e.message }; }
+      }
+      res.json({ configured, env, companies, connectionTest });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get("/api/nf/provider-preferences", requireAuth, requireRole('administrador', 'diretoria', 'financeiro'), async (_req: Request, res: Response) => {
+    try {
+      const { getProviderPreferences } = await import('./nfProviderRouter');
+      const { listPlugNotasCompanies, isPlugNotasConfigured } = await import('./plugnotasService');
+      const prefs = await getProviderPreferences();
+      const companies = listPlugNotasCompanies();
+      res.json({ success: true, preferences: prefs, companies, plugnotasConfigured: isPlugNotasConfigured() });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.put("/api/nf/provider-preferences", requireAuth, requireRole('administrador', 'diretoria'), async (req: Request, res: Response) => {
+    try {
+      const { setProviderPreferences } = await import('./nfProviderRouter');
+      const { preferences, actor } = req.body || {};
+      if (!preferences || typeof preferences !== 'object') return res.status(400).json({ error: 'preferences é obrigatório' });
+      await setProviderPreferences(preferences, actor || 'system');
+      res.json({ success: true, preferences });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Reemissão de uma fatura específica VIA PlugNotas (failover manual quando Asaas trava).
+  app.post("/api/nf/reissue-plugnotas/:invoiceId", requireAuth, requireRole('administrador', 'diretoria', 'financeiro'), async (req: Request, res: Response) => {
+    try {
+      const { invoiceId } = req.params;
+      const sbUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || '';
+      const sbKey = process.env.SUPABASE_SERVICE_KEY || process.env.VITE_SUPABASE_ANON_KEY || '';
+      if (!sbUrl || !sbKey) return res.status(500).json({ error: 'Supabase indisponível' });
+      const sb = createClient(sbUrl, sbKey);
+      const { data: inv } = await sb.from('financial_invoices').select('*').eq('id', invoiceId).maybeSingle();
+      if (!inv) return res.status(404).json({ error: 'Fatura não encontrada' });
+
+      const { isPlugNotasConfigured, issueNfse } = await import('./plugnotasService');
+      if (!isPlugNotasConfigured()) return res.status(400).json({ error: 'PlugNotas não configurado — defina o token nas configurações do projeto.' });
+
+      const amount = Number(inv.amount || 0);
+      if (!amount || amount <= 0) return res.status(400).json({ error: 'Valor da fatura inválido para emissão.' });
+
+      // Tenta cancelar no Asaas se tiver NF lá em estado pendente/erro (best-effort)
+      const previousProvider = (inv.nf_provider || 'ASAAS').toUpperCase();
+      const previousAsaasInvoiceId = inv.asaas_invoice_id;
+      let asaasCancelled = false;
+      let asaasCancelError: string | null = null;
+      if (previousProvider === 'ASAAS' && previousAsaasInvoiceId) {
+        try {
+          const { cancelInvoice } = await import('./asaasService');
+          await cancelInvoice(previousAsaasInvoiceId, inv.issuer_company || undefined);
+          asaasCancelled = true;
+          console.log(`[Plugnotas Failover] cancelada NF Asaas ${previousAsaasInvoiceId} para fatura ${invoiceId}.`);
+        } catch (e: any) {
+          asaasCancelError = e.message;
+          console.log(`[Plugnotas Failover] não foi possível cancelar Asaas ${previousAsaasInvoiceId}: ${e.message} — prosseguindo com emissão PlugNotas (verifique manualmente).`);
+        }
+      }
+
+      // Resolve cliente para CNPJ
+      let clientCnpj: string | undefined;
+      try {
+        const firstWord = (inv.client || '').split(/[\s,.]+/)[0];
+        if (firstWord) {
+          const { data: clientRow } = await sb.from('clients').select('cnpj').ilike('name', firstWord + '%').limit(1).maybeSingle();
+          if (clientRow?.cnpj) clientCnpj = String(clientRow.cnpj).replace(/\D/g, '');
+        }
+      } catch {}
+
+      let issued: any;
+      try {
+        issued = await issueNfse({
+          invoiceId,
+          amount,
+          company: inv.issuer_company || undefined,
+          clientName: inv.client,
+          clientCnpj,
+          serviceDescription: undefined,
+          externalReference: inv.number || invoiceId,
+        });
+      } catch (e: any) {
+        return res.status(500).json({ error: `Falha ao emitir no PlugNotas: ${e.message}` });
+      }
+
+      const now = new Date().toISOString();
+      const { data: row } = await sb.from('financial_invoices').select('nf_history').eq('id', invoiceId).maybeSingle();
+      const existing = Array.isArray((row as any)?.nf_history) ? (row as any).nf_history : [];
+      const newHistoryEntry = {
+        ts: now,
+        action: 'provider-failover',
+        status: issued.status || 'PROCESSING',
+        message: `Failover Asaas → PlugNotas. ${asaasCancelled ? 'NF Asaas cancelada antes.' : asaasCancelError ? `Asaas não cancelou: ${asaasCancelError}.` : 'Sem NF Asaas anterior para cancelar.'} Novo idIntegracao=${issued.idIntegracao}.`,
+      };
+      const updateData: any = {
+        nf_provider: 'PLUGNOTAS',
+        plugnotas_invoice_id: issued.plugnotasId || issued.idIntegracao,
+        plugnotas_protocol: issued.protocol || null,
+        nf_status: issued.status || 'PROCESSING',
+        nf_last_error: null,
+        nf_retry_paused: false,
+        nf_retry_count: 0,
+        nf_retry_at: now,
+        nf_history: [...existing, newHistoryEntry].slice(-50),
+      };
+      await sb.from('financial_invoices').update(updateData).eq('id', invoiceId);
+      console.log(`[Plugnotas Failover] fatura ${invoiceId} agora em PlugNotas (id=${issued.plugnotasId || issued.idIntegracao}).`);
+      res.json({ success: true, plugnotasId: issued.plugnotasId, idIntegracao: issued.idIntegracao, status: issued.status, asaasCancelled, asaasCancelError });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Webhook PlugNotas — recebe eventos assíncronos de emissão/autorização/cancelamento.
+  app.post("/api/plugnotas/webhook", async (req: Request, res: Response) => {
+    try {
+      const body = req.body || {};
+      console.log('[PlugNotas Webhook] payload recebido:', JSON.stringify(body).substring(0, 500));
+      const sbUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || '';
+      const sbKey = process.env.SUPABASE_SERVICE_KEY || process.env.VITE_SUPABASE_ANON_KEY || '';
+      if (!sbUrl || !sbKey) return res.json({ ok: true, ignored: 'no-supabase' });
+      const sb = createClient(sbUrl, sbKey);
+
+      const items: any[] = Array.isArray(body) ? body : Array.isArray(body?.documents) ? body.documents : [body];
+      const { mapPlugNotasStatusToNf, extractPlugNotasError } = await import('./plugnotasService');
+
+      let updated = 0;
+      for (const item of items) {
+        const idIntegracao: string | null = item?.idIntegracao || item?.referencia || null;
+        const plugId: string | null = item?.id || item?._id || null;
+        if (!idIntegracao && !plugId) continue;
+
+        let inv: any = null;
+        if (plugId) {
+          const { data } = await sb.from('financial_invoices').select('*').eq('plugnotas_invoice_id', plugId).maybeSingle();
+          inv = data;
+        }
+        if (!inv && idIntegracao) {
+          const m = idIntegracao.match(/^inv-([0-9a-f-]+)-/i);
+          if (m) {
+            const { data } = await sb.from('financial_invoices').select('*').eq('id', m[1]).maybeSingle();
+            inv = data;
+          }
+        }
+        if (!inv) {
+          console.log(`[PlugNotas Webhook] sem fatura correspondente: idIntegracao=${idIntegracao} plugId=${plugId}`);
+          continue;
+        }
+
+        const status = mapPlugNotasStatusToNf(item?.status || item?.situacao);
+        const pdfUrl: string | null = item?.linkPdf || item?.pdfUrl || null;
+        const errorMsg = status === 'ERROR' ? extractPlugNotasError(item) : null;
+
+        const patch: any = {
+          nf_provider: 'PLUGNOTAS',
+          nf_status: status,
+          nf_retry_at: new Date().toISOString(),
+        };
+        if (plugId) patch.plugnotas_invoice_id = plugId;
+        if (item?.numero || item?.number) patch.nf_number = String(item.numero || item.number);
+        if (pdfUrl) patch.nf_image_url = pdfUrl;
+        if (item?.protocoloPrefeitura?.numero || item?.protocolo) patch.plugnotas_protocol = item.protocoloPrefeitura?.numero || item.protocolo;
+        if (status === 'AUTHORIZED') {
+          patch.nf_last_error = null;
+          patch.nf_retry_paused = false;
+        } else if (errorMsg) {
+          patch.nf_last_error = errorMsg.substring(0, 500);
+        }
+
+        const { data: row } = await sb.from('financial_invoices').select('nf_history').eq('id', inv.id).maybeSingle();
+        const existing = Array.isArray((row as any)?.nf_history) ? (row as any).nf_history : [];
+        const action = status === 'AUTHORIZED' ? 'authorized'
+          : status === 'CANCELED' ? 'cancel-and-reschedule'
+          : status === 'ERROR' ? 'schedule-failed'
+          : 'scheduled';
+        const entry = {
+          ts: new Date().toISOString(),
+          action,
+          status,
+          message: `Webhook PlugNotas: ${status}${errorMsg ? ` — ${errorMsg}` : ''}`.substring(0, 500),
+        };
+        patch.nf_history = [...existing, entry].slice(-50);
+
+        await sb.from('financial_invoices').update(patch).eq('id', inv.id);
+        updated++;
+      }
+      console.log(`[PlugNotas Webhook] processado — ${updated} fatura(s) atualizada(s).`);
+      res.json({ ok: true, updated });
+    } catch (err: any) {
+      console.log('[PlugNotas Webhook] erro:', err.message);
       res.status(500).json({ error: err.message });
     }
   });

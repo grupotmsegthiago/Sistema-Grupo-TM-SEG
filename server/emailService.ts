@@ -1139,13 +1139,19 @@ export async function sendStuckNfsReport(to: string, items: any[], reportDate: s
   });
   const fmtBRL = (v: number) => Number(v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
   const blocks = Object.entries(byCompany).map(([company, list]) => {
-    const rows = list.map(it => `<tr>
+    const rows = list.map(it => {
+      const provider = (it.nf_provider || 'ASAAS').toUpperCase();
+      const provColor = provider === 'PLUGNOTAS' ? '#0e7490' : '#7c3aed';
+      const provBg = provider === 'PLUGNOTAS' ? '#cffafe' : '#ede9fe';
+      return `<tr>
       <td style="padding:8px 12px; border-bottom:1px solid #eee; font-weight:600;">${it.number || it.id?.substring(0, 8)}</td>
       <td style="padding:8px 12px; border-bottom:1px solid #eee;">${it.client || '—'}</td>
       <td style="padding:8px 12px; border-bottom:1px solid #eee; text-align:right;">${fmtBRL(it.amount)}</td>
       <td style="padding:8px 12px; border-bottom:1px solid #eee; text-align:center;">${it.hours_stuck || '—'}h</td>
+      <td style="padding:8px 12px; border-bottom:1px solid #eee; text-align:center;"><span style="display:inline-block; padding:2px 8px; background:${provBg}; color:${provColor}; border-radius:10px; font-size:10px; font-weight:700;">${provider}</span></td>
       <td style="padding:8px 12px; border-bottom:1px solid #eee; color:#c0392b; font-weight:600;">${it.nf_status || '—'}</td>
-    </tr>`).join('');
+    </tr>`;
+    }).join('');
     return `<h3 style="margin-top:20px; color:#c0392b;">${company} — ${list.length} NF(s) travada(s)</h3>
       <table style="width:100%; border-collapse:collapse; margin:8px 0; font-size:13px;">
         <thead><tr style="background:#1a1a1a; color:#fff;">
@@ -1153,6 +1159,7 @@ export async function sendStuckNfsReport(to: string, items: any[], reportDate: s
           <th style="padding:10px 12px; text-align:left;">Cliente</th>
           <th style="padding:10px 12px; text-align:right;">Valor</th>
           <th style="padding:10px 12px; text-align:center;">Tempo travada</th>
+          <th style="padding:10px 12px; text-align:center;">Emissora</th>
           <th style="padding:10px 12px; text-align:left;">Status</th>
         </tr></thead>
         <tbody>${rows}</tbody>
