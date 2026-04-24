@@ -486,8 +486,8 @@ function tick() {
     const hour = now.getHours();
     const dateKey = `${now.getFullYear()}-${now.getMonth()}-${now.getDate()}`;
 
-    // Resumo diário 07:00 — catch-up: dispara qualquer hora >=7 se ainda não foi enviado hoje
-    if (hour >= 7 && state.lastDailyDate !== dateKey) {
+    // Resumo diário 10:00 — catch-up: dispara qualquer hora >=10 se ainda não foi enviado hoje
+    if (hour >= 10 && state.lastDailyDate !== dateKey) {
       void runDaily(dateKey);
     }
 
