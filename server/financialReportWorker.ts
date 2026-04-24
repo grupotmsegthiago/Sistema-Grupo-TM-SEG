@@ -209,10 +209,20 @@ async function fetchRevenueSummary() {
   const dayByClient = new Map<string, { revenue: number; count: number }>();
   const yearByClient = new Map<string, { revenue: number; count: number }>();
 
+  const normName = (s: string | null | undefined) => String(s || '').trim().toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  const inactiveClientNames = new Set<string>();
+  (refs.clients as any[]).forEach((c: any) => {
+    if (String(c?.status || '').toLowerCase() === 'inativo') {
+      if (c?.name) inactiveClientNames.add(normName(c.name));
+      if (c?.trading_name) inactiveClientNames.add(normName(c.trading_name));
+    }
+  });
+
   const currentTime = new Date();
   for (const m of (missions || [])) {
     const r = computeMissionRevenue(m, refs.clientTables, refs.providerTables, refs.clients, currentTime);
     if (!r) continue;
+    if (inactiveClientNames.has(normName(r.client))) continue;
     if (r.ts >= startYearMs) {
       buckets.year.count++; buckets.year.revenue += r.revenue; buckets.year.cost += r.cost;
       const k = r.client.toUpperCase();
@@ -359,13 +369,22 @@ async function sendDailyAccountsReport() {
     const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
 
     const { getAllBalances } = await import('./asaasService');
-    const [{ data: payAll }, { data: recAll }, asaasBalances] = await Promise.all([
+    const [{ data: payAll }, { data: recAll }, asaasBalances, { data: inactiveClients }] = await Promise.all([
       sb.from('financial_transactions').select('id,description,amount,due_date,payment_date,entity_name,category_name,status,type')
         .eq('type','EXPENSE').in('status',['PENDING','PAID']).eq('due_date',todayStr).order('status',{ ascending:true }).order('amount',{ ascending:false }),
       sb.from('financial_transactions').select('id,description,amount,due_date,payment_date,entity_name,category_name,status,type')
         .eq('type','INCOME').in('status',['PENDING','PAID']).eq('due_date',todayStr).order('status',{ ascending:true }).order('amount',{ ascending:false }),
       getAllBalances().catch((e: any) => { console.error('[FinReport] Asaas balances erro:', e?.message); return []; }),
+      sb.from('clients').select('name,trading_name,status').eq('status','Inativo'),
     ]);
+
+    const norm = (s: string | null | undefined) => String(s || '').trim().toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+    const inactiveSet = new Set<string>();
+    (inactiveClients || []).forEach((c: any) => {
+      if (c.name) inactiveSet.add(norm(c.name));
+      if (c.trading_name) inactiveSet.add(norm(c.trading_name));
+    });
+    const isInactiveEntity = (t: any) => inactiveSet.has(norm(t?.entity_name));
 
     const isInternalAdjustment = (t: any) => {
       const cat = String(t?.category_name || '').toUpperCase();
@@ -375,8 +394,8 @@ async function sendDailyAccountsReport() {
         || desc.includes('RENDIMENTO DE INVESTIMENTO')
         || desc.includes('DESVALORIZA');
     };
-    const payToday = (payAll || []).filter(t => !isInternalAdjustment(t));
-    const recToday = (recAll || []).filter(t => !isInternalAdjustment(t));
+    const payToday = (payAll || []).filter(t => !isInternalAdjustment(t) && !isInactiveEntity(t));
+    const recToday = (recAll || []).filter(t => !isInternalAdjustment(t) && !isInactiveEntity(t));
     const payPending = payToday.filter(t => t.status === 'PENDING');
     const payPaid    = payToday.filter(t => t.status === 'PAID');
     const recPending = recToday.filter(t => t.status === 'PENDING');
