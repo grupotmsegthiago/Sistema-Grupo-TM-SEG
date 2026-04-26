@@ -322,7 +322,7 @@ async function sendRevenueReport() {
       </table>` : ''}`;
 
     const subject = `Faturamento — ${fmtDateBR(new Date())} ${new Date().toLocaleTimeString('pt-BR', { timeZone: TZ, hour: '2-digit', minute: '2-digit' })}`;
-    await transporter.sendMail({ from: SMTP_FROM, to: RECIPIENT, subject, html: htmlTemplate('Relatório de Faturamento (6h)', inner) });
+    await transporter.sendMail({ from: SMTP_FROM, to: RECIPIENT, subject, html: htmlTemplate('Relatório de Faturamento (12h)', inner) });
     console.log(`[FinReport] Faturamento enviado → ${RECIPIENT}`);
   } catch (err: any) {
     console.error('[FinReport] Erro faturamento:', err.message);
@@ -505,17 +505,19 @@ function tick() {
     const hour = now.getHours();
     const dateKey = `${now.getFullYear()}-${now.getMonth()}-${now.getDate()}`;
 
-    // Resumo diário 10:00 — catch-up: dispara qualquer hora >=10 se ainda não foi enviado hoje
-    if (hour >= 10 && state.lastDailyDate !== dateKey) {
-      void runDaily(dateKey);
+    // Faturamento 12/12h (07h e 19h BRT) — catch-up: dispara o slot mais recente já passado
+    const slots = [7, 19];
+    const currentSlot = [...slots].reverse().find(s => hour >= s);
+    if (currentSlot !== undefined) {
+      const slotKey = `${dateKey}-${currentSlot}`;
+      if (state.lastRevenueSlot !== slotKey) {
+        void runRevenue(slotKey);
+      }
     }
 
-    // Faturamento 6/6h (00, 06, 12, 18) — catch-up: dispara o slot mais recente já passado
-    const slots = [0, 6, 12, 18];
-    const currentSlot = [...slots].reverse().find(s => hour >= s) ?? 0;
-    const slotKey = `${dateKey}-${currentSlot}`;
-    if (state.lastRevenueSlot !== slotKey) {
-      void runRevenue(slotKey);
+    // Resumo diário sai junto com o slot da manhã (07h) — uma vez por dia
+    if (hour >= 7 && state.lastDailyDate !== dateKey) {
+      void runDaily(dateKey);
     }
   } catch (e: any) {
     console.error('[FinReport] tick erro:', e.message);
@@ -523,7 +525,7 @@ function tick() {
 }
 
 export function startFinancialReportWorker() {
-  console.log(`[FinReport] Worker ativo — ${RECIPIENT} (faturamento 6/6h, resumo diário 07:00 BRT) | estado: dailySent=${state.lastDailyDate} revenueSlot=${state.lastRevenueSlot}`);
+  console.log(`[FinReport] Worker ativo — ${RECIPIENT} (faturamento 12/12h às 07h e 19h BRT, resumo diário junto com o de 07h) | estado: dailySent=${state.lastDailyDate} revenueSlot=${state.lastRevenueSlot}`);
   setInterval(tick, 60_000);
   tick();
 }
