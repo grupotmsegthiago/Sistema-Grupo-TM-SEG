@@ -3360,8 +3360,12 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
       // Aceita retry para Asaas (precisa de asaas_payment_id) OU PlugNotas
       // (precisa de plugnotas_invoice_id). Sem nenhum dos dois IDs, a fatura
       // não tem como ser reemitida.
-      const provider = String((inv as any).nf_provider || '').toUpperCase();
-      if (provider === 'PLUGNOTAS') {
+      // Inferência: nf_provider pode estar nulo em faturas antigas; se houver
+      // plugnotas_invoice_id, tratamos como PLUGNOTAS para a validação prévia
+      // (mesma regra usada por retryOne no worker).
+      const rawProvider = String((inv as any).nf_provider || '').toUpperCase();
+      const inferredProvider = rawProvider === 'PLUGNOTAS' || (!rawProvider && (inv as any).plugnotas_invoice_id) ? 'PLUGNOTAS' : 'ASAAS';
+      if (inferredProvider === 'PLUGNOTAS') {
         if (!(inv as any).plugnotas_invoice_id) return res.status(400).json({ error: 'Fatura PlugNotas sem ID de integração — não pode reemitir.' });
       } else {
         if (!inv.asaas_payment_id) return res.status(400).json({ error: 'Fatura sem ID Asaas — não pode reemitir.' });
@@ -3952,11 +3956,34 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
             }
           } catch (nfErr: any) {
             // PlugNotas é fail-fast: se a empresa está configurada para PLUGNOTAS e a
-            // emissão falhou, abortamos a request inteira para o operador corrigir
-            // (config, preferência ou retry). Sem fallback silencioso para Asaas.
+            // emissão falhou, anexamos o erro ao chargeResult e ABORTAMOS o loop —
+            // mas devolvemos no payload as cobranças JÁ CRIADAS no Asaas anteriormente
+            // (status 207-like via flag `partialFailure`) para que o frontend possa
+            // reconciliar localmente em vez de criar cobranças órfãs.
             if (nfErr?.provider === 'PLUGNOTAS') {
               console.error(`[NF Router] Falha PLUGNOTAS no split (${payment.id}, charge ${i + 1}): ${nfErr.message}`);
-              throw nfErr;
+              const failedResult: any = {
+                payment: {
+                  id: payment.id, status: payment.status, statusBr: mapAsaasStatus(payment.status),
+                  value: payment.value, dueDate: payment.dueDate,
+                  invoiceUrl: payment.invoiceUrl || null, bankSlipUrl: payment.bankSlipUrl || null,
+                  externalReference: externalRef,
+                },
+                customer: { id: customer.id, name: customer.name, cpfCnpj: cleanCnpj },
+                invoice: null,
+                nfError: { provider: 'PLUGNOTAS', code: nfErr.code || 'PLUGNOTAS_ISSUE_FAILED', message: nfErr.message },
+                emailSent: false,
+              };
+              results.push(failedResult);
+              return res.status(207).json({
+                success: false,
+                split: true,
+                partialFailure: true,
+                charges: results,
+                totalValue: results.reduce((s, r) => s + (r.payment?.value || 0), 0),
+                error: `Cobranças Asaas criadas até a posição ${i + 1}, mas a NF PlugNotas falhou. Cobrança ${i + 1} ficou SEM NF — ajuste a configuração ou a preferência da empresa e use "Reemitir via PlugNotas" para concluir.`,
+                failedAtIndex: i,
+              });
             }
             console.log(`[Asaas] AVISO: Não foi possível agendar NF para ${payment.id}: ${nfErr.message}`);
           }

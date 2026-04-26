@@ -771,10 +771,12 @@ const FinancialInvoiceControl: React.FC = () => {
                           const ageH = ref ? Math.floor((Date.now() - new Date(ref).getTime()) / 3600_000) : null;
                           const isStuckSync = ns === 'SYNCHRONIZED' && ageH !== null && ageH >= 24;
                           const effectiveStatus = isStuckSync ? 'STUCK' : ns;
+                          const invProvider = String((inv as any).nf_provider || '').toUpperCase() === 'PLUGNOTAS' || (inv as any).plugnotas_invoice_id ? 'PLUGNOTAS' : 'ASAAS';
+                          const stuckLabel = invProvider === 'PLUGNOTAS' ? 'TRAVADA — verificar PlugNotas' : 'TRAVADA — verificar Asaas';
                           const nfLabel = effectiveStatus === 'AUTHORIZED' ? 'Autorizada'
                             : effectiveStatus === 'SCHEDULED' ? 'Agendada'
                             : effectiveStatus === 'SYNCHRONIZED' ? 'Em fila Prefeitura'
-                            : effectiveStatus === 'STUCK' ? 'TRAVADA — verificar Asaas'
+                            : effectiveStatus === 'STUCK' ? stuckLabel
                             : effectiveStatus === 'PROCESSING' ? 'Processando'
                             : effectiveStatus === 'CANCELED' ? 'Cancelada'
                             : effectiveStatus === 'ERROR' ? 'Erro'
