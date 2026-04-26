@@ -1194,6 +1194,15 @@ export async function registerRoutes(
       ALTER TABLE financial_invoices ADD COLUMN IF NOT EXISTS nf_provider TEXT DEFAULT 'ASAAS';
       ALTER TABLE financial_invoices ADD COLUMN IF NOT EXISTS plugnotas_invoice_id TEXT;
       ALTER TABLE financial_invoices ADD COLUMN IF NOT EXISTS plugnotas_protocol TEXT;
+      -- Backfill provider-aware:
+      --  * Linhas com plugnotas_invoice_id → 'PLUGNOTAS' (corrige rollouts
+      --    parciais e dados de teste anteriores que ficaram sem provider).
+      --  * Demais linhas sem provider → 'ASAAS' (default).
+      -- Também corrige o caso em que nf_provider veio 'ASAAS' por engano
+      -- mas existe plugnotas_invoice_id (consistência de classificação).
+      UPDATE financial_invoices SET nf_provider = 'PLUGNOTAS'
+        WHERE plugnotas_invoice_id IS NOT NULL
+          AND (nf_provider IS NULL OR upper(nf_provider) <> 'PLUGNOTAS');
       UPDATE financial_invoices SET nf_provider = 'ASAAS' WHERE nf_provider IS NULL;
     `});
     console.log('[Migration] Colunas PlugNotas (nf_provider, plugnotas_invoice_id, plugnotas_protocol) verificadas/criadas.');
