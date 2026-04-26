@@ -68,7 +68,9 @@ export async function setProviderPreferences(prefs: Record<string, NfProvider>, 
     const provider = String(v).toUpperCase() as NfProvider;
     if (VALID_PROVIDERS.includes(provider)) clean[normalizeCompanyKey(k)] = provider;
   }
-  await sb.from('system_logs').delete().eq('entity', PREF_ENTITY).eq('entity_id', PREF_ENTITY_ID);
+  // Append-only: cada UPDATE vira um novo registro em system_logs, preservando
+  // o histórico de mudanças. A leitura em getProviderPreferences usa
+  // .order(created_at desc).limit(1) para sempre pegar a versão mais recente.
   await sb.from('system_logs').insert({
     entity: PREF_ENTITY,
     entity_id: PREF_ENTITY_ID,

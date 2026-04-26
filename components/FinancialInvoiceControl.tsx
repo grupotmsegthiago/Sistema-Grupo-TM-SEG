@@ -835,17 +835,26 @@ const FinancialInvoiceControl: React.FC = () => {
                               {retryingNfId === inv.id ? <Loader2 size={13} className="animate-spin" /> : <FileText size={13} />}
                             </button>
                           )}
-                          {inv.status !== 'CANCELADA' && inv.nf_status?.toUpperCase() !== 'AUTHORIZED' && plugnotasConfigured && (
-                            <button
-                              onClick={() => handleReissueViaPlugNotas(inv)}
-                              disabled={reissuePlugnotasId === inv.id}
-                              className="bg-cyan-50 hover:bg-cyan-100 text-cyan-700 p-1.5 rounded-lg"
-                              title="Reemitir via PlugNotas (failover)"
-                              data-testid={`btn-reissue-plugnotas-${inv.id}`}
-                            >
-                              {reissuePlugnotasId === inv.id ? <Loader2 size={13} className="animate-spin" /> : <Send size={13} />}
-                            </button>
-                          )}
+                          {(() => {
+                            // Failover só faz sentido para fatura Asaas em estado problemático.
+                            // Esconde quando: cancelada, NF já autorizada, ou já está em PlugNotas
+                            // (nesse caso a reemissão é controlada pelo watchdog automático).
+                            const nfStat = (inv.nf_status || '').toUpperCase();
+                            const isAsaasStuck = ['ERROR', 'FAILED', 'STUCK', 'PENDING', 'SCHEDULED', 'PROCESSING', 'SYNCHRONIZED', ''].includes(nfStat);
+                            const alreadyPlugnotas = (inv.nf_provider || '').toUpperCase() === 'PLUGNOTAS';
+                            const showReissue = inv.status !== 'CANCELADA' && nfStat !== 'AUTHORIZED' && !alreadyPlugnotas && isAsaasStuck && plugnotasConfigured;
+                            return showReissue ? (
+                              <button
+                                onClick={() => handleReissueViaPlugNotas(inv)}
+                                disabled={reissuePlugnotasId === inv.id}
+                                className="bg-cyan-50 hover:bg-cyan-100 text-cyan-700 p-1.5 rounded-lg"
+                                title="Failover: cancela NF Asaas (se houver) e emite no PlugNotas"
+                                data-testid={`btn-reissue-plugnotas-${inv.id}`}
+                              >
+                                {reissuePlugnotasId === inv.id ? <Loader2 size={13} className="animate-spin" /> : <Send size={13} />}
+                              </button>
+                            ) : null;
+                          })()}
                           {inv.status !== 'CANCELADA' && inv.status !== 'PAGA' && (
                             <button onClick={() => handleCancelInvoice(inv)} disabled={cancellingId === inv.id} className="bg-red-50 hover:bg-red-100 text-red-500 p-1.5 rounded-lg" title="Cancelar" data-testid={`btn-cancel-${inv.id}`}>
                               {cancellingId === inv.id ? <Loader2 size={13} className="animate-spin" /> : <Ban size={13} />}
@@ -1008,17 +1017,23 @@ const FinancialInvoiceControl: React.FC = () => {
                           Enviar Email
                         </button>
                       )}
-                      {inv.status !== 'CANCELADA' && inv.nf_status?.toUpperCase() !== 'AUTHORIZED' && plugnotasConfigured && (
-                        <button
-                          onClick={() => handleReissueViaPlugNotas(inv)}
-                          disabled={reissuePlugnotasId === inv.id}
-                          className="flex items-center gap-1.5 text-[10px] font-bold text-cyan-700 bg-cyan-50 px-3 py-2 rounded-lg border border-cyan-200 hover:bg-cyan-100"
-                          title="Failover: cancela NF Asaas (se houver) e emite no PlugNotas"
-                          data-testid={`btn-reissue-plugnotas-detail-${inv.id}`}
-                        >
-                          {reissuePlugnotasId === inv.id ? <Loader2 size={12} className="animate-spin" /> : <Send size={12} />} Reemitir via PlugNotas
-                        </button>
-                      )}
+                      {(() => {
+                        const nfStat = (inv.nf_status || '').toUpperCase();
+                        const isAsaasStuck = ['ERROR', 'FAILED', 'STUCK', 'PENDING', 'SCHEDULED', 'PROCESSING', 'SYNCHRONIZED', ''].includes(nfStat);
+                        const alreadyPlugnotas = (inv.nf_provider || '').toUpperCase() === 'PLUGNOTAS';
+                        const showReissue = inv.status !== 'CANCELADA' && nfStat !== 'AUTHORIZED' && !alreadyPlugnotas && isAsaasStuck && plugnotasConfigured;
+                        return showReissue ? (
+                          <button
+                            onClick={() => handleReissueViaPlugNotas(inv)}
+                            disabled={reissuePlugnotasId === inv.id}
+                            className="flex items-center gap-1.5 text-[10px] font-bold text-cyan-700 bg-cyan-50 px-3 py-2 rounded-lg border border-cyan-200 hover:bg-cyan-100"
+                            title="Failover: cancela NF Asaas (se houver) e emite no PlugNotas"
+                            data-testid={`btn-reissue-plugnotas-detail-${inv.id}`}
+                          >
+                            {reissuePlugnotasId === inv.id ? <Loader2 size={12} className="animate-spin" /> : <Send size={12} />} Reemitir via PlugNotas
+                          </button>
+                        ) : null;
+                      })()}
                       {inv.status !== 'CANCELADA' && inv.status !== 'PAGA' && (
                         <button onClick={() => handleCancelInvoice(inv)} disabled={cancellingId === inv.id} className="flex items-center gap-1.5 text-[10px] font-bold text-red-600 bg-red-50 px-3 py-2 rounded-lg border border-red-200 hover:bg-red-100 ml-auto">
                           {cancellingId === inv.id ? <Loader2 size={12} className="animate-spin" /> : <Ban size={12} />} Cancelar Fatura

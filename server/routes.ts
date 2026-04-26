@@ -4217,19 +4217,35 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
       const statusBr = mapAsaasStatus(payment.status);
       const isPaid = ['RECEIVED', 'CONFIRMED', 'RECEIVED_IN_CASH'].includes(payment.status);
 
+      // Se a fatura está vinculada a NF emitida pelo PlugNotas, NÃO sobrescreve
+      // dados de NF com a consulta Asaas (poderia trocar URL/status PDF correto
+      // do PlugNotas por dados antigos/cancelados da NF Asaas anterior). Apenas
+      // o status do pagamento (PAGA/VENCIDA) é atualizado.
       let nfPdfUrl: string | null = null;
       let nfStatus: string | null = null;
       let nfNumber: string | null = null;
-      try {
-        const invoicesResp = await getInvoiceByPayment(paymentId, company);
-        const invoicesList = invoicesResp?.data || (Array.isArray(invoicesResp) ? invoicesResp : []);
-        const nfData = invoicesList.find((i: any) => i.status === 'AUTHORIZED') || invoicesList.find((i: any) => i.status === 'SCHEDULED') || invoicesList[0];
-        if (nfData?.pdfUrl) nfPdfUrl = nfData.pdfUrl;
-        if (nfData?.status) nfStatus = nfData.status;
-        if (nfData?.number) nfNumber = String(nfData.number);
-        console.log(`[Asaas Sync] NF para payment ${paymentId}: status=${nfStatus || 'N/A'}, number=${nfNumber || 'N/A'}, pdfUrl=${nfPdfUrl || 'N/A'}`);
-      } catch (nfErr: any) {
-        console.log(`[Asaas Sync] Erro ao buscar NF do payment ${paymentId}: ${nfErr.message}`);
+      let skipNfSync = false;
+      if (invoiceId) {
+        try {
+          const { data: invProvCheck } = await supabase.from('financial_invoices').select('nf_provider').eq('id', invoiceId).maybeSingle();
+          if ((invProvCheck as any)?.nf_provider && String((invProvCheck as any).nf_provider).toUpperCase() === 'PLUGNOTAS') {
+            skipNfSync = true;
+            console.log(`[Asaas Sync] fatura ${invoiceId} usa PlugNotas — pulando sync de campos NF (preserva PDF/status/número PlugNotas).`);
+          }
+        } catch {}
+      }
+      if (!skipNfSync) {
+        try {
+          const invoicesResp = await getInvoiceByPayment(paymentId, company);
+          const invoicesList = invoicesResp?.data || (Array.isArray(invoicesResp) ? invoicesResp : []);
+          const nfData = invoicesList.find((i: any) => i.status === 'AUTHORIZED') || invoicesList.find((i: any) => i.status === 'SCHEDULED') || invoicesList[0];
+          if (nfData?.pdfUrl) nfPdfUrl = nfData.pdfUrl;
+          if (nfData?.status) nfStatus = nfData.status;
+          if (nfData?.number) nfNumber = String(nfData.number);
+          console.log(`[Asaas Sync] NF para payment ${paymentId}: status=${nfStatus || 'N/A'}, number=${nfNumber || 'N/A'}, pdfUrl=${nfPdfUrl || 'N/A'}`);
+        } catch (nfErr: any) {
+          console.log(`[Asaas Sync] Erro ao buscar NF do payment ${paymentId}: ${nfErr.message}`);
+        }
       }
 
       let pixData = null;
