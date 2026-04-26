@@ -3495,6 +3495,10 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
         }
       } catch {}
 
+      // Preserva a descrição original da fatura na reemissão (sanitização cabe ao
+      // próprio plugnotasService.issueNfse via sanitizeDescription).
+      const originalDescription: string | undefined = (inv.notes || inv.description || (inv as any).service_description || '').trim() || undefined;
+
       let issued: any;
       try {
         issued = await issueNfse({
@@ -3503,7 +3507,7 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
           company: inv.issuer_company || undefined,
           clientName: inv.client,
           clientCnpj,
-          serviceDescription: undefined,
+          serviceDescription: originalDescription,
           externalReference: inv.number || invoiceId,
         });
       } catch (e: any) {
@@ -3574,7 +3578,7 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
       const sb = createClient(sbUrl, sbKey);
 
       const items: any[] = Array.isArray(body) ? body : Array.isArray(body?.documents) ? body.documents : [body];
-      const { mapPlugNotasStatusToNf, extractPlugNotasError } = await import('./plugnotasService');
+      const { mapPlugNotasStatusToNf, extractPlugNotasError, getNfsePdfUrl: plugGetPdfUrlWh } = await import('./plugnotasService');
 
       let updated = 0;
       for (const item of items) {
@@ -3608,7 +3612,9 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
         }
 
         const status = mapPlugNotasStatusToNf(item?.status || item?.situacao);
-        const pdfUrl: string | null = item?.linkPdf || item?.pdfUrl || null;
+        // Fallback PDF: se o webhook não trouxe linkPdf mas temos um plugId real,
+        // monta a URL canônica.
+        const pdfUrl: string | null = item?.linkPdf || item?.pdfUrl || (status === 'AUTHORIZED' && plugId ? await plugGetPdfUrlWh(plugId) : null);
         const errorMsg = status === 'ERROR' ? extractPlugNotasError(item) : null;
 
         const patch: any = {

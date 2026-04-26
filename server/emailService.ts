@@ -1180,7 +1180,7 @@ export async function sendStuckNfsReport(to: string, items: any[], reportDate: s
     await transporter.sendMail({
       from: SMTP_FROM,
       to,
-      subject: `🚨 NFs travadas no Asaas — ${items.length} pendente(s) — ${reportDate}`,
+      subject: `🚨 NFs travadas — ${items.length} pendente(s) — ${reportDate}`,
       html,
     });
     console.log(`[Email] Relatório de NFs travadas enviado → ${to} | ${items.length} NF(s)`);

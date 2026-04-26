@@ -8,6 +8,7 @@ import {
   mapPlugNotasStatusToNf,
   extractPlugNotasError,
   isPlugNotasConfigured,
+  getNfsePdfUrl as plugGetPdfUrl,
 } from './plugnotasService';
 
 const RETRY_INTERVAL_MS = 15 * 60 * 1000;
@@ -257,8 +258,10 @@ async function retryOnePlugNotas(inv: PendingInvoice): Promise<{ ok: boolean; st
   }
   const status = mapPlugNotasStatusToNf(current?.status || current?.situacao);
   if (status === 'AUTHORIZED') {
-    const pdfUrl = current?.linkPdf || current?.pdfUrl || null;
     const realId = current?.id || current?._id || inv.plugnotas_invoice_id;
+    // Fallback: se a Prefeitura/PlugNotas ainda não devolveu linkPdf, monta a
+    // URL canônica de PDF por id (endpoint público autenticado por token).
+    const pdfUrl = current?.linkPdf || current?.pdfUrl || (realId && !/^inv-/i.test(realId) ? await plugGetPdfUrl(realId) : null);
     await markInvoice(inv.id, {
       nf_status: 'AUTHORIZED',
       nf_number: current?.numero || current?.number || inv.number,
