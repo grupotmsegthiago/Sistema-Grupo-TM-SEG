@@ -387,7 +387,11 @@ async function retryOnePlugNotas(inv: PendingInvoice): Promise<{ ok: boolean; st
 }
 
 export async function retryOne(inv: PendingInvoice, opts?: { clientCnpj?: string; serviceDescription?: string }): Promise<{ ok: boolean; status?: string; pdfUrl?: string; number?: string; error?: string; paused?: boolean; action?: string }> {
-  const provider = (inv.nf_provider || 'ASAAS').toUpperCase();
+  // Inferência de provider: usa nf_provider explícito; caso esteja vazio mas
+  // exista plugnotas_invoice_id, assume PlugNotas (cobre faturas legadas
+  // criadas antes do roteador, que ficaram com nf_provider null).
+  const explicit = (inv.nf_provider || '').toUpperCase();
+  const provider = explicit || ((inv as any).plugnotas_invoice_id ? 'PLUGNOTAS' : 'ASAAS');
   if (provider === 'PLUGNOTAS') {
     return retryOnePlugNotas(inv);
   }

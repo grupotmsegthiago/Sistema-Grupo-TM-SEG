@@ -1167,10 +1167,10 @@ export async function sendStuckNfsReport(to: string, items: any[], reportDate: s
   }).join('');
 
   const html = baseTemplate(`
-    <h2>NFs Travadas — Verificação Necessária no Asaas</h2>
+    <h2>NFs Travadas — Verificação Necessária na Emissora</h2>
     <div class="highlight-box">
       <p><strong>${items.length} NF(s)</strong> permanecem em andamento há mais de 24 horas sem autorização da Prefeitura.</p>
-      <p style="margin-top:8px;">Causa provável: configuração da empresa emissora no Asaas (Inscrição Municipal, certificado digital ou habilitação na Prefeitura). Verifique o painel do Asaas das empresas listadas abaixo.</p>
+      <p style="margin-top:8px;">Causa provável: configuração da empresa emissora junto ao provider de NF (Asaas ou PlugNotas) ou na Prefeitura — Inscrição Municipal, certificado digital ou habilitação. Verifique a coluna <strong>Emissora</strong> abaixo para identificar o provider de cada NF e tomar a ação correspondente no painel certo.</p>
     </div>
     ${blocks}
     <p style="font-size:12px; color:#999; margin-top:24px;">Relatório gerado automaticamente pelo TMSEGo. Faturas listadas estão pausadas para retentativas até o problema ser resolvido. Use o botão "Reemitir NF" no controle financeiro após corrigir a configuração.</p>
