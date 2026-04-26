@@ -3439,7 +3439,7 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
     }
   });
 
-  app.put("/api/nf/provider-preferences", requireAuth, requireRole('administrador', 'diretoria'), async (req: Request, res: Response) => {
+  app.put("/api/nf/provider-preferences", requireAuth, requireRole('administrador', 'diretoria', 'financeiro'), async (req: Request, res: Response) => {
     try {
       const { setProviderPreferences } = await import('./nfProviderRouter');
       const { preferences, actor } = req.body || {};
