@@ -3750,25 +3750,39 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
         // IMPORTANTE: Quando a empresa está configurada para PLUGNOTAS, NUNCA caímos
         // silenciosamente para Asaas. Risco fiscal: se o PlugNotas aceitou a NF mas a
         // resposta falhou (timeout/rede), um fallback geraria uma segunda NF no Asaas
-        // (duplicidade). Operador resolve manualmente: ajusta config, troca preferência
-        // da empresa, ou usa o botão "Reemitir via PlugNotas" depois que a fatura existir.
+        // (duplicidade). Erros são marcados com `provider='PLUGNOTAS'` e propagados
+        // para o handler externo retornar 502 ao operador (fail-fast).
         const { isPlugNotasConfigured, issueNfse } = await import('./plugnotasService');
         if (!isPlugNotasConfigured()) {
-          throw new Error(
+          const err: any = new Error(
             `PlugNotas não configurado para empresa ${params.issuerCompany}. ` +
             `Defina PLUGNOTAS_API_TOKEN_SANDBOX/PROD ou altere a preferência da empresa para ASAAS.`
           );
+          err.provider = 'PLUGNOTAS';
+          err.code = 'PLUGNOTAS_NOT_CONFIGURED';
+          throw err;
         }
-        const issued = await issueNfse({
-          invoiceId: params.externalRef,
-          amount: params.amount,
-          company: params.issuerCompany,
-          clientCnpj: params.clientCnpj,
-          clientName: params.clientName || 'Cliente',
-          clientEmail: params.clientEmail,
-          serviceDescription: params.descText,
-          externalReference: params.externalRef,
-        });
+        let issued: any;
+        try {
+          issued = await issueNfse({
+            invoiceId: params.externalRef,
+            amount: params.amount,
+            company: params.issuerCompany,
+            clientCnpj: params.clientCnpj,
+            clientName: params.clientName || 'Cliente',
+            clientEmail: params.clientEmail,
+            serviceDescription: params.descText,
+            externalReference: params.externalRef,
+          });
+        } catch (plugErr: any) {
+          const err: any = new Error(
+            `Falha ao emitir NF via PlugNotas para ${params.paymentId}: ${plugErr?.message || 'erro desconhecido'}`
+          );
+          err.provider = 'PLUGNOTAS';
+          err.code = 'PLUGNOTAS_ISSUE_FAILED';
+          err.cause = plugErr;
+          throw err;
+        }
         const idForLookup = issued.plugnotasId || issued.idIntegracao;
         console.log(`[NF Router] NF emitida via PLUGNOTAS para ${params.paymentId}: ${idForLookup}`);
         return {
@@ -3916,6 +3930,13 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
               }
             }
           } catch (nfErr: any) {
+            // PlugNotas é fail-fast: se a empresa está configurada para PLUGNOTAS e a
+            // emissão falhou, abortamos a request inteira para o operador corrigir
+            // (config, preferência ou retry). Sem fallback silencioso para Asaas.
+            if (nfErr?.provider === 'PLUGNOTAS') {
+              console.error(`[NF Router] Falha PLUGNOTAS no split (${payment.id}, charge ${i + 1}): ${nfErr.message}`);
+              throw nfErr;
+            }
             console.log(`[Asaas] AVISO: Não foi possível agendar NF para ${payment.id}: ${nfErr.message}`);
           }
 
@@ -4043,6 +4064,12 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
           }
         }
       } catch (nfErr: any) {
+        // PlugNotas é fail-fast: empresas configuradas para PLUGNOTAS NÃO caem para
+        // Asaas em silêncio. Operador resolve via config/preferência/retry manual.
+        if (nfErr?.provider === 'PLUGNOTAS') {
+          console.error(`[NF Router] Falha PLUGNOTAS na cobrança ${payment.id}: ${nfErr.message}`);
+          throw nfErr;
+        }
         console.log(`[Asaas] AVISO: Não foi possível agendar NF para ${payment.id}: ${nfErr.message}`);
       }
 
