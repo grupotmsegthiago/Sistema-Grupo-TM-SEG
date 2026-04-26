@@ -3910,7 +3910,15 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
             pix: pixData ? { qrCodeBase64: pixData.encodedImage, copyPaste: pixData.payload } : null,
             bankSlip: bankSlipData ? { barCode: bankSlipData.barCode, digitableLine: bankSlipData.identificationField, nossoNumero: bankSlipData.nossoNumero } : null,
             customer: { id: customer.id, name: customer.name, cpfCnpj: cleanCnpj },
-            invoice: invoiceData ? { id: invoiceData.id, status: invoiceData.status, number: invoiceData.number || null, pdfUrl: invoiceData.pdfUrl || null } : null,
+            invoice: invoiceData ? {
+              id: invoiceData.id,
+              status: invoiceData.status,
+              number: invoiceData.number || null,
+              pdfUrl: invoiceData.pdfUrl || null,
+              provider: invoiceData.provider || 'ASAAS',
+              plugnotasInvoiceId: invoiceData.plugnotasInvoiceId || null,
+              plugnotasProtocol: invoiceData.plugnotasProtocol || null,
+            } : null,
           };
           results.push(chargeResult);
 
@@ -4075,7 +4083,15 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
           nossoNumero: bankSlipData.nossoNumero,
         } : null,
         customer: { id: customer.id, name: customer.name },
-        invoice: invoiceData ? { id: invoiceData.id, status: invoiceData.status, number: invoiceData.number || null, pdfUrl: invoiceData.pdfUrl || null } : null,
+        invoice: invoiceData ? {
+          id: invoiceData.id,
+          status: invoiceData.status,
+          number: invoiceData.number || null,
+          pdfUrl: invoiceData.pdfUrl || null,
+          provider: invoiceData.provider || 'ASAAS',
+          plugnotasInvoiceId: invoiceData.plugnotasInvoiceId || null,
+          plugnotasProtocol: invoiceData.plugnotasProtocol || null,
+        } : null,
       });
     } catch (err: any) {
       console.error('[Asaas] Erro ao criar cobrança:', err.message);
