@@ -4347,18 +4347,32 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
 
       // Se a fatura está vinculada a NF emitida pelo PlugNotas, NÃO sobrescreve
       // dados de NF com a consulta Asaas (poderia trocar URL/status PDF correto
-      // do PlugNotas por dados antigos/cancelados da NF Asaas anterior). Apenas
-      // o status do pagamento (PAGA/VENCIDA) é atualizado.
+      // do PlugNotas por dados antigos/cancelados da NF Asaas anterior). Em vez
+      // disso, reaproveita os campos locais (nf_image_url/nf_status/nf_number)
+      // para preencher a resposta — assim o frontend não vê falso "NF pendente"
+      // quando o PDF PlugNotas já está autorizado e gravado no banco.
       let nfPdfUrl: string | null = null;
       let nfStatus: string | null = null;
       let nfNumber: string | null = null;
       let skipNfSync = false;
       if (invoiceId) {
         try {
-          const { data: invProvCheck } = await supabase.from('financial_invoices').select('nf_provider').eq('id', invoiceId).maybeSingle();
-          if ((invProvCheck as any)?.nf_provider && String((invProvCheck as any).nf_provider).toUpperCase() === 'PLUGNOTAS') {
+          const { data: invProvCheck } = await supabase
+            .from('financial_invoices')
+            .select('nf_provider, nf_image_url, nf_status, nf_number, plugnotas_invoice_id')
+            .eq('id', invoiceId)
+            .maybeSingle();
+          const rawProv = String((invProvCheck as any)?.nf_provider || '').toUpperCase();
+          // Inferência consistente: provider é PLUGNOTAS quando explícito OU
+          // quando há plugnotas_invoice_id (faturas legadas sem nf_provider).
+          const isPlug = rawProv === 'PLUGNOTAS' || (!rawProv && (invProvCheck as any)?.plugnotas_invoice_id);
+          if (isPlug) {
             skipNfSync = true;
-            console.log(`[Asaas Sync] fatura ${invoiceId} usa PlugNotas — pulando sync de campos NF (preserva PDF/status/número PlugNotas).`);
+            // Reaproveita o que já está no banco, em vez de devolver tudo nulo.
+            nfPdfUrl = (invProvCheck as any)?.nf_image_url || null;
+            nfStatus = (invProvCheck as any)?.nf_status || null;
+            nfNumber = (invProvCheck as any)?.nf_number || null;
+            console.log(`[Asaas Sync] fatura ${invoiceId} usa PlugNotas — usa NF local (status=${nfStatus || 'N/A'}, pdf=${nfPdfUrl ? 'sim' : 'não'}).`);
           }
         } catch {}
       }
