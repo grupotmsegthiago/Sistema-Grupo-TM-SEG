@@ -39,8 +39,11 @@ interface PlugNotasCompanyConfig {
   uf: string;
 }
 
+// Chaves normalizadas (sem acento, MAIÚSCULAS) — devem casar com o que o
+// `nfProviderRouter.normalizeCompanyKey()` produz, para que a preferência salva
+// pelo backend seja lida corretamente pelo frontend (que usa estas mesmas keys).
 const PLUGNOTAS_COMPANIES: Record<string, PlugNotasCompanyConfig> = {
-  'TM GESTÃO': {
+  'TM GESTAO': {
     cnpj: '60485843000157',
     name: 'TM GESTÃO',
     aliases: ['TM GESTAO', 'TM GESTÃO', 'GESTAO', 'GESTÃO'],
@@ -92,7 +95,7 @@ export function resolvePlugNotasCompany(company?: string | null): PlugNotasCompa
       if (normalize(val.name).includes(upper) || upper.includes(normalize(val.name))) return val;
     }
   }
-  return PLUGNOTAS_COMPANIES['TM GESTÃO'];
+  return PLUGNOTAS_COMPANIES['TM GESTAO'];
 }
 
 export function listPlugNotasCompanies(): { key: string; name: string; cnpj: string }[] {
