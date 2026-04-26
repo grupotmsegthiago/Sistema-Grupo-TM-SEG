@@ -71,12 +71,14 @@ export async function setProviderPreferences(prefs: Record<string, NfProvider>, 
   // Append-only: cada UPDATE vira um novo registro em system_logs, preservando
   // o histórico de mudanças. A leitura em getProviderPreferences usa
   // .order(created_at desc).limit(1) para sempre pegar a versão mais recente.
+  // IMPORTANTE: o schema da tabela `system_logs` usa `action_type` e `user_name`
+  // (alinhado com todos os outros inserts em server/routes.ts). NÃO use `action`/`actor`.
   const { error } = await sb.from('system_logs').insert({
     entity: PREF_ENTITY,
     entity_id: PREF_ENTITY_ID,
-    action: 'UPDATE',
-    actor: actor || 'system',
-    details: clean,
+    action_type: 'nf_provider_pref_update',
+    user_name: actor || 'system',
+    details: JSON.stringify(clean),
   });
   if (error) {
     // NÃO atualiza o cache para que a próxima leitura busque o estado real do
