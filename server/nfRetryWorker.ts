@@ -101,8 +101,11 @@ export async function listPendingNfs(): Promise<PendingInvoice[]> {
     // Busca: faturas com pagamento Asaas, nf_status em estados pendentes OU nulo (faturas
     // antigas que nunca tiveram o ciclo). Filtragem fina (idade, paused, retries) é feita
     // em retryOne para aproveitar a info de dateCreated do Asaas.
+    // Só pega faturas com algum identificador de NF/provider — evita varrer milhares
+    // de faturas legacy sem cobrança Asaas nem NF PlugNotas e saturar o ciclo.
     const { data, error } = await sb.from('financial_invoices')
       .select('id, client, number, amount, asaas_payment_id, asaas_invoice_id, issuer_company, nf_status, nf_last_error, nf_retry_count, nf_retry_paused, nf_retry_at, created_at, nf_provider, plugnotas_invoice_id, plugnotas_protocol')
+      .or('asaas_payment_id.not.is.null,plugnotas_invoice_id.not.is.null')
       .or(`nf_status.is.null,nf_status.in.(${PENDING_NF_STATUSES.join(',')})`)
       .or('nf_retry_paused.is.null,nf_retry_paused.eq.false')
       .or(`nf_retry_count.is.null,nf_retry_count.lt.${MAX_RETRIES}`)

@@ -3548,20 +3548,23 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
   app.post("/api/plugnotas/webhook", async (req: Request, res: Response) => {
     try {
       const expected = (process.env.PLUGNOTAS_WEBHOOK_SECRET || '').trim();
-      if (expected) {
-        const provided = String(
-          req.headers['x-plugnotas-secret'] ||
-          req.headers['x-webhook-secret'] ||
-          req.query.token ||
-          (req.headers.authorization || '').toString().replace(/^Bearer\s+/i, '') ||
-          ''
-        ).trim();
-        if (!provided || provided !== expected) {
-          console.log('[PlugNotas Webhook] 401 — secret ausente/incorreto.');
-          return res.status(401).json({ error: 'unauthorized' });
-        }
-      } else {
-        console.log('[PlugNotas Webhook] AVISO: PLUGNOTAS_WEBHOOK_SECRET não configurado — aceitando sem autenticação. Configure o secret antes de ir para produção.');
+      if (!expected) {
+        // Secure-by-default: sem secret configurado, o endpoint não aceita ninguém.
+        // Defina PLUGNOTAS_WEBHOOK_SECRET (qualquer string forte) e configure-o
+        // como token na URL do webhook do PlugNotas (?token=...).
+        console.log('[PlugNotas Webhook] 503 — PLUGNOTAS_WEBHOOK_SECRET não configurado. Endpoint desativado até o secret ser definido.');
+        return res.status(503).json({ error: 'webhook-not-configured' });
+      }
+      const provided = String(
+        req.headers['x-plugnotas-secret'] ||
+        req.headers['x-webhook-secret'] ||
+        req.query.token ||
+        (req.headers.authorization || '').toString().replace(/^Bearer\s+/i, '') ||
+        ''
+      ).trim();
+      if (!provided || provided !== expected) {
+        console.log('[PlugNotas Webhook] 401 — secret ausente/incorreto.');
+        return res.status(401).json({ error: 'unauthorized' });
       }
       const body = req.body || {};
       console.log('[PlugNotas Webhook] payload recebido:', JSON.stringify(body).substring(0, 500));
@@ -3582,6 +3585,14 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
         let inv: any = null;
         if (plugId) {
           const { data } = await sb.from('financial_invoices').select('*').eq('plugnotas_invoice_id', plugId).maybeSingle();
+          inv = data;
+        }
+        // Correlação por idIntegracao: tanto o caso onde salvamos o próprio
+        // idIntegracao em plugnotas_invoice_id (fallback quando emissão não
+        // devolveu plugId) quanto o decoding do UUID embutido no formato
+        // "inv-<uuid>-<ts>".
+        if (!inv && idIntegracao) {
+          const { data } = await sb.from('financial_invoices').select('*').eq('plugnotas_invoice_id', idIntegracao).maybeSingle();
           inv = data;
         }
         if (!inv && idIntegracao) {
