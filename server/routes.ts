@@ -1142,8 +1142,11 @@ export async function registerRoutes(
     }
   });
 
-  const SUPABASE_URL = 'https://ajhmmjuewdsukecaimik.supabase.co';
-  const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFqaG1tanVld2RzdWtlY2FpbWlrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjQxNzUxMjEsImV4cCI6MjA3OTc1MTEyMX0.5bXRWTyb1HxLimt3lqJTBfjzDoumux7TXlW4lycXrPk';
+  // Lidos exclusivamente do ambiente — não use fallback hardcoded.
+  // Se faltarem, os endpoints que dependem dessas constantes responderão erro
+  // (preferível a expor chaves no código).
+  const SUPABASE_URL = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || '';
+  const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY || '';
   const supabaseAdmin = supabase;
 
   const { error: colCheck } = await supabaseAdmin.from('missions').select('billing_release').limit(1);
@@ -3353,7 +3356,8 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
       const { invoiceId } = req.params;
       const { listPendingNfs, retryOne } = await import('./nfRetryWorker');
       const all = await listPendingNfs();
-      let inv = all.find(i => i.id === invoiceId);
+      type InvoiceRow = typeof all[number];
+      let inv: InvoiceRow | undefined = all.find(i => i.id === invoiceId);
       if (!inv) {
         const sbUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || '';
         const sbKey = process.env.SUPABASE_SERVICE_KEY || process.env.VITE_SUPABASE_ANON_KEY || '';
@@ -3362,7 +3366,7 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
           const { data } = await sb.from('financial_invoices')
             .select('id, client, asaas_payment_id, asaas_invoice_id, issuer_company, nf_status, nf_last_error, nf_retry_count, nf_retry_paused, nf_provider, plugnotas_invoice_id, plugnotas_protocol, number, amount, due_date, description, notes')
             .eq('id', invoiceId).maybeSingle();
-          if (data) inv = data as any;
+          if (data) inv = data as unknown as InvoiceRow;
         }
       }
       if (!inv) return res.status(404).json({ error: 'Fatura não encontrada' });
@@ -3372,10 +3376,10 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
       // Inferência: nf_provider pode estar nulo em faturas antigas; se houver
       // plugnotas_invoice_id, tratamos como PLUGNOTAS para a validação prévia
       // (mesma regra usada por retryOne no worker).
-      const rawProvider = String((inv as any).nf_provider || '').toUpperCase();
-      const inferredProvider = rawProvider === 'PLUGNOTAS' || (!rawProvider && (inv as any).plugnotas_invoice_id) ? 'PLUGNOTAS' : 'ASAAS';
+      const rawProvider = String(inv.nf_provider || '').toUpperCase();
+      const inferredProvider = rawProvider === 'PLUGNOTAS' || (!rawProvider && inv.plugnotas_invoice_id) ? 'PLUGNOTAS' : 'ASAAS';
       if (inferredProvider === 'PLUGNOTAS') {
-        if (!(inv as any).plugnotas_invoice_id) return res.status(400).json({ error: 'Fatura PlugNotas sem ID de integração — não pode reemitir.' });
+        if (!inv.plugnotas_invoice_id) return res.status(400).json({ error: 'Fatura PlugNotas sem ID de integração — não pode reemitir.' });
       } else {
         if (!inv.asaas_payment_id) return res.status(400).json({ error: 'Fatura sem ID Asaas — não pode reemitir.' });
       }
@@ -3673,10 +3677,16 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
         const pdfUrl: string | null = item?.linkPdf || item?.pdfUrl || (status === 'AUTHORIZED' && plugId ? await plugGetPdfUrlWh(plugId) : null);
         const errorMsg = status === 'ERROR' ? extractPlugNotasError(item) : null;
 
+        // IMPORTANTE: webhook é o caminho passivo (PlugNotas → nós). NÃO atualiza
+        // nf_retry_at aqui — esse campo é a "âncora de idade" usada pelo
+        // nfRetryWorker para escalonar (>6h cancel/reissue, >24h STUCK). Resetá-lo
+        // a cada evento de webhook (que pode chegar continuamente enquanto a
+        // Prefeitura ainda processa) faria a fatura nunca atingir os limites
+        // de escalonamento. nf_retry_at é reservado para tentativas reais
+        // (retryOne / scheduleInvoice via roteador).
         const patch: any = {
           nf_provider: 'PLUGNOTAS',
           nf_status: status,
-          nf_retry_at: new Date().toISOString(),
         };
         if (plugId) patch.plugnotas_invoice_id = plugId;
         if (item?.numero || item?.number) patch.nf_number = String(item.numero || item.number);
@@ -4382,21 +4392,29 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
       let skipNfSync = false;
       if (invoiceId) {
         try {
-          const { data: invProvCheck } = await supabase
+          type InvProvCheck = {
+            nf_provider: string | null;
+            nf_image_url: string | null;
+            nf_status: string | null;
+            nf_number: string | null;
+            plugnotas_invoice_id: string | null;
+          };
+          const { data } = await supabase
             .from('financial_invoices')
             .select('nf_provider, nf_image_url, nf_status, nf_number, plugnotas_invoice_id')
             .eq('id', invoiceId)
             .maybeSingle();
-          const rawProv = String((invProvCheck as any)?.nf_provider || '').toUpperCase();
+          const invProvCheck = data as InvProvCheck | null;
+          const rawProv = String(invProvCheck?.nf_provider || '').toUpperCase();
           // Inferência consistente: provider é PLUGNOTAS quando explícito OU
           // quando há plugnotas_invoice_id (faturas legadas sem nf_provider).
-          const isPlug = rawProv === 'PLUGNOTAS' || (!rawProv && (invProvCheck as any)?.plugnotas_invoice_id);
+          const isPlug = rawProv === 'PLUGNOTAS' || (!rawProv && !!invProvCheck?.plugnotas_invoice_id);
           if (isPlug) {
             skipNfSync = true;
             // Reaproveita o que já está no banco, em vez de devolver tudo nulo.
-            nfPdfUrl = (invProvCheck as any)?.nf_image_url || null;
-            nfStatus = (invProvCheck as any)?.nf_status || null;
-            nfNumber = (invProvCheck as any)?.nf_number || null;
+            nfPdfUrl = invProvCheck?.nf_image_url || null;
+            nfStatus = invProvCheck?.nf_status || null;
+            nfNumber = invProvCheck?.nf_number || null;
             console.log(`[Asaas Sync] fatura ${invoiceId} usa PlugNotas — usa NF local (status=${nfStatus || 'N/A'}, pdf=${nfPdfUrl ? 'sim' : 'não'}).`);
           }
         } catch {}
