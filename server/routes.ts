@@ -4078,6 +4078,7 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
       let pixData = null;
       let bankSlipData = null;
       let invoiceData = null;
+      let nfErrorPayload: { provider: string; code: string; message: string } | null = null;
       try { pixData = await getPaymentPixQrCode(payment.id, issuerCompany); } catch (e) { console.log('[Asaas] PIX QR não disponível para esta cobrança'); }
       try { bankSlipData = await getPaymentBankSlip(payment.id, issuerCompany); } catch (e) { console.log('[Asaas] Boleto não disponível para esta cobrança'); }
       try {
@@ -4112,13 +4113,16 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
           }
         }
       } catch (nfErr: any) {
-        // PlugNotas é fail-fast: empresas configuradas para PLUGNOTAS NÃO caem para
-        // Asaas em silêncio. Operador resolve via config/preferência/retry manual.
+        // PlugNotas é fail-fast (sem fallback Asaas), MAS a cobrança Asaas já foi
+        // criada antes deste passo. Para NÃO gerar cobrança órfã, devolvemos o
+        // payload do payment + nfError. Frontend persiste localmente e mostra
+        // aviso para o operador usar "Reemitir via PlugNotas".
         if (nfErr?.provider === 'PLUGNOTAS') {
           console.error(`[NF Router] Falha PLUGNOTAS na cobrança ${payment.id}: ${nfErr.message}`);
-          throw nfErr;
+          nfErrorPayload = { provider: 'PLUGNOTAS', code: nfErr.code || 'PLUGNOTAS_ISSUE_FAILED', message: nfErr.message };
+        } else {
+          console.log(`[Asaas] AVISO: Não foi possível agendar NF para ${payment.id}: ${nfErr.message}`);
         }
-        console.log(`[Asaas] AVISO: Não foi possível agendar NF para ${payment.id}: ${nfErr.message}`);
       }
 
       console.log(`[Asaas] Cobrança criada: ${payment.id} | ${clientName} | R$ ${value} | Venc: ${dueDate}`);
@@ -4154,8 +4158,10 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
         console.log(`[Asaas] Email NÃO enviado — aguardando: boleto=${hasBoleto}, NF=${hasNf}. Envio manual necessário após sincronização.`);
       }
 
-      res.json({
-        success: true,
+      res.status(nfErrorPayload ? 207 : 200).json({
+        success: !nfErrorPayload,
+        nfPending: !!nfErrorPayload,
+        nfError: nfErrorPayload || undefined,
         emailSent,
         emailPendingReason: !emailSent && clientEmail ? (!hasBoleto ? 'Boleto não disponível ainda' : !hasNf ? 'NF não disponível ainda' : '') : undefined,
         payment: {

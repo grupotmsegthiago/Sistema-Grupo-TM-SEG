@@ -1666,13 +1666,23 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
                     }),
                 });
                 const data = await res.json();
-                if (!res.ok) throw new Error(data.error || 'Erro ao criar cobranças');
+                // 207 = partialFailure (PlugNotas falhou no meio do loop, mas
+                // cobranças Asaas anteriores foram criadas e devem ser persistidas
+                // para evitar cobranças órfãs).
+                if (!res.ok && res.status !== 207) throw new Error(data.error || 'Erro ao criar cobranças');
                 setAsaasResult(data);
                 const firstNf = data.charges?.[0]?.payment?.id ? `ASAAS-${data.charges[0].payment.id}` : '';
                 if (firstNf) {
                     setInvoiceForm(prev => ({ ...prev, number: firstNf }));
                 }
-                setAiStatus(`${data.charges?.length || 0} cobranças Asaas geradas! Salvando fatura...`);
+                if (data.partialFailure) {
+                    const failedCharge = data.charges?.[data.failedAtIndex];
+                    const errMsg = failedCharge?.nfError?.message || data.error || 'NF PlugNotas falhou';
+                    setAiStatus(`⚠️ ${data.charges?.length - 1 || 0} cobrança(s) OK + 1 SEM NF (PlugNotas falhou). Persistindo localmente — use "Reemitir via PlugNotas" depois. Erro: ${errMsg}`);
+                    alert(`Atenção: cobranças Asaas foram criadas, mas a NF da cobrança ${data.failedAtIndex + 1} falhou no PlugNotas:\n\n${errMsg}\n\nAs cobranças serão salvas localmente. Use "Reemitir via PlugNotas" na tela de Faturamento depois de corrigir a configuração.`);
+                } else {
+                    setAiStatus(`${data.charges?.length || 0} cobranças Asaas geradas! Salvando fatura...`);
+                }
                 await autoSaveInvoiceAfterAsaas(data, firstNf);
             } catch (err: any) {
                 alert('Erro ao gerar cobranças no Asaas: ' + err.message);
@@ -1704,13 +1714,21 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
                 }),
             });
             const data = await res.json();
-            if (!res.ok) throw new Error(data.error || 'Erro ao criar cobrança');
+            // 207 = NF PlugNotas falhou MAS a cobrança Asaas foi criada. Persistimos
+            // a cobrança localmente para evitar pagamento órfão e exibimos aviso para
+            // o operador usar "Reemitir via PlugNotas" depois de corrigir a config.
+            if (!res.ok && res.status !== 207) throw new Error(data.error || 'Erro ao criar cobrança');
             setAsaasResult(data);
             const nfNum = data.payment?.id ? `ASAAS-${data.payment.id}` : '';
             if (nfNum) {
                 setInvoiceForm(prev => ({ ...prev, number: nfNum }));
             }
-            setAiStatus('Cobrança Asaas gerada! Salvando fatura e contas a receber...');
+            if (data.nfPending && data.nfError) {
+                setAiStatus(`⚠️ Cobrança Asaas gerada, mas NF PlugNotas falhou: ${data.nfError.message}. Persistindo localmente.`);
+                alert(`Atenção: cobrança Asaas foi criada com sucesso, mas a NF PlugNotas falhou:\n\n${data.nfError.message}\n\nA cobrança será salva localmente. Use "Reemitir via PlugNotas" na tela de Faturamento depois de corrigir a configuração.`);
+            } else {
+                setAiStatus('Cobrança Asaas gerada! Salvando fatura e contas a receber...');
+            }
 
             await autoSaveInvoiceAfterAsaas(data, nfNum);
         } catch (err: any) {
