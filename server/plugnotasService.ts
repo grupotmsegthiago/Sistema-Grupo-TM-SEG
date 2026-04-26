@@ -17,7 +17,11 @@ export function getPlugNotasBaseUrl(): string {
 export function getPlugNotasToken(): string {
   const env = getPlugNotasEnv();
   if (env === 'production') {
-    return process.env.PLUGNOTAS_API_TOKEN || process.env.PLUGNOTAS_API_TOKEN_SANDBOX || '';
+    // PRODUÇÃO: NÃO faz fallback para token de sandbox — usar credencial errada
+    // contra a Prefeitura emite NFs falsas/em ambiente errado e mascara
+    // misconfigurações. Falha rápida com string vazia para que o caller
+    // (plugFetch / isPlugNotasConfigured) reporte erro explícito.
+    return process.env.PLUGNOTAS_API_TOKEN || '';
   }
   return process.env.PLUGNOTAS_API_TOKEN_SANDBOX || process.env.PLUGNOTAS_API_TOKEN || '';
 }

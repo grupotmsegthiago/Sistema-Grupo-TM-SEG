@@ -3450,9 +3450,13 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
   app.put("/api/nf/provider-preferences", requireAuth, requireRole('administrador', 'diretoria', 'financeiro'), async (req: Request, res: Response) => {
     try {
       const { setProviderPreferences } = await import('./nfProviderRouter');
-      const { preferences, actor } = req.body || {};
+      const { preferences } = req.body || {};
       if (!preferences || typeof preferences !== 'object') return res.status(400).json({ error: 'preferences é obrigatório' });
-      await setProviderPreferences(preferences, actor || 'system');
+      // Audit: o ator é SEMPRE o usuário autenticado, derivado do contexto do
+      // servidor — nunca confiamos em `actor` recebido do corpo do request.
+      const principal = (req as any).user || (req as any).auth || {};
+      const actor = principal.email || principal.username || principal.name || principal.id || 'system';
+      await setProviderPreferences(preferences, String(actor));
       res.json({ success: true, preferences });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
