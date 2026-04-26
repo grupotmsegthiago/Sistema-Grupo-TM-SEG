@@ -71,13 +71,18 @@ export async function setProviderPreferences(prefs: Record<string, NfProvider>, 
   // Append-only: cada UPDATE vira um novo registro em system_logs, preservando
   // o histórico de mudanças. A leitura em getProviderPreferences usa
   // .order(created_at desc).limit(1) para sempre pegar a versão mais recente.
-  await sb.from('system_logs').insert({
+  const { error } = await sb.from('system_logs').insert({
     entity: PREF_ENTITY,
     entity_id: PREF_ENTITY_ID,
     action: 'UPDATE',
     actor: actor || 'system',
     details: clean,
   });
+  if (error) {
+    // NÃO atualiza o cache para que a próxima leitura busque o estado real do
+    // banco em vez de servir uma preferência que nunca foi persistida.
+    throw new Error(`Falha ao salvar preferências de provider: ${error.message || 'erro desconhecido'}`);
+  }
   cache = { ts: Date.now(), map: clean };
 }
 

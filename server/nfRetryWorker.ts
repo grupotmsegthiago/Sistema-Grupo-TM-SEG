@@ -265,10 +265,14 @@ async function retryOnePlugNotas(inv: PendingInvoice): Promise<{ ok: boolean; st
     // Fallback: se a Prefeitura/PlugNotas ainda não devolveu linkPdf, monta a
     // URL canônica de PDF por id (endpoint público autenticado por token).
     const pdfUrl = current?.linkPdf || current?.pdfUrl || (realId && !/^inv-/i.test(realId) ? await plugGetPdfUrl(realId) : null);
+    // Só persiste em nf_image_url quando temos URL consumível (http/https).
+    // Caso contrário deixa null — webhook/próxima consulta atualiza quando
+    // a Prefeitura retornar o linkPdf real (evita gravar id "inv-..." num campo de URL).
+    const consumablePdf = pdfUrl && /^https?:\/\//i.test(String(pdfUrl)) ? pdfUrl : null;
     await markInvoice(inv.id, {
       nf_status: 'AUTHORIZED',
       nf_number: current?.numero || current?.number || inv.number,
-      nf_image_url: pdfUrl || realId,
+      nf_image_url: consumablePdf,
       plugnotas_invoice_id: realId,
       plugnotas_protocol: current?.protocoloPrefeitura?.numero || current?.protocolo || null,
       nf_last_error: null,
