@@ -3747,41 +3747,44 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
       const router = await import('./nfProviderRouter');
       const provider = await router.resolveProvider({ company: params.issuerCompany });
       if (provider === 'PLUGNOTAS') {
+        // IMPORTANTE: Quando a empresa está configurada para PLUGNOTAS, NUNCA caímos
+        // silenciosamente para Asaas. Risco fiscal: se o PlugNotas aceitou a NF mas a
+        // resposta falhou (timeout/rede), um fallback geraria uma segunda NF no Asaas
+        // (duplicidade). Operador resolve manualmente: ajusta config, troca preferência
+        // da empresa, ou usa o botão "Reemitir via PlugNotas" depois que a fatura existir.
         const { isPlugNotasConfigured, issueNfse } = await import('./plugnotasService');
         if (!isPlugNotasConfigured()) {
-          console.log(`[NF Router] Empresa ${params.issuerCompany} prefere PLUGNOTAS mas o token não está configurado — caindo para Asaas.`);
-        } else {
-          try {
-            const issued = await issueNfse({
-              invoiceId: params.externalRef,
-              amount: params.amount,
-              company: params.issuerCompany,
-              clientCnpj: params.clientCnpj,
-              clientName: params.clientName || 'Cliente',
-              clientEmail: params.clientEmail,
-              serviceDescription: params.descText,
-              externalReference: params.externalRef,
-            });
-            const idForLookup = issued.plugnotasId || issued.idIntegracao;
-            console.log(`[NF Router] NF emitida via PLUGNOTAS para ${params.paymentId}: ${idForLookup}`);
-            return {
-              provider: 'PLUGNOTAS',
-              invoice: {
-                id: idForLookup,
-                status: issued.status || 'PROCESSING',
-                number: null,
-                pdfUrl: null,
-                provider: 'PLUGNOTAS',
-                plugnotasInvoiceId: idForLookup,
-                plugnotasProtocol: issued.protocol || null,
-              },
-            };
-          } catch (plugErr: any) {
-            console.log(`[NF Router] Falha PlugNotas para ${params.paymentId} — caindo para Asaas: ${plugErr.message}`);
-          }
+          throw new Error(
+            `PlugNotas não configurado para empresa ${params.issuerCompany}. ` +
+            `Defina PLUGNOTAS_API_TOKEN_SANDBOX/PROD ou altere a preferência da empresa para ASAAS.`
+          );
         }
+        const issued = await issueNfse({
+          invoiceId: params.externalRef,
+          amount: params.amount,
+          company: params.issuerCompany,
+          clientCnpj: params.clientCnpj,
+          clientName: params.clientName || 'Cliente',
+          clientEmail: params.clientEmail,
+          serviceDescription: params.descText,
+          externalReference: params.externalRef,
+        });
+        const idForLookup = issued.plugnotasId || issued.idIntegracao;
+        console.log(`[NF Router] NF emitida via PLUGNOTAS para ${params.paymentId}: ${idForLookup}`);
+        return {
+          provider: 'PLUGNOTAS',
+          invoice: {
+            id: idForLookup,
+            status: issued.status || 'PROCESSING',
+            number: null,
+            pdfUrl: null,
+            provider: 'PLUGNOTAS',
+            plugnotasInvoiceId: idForLookup,
+            plugnotasProtocol: issued.protocol || null,
+          },
+        };
       }
-      // Caminho padrão / fallback: Asaas
+      // Caminho padrão (provider === 'ASAAS'): Asaas
       const invoiceData = await scheduleInvoice({
         paymentId: params.paymentId,
         serviceDescription: params.descText,
