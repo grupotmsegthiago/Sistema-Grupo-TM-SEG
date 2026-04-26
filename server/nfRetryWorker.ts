@@ -93,7 +93,10 @@ interface PendingInvoice {
   plugnotas_protocol?: string | null;
 }
 
-const PENDING_NF_STATUSES = ['ERROR', 'FAILED', 'PENDING', 'SCHEDULED', 'RETRY', 'SYNCHRONIZED'];
+// PROCESSING é o estado inicial de NFs PlugNotas (a Prefeitura ainda não devolveu
+// AUTORIZADA/REJEITADA). Sem ele, faturas PlugNotas recém-emitidas nunca entrariam
+// no ciclo do watchdog (nem no escalonamento >6h/>24h).
+const PENDING_NF_STATUSES = ['ERROR', 'FAILED', 'PENDING', 'PROCESSING', 'SCHEDULED', 'RETRY', 'SYNCHRONIZED'];
 
 export async function listPendingNfs(): Promise<PendingInvoice[]> {
   const sb = getSupabase();
