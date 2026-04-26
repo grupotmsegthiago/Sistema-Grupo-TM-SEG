@@ -379,9 +379,13 @@ async function retryOnePlugNotas(inv: PendingInvoice): Promise<{ ok: boolean; st
     }, { action: 'stuck-alert', status: 'STUCK', message: `PlugNotas travada há ${Math.floor(ageH)}h em ${status}.` });
     return { ok: false, paused: true, status: 'STUCK', action: 'stuck-alert' };
   }
+  // IMPORTANTE: NÃO atualiza nf_retry_at aqui. Esse campo serve como "início
+  // do ciclo de espera" — se for sobrescrito a cada polling, ageH nunca atinge
+  // os limites STUCK_HOURS_RETRY (6h) e STUCK_HOURS_ALERT (24h) e o
+  // escalonamento PlugNotas nunca dispara. Apenas o nf_status é refrescado
+  // para refletir a transição entre PROCESSING/SCHEDULED/SYNCHRONIZED.
   await markInvoice(inv.id, {
     nf_status: status || 'PROCESSING',
-    nf_retry_at: new Date().toISOString(),
   });
   return { ok: false, status, action: 'wait' };
 }
