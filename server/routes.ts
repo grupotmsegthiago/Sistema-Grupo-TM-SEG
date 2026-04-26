@@ -51,9 +51,12 @@ function extractUserIdFromToken(token: string): string | null {
   return match ? match[1] : null;
 }
 
-async function resolveUserRole(token: string): Promise<string | null> {
-  const cached = roleCache.get(token);
-  if (cached && cached.expiresAt > Date.now()) return cached.role;
+type ResolvedPrincipal = { id: string; name: string | null; email: string | null; role: string };
+const principalCache = new Map<string, { principal: ResolvedPrincipal; expiresAt: number }>();
+
+async function resolvePrincipal(token: string): Promise<ResolvedPrincipal | null> {
+  const cached = principalCache.get(token);
+  if (cached && cached.expiresAt > Date.now()) return cached.principal;
 
   const userId = extractUserIdFromToken(token);
   if (!userId) return null;
@@ -62,14 +65,28 @@ async function resolveUserRole(token: string): Promise<string | null> {
     const sbUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || '';
     const sbKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY || '';
     const sb = createClient(sbUrl, sbKey);
-    const { data } = await sb.from('system_users').select('status, profiles:profile_id ( name )').eq('id', userId).single();
+    const { data } = await sb.from('system_users').select('id, name, email, status, profiles:profile_id ( name )').eq('id', userId).single();
     if (!data || data.status !== 'Ativo') return null;
-    const role = ((data.profiles as any)?.name || '').toLowerCase();
-    roleCache.set(token, { role, expiresAt: Date.now() + ROLE_CACHE_TTL });
-    return role;
+    const principal: ResolvedPrincipal = {
+      id: data.id,
+      name: (data as any).name || null,
+      email: (data as any).email || null,
+      role: ((data.profiles as any)?.name || '').toLowerCase(),
+    };
+    principalCache.set(token, { principal, expiresAt: Date.now() + ROLE_CACHE_TTL });
+    // Mantém roleCache em sync para compatibilidade com código legado.
+    roleCache.set(token, { role: principal.role, expiresAt: Date.now() + ROLE_CACHE_TTL });
+    return principal;
   } catch {
     return null;
   }
+}
+
+async function resolveUserRole(token: string): Promise<string | null> {
+  const cached = roleCache.get(token);
+  if (cached && cached.expiresAt > Date.now()) return cached.role;
+  const principal = await resolvePrincipal(token);
+  return principal?.role || null;
 }
 
 function requireRole(...allowedRoles: string[]) {
@@ -78,11 +95,14 @@ function requireRole(...allowedRoles: string[]) {
     const token = (req as any).authToken;
     if (!token) return res.status(401).json({ error: 'Não autorizado' });
 
-    const role = await resolveUserRole(token);
-    if (!role) return res.status(403).json({ error: 'Permissão negada — usuário inativo ou não encontrado' });
+    const principal = await resolvePrincipal(token);
+    if (!principal) return res.status(403).json({ error: 'Permissão negada — usuário inativo ou não encontrado' });
 
-    if (normalized.includes(role) || normalized.includes('*')) {
-      (req as any).userRole = role;
+    if (normalized.includes(principal.role) || normalized.includes('*')) {
+      (req as any).userRole = principal.role;
+      // Popula req.user/req.auth para auditoria (preferências, ações administrativas).
+      (req as any).user = principal;
+      (req as any).auth = principal;
       return next();
     }
 
@@ -3559,8 +3579,9 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
   //  - header `x-plugnotas-secret` ou `x-webhook-secret`
   //  - query string `?token=...`
   //  - header padrão `Authorization: Bearer <secret>`
-  // Se o env var não estiver configurado, o endpoint loga aviso e aceita (modo
-  // setup inicial — recomenda-se SEMPRE configurar antes de produção).
+  // SECURE-BY-DEFAULT: se PLUGNOTAS_WEBHOOK_SECRET NÃO estiver configurado, o endpoint
+  // responde 503 e nega TODAS as requisições. É obrigatório definir o secret antes
+  // de habilitar o webhook no painel PlugNotas, mesmo em sandbox.
   app.post("/api/plugnotas/webhook", async (req: Request, res: Response) => {
     try {
       const expected = (process.env.PLUGNOTAS_WEBHOOK_SECRET || '').trim();
@@ -4155,16 +4176,54 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
       }
 
       const company = issuerCompany || undefined;
-      let pixData = null, bankSlipData = null, invoiceData = null;
+      let pixData = null, bankSlipData = null, invoiceData: any = null;
 
       try { pixData = await getPaymentPixQrCode(paymentId, company); } catch (_) {}
       try { bankSlipData = await getPaymentBankSlip(paymentId, company); } catch (_) {}
+
+      // Provider-aware: primeiro tenta resolver a NF a partir da fatura no banco
+      // (que conhece nf_provider, nf_image_url, nf_number e plugnotas_invoice_id).
+      // Só consulta a API do Asaas se a fatura local indicar provider ASAAS ou
+      // não tiver dados suficientes (compatibilidade com cobranças antigas).
+      let dbInvoiceRow: any = null;
       try {
-        const invoicesResp = await getInvoiceByPayment(paymentId, company);
-        if (invoicesResp?.data?.length > 0) {
-          invoiceData = invoicesResp.data[0];
+        const { data: rows } = await supabaseAdmin
+          .from('financial_invoices')
+          .select('nf_provider, nf_image_url, nf_number, nf_status, plugnotas_invoice_id, asaas_invoice_id')
+          .eq('asaas_payment_id', paymentId)
+          .order('created_at', { ascending: false })
+          .limit(1);
+        dbInvoiceRow = rows && rows[0] ? rows[0] : null;
+      } catch (_) { /* fallback abaixo */ }
+
+      const dbProvider = (dbInvoiceRow?.nf_provider || '').toUpperCase();
+      if (dbProvider === 'PLUGNOTAS' && dbInvoiceRow?.nf_image_url) {
+        invoiceData = {
+          id: dbInvoiceRow.plugnotas_invoice_id || null,
+          status: dbInvoiceRow.nf_status || 'AUTHORIZED',
+          number: dbInvoiceRow.nf_number || null,
+          pdfUrl: dbInvoiceRow.nf_image_url,
+          provider: 'PLUGNOTAS',
+        };
+      } else {
+        try {
+          const invoicesResp = await getInvoiceByPayment(paymentId, company);
+          if (invoicesResp?.data?.length > 0) {
+            invoiceData = invoicesResp.data[0];
+          }
+        } catch (_) {}
+        // Se a fatura local diz PLUGNOTAS mas ainda não tem PDF, expõe explicitamente
+        // para o operador em vez de buscar (e nunca encontrar) no Asaas.
+        if (!invoiceData && dbProvider === 'PLUGNOTAS') {
+          invoiceData = {
+            id: dbInvoiceRow.plugnotas_invoice_id || null,
+            status: dbInvoiceRow.nf_status || 'PROCESSING',
+            number: dbInvoiceRow.nf_number || null,
+            pdfUrl: dbInvoiceRow.nf_image_url || null,
+            provider: 'PLUGNOTAS',
+          };
         }
-      } catch (_) {}
+      }
 
       let payment: any = null;
       try { payment = await getPayment(paymentId, company); } catch (_) {}
