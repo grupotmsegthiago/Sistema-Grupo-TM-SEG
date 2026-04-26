@@ -1501,6 +1501,12 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
                     if (ch.invoice?.pdfUrl) invoicePayload.nf_image_url = ch.invoice.pdfUrl;
                     if (ch.invoice?.status) invoicePayload.nf_status = ch.invoice.status;
                     if (ch.invoice?.number) invoicePayload.nf_number = String(ch.invoice.number);
+                    const chProvider = (ch.invoice?.provider || 'ASAAS').toUpperCase();
+                    invoicePayload.nf_provider = chProvider;
+                    if (chProvider === 'PLUGNOTAS') {
+                        if (ch.invoice?.plugnotasInvoiceId) invoicePayload.plugnotas_invoice_id = ch.invoice.plugnotasInvoiceId;
+                        if (ch.invoice?.plugnotasProtocol) invoicePayload.plugnotas_protocol = ch.invoice.plugnotasProtocol;
+                    }
 
                     let { error } = await supabase.from('financial_invoices').insert(invoicePayload).select();
                     if (error && error.code === '42703') {
@@ -1569,6 +1575,12 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
             if (nfPdf) invoicePayload.nf_image_url = nfPdf;
             if (asaasData?.invoice?.status) invoicePayload.nf_status = asaasData.invoice.status;
             if (asaasData?.invoice?.number) invoicePayload.nf_number = String(asaasData.invoice.number);
+            const nfProvider = (asaasData?.invoice?.provider || 'ASAAS').toUpperCase();
+            invoicePayload.nf_provider = nfProvider;
+            if (nfProvider === 'PLUGNOTAS') {
+                if (asaasData?.invoice?.plugnotasInvoiceId) invoicePayload.plugnotas_invoice_id = asaasData.invoice.plugnotasInvoiceId;
+                if (asaasData?.invoice?.plugnotasProtocol) invoicePayload.plugnotas_protocol = asaasData.invoice.plugnotasProtocol;
+            }
 
             let { error } = await supabase.from('financial_invoices').insert(invoicePayload).select();
             if (error && error.code === '42703') {

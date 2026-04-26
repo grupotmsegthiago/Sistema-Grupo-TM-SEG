@@ -238,8 +238,16 @@ async function retryOnePlugNotas(inv: PendingInvoice): Promise<{ ok: boolean; st
     return { ok: false, paused: true, action: 'paused-validation' };
   }
   let current: any;
+  // O plugnotas_invoice_id pode ser tanto o "id" interno do PlugNotas (vindo do
+  // webhook ou da emissão sync) quanto o idIntegracao "inv-<uuid>-<ts>" salvo
+  // como fallback quando a emissão não devolveu o id imediato. Usamos o
+  // endpoint correto para cada formato.
+  const lookupId = inv.plugnotas_invoice_id;
+  const isIdIntegracao = typeof lookupId === 'string' && /^inv-/i.test(lookupId);
   try {
-    current = await consultNfseById(inv.plugnotas_invoice_id);
+    current = isIdIntegracao
+      ? await consultNfseByIntegration(lookupId)
+      : await consultNfseById(lookupId);
   } catch (e: any) {
     await markInvoice(inv.id, { nf_retry_at: new Date().toISOString(), nf_last_error: String(e.message).substring(0, 500) }, { action: 'lookup-error', message: e.message });
     return { ok: false, error: e.message };
@@ -247,10 +255,12 @@ async function retryOnePlugNotas(inv: PendingInvoice): Promise<{ ok: boolean; st
   const status = mapPlugNotasStatusToNf(current?.status || current?.situacao);
   if (status === 'AUTHORIZED') {
     const pdfUrl = current?.linkPdf || current?.pdfUrl || null;
+    const realId = current?.id || current?._id || inv.plugnotas_invoice_id;
     await markInvoice(inv.id, {
       nf_status: 'AUTHORIZED',
       nf_number: current?.numero || current?.number || inv.number,
-      nf_image_url: pdfUrl || inv.plugnotas_invoice_id,
+      nf_image_url: pdfUrl || realId,
+      plugnotas_invoice_id: realId,
       plugnotas_protocol: current?.protocoloPrefeitura?.numero || current?.protocolo || null,
       nf_last_error: null,
       nf_retry_at: new Date().toISOString(),
@@ -278,7 +288,76 @@ async function retryOnePlugNotas(inv: PendingInvoice): Promise<{ ok: boolean; st
     return { ok: false, error: errMsg };
   }
   const ageH = ageHoursSince(inv.nf_retry_at || inv.created_at);
-  if ((status === 'PROCESSING' || status === 'SCHEDULED') && ageH >= STUCK_HOURS_ALERT) {
+  // Janela 6h–24h: assume que a Prefeitura travou e tenta cancelar+reemitir,
+  // respeitando MAX_SYNC_RETRIES (igual ao caminho Asaas).
+  if ((status === 'PROCESSING' || status === 'SCHEDULED' || status === 'SYNCHRONIZED') && ageH >= STUCK_HOURS_RETRY && ageH < STUCK_HOURS_ALERT) {
+    const retries = inv.nf_retry_count || 0;
+    if (retries >= MAX_SYNC_RETRIES) {
+      await markInvoice(inv.id, {
+        nf_status: 'STUCK',
+        nf_retry_paused: true,
+        nf_last_error: `NF PlugNotas travada em ${status} há ${Math.floor(ageH)}h após ${retries} tentativas — verifique o painel PlugNotas.`,
+        nf_retry_at: new Date().toISOString(),
+      }, { action: 'stuck-alert', status: 'STUCK', message: `PlugNotas: limite de ${MAX_SYNC_RETRIES} reemissões atingido em ${Math.floor(ageH)}h.` });
+      return { ok: false, paused: true, status: 'STUCK', action: 'stuck-alert' };
+    }
+    // Tenta cancelar a NF travada (idempotente: se já estiver cancelada/inexistente, segue)
+    try {
+      const realId = current?.id || current?._id || (isIdIntegracao ? null : inv.plugnotas_invoice_id);
+      if (realId) {
+        await plugCancelNfse(realId, 'Reemissão automática — NF travada na Prefeitura');
+        console.log(`[NF Retry][PlugNotas] cancel ok para ${realId} (fatura ${inv.id})`);
+      }
+    } catch (cancelErr: any) {
+      console.log(`[NF Retry][PlugNotas] cancel falhou para fatura ${inv.id} (seguindo com reemissão): ${cancelErr.message}`);
+    }
+    // Reemite — busca dados de cliente/empresa via Supabase
+    try {
+      const sb = getSupabase();
+      let clientCnpj: string | undefined;
+      let clientName: string = inv.client || 'Cliente';
+      let clientEmail: string | undefined;
+      let serviceDescription: string | undefined;
+      if (sb && inv.client) {
+        const { data: clientRow } = await sb.from('clients').select('name, trading_name, cnpj, medicao_email, email').or(`name.eq.${inv.client},trading_name.eq.${inv.client}`).limit(1).maybeSingle();
+        if (clientRow) {
+          clientCnpj = (clientRow as any).cnpj || undefined;
+          clientName = (clientRow as any).trading_name || (clientRow as any).name || clientName;
+          clientEmail = (clientRow as any).medicao_email || (clientRow as any).email || undefined;
+        }
+      }
+      const reissued = await plugIssueNfse({
+        invoiceId: inv.id,
+        amount: Number(inv.amount || 0),
+        company: inv.issuer_company || undefined,
+        clientCnpj,
+        clientName,
+        clientEmail,
+        serviceDescription,
+        externalReference: inv.id,
+      });
+      const newId = reissued.plugnotasId || reissued.idIntegracao;
+      await markInvoice(inv.id, {
+        nf_status: reissued.status || 'PROCESSING',
+        plugnotas_invoice_id: newId,
+        plugnotas_protocol: reissued.protocol || null,
+        nf_retry_count: retries + 1,
+        nf_retry_at: new Date().toISOString(),
+        nf_last_error: null,
+      }, { action: 'cancel-and-reschedule', status: reissued.status || 'PROCESSING', message: `PlugNotas reemitida após ${Math.floor(ageH)}h (tentativa ${retries + 1}/${MAX_SYNC_RETRIES}). Novo id ${newId}.` });
+      return { ok: true, status: reissued.status, action: 'cancel-and-reschedule' };
+    } catch (reissueErr: any) {
+      const msg = reissueErr.message || 'Falha ao reemitir NF PlugNotas';
+      await markInvoice(inv.id, {
+        nf_status: 'ERROR',
+        nf_last_error: msg.substring(0, 500),
+        nf_retry_count: retries + 1,
+        nf_retry_at: new Date().toISOString(),
+      }, { action: 'schedule-failed', status: 'ERROR', message: `PlugNotas reemissão falhou (${retries + 1}/${MAX_SYNC_RETRIES}): ${msg}` });
+      return { ok: false, error: msg, action: 'schedule-failed' };
+    }
+  }
+  if ((status === 'PROCESSING' || status === 'SCHEDULED' || status === 'SYNCHRONIZED') && ageH >= STUCK_HOURS_ALERT) {
     await markInvoice(inv.id, {
       nf_status: 'STUCK',
       nf_retry_paused: true,

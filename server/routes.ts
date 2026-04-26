@@ -3539,8 +3539,30 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
   });
 
   // Webhook PlugNotas — recebe eventos assíncronos de emissão/autorização/cancelamento.
+  // Autenticação por shared-secret (env PLUGNOTAS_WEBHOOK_SECRET). Aceita o token via:
+  //  - header `x-plugnotas-secret` ou `x-webhook-secret`
+  //  - query string `?token=...`
+  //  - header padrão `Authorization: Bearer <secret>`
+  // Se o env var não estiver configurado, o endpoint loga aviso e aceita (modo
+  // setup inicial — recomenda-se SEMPRE configurar antes de produção).
   app.post("/api/plugnotas/webhook", async (req: Request, res: Response) => {
     try {
+      const expected = (process.env.PLUGNOTAS_WEBHOOK_SECRET || '').trim();
+      if (expected) {
+        const provided = String(
+          req.headers['x-plugnotas-secret'] ||
+          req.headers['x-webhook-secret'] ||
+          req.query.token ||
+          (req.headers.authorization || '').toString().replace(/^Bearer\s+/i, '') ||
+          ''
+        ).trim();
+        if (!provided || provided !== expected) {
+          console.log('[PlugNotas Webhook] 401 — secret ausente/incorreto.');
+          return res.status(401).json({ error: 'unauthorized' });
+        }
+      } else {
+        console.log('[PlugNotas Webhook] AVISO: PLUGNOTAS_WEBHOOK_SECRET não configurado — aceitando sem autenticação. Configure o secret antes de ir para produção.');
+      }
       const body = req.body || {};
       console.log('[PlugNotas Webhook] payload recebido:', JSON.stringify(body).substring(0, 500));
       const sbUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || '';
@@ -3679,6 +3701,73 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
   });
 
   app.post("/api/asaas/create-charge", requireAuth, requireRole('administrador', 'diretoria', 'financeiro'), async (req: Request, res: Response) => {
+    // Helper local: decide provider de NF (ASAAS|PLUGNOTAS) por empresa emissora e
+    // emite via PlugNotas quando preferido. Mantém Asaas como gateway de cobrança
+    // SEMPRE — só a NFS-e muda. Retorna shape compatível com Asaas.scheduleInvoice
+    // + campos extra (provider, plugnotasInvoiceId, plugnotasProtocol).
+    const issueNfWithRouter = async (params: {
+      paymentId: string;
+      issuerCompany?: string;
+      descText: string;
+      externalRef: string;
+      clientCnpj: string;
+      clientName?: string;
+      clientEmail?: string;
+      amount: number;
+    }): Promise<{ provider: 'ASAAS' | 'PLUGNOTAS'; invoice: any }> => {
+      const router = await import('./nfProviderRouter');
+      const provider = await router.resolveProvider({ company: params.issuerCompany });
+      if (provider === 'PLUGNOTAS') {
+        const { isPlugNotasConfigured, issueNfse } = await import('./plugnotasService');
+        if (!isPlugNotasConfigured()) {
+          console.log(`[NF Router] Empresa ${params.issuerCompany} prefere PLUGNOTAS mas o token não está configurado — caindo para Asaas.`);
+        } else {
+          try {
+            const issued = await issueNfse({
+              invoiceId: params.externalRef,
+              amount: params.amount,
+              company: params.issuerCompany,
+              clientCnpj: params.clientCnpj,
+              clientName: params.clientName || 'Cliente',
+              clientEmail: params.clientEmail,
+              serviceDescription: params.descText,
+              externalReference: params.externalRef,
+            });
+            const idForLookup = issued.plugnotasId || issued.idIntegracao;
+            console.log(`[NF Router] NF emitida via PLUGNOTAS para ${params.paymentId}: ${idForLookup}`);
+            return {
+              provider: 'PLUGNOTAS',
+              invoice: {
+                id: idForLookup,
+                status: issued.status || 'PROCESSING',
+                number: null,
+                pdfUrl: null,
+                provider: 'PLUGNOTAS',
+                plugnotasInvoiceId: idForLookup,
+                plugnotasProtocol: issued.protocol || null,
+              },
+            };
+          } catch (plugErr: any) {
+            console.log(`[NF Router] Falha PlugNotas para ${params.paymentId} — caindo para Asaas: ${plugErr.message}`);
+          }
+        }
+      }
+      // Caminho padrão / fallback: Asaas
+      const invoiceData = await scheduleInvoice({
+        paymentId: params.paymentId,
+        serviceDescription: params.descText,
+        observations: `${params.descText} | Ref. ${params.externalRef}`,
+        externalReference: params.externalRef,
+        company: params.issuerCompany,
+        clientCnpj: params.clientCnpj,
+        clientName: params.clientName,
+      });
+      return {
+        provider: 'ASAAS',
+        invoice: invoiceData ? { ...invoiceData, provider: 'ASAAS' } : null,
+      };
+    };
+
     try {
       const { clientName, clientCpfCnpj, clientEmail, value, dueDate, description, invoiceNumber, issuerCompany, charges } = req.body;
 
@@ -3764,18 +3853,20 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
           try { pixData = await getPaymentPixQrCode(payment.id, issuerCompany); } catch (_) {}
           try { bankSlipData = await getPaymentBankSlip(payment.id, issuerCompany); } catch (_) {}
           try {
-            invoiceData = await scheduleInvoice({
+            const routed = await issueNfWithRouter({
               paymentId: payment.id,
-              serviceDescription: descText,
-              observations: `${descText} | Ref. ${externalRef}`,
-              externalReference: externalRef,
-              company: issuerCompany,
+              issuerCompany,
+              descText,
+              externalRef,
               clientCnpj: cleanCnpj,
               clientName: charge.name || clientName,
+              clientEmail: charge.email || clientEmail || undefined,
+              amount: parseFloat(charge.value),
             });
-            console.log(`[Asaas] NF agendada para cobrança ${payment.id}: ${invoiceData?.id || 'OK'} | Status: ${invoiceData?.status || '-'} | Desc: ${descText}`);
+            invoiceData = routed.invoice;
+            console.log(`[NF] NF emitida via ${routed.provider} para cobrança ${payment.id}: ${invoiceData?.id || 'OK'} | Status: ${invoiceData?.status || '-'} | Desc: ${descText}`);
 
-            if (invoiceData?.id && !invoiceData?.pdfUrl) {
+            if (routed.provider === 'ASAAS' && invoiceData?.id && !invoiceData?.pdfUrl) {
               for (let attempt = 0; attempt < 5; attempt++) {
                 await new Promise(r => setTimeout(r, 3000));
                 try {
@@ -3881,18 +3972,20 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
       try { pixData = await getPaymentPixQrCode(payment.id, issuerCompany); } catch (e) { console.log('[Asaas] PIX QR não disponível para esta cobrança'); }
       try { bankSlipData = await getPaymentBankSlip(payment.id, issuerCompany); } catch (e) { console.log('[Asaas] Boleto não disponível para esta cobrança'); }
       try {
-        invoiceData = await scheduleInvoice({
+        const routed = await issueNfWithRouter({
           paymentId: payment.id,
-          serviceDescription: descText,
-          observations: `${descText} | Ref. ${externalRef}`,
-          externalReference: externalRef,
-          company: issuerCompany,
+          issuerCompany,
+          descText,
+          externalRef,
           clientCnpj: clientCpfCnpj,
           clientName: clientName,
+          clientEmail: clientEmail || undefined,
+          amount: parseFloat(value),
         });
-        console.log(`[Asaas] NF agendada para cobrança ${payment.id}: ${invoiceData?.id || 'OK'} | Status: ${invoiceData?.status || '-'} | Desc: ${descText}`);
+        invoiceData = routed.invoice;
+        console.log(`[NF] NF emitida via ${routed.provider} para cobrança ${payment.id}: ${invoiceData?.id || 'OK'} | Status: ${invoiceData?.status || '-'} | Desc: ${descText}`);
 
-        if (invoiceData?.id && !invoiceData?.pdfUrl) {
+        if (routed.provider === 'ASAAS' && invoiceData?.id && !invoiceData?.pdfUrl) {
           for (let attempt = 0; attempt < 5; attempt++) {
             await new Promise(r => setTimeout(r, 3000));
             try {
