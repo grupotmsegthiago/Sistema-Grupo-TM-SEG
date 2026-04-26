@@ -824,7 +824,7 @@ const FinancialInvoiceControl: React.FC = () => {
                               {syncingId === inv.id ? <Loader2 size={13} className="animate-spin" /> : <RefreshCw size={13} />}
                             </button>
                           )}
-                          {inv.asaas_payment_id && (inv.nf_status?.toUpperCase() === 'ERROR' || (!inv.nf_image_url && inv.nf_status?.toUpperCase() !== 'AUTHORIZED')) && (
+                          {inv.asaas_payment_id && (inv.nf_provider || 'ASAAS').toUpperCase() !== 'PLUGNOTAS' && (inv.nf_status?.toUpperCase() === 'ERROR' || (!inv.nf_image_url && inv.nf_status?.toUpperCase() !== 'AUTHORIZED')) && (
                             <button
                               onClick={() => handleRetryNf(inv)}
                               disabled={retryingNfId === inv.id}

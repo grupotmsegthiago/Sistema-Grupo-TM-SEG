@@ -3331,13 +3331,21 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
         if (sbUrl && sbKey) {
           const sb = createClient(sbUrl, sbKey);
           const { data } = await sb.from('financial_invoices')
-            .select('id, client, asaas_payment_id, asaas_invoice_id, issuer_company, nf_status, nf_last_error, nf_retry_count, nf_retry_paused')
+            .select('id, client, asaas_payment_id, asaas_invoice_id, issuer_company, nf_status, nf_last_error, nf_retry_count, nf_retry_paused, nf_provider, plugnotas_invoice_id, plugnotas_protocol, number, amount, due_date, description, notes')
             .eq('id', invoiceId).maybeSingle();
           if (data) inv = data as any;
         }
       }
       if (!inv) return res.status(404).json({ error: 'Fatura não encontrada' });
-      if (!inv.asaas_payment_id) return res.status(400).json({ error: 'Fatura sem ID Asaas — não pode reemitir.' });
+      // Aceita retry para Asaas (precisa de asaas_payment_id) OU PlugNotas
+      // (precisa de plugnotas_invoice_id). Sem nenhum dos dois IDs, a fatura
+      // não tem como ser reemitida.
+      const provider = String((inv as any).nf_provider || '').toUpperCase();
+      if (provider === 'PLUGNOTAS') {
+        if (!(inv as any).plugnotas_invoice_id) return res.status(400).json({ error: 'Fatura PlugNotas sem ID de integração — não pode reemitir.' });
+      } else {
+        if (!inv.asaas_payment_id) return res.status(400).json({ error: 'Fatura sem ID Asaas — não pode reemitir.' });
+      }
       if (inv.nf_retry_paused) {
         const sbUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || '';
         const sbKey = process.env.SUPABASE_SERVICE_KEY || process.env.VITE_SUPABASE_ANON_KEY || '';
