@@ -3406,7 +3406,12 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
         // ignora linhas sem qualquer ID de provider (faturas retroativas sem NF)
         if (!r.asaas_payment_id && !r.plugnotas_invoice_id) return;
         const c = r.issuer_company || '(sem emissora)';
-        const provider = (r.nf_provider || 'ASAAS').toUpperCase();
+        // Inferência espelha /sync-payment-status e /retry: se nf_provider está
+        // null mas há plugnotas_invoice_id, classifica como PLUGNOTAS.
+        const provider = (
+          r.nf_provider
+          || (r.plugnotas_invoice_id ? 'PLUGNOTAS' : 'ASAAS')
+        ).toUpperCase();
         if (!byCompany[c]) byCompany[c] = { company: c, total: 0, authorized: 0, synchronized: 0, scheduled: 0, error: 0, stuck: 0, canceled: 0, other: 0, asaas: 0, plugnotas: 0 };
         byCompany[c].total++;
         if (provider === 'PLUGNOTAS') byCompany[c].plugnotas++; else byCompany[c].asaas++;
@@ -3569,6 +3574,11 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
         nf_retry_count: 0,
         nf_retry_at: now,
         nf_history: [...existing, newHistoryEntry].slice(-50),
+        // Limpa artefatos da NF Asaas anterior para evitar que a UI mostre
+        // PDF/número desatualizados até o webhook/polling do PlugNotas chegar.
+        nf_image_url: null,
+        nf_number: null,
+        asaas_invoice_id: null,
       };
       await sb.from('financial_invoices').update(updateData).eq('id', invoiceId);
       console.log(`[Plugnotas Failover] fatura ${invoiceId} agora em PlugNotas (id=${issued.plugnotasId || issued.idIntegracao}).`);

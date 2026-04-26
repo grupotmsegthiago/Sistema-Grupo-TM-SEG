@@ -1501,8 +1501,19 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
                     if (ch.invoice?.pdfUrl) invoicePayload.nf_image_url = ch.invoice.pdfUrl;
                     if (ch.invoice?.status) invoicePayload.nf_status = ch.invoice.status;
                     if (ch.invoice?.number) invoicePayload.nf_number = String(ch.invoice.number);
-                    const chProvider = (ch.invoice?.provider || 'ASAAS').toUpperCase();
+                    // Provider attribution: prefer explícito (ch.invoice.provider). Quando
+                    // a NF falhou (invoice null + nfError), inferir do nfError.provider para
+                    // não classificar erroneamente como ASAAS uma fatura PLUGNOTAS pendente.
+                    const chProvider = (
+                        ch.invoice?.provider
+                        || (ch.nfError?.provider)
+                        || 'ASAAS'
+                    ).toUpperCase();
                     invoicePayload.nf_provider = chProvider;
+                    if (!ch.invoice && ch.nfError) {
+                        invoicePayload.nf_status = 'ERROR';
+                        invoicePayload.nf_last_error = ch.nfError.message || 'NF pendente — reemissão necessária';
+                    }
                     if (chProvider === 'PLUGNOTAS') {
                         if (ch.invoice?.plugnotasInvoiceId) invoicePayload.plugnotas_invoice_id = ch.invoice.plugnotasInvoiceId;
                         if (ch.invoice?.plugnotasProtocol) invoicePayload.plugnotas_protocol = ch.invoice.plugnotasProtocol;
@@ -1575,8 +1586,19 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
             if (nfPdf) invoicePayload.nf_image_url = nfPdf;
             if (asaasData?.invoice?.status) invoicePayload.nf_status = asaasData.invoice.status;
             if (asaasData?.invoice?.number) invoicePayload.nf_number = String(asaasData.invoice.number);
-            const nfProvider = (asaasData?.invoice?.provider || 'ASAAS').toUpperCase();
+            // Provider attribution: prefer explícito (asaasData.invoice.provider). Quando
+            // a NF falhou (invoice null + nfError), inferir do nfError.provider para evitar
+            // classificar erroneamente como ASAAS uma fatura PLUGNOTAS pendente.
+            const nfProvider = (
+                asaasData?.invoice?.provider
+                || asaasData?.nfError?.provider
+                || 'ASAAS'
+            ).toUpperCase();
             invoicePayload.nf_provider = nfProvider;
+            if (!asaasData?.invoice && asaasData?.nfError) {
+                invoicePayload.nf_status = 'ERROR';
+                invoicePayload.nf_last_error = asaasData.nfError.message || 'NF pendente — reemissão necessária';
+            }
             if (nfProvider === 'PLUGNOTAS') {
                 if (asaasData?.invoice?.plugnotasInvoiceId) invoicePayload.plugnotas_invoice_id = asaasData.invoice.plugnotasInvoiceId;
                 if (asaasData?.invoice?.plugnotasProtocol) invoicePayload.plugnotas_protocol = asaasData.invoice.plugnotasProtocol;
