@@ -400,7 +400,9 @@ const FinancialInvoiceControl: React.FC = () => {
     if (issuerStateFilter) {
       const now = Date.now();
       list = list.filter(i => {
-        if (!i.asaas_payment_id) return false;
+        // Provider-neutral: NF identidade é Asaas OU PlugNotas. Filtrar só por
+        // asaas_payment_id ocultaria faturas PlugNotas-only do painel de saúde.
+        if (!i.asaas_payment_id && !i.plugnotas_invoice_id) return false;
         const ns = (i.nf_status || '').toUpperCase();
         if (issuerStateFilter === 'total') return true;
         if (issuerStateFilter === 'authorized') return ns === 'AUTHORIZED';
