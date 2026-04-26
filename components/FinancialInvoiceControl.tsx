@@ -845,7 +845,11 @@ const FinancialInvoiceControl: React.FC = () => {
                             // (nesse caso a reemissão é controlada pelo watchdog automático).
                             const nfStat = (inv.nf_status || '').toUpperCase();
                             const isAsaasStuck = ['ERROR', 'FAILED', 'STUCK', 'PENDING', 'SCHEDULED', 'PROCESSING', 'SYNCHRONIZED', ''].includes(nfStat);
-                            const alreadyPlugnotas = (inv.nf_provider || '').toUpperCase() === 'PLUGNOTAS';
+                            // Inferência alinhada ao backend: faturas legadas podem
+                            // ter nf_provider null mas plugnotas_invoice_id preenchido —
+                            // tratamos como já-PlugNotas para esconder o botão de
+                            // reemissão (evita sugerir failover quando já é PlugNotas).
+                            const alreadyPlugnotas = (inv.nf_provider || '').toUpperCase() === 'PLUGNOTAS' || !!inv.plugnotas_invoice_id;
                             const showReissue = inv.status !== 'CANCELADA' && nfStat !== 'AUTHORIZED' && !alreadyPlugnotas && isAsaasStuck && plugnotasConfigured;
                             return showReissue ? (
                               <button
@@ -1024,7 +1028,10 @@ const FinancialInvoiceControl: React.FC = () => {
                       {(() => {
                         const nfStat = (inv.nf_status || '').toUpperCase();
                         const isAsaasStuck = ['ERROR', 'FAILED', 'STUCK', 'PENDING', 'SCHEDULED', 'PROCESSING', 'SYNCHRONIZED', ''].includes(nfStat);
-                        const alreadyPlugnotas = (inv.nf_provider || '').toUpperCase() === 'PLUGNOTAS';
+                        // Mesma inferência do bloco da linha de tabela: provider é
+                        // PlugNotas quando explícito OU quando há plugnotas_invoice_id
+                        // (faturas legadas sem nf_provider).
+                        const alreadyPlugnotas = (inv.nf_provider || '').toUpperCase() === 'PLUGNOTAS' || !!inv.plugnotas_invoice_id;
                         const showReissue = inv.status !== 'CANCELADA' && nfStat !== 'AUTHORIZED' && !alreadyPlugnotas && isAsaasStuck && plugnotasConfigured;
                         return showReissue ? (
                           <button
