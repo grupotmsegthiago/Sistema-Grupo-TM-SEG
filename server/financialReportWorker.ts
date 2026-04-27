@@ -37,11 +37,13 @@ function nowSP(): Date {
 }
 
 function startOfDaySP(d: Date): Date { const x = new Date(d); x.setHours(0,0,0,0); return x; }
+// IMPORTANTE: alinhado ao dashboard (ExecutiveDashboard.getDateRange).
+// Semana começa no DOMINGO (regra histórica do sistema), não na segunda.
+// Antes começava na segunda e os totais "Esta Semana" do e-mail divergiam
+// do que o usuário via na tela.
 function startOfWeekSP(d: Date): Date {
   const x = startOfDaySP(d);
-  const day = x.getDay();
-  const diff = day === 0 ? -6 : 1 - day;
-  x.setDate(x.getDate() + diff);
+  x.setDate(x.getDate() - x.getDay()); // domingo (getDay()===0) fica zero, demais voltam até domingo
   return x;
 }
 function startOfMonthSP(d: Date): Date { const x = startOfDaySP(d); x.setDate(1); return x; }
@@ -209,20 +211,30 @@ async function fetchRevenueSummary() {
   const dayByClient = new Map<string, { revenue: number; count: number }>();
   const yearByClient = new Map<string, { revenue: number; count: number }>();
 
-  const normName = (s: string | null | undefined) => String(s || '').trim().toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
-  const inactiveClientNames = new Set<string>();
-  (refs.clients as any[]).forEach((c: any) => {
-    if (String(c?.status || '').toLowerCase() === 'inativo') {
-      if (c?.name) inactiveClientNames.add(normName(c.name));
-      if (c?.trading_name) inactiveClientNames.add(normName(c.trading_name));
-    }
-  });
+  // IMPORTANTE: o dashboard NÃO filtra clientes inativos do somatório de
+  // faturamento por período. Para o e-mail bater com o que o usuário vê na
+  // tela, removemos o filtro daqui também (antes existia e fazia o total
+  // do e-mail ficar menor que o do dashboard quando havia faturas/missões
+  // de clientes recém-marcados como inativo).
+  // Status REFUSED continua ignorado (mesma regra do dashboard).
+  // O painel "A Receber/A Pagar Hoje" do resumo diário continua filtrando
+  // clientes inativos (ver sendDailyAccountsReport — escopo diferente).
+
+  // Estados ativos que o dashboard inclui no bucket "Hoje" independente
+  // da data da missão (ExecutiveDashboard linha 311-313). Reproduzimos
+  // a mesma regra para que "Hoje" do e-mail bata com "Hoje" da tela.
+  const ACTIVE_STATUSES = new Set<string>([
+    String(MissionStatus.IN_TRANSIT),
+    String(MissionStatus.ORIGIN),
+    String(MissionStatus.SCHEDULED),
+    String(MissionStatus.SOLICITED),
+    String(MissionStatus.DOCUMENTATION),
+  ]);
 
   const currentTime = new Date();
   for (const m of (missions || [])) {
     const r = computeMissionRevenue(m, refs.clientTables, refs.providerTables, refs.clients, currentTime);
     if (!r) continue;
-    if (inactiveClientNames.has(normName(r.client))) continue;
     if (r.ts >= startYearMs) {
       buckets.year.count++; buckets.year.revenue += r.revenue; buckets.year.cost += r.cost;
       const k = r.client.toUpperCase();
@@ -232,7 +244,8 @@ async function fetchRevenueSummary() {
     }
     if (r.ts >= startMonthMs) { buckets.month.count++; buckets.month.revenue += r.revenue; buckets.month.cost += r.cost; }
     if (r.ts >= startWeekMs)  { buckets.week.count++;  buckets.week.revenue += r.revenue;  buckets.week.cost += r.cost; }
-    if (r.ts >= startDayMs) {
+    const isActive = ACTIVE_STATUSES.has(String(m.status || ''));
+    if (r.ts >= startDayMs || isActive) {
       buckets.day.count++; buckets.day.revenue += r.revenue; buckets.day.cost += r.cost;
       const k = r.client.toUpperCase();
       const cur = dayByClient.get(k) || { revenue: 0, count: 0 };
