@@ -5,7 +5,8 @@ import { supabase } from '../lib/supabase';
 import { useNotification } from '../lib/NotificationContext';
 import {
   Loader2, FileBarChart, Download, RefreshCw, Filter, List, Link2,
-  ClipboardCheck, Calendar, Search, X, ChevronDown, RotateCcw
+  ClipboardCheck, Calendar, Search, X, ChevronDown, RotateCcw,
+  AlertTriangle, ShieldAlert, BadgeCheck
 } from 'lucide-react';
 import MissionFinancialModal from './MissionFinancialModal';
 import { calculateMissionFinancials } from '../lib/financialUtils';
@@ -677,9 +678,46 @@ const MissionReportPage: React.FC = () => {
                           <td className={`px-3 py-2 border-r border-gray-100 text-right font-black whitespace-nowrap ${resultado >= 0 ? 'text-emerald-700' : 'text-red-600 bg-red-50'}`}>
                             {rev > 0 || cost > 0 ? fmtMoney(resultado) : '-'}
                           </td>
-                          <td className={`px-3 py-2 border-r border-gray-100 text-right font-black whitespace-nowrap ${lucroPerc >= 0 ? 'text-emerald-700' : 'text-red-600'}`}>
-                            {rev > 0 ? `${lucroPerc.toFixed(1)}%` : '-'}
-                          </td>
+                          {(() => {
+                            // Regras de cor da % LUCRO:
+                            // - APROVADO pelo usuário → normal (verde) + ícone verificado, independente do %
+                            // - < 10% (não aprovado) → vermelho (alerta forte)
+                            // - 10% a < 20% (não aprovado) → amarelo "Atenção"
+                            // - >= 20% (não aprovado) → normal verde
+                            // - lucro negativo (não aprovado) → vermelho
+                            const hasValue = rev > 0;
+                            const isApproved = !!m.billing_approved;
+                            let cellClass = 'text-emerald-700';
+                            let icon: React.ReactNode = null;
+                            let title = '';
+                            if (hasValue && !isApproved) {
+                              if (lucroPerc < 10) {
+                                cellClass = 'text-red-700 bg-red-100';
+                                icon = <ShieldAlert size={12} className="text-red-700" />;
+                                title = 'Margem crítica (abaixo de 10%) — revisar';
+                              } else if (lucroPerc < 20) {
+                                cellClass = 'text-amber-700 bg-amber-100';
+                                icon = <AlertTriangle size={12} className="text-amber-700" />;
+                                title = 'Atenção: margem entre 10% e 20%';
+                              }
+                            } else if (hasValue && isApproved) {
+                              icon = <BadgeCheck size={12} className="text-emerald-600" />;
+                              title = 'Aprovado pela conferência';
+                            }
+                            return (
+                              <td className={`px-3 py-2 border-r border-gray-100 text-right font-black whitespace-nowrap ${cellClass}`} title={title}>
+                                {hasValue ? (
+                                  <div className="flex items-center justify-end gap-1">
+                                    {icon}
+                                    {!isApproved && lucroPerc >= 10 && lucroPerc < 20 && (
+                                      <span className="text-[9px] font-black uppercase tracking-wider">Atenção</span>
+                                    )}
+                                    <span>{lucroPerc.toFixed(1)}%</span>
+                                  </div>
+                                ) : '-'}
+                              </td>
+                            );
+                          })()}
                         </>
                       )}
                       <td className="px-3 py-2 text-center">
