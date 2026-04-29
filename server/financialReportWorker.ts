@@ -211,25 +211,16 @@ async function fetchRevenueSummary() {
   const dayByClient = new Map<string, { revenue: number; count: number }>();
   const yearByClient = new Map<string, { revenue: number; count: number }>();
 
-  // IMPORTANTE: o dashboard NÃO filtra clientes inativos do somatório de
-  // faturamento por período. Para o e-mail bater com o que o usuário vê na
-  // tela, removemos o filtro daqui também (antes existia e fazia o total
-  // do e-mail ficar menor que o do dashboard quando havia faturas/missões
-  // de clientes recém-marcados como inativo).
-  // Status REFUSED continua ignorado (mesma regra do dashboard).
-  // O painel "A Receber/A Pagar Hoje" do resumo diário continua filtrando
-  // clientes inativos (ver sendDailyAccountsReport — escopo diferente).
-
-  // Estados ativos que o dashboard inclui no bucket "Hoje" independente
-  // da data da missão (ExecutiveDashboard linha 311-313). Reproduzimos
-  // a mesma regra para que "Hoje" do e-mail bata com "Hoje" da tela.
-  const ACTIVE_STATUSES = new Set<string>([
-    String(MissionStatus.IN_TRANSIT),
-    String(MissionStatus.ORIGIN),
-    String(MissionStatus.SCHEDULED),
-    String(MissionStatus.SOLICITED),
-    String(MissionStatus.DOCUMENTATION),
-  ]);
+  // IMPORTANTE: o widget "Meta Agendada (Hoje)" do Monitoramento de Missões
+  // (DailyGoalThermometer) — que é a referência de faturamento do dia que o
+  // usuário observa no dia a dia — usa filtro ESTRITO por start_time/created_at.
+  // Não inclui missões ativas de dias anteriores no bucket "Hoje". Mantemos a
+  // mesma regra aqui para o e-mail bater com o termômetro.
+  // O dashboard analítico (ExecutiveDashboard) faz diferente, incluindo
+  // missões ativas independentemente da data, mas a referência operacional
+  // que o usuário acompanha é o termômetro — então o e-mail segue ele.
+  // Inativos: também não filtramos (nenhum dos dois widgets filtra).
+  // REFUSED: ignorado em todos os lados.
 
   const currentTime = new Date();
   for (const m of (missions || [])) {
@@ -244,8 +235,7 @@ async function fetchRevenueSummary() {
     }
     if (r.ts >= startMonthMs) { buckets.month.count++; buckets.month.revenue += r.revenue; buckets.month.cost += r.cost; }
     if (r.ts >= startWeekMs)  { buckets.week.count++;  buckets.week.revenue += r.revenue;  buckets.week.cost += r.cost; }
-    const isActive = ACTIVE_STATUSES.has(String(m.status || ''));
-    if (r.ts >= startDayMs || isActive) {
+    if (r.ts >= startDayMs) {
       buckets.day.count++; buckets.day.revenue += r.revenue; buckets.day.cost += r.cost;
       const k = r.client.toUpperCase();
       const cur = dayByClient.get(k) || { revenue: 0, count: 0 };
