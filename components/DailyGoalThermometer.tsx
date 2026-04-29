@@ -3,6 +3,12 @@ import { supabase } from '../lib/supabase';
 import { Target, Loader2, Trophy, Zap, Clock, RefreshCw } from 'lucide-react';
 import { calculateMissionFinancials } from '../lib/financialUtils';
 import { Mission, ClientPriceTable, ProviderCostTable, MissionStatus, Client } from '../types';
+import {
+  getCanonicalDateRange,
+  filterMissionsByPeriod,
+  sumCanonical,
+  type CanonicalPeriod,
+} from '../lib/missionFinancialsCanonical';
 
 const DAILY_GOAL = 35000.00;
 
@@ -21,31 +27,12 @@ const formatCurrency = (val: number) => {
     return val.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 };
 
+// Janela CANÔNICA delegada para lib/missionFinancialsCanonical (mesma usada
+// pelo Relatório, Dashboard e worker do e-mail).
 function getDateRange(viewPeriod: string, customStartDate?: string, customEndDate?: string): [Date, Date] {
-    const now = new Date();
-    let start = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
-    let end = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
-
-    if (viewPeriod === 'YESTERDAY') {
-        start.setDate(start.getDate() - 1);
-        end.setDate(end.getDate() - 1);
-    } else if (viewPeriod === 'WEEK') {
-        start.setDate(start.getDate() - 7);
-    } else if (viewPeriod === 'MONTH') {
-        start = new Date(now.getFullYear(), now.getMonth(), 1);
-        end = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
-    } else if (viewPeriod === 'YEAR') {
-        start = new Date(now.getFullYear(), 0, 1);
-        end = new Date(now.getFullYear(), 11, 31, 23, 59, 59, 999);
-    } else if (viewPeriod === 'CUSTOM' && customStartDate && customEndDate) {
-        start = new Date(customStartDate + 'T00:00:00');
-        end = new Date(customEndDate + 'T23:59:59');
-    } else if (viewPeriod === 'ALL') {
-        start = new Date(2000, 0, 1);
-        end = new Date(2100, 0, 1);
-    }
-
-    return [start, end];
+    const allowed: CanonicalPeriod[] = ['TODAY', 'YESTERDAY', 'WEEK', 'MONTH', 'YEAR', 'CUSTOM', 'ALL'];
+    const period = (allowed.includes(viewPeriod as CanonicalPeriod) ? viewPeriod : 'TODAY') as CanonicalPeriod;
+    return getCanonicalDateRange(period, customStartDate, customEndDate);
 }
 
 const DailyGoalThermometer: React.FC<Props> = ({ viewPeriod = 'TODAY', customStartDate, customEndDate, missions: parentMissions, clientTables: parentClientTables, providerTables: parentProviderTables, clientsData: parentClientsData, onRefreshMissions }) => {
@@ -78,65 +65,15 @@ const DailyGoalThermometer: React.FC<Props> = ({ viewPeriod = 'TODAY', customSta
         });
     }, [parentMissions, viewPeriod, customStartDate, customEndDate]);
 
+    // CANÔNICO: delega o cálculo para a fonte única (mesma fórmula em todo o sistema).
     const { currentRevenue, currentCost } = useMemo(() => {
         if (!parentClientTables || !parentProviderTables || !parentClientsData) return { currentRevenue: 0, currentCost: 0 };
-        let totalRevenue = 0;
-        let totalCost = 0;
-        filteredMissions.forEach(m => {
-            if (m.status === MissionStatus.REFUSED) return;
-
-            const hasStoredRevenue = (m.revenue_value != null && m.revenue_value > 0);
-            const hasStoredCost = (m.cost_value != null && m.cost_value > 0);
-            const isVerified = !!(m.billing_approved || m.billing_verified_by);
-            const hasSavedValues = isVerified && (hasStoredRevenue || hasStoredCost || m.revenue_value === 0 || m.cost_value === 0);
-
-            if (hasSavedValues) {
-                 totalRevenue += (m.revenue_value || 0) + Math.max(0, m.toll_value || 0);
-                 const tollProv = Math.max(0, m.toll_value_provider != null ? m.toll_value_provider : (m.toll_value || 0));
-                 totalCost += (m.cost_value || 0) + tollProv;
-                 return;
-            }
-
-            if (hasStoredRevenue && hasStoredCost) {
-                 totalRevenue += (m.revenue_value || 0) + Math.max(0, m.toll_value || 0);
-                 const tollProv = Math.max(0, m.toll_value_provider != null ? m.toll_value_provider : (m.toll_value || 0));
-                 totalCost += (m.cost_value || 0) + tollProv;
-                 return;
-            }
-
-            if (hasStoredRevenue) {
-                 totalRevenue += (m.revenue_value || 0) + Math.max(0, m.toll_value || 0);
-            }
-
-            if (hasStoredCost) {
-                 const tollProv = Math.max(0, m.toll_value_provider != null ? m.toll_value_provider : (m.toll_value || 0));
-                 totalCost += (m.cost_value || 0) + tollProv;
-            }
-
-            if (!hasStoredRevenue || !hasStoredCost) {
-                const isCancelled = m.status === MissionStatus.CANCELLED;
-                const missionObj: Mission = {
-                    ...m,
-                    startKm: m.startKm ?? m.start_km,
-                    endKm: m.endKm ?? m.end_km,
-                    startTime: m.startTime ?? m.start_time,
-                    endTime: m.endTime ?? m.end_time,
-                    ...(isCancelled ? { status: MissionStatus.COMPLETED } : {})
-                };
-                const clientName = (m.originalClientName || m.client || '').trim();
-                const matchedClient = parentClientsData.find(c => c.name === clientName);
-                const financials = calculateMissionFinancials(
-                    missionObj, 
-                    parentClientTables, 
-                    parentProviderTables, 
-                    matchedClient, 
-                    currentTime 
-                );
-                if (!hasStoredRevenue) totalRevenue += (financials.client.total || 0);
-                if (!hasStoredCost) totalCost += (financials.provider.total || 0);
-            }
-        });
-        return { currentRevenue: totalRevenue, currentCost: totalCost };
+        const sums = sumCanonical(
+            filteredMissions,
+            { clientTables: parentClientTables, providerTables: parentProviderTables, clientsData: parentClientsData },
+            currentTime,
+        );
+        return { currentRevenue: sums.rev, currentCost: sums.cost };
     }, [filteredMissions, parentClientTables, parentProviderTables, parentClientsData, currentTime]);
 
     const stats = useMemo(() => {

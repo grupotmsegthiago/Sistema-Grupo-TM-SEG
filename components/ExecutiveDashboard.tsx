@@ -3,6 +3,12 @@ import { Mission, MissionStatus, Client, ClientPriceTable, ProviderCostTable } f
 import { authFetch } from '../lib/authFetch';
 import { calculateMissionFinancials } from '../lib/financialUtils';
 import {
+  computeCanonicalRevenueCost,
+  getCanonicalDateRange,
+  filterMissionsByPeriod,
+  type CanonicalPeriod,
+} from '../lib/missionFinancialsCanonical';
+import {
     BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
     PieChart, Pie, Cell, AreaChart, Area, ComposedChart, Line, Legend, LabelList
 } from 'recharts';
@@ -35,22 +41,10 @@ const PERIOD_LABELS: Record<DashPeriod, string> = {
     TODAY: 'Hoje', YESTERDAY: 'Ontem', WEEK: 'Semana', MONTH: 'Mês', YEAR: 'Ano', CUSTOM: 'Personalizado'
 };
 
+// Janela CANÔNICA delegada para lib/missionFinancialsCanonical (mesma usada
+// pelo Relatório, Termômetro e worker do e-mail).
 function getDateRange(period: DashPeriod, customStart: string, customEnd: string): [Date, Date] {
-    const now = new Date();
-    const startOfDay = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate(), 0, 0, 0, 0);
-    const endOfDay = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate(), 23, 59, 59, 999);
-    switch (period) {
-        case 'TODAY': return [startOfDay(now), endOfDay(now)];
-        case 'YESTERDAY': { const y = new Date(now); y.setDate(y.getDate() - 1); return [startOfDay(y), endOfDay(y)]; }
-        case 'WEEK': { const s = new Date(now); s.setDate(s.getDate() - s.getDay()); return [startOfDay(s), endOfDay(now)]; }
-        case 'MONTH': return [new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0), endOfDay(now)];
-        case 'YEAR': return [new Date(now.getFullYear(), 0, 1, 0, 0, 0), endOfDay(now)];
-        case 'CUSTOM': {
-            const s = customStart ? new Date(customStart + 'T00:00:00') : startOfDay(now);
-            const e = customEnd ? new Date(customEnd + 'T23:59:59') : endOfDay(now);
-            return [s, e];
-        }
-    }
+    return getCanonicalDateRange(period as CanonicalPeriod, customStart, customEnd);
 }
 
 const CustomTooltip = ({ active, payload, label }: any) => {
@@ -306,74 +300,19 @@ const ExecutiveDashboard: React.FC<Props> = ({ missions, isDirector, clientTable
     }, [onRefreshMissions]);
 
     const filteredMissions = useMemo(() => {
+        // Filtro CANÔNICO — mesmo critério usado em todas as telas/worker.
+        // Sem regra especial de "ativas fora do período", para bater com o termômetro.
         const [start, end] = getDateRange(period, customStart, customEnd);
-        return missions.filter(m => {
-            const activeStatuses = [MissionStatus.IN_TRANSIT, MissionStatus.ORIGIN, MissionStatus.SCHEDULED, MissionStatus.SOLICITED, MissionStatus.DOCUMENTATION];
-            const isActive = activeStatuses.includes(m.status as MissionStatus);
-            if (period === 'TODAY' && isActive) return true;
-            const d = new Date(m.startTime || m.start_time || m.createdAt || m.created_at);
-            return d >= start && d <= end;
-        });
+        return filterMissionsByPeriod(missions, start, end);
     }, [missions, period, customStart, customEnd, refreshKey]);
 
     const missionFinancials = useMemo(() => {
+        // CANÔNICO: delega o cálculo para a fonte única (mesma fórmula em todo o sistema).
+        const refs = { clientTables, providerTables, clientsData };
+        const now = new Date();
         return filteredMissions.map(m => {
-            if (m.status === MissionStatus.REFUSED) return { ...m, rev: 0, cost: 0, profit: 0 };
-
-            const hasStoredRevenue = (m.revenue_value != null && m.revenue_value > 0);
-            const hasStoredCost = (m.cost_value != null && m.cost_value > 0);
-            const isVerified = !!(m.billing_approved || m.billing_verified_by);
-
-            const hasSavedValues = isVerified && (hasStoredRevenue || hasStoredCost || m.revenue_value === 0 || m.cost_value === 0);
-            if (hasSavedValues) {
-                const rev = (m.revenue_value || 0) + Math.max(0, m.toll_value || 0);
-                const tollProv = Math.max(0, m.toll_value_provider != null ? m.toll_value_provider : (m.toll_value || 0));
-                const cost = (m.cost_value || 0) + tollProv;
-                return { ...m, rev, cost, profit: rev - cost };
-            }
-
-            if (hasStoredRevenue && hasStoredCost) {
-                const rev = (m.revenue_value || 0) + Math.max(0, m.toll_value || 0);
-                const tollProv = Math.max(0, m.toll_value_provider != null ? m.toll_value_provider : (m.toll_value || 0));
-                const cost = (m.cost_value || 0) + tollProv;
-                return { ...m, rev, cost, profit: rev - cost };
-            }
-
-            let rev = 0;
-            let cost = 0;
-
-            if (hasStoredRevenue) {
-                rev = (m.revenue_value || 0) + Math.max(0, m.toll_value || 0);
-            }
-            if (hasStoredCost) {
-                const tollProv = Math.max(0, m.toll_value_provider != null ? m.toll_value_provider : (m.toll_value || 0));
-                cost = (m.cost_value || 0) + tollProv;
-            }
-
-            if (!hasStoredRevenue || !hasStoredCost) {
-                const isCancelledMission = m.status === MissionStatus.CANCELLED;
-                const missionObj: Mission = {
-                    ...m,
-                    startKm: m.startKm ?? m.start_km,
-                    endKm: m.endKm ?? m.end_km,
-                    startTime: m.startTime ?? m.start_time,
-                    endTime: m.endTime ?? m.end_time,
-                    ...(isCancelledMission ? { status: MissionStatus.COMPLETED } : {})
-                };
-                const clientName = (m.originalClientName || m.client || '').trim();
-                const matchedClient = clientsData.find(c => c.name === clientName);
-                const financials = calculateMissionFinancials(
-                    missionObj,
-                    clientTables,
-                    providerTables,
-                    matchedClient,
-                    new Date()
-                );
-                if (!hasStoredRevenue) rev = financials.client.total || 0;
-                if (!hasStoredCost) cost = financials.provider.total || 0;
-            }
-
-            return { ...m, rev, cost, profit: rev - cost };
+            const c = computeCanonicalRevenueCost(m, refs, now);
+            return { ...m, rev: c.rev, cost: c.cost, profit: c.profit };
         });
     }, [filteredMissions, clientTables, providerTables, clientsData, refreshKey]);
 
@@ -386,31 +325,9 @@ const ExecutiveDashboard: React.FC<Props> = ({ missions, isDirector, clientTable
         if (found) return found;
         const fullMission = missions.find(matchId);
         if (!fullMission) return null;
-        const hasStoredRev = (fullMission.revenue_value != null && fullMission.revenue_value > 0);
-        const hasStoredCost = (fullMission.cost_value != null && fullMission.cost_value > 0);
-        let rev = 0, cost = 0;
-        const isVerifiedFull = !!(fullMission.billing_approved || fullMission.billing_verified_by);
-        const hasSaved = isVerifiedFull && (hasStoredRev || hasStoredCost || fullMission.revenue_value === 0 || fullMission.cost_value === 0);
-        if (hasSaved || (hasStoredRev && hasStoredCost)) {
-            rev = (fullMission.revenue_value || 0) + Math.max(0, fullMission.toll_value || 0);
-            const tollProv = Math.max(0, fullMission.toll_value_provider != null ? fullMission.toll_value_provider : (fullMission.toll_value || 0));
-            cost = (fullMission.cost_value || 0) + tollProv;
-        } else {
-            if (hasStoredRev) rev = (fullMission.revenue_value || 0) + Math.max(0, fullMission.toll_value || 0);
-            if (hasStoredCost) {
-                const tollProv = Math.max(0, fullMission.toll_value_provider != null ? fullMission.toll_value_provider : (fullMission.toll_value || 0));
-                cost = (fullMission.cost_value || 0) + tollProv;
-            }
-            if (!hasStoredRev || !hasStoredCost) {
-                const missionObj: Mission = { ...fullMission, startKm: fullMission.startKm ?? fullMission.start_km, endKm: fullMission.endKm ?? fullMission.end_km, startTime: fullMission.startTime ?? fullMission.start_time, endTime: fullMission.endTime ?? fullMission.end_time };
-                const clientName = (fullMission.originalClientName || fullMission.client || '').trim();
-                const matchedClient = clientsData.find((c: any) => c.name === clientName);
-                const financials = calculateMissionFinancials(missionObj, clientTables, providerTables, matchedClient, new Date());
-                if (!hasStoredRev) rev = financials.client.total || 0;
-                if (!hasStoredCost) cost = financials.provider.total || 0;
-            }
-        }
-        return { ...fullMission, rev, cost, profit: rev - cost };
+        // CANÔNICO: mesma fórmula da fonte única.
+        const c = computeCanonicalRevenueCost(fullMission, { clientTables, providerTables, clientsData }, new Date());
+        return { ...fullMission, rev: c.rev, cost: c.cost, profit: c.profit };
     }, [missionFinancials, missions, clientTables, providerTables, clientsData]);
 
     const checkComparisonMatch = useCallback((systemMission: any, excelRev: number, excelCost: number, excelAcionamento?: number | null, excelToll?: number | null) => {

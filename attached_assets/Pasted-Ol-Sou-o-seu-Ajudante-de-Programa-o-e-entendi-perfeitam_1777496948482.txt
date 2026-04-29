@@ -1,0 +1,92 @@
+Olá! Sou o seu Ajudante de Programação e entendi perfeitamente o problema.
+
+Estamos diante de um erro clássico de duplicação de lógica (o oposto do princípio DRY - Don't Repeat Yourself). Quando cada tela calcula o faturamento do seu próprio jeito, qualquer pequena mudança em uma fórmula cria essa divergência que você viu: R$ 640k vs R$ 630k vs R$ 627k.
+
+Para resolver isso no Replit (ou em qualquer ambiente de desenvolvimento), a solução técnica é criar uma Single Source of Truth (Fonte Única da Verdade).
+
+🛠️ Panorama Geral da Solução
+Vou estruturar um código que centraliza o cálculo. Em vez de cada tela fazer sua própria conta, elas vão "perguntar" para uma função central quanto vale cada Ordem de Serviço (OS).
+
+O que vamos fazer:
+Centralizar a Lógica: Criar um arquivo de utilitários para o cálculo financeiro.
+
+Padronizar Filtros: Definir o que é uma OS "válida" (ex: ignorar canceladas/REFUSED).
+
+Unificar Datas: Garantir que o "Mês Atual" signifique a mesma coisa em todos os lugares.
+
+💻 Implementação do Código (TypeScript/JavaScript)
+Sugiro criar um arquivo chamado missionFinancials.ts (ou .js) para ser o seu motor de cálculo.
+
+1. O Motor de Cálculo (A "Verdade" do Sistema)
+TypeScript
+/**
+ * DOCUMENTAÇÃO:
+ * Esta função centraliza o cálculo de receita de uma Missão/OS.
+ * Regras aplicadas:
+ * - Ignora missões com status 'REFUSED'.
+ * - Soma valor da receita + pedágio.
+ * - Se não houver valor salvo, usa a estimativa da tabela de preços.
+ */
+
+export function calculateCanonicalRevenue(mission: any): number {
+  // 1. Filtro de Segurança: Se foi recusada, a receita é zero.
+  if (mission.status === 'REFUSED') {
+    return 0;
+  }
+
+  // 2. Base de cálculo: Prioriza valor aprovado, depois valor salvo, depois estimativa.
+  let baseRevenue = 0;
+  
+  if (mission.billing_approved || mission.billing_verified_by) {
+    baseRevenue = mission.revenue_value || 0;
+  } else if (mission.revenue_value > 0) {
+    baseRevenue = mission.revenue_value;
+  } else {
+    // Caso a OS não tenha valor preenchido, chama a função de estimativa
+    baseRevenue = mission.estimated_value || 0; 
+  }
+
+  // 3. Adiciona o Pedágio (Toll)
+  const toll = mission.toll_value || 0;
+
+  return baseRevenue + toll;
+}
+2. Padronização de Datas
+TypeScript
+/**
+ * DOCUMENTAÇÃO:
+ * Define períodos de tempo idênticos para todas as telas.
+ */
+export const getTimeRange = (period: 'today' | 'month') => {
+  const now = new Date();
+  const start = new Date(now.getFullYear(), now.getMonth(), 1); // Dia 1
+  const end = new Date(); // Até o exato momento de "agora"
+  
+  if (period === 'today') {
+    start.setHours(0, 0, 0, 0);
+  }
+  
+  return { start, end };
+};
+📝 Como implementar no seu projeto Replit
+Para que os valores fiquem iguais, você deve abrir os arquivos de cada tela (Relatório, Monitoramento e Dashboard) e substituir os loops de soma antigos por este:
+
+Importe a função:
+import { calculateCanonicalRevenue } from './lib/missionFinancials';
+
+Substitua a soma manual:
+
+Antes (Errado): total += mission.price (Cada tela fazia de um jeito).
+
+Depois (Certo):
+
+JavaScript
+const totalFaturamento = missions.reduce((acc, mission) => {
+  return acc + calculateCanonicalRevenue(mission);
+}, 0);
+🧐 Por que isso resolve o erro?
+Consistência: Se você decidir amanhã que o pedágio não deve mais somar na receita, você muda em um só lugar e as três telas atualizam sozinhas.
+
+Sincronização: Ao usar o getTimeRange unificado, o Dashboard não vai mais "parar em hoje" enquanto o Relatório "olha para o futuro". Eles estarão olhando para a mesma foto do banco de dados.
+
+Você concorda com a regra de que o "Mês" deve mostrar apenas do dia 1 até o momento atual (excluindo agendamentos futuros) para que o faturamento seja real? Se sim, posso te ajudar a ajustar as consultas SQL se precisar!

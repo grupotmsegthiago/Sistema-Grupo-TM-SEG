@@ -2,8 +2,8 @@ import { createClient } from '@supabase/supabase-js';
 import nodemailer from 'nodemailer';
 import * as fs from 'fs';
 import * as path from 'path';
-import { calculateMissionFinancials } from '../lib/financialUtils';
-import { MissionStatus, type Mission, type ClientPriceTable, type ProviderCostTable, type Client } from '../types';
+import { computeCanonicalRevenueCost } from '../lib/missionFinancialsCanonical';
+import { MissionStatus, type ClientPriceTable, type ProviderCostTable, type Client } from '../types';
 
 const RECIPIENT = 'thiago@grupotmseg.com.br';
 const EMAIL_USER = process.env.EMAIL_USER || 'adm@grupotmseg.com.br';
@@ -95,6 +95,10 @@ function tsSP(s: string | null | undefined): number {
   return new Date(new Date(s).toLocaleString('en-US', { timeZone: TZ })).getTime();
 }
 
+// CANÔNICO: o worker delega o cálculo de receita/custo para a fonte única
+// (lib/missionFinancialsCanonical) usada também por Relatório, Termômetro e
+// Dashboard. As janelas de tempo são tratadas separadamente via funções
+// TZ-aware acima (a fonte única usa horário local do navegador).
 function computeMissionRevenue(
   m: any,
   clientTables: ClientPriceTable[],
@@ -103,65 +107,17 @@ function computeMissionRevenue(
   currentTime: Date
 ): MissionRevenue | null {
   if (m.status === MissionStatus.REFUSED) return null;
-
   const dateRef = m.start_time || m.created_at;
   if (!dateRef) return null;
   const ts = tsSP(dateRef);
   const client = (m.client || 'SEM CLIENTE').toString();
-
-  const hasStoredRevenue = (m.revenue_value != null && m.revenue_value > 0);
-  const hasStoredCost = (m.cost_value != null && m.cost_value > 0);
-  const isVerified = !!(m.billing_approved || m.billing_verified_by);
-  const hasSavedValues = isVerified && (hasStoredRevenue || hasStoredCost || m.revenue_value === 0 || m.cost_value === 0);
-
-  if (hasSavedValues) {
-    const tollProv = Math.max(0, m.toll_value_provider != null ? m.toll_value_provider : (m.toll_value || 0));
-    return {
-      client, ts,
-      revenue: (m.revenue_value || 0) + Math.max(0, m.toll_value || 0),
-      cost: (m.cost_value || 0) + tollProv,
-      source: 'saved',
-    };
-  }
-  if (hasStoredRevenue && hasStoredCost) {
-    const tollProv = Math.max(0, m.toll_value_provider != null ? m.toll_value_provider : (m.toll_value || 0));
-    return {
-      client, ts,
-      revenue: (m.revenue_value || 0) + Math.max(0, m.toll_value || 0),
-      cost: (m.cost_value || 0) + tollProv,
-      source: 'saved',
-    };
-  }
-
-  let revenue = 0, cost = 0;
-  if (hasStoredRevenue) revenue = (m.revenue_value || 0) + Math.max(0, m.toll_value || 0);
-  if (hasStoredCost) {
-    const tollProv = Math.max(0, m.toll_value_provider != null ? m.toll_value_provider : (m.toll_value || 0));
-    cost = (m.cost_value || 0) + tollProv;
-  }
-
-  if (!hasStoredRevenue || !hasStoredCost) {
-    const isCancelled = m.status === MissionStatus.CANCELLED;
-    const missionObj: Mission = {
-      ...m,
-      startKm: m.start_km, endKm: m.end_km,
-      startTime: m.start_time, endTime: m.end_time,
-      createdAt: m.created_at,
-      lastUpdate: m.last_update,
-      totalDistance: m.total_distance,
-      ...(isCancelled ? { status: MissionStatus.COMPLETED } : {}),
-    } as any;
-    const matchedClient = clientsData.find(c => c.name === client.trim());
-    try {
-      const fin = calculateMissionFinancials(missionObj, clientTables, providerTables, matchedClient, currentTime);
-      if (!hasStoredRevenue) revenue = fin.client.total || 0;
-      if (!hasStoredCost) cost = fin.provider.total || 0;
-    } catch (e) {
-      // ignore individual mission calc errors
-    }
-  }
-
-  return { client, ts, revenue, cost, source: hasStoredRevenue ? 'saved' : 'estimated' };
+  const c = computeCanonicalRevenueCost(m, { clientTables, providerTables, clientsData }, currentTime);
+  return {
+    client, ts,
+    revenue: c.rev,
+    cost: c.cost,
+    source: c.source === 'saved' ? 'saved' : 'estimated',
+  };
 }
 
 async function fetchAllReferenceData() {

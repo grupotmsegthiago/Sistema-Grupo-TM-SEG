@@ -10,6 +10,12 @@ import {
 } from 'lucide-react';
 import MissionFinancialModal from './MissionFinancialModal';
 import { calculateMissionFinancials } from '../lib/financialUtils';
+import {
+  computeCanonicalRevenueCost,
+  getCanonicalDateRange,
+  filterMissionsByPeriod,
+  type CanonicalResult,
+} from '../lib/missionFinancialsCanonical';
 
 const MissionReportPage: React.FC = () => {
   const { showNotification } = useNotification();
@@ -158,53 +164,15 @@ const MissionReportPage: React.FC = () => {
   }, [currentUser, fetchMissions]);
 
   const filteredMissions = useMemo(() => {
-    const todayStart = new Date();
-    todayStart.setHours(0, 0, 0, 0);
-    const todayEnd = new Date();
-    todayEnd.setHours(23, 59, 59, 999);
-
     let filtered = allMissions;
 
-    if (periodFilter === 'TODAY') {
-      filtered = filtered.filter(m => {
-        const mDate = new Date(m.startTime || m.createdAt);
-        return mDate >= todayStart && mDate <= todayEnd;
-      });
-    } else if (periodFilter === 'YESTERDAY') {
-      const ys = new Date(todayStart); ys.setDate(ys.getDate() - 1);
-      const ye = new Date(todayEnd); ye.setDate(ye.getDate() - 1);
-      filtered = filtered.filter(m => {
-        const mDate = new Date(m.startTime || m.createdAt);
-        return mDate >= ys && mDate <= ye;
-      });
-    } else if (periodFilter === 'WEEK') {
-      const ws = new Date(todayStart); ws.setDate(ws.getDate() - 7);
-      filtered = filtered.filter(m => {
-        const mDate = new Date(m.startTime || m.createdAt);
-        return mDate >= ws && mDate <= todayEnd;
-      });
-    } else if (periodFilter === 'MONTH') {
-      const ms = new Date(todayStart.getFullYear(), todayStart.getMonth(), 1);
-      const me = new Date(todayStart.getFullYear(), todayStart.getMonth() + 1, 0, 23, 59, 59, 999);
-      filtered = filtered.filter(m => {
-        const mDate = new Date(m.startTime || m.createdAt);
-        return mDate >= ms && mDate <= me;
-      });
-    } else if (periodFilter === 'YEAR') {
-      const ys = new Date(todayStart.getFullYear(), 0, 1);
-      const ye = new Date(todayStart.getFullYear(), 11, 31, 23, 59, 59, 999);
-      filtered = filtered.filter(m => {
-        const mDate = new Date(m.startTime || m.createdAt);
-        return mDate >= ys && mDate <= ye;
-      });
-    } else if (periodFilter === 'CUSTOM') {
-      if (customStartDate && customEndDate) {
-        const cs = new Date(customStartDate + 'T00:00:00');
-        const ce = new Date(customEndDate + 'T23:59:59');
-        filtered = filtered.filter(m => {
-          const mDate = new Date(m.startTime || m.createdAt);
-          return mDate >= cs && mDate <= ce;
-        });
+    if (periodFilter !== 'ALL') {
+      // Janela de tempo CANÔNICA — mesma usada pelo Termômetro/Dashboard/Worker.
+      if (periodFilter === 'CUSTOM' && (!customStartDate || !customEndDate)) {
+        // sem datas customizadas, não filtra
+      } else {
+        const [start, end] = getCanonicalDateRange(periodFilter, customStartDate, customEndDate);
+        filtered = filterMissionsByPeriod(filtered, start, end);
       }
     }
 
@@ -293,10 +261,34 @@ const MissionReportPage: React.FC = () => {
     }
   };
 
-  const totalRev = filteredMissions.reduce((s, m) => s + (m.revenue_value || 0), 0);
-  const totalCost = filteredMissions.reduce((s, m) => s + (m.is_same_os ? 0 : (m.cost_value || 0)), 0);
-  const totalToll = filteredMissions.reduce((s, m) => s + (m.toll_value || 0), 0);
-  const totalTollProvider = filteredMissions.reduce((s, m) => s + (m.toll_value_provider != null ? m.toll_value_provider : (m.toll_value || 0)), 0);
+  // CANÔNICO: cálculo único usado por todas as telas/worker.
+  // Para cada OS calcula receita base + pedágio + custo base + pedágio pago.
+  // Pula REFUSED. Usa valores salvos quando há, senão estima via tabela.
+  const canonicalByMission = useMemo(() => {
+    const refs = { clientTables: clientPriceTables, providerTables: providerCostTables, clientsData };
+    const now = new Date();
+    const map = new Map<string, CanonicalResult>();
+    for (const m of filteredMissions) {
+      map.set(m.id, computeCanonicalRevenueCost(m, refs, now));
+    }
+    return map;
+  }, [filteredMissions, clientPriceTables, providerCostTables, clientsData]);
+
+  const totals = useMemo(() => {
+    let revBase = 0, tollRev = 0, costBase = 0, tollCost = 0, profit = 0;
+    canonicalByMission.forEach(c => {
+      revBase += c.revBase; tollRev += c.tollRev;
+      costBase += c.costBase; tollCost += c.tollCost;
+      profit += c.profit;
+    });
+    return { revBase, tollRev, costBase, tollCost, profit, rev: revBase + tollRev, cost: costBase + tollCost };
+  }, [canonicalByMission]);
+
+  // Aliases para manter compatibilidade com o JSX existente.
+  const totalRev = totals.revBase;
+  const totalCost = totals.costBase;
+  const totalToll = totals.tollRev;
+  const totalTollProvider = totals.tollCost;
 
   const handleExportCSV = () => {
     const sep = ';';
@@ -307,10 +299,12 @@ const MissionReportPage: React.FC = () => {
     filteredMissions.forEach(m => { if (m.is_same_os && m.parent_mission_id) exportParentIds.add(m.parent_mission_id); });
 
     const rows = filteredMissions.map((m, i) => {
-      const rev = m.revenue_value || 0;
-      const cost = m.is_same_os ? 0 : (m.cost_value || 0);
-      const toll = m.toll_value || 0;
-      const resultado = rev - cost - toll;
+      const c = canonicalByMission.get(m.id);
+      const rev = c?.revBase || 0;
+      const cost = c?.costBase || 0;
+      const toll = c?.tollRev || 0;
+      const tollPaid = c?.tollCost || 0;
+      const resultado = c?.profit || 0;
       const osLabel = exportParentIds.has(m.id) ? ' (OS MÃE)' : (m.is_same_os ? ` (MESMA OS${m.parent_mission_id ? ` → MÃE: ${m.parent_mission_id}` : ''})` : '');
       const row = [
         i + 1,
@@ -328,14 +322,14 @@ const MissionReportPage: React.FC = () => {
         m.endTime ? fmtTime(m.endTime) : '',
       ];
       if (canSeeFinancials) {
-        const tollProv = m.toll_value_provider != null ? m.toll_value_provider : toll;
+        const revTotal = rev + toll;
         row.push(
           rev > 0 ? rev.toFixed(2).replace('.', ',') : '',
           cost > 0 ? cost.toFixed(2).replace('.', ',') : '',
           toll > 0 ? toll.toFixed(2).replace('.', ',') : '',
-          tollProv > 0 ? tollProv.toFixed(2).replace('.', ',') : '',
+          tollPaid > 0 ? tollPaid.toFixed(2).replace('.', ',') : '',
           resultado !== 0 ? resultado.toFixed(2).replace('.', ',') : '',
-          rev > 0 ? ((resultado / rev) * 100).toFixed(1).replace('.', ',') + '%' : ''
+          revTotal > 0 ? ((resultado / revTotal) * 100).toFixed(1).replace('.', ',') + '%' : ''
         );
       }
       return row.join(sep);
@@ -556,8 +550,8 @@ const MissionReportPage: React.FC = () => {
               <span className="text-blue-700">Custo Total: R$ {fmtMoney(totalCost)}</span>
               <span className="text-orange-700">Pedágio Recebido: R$ {fmtMoney(totalToll)}</span>
               <span className="text-orange-500">Pedágio Pago: R$ {fmtMoney(totalTollProvider)}</span>
-              <span className={`font-black ${totalRev - totalCost - totalToll >= 0 ? 'text-emerald-700' : 'text-red-700'}`}>
-                Resultado: R$ {fmtMoney(totalRev - totalCost - totalToll)}
+              <span className={`font-black ${totals.profit >= 0 ? 'text-emerald-700' : 'text-red-700'}`}>
+                Resultado: R$ {fmtMoney(totals.profit)}
               </span>
             </>
           )}
@@ -608,12 +602,16 @@ const MissionReportPage: React.FC = () => {
               </thead>
               <tbody>
                 {filteredMissions.map((m, idx) => {
-                  const rev = m.revenue_value || 0;
-                  const cost = m.is_same_os ? 0 : (m.cost_value || 0);
-                  const toll = m.toll_value || 0;
-                  const tollProvider = m.toll_value_provider != null ? m.toll_value_provider : toll;
-                  const resultado = rev - cost - toll;
-                  const lucroPerc = rev > 0 ? ((resultado / rev) * 100) : 0;
+                  // Usa o cálculo CANÔNICO (mesmo do Termômetro/Dashboard/Worker)
+                  // para que a soma das linhas BATA com o total do rodapé.
+                  const c = canonicalByMission.get(m.id);
+                  const rev = c?.revBase || 0;
+                  const cost = c?.costBase || 0;
+                  const toll = c?.tollRev || 0;
+                  const tollProvider = c?.tollCost || 0;
+                  const resultado = c?.profit || 0;
+                  const revTotal = rev + toll;
+                  const lucroPerc = revTotal > 0 ? ((resultado / revTotal) * 100) : 0;
                   const placaEscoltado = m.clientVehicle?.plate || '-';
                   const agentes = [m.agent1, m.agent2].filter(Boolean).join(' & ') || '-';
                   const isParentMission = parentChildMap.has(m.id);
@@ -758,9 +756,9 @@ const MissionReportPage: React.FC = () => {
                     <td className="px-3 py-2.5 text-right border-r border-gray-600 text-blue-300">{fmtMoney(totalCost)}</td>
                     <td className="px-3 py-2.5 text-right border-r border-gray-600 text-orange-300">{fmtMoney(totalToll)}</td>
                     <td className="px-3 py-2.5 text-right border-r border-gray-600 text-orange-200">{fmtMoney(totalTollProvider)}</td>
-                    <td className="px-3 py-2.5 text-right border-r border-gray-600 text-emerald-300">{fmtMoney(totalRev - totalCost - totalToll)}</td>
-                    <td className={`px-3 py-2.5 text-right border-r border-gray-600 ${totalRev > 0 ? (((totalRev - totalCost - totalToll) / totalRev * 100) >= 0 ? 'text-emerald-300' : 'text-red-300') : ''}`}>
-                      {totalRev > 0 ? `${((totalRev - totalCost - totalToll) / totalRev * 100).toFixed(1)}%` : '-'}
+                    <td className={`px-3 py-2.5 text-right border-r border-gray-600 ${totals.profit >= 0 ? 'text-emerald-300' : 'text-red-300'}`}>{fmtMoney(totals.profit)}</td>
+                    <td className={`px-3 py-2.5 text-right border-r border-gray-600 ${totals.rev > 0 ? (totals.profit >= 0 ? 'text-emerald-300' : 'text-red-300') : ''}`}>
+                      {totals.rev > 0 ? `${((totals.profit / totals.rev) * 100).toFixed(1)}%` : '-'}
                     </td>
                     <td className="px-3 py-2.5"></td>
                   </tr>
