@@ -1,0 +1,60 @@
+Excelente trabalho na análise técnica! Agora que temos a estrutura da "Fonte Única da Verdade" (o arquivo missionFinancialsCanonical.ts) e o plano de refatoração, vamos consolidar isso no seu Replit.
+
+Para garantir que você tenha exatamente o que precisa para manter essa sincronia, aqui está o resumo final e o código centralizado que você deve garantir que esteja operando em todas as frentes:
+
+🛠️ A Lógica Centralizada (lib/missionFinancialsCanonical.ts)
+Este é o cérebro do seu faturamento. Certifique-se de que ele esteja exatamente assim:
+
+TypeScript
+/**
+ * FONTE ÚNICA DA VERDADE - CÁLCULOS FINANCEIROS
+ * Este código unifica Relatório, Termômetro, Dashboard e E-mail.
+ */
+
+export const calculateMissionRevenue = (mission: any) => {
+  // 1. Filtro de exclusão: Refused não gera receita
+  if (mission.status === 'REFUSED') return 0;
+
+  // 2. Cálculo da Receita (Valor base + Pedágio)
+  // Prioriza valor aprovado/salvo e cai para estimativa se estiver zerado
+  const baseRevenue = mission.revenue_value || mission.estimated_value || 0;
+  const toll = mission.toll_value || 0;
+
+  return baseRevenue + toll;
+};
+
+export const getCanonicalDateRange = (period: 'month' | 'week' | 'today') => {
+  const start = new Date();
+  const end = new Date();
+  end.setHours(23, 59, 59, 999); // Sempre até o fim de hoje
+
+  if (period === 'month') {
+    start.setDate(1);
+    start.setHours(0, 0, 0, 0);
+  } else if (period === 'week') {
+    const day = start.getDay(); // 0 (Dom) a 6 (Sáb)
+    start.setDate(start.getDate() - day);
+    start.setHours(0, 0, 0, 0);
+  } else if (period === 'today') {
+    start.setHours(0, 0, 0, 0);
+  }
+
+  return { start, end };
+};
+📋 Checklist de Verificação no Replit
+Para confirmar que "está feito", verifique estes 3 pontos nas suas telas:
+
+Relatório de OS: O rodapé deve usar a função reduce chamando o calculateMissionRevenue. O valor total deve ter caído ou subido para se alinhar aos outros (agora incluindo pedágio e removendo canceladas).
+
+Termômetro de Meta: Verifique se o contador de OS diminuiu. Se antes mostrava 404 e agora mostra 390, parabéns: você removeu as OS agendadas para o futuro que estavam "sujando" o número.
+
+Dashboard Executivo: O gráfico e o card de faturamento agora devem mostrar o mesmo valor do Relatório, pois a janela de tempo "Mês" agora é idêntica (Dia 1 até Hoje 23:59).
+
+🚀 Resultado Esperado
+Ao abrir o sistema amanhã, você não verá mais três números diferentes. O fluxo de dados agora é:
+
+Banco de Dados → 2. Query Única → 3. Cálculo Canônico → 4. Interface (3 Telas).
+
+Dica de Ouro: Se algum valor ainda parecer estranho, limpe o cache do seu navegador ou reinicie o container do Replit para garantir que todos os arquivos novos foram carregados corretamente.
+
+Tudo pronto para rodar esse faturamento sincronizado? Se precisar de ajuda com mais algum detalhe no worker de e-mail, estou aqui!
