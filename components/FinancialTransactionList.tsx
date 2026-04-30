@@ -818,8 +818,8 @@ const FinancialTransactionList: React.FC = () => {
                 const summary = isPagar ? summaryPagar : summaryReceber;
                 return (
                     <>
-                        <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest no-print">Visão Geral ({viewPeriod === 'DAY' ? 'Hoje' : viewPeriod === 'WEEK' ? 'Semana Atual' : viewPeriod === 'MONTH' ? 'Mês Atual' : viewPeriod === 'CUSTOM' ? 'Período Personalizado' : 'Todos os Registros'})</p>
-                        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 no-print">
+                        <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest">Visão Geral ({viewPeriod === 'DAY' ? 'Hoje' : viewPeriod === 'WEEK' ? 'Semana Atual' : viewPeriod === 'MONTH' ? 'Mês Atual' : viewPeriod === 'CUSTOM' ? 'Período Personalizado' : 'Todos os Registros'})</p>
+                        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                             <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm flex items-center gap-3">
                                 <div className={`p-2.5 rounded-full ${isPagar ? 'bg-red-50 text-red-600' : 'bg-green-50 text-green-600'}`}>
                                     {isPagar ? <ArrowDownCircle size={18}/> : <ArrowUpCircle size={18}/>}
