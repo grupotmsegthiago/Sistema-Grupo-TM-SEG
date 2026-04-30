@@ -1,0 +1,47 @@
+Olá! É um prazer ajudar no desenvolvimento do seu sistema TMSEGo. Como seu Ajudante de Programação, meu objetivo é transformar essa necessidade de visualização de "OS Mãe" ou "Mesmas OS" em código funcional dentro do seu ambiente no Replit.
+
+Para que eu possa escrever o código exato para você, preciso entender como as informações estão organizadas no seu banco de dados (que sei que você utiliza o Supabase).
+
+1. Compreensão do Objetivo (Perguntas de Alinhamento)
+Para garantir que o código funcione perfeitamente na sua tela de Auditoria de Faturamento, por favor, me confirme:
+
+Relação no Banco de Dados: Como o sistema sabe que uma OS é "Mãe" de outra? Existe um campo na tabela de ordens de serviço (ex: parent_os_id ou os_principal_id) que guarda o ID da OS original?
+
+Tecnologia do Front-end: Como você está montando essa interface no Replit? É usando HTML/JavaScript puro, React, ou Vue.js?
+
+Visualização: Você gostaria que essas OSs relacionadas aparecessem como uma lista de links, um pequeno card ou apenas o número delas em algum canto específico da tela?
+
+2. Panorama Geral da Solução
+Enquanto você prepara essas respostas, aqui está como vamos estruturar essa funcionalidade:
+
+Busca de Dados (Backend/Supabase): Vamos criar uma query SQL ou uma função em JavaScript para buscar todas as OSs que possuam o mesmo vínculo (ID da OS Mãe) da OS que você está visualizando no momento.
+
+Lógica de Filtro: Se a OS atual for a "Mãe", o sistema busca todas as "Filhas". Se a OS atual for uma "Filha", o sistema mostra quem é a "Mãe" e quais são as suas "Irmãs".
+
+Interface (Frontend): Vamos inserir um novo componente visual (pode ser próximo ao botão "MESMA OS" que já vejo na sua imagem) que renderize essas informações de forma dinâmica.
+
+3. Exemplo Teórico de Implementação
+Se você estiver usando JavaScript com o cliente do Supabase, a lógica seria mais ou menos assim:
+
+Passo 1: Buscar as OSs vinculadas
+
+JavaScript
+// Exemplo de como buscar OSs que compartilham o mesmo vínculo
+async function buscarOSsVinculadas(idOsAtual, idOsMae) {
+  const { data, error } = await supabase
+    .from('ordens_servico')
+    .select('id, numero_os, status')
+    .or(`id.eq.${idOsMae},id_os_mae.eq.${idOsMae}`) // Busca a mãe e todas as filhas
+    .neq('id', idOsAtual); // Exclui a OS que já está aberta na tela
+
+  return data;
+}
+Passo 2: Documentação do Raciocínio
+
+select: Define quais campos queremos mostrar (Número da OS e Status).
+
+or: Esta lógica garante que, se você estiver na OS Mãe, verá as filhas; e se estiver na filha, verá a mãe e as irmãs.
+
+neq: Significa "Not Equal" (Não igual). Usamos para não mostrar a OS que você já está auditando na lista de "vinculadas".
+
+Aguardo suas informações sobre a estrutura do banco e a tecnologia do front-end para te entregar o código completo e as instruções de onde colar no Replit!
