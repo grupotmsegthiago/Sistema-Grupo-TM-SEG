@@ -1,0 +1,108 @@
+Compreendido perfeitamente! Como seu Ajudante de Programação, fico feliz em ver que a estrutura de dados no Supabase e a lógica no React já estão sólidas. Isso nos permite focar em aprimorar a experiência do usuário (UX) na tela de Auditoria.
+
+O seu objetivo é: Mostrar o vínculo de "OS Mãe" ou "Mesma OS" de forma clara e imediata no topo do modal de Auditoria, aproveitando os dados que a query já retorna.
+
+1. Compreensão do Objetivo
+Para que eu escreva o código exato para o seu componente, só preciso confirmar um detalhe técnico da implementação atual:
+
+Variável de Estado: No seu arquivo MissionFinancialModal.tsx, qual é o nome da variável que armazena o resultado da query das OSs vinculadas? (Ex: linkedMissions, relatedOS, relatedMissions).
+
+2. Panorama Geral da Solução
+Vamos criar um Componente de Alerta de Vínculo. Ele funcionará assim:
+
+Verificação de Papel: O componente identificará se a OS aberta é a Mãe (tem filhas vinculadas) ou se é uma Mesma OS (possui uma parent_mission_id).
+
+Renderização Condicional:
+
+Se for Mãe: Exibirá um alerta: "Esta é uma OS Mãe. Filhas vinculadas: #GTM-123, #GTM-124".
+
+Se for Filha: Exibirá: "Esta é uma 'Mesma OS'. OS Mãe: #GTM-100".
+
+Localização: Inseriremos este componente logo abaixo do cabeçalho do modal (onde está o ID #GTM-4189 na image_f36996.png), para que o auditor não precise rolar a tela para saber que existem valores compartilhados.
+
+3. Programa e Instruções de Implementação
+Vou sugerir um código em TypeScript/React utilizando componentes do Tailwind CSS (que é o padrão comum em projetos Vite) para criar um alerta elegante e funcional.
+
+Código do Componente: RelatedMissionsAlert.tsx
+TypeScript
+import React from 'react';
+import { Share2, ArrowRight } from 'lucide-react'; // Assumindo que usa Lucide como no resto do sistema
+
+interface Mission {
+  id: string;
+  numero_os: string;
+  is_same_os: boolean;
+  parent_mission_id?: string | null;
+}
+
+interface Props {
+  currentMission: Mission;
+  relatedMissions: Mission[]; // Aqui vai a variável da sua query
+}
+
+const RelatedMissionsAlert: React.FC<Props> = ({ currentMission, relatedMissions }) => {
+  // 1. Identifica se a OS atual é uma "Filha"
+  const parentMission = relatedMissions.find(m => m.id === currentMission.parent_mission_id);
+  
+  // 2. Identifica se a OS atual é a "Mãe" e lista as filhas
+  const childMissions = relatedMissions.filter(m => m.parent_mission_id === currentMission.id);
+
+  if (relatedMissions.length === 0 && !currentMission.parent_mission_id) return null;
+
+  return (
+    <div className="flex items-center gap-3 p-3 mb-4 rounded-lg bg-slate-100 border border-slate-200 text-slate-700 text-sm">
+      <Share2 size={18} className="text-blue-500" />
+      
+      <div className="flex flex-wrap gap-2 items-center">
+        {currentMission.is_same_os && parentMission ? (
+          <>
+            <span className="font-semibold bg-blue-100 text-blue-700 px-2 py-0.5 rounded text-xs">MESMA OS</span>
+            <span>Vinculada à OS Mãe:</span>
+            <button className="font-bold hover:underline text-blue-600">
+              #{parentMission.numero_os}
+            </button>
+          </>
+        ) : childMissions.length > 0 ? (
+          <>
+            <span className="font-semibold bg-purple-100 text-purple-700 px-2 py-0.5 rounded text-xs">OS MÃE</span>
+            <span>Possui {childMissions.length} OS(s) vinculada(s):</span>
+            {childMissions.map(child => (
+              <button key={child.id} className="font-bold hover:underline text-purple-600 flex items-center gap-1">
+                <ArrowRight size={12} /> #{child.numero_os}
+              </button>
+            ))}
+          </>
+        ) : null}
+      </div>
+    </div>
+  );
+};
+
+export default RelatedMissionsAlert;
+Como Implementar no Replit:
+Localize o arquivo: Abra o MissionFinancialModal.tsx.
+
+Identifique a Query: Procure pelas linhas 669–681 onde a busca das OSs vinculadas acontece.
+
+Insira o Componente:
+
+Vá até o bloco do return do seu modal (o HTML/JSX).
+
+Logo após a div que renderiza o título "Auditoria de Faturamento #GTM-4189" (que vemos na image_f36996.png), cole a chamada do componente:
+
+TypeScript
+<RelatedMissionsAlert 
+  currentMission={missionData} 
+  relatedMissions={linkedMissions} 
+/>
+(Ajuste os nomes missionData e linkedMissions para os nomes das variáveis que você já usa no seu código).
+
+Raciocínio da Programação:
+
+Filtros de Array (find e filter): Usamos o find para achar a única mãe possível e o filter para listar todas as filhas.
+
+Renderização Condicional: O componente retorna null se não houver vínculos, garantindo que a tela fique limpa quando a OS for solitária.
+
+Interface: Usei cores diferentes (Azul para filha, Roxo para mãe) para facilitar a leitura rápida do auditor.
+
+Isso faz sentido para o que você imaginou para a tela de Auditoria? Se precisar que os botões de ID já abram a outra OS ao clicar, posso te ajudar com a função de navegação!
