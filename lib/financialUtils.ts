@@ -316,6 +316,14 @@ export const calculateMissionFinancials = (
     const diffMs = endDateObj.getTime() - effectiveStartDate.getTime();
     let durationHours = Math.max(0, diffMs / (1000 * 60 * 60));
 
+    // ALINHAMENTO COBRANÇA x EXIBIÇÃO:
+    // O card "Duração" no MissionFinancialModal trunca os segundos com Math.floor
+    // (ex.: 12h16min42s vira "12h16min"). Antes desta correção, o cálculo financeiro
+    // usava o decimal completo com segundos, causando divergência: 12.27862h × R$129,60
+    // = R$ 1.202,51 quando o esperado pela tela (12h16min × R$129,60) era R$ 1.200,96.
+    // Truncamos para o minuto inteiro (igual ao display), zerando os segundos.
+    durationHours = Math.floor(durationHours * 60) / 60;
+
     const cancelledWithHours = isCancelled && durationHours > 0 && !!parseSafeDate(mission.endTime || (mission as any).end_time);
     if (isZeroValueMission && !cancelledWithHours) {
         durationHours = 0;

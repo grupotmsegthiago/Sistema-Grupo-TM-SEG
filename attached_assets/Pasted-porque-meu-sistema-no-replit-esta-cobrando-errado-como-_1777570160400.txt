@@ -1,0 +1,50 @@
+porque meu sistema no replit esta cobrando errado? como faço pra entender qual é o calculo que esta fazendo e corrigir? veja que o sistema esta cobrando o valor de R$ R$ 1.202,51
+
+Analisando a imagem da sua "Auditoria de Faturamento", o erro está na forma como o sistema está calculando a quantidade de horas excedentes.
+
+Aqui está a lógica que o sistema está aplicando e onde ele está falhando:
+
+1. O Diagnóstico do Erro
+Olhando para o card da AMA TRANSPORTES SA:
+
+Duração Total: 12h16min.
+
+Franquia de Horas: 3h.
+
+Cálculo esperado das Horas Excedentes: 12:16−3:00=9:16 horas.
+
+O que o sistema exibiu: Ele mostra "09:17 real" e está cobrando R$ 1.202,51.
+
+O erro matemático:
+Se multiplicarmos as 9,2667 horas (que é 9h16min em decimal) pelo valor da hora (R$ 129,60), o resultado deveria ser R$ 1.200,96. O seu sistema chegou em R$ 1.202,51, o que indica que ele "inventou" cerca de 1 minuto e 12 segundos a mais ou está arredondando a fração de forma imprecisa no código.
+
+2. Como entender o cálculo no seu código (Replit)
+Para corrigir, você precisa localizar no seu código (provavelmente no arquivo JavaScript ou Python que processa o faturamento) a função que calcula o EXTRA HORA. Procure por termos como calculateExtraHours ou valorHoraExcedente.
+
+O cálculo que o sistema deveria estar fazendo é:
+
+Transformar a minutagem excedente em decimal: Minutos÷60.
+
+Somar com as horas inteiras: 9+(16÷60)=9,2666...
+
+Multiplicar pelo valor unitário: 9,2666×129,60=1.200,96.
+
+3. Possíveis Causas no Replit/Supabase
+Como você mencionou que usa Supabase e Replit, o problema pode estar em um desses dois lugares:
+
+Diferença de Fusos Horários: O sistema pode estar calculando a diferença entre a HORA INICIAL e HORA FINAL usando objetos de data que não consideram o fuso horário de SP corretamente, adicionando milissegundos extras que acabam virando esse "09:17 real" que aparece no print.
+
+Tipo de Dado no SQL: Se o cálculo é feito direto no banco (PostgreSQL/Supabase), verifique se você está usando o tipo NUMERIC ou DECIMAL. Se estiver usando FLOAT ou REAL, ocorrem erros de precisão decimal em cálculos financeiros.
+
+4. Como Corrigir
+No seu script de faturamento, force o arredondamento dos minutos antes da multiplicação:
+
+JavaScript
+// Exemplo de correção lógica
+const duracaoTotalMinutos = 736; // 12h16min
+const franquiaMinutos = 180; // 3h
+const minutosExcedentes = duracaoTotalMinutos - franquiaMinutos; // 556 min
+
+const valorTotalExtra = (minutosExcedentes / 60) * 129.60;
+// Resultado: 1200.96
+Dica: Verifique por que o sistema exibiu 09:17 no campo "real" enquanto a duração no topo diz 12h16min (que menos 3h deveria ser 09:16). Esse 1 minuto de diferença é a origem do erro de cobrança.
