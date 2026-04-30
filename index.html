@@ -148,6 +148,63 @@
         };
       })();
     </script>
+
+    <style>
+      /* ============================================================
+         Estilos de Impressão (window.print / Ctrl+P)
+         Esconde sidebar, header, botões de ação e mantém só o conteúdo.
+         ============================================================ */
+      @media print {
+        @page {
+          size: A4 landscape;
+          margin: 8mm;
+        }
+        html, body {
+          background: #ffffff !important;
+          color: #000000 !important;
+          -webkit-print-color-adjust: exact !important;
+          print-color-adjust: exact !important;
+        }
+        /* Esconde estrutura de chrome do app */
+        aside,
+        header,
+        footer,
+        .no-print,
+        [data-no-print] {
+          display: none !important;
+        }
+        /* Remove o offset reservado para a sidebar */
+        .lg\:pl-20 { padding-left: 0 !important; }
+        main {
+          overflow: visible !important;
+          padding: 0 !important;
+          height: auto !important;
+        }
+        /* Remove sombras */
+        .shadow-sm, .shadow, .shadow-md, .shadow-lg, .shadow-xl, .shadow-2xl {
+          box-shadow: none !important;
+        }
+        /* Tabelas — não corta linha entre páginas, repete cabeçalho */
+        table { width: 100% !important; border-collapse: collapse !important; }
+        thead { display: table-header-group; }
+        tr, td, th { page-break-inside: avoid; break-inside: avoid; }
+        /* Tipografia compacta para caber tudo */
+        body { font-size: 10pt; }
+        table { font-size: 9pt; }
+        /* Inputs/botões viram texto plano */
+        button, input, select, textarea {
+          border: none !important;
+          background: transparent !important;
+          color: inherit !important;
+          -webkit-appearance: none;
+          appearance: none;
+        }
+        /* Modais e overlays atrapalham a impressão */
+        .fixed { display: none !important; }
+        /* Fundo decorativo do app é absoluto — esconde */
+        .absolute.inset-0.z-0 { display: none !important; }
+      }
+    </style>
   </head>
   <body>
     <div id="ios-error-overlay"></div>
