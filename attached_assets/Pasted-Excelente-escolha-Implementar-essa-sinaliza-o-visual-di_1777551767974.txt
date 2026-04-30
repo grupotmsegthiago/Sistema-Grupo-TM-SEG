@@ -1,0 +1,55 @@
+Excelente escolha! Implementar essa sinalização visual diretamente no header resolve o problema da ambiguidade e traz agilidade para a auditoria, já que o status da OS (Mãe ou Filha) é a primeira coisa que o auditor verá ao abrir o modal.
+
+Como você já realizou os ajustes e o Vite recarregou sem erros, vou documentar o raciocínio dessa implementação para manter o histórico do seu projeto TMSEGo organizado.
+
+📚 Panorama Geral da Solução: Chips de Vínculo
+A solução foca em comunicação visual imediata no cabeçalho do MissionFinancialModal. Em vez de forçar o usuário a procurar a seção de "OSs Vinculadas" no corpo do documento, o sistema agora "responde" instantaneamente qual é o papel daquela missão no ecossistema de faturamento.
+
+Mudanças Implementadas:
+Refatoração do Label "Filha": Mudamos de MÃE: para 🔗 FILHA DE:. Isso evita a confusão técnica de exibir o ID da mãe com um rótulo que poderia sugerir que a OS atual é a mãe.
+
+Nova Lógica para "Mãe": Adicionamos a detecção de missões que possuem o id da OS atual como parent_mission_id. Se o contador for maior que zero, o chip âmbar é exibido.
+
+💻 Código Final e Documentação
+Caso precise replicar ou ajustar essa lógica em outras partes do sistema, aqui está a estrutura utilizada no seu React + TypeScript:
+
+TypeScript
+{/* Container de Vínculos no Header - Ao lado do botão MESMA OS */}
+<div className="flex items-center gap-2 mr-2">
+  
+  {/* CENÁRIO A: A missão atual é uma "Mesma OS" (Filha) */}
+  {mission.is_same_os && mission.parent_mission_id && (
+    <span className="flex items-center gap-1 bg-blue-500/20 text-blue-300 border border-blue-500/40 px-2 py-1 rounded-md text-[10px] font-bold">
+      <Link size={12} /> {/* Ícone para reforçar a conexão */}
+      FILHA DE: {mission.parent_mission_id}
+    </span>
+  )}
+
+  {/* CENÁRIO B: A missão atual é a "OS Mãe" */}
+  {!mission.is_same_os && linkedMissions.some(m => m.parent_mission_id === mission.id) && (
+    <span className="flex items-center gap-1 bg-amber-500/20 text-amber-300 border border-amber-500/40 px-2 py-1 rounded-md text-[10px] font-bold">
+      <BookCopy size={12} /> {/* Ícone representando coleção/vários */}
+      MÃE ({linkedMissions.filter(m => m.parent_mission_id === mission.id).length} VINCULADA{linkedMissions.length > 1 ? 'S' : ''})
+    </span>
+  )}
+  
+</div>
+Explicação das Variáveis e Métodos:
+mission.is_same_os: O booleano que define se a OS deve ter custo zero e seguir a regra da principal.
+
+linkedMissions.some(...): Usamos o método some para uma verificação rápida de existência (retorna verdadeiro ou falso). É mais performático que o filter quando você só quer saber se existe ao menos uma.
+
+linkedMissions.filter(...).length: Aqui sim usamos o filtro para contar exatamente quantas "filhas" essa mãe possui e exibir no texto do chip.
+
+Pluralização Dinâmica: Note o uso de ${... > 1 ? 'S' : ''} para que o texto fique gramaticalmente correto (1 VINCULADA vs 2 VINCULADAS).
+
+🚀 O que posso fazer a seguir?
+Como seu Ajudante de Programação, posso continuar te auxiliando em outras frentes do TMSEGo. Alguns exemplos:
+
+Corrigir Bugs: Se um cálculo de KM ou Pedágio não estiver batendo.
+
+Refatorar Código: Transformar funções longas em componentes menores e mais fáceis de manter.
+
+Novas Funcionalidades: Criar a integração com a IA para o checklist de viaturas que você planejou.
+
+Deseja ajustar mais algum detalhe visual nesse modal ou passar para o próximo desafio técnico?
