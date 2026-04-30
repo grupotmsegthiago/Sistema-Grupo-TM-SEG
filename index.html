@@ -153,15 +153,21 @@
       /* ============================================================
          Estilos de Impressão (window.print / Ctrl+P)
          Esconde sidebar, header, botões de ação e mantém só o conteúdo.
+         IMPORTANTE: @page fica fora do @media print porque Chrome/Edge
+         respeitam melhor a orientação quando declarada no nível raiz.
          ============================================================ */
+      @page {
+        size: A4 landscape;
+        margin: 8mm;
+      }
+
       @media print {
-        @page {
-          size: A4 landscape;
-          margin: 8mm;
-        }
         html, body {
           background: #ffffff !important;
           color: #000000 !important;
+          width: 100% !important;
+          margin: 0 !important;
+          padding: 0 !important;
           -webkit-print-color-adjust: exact !important;
           print-color-adjust: exact !important;
         }
@@ -178,19 +184,40 @@
         main {
           overflow: visible !important;
           padding: 0 !important;
+          margin: 0 !important;
           height: auto !important;
+          width: 100% !important;
+        }
+        /* Container raiz ocupa toda a largura disponível */
+        #root, #root > div, main > div {
+          width: 100% !important;
+          max-width: 100% !important;
+          overflow: visible !important;
         }
         /* Remove sombras */
         .shadow-sm, .shadow, .shadow-md, .shadow-lg, .shadow-xl, .shadow-2xl {
           box-shadow: none !important;
         }
+        /* Cards de Visão Geral: mais compactos pra sobrar espaço pra tabela */
+        .grid {
+          gap: 6px !important;
+        }
+        .p-4, .p-5, .p-6 { padding: 6px !important; }
+        .rounded-xl, .rounded-2xl { border-radius: 6px !important; }
         /* Tabelas — não corta linha entre páginas, repete cabeçalho */
-        table { width: 100% !important; border-collapse: collapse !important; }
+        table {
+          width: 100% !important;
+          border-collapse: collapse !important;
+          page-break-inside: auto;
+        }
         thead { display: table-header-group; }
-        tr, td, th { page-break-inside: avoid; break-inside: avoid; }
+        tfoot { display: table-footer-group; }
+        tr { page-break-inside: avoid !important; break-inside: avoid !important; }
+        td, th { padding: 4px 6px !important; }
         /* Tipografia compacta para caber tudo */
-        body { font-size: 10pt; }
-        table { font-size: 9pt; }
+        body { font-size: 9pt; }
+        table { font-size: 8.5pt; }
+        h1, h2, h3 { font-size: 12pt !important; }
         /* Inputs/botões viram texto plano */
         button, input, select, textarea {
           border: none !important;
@@ -198,11 +225,14 @@
           color: inherit !important;
           -webkit-appearance: none;
           appearance: none;
+          padding: 0 !important;
         }
         /* Modais e overlays atrapalham a impressão */
         .fixed { display: none !important; }
         /* Fundo decorativo do app é absoluto — esconde */
         .absolute.inset-0.z-0 { display: none !important; }
+        /* Garante que nada quebre o layout horizontal */
+        * { overflow: visible !important; }
       }
     </style>
   </head>
