@@ -227,8 +227,10 @@
           appearance: none;
           padding: 0 !important;
         }
-        /* Modais e overlays atrapalham a impressão */
-        .fixed { display: none !important; }
+        /* IMPORTANTE: NÃO esconder .fixed indiscriminadamente — quebra o
+           MissionPrintModal (e outros modais que têm CSS de impressão próprio
+           e renderizam o conteúdo dentro de um wrapper .fixed). Cada modal
+           que precisar bloquear impressão deve usar a classe .no-print. */
         /* Fundo decorativo do app é absoluto — esconde */
         .absolute.inset-0.z-0 { display: none !important; }
         /* Garante que nada quebre o layout horizontal */
