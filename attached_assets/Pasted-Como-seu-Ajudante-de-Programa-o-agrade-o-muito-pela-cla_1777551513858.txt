@@ -1,0 +1,55 @@
+Como seu Ajudante de Programação, agradeço muito pela clareza e pelo cuidado em checar os detalhes técnicos. É fundamental alinharmos as variáveis reais do seu banco no Supabase para que o código não quebre.
+
+Você tem toda razão: usar numero_os causaria um erro de undefined, já que no seu sistema o próprio id já carrega o formato GTM-XXXX. Além disso, como você pontuou, a funcionalidade de alerta já existe no MissionFinancialModal.tsx (linhas 1858–1880), mas não apareceu na imagem por falta de vínculos na OS #GTM-4189.
+
+1. Compreensão do Objetivo
+Baseado no que você explicou, o objetivo mais eficiente agora é melhorar a visibilidade imediata. Vamos seguir com a Opção 1:
+
+O que vamos fazer: Criar um "Chip" (etiqueta compacta) para o header escuro do modal.
+
+Por que: Isso permite que o auditor identifique o status da OS (Mãe ou Filha) instantaneamente, sem precisar de scroll, complementando a faixa detalhada que já existe no corpo do modal.
+
+2. Panorama Geral da Solução
+Vamos modificar o cabeçalho do seu modal para incluir uma lógica simples:
+
+Identificação: Verificar se a missão atual tem um parent_mission_id (é Filha) ou se existem outras missões no array de vinculadas que apontam para ela (é Mãe).
+
+Estilização: Usar um componente visual pequeno (Badge/Chip) ao lado do botão "MESMA OS" que você já possui.
+
+Segurança de Dados: Usaremos apenas o campo id para evitar o erro de undefined.
+
+3. Programa e Instruções de Implementação
+Aqui está o código ajustado para o seu ambiente React + TypeScript no Replit.
+
+Código do Chip (para inserir no Header)
+TypeScript
+{/* Insira este bloco ao lado do seu botão "MESMA OS" no header */}
+<div className="flex items-center gap-2">
+  {/* Caso 1: A OS é Filha */}
+  {mission.is_same_os && mission.parent_mission_id && (
+    <span className="bg-blue-500/20 text-blue-300 border border-blue-500/50 px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider">
+      Filha de: {mission.parent_mission_id}
+    </span>
+  )}
+
+  {/* Caso 2: A OS é Mãe (Verifica se há filhas no array de vinculadas) */}
+  {!mission.is_same_os && linkedMissions.filter(m => m.parent_mission_id === mission.id).length > 0 && (
+    <span className="bg-amber-500/20 text-amber-300 border border-amber-500/50 px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider">
+      Mãe ({linkedMissions.filter(m => m.parent_mission_id === mission.id).length} vinculadas)
+    </span>
+  )}
+</div>
+Instruções de Implementação:
+Localize o Header: No seu arquivo MissionFinancialModal.tsx, procure pela seção do JSX que renderiza o topo escuro (onde está o título "Auditoria de Faturamento" e o botão "MESMA OS").
+
+Ajuste de Variáveis: No snippet acima, usei mission e linkedMissions. Certifique-se de que esses são os nomes das variáveis que o seu componente usa para a missão atual e para a lista de vinculadas.
+
+Posicionamento: Coloque esse bloco de código dentro da mesma div que contém o botão de toggle "MESMA OS". Isso garantirá que eles fiquem alinhados horizontalmente.
+
+Por que fizemos assim?
+
+Correção de Campo: Usamos parent_mission_id e mission.id diretamente, respeitando a estrutura da sua tabela missions.
+
+Transparência: Usamos cores com opacidade (/20) e bordas para manter o estilo moderno do seu sistema sem poluir visualmente o cabeçalho escuro.
+
+Essa abordagem resolve a sua necessidade de "aparecer na tela" de forma rápida e profissional. O que acha desta implementação compacta para o header?

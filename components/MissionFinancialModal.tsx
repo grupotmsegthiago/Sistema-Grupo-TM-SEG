@@ -1800,10 +1800,19 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
           </div>
           <div className="flex items-center gap-2 ml-4 shrink-0">
             {mission.is_same_os && mission.parent_mission_id && (
-              <span className="text-[9px] font-black bg-blue-600 text-white px-2 py-1 rounded uppercase flex items-center gap-1">
-                <Link2 size={10} /> MÃE: {mission.parent_mission_id}
+              <span data-testid="chip-is-child" className="text-[9px] font-black bg-blue-600 text-white px-2 py-1 rounded uppercase flex items-center gap-1">
+                <Link2 size={10} /> FILHA DE: {mission.parent_mission_id}
               </span>
             )}
+            {!mission.is_same_os && !mission.parent_mission_id && (() => {
+              const childCount = linkedMissions.filter(lm => lm.is_same_os).length;
+              if (childCount === 0) return null;
+              return (
+                <span data-testid="chip-is-parent" className="text-[9px] font-black bg-amber-500 text-white px-2 py-1 rounded uppercase flex items-center gap-1">
+                  <Layers size={10} /> MÃE ({childCount} {childCount === 1 ? 'vinculada' : 'vinculadas'})
+                </span>
+              );
+            })()}
             <button
               data-testid="btn-toggle-same-os"
               onClick={async () => {
