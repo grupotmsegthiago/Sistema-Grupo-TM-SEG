@@ -462,20 +462,26 @@ function tick() {
   try {
     const now = nowSP();
     const hour = now.getHours();
+    const day = now.getDay(); // 0=Dom, 1=Seg ... 5=Sex, 6=Sáb
+
+    // Somente segunda a sexta (não envia em sábado/domingo)
+    if (day === 0 || day === 6) return;
+
     const dateKey = `${now.getFullYear()}-${now.getMonth()}-${now.getDate()}`;
 
-    // Faturamento 12/12h (07h e 19h BRT) — catch-up: dispara o slot mais recente já passado
+    // Faturamento 12/12h: só dispara DURANTE a hora exata do slot (07h ou 19h).
+    // Não faz catch-up de slots passados para evitar reenvio em restart/deploy.
     const slots = [7, 19];
-    const currentSlot = [...slots].reverse().find(s => hour >= s);
-    if (currentSlot !== undefined) {
-      const slotKey = `${dateKey}-${currentSlot}`;
+    if (slots.includes(hour)) {
+      const slotKey = `${dateKey}-${hour}`;
       if (state.lastRevenueSlot !== slotKey) {
         void runRevenue(slotKey);
       }
     }
 
-    // Resumo diário sai junto com o slot da manhã (07h) — uma vez por dia
-    if (hour >= 7 && state.lastDailyDate !== dateKey) {
+    // Resumo diário: junto com o slot das 07h, uma vez por dia útil.
+    // Restringido à hora 07 (sem catch-up) pelo mesmo motivo do faturamento.
+    if (hour === 7 && state.lastDailyDate !== dateKey) {
       void runDaily(dateKey);
     }
   } catch (e: any) {
@@ -484,7 +490,7 @@ function tick() {
 }
 
 export function startFinancialReportWorker() {
-  console.log(`[FinReport] Worker ativo — ${RECIPIENT} (faturamento 12/12h às 07h e 19h BRT, resumo diário junto com o de 07h) | estado: dailySent=${state.lastDailyDate} revenueSlot=${state.lastRevenueSlot}`);
+  console.log(`[FinReport] Worker ativo — ${RECIPIENT} (faturamento 12/12h às 07h e 19h BRT, segunda a sexta; resumo diário junto com o de 07h) | estado: dailySent=${state.lastDailyDate} revenueSlot=${state.lastRevenueSlot}`);
   setInterval(tick, 60_000);
   tick();
 }
