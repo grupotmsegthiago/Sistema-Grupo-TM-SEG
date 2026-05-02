@@ -403,8 +403,13 @@ export async function registerRoutes(
     if (fs.existsSync(swPath)) {
       res.setHeader('Content-Type', 'application/javascript');
       res.setHeader('Service-Worker-Allowed', '/');
-      res.setHeader('Cache-Control', 'no-cache');
-      res.sendFile(swPath);
+      // no-store garante que o navegador SEMPRE pede o sw.js novo, e o
+      // timestamp injetado abaixo garante que os BYTES do arquivo mudam a
+      // cada deploy/restart — disparando o ciclo de update do Service Worker.
+      res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
+      const original = fs.readFileSync(swPath, 'utf-8');
+      const stamp = `// build: ${process.env.REPLIT_DEPLOYMENT_ID || ''}-${Date.now()}\n`;
+      res.send(stamp + original);
     } else {
       res.status(404).send('Not found');
     }

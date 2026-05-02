@@ -1,10 +1,15 @@
-const CACHE_NAME = 'tmseg-v8-' + (self.registration?.scope || '') + '-2026-05-02';
+// O servidor injeta uma linha "// build: <timestamp>" no topo deste arquivo
+// a cada requisição. Isso garante que todo deploy muda os bytes do sw.js,
+// forçando o navegador a baixar a versão nova e disparar o ciclo de update.
+const CACHE_NAME = 'tmseg-runtime';
 
 self.addEventListener('install', (event) => {
+  // Apaga TODO cache anterior antes de ativar a nova versão.
   event.waitUntil(
     caches.keys().then(names => Promise.all(names.map(n => caches.delete(n))))
   );
-  self.skipWaiting();
+  // Não auto-ativa — espera o app pedir via postMessage('SKIP_WAITING')
+  // para podermos sincronizar o reload da página.
 });
 
 self.addEventListener('activate', (event) => {
@@ -18,8 +23,20 @@ self.addEventListener('activate', (event) => {
   );
 });
 
+// Estratégia: SEM cache. Tudo passa direto pela rede para garantir que o
+// usuário sempre vê a versão mais recente. O SW existe apenas para receber
+// push notifications e para o ciclo de update detectar nova versão.
 self.addEventListener('fetch', (event) => {
-  event.respondWith(fetch(event.request));
+  // Não interfere em requests não-GET, APIs, supabase ou recursos externos.
+  if (event.request.method !== 'GET') return;
+  // Network-only, sem cache nenhum.
+  event.respondWith(fetch(event.request).catch(() => Response.error()));
+});
+
+self.addEventListener('message', (event) => {
+  if (event.data && event.data.type === 'SKIP_WAITING') {
+    self.skipWaiting();
+  }
 });
 
 self.addEventListener('push', (event) => {

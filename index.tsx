@@ -13,3 +13,43 @@ root.render(
     <App />
   </React.StrictMode>
 );
+
+// Service Worker: registro automático + detecção de nova versão + reload.
+// Garante que o app NUNCA fique travado em uma versão antiga após um deploy.
+if ('serviceWorker' in navigator && window.location.hostname !== 'localhost') {
+  window.addEventListener('load', async () => {
+    try {
+      const reg = await navigator.serviceWorker.register('/sw.js', { scope: '/', updateViaCache: 'none' });
+
+      // Quando o SW novo termina de instalar, ativa imediatamente e recarrega.
+      reg.addEventListener('updatefound', () => {
+        const sw = reg.installing;
+        if (!sw) return;
+        sw.addEventListener('statechange', () => {
+          if (sw.state === 'installed' && navigator.serviceWorker.controller) {
+            console.log('[SW] Nova versão detectada — recarregando…');
+            sw.postMessage({ type: 'SKIP_WAITING' });
+          }
+        });
+      });
+
+      // Quando o SW muda de controller (skipWaiting + clients.claim), recarrega 1x.
+      let reloaded = false;
+      navigator.serviceWorker.addEventListener('controllerchange', () => {
+        if (reloaded) return;
+        reloaded = true;
+        window.location.reload();
+      });
+
+      // A cada 5 min e ao voltar para a aba, força check de update.
+      const checkUpdate = () => { reg.update().catch(() => {}); };
+      setInterval(checkUpdate, 5 * 60 * 1000);
+      window.addEventListener('focus', checkUpdate);
+      document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'visible') checkUpdate();
+      });
+    } catch (err) {
+      console.warn('[SW] Falha ao registrar:', err);
+    }
+  });
+}
