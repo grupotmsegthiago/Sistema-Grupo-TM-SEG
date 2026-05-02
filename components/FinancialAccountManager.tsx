@@ -202,7 +202,10 @@ const FinancialAccountManager: React.FC<Props> = ({ onClose }) => {
             setUpdateAccountId(null);
             setNewBalanceInput('');
             fetchData();
-        } catch (e: any) { alert(e.message); } finally { setIsProcessingUpdate(false); }
+        } catch (e) {
+            const msg = e instanceof Error ? e.message : 'Erro desconhecido';
+            showNotification('Erro', msg, 'error');
+        } finally { setIsProcessingUpdate(false); }
     };
 
     const handleDeleteSnapshot = async (id: number) => {
@@ -218,16 +221,19 @@ const FinancialAccountManager: React.FC<Props> = ({ onClose }) => {
             const val = parseFloat(formData.initial_balance);
             if (editingId) {
                 const { error } = await supabase.from('financial_accounts').update({ name: formData.name, initial_balance: val, bank_name: formData.bank_name }).eq('id', editingId);
-                if (error) { alert('Erro ao salvar conta: ' + error.message); setIsSaving(false); return; }
+                if (error) { showNotification('Erro', 'Erro ao salvar conta: ' + error.message, 'error'); setIsSaving(false); return; }
             } else {
                 const { error } = await supabase.from('financial_accounts').insert([{ name: formData.name, initial_balance: val, bank_name: formData.bank_name, status: 'Ativo' }]);
-                if (error) { alert('Erro ao criar conta: ' + error.message); setIsSaving(false); return; }
+                if (error) { showNotification('Erro', 'Erro ao criar conta: ' + error.message, 'error'); setIsSaving(false); return; }
             }
             setEditingId(null);
             setShowForm(false);
             setFormData({ name: '', initial_balance: '', bank_name: '' });
             fetchData();
-        } catch (e: any) { alert(e.message); } finally { setIsSaving(false); }
+        } catch (e) {
+            const msg = e instanceof Error ? e.message : 'Erro desconhecido';
+            showNotification('Erro', msg, 'error');
+        } finally { setIsSaving(false); }
     };
 
     const handleDeleteAccount = async (id: string) => {

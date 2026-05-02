@@ -1375,7 +1375,11 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                       totalGeral: r2(revServiceOnly + toll),
                   };
                   const snapUpdRes = await supabase.from('missions').update({ snapshot_data: updatedSnap }).eq('id', mission.id);
-                  if (snapUpdRes.error) console.error('[Snapshot Update] Falha ao sincronizar snapshot:', snapUpdRes.error);
+                  if (snapUpdRes.error) {
+                      console.error('[Snapshot Update] Falha ao sincronizar snapshot:', snapUpdRes.error);
+                      showNotification('Erro', 'OS salva, mas falha ao sincronizar snapshot: ' + snapUpdRes.error.message, 'error');
+                      return;
+                  }
               }
           }
           
