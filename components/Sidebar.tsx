@@ -2,7 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { 
   LayoutDashboard, MapPin, Truck, Users, FileBarChart, Settings, 
-  Briefcase, UserCog, ChevronDown, ChevronRight, Circle, LogOut, DollarSign, Bot, Wallet, Map, MessageCircle, Scale
+  Briefcase, UserCog, ChevronDown, ChevronRight, Circle, LogOut, DollarSign, Bot, Wallet, Map, MessageCircle, Scale, RefreshCw
 } from 'lucide-react';
 import { NAV_ITEMS, APP_VERSION } from '../constants';
 import { NavItem } from '../constants'; // Explicit import to avoid TS error if NAV_ITEMS interface isn't exported correctly
@@ -39,6 +39,72 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, activeScreen, onNavigate, onL
         }
     }
   }, []);
+
+  const handleHardReset = async () => {
+    const ok = window.confirm(
+      'LIMPEZA TOTAL\n\n' +
+      'Isto vai:\n' +
+      '• Desregistrar Service Workers\n' +
+      '• Apagar todos os caches do navegador\n' +
+      '• Limpar dados temporários (sessionStorage / IndexedDB)\n' +
+      '• Recarregar o app na versão mais nova do servidor\n\n' +
+      'Seu login será mantido. Continuar?'
+    );
+    if (!ok) return;
+
+    try {
+      const keepKeys = ['authToken', 'auth_token', 'userData', 'tmseg-token'];
+      const preserved: Record<string, string> = {};
+      for (const k of keepKeys) {
+        const v = localStorage.getItem(k);
+        if (v !== null) preserved[k] = v;
+      }
+      try { sessionStorage.clear(); } catch {}
+      try {
+        localStorage.clear();
+        for (const [k, v] of Object.entries(preserved)) localStorage.setItem(k, v);
+      } catch {}
+
+      if ('serviceWorker' in navigator) {
+        try {
+          const regs = await navigator.serviceWorker.getRegistrations();
+          await Promise.all(regs.map(r => r.unregister().catch(() => false)));
+        } catch (e) { console.warn('[HardReset] SW unregister falhou', e); }
+      }
+
+      if ('caches' in window) {
+        try {
+          const names = await caches.keys();
+          await Promise.all(names.map(n => caches.delete(n).catch(() => false)));
+        } catch (e) { console.warn('[HardReset] Cache API falhou', e); }
+      }
+
+      if ('indexedDB' in window && (indexedDB as any).databases) {
+        try {
+          const dbs: Array<{ name?: string }> = await (indexedDB as any).databases();
+          await Promise.all(
+            dbs.filter(d => d.name).map(d => new Promise<void>(resolve => {
+              const req = indexedDB.deleteDatabase(d.name as string);
+              req.onsuccess = req.onerror = req.onblocked = () => resolve();
+            }))
+          );
+        } catch (e) { console.warn('[HardReset] IndexedDB falhou', e); }
+      }
+
+      try {
+        if (currentUser) {
+          await logAction('OTHER', 'HardReset', currentUser.id || 'unknown', `Limpeza total de cache solicitada por ${currentUser.name || currentUser.email || 'usuário'}`);
+        }
+      } catch {}
+
+      const url = new URL(window.location.href);
+      url.searchParams.set('_r', String(Date.now()));
+      window.location.replace(url.toString());
+    } catch (e) {
+      console.error('[HardReset] erro geral', e);
+      window.location.reload();
+    }
+  };
 
   const handleNavigation = (screenId: string, screenName: string) => {
       // LOG DE NAVEGAÇÃO (Rastreamento de Cliques)
@@ -255,6 +321,19 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, activeScreen, onNavigate, onL
                  <span className="font-bold text-sm tracking-wide">SAIR DO SISTEMA</span>
              </div>
           </button>
+          <button
+            onClick={handleHardReset}
+            data-testid="button-hard-reset-cache"
+            className="w-full flex items-center px-4 py-3 text-amber-300/80 hover:text-amber-200 hover:bg-amber-500/10 rounded-lg transition-all group/reset relative border border-amber-500/20"
+            title="Limpar cache, Service Workers e recarregar"
+          >
+             <div className="min-w-[24px] flex justify-center items-center">
+                 <RefreshCw size={20} className="group-hover/reset:rotate-180 transition-transform duration-500" />
+             </div>
+             <div className="flex-1 ml-4 overflow-hidden whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity duration-300 w-0 group-hover:w-auto">
+                 <span className="font-bold text-xs tracking-wide uppercase">Limpar Cache</span>
+             </div>
+          </button>
           <div className="bg-gradient-to-r from-red-950 to-black rounded-lg p-3 text-center border border-red-900/30 flex items-center justify-center group-hover:justify-start gap-3 transition-all">
             <div className="relative flex h-3 w-3 shrink-0">
                 <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
@@ -262,7 +341,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, activeScreen, onNavigate, onL
             </div>
             <div className="text-left hidden group-hover:block whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity duration-300">
                 <p className="text-xs text-gray-400 uppercase font-semibold">Status: Online</p>
-                <span className="text-[10px] font-mono font-medium text-green-400">v{APP_VERSION}</span>
+                <span className="text-[10px] font-mono font-medium text-green-400" data-testid="text-app-version">v{APP_VERSION}</span>
             </div>
           </div>
         </div>
