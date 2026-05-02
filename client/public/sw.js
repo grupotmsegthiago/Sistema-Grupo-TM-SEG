@@ -1,4 +1,4 @@
-const CACHE_NAME = 'tmseg-v7';
+const CACHE_NAME = 'tmseg-v8-' + (self.registration?.scope || '') + '-2026-05-02';
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
