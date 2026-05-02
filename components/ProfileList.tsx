@@ -3,6 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { Plus, Shield, Loader2, Pencil, Trash2, RefreshCw, Database, AlertTriangle } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useRealtimeRefresh } from '../lib/RealtimeProvider';
+import { useNotification } from '../lib/NotificationContext';
 import { AccessProfile } from '../types';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 
@@ -12,6 +13,7 @@ interface Props {
 }
 
 const ProfileList: React.FC<Props> = ({ onAdd, onEdit }) => {
+  const { showNotification } = useNotification();
   const queryClientRQ = useQueryClient();
   const [isAdmin, setIsAdmin] = useState(false);
   const [isDirector, setIsDirector] = useState(false);
@@ -48,9 +50,12 @@ const ProfileList: React.FC<Props> = ({ onAdd, onEdit }) => {
   const handleDelete = async (id: string, name: string) => {
       // Proteção contra exclusão de perfis base
       if (['Diretoria', 'Administrador', 'Operador'].includes(name)) {
-          alert('Este é um perfil nativo do sistema e não pode ser excluído.');
+          showNotification('Bloqueado', 'Este é um perfil nativo do sistema e não pode ser excluído.', 'warning');
           return;
       }
+
+      const previousProfiles = queryClientRQ.getQueryData<AccessProfile[]>(['profiles']);
+      queryClientRQ.setQueryData<AccessProfile[]>(['profiles'], (old) => (old || []).filter(p => p.id !== id));
 
       setIsDeleting(id);
       try {
@@ -110,12 +115,14 @@ const ProfileList: React.FC<Props> = ({ onAdd, onEdit }) => {
               created_at: new Date().toISOString()
           }]);
 
-          alert('Perfil excluído com sucesso.');
+          showNotification('Sucesso', 'Perfil excluído com sucesso.', 'success');
           queryClientRQ.invalidateQueries({ queryKey: ['profiles'] });
 
-      } catch (e: any) {
+      } catch (e) {
           console.error(e);
-          alert('Erro ao excluir: ' + e.message);
+          if (previousProfiles) queryClientRQ.setQueryData(['profiles'], previousProfiles);
+          const msg = e instanceof Error ? e.message : 'Erro desconhecido';
+          showNotification('Erro', 'Erro ao excluir: ' + msg, 'error');
       } finally { 
           setIsDeleting(null); 
       }

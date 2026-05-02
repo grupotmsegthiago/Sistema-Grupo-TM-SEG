@@ -278,7 +278,7 @@ const ClientForm: React.FC<ClientFormProps> = ({
 
   const handleApplyAnnualAdjustment = async () => {
       if (selectedPriceIds.length === 0) {
-          alert("Selecione pelo menos um item da tabela para reajustar.");
+          showNotification('Atenção', 'Selecione pelo menos um item da tabela para reajustar.', 'warning');
           return;
       }
 
@@ -292,7 +292,7 @@ const ClientForm: React.FC<ClientFormProps> = ({
       }
 
       const percent = parseFloat(adjustmentPercent);
-      if (isNaN(percent) || percent === 0) return alert("Informe uma porcentagem válida.");
+      if (isNaN(percent) || percent === 0) { showNotification('Atenção', 'Informe uma porcentagem válida.', 'warning'); return; }
       
       const msg = `APLICAR REAJUSTE DE ${percent}% NOS ${selectedPriceIds.length} ITENS SELECIONADOS?\n\nDeseja continuar?`;
       if (!confirm(msg)) return;
@@ -327,8 +327,9 @@ const ClientForm: React.FC<ClientFormProps> = ({
 
           await logAction('UPDATE', 'AnnualAdjustment', id || 'unknown', `Reajuste aplicado.`);
           fetchPriceTables(formData.name);
-      } catch (e: any) {
-          alert("Erro: " + e.message);
+      } catch (e) {
+          const msg = e instanceof Error ? e.message : 'Erro desconhecido';
+          showNotification('Erro', 'Erro ao aplicar reajuste: ' + msg, 'error');
       } finally {
           setIsApplyingAdjustment(false);
       }
@@ -393,15 +394,16 @@ const ClientForm: React.FC<ClientFormProps> = ({
           await logAction('CREATE', 'Client', 'NEW', `Cliente cadastrado: ${formData.name}`);
       }
       onBack();
-    } catch (error: any) { 
+    } catch (error) { 
         console.error(error);
-        alert('Erro ao salvar cliente: ' + error.message); 
+        const msg = error instanceof Error ? error.message : 'Erro desconhecido';
+        showNotification('Erro', 'Erro ao salvar cliente: ' + msg, 'error');
     } finally { setIsSaving(false); }
   };
 
   const handlePriceSubmit = async (e: React.FormEvent) => {
       e.preventDefault();
-      if (!formData.name) return alert("Salve o cliente primeiro.");
+      if (!formData.name) { showNotification('Atenção', 'Salve o cliente primeiro.', 'warning'); return; }
       setIsSavingPrice(true);
       try {
           const finalOpType = `${priceRegion} - ${priceDescription}`.toUpperCase();
@@ -425,7 +427,10 @@ const ClientForm: React.FC<ClientFormProps> = ({
           setPriceRegion(''); setPriceDescription('');
           setPriceFormData({ activation_fee: '', franchise_hours: '', franchise_km: '', price_per_extra_km: '', price_per_extra_hour: '' });
           fetchPriceTables(formData.name);
-      } catch (err: any) { alert(err.message); } finally { setIsSavingPrice(false); }
+      } catch (err) {
+          const msg = err instanceof Error ? err.message : 'Erro desconhecido';
+          showNotification('Erro', msg, 'error');
+      } finally { setIsSavingPrice(false); }
   };
 
   const handleEditPrice = (table: ClientPriceTable) => {
@@ -453,7 +458,7 @@ const ClientForm: React.FC<ClientFormProps> = ({
         const { data: sourceTables, error: fetchError } = await supabase.from('client_price_tables').select('*').or(clientFuzzyFilter(sourceClient.name));
         if (fetchError) throw fetchError;
         if (!sourceTables || sourceTables.length === 0) {
-            alert("O cliente de origem não possui tabelas de preço.");
+            showNotification('Atenção', 'O cliente de origem não possui tabelas de preço.', 'warning');
             return;
         }
         const newTables = sourceTables.map((t: any) => ({
@@ -465,11 +470,14 @@ const ClientForm: React.FC<ClientFormProps> = ({
         if (insertError) throw insertError;
         showNotification('Sucesso', 'Tarifário copiado com sucesso!', 'success');
         fetchPriceTables(formData.name);
-    } catch (e: any) { alert("Erro ao copiar: " + e.message); } finally { setIsSavingPrice(false); setCopySourceClientId(''); }
+    } catch (e) {
+        const msg = e instanceof Error ? e.message : 'Erro desconhecido';
+        showNotification('Erro', 'Erro ao copiar: ' + msg, 'error');
+    } finally { setIsSavingPrice(false); setCopySourceClientId(''); }
   };
 
   const handleUndoAdjustment = async () => {
-      if (selectedPriceIds.length === 0) { alert("Selecione pelo menos um item para reverter."); return; }
+      if (selectedPriceIds.length === 0) { showNotification('Atenção', 'Selecione pelo menos um item para reverter.', 'warning'); return; }
       if (!confirm(`REVERTER REAJUSTE: Deseja restaurar os valores originais dos itens selecionados?`)) return;
       setIsReverting(true);
       try {
@@ -483,10 +491,15 @@ const ClientForm: React.FC<ClientFormProps> = ({
                   adjustment_status: false, last_adjustment_date: null
               }).eq('id', table.id);
           });
-          await Promise.all(updates);
+          const undoResults = await Promise.all(updates);
+          const failedUndo = undoResults.find(r => r?.error);
+          if (failedUndo?.error) throw failedUndo.error;
           showNotification('Sucesso', 'Reajuste revertido!', 'success');
           fetchPriceTables(formData.name);
-      } catch (e: any) { alert("Erro ao reverter: " + e.message); } finally { setIsReverting(false); }
+      } catch (e) {
+          const msg = e instanceof Error ? e.message : 'Erro desconhecido';
+          showNotification('Erro', 'Erro ao reverter: ' + msg, 'error');
+      } finally { setIsReverting(false); }
   };
 
   const handleSelectAllPrices = () => {
