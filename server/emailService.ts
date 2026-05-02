@@ -6,8 +6,9 @@ import { generateMissionReportPDF, formatOSForFilename } from './pdfReportServic
 const EMAIL_USER = process.env.EMAIL_USER || 'adm@grupotmseg.com.br';
 const EMAIL_PASS = process.env.EMAIL_PASS || process.env.SMTP_PASSWORD || '';
 const SMTP_FROM = `"Grupo TM SEG" <adm@grupotmseg.com.br>`;
-const BCC_RECIPIENTS = 'thiago@grupotmseg.com.br, operacional@grupotmseg.com.br';
-const BCC_WELCOME_ONLY = 'thiago@grupotmseg.com.br';
+// BCC como ARRAY — alguns servidores SMTP rejeitam string com espaço após vírgula
+const BCC_RECIPIENTS: string[] = ['thiago@grupotmseg.com.br', 'operacional@grupotmseg.com.br'];
+const BCC_WELCOME_ONLY: string[] = ['thiago@grupotmseg.com.br'];
 
 const transporter = nodemailer.createTransport({
   host: 'smtp.office365.com',

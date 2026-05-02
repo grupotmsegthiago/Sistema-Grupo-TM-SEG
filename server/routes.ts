@@ -20,8 +20,63 @@ if (VAPID_PUBLIC && VAPID_PRIVATE) {
   webpush.setVapidDetails('mailto:contato@grupotmseg.com.br', VAPID_PUBLIC, VAPID_PRIVATE);
 }
 
-const pushSubscriptions = new Map<string, any>();
+// Helpers de persistência de push subscriptions (Supabase) — em memória apenas como cache best-effort
+const pushSubsCache = new Map<string, any>();
+
+async function pushSubsLoadAll(): Promise<Array<{ key: string; subscription: any }>> {
+  try {
+    const url = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || '';
+    const key = process.env.SUPABASE_SERVICE_KEY || process.env.VITE_SUPABASE_ANON_KEY || '';
+    if (!url || !key) return Array.from(pushSubsCache.entries()).map(([k, v]) => ({ key: k, subscription: v }));
+    const sb = createClient(url, key);
+    const { data, error } = await sb.from('push_subscriptions').select('user_key, subscription');
+    if (error || !data) return Array.from(pushSubsCache.entries()).map(([k, v]) => ({ key: k, subscription: v }));
+    pushSubsCache.clear();
+    for (const row of data) pushSubsCache.set(row.user_key, row.subscription);
+    return data.map((r: any) => ({ key: r.user_key, subscription: r.subscription }));
+  } catch {
+    return Array.from(pushSubsCache.entries()).map(([k, v]) => ({ key: k, subscription: v }));
+  }
+}
+
+async function pushSubsUpsert(userKey: string, subscription: any): Promise<void> {
+  pushSubsCache.set(userKey, subscription);
+  try {
+    const url = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || '';
+    const key = process.env.SUPABASE_SERVICE_KEY || process.env.VITE_SUPABASE_ANON_KEY || '';
+    if (!url || !key) return;
+    const sb = createClient(url, key);
+    await sb.from('push_subscriptions').upsert({
+      user_key: userKey,
+      subscription,
+      endpoint: subscription?.endpoint || null,
+      updated_at: new Date().toISOString(),
+    }, { onConflict: 'user_key' });
+  } catch (e: any) {
+    console.warn('[Push] Falha ao persistir subscription:', e?.message);
+  }
+}
+
+async function pushSubsDelete(userKey: string): Promise<void> {
+  pushSubsCache.delete(userKey);
+  try {
+    const url = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || '';
+    const key = process.env.SUPABASE_SERVICE_KEY || process.env.VITE_SUPABASE_ANON_KEY || '';
+    if (!url || !key) return;
+    const sb = createClient(url, key);
+    await sb.from('push_subscriptions').delete().eq('user_key', userKey);
+  } catch (e: any) {
+    console.warn('[Push] Falha ao remover subscription:', e?.message);
+  }
+}
+
 const verificationCodes = new Map<string, { code: string; expiresAt: number; email: string }>();
+
+// Configuração Z-API server-side (não exposta ao frontend)
+const ZAPI_INSTANCE = process.env.ZAPI_INSTANCE_ID || process.env.VITE_ZAPI_INSTANCE_ID || '';
+const ZAPI_TOKEN = process.env.ZAPI_TOKEN || process.env.VITE_ZAPI_TOKEN || '';
+const ZAPI_CLIENT_TOKEN = process.env.ZAPI_CLIENT_TOKEN || process.env.VITE_ZAPI_CLIENT_TOKEN || '';
+const zapiBase = () => `https://api.z-api.io/instances/${ZAPI_INSTANCE}/token/${ZAPI_TOKEN}`;
 
 const ai = new GoogleGenAI({
   apiKey: process.env.AI_INTEGRATIONS_GEMINI_API_KEY,
@@ -429,48 +484,49 @@ export async function registerRoutes(
     res.json({ publicKey: VAPID_PUBLIC });
   });
 
-  app.post('/api/push/subscribe', (req: Request, res: Response) => {
+  app.post('/api/push/subscribe', async (req: Request, res: Response) => {
     try {
       const { subscription, userId } = req.body;
       if (!subscription || !subscription.endpoint) {
         return res.status(400).json({ error: 'Subscription inválida' });
       }
-      const key = userId || subscription.endpoint;
-      pushSubscriptions.set(key, subscription);
-      console.log(`[Push] Subscription registrada: ${key.substring(0, 30)}... (total: ${pushSubscriptions.size})`);
+      const key = String(userId || subscription.endpoint);
+      await pushSubsUpsert(key, subscription);
+      console.log(`[Push] Subscription registrada: ${key.substring(0, 30)}... (cache: ${pushSubsCache.size})`);
       res.json({ success: true });
     } catch (e: any) {
       res.status(500).json({ error: e.message });
     }
   });
 
-  app.post('/api/push/unsubscribe', (req: Request, res: Response) => {
+  app.post('/api/push/unsubscribe', async (req: Request, res: Response) => {
     try {
       const { userId, endpoint } = req.body;
-      const key = userId || endpoint;
-      pushSubscriptions.delete(key);
+      const key = String(userId || endpoint || '');
+      if (key) await pushSubsDelete(key);
       res.json({ success: true });
     } catch (e: any) {
       res.status(500).json({ error: e.message });
     }
   });
 
-  app.post('/api/push/send', async (req: Request, res: Response) => {
+  app.post('/api/push/send', requireAuth, async (req: Request, res: Response) => {
     try {
       const { title, body, tag } = req.body;
       if (!title) return res.status(400).json({ error: 'Título obrigatório' });
 
       const payload = JSON.stringify({ title, body: body || '', tag: tag || 'tmseg', icon: '/favicon.png' });
+      const subs = await pushSubsLoadAll();
       const results: any[] = [];
       const failed: string[] = [];
 
-      for (const [key, sub] of pushSubscriptions.entries()) {
+      for (const { key, subscription } of subs) {
         try {
-          await webpush.sendNotification(sub, payload);
+          await webpush.sendNotification(subscription, payload);
           results.push({ key: key.substring(0, 20), status: 'ok' });
         } catch (err: any) {
           if (err.statusCode === 410 || err.statusCode === 404) {
-            pushSubscriptions.delete(key);
+            await pushSubsDelete(key);
             failed.push(key.substring(0, 20));
           } else {
             results.push({ key: key.substring(0, 20), status: 'error', msg: err.message });
@@ -478,7 +534,46 @@ export async function registerRoutes(
         }
       }
 
-      res.json({ sent: results.length, failed: failed.length, total: pushSubscriptions.size });
+      res.json({ sent: results.length, failed: failed.length, total: subs.length });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // ───────────── WhatsApp (Z-API) — proxy para não expor credenciais ao browser ─────────────
+  app.get('/api/whatsapp/groups', requireAuth, async (_req: Request, res: Response) => {
+    try {
+      if (!ZAPI_INSTANCE || !ZAPI_TOKEN) return res.status(503).json({ error: 'Z-API não configurada' });
+      const headers: any = { 'Content-Type': 'application/json' };
+      if (ZAPI_CLIENT_TOKEN) headers['Client-Token'] = ZAPI_CLIENT_TOKEN;
+      const r = await fetch(`${zapiBase()}/groups`, { method: 'GET', headers });
+      const text = await r.text();
+      let data: any = null;
+      try { data = JSON.parse(text); } catch { data = { raw: text }; }
+      if (!r.ok) return res.status(r.status).json({ error: 'Falha Z-API', detail: data });
+      res.json(data);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.post('/api/whatsapp/send', requireAuth, async (req: Request, res: Response) => {
+    try {
+      if (!ZAPI_INSTANCE || !ZAPI_TOKEN) return res.status(503).json({ error: 'Z-API não configurada' });
+      const { phone, message } = req.body || {};
+      if (!phone || !message) return res.status(400).json({ error: 'phone e message são obrigatórios' });
+      const headers: any = { 'Content-Type': 'application/json' };
+      if (ZAPI_CLIENT_TOKEN) headers['Client-Token'] = ZAPI_CLIENT_TOKEN;
+      const r = await fetch(`${zapiBase()}/send-text`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ phone, message }),
+      });
+      const text = await r.text();
+      let data: any = null;
+      try { data = JSON.parse(text); } catch { data = { raw: text }; }
+      if (!r.ok) return res.status(r.status).json({ error: 'Falha Z-API', detail: data });
+      res.json(data);
     } catch (e: any) {
       res.status(500).json({ error: e.message });
     }
@@ -585,18 +680,19 @@ export async function registerRoutes(
         : `OS - Criada Nº ${osId} - Cliente: ${client}`;
       const body = `Origem: ${origin} → Destino: ${destination}\nFornecedor: ${provider}`;
 
-      if (pushSubscriptions.size > 0) {
+      const subs = await pushSubsLoadAll();
+      if (subs.length > 0) {
         const pushPayload = JSON.stringify({ title, body, tag: `mission-${osId}`, icon: '/favicon.png' });
-        for (const [key, sub] of pushSubscriptions.entries()) {
+        for (const { key, subscription } of subs) {
           try {
-            await webpush.sendNotification(sub, pushPayload);
+            await webpush.sendNotification(subscription, pushPayload);
           } catch (err: any) {
             if (err.statusCode === 410 || err.statusCode === 404) {
-              pushSubscriptions.delete(key);
+              await pushSubsDelete(key);
             }
           }
         }
-        console.log(`[Push] Notificação enviada para ${pushSubscriptions.size} dispositivos: OS ${osId}`);
+        console.log(`[Push] Notificação enviada para ${subs.length} dispositivos: OS ${osId}`);
       }
 
     })
@@ -1194,6 +1290,22 @@ export async function registerRoutes(
     console.log('[Migration] Tabela monitored_processes verificada/criada.');
   } catch (e: any) {
     console.log('[Migration] monitored_processes:', e.message || 'ok');
+  }
+
+  // Push subscriptions persistidas (antes ficavam só em memória → perdidas a cada deploy)
+  try {
+    await supabaseAdmin.rpc('exec_sql', { sql: `
+      CREATE TABLE IF NOT EXISTS push_subscriptions (
+        user_key TEXT PRIMARY KEY,
+        subscription JSONB NOT NULL,
+        endpoint TEXT,
+        created_at TIMESTAMPTZ DEFAULT NOW(),
+        updated_at TIMESTAMPTZ DEFAULT NOW()
+      );
+    `});
+    console.log('[Migration] Tabela push_subscriptions verificada/criada.');
+  } catch (e: any) {
+    console.log('[Migration] push_subscriptions:', e.message || 'ok');
   }
 
   // ── Migration PlugNotas: colunas multi-provider em financial_invoices ──

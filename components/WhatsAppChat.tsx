@@ -2,7 +2,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { supabase } from '../lib/supabase';
 import { useRealtimeRefresh } from '../lib/RealtimeProvider';
-import { WHATSAPP_API_CONFIG } from '../constants';
+import { useNotification } from '../lib/NotificationContext';
+import { authFetch } from '../lib/authFetch';
 import { Search, Send, Loader2, MessageCircle, User, Phone, CheckCheck, RefreshCw, AlertTriangle, ShieldCheck, Shield, Users } from 'lucide-react';
 
 interface ChatMessage {
@@ -34,6 +35,7 @@ const WhatsAppChat: React.FC = () => {
     const [isLoadingContacts, setIsLoadingContacts] = useState(true);
     const [isLoadingMessages, setIsLoadingMessages] = useState(false);
     const scrollRef = useRef<HTMLDivElement>(null);
+    const { showNotification } = useNotification();
 
     // Carregar Contatos (Agentes do Banco + Grupos da API)
     useEffect(() => {
@@ -53,9 +55,10 @@ const WhatsAppChat: React.FC = () => {
 
         fetchMessages(chatIdentifier);
 
-        // REALTIME SUBSCRIPTION
+        // REALTIME — canal único por chat para evitar colisão entre instâncias
+        const channelName = `chat_updates_${chatIdentifier}_${Math.random().toString(36).slice(2, 8)}`;
         const channel = supabase
-            .channel('chat_updates')
+            .channel(channelName)
             .on(
                 'postgres_changes',
                 {
@@ -66,7 +69,8 @@ const WhatsAppChat: React.FC = () => {
                 },
                 (payload) => {
                     const newMsg = payload.new as ChatMessage;
-                    setMessages((prev) => [...prev, newMsg]);
+                    // Dedup: ignora se a mensagem já está no estado (insert local + realtime echo)
+                    setMessages((prev) => prev.some(m => m.id === newMsg.id) ? prev : [...prev, newMsg]);
                 }
             )
             .subscribe();
@@ -124,32 +128,25 @@ const WhatsAppChat: React.FC = () => {
                 combinedContacts.push(...mappedAgents);
             }
 
-            // 2. Buscar Grupos da Z-API
-            const headers: any = { 
-                'Content-Type': 'application/json',
-                'Client-Token': WHATSAPP_API_CONFIG.CLIENT_TOKEN
-            };
-
-            const groupsResponse = await fetch(WHATSAPP_API_CONFIG.GROUPS_URL, {
-                method: 'GET',
-                headers: headers
-            });
-
-            if (groupsResponse.ok) {
-                const groupsData = await groupsResponse.json();
-                // A estrutura da Z-API geralmente retorna um array de objetos
-                if (Array.isArray(groupsData)) {
-                    const mappedGroups: ChatContact[] = groupsData.map((g: any) => ({
-                        id: g.id || g.phone, // ID do grupo (ex: 551199...@g.us)
+            // 2. Buscar Grupos via proxy do backend (não expor credenciais Z-API ao browser)
+            try {
+                const groupsResponse = await authFetch('/api/whatsapp/groups');
+                if (groupsResponse.ok) {
+                    const groupsData = await groupsResponse.json();
+                    const list = Array.isArray(groupsData) ? groupsData : (groupsData?.groups || []);
+                    const mappedGroups: ChatContact[] = list.map((g: any) => ({
+                        id: g.id || g.phone,
                         name: g.subject || g.name || 'Grupo Desconhecido',
-                        phone: g.id || g.phone, // O ID do grupo serve como "telefone" para envio
+                        phone: g.id || g.phone,
                         isGroup: true,
                         type: 'group'
                     }));
                     combinedContacts.push(...mappedGroups);
+                } else {
+                    console.warn('[WhatsApp] Proxy /api/whatsapp/groups indisponível (status', groupsResponse.status, ')');
                 }
-            } else {
-                console.warn("Falha ao buscar grupos Z-API. Verifique credenciais ou endpoint.");
+            } catch (e) {
+                console.warn('[WhatsApp] Falha ao consultar grupos via proxy:', e);
             }
 
         } catch (error) {
@@ -208,29 +205,23 @@ const WhatsAppChat: React.FC = () => {
 
             if (dbError) throw dbError;
 
-            // 2. Enviar via Z-API
-            const headers: any = { 'Content-Type': 'application/json' };
-            if (WHATSAPP_API_CONFIG.CLIENT_TOKEN) {
-                headers['Client-Token'] = WHATSAPP_API_CONFIG.CLIENT_TOKEN;
-            }
-
-            const response = await fetch(WHATSAPP_API_CONFIG.BASE_URL, {
+            // 2. Enviar via proxy do backend (não expor token Z-API ao browser)
+            const response = await authFetch('/api/whatsapp/send', {
                 method: 'POST',
-                headers: headers,
-                body: JSON.stringify({
-                    phone: targetPhone,
-                    message: textToSend
-                })
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ phone: targetPhone, message: textToSend })
             });
 
             if (!response.ok) {
-                const errText = await response.text();
-                throw new Error(`API Error: ${errText}`);
+                const errText = await response.text().catch(() => '');
+                throw new Error(errText || `Status ${response.status}`);
             }
 
         } catch (error: any) {
             console.error("Erro envio:", error);
-            alert(`Erro ao enviar: ${error.message}`);
+            showNotification('Falha ao enviar mensagem', error?.message || 'Erro desconhecido', 'error');
+            // Restaura input para o usuário não perder o texto
+            setMessageInput(textToSend);
         } finally {
             setIsSending(false);
         }
@@ -243,10 +234,13 @@ const WhatsAppChat: React.FC = () => {
         }
     };
 
-    // Helper para exibir webhook info (apenas para debug/configuração)
+    // Info de configuração do webhook (notificação interna em vez de alert nativo)
     const showWebhookInfo = () => {
-        const url = `https://[SEU-PROJETO].supabase.co/functions/v1/zapi-webhook`;
-        alert(`PARA RECEBER RESPOSTAS:\n\n1. O Webhook deve apontar para: ${url}\n\n2. Eventos: on-message-received\n\nOBS: Grupos são suportados automaticamente.`);
+        showNotification(
+            'Configuração de Webhook Z-API',
+            'Aponte o webhook on-message-received da Z-API para o endpoint /api/whatsapp/webhook deste sistema. Grupos são suportados automaticamente.',
+            'info'
+        );
     };
 
     return (

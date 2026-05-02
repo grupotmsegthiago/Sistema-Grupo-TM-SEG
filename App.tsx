@@ -105,6 +105,7 @@ const App: React.FC = () => {
   const resetToken = new URLSearchParams(window.location.search).get('token') || '';
 
   const handleLogout = useCallback(async () => {
+    try { window.dispatchEvent(new CustomEvent('tmseg:logout')); } catch {}
     await supabase.auth.signOut();
     localStorage.clear(); 
     sessionStorage.clear(); 
