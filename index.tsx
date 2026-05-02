@@ -4,34 +4,20 @@ import App from './App';
 import { APP_VERSION } from './constants';
 
 // ============================================================
-// AUTO-LIMPEZA DE CACHE + AUTO-UPDATE NO BOOT
-// Toda vez que o app abre:
-//  1) Apaga Cache Storage API (caches herdados de SWs antigos)
-//  2) Desregistra Service Workers órfãos (escopos antigos)
-//  3) Limpa sessionStorage e cache HTTP do React Query (sessionStorage)
-//  4) Compara versão do bundle local com versão publicada no servidor
-//     (GET /api/version, no-store). Se divergir → HARD RESET completo
-//     (apaga tudo menos token de login + IndexedDB + reload com bypass).
-// Isso garante que o usuário NUNCA fique preso em uma versão antiga.
+// AUTO-UPDATE NO BOOT (sem ser invasivo)
+// Em todo boot:
+//  1) Desregistra Service Workers órfãos (escopos diferentes do nosso /sw.js)
+//  2) Detecta bump local de APP_VERSION e limpa sessionStorage
+//  3) Compara versão local x versão publicada no servidor (/api/version, no-store).
+//     Se divergir → limpa caches + SWs + sessionStorage + reload com bypass,
+//     preservando token de login. Flag de sessão evita loop.
+// Não fazemos limpeza incondicional de cache em todo boot — só quando
+// realmente precisa (versão diferente). O sw.js já é network-only.
 // ============================================================
 
 const REDIRECTED_FLAG = '__tmseg_just_reloaded__';
 
-async function nukeBrowserState(preserveAuth: boolean = true): Promise<void> {
-  // Preserva autenticação para usuário não precisar relogar
-  const keepKeys = ['authToken', 'auth_token', 'userData', 'tmseg-token', 'app_version', 'notificationSound'];
-  const preserved: Record<string, string> = {};
-  if (preserveAuth) {
-    for (const k of keepKeys) {
-      const v = localStorage.getItem(k);
-      if (v !== null) preserved[k] = v;
-    }
-  }
-  try { sessionStorage.clear(); } catch {}
-  try {
-    localStorage.clear();
-    for (const [k, v] of Object.entries(preserved)) localStorage.setItem(k, v);
-  } catch {}
+async function clearCachesAndSWs(): Promise<void> {
   if ('caches' in window) {
     try {
       const names = await caches.keys();
@@ -44,40 +30,17 @@ async function nukeBrowserState(preserveAuth: boolean = true): Promise<void> {
       await Promise.all(regs.map((r) => r.unregister().catch(() => false)));
     } catch {}
   }
-  if ('indexedDB' in window && (indexedDB as any).databases) {
-    try {
-      const dbs: Array<{ name?: string }> = await (indexedDB as any).databases();
-      await Promise.all(
-        dbs.filter((d) => d.name).map(
-          (d) =>
-            new Promise<void>((resolve) => {
-              const req = indexedDB.deleteDatabase(d.name as string);
-              req.onsuccess = req.onerror = req.onblocked = () => resolve();
-            })
-        )
-      );
-    } catch {}
-  }
 }
 
 (async () => {
   try {
-    // 1) Cleanup leve em todo boot: caches do navegador + SWs órfãos
-    if ('caches' in window) {
-      const names = await caches.keys();
-      if (names.length > 0) {
-        await Promise.all(names.map((n) => caches.delete(n).catch(() => false)));
-        console.log(`[Cache] Limpos ${names.length} cache(s) do navegador no boot`);
-      }
-    }
-
+    // 1) Remove SWs órfãos (de scopes ou URLs diferentes do nosso /sw.js)
     if ('serviceWorker' in navigator) {
       const regs = await navigator.serviceWorker.getRegistrations();
       for (const reg of regs) {
         const scope = reg.scope || '';
         const swUrl =
           reg.active?.scriptURL || reg.installing?.scriptURL || reg.waiting?.scriptURL || '';
-        // Mantém só o nosso /sw.js no scope raiz; qualquer outro vai embora
         if (!swUrl.endsWith('/sw.js') || !scope.endsWith('/')) {
           await reg.unregister().catch(() => false);
           console.log(`[SW] Desregistrado SW órfão: ${swUrl}`);
@@ -92,8 +55,7 @@ async function nukeBrowserState(preserveAuth: boolean = true): Promise<void> {
       try { sessionStorage.clear(); } catch {}
     }
 
-    // 3) HARD CHECK contra o SERVIDOR — pega versão publicada e compara.
-    //    Em produção: hostname não é localhost. Sem rede: ignora silenciosamente.
+    // 3) Compara com versão publicada no servidor — só age se divergir.
     if (window.location.hostname !== 'localhost' && !sessionStorage.getItem(REDIRECTED_FLAG)) {
       try {
         const res = await fetch('/api/version', {
@@ -104,26 +66,23 @@ async function nukeBrowserState(preserveAuth: boolean = true): Promise<void> {
           const { version: serverVersion } = await res.json();
           if (serverVersion && serverVersion !== APP_VERSION) {
             console.warn(
-              `[AutoUpdate] Versão local (${APP_VERSION}) ≠ servidor (${serverVersion}). Limpando tudo e recarregando…`
+              `[AutoUpdate] Versão local (${APP_VERSION}) ≠ servidor (${serverVersion}). Atualizando…`
             );
             sessionStorage.setItem(REDIRECTED_FLAG, '1');
-            await nukeBrowserState(true);
+            await clearCachesAndSWs();
             const url = new URL(window.location.href);
             url.searchParams.set('_v', serverVersion);
-            url.searchParams.set('_t', String(Date.now()));
             window.location.replace(url.toString());
-            return; // não monta o React; o reload vai acontecer
+            return;
           }
         }
-      } catch (e) {
+      } catch {
         // Sem rede ou backend fora — segue com versão local
-        console.log('[AutoUpdate] Não foi possível verificar versão do servidor (segue offline)');
       }
     }
-    // Limpa flag se chegamos até aqui sem precisar redirect
     try { sessionStorage.removeItem(REDIRECTED_FLAG); } catch {}
   } catch (err) {
-    console.warn('[Cache] Falha ao limpar caches no boot:', err);
+    console.warn('[Boot] Falha na verificação de versão:', err);
   }
 })();
 
