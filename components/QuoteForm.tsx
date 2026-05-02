@@ -147,13 +147,31 @@ const QuoteForm: React.FC<Props> = ({ onBack, id }) => {
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
-      e.preventDefault(); if (formData.items.length === 0) return alert("Adicione uma região.");
+      e.preventDefault();
+      if (formData.items.length === 0) { showNotification('Atenção', 'Adicione uma região.', 'warning'); return; }
       setIsSaving(true);
       try {
           const payload = { client_id: parseInt(formData.clientId), client_name: formData.clientName, origin: formData.origin, destination: formData.destination, total_km: parseFloat(formData.totalKm) || 0, total_hours: parseFloat(formData.totalHours) || 0, total_value: totalValue, status: 'Rascunho', items: formData.items, contract_details: formData.contractDetails, created_by: JSON.parse(localStorage.getItem('userData') || '{}').name };
-          if (id) await supabase.from('quotes').update(payload).eq('id', id); else { const { data } = await supabase.from('quotes').insert([payload]).select(); if (data) await logAction('CREATE', 'Quote', data[0].id, `Nova cotação: ${formData.clientName}`); }
+          if (id) {
+              const { data: current, error: fetchErr } = await supabase.from('quotes').select('updated_at, status').eq('id', id).single();
+              if (fetchErr) { showNotification('Erro', 'Falha ao validar cotação: ' + fetchErr.message, 'error'); setIsSaving(false); return; }
+              if (current && (current as any).status && (current as any).status !== 'Rascunho') {
+                  showNotification('Conflito', 'Esta cotação foi alterada por outro usuário. Recarregue.', 'error');
+                  setIsSaving(false);
+                  return;
+              }
+              const { error: updErr } = await supabase.from('quotes').update(payload).eq('id', id);
+              if (updErr) { showNotification('Erro', 'Erro ao salvar cotação: ' + updErr.message, 'error'); setIsSaving(false); return; }
+          } else {
+              const { data, error: insErr } = await supabase.from('quotes').insert([payload]).select();
+              if (insErr) { showNotification('Erro', 'Erro ao criar cotação: ' + insErr.message, 'error'); setIsSaving(false); return; }
+              if (data && data[0]) await logAction('CREATE', 'Quote', data[0].id, `Nova cotação: ${formData.clientName}`);
+          }
           onBack();
-      } catch (err: any) { alert('Erro ao salvar: ' + err.message); } finally { setIsSaving(false); }
+      } catch (err) {
+          const msg = err instanceof Error ? err.message : 'Erro desconhecido';
+          showNotification('Erro', 'Erro ao salvar: ' + msg, 'error');
+      } finally { setIsSaving(false); }
   };
 
   if (isLoading) return <div className="flex justify-center p-10"><Loader2 className="animate-spin text-green-600"/></div>;

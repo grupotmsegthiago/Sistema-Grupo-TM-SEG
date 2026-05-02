@@ -1011,6 +1011,12 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                   recalcPayload.revenue_edit_reason = '';
               }
               recalcPayload.cost_edit_reason = '';
+              const { data: currentClient, error: fetchErr } = await supabase.from('missions').select('last_update').eq('id', mission.id).single();
+              if (fetchErr) throw fetchErr;
+              if (currentClient?.last_update && mission.last_update && currentClient.last_update !== mission.last_update) {
+                  showNotification('Conflito', 'Outro usuário alterou esta OS, recarregue.', 'error');
+                  return;
+              }
               const recalcRes = await supabase.from('missions').update(recalcPayload).eq('id', mission.id);
               if (recalcRes.error) throw recalcRes.error;
               
@@ -1070,6 +1076,12 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                   recalcProvPayload.cost_edit_reason = '';
               }
               recalcProvPayload.revenue_edit_reason = '';
+              const { data: currentProv, error: fetchProvErr } = await supabase.from('missions').select('last_update').eq('id', mission.id).single();
+              if (fetchProvErr) throw fetchProvErr;
+              if (currentProv?.last_update && mission.last_update && currentProv.last_update !== mission.last_update) {
+                  showNotification('Conflito', 'Outro usuário alterou esta OS, recarregue.', 'error');
+                  return;
+              }
               const recalcProvRes = await supabase.from('missions').update(recalcProvPayload).eq('id', mission.id);
               if (recalcProvRes.error) throw recalcProvRes.error;
               
@@ -1424,7 +1436,10 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
           });
 
           const adjDelRes = await supabase.from('system_logs').delete().eq('entity', 'BillingAdjustment').eq('entity_id', mission.id);
-          if (adjDelRes.error) console.error('[BillingAdjustment Delete] Falha:', adjDelRes.error);
+          if (adjDelRes.error) {
+              console.error('[BillingAdjustment Delete] Falha:', adjDelRes.error);
+              showNotification('Erro', 'OS salva, mas falhou ao limpar log de ajuste anterior: ' + adjDelRes.error.message, 'error');
+          }
           const adjInsRes = await supabase.from('system_logs').insert([{
               user_name: userName,
               action_type: approve ? 'APPROVE_SAVE' : 'MANUAL_SAVE',
@@ -1432,7 +1447,10 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
               entity_id: mission.id,
               details: adjustmentDetails
           }]);
-          if (adjInsRes.error) console.error('[BillingAdjustment Insert] Falha ao registrar log:', adjInsRes.error);
+          if (adjInsRes.error) {
+              console.error('[BillingAdjustment Insert] Falha ao registrar log:', adjInsRes.error);
+              showNotification('Erro', 'OS salva, mas falhou ao registrar log de ajuste: ' + adjInsRes.error.message, 'error');
+          }
 
           const now = new Date();
           const dateStr = now.toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' }) + ' ' + now.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', timeZone: 'America/Sao_Paulo' });

@@ -316,7 +316,7 @@ const ClientForm: React.FC<ClientFormProps> = ({
           });
 
           const updateResults = await Promise.all(updates);
-          const failedUpdate = updateResults.find((r: any) => r?.error);
+          const failedUpdate = updateResults.find(r => r?.error);
           if (failedUpdate?.error) throw failedUpdate.error;
           
           if (id) {

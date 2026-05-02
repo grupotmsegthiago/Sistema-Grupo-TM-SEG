@@ -159,14 +159,16 @@ const CommercialProposalModal: React.FC<Props> = ({
           
           const insRes = await supabase.from('commercial_proposals').insert([payload]);
           if (insRes.error) {
-              console.warn('[Proposta] Não foi possível registrar no histórico:', insRes.error);
-              showNotification('Aviso', 'PDF gerado, mas o registro no histórico falhou: ' + insRes.error.message, 'warning');
-          } else {
-              await logAction('CREATE', 'Contract', 'NEW', `Novo documento gerado: ${payload.type} para ${clientName}`);
-              showNotification('Registrado', 'Documento registrado no histórico de contratos.', 'success');
+              console.error('[Proposta] Não foi possível registrar no histórico:', insRes.error);
+              showNotification('Erro', 'PDF gerado, mas o registro no histórico falhou: ' + insRes.error.message, 'error');
+              return;
           }
+          await logAction('CREATE', 'Contract', 'NEW', `Novo documento gerado: ${payload.type} para ${clientName}`);
+          showNotification('Registrado', 'Documento registrado no histórico de contratos.', 'success');
       } catch (error) {
-          console.warn("Tabela commercial_proposals pode não existir", error);
+          const msg = error instanceof Error ? error.message : 'Erro desconhecido';
+          console.error("Falha ao gravar proposta:", error);
+          showNotification('Erro', 'Falha ao registrar proposta: ' + msg, 'error');
       } finally {
           setIsSavingConfig(false);
       }

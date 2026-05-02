@@ -1,6 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
+import { useNotification } from '../lib/NotificationContext';
 import { 
   FileText, Search, Loader2, CheckCircle2, XCircle, 
   RefreshCw, Calendar, User, ShieldCheck, Clock, Send,
@@ -32,6 +33,7 @@ const STATUS_CONFIG: Record<string, { label: string; color: string; icon: any }>
 };
 
 const ContractManager: React.FC = () => {
+    const { showNotification } = useNotification();
     const [contracts, setContracts] = useState<ContractRecord[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [searchTerm, setSearchTerm] = useState('');
@@ -86,9 +88,13 @@ const ContractManager: React.FC = () => {
                 details: JSON.stringify(payload),
                 action_type: 'UPDATE',
             }).eq('id', contract.id);
-            if (updRes.error) { alert('Erro ao atualizar status do contrato: ' + updRes.error.message); return; }
+            if (updRes.error) { showNotification('Erro', 'Erro ao atualizar status do contrato: ' + updRes.error.message, 'error'); return; }
             fetchContracts();
-        } catch (e: any) { console.error(e); alert('Erro ao atualizar status do contrato: ' + (e?.message || 'Erro desconhecido')); }
+        } catch (e) {
+            console.error(e);
+            const msg = e instanceof Error ? e.message : 'Erro desconhecido';
+            showNotification('Erro', 'Erro ao atualizar status do contrato: ' + msg, 'error');
+        }
     };
 
     const filtered = contracts.filter(c => {

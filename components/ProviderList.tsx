@@ -2,6 +2,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../lib/supabase';
 import { useRealtimeRefresh } from '../lib/RealtimeProvider';
+import { useNotification } from '../lib/NotificationContext';
 import { formatDateBR } from '../lib/dateUtils';
 import { ProviderData } from '../types';
 import { useQuery } from '@tanstack/react-query';
@@ -20,6 +21,7 @@ interface ProviderWithTableStatus extends ProviderData {
 }
 
 const ProviderList: React.FC<ProviderListProps> = ({ onAddProvider, onEdit }) => {
+  const { showNotification } = useNotification();
   const [searchTerm, setSearchTerm] = useState('');
   const [isDeleting, setIsDeleting] = useState<string | null>(null);
   const [isToggling, setIsToggling] = useState<string | null>(null);
@@ -164,8 +166,9 @@ const ProviderList: React.FC<ProviderListProps> = ({ onAddProvider, onEdit }) =>
           const { error } = await supabase.from('providers').update({ status: newStatus }).eq('id', id);
           if (error) throw error;
           fetchProviders();
-      } catch (e: any) {
-          alert('Erro: ' + e.message);
+      } catch (e) {
+          const msg = e instanceof Error ? e.message : 'Erro desconhecido';
+          showNotification('Erro', 'Falha ao alterar status do fornecedor: ' + msg, 'error');
       } finally {
           setIsToggling(null);
       }

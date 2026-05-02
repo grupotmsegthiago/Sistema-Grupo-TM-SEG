@@ -5,6 +5,7 @@ import { formatDateBR, formatDateTimeBR } from '../lib/dateUtils';
 import { logAction } from '../lib/logger';
 import { supabase } from '../lib/supabase';
 import { useRealtimeRefresh } from '../lib/RealtimeProvider';
+import { useNotification } from '../lib/NotificationContext';
 import { FinancialAccount, FinancialCategory } from '../types';
 import { Plus, Trash2, Landmark, Save, X, Loader2, Wallet, Pencil, TrendingUp, TrendingDown, RefreshCw, CheckCircle2, AlertCircle, Zap, PencilLine, Calculator, History, Sparkles, BarChart, DollarSign, ArrowUpRight, ArrowDownRight, Calendar, Clock, Eye, ChevronDown, ChevronUp, Brain, LineChart as LineChartIcon } from 'lucide-react';
 import { LineChart, Line, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend, PieChart, Pie, Cell, ComposedChart, Bar } from 'recharts';
@@ -46,6 +47,7 @@ const formatDate = (d: string) => formatDateBR(d);
 const formatDateTime = (d: string) => formatDateTimeBR(d);
 
 const FinancialAccountManager: React.FC<Props> = ({ onClose }) => {
+    const { showNotification } = useNotification();
     const [accounts, setAccounts] = useState<EnrichedAccount[]>([]);
     const [allSnapshots, setAllSnapshots] = useState<BalanceSnapshot[]>([]);
     const [isLoading, setIsLoading] = useState(true);
@@ -193,7 +195,7 @@ const FinancialAccountManager: React.FC<Props> = ({ onClose }) => {
                         notes: `Atualização de saldo de investimento (${formatBRL(account.current_calculated_balance)} → ${formatBRL(newBal)})`,
                         created_by: userName,
                     }]);
-                    if (adjRes.error) { alert('Saldo atualizado, mas falhou ao registrar lançamento de ajuste: ' + adjRes.error.message); }
+                    if (adjRes.error) { showNotification('Erro', 'Saldo atualizado, mas falhou ao registrar lançamento de ajuste: ' + adjRes.error.message, 'error'); }
                 }
             }
 
@@ -232,7 +234,7 @@ const FinancialAccountManager: React.FC<Props> = ({ onClose }) => {
         if (!confirm('Excluir conta bancária e todo histórico?')) return;
         const acc = accounts.find(a => a.id === id);
         const delRes = await supabase.from('financial_accounts').delete().eq('id', id);
-        if (delRes.error) { alert('Erro ao excluir conta: ' + delRes.error.message); return; }
+        if (delRes.error) { showNotification('Erro', 'Erro ao excluir conta: ' + delRes.error.message, 'error'); return; }
         await logAction('DELETE', 'FinancialAccount', id, `Conta bancária excluída: ${acc?.name || 'N/A'} — Banco: ${acc?.bank_name || 'N/A'}`);
         fetchData();
     };

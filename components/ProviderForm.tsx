@@ -193,13 +193,13 @@ const ProviderForm: React.FC<ProviderFormProps> = ({ onBack, onNavigateToVehicle
           });
 
           const updateResults = await Promise.all(updates);
-          const failedUpdate = updateResults.find((r: any) => r?.error);
+          const failedUpdate = updateResults.find(r => r?.error);
           if (failedUpdate?.error) throw failedUpdate.error;
           await logAction('UPDATE', 'ProviderAdjustment', id || 'unknown', `Reajuste de ${percent}% aplicado ao fornecedor ${formData.name}`);
           showNotification('Sucesso', 'Reajuste aplicado com sucesso!', 'success');
           fetchCostTables(formData.name);
       } catch (e: any) {
-          alert("Erro: " + e.message);
+          showNotification('Erro', 'Falha ao reajustar custos: ' + (e instanceof Error ? e.message : 'erro desconhecido'), 'error');
       } finally {
           setIsApplyingAdjustment(false);
       }
@@ -228,7 +228,7 @@ const ProviderForm: React.FC<ProviderFormProps> = ({ onBack, onNavigateToVehicle
           showNotification('Sucesso', 'Custos restaurados!', 'success');
           fetchCostTables(formData.name);
       } catch (e: any) {
-          alert("Erro ao reverter: " + e.message);
+          showNotification('Erro', 'Erro ao reverter: ' + (e instanceof Error ? e.message : 'erro desconhecido'), 'error');
       } finally {
           setIsReverting(false);
       }
@@ -773,7 +773,7 @@ const ProviderForm: React.FC<ProviderFormProps> = ({ onBack, onNavigateToVehicle
                                                     cancellation_fee: (table.cancellation_fee || 0).toString()
                                                 });
                                             }} className="p-1.5 text-blue-600 hover:bg-blue-50 rounded"><Edit size={14} /></button>
-                                            <button onClick={async () => { if(confirm("Excluir custo?")) { const delRes = await supabase.from('provider_cost_tables').delete().eq('id', table.id); if (delRes.error) { alert('Erro ao excluir tabela de custo: ' + delRes.error.message); return; } await logAction('DELETE', 'ProviderCostTable', table.id, `Tabela de custo excluída: ${table.provider || 'N/A'} — ${table.origin || '?'} → ${table.destination || '?'} (R$ ${table.cost?.toFixed(2) || '0.00'})`); fetchCostTables(formData.name); } }} className="p-1.5 text-red-600 hover:bg-red-50 rounded"><Trash2 size={14} /></button>
+                                            <button onClick={async () => { if(confirm("Excluir custo?")) { const delRes = await supabase.from('provider_cost_tables').delete().eq('id', table.id); if (delRes.error) { showNotification('Erro', 'Erro ao excluir tabela de custo: ' + delRes.error.message, 'error'); return; } await logAction('DELETE', 'ProviderCostTable', table.id, `Tabela de custo excluída: ${table.provider || 'N/A'} — ${table.origin || '?'} → ${table.destination || '?'} (R$ ${table.cost?.toFixed(2) || '0.00'})`); fetchCostTables(formData.name); } }} className="p-1.5 text-red-600 hover:bg-red-50 rounded"><Trash2 size={14} /></button>
                                         </div>
                                     </td>
                                 </tr> 

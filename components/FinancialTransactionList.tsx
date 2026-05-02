@@ -238,9 +238,14 @@ const FinancialTransactionList: React.FC = () => {
                         const now = getTodayBR();
                         const userName = JSON.parse(localStorage.getItem('userData') || '{}').name || 'Sistema';
                         for (const tx of matchingTx) {
-                            await supabase.from('financial_transactions')
+                            const { error: updErr } = await supabase.from('financial_transactions')
                                 .update({ status: 'PAID', payment_date: now, updated_by: userName })
                                 .eq('id', tx.id);
+                            if (updErr) {
+                                console.error('[Auto BAIXA] Falha ao baixar lançamento:', updErr);
+                                alert('Fatura marcada como PAGA, mas falha ao baixar lançamento financeiro vinculado: ' + updErr.message);
+                                return;
+                            }
                         }
                         console.log(`[Auto BAIXA] NF ${invoice.number} (${invoice.client}): ${matchingTx.length} lançamento(s) baixado(s)`);
                     } else {
@@ -255,9 +260,14 @@ const FinancialTransactionList: React.FC = () => {
                             const now = getTodayBR();
                             const userName = JSON.parse(localStorage.getItem('userData') || '{}').name || 'Sistema';
                             for (const tx of fallbackTx) {
-                                await supabase.from('financial_transactions')
+                                const { error: updErr } = await supabase.from('financial_transactions')
                                     .update({ status: 'PAID', payment_date: now, updated_by: userName })
                                     .eq('id', tx.id);
+                                if (updErr) {
+                                    console.error('[Auto BAIXA fallback] Falha ao baixar lançamento:', updErr);
+                                    alert('Fatura marcada como PAGA, mas falha ao baixar lançamento financeiro vinculado: ' + updErr.message);
+                                    return;
+                                }
                             }
                             console.log(`[Auto BAIXA fallback] NF ${invoice.number}: ${fallbackTx.length} lançamento(s) baixado(s)`);
                         }
