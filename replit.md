@@ -78,3 +78,41 @@ The system encompasses modules for **Missions**, **Clients**, **Providers**, **F
 
 ### Deployment
 -   **Vercel:** Used for frontend deployment.
+
+## Anti-Patterns / Memória de Bugs (NÃO REINTRODUZIR)
+
+Esta seção lista bugs CRÍTICOS já corrigidos. **Antes de mexer nos sistemas de mensagens, RELER esta lista.** Toda nova alteração nos quatro sistemas (Notificações in-app, Push Notifications, Chat WhatsApp, E-mails automáticos) deve revisar estes itens.
+
+### 1. Notificações in-app (`lib/NotificationContext.tsx`)
+- ❌ **NUNCA usar URL externa para som de notificação** (ex.: `new Audio('https://assets.mixkit.co/...')`). Falha em iOS/CORS/offline. ✅ Usar beep sintético via WebAudio API (`AudioContext` + `OscillatorNode`).
+- ❌ **NUNCA disparar `showNotification` para todo INSERT em `system_logs` sem deduplicação.** O Realtime do Supabase pode reentregar o mesmo log em reconexão → spam. ✅ Sempre passar `dedupKey` (preferir `log-${log.id}`); o `NotificationProvider` mantém map de chaves recentes (8s TTL).
+- ❌ **NUNCA fazer reconnect manual** (`setTimeout(() => channel.subscribe(), 3000)`) em `CLOSED`/`CHANNEL_ERROR`. supabase-js já faz retry automático; reconnect manual cria leaks. ✅ Apenas logar status.
+- ❌ **NUNCA permitir fila de toasts ilimitada.** ✅ Limite máximo (`MAX_VISIBLE_TOASTS = 5`) — descartar mais antigos.
+- ❌ **NUNCA usar `Math.random()` como id único.** ✅ Usar `crypto.randomUUID()`.
+
+### 2. Push Notifications (`server/routes.ts` + `components/PushNotificationManager.tsx`)
+- 🔴 **NUNCA armazenar `pushSubscriptions` apenas em `Map` em memória no servidor.** A cada deploy/restart todas as inscrições são perdidas e usuários param de receber push silenciosamente. ✅ Persistir em Supabase (tabela `push_subscriptions` com `user_key`, `subscription` jsonb, `endpoint`, `updated_at`). Helpers: `pushSubsLoadAll`, `pushSubsUpsert`, `pushSubsDelete`. O `Map` local serve só como cache best-effort.
+- ❌ **NUNCA usar `userData.name` como `userId` da subscription.** Nome muda, tem acentos/espaços, pode duplicar. ✅ Usar id ou email (helper `getStableUserKey()`).
+- ❌ **NUNCA esquecer de cancelar a subscription no logout.** ✅ `App.tsx` dispara `window.dispatchEvent(new CustomEvent('tmseg:logout'))` ANTES do `signOut()`; `PushNotificationManager` escuta e chama `/api/push/unsubscribe` + `sub.unsubscribe()`.
+- ❌ **NUNCA deixar `/api/push/send` sem autenticação** — qualquer pessoa poderia spamar todos os dispositivos. ✅ Usa `requireAuth`.
+- ❌ **NUNCA usar Notification API nativa (`new Notification(...)`) em paralelo ao push via SW.** Duplica notificação no desktop. ✅ Push só via Service Worker; toasts in-app permanecem separados.
+
+### 3. Chat WhatsApp (`components/WhatsAppChat.tsx` + `server/routes.ts`)
+- 🔴 **NUNCA chamar `WHATSAPP_API_CONFIG.BASE_URL` ou `WHATSAPP_API_CONFIG.GROUPS_URL` direto do frontend.** Isso EXPÕE `VITE_ZAPI_TOKEN` e `VITE_ZAPI_CLIENT_TOKEN` no bundle JavaScript público — qualquer usuário com DevTools rouba o token e envia mensagens em nome da empresa. ✅ Sempre usar proxy backend: `GET /api/whatsapp/groups` e `POST /api/whatsapp/send` (envs preferenciais: `ZAPI_INSTANCE_ID`, `ZAPI_TOKEN`, `ZAPI_CLIENT_TOKEN` sem prefixo `VITE_`).
+- ❌ **NUNCA usar nome de canal Realtime estático** como `'chat_updates'` quando múltiplos contatos podem ser abertos em sequência. Cria colisão. ✅ Nome único por chat: `chat_updates_${chatIdentifier}_${random}`.
+- ❌ **NUNCA assumir que mensagens chegam só via realtime.** O insert local + echo do Realtime cria duplicidade. ✅ Antes de adicionar ao state, checar `prev.some(m => m.id === newMsg.id)`.
+- ❌ **NUNCA usar `alert()` nativo para erros de envio.** ✅ Usar `useNotification().showNotification(...)` e restaurar `messageInput` para o usuário não perder o texto.
+
+### 4. E-mails automáticos (`server/emailService.ts` + workers)
+- ❌ **NUNCA usar string com vírgula+espaço para BCC** (`'a@x.com, b@x.com'`). Alguns servidores SMTP (Office365 inclusive em alguns cenários) rejeitam ou ignoram silenciosamente. ✅ Usar **array**: `['a@x.com', 'b@x.com']`.
+- ❌ **NUNCA criar `nodemailer.createTransport(...)` duplicado em workers** quando já existe em `emailService.ts`. ✅ Importar `transporter` exportado de `emailService.ts`.
+- ❌ **NUNCA criar transporter sem validar `EMAIL_PASS`** silenciosamente. ✅ Logar warning explícito quando senha vazia (`⚠ VAZIA`).
+- ❌ **NUNCA confiar que `setInterval` em worker mantém estado em memória entre deploys.** Estado do `financialReportWorker` (`lastDailyDate`, `lastRevenueSlot`) reseta a cada restart. ✅ Janela de hora exata + checagem por slot evita reenvio em catch-up no boot.
+
+### 5. Cache do PWA / atualização de versão
+- ❌ **NUNCA esquecer de bumpar `APP_VERSION` em `constants.ts`** quando alterar lógica crítica de boot, SW ou autenticação. O `index.tsx` usa `APP_VERSION` para detectar nova versão e limpar `sessionStorage`; `App.tsx` força logout se diferente.
+- ❌ **NUNCA fazer o `sw.js` cache-first.** ✅ Network-only obrigatório (`event.respondWith(fetch(event.request).catch(...))`). Cache-first cria PWAs presos em versões antigas.
+- ✅ Toda mudança em `sw.js` ou `APP_VERSION` deve ser seguida de **republish** via Replit Deploy (build em `dist/` é re-gerado automaticamente).
+
+### Como revisar antes de novo PR/edit
+Ao tocar QUALQUER um dos 4 sistemas acima, abrir esta seção e marcar mentalmente: "estou reintroduzindo algum item desta lista?" Se sim, **parar e usar a alternativa marcada com ✅**.
