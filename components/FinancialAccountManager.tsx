@@ -179,7 +179,7 @@ const FinancialAccountManager: React.FC<Props> = ({ onClose }) => {
                 if (Math.abs(diff) >= 0.01) {
                     const isGain = diff > 0;
                     const cat = categories.find(c => c.group === 'NAO_OPERACIONAL' || c.name.includes('Ajuste'));
-                    await supabase.from('financial_transactions').insert([{
+                    const adjRes = await supabase.from('financial_transactions').insert([{
                         description: isGain ? 'Rendimento de Investimento' : 'Desvalorização de Investimento',
                         amount: Math.abs(diff),
                         type: isGain ? 'INCOME' : 'EXPENSE',
@@ -193,6 +193,7 @@ const FinancialAccountManager: React.FC<Props> = ({ onClose }) => {
                         notes: `Atualização de saldo de investimento (${formatBRL(account.current_calculated_balance)} → ${formatBRL(newBal)})`,
                         created_by: userName,
                     }]);
+                    if (adjRes.error) { alert('Saldo atualizado, mas falhou ao registrar lançamento de ajuste: ' + adjRes.error.message); }
                 }
             }
 
@@ -230,7 +231,8 @@ const FinancialAccountManager: React.FC<Props> = ({ onClose }) => {
     const handleDeleteAccount = async (id: string) => {
         if (!confirm('Excluir conta bancária e todo histórico?')) return;
         const acc = accounts.find(a => a.id === id);
-        await supabase.from('financial_accounts').delete().eq('id', id);
+        const delRes = await supabase.from('financial_accounts').delete().eq('id', id);
+        if (delRes.error) { alert('Erro ao excluir conta: ' + delRes.error.message); return; }
         await logAction('DELETE', 'FinancialAccount', id, `Conta bancária excluída: ${acc?.name || 'N/A'} — Banco: ${acc?.bank_name || 'N/A'}`);
         fetchData();
     };

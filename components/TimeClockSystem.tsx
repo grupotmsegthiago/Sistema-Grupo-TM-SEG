@@ -3,6 +3,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { generateContent } from '../lib/gemini';
 import { Camera, MapPin, Clock, Fingerprint, Loader2, ShieldCheck, AlertTriangle, CheckCircle2, History, Smartphone, Coffee, LogOut, ArrowRight, UserCheck } from 'lucide-react';
 import { supabase } from '../lib/supabase';
+import { useRealtimeRefresh } from '../lib/RealtimeProvider';
 import { useNotification } from '../lib/NotificationContext';
 
 type Stage = 'IN' | 'BREAK_START' | 'BREAK_END' | 'OUT';
@@ -25,6 +26,8 @@ const TimeClockSystem: React.FC = () => {
         getGeolocation();
         fetchTodayCycle();
     }, []);
+
+    useRealtimeRefresh('time_clock', () => fetchTodayCycle());
 
     // ALERTA DE ALMOÇO (5h e 6h)
     useEffect(() => {

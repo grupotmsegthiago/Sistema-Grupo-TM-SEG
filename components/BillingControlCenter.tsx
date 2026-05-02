@@ -1,6 +1,7 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../lib/supabase';
+import { useRealtimeRefresh } from '../lib/RealtimeProvider';
 import { Client, ClientPriceTable, ProviderCostTable, MissionStatus } from '../types';
 import { 
     Search, DollarSign, RefreshCw, Loader2, 
@@ -35,6 +36,11 @@ const BillingControlCenter: React.FC = () => {
         loadInitialData();
         loadIntelligenceStats();
     }, []);
+
+    useRealtimeRefresh(['missions', 'clients', 'client_price_tables', 'provider_cost_tables'], () => {
+        loadInitialData();
+        loadIntelligenceStats();
+    });
 
     const loadIntelligenceStats = async () => {
         const [approvedRes, rulesRes] = await Promise.all([

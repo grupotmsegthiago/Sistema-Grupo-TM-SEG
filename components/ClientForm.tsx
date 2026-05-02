@@ -315,10 +315,13 @@ const ClientForm: React.FC<ClientFormProps> = ({
               }).eq('id', table.id);
           });
 
-          await Promise.all(updates);
+          const updateResults = await Promise.all(updates);
+          const failedUpdate = updateResults.find((r: any) => r?.error);
+          if (failedUpdate?.error) throw failedUpdate.error;
           
           if (id) {
-              await supabase.from('clients').update({ adjustment_2026_applied: true }).eq('id', id);
+              const flagRes = await supabase.from('clients').update({ adjustment_2026_applied: true }).eq('id', id);
+              if (flagRes.error) throw flagRes.error;
               setFormData(prev => ({ ...prev, adjustment_2026_applied: true }));
           }
 

@@ -1011,7 +1011,8 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                   recalcPayload.revenue_edit_reason = '';
               }
               recalcPayload.cost_edit_reason = '';
-              await supabase.from('missions').update(recalcPayload).eq('id', mission.id);
+              const recalcRes = await supabase.from('missions').update(recalcPayload).eq('id', mission.id);
+              if (recalcRes.error) throw recalcRes.error;
               
               await supabase.from('system_logs').insert([{
                   user_name: userName,
@@ -1069,7 +1070,8 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                   recalcProvPayload.cost_edit_reason = '';
               }
               recalcProvPayload.revenue_edit_reason = '';
-              await supabase.from('missions').update(recalcProvPayload).eq('id', mission.id);
+              const recalcProvRes = await supabase.from('missions').update(recalcProvPayload).eq('id', mission.id);
+              if (recalcProvRes.error) throw recalcProvRes.error;
               
               await supabase.from('system_logs').insert([{
                   user_name: userName,
@@ -1360,7 +1362,8 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                       tollProvider: r2(tollProv),
                       totalGeral: r2(revServiceOnly + toll),
                   };
-                  await supabase.from('missions').update({ snapshot_data: updatedSnap }).eq('id', mission.id);
+                  const snapUpdRes = await supabase.from('missions').update({ snapshot_data: updatedSnap }).eq('id', mission.id);
+                  if (snapUpdRes.error) console.error('[Snapshot Update] Falha ao sincronizar snapshot:', snapUpdRes.error);
               }
           }
           
@@ -1420,14 +1423,16 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
               costDivergent: costDivergent
           });
 
-          await supabase.from('system_logs').delete().eq('entity', 'BillingAdjustment').eq('entity_id', mission.id);
-          await supabase.from('system_logs').insert([{
+          const adjDelRes = await supabase.from('system_logs').delete().eq('entity', 'BillingAdjustment').eq('entity_id', mission.id);
+          if (adjDelRes.error) console.error('[BillingAdjustment Delete] Falha:', adjDelRes.error);
+          const adjInsRes = await supabase.from('system_logs').insert([{
               user_name: userName,
               action_type: approve ? 'APPROVE_SAVE' : 'MANUAL_SAVE',
               entity: 'BillingAdjustment',
               entity_id: mission.id,
               details: adjustmentDetails
           }]);
+          if (adjInsRes.error) console.error('[BillingAdjustment Insert] Falha ao registrar log:', adjInsRes.error);
 
           const now = new Date();
           const dateStr = now.toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' }) + ' ' + now.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', timeZone: 'America/Sao_Paulo' });
@@ -2340,7 +2345,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                     <select 
                                         className={`w-full p-2 bg-gray-50 border border-gray-200 rounded-lg text-xs font-bold text-gray-700 uppercase outline-none focus:border-blue-500 ${isController ? 'pointer-events-none opacity-60' : ''}`}
                                         value={manualClientTableId || ''}
-                                        onChange={(e) => { if (!isController) { setManualClientTableId(e.target.value); setCustomClientBase(''); setCustomClientKm(''); setCustomClientHour(''); setUseSavedValues(false); userManuallyEditedRef.current = false; setMission(prev => prev ? { ...prev, revenue_edit_reason: '', cost_edit_reason: '', billing_verified_by: null } : prev); if (mission) supabase.from('missions').update({ revenue_edit_reason: '', cost_edit_reason: '', billing_verified_by: null }).eq('id', mission.id); } }}
+                                        onChange={(e) => { if (!isController) { setManualClientTableId(e.target.value); setCustomClientBase(''); setCustomClientKm(''); setCustomClientHour(''); setUseSavedValues(false); userManuallyEditedRef.current = false; setMission(prev => prev ? { ...prev, revenue_edit_reason: '', cost_edit_reason: '', billing_verified_by: null } : prev); if (mission) { supabase.from('missions').update({ revenue_edit_reason: '', cost_edit_reason: '', billing_verified_by: null }).eq('id', mission.id).then(res => { if (res.error) { console.error('[Tabela Cliente] Falha ao limpar verificação:', res.error); showNotification('Erro', 'Não foi possível atualizar a tabela de preço: ' + res.error.message, 'error'); } }); } } }}
                                         disabled={isController}
                                     >
                                         <option value="">Automático (IA Detectando)</option>

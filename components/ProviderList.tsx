@@ -1,6 +1,7 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../lib/supabase';
+import { useRealtimeRefresh } from '../lib/RealtimeProvider';
 import { formatDateBR } from '../lib/dateUtils';
 import { ProviderData } from '../types';
 import { useQuery } from '@tanstack/react-query';
@@ -47,6 +48,11 @@ const ProviderList: React.FC<ProviderListProps> = ({ onAddProvider, onEdit }) =>
     }
     fetchInternalUsers();
   }, []);
+
+  useRealtimeRefresh(['providers', 'vehicles', 'agents', 'provider_cost_tables', 'system_users'], () => {
+    refetchProviders();
+    fetchInternalUsers();
+  });
 
   const fetchInternalUsers = async () => {
     try {

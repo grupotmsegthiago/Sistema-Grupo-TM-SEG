@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Client } from '../types';
 import { supabase } from '../lib/supabase';
+import { useRealtimeRefresh } from '../lib/RealtimeProvider';
 import { formatDateBR } from '../lib/dateUtils';
 import { useQuery } from '@tanstack/react-query';
 import { Plus, Search, Building2, Phone, Mail, Loader2, Trash2, RefreshCw, Pencil, Ban, CheckCircle2, Database, AlertTriangle, DollarSign, FileWarning, TrendingUp, Send, CheckCircle, Clock, ShieldCheck, User, Calendar, Hash, Fingerprint, Target, UserCheck, ToggleLeft, ToggleRight, Lock } from 'lucide-react';
@@ -54,6 +55,11 @@ const ClientList: React.FC<ClientListProps> = ({ onAddClient, onEdit }) => {
     }
     fetchInternalUsers();
   }, []);
+
+  useRealtimeRefresh(['clients', 'client_price_tables', 'system_users'], () => {
+    refetchClients();
+    fetchInternalUsers();
+  });
 
   const fetchInternalUsers = async () => {
     try {

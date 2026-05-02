@@ -157,10 +157,14 @@ const CommercialProposalModal: React.FC<Props> = ({
               created_at: new Date().toISOString()
           };
           
-          await supabase.from('commercial_proposals').insert([payload]);
-          
-          await logAction('CREATE', 'Contract', 'NEW', `Novo documento gerado: ${payload.type} para ${clientName}`);
-          showNotification('Registrado', 'Documento registrado no histórico de contratos.', 'success');
+          const insRes = await supabase.from('commercial_proposals').insert([payload]);
+          if (insRes.error) {
+              console.warn('[Proposta] Não foi possível registrar no histórico:', insRes.error);
+              showNotification('Aviso', 'PDF gerado, mas o registro no histórico falhou: ' + insRes.error.message, 'warning');
+          } else {
+              await logAction('CREATE', 'Contract', 'NEW', `Novo documento gerado: ${payload.type} para ${clientName}`);
+              showNotification('Registrado', 'Documento registrado no histórico de contratos.', 'success');
+          }
       } catch (error) {
           console.warn("Tabela commercial_proposals pode não existir", error);
       } finally {

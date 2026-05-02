@@ -189,8 +189,8 @@ const ClientContractTab: React.FC<Props> = ({
           details: JSON.stringify(payload),
           action_type: 'UPDATE',
         }).eq('id', editingId);
-        if (error) { showNotification('Erro ao salvar contrato: ' + error.message, 'error'); setIsSaving(false); return; }
-        showNotification('Contrato atualizado com sucesso!', 'success');
+        if (error) { showNotification('Erro', 'Erro ao salvar contrato: ' + error.message, 'error'); setIsSaving(false); return; }
+        showNotification('Sucesso', 'Contrato atualizado com sucesso!', 'success');
       } else {
         const { error } = await supabase.from('system_logs').insert([{
           user_name: user.name,
@@ -200,16 +200,16 @@ const ClientContractTab: React.FC<Props> = ({
           details: JSON.stringify(payload),
           created_at: new Date().toISOString(),
         }]);
-        if (error) { showNotification('Erro ao criar contrato: ' + error.message, 'error'); setIsSaving(false); return; }
-        showNotification('Contrato registrado com sucesso!', 'success');
+        if (error) { showNotification('Erro', 'Erro ao criar contrato: ' + error.message, 'error'); setIsSaving(false); return; }
+        showNotification('Sucesso', 'Contrato registrado com sucesso!', 'success');
       }
 
       await logAction(editingId ? 'UPDATE' : 'CREATE', 'ClientContractAudit', clientId, `Contrato ${editingId ? 'atualizado' : 'criado'} para ${tradingName || clientName}`);
       resetForm();
       fetchContracts();
-    } catch (e) {
+    } catch (e: any) {
       console.error(e);
-      showNotification('Erro ao salvar contrato.', 'error');
+      showNotification('Erro', 'Erro ao salvar contrato: ' + (e?.message || 'Erro desconhecido'), 'error');
     } finally { setIsSaving(false); }
   };
 
@@ -217,9 +217,9 @@ const ClientContractTab: React.FC<Props> = ({
     if (!confirm('Deseja realmente excluir este contrato?')) return;
     const contract = contracts.find(c => c.id === id);
     const { error } = await supabase.from('system_logs').delete().eq('id', id);
-    if (error) { showNotification('Erro ao excluir contrato: ' + error.message, 'error'); return; }
+    if (error) { showNotification('Erro', 'Erro ao excluir contrato: ' + error.message, 'error'); return; }
     await logAction('DELETE', 'ClientContract', id, `Contrato excluído: ${contract?.client_name || 'N/A'} — ${contract?.contract_type || 'N/A'} (${contract?.status || 'N/A'})`);
-    showNotification('Contrato excluído.', 'success');
+    showNotification('Sucesso', 'Contrato excluído.', 'success');
     fetchContracts();
   };
 
@@ -235,8 +235,8 @@ const ClientContractTab: React.FC<Props> = ({
       details: JSON.stringify(payload),
       action_type: 'UPDATE',
     }).eq('id', contract.id);
-    if (error) { showNotification('Erro ao alterar status: ' + error.message, 'error'); return; }
-    showNotification(`Status alterado para ${STATUS_CONFIG[newStatus]?.label || newStatus}`, 'success');
+    if (error) { showNotification('Erro', 'Erro ao alterar status: ' + error.message, 'error'); return; }
+    showNotification('Sucesso', `Status alterado para ${STATUS_CONFIG[newStatus]?.label || newStatus}`, 'success');
     fetchContracts();
   };
 

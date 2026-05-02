@@ -82,12 +82,13 @@ const ContractManager: React.FC = () => {
             if (newStatus === 'ASSINADO' && !contract.signed_at) {
                 payload.signed_at = new Date().toISOString().split('T')[0];
             }
-            await supabase.from('system_logs').update({
+            const updRes = await supabase.from('system_logs').update({
                 details: JSON.stringify(payload),
                 action_type: 'UPDATE',
             }).eq('id', contract.id);
+            if (updRes.error) { alert('Erro ao atualizar status do contrato: ' + updRes.error.message); return; }
             fetchContracts();
-        } catch (e) { console.error(e); }
+        } catch (e: any) { console.error(e); alert('Erro ao atualizar status do contrato: ' + (e?.message || 'Erro desconhecido')); }
     };
 
     const filtered = contracts.filter(c => {

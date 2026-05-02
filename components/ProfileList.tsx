@@ -2,6 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { Plus, Shield, Loader2, Pencil, Trash2, RefreshCw, Database, AlertTriangle } from 'lucide-react';
 import { supabase } from '../lib/supabase';
+import { useRealtimeRefresh } from '../lib/RealtimeProvider';
 import { AccessProfile } from '../types';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 
@@ -39,6 +40,8 @@ const ProfileList: React.FC<Props> = ({ onAdd, onEdit }) => {
   });
 
   const dbStatus = isError ? 'error' : (profiles.length >= 0 && !isLoading ? 'ok' : null);
+
+  useRealtimeRefresh(['profiles', 'system_users'], () => { refetch(); });
 
   const load = () => { refetch(); };
 
