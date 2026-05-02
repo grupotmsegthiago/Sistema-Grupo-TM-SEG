@@ -78,7 +78,7 @@ const TimeClockSystem: React.FC = () => {
 
     const handleClockAction = async () => {
         if (!location || !videoRef.current || !canvasRef.current) {
-            alert('Aguardando GPS estável...');
+            showNotification('Aguarde', 'Aguardando GPS estável...', 'warning');
             getGeolocation();
             return;
         }
@@ -117,8 +117,9 @@ const TimeClockSystem: React.FC = () => {
 
             showNotification('Sucesso', `Registro de ${currentStage} efetuado com sucesso!`, 'success');
             await fetchTodayCycle();
-        } catch (e: any) {
-            alert(e.message);
+        } catch (e) {
+            const msg = e instanceof Error ? e.message : 'Erro desconhecido';
+            showNotification('Erro', msg, 'error');
         } finally {
             setIsProcessing(false);
         }

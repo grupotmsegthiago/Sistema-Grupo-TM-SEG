@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { Client } from '../types';
 import { supabase } from '../lib/supabase';
 import { useRealtimeRefresh } from '../lib/RealtimeProvider';
+import { useNotification } from '../lib/NotificationContext';
 import { formatDateBR } from '../lib/dateUtils';
 import { useQuery } from '@tanstack/react-query';
 import { Plus, Search, Building2, Phone, Mail, Loader2, Trash2, RefreshCw, Pencil, Ban, CheckCircle2, Database, AlertTriangle, DollarSign, FileWarning, TrendingUp, Send, CheckCircle, Clock, ShieldCheck, User, Calendar, Hash, Fingerprint, Target, UserCheck, ToggleLeft, ToggleRight, Lock } from 'lucide-react';
@@ -17,6 +18,7 @@ interface ClientWithTableStatus extends Client {
 }
 
 const ClientList: React.FC<ClientListProps> = ({ onAddClient, onEdit }) => {
+  const { showNotification } = useNotification();
   const [searchTerm, setSearchTerm] = useState('');
   const [isDeleting, setIsDeleting] = useState<string | null>(null);
   const [isToggling, setIsToggling] = useState<string | null>(null);
@@ -136,8 +138,9 @@ const ClientList: React.FC<ClientListProps> = ({ onAddClient, onEdit }) => {
           const { error } = await supabase.from('clients').update({ status: newStatus }).eq('id', id);
           if (error) throw error;
           refetchClients();
-      } catch (e: any) {
-          alert('Erro ao alterar status: ' + e.message);
+      } catch (e) {
+          const msg = e instanceof Error ? e.message : 'Erro desconhecido';
+          showNotification('Erro', 'Erro ao alterar status: ' + msg, 'error');
       } finally {
           setIsToggling(null);
       }
@@ -161,9 +164,10 @@ const ClientList: React.FC<ClientListProps> = ({ onAddClient, onEdit }) => {
       try {
           const { error } = await supabase.from('clients').update({ full_extra_hour_after_16_min: newVal }).eq('id', id);
           if (error) throw error;
-      } catch (e: any) {
+      } catch (e) {
           console.error(e);
-          alert('Erro ao alterar regra: ' + e.message);
+          const msg = e instanceof Error ? e.message : 'Erro desconhecido';
+          showNotification('Erro', 'Erro ao alterar regra: ' + msg, 'error');
           // Reverter em caso de erro
           refetchClients();
       } finally {
@@ -177,10 +181,11 @@ const ClientList: React.FC<ClientListProps> = ({ onAddClient, onEdit }) => {
     try {
         const { error } = await supabase.from('clients').update({ status: 'Inativo' }).eq('id', id);
         if (error) throw error;
-        alert('Cliente inativado com sucesso. O registro permanece no banco de dados.');
+        showNotification('Sucesso', 'Cliente inativado com sucesso. O registro permanece no banco de dados.', 'success');
         refetchClients();
-    } catch (error: any) {
-        alert('Erro ao inativar: ' + error.message);
+    } catch (error) {
+        const msg = error instanceof Error ? error.message : 'Erro desconhecido';
+        showNotification('Erro', 'Erro ao inativar: ' + msg, 'error');
     } finally {
         setIsDeleting(null);
     }
