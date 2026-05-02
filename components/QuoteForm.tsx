@@ -44,6 +44,7 @@ const QuoteForm: React.FC<Props> = ({ onBack, id }) => {
   const [isCalculatingRoute, setIsCalculatingRoute] = useState(false);
   const [isSavingTable, setIsSavingTable] = useState(false);
   const [currentUser, setCurrentUser] = useState<any>(null);
+  const initialUpdatedAtRef = useRef<string | null>(null);
 
   const originRef = useRef<any>(null);
   const destRef = useRef<any>(null);
@@ -76,6 +77,7 @@ const QuoteForm: React.FC<Props> = ({ onBack, id }) => {
           if (id) {
               const { data: quote } = await supabase.from('quotes').select('*').eq('id', id).single();
               if (quote) {
+                  initialUpdatedAtRef.current = (quote as { updated_at?: string | null }).updated_at ?? null;
                   const extractedUf = quote.origin.includes('-') ? quote.origin.split('-')[1].trim().split(',')[0].trim() : '';
                   setFormData({ clientId: quote.client_id.toString(), clientName: quote.client_name, tableId: '', origin: quote.origin, destination: quote.destination, activeUf: extractedUf.length === 2 ? extractedUf : '', totalKm: quote.total_km.toString(), totalHours: quote.total_hours.toString(), contractDetails: quote.contract_details || '', items: quote.items || [] });
               }
@@ -153,15 +155,17 @@ const QuoteForm: React.FC<Props> = ({ onBack, id }) => {
       try {
           const payload = { client_id: parseInt(formData.clientId), client_name: formData.clientName, origin: formData.origin, destination: formData.destination, total_km: parseFloat(formData.totalKm) || 0, total_hours: parseFloat(formData.totalHours) || 0, total_value: totalValue, status: 'Rascunho', items: formData.items, contract_details: formData.contractDetails, created_by: JSON.parse(localStorage.getItem('userData') || '{}').name };
           if (id) {
-              const { data: current, error: fetchErr } = await supabase.from('quotes').select('updated_at, status').eq('id', id).single();
-              if (fetchErr) { showNotification('Erro', 'Falha ao validar cotação: ' + fetchErr.message, 'error'); setIsSaving(false); return; }
-              if (current && (current as any).status && (current as any).status !== 'Rascunho') {
+              const fetchRes = await supabase.from('quotes').select('updated_at').eq('id', id).single();
+              if (fetchRes.error) { showNotification('Erro', 'Falha ao validar cotação: ' + fetchRes.error.message, 'error'); setIsSaving(false); return; }
+              const current = fetchRes.data as { updated_at: string | null } | null;
+              if (current?.updated_at && initialUpdatedAtRef.current && current.updated_at !== initialUpdatedAtRef.current) {
                   showNotification('Conflito', 'Esta cotação foi alterada por outro usuário. Recarregue.', 'error');
                   setIsSaving(false);
                   return;
               }
               const { error: updErr } = await supabase.from('quotes').update(payload).eq('id', id);
               if (updErr) { showNotification('Erro', 'Erro ao salvar cotação: ' + updErr.message, 'error'); setIsSaving(false); return; }
+              initialUpdatedAtRef.current = new Date().toISOString();
           } else {
               const { data, error: insErr } = await supabase.from('quotes').insert([payload]).select();
               if (insErr) { showNotification('Erro', 'Erro ao criar cotação: ' + insErr.message, 'error'); setIsSaving(false); return; }

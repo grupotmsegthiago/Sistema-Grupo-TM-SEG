@@ -215,8 +215,9 @@ const BankStatementImporter: React.FC<Props> = ({ onClose, onSuccess }) => {
           } : r));
           
           showNotification('Concluído', 'Lançamento registrado e conciliado.', 'success');
-      } catch (err: any) {
-          alert("Erro no lançamento: " + err.message);
+      } catch (err) {
+          const msg = err instanceof Error ? err.message : 'Erro desconhecido';
+          showNotification('Erro', 'Erro no lançamento: ' + msg, 'error');
       } finally {
           setIsProcessingAction(null);
       }
@@ -253,7 +254,7 @@ const BankStatementImporter: React.FC<Props> = ({ onClose, onSuccess }) => {
           
           showNotification('Removido', 'Lançamento excluído.', 'info');
       } catch (err: any) {
-          alert("Erro ao excluir: " + err.message);
+          showNotification('Erro', 'Erro ao excluir: ' + (err instanceof Error ? err.message : 'erro desconhecido'), 'error');
       } finally {
           setIsProcessingAction(null);
       }

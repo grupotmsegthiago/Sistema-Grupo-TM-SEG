@@ -5,6 +5,7 @@ import { formatDateBR } from '../lib/dateUtils';
 import { logAction } from '../lib/logger';
 import { supabase } from '../lib/supabase';
 import { useRealtimeRefresh } from '../lib/RealtimeProvider';
+import { useNotification } from '../lib/NotificationContext';
 import { FinancialTransaction, TransactionType, TransactionStatus, FinancialAccount, FinancialCategory } from '../types';
 import { 
   Plus, Search, Edit, Trash2, RefreshCw, 
@@ -46,6 +47,7 @@ const STEPS: { id: Step; label: string; icon: React.ReactNode; description: stri
 ];
 
 const FinancialTransactionList: React.FC = () => {
+    const { showNotification } = useNotification();
     const [activeStep, setActiveStep] = useState<Step>('PAGAR');
     const [transactions, setTransactions] = useState<FinancialTransaction[]>([]);
     const [accounts, setAccounts] = useState<FinancialAccount[]>([]);
@@ -220,7 +222,7 @@ const FinancialTransactionList: React.FC = () => {
 
     const handleInvoiceStatusChange = async (id: string, newStatus: 'EMITIDA' | 'PAGA' | 'CANCELADA') => {
         const { error } = await supabase.from('financial_invoices').update({ status: newStatus }).eq('id', id);
-        if (error) { console.error(error); alert('Erro ao atualizar status da fatura.'); return; }
+        if (error) { console.error(error); showNotification('Erro', 'Erro ao atualizar status da fatura: ' + error.message, 'error'); return; }
 
         if (newStatus === 'PAGA') {
             const invoice = invoices.find(inv => inv.id === id);
@@ -243,7 +245,7 @@ const FinancialTransactionList: React.FC = () => {
                                 .eq('id', tx.id);
                             if (updErr) {
                                 console.error('[Auto BAIXA] Falha ao baixar lançamento:', updErr);
-                                alert('Fatura marcada como PAGA, mas falha ao baixar lançamento financeiro vinculado: ' + updErr.message);
+                                showNotification('Erro', 'Fatura marcada como PAGA, mas falha ao baixar lançamento financeiro vinculado: ' + updErr.message, 'error');
                                 return;
                             }
                         }
@@ -265,7 +267,7 @@ const FinancialTransactionList: React.FC = () => {
                                     .eq('id', tx.id);
                                 if (updErr) {
                                     console.error('[Auto BAIXA fallback] Falha ao baixar lançamento:', updErr);
-                                    alert('Fatura marcada como PAGA, mas falha ao baixar lançamento financeiro vinculado: ' + updErr.message);
+                                    showNotification('Erro', 'Fatura marcada como PAGA, mas falha ao baixar lançamento financeiro vinculado: ' + updErr.message, 'error');
                                     return;
                                 }
                             }
@@ -761,7 +763,7 @@ const FinancialTransactionList: React.FC = () => {
                                                 if (error) {
                                                     console.error('Erro ao salvar forma de pagamento:', error);
                                                     setTransactions(prev => prev.map(item => item.id === t.id ? { ...item, payment_method: original as any } : item));
-                                                    alert('Erro ao salvar forma de pagamento. A coluna pode não existir no banco.');
+                                                    showNotification('Erro', 'Erro ao salvar forma de pagamento: ' + error.message, 'error');
                                                 }
                                             }}
                                             className={`px-2 py-1 rounded text-[10px] font-black uppercase border cursor-pointer outline-none ${

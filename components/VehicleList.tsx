@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import { useRealtimeRefresh } from '../lib/RealtimeProvider';
+import { useNotification } from '../lib/NotificationContext';
 import { VehicleStatus, Vehicle } from '../types';
 import { Plus, Search, Filter, ShieldCheck, Wrench, Ban, RefreshCw, Trash2, Loader2, Database, AlertTriangle, Radio, Pencil } from 'lucide-react';
 
@@ -10,6 +11,7 @@ interface VehicleListProps {
 }
 
 const VehicleList: React.FC<VehicleListProps> = ({ onAddVehicle, onEdit }) => {
+  const { showNotification } = useNotification();
   const [searchTerm, setSearchTerm] = useState('');
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -55,10 +57,11 @@ const VehicleList: React.FC<VehicleListProps> = ({ onAddVehicle, onEdit }) => {
         if (error) throw error;
 
         await fetchVehicles();
-        alert('Viatura inativada com sucesso. O registro permanece no banco de dados.');
-    } catch (e: any) { 
+        showNotification('Sucesso', 'Viatura inativada com sucesso. O registro permanece no banco de dados.', 'success');
+    } catch (e) { 
         console.error(e);
-        alert('Erro ao inativar: ' + (e.message || "Erro desconhecido"));
+        const msg = e instanceof Error ? e.message : 'Erro desconhecido';
+        showNotification('Erro', 'Erro ao inativar: ' + msg, 'error');
     } finally { setIsDeleting(null); }
   };
 
