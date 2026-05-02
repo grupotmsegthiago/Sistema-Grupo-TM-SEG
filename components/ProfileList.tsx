@@ -54,10 +54,9 @@ const ProfileList: React.FC<Props> = ({ onAdd, onEdit }) => {
           return;
       }
 
-      const previousProfiles = queryClientRQ.getQueryData<AccessProfile[]>(['profiles']);
-      queryClientRQ.setQueryData<AccessProfile[]>(['profiles'], (old) => (old || []).filter(p => p.id !== id));
-
       setIsDeleting(id);
+      let previousProfiles: AccessProfile[] | undefined;
+      let optimisticApplied = false;
       try {
           // 1. Verificar usuários vinculados
           const { count, error: countError } = await supabase
@@ -95,6 +94,11 @@ const ProfileList: React.FC<Props> = ({ onAdd, onEdit }) => {
               }
           }
 
+          // Aplica remoção otimista apenas APÓS todas as confirmações
+          previousProfiles = queryClientRQ.getQueryData<AccessProfile[]>(['profiles']);
+          queryClientRQ.setQueryData<AccessProfile[]>(['profiles'], (old) => (old || []).filter(p => p.id !== id));
+          optimisticApplied = true;
+
           // 3. Excluir o perfil (USANDO SELECT PARA CONFIRMAR)
           const { data, error: deleteError } = await supabase.from('profiles').delete().eq('id', id).select();
           
@@ -120,7 +124,9 @@ const ProfileList: React.FC<Props> = ({ onAdd, onEdit }) => {
 
       } catch (e) {
           console.error(e);
-          if (previousProfiles) queryClientRQ.setQueryData(['profiles'], previousProfiles);
+          if (optimisticApplied && previousProfiles) {
+              queryClientRQ.setQueryData(['profiles'], previousProfiles);
+          }
           const msg = e instanceof Error ? e.message : 'Erro desconhecido';
           showNotification('Erro', 'Erro ao excluir: ' + msg, 'error');
       } finally { 
