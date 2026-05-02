@@ -25,6 +25,20 @@ app.use(
 
 app.use(express.urlencoded({ extended: false }));
 
+// CACHE GLOBAL OFF para todas as rotas /api/*.
+// Garante que NENHUMA resposta de API fica cacheada em browser, proxy ou CDN.
+// Crítico para que o frontend sempre veja dados atualizados.
+app.use('/api', (_req, res, next) => {
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0');
+  res.setHeader('Pragma', 'no-cache');
+  res.setHeader('Expires', '0');
+  res.setHeader('Surrogate-Control', 'no-store');
+  next();
+});
+
+// Desabilita ETag global (evita 304 Not Modified servindo conteúdo velho)
+app.disable('etag');
+
 export function log(message: string, source = "express") {
   const formattedTime = new Date().toLocaleTimeString("en-US", {
     hour: "numeric",
