@@ -205,7 +205,7 @@ const FinancialTransactionList: React.FC = () => {
         const { error } = await supabase.from('financial_transactions').update(updates).eq('id', t.id);
         if (error) {
             console.error('Erro ao atualizar status:', error);
-            alert('Erro ao atualizar status do lançamento.');
+            showNotification('Erro', 'Erro ao atualizar status do lançamento: ' + error.message, 'error');
             if (original) setTransactions(prev => prev.map(item => item.id === t.id ? original : item));
             else fetchTransactions();
         }
@@ -215,7 +215,7 @@ const FinancialTransactionList: React.FC = () => {
         if (!confirm("Excluir este lançamento?")) return;
         const item = transactions.find(t => t.id === id);
         const { error } = await supabase.from('financial_transactions').delete().eq('id', id);
-        if (error) { console.error(error); alert('Erro ao excluir lançamento.'); return; }
+        if (error) { console.error(error); showNotification('Erro', 'Erro ao excluir lançamento: ' + error.message, 'error'); return; }
         await logAction('DELETE', 'FinancialTransaction', id, `Transação excluída: ${item?.description || 'N/A'} (R$ ${item?.amount?.toFixed(2) || '0.00'}) — Venc: ${item?.due_date || 'N/A'}`);
         fetchTransactions();
     };
@@ -288,7 +288,7 @@ const FinancialTransactionList: React.FC = () => {
         if (!confirm("Excluir esta fatura?")) return;
         const inv = invoices.find(i => i.id === id);
         const { error } = await supabase.from('financial_invoices').delete().eq('id', id);
-        if (error) { console.error(error); alert('Erro ao excluir fatura.'); return; }
+        if (error) { console.error(error); showNotification('Erro', 'Erro ao excluir fatura: ' + error.message, 'error'); return; }
         await logAction('DELETE', 'FinancialInvoice', id, `Fatura excluída: ${inv?.number || 'N/A'} — Cliente: ${inv?.client || 'N/A'} (R$ ${inv?.amount?.toFixed(2) || '0.00'})`);
         fetchInvoices();
     };
@@ -1054,7 +1054,7 @@ const FinancialTransactionList: React.FC = () => {
                             )}
                             <button 
                                 disabled={!closingConfirmed || !allClear}
-                                onClick={() => { alert('Fechamento financeiro concluído com sucesso!'); setClosingConfirmed(false); setClosingNotes(''); }}
+                                onClick={() => { showNotification('Sucesso', 'Fechamento financeiro concluído com sucesso!', 'success'); setClosingConfirmed(false); setClosingNotes(''); }}
                                 className={`mt-4 w-full py-4 rounded-xl font-black uppercase text-sm tracking-widest flex items-center justify-center gap-2 transition-all ${closingConfirmed && allClear ? 'bg-green-600 hover:bg-green-700 text-white shadow-lg' : 'bg-gray-200 text-gray-400 cursor-not-allowed'}`}
                                 data-testid="btn-finalize-closing"
                             >

@@ -162,12 +162,12 @@ const ProviderForm: React.FC<ProviderFormProps> = ({ onBack, onNavigateToVehicle
 
   const handleApplyAdjustment = async () => {
       if (selectedCostIds.length === 0) {
-          alert("Selecione pelo menos um item da tabela para reajustar.");
+          showNotification('Atenção', 'Selecione pelo menos um item da tabela para reajustar.', 'warning');
           return;
       }
 
       const percent = parseFloat(adjustmentPercent);
-      if (isNaN(percent) || percent === 0) return alert("Informe uma porcentagem válida.");
+      if (isNaN(percent) || percent === 0) { showNotification('Atenção', 'Informe uma porcentagem válida.', 'warning'); return; }
       
       const msg = `APLICAR REAJUSTE DE ${percent}% NOS ${selectedCostIds.length} ITENS SELECIONADOS?\n\nIsso atualizará os custos operacionais deste fornecedor.`;
       if (!confirm(msg)) return;
@@ -206,7 +206,7 @@ const ProviderForm: React.FC<ProviderFormProps> = ({ onBack, onNavigateToVehicle
   };
 
   const handleUndoAdjustment = async () => {
-      if (selectedCostIds.length === 0) return alert("Selecione os itens para reverter.");
+      if (selectedCostIds.length === 0) { showNotification('Atenção', 'Selecione os itens para reverter.', 'warning'); return; }
       if (!confirm("Deseja restaurar os valores originais dos custos selecionados?")) return;
       
       setIsReverting(true);
@@ -224,7 +224,9 @@ const ProviderForm: React.FC<ProviderFormProps> = ({ onBack, onNavigateToVehicle
                   last_adjustment_date: null
               }).eq('id', table.id);
           });
-          await Promise.all(updates);
+          const undoResults = await Promise.all(updates);
+          const failedUndo = undoResults.find(r => r?.error);
+          if (failedUndo?.error) throw failedUndo.error;
           showNotification('Sucesso', 'Custos restaurados!', 'success');
           fetchCostTables(formData.name);
       } catch (e: any) {
@@ -326,7 +328,7 @@ const ProviderForm: React.FC<ProviderFormProps> = ({ onBack, onNavigateToVehicle
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (cnpjError) { alert("ERRO: O CNPJ informado já pertence a outro fornecedor."); return; }
+    if (cnpjError) { showNotification('Erro', 'O CNPJ informado já pertence a outro fornecedor.', 'error'); return; }
     setIsSaving(true);
     try {
        const fullAddress = `${formData.street}, ${formData.number}${formData.complement ? ' - ' + formData.complement : ''}, ${formData.neighborhood}, ${formData.city} - ${formData.state}, CEP: ${formData.zip_code}`;
@@ -365,12 +367,15 @@ const ProviderForm: React.FC<ProviderFormProps> = ({ onBack, onNavigateToVehicle
        }
        showNotification('Sucesso', 'Fornecedor salvo com sucesso!', 'success');
        onBack();
-    } catch (err: any) { alert(err.message); } finally { setIsSaving(false); }
+    } catch (err) {
+        const msg = err instanceof Error ? err.message : 'Erro desconhecido';
+        showNotification('Erro', msg, 'error');
+    } finally { setIsSaving(false); }
   };
 
   const handleCostSubmit = async (e: React.FormEvent) => {
       e.preventDefault();
-      if (!formData.name) return alert("Salve o fornecedor primeiro.");
+      if (!formData.name) { showNotification('Atenção', 'Salve o fornecedor primeiro.', 'warning'); return; }
       setIsSavingCost(true);
       try {
           const payload = {
@@ -395,7 +400,10 @@ const ProviderForm: React.FC<ProviderFormProps> = ({ onBack, onNavigateToVehicle
           setCostFormData({ operation_type: '', activation_cost: '', franchise_hours: '', franchise_km: '', cost_per_extra_km: '', cost_per_extra_hour: '', cancellation_fee: '' });
           fetchCostTables(formData.name);
           showNotification('Sucesso', 'Tabela de custos atualizada.', 'success');
-      } catch (err: any) { alert(err.message); } finally { setIsSavingCost(false); }
+      } catch (err) {
+          const msg = err instanceof Error ? err.message : 'Erro desconhecido';
+          showNotification('Erro', msg, 'error');
+      } finally { setIsSavingCost(false); }
   };
 
   if (isLoading) return <div className="p-10 flex justify-center"><Loader2 className="animate-spin text-red-600"/></div>;
@@ -412,7 +420,7 @@ const ProviderForm: React.FC<ProviderFormProps> = ({ onBack, onNavigateToVehicle
       <div className="flex flex-wrap gap-2 bg-white p-1.5 rounded-xl w-full lg:w-fit shadow-sm border border-gray-200">
           <button onClick={() => setActiveTab('registration')} className={`px-4 py-2 rounded-lg text-xs font-bold flex items-center gap-2 transition-all uppercase ${activeTab === 'registration' ? 'bg-black text-white shadow-sm' : 'text-gray-500 hover:text-gray-700 hover:bg-gray-50'}`}><Briefcase size={14} /> Dados Cadastrais</button>
           {isFinanceAdmin && id && <button onClick={() => setActiveTab('contracts')} className={`px-4 py-2 rounded-lg text-xs font-bold flex items-center gap-2 transition-all uppercase ${activeTab === 'contracts' ? 'bg-black text-white shadow-sm' : 'text-gray-500 hover:text-gray-700 hover:bg-gray-50'}`}><ScrollText size={14} /> Contratos</button>}
-          {isFinanceAdmin && <button onClick={() => { if (!id) { alert("Salve primeiro."); return; } setActiveTab('costs'); }} className={`px-4 py-2 rounded-lg text-xs font-bold flex items-center gap-2 transition-all uppercase ${activeTab === 'costs' ? 'bg-black text-white shadow-sm' : 'text-gray-500 hover:text-gray-700 hover:bg-gray-50'}`}><DollarSign size={14} /> Tabela de Custos</button>}
+          {isFinanceAdmin && <button onClick={() => { if (!id) { showNotification('Atenção', 'Salve primeiro.', 'warning'); return; } setActiveTab('costs'); }} className={`px-4 py-2 rounded-lg text-xs font-bold flex items-center gap-2 transition-all uppercase ${activeTab === 'costs' ? 'bg-black text-white shadow-sm' : 'text-gray-500 hover:text-gray-700 hover:bg-gray-50'}`}><DollarSign size={14} /> Tabela de Custos</button>}
       </div>
 
       {activeTab === 'registration' && (

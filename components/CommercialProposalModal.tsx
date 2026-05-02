@@ -260,7 +260,7 @@ const CommercialProposalModal: React.FC<Props> = ({
   };
 
   const handleSendToSignature = () => {
-      alert("Iniciando ZapSign para: " + contactName + "\nE-mail: " + email);
+      showNotification('ZapSign', `Iniciando ZapSign para: ${contactName} (${email})`, 'info');
       handleSaveProposalRecord();
       showNotification('Assinatura Digital', 'Documento enviado para o ZapSign.', 'info');
   };

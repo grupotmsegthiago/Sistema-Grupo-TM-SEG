@@ -1524,8 +1524,9 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
           window.dispatchEvent(new CustomEvent('refreshMissions'));
           if (!approve || isFullyApproved) onClose();
       } catch (e: any) {
-          console.error('[SAVE ERROR]', e.message, e.details, e.hint);
-          alert(`Erro ao salvar: ${e.message || 'Erro desconhecido'}`);
+          console.error('[SAVE ERROR]', e?.message, e?.details, e?.hint);
+          const msg = e instanceof Error ? e.message : (e?.message || 'Erro desconhecido');
+          showNotification('Erro', `Erro ao salvar: ${msg}`, 'error');
       } finally { setIsUpdating(false); isSavingRef.current = false; }
   };
 
