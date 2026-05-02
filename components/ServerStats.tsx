@@ -255,14 +255,15 @@ const ServerStats: React.FC = () => {
   const testZapi = async () => {
     setZapi({ ...zapi, status: 'TESTING', result: null, errorDetails: null });
     try {
-        const url = WHATSAPP_API_CONFIG.GROUPS_URL;
-        const response = await fetch(url, { headers: { 'Client-Token': WHATSAPP_API_CONFIG.CLIENT_TOKEN } });
+        // Usa proxy backend para não expor token Z-API no bundle
+        const { authFetch } = await import('../lib/authFetch');
+        const response = await authFetch('/api/whatsapp/groups');
         if (response.ok) {
             setZapi({ ...zapi, status: 'SUCCESS', result: 'Instância Conectada', errorDetails: null, showHelp: false });
         } else {
             setZapi({ 
                 status: 'ERROR', result: `Erro ${response.status}`, showHelp: true,
-                errorDetails: { code: 'ZAPI_AUTH', steps: ["Acesse o painel da Z-API", "Verifique se o celular está pareado (QR Code)", "Verifique se o INSTANCE_ID e TOKEN em 'constants.ts' estão corretos"], link: "https://painel.z-api.io" }
+                errorDetails: { code: 'ZAPI_AUTH', steps: ["Acesse o painel da Z-API", "Verifique se o celular está pareado (QR Code)", "Verifique secrets ZAPI_INSTANCE_ID, ZAPI_TOKEN e ZAPI_CLIENT_TOKEN no Replit"], link: "https://painel.z-api.io" }
             });
         }
     } catch (e) {

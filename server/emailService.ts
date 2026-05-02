@@ -800,8 +800,8 @@ export async function sendBillingEmail(data: BillingEmailData): Promise<{ succes
     const mailOptions: any = {
       from: SMTP_FROM,
       to: data.clientEmail,
-      cc: 'financeiro@grupotmseg.com.br',
-      bcc: 'thiago@grupotmseg.com.br',
+      cc: ['financeiro@grupotmseg.com.br'],
+      bcc: ['thiago@grupotmseg.com.br'],
       subject: `Cobrança ${data.invoiceNumber ? `NF ${data.invoiceNumber} — ` : ''}${formatCurrency(data.value)} — Venc. ${formatDueDate(data.dueDate)} — ${data.issuerCompany}`,
       html,
     };

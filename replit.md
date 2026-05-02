@@ -113,6 +113,9 @@ Esta seção lista bugs CRÍTICOS já corrigidos. **Antes de mexer nos sistemas 
 - ❌ **NUNCA esquecer de bumpar `APP_VERSION` em `constants.ts`** quando alterar lógica crítica de boot, SW ou autenticação. O `index.tsx` usa `APP_VERSION` para detectar nova versão e limpar `sessionStorage`; `App.tsx` força logout se diferente.
 - ❌ **NUNCA fazer o `sw.js` cache-first.** ✅ Network-only obrigatório (`event.respondWith(fetch(event.request).catch(...))`). Cache-first cria PWAs presos em versões antigas.
 - ✅ Toda mudança em `sw.js` ou `APP_VERSION` deve ser seguida de **republish** via Replit Deploy (build em `dist/` é re-gerado automaticamente).
+- ✅ **Auto-update no boot (desde 3.3.2):** `index.tsx` faz GET `/api/version` (no-store) em todo carregamento e compara com `APP_VERSION` local. Se divergir → `nukeBrowserState()` (apaga caches, SWs, IndexedDB, sessionStorage, localStorage exceto auth) + `window.location.replace(?_v=<v>&_t=<ts>)`. Flag `__tmseg_just_reloaded__` em sessionStorage previne loop. Backend: `/api/version` lê `constants.ts` em runtime via regex.
+- ✅ **Botão "Limpar Cache" manual** disponível no Sidebar (`button-hard-reset-cache`) para casos extremos (PWA iOS preso). Função `handleHardReset` faz o mesmo que `nukeBrowserState` + reload.
+- ❌ **NUNCA chamar `WHATSAPP_API_CONFIG.GROUPS_URL` ou `BASE_URL` direto do frontend** (mesmo em telas de "diagnóstico" como `ServerStats.tsx`). Sempre proxy via `/api/whatsapp/*` autenticado.
 
 ### Como revisar antes de novo PR/edit
 Ao tocar QUALQUER um dos 4 sistemas acima, abrir esta seção e marcar mentalmente: "estou reintroduzindo algum item desta lista?" Se sim, **parar e usar a alternativa marcada com ✅**.

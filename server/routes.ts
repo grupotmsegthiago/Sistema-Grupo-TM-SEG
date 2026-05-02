@@ -484,6 +484,29 @@ export async function registerRoutes(
     res.json({ publicKey: VAPID_PUBLIC });
   });
 
+  // Versão atual do servidor — lida do constants.ts a cada request.
+  // O client compara com sua APP_VERSION em memória; se divergir, faz hard-reset
+  // automático e recarrega para garantir bundle sempre atualizado.
+  app.get('/api/version', (_req: Request, res: Response) => {
+    try {
+      res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
+      const constantsPath = path.resolve(process.cwd(), 'constants.ts');
+      let version = 'unknown';
+      if (fs.existsSync(constantsPath)) {
+        const txt = fs.readFileSync(constantsPath, 'utf-8');
+        const m = txt.match(/APP_VERSION\s*=\s*["']([^"']+)["']/);
+        if (m) version = m[1];
+      }
+      res.json({
+        version,
+        deploymentId: process.env.REPLIT_DEPLOYMENT_ID || null,
+        builtAt: Date.now(),
+      });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
   app.post('/api/push/subscribe', async (req: Request, res: Response) => {
     try {
       const { subscription, userId } = req.body;
