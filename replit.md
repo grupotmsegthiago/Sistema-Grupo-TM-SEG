@@ -118,6 +118,7 @@ Esta seção lista bugs CRÍTICOS já corrigidos. **Antes de mexer nos sistemas 
 - ❌ **NUNCA chamar `WHATSAPP_API_CONFIG.GROUPS_URL` ou `BASE_URL` direto do frontend** (mesmo em telas de "diagnóstico" como `ServerStats.tsx`). Sempre proxy via `/api/whatsapp/*` autenticado.
 - ❌ **NUNCA forçar `handleLogout()` por mismatch de `app_version` mid-sessão.** ✅ Apenas atualizar `localStorage.app_version` silenciosamente — o auto-update no boot já cuida do reload do bundle. Forçar logout em useEffect que reage a `isAuthenticated` causa bounces (logout → login → useEffect re-roda → ...).
 - ✅ **ErrorBoundary obrigatório (`AppErrorBoundary`) em volta do `renderContent()`.** Sem ErrorBoundary, qualquer crash em uma tela específica (ex: `MissionTable`) faz o React desmontar a árvore inteira e remontar — `currentScreen` volta pro estado inicial (`'dashboard'`), parecendo um "bounce" misterioso. Com a `key={currentScreen}`, o boundary reseta entre telas.
+- ❌ **NUNCA usar `group-hover:` do Tailwind sozinho pra expandir/revelar conteúdo na Sidebar.** iPhone/touch não tem hover — o menu abre mas só mostra ícones. ✅ Sempre combinar com a prop `isOpen`: `${isOpen ? 'opacity-100 w-auto' : 'opacity-0 w-0 lg:group-hover:opacity-100 lg:group-hover:w-auto'}`. Hover fica restrito a `lg:` (desktop), `isOpen` cuida do mobile.
 
 ### Como revisar antes de novo PR/edit
 Ao tocar QUALQUER um dos 4 sistemas acima, abrir esta seção e marcar mentalmente: "estou reintroduzindo algum item desta lista?" Se sim, **parar e usar a alternativa marcada com ✅**.

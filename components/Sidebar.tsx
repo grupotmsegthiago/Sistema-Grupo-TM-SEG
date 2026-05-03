@@ -242,7 +242,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, activeScreen, onNavigate, onL
                {getIcon(item.icon)}
              </span>
           </div>
-          <div className="flex-1 flex items-center justify-between ml-4 overflow-hidden whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity duration-300 w-0 group-hover:w-auto">
+          <div className={`flex-1 flex items-center justify-between ml-4 overflow-hidden whitespace-nowrap transition-opacity duration-300 ${isOpen ? 'opacity-100 w-auto' : 'opacity-0 w-0 lg:group-hover:opacity-100 lg:group-hover:w-auto'}`}>
              <span className="font-medium text-base tracking-wide truncate">{item.name}</span>
              {hasChildren && (
                 <span className="text-gray-500 ml-2">
@@ -253,7 +253,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, activeScreen, onNavigate, onL
         </button>
 
         {hasChildren && isExpanded && (
-           <div className="bg-black/20 py-2 hidden group-hover:block transition-all animate-fade-in">
+           <div className={`bg-black/20 py-2 transition-all animate-fade-in ${isOpen ? 'block' : 'hidden lg:group-hover:block'}`}>
               {visibleChildren?.map(child => {
                  const isChildSelected = activeScreen === child.id;
                  return (
@@ -290,17 +290,17 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, activeScreen, onNavigate, onL
       `}
     >
         <div className="flex items-center justify-center h-28 border-b border-white/10 bg-black/20 shrink-0 overflow-hidden relative">
-           <div className="flex flex-col items-center transition-all duration-300 absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 group-hover:left-8 group-hover:translate-x-0">
+           <div className={`flex flex-col items-center transition-all duration-300 absolute top-1/2 -translate-y-1/2 ${isOpen ? 'left-8 translate-x-0' : 'left-1/2 -translate-x-1/2 lg:group-hover:left-8 lg:group-hover:translate-x-0'}`}>
                <img 
                   src="/logo.png" 
                   alt="Logo" 
-                  className="h-14 w-auto object-contain transition-all group-hover:h-16"
+                  className={`w-auto object-contain transition-all ${isOpen ? 'h-16' : 'h-14 lg:group-hover:h-16'}`}
                   onError={(e) => {
                     e.currentTarget.src = 'https://placehold.co/80x80/b91c1c/white?text=TM';
                   }}
                />
            </div>
-           <div className="flex flex-col justify-center ml-16 opacity-0 group-hover:opacity-100 transition-opacity duration-300 delay-75 whitespace-nowrap">
+           <div className={`flex flex-col justify-center ml-16 transition-opacity duration-300 delay-75 whitespace-nowrap ${isOpen ? 'opacity-100' : 'opacity-0 lg:group-hover:opacity-100'}`}>
                 <span className="block text-xs font-light text-gray-300 tracking-[0.2em]">GRUPO</span>
                 <span className="text-red-600 text-2xl font-bold tracking-widest">TMSEG</span>
            </div>
@@ -317,7 +317,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, activeScreen, onNavigate, onL
              <div className="min-w-[24px] flex justify-center items-center">
                  <LogOut size={22} className="group-hover/logout:text-red-500 transition-colors" />
              </div>
-             <div className="flex-1 ml-4 overflow-hidden whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity duration-300 w-0 group-hover:w-auto">
+             <div className={`flex-1 ml-4 overflow-hidden whitespace-nowrap transition-opacity duration-300 ${isOpen ? 'opacity-100 w-auto' : 'opacity-0 w-0 lg:group-hover:opacity-100 lg:group-hover:w-auto'}`}>
                  <span className="font-bold text-sm tracking-wide">SAIR DO SISTEMA</span>
              </div>
           </button>
@@ -330,16 +330,16 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, activeScreen, onNavigate, onL
              <div className="min-w-[24px] flex justify-center items-center">
                  <RefreshCw size={20} className="group-hover/reset:rotate-180 transition-transform duration-500" />
              </div>
-             <div className="flex-1 ml-4 overflow-hidden whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity duration-300 w-0 group-hover:w-auto">
+             <div className={`flex-1 ml-4 overflow-hidden whitespace-nowrap transition-opacity duration-300 ${isOpen ? 'opacity-100 w-auto' : 'opacity-0 w-0 lg:group-hover:opacity-100 lg:group-hover:w-auto'}`}>
                  <span className="font-bold text-xs tracking-wide uppercase">Limpar Cache</span>
              </div>
           </button>
-          <div className="bg-gradient-to-r from-red-950 to-black rounded-lg p-3 text-center border border-red-900/30 flex items-center justify-center group-hover:justify-start gap-3 transition-all">
+          <div className={`bg-gradient-to-r from-red-950 to-black rounded-lg p-3 text-center border border-red-900/30 flex items-center gap-3 transition-all ${isOpen ? 'justify-start' : 'justify-center lg:group-hover:justify-start'}`}>
             <div className="relative flex h-3 w-3 shrink-0">
                 <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
                 <span className="relative inline-flex rounded-full h-3 w-3 bg-green-500"></span>
             </div>
-            <div className="text-left hidden group-hover:block whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity duration-300">
+            <div className={`text-left whitespace-nowrap transition-opacity duration-300 ${isOpen ? 'block opacity-100' : 'hidden opacity-0 lg:group-hover:block lg:group-hover:opacity-100'}`}>
                 <p className="text-xs text-gray-400 uppercase font-semibold">Status: Online</p>
                 <span className="text-[10px] font-mono font-medium text-green-400" data-testid="text-app-version">v{APP_VERSION}</span>
             </div>
