@@ -16,15 +16,34 @@ if (fs.existsSync(oldCjs)) {
 
 fs.mkdirSync(publicDir, { recursive: true });
 
-const frontendFiles = ['index.html', 'assets', 'logo.png', '_redirects'];
-for (const entry of frontendFiles) {
+// Move TODOS os arquivos/pastas de dist/ pra dist/public/, exceto a própria
+// pasta public e qualquer arquivo de servidor (.cjs, .js do server).
+// Antes só movíamos uma lista hardcoded (index.html, assets, logo.png,
+// _redirects), o que deixava ícones do PWA (apple-touch-icon.png,
+// icon-*.png), manifest.json e sw.js órfãos em dist/ e nunca servidos
+// em produção. Resultado: iPhone nunca recebia o logo no atalho.
+const skipEntries = new Set(['public', 'index.cjs']);
+const entries = fs.readdirSync(distDir);
+for (const entry of entries) {
+  if (skipEntries.has(entry)) continue;
   const src = path.join(distDir, entry);
-  if (fs.existsSync(src)) {
-    fs.renameSync(src, path.join(publicDir, entry));
+  fs.renameSync(src, path.join(publicDir, entry));
+}
+
+// Garante que TODOS os assets PWA estejam em dist/public/, mesmo que o
+// vite não tenha incluído por algum motivo. Copia direto de client/public/.
+const clientPublic = path.join('client', 'public');
+if (fs.existsSync(clientPublic)) {
+  for (const entry of fs.readdirSync(clientPublic)) {
+    const src = path.join(clientPublic, entry);
+    const dest = path.join(publicDir, entry);
+    if (!fs.existsSync(dest)) {
+      fs.cpSync(src, dest, { recursive: true });
+    }
   }
 }
 
-console.log('Frontend files moved to dist/public/');
+console.log('Frontend files (HTML, assets, ícones PWA, manifest, sw.js) movidos para dist/public/');
 
 execSync(
   'npx esbuild server/index.ts --bundle --platform=node --format=cjs --outfile=dist/index.cjs --packages=external --external:./vite --external:../vite.config',
