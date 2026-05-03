@@ -77,6 +77,7 @@ import DailyCashMovement from './components/DailyCashMovement';
 import VendorVerificationControl from './components/VendorVerificationControl';
 import FinancialInvoiceControl from './components/FinancialInvoiceControl';
 import MissionAlertMonitor from './components/MissionAlertMonitor';
+import AppErrorBoundary from './components/AppErrorBoundary';
 
 // TEMPO DE INATIVIDADE (30 minutos)
 const INACTIVITY_LIMIT = 20 * 60 * 1000;
@@ -174,7 +175,14 @@ const App: React.FC = () => {
     const storedVersion = localStorage.getItem('app_version');
     const token = localStorage.getItem('authToken');
     const userData = localStorage.getItem('userData');
-    if (storedVersion !== APP_VERSION) { handleLogout(); return; }
+    // Versão diferente: NÃO força logout (era agressivo demais e causava
+    // bounces inesperados). Só atualiza marca local; o auto-update no
+    // boot já recarrega o bundle se o servidor estiver mais novo.
+    if (storedVersion && storedVersion !== APP_VERSION) {
+      localStorage.setItem('app_version', APP_VERSION);
+    } else if (!storedVersion) {
+      localStorage.setItem('app_version', APP_VERSION);
+    }
     if (!token || !userData) { if (isAuthenticated) handleLogout(); } else { verifySessionInDatabase(); }
   }, [isPublicRoute, isAuthenticated, handleLogout]);
 
@@ -327,7 +335,9 @@ const App: React.FC = () => {
             <Header onMenuClick={toggleSidebar} onProfileSettingsClick={() => setIsProfileSettingsOpen(true)} isCevaClient={isCevaClient} />
             <main className="flex-1 overflow-y-auto p-4 md:p-6 scrollbar-thin" style={{ WebkitOverflowScrolling: 'touch' }}>
             <div className="w-full mx-auto relative">
-                {renderContent()}
+                <AppErrorBoundary key={currentScreen} onReset={() => navigateTo('dashboard')}>
+                  {renderContent()}
+                </AppErrorBoundary>
                 <footer className="mt-8 text-center text-[10px] text-gray-400 pb-4 uppercase">&copy; {new Date().getFullYear()} Grupo TMSEG.</footer>
             </div>
             </main>
