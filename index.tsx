@@ -98,40 +98,16 @@ root.render(
   </React.StrictMode>
 );
 
-// Service Worker: registro automático + detecção de nova versão + reload.
-// Garante que o app NUNCA fique travado em uma versão antiga após um deploy.
+// Service Worker: APENAS registra para receber push notifications.
+// NÃO faz auto-reload em controllerchange — isso causava loop infinito
+// de reload no iPhone PWA (Bug 3.3.x: o servidor injetava Date.now() no
+// sw.js, então TODO check de update via reg.update() achava bytes
+// diferentes → skipWaiting → controllerchange → reload).
+// O ciclo de atualização real é feito pelo /api/version check no boot.
 if ('serviceWorker' in navigator && window.location.hostname !== 'localhost') {
   window.addEventListener('load', async () => {
     try {
-      const reg = await navigator.serviceWorker.register('/sw.js', { scope: '/', updateViaCache: 'none' });
-
-      // Quando o SW novo termina de instalar, ativa imediatamente e recarrega.
-      reg.addEventListener('updatefound', () => {
-        const sw = reg.installing;
-        if (!sw) return;
-        sw.addEventListener('statechange', () => {
-          if (sw.state === 'installed' && navigator.serviceWorker.controller) {
-            console.log('[SW] Nova versão detectada — recarregando…');
-            sw.postMessage({ type: 'SKIP_WAITING' });
-          }
-        });
-      });
-
-      // Quando o SW muda de controller (skipWaiting + clients.claim), recarrega 1x.
-      let reloaded = false;
-      navigator.serviceWorker.addEventListener('controllerchange', () => {
-        if (reloaded) return;
-        reloaded = true;
-        window.location.reload();
-      });
-
-      // A cada 5 min e ao voltar para a aba, força check de update.
-      const checkUpdate = () => { reg.update().catch(() => {}); };
-      setInterval(checkUpdate, 5 * 60 * 1000);
-      window.addEventListener('focus', checkUpdate);
-      document.addEventListener('visibilitychange', () => {
-        if (document.visibilityState === 'visible') checkUpdate();
-      });
+      await navigator.serviceWorker.register('/sw.js', { scope: '/', updateViaCache: 'none' });
     } catch (err) {
       console.warn('[SW] Falha ao registrar:', err);
     }

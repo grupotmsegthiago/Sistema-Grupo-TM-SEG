@@ -458,12 +458,21 @@ export async function registerRoutes(
     if (fs.existsSync(swPath)) {
       res.setHeader('Content-Type', 'application/javascript');
       res.setHeader('Service-Worker-Allowed', '/');
-      // no-store garante que o navegador SEMPRE pede o sw.js novo, e o
-      // timestamp injetado abaixo garante que os BYTES do arquivo mudam a
-      // cada deploy/restart — disparando o ciclo de update do Service Worker.
       res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
+      // Stamp ESTÁVEL: usa APENAS o REPLIT_DEPLOYMENT_ID (ou APP_VERSION
+      // como fallback). NUNCA Date.now(): isso fazia os bytes mudarem em
+      // toda request, disparando updatefound→SKIP_WAITING→reload em loop
+      // no iPhone PWA (focus/visibility eventos disparam reg.update()
+      // várias vezes por minuto). Bug introduzido na 3.3.x.
       const original = fs.readFileSync(swPath, 'utf-8');
-      const stamp = `// build: ${process.env.REPLIT_DEPLOYMENT_ID || ''}-${Date.now()}\n`;
+      let appVersion = '';
+      try {
+        const constantsPath = path.resolve(process.cwd(), 'constants.ts');
+        const c = fs.readFileSync(constantsPath, 'utf-8');
+        const m = c.match(/APP_VERSION\s*=\s*["']([^"']+)["']/);
+        if (m) appVersion = m[1];
+      } catch {}
+      const stamp = `// build: ${process.env.REPLIT_DEPLOYMENT_ID || 'dev'}-v${appVersion}\n`;
       res.send(stamp + original);
     } else {
       res.status(404).send('Not found');
