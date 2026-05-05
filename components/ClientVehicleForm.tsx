@@ -39,7 +39,7 @@ const ClientVehicleForm: React.FC<Props> = ({ onBack, id, initialClientId, onSuc
 
   useEffect(() => {
     async function loadInitialData() {
-        const { data } = await supabase.from('clients').select('id, name').order('name');
+        const { data } = await supabase.from('clients').select('id, name, trading_name').order('trading_name', { ascending: true, nullsFirst: false });
         if (data) setClients(data);
 
         // Pre-select client if provided via prop
@@ -280,7 +280,7 @@ const ClientVehicleForm: React.FC<Props> = ({ onBack, id, initialClientId, onSuc
                         >
                             <option value="">Selecione o Cliente...</option>
                             {clients.map(c => (
-                                <option key={c.id} value={c.id}>{c.name}</option>
+                                <option key={c.id} value={c.id}>{(c.trading_name && c.trading_name.trim()) ? c.trading_name : c.name}</option>
                             ))}
                         </select>
                         <Building2 size={20} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
