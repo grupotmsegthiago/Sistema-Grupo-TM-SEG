@@ -11,6 +11,36 @@ import {
 } from '../lib/missionFinancialsCanonical';
 
 const DAILY_GOAL = 35000.00;
+const MONTHLY_GOAL = 700000.00;
+const WEEKLY_GOAL = DAILY_GOAL * 5;
+const YEARLY_GOAL = MONTHLY_GOAL * 12;
+
+// Calcula a meta proporcional ao período selecionado no filtro.
+// Para CUSTOM, prorata pelos dias do intervalo (usando dias úteis ~ 20/mês).
+function getGoalForPeriod(viewPeriod: string, customStartDate?: string, customEndDate?: string): number {
+    switch (viewPeriod) {
+        case 'TODAY':
+        case 'YESTERDAY':
+            return DAILY_GOAL;
+        case 'WEEK':
+            return WEEKLY_GOAL;
+        case 'MONTH':
+            return MONTHLY_GOAL;
+        case 'YEAR':
+            return YEARLY_GOAL;
+        case 'CUSTOM': {
+            if (!customStartDate || !customEndDate) return MONTHLY_GOAL;
+            const start = new Date(customStartDate);
+            const end = new Date(customEndDate);
+            const days = Math.max(1, Math.round((end.getTime() - start.getTime()) / 86400000) + 1);
+            // Prorata mensal: dias / 30 * meta mensal (cobre intervalos curtos e longos)
+            return (days / 30) * MONTHLY_GOAL;
+        }
+        case 'ALL':
+        default:
+            return MONTHLY_GOAL;
+    }
+}
 
 interface Props {
     viewPeriod?: string;
@@ -76,9 +106,14 @@ const DailyGoalThermometer: React.FC<Props> = ({ viewPeriod = 'TODAY', customSta
         return { currentRevenue: sums.rev, currentCost: sums.cost };
     }, [filteredMissions, parentClientTables, parentProviderTables, parentClientsData, currentTime]);
 
+    const goal = useMemo(
+        () => getGoalForPeriod(viewPeriod, customStartDate, customEndDate),
+        [viewPeriod, customStartDate, customEndDate]
+    );
+
     const stats = useMemo(() => {
-        const percentage = Math.min(100, (currentRevenue / DAILY_GOAL) * 100);
-        const remaining = Math.max(0, DAILY_GOAL - currentRevenue);
+        const percentage = goal > 0 ? Math.min(100, (currentRevenue / goal) * 100) : 0;
+        const remaining = Math.max(0, goal - currentRevenue);
         const profit = currentRevenue - currentCost;
         const marginPercent = currentRevenue > 0 ? (profit / currentRevenue) * 100 : 0;
         
@@ -102,7 +137,7 @@ const DailyGoalThermometer: React.FC<Props> = ({ viewPeriod = 'TODAY', customSta
             profit,
             marginPercent
         };
-    }, [currentRevenue, currentCost]);
+    }, [currentRevenue, currentCost, goal]);
 
     const userPermissions = useMemo(() => {
         try {
@@ -125,9 +160,13 @@ const DailyGoalThermometer: React.FC<Props> = ({ viewPeriod = 'TODAY', customSta
         setTimeout(() => setIsRefreshing(false), 500);
     }, [onRefreshMissions]);
 
-    const labelText = viewPeriod === 'TODAY' ? 'Meta Agendada (Hoje)' : 
+    const labelText = viewPeriod === 'TODAY' ? 'Meta Agendada (Hoje)' :
                       viewPeriod === 'YESTERDAY' ? 'Meta Agendada (Ontem)' :
-                      viewPeriod === 'MONTH' ? 'Meta Mensal' : 'Faturamento Período';
+                      viewPeriod === 'WEEK' ? 'Meta Semanal' :
+                      viewPeriod === 'MONTH' ? 'Meta Mensal' :
+                      viewPeriod === 'YEAR' ? 'Meta Anual' :
+                      viewPeriod === 'CUSTOM' ? 'Meta Período' :
+                      'Faturamento Período';
 
     return (
         <div className="group perspective-1000 w-full max-w-lg mx-auto">

@@ -1,127 +1,98 @@
-# Grupo TMSEG - Sistema de Gestão Operacional
+# Grupo TMSEG
 
-## Overview
+Manages all operational aspects of a Brazilian security escort company, including missions, fleet, clients, finance, and AI-powered automation.
 
-Grupo TMSEG is a comprehensive operational management system designed for a Brazilian security escort company. Its primary purpose is to streamline and manage all facets of the business, including escort missions, fleet vehicles, clients, subcontractors, financial operations, billing, contracts, and advanced AI-powered functionalities. The system aims to enhance operational efficiency, improve financial oversight, and provide intelligent automation for tasks like reporting, auditing, and communication. Key capabilities include full mission lifecycle management, detailed client and provider management, a robust financial module, automated billing with AI auditing, and various AI features for enhanced decision-making and task automation. The business vision is to become the leading operational management solution in the security escort sector, leveraging AI for unparalleled efficiency and financial control.
+## Run & Operate
 
-## User Preferences
+-   **Run Dev Server:** `npm run dev`
+-   **Build:** `npm run build`
+-   **Typecheck:** `npm run typecheck`
+-   **Generate Drizzle Kit Migrations:** `npm run db:generate`
+-   **Push DB Schema:** `npm run db:push` (Requires `DATABASE_URL` environment variable)
+
+**Required Environment Variables:**
+-   `DATABASE_URL`: Supabase PostgreSQL connection string.
+-   `SUPABASE_URL`: Supabase project URL.
+-   `SUPABASE_ANON_KEY`: Supabase public anon key.
+-   `VITE_ZAPI_TOKEN`, `VITE_ZAPI_CLIENT_TOKEN`: Z-API (WhatsApp) credentials (frontend-proxied).
+-   `ASAAS_API_KEY`: Asaas API key for TM GESTÃO.
+-   `ASAAS_API_KEY_TMSECURITY`: Asaas API key for TM SECURITY.
+-   `PLUGNOTAS_ENV`: `sandbox` or `production`.
+-   `PLUGNOTAS_API_TOKEN_SANDBOX`, `PLUGNOTAS_API_TOKEN`: PlugNotas API tokens.
+-   `DATAJUD_API_KEY`: DataJud integration API key.
+-   `GOOGLE_GEMINI_API_KEY`: For AI features.
+-   `VITE_GOOGLE_MAPS_API_KEY`: Google Maps Platform API key.
+-   `EMAIL_USER`, `EMAIL_PASS`, `EMAIL_HOST`, `EMAIL_PORT`: Nodemailer (Office 365) SMTP credentials.
+-   `REPLIT_DEPLOYMENT_ID`: Replit deployment identifier for cache busting.
+-   `VITE_APP_VERSION`: Application version for PWA updates.
+
+## Stack
+
+-   **Frontend:** React 18, TypeScript, Vite 5, Tailwind CSS
+-   **Backend:** Node.js, Express 5, `tsx`
+-   **ORM:** Drizzle ORM (for schema management, direct Supabase JS client for operations)
+-   **Database:** Supabase (PostgreSQL)
+-   **State Management:** React Query v5
+-   **Build Tool:** Vite
+
+## Where things live
+
+-   `/src/`: Frontend source code.
+-   `/server/`: Backend source code.
+-   `/db/`: Drizzle ORM database schema definition.
+    -   `db/schema.ts`: Database schema source-of-truth.
+-   `/lib/`: Shared utility functions and hooks.
+    -   `lib/financialUtils.ts`: Single source of truth for financial calculations.
+    -   `lib/queryClient.ts`: React Query client configuration.
+    -   `lib/RealtimeProvider.tsx`: Global real-time synchronization.
+-   `/components/`: Reusable React components.
+-   `App.tsx`: Main application entry point and routing.
+-   `index.tsx`: Frontend bootstrapping.
+-   `server/routes.ts`: Backend API routes and middleware.
+
+## Architecture decisions
+
+-   **Supabase Exclusive Access:** All database interactions, both frontend and backend, exclusively use the Supabase JS client (`@supabase/supabase-js`). Direct `pg` driver connections are forbidden.
+-   **Real-time Global Sync:** A single Supabase Realtime channel (`global-realtime-sync`) subscribes to changes across 23 tables, invalidating React Query caches and dispatching custom `window` events.
+-   **Backend AI Proxying:** All AI calls are proxied through server routes to protect API keys and integrate with Replit AI Integrations (Google Gemini).
+-   **Immutable Financial Snapshots:** Upon billing approval, a frozen snapshot of all financial values is stored directly on the mission record (`snapshot_data`) to ensure immutability and prevent discrepancies from future price table changes.
+-   **Client/Provider Table Selection Logic:** Provider table selection prioritizes a score-based matching algorithm over "lowest cost" optimization, with manual overrides taking precedence. Strict franchise rules are applied for specific clients.
+
+## Product
+
+-   **Mission Management:** Full lifecycle management of security escort missions.
+-   **Client & Provider Management:** Comprehensive client and subcontractor data.
+-   **Financial Management:** Transaction tracking, account balances, and category management.
+-   **Billing & Invoicing:** Automated billing, invoice generation, and AI-powered auditing.
+-   **AI Features:** Chatbot, image generation, operational auditing, spreadsheet comparison, and intelligent report generation.
+-   **Reporting:** Operational and financial dashboards with interactive filtering.
+-   **User & Access Control:** Role-based access control with custom authentication.
+-   **Jurídico Integration:** DataJud/CNJ API integration for legal process consultation.
+-   **Real-time Updates:** Live synchronization across the application for mission statuses and data changes.
+-   **Geographic Positioning:** Server-side reverse geocoding with Nominatim/Photon fallback and caching.
+-   **Contract Management:** Client contract CRUD with PDF generation.
+-   **Equipment Management:** Standalone module for tracking company assets.
+
+## User preferences
 
 Preferred communication style: Simple, everyday language.
 
-## System Architecture
+## Gotchas
 
-### Frontend Architecture
-The frontend is built with React 18, TypeScript, and Vite 5, utilizing Tailwind CSS for styling. UI aesthetics, including layout, colors, and button positioning, are frozen and should not be modified. Custom CSS classes and JS-based `--vh` CSS variables ensure iOS/Safari compatibility.
+-   **Database is the Single Source of Truth for Financials:** The frontend **NEVER** calculates financial totals independently. All financial displays (Spreadsheet Comparer, Financial Summary, reports) must show `revenue_value + toll_value` as recorded in the database. Editing in the Financial Modal and saving makes that value canonical. Do not reintroduce frontend-based calculations, as this causes cent discrepancies and caching errors.
+-   **Communication Systems (In-app, Push, WhatsApp, Email):** Avoid external URLs for notification sounds, always deduplicate in-app notifications, rely on `supabase-js` for Realtime reconnects, persist push subscriptions in DB, proxy WhatsApp API calls through backend, and use array format for BCC emails.
+-   **PWA / Version Updates:** Always bump `APP_VERSION` in `constants.ts` for critical logic changes. `sw.js` must be network-only. Do not use `Date.now()` for `sw.js` stamps; use a stable `REPLIT_DEPLOYMENT_ID` and `APP_VERSION`. Do not force `window.location.reload()` on `controllerchange` events.
+-   **Tailwind `group-hover`:** Do not use `group-hover` alone for expanding content on touch devices (iOS). Combine with `isOpen` prop for mobile compatibility.
+-   **Authentication Token Security:** Frontend must never directly access `WHATSAPP_API_CONFIG` URLs; always route through authenticated backend proxies to protect API tokens.
 
-### Backend Architecture
-The backend is built with Node.js and Express 5, using `tsx` for TypeScript execution. It integrates with Drizzle ORM for PostgreSQL. All AI calls are proxied through server routes, utilizing Replit AI Integrations for Google Gemini.
+## Pointers
 
-### Data Storage
-The primary and **only** database is Supabase (PostgreSQL), accessed exclusively via the Supabase JS client (`@supabase/supabase-js`). The `pg` (node-postgres) driver has been fully removed — there are NO direct SQL connections. All CRUD operations (frontend and backend) use `supabase.from('table')`. Schema changes (new columns, constraints) must be done manually via the Supabase SQL Editor + `NOTIFY pgrst, 'reload schema'`. Key tables include `missions`, `clients`, `providers`, `vehicles`, `system_users`, `financial_transactions`, `commercial_proposals`, `operational_reports`, `financial_invoices`, `system_logs`, `client_registries`, `client_mission_notes`, `account_balance_snapshots`, and `platform_cost_overrides`.
-
-### Authentication & Authorization
-Authentication is custom, using a `system_users` table in Supabase, with user session data stored in `localStorage`. Token format: `tmseg-token-{userId}-{timestamp}` or `impersonation-token-{userId}-{timestamp}`. The system implements role-based access control with roles like `Administrador`, `Diretoria`, `Avançado`, `Operador`, `Comercial`, and `Financeiro`. Email verification with a 6-digit code is required for user creation. Backend role validation via `requireRole()` middleware in `server/routes.ts` with 5-minute token-to-role cache. Protected routes: `/api/admin/*` (administrador, diretoria), `/api/asaas/*` (administrador, diretoria, financeiro), `/api/email/mission-*` (administrador, diretoria, avançado, operador), `/api/billing/recalculate-all` (administrador, diretoria, financeiro).
-
-### State Management
-React Query (`@tanstack/react-query` v5) is configured via `QueryClientProvider` in `App.tsx` with `queryClient` from `lib/queryClient.ts`. Migrated components: `ProfileList` (key: `['profiles']`), `FinancialDashboard` (key: `['financial-dashboard']`), `ClientList` (key: `['clients', ...]`), `ProviderList` (key: `['providers']`). `MissionTable` retains direct Supabase fetch + Realtime channels. Helper hooks in `lib/useSupabaseQuery.ts` (`useSupabaseQuery`, `useSupabaseUpdate`, `useSupabaseInsert`, `useSupabaseDelete`).
-
-### Jurídico (DataJud/CNJ Integration)
-Menu "Jurídico" with `LegalDashboard.tsx` component. Backend endpoint `POST /api/datajud/consulta` proxies requests to the DataJud public API (CNJ). Supports all Brazilian courts (TJ, TRF, TRT, STF, STJ, TST). API Key stored in `DATAJUD_API_KEY` env var. Searches by process number or free text. Returns case details including class, subjects, court, judge, filing date, and procedural movements.
-
-### Real-Time Synchronization
-Global real-time sync via `lib/RealtimeProvider.tsx` wrapping the app in `App.tsx`. Subscribes to `postgres_changes` on **23 Supabase tables** via a single channel (`global-realtime-sync`). On any INSERT/UPDATE/DELETE: (1) invalidates matching TanStack Query caches, (2) dispatches `supabase:{tableName}` custom events on `window`, (3) dispatches `refreshMissions` for MissionTable. The `useRealtimeRefresh(tables, callback)` hook allows any component to react to specific table changes. Server-side: `server/routes.ts` auto-enables `supabase_realtime` publication for all tables on startup via `ALTER PUBLICATION`. Polling intervals reduced from 30s/60s to 5 min (fallback only). Tables covered: missions, clients, providers, vehicles, agents, profiles, client_price_tables, client_routes, client_vehicles, provider_cost_tables, financial_transactions, financial_accounts, financial_categories, financial_invoices, quotes, commercial_proposals, support_agents, time_clock, vehicle_technologies, system_users, whatsapp_messages, system_logs, mission_logs.
-
-### Key Modules & Features
-The system encompasses modules for **Missions**, **Clients**, **Providers**, **Financial Management**, and **Billing**, with advanced **AI Features** for chatbot, image generation, auditing, and analysis. **Reports** provide operational and financial dashboards. **System Admin** handles user, profile, and permission management.
-
-**Specific Features:**
--   **AI-Powered Spreadsheet Comparison Module:** Analyzes pasted spreadsheet data against system values, highlighting divergences and recommending corrections.
--   **CEVA + Jundiaí Price Table Intelligence:** Automatically adjusts price table selection for the CEVA client based on distance and location.
--   **CESLOG Cubatão x Santos Fixed Route:** For CESLOG client, missions with origin Cubatão and destination Santos (or vice-versa) always use the "SUDESTE - CUBATÃO X SANTOS" table for both client and provider, bypassing cheapest-cost optimization.
--   **Approval Screenshot Capture:** Automatically captures a screenshot of the financial modal when saving/approving, stored in system_logs as APPROVAL_SCREENSHOT. Viewable via camera icon in approval history. Cleaned up automatically after 3 months.
--   **Mission Reporting:** Generates detailed, AI-powered operational reports with client-specific views and PDF export.
--   **Toll Calculation:** Manual entry with persistence, defaulting to R$ 0,00 if no saved value exists.
--   **Intelligent Geographic Positioning (Reverse Geocoding):** Full server-side reverse geocoding pipeline via `/api/reverse-geocode` endpoint. Uses Nominatim (OpenStreetMap) as primary geocoder with Photon (Komoot) as automatic fallback when Nominatim returns 429 rate-limit errors. Server-side request queue with throttling (1.1s interval between Nominatim calls). In-memory cache with 1hr TTL and LRU eviction at 500 entries. In-flight request deduplication prevents redundant upstream calls. Brazilian state names auto-mapped to 2-letter codes (SP, RJ, MG, etc.). Address format: `"STREET - NEIGHBORHOOD - CITY/UF"`. Frontend components (`MissionCard`, `MissionStatusModal`, `UpdateMissionModal`) all call the backend endpoint — never show raw LAT/LNG to users (shows "Resolvendo endereço..." while loading, "LOCALIZAÇÃO VIA GPS" as graceful fallback). `reverseGeocode()` in UpdateMissionModal has retry logic (up to 3 attempts with backoff). MissionCard has client-side cache + pending-request dedup. On save, the system detects if `currentLocationName` contains coordinates or URLs and re-geocodes before writing. Auto-enrichment on modal open saves resolved addresses back to DB. The `current_location` field format is `"DESCRIPTION | ADDRESS"`. Console audit logs with `[LOCATION]` and `[GEOCODE]` prefixes.
--   **REGRA DE OURO — Banco de Dados é a Única Fonte da Verdade (#049):** O frontend (navegador) NUNCA calcula totais financeiros por conta própria. O Comparador de Planilha, o Resumo Financeiro e qualquer relatório devem APENAS exibir a soma de `revenue_value + toll_value` já gravada no banco de dados (Supabase). Se o usuário editou no Modal Financeiro e salvou, esse valor é lei — o sistema não tem permissão para sugerir valor diferente baseado em tabelas de preço na tela de comparação. Sempre que mexer em `ClientBillingReport.tsx` ou componentes financeiros, verificar alteração #049 em `DOCUMENTACAO_ALTERACOES.md`. NUNCA reverter a lógica para cálculos no frontend. Ignorar esta regra causa divergências de centavos e erros de cache.
--   **Single Source of Truth Financial Calculation:** ALL financial calculations go through `calculateMissionFinancials()` in `lib/financialUtils.ts`. The modal (`MissionFinancialModal.tsx`) never manually sums `base + extraKm + extraHr`; it uses `financialData.client.serviceTotal` and `financialData.provider.serviceTotal` (toll-free subtotals). The `CalculatedFinancials` interface includes `serviceTotal` on both client and provider objects, plus `hasClientTable`/`hasProviderTable` flags for missing-table warnings. On save/approve, the snapshot and `BillingAdjustment` log freeze `clientTableId`, `providerTableId`, `systemCalculatedRevenue`, and `systemCalculatedCost` — immutable values that survive future table changes. A `BillingSnapshot` system_log is always written on snapshot creation.
--   **Missing Price Table Warnings:** If a client has no price table, a red alert ("Erro: Cliente sem Tabela de Preços") is shown. If a provider has no cost table, an orange alert is shown. Both use `hasClientTable`/`hasProviderTable` from `calculateMissionFinancials`.
--   **Franchise Financial Calculation:** Implements strict franchise rules for extra KM and hours, with tolerance-based auditing and prioritizing user-saved values. Critical rule: `isFixedDistanceClientRule` / `isFixedDistanceProviderRule` must ONLY activate for truly fixed-distance tables. THREE conditions must ALL be true: (1) name contains 100KM/200KM/LOGITECH, (2) name does NOT match franchise pattern (ATÉ/ATE+nonword+digit/FAIXA), (3) table has NO extra km cost defined (`cost_per_extra_km = 0` or `price_per_extra_km = 0`). Additionally, a safety fallback ensures: if `cost_per_extra_km > 0` and `rawDistance > franchiseKm` and `pExcessKm` is still 0, the excess is forcibly recalculated. This triple-layer protection prevents any regression. A "Recalcular" button in the provider section allows users to force fresh recalculation, clearing saved BillingAdjustment data.
--   **Provider Table Selection by Score:** Provider tables are selected by `selectStrictTable()` score matching (region, distance, operation type). The previous "lowest cost" optimization that replaced the score-selected table with the cheapest alternative has been REMOVED — it caused incorrect table selection. Manual table overrides (via `manualTableOverrides.providerTableId`) always take priority. Provider cost tables are filtered by provider name at query time (`MissionFinancialModal.tsx`) before loading.
--   **Billing Approval Flow with Data Snapshot:** A three-stage approval process (Auditor → Financeiro → Diretoria). Barbara (Financeiro) can approve independently of Daniel (Auditor), skipping the auditor stage. When Barbara or Thiago (Diretoria) approves, the system creates a **Data Snapshot** — a frozen copy of all financial values (route, activation fee, franchise KM/hours, extras, tolls, total) saved to `snapshot_data` (JSONB), `snapshot_approved_by`, and `snapshot_approved_at` columns on the missions table (with fallback to `BillingSnapshot` in system_logs). The billing report uses snapshot data directly without recalculation, ensuring immutability. A lock icon and "Dados Congelados" banner indicate frozen missions. Regular operators cannot edit frozen data — only Financeiro or Diretoria can modify after snapshot.
--   **Operational Data Division:** MissionFinancialModal divides operational data into "Dados Cliente" and "Dados Fornecedor", with provider data initially copying client data and becoming independently editable.
--   **Mandatory Reason for Value Changes:** Manual changes to final client revenue or provider payment values require a justification, recorded in `revenue_edit_reason` and `cost_edit_reason` in the `missions` table.
--   **Automated Status Transitions & Email Notifications:** Automated status updates based on data entry (e.g., provider selection, vehicle/agent assignment) triggering client confirmation emails.
--   **Parent Mission Linking (`OS Mãe`):** Allows linking related missions for traceability, indicated by a "MÃE" badge on MissionCards.
--   **Odometer Anomaly Validation:** System flags and warns about significant discrepancies between `kmRodado` and planned distance, suppressing auto-calculation.
--   **Client Portal & Restricted View:** Clients can create mission requests, and the system restricts their view to relevant information, hiding internal data.
--   **Dashboard Click-to-Filter:** PowerBI-style interactive filtering on all dashboard charts.
--   **Third-Party Financial Closing Workflow:** A 6-step manual financial closing process (Payables, Receivables, Invoicing, Reconciliation, Control Report, Finalization) with dedicated tables for invoices.
--   **Vendor Billing Verification Control (`Controle OS Fornecedor`):** Module for verifying provider payments, with fields for OS number, invoice, and payment date, including `verified_by` and `verified_at` tracking.
--   **Automated Quarterly Data Cleanup:** Server-side cleanup of old `mission_history` and `mission_logs` entries every 90 days in batches.
--   **Internal Employee Equipment Control:** Equipment and SIM chip management for internal users via UserForm. Also tracks SIM chips with phone number, operator, ICCID, and plan. Data is stored in `system_logs` table (entity='UserEquipment', entity_id=user_id) as JSON.
--   **Patrimônio & Equipamentos (Standalone Manager):** Centralized equipment registry accessible from Configurações menu. Each equipment has auto-generated patrimony ID (PAT-XXXX), type (notebook/desktop/celular/tablet/outro), brand, model, serial number, multiple photos, and assignment to an employee. Equipment can be reassigned between employees with full transfer history tracking. Data stored in `system_logs` (entity='EquipmentRegistry', entity_id='master') as a single JSON document. Photos uploaded to `mission-evidence` bucket under `equipment/` prefix. Component: `components/EquipmentManager.tsx`.
--   **Client Contract Management:** Per-client contract management integrated as a "Contratos" tab in ClientForm (visible to finance/admin roles). Supports full CRUD for contracts with: contract type (Cliente/Fornecedor), status tracking (Pendente → Enviado → Assinado → Cancelado/Vencido), validity dates, signature date/signee, witnesses, and notes. Auto-detects expired contracts. Generates complete PDF contracts using jsPDF with the standard TM SEGURANÇA service agreement template, auto-filling client data (name, CNPJ, address, contact, email). Global view available in `ContractManager.tsx` showing all contracts across clients with status filters. Contract data stored in `system_logs` (entity='ClientContract', entity_id=client_id) as JSON. Audit logs use entity='ClientContractAudit'. Component: `components/ClientContractTab.tsx`.
-
-## External Dependencies
-
-### Third-Party Services
--   **Supabase:** Primary PostgreSQL database, storage (for `mission-evidence` bucket), and real-time services (for push notifications and client solicitation toasts).
--   **Google Gemini AI:** Powers all AI-driven features (chatbot, image generation, auditing, analysis, spreadsheet comparison).
--   **Google Maps Platform:** Provides mapping, routing, distance calculation, and geocoding functionalities.
--   **WDAPI:** Used for Brazilian vehicle plate lookup.
--   **Rotas Brasil API / calcularpedagio.com.br:** External APIs for toll cost calculation.
--   **Z-API (WhatsApp):** Integrates WhatsApp messaging capabilities.
--   **Resend API:** Used for sending email verification codes.
--   **Nodemailer (Office 365 SMTP):** Automated email system for mission notifications and welcome emails, with strict commercial confidentiality.
--   **Asaas Payment Gateway:** Multi-company support — two Asaas accounts configured: **TM GESTÃO** (CNPJ 60.485.843/0001-57, env: `ASAAS_API_KEY`) and **TM SECURITY** (CNPJ 60.508.931/0001-27, env: `ASAAS_API_KEY_TMSECURITY`). The `issuer_company` field on the `clients` table determines which Asaas account is used for charges. The `asaasService.ts` `resolveApiKey(company)` function maps company names to the correct API key.
--   **PlugNotas (NFS-e — emissora alternativa, coexistência com Asaas):** Asaas continua sendo o emissor padrão de boleto **e** NF. PlugNotas atua como **emissora opt-in por empresa** ou via **failover manual** por fatura. Três empresas mapeadas (TM GESTÃO 60485843000157, TM SECURITY 60508931000127, TM SEGURANÇA 28804378000167). Toggle de ambiente via `PLUGNOTAS_ENV` (`sandbox` padrão / `production`); tokens em `PLUGNOTAS_API_TOKEN_SANDBOX` e `PLUGNOTAS_API_TOKEN`. Roteamento por empresa em `system_logs` (entity `NfProviderPreference`, id `master`) — gerenciado em `server/nfProviderRouter.ts` com cache de 60s. Colunas extra em `financial_invoices`: `nf_provider` (`ASAAS` | `PLUGNOTAS`), `plugnotas_invoice_id`, `plugnotas_protocol`. Worker `server/nfRetryWorker.ts` despacha por provider; `server/plugnotasService.ts` cobre emissão (`POST /nfse`), consulta (`/nfse/consultar/:idIntegracao` e `/nfse/:id`), cancelamento e download de PDF/XML. Endpoints: `GET /api/plugnotas/status`, `GET|PUT /api/nf/provider-preferences`, `POST /api/nf/reissue-plugnotas/:id` (failover manual: cancela Asaas best-effort + emite no PlugNotas + grava `provider-failover` em `nf_history`), `POST /api/plugnotas/webhook`. UI: card "Emissora padrão de NF por empresa" + chip ASAAS/PLUGNOTAS por linha + botão "Reemitir via PlugNotas" em `components/FinancialInvoiceControl.tsx`.
-
-### Deployment
--   **Vercel:** Used for frontend deployment.
-
-## Anti-Patterns / Memória de Bugs (NÃO REINTRODUZIR)
-
-Esta seção lista bugs CRÍTICOS já corrigidos. **Antes de mexer nos sistemas de mensagens, RELER esta lista.** Toda nova alteração nos quatro sistemas (Notificações in-app, Push Notifications, Chat WhatsApp, E-mails automáticos) deve revisar estes itens.
-
-### 1. Notificações in-app (`lib/NotificationContext.tsx`)
-- ❌ **NUNCA usar URL externa para som de notificação** (ex.: `new Audio('https://assets.mixkit.co/...')`). Falha em iOS/CORS/offline. ✅ Usar beep sintético via WebAudio API (`AudioContext` + `OscillatorNode`).
-- ❌ **NUNCA disparar `showNotification` para todo INSERT em `system_logs` sem deduplicação.** O Realtime do Supabase pode reentregar o mesmo log em reconexão → spam. ✅ Sempre passar `dedupKey` (preferir `log-${log.id}`); o `NotificationProvider` mantém map de chaves recentes (8s TTL).
-- ❌ **NUNCA fazer reconnect manual** (`setTimeout(() => channel.subscribe(), 3000)`) em `CLOSED`/`CHANNEL_ERROR`. supabase-js já faz retry automático; reconnect manual cria leaks. ✅ Apenas logar status.
-- ❌ **NUNCA permitir fila de toasts ilimitada.** ✅ Limite máximo (`MAX_VISIBLE_TOASTS = 5`) — descartar mais antigos.
-- ❌ **NUNCA usar `Math.random()` como id único.** ✅ Usar `crypto.randomUUID()`.
-
-### 2. Push Notifications (`server/routes.ts` + `components/PushNotificationManager.tsx`)
-- 🔴 **NUNCA armazenar `pushSubscriptions` apenas em `Map` em memória no servidor.** A cada deploy/restart todas as inscrições são perdidas e usuários param de receber push silenciosamente. ✅ Persistir em Supabase (tabela `push_subscriptions` com `user_key`, `subscription` jsonb, `endpoint`, `updated_at`). Helpers: `pushSubsLoadAll`, `pushSubsUpsert`, `pushSubsDelete`. O `Map` local serve só como cache best-effort.
-- ❌ **NUNCA usar `userData.name` como `userId` da subscription.** Nome muda, tem acentos/espaços, pode duplicar. ✅ Usar id ou email (helper `getStableUserKey()`).
-- ❌ **NUNCA esquecer de cancelar a subscription no logout.** ✅ `App.tsx` dispara `window.dispatchEvent(new CustomEvent('tmseg:logout'))` ANTES do `signOut()`; `PushNotificationManager` escuta e chama `/api/push/unsubscribe` + `sub.unsubscribe()`.
-- ❌ **NUNCA deixar `/api/push/send` sem autenticação** — qualquer pessoa poderia spamar todos os dispositivos. ✅ Usa `requireAuth`.
-- ❌ **NUNCA usar Notification API nativa (`new Notification(...)`) em paralelo ao push via SW.** Duplica notificação no desktop. ✅ Push só via Service Worker; toasts in-app permanecem separados.
-
-### 3. Chat WhatsApp (`components/WhatsAppChat.tsx` + `server/routes.ts`)
-- 🔴 **NUNCA chamar `WHATSAPP_API_CONFIG.BASE_URL` ou `WHATSAPP_API_CONFIG.GROUPS_URL` direto do frontend.** Isso EXPÕE `VITE_ZAPI_TOKEN` e `VITE_ZAPI_CLIENT_TOKEN` no bundle JavaScript público — qualquer usuário com DevTools rouba o token e envia mensagens em nome da empresa. ✅ Sempre usar proxy backend: `GET /api/whatsapp/groups` e `POST /api/whatsapp/send` (envs preferenciais: `ZAPI_INSTANCE_ID`, `ZAPI_TOKEN`, `ZAPI_CLIENT_TOKEN` sem prefixo `VITE_`).
-- ❌ **NUNCA usar nome de canal Realtime estático** como `'chat_updates'` quando múltiplos contatos podem ser abertos em sequência. Cria colisão. ✅ Nome único por chat: `chat_updates_${chatIdentifier}_${random}`.
-- ❌ **NUNCA assumir que mensagens chegam só via realtime.** O insert local + echo do Realtime cria duplicidade. ✅ Antes de adicionar ao state, checar `prev.some(m => m.id === newMsg.id)`.
-- ❌ **NUNCA usar `alert()` nativo para erros de envio.** ✅ Usar `useNotification().showNotification(...)` e restaurar `messageInput` para o usuário não perder o texto.
-
-### 4. E-mails automáticos (`server/emailService.ts` + workers)
-- ❌ **NUNCA usar string com vírgula+espaço para BCC** (`'a@x.com, b@x.com'`). Alguns servidores SMTP (Office365 inclusive em alguns cenários) rejeitam ou ignoram silenciosamente. ✅ Usar **array**: `['a@x.com', 'b@x.com']`.
-- ❌ **NUNCA criar `nodemailer.createTransport(...)` duplicado em workers** quando já existe em `emailService.ts`. ✅ Importar `transporter` exportado de `emailService.ts`.
-- ❌ **NUNCA criar transporter sem validar `EMAIL_PASS`** silenciosamente. ✅ Logar warning explícito quando senha vazia (`⚠ VAZIA`).
-- ❌ **NUNCA confiar que `setInterval` em worker mantém estado em memória entre deploys.** Estado do `financialReportWorker` (`lastDailyDate`, `lastRevenueSlot`) reseta a cada restart. ✅ Janela de hora exata + checagem por slot evita reenvio em catch-up no boot.
-
-### 5. Cache do PWA / atualização de versão
-- ❌ **NUNCA esquecer de bumpar `APP_VERSION` em `constants.ts`** quando alterar lógica crítica de boot, SW ou autenticação. O `index.tsx` usa `APP_VERSION` para detectar nova versão e limpar `sessionStorage`; `App.tsx` força logout se diferente.
-- ❌ **NUNCA fazer o `sw.js` cache-first.** ✅ Network-only obrigatório (`event.respondWith(fetch(event.request).catch(...))`). Cache-first cria PWAs presos em versões antigas.
-- ✅ Toda mudança em `sw.js` ou `APP_VERSION` deve ser seguida de **republish** via Replit Deploy (build em `dist/` é re-gerado automaticamente).
-- ✅ **Auto-update no boot (desde 3.3.3):** `index.tsx` faz GET `/api/version` (no-store) em todo carregamento e compara com `APP_VERSION` local. Se divergir → `clearCachesAndSWs()` (apaga Cache Storage + desregistra SWs) + `window.location.replace(?_v=<v>)`, preservando localStorage de login. Flag `__tmseg_just_reloaded__` em sessionStorage previne loop. **Não faz limpeza incondicional em todo boot** — só age quando há divergência real. Backend: `/api/version` lê `constants.ts` em runtime via regex.
-- ✅ **Botão "Limpar Cache" manual** disponível no Sidebar (`button-hard-reset-cache`) para casos extremos (PWA iOS preso). Função `handleHardReset` é mais agressiva: caches + SWs + sessionStorage + localStorage (exceto login) + IndexedDB + reload.
-- ❌ **NUNCA chamar `WHATSAPP_API_CONFIG.GROUPS_URL` ou `BASE_URL` direto do frontend** (mesmo em telas de "diagnóstico" como `ServerStats.tsx`). Sempre proxy via `/api/whatsapp/*` autenticado.
-- ❌ **NUNCA forçar `handleLogout()` por mismatch de `app_version` mid-sessão.** ✅ Apenas atualizar `localStorage.app_version` silenciosamente — o auto-update no boot já cuida do reload do bundle. Forçar logout em useEffect que reage a `isAuthenticated` causa bounces (logout → login → useEffect re-roda → ...).
-- ✅ **ErrorBoundary obrigatório (`AppErrorBoundary`) em volta do `renderContent()`.** Sem ErrorBoundary, qualquer crash em uma tela específica (ex: `MissionTable`) faz o React desmontar a árvore inteira e remontar — `currentScreen` volta pro estado inicial (`'dashboard'`), parecendo um "bounce" misterioso. Com a `key={currentScreen}`, o boundary reseta entre telas.
-- ❌ **NUNCA usar `group-hover:` do Tailwind sozinho pra expandir/revelar conteúdo na Sidebar.** iPhone/touch não tem hover — o menu abre mas só mostra ícones. ✅ Sempre combinar com a prop `isOpen`: `${isOpen ? 'opacity-100 w-auto' : 'opacity-0 w-0 lg:group-hover:opacity-100 lg:group-hover:w-auto'}`. Hover fica restrito a `lg:` (desktop), `isOpen` cuida do mobile.
-- ❌ **NUNCA injetar `Date.now()` no stamp do `sw.js` servido pelo backend.** Bug 3.3.x: `server/routes.ts` GET `/sw.js` colocava `// build: <deploymentId>-${Date.now()}` no topo. Cada `reg.update()` (disparado por focus/visibilitychange/setInterval) baixava bytes diferentes → updatefound → SKIP_WAITING → controllerchange → reload. No iPhone PWA isso virou loop infinito de reload, impossível fazer login. ✅ Stamp deve ser ESTÁVEL por deploy: `// build: ${REPLIT_DEPLOYMENT_ID}-v${APP_VERSION}` (lido de constants.ts).
-- ❌ **NUNCA fazer `window.location.reload()` em `controllerchange` do SW.** Era o gatilho do loop acima. ✅ Auto-update é responsabilidade exclusiva do check `/api/version` no boot do `index.tsx`. SW serve só pra push notifications. Sem `reg.update()` em focus/visibility/interval — apenas registro inicial.
-- ❌ **NUNCA usar lista hardcoded de arquivos em `build-server.mjs`** ao mover de `dist/` pra `dist/public/`. Bug 3.3.x: lista era `['index.html', 'assets', 'logo.png', '_redirects']` — qualquer asset novo (ícones PWA, manifest.json, sw.js, favicons, robots.txt, etc.) ficava órfão em `dist/` e nunca era servido em produção. Sintoma: iPhone nunca recebia o logo no atalho da tela inicial. ✅ Mover TUDO de `dist/` pra `dist/public/` exceto a própria `public/` e `index.cjs` (server bundle), e como cinto de segurança, copiar tudo de `client/public/` que ainda não existir em `dist/public/`.
-
-### Como revisar antes de novo PR/edit
-Ao tocar QUALQUER um dos 4 sistemas acima, abrir esta seção e marcar mentalmente: "estou reintroduzindo algum item desta lista?" Se sim, **parar e usar a alternativa marcada com ✅**.
+-   **Supabase Docs:** [https://supabase.com/docs](https://supabase.com/docs)
+-   **React Query Docs:** [https://tanstack.com/query/latest](https://tanstack.com/query/latest)
+-   **Tailwind CSS Docs:** [https://tailwindcss.com/docs](https://tailwindcss.com/docs)
+-   **Drizzle ORM Docs:** [https://orm.drizzle.team/docs/overview](https://orm.drizzle.team/docs/overview)
+-   **Replit AI Integrations:** Refer to Replit's documentation on integrating Google Gemini.
+-   **Asaas API Docs:** [https://docs.asaas.com/](https://docs.asaas.com/)
+-   **PlugNotas API Docs:** [https://documenter.getpostman.com/view/1744927/UVsMzsWc](https://documenter.getpostman.com/view/1744927/UVsMzsWc)
+-   **Nodemailer Docs:** [https://nodemailer.com/](https://nodemailer.com/)
+-   **Nominatim Usage Policy:** [https://operations.osmfoundation.org/policies/nominatim/](https://operations.osmfoundation.org/policies/nominatim/)
