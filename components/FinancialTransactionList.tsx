@@ -136,6 +136,13 @@ const FinancialTransactionList: React.FC = () => {
         return new Set(categories.filter(c => c.group === 'INVESTIMENTOS').map(c => c.id));
     }, [categories]);
 
+    // Lançamentos auto-gerados pela atualização de saldo de contas de investimento
+    // ("Rendimento de Investimento" / "Desvalorização de Investimento") devem ser
+    // excluídos de Contas a Pagar/Receber mesmo que estejam em categoria não-INVESTIMENTOS.
+    // Marcador estável: notes começando com "Atualização de saldo de investimento".
+    const isInvestmentAdjustment = (t: FinancialTransaction) =>
+        (t.notes || '').startsWith('Atualização de saldo de investimento');
+
     const filteredByStep = useMemo(() => {
         const typeFilter = activeStep === 'PAGAR' ? 'EXPENSE' : activeStep === 'RECEBER' ? 'INCOME' : null;
         if (!typeFilter && activeStep !== 'CONFERENCIA' && activeStep !== 'RELATORIO') return [];
@@ -143,7 +150,7 @@ const FinancialTransactionList: React.FC = () => {
         let list = typeFilter ? transactions.filter(t => t.type === typeFilter) : transactions;
 
         if (activeStep === 'PAGAR' || activeStep === 'RECEBER') {
-            list = list.filter(t => !investmentCategoryIds.has(t.category_id));
+            list = list.filter(t => !investmentCategoryIds.has(t.category_id) && !isInvestmentAdjustment(t));
         }
 
         const todayStr = getTodayBR();
@@ -317,7 +324,7 @@ const FinancialTransactionList: React.FC = () => {
         const today = new Date(todayStr + 'T12:00:00');
         const MONTH_NAMES = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
 
-        const pending = transactions.filter(t => (t.status === 'PENDING' || t.status === 'SCHEDULED') && !investmentCategoryIds.has(t.category_id));
+        const pending = transactions.filter(t => (t.status === 'PENDING' || t.status === 'SCHEDULED') && !investmentCategoryIds.has(t.category_id) && !isInvestmentAdjustment(t));
         const aVencer = pending.filter(t => t.due_date.split('T')[0] >= todayStr);
         const vencidos = pending.filter(t => t.due_date.split('T')[0] < todayStr);
 
@@ -618,23 +625,23 @@ const FinancialTransactionList: React.FC = () => {
     }, [transactions, viewPeriod, customStartDate, customEndDate]);
 
     const summaryPagar = useMemo(() => {
-        const expenses = periodFilteredTransactions.filter(t => t.type === 'EXPENSE' && !investmentCategoryIds.has(t.category_id));
+        const expenses = periodFilteredTransactions.filter(t => t.type === 'EXPENSE' && !investmentCategoryIds.has(t.category_id) && !isInvestmentAdjustment(t));
         return { total: expenses.reduce((a, t) => a + t.amount, 0), paid: expenses.filter(t => t.status === 'PAID').reduce((a, t) => a + t.amount, 0), pending: expenses.filter(t => t.status === 'PENDING').reduce((a, t) => a + t.amount, 0), count: expenses.length, paidCount: expenses.filter(t => t.status === 'PAID').length };
     }, [periodFilteredTransactions, investmentCategoryIds]);
 
     const summaryReceber = useMemo(() => {
-        const incomes = periodFilteredTransactions.filter(t => t.type === 'INCOME' && !investmentCategoryIds.has(t.category_id));
+        const incomes = periodFilteredTransactions.filter(t => t.type === 'INCOME' && !investmentCategoryIds.has(t.category_id) && !isInvestmentAdjustment(t));
         return { total: incomes.reduce((a, t) => a + t.amount, 0), paid: incomes.filter(t => t.status === 'PAID').reduce((a, t) => a + t.amount, 0), pending: incomes.filter(t => t.status === 'PENDING').reduce((a, t) => a + t.amount, 0), count: incomes.length, paidCount: incomes.filter(t => t.status === 'PAID').length };
     }, [periodFilteredTransactions, investmentCategoryIds]);
 
     const overduePagar = useMemo(() => {
         const today = getTodayBR();
-        return periodFilteredTransactions.filter(t => t.type === 'EXPENSE' && t.status === 'PENDING' && t.due_date.split('T')[0] < today && !investmentCategoryIds.has(t.category_id));
+        return periodFilteredTransactions.filter(t => t.type === 'EXPENSE' && t.status === 'PENDING' && t.due_date.split('T')[0] < today && !investmentCategoryIds.has(t.category_id) && !isInvestmentAdjustment(t));
     }, [periodFilteredTransactions, investmentCategoryIds]);
 
     const overdueReceber = useMemo(() => {
         const today = getTodayBR();
-        return periodFilteredTransactions.filter(t => t.type === 'INCOME' && t.status === 'PENDING' && t.due_date.split('T')[0] < today && !investmentCategoryIds.has(t.category_id));
+        return periodFilteredTransactions.filter(t => t.type === 'INCOME' && t.status === 'PENDING' && t.due_date.split('T')[0] < today && !investmentCategoryIds.has(t.category_id) && !isInvestmentAdjustment(t));
     }, [periodFilteredTransactions, investmentCategoryIds]);
 
     const renderFilters = () => (
@@ -931,7 +938,7 @@ const FinancialTransactionList: React.FC = () => {
 
             case 'RELATORIO': {
                 const todayStr = getTodayBR();
-                const nonInvestTx = transactions.filter(t => !investmentCategoryIds.has(t.category_id));
+                const nonInvestTx = transactions.filter(t => !investmentCategoryIds.has(t.category_id) && !isInvestmentAdjustment(t));
                 const paidExpenses = nonInvestTx.filter(t => t.type === 'EXPENSE' && t.status === 'PAID');
                 const paidIncomes = nonInvestTx.filter(t => t.type === 'INCOME' && t.status === 'PAID');
                 const overdueExpenses = nonInvestTx.filter(t => t.type === 'EXPENSE' && t.status === 'PENDING' && t.due_date.split('T')[0] < todayStr);

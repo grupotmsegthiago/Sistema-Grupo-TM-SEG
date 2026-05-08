@@ -180,7 +180,12 @@ const FinancialAccountManager: React.FC<Props> = ({ onClose }) => {
                 const diff = newBal - account.current_calculated_balance;
                 if (Math.abs(diff) >= 0.01) {
                     const isGain = diff > 0;
-                    const cat = categories.find(c => c.group === 'NAO_OPERACIONAL' || c.name.includes('Ajuste'));
+                    // Preferir categoria do grupo INVESTIMENTOS pra que o ajuste de saldo
+                    // não vaze para Contas a Pagar/Receber (filtro existente exclui INVESTIMENTOS).
+                    // Fallback: NAO_OPERACIONAL/Ajuste — nesse caso o filtro de
+                    // FinancialTransactionList ainda exclui via marcador no campo `notes`.
+                    const cat = categories.find(c => c.group === 'INVESTIMENTOS')
+                              || categories.find(c => c.group === 'NAO_OPERACIONAL' || c.name.includes('Ajuste'));
                     const adjRes = await supabase.from('financial_transactions').insert([{
                         description: isGain ? 'Rendimento de Investimento' : 'Desvalorização de Investimento',
                         amount: Math.abs(diff),
