@@ -2555,6 +2555,111 @@ export async function registerRoutes(
       setInterval(checkAndRunCleanup, ONE_DAY_MS);
   }, 5 * 60 * 1000);
 
+  // ===== Limpeza MENSAL automática de system_logs (ruído de heartbeat/login/logout) =====
+  // Mantém o banco enxuto e o egresso saudável sem precisar lembrar de rodar SQL manual.
+  const runMonthlySystemLogsCleanup = async () => {
+      try {
+          const ninetyDaysAgo = new Date();
+          ninetyDaysAgo.setDate(ninetyDaysAgo.getDate() - 90);
+          const cutoffDate = ninetyDaysAgo.toISOString();
+
+          const NOISY_TYPES = ['HEARTBEAT', 'LOGIN', 'LOGOUT', 'OTHER'];
+          const BATCH_SIZE = 500;
+          let totalDeleted = 0;
+          const perType: Record<string, number> = {};
+
+          for (const actionType of NOISY_TYPES) {
+              let typeDeleted = 0;
+              let batch;
+              do {
+                  const { data, error } = await supabaseAdmin
+                      .from('system_logs')
+                      .select('id')
+                      .eq('action_type', actionType)
+                      .lt('created_at', cutoffDate)
+                      .limit(BATCH_SIZE);
+                  if (error || !data || data.length === 0) break;
+                  batch = data;
+                  const ids = batch.map((r: any) => r.id);
+                  const { error: delErr } = await supabaseAdmin
+                      .from('system_logs')
+                      .delete()
+                      .in('id', ids);
+                  if (delErr) { console.error(`[CLEANUP-MENSAL] Erro deletando ${actionType}:`, delErr.message); break; }
+                  typeDeleted += ids.length;
+                  if (ids.length < BATCH_SIZE) break;
+                  await new Promise(r => setTimeout(r, 500));
+              } while (batch && batch.length === BATCH_SIZE);
+              perType[actionType] = typeDeleted;
+              totalDeleted += typeDeleted;
+          }
+
+          const results = {
+              total_removidos: totalDeleted,
+              por_tipo: perType,
+              cutoff_date: cutoffDate,
+              executed_at: new Date().toISOString()
+          };
+
+          console.log('[CLEANUP-MENSAL] Limpeza mensal de system_logs executada:', JSON.stringify(results));
+
+          await supabaseAdmin.from('system_logs').insert([{
+              user_name: 'Sistema',
+              action_type: 'CLEANUP_MENSAL_LOGS',
+              entity: 'Database',
+              entity_id: 'auto',
+              details: JSON.stringify(results)
+          }]);
+
+          return results;
+      } catch (e: any) {
+          console.error('[CLEANUP-MENSAL] Erro na limpeza mensal:', e.message);
+          return { error: e.message };
+      }
+  };
+
+  const checkAndRunMonthlyCleanup = async () => {
+      try {
+          const { data } = await supabaseAdmin
+              .from('system_logs')
+              .select('created_at')
+              .eq('action_type', 'CLEANUP_MENSAL_LOGS')
+              .order('created_at', { ascending: false })
+              .limit(1);
+
+          if (data && data.length > 0) {
+              const lastRun = new Date(data[0].created_at);
+              const daysSince = (Date.now() - lastRun.getTime()) / (1000 * 60 * 60 * 24);
+              if (daysSince < 28) {
+                  console.log(`[CLEANUP-MENSAL] Última limpeza de logs foi há ${daysSince.toFixed(0)} dias. Próxima em ~${(30 - daysSince).toFixed(0)} dias.`);
+                  return;
+              }
+          }
+
+          console.log('[CLEANUP-MENSAL] Iniciando limpeza mensal automática de system_logs...');
+          await runMonthlySystemLogsCleanup();
+      } catch (e: any) {
+          console.error('[CLEANUP-MENSAL] Erro ao verificar necessidade de limpeza mensal:', e.message);
+      }
+  };
+
+  // Roda 7 minutos depois do start (escalonado da limpeza trimestral pra não sobrecarregar boot)
+  // e depois a cada 24h verifica se já passou 1 mês.
+  setTimeout(() => {
+      checkAndRunMonthlyCleanup();
+      setInterval(checkAndRunMonthlyCleanup, ONE_DAY_MS);
+  }, 7 * 60 * 1000);
+
+  // Endpoint manual pra forçar a limpeza mensal (útil pra testes/diretoria)
+  app.post('/api/admin/run-monthly-logs-cleanup', async (_req: Request, res: Response) => {
+      try {
+          const results = await runMonthlySystemLogsCleanup();
+          res.json({ ok: true, results });
+      } catch (e: any) {
+          res.status(500).json({ ok: false, error: e.message });
+      }
+  });
+
   app.post("/api/vendor-verification/:missionId", async (req: Request, res: Response) => {
       try {
           const { missionId } = req.params;
