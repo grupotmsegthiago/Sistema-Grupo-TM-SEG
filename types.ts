@@ -89,6 +89,12 @@ export interface Mission {
 
   reference_number?: string;
   billing_release?: string;
+
+  // Controles manuais do Boletim de Medição (não afetam o sistema):
+  // - billing_period_override: data alternativa usada pelo boletim em vez de start_time.
+  // - exclude_from_billing: se true, OS é escondida de TODOS os boletins.
+  billing_period_override?: string | null;
+  exclude_from_billing?: boolean;
 }
 
 export interface MissionHistory {

@@ -247,6 +247,11 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
                 clientFilters.push(`client.ilike.%${shortName}%`);
             }
 
+            // Regra padrão: filtra por start_time (mês da viagem).
+            // Para casos especiais (ex: Cancelada auditada em mês diferente),
+            // o usuário pode preencher manualmente `billing_period_override`
+            // na auditoria — essa OS será incluída pela data override.
+            // Já `exclude_from_billing = true` esconde a OS de TODOS os boletins.
             const { data: missionDataRaw, error } = await supabase
                 .from('missions')
                 .select('*, company_vehicle:vehicles(*)')
@@ -259,25 +264,28 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
 
             if (error) throw error;
 
-            // Inclui também OS Canceladas cuja aprovação do snapshot caiu
-            // dentro do período do boletim — mesmo que a viagem tenha sido
-            // num mês anterior. Lógica: se foi cancelada E auditada no
-            // período, deve aparecer pra cobrança da taxa de acionamento.
-            // Sem isso, OS canceladas em mês X e auditadas em mês X+1
-            // ficavam invisíveis entre dois boletins.
-            const { data: lateApprovedRaw } = await supabase
-                .from('missions')
-                .select('*, company_vehicle:vehicles(*)')
-                .or(clientFilters.join(','))
-                .eq('status', 'Cancelada')
-                .not('snapshot_approved_at', 'is', null)
-                .gte('snapshot_approved_at', rangeStart)
-                .lte('snapshot_approved_at', rangeEnd);
+            // Busca extra: OS com billing_period_override caindo no período.
+            // Se a coluna ainda não existir no banco (migração não rodada),
+            // a query falha silenciosamente e o boletim segue normal.
+            let overrideExtras: any[] = [];
+            try {
+                const { data: overrideRaw, error: ovErr } = await supabase
+                    .from('missions')
+                    .select('*, company_vehicle:vehicles(*)')
+                    .or(clientFilters.join(','))
+                    .neq('status', 'Recusada')
+                    .not('billing_period_override', 'is', null)
+                    .gte('billing_period_override', rangeStart)
+                    .lte('billing_period_override', rangeEnd);
+                if (!ovErr && overrideRaw) overrideExtras = overrideRaw;
+            } catch {}
 
             const baseList: any[] = missionDataRaw || [];
             const seen = new Set(baseList.map(m => m.id));
-            const lateExtras = (lateApprovedRaw || []).filter(m => !seen.has(m.id));
-            const missionData: any[] = [...baseList, ...lateExtras]
+            const merged = [...baseList, ...overrideExtras.filter(m => !seen.has(m.id))];
+            // Aplica exclude_from_billing (se a coluna existir).
+            const missionData: any[] = merged
+                .filter(m => m.exclude_from_billing !== true)
                 .sort((a, b) => new Date(a.start_time || 0).getTime() - new Date(b.start_time || 0).getTime());
 
             const clientVehicleIds = [...new Set((missionData || []).map((m: any) => m.client_vehicle).filter((id: any) => id))];

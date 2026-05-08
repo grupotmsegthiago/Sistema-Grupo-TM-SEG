@@ -1306,6 +1306,19 @@ export async function registerRoutes(
     console.log('[Migration] Colunas valor_zero_motivo, reference_number, billing_release verificadas/OK.');
   }
 
+  // ── Migration: controles manuais do Boletim de Medição ──
+  try {
+    await supabaseAdmin.rpc('exec_sql', { sql: `
+      ALTER TABLE missions
+        ADD COLUMN IF NOT EXISTS billing_period_override TIMESTAMPTZ,
+        ADD COLUMN IF NOT EXISTS exclude_from_billing BOOLEAN DEFAULT false;
+      NOTIFY pgrst, 'reload schema';
+    `});
+    console.log('[Migration] Colunas billing_period_override e exclude_from_billing verificadas/criadas.');
+  } catch (e: any) {
+    console.log('[Migration] billing_period_override/exclude_from_billing:', e.message || 'ok');
+  }
+
   try {
     await supabaseAdmin.rpc('exec_sql', { sql: `
       CREATE TABLE IF NOT EXISTS monitored_processes (

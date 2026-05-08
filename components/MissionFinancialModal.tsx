@@ -59,6 +59,132 @@ const formatHoursHHMM = (decimalHours: number): string => {
 
 const LABEL_CLASS = "text-[10px] font-black text-gray-400 uppercase mb-1.5 block tracking-widest";
 
+const BillingPeriodOverridePanel: React.FC<{
+    mission: Mission | null;
+    setMission: React.Dispatch<React.SetStateAction<Mission | null>>;
+    showNotification: (t: string, m: string, k?: any) => void;
+}> = ({ mission, setMission, showNotification }) => {
+    const [open, setOpen] = useState(false);
+    const [saving, setSaving] = useState(false);
+    const toLocalInput = (iso?: string | null) => {
+        if (!iso) return '';
+        const d = new Date(iso);
+        const tzOff = d.getTimezoneOffset() * 60000;
+        return new Date(d.getTime() - tzOff).toISOString().slice(0, 16);
+    };
+    const [overrideDate, setOverrideDate] = useState<string>(toLocalInput(mission?.billing_period_override));
+    const [excluded, setExcluded] = useState<boolean>(mission?.exclude_from_billing === true);
+
+    React.useEffect(() => {
+        setOverrideDate(toLocalInput(mission?.billing_period_override));
+        setExcluded(mission?.exclude_from_billing === true);
+    }, [mission?.id, mission?.billing_period_override, mission?.exclude_from_billing]);
+
+    if (!mission) return null;
+    const hasOverride = !!mission.billing_period_override;
+    const isExcluded = mission.exclude_from_billing === true;
+    const badge = isExcluded
+        ? { text: 'Removida do boletim', cls: 'bg-red-100 text-red-700 border-red-300' }
+        : hasOverride
+            ? { text: 'Data manual no boletim', cls: 'bg-indigo-100 text-indigo-700 border-indigo-300' }
+            : null;
+
+    const handleSave = async () => {
+        setSaving(true);
+        try {
+            const isoOverride = overrideDate ? new Date(overrideDate).toISOString() : null;
+            const { error } = await supabase
+                .from('missions')
+                .update({ billing_period_override: isoOverride, exclude_from_billing: excluded })
+                .eq('id', mission.id);
+            if (error) {
+                if (/column .* does not exist/i.test(error.message)) {
+                    showNotification('Migração pendente', 'Rode o SQL em migrations/2026_05_08_billing_overrides.sql no Supabase antes de usar este controle.', 'error');
+                } else {
+                    showNotification('Erro', 'Falha ao salvar: ' + error.message, 'error');
+                }
+                return;
+            }
+            setMission(prev => prev ? { ...prev, billing_period_override: isoOverride, exclude_from_billing: excluded } : prev);
+            showNotification('Sucesso', 'Configuração do boletim atualizada.', 'success');
+            setOpen(false);
+            window.dispatchEvent(new CustomEvent('refreshMissions'));
+        } finally {
+            setSaving(false);
+        }
+    };
+
+    return (
+        <div data-testid="billing-override-panel" className="bg-white border border-gray-200 rounded-xl shadow-sm">
+            <button
+                type="button"
+                data-testid="button-toggle-billing-override"
+                onClick={() => setOpen(o => !o)}
+                className="w-full flex items-center justify-between gap-3 px-4 py-2.5 text-left hover:bg-gray-50 rounded-xl"
+            >
+                <div className="flex items-center gap-2">
+                    <span className="text-[10px] font-black text-gray-500 uppercase tracking-widest">Boletim de Medição — Inclusão Manual</span>
+                    {badge && (
+                        <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full border ${badge.cls}`}>{badge.text}</span>
+                    )}
+                </div>
+                <span className="text-[10px] text-gray-400">{open ? 'fechar' : 'abrir'}</span>
+            </button>
+            {open && (
+                <div className="px-4 pb-4 pt-1 space-y-3 border-t border-gray-100">
+                    <p className="text-[11px] text-gray-500">
+                        Por padrão, esta OS aparece no boletim do mês da viagem. Use os controles abaixo só para casos especiais — não afeta o restante do sistema.
+                    </p>
+                    <div>
+                        <label className="text-[10px] font-black text-gray-500 uppercase tracking-widest block mb-1">Considerar nesta data (opcional)</label>
+                        <div className="flex gap-2 items-center">
+                            <input
+                                data-testid="input-billing-period-override"
+                                type="datetime-local"
+                                value={overrideDate}
+                                onChange={e => setOverrideDate(e.target.value)}
+                                className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm flex-1"
+                            />
+                            {overrideDate && (
+                                <button
+                                    type="button"
+                                    data-testid="button-clear-billing-override"
+                                    onClick={() => setOverrideDate('')}
+                                    className="text-[10px] text-gray-500 hover:text-gray-800 underline"
+                                >limpar</button>
+                            )}
+                        </div>
+                        <p className="text-[10px] text-gray-400 mt-1">
+                            Se preenchido, o boletim usa esta data em vez da data da viagem ({mission.start_time ? new Date(mission.start_time).toLocaleDateString('pt-BR') : '-'}).
+                        </p>
+                    </div>
+                    <label className="flex items-center gap-2 cursor-pointer select-none">
+                        <input
+                            data-testid="checkbox-exclude-from-billing"
+                            type="checkbox"
+                            checked={excluded}
+                            onChange={e => setExcluded(e.target.checked)}
+                            className="w-4 h-4"
+                        />
+                        <span className="text-xs text-gray-700">Não incluir esta OS em nenhum boletim de medição</span>
+                    </label>
+                    <div className="flex justify-end pt-1">
+                        <button
+                            type="button"
+                            data-testid="button-save-billing-override"
+                            disabled={saving}
+                            onClick={handleSave}
+                            className="bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold px-4 py-2 rounded-lg disabled:opacity-50"
+                        >
+                            {saving ? 'Salvando…' : 'Salvar configuração'}
+                        </button>
+                    </div>
+                </div>
+            )}
+        </div>
+    );
+};
+
 const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: initialMission, onUpdate }) => {
   const { showNotification } = useNotification();
   const [mission, setMission] = useState<Mission | null>(initialMission);
@@ -1892,6 +2018,8 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                     </div>
                 </div>
             )}
+            <BillingPeriodOverridePanel mission={mission} setMission={setMission} showNotification={showNotification} />
+
             {linkedMissions.length > 0 && (() => {
                 const isCurrentParent = !mission.is_same_os && !mission.parent_mission_id && linkedMissions.some(lm => lm.is_same_os);
                 const isCurrentChild = mission.is_same_os && !!mission.parent_mission_id;
