@@ -250,7 +250,26 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
 
             if (error) throw error;
 
-            const missionData: any[] = missionDataRaw || [];
+            // Inclui também OS Canceladas cuja aprovação do snapshot caiu
+            // dentro do período do boletim — mesmo que a viagem tenha sido
+            // num mês anterior. Lógica: se foi cancelada E auditada no
+            // período, deve aparecer pra cobrança da taxa de acionamento.
+            // Sem isso, OS canceladas em mês X e auditadas em mês X+1
+            // ficavam invisíveis entre dois boletins.
+            const { data: lateApprovedRaw } = await supabase
+                .from('missions')
+                .select('*, company_vehicle:vehicles(*)')
+                .or(clientFilters.join(','))
+                .eq('status', 'Cancelada')
+                .not('snapshot_approved_at', 'is', null)
+                .gte('snapshot_approved_at', rangeStart)
+                .lte('snapshot_approved_at', rangeEnd);
+
+            const baseList: any[] = missionDataRaw || [];
+            const seen = new Set(baseList.map(m => m.id));
+            const lateExtras = (lateApprovedRaw || []).filter(m => !seen.has(m.id));
+            const missionData: any[] = [...baseList, ...lateExtras]
+                .sort((a, b) => new Date(a.start_time || 0).getTime() - new Date(b.start_time || 0).getTime());
 
             const clientVehicleIds = [...new Set((missionData || []).map((m: any) => m.client_vehicle).filter((id: any) => id))];
             let clientVehiclesMap: Record<string, any> = {};
