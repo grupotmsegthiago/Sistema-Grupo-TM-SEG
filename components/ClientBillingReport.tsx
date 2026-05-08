@@ -57,6 +57,8 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
     const [divEditSaving, setDivEditSaving] = useState(false);
     const [divEditError, setDivEditError] = useState('');
     const [boletimFilter, setBoletimFilter] = useState<'todas' | 'aprovadas' | 'pendentes'>('todas');
+    const [includeOsInput, setIncludeOsInput] = useState('');
+    const [actionBusy, setActionBusy] = useState<string | null>(null);
     const [isRecalculating, setIsRecalculating] = useState(false);
     const [recalcResult, setRecalcResult] = useState<{ total: number; updated: number; skipped: number; errors: number } | null>(null);
 
@@ -355,6 +357,63 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
         }
     };
     handleGenerateRef.current = handleGenerate;
+
+    // Inclui uma OS no boletim do período atual mesmo que start_time seja de
+    // outro mês. Marca billing_period_override = data central do período.
+    const handleIncludeOs = async () => {
+        const raw = includeOsInput.trim().toUpperCase().replace(/\s+/g,'');
+        if (!raw) { alert('Digite o número da OS (ex: 4261 ou GTM-4261).'); return; }
+        const missionId = raw.startsWith('GTM-') ? raw : `GTM-${raw}`;
+        if (!startDate || !endDate) { alert('Defina o período antes de incluir a OS.'); return; }
+        setActionBusy(missionId);
+        try {
+            const { data: existing, error: chkErr } = await supabase
+                .from('missions').select('id, client, start_time, exclude_from_billing').eq('id', missionId).maybeSingle();
+            if (chkErr) throw chkErr;
+            if (!existing) { alert(`OS ${missionId} não encontrada.`); return; }
+
+            // Usa o meio do período como data de override (12h pra evitar fuso)
+            const overrideDate = `${startDate}T12:00:00.000Z`;
+            const updates: any = { billing_period_override: overrideDate };
+            if (existing.exclude_from_billing) updates.exclude_from_billing = false;
+
+            const { error: upErr } = await supabase.from('missions').update(updates).eq('id', missionId);
+            if (upErr) {
+                if (upErr.message?.includes('billing_period_override') || upErr.message?.includes('does not exist')) {
+                    alert('A coluna billing_period_override ainda não existe no banco. Rode o SQL fornecido anteriormente no Supabase SQL Editor e tente de novo.');
+                    return;
+                }
+                throw upErr;
+            }
+            setIncludeOsInput('');
+            await handleGenerate();
+            alert(`OS ${missionId} incluída neste período.`);
+        } catch (e: any) {
+            console.error(e);
+            alert('Erro ao incluir OS: ' + (e.message || 'desconhecido'));
+        } finally { setActionBusy(null); }
+    };
+
+    // Exclui uma OS deste boletim (e de qualquer outro). Marca exclude_from_billing=true.
+    const handleExcludeRow = async (shortId: string) => {
+        const missionId = shortId.startsWith('GTM-') ? shortId : `GTM-${shortId}`;
+        if (!confirm(`Remover a OS ${missionId} deste boletim?\n\nEla não vai mais aparecer em nenhum boletim de medição até você reincluir.`)) return;
+        setActionBusy(missionId);
+        try {
+            const { error: upErr } = await supabase.from('missions').update({ exclude_from_billing: true, billing_period_override: null }).eq('id', missionId);
+            if (upErr) {
+                if (upErr.message?.includes('exclude_from_billing') || upErr.message?.includes('does not exist')) {
+                    alert('A coluna exclude_from_billing ainda não existe no banco. Rode o SQL fornecido anteriormente no Supabase SQL Editor e tente de novo.');
+                    return;
+                }
+                throw upErr;
+            }
+            await handleGenerate();
+        } catch (e: any) {
+            console.error(e);
+            alert('Erro ao excluir OS: ' + (e.message || 'desconhecido'));
+        } finally { setActionBusy(null); }
+    };
 
     const handleRecalculateAndCompare = async () => {
         const clientObj = clients.find(c => c.id.toString() === selectedClient);
@@ -1154,14 +1213,13 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
 
         const { exportFormattedExcel } = await import('../exports/excel-export-template');
 
-        const extraColOffset = (isCeslogBilling ? 1 : 0) + (isCevaBilling ? 1 : 0);
+        const extraColOffset = (isCeslogBilling ? 1 : 0);
 
         const dataRows = rowsData.map(r => {
             const row: (string | number)[] = [
                 !r.isApproved ? `[${r.missionStatus.toUpperCase()}] ${r.id}` : r.id,
             ];
             if (isCeslogBilling) row.push(r.referenceNumber || '-');
-            if (isCevaBilling) row.push(r.billingRelease || '-');
             row.push(
                 r.route,
                 r.activationFee,
@@ -1215,7 +1273,6 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
 
         const colWidths: number[] = [6];
         if (isCeslogBilling) colWidths.push(14);
-        if (isCevaBilling) colWidths.push(12);
         colWidths.push(
             30, 12, 7, 7, 12, 12,
             12, 8, 10, 12, 12, 8,
@@ -2733,6 +2790,29 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
                         )}
                     </div>
 
+                    <div className="no-print" style={{ marginBottom: '10px', padding: '10px 12px', background: '#f0f9ff', border: '1px solid #bae6fd', borderRadius: '8px', display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '8px' }} data-testid="include-os-bar">
+                        <span style={{ fontSize: '11px', fontWeight: 800, color: '#0369a1', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Incluir OS de outro período:</span>
+                        <input
+                            type="text"
+                            value={includeOsInput}
+                            onChange={e => setIncludeOsInput(e.target.value)}
+                            placeholder="Ex: 4261"
+                            data-testid="input-include-os"
+                            onKeyDown={e => { if (e.key === 'Enter') handleIncludeOs(); }}
+                            style={{ flex: '0 0 160px', padding: '6px 10px', border: '1.5px solid #7dd3fc', borderRadius: '6px', fontSize: '12px', fontWeight: 700, fontFamily: 'monospace', background: '#fff' }}
+                        />
+                        <button
+                            onClick={handleIncludeOs}
+                            disabled={!!actionBusy}
+                            data-testid="btn-include-os"
+                            style={{ padding: '6px 14px', background: '#0284c7', color: '#fff', border: 'none', borderRadius: '6px', fontSize: '11px', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.5px', cursor: actionBusy ? 'not-allowed' : 'pointer', opacity: actionBusy ? 0.6 : 1 }}
+                        >+ Incluir nesta data</button>
+                        <span style={{ fontSize: '10px', color: '#64748b', fontWeight: 600, fontStyle: 'italic' }}>
+                            Útil pra OS que viajou em outro mês mas precisa ser faturada neste período.
+                            Pra remover uma OS deste boletim, clique no <span style={{ color: '#dc2626', fontWeight: 900 }}>X</span> ao lado do número.
+                        </span>
+                    </div>
+
                     <div className="report-table-scroll" style={{ overflowX: 'auto', maxHeight: '75vh', overflowY: 'auto', WebkitOverflowScrolling: 'touch', border: '1.5px solid #b91c1c', borderRadius: '8px' }}>
                         <table style={{ width: 'max-content', minWidth: '100%', borderCollapse: 'collapse', tableLayout: 'auto' }}>
                             <colgroup>
@@ -2767,7 +2847,7 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
                             </colgroup>
                             <thead>
                                 <tr className="group-hdr">
-                                    <th style={groupHeaderStyle} colSpan={8 + (isCeslogBilling ? 1 : 0) + (isCevaBilling ? 1 : 0)}>TABELA ACORDADA</th>
+                                    <th style={groupHeaderStyle} colSpan={8 + (isCeslogBilling ? 1 : 0)}>TABELA ACORDADA</th>
                                     <th style={groupHeaderStyle} colSpan={6}>INFORMAÇÕES DA VIAGEM</th>
                                     <th style={grpKm} colSpan={3}>KILOMETRAGEM</th>
                                     <th style={grpHr} colSpan={3}>HORÁRIOS</th>
@@ -2811,18 +2891,28 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
                                 {(() => {
                                     const filtered = boletimFilter === 'aprovadas' ? rowsData.filter(r => r.isApproved) : boletimFilter === 'pendentes' ? rowsData.filter(r => !r.isApproved) : rowsData;
                                     return filtered.length === 0 ? (
-                                    <tr><td colSpan={28 + (isCeslogBilling ? 1 : 0) + (isCevaBilling ? 1 : 0)} style={{ ...cellStyle, padding: '20px', fontSize: '14px', fontWeight: 700, color: '#9ca3af' }}>{boletimFilter !== 'todas' ? `NENHUMA MISSÃO ${boletimFilter === 'aprovadas' ? 'APROVADA' : 'PENDENTE'} NO PERÍODO.` : 'NENHUMA MISSÃO NO PERÍODO.'}</td></tr>
+                                    <tr><td colSpan={28 + (isCeslogBilling ? 1 : 0)} style={{ ...cellStyle, padding: '20px', fontSize: '14px', fontWeight: 700, color: '#9ca3af' }}>{boletimFilter !== 'todas' ? `NENHUMA MISSÃO ${boletimFilter === 'aprovadas' ? 'APROVADA' : 'PENDENTE'} NO PERÍODO.` : 'NENHUMA MISSÃO NO PERÍODO.'}</td></tr>
                                 ) : (
                                     filtered.map((r, i) => (
                                         <tr key={i} title={r.frozen ? `Dados Congelados - Aprovado por ${r.frozenBy}` : !r.isApproved ? `Status: ${r.missionStatus} (não aprovada)` : ''} style={!r.isApproved ? { backgroundColor: '#fce4e4', animation: 'blink-pending 2s ease-in-out infinite' } : undefined}>
                                             <td style={{ ...cellStyle, fontSize: '9px', color: '#9ca3af', textAlign: 'center', padding: '2px' }}>{i + 1}</td>
-                                            <td style={{ ...cellBold, cursor: 'pointer' }} onClick={(e) => handleOpenOS(`GTM-${r.id}`, e)} data-testid={`boletim-open-os-${r.id}`}>
-                                                {r.frozen && <Lock size={8} style={{ display: 'inline', marginRight: '2px', color: '#92400e' }} />}
-                                                {!r.isApproved && <span style={{ display: 'inline-block', fontSize: '7px', fontWeight: 900, color: '#fff', backgroundColor: '#dc2626', borderRadius: '3px', padding: '0 3px', marginRight: '2px', verticalAlign: 'middle' }}>{r.missionStatus.toUpperCase()}</span>}
-                                                <span style={{ color: '#1d4ed8', textDecoration: 'underline' }}>{r.id}</span>
+                                            <td style={cellBold}>
+                                                <span onClick={(e) => handleOpenOS(`GTM-${r.id}`, e)} data-testid={`boletim-open-os-${r.id}`} style={{ cursor: 'pointer' }}>
+                                                    {r.frozen && <Lock size={8} style={{ display: 'inline', marginRight: '2px', color: '#92400e' }} />}
+                                                    {!r.isApproved && <span style={{ display: 'inline-block', fontSize: '7px', fontWeight: 900, color: '#fff', backgroundColor: '#dc2626', borderRadius: '3px', padding: '0 3px', marginRight: '2px', verticalAlign: 'middle' }}>{r.missionStatus.toUpperCase()}</span>}
+                                                    <span style={{ color: '#1d4ed8', textDecoration: 'underline' }}>{r.id}</span>
+                                                </span>
+                                                <button
+                                                    type="button"
+                                                    className="no-print"
+                                                    onClick={(e) => { e.stopPropagation(); handleExcludeRow(r.id); }}
+                                                    disabled={actionBusy === `GTM-${r.id}`}
+                                                    title="Remover esta OS do boletim"
+                                                    data-testid={`btn-exclude-os-${r.id}`}
+                                                    style={{ marginLeft: '4px', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: '14px', height: '14px', border: 'none', borderRadius: '3px', background: '#fee2e2', color: '#dc2626', fontSize: '10px', fontWeight: 900, cursor: actionBusy ? 'not-allowed' : 'pointer', verticalAlign: 'middle', lineHeight: 1, padding: 0, opacity: actionBusy === `GTM-${r.id}` ? 0.4 : 1 }}
+                                                >×</button>
                                             </td>
                                             {isCeslogBilling && <td style={{ ...cellStyle, fontWeight: 700, color: '#7e22ce', fontSize: '11px' }}>{r.referenceNumber || '-'}</td>}
-                                            {isCevaBilling && <td style={{ ...cellStyle, fontWeight: 700, color: '#0d9488', fontSize: '11px' }}>{r.billingRelease || '-'}</td>}
                                             <td className="route-cell" style={{ ...cellStyle, textAlign: 'left', whiteSpace: 'normal', wordWrap: 'break-word', wordBreak: 'break-word', overflowWrap: 'break-word', lineHeight: '1.25', fontSize: '12px', maxWidth: '320px' }} title={r.route}>{r.route}</td>
                                             <td style={cellStyle}>{fmtBRL(r.activationFee)}</td>
                                             <td style={cellStyle}>{r.franchiseHoursFmt}</td>
@@ -2857,7 +2947,7 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
                             {rowsData.length > 0 && (
                                 <tfoot>
                                     <tr style={{ backgroundColor: '#7f1d1d', color: '#fff' }}>
-                                        <td colSpan={27 + (isCeslogBilling ? 1 : 0) + (isCevaBilling ? 1 : 0)} style={{ ...cellStyle, textAlign: 'right', fontWeight: 900, fontSize: '14px', color: '#fff', border: '1px solid #991b1b', padding: '8px 10px' }}>TOTAL</td>
+                                        <td colSpan={27 + (isCeslogBilling ? 1 : 0)} style={{ ...cellStyle, textAlign: 'right', fontWeight: 900, fontSize: '14px', color: '#fff', border: '1px solid #991b1b', padding: '8px 10px' }}>TOTAL</td>
                                         <td style={{ ...cellStyle, fontWeight: 900, fontSize: '15px', color: '#fff', border: '1px solid #991b1b', padding: '8px 10px' }}>{fmtBRL(grandTotal)}</td>
                                     </tr>
                                 </tfoot>

@@ -1307,16 +1307,20 @@ export async function registerRoutes(
   }
 
   // ── Migration: controles manuais do Boletim de Medição ──
+  // Verifica se as colunas já existem; se não, instrui o usuário a rodar o SQL.
+  // Não usa exec_sql porque essa função pode não existir no Supabase do cliente.
   try {
-    await supabaseAdmin.rpc('exec_sql', { sql: `
-      ALTER TABLE missions
-        ADD COLUMN IF NOT EXISTS billing_period_override TIMESTAMPTZ,
-        ADD COLUMN IF NOT EXISTS exclude_from_billing BOOLEAN DEFAULT false;
-      NOTIFY pgrst, 'reload schema';
-    `});
-    console.log('[Migration] Colunas billing_period_override e exclude_from_billing verificadas/criadas.');
+    const { error: chkErr } = await supabaseAdmin.from('missions').select('billing_period_override').limit(1);
+    if (chkErr && chkErr.message?.includes('does not exist')) {
+      console.log('[Migration] ⚠️  Colunas billing_period_override / exclude_from_billing NÃO existem.');
+      console.log('[Migration] ⚠️  Execute no Supabase SQL Editor:');
+      console.log('[Migration] ⚠️    ALTER TABLE missions ADD COLUMN IF NOT EXISTS billing_period_override TIMESTAMPTZ, ADD COLUMN IF NOT EXISTS exclude_from_billing BOOLEAN DEFAULT false;');
+      console.log("[Migration] ⚠️    NOTIFY pgrst, 'reload schema';");
+    } else {
+      console.log('[Migration] Colunas billing_period_override e exclude_from_billing OK.');
+    }
   } catch (e: any) {
-    console.log('[Migration] billing_period_override/exclude_from_billing:', e.message || 'ok');
+    console.log('[Migration] billing_period_override/exclude_from_billing check error:', e.message || 'unknown');
   }
 
   try {
