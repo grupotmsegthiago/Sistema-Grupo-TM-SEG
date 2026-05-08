@@ -228,13 +228,22 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
             if (escapedTradingName && escapedTradingName !== escapedClientName) {
                 clientFilters.push(`client.ilike.%${escapedTradingName}%`);
             }
-            const clientNameParts = escapedClientName.split(/\s+/).filter(p => p.length > 2);
-            if (clientNameParts.length >= 2) {
-                const coreFilter = clientNameParts.slice(0, 3).join('%');
+            // BUG anterior: usávamos só `length > 2` como filtro de palavras, então
+            // pra "ET DO BRASIL LTDA" sobrava ["BRASIL","LTDA"] → padrão
+            // `%BRASIL%LTDA%` → casava SANKYU LOGISTICS DO BRASIL LTDA, etc.
+            // Agora também tira stop-words (LTDA, S.A., DO, DE, DA, ...) e exige
+            // pelo menos 2 palavras significativas com 4+ letras pra montar o
+            // filtro genérico, evitando colisões entre clientes.
+            const STOP_WORDS = new Set(['LTDA','LTDA.','S.A.','S.A','SA','S/A','S/A.','DO','DE','DA','E','DAS','DOS','BRASIL']);
+            const meaningfulParts = escapedClientName
+                .split(/\s+/)
+                .filter(p => p.length >= 4 && !STOP_WORDS.has(p.toUpperCase()));
+            if (meaningfulParts.length >= 2) {
+                const coreFilter = meaningfulParts.slice(0, 3).join('%');
                 clientFilters.push(`client.ilike.%${coreFilter}%`);
             }
             const shortName = clientNameShort(clientName);
-            if (shortName) {
+            if (shortName && shortName.split(/\s+/).every(w => w.length >= 3)) {
                 clientFilters.push(`client.ilike.%${shortName}%`);
             }
 
