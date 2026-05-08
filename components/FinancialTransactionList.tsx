@@ -644,6 +644,19 @@ const FinancialTransactionList: React.FC = () => {
         return periodFilteredTransactions.filter(t => t.type === 'INCOME' && t.status === 'PENDING' && t.due_date.split('T')[0] < today && !investmentCategoryIds.has(t.category_id) && !isInvestmentAdjustment(t));
     }, [periodFilteredTransactions, investmentCategoryIds]);
 
+    // Vencidos GLOBAIS (independente do filtro de período) — pra o card "Vencidos"
+    // mostrar a totalidade de títulos atrasados, mesmo quando o usuário está
+    // visualizando "Mês Atual" e os vencimentos atrasados são de meses anteriores.
+    const overduePagarAll = useMemo(() => {
+        const today = getTodayBR();
+        return transactions.filter(t => t.type === 'EXPENSE' && t.status === 'PENDING' && (t.due_date || '').split('T')[0] < today && !investmentCategoryIds.has(t.category_id) && !isInvestmentAdjustment(t));
+    }, [transactions, investmentCategoryIds]);
+
+    const overdueReceberAll = useMemo(() => {
+        const today = getTodayBR();
+        return transactions.filter(t => t.type === 'INCOME' && t.status === 'PENDING' && (t.due_date || '').split('T')[0] < today && !investmentCategoryIds.has(t.category_id) && !isInvestmentAdjustment(t));
+    }, [transactions, investmentCategoryIds]);
+
     const renderFilters = () => (
         <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-200 space-y-3 no-print">
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-end">
@@ -864,16 +877,45 @@ const FinancialTransactionList: React.FC = () => {
                                     <p className="text-[9px] text-gray-400 font-bold">{summary.count - summary.paidCount} título(s)</p>
                                 </div>
                             </div>
-                            <div className={`p-4 rounded-xl border shadow-sm flex items-center gap-3 ${(isPagar ? overduePagar : overdueReceber).length > 0 ? 'bg-red-50 border-red-200' : 'bg-gray-50 border-gray-200'}`}>
-                                <div className={`p-2.5 rounded-full ${(isPagar ? overduePagar : overdueReceber).length > 0 ? 'bg-red-100 text-red-600' : 'bg-gray-200 text-gray-400'}`}><AlertCircle size={18}/></div>
-                                <div>
-                                    <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest">Vencidos</p>
-                                    <p className={`text-lg font-black font-mono ${(isPagar ? overduePagar : overdueReceber).length > 0 ? 'text-red-600' : 'text-gray-400'}`}>
-                                        {(isPagar ? overduePagar : overdueReceber).length}
-                                    </p>
-                                    <p className="text-[9px] text-red-500 font-bold">{formatCurrency((isPagar ? overduePagar : overdueReceber).reduce((a, t) => a + t.amount, 0))}</p>
-                                </div>
-                            </div>
+                            {(() => {
+                                const overdueList = isPagar ? overduePagarAll : overdueReceberAll;
+                                const hasOverdue = overdueList.length > 0;
+                                const isActive = statusFilter === 'OVERDUE';
+                                return (
+                                    <button
+                                        type="button"
+                                        data-testid="card-vencidos-filter"
+                                        onClick={() => {
+                                            if (isActive) {
+                                                setStatusFilter('ALL');
+                                            } else {
+                                                setStatusFilter('OVERDUE');
+                                                setViewPeriod('ALL');
+                                            }
+                                        }}
+                                        className={`text-left p-4 rounded-xl border shadow-sm flex items-center gap-3 transition-all hover:shadow-md ${
+                                            isActive
+                                                ? 'bg-red-100 border-red-400 ring-2 ring-red-400'
+                                                : hasOverdue
+                                                    ? 'bg-red-50 border-red-200 hover:bg-red-100'
+                                                    : 'bg-gray-50 border-gray-200 hover:bg-gray-100'
+                                        }`}
+                                    >
+                                        <div className={`p-2.5 rounded-full ${hasOverdue ? 'bg-red-100 text-red-600' : 'bg-gray-200 text-gray-400'}`}><AlertCircle size={18}/></div>
+                                        <div className="flex-1 min-w-0">
+                                            <div className="flex items-center gap-1.5">
+                                                <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest">Vencidos</p>
+                                                {isActive && <span className="text-[8px] font-black bg-red-600 text-white px-1.5 py-0.5 rounded uppercase">Filtrando</span>}
+                                            </div>
+                                            <p className={`text-lg font-black font-mono ${hasOverdue ? 'text-red-600' : 'text-gray-400'}`}>{overdueList.length}</p>
+                                            <p className="text-[9px] text-red-500 font-bold">{formatCurrency(overdueList.reduce((a, t) => a + t.amount, 0))}</p>
+                                            <p className="text-[9px] text-gray-400 font-bold mt-0.5">
+                                                {isActive ? 'clique para limpar filtro' : hasOverdue ? 'clique para filtrar' : 'tudo em dia'}
+                                            </p>
+                                        </div>
+                                    </button>
+                                );
+                            })()}
                         </div>
                         {renderFilters()}
                         {renderTransactionTable(filteredByStep, isPagar ? 'Despesa' : 'Receita')}
