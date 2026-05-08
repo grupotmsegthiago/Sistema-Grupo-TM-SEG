@@ -122,13 +122,33 @@ const FinancialTransactionList: React.FC = () => {
     const fetchTransactions = async () => {
         setLoading(true);
         try {
-            const { data, error } = await supabase
+            // Carrega o período principal (visualização padrão)
+            const mainQuery = supabase
                 .from('financial_transactions')
                 .select('*')
                 .gte('due_date', '2026-02-15')
                 .order('due_date', { ascending: false });
-            if (error) throw error;
-            setTransactions(data as FinancialTransaction[]);
+
+            // Carrega TODOS os atrasados (qualquer data anterior a hoje)
+            // que ainda não foram pagos/cancelados, pra o card "Vencidos"
+            // mostrar a totalidade real, mesmo títulos antigos.
+            const todayStr = getTodayBR();
+            const overdueQuery = supabase
+                .from('financial_transactions')
+                .select('*')
+                .lt('due_date', todayStr)
+                .not('status', 'in', '(PAID,CANCELLED,CANCELED)')
+                .order('due_date', { ascending: false });
+
+            const [mainRes, overdueRes] = await Promise.all([mainQuery, overdueQuery]);
+            if (mainRes.error) throw mainRes.error;
+            if (overdueRes.error) throw overdueRes.error;
+
+            // Mescla os dois conjuntos sem duplicar (por id)
+            const merged = new Map<string, FinancialTransaction>();
+            (mainRes.data as FinancialTransaction[]).forEach(t => merged.set(t.id, t));
+            (overdueRes.data as FinancialTransaction[]).forEach(t => { if (!merged.has(t.id)) merged.set(t.id, t); });
+            setTransactions(Array.from(merged.values()));
         } catch (e) { console.error(e); } finally { setLoading(false); }
     };
 
@@ -647,14 +667,25 @@ const FinancialTransactionList: React.FC = () => {
     // Vencidos GLOBAIS (independente do filtro de período) — pra o card "Vencidos"
     // mostrar a totalidade de títulos atrasados, mesmo quando o usuário está
     // visualizando "Mês Atual" e os vencimentos atrasados são de meses anteriores.
+    // Regra: TUDO que passou da data e não está PAGO conta como vencido,
+    // independente do status no banco (PENDING, OVERDUE, SCHEDULED, etc.).
+    // Único critério de exclusão: status === 'PAID' (foi pago) ou
+    // status === 'CANCELLED' (foi cancelado).
+    const isOverdue = (t: FinancialTransaction, today: string) => {
+        if (t.status === 'PAID' || (t.status as string) === 'CANCELLED' || (t.status as string) === 'CANCELED') return false;
+        const due = (t.due_date || '').split('T')[0];
+        if (!due) return false;
+        return due < today;
+    };
+
     const overduePagarAll = useMemo(() => {
         const today = getTodayBR();
-        return transactions.filter(t => t.type === 'EXPENSE' && t.status === 'PENDING' && (t.due_date || '').split('T')[0] < today && !investmentCategoryIds.has(t.category_id) && !isInvestmentAdjustment(t));
+        return transactions.filter(t => t.type === 'EXPENSE' && isOverdue(t, today) && !investmentCategoryIds.has(t.category_id) && !isInvestmentAdjustment(t));
     }, [transactions, investmentCategoryIds]);
 
     const overdueReceberAll = useMemo(() => {
         const today = getTodayBR();
-        return transactions.filter(t => t.type === 'INCOME' && t.status === 'PENDING' && (t.due_date || '').split('T')[0] < today && !investmentCategoryIds.has(t.category_id) && !isInvestmentAdjustment(t));
+        return transactions.filter(t => t.type === 'INCOME' && isOverdue(t, today) && !investmentCategoryIds.has(t.category_id) && !isInvestmentAdjustment(t));
     }, [transactions, investmentCategoryIds]);
 
     const renderFilters = () => (
