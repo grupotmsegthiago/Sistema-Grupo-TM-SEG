@@ -170,6 +170,10 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
   const [showNegativeMarginOnly, setShowNegativeMarginOnly] = useState(false);
   const [isRecalculating, setIsRecalculating] = useState(false);
 
+  // Paginação da tabela: 30 OS por página
+  const PAGE_SIZE = 30;
+  const [currentPage, setCurrentPage] = useState(1);
+
   // Relógio para projeções
   const [currentTime, setCurrentTime] = useState(new Date());
 
@@ -884,7 +888,18 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
             return tsA - tsB;
         });
     }, [filteredMissions, getDelayMinutes, getLastUpdateTimestamp]);
-  
+
+    // Paginação: fatia 30 OS por página
+    const totalPages = Math.max(1, Math.ceil(sortedMissions.length / PAGE_SIZE));
+    const safePage = Math.min(currentPage, totalPages);
+    const pagedMissions = useMemo(() => {
+        const start = (safePage - 1) * PAGE_SIZE;
+        return sortedMissions.slice(start, start + PAGE_SIZE);
+    }, [sortedMissions, safePage]);
+
+    // Reset pra página 1 sempre que algum filtro mudar
+    useEffect(() => { setCurrentPage(1); }, [searchTerm, osFilterTerm, filterStatus, viewPeriod, customStartDate, customEndDate, showPendingOnly, showTomorrowOnly, showMyApprovalOnly, showNegativeMarginOnly, approvalViewStage]);
+
     const handleOpenUpdateModal = (mission: Mission) => { setSelectedMission(mission); setIsUpdateModalOpen(true); };
     const handleUpdateSuccess = (reportText?: string) => { setIsUpdateModalOpen(false); setSelectedMission(null); fetchMissions(true); if (reportText) handleCopyToClipboard(reportText, 'relatorio', true); };
     const handleOpenStatusModal = async (mission: Mission) => { setMissionForStatusView(mission); setIsStatusModalOpen(true); const { data } = await supabase.from('mission_logs').select('*').eq('mission_id', mission.id).order('created_at', { ascending: false }); if (data) setMissionLogs(data as MissionLog[]); };
@@ -1307,7 +1322,7 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
                   <p className="text-sm font-bold text-gray-500 relative z-10">Nenhuma missão encontrada para este filtro.</p>
               </div> ) : (
                   <div className="flex flex-col gap-3">
-                      {sortedMissions.map((mission) => {
+                      {pagedMissions.map((mission) => {
                           const diffMinutes = getDelayMinutes(mission);
                           const isPending = isMissionPending(mission);
                           const isRedLight = isPending || [MissionStatus.CANCELLED, MissionStatus.REFUSED].includes(mission.status) || (diffMinutes > 60 && ![MissionStatus.COMPLETED].includes(mission.status));
@@ -1347,6 +1362,46 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
                           );
                       })}
                   </div>
+              )}
+              {!isLoading && sortedMissions.length > PAGE_SIZE && (
+                <div className="flex flex-wrap items-center justify-between gap-3 mt-4 px-2 py-3 bg-white border border-gray-200 rounded-lg" data-testid="pagination-bar">
+                  <div className="text-xs text-gray-600 font-medium">
+                    Mostrando <span className="font-bold text-gray-900">{(safePage - 1) * PAGE_SIZE + 1}</span>
+                    {' – '}
+                    <span className="font-bold text-gray-900">{Math.min(safePage * PAGE_SIZE, sortedMissions.length)}</span>
+                    {' de '}
+                    <span className="font-bold text-gray-900">{sortedMissions.length}</span> OS
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <button
+                      onClick={() => setCurrentPage(1)}
+                      disabled={safePage === 1}
+                      data-testid="btn-page-first"
+                      className="px-2.5 py-1.5 text-xs font-bold rounded-md border border-gray-300 bg-white hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed"
+                    >«</button>
+                    <button
+                      onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                      disabled={safePage === 1}
+                      data-testid="btn-page-prev"
+                      className="px-3 py-1.5 text-xs font-bold rounded-md border border-gray-300 bg-white hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed"
+                    >‹ Anterior</button>
+                    <span className="px-3 py-1.5 text-xs font-bold text-gray-700 bg-gray-100 rounded-md min-w-[80px] text-center" data-testid="text-page-info">
+                      {safePage} / {totalPages}
+                    </span>
+                    <button
+                      onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                      disabled={safePage >= totalPages}
+                      data-testid="btn-page-next"
+                      className="px-3 py-1.5 text-xs font-bold rounded-md border border-gray-300 bg-white hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed"
+                    >Próxima ›</button>
+                    <button
+                      onClick={() => setCurrentPage(totalPages)}
+                      disabled={safePage >= totalPages}
+                      data-testid="btn-page-last"
+                      className="px-2.5 py-1.5 text-xs font-bold rounded-md border border-gray-300 bg-white hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed"
+                    >»</button>
+                  </div>
+                </div>
               )}
           </div>
         </div>
