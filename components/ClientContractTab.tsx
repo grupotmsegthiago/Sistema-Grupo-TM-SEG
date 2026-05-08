@@ -97,10 +97,11 @@ const ClientContractTab: React.FC<Props> = ({
     try {
       const { data } = await supabase
         .from('system_logs')
-        .select('*')
+        .select('id, created_at, user_name, action_type, details')
         .eq('entity', 'ClientContract')
         .eq('entity_id', clientId)
-        .order('created_at', { ascending: false });
+        .order('created_at', { ascending: false })
+        .limit(200);
 
       if (data) {
         const parsed = data.map(row => {

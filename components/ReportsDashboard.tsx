@@ -79,10 +79,11 @@ const ReportsDashboard: React.FC = () => {
             // Busca expandida para incluir mais tipos de ações se necessário
             const { data, error } = await supabase
                 .from('system_logs')
-                .select('*')
+                .select('id, created_at, user_name, action_type, entity, entity_id, details')
                 .gte('created_at', `${startDate}T00:00:00`)
                 .lte('created_at', `${endDate}T23:59:59`)
-                .order('created_at', { ascending: false });
+                .order('created_at', { ascending: false })
+                .limit(2000);
 
             if (error) throw error;
             setLogs(data || []);

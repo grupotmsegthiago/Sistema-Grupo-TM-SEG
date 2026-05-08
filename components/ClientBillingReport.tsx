@@ -310,10 +310,10 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
                 supabase.from('client_price_tables').select('*').or(clientFuzzyFilter(clientName)),
                 supabase.from('provider_cost_tables').select('*'),
                 missionIds.length > 0
-                    ? supabase.from('system_logs').select('entity_id, details').eq('entity', 'BillingAdjustment').in('entity_id', missionIds).order('created_at', { ascending: false })
+                    ? supabase.from('system_logs').select('entity_id, details').eq('entity', 'BillingAdjustment').in('entity_id', missionIds).order('created_at', { ascending: false }).limit(missionIds.length * 5)
                     : Promise.resolve({ data: [] }),
                 missionIds.length > 0
-                    ? supabase.from('system_logs').select('entity_id, details').eq('entity', 'BillingSnapshot').in('entity_id', missionIds).order('created_at', { ascending: false })
+                    ? supabase.from('system_logs').select('entity_id, details').eq('entity', 'BillingSnapshot').in('entity_id', missionIds).order('created_at', { ascending: false }).limit(missionIds.length * 2)
                     : Promise.resolve({ data: [] })
             ]);
             setPriceTables(ptRes.data as ClientPriceTable[] || []);

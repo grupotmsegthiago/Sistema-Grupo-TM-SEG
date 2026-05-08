@@ -336,7 +336,9 @@ const UserForm: React.FC<UserFormProps> = ({ onBack, userType, id }) => {
     try {
       const { data: allLogs } = await supabase.from('system_logs')
         .select('details')
-        .eq('entity', 'UserEquipment');
+        .eq('entity', 'UserEquipment')
+        .order('created_at', { ascending: false })
+        .limit(500);
       if (allLogs) {
         allLogs.forEach(log => {
           try {
