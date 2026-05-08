@@ -1203,7 +1203,6 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
 
         const headers: string[] = ['Nº'];
         if (isCeslogBilling) headers.push('REFERÊNCIA');
-        if (isCevaBilling) headers.push('LIB. FATUR.');
         headers.push(
             'ROTA', 'VALOR', 'HR FRANQ', 'KM FRANQ', 'HR EXTRA', 'KM EXTRA',
             'DATA INÍCIO', 'HORA INÍCIO', 'VIATURA', 'VEÍC. ESCOLTADO', 'DATA FIM', 'HORA FIM',
@@ -2780,7 +2779,6 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
                                     <th style={{ ...headerStyle, width: '30px', minWidth: '30px' }}>#</th>
                                     <th style={headerStyle}>Nº</th>
                                     {isCeslogBilling && <th style={{ ...headerStyle, backgroundColor: '#7e22ce', color: '#fff' }}>REFERÊNCIA</th>}
-                                    {isCevaBilling && <th style={{ ...headerStyle, backgroundColor: '#0d9488', color: '#fff' }}>LIB. FATUR.</th>}
                                     <th style={{ ...headerStyle, textAlign: 'left' }}>ROTA</th>
                                     <th style={headerStyle}>VALOR</th>
                                     <th style={headerStyle}>HR FRANQ</th>
