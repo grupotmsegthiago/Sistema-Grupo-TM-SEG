@@ -69,6 +69,31 @@ const FinancialTransactionList: React.FC = () => {
     const [invoices, setInvoices] = useState<{id: string, client: string, number: string, amount: number, date: string, status: 'EMITIDA' | 'PAGA' | 'CANCELADA', notes: string, nf_image_url?: string, boleto_image_url?: string, provider?: string, issuer_company?: string, boleto_due_date?: string}[]>([]);
     const [clients, setClients] = useState<{id: string, name: string}[]>([]);
 
+    // Saldos Asaas (TM Gestão, TM Seg, TM Security)
+    const [asaasBalances, setAsaasBalances] = useState<Array<{ company: string; name: string; balance: number; pendingBalance: number; error?: string }>>([]);
+    const [loadingBalances, setLoadingBalances] = useState(false);
+
+    const fetchAsaasBalances = async () => {
+        setLoadingBalances(true);
+        try {
+            const res = await authFetch('/api/asaas/balances');
+            if (res.ok) {
+                const json = await res.json();
+                if (json?.success && Array.isArray(json.balances)) setAsaasBalances(json.balances);
+            }
+        } catch (e) {
+            console.warn('[Asaas] Falha ao buscar saldos:', e);
+        } finally {
+            setLoadingBalances(false);
+        }
+    };
+
+    useEffect(() => {
+        fetchAsaasBalances();
+        const id = setInterval(fetchAsaasBalances, 5 * 60 * 1000);
+        return () => clearInterval(id);
+    }, []);
+
     useEffect(() => { 
         fetchTransactions();
         fetchAccounts();
@@ -1187,6 +1212,59 @@ const FinancialTransactionList: React.FC = () => {
                         </button>
                     )}
                 </div>
+            </div>
+
+            {/* Saldos Asaas — TM Gestão, TM Seg, TM Security */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3 no-print" data-testid="cards-asaas-balances">
+                {[
+                    { key: 'TM GESTÃO', label: 'TM GESTÃO', color: 'from-red-700 to-red-900', accent: 'text-red-700', dot: 'bg-red-700' },
+                    { key: 'TM SEGURANCA', label: 'TM SEG', color: 'from-blue-700 to-blue-900', accent: 'text-blue-700', dot: 'bg-blue-700' },
+                    { key: 'TM SECURITY', label: 'TM SECURITY', color: 'from-emerald-700 to-emerald-900', accent: 'text-emerald-700', dot: 'bg-emerald-700' },
+                ].map(co => {
+                    const entry = asaasBalances.find(b => b.company === co.key);
+                    const balance = entry?.balance ?? 0;
+                    const pending = entry?.pendingBalance ?? 0;
+                    const hasError = !!entry?.error;
+                    return (
+                        <div key={co.key} className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden" data-testid={`card-asaas-${co.key.replace(/\s+/g, '-').toLowerCase()}`}>
+                            <div className={`h-1.5 bg-gradient-to-r ${co.color}`}></div>
+                            <div className="p-4">
+                                <div className="flex items-center justify-between mb-2">
+                                    <div className="flex items-center gap-2">
+                                        <span className={`w-2 h-2 rounded-full ${co.dot}`}></span>
+                                        <p className="text-[10px] font-black uppercase tracking-wider text-gray-500">Saldo Asaas</p>
+                                    </div>
+                                    <button onClick={fetchAsaasBalances} className="text-gray-400 hover:text-gray-700 transition-colors" title="Atualizar saldos" data-testid={`btn-refresh-asaas-${co.key.replace(/\s+/g, '-').toLowerCase()}`}>
+                                        <RefreshCw size={12} className={loadingBalances ? 'animate-spin' : ''} />
+                                    </button>
+                                </div>
+                                <p className={`text-sm font-black uppercase tracking-tight ${co.accent} mb-1`}>{co.label}</p>
+                                {loadingBalances && !entry ? (
+                                    <div className="flex items-center gap-2 text-gray-400">
+                                        <Loader2 size={14} className="animate-spin" />
+                                        <span className="text-xs">Carregando...</span>
+                                    </div>
+                                ) : hasError ? (
+                                    <div className="flex items-start gap-1.5 text-amber-600">
+                                        <AlertCircle size={14} className="mt-0.5 flex-shrink-0" />
+                                        <span className="text-[10px] leading-tight">{entry?.error}</span>
+                                    </div>
+                                ) : (
+                                    <>
+                                        <p className="text-2xl font-black text-gray-900 tracking-tight" data-testid={`text-balance-${co.key.replace(/\s+/g, '-').toLowerCase()}`}>
+                                            {balance.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                                        </p>
+                                        {pending > 0 && (
+                                            <p className="text-[11px] text-gray-500 mt-1">
+                                                Pendente: <span className="font-bold text-amber-600">{pending.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</span>
+                                            </p>
+                                        )}
+                                    </>
+                                )}
+                            </div>
+                        </div>
+                    );
+                })}
             </div>
 
             <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-2 no-print">
