@@ -1344,7 +1344,8 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
                   {/* Barra de rolagem horizontal SUPERIOR — espelha a inferior */}
                   <div
                     ref={topScrollRef}
-                    className="overflow-x-auto overflow-y-hidden sticky top-0 z-10 mb-2 rounded-lg [scrollbar-color:#2d3748_#13151f] [&::-webkit-scrollbar]:h-2.5 [&::-webkit-scrollbar-track]:bg-[#13151f] [&::-webkit-scrollbar-track]:rounded-full [&::-webkit-scrollbar-thumb]:bg-[#2d3748] [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:border-2 [&::-webkit-scrollbar-thumb]:border-solid [&::-webkit-scrollbar-thumb]:border-[#13151f] [&::-webkit-scrollbar-thumb:hover]:bg-[#4a5568]"
+                    style={{ height: 14 }}
+                    className="overflow-x-scroll overflow-y-hidden sticky top-2 z-20 mb-2 rounded-full bg-[#13151f] [scrollbar-color:#2d3748_#13151f] [&::-webkit-scrollbar]:h-3 [&::-webkit-scrollbar-track]:bg-[#13151f] [&::-webkit-scrollbar-track]:rounded-full [&::-webkit-scrollbar-thumb]:bg-[#3b4252] [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:border-2 [&::-webkit-scrollbar-thumb]:border-solid [&::-webkit-scrollbar-thumb]:border-[#13151f] [&::-webkit-scrollbar-thumb:hover]:bg-[#4a5568]"
                     onScroll={() => { if (mainScrollRef.current && topScrollRef.current && !syncingFromMainRef.current) { syncingFromTopRef.current = true; mainScrollRef.current.scrollLeft = topScrollRef.current.scrollLeft; requestAnimationFrame(() => { syncingFromTopRef.current = false; }); } }}
                     data-testid="mission-list-scroll-top"
                     aria-hidden="true"

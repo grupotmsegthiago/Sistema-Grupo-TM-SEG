@@ -1,0 +1,60 @@
+não resolveu a barra não aparece..
+
+Entendi, Thiago. Olhando a imagem image_931b5f.png, o problema é que o container da sua tabela está "preso" dentro da altura da página, ocultando a barra de rolagem lá no fundo.
+
+Em vez de tentar criar uma barra fantasma no topo (que pode falhar se o layout for dinâmico), vamos fazer a solução definitiva: Fixar o Cabeçalho e limitar a altura da tabela.
+
+Dessa forma, a barra de rolagem aparecerá sempre visível na altura do seu monitor, logo abaixo da última linha que couber na tela, sem você precisar descer a página inteira.
+
+Implemente este CSS no seu sistema Grupo TM SEG:
+CSS
+/* 1. Container que limita a altura para a barra aparecer na tela atual */
+.tmseg-table-wrapper {
+  max-height: 70vh; /* Ocupa 70% da altura da visão do monitor */
+  overflow-x: auto; /* Barra horizontal SEMPRE visível se a tabela for larga */
+  overflow-y: auto; /* Barra vertical interna para não descer a página toda */
+  border: 1px solid #1c2130;
+  border-radius: 8px;
+  background: #0f111a;
+  position: relative;
+}
+
+/* 2. FAZ O CABEÇALHO FICAR FIXO NO TOPO (Sticky) */
+/* Assim você rola para baixo e os títulos (#, OS, STATUS) não somem */
+.tmseg-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  background-color: #13151f; /* Mesma cor do fundo para não ficar transparente */
+  box-shadow: inset 0 -1px 0 #1c2130; /* Linha divisória inferior */
+}
+
+/* 3. Garante que a tabela tenha largura para ativar a rolagem horizontal */
+.tmseg-table {
+  min-width: 1400px; /* Ajuste esse valor conforme a necessidade das colunas */
+  border-collapse: separate; /* Necessário para o sticky header funcionar bem */
+  border-spacing: 0;
+}
+
+/* 4. Estilização da barra de rolagem para ficar bem visível no seu tema escuro */
+.tmseg-table-wrapper::-webkit-scrollbar {
+  width: 10px;  /* Barra vertical */
+  height: 10px; /* Barra horizontal */
+}
+
+.tmseg-table-wrapper::-webkit-scrollbar-thumb {
+  background: #3b4252; /* Cor de destaque */
+  border-radius: 5px;
+}
+
+.tmseg-table-wrapper::-webkit-scrollbar-track {
+  background: #0f111a;
+}
+O que essa mudança faz na prática:
+Fim da rolagem infinita: A página do navegador para de crescer. A tabela agora tem sua própria "janela" interna.
+
+Barra sempre à mão: Como o container tem max-height: 70vh, a barra de rolagem horizontal vai aparecer exatamente onde a tabela termina na sua tela, e não lá no final das 98 missões.
+
+Título fixo: Ao descer a lista de OS, você continua vendo o que é cada coluna, facilitando a auditoria.
+
+Dica para o Replit: Se a barra ainda parecer "escondida", diminua o valor de 70vh para 60vh no CSS acima até que ela apareça confortavelmente no seu monitor sem precisar usar o scroll do mouse para fora da tabela.
