@@ -1,0 +1,72 @@
+perfeito..
+
+
+
+toda vez que eu mudo algo ele pede para "Recalcular" eu queria que ele recalculasse sozinho
+
+Entendi perfeitamente. Na imagem image_93e9d9.png, vejo que você tem botões de "Recalcular" tanto no "Valor Final Cliente" quanto no "Pagamento Fornecedor". Para que o sistema do Grupo TM SEG faça isso sozinho, precisamos trocar o disparo manual (clique no botão) por um efeito de monitoramento automático (reatividade).
+
+Como você utiliza o Replit e o Supabase, provavelmente está usando React ou Vue no frontend. A ideia é usar um "gancho" que observa as variáveis (KM, base, pedágio) e dispara a função de cálculo sempre que uma delas mudar.
+
+Aqui estão os dois caminhos para automatizar isso:
+
+1. Reatividade via Código (Frontend)
+Se o seu sistema for em React, você deve usar o useEffect. Em vez de esperar o clique no botão, o código abaixo "vigia" os inputs.
+
+JavaScript
+// Exemplo de lógica para o seu componente no Replit
+import { useEffect, useState } from 'react';
+
+function AuditoriaFaturamento() {
+  const [dados, setDados] = useState({
+    base: 928.00,
+    km: 98.0,
+    valorKm: 7.30,
+    pedagio: 14.70,
+    horaExtra: 0
+  });
+
+  const [valorFinal, setValorFinal] = useState(0);
+
+  // ESTA É A MÁGICA: Sempre que qualquer valor dentro de 'dados' mudar, 
+  // ele executa a função de cálculo automaticamente.
+  useEffect(() => {
+    const calcular = () => {
+      const total = dados.base + (dados.km * dados.valorKm) + dados.horaExtra + dados.pedagio;
+      setValorFinal(total);
+    };
+
+    calcular();
+  }, [dados]); // O array aqui diz ao React: "Monitore estas variáveis"
+
+  // No seu HTML/JSX, você pode remover o botão de Recalcular 
+  // ou deixá-lo apenas como um indicador visual.
+}
+2. Sincronização com o Supabase (Backend)
+Se você estiver editando os valores e quer que o banco de dados já salve o cálculo pronto, a melhor estratégia é usar uma Generated Column ou uma Function no Supabase.
+
+Vantagem: O cálculo acontece no servidor. Se você mudar o KM no banco de dados, o "Valor Total" se ajusta sozinho sem precisar de código no Replit.
+
+Como fazer: No SQL Editor do seu Supabase, você pode ajustar a tabela:
+
+SQL
+-- Exemplo de coluna calculada automática no Supabase
+ALTER TABLE faturamento
+ADD COLUMN valor_total_gerado NUMERIC 
+GENERATED ALWAYS AS (valor_base + (km_total * valor_por_km) + valor_pedagio) STORED;
+O que você deve fazer agora:
+Para eu te passar o código exato, você consegue me confirmar:
+
+Qual linguagem/framework você está usando no Replit? (React, Vue, ou HTML puro com JavaScript?)
+
+Onde estão os inputs? O cálculo deve acontecer enquanto você digita ou logo após você sair do campo de edição?
+
+Dica técnica: Se você quiser manter o botão apenas para "emergências", podemos mudar a cor dele para cinza e deixá-lo invisível, aparecendo apenas se houver uma divergência entre o valor manual e o automático, como notei que já existe um aviso de "VALOR MANUAL" na sua tela.
+
+Qual desses caminhos faz mais sentido para a estrutura atual do seu sistema?
+
+
+
+
+
+O Gemini é IA e pode cometer erros.

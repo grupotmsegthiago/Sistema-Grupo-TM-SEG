@@ -1069,6 +1069,23 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
       }
     }, [financialData, memoryLoaded, mission, tollProviderInput, useSavedValues, isLoading]); 
 
+    // Auto-recálculo: quando o usuário mexer em qualquer parâmetro (tabela, base/km/hora customizados,
+    // IBL, override do fornecedor) após o carregamento inicial, liberamos os refs para que o autofill
+    // acima atualize sozinho os totais — eliminando a necessidade de clicar em "Recalcular".
+    const paramsBaselineRef = React.useRef(false);
+    useEffect(() => {
+        if (isLoading) {
+            paramsBaselineRef.current = false;
+            return;
+        }
+        if (!paramsBaselineRef.current) {
+            paramsBaselineRef.current = true;
+            return;
+        }
+        dbValuesLoadedRef.current = false;
+        userManuallyEditedRef.current = false;
+    }, [manualClientTableId, manualProviderTableId, customClientBase, customClientKm, customClientHour, customProviderBase, customProviderKm, customProviderHour, iblEnabled, providerOpsOverride, isLoading]);
+
 
   const handleTollChange = (val: string) => {
       const oldToll = parseNumber(tollInput);
@@ -2924,9 +2941,21 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                         <div className="p-4 bg-green-50 border border-green-100 rounded-xl relative group">
                             <div className="flex justify-between items-center mb-2">
                                 <label className="text-[10px] font-black text-green-700 uppercase">Valor Final Cliente (Serviço + Pedágio)</label>
-                                <button type="button" onClick={handleRecalculateClient} className={`flex items-center gap-1 text-[9px] font-bold text-green-700 hover:text-green-900 bg-green-100 hover:bg-green-200 px-2 py-0.5 rounded transition-colors ${isController ? 'hidden' : ''}`} title="Resetar para o cálculo da tabela">
-                                    <RefreshCw size={10} /> Recalcular
-                                </button>
+                                {(() => {
+                                    const calcTotalBtn = financialData ? financialData.client.total : 0;
+                                    const inputValBtn = parseNumber(revenueInput);
+                                    const isManualValueBtn = inputValBtn > 0 && calcTotalBtn > 0 && Math.abs(inputValBtn - calcTotalBtn) > 1;
+                                    if (!isManualValueBtn || isController) return (
+                                        <span className="text-[9px] font-bold text-green-600 bg-green-100 px-2 py-0.5 rounded flex items-center gap-1" title="Recálculo automático ativo">
+                                            <RefreshCw size={10} /> Auto
+                                        </span>
+                                    );
+                                    return (
+                                        <button type="button" onClick={handleRecalculateClient} className="flex items-center gap-1 text-[9px] font-bold text-amber-700 hover:text-amber-900 bg-amber-100 hover:bg-amber-200 border border-amber-300 px-2 py-0.5 rounded transition-colors" title="Redefinir para o cálculo da tabela">
+                                            <RefreshCw size={10} /> Restaurar Auto
+                                        </button>
+                                    );
+                                })()}
                             </div>
                             {(() => {
                                 const ibl = financialData.iblFee || 0;
@@ -3011,11 +3040,21 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                     Pagamento Fornecedor (Tabela + Pedágio)
                                     {mission?.verified_by && mission?.verified_at && <Lock size={12} className="text-blue-600" />}
                                 </label>
-                                {!(mission?.verified_by && mission?.verified_at) && (
-                                    <button type="button" onClick={handleRecalculateProvider} className="flex items-center gap-1 text-[9px] font-bold text-blue-700 hover:text-blue-900 bg-blue-100 hover:bg-blue-200 px-2 py-0.5 rounded transition-colors" title="Resetar para o cálculo da tabela">
-                                        <RefreshCw size={10} /> Recalcular
-                                    </button>
-                                )}
+                                {!(mission?.verified_by && mission?.verified_at) && (() => {
+                                    const calcCostBtn = financialData ? (financialData.provider.serviceTotal + parseNumber(tollProviderInput)) : 0;
+                                    const inputCostBtn = parseNumber(costInput);
+                                    const isManualCostBtn = inputCostBtn > 0 && calcCostBtn > 0 && Math.abs(inputCostBtn - calcCostBtn) > 1;
+                                    if (!isManualCostBtn) return (
+                                        <span className="text-[9px] font-bold text-blue-600 bg-blue-100 px-2 py-0.5 rounded flex items-center gap-1" title="Recálculo automático ativo">
+                                            <RefreshCw size={10} /> Auto
+                                        </span>
+                                    );
+                                    return (
+                                        <button type="button" onClick={handleRecalculateProvider} className="flex items-center gap-1 text-[9px] font-bold text-amber-700 hover:text-amber-900 bg-amber-100 hover:bg-amber-200 border border-amber-300 px-2 py-0.5 rounded transition-colors" title="Redefinir para o cálculo da tabela">
+                                            <RefreshCw size={10} /> Restaurar Auto
+                                        </button>
+                                    );
+                                })()}
                             </div>
                             {mission?.verified_by && mission?.verified_at && (
                                 <div className="bg-blue-100 border border-blue-300 rounded-lg px-3 py-1.5 mb-2 flex items-center gap-2">
