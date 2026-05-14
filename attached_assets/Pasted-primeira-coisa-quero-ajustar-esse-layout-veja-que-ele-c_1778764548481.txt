@@ -1,0 +1,191 @@
+primeira coisa, quero ajustar esse layout
+
+
+
+veja que ele corta os nomes, eu preciso que apareça assim
+
+Origem:
+
+Destino:
+
+KM total:
+
+Com certeza! Entendi perfeitamente o problema. O layout original na imagem image_0.png está com os campos comprimidos e cortando informações importantes. Vamos ajustar isso para criar a estrutura que você pediu, garantindo que tudo fique visível e bem organizado.
+
+Para resolver, vamos:
+
+Criar Novas Linhas: Transformar a linha única e apertada em várias linhas empilhadas verticalmente para dar espaço.
+
+Formatar com Rótulos Claros: Adicionar "Origem:", "Destino:" e "KM total:" antes de cada valor, como você especificou.
+
+Melhorar a Hierarquia: Manter os badges de empresa destacados e dar mais destaque para a quilometragem.
+
+Aqui está o código ajustado para implementar essas mudanças no seu sistema Grupo TM SEG.
+
+Solução 1: Código Completo (HTML/JSX/TSX com Tailwind CSS)
+Se você está usando React/Vue/Svelte com Tailwind CSS no Replit, substitua o bloco do cabeçalho pelo código abaixo. Ele já está configurado com o novo layout empilhado:
+
+HTML
+<!-- CÓDIGO AJUSTADO PARA LAYOUT EXPANDIDO -->
+
+<!-- Container principal do cabeçalho (fundo escuro, cantos arredondados) -->
+<div class="bg-[#0f111a] text-white p-4 rounded-t-lg shadow-lg">
+  
+  <!-- Linha 1: Título Principal, ID e Botões (Fica no topo) -->
+  <div class="flex items-center justify-between gap-4 mb-4">
+    <div class="flex items-center gap-4">
+      <!-- Ícone da Calculadora Vermelha -->
+      <div class="bg-red-600 p-3 rounded-lg">
+        <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 7h6m0 10v-3m-3 3h.01M9 17h.01M9 14h.01M12 14h.01M15 11h.01M12 11h.01M9 11h.01M7 21h10a2 2 0 002-2V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2z"></path>
+        </svg>
+      </div>
+      <!-- Título e ID -->
+      <div class="flex items-baseline gap-2">
+        <h1 class="text-xl font-bold">Auditoria de Faturamento</h1>
+        <span class="text-gray-400"># GTM-4923</span>
+      </div>
+    </div>
+    
+    <!-- Botões da Direita -->
+    <div class="flex items-center gap-2">
+      <button class="bg-[#1c2130] text-gray-300 text-xs px-3 py-1.5 rounded flex items-center gap-1.5 hover:bg-gray-700">
+        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"></path></svg>
+        MESMA OS
+      </button>
+      <button class="text-gray-500 hover:text-white p-1">
+        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M6 18L18 6M6 6l12 12"></path></svg>
+      </button>
+    </div>
+  </div>
+
+  <!-- Linha 2: Badges das Empresas (Mantemos lado a lado) -->
+  <div class="flex items-center gap-2 mb-4 border-t border-gray-800 pt-3">
+    <!-- Remetente (Azul) -->
+    <div class="bg-[#2a4365] text-[#90cdf4] text-xs font-medium px-3 py-1 rounded flex items-center gap-1.5">
+      <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"></path></svg>
+      INTERMODAL BRASIL LOGISTICA S.A.
+    </div>
+    
+    <!-- Destinatário (Roxo) -->
+    <div class="bg-[#44337a] text-[#d6bcfa] text-xs font-medium px-3 py-1 rounded flex items-center gap-1.5">
+      <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"></path></svg>
+      SOARES ELETRONICA E
+    </div>
+  </div>
+
+  <!-- SEÇÃO NOVA: Dados Detalhados (Empilhados Verticalmente) -->
+  <div class="space-y-3 bg-[#13151f] p-4 rounded-md border border-gray-800">
+    
+    <!-- Origem: Endereço Completo -->
+    <div class="flex items-start gap-2.5">
+      <svg class="w-4 h-4 text-red-500 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"></path><path d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
+      <div class="flex-grow">
+        <span class="font-bold text-sm text-gray-200">Origem:</span>
+        <span class="text-sm text-gray-300 ml-1.5">R. Otto Albano Ganzenmüller, 123 - Curitiba, PR</span>
+      </div>
+    </div>
+
+    <!-- Destino: Endereço Completo -->
+    <div class="flex items-start gap-2.5">
+      <svg class="w-4 h-4 text-green-500 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"></path><path d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
+      <div class="flex-grow">
+        <span class="font-bold text-sm text-gray-200">Destino:</span>
+        <span class="text-sm text-gray-300 ml-1.5">Rua Romalino João da Rosa, 456 - São José, SC</span>
+      </div>
+    </div>
+
+    <!-- KM total: Valor Destacado -->
+    <div class="flex items-center gap-2.5 border-t border-gray-800 pt-2.5 mt-2.5">
+      <svg class="w-4 h-4 text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"></path></svg>
+      <div class="flex-grow flex items-baseline gap-2">
+        <span class="font-bold text-sm text-gray-200">KM total:</span>
+        <span class="text-xl font-extrabold text-white">254,80</span>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<!-- O restante do conteúdo (Boletim de Medição) continua abaixo sem alterações -->
+Solução 2: Se você estiver usando CSS Puro
+Se o seu projeto não usa Tailwind e você precisa dos estilos CSS correspondentes, use esta estrutura HTML e a classe CSS abaixo:
+
+HTML
+<!-- Estrutura HTML -->
+<div class="tmseg-auditoria-header">
+  <div class="main-title-row">
+    <!-- Ícone, Título, GTM, Botões (igual image_0.png) -->
+  </div>
+  
+  <div class="badges-row">
+    <!-- Badges de Empresas (igual image_0.png) -->
+  </div>
+
+  <!-- Nova seção expandida -->
+  <div class="details-section">
+    <div class="detail-item origin">
+      <span class="label">Origem:</span>
+      <span class="value">R. Otto Albano Ganzenmüller...</span>
+    </div>
+    <div class="detail-item destination">
+      <span class="label">Destino:</span>
+      <span class="value">Rua Romalino João da Rosa...</span>
+    </div>
+    <div class="detail-item total-km">
+      <span class="label">KM total:</span>
+      <span class="value km-highlight">254,80</span>
+    </div>
+  </div>
+</div>
+CSS
+/* CSS Correspondente */
+.tmseg-auditoria-header {
+  background-color: #0f111a;
+  color: white;
+  padding: 16px;
+  border-radius: 8px 8px 0 0;
+}
+
+.details-section {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  background-color: #13151f;
+  padding: 16px;
+  border-radius: 6px;
+  margin-top: 16px;
+  border: 1px solid #1c2130;
+}
+
+.detail-item {
+  display: flex;
+  align-items: flex-start; /* Alinha no topo para endereços longos */
+  font-size: 14px;
+}
+
+.detail-item .label {
+  font-weight: bold;
+  color: #e2e8f0; /* Cinza claro */
+  min-width: 80px; /* Garante alinhamento dos rótulos */
+  display: inline-block;
+}
+
+.detail-item .value {
+  color: #cbd5e0; /* Cinza médio */
+  flex-grow: 1;
+}
+
+.detail-item.total-km {
+  align-items: center; /* KM alinhado ao centro */
+  margin-top: 12px;
+  border-top: 1px solid #1c2130;
+  padding-top: 12px;
+}
+
+.km-highlight {
+  font-size: 20px;
+  font-weight: 800;
+  color: white;
+}
+Implemente uma dessas soluções no seu arquivo .jsx ou .html no Replit e me diga se o visual ficou como você queria!

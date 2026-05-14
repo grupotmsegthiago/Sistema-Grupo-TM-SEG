@@ -5,7 +5,7 @@ import { supabase } from '../lib/supabase';
 import { authFetch } from '../lib/authFetch';
 import { useNotification } from '../lib/NotificationContext';
 import { calculateMissionFinancials, auditMissionFinancials, extractUF, UF_TO_REGION, clientFuzzyFilter, clientNameShort } from '../lib/financialUtils';
-import { X, Calculator, Loader2, Save, CheckCircle2, TrendingUp, Landmark, Zap, RotateCcw, Building2, Briefcase, Plus, Users, MapPin, ArrowRight, BrainCircuit, AlertTriangle, AlertCircle, Edit2, Info, RefreshCw, Clock, Pencil, Lock, ShieldCheck, Camera, Image as ImageIcon, Link2, Layers, Scale, Sparkles } from 'lucide-react';
+import { X, Calculator, Loader2, Save, CheckCircle2, TrendingUp, Landmark, Zap, RotateCcw, Building2, Briefcase, Plus, Users, MapPin, ArrowRight, BrainCircuit, AlertTriangle, AlertCircle, Edit2, Info, RefreshCw, Clock, Pencil, Lock, ShieldCheck, Camera, Image as ImageIcon, Link2, Layers, Scale, Sparkles, Navigation } from 'lucide-react';
 import { suggestPriceTable } from '../lib/gemini';
 import ProviderCostForm from './ProviderCostForm';
 import ClientPriceForm from './ClientPriceForm';
@@ -1859,99 +1859,18 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
       )}
 
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-5xl overflow-hidden flex flex-col max-h-[95vh] border border-gray-200 relative z-[100]">
-        <header className="bg-[#0f172a] text-white p-5 flex justify-between items-center shrink-0">
-          <div className="flex items-center gap-4 flex-1 min-w-0">
-            <div className="p-2.5 bg-red-600 rounded-xl shadow-lg shrink-0"><Calculator size={24} /></div>
-            <div className="min-w-0 flex-1">
-                <h3 className="font-bold text-xl leading-none truncate">Auditoria de Faturamento <span className="text-gray-400 text-sm"># {mission.id}</span></h3>
-                <div className="flex flex-col md:flex-row md:items-center gap-2 md:gap-4 mt-2">
-                    <div className="flex gap-2 shrink-0">
-                        <span className="bg-blue-900 text-blue-200 text-[9px] px-2 py-0.5 rounded font-bold uppercase flex items-center gap-1"><Building2 size={10}/> {mission.client}</span>
-                        <span className="bg-indigo-900 text-indigo-200 text-[9px] px-2 py-0.5 rounded font-bold uppercase flex items-center gap-1"><Briefcase size={10}/> {formatProviderName(mission.provider)}</span>
-                    </div>
-                    <div className="flex items-center gap-2 text-[10px] font-bold text-gray-400 uppercase min-w-0 flex-1 overflow-hidden">
-                        <MapPin size={10} className="text-red-500 shrink-0" /> 
-                        {isEditingRoute ? (
-                            <>
-                                <input 
-                                    type="text" 
-                                    value={editOrigin} 
-                                    onChange={e => setEditOrigin(e.target.value.toUpperCase())}
-                                    className="bg-white/10 border border-white/30 rounded px-2 py-1 text-[10px] font-bold text-white uppercase flex-1 min-w-0 outline-none focus:border-red-400"
-                                    placeholder="Origem"
-                                    data-testid="input-edit-origin"
-                                />
-                                <ArrowRight size={10} className="shrink-0" />
-                                <input 
-                                    type="text" 
-                                    value={editDestination} 
-                                    onChange={e => setEditDestination(e.target.value.toUpperCase())}
-                                    className="bg-white/10 border border-white/30 rounded px-2 py-1 text-[10px] font-bold text-white uppercase flex-1 min-w-0 outline-none focus:border-red-400"
-                                    placeholder="Destino"
-                                    data-testid="input-edit-destination"
-                                />
-                                <button 
-                                    onClick={async () => {
-                                        if (!editOrigin.trim() || !editDestination.trim()) return;
-                                        setIsSavingRoute(true);
-                                        try {
-                                            const { error } = await supabase.from('missions').update({ 
-                                                origin: editOrigin.trim(), 
-                                                destination: editDestination.trim(),
-                                                last_update: new Date().toISOString()
-                                            }).eq('id', mission.id).select('id').single();
-                                            if (error) throw error;
-                                            const userData = JSON.parse(localStorage.getItem('userData') || '{}');
-                                            await supabase.from('system_logs').insert([{
-                                                user_name: userData.name || 'Sistema',
-                                                action_type: 'UPDATE',
-                                                entity: 'Mission',
-                                                entity_id: mission.id,
-                                                details: JSON.stringify({ field: 'route', oldOrigin: mission.origin, newOrigin: editOrigin.trim(), oldDestination: mission.destination, newDestination: editDestination.trim() })
-                                            }]);
-                                            mission.origin = editOrigin.trim();
-                                            mission.destination = editDestination.trim();
-                                            setIsEditingRoute(false);
-                                            showNotification('Rota Atualizada', `${editOrigin.trim()} → ${editDestination.trim()}`, 'success');
-                                        } catch (err: any) {
-                                            showNotification('Erro', err.message, 'error');
-                                        }
-                                        setIsSavingRoute(false);
-                                    }}
-                                    disabled={isSavingRoute}
-                                    className="flex items-center gap-1 px-2 py-1 bg-emerald-600 text-white rounded text-[9px] font-black hover:bg-emerald-700 shrink-0"
-                                    data-testid="button-save-route"
-                                >
-                                    {isSavingRoute ? <Loader2 size={10} className="animate-spin" /> : <Save size={10} />} OK
-                                </button>
-                                <button 
-                                    onClick={() => setIsEditingRoute(false)}
-                                    className="p-1 text-gray-400 hover:text-white shrink-0"
-                                >
-                                    <X size={12} />
-                                </button>
-                            </>
-                        ) : (
-                            <>
-                                <span className="truncate flex-1 min-w-0">{mission.origin}</span>
-                                <ArrowRight size={10} className="shrink-0" />
-                                <span className="truncate flex-1 min-w-0">{mission.destination}</span>
-                                {canEditOpsData && (
-                                    <button 
-                                        onClick={() => { setEditOrigin(mission.origin || ''); setEditDestination(mission.destination || ''); setIsEditingRoute(true); }}
-                                        className="p-1 text-gray-500 hover:text-white transition-colors shrink-0"
-                                        title="Editar Origem e Destino"
-                                        data-testid="button-edit-route"
-                                    >
-                                        <Pencil size={10} />
-                                    </button>
-                                )}
-                            </>
-                        )}
-                    </div>
-                </div>
+        <header className="bg-[#0f172a] text-white p-5 flex flex-col gap-3 shrink-0">
+          <div className="flex justify-between items-start gap-3">
+            <div className="flex items-center gap-4 flex-1 min-w-0">
+              <div className="p-2.5 bg-red-600 rounded-xl shadow-lg shrink-0"><Calculator size={24} /></div>
+              <div className="min-w-0 flex-1">
+                  <h3 className="font-bold text-xl leading-tight truncate">Auditoria de Faturamento <span className="text-gray-400 text-sm font-normal"># {mission.id}</span></h3>
+                  <div className="flex flex-wrap gap-1.5 mt-2">
+                      <span className="bg-blue-900 text-blue-200 text-[9px] px-2 py-0.5 rounded font-bold uppercase flex items-center gap-1" title={mission.client}><Building2 size={10}/> <span className="truncate max-w-[180px]">{mission.client}</span></span>
+                      <span className="bg-indigo-900 text-indigo-200 text-[9px] px-2 py-0.5 rounded font-bold uppercase flex items-center gap-1" title={formatProviderName(mission.provider)}><Briefcase size={10}/> <span className="truncate max-w-[180px]">{formatProviderName(mission.provider)}</span></span>
+                  </div>
+              </div>
             </div>
-          </div>
           <div className="flex items-center gap-2 ml-4 shrink-0">
             {mission.is_same_os && mission.parent_mission_id && (
               <span data-testid="chip-is-child" className="text-[9px] font-black bg-blue-600 text-white px-2 py-1 rounded uppercase flex items-center gap-1">
@@ -2004,6 +1923,119 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
               {mission.is_same_os ? 'MESMA OS ✓' : 'MESMA OS'}
             </button>
             <button onClick={onClose} className="p-2 rounded-full hover:bg-white/10 transition-colors"><X size={24}/></button>
+          </div>
+          </div>
+
+          {/* Origem / Destino / KM total — empilhados para evitar corte de texto */}
+          <div className="bg-[#13151f] border border-gray-800 rounded-md p-3 space-y-2">
+              {isEditingRoute ? (
+                  <>
+                      <div className="flex items-start gap-2">
+                          <MapPin size={14} className="text-red-500 mt-2 flex-shrink-0" />
+                          <div className="flex-1 min-w-0">
+                              <label className="text-[10px] font-black text-gray-400 uppercase tracking-wider">Origem</label>
+                              <input
+                                  type="text"
+                                  value={editOrigin}
+                                  onChange={e => setEditOrigin(e.target.value.toUpperCase())}
+                                  className="w-full bg-white/10 border border-white/30 rounded px-2 py-1.5 text-sm font-bold text-white uppercase outline-none focus:border-red-400 mt-0.5"
+                                  placeholder="Origem"
+                                  data-testid="input-edit-origin"
+                              />
+                          </div>
+                      </div>
+                      <div className="flex items-start gap-2">
+                          <MapPin size={14} className="text-green-500 mt-2 flex-shrink-0" />
+                          <div className="flex-1 min-w-0">
+                              <label className="text-[10px] font-black text-gray-400 uppercase tracking-wider">Destino</label>
+                              <input
+                                  type="text"
+                                  value={editDestination}
+                                  onChange={e => setEditDestination(e.target.value.toUpperCase())}
+                                  className="w-full bg-white/10 border border-white/30 rounded px-2 py-1.5 text-sm font-bold text-white uppercase outline-none focus:border-red-400 mt-0.5"
+                                  placeholder="Destino"
+                                  data-testid="input-edit-destination"
+                              />
+                          </div>
+                      </div>
+                      <div className="flex items-center gap-2 pt-1">
+                          <button
+                              onClick={async () => {
+                                  if (!editOrigin.trim() || !editDestination.trim()) return;
+                                  setIsSavingRoute(true);
+                                  try {
+                                      const { error } = await supabase.from('missions').update({
+                                          origin: editOrigin.trim(),
+                                          destination: editDestination.trim(),
+                                          last_update: new Date().toISOString()
+                                      }).eq('id', mission.id).select('id').single();
+                                      if (error) throw error;
+                                      const userData = JSON.parse(localStorage.getItem('userData') || '{}');
+                                      await supabase.from('system_logs').insert([{
+                                          user_name: userData.name || 'Sistema',
+                                          action_type: 'UPDATE',
+                                          entity: 'Mission',
+                                          entity_id: mission.id,
+                                          details: JSON.stringify({ field: 'route', oldOrigin: mission.origin, newOrigin: editOrigin.trim(), oldDestination: mission.destination, newDestination: editDestination.trim() })
+                                      }]);
+                                      mission.origin = editOrigin.trim();
+                                      mission.destination = editDestination.trim();
+                                      setIsEditingRoute(false);
+                                      showNotification('Rota Atualizada', `${editOrigin.trim()} → ${editDestination.trim()}`, 'success');
+                                  } catch (err: any) {
+                                      showNotification('Erro', err.message, 'error');
+                                  }
+                                  setIsSavingRoute(false);
+                              }}
+                              disabled={isSavingRoute}
+                              className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 text-white rounded text-xs font-black hover:bg-emerald-700"
+                              data-testid="button-save-route"
+                          >
+                              {isSavingRoute ? <Loader2 size={12} className="animate-spin" /> : <Save size={12} />} Salvar
+                          </button>
+                          <button
+                              onClick={() => setIsEditingRoute(false)}
+                              className="flex items-center gap-1 px-3 py-1.5 text-gray-300 hover:text-white border border-white/20 rounded text-xs"
+                          >
+                              <X size={12} /> Cancelar
+                          </button>
+                      </div>
+                  </>
+              ) : (
+                  <>
+                      <div className="flex items-start gap-2.5">
+                          <MapPin size={16} className="text-red-500 mt-0.5 flex-shrink-0" />
+                          <div className="flex-1 min-w-0 flex flex-wrap items-baseline gap-x-2">
+                              <span className="font-black text-sm text-gray-200 uppercase tracking-wider whitespace-nowrap">Origem:</span>
+                              <span className="text-sm text-gray-100 break-words font-medium" data-testid="text-route-origin">{mission.origin || '—'}</span>
+                          </div>
+                      </div>
+                      <div className="flex items-start gap-2.5">
+                          <MapPin size={16} className="text-green-500 mt-0.5 flex-shrink-0" />
+                          <div className="flex-1 min-w-0 flex flex-wrap items-baseline gap-x-2">
+                              <span className="font-black text-sm text-gray-200 uppercase tracking-wider whitespace-nowrap">Destino:</span>
+                              <span className="text-sm text-gray-100 break-words font-medium" data-testid="text-route-destination">{mission.destination || '—'}</span>
+                          </div>
+                      </div>
+                      <div className="flex items-center gap-2.5 border-t border-gray-800 pt-2 mt-1">
+                          <Navigation size={16} className="text-amber-400 flex-shrink-0" />
+                          <span className="font-black text-sm text-gray-200 uppercase tracking-wider">KM total:</span>
+                          <span className="text-lg font-black text-white tracking-tight" data-testid="text-route-totalkm">
+                              {(mission.totalDistance || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} <span className="text-xs font-bold text-gray-400">km</span>
+                          </span>
+                          {canEditOpsData && (
+                              <button
+                                  onClick={() => { setEditOrigin(mission.origin || ''); setEditDestination(mission.destination || ''); setIsEditingRoute(true); }}
+                                  className="ml-auto p-1.5 text-gray-500 hover:text-white transition-colors rounded hover:bg-white/10"
+                                  title="Editar Origem e Destino"
+                                  data-testid="button-edit-route"
+                              >
+                                  <Pencil size={12} />
+                              </button>
+                          )}
+                      </div>
+                  </>
+              )}
           </div>
         </header>
 
