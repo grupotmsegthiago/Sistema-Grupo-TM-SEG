@@ -191,7 +191,7 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
     ro.observe(el);
     window.addEventListener('resize', update);
     return () => { ro.disconnect(); window.removeEventListener('resize', update); };
-  }, [pagedMissions.length, isLoading]);
+  }, [isLoading]);
 
   // Relógio para projeções
   const [currentTime, setCurrentTime] = useState(new Date());
