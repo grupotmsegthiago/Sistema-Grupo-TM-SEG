@@ -1,0 +1,54 @@
+a rolagem esta no final da tela.. quero nessa tela mesmo em cima, é possivel?
+
+É perfeitamente possível, Thiago. Como a sua lista de OS é longa, a barra nativa do navegador fica lá no final da página, o que obriga você a rolar tudo para baixo só para conseguir andar para o lado.
+
+Para colocar uma barra de rolagem no topo da tabela, usamos um "truque" de espelhamento com uma div extra.
+
+Como implementar no Replit
+Você vai precisar de dois passos: uma pequena mudança na estrutura e um script curto para sincronizar as duas barras.
+
+1. Ajuste na Estrutura (HTML/JSX)
+Adicione uma div vazia logo acima do container da sua tabela. Ela servirá apenas como a barra de rolagem superior.
+
+HTML
+<!-- NOVA BARRA SUPERIOR -->
+<div id="scroll-top-container" style="overflow-x: auto; overflow-y: hidden; width: 100%;">
+  <div id="scroll-top-content" style="height: 1px;"></div>
+</div>
+
+<!-- CONTAINER DA TABELA (O que você já tem) -->
+<div id="table-main-container" class="tmseg-table-wrapper" style="overflow-x: auto; width: 100%;">
+  <table class="tmseg-table" style="min-width: 1500px;"> 
+    <!-- ... seu conteúdo ... -->
+  </table>
+</div>
+2. O Script de Sincronização
+Para que, ao mexer na barra de cima, a de baixo se mova (e vice-versa), adicione este script ao seu arquivo:
+
+JavaScript
+const topScroll = document.getElementById('scroll-top-container');
+const bottomScroll = document.getElementById('table-main-container');
+const topContent = document.getElementById('scroll-top-content');
+const table = bottomScroll.querySelector('table');
+
+// Sincroniza a largura da barra de cima com a largura real da tabela
+const syncWidth = () => {
+  topContent.style.width = table.offsetWidth + 'px';
+};
+
+// Faz uma barra seguir a outra
+topScroll.onscroll = () => {
+  bottomScroll.scrollLeft = topScroll.scrollLeft;
+};
+
+bottomScroll.onscroll = () => {
+  topScroll.scrollLeft = bottomScroll.scrollLeft;
+};
+
+// Atualiza a largura sempre que a tela mudar de tamanho
+window.addEventListener('resize', syncWidth);
+syncWidth(); // Executa ao carregar
+Por que isso resolve?
+Como você tem muitas OS (97 missões aparecendo na image_937dd9.jpg), o navegador entende que o "final" da tela é lá embaixo. Com esse código, você cria uma barra fantasma no topo que tem exatamente o mesmo tamanho da sua tabela. Quando você arrasta ela, o sistema "empurra" a tabela embaixo simultaneamente.
+
+Dica: Se você estiver usando React no Replit, coloque essa lógica de sincronização dentro de um useEffect para garantir que os elementos já existam na tela antes do script rodar.

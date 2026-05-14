@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { Mission, MissionStatus, MissionLog, User as UserType, Agent, Client, ClientPriceTable, ProviderCostTable } from '../types';
 import { authFetch } from '../lib/authFetch';
 import { supabase } from '../lib/supabase';
@@ -173,6 +173,25 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
   // Paginação da tabela: 30 OS por página
   const PAGE_SIZE = 30;
   const [currentPage, setCurrentPage] = useState(1);
+
+  const topScrollRef = useRef<HTMLDivElement | null>(null);
+  const mainScrollRef = useRef<HTMLDivElement | null>(null);
+  const mainContentRef = useRef<HTMLDivElement | null>(null);
+  const syncingFromTopRef = useRef(false);
+  const syncingFromMainRef = useRef(false);
+  const [topMirrorWidth, setTopMirrorWidth] = useState<number>(1100);
+
+  // Mantém a barra de rolagem SUPERIOR com a mesma largura interna da lista.
+  useEffect(() => {
+    const el = mainContentRef.current;
+    if (!el || typeof ResizeObserver === 'undefined') return;
+    const update = () => setTopMirrorWidth(el.scrollWidth || el.offsetWidth || 1100);
+    update();
+    const ro = new ResizeObserver(update);
+    ro.observe(el);
+    window.addEventListener('resize', update);
+    return () => { ro.disconnect(); window.removeEventListener('resize', update); };
+  }, [pagedMissions.length, isLoading]);
 
   // Relógio para projeções
   const [currentTime, setCurrentTime] = useState(new Date());
@@ -1321,11 +1340,24 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
                   </svg>
                   <p className="text-sm font-bold text-gray-500 relative z-10">Nenhuma missão encontrada para este filtro.</p>
               </div> ) : (
+                <>
+                  {/* Barra de rolagem horizontal SUPERIOR — espelha a inferior */}
                   <div
+                    ref={topScrollRef}
+                    className="overflow-x-auto overflow-y-hidden sticky top-0 z-10 mb-2 rounded-lg [scrollbar-color:#2d3748_#13151f] [&::-webkit-scrollbar]:h-2.5 [&::-webkit-scrollbar-track]:bg-[#13151f] [&::-webkit-scrollbar-track]:rounded-full [&::-webkit-scrollbar-thumb]:bg-[#2d3748] [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:border-2 [&::-webkit-scrollbar-thumb]:border-solid [&::-webkit-scrollbar-thumb]:border-[#13151f] [&::-webkit-scrollbar-thumb:hover]:bg-[#4a5568]"
+                    onScroll={() => { if (mainScrollRef.current && topScrollRef.current && !syncingFromMainRef.current) { syncingFromTopRef.current = true; mainScrollRef.current.scrollLeft = topScrollRef.current.scrollLeft; requestAnimationFrame(() => { syncingFromTopRef.current = false; }); } }}
+                    data-testid="mission-list-scroll-top"
+                    aria-hidden="true"
+                  >
+                    <div style={{ width: topMirrorWidth, height: 1 }} />
+                  </div>
+                  <div
+                    ref={mainScrollRef}
                     className="overflow-x-auto overflow-y-hidden pb-2 rounded-lg [scrollbar-color:#2d3748_#13151f] [&::-webkit-scrollbar]:h-2.5 [&::-webkit-scrollbar-track]:bg-[#13151f] [&::-webkit-scrollbar-track]:rounded-full [&::-webkit-scrollbar-thumb]:bg-[#2d3748] [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:border-2 [&::-webkit-scrollbar-thumb]:border-solid [&::-webkit-scrollbar-thumb]:border-[#13151f] [&::-webkit-scrollbar-thumb:hover]:bg-[#4a5568]"
+                    onScroll={() => { if (mainScrollRef.current && topScrollRef.current && !syncingFromTopRef.current) { syncingFromMainRef.current = true; topScrollRef.current.scrollLeft = mainScrollRef.current.scrollLeft; requestAnimationFrame(() => { syncingFromMainRef.current = false; }); } }}
                     data-testid="mission-list-scroll"
                   >
-                    <div className="flex flex-col gap-3 min-w-[1100px]">
+                    <div ref={mainContentRef} className="flex flex-col gap-3 min-w-[1100px]">
                       {pagedMissions.map((mission) => {
                           const diffMinutes = getDelayMinutes(mission);
                           const isPending = isMissionPending(mission);
@@ -1367,6 +1399,7 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
                       })}
                     </div>
                   </div>
+                </>
               )}
               {!isLoading && sortedMissions.length > PAGE_SIZE && (
                 <div className="flex flex-wrap items-center justify-between gap-3 mt-4 px-2 py-3 bg-white border border-gray-200 rounded-lg" data-testid="pagination-bar">
