@@ -1,0 +1,48 @@
+Quando eu ou alguém clicar em SALVAR ou APROVAR, toda vez que recalcular qualquer coisa no sistema, uma vez salvo ele não pode mais ser alterado isso pra todas as telas? pode verificar se esta funcionando desse jeito?
+
+Essa é uma trava de segurança essencial para o Grupo TM SEG, Thiago. Ao analisar a imagem image_91bec4.png, noto que o sistema já registra quem salvou e em qual data/hora (conforme o selo verde: "SALVO POR THIAGO MOREIRA DOS SANTOS (14/05/2026 11:31)").
+
+Atualmente, o comportamento padrão do seu sistema permite salvar rascunhos. Para garantir a imutabilidade (não permitir alterações após o salvamento/aprovação), precisamos implementar um bloqueio de estado.
+
+Verificação do Status Atual
+Pela imagem, vejo que o botão "SALVAR AJUSTES" e os botões de "EDITAR" nas seções de Dados do Cliente e Fornecedor ainda estão ativos (clicáveis). Isso significa que, tecnicamente, os dados ainda podem ser alterados.
+
+Como implementar essa trava em todas as telas
+Para que o sistema respeite essa regra de "uma vez salvo, não altera mais", você deve aplicar uma lógica de ReadOnly (Somente Leitura) baseada no status de aprovação.
+
+1. Lógica no Frontend (Replit)
+Você deve desabilitar todos os inputs e botões de ação se houver um registro de salvamento ou aprovação:
+
+JavaScript
+// Exemplo de verificação de trava
+const isLocked = osData.status_faturamento === 'APROVADO' || osData.ultimo_salvamento != null;
+
+// No seu código, aplique a propriedade 'disabled' nos componentes:
+<button disabled={isLocked} onClick={handleSave}>SALVAR AJUSTES</button>
+<button disabled={isLocked} onClick={handleEdit}>EDITAR</button>
+<input disabled={isLocked} value={kmReal} />
+2. Proteção no Banco de Dados (Supabase)
+Para garantir que ninguém altere os dados diretamente via API ou console, você pode criar uma Trigger no banco de dados que impede o UPDATE se a coluna status_faturamento for 'APROVADO'.
+
+SQL
+CREATE OR REPLACE FUNCTION proteger_os_aprovada()
+RETURNS TRIGGER AS $$
+BEGIN
+    IF (OLD.status_faturamento = 'APROVADO') THEN
+        RAISE EXCEPTION 'Esta OS já foi aprovada e não pode ser alterada.';
+    END IF;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER trg_bloqueio_os_aprovada
+BEFORE UPDATE ON ordens_servico
+FOR EACH ROW EXECUTE FUNCTION proteger_os_aprovada();
+Checklist de Implementação:
+Desativar botões de "Recalcular": Se o valor foi salvo, ele deve ser lido do banco, não recalculado.
+
+Esconder botões de "Editar": Uma vez aprovado, o botão "EDITAR" (verde e azul na imagem) deve sumir ou ficar cinza.
+
+Log de Auditoria: Você já tem o log de quem salvou. Mantenha isso para garantir a rastreabilidade da operação.
+
+Quer que eu te ajude a criar uma função específica no Replit para varrer todos os campos da tela e desativá-los automaticamente quando o status for "Salvo"?

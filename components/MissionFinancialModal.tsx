@@ -278,6 +278,15 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
     return canEditOpsData || ['operacional', 'operador'].includes(userRoleLower);
   }, [canEditOpsData, userRoleLower]);
   const canEditClientData = canEditOpsData && !isController;
+
+  // TRAVA PÓS-SALVAMENTO: assim que alguém salva ou aprova um faturamento,
+  // todos os campos editáveis são bloqueados em todas as telas. Diretoria,
+  // administrador e CEO podem destravar manualmente para corrigir algo.
+  const isBillingLocked = !!(mission?.billing_verified_by || mission?.billing_approved || mission?.snapshot_approved_by);
+  const canUnlockBilling = ['diretoria', 'administrador', 'ceo'].includes(userRoleLower);
+  const [unlockOverride, setUnlockOverride] = useState(false);
+  useEffect(() => { setUnlockOverride(false); }, [mission?.id]);
+  const isEffectivelyLocked = isBillingLocked && !unlockOverride;
   
 
   const tollCalcMissionRef = React.useRef<string | null>(null);
@@ -1082,9 +1091,14 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
             paramsBaselineRef.current = true;
             return;
         }
+        // Quando o faturamento está travado (já salvo/aprovado) e não houve destravamento,
+        // não permitimos que o auto-recálculo sobrescreva os valores salvos no banco.
+        if (isEffectivelyLocked) {
+            return;
+        }
         dbValuesLoadedRef.current = false;
         userManuallyEditedRef.current = false;
-    }, [manualClientTableId, manualProviderTableId, customClientBase, customClientKm, customClientHour, customProviderBase, customProviderKm, customProviderHour, iblEnabled, providerOpsOverride, isLoading]);
+    }, [manualClientTableId, manualProviderTableId, customClientBase, customClientKm, customClientHour, customProviderBase, customProviderKm, customProviderHour, iblEnabled, providerOpsOverride, isLoading, isEffectivelyLocked]);
 
 
   const handleTollChange = (val: string) => {
@@ -2040,7 +2054,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                           <span className="text-lg font-black text-white tracking-tight" data-testid="text-route-totalkm">
                               {(mission.totalDistance || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} <span className="text-xs font-bold text-gray-400">km</span>
                           </span>
-                          {canEditOpsData && (
+                          {canEditOpsData && !isEffectivelyLocked && (
                               <button
                                   onClick={() => { setEditOrigin(mission.origin || ''); setEditDestination(mission.destination || ''); setIsEditingRoute(true); }}
                                   className="ml-auto p-1.5 text-gray-500 hover:text-white transition-colors rounded hover:bg-white/10"
@@ -2065,6 +2079,28 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                         <p className="text-amber-700 text-xs">Aprovado por <strong>{mission.snapshot_approved_by}</strong> em {mission.snapshot_approved_at ? new Date(mission.snapshot_approved_at).toLocaleString('pt-BR') : '-'}</p>
                         <p className="text-amber-600 text-[10px] mt-0.5">Valores finais salvos. O boletim de medição reflete esta versão aprovada.</p>
                     </div>
+                </div>
+            )}
+            {isBillingLocked && !isSnapshotFrozen && (
+                <div data-testid="billing-locked-banner" className={`border-2 rounded-xl p-4 flex items-center gap-3 shadow-sm ${unlockOverride ? 'bg-orange-50 border-orange-400' : 'bg-blue-50 border-blue-400'}`}>
+                    <div className={`p-2 rounded-lg ${unlockOverride ? 'bg-orange-500' : 'bg-blue-600'}`}><Lock size={20} className="text-white" /></div>
+                    <div className="flex-1">
+                        <p className={`font-bold text-sm ${unlockOverride ? 'text-orange-900' : 'text-blue-900'}`}>
+                            {unlockOverride ? 'Edição desbloqueada temporariamente' : 'Faturamento bloqueado para edição'}
+                        </p>
+                        <p className={`text-xs ${unlockOverride ? 'text-orange-700' : 'text-blue-700'}`}>
+                            {mission.billing_verified_by ? <>Salvo por <strong>{mission.billing_verified_by}</strong>{mission.billing_verified_at ? ` em ${new Date(mission.billing_verified_at).toLocaleString('pt-BR')}` : ''}.</> : 'Valores aprovados/salvos.'} {unlockOverride ? 'Os campos estão editáveis somente nesta sessão.' : 'Os campos só podem ser alterados após destravar.'}
+                        </p>
+                    </div>
+                    {canUnlockBilling && (
+                        <button
+                            onClick={() => setUnlockOverride(v => !v)}
+                            className={`px-3 py-2 rounded-lg text-xs font-black uppercase tracking-wider shadow-sm transition-all ${unlockOverride ? 'bg-orange-600 text-white hover:bg-orange-700' : 'bg-white text-blue-700 border-2 border-blue-300 hover:bg-blue-100'}`}
+                            data-testid="button-toggle-billing-lock"
+                        >
+                            {unlockOverride ? 'Travar de novo' : 'Destravar para editar'}
+                        </button>
+                    )}
                 </div>
             )}
             <BillingPeriodOverridePanel mission={mission} setMission={setMission} showNotification={showNotification} />
@@ -2295,7 +2331,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                 <div className="bg-green-50/50 border border-green-200 rounded-xl p-3">
                                     <div className="flex items-center justify-between mb-3">
                                         <p className="text-[10px] font-black text-green-700 uppercase tracking-widest flex items-center gap-1.5"><MapPin size={12}/> Dados Cliente</p>
-                                        {(canEditClientData || canEditEndTimeOnly) && !isEditingOpsData && (
+                                        {(canEditClientData || canEditEndTimeOnly) && !isEditingOpsData && !isEffectivelyLocked && (
                                             <button onClick={() => setIsEditingOpsData(true)} className="flex items-center gap-1 px-2 py-1 text-[9px] font-black text-green-600 bg-green-100 rounded-lg hover:bg-green-200 uppercase tracking-wider transition-all" data-testid="button-edit-ops-data"><Edit2 size={10}/> {canEditClientData ? 'Editar' : 'Editar Data/Hora'}</button>
                                         )}
                                         {isEditingOpsData && (
@@ -2378,7 +2414,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                                 <span className="text-[8px] font-bold text-blue-400 bg-blue-100 px-1.5 py-0.5 rounded-full">CÓPIA CLIENTE</span>
                                             )}
                                         </div>
-                                        {canEditOpsData && !isEditingProvOpsData && (
+                                        {canEditOpsData && !isEditingProvOpsData && !isEffectivelyLocked && (
                                             <button onClick={() => setIsEditingProvOpsData(true)} className="flex items-center gap-1 px-2 py-1 text-[9px] font-black text-blue-600 bg-blue-100 rounded-lg hover:bg-blue-200 uppercase tracking-wider transition-all" data-testid="button-edit-prov-ops-data"><Edit2 size={10}/> Editar</button>
                                         )}
                                         {isEditingProvOpsData && (
@@ -2543,10 +2579,10 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                 <label className={LABEL_CLASS}>Tabela de Preço Aplicada</label>
                                 <div className="flex gap-2">
                                     <select 
-                                        className={`w-full p-2 bg-gray-50 border border-gray-200 rounded-lg text-xs font-bold text-gray-700 uppercase outline-none focus:border-blue-500 ${isController ? 'pointer-events-none opacity-60' : ''}`}
+                                        className={`w-full p-2 bg-gray-50 border border-gray-200 rounded-lg text-xs font-bold text-gray-700 uppercase outline-none focus:border-blue-500 ${(isController || isEffectivelyLocked) ? 'pointer-events-none opacity-60' : ''}`}
                                         value={manualClientTableId || ''}
-                                        onChange={(e) => { if (!isController) { setManualClientTableId(e.target.value); setCustomClientBase(''); setCustomClientKm(''); setCustomClientHour(''); setUseSavedValues(false); userManuallyEditedRef.current = false; setMission(prev => prev ? { ...prev, revenue_edit_reason: '', cost_edit_reason: '', billing_verified_by: null } : prev); if (mission) { supabase.from('missions').update({ revenue_edit_reason: '', cost_edit_reason: '', billing_verified_by: null }).eq('id', mission.id).then(res => { if (res.error) { console.error('[Tabela Cliente] Falha ao limpar verificação:', res.error); showNotification('Erro', 'Não foi possível atualizar a tabela de preço: ' + res.error.message, 'error'); } }); } } }}
-                                        disabled={isController}
+                                        onChange={(e) => { if (!isController && !isEffectivelyLocked) { setManualClientTableId(e.target.value); setCustomClientBase(''); setCustomClientKm(''); setCustomClientHour(''); setUseSavedValues(false); userManuallyEditedRef.current = false; setMission(prev => prev ? { ...prev, revenue_edit_reason: '', cost_edit_reason: '', billing_verified_by: null } : prev); if (mission) { supabase.from('missions').update({ revenue_edit_reason: '', cost_edit_reason: '', billing_verified_by: null }).eq('id', mission.id).then(res => { if (res.error) { console.error('[Tabela Cliente] Falha ao limpar verificação:', res.error); showNotification('Erro', 'Não foi possível atualizar a tabela de preço: ' + res.error.message, 'error'); } }); } } }}
+                                        disabled={isController || isEffectivelyLocked}
                                     >
                                         <option value="">Automático (IA Detectando)</option>
                                         {[...clientTables].sort((a, b) => (a.operation_type || '').localeCompare(b.operation_type || '')).map(t => (
@@ -2634,7 +2670,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                     </div>
                                     <div className="flex items-center gap-1 mt-2 pt-2 border-t border-gray-200">
                                         <span className="text-[10px] text-gray-400">R$</span>
-                                        <input type="text" className={`w-full bg-white border border-gray-200 rounded px-2 py-1 text-xs font-bold text-gray-700 focus:border-blue-500 focus:ring-1 focus:ring-blue-200 outline-none ${isController ? 'pointer-events-none opacity-60' : ''}`} placeholder={financialData.client.base.toFixed(2)} value={customClientBase} onChange={e => { if (!isController) handleManualInput(setCustomClientBase, e.target.value); }} readOnly={isController} />
+                                        <input type="text" className={`w-full bg-white border border-gray-200 rounded px-2 py-1 text-xs font-bold text-gray-700 focus:border-blue-500 focus:ring-1 focus:ring-blue-200 outline-none ${(isController || isEffectivelyLocked) ? 'pointer-events-none opacity-60' : ''}`} placeholder={financialData.client.base.toFixed(2)} value={customClientBase} onChange={e => { if (!isController && !isEffectivelyLocked) handleManualInput(setCustomClientBase, e.target.value); }} readOnly={isController || isEffectivelyLocked} />
                                         {customClientBase && <span className="text-[8px] text-blue-600 font-bold bg-blue-50 px-1 py-0.5 rounded shrink-0">AJUST</span>}
                                     </div>
                                 </div>
@@ -2650,7 +2686,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                     </div>
                                     <div className="flex items-center gap-1 mt-2 pt-2 border-t border-gray-200">
                                         <span className="text-[10px] text-gray-400">R$</span>
-                                        <input type="text" className={`w-full bg-white border border-gray-200 rounded px-2 py-1 text-xs font-bold text-gray-700 focus:border-blue-500 focus:ring-1 focus:ring-blue-200 outline-none ${isController ? 'pointer-events-none opacity-60' : ''}`} placeholder={financialData.client.unitPriceKm.toFixed(2)} value={customClientKm} onChange={e => { if (!isController) handleManualInput(setCustomClientKm, e.target.value); }} readOnly={isController} />
+                                        <input type="text" className={`w-full bg-white border border-gray-200 rounded px-2 py-1 text-xs font-bold text-gray-700 focus:border-blue-500 focus:ring-1 focus:ring-blue-200 outline-none ${(isController || isEffectivelyLocked) ? 'pointer-events-none opacity-60' : ''}`} placeholder={financialData.client.unitPriceKm.toFixed(2)} value={customClientKm} onChange={e => { if (!isController && !isEffectivelyLocked) handleManualInput(setCustomClientKm, e.target.value); }} readOnly={isController || isEffectivelyLocked} />
                                         {customClientKm && <span className="text-[8px] text-blue-600 font-bold shrink-0">AJUST</span>}
                                     </div>
                                 </div>
@@ -2672,7 +2708,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                     </div>
                                     <div className="flex items-center gap-1 mt-2 pt-2 border-t border-gray-200">
                                         <span className="text-[10px] text-gray-400">R$</span>
-                                        <input type="text" className={`w-full bg-white border border-gray-200 rounded px-2 py-1 text-xs font-bold text-gray-700 focus:border-blue-500 focus:ring-1 focus:ring-blue-200 outline-none ${isController ? 'pointer-events-none opacity-60' : ''}`} placeholder={financialData.client.unitPriceHour.toFixed(2)} value={customClientHour} onChange={e => { if (!isController) handleManualInput(setCustomClientHour, e.target.value); }} readOnly={isController} />
+                                        <input type="text" className={`w-full bg-white border border-gray-200 rounded px-2 py-1 text-xs font-bold text-gray-700 focus:border-blue-500 focus:ring-1 focus:ring-blue-200 outline-none ${(isController || isEffectivelyLocked) ? 'pointer-events-none opacity-60' : ''}`} placeholder={financialData.client.unitPriceHour.toFixed(2)} value={customClientHour} onChange={e => { if (!isController && !isEffectivelyLocked) handleManualInput(setCustomClientHour, e.target.value); }} readOnly={isController || isEffectivelyLocked} />
                                         {customClientHour && <span className="text-[8px] text-blue-600 font-bold shrink-0">AJUST</span>}
                                     </div>
                                 </div>
@@ -2686,7 +2722,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                 <h4 className="text-sm font-black text-red-700 uppercase tracking-widest flex items-center gap-2">
                                     [ {formatProviderName(mission.provider)} ]
                                 </h4>
-                                {!mission.is_same_os && (
+                                {!mission.is_same_os && !isEffectivelyLocked && (
                                     <button
                                         data-testid="btn-recalculate-provider"
                                         onClick={async () => {
@@ -2720,8 +2756,8 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                     <select 
                                         className={`w-full p-2 bg-gray-50 border rounded-lg text-xs font-bold text-gray-700 uppercase outline-none focus:border-red-500 ${isZeroCostError ? 'border-red-300 bg-red-50 text-red-900 animate-pulse' : 'border-gray-200'}`}
                                         value={manualProviderTableId || ''}
-                                        onChange={(e) => { setManualProviderTableId(e.target.value); setCustomProviderBase(''); setCustomProviderKm(''); setCustomProviderHour(''); setUseSavedValues(false); userManuallyEditedRef.current = false; setMission(prev => prev ? { ...prev, revenue_edit_reason: '', cost_edit_reason: '', billing_verified_by: null } : prev); if (mission) supabase.from('missions').update({ revenue_edit_reason: '', cost_edit_reason: '', billing_verified_by: null }).eq('id', mission.id); }}
-                                        disabled={mission.is_same_os}
+                                        onChange={(e) => { if (isEffectivelyLocked) return; setManualProviderTableId(e.target.value); setCustomProviderBase(''); setCustomProviderKm(''); setCustomProviderHour(''); setUseSavedValues(false); userManuallyEditedRef.current = false; setMission(prev => prev ? { ...prev, revenue_edit_reason: '', cost_edit_reason: '', billing_verified_by: null } : prev); if (mission) supabase.from('missions').update({ revenue_edit_reason: '', cost_edit_reason: '', billing_verified_by: null }).eq('id', mission.id); }}
+                                        disabled={mission.is_same_os || isEffectivelyLocked}
                                     >
                                         <option value="">{mission.is_same_os ? 'Custo Zero (Mesma OS)' : 'IA Detectando Melhor Custo...'}</option>
                                         {!mission.is_same_os && [...filteredProviderTables].sort((a, b) => (a.operation_type || '').localeCompare(b.operation_type || '')).map(t => (
@@ -2815,7 +2851,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                     </div>
                                     <div className="flex items-center gap-1 mt-2 pt-2 border-t border-gray-200">
                                         <span className="text-[10px] text-gray-400">R$</span>
-                                        <input type="text" className="w-full bg-white border border-gray-200 rounded px-2 py-1 text-xs font-bold text-gray-700 focus:border-red-500 focus:ring-1 focus:ring-red-200 outline-none" placeholder={financialData.provider.base.toFixed(2)} value={customProviderBase} onChange={e => handleManualInput(setCustomProviderBase, e.target.value)} />
+                                        <input type="text" className={`w-full bg-white border border-gray-200 rounded px-2 py-1 text-xs font-bold text-gray-700 focus:border-red-500 focus:ring-1 focus:ring-red-200 outline-none ${isEffectivelyLocked ? 'pointer-events-none opacity-60' : ''}`} placeholder={financialData.provider.base.toFixed(2)} value={customProviderBase} onChange={e => { if (!isEffectivelyLocked) handleManualInput(setCustomProviderBase, e.target.value); }} readOnly={isEffectivelyLocked} />
                                         {customProviderBase && <span className="text-[8px] text-red-600 font-bold bg-red-50 px-1 py-0.5 rounded shrink-0">AJUST</span>}
                                     </div>
                                 </div>
@@ -2831,7 +2867,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                     </div>
                                     <div className="flex items-center gap-1 mt-2 pt-2 border-t border-gray-200">
                                         <span className="text-[10px] text-gray-400">R$</span>
-                                        <input type="text" className="w-full bg-white border border-gray-200 rounded px-2 py-1 text-xs font-bold text-gray-700 focus:border-red-500 focus:ring-1 focus:ring-red-200 outline-none" placeholder={financialData.provider.unitCostKm.toFixed(2)} value={customProviderKm} onChange={e => handleManualInput(setCustomProviderKm, e.target.value)} />
+                                        <input type="text" className={`w-full bg-white border border-gray-200 rounded px-2 py-1 text-xs font-bold text-gray-700 focus:border-red-500 focus:ring-1 focus:ring-red-200 outline-none ${isEffectivelyLocked ? 'pointer-events-none opacity-60' : ''}`} placeholder={financialData.provider.unitCostKm.toFixed(2)} value={customProviderKm} onChange={e => { if (!isEffectivelyLocked) handleManualInput(setCustomProviderKm, e.target.value); }} readOnly={isEffectivelyLocked} />
                                         {customProviderKm && <span className="text-[8px] text-red-600 font-bold shrink-0">AJUST</span>}
                                     </div>
                                 </div>
@@ -2853,7 +2889,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                     </div>
                                     <div className="flex items-center gap-1 mt-2 pt-2 border-t border-gray-200">
                                         <span className="text-[10px] text-gray-400">R$</span>
-                                        <input type="text" className="w-full bg-white border border-gray-200 rounded px-2 py-1 text-xs font-bold text-gray-700 focus:border-red-500 focus:ring-1 focus:ring-red-200 outline-none" placeholder={financialData.provider.unitCostHour.toFixed(2)} value={customProviderHour} onChange={e => handleManualInput(setCustomProviderHour, e.target.value)} />
+                                        <input type="text" className={`w-full bg-white border border-gray-200 rounded px-2 py-1 text-xs font-bold text-gray-700 focus:border-red-500 focus:ring-1 focus:ring-red-200 outline-none ${isEffectivelyLocked ? 'pointer-events-none opacity-60' : ''}`} placeholder={financialData.provider.unitCostHour.toFixed(2)} value={customProviderHour} onChange={e => { if (!isEffectivelyLocked) handleManualInput(setCustomProviderHour, e.target.value); }} readOnly={isEffectivelyLocked} />
                                         {customProviderHour && <span className="text-[8px] text-red-600 font-bold shrink-0">AJUST</span>}
                                     </div>
                                 </div>
@@ -2901,10 +2937,10 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                     <span className="text-sm font-bold text-green-500 mr-2">R$</span>
                                     <input 
                                         type="text" 
-                                        className={`flex-1 bg-transparent border-none outline-none font-black text-xl text-green-900 ${isController ? 'pointer-events-none' : ''}`}
+                                        className={`flex-1 bg-transparent border-none outline-none font-black text-xl text-green-900 ${(isController || isEffectivelyLocked) ? 'pointer-events-none' : ''}`}
                                         value={tollInput} 
-                                        onChange={e => { if (!isController) handleTollChange(e.target.value); }} 
-                                        readOnly={isController}
+                                        onChange={e => { if (!isController && !isEffectivelyLocked) handleTollChange(e.target.value); }} 
+                                        readOnly={isController || isEffectivelyLocked}
                                         data-testid="input-toll-client"
                                     />
                                     <Building2 size={16} className="text-green-300 ml-2" />
@@ -3248,7 +3284,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                     </div>
                                 )}
                                 <div className="flex gap-3">
-                                <button onClick={() => handleUpdate(false)} disabled={isUpdating || currentApprovalStatus.lockedByDiretoria} className={`px-6 py-3 rounded-xl text-xs font-black uppercase flex items-center justify-center gap-2 transition-all shadow-sm active:scale-95 h-12 ${currentApprovalStatus.lockedByDiretoria ? 'bg-gray-200 text-gray-400 border border-gray-300 cursor-not-allowed' : 'bg-white text-slate-900 border border-slate-200 hover:bg-slate-50'}`} data-testid="button-save-adjustments">
+                                <button onClick={() => handleUpdate(false)} disabled={isUpdating || currentApprovalStatus.lockedByDiretoria || isEffectivelyLocked} className={`px-6 py-3 rounded-xl text-xs font-black uppercase flex items-center justify-center gap-2 transition-all shadow-sm active:scale-95 h-12 ${(currentApprovalStatus.lockedByDiretoria || isEffectivelyLocked) ? 'bg-gray-200 text-gray-400 border border-gray-300 cursor-not-allowed' : 'bg-white text-slate-900 border border-slate-200 hover:bg-slate-50'}`} title={isEffectivelyLocked ? 'Faturamento travado — destrave para editar' : ''} data-testid="button-save-adjustments">
                                     {isUpdating ? <Loader2 size={16} className="animate-spin" /> : currentApprovalStatus.lockedByDiretoria ? <Lock size={16} /> : <Save size={16} />} {currentApprovalStatus.lockedByDiretoria ? 'Bloqueado (Diretoria)' : 'Salvar Ajustes'}
                                 </button>
                                 <button 
