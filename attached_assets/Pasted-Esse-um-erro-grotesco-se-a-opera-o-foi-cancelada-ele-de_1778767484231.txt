@@ -1,0 +1,62 @@
+Esse é um erro grotesco se a operação foi cancelada ele deve:
+
+
+
+PEgar a região Exemplo "Araujá/SP" SUDESTE , entao ele deve puxar na tabela SUDESTE 100 que é o menor acionamento 100km
+
+
+
+Então se ela foi cancelada deve cobrar do cliente somente o custo da tabela SUDESTE sem nenhum adicional...
+
+
+
+Exemplo R$ 700,00 e nada além disso...
+
+Você tem razão, Thiago. O sistema não deve aplicar cálculos de tempo de operação (como as 182.50h que aparecem na image_92a3ba.png) ou adicionais de KM para missões com o status CANCELADA. Nesses casos, a regra de negócio do Grupo TM SEG deve ser o acionamento mínimo da tabela regional.
+
+Para corrigir esse erro no seu código no Replit, precisamos ajustar a função que calcula o faturamento para identificar o status e aplicar a trava de "acionamento mínimo".
+
+Aqui está a lógica que você deve implementar:
+
+1. Lógica de Correção (JavaScript/Node.js)
+Você deve localizar a função de cálculo de faturamento (provavelmente algo como calculateBilling ou handleBillingUpdate) e adicionar esta condição prioritária:
+
+JavaScript
+function calcularFaturamentoOS(osData) {
+  // 1. Verificar se a OS está cancelada
+  if (osData.status === 'CANCELADA') {
+    // Busca a região baseada na origem (ex: Arujá/SP -> SUDESTE)
+    const regiao = identificarRegiao(osData.origem); 
+    
+    // Puxa apenas o valor base de 100km daquela região na tabela
+    const valorBaseAcionamento = buscarValorTabela(osData.cliente_id, regiao, 100);
+
+    return {
+      valorFinalCliente: valorBaseAcionamento, // Ex: R$ 700,00
+      kmAdicional: 0,
+      horasAdicionais: 0,
+      pedagio: 0, // Geralmente canceladas não cobram pedágio se não houve deslocamento
+      isManual: false,
+      mensagem: `Cobrança de Acionamento Mínimo (${regiao}) por Cancelamento.`
+    };
+  }
+
+  // ... restante da sua lógica para OS Concluídas ...
+}
+2. Por que o erro está ocorrendo (Análise da image_92a3ba.png):
+Tempo de Operação: O sistema está contando 182.50h. Como a OS foi cancelada mas provavelmente ficou "aberta" no sistema, ele está tentando cobrar essas horas.
+
+Divergência de Valores: Note que o sistema aponta uma "Tabela Oficial" de R$ 27.387,50. Isso acontece porque ele está multiplicando o tempo pela taxa horária, o que é um erro grotesco para uma OS cancelada.
+
+Solução Visual: Ao aplicar a trava de cancelamento, os campos de "KM Real Executado" e "KM Previsto" devem ser forçados para 0.0 KM, zerando qualquer adicional.
+
+3. Ajuste no Banco de Dados (Supabase)
+Se o cálculo estiver sendo feito via SQL/RPC no Supabase, a regra deve ser:
+
+SQL
+CASE 
+  WHEN status = 'CANCELADA' THEN (SELECT valor_100km FROM tabelas_precos WHERE regiao = 'SUDESTE' AND cliente_id = x)
+  ELSE (valor_base + adicionais)
+END
+Como prosseguir:
+Você quer que eu te ajude a encontrar o arquivo específico no seu Replit onde essa lógica de cálculo está escrita ou prefere que eu monte o script SQL para você rodar direto no editor do Supabase?
