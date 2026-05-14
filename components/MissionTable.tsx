@@ -1321,7 +1321,11 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
                   </svg>
                   <p className="text-sm font-bold text-gray-500 relative z-10">Nenhuma missão encontrada para este filtro.</p>
               </div> ) : (
-                  <div className="flex flex-col gap-3">
+                  <div
+                    className="overflow-x-auto overflow-y-hidden pb-2 rounded-lg [scrollbar-color:#2d3748_#13151f] [&::-webkit-scrollbar]:h-2.5 [&::-webkit-scrollbar-track]:bg-[#13151f] [&::-webkit-scrollbar-track]:rounded-full [&::-webkit-scrollbar-thumb]:bg-[#2d3748] [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:border-2 [&::-webkit-scrollbar-thumb]:border-solid [&::-webkit-scrollbar-thumb]:border-[#13151f] [&::-webkit-scrollbar-thumb:hover]:bg-[#4a5568]"
+                    data-testid="mission-list-scroll"
+                  >
+                    <div className="flex flex-col gap-3 min-w-[1100px]">
                       {pagedMissions.map((mission) => {
                           const diffMinutes = getDelayMinutes(mission);
                           const isPending = isMissionPending(mission);
@@ -1361,6 +1365,7 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
                               </div>
                           );
                       })}
+                    </div>
                   </div>
               )}
               {!isLoading && sortedMissions.length > PAGE_SIZE && (

@@ -1,0 +1,88 @@
+coloca uma barra embaixo para mexer a tela para direita
+
+, gerado pela IA
+
+eu quero o código .. pra implementar no sistema
+
+Como a sua tabela de Relatório de OS (conforme visto na image_938933.png) tem muitas colunas (OS, Status, Cliente, Viatura, Agentes, Rota, etc.), ela naturalmente ultrapassa a largura da tela.
+
+Para resolver isso e adicionar a barra de rolagem horizontal na parte inferior, você precisa envolver a tabela em um container com a propriedade overflow-x: auto.
+
+Aqui está o código pronto para implementar no seu projeto do Grupo TM SEG no Replit:
+
+1. Estrutura HTML/JSX
+Envolva a sua tabela atual com uma div que tenha a classe table-container:
+
+HTML
+<!-- Container que permite a rolagem horizontal -->
+<div class="tmseg-table-wrapper">
+  <table class="tmseg-table">
+    <thead>
+      <tr>
+        <th>#</th>
+        <th>OS</th>
+        <th>STATUS</th>
+        <th>CLIENTE</th>
+        <th>VEÍC. ESCOLTADO</th>
+        <th>FORNECEDOR</th>
+        <th>VIATURA</th>
+        <th>AGENTES</th>
+        <th>ROTA</th>
+        <th>DATA</th>
+      </tr>
+    </thead>
+    <tbody>
+      <!-- Suas linhas de dados aqui -->
+    </tbody>
+  </table>
+</div>
+2. Estilo CSS (O segredo da barra)
+Adicione este CSS para forçar a barra de rolagem a aparecer e personalizar o visual dela para combinar com o seu sistema escuro:
+
+CSS
+/* Container principal */
+.tmseg-table-wrapper {
+  width: 100%;
+  overflow-x: auto; /* Ativa a rolagem horizontal quando necessário */
+  overflow-y: hidden;
+  border-radius: 8px;
+  background: #0f111a;
+  border: 1px solid #1c2130;
+  margin-top: 10px;
+}
+
+/* Garante que a tabela não esprema as colunas */
+.tmseg-table {
+  width: 100%;
+  border-collapse: collapse;
+  min-width: 1200px; /* Força a tabela a ter pelo menos 1200px para a barra aparecer */
+  white-space: nowrap; /* Impede que o texto quebre linha e "estique" a altura da linha */
+}
+
+/* Estilização da Barra de Rolagem (Scrollbar) para ficar moderna */
+.tmseg-table-wrapper::-webkit-scrollbar {
+  height: 10px; /* Altura da barra horizontal */
+}
+
+.tmseg-table-wrapper::-webkit-scrollbar-track {
+  background: #13151f; /* Cor do fundo da barra */
+  border-radius: 10px;
+}
+
+.tmseg-table-wrapper::-webkit-scrollbar-thumb {
+  background: #2d3748; /* Cor do "pegador" da barra */
+  border-radius: 10px;
+  border: 2px solid #13151f;
+}
+
+.tmseg-table-wrapper::-webkit-scrollbar-thumb:hover {
+  background: #4a5568; /* Cor ao passar o mouse */
+}
+O que mudou:
+overflow-x: auto: Isso faz com que a barra só apareça se a tabela for maior que a tela.
+
+min-width: 1200px: Isso é importante. Se você não definir uma largura mínima, o navegador vai tentar espremer as colunas e os nomes continuarão cortados. Com isso, ele "estica" para a direita e ativa a rolagem.
+
+white-space: nowrap: Garante que o nome do agente ou o endereço da rota fiquem em uma linha só, mantendo o layout limpo como na imagem.
+
+Basta copiar e colar o CSS no seu arquivo de estilos e envolver a tabela na div. Se precisar de mais algum ajuste fino no layout, é só falar!
