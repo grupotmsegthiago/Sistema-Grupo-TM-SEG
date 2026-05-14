@@ -292,6 +292,15 @@ export const calculateMissionFinancials = (
     if (isZeroValueMission && !hasValidKms) {
         distanceForCalculation = 0;
     }
+
+    // REGRA DE CANCELAMENTO (acionamento mínimo):
+    // Para qualquer OS CANCELADA — mesmo com valor salvo manualmente —
+    // a "Tabela Oficial" deve refletir apenas o acionamento mínimo da
+    // menor tabela regional. Zeramos KM da OS sempre, para que o cálculo
+    // a seguir não some extra-km na referência oficial.
+    if (isCancelled && !hasValidKms) {
+        distanceForCalculation = 0;
+    }
     
     const scheduledDate = parseSafeDate(mission.startTime || (mission as any).start_time); 
     const creationDate = parseSafeDate(mission.createdAt); 
@@ -326,6 +335,16 @@ export const calculateMissionFinancials = (
 
     const cancelledWithHours = isCancelled && durationHours > 0 && !!parseSafeDate(mission.endTime || (mission as any).end_time);
     if (isZeroValueMission && !cancelledWithHours) {
+        durationHours = 0;
+    }
+
+    // REGRA DE CANCELAMENTO (acionamento mínimo):
+    // Mesmo quando a OS cancelada tem valor salvo manualmente, a duração
+    // usada na "Tabela Oficial" é zerada sempre que não houver endTime real.
+    // Sem isso, missões canceladas sem encerramento formal acumulam horas
+    // do agendamento até "agora" e geram referências oficiais absurdas
+    // (ex.: 182h × R$/h = R$ 27 mil para uma OS de R$ 700 de acionamento).
+    if (isCancelled && !cancelledWithHours) {
         durationHours = 0;
     }
 
