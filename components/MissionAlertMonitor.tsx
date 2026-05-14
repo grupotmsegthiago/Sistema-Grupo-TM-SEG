@@ -489,11 +489,15 @@ const MissionAlertMonitor: React.FC = () => {
                                                 <span className="text-[8px] text-gray-400">|</span>
                                                 <span className="text-[9px] font-bold text-gray-600 truncate">{a.provider}</span>
                                             </div>
-                                            <div className="flex items-center gap-1 text-[8px] text-gray-500">
-                                                <MapPin size={9} className="flex-shrink-0" />
-                                                <span className="truncate">{a.origin}</span>
-                                                <span>→</span>
-                                                <span className="truncate">{a.destination}</span>
+                                            <div className="flex flex-col gap-0.5 text-[9px] text-gray-600 leading-tight">
+                                                <div className="flex items-start gap-1 min-w-0">
+                                                    <MapPin size={10} className="flex-shrink-0 mt-0.5 text-green-600" />
+                                                    <span className="font-bold uppercase break-words" title={a.origin}>{a.origin}</span>
+                                                </div>
+                                                <div className="flex items-start gap-1 min-w-0 pl-3">
+                                                    <span className="text-gray-400 flex-shrink-0">→</span>
+                                                    <span className="font-bold uppercase break-words" title={a.destination}>{a.destination}</span>
+                                                </div>
                                             </div>
                                         </>
                                     )}
