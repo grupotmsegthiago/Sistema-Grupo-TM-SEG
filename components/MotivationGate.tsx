@@ -1,11 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
 import { ChevronLeft, ChevronRight, Sparkles, CheckCircle2 } from 'lucide-react';
-const img1 = '/motivation/m1.jpg';
-const img2 = '/motivation/m2.jpg';
-const img3 = '/motivation/m3.jpg';
-const img4 = '/motivation/m4.jpg';
-const img5 = '/motivation/m5.jpg';
-
 interface MotivationGateProps {
     userId: string;
     userName?: string;
@@ -13,7 +7,6 @@ interface MotivationGateProps {
 }
 
 interface MotivationCard {
-    image: string;
     title: string;
     subtitle: string;
     bullets: string[];
@@ -22,7 +15,6 @@ interface MotivationCard {
 
 const ALL_CARDS: MotivationCard[] = [
     {
-        image: img1,
         title: 'COMO FICAR À FRENTE DE 99% DAS PESSOAS',
         subtitle: 'Assuma o controle. Crie uma visão. Elimine o que não importa.',
         bullets: [
@@ -34,7 +26,6 @@ const ALL_CARDS: MotivationCard[] = [
         footer: 'Mude a chave dentro de você — construa uma base que te levará à vida que deseja.',
     },
     {
-        image: img2,
         title: 'COMO TER 8 HORAS DE TRABALHO TERMINADAS EM 4',
         subtitle: 'Foco profundo, prazos curtos, ritmo consistente.',
         bullets: [
@@ -46,7 +37,6 @@ const ALL_CARDS: MotivationCard[] = [
         footer: 'Nada disso importa se você estiver constantemente distraído. Desligue notificações.',
     },
     {
-        image: img3,
         title: 'COMO ORGANIZAR SUAS IDEIAS — MÉTODO P.A.R.A.',
         subtitle: 'Construa seu segundo cérebro.',
         bullets: [
@@ -58,7 +48,6 @@ const ALL_CARDS: MotivationCard[] = [
         footer: 'Capture, organize, destile e expresse. Reveja toda semana.',
     },
     {
-        image: img4,
         title: 'AS 8 REGRAS DE STEVE JOBS PARA EXCELÊNCIA EM VENDAS',
         subtitle: 'Venda experiência, não recurso.',
         bullets: [
@@ -71,7 +60,6 @@ const ALL_CARDS: MotivationCard[] = [
         footer: 'Estou convencido de que metade do que separa empreendedores bem-sucedidos dos não-sucedidos é a pura perseverança.',
     },
     {
-        image: img5,
         title: 'COMO ENTRAR NO ESTADO DE FLOW',
         subtitle: 'A zona onde corpo e mente trabalham sem esforço.',
         bullets: [
@@ -166,11 +154,7 @@ export default function MotivationGate({ userId, userName, onAcknowledge }: Moti
                 </div>
 
                 <div className="px-5 sm:px-8 pt-5 pb-3">
-                    <div className="relative rounded-xl overflow-hidden bg-black border border-red-900/30 mb-4">
-                        <img src={card.image} alt={card.title} className="w-full h-auto block max-h-[60vh] object-contain bg-white" data-testid={`img-motivation-${index}`} />
-                    </div>
-
-                    <h3 className="text-white font-black text-lg sm:text-xl mb-1 leading-tight" data-testid={`text-title-${index}`}>{card.title}</h3>
+                    <h3 className="text-white font-black text-xl sm:text-2xl mb-2 leading-tight" data-testid={`text-title-${index}`}>{card.title}</h3>
                     <p className="text-red-400/90 text-sm mb-4 italic">{card.subtitle}</p>
 
                     <ul className="space-y-2 mb-4">
