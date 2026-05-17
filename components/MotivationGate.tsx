@@ -152,69 +152,69 @@ export default function MotivationGate({ userId, userName, onAcknowledge }: Moti
     const firstName = (userName || '').split(' ')[0] || 'você';
 
     return (
-        <div className="fixed inset-0 z-[9999] bg-black/85 backdrop-blur-md flex items-center justify-center p-3 sm:p-6" data-testid="motivation-gate">
-            <div className="bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 rounded-2xl max-w-3xl w-full max-h-[95vh] overflow-y-auto shadow-2xl border border-amber-500/30">
-                <div className="px-5 sm:px-8 py-4 sm:py-5 border-b border-amber-500/20 flex items-center gap-3 bg-gradient-to-r from-amber-500/10 to-transparent">
-                    <div className="w-10 h-10 rounded-full bg-amber-500/20 border border-amber-400/40 flex items-center justify-center shrink-0">
-                        <Sparkles className="text-amber-400" size={20} />
+        <div className="fixed inset-0 z-[9999] bg-black/90 backdrop-blur-md flex items-center justify-center p-3 sm:p-6" data-testid="motivation-gate">
+            <div className="bg-gradient-to-br from-black via-zinc-950 to-black rounded-2xl max-w-3xl w-full max-h-[95vh] overflow-y-auto shadow-2xl border border-red-900/40">
+                <div className="px-5 sm:px-8 py-4 sm:py-5 border-b border-red-900/30 flex items-center gap-3 bg-gradient-to-r from-red-950/40 to-transparent">
+                    <div className="w-10 h-10 rounded-full bg-red-900/30 border border-red-700/50 flex items-center justify-center shrink-0">
+                        <Sparkles className="text-red-500" size={20} />
                     </div>
                     <div className="flex-1 min-w-0">
-                        <h2 className="text-amber-100 font-black text-base sm:text-lg leading-tight">Bom dia, {firstName}.</h2>
-                        <p className="text-amber-200/70 text-xs sm:text-sm">Antes de começar, 1 minuto para subir o nível.</p>
+                        <h2 className="text-white font-black text-base sm:text-lg leading-tight">Bom dia, <span className="text-red-500">{firstName}</span>.</h2>
+                        <p className="text-zinc-400 text-xs sm:text-sm">Antes de começar, 1 minuto para subir o nível.</p>
                     </div>
-                    <span className="text-amber-300/60 text-xs font-bold whitespace-nowrap">{index + 1}/{sessionCards.length}</span>
+                    <span className="text-red-500/80 text-xs font-bold whitespace-nowrap">{index + 1}/{sessionCards.length}</span>
                 </div>
 
                 <div className="px-5 sm:px-8 pt-5 pb-3">
-                    <div className="relative rounded-xl overflow-hidden bg-slate-950 border border-slate-700 mb-4">
+                    <div className="relative rounded-xl overflow-hidden bg-black border border-red-900/30 mb-4">
                         <img src={card.image} alt={card.title} className="w-full h-auto block max-h-[60vh] object-contain bg-white" data-testid={`img-motivation-${index}`} />
                     </div>
 
                     <h3 className="text-white font-black text-lg sm:text-xl mb-1 leading-tight" data-testid={`text-title-${index}`}>{card.title}</h3>
-                    <p className="text-amber-200/80 text-sm mb-4 italic">{card.subtitle}</p>
+                    <p className="text-red-400/90 text-sm mb-4 italic">{card.subtitle}</p>
 
                     <ul className="space-y-2 mb-4">
                         {card.bullets.map((b, i) => (
-                            <li key={i} className="flex gap-2 text-slate-200 text-sm leading-relaxed">
-                                <span className="text-amber-400 font-black shrink-0">→</span>
+                            <li key={i} className="flex gap-2 text-zinc-200 text-sm leading-relaxed">
+                                <span className="text-red-500 font-black shrink-0">→</span>
                                 <span>{b}</span>
                             </li>
                         ))}
                     </ul>
 
                     {card.footer && (
-                        <div className="bg-amber-500/10 border-l-4 border-amber-400 px-4 py-3 rounded text-amber-100 text-sm italic mb-4">
+                        <div className="bg-red-950/30 border-l-4 border-red-600 px-4 py-3 rounded text-red-100 text-sm italic mb-4">
                             {card.footer}
                         </div>
                     )}
 
                     {isLast && (
-                        <div className="bg-slate-950/60 border border-slate-700 rounded-lg px-4 py-3 mt-4 text-center">
-                            <p className="text-amber-300/90 text-xs font-bold uppercase tracking-wider mb-1">Pensamento do dia</p>
+                        <div className="bg-black/60 border border-red-900/40 rounded-lg px-4 py-3 mt-4 text-center">
+                            <p className="text-red-500 text-xs font-bold uppercase tracking-wider mb-1">Pensamento do dia</p>
                             <p className="text-white text-sm italic">{quote}</p>
                         </div>
                     )}
                 </div>
 
-                <div className="px-5 sm:px-8 py-4 border-t border-slate-700 bg-slate-950/40 sticky bottom-0">
+                <div className="px-5 sm:px-8 py-4 border-t border-red-900/30 bg-black/60 sticky bottom-0">
                     {!isLast ? (
                         <div className="flex items-center justify-between gap-3">
                             <button
                                 onClick={() => setIndex(i => Math.max(0, i - 1))}
                                 disabled={index === 0}
-                                className="px-4 py-2.5 rounded-lg bg-slate-800 text-slate-300 font-bold text-sm flex items-center gap-1 disabled:opacity-30 disabled:cursor-not-allowed hover:bg-slate-700"
+                                className="px-4 py-2.5 rounded-lg bg-zinc-900 text-zinc-300 font-bold text-sm flex items-center gap-1 disabled:opacity-30 disabled:cursor-not-allowed hover:bg-zinc-800 border border-zinc-800"
                                 data-testid="button-prev"
                             >
                                 <ChevronLeft size={16} /> Anterior
                             </button>
                             <div className="flex gap-1.5">
                                 {sessionCards.map((_, i) => (
-                                    <div key={i} className={`h-1.5 rounded-full transition-all ${i === index ? 'w-6 bg-amber-400' : 'w-1.5 bg-slate-600'}`} />
+                                    <div key={i} className={`h-1.5 rounded-full transition-all ${i === index ? 'w-6 bg-red-500' : 'w-1.5 bg-zinc-700'}`} />
                                 ))}
                             </div>
                             <button
                                 onClick={() => setIndex(i => Math.min(sessionCards.length - 1, i + 1))}
-                                className="px-4 py-2.5 rounded-lg bg-amber-500 text-slate-900 font-black text-sm flex items-center gap-1 hover:bg-amber-400"
+                                className="px-4 py-2.5 rounded-lg bg-gradient-to-r from-red-700 via-red-600 to-red-700 hover:from-red-600 hover:via-red-500 hover:to-red-600 text-white font-black text-sm flex items-center gap-1 shadow-lg shadow-red-900/40 uppercase tracking-wider"
                                 data-testid="button-next"
                             >
                                 Próximo <ChevronRight size={16} />
@@ -227,17 +227,17 @@ export default function MotivationGate({ userId, userName, onAcknowledge }: Moti
                                     type="checkbox"
                                     checked={checked}
                                     onChange={e => setChecked(e.target.checked)}
-                                    className="mt-1 w-5 h-5 rounded accent-amber-500 cursor-pointer"
+                                    className="mt-1 w-5 h-5 rounded accent-red-600 cursor-pointer"
                                     data-testid="checkbox-acknowledge"
                                 />
-                                <span className="text-white text-sm sm:text-base font-bold leading-snug group-hover:text-amber-100">
+                                <span className="text-white text-sm sm:text-base font-bold leading-snug group-hover:text-red-100">
                                     Li, e vou tentar melhorar 1% todos os dias.
                                 </span>
                             </label>
                             <button
                                 onClick={handleConfirm}
                                 disabled={!checked}
-                                className={`w-full py-3.5 rounded-xl font-black text-sm uppercase tracking-wide flex items-center justify-center gap-2 transition-all ${checked ? 'bg-gradient-to-r from-amber-500 to-amber-400 text-slate-900 hover:scale-[1.01] shadow-lg shadow-amber-500/30' : 'bg-slate-800 text-slate-500 cursor-not-allowed'}`}
+                                className={`w-full py-3.5 rounded-xl font-black text-sm uppercase tracking-[0.2em] flex items-center justify-center gap-2 transition-all ${checked ? 'bg-gradient-to-r from-red-700 via-red-600 to-red-700 hover:from-red-600 hover:via-red-500 hover:to-red-600 text-white shadow-lg shadow-red-900/40 active:scale-[0.98]' : 'bg-zinc-900 text-zinc-600 border border-zinc-800 cursor-not-allowed'}`}
                                 data-testid="button-confirm"
                             >
                                 <CheckCircle2 size={18} />
