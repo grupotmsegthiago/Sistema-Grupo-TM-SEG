@@ -31,6 +31,7 @@ import ChangePasswordModal from './components/ChangePasswordModal';
 import ProfileSettingsModal from './components/ProfileSettingsModal';
 
 import MissionFinancialModal from './components/MissionFinancialModal';
+import MotivationGate, { shouldShowMotivation } from './components/MotivationGate';
 
 // Outros Componentes
 import ClientRouteList from './components/ClientRouteList';
@@ -99,6 +100,16 @@ const App: React.FC = () => {
   const [isCevaClient, setIsCevaClient] = useState(false);
   const [billingMissionId, setBillingMissionId] = useState<string | null>(null);
   const [billingMission, setBillingMission] = useState<any>(null);
+  const [motivationPending, setMotivationPending] = useState(() => {
+    try {
+      const token = localStorage.getItem('authToken');
+      const userData = localStorage.getItem('userData');
+      const version = localStorage.getItem('app_version');
+      if (!(token && userData && version === APP_VERSION)) return false;
+      const u = JSON.parse(userData || '{}');
+      return shouldShowMotivation(u.id || u.email || 'anon');
+    } catch { return false; }
+  });
 
   const normalizedPath = window.location.pathname.toLowerCase().replace(/\/$/, '');
   const isPublicRoute = normalizedPath === '/cadastro-operacional';
@@ -198,7 +209,14 @@ const App: React.FC = () => {
   }, [isAuthenticated, isPublicRoute, handleLogout]); 
 
   const toggleSidebar = () => setIsSidebarOpen(!isSidebarOpen);
-  const handleLogin = () => { setIsAuthenticated(true); verifySessionInDatabase(); };
+  const handleLogin = () => {
+    setIsAuthenticated(true);
+    verifySessionInDatabase();
+    try {
+      const u = JSON.parse(localStorage.getItem('userData') || '{}');
+      setMotivationPending(shouldShowMotivation(u.id || u.email || 'anon'));
+    } catch { setMotivationPending(true); }
+  };
 
   const handleOpenBillingMission = async (missionId: string) => {
       try {
@@ -250,6 +268,11 @@ const App: React.FC = () => {
   if (!isAuthenticated) { return <Login onLogin={handleLogin} />; }
   
   if (needsPasswordChange) { return <ChangePasswordModal onSuccess={handlePasswordChanged} />; }
+
+  if (motivationPending) {
+    const u = (() => { try { return JSON.parse(localStorage.getItem('userData') || '{}'); } catch { return {}; } })();
+    return <MotivationGate userId={u.id || u.email || 'anon'} userName={u.name || u.full_name} onAcknowledge={() => setMotivationPending(false)} />;
+  }
 
   const renderContent = () => {
     switch (currentScreen) {
