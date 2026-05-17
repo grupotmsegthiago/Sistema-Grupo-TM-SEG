@@ -54,3 +54,9 @@ id = "iIUfbPVspefpaSkMk76ZP"
 uri = "file://export_relatorio/RelatorioOS_TMSEGo.tar.gz"
 type = "unspecified"
 title = "Relatório de OS - Código Fonte Completo"
+
+[[outputs]]
+id = "pR9wAh7JkcZnjS3q107kO"
+uri = "file://public/motivation/m2.jpg"
+type = "image"
+title = "Preview do corte (m2 - 8 Horas em 4)"

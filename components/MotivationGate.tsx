@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
 import { ChevronLeft, ChevronRight, Sparkles, CheckCircle2 } from 'lucide-react';
-const img1 = '/motivation/m1.png';
-const img2 = '/motivation/m2.png';
-const img3 = '/motivation/m3.png';
-const img4 = '/motivation/m4.png';
-const img5 = '/motivation/m5.png';
+const img1 = '/motivation/m1.jpg';
+const img2 = '/motivation/m2.jpg';
+const img3 = '/motivation/m3.jpg';
+const img4 = '/motivation/m4.jpg';
+const img5 = '/motivation/m5.jpg';
 
 interface MotivationGateProps {
     userId: string;
