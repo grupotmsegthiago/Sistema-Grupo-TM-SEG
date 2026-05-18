@@ -128,6 +128,9 @@ export async function runDhlIntakeMigrations(): Promise<void> {
       ALTER TABLE dhl_supplier_intakes ADD COLUMN IF NOT EXISTS mirror_proof_url TEXT;
       ALTER TABLE dhl_supplier_intakes ADD COLUMN IF NOT EXISTS mirror_proof_filename TEXT;
 
+      -- Força o PostgREST a recarregar o cache de schema após ALTER TABLE
+      NOTIFY pgrst, 'reload schema';
+
       -- Trigger: invalida automaticamente os links DHL ao excluir ou cancelar a OS.
       -- Fonte única da verdade (independente do cliente — frontend, API, automações).
       CREATE OR REPLACE FUNCTION cancel_dhl_intakes_on_mission_change() RETURNS TRIGGER AS $func$
