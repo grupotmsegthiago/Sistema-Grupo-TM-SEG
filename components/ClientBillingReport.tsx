@@ -1216,13 +1216,14 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
 
         const { exportFormattedExcel } = await import('../exports/excel-export-template');
 
-        const extraColOffset = (isCeslogBilling ? 1 : 0);
+        const extraColOffset = (isCeslogBilling ? 1 : 0) + (isDhlBilling ? 1 : 0);
 
         const dataRows = rowsData.map(r => {
             const row: (string | number)[] = [
                 !r.isApproved ? `[${r.missionStatus.toUpperCase()}] ${r.id}` : r.id,
             ];
             if (isCeslogBilling) row.push(r.referenceNumber || '-');
+            if (isDhlBilling) row.push(r.seNumber || '-');
             row.push(
                 r.route,
                 r.activationFee,
@@ -1264,6 +1265,7 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
 
         const headers: string[] = ['Nº'];
         if (isCeslogBilling) headers.push('REFERÊNCIA');
+        if (isDhlBilling) headers.push('S.E.');
         headers.push(
             'ROTA', 'VALOR', 'HR FRANQ', 'KM FRANQ', 'HR EXTRA', 'KM EXTRA',
             'DATA INÍCIO', 'HORA INÍCIO', 'VIATURA', 'VEÍC. ESCOLTADO', 'DATA FIM', 'HORA FIM',
@@ -1276,6 +1278,7 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
 
         const colWidths: number[] = [6];
         if (isCeslogBilling) colWidths.push(14);
+        if (isDhlBilling) colWidths.push(10);
         colWidths.push(
             30, 12, 7, 7, 12, 12,
             12, 8, 10, 12, 12, 8,
@@ -1313,7 +1316,7 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
             footerLeft: 'DOCUMENTO GERADO ELETRONICAMENTE PELO GRUPO TM SEG',
             footerRight: 'ASSINATURA / CARIMBO CLIENTE',
         });
-    }, [rowsData, grandTotal, displayClientName, startDate, endDate, isCeslogBilling, isCevaBilling]);
+    }, [rowsData, grandTotal, displayClientName, startDate, endDate, isCeslogBilling, isCevaBilling, isDhlBilling]);
 
     const cellStyle: React.CSSProperties = {
         border: '1px solid #e5c4c4',
