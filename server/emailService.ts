@@ -1336,10 +1336,20 @@ export async function sendDhlIntakeSubmittedEmail(opts: {
       <table class="info-table">
         <tr><td>Nome</td><td>${fmt(e.nome)}</td></tr>
         <tr><td>CPF</td><td>${fmt(e.cpf)}</td></tr>
-        <tr><td>RG</td><td>${fmt(e.rg)} ${e.orgao_emissor ? '— ' + e.orgao_emissor : ''}</td></tr>
-        <tr><td>CNH</td><td>${fmt(e.cnh)} ${e.cnh_categoria ? '(' + e.cnh_categoria + ')' : ''} ${e.cnh_vencimento ? 'venc. ' + e.cnh_vencimento : ''}</td></tr>
-        <tr><td>CNV</td><td>${fmt(e.cnv_numero)} ${e.cnv_validade ? '— validade ' + e.cnv_validade : ''}</td></tr>
-        <tr><td>Endereço</td><td>${fmt(e.rua)}${e.numero ? ', ' + e.numero : ''}${e.complemento ? ' — ' + e.complemento : ''}<br/>${fmt(e.bairro)} — ${fmt(e.cidade)}/${fmt(e.uf)} — CEP ${fmt(e.cep)}</td></tr>
+        <tr><td>RG</td><td>${fmt(e.rg)}</td></tr>
+        <tr><td>Órgão emissor / UF</td><td>${fmt(e.orgao_emissor)}</td></tr>
+        <tr><td>CNH</td><td>${fmt(e.cnh)}</td></tr>
+        <tr><td>Categoria CNH</td><td>${fmt(e.cnh_categoria)}</td></tr>
+        <tr><td>Vencimento CNH</td><td>${fmt(e.cnh_vencimento)}</td></tr>
+        <tr><td>CNV Número</td><td>${fmt(e.cnv_numero)}</td></tr>
+        <tr><td>Validade CNV</td><td>${fmt(e.cnv_validade)}</td></tr>
+        <tr><td>Rua</td><td>${fmt(e.rua)}</td></tr>
+        <tr><td>Número</td><td>${fmt(e.numero)}</td></tr>
+        <tr><td>Complemento</td><td>${fmt(e.complemento)}</td></tr>
+        <tr><td>Bairro</td><td>${fmt(e.bairro)}</td></tr>
+        <tr><td>Cidade</td><td>${fmt(e.cidade)}</td></tr>
+        <tr><td>UF</td><td>${fmt(e.uf)}</td></tr>
+        <tr><td>CEP</td><td>${fmt(e.cep)}</td></tr>
         <tr><td>Celular</td><td>${fmt(e.celular)}</td></tr>
         <tr><td>Admissão</td><td>${fmt(e.admissao)}</td></tr>
       </table>`;
@@ -1350,7 +1360,10 @@ export async function sendDhlIntakeSubmittedEmail(opts: {
     <table class="info-table">
       <tr><td>Placa</td><td><strong>${fmt(v.placa)}</strong></td></tr>
       <tr><td>Renavam</td><td>${fmt(v.renavam)}</td></tr>
-      <tr><td>Marca / Modelo</td><td>${fmt(v.marca)} / ${fmt(v.modelo)} (${fmt(v.ano)}) — ${fmt(v.cor)}</td></tr>
+      <tr><td>Marca</td><td>${fmt(v.marca)}</td></tr>
+      <tr><td>Modelo</td><td>${fmt(v.modelo)}</td></tr>
+      <tr><td>Ano</td><td>${fmt(v.ano)}</td></tr>
+      <tr><td>Cor</td><td>${fmt(v.cor)}</td></tr>
       <tr><td>Tecnologia</td><td><strong>${fmt(v.tecnologia)}</strong></td></tr>
       <tr><td>ID Rastreador</td><td>${fmt(v.id_rastreador)}</td></tr>
       <tr><td>Comunicação</td><td>${fmt(v.comunicacao)}</td></tr>
