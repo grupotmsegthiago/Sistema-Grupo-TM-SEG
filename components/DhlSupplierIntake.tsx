@@ -81,6 +81,7 @@ const DhlSupplierIntake: React.FC = () => {
   const [agent1, setAgent1] = useState<Escoltista>({ ...EMPTY_ESCOLTISTA });
   const [agent2, setAgent2] = useState<Escoltista>({ ...EMPTY_ESCOLTISTA });
   const [veiculo, setVeiculo] = useState<Veiculo>({ ...EMPTY_VEICULO });
+  const [mirrorProof, setMirrorProof] = useState<{ dataUrl: string; filename: string; size: number; contentType: string } | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [done, setDone] = useState(false);
 
@@ -154,12 +155,17 @@ const DhlSupplierIntake: React.FC = () => {
       alert('Escoltista 1 e Escoltista 2 não podem ter o mesmo CPF');
       return;
     }
+    if (!mirrorProof) {
+      alert('Anexe o print do espelhamento (comprovante de que foi realizado) antes de enviar.');
+      setStep(3);
+      return;
+    }
 
     setSubmitting(true);
     try {
       const r = await fetch(`/api/dhl/intake/public/${encodeURIComponent(token)}/submit`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ agent1, agent2, vehicle: veiculo }),
+        body: JSON.stringify({ agent1, agent2, vehicle: veiculo, mirrorProof }),
       });
       const j = await r.json();
       if (!r.ok) { alert(j.error || 'Erro ao enviar'); setSubmitting(false); return; }
@@ -305,10 +311,13 @@ const DhlSupplierIntake: React.FC = () => {
               setData={setVeiculo}
               savedList={savedVeiculos}
               fromSavedVeic={fromSavedVeic}
+              mirrorProof={mirrorProof}
+              setMirrorProof={setMirrorProof}
               onBack={() => setStep(2)}
               onNext={() => {
                 const err = validateVeiculo(veiculo);
                 if (err) { alert(err); return; }
+                if (!mirrorProof) { alert('Anexe o print do espelhamento (comprovante de que foi realizado) antes de avançar.'); return; }
                 setStep(4);
               }}
             />
@@ -316,6 +325,7 @@ const DhlSupplierIntake: React.FC = () => {
           {step === 4 && (
             <Revisao
               agent1={agent1} agent2={agent2} veiculo={veiculo}
+              mirrorProof={mirrorProof}
               onBack={() => setStep(3)}
               onSubmit={submit}
               submitting={submitting}
@@ -414,9 +424,11 @@ const VeiculoForm: React.FC<{
   setData: (v: Veiculo) => void;
   savedList: any[];
   fromSavedVeic: (s: any) => Veiculo;
+  mirrorProof: { dataUrl: string; filename: string; size: number; contentType: string } | null;
+  setMirrorProof: (p: { dataUrl: string; filename: string; size: number; contentType: string } | null) => void;
   onBack: () => void;
   onNext: () => void;
-}> = ({ data, setData, savedList, fromSavedVeic, onBack, onNext }) => {
+}> = ({ data, setData, savedList, fromSavedVeic, mirrorProof, setMirrorProof, onBack, onNext }) => {
   const [mode, setMode] = useState<'novo' | 'cadastrado'>(savedList.length > 0 ? 'cadastrado' : 'novo');
   const set = (patch: Partial<Veiculo>) => setData({ ...data, ...patch });
 
@@ -462,6 +474,54 @@ const VeiculoForm: React.FC<{
         </div>
       )}
 
+      {/* Print do espelhamento — obrigatório */}
+      <div className="mt-6 pt-5 border-t border-gray-200">
+        <h4 className="text-sm font-black uppercase text-gray-900 mb-1 flex items-center gap-2">
+          <CheckCircle2 className="w-4 h-4 text-red-600" /> Comprovante de Espelhamento*
+        </h4>
+        <p className="text-xs text-gray-500 mb-3">Anexe o print confirmando que o espelhamento do sinal foi realizado (PNG, JPG, WEBP ou PDF — até 8 MB).</p>
+        {!mirrorProof ? (
+          <label className="block border-2 border-dashed border-gray-300 rounded-lg p-5 text-center cursor-pointer hover:border-red-500 hover:bg-red-50/30 transition" data-testid="input-mirror-proof">
+            <input
+              type="file"
+              accept="image/png,image/jpeg,image/webp,application/pdf"
+              className="hidden"
+              onChange={async (e) => {
+                const f = e.target.files?.[0];
+                if (!f) return;
+                if (f.size > 8 * 1024 * 1024) { alert('Arquivo muito grande — limite de 8 MB.'); return; }
+                const allowed = ['image/png', 'image/jpeg', 'image/webp', 'application/pdf'];
+                if (!allowed.includes(f.type)) { alert('Tipo não suportado — envie PNG, JPG, WEBP ou PDF.'); return; }
+                const dataUrl: string = await new Promise((resolve, reject) => {
+                  const r = new FileReader();
+                  r.onload = () => resolve(String(r.result));
+                  r.onerror = () => reject(new Error('Falha ao ler arquivo'));
+                  r.readAsDataURL(f);
+                });
+                setMirrorProof({ dataUrl, filename: f.name, size: f.size, contentType: f.type });
+              }}
+            />
+            <p className="text-sm font-bold text-gray-700">Clique para selecionar o print</p>
+            <p className="text-[11px] text-gray-400 mt-1">ou tire uma foto da tela do sistema de rastreamento</p>
+          </label>
+        ) : (
+          <div className="border border-green-300 bg-green-50 rounded-lg p-3 flex items-center justify-between gap-3">
+            <div className="flex items-center gap-3 min-w-0">
+              {mirrorProof.contentType.startsWith('image/') ? (
+                <img src={mirrorProof.dataUrl} alt="prévia" className="w-14 h-14 object-cover rounded border border-green-300" />
+              ) : (
+                <div className="w-14 h-14 rounded bg-white border border-green-300 flex items-center justify-center text-[10px] font-bold text-gray-500">PDF</div>
+              )}
+              <div className="min-w-0">
+                <p className="text-sm font-bold text-green-800 truncate">{mirrorProof.filename}</p>
+                <p className="text-[11px] text-green-700">{(mirrorProof.size / 1024).toFixed(0)} KB — anexado</p>
+              </div>
+            </div>
+            <button type="button" onClick={() => setMirrorProof(null)} className="px-3 py-1.5 rounded bg-white border border-red-300 text-red-600 text-xs font-bold hover:bg-red-50" data-testid="button-remove-mirror-proof">Remover</button>
+          </div>
+        )}
+      </div>
+
       <div className="flex justify-between mt-6 pt-4 border-t border-gray-100">
         <button type="button" onClick={onBack} className="px-5 py-2.5 rounded-lg bg-gray-100 text-gray-700 text-sm font-bold flex items-center gap-2"><ArrowLeft size={16} /> Voltar</button>
         <button type="button" onClick={onNext} className="px-6 py-2.5 rounded-lg bg-red-600 text-white text-sm font-bold flex items-center gap-2 hover:bg-red-700">Revisar <ArrowRight size={16} /></button>
@@ -475,8 +535,9 @@ const VeiculoForm: React.FC<{
 // ────────────────────────────────────────────────────────────
 const Revisao: React.FC<{
   agent1: Escoltista; agent2: Escoltista; veiculo: Veiculo;
+  mirrorProof: { dataUrl: string; filename: string; size: number; contentType: string } | null;
   onBack: () => void; onSubmit: () => void; submitting: boolean;
-}> = ({ agent1, agent2, veiculo, onBack, onSubmit, submitting }) => {
+}> = ({ agent1, agent2, veiculo, mirrorProof, onBack, onSubmit, submitting }) => {
   const Row = ({ k, v }: { k: string; v: any }) => (
     <div className="flex justify-between gap-3 py-1.5 border-b border-gray-100 text-xs">
       <span className="text-gray-500 font-bold uppercase tracking-wider">{k}</span>
@@ -522,6 +583,25 @@ const Revisao: React.FC<{
         <Row k="Tecnologia" v={veiculo.tecnologia} />
         <Row k="ID Rastreador" v={veiculo.idRastreador} />
         <Row k="Comunicação" v={veiculo.comunicacao} />
+      </div>
+
+      <h4 className="text-xs font-black uppercase text-red-600 mb-2 tracking-wider">Comprovante de Espelhamento</h4>
+      <div className="bg-gray-50 rounded-lg p-4 mb-4">
+        {mirrorProof ? (
+          <div className="flex items-center gap-3">
+            {mirrorProof.contentType.startsWith('image/') ? (
+              <img src={mirrorProof.dataUrl} alt="comprovante" className="w-20 h-20 object-cover rounded border border-gray-300" />
+            ) : (
+              <div className="w-20 h-20 rounded bg-white border border-gray-300 flex items-center justify-center text-xs font-bold text-gray-500">PDF</div>
+            )}
+            <div>
+              <p className="text-sm font-bold text-gray-800">{mirrorProof.filename}</p>
+              <p className="text-[11px] text-gray-500">{(mirrorProof.size / 1024).toFixed(0)} KB</p>
+            </div>
+          </div>
+        ) : (
+          <p className="text-xs text-red-600 font-bold">Print do espelhamento não anexado — volte e anexe.</p>
+        )}
       </div>
 
       <div className="flex justify-between pt-4 border-t border-gray-100">

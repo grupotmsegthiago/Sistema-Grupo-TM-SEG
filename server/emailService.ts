@@ -1324,6 +1324,8 @@ export async function sendDhlIntakeSubmittedEmail(opts: {
   agent1: any;
   agent2: any;
   vehicle: any;
+  mirrorProofUrl?: string | null;
+  mirrorProofFilename?: string | null;
 }): Promise<void> {
   const a = (x: any) => x || {};
   const fmt = (v: any) => v ? String(v) : '—';
@@ -1366,8 +1368,17 @@ export async function sendDhlIntakeSubmittedEmail(opts: {
     ${escoltistaHtml('Escoltista 1', opts.agent1)}
     ${escoltistaHtml('Escoltista 2', opts.agent2)}
     ${veicHtml}
+    ${opts.mirrorProofUrl ? `
+    <h3 style="color:#1a1a1a; font-size:15px; margin-top:20px; border-bottom:2px solid #FFCC00; padding-bottom:6px;">Comprovante de Espelhamento</h3>
+    <p style="margin:8px 0;">O fornecedor anexou o print confirmando que o espelhamento foi realizado.</p>
+    <p style="margin:8px 0;"><a href="${opts.mirrorProofUrl}" target="_blank" style="display:inline-block; background:#D40511; color:#fff; padding:10px 18px; border-radius:6px; text-decoration:none; font-weight:bold;">Abrir comprovante${opts.mirrorProofFilename ? ' — ' + opts.mirrorProofFilename : ''}</a></p>
+    ` : `
+    <div class="highlight" style="margin-top:20px; background:#fff3cd; border-left:4px solid #FFCC00;">
+      <strong>Atenção:</strong> o fornecedor não anexou comprovante do espelhamento.
+    </div>
+    `}
     <div class="highlight" style="margin-top:20px;">
-      <strong>Próximo passo:</strong> conferir os dados acima e realizar o espelhamento do sinal conforme a tecnologia do veículo (instruções já enviadas ao fornecedor por e-mail/WhatsApp).
+      <strong>Próximo passo:</strong> conferir os dados acima e o comprovante de espelhamento.
     </div>
   `);
 

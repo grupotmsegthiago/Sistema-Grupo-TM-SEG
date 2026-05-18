@@ -125,6 +125,8 @@ export async function runDhlIntakeMigrations(): Promise<void> {
       CREATE INDEX IF NOT EXISTS idx_dhl_intakes_token ON dhl_supplier_intakes(token);
 
       ALTER TABLE missions ADD COLUMN IF NOT EXISTS dhl_se_number TEXT;
+      ALTER TABLE dhl_supplier_intakes ADD COLUMN IF NOT EXISTS mirror_proof_url TEXT;
+      ALTER TABLE dhl_supplier_intakes ADD COLUMN IF NOT EXISTS mirror_proof_filename TEXT;
 
       -- Trigger: invalida automaticamente os links DHL ao excluir ou cancelar a OS.
       -- Fonte única da verdade (independente do cliente — frontend, API, automações).
@@ -169,6 +171,12 @@ export async function runDhlIntakeMigrations(): Promise<void> {
 }
 
 function getAppUrl(req: Request): string {
+  // Prioridade: APP_PUBLIC_URL (estável p/ links externos) → REPLIT_DOMAINS → headers.
+  // Evita links efêmeros do ambiente dev quando há um domínio publicado.
+  const fromEnv = (process.env.APP_PUBLIC_URL || '').trim();
+  if (fromEnv) return fromEnv.replace(/\/$/, '');
+  const replitDomain = (process.env.REPLIT_DOMAINS || '').split(',')[0].trim();
+  if (replitDomain) return `https://${replitDomain}`;
   const proto = (req.headers['x-forwarded-proto'] as string) || 'https';
   const host = (req.headers['x-forwarded-host'] as string) || req.headers.host || 'localhost';
   return `${proto}://${host}`;
@@ -431,9 +439,12 @@ export function registerDhlIntakeRoutes(
   app.post('/api/dhl/intake/public/:token/submit', async (req: Request, res: Response) => {
     try {
       const { token } = req.params;
-      const { agent1, agent2, vehicle } = req.body || {};
+      const { agent1, agent2, vehicle, mirrorProof } = req.body || {};
       if (!agent1 || !agent2 || !vehicle) {
         return res.status(400).json({ error: 'Preencha os 3 blocos: Escoltista 1, Escoltista 2 e Veículo.' });
+      }
+      if (!mirrorProof || !mirrorProof.dataUrl) {
+        return res.status(400).json({ error: 'Anexe o print do espelhamento (comprovante de que foi realizado) antes de enviar.' });
       }
 
       const sb = getSb();
@@ -572,6 +583,31 @@ export function registerDhlIntakeRoutes(
         return res.status(400).json({ error: 'Escoltista 1 e Escoltista 2 não podem ser o mesmo registro.' });
       }
 
+      // Upload do print do espelhamento → bucket mission-evidence/dhl-mirror-proof/<missionId>/
+      let mirrorProofUrl: string | null = null;
+      let mirrorProofFilename: string | null = null;
+      try {
+        const dataUrl: string = String(mirrorProof.dataUrl);
+        const m = dataUrl.match(/^data:([^;]+);base64,(.+)$/);
+        if (!m) throw new Error('Print inválido — formato não reconhecido (envie PNG/JPG/PDF).');
+        const contentType = m[1];
+        const buf = Buffer.from(m[2], 'base64');
+        if (buf.length > 8 * 1024 * 1024) throw new Error('Print muito grande — limite de 8 MB.');
+        const allowed = ['image/png', 'image/jpeg', 'image/jpg', 'image/webp', 'application/pdf'];
+        if (!allowed.includes(contentType.toLowerCase())) throw new Error('Tipo de arquivo não suportado — envie PNG, JPG, WEBP ou PDF.');
+        const extMap: Record<string,string> = { 'image/png':'png','image/jpeg':'jpg','image/jpg':'jpg','image/webp':'webp','application/pdf':'pdf' };
+        const ext = extMap[contentType.toLowerCase()] || 'bin';
+        const safeOrig = String(mirrorProof.filename || `espelhamento.${ext}`).replace(/[^A-Za-z0-9._-]/g, '_').slice(0, 80);
+        const filePath = `dhl-mirror-proof/${intake.mission_id}/${Date.now()}_${safeOrig}`;
+        const { error: upErr } = await sb.storage.from('mission-evidence').upload(filePath, buf, { contentType, upsert: false });
+        if (upErr) throw new Error('Falha ao salvar o print: ' + upErr.message);
+        const { data: urlData } = sb.storage.from('mission-evidence').getPublicUrl(filePath);
+        mirrorProofUrl = urlData?.publicUrl || null;
+        mirrorProofFilename = safeOrig;
+      } catch (e: any) {
+        return res.status(400).json({ error: e?.message || 'Erro ao processar o print do espelhamento.' });
+      }
+
       await sb.from('dhl_supplier_intakes').update({
         status: 'preenchido',
         agent1_id: a1.id,
@@ -580,6 +616,8 @@ export function registerDhlIntakeRoutes(
         agent1_snapshot: a1.snap,
         agent2_snapshot: a2.snap,
         vehicle_snapshot: vh.snap,
+        mirror_proof_url: mirrorProofUrl,
+        mirror_proof_filename: mirrorProofFilename,
         submitted_at: new Date().toISOString(),
       }).eq('token', token);
 
@@ -597,6 +635,8 @@ export function registerDhlIntakeRoutes(
           agent1: a1.snap,
           agent2: a2.snap,
           vehicle: vh.snap,
+          mirrorProofUrl,
+          mirrorProofFilename,
         });
       } catch (e: any) {
         console.error('[DHL Intake] erro ao notificar operacional:', e?.message);

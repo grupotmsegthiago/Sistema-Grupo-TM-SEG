@@ -83,6 +83,8 @@ async function main() {
       id_rastreador: 'OMN-998877',
       comunicacao: 'Satelital + GPRS',
     },
+    mirrorProofUrl: 'https://example.com/comprovante-simulado.png',
+    mirrorProofFilename: 'espelhamento_simulado.png',
   });
   console.log('[TESTE] 2/2 enviado.');
   console.log('[TESTE] ✔ Simulação concluída — verifique a caixa de operacional@grupotmseg.com.br');
