@@ -131,11 +131,11 @@ function buildWhatsappText(opts: {
     ? `\n\n*Instruções de Espelhamento — Tecnologia(s): ${tecs.join(', ')}*\n${tecs.map(t => instrucaoEspelhamentoTexto(t)).join('\n\n')}`
     : `\n\n*Instruções de Espelhamento* serão verificadas conforme a tecnologia informada do veículo.`;
 
-  return `*Grupo TM SEG — Solicitação de Escolta DHL*
+  return `*Grupo TM SEG — Solicitação de Escolta*
 
 Olá, ${opts.providerName}!
 
-Foi gerada uma nova OS para a *DHL Supply Chain*. Pedimos que preencha os dados do *Escoltista 1, Escoltista 2 e Veículo* pelo link abaixo:
+Foi gerada uma nova OS pelo Grupo TM SEG. Pedimos que preencha os dados do *Escoltista 1, Escoltista 2 e Veículo* pelo link abaixo:
 
 🔗 ${opts.link}
 

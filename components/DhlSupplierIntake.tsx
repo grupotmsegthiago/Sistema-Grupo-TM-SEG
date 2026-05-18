@@ -202,7 +202,7 @@ const DhlSupplierIntake: React.FC = () => {
           <p className="text-gray-600 text-sm mb-4">A equipe operacional da TM SEG foi notificada e dará sequência ao processo.</p>
           <div className="bg-gray-50 rounded-lg p-3 text-left text-xs text-gray-600 space-y-1">
             <p><span className="font-bold">OS:</span> {mission?.id}</p>
-            <p><span className="font-bold">S.E. DHL:</span> {mission?.dhl_se_number || '—'}</p>
+            <p><span className="font-bold">S.E.:</span> {mission?.dhl_se_number || '—'}</p>
             <p><span className="font-bold">Trajeto:</span> {mission?.origin} → {mission?.destination}</p>
           </div>
         </div>
@@ -221,7 +221,7 @@ const DhlSupplierIntake: React.FC = () => {
             <div className="w-12 h-12 rounded-full bg-gradient-to-br from-red-600 to-red-800 flex items-center justify-center"><Shield className="w-6 h-6 text-white" /></div>
             <div>
               <h1 className="text-lg md:text-xl font-black tracking-wide">GRUPO <span className="text-red-500">TM SEG</span></h1>
-              <p className="text-[10px] uppercase tracking-widest text-yellow-400 font-bold">Operação DHL Supply Chain</p>
+              <p className="text-[10px] uppercase tracking-widest text-yellow-400 font-bold">Intermediação de Escolta Armada</p>
             </div>
           </div>
           <div className="text-right">
@@ -236,7 +236,7 @@ const DhlSupplierIntake: React.FC = () => {
         <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-5">
           <h2 className="text-sm font-black uppercase text-gray-900 mb-3 border-b-2 border-yellow-400 pb-2">Dados da Solicitação</h2>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
-            <div><span className="text-[10px] uppercase text-gray-400 font-bold block">Nº S.E. DHL</span><span className="font-bold text-red-600">{mission?.dhl_se_number || '—'}</span></div>
+            <div><span className="text-[10px] uppercase text-gray-400 font-bold block">Nº S.E.</span><span className="font-bold text-red-600">{mission?.dhl_se_number || '—'}</span></div>
             <div><span className="text-[10px] uppercase text-gray-400 font-bold block">Fornecedor</span><span className="font-semibold text-gray-800">{intake?.providerName || '—'}</span></div>
             <div><span className="text-[10px] uppercase text-gray-400 font-bold block">Origem</span><span className="text-gray-700">{mission?.origin || '—'}</span></div>
             <div><span className="text-[10px] uppercase text-gray-400 font-bold block">Destino</span><span className="text-gray-700">{mission?.destination || '—'}</span></div>

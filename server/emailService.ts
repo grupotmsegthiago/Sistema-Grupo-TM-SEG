@@ -1226,7 +1226,7 @@ function dhlTemplate(content: string): string {
   <div class="dhl-red-bar"></div>
   <div class="header">
     <h1>GRUPO <span class="red">TM SEG</span></h1>
-    <p class="sub">Operação DHL Supply Chain</p>
+    <p class="sub">Intermediação de Escolta Armada</p>
   </div>
   <div class="body-content">${content}</div>
   <div class="footer">
@@ -1274,9 +1274,9 @@ export async function sendDhlSupplierIntakeEmail(opts: {
   link: string;
 }): Promise<void> {
   const html = dhlTemplate(`
-    <h2>Solicitação de Escolta DHL — Preencher Dados</h2>
+    <h2>Solicitação de Escolta — Preencher Dados</h2>
     <p>Olá, <strong>${opts.providerName}</strong>.</p>
-    <p>Foi gerada uma nova Ordem de Serviço para a <strong>DHL Supply Chain</strong>. Para prosseguir, é necessário preencher os dados dos <strong>2 escoltistas e do veículo</strong> através do link abaixo:</p>
+    <p>Foi gerada uma nova Ordem de Serviço pelo Grupo TM SEG. Para prosseguir, é necessário preencher os dados dos <strong>2 escoltistas e do veículo</strong> através do link abaixo:</p>
     <p style="text-align:center; margin:20px 0;">
       <a class="cta" href="${opts.link}">Preencher dados da escolta</a>
     </p>
@@ -1285,7 +1285,7 @@ export async function sendDhlSupplierIntakeEmail(opts: {
     <h3 style="color:#1a1a1a; font-size:15px; margin-top:24px; border-bottom:2px solid #FFCC00; padding-bottom:6px;">Dados da OS</h3>
     <table class="info-table">
       <tr><td>OS TM SEG</td><td>${opts.osNumber}</td></tr>
-      <tr><td>Nº S.E. DHL</td><td><strong>${opts.seNumber}</strong></td></tr>
+      <tr><td>Nº S.E.</td><td><strong>${opts.seNumber}</strong></td></tr>
       <tr><td>Origem</td><td>${opts.origin}</td></tr>
       <tr><td>Destino</td><td>${opts.destination}</td></tr>
       <tr><td>Início previsto</td><td>${opts.scheduledAt}</td></tr>
@@ -1296,7 +1296,7 @@ export async function sendDhlSupplierIntakeEmail(opts: {
       Se o escoltista ou o veículo já tiver sido cadastrado anteriormente, é possível selecioná-lo na lista para reaproveitamento.
     </div>
 
-    <h3 style="color:#1a1a1a; font-size:15px; margin-top:24px; border-bottom:2px solid #FFCC00; padding-bottom:6px;">Instruções de Espelhamento DHL — por tecnologia</h3>
+    <h3 style="color:#1a1a1a; font-size:15px; margin-top:24px; border-bottom:2px solid #FFCC00; padding-bottom:6px;">Instruções de Espelhamento — por tecnologia</h3>
     <p style="font-size:13px; color:#555;">Realize o espelhamento conforme a tecnologia do veículo cadastrado:</p>
     ${dhlTechBlocksHtml()}
 
@@ -1307,10 +1307,10 @@ export async function sendDhlSupplierIntakeEmail(opts: {
     from: SMTP_FROM,
     to: opts.to,
     bcc: ['operacional@grupotmseg.com.br'],
-    subject: `[DHL] Preencher dados de escolta — OS ${opts.osNumber} — S.E. ${opts.seNumber}`,
+    subject: `[TM SEG] Preencher dados de escolta — OS ${opts.osNumber} — S.E. ${opts.seNumber}`,
     html,
   });
-  console.log(`[Email] DHL intake enviado → ${opts.to} | OS ${opts.osNumber}`);
+  console.log(`[Email] Intake fornecedor enviado → ${opts.to} | OS ${opts.osNumber}`);
 }
 
 export async function sendDhlIntakeSubmittedEmail(opts: {
