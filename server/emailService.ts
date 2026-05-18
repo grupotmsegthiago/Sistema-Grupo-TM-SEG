@@ -1404,4 +1404,62 @@ export async function sendDhlIntakeSubmittedEmail(opts: {
   console.log(`[Email] DHL intake recebido → ${opts.to} | OS ${opts.osNumber}`);
 }
 
+export async function sendDhlIntakeExpiredEmail(opts: {
+  to: string;
+  expired: Array<{
+    osNumber: string;
+    seNumber: string;
+    providerName: string;
+    sentAt: string;
+    sentTo: string;
+    expiredAt: string;
+    origin: string;
+    destination: string;
+    scheduledAt: string;
+  }>;
+}): Promise<void> {
+  if (!opts.expired || opts.expired.length === 0) return;
+
+  const rows = opts.expired.map(item => `
+    <tr>
+      <td><strong>${item.osNumber}</strong></td>
+      <td>${item.seNumber || '—'}</td>
+      <td>${item.providerName}</td>
+      <td>${item.sentTo || '—'}<br/><span style="color:#888; font-size:11px;">enviado em ${item.sentAt}</span></td>
+      <td>${item.origin} → ${item.destination}<br/><span style="color:#888; font-size:11px;">início ${item.scheduledAt}</span></td>
+      <td style="color:#D40511;"><strong>${item.expiredAt}</strong></td>
+    </tr>`).join('');
+
+  const html = dhlTemplate(`
+    <h2>Atenção — Link(s) DHL Expirado(s) sem Preenchimento</h2>
+    <p>O(s) link(s) abaixo de coleta de dados do fornecedor (Escoltistas + Veículo) <strong>expirou(aram)</strong> sem que o fornecedor concluísse o preenchimento. A OS pode chegar ao início sem os dados necessários para o espelhamento e a operação.</p>
+    <p><strong>Total de links expirados nesta verificação:</strong> ${opts.expired.length}</p>
+    <table class="info-table" style="width:100%;">
+      <thead>
+        <tr style="background:#fff3cd;">
+          <th style="text-align:left; padding:8px;">OS</th>
+          <th style="text-align:left; padding:8px;">S.E.</th>
+          <th style="text-align:left; padding:8px;">Fornecedor</th>
+          <th style="text-align:left; padding:8px;">Envio</th>
+          <th style="text-align:left; padding:8px;">Trajeto / Início</th>
+          <th style="text-align:left; padding:8px;">Expirou em</th>
+        </tr>
+      </thead>
+      <tbody>${rows}</tbody>
+    </table>
+    <div class="highlight" style="margin-top:20px; background:#fff3cd; border-left:4px solid #FFCC00;">
+      <strong>Ação recomendada:</strong> entrar em contato com o fornecedor e/ou gerar um novo link para preenchimento direto no painel da OS.
+    </div>
+    <p style="margin-top:14px; font-size:12px; color:#888;">No painel da OS o status do link aparece como <strong>Expirado</strong>.</p>
+  `);
+
+  await transporter.sendMail({
+    from: SMTP_FROM,
+    to: opts.to,
+    subject: `[DHL] ${opts.expired.length} link(s) de fornecedor expirado(s) sem preenchimento`,
+    html,
+  });
+  console.log(`[Email] DHL intake expirado → ${opts.to} | ${opts.expired.length} link(s)`);
+}
+
 export { transporter };

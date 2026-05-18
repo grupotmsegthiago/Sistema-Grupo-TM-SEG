@@ -13,7 +13,7 @@
 import type { Express, Request, Response } from 'express';
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import { randomUUID } from 'crypto';
-import { sendDhlSupplierIntakeEmail, sendDhlIntakeSubmittedEmail } from './emailService';
+import { sendDhlSupplierIntakeEmail, sendDhlIntakeSubmittedEmail, sendDhlIntakeExpiredEmail } from './emailService';
 
 const DHL_CLIENT_NAME = 'DHL SUPPLY CHAIN (BRAZIL) LTDA';
 const OPERACIONAL_EMAIL = 'operacional@grupotmseg.com.br';
@@ -244,6 +244,118 @@ function instrucaoEspelhamentoTexto(tec: string): string {
 function maskPhone(value: string | null | undefined): string {
   if (!value) return '';
   return String(value).replace(/\D/g, '');
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// WORKER PERIÓDICO — marca intakes pendentes vencidos como 'expirado' e
+// notifica o operacional (in-app via system_logs + e-mail consolidado).
+//
+// Roda a cada 15 min. Para evitar avisos repetidos, só notifica os registros
+// recém-marcados nesta execução (transição pendente → expirado).
+// ────────────────────────────────────────────────────────────────────────────
+const DHL_EXPIRY_CHECK_INTERVAL_MS = 15 * 60 * 1000;
+let _dhlExpiryWorkerTimer: NodeJS.Timeout | null = null;
+
+async function checkAndNotifyExpiredDhlIntakes(): Promise<void> {
+  const sb = getSb();
+  const nowIso = new Date().toISOString();
+
+  // Busca intakes pendentes cujo expires_at já passou.
+  const { data: vencidos, error: selErr } = await sb.from('dhl_supplier_intakes')
+    .select('id, mission_id, provider_name, sent_to_email, sent_to_phone, created_at, expires_at')
+    .eq('status', 'pendente')
+    .lt('expires_at', nowIso);
+
+  if (selErr) {
+    console.error('[DHL Expiry Worker] erro ao listar intakes vencidos:', selErr.message);
+    return;
+  }
+  const lista = Array.isArray(vencidos) ? vencidos : [];
+  if (lista.length === 0) return;
+
+  console.log(`[DHL Expiry Worker] ${lista.length} intake(s) pendente(s) vencido(s) detectado(s).`);
+
+  // Marca todos como 'expirado' em um único update (transição atômica).
+  const ids = lista.map(i => i.id);
+  const { data: updated, error: updErr } = await sb.from('dhl_supplier_intakes')
+    .update({ status: 'expirado' })
+    .in('id', ids)
+    .eq('status', 'pendente') // proteção contra corrida
+    .select('id, mission_id, provider_name, sent_to_email, sent_to_phone, created_at, expires_at');
+
+  if (updErr) {
+    console.error('[DHL Expiry Worker] erro ao marcar como expirado:', updErr.message);
+    return;
+  }
+  const transitados = Array.isArray(updated) ? updated : [];
+  if (transitados.length === 0) return;
+
+  // Hidrata dados da OS para a notificação.
+  const missionIds = Array.from(new Set(transitados.map(t => t.mission_id).filter(Boolean)));
+  const { data: missions, error: misErr } = await sb.from('missions')
+    .select('id, dhl_se_number, origin, destination, start_time')
+    .in('id', missionIds);
+  if (misErr) {
+    console.error('[DHL Expiry Worker] erro ao hidratar dados das OS (notificação seguirá com campos vazios):', misErr.message);
+  }
+  const missionMap = new Map<string, any>((missions || []).map((m: any) => [m.id, m]));
+
+  const fmtBr = (iso: string | null | undefined) => {
+    if (!iso) return '—';
+    try { return new Date(iso).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' }); } catch { return '—'; }
+  };
+
+  const expiredPayload = transitados.map((it: any) => {
+    const m = missionMap.get(it.mission_id) || {};
+    return {
+      osNumber: it.mission_id,
+      seNumber: m.dhl_se_number || '—',
+      providerName: it.provider_name || '—',
+      sentAt: fmtBr(it.created_at),
+      sentTo: it.sent_to_email || it.sent_to_phone || '—',
+      expiredAt: fmtBr(it.expires_at),
+      origin: m.origin || '—',
+      destination: m.destination || '—',
+      scheduledAt: fmtBr(m.start_time),
+    };
+  });
+
+  // Notificação in-app (toast em tempo real via canal global-system-broadcast
+  // que escuta INSERT em system_logs). Um log por intake para que apareça por OS.
+  try {
+    const rows = transitados.map((it: any) => ({
+      user_name: 'Sistema',
+      action_type: 'UPDATE',
+      entity: 'Mission',
+      entity_id: it.mission_id,
+      details: `Link DHL do fornecedor ${it.provider_name || '—'} EXPIROU sem preenchimento (enviado em ${fmtBr(it.created_at)} para ${it.sent_to_email || it.sent_to_phone || '—'}). Gere um novo link no painel da OS.`,
+    }));
+    const { error: logErr } = await sb.from('system_logs').insert(rows);
+    if (logErr) console.error('[DHL Expiry Worker] erro ao inserir system_logs:', logErr.message);
+  } catch (e: any) {
+    console.error('[DHL Expiry Worker] exceção ao inserir system_logs:', e?.message);
+  }
+
+  // E-mail consolidado para o operacional.
+  try {
+    await sendDhlIntakeExpiredEmail({ to: OPERACIONAL_EMAIL, expired: expiredPayload });
+  } catch (e: any) {
+    console.error('[DHL Expiry Worker] erro ao enviar e-mail ao operacional:', e?.message);
+  }
+
+  console.log(`[DHL Expiry Worker] ${transitados.length} intake(s) marcado(s) como expirado e operacional notificado.`);
+}
+
+export function startDhlIntakeExpiryWorker(): void {
+  if (_dhlExpiryWorkerTimer) return;
+  // Primeira execução com um pequeno delay para não competir com o boot.
+  setTimeout(() => {
+    checkAndNotifyExpiredDhlIntakes().catch(e => console.error('[DHL Expiry Worker] tick inicial falhou:', e?.message));
+  }, 30 * 1000);
+  _dhlExpiryWorkerTimer = setInterval(() => {
+    checkAndNotifyExpiredDhlIntakes().catch(e => console.error('[DHL Expiry Worker] tick falhou:', e?.message));
+  }, DHL_EXPIRY_CHECK_INTERVAL_MS);
+  console.log(`[DHL Expiry Worker] iniciado (intervalo ${Math.round(DHL_EXPIRY_CHECK_INTERVAL_MS / 60000)} min).`);
 }
 
 export function registerDhlIntakeRoutes(
