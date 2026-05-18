@@ -131,6 +131,7 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
   const [expandedStep, setExpandedStep] = useState<number>(1);
   const [driverQuestion, setDriverQuestion] = useState<'asking' | 'yes' | 'no' | null>(null);
   const [scheduleMode, setScheduleMode] = useState<'asking' | 'immediate' | 'scheduled' | null>(null);
+  const [dhlSeConfirmed, setDhlSeConfirmed] = useState<string>('');
 
   const { isLoaded: isGoogleLoaded } = useLoadScript(googleMapsLoadConfig);
   const originAutocompleteRef = useRef<google.maps.places.Autocomplete | null>(null);
@@ -194,9 +195,13 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
   };
   const hasClientRules = isVtcClient || (formData.client || '').toUpperCase().includes('CEVA');
 
+  const dhlSeOk = !isDhlClient || (
+    !!formData.dhl_se_number.trim() &&
+    dhlSeConfirmed.trim().toUpperCase() === formData.dhl_se_number.trim().toUpperCase()
+  );
   const stepComplete = {
     step1: !!formData.missionType,
-    step2: !!formData.client,
+    step2: !!formData.client && dhlSeOk,
     step3: step3Done,
     step4: !!(formData.provider || providerPending),
     step5: step5Done,
@@ -1321,15 +1326,47 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
                               <p className="text-[10px] font-black uppercase tracking-widest" style={{ color: '#7f1d1d' }}>Cliente DHL — Dados Obrigatórios</p>
                           </div>
                           <label className={LABEL_CLASS}><span className="text-red-600">*</span> Número da S.E. (Solicitação de Escolta)</label>
-                          <input
-                              type="text"
-                              required
-                              className={INPUT_CLASS}
-                              placeholder="Ex: SE-123456 / 4912345"
-                              value={formData.dhl_se_number}
-                              onChange={e => setFormData(prev => ({ ...prev, dhl_se_number: e.target.value.toUpperCase() }))}
-                              data-testid="input-dhl-se-number"
-                          />
+                          <div className="flex gap-2 items-stretch">
+                              <input
+                                  type="text"
+                                  required
+                                  className={`${INPUT_CLASS} flex-1`}
+                                  placeholder="Ex: SE-123456 / 4912345"
+                                  value={formData.dhl_se_number}
+                                  onChange={e => {
+                                      const v = e.target.value.toUpperCase();
+                                      setFormData(prev => ({ ...prev, dhl_se_number: v }));
+                                      if (dhlSeConfirmed && dhlSeConfirmed.toUpperCase() !== v) setDhlSeConfirmed('');
+                                  }}
+                                  data-testid="input-dhl-se-number"
+                              />
+                              {(() => {
+                                  const current = formData.dhl_se_number.trim();
+                                  const confirmed = !!current && dhlSeConfirmed.trim().toUpperCase() === current.toUpperCase();
+                                  return (
+                                      <button
+                                          type="button"
+                                          disabled={!current || confirmed}
+                                          onClick={() => setDhlSeConfirmed(current)}
+                                          data-testid="button-confirm-dhl-se"
+                                          className={`px-4 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all active:scale-95 flex items-center gap-1 ${
+                                              confirmed
+                                                  ? 'bg-green-600 text-white cursor-default'
+                                                  : current
+                                                      ? 'bg-red-600 text-white hover:bg-red-700'
+                                                      : 'bg-gray-200 text-gray-400 cursor-not-allowed'
+                                          }`}
+                                      >
+                                          {confirmed ? <><Check size={12} /> Confirmado</> : 'Confirmar'}
+                                      </button>
+                                  );
+                              })()}
+                          </div>
+                          {!dhlSeOk && formData.dhl_se_number.trim() && (
+                              <p className="text-[10px] font-black mt-2 px-3 py-2 rounded-lg bg-red-50 border border-red-300 text-red-700 uppercase tracking-wider">
+                                  Confirme o número da S.E. para liberar as próximas etapas.
+                              </p>
+                          )}
                           <p className="text-[9px] font-bold mt-1" style={{ color: '#7f1d1d' }}>
                               Após salvar a OS, o sistema gera automaticamente um link público para o fornecedor preencher Escoltistas e Veículo, com e-mail e mensagem para WhatsApp.
                           </p>
