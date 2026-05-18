@@ -647,7 +647,10 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
 
           let finalDestination = route.destination;
           if (currentFlags.vtc02h) finalDestination = '02 HORAS DE ACOMPANHAMENTO';
-          else if (currentFlags.ceva200km) finalDestination = '200KM DE ACOMPANHAMENTO';
+          else if (currentFlags.ceva200km) {
+              const isDhl = (formData.client || '').toUpperCase().includes('DHL');
+              finalDestination = isDhl ? 'RAIO 200 KM — DESTINO A DEFINIR' : '200KM DE ACOMPANHAMENTO';
+          }
 
           setFormData(prev => ({
               ...prev, provider: activeProvider,
@@ -1610,6 +1613,38 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
                               )}
                               <Flag size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-blue-500 pointer-events-none z-10" />
                           </div>
+                          {isDhlClient && (
+                            <button
+                              type="button"
+                              data-testid="button-dhl-raio-200"
+                              onClick={() => {
+                                if (!formData.origin) { alert('Informe primeiro o endereço de origem.'); return; }
+                                const virtualRoute: any = {
+                                  id: 'dhl-raio-200',
+                                  name: 'DHL — Raio 200 km',
+                                  origin: formData.origin,
+                                  destination: 'RAIO 200 KM — DESTINO A DEFINIR',
+                                  distance: '200',
+                                  toll_cost: 0,
+                                };
+                                setSelectedRouteId('dhl-raio-200');
+                                setRouteSearchTerm('DHL — Raio 200 km');
+                                setActiveDropdown(null);
+                                setTollDetails(null);
+                                setOperatorConfirmedCalc(false);
+                                setFormData(prev => ({ ...prev, applyCeva200km: true, destination: 'RAIO 200 KM — DESTINO A DEFINIR', tollValue: '0' }));
+                                calculatePricing(virtualRoute, undefined, '', '', { ceva200km: true, vtc02h: false, isSameOs: formData.isSameOs });
+                              }}
+                              className={`mt-2 w-full px-3 py-2 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all active:scale-95 flex items-center justify-center gap-2 ${
+                                formData.applyCeva200km
+                                  ? 'bg-orange-600 text-white shadow-md'
+                                  : 'bg-yellow-50 border border-yellow-400 text-yellow-700 hover:bg-yellow-100'
+                              }`}
+                            >
+                              <TrendingUp size={14} />
+                              {formData.applyCeva200km ? 'Raio 200 km aplicado — toque para refazer' : 'Não sei o destino — usar Raio 200 km'}
+                            </button>
+                          )}
                       </div>
                   </div>
 
