@@ -1192,4 +1192,192 @@ export async function sendStuckNfsReport(to: string, items: any[], reportDate: s
   }
 }
 
+// ──────────────────────────────────────────────────────────────────────────
+// DHL Supplier Intake — e-mails (paleta DHL amarelo/vermelho + logo TM SEG)
+// ──────────────────────────────────────────────────────────────────────────
+function dhlTemplate(content: string): string {
+  return `<!DOCTYPE html>
+<html lang="pt-BR"><head><meta charset="UTF-8">
+<style>
+  body { margin:0; padding:0; background:#f4f4f4; font-family:'Segoe UI',Arial,sans-serif; }
+  .container { max-width:640px; margin:0 auto; background:#fff; border-radius:8px; overflow:hidden; box-shadow:0 2px 12px rgba(0,0,0,0.08); }
+  .dhl-bar { background:#FFCC00; height:8px; }
+  .dhl-red-bar { background:#D40511; height:4px; }
+  .header { background:#1a1a1a; padding:24px 32px; text-align:center; }
+  .header h1 { color:#fff; font-size:22px; margin:0 0 4px; letter-spacing:1px; }
+  .header h1 .red { color:#D40511; font-weight:700; }
+  .header .sub { color:#FFCC00; font-size:11px; margin:0; letter-spacing:2px; text-transform:uppercase; font-weight:700; }
+  .body-content { padding:32px; color:#333; line-height:1.65; font-size:14px; }
+  .body-content h2 { color:#D40511; font-size:18px; border-bottom:3px solid #FFCC00; padding-bottom:8px; margin:0 0 16px; }
+  .cta { display:inline-block; background:#D40511; color:#fff !important; padding:14px 26px; border-radius:6px; text-decoration:none; font-weight:700; letter-spacing:0.5px; margin:8px 0; }
+  .info-table { width:100%; border-collapse:collapse; margin:14px 0; font-size:13px; }
+  .info-table td { padding:8px 12px; border-bottom:1px solid #eee; vertical-align:top; }
+  .info-table td:first-child { font-weight:600; width:38%; color:#1a1a1a; }
+  .highlight { background:#FFFBE6; border-left:4px solid #FFCC00; padding:12px 16px; margin:14px 0; border-radius:0 4px 4px 0; font-size:13px; }
+  .tech-block { background:#fafafa; border:1px solid #eee; border-radius:6px; padding:14px 16px; margin:10px 0; font-size:13px; }
+  .tech-title { color:#D40511; font-weight:700; margin:0 0 6px; font-size:14px; }
+  .footer { background:#1a1a1a; padding:18px 32px; text-align:center; border-top:4px solid #FFCC00; }
+  .footer p { color:#999; font-size:11px; margin:3px 0; }
+  .footer .company { color:#fff; font-weight:700; }
+</style></head>
+<body>
+<div class="container">
+  <div class="dhl-bar"></div>
+  <div class="dhl-red-bar"></div>
+  <div class="header">
+    <h1>GRUPO <span class="red">TM SEG</span></h1>
+    <p class="sub">Operação DHL Supply Chain</p>
+  </div>
+  <div class="body-content">${content}</div>
+  <div class="footer">
+    <p class="company">Grupo TM SEG</p>
+    <p>Intermediação de Escolta Armada</p>
+    <p style="margin-top:6px; color:#666;">E-mail automático. Dúvidas: operacional@grupotmseg.com.br</p>
+  </div>
+</div>
+</body></html>`;
+}
+
+function dhlTechBlocksHtml(): string {
+  return `
+  <div class="tech-block">
+    <p class="tech-title">OMNILINK</p>
+    <p style="margin:0;">DHL SUPPLY CHAIN — CNPJ 00.233.065/0001-87 — IP <strong>131.255.103.146</strong> — Porta <strong>9001</strong>.<br/>
+    <strong>Obrigatório anexar a ficha de ativação</strong> quando o veículo possuir rastreador Omnilink instalado.</p>
+  </div>
+  <div class="tech-block">
+    <p class="tech-title">SASCAR</p>
+    <p style="margin:0;">Portal Sascar → Serviços → <em>Direcionamento de Sinal</em>. No campo <strong>Gerenciadora</strong>, inserir conta: <strong>DHL LOGISTICS (BRASIL) LTDA (FILIAL) – RASTREAMENTO</strong>.</p>
+  </div>
+  <div class="tech-block">
+    <p class="tech-title">ONIXSAT / JABURSAT</p>
+    <p style="margin:0;">Espelhar sinal para <strong>Central Unidocks/DHL — CNPJ 00.233.065/0001-87</strong>. Onixsat → Menu ADM → Espelhamento → Espelhamento de Equipamento. Alternativa: telefone <strong>(43) 3371-3700</strong>.</p>
+  </div>
+  <div class="tech-block">
+    <p class="tech-title">SIGHRA</p>
+    <p style="margin:0;">Se possuir o software Sighra: opção <em>Filas do Veículo</em>. Se não, enviar e-mail para <strong>suporte@sighra.com.br</strong> com placa + ID do veículo + conta <strong>DHL LOGISTICS (BRASIL)</strong>.</p>
+  </div>
+  <div class="tech-block">
+    <p class="tech-title">AUTOTRAC</p>
+    <p style="margin:0;">Supervisor Web → botão direito no veículo → Roteamento → <em>Inserir roteamento express</em>. Companhia: <strong>DHL</strong> (validar companhia). Perfil: <strong>(Perfil Normal) Retorno Completo (sem cópia)</strong>.</p>
+  </div>`;
+}
+
+export async function sendDhlSupplierIntakeEmail(opts: {
+  to: string;
+  providerName: string;
+  osNumber: string;
+  seNumber: string;
+  origin: string;
+  destination: string;
+  scheduledAt: string;
+  link: string;
+}): Promise<void> {
+  const html = dhlTemplate(`
+    <h2>Solicitação de Escolta DHL — Preencher Dados</h2>
+    <p>Olá, <strong>${opts.providerName}</strong>.</p>
+    <p>Foi gerada uma nova Ordem de Serviço para a <strong>DHL Supply Chain</strong>. Para prosseguir, é necessário preencher os dados dos <strong>2 escoltistas e do veículo</strong> através do link abaixo:</p>
+    <p style="text-align:center; margin:20px 0;">
+      <a class="cta" href="${opts.link}">Preencher dados da escolta</a>
+    </p>
+    <p style="font-size:12px; color:#888; text-align:center;">Ou copie e cole no navegador:<br/><span style="word-break:break-all;">${opts.link}</span></p>
+
+    <h3 style="color:#1a1a1a; font-size:15px; margin-top:24px; border-bottom:2px solid #FFCC00; padding-bottom:6px;">Dados da OS</h3>
+    <table class="info-table">
+      <tr><td>OS TM SEG</td><td>${opts.osNumber}</td></tr>
+      <tr><td>Nº S.E. DHL</td><td><strong>${opts.seNumber}</strong></td></tr>
+      <tr><td>Origem</td><td>${opts.origin}</td></tr>
+      <tr><td>Destino</td><td>${opts.destination}</td></tr>
+      <tr><td>Início previsto</td><td>${opts.scheduledAt}</td></tr>
+    </table>
+
+    <div class="highlight">
+      <strong>Ordem de preenchimento:</strong> Escoltista 1 → Escoltista 2 → Veículo.<br/>
+      Se o escoltista ou o veículo já tiver sido cadastrado anteriormente, é possível selecioná-lo na lista para reaproveitamento.
+    </div>
+
+    <h3 style="color:#1a1a1a; font-size:15px; margin-top:24px; border-bottom:2px solid #FFCC00; padding-bottom:6px;">Instruções de Espelhamento DHL — por tecnologia</h3>
+    <p style="font-size:13px; color:#555;">Realize o espelhamento conforme a tecnologia do veículo cadastrado:</p>
+    ${dhlTechBlocksHtml()}
+
+    <p style="margin-top:20px; font-size:12px; color:#888;">Após o preenchimento, nossa equipe operacional será notificada automaticamente.</p>
+  `);
+
+  await transporter.sendMail({
+    from: SMTP_FROM,
+    to: opts.to,
+    bcc: ['operacional@grupotmseg.com.br'],
+    subject: `[DHL] Preencher dados de escolta — OS ${opts.osNumber} — S.E. ${opts.seNumber}`,
+    html,
+  });
+  console.log(`[Email] DHL intake enviado → ${opts.to} | OS ${opts.osNumber}`);
+}
+
+export async function sendDhlIntakeSubmittedEmail(opts: {
+  to: string;
+  providerName: string;
+  osNumber: string;
+  seNumber: string;
+  origin: string;
+  destination: string;
+  scheduledAt: string;
+  agent1: any;
+  agent2: any;
+  vehicle: any;
+}): Promise<void> {
+  const a = (x: any) => x || {};
+  const fmt = (v: any) => v ? String(v) : '—';
+  const escoltistaHtml = (label: string, x: any) => {
+    const e = a(x);
+    return `
+      <h3 style="color:#1a1a1a; font-size:15px; margin-top:20px; border-bottom:2px solid #FFCC00; padding-bottom:6px;">${label}</h3>
+      <table class="info-table">
+        <tr><td>Nome</td><td>${fmt(e.nome)}</td></tr>
+        <tr><td>CPF</td><td>${fmt(e.cpf)}</td></tr>
+        <tr><td>RG</td><td>${fmt(e.rg)} ${e.orgao_emissor ? '— ' + e.orgao_emissor : ''}</td></tr>
+        <tr><td>CNH</td><td>${fmt(e.cnh)} ${e.cnh_categoria ? '(' + e.cnh_categoria + ')' : ''} ${e.cnh_vencimento ? 'venc. ' + e.cnh_vencimento : ''}</td></tr>
+        <tr><td>CNV</td><td>${fmt(e.cnv_numero)} ${e.cnv_validade ? '— validade ' + e.cnv_validade : ''}</td></tr>
+        <tr><td>Endereço</td><td>${fmt(e.rua)}${e.numero ? ', ' + e.numero : ''}${e.complemento ? ' — ' + e.complemento : ''}<br/>${fmt(e.bairro)} — ${fmt(e.cidade)}/${fmt(e.uf)} — CEP ${fmt(e.cep)}</td></tr>
+        <tr><td>Celular</td><td>${fmt(e.celular)}</td></tr>
+        <tr><td>Admissão</td><td>${fmt(e.admissao)}</td></tr>
+      </table>`;
+  };
+  const v = a(opts.vehicle);
+  const veicHtml = `
+    <h3 style="color:#1a1a1a; font-size:15px; margin-top:20px; border-bottom:2px solid #FFCC00; padding-bottom:6px;">Veículo</h3>
+    <table class="info-table">
+      <tr><td>Placa</td><td><strong>${fmt(v.placa)}</strong></td></tr>
+      <tr><td>Renavam</td><td>${fmt(v.renavam)}</td></tr>
+      <tr><td>Marca / Modelo</td><td>${fmt(v.marca)} / ${fmt(v.modelo)} (${fmt(v.ano)}) — ${fmt(v.cor)}</td></tr>
+      <tr><td>Tecnologia</td><td><strong>${fmt(v.tecnologia)}</strong></td></tr>
+      <tr><td>ID Rastreador</td><td>${fmt(v.id_rastreador)}</td></tr>
+      <tr><td>Comunicação</td><td>${fmt(v.comunicacao)}</td></tr>
+    </table>`;
+
+  const html = dhlTemplate(`
+    <h2>OS DHL — Dados Preenchidos pelo Fornecedor</h2>
+    <p>O fornecedor <strong>${opts.providerName}</strong> concluiu o preenchimento dos dados da escolta:</p>
+    <table class="info-table">
+      <tr><td>OS</td><td>${opts.osNumber}</td></tr>
+      <tr><td>Nº S.E. DHL</td><td><strong>${opts.seNumber}</strong></td></tr>
+      <tr><td>Trajeto</td><td>${opts.origin} → ${opts.destination}</td></tr>
+      <tr><td>Início previsto</td><td>${opts.scheduledAt}</td></tr>
+    </table>
+    ${escoltistaHtml('Escoltista 1', opts.agent1)}
+    ${escoltistaHtml('Escoltista 2', opts.agent2)}
+    ${veicHtml}
+    <div class="highlight" style="margin-top:20px;">
+      <strong>Próximo passo:</strong> conferir os dados acima e realizar o espelhamento do sinal conforme a tecnologia do veículo (instruções já enviadas ao fornecedor por e-mail/WhatsApp).
+    </div>
+  `);
+
+  await transporter.sendMail({
+    from: SMTP_FROM,
+    to: opts.to,
+    subject: `[DHL] Dados recebidos — OS ${opts.osNumber} — S.E. ${opts.seNumber} — ${opts.providerName}`,
+    html,
+  });
+  console.log(`[Email] DHL intake recebido → ${opts.to} | OS ${opts.osNumber}`);
+}
+
 export { transporter };

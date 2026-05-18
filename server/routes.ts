@@ -10,6 +10,7 @@ import fs from "fs";
 import path from "path";
 import pg from "pg";
 import { sendMissionEmailToClient, sendMissionEmailToProvider, sendMissionResendToClient, sendMirroringEvidenceEmail, sendMissionChangeNotificationToClient, sendMissionChangeNotificationToProvider, sendWelcomeEmail, sendTestEmail, sendVerificationCodeEmail, sendPasswordResetEmail, sendBillingEmail, sendLegalReportEmail, sendPendingInfoReport, sendApprovalPendingReport, sendCancelledMissingInfoEmail, sendDailyMissingInfoReport, sendStuckNfsReport } from "./emailService";
+import { registerDhlIntakeRoutes, runDhlIntakeMigrations } from "./dhlSupplierIntake";
 import { findOrCreateCustomer, createPayment, getPayment, getPaymentPixQrCode, getPaymentBankSlip, listPayments, deletePayment, mapAsaasStatus, isAsaasConfigured, getAsaasCompanies, scheduleInvoice, listMunicipalServices, getInvoiceByPayment, getAllBalances } from "./asaasService";
 
 const resend = new Resend(process.env.RESEND_API_KEY);
@@ -1378,6 +1379,10 @@ export async function registerRoutes(
   } catch (e: any) {
     console.log('[Migration] PlugNotas columns:', e.message || 'ok');
   }
+
+  // ── DHL Supplier Intake (tabelas + coluna dhl_se_number) ──
+  await runDhlIntakeMigrations();
+  registerDhlIntakeRoutes(app, requireAuth, requireRole);
 
   app.post("/api/supabase/init-invoices", async (_req: Request, res: Response) => {
     try {

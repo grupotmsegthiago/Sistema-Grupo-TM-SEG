@@ -49,6 +49,7 @@ import MissionReportPage from './components/MissionReportPage';
 import QuoteList from './components/QuoteList';
 import QuoteForm from './components/QuoteForm';
 import PublicAgentRegistration from './components/PublicAgentRegistration';
+import DhlSupplierIntake from './components/DhlSupplierIntake';
 import SupportMapFinder from './components/SupportMapFinder'; 
 import PushNotificationManager from './components/PushNotificationManager';
 import CostOptimizationDashboard from './components/CostOptimizationDashboard';
@@ -113,6 +114,7 @@ const App: React.FC = () => {
 
   const normalizedPath = window.location.pathname.toLowerCase().replace(/\/$/, '');
   const isPublicRoute = normalizedPath === '/cadastro-operacional';
+  const isDhlSupplierRoute = normalizedPath === '/fornecedor/dhl';
   const isResetPasswordRoute = normalizedPath === '/reset-password';
   const resetToken = new URLSearchParams(window.location.search).get('token') || '';
 
@@ -260,6 +262,7 @@ const App: React.FC = () => {
   const handleSaveAndContinue = (missionId: string) => { localStorage.setItem('openMissionOnLoad', missionId); navigateTo('missions'); };
 
   if (isPublicRoute) { return ( <NotificationProvider> <PublicAgentRegistration /> </NotificationProvider> ); }
+  if (isDhlSupplierRoute) { return <DhlSupplierIntake />; }
 
   if (isResetPasswordRoute && resetToken) {
     return <ResetPassword token={resetToken} onComplete={() => { window.location.href = '/'; }} />;

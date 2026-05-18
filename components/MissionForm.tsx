@@ -72,8 +72,10 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
     clientVehicleId2: '', clientVehiclePlate2: '', clientVehicleModel2: '',
     driver_name: '', driver_phone: '', startKm: '',
     driver_name_2: '', driver_phone_2: '',
-    reference_number: ''
+    reference_number: '',
+    dhl_se_number: ''
   });
+  const [dhlLinkModal, setDhlLinkModal] = useState<{ open: boolean; missionId: string; url: string; whatsappText: string; phone: string }>({ open: false, missionId: '', url: '', whatsappText: '', phone: '' });
   
   const [isSaving, setIsSaving] = useState(false);
   const [emailConfirmDialog, setEmailConfirmDialog] = useState<{ clientPayload?: any; providerPayload?: any; onSaveCallback?: () => void } | null>(null);
@@ -139,6 +141,7 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
 
   const isVtcClient = (formData.client || '').toUpperCase().includes('VTC');
   const isCeslogClient = (formData.client || '').toUpperCase().includes('CESLOG') || (formData.client || '').toUpperCase().includes('CESARI');
+  const isDhlClient = (formData.client || '').toUpperCase().includes('DHL');
   const hasClientRules = isVtcClient || (formData.client || '').toUpperCase().includes('CEVA');
 
   const stepComplete = {
@@ -820,6 +823,7 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
     if (!formData.client || (!formData.origin && !formData.destination)) return alert("Selecione o cliente e informe a origem e destino da rota.");
     const clientUpper = (formData.client || '').toUpperCase();
     if ((clientUpper.includes('CESLOG') || clientUpper.includes('CESARI')) && !formData.reference_number.trim()) return alert("Para clientes CESLOG/CESARI, o Nº da Referência é obrigatório.");
+    if (clientUpper.includes('DHL') && !formData.dhl_se_number.trim()) return alert("Para o cliente DHL, o Número da S.E. é obrigatório.");
 
     const scheduledDateTime = new Date(`${formData.scheduledDate}T${formData.scheduledTime}:00`);
     const now = new Date();
@@ -859,7 +863,8 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
                 driver_phone_2: formData.driver_phone_2 || null,
                 start_km: parseFloat(formData.startKm) || null,
                 snapshot_data: '', snapshot_approved_by: null, snapshot_approved_at: null,
-                reference_number: formData.reference_number || null
+                reference_number: formData.reference_number || null,
+                dhl_se_number: formData.dhl_se_number ? formData.dhl_se_number.trim().toUpperCase() : null
             };
             let { error } = await supabase.from('missions').insert([missionPayload]);
             if (error && error.message?.includes('valor_zero_motivo')) {
@@ -870,6 +875,27 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
             if (!error) saved = true; else if (error.code === '23505') attempts++; else throw error;
         }
         await uploadEvidences(finalId);
+
+        // ── DHL: gerar link público para o fornecedor e abrir modal ──
+        if (clientUpper.includes('DHL')) {
+          try {
+            const token = localStorage.getItem('authToken') || '';
+            const r = await fetch('/api/dhl/intake/generate', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', ...(token ? { 'Authorization': `Bearer ${token}` } : {}) },
+              credentials: 'include',
+              body: JSON.stringify({ missionId: finalId }),
+            });
+            const j = await r.json();
+            if (r.ok && j.url) {
+              setDhlLinkModal({ open: true, missionId: finalId, url: j.url, whatsappText: j.whatsappText || '', phone: j.providerPhone || '' });
+            } else {
+              alert('OS salva, mas falhou ao gerar o link DHL: ' + (j.error || 'erro desconhecido'));
+            }
+          } catch (err: any) {
+            alert('OS salva, mas falhou ao gerar o link DHL: ' + (err?.message || 'erro de rede'));
+          }
+        }
 
         const vehiclePlate = formData.clientVehicleId 
             ? (dbClientVehicles.find(v => v.id.toString() === formData.clientVehicleId)?.plate || '—') 
@@ -1232,6 +1258,28 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
                           <label className={LABEL_CLASS}><span className="text-red-600">*</span> Nº da Referência (CESLOG/CESARI)</label>
                           <input type="text" required className={INPUT_CLASS} placeholder="Informe o número da referência..." value={formData.reference_number} onChange={e => setFormData(prev => ({ ...prev, reference_number: e.target.value }))} data-testid="input-reference-number" />
                           <p className="text-[9px] text-purple-600 font-bold mt-1">Campo obrigatório para clientes CESLOG e CESARI</p>
+                      </div>
+                  )}
+                  {isDhlClient && (
+                      <div className="p-4 rounded-xl border-2 animate-in slide-in-from-top-2 duration-300" style={{ borderColor: '#D40511', background: 'linear-gradient(180deg, #fff8d6 0%, #fffbe6 100%)' }}>
+                          <div className="flex items-center gap-2 mb-2">
+                              <div style={{ width: 8, height: 24, background: '#FFCC00', borderRadius: 2 }}></div>
+                              <div style={{ width: 8, height: 24, background: '#D40511', borderRadius: 2 }}></div>
+                              <p className="text-[10px] font-black uppercase tracking-widest" style={{ color: '#7f1d1d' }}>Cliente DHL — Dados Obrigatórios</p>
+                          </div>
+                          <label className={LABEL_CLASS}><span className="text-red-600">*</span> Número da S.E. (Solicitação de Escolta)</label>
+                          <input
+                              type="text"
+                              required
+                              className={INPUT_CLASS}
+                              placeholder="Ex: SE-123456 / 4912345"
+                              value={formData.dhl_se_number}
+                              onChange={e => setFormData(prev => ({ ...prev, dhl_se_number: e.target.value.toUpperCase() }))}
+                              data-testid="input-dhl-se-number"
+                          />
+                          <p className="text-[9px] font-bold mt-1" style={{ color: '#7f1d1d' }}>
+                              Após salvar a OS, o sistema gera automaticamente um link público para o fornecedor preencher Escoltistas e Veículo, com e-mail e mensagem para WhatsApp.
+                          </p>
                       </div>
                   )}
               </div>
@@ -1946,6 +1994,45 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
               )}
           </form>
       </div>
+
+      {dhlLinkModal.open && (
+        <div className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4" data-testid="modal-dhl-link">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full overflow-hidden">
+            <div style={{ background: '#FFCC00', height: 6 }}></div>
+            <div style={{ background: '#D40511', height: 4 }}></div>
+            <div className="p-6">
+              <h2 className="text-lg font-black uppercase tracking-wide text-gray-900 mb-1">Link do fornecedor gerado</h2>
+              <p className="text-xs text-gray-500 mb-4">OS <span className="font-bold text-red-600">{dhlLinkModal.missionId}</span> — o fornecedor recebeu o e-mail automaticamente. Copie a mensagem para enviar pelo WhatsApp.</p>
+
+              <label className="text-[10px] font-black text-gray-500 uppercase mb-1 block tracking-wider">Link público</label>
+              <div className="flex gap-2 mb-4">
+                <input readOnly className="flex-1 bg-gray-50 border border-gray-300 rounded-lg px-3 h-11 text-xs font-mono text-gray-700" value={dhlLinkModal.url} onClick={(e) => (e.target as HTMLInputElement).select()} data-testid="input-dhl-public-url" />
+                <button type="button" onClick={() => { navigator.clipboard.writeText(dhlLinkModal.url); alert('Link copiado'); }} className="px-3 h-11 rounded-lg bg-gray-900 text-white text-xs font-bold hover:bg-black" data-testid="btn-copy-dhl-url">Copiar</button>
+              </div>
+
+              <label className="text-[10px] font-black text-gray-500 uppercase mb-1 block tracking-wider">Mensagem para WhatsApp</label>
+              <textarea readOnly className="w-full bg-gray-50 border border-gray-300 rounded-lg px-3 py-2 text-xs text-gray-700 mb-3" rows={6} value={dhlLinkModal.whatsappText} onClick={(e) => (e.target as HTMLTextAreaElement).select()} data-testid="textarea-dhl-whatsapp" />
+
+              <div className="flex flex-wrap gap-2 justify-end">
+                <button type="button" onClick={() => { navigator.clipboard.writeText(dhlLinkModal.whatsappText); alert('Mensagem copiada'); }} className="px-4 h-11 rounded-lg bg-gray-100 text-gray-700 text-xs font-bold hover:bg-gray-200" data-testid="btn-copy-whatsapp">Copiar mensagem</button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const phone = (dhlLinkModal.phone || '').replace(/\D/g, '');
+                    const url = phone
+                      ? `https://wa.me/${phone.length <= 11 ? '55' + phone : phone}?text=${encodeURIComponent(dhlLinkModal.whatsappText)}`
+                      : `https://wa.me/?text=${encodeURIComponent(dhlLinkModal.whatsappText)}`;
+                    window.open(url, '_blank');
+                  }}
+                  className="px-4 h-11 rounded-lg bg-green-600 text-white text-xs font-bold hover:bg-green-700"
+                  data-testid="btn-open-whatsapp"
+                >Abrir no WhatsApp</button>
+                <button type="button" onClick={() => setDhlLinkModal({ ...dhlLinkModal, open: false })} className="px-4 h-11 rounded-lg bg-red-600 text-white text-xs font-bold hover:bg-red-700" data-testid="btn-close-dhl-modal">Fechar</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
