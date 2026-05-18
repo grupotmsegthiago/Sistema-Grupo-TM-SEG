@@ -1012,6 +1012,16 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
             await logAction('UPDATE', 'Mission', missionToDelete.id, `Missão cancelada por ${currentUser?.name}. ${motivo}`);
 
             try {
+                await authFetch('/api/dhl/intake/cancel-by-mission', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ missionId: missionToDelete.id })
+                });
+            } catch (intakeErr) {
+                console.warn('[Cancel] Falha ao invalidar links DHL do fornecedor:', intakeErr);
+            }
+
+            try {
                 const emailRes = await authFetch(`/api/missions/${missionToDelete.id}/cancel-missing-info-email`, { method: 'POST', headers: { 'Content-Type': 'application/json' } });
                 const emailData = await emailRes.json();
                 if (emailData.sent) {

@@ -24,6 +24,28 @@ function getSb(): SupabaseClient {
   return createClient(url, key);
 }
 
+/** Marca como 'cancelado' todos os intakes pendentes/preenchidos de uma missão.
+ *  Usado quando a OS é excluída ou cancelada — invalida o link público para o fornecedor. */
+export async function cancelDhlIntakesForMission(missionId: string): Promise<number> {
+  if (!missionId) return 0;
+  const sb = getSb();
+  try {
+    const { data, error } = await sb.from('dhl_supplier_intakes')
+      .update({ status: 'cancelado' })
+      .eq('mission_id', missionId)
+      .in('status', ['pendente', 'preenchido'])
+      .select('id');
+    if (error) {
+      console.error('[DHL Intake] cancelDhlIntakesForMission error:', error.message);
+      return 0;
+    }
+    return Array.isArray(data) ? data.length : 0;
+  } catch (e: any) {
+    console.error('[DHL Intake] cancelDhlIntakesForMission exception:', e?.message);
+    return 0;
+  }
+}
+
 export function isDhlMission(clientName: string | null | undefined): boolean {
   if (!clientName) return false;
   const n = String(clientName).toUpperCase();
@@ -103,6 +125,41 @@ export async function runDhlIntakeMigrations(): Promise<void> {
       CREATE INDEX IF NOT EXISTS idx_dhl_intakes_token ON dhl_supplier_intakes(token);
 
       ALTER TABLE missions ADD COLUMN IF NOT EXISTS dhl_se_number TEXT;
+
+      -- Trigger: invalida automaticamente os links DHL ao excluir ou cancelar a OS.
+      -- Fonte única da verdade (independente do cliente — frontend, API, automações).
+      CREATE OR REPLACE FUNCTION cancel_dhl_intakes_on_mission_change() RETURNS TRIGGER AS $func$
+      BEGIN
+        IF TG_OP = 'DELETE' THEN
+          UPDATE dhl_supplier_intakes
+            SET status = 'cancelado'
+            WHERE mission_id = OLD.id
+              AND status IN ('pendente', 'preenchido');
+          RETURN OLD;
+        ELSIF TG_OP = 'UPDATE' THEN
+          IF NEW.status IN ('Cancelada', 'Recusada')
+             AND (OLD.status IS DISTINCT FROM NEW.status) THEN
+            UPDATE dhl_supplier_intakes
+              SET status = 'cancelado'
+              WHERE mission_id = NEW.id
+                AND status IN ('pendente', 'preenchido');
+          END IF;
+          RETURN NEW;
+        END IF;
+        RETURN NULL;
+      END;
+      $func$ LANGUAGE plpgsql;
+
+      DROP TRIGGER IF EXISTS trg_cancel_dhl_intakes_on_mission_delete ON missions;
+      CREATE TRIGGER trg_cancel_dhl_intakes_on_mission_delete
+        AFTER DELETE ON missions
+        FOR EACH ROW EXECUTE FUNCTION cancel_dhl_intakes_on_mission_change();
+
+      DROP TRIGGER IF EXISTS trg_cancel_dhl_intakes_on_mission_update ON missions;
+      CREATE TRIGGER trg_cancel_dhl_intakes_on_mission_update
+        AFTER UPDATE OF status ON missions
+        FOR EACH ROW EXECUTE FUNCTION cancel_dhl_intakes_on_mission_change();
+
       NOTIFY pgrst, 'reload schema';
     ` });
     console.log('[Migration] DHL Supplier Intake — tabelas verificadas/criadas.');
@@ -306,6 +363,22 @@ export function registerDhlIntakeRoutes(
   });
 
   // ──────────────────────────────────────────────────────────────
+  // POST /api/dhl/intake/cancel-by-mission — invalida links da OS
+  // body: { missionId: string }
+  // ──────────────────────────────────────────────────────────────
+  app.post('/api/dhl/intake/cancel-by-mission', requireAuth, async (req: Request, res: Response) => {
+    try {
+      const { missionId } = req.body || {};
+      if (!missionId) return res.status(400).json({ error: 'missionId é obrigatório' });
+      const cancelled = await cancelDhlIntakesForMission(String(missionId));
+      return res.json({ ok: true, cancelled });
+    } catch (e: any) {
+      console.error('[DHL Intake] cancel-by-mission exception:', e);
+      return res.status(500).json({ error: e?.message || 'Erro interno' });
+    }
+  });
+
+  // ──────────────────────────────────────────────────────────────
   // GET /api/dhl/intake/public/:token — dados para a página pública
   // ──────────────────────────────────────────────────────────────
   app.get('/api/dhl/intake/public/:token', async (req: Request, res: Response) => {
@@ -314,6 +387,9 @@ export function registerDhlIntakeRoutes(
       const sb = getSb();
       const { data: intake } = await sb.from('dhl_supplier_intakes').select('*').eq('token', token).maybeSingle();
       if (!intake) return res.status(404).json({ error: 'Link inválido ou expirado' });
+      if (intake.status === 'cancelado') {
+        return res.status(410).json({ error: 'Link cancelado — a OS foi excluída ou cancelada. Solicite um novo link ao Operacional TM Seg.' });
+      }
       if (intake.expires_at && new Date(intake.expires_at) < new Date()) {
         return res.status(410).json({ error: 'Link expirado' });
       }
@@ -363,6 +439,9 @@ export function registerDhlIntakeRoutes(
       const sb = getSb();
       const { data: intake } = await sb.from('dhl_supplier_intakes').select('*').eq('token', token).maybeSingle();
       if (!intake) return res.status(404).json({ error: 'Link inválido' });
+      if (intake.status === 'cancelado') {
+        return res.status(410).json({ error: 'Link cancelado — a OS foi excluída ou cancelada. Solicite um novo link ao Operacional TM Seg.' });
+      }
       if (intake.expires_at && new Date(intake.expires_at) < new Date()) {
         return res.status(410).json({ error: 'Link expirado' });
       }
