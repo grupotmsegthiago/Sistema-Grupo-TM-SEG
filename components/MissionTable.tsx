@@ -412,7 +412,8 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
                     billing_approved: m.billing_approved,
                     billing_verified_by: m.billing_verified_by,
                     reference_number: m.reference_number || '',
-                    billing_release: m.billing_release || ''
+                    billing_release: m.billing_release || '',
+                    dhl_se_number: m.dhl_se_number || ''
                 };
             });
             setAllMissions(mapped);
