@@ -55,10 +55,63 @@ interface MissionFormProps {
   onAddClient: () => void;
 }
 
+interface EscoltistaSnapshot {
+  nome?: string | null;
+  cpf?: string | null;
+  rg?: string | null;
+  orgao_emissor?: string | null;
+  cnh?: string | null;
+  cnh_categoria?: string | null;
+  cnh_vencimento?: string | null;
+  cnv_numero?: string | null;
+  cnv_validade?: string | null;
+  rua?: string | null;
+  numero?: string | null;
+  complemento?: string | null;
+  bairro?: string | null;
+  cidade?: string | null;
+  uf?: string | null;
+  cep?: string | null;
+  celular?: string | null;
+  admissao?: string | null;
+}
+
+interface VehicleSnapshot {
+  placa?: string | null;
+  renavam?: string | null;
+  marca?: string | null;
+  modelo?: string | null;
+  ano?: string | null;
+  cor?: string | null;
+  tecnologia?: string | null;
+  id_rastreador?: string | null;
+  comunicacao?: string | null;
+}
+
+interface DhlIntakeRow {
+  id: string;
+  token: string;
+  provider_name: string | null;
+  status: string;
+  effective_status: string;
+  expired: boolean;
+  sent_to_email: string | null;
+  sent_to_phone: string | null;
+  submitted_at: string | null;
+  created_at: string;
+  expires_at: string | null;
+  agent1_snapshot?: EscoltistaSnapshot | null;
+  agent2_snapshot?: EscoltistaSnapshot | null;
+  vehicle_snapshot?: VehicleSnapshot | null;
+  mirror_proof_url?: string | null;
+  mirror_proof_filename?: string | null;
+}
+
 const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) => {
   const { showNotification } = useNotification();
   const [osId, setOsId] = useState("GTM-....");
   const [canViewFinancials, setCanViewFinancials] = useState(false);
+  const [canViewIntakeSnapshots, setCanViewIntakeSnapshots] = useState(false);
   
   const now = new Date();
   const defaultDate = now.toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' }); 
@@ -76,9 +129,11 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
     dhl_se_number: ''
   });
   const [dhlLinkModal, setDhlLinkModal] = useState<{ open: boolean; missionId: string; url: string; whatsappText: string; phone: string }>({ open: false, missionId: '', url: '', whatsappText: '', phone: '' });
-  const [dhlIntakes, setDhlIntakes] = useState<Array<{ id: string; token: string; provider_name: string | null; status: string; effective_status: string; expired: boolean; sent_to_email: string | null; sent_to_phone: string | null; submitted_at: string | null; created_at: string; expires_at: string | null }>>([]);
+  const [dhlIntakes, setDhlIntakes] = useState<DhlIntakeRow[]>([]);
   const [dhlIntakesLoading, setDhlIntakesLoading] = useState(false);
   const [dhlRegenerating, setDhlRegenerating] = useState(false);
+  const [expandedIntakeId, setExpandedIntakeId] = useState<string | null>(null);
+  const [copiedIntakeId, setCopiedIntakeId] = useState<string | null>(null);
   
   const [isSaving, setIsSaving] = useState(false);
   const [emailConfirmDialog, setEmailConfirmDialog] = useState<{ clientPayload?: any; providerPayload?: any; onSaveCallback?: () => void } | null>(null);
@@ -229,6 +284,8 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
             const role = (user.role || "").toLowerCase();
             const allowed = ['diretoria', 'administrador'].includes(role) || (user.permissions && user.permissions.includes('*'));
             setCanViewFinancials(allowed);
+            const opAllowed = ['administrador', 'diretoria', 'avançado', 'avancado', 'operador'].includes(role) || (user.permissions && user.permissions.includes('*'));
+            setCanViewIntakeSnapshots(opAllowed);
             if (role === 'comercial') {
                 setIsCommercialUser(true);
                 const clientPerm = (user.permissions || []).find((p: string) => p.startsWith('client_view:'));
@@ -1411,6 +1468,100 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
                                           ? { bg: 'bg-orange-100', fg: 'text-orange-800', label: 'Expirado' }
                                           : { bg: 'bg-yellow-100', fg: 'text-yellow-800', label: 'Pendente' };
                                     const fmt = (d: string | null) => d ? new Date(d).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' }) : '—';
+                                    const hasSnapshots = canViewIntakeSnapshots && st === 'preenchido' && (it.agent1_snapshot || it.agent2_snapshot || it.vehicle_snapshot);
+                                    const isExpanded = expandedIntakeId === it.id;
+
+                                    const buildSnapshotText = (): string => {
+                                      const lines: string[] = [];
+                                      lines.push(`OS ${osId} — Dados enviados pelo fornecedor`);
+                                      lines.push(`Fornecedor: ${it.provider_name || '—'}`);
+                                      lines.push(`Enviado em: ${fmt(it.submitted_at)}`);
+                                      lines.push('');
+                                      const agentBlock = (label: string, a: EscoltistaSnapshot | null | undefined) => {
+                                        if (!a) return;
+                                        lines.push(`== ${label} ==`);
+                                        if (a.nome) lines.push(`Nome: ${a.nome}`);
+                                        if (a.cpf) lines.push(`CPF: ${a.cpf}`);
+                                        if (a.rg) lines.push(`RG: ${a.rg}${a.orgao_emissor ? ' / ' + a.orgao_emissor : ''}`);
+                                        if (a.cnh) lines.push(`CNH: ${a.cnh}${a.cnh_categoria ? ' (' + a.cnh_categoria + ')' : ''}${a.cnh_vencimento ? ' — venc.: ' + a.cnh_vencimento : ''}`);
+                                        if (a.cnv_numero) lines.push(`CNV: ${a.cnv_numero}${a.cnv_validade ? ' — venc.: ' + a.cnv_validade : ''}`);
+                                        if (a.celular) lines.push(`Celular: ${a.celular}`);
+                                        const end = [a.rua, a.numero, a.complemento, a.bairro, a.cidade, a.uf, a.cep].filter(Boolean).join(', ');
+                                        if (end) lines.push(`Endereço: ${end}`);
+                                        if (a.admissao) lines.push(`Admissão: ${a.admissao}`);
+                                        lines.push('');
+                                      };
+                                      agentBlock('ESCOLTISTA 1', it.agent1_snapshot);
+                                      agentBlock('ESCOLTISTA 2', it.agent2_snapshot);
+                                      const v = it.vehicle_snapshot;
+                                      if (v) {
+                                        lines.push('== VEÍCULO ==');
+                                        if (v.placa) lines.push(`Placa: ${v.placa}`);
+                                        if (v.renavam) lines.push(`Renavam: ${v.renavam}`);
+                                        if (v.marca || v.modelo || v.ano) lines.push(`Marca/Modelo/Ano: ${[v.marca, v.modelo, v.ano].filter(Boolean).join(' / ')}`);
+                                        if (v.cor) lines.push(`Cor: ${v.cor}`);
+                                        if (v.tecnologia) lines.push(`Tecnologia: ${v.tecnologia}`);
+                                        if (v.id_rastreador) lines.push(`ID Rastreador: ${v.id_rastreador}`);
+                                        if (v.comunicacao) lines.push(`Comunicação: ${v.comunicacao}`);
+                                      }
+                                      return lines.join('\n');
+                                    };
+
+                                    const handleCopy = async () => {
+                                      try {
+                                        await navigator.clipboard.writeText(buildSnapshotText());
+                                        setCopiedIntakeId(it.id);
+                                        setTimeout(() => setCopiedIntakeId((cur) => (cur === it.id ? null : cur)), 1800);
+                                      } catch {
+                                        showNotification('Não foi possível copiar para a área de transferência', 'error');
+                                      }
+                                    };
+
+                                    const renderAgent = (label: string, a: EscoltistaSnapshot | null | undefined, testKey: string) => {
+                                      if (!a) return (
+                                        <div className="bg-gray-50 rounded p-2" data-testid={`block-${testKey}-${it.id}`}>
+                                          <p className="font-black uppercase tracking-wider text-gray-500 mb-0.5">{label}</p>
+                                          <p className="italic text-gray-400">— não informado —</p>
+                                        </div>
+                                      );
+                                      const end = [a.rua, a.numero, a.complemento, a.bairro, a.cidade, a.uf, a.cep].filter(Boolean).join(', ');
+                                      return (
+                                        <div className="bg-gray-50 rounded p-2 space-y-0.5" data-testid={`block-${testKey}-${it.id}`}>
+                                          <p className="font-black uppercase tracking-wider text-gray-700 mb-0.5">{label}</p>
+                                          {a.nome && <p data-testid={`text-${testKey}-nome-${it.id}`}><span className="font-bold">Nome:</span> {a.nome}</p>}
+                                          {a.cpf && <p data-testid={`text-${testKey}-cpf-${it.id}`}><span className="font-bold">CPF:</span> {a.cpf}</p>}
+                                          {a.rg && <p><span className="font-bold">RG:</span> {a.rg}{a.orgao_emissor ? ` / ${a.orgao_emissor}` : ''}</p>}
+                                          {a.cnh && <p><span className="font-bold">CNH:</span> {a.cnh}{a.cnh_categoria ? ` (${a.cnh_categoria})` : ''}{a.cnh_vencimento ? ` — venc.: ${a.cnh_vencimento}` : ''}</p>}
+                                          {a.cnv_numero && <p><span className="font-bold">CNV:</span> {a.cnv_numero}{a.cnv_validade ? ` — venc.: ${a.cnv_validade}` : ''}</p>}
+                                          {a.celular && <p><span className="font-bold">Celular:</span> {a.celular}</p>}
+                                          {end && <p><span className="font-bold">Endereço:</span> {end}</p>}
+                                          {a.admissao && <p><span className="font-bold">Admissão:</span> {a.admissao}</p>}
+                                        </div>
+                                      );
+                                    };
+
+                                    const v = it.vehicle_snapshot;
+                                    const renderVehicle = () => {
+                                      if (!v) return (
+                                        <div className="bg-gray-50 rounded p-2" data-testid={`block-vehicle-${it.id}`}>
+                                          <p className="font-black uppercase tracking-wider text-gray-500 mb-0.5">Veículo</p>
+                                          <p className="italic text-gray-400">— não informado —</p>
+                                        </div>
+                                      );
+                                      return (
+                                        <div className="bg-gray-50 rounded p-2 space-y-0.5" data-testid={`block-vehicle-${it.id}`}>
+                                          <p className="font-black uppercase tracking-wider text-gray-700 mb-0.5">Veículo</p>
+                                          {v.placa && <p data-testid={`text-vehicle-placa-${it.id}`}><span className="font-bold">Placa:</span> {v.placa}</p>}
+                                          {v.renavam && <p><span className="font-bold">Renavam:</span> {v.renavam}</p>}
+                                          {(v.marca || v.modelo || v.ano) && <p><span className="font-bold">Marca/Modelo/Ano:</span> {[v.marca, v.modelo, v.ano].filter(Boolean).join(' / ')}</p>}
+                                          {v.cor && <p><span className="font-bold">Cor:</span> {v.cor}</p>}
+                                          {v.tecnologia && <p data-testid={`text-vehicle-tecnologia-${it.id}`}><span className="font-bold">Tecnologia:</span> {v.tecnologia}</p>}
+                                          {v.id_rastreador && <p><span className="font-bold">ID Rastreador:</span> {v.id_rastreador}</p>}
+                                          {v.comunicacao && <p><span className="font-bold">Comunicação:</span> {v.comunicacao}</p>}
+                                        </div>
+                                      );
+                                    };
+
                                     return (
                                       <div key={it.id} className="bg-white border border-gray-200 rounded-lg p-2.5 text-[10px]" data-testid={`row-dhl-intake-${it.id}`}>
                                         <div className="flex items-center justify-between gap-2 mb-1">
@@ -1424,6 +1575,51 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
                                           <span data-testid={`text-dhl-intake-submitted-${it.id}`}>Enviado pelo fornecedor: {fmt(it.submitted_at)}</span>
                                           <span data-testid={`text-dhl-intake-expires-${it.id}`}>Expira: {fmt(it.expires_at)}</span>
                                         </div>
+                                        {hasSnapshots && (
+                                          <>
+                                            <div className="flex items-center justify-between mt-2 pt-2 border-t border-gray-100 gap-2">
+                                              <button
+                                                type="button"
+                                                onClick={() => setExpandedIntakeId(isExpanded ? null : it.id)}
+                                                className="text-[10px] font-black uppercase tracking-wider text-red-700 hover:text-red-900 flex items-center gap-1"
+                                                data-testid={`btn-toggle-intake-details-${it.id}`}
+                                              >
+                                                <ChevronDown size={12} className={`transition-transform ${isExpanded ? 'rotate-180' : ''}`} />
+                                                {isExpanded ? 'Ocultar dados do fornecedor' : 'Ver dados preenchidos pelo fornecedor'}
+                                              </button>
+                                              {isExpanded && (
+                                                <button
+                                                  type="button"
+                                                  onClick={handleCopy}
+                                                  className="px-2 py-1 rounded bg-gray-100 hover:bg-gray-200 text-gray-700 font-black uppercase tracking-wider flex items-center gap-1 text-[10px]"
+                                                  data-testid={`btn-copy-intake-${it.id}`}
+                                                >
+                                                  {copiedIntakeId === it.id ? <><Check size={11} className="text-green-600" /> Copiado</> : <><Clipboard size={11} /> Copiar texto</>}
+                                                </button>
+                                              )}
+                                            </div>
+                                            {isExpanded && (
+                                              <div className="mt-2 grid grid-cols-1 md:grid-cols-3 gap-2 text-gray-700 animate-in slide-in-from-top-1 duration-150" data-testid={`details-intake-${it.id}`}>
+                                                {renderAgent('Escoltista 1', it.agent1_snapshot, 'agent1')}
+                                                {renderAgent('Escoltista 2', it.agent2_snapshot, 'agent2')}
+                                                {renderVehicle()}
+                                                {it.mirror_proof_url && (
+                                                  <div className="md:col-span-3">
+                                                    <a
+                                                      href={it.mirror_proof_url}
+                                                      target="_blank"
+                                                      rel="noopener noreferrer"
+                                                      className="inline-flex items-center gap-1 text-red-700 hover:text-red-900 font-black uppercase tracking-wider text-[10px]"
+                                                      data-testid={`link-mirror-proof-${it.id}`}
+                                                    >
+                                                      <Paperclip size={11} /> Print do espelhamento{it.mirror_proof_filename ? ` (${it.mirror_proof_filename})` : ''}
+                                                    </a>
+                                                  </div>
+                                                )}
+                                              </div>
+                                            )}
+                                          </>
+                                        )}
                                       </div>
                                     );
                                   })}

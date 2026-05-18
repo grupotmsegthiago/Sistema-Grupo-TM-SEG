@@ -250,7 +250,20 @@ export function registerDhlIntakeRoutes(
   app: Express,
   requireAuth: any,
   requireRole: any,
+  resolveUserRole?: (token: string) => Promise<string | null>,
 ): void {
+  const OPERATIONAL_ROLES = new Set(['administrador', 'diretoria', 'avançado', 'avancado', 'operador']);
+  const userCanSeeSnapshots = async (req: Request): Promise<boolean> => {
+    if (!resolveUserRole) return false;
+    try {
+      const token = (req as any).authToken as string | undefined;
+      if (!token) return false;
+      const role = (await resolveUserRole(token)) || '';
+      return OPERATIONAL_ROLES.has(role.toLowerCase());
+    } catch {
+      return false;
+    }
+  };
   // ──────────────────────────────────────────────────────────────
   // POST /api/dhl/intake/generate — operador gera link para fornecedor
   // body: { missionId: string }
@@ -398,8 +411,11 @@ export function registerDhlIntakeRoutes(
       const { missionId } = req.params;
       if (!missionId) return res.status(400).json({ error: 'missionId é obrigatório' });
       const sb = getSb();
+      const canSeeSnapshots = await userCanSeeSnapshots(req);
+      const baseCols = 'id, token, provider_id, provider_name, status, sent_to_email, sent_to_phone, submitted_at, created_at, expires_at';
+      const sensitiveCols = ', agent1_snapshot, agent2_snapshot, vehicle_snapshot, mirror_proof_url, mirror_proof_filename';
       const { data, error } = await sb.from('dhl_supplier_intakes')
-        .select('id, token, provider_id, provider_name, status, sent_to_email, sent_to_phone, submitted_at, created_at, expires_at')
+        .select(canSeeSnapshots ? baseCols + sensitiveCols : baseCols)
         .eq('mission_id', missionId)
         .order('created_at', { ascending: false });
       if (error) {
@@ -412,7 +428,7 @@ export function registerDhlIntakeRoutes(
         const effectiveStatus = it.status === 'pendente' && expired ? 'expirado' : it.status;
         return { ...it, expired, effective_status: effectiveStatus };
       });
-      return res.json({ ok: true, intakes });
+      return res.json({ ok: true, intakes, canViewSnapshots: canSeeSnapshots });
     } catch (e: any) {
       console.error('[DHL Intake] by-mission exception:', e);
       return res.status(500).json({ error: e?.message || 'Erro interno' });

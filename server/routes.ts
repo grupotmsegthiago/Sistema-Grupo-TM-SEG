@@ -1382,7 +1382,7 @@ export async function registerRoutes(
 
   // ── DHL Supplier Intake (tabelas + coluna dhl_se_number) ──
   await runDhlIntakeMigrations();
-  registerDhlIntakeRoutes(app, requireAuth, requireRole);
+  registerDhlIntakeRoutes(app, requireAuth, requireRole, resolveUserRole);
 
   app.post("/api/supabase/init-invoices", async (_req: Request, res: Response) => {
     try {
