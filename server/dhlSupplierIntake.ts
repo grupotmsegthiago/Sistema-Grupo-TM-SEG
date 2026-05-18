@@ -387,6 +387,36 @@ export function registerDhlIntakeRoutes(
   });
 
   // ──────────────────────────────────────────────────────────────
+  // GET /api/dhl/intake/by-mission/:missionId — lista intakes (auth)
+  // Mostra no painel da OS os links ativos, preenchidos e cancelados.
+  // ──────────────────────────────────────────────────────────────
+  app.get('/api/dhl/intake/by-mission/:missionId', requireAuth, async (req: Request, res: Response) => {
+    try {
+      const { missionId } = req.params;
+      if (!missionId) return res.status(400).json({ error: 'missionId é obrigatório' });
+      const sb = getSb();
+      const { data, error } = await sb.from('dhl_supplier_intakes')
+        .select('id, token, provider_id, provider_name, status, sent_to_email, sent_to_phone, submitted_at, created_at, expires_at')
+        .eq('mission_id', missionId)
+        .order('created_at', { ascending: false });
+      if (error) {
+        console.error('[DHL Intake] by-mission error:', error.message);
+        return res.status(500).json({ error: error.message });
+      }
+      const now = new Date();
+      const intakes = (data || []).map((it: any) => {
+        const expired = it.expires_at ? new Date(it.expires_at) < now : false;
+        const effectiveStatus = it.status === 'pendente' && expired ? 'expirado' : it.status;
+        return { ...it, expired, effective_status: effectiveStatus };
+      });
+      return res.json({ ok: true, intakes });
+    } catch (e: any) {
+      console.error('[DHL Intake] by-mission exception:', e);
+      return res.status(500).json({ error: e?.message || 'Erro interno' });
+    }
+  });
+
+  // ──────────────────────────────────────────────────────────────
   // GET /api/dhl/intake/public/:token — dados para a página pública
   // ──────────────────────────────────────────────────────────────
   app.get('/api/dhl/intake/public/:token', async (req: Request, res: Response) => {

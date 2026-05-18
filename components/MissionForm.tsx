@@ -76,6 +76,9 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
     dhl_se_number: ''
   });
   const [dhlLinkModal, setDhlLinkModal] = useState<{ open: boolean; missionId: string; url: string; whatsappText: string; phone: string }>({ open: false, missionId: '', url: '', whatsappText: '', phone: '' });
+  const [dhlIntakes, setDhlIntakes] = useState<Array<{ id: string; token: string; provider_name: string | null; status: string; effective_status: string; expired: boolean; sent_to_email: string | null; sent_to_phone: string | null; submitted_at: string | null; created_at: string; expires_at: string | null }>>([]);
+  const [dhlIntakesLoading, setDhlIntakesLoading] = useState(false);
+  const [dhlRegenerating, setDhlRegenerating] = useState(false);
   
   const [isSaving, setIsSaving] = useState(false);
   const [emailConfirmDialog, setEmailConfirmDialog] = useState<{ clientPayload?: any; providerPayload?: any; onSaveCallback?: () => void } | null>(null);
@@ -142,6 +145,53 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
   const isVtcClient = (formData.client || '').toUpperCase().includes('VTC');
   const isCeslogClient = (formData.client || '').toUpperCase().includes('CESLOG') || (formData.client || '').toUpperCase().includes('CESARI');
   const isDhlClient = (formData.client || '').toUpperCase().includes('DHL');
+  const hasSavedOs = /^GTM-\d+/i.test(osId);
+
+  const fetchDhlIntakes = useCallback(async (missionId: string) => {
+    if (!missionId || !/^GTM-\d+/i.test(missionId)) return;
+    setDhlIntakesLoading(true);
+    try {
+      const r = await authFetch(`/api/dhl/intake/by-mission/${encodeURIComponent(missionId)}`);
+      const j = await r.json();
+      if (r.ok && Array.isArray(j.intakes)) setDhlIntakes(j.intakes);
+      else setDhlIntakes([]);
+    } catch (e) {
+      console.warn('[DHL Intakes] fetch error', e);
+      setDhlIntakes([]);
+    } finally {
+      setDhlIntakesLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (isDhlClient && hasSavedOs) fetchDhlIntakes(osId);
+    else setDhlIntakes([]);
+  }, [isDhlClient, hasSavedOs, osId, fetchDhlIntakes]);
+
+  const handleRegenerateDhlLink = async () => {
+    if (!hasSavedOs) { alert('Salve a OS antes de gerar o link.'); return; }
+    setDhlRegenerating(true);
+    try {
+      const token = localStorage.getItem('authToken') || '';
+      const r = await fetch('/api/dhl/intake/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+        credentials: 'include',
+        body: JSON.stringify({ missionId: osId }),
+      });
+      const j = await r.json();
+      if (r.ok && j.url) {
+        setDhlLinkModal({ open: true, missionId: osId, url: j.url, whatsappText: j.whatsappText || '', phone: j.providerPhone || '' });
+        await fetchDhlIntakes(osId);
+      } else {
+        alert('Falha ao regerar link DHL: ' + (j.error || 'erro desconhecido'));
+      }
+    } catch (err: any) {
+      alert('Falha ao regerar link DHL: ' + (err?.message || 'erro de rede'));
+    } finally {
+      setDhlRegenerating(false);
+    }
+  };
   const hasClientRules = isVtcClient || (formData.client || '').toUpperCase().includes('CEVA');
 
   const stepComplete = {
@@ -1280,6 +1330,67 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
                           <p className="text-[9px] font-bold mt-1" style={{ color: '#7f1d1d' }}>
                               Após salvar a OS, o sistema gera automaticamente um link público para o fornecedor preencher Escoltistas e Veículo, com e-mail e mensagem para WhatsApp.
                           </p>
+
+                          {hasSavedOs && (
+                            <div className="mt-4 pt-4 border-t-2 border-dashed" style={{ borderColor: '#D40511' }} data-testid="panel-dhl-intakes">
+                              <div className="flex items-center justify-between mb-2">
+                                <p className="text-[10px] font-black uppercase tracking-widest" style={{ color: '#7f1d1d' }}>
+                                  Links DHL desta OS {dhlIntakes.length > 0 && <span className="text-gray-500">({dhlIntakes.length})</span>}
+                                </p>
+                                {(() => {
+                                  const last = dhlIntakes[0];
+                                  const showRegen = !!last && (last.effective_status === 'cancelado' || last.effective_status === 'expirado');
+                                  if (!showRegen) return null;
+                                  return (
+                                    <button
+                                      type="button"
+                                      onClick={handleRegenerateDhlLink}
+                                      disabled={dhlRegenerating}
+                                      className="px-3 h-8 rounded-lg bg-red-600 text-white text-[10px] font-black uppercase tracking-wider hover:bg-red-700 disabled:opacity-50 active:scale-95 transition-all flex items-center gap-1"
+                                      data-testid="btn-regenerate-dhl-link"
+                                    >
+                                      {dhlRegenerating ? <Loader2 size={12} className="animate-spin" /> : <Mail size={12} />}
+                                      {dhlRegenerating ? 'Gerando...' : 'Regerar Link'}
+                                    </button>
+                                  );
+                                })()}
+                              </div>
+                              {dhlIntakesLoading && dhlIntakes.length === 0 ? (
+                                <p className="text-[10px] text-gray-500 italic" data-testid="text-dhl-intakes-loading">Carregando...</p>
+                              ) : dhlIntakes.length === 0 ? (
+                                <p className="text-[10px] text-gray-500 italic" data-testid="text-dhl-intakes-empty">Nenhum link gerado ainda.</p>
+                              ) : (
+                                <div className="space-y-2">
+                                  {dhlIntakes.map((it) => {
+                                    const st = it.effective_status;
+                                    const badge = st === 'preenchido'
+                                      ? { bg: 'bg-green-100', fg: 'text-green-800', label: 'Preenchido' }
+                                      : st === 'cancelado'
+                                        ? { bg: 'bg-gray-200', fg: 'text-gray-700', label: 'Cancelado' }
+                                        : st === 'expirado'
+                                          ? { bg: 'bg-orange-100', fg: 'text-orange-800', label: 'Expirado' }
+                                          : { bg: 'bg-yellow-100', fg: 'text-yellow-800', label: 'Pendente' };
+                                    const fmt = (d: string | null) => d ? new Date(d).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' }) : '—';
+                                    return (
+                                      <div key={it.id} className="bg-white border border-gray-200 rounded-lg p-2.5 text-[10px]" data-testid={`row-dhl-intake-${it.id}`}>
+                                        <div className="flex items-center justify-between gap-2 mb-1">
+                                          <span className={`px-2 py-0.5 ${badge.bg} ${badge.fg} font-black uppercase tracking-wider rounded`} data-testid={`status-dhl-intake-${it.id}`}>{badge.label}</span>
+                                          <span className="text-gray-500 font-mono" data-testid={`text-dhl-intake-created-${it.id}`}>Criado: {fmt(it.created_at)}</span>
+                                        </div>
+                                        <p className="font-bold text-gray-800 truncate" data-testid={`text-dhl-intake-provider-${it.id}`}>{it.provider_name || '—'}</p>
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-x-3 gap-y-0.5 mt-1 text-gray-600">
+                                          <span data-testid={`text-dhl-intake-email-${it.id}`}><Mail size={10} className="inline mr-1" />{it.sent_to_email || '—'}</span>
+                                          <span data-testid={`text-dhl-intake-phone-${it.id}`}><Phone size={10} className="inline mr-1" />{it.sent_to_phone || '—'}</span>
+                                          <span data-testid={`text-dhl-intake-submitted-${it.id}`}>Enviado pelo fornecedor: {fmt(it.submitted_at)}</span>
+                                          <span data-testid={`text-dhl-intake-expires-${it.id}`}>Expira: {fmt(it.expires_at)}</span>
+                                        </div>
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              )}
+                            </div>
+                          )}
                       </div>
                   )}
               </div>
