@@ -287,10 +287,21 @@ export const calculateMissionFinancials = (
     }
     
     const totalDistance = safeNumber(mission.totalDistance || (mission as any).total_distance);
-    let distanceForCalculation = hasValidKms ? realTraveledKm : totalDistance;
-    
-    if (isZeroValueMission && !hasValidKms) {
-        distanceForCalculation = 0;
+    // REGRA DE KM PARA CÁLCULO:
+    // - Missão CONCLUÍDA: usa o KM REAL EXECUTADO (endKm - startKm) sempre que
+    //   houver hodômetro válido. Esse é o KM canônico para faturamento.
+    //   Se não houver hodômetro válido (legado), cai para o KM previsto da rota
+    //   como fallback defensivo para não quebrar OS antigas.
+    // - Missão EM ANDAMENTO (Agendada / Em Viagem / Origem / etc.): usa o KM
+    //   PREVISTO (rota) para simulação. O KM REAL é mostrado apenas visualmente.
+    // - Missão CANCELADA / RECUSADA: zera o KM (regra de acionamento mínimo).
+    let distanceForCalculation: number;
+    if (isFinished) {
+        distanceForCalculation = hasValidKms ? realTraveledKm : totalDistance;
+    } else if (isZeroValueMission) {
+        distanceForCalculation = hasValidKms ? realTraveledKm : 0;
+    } else {
+        distanceForCalculation = totalDistance;
     }
 
     // REGRA DE CANCELAMENTO (acionamento mínimo):
