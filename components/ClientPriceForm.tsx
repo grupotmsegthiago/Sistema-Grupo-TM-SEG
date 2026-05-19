@@ -8,6 +8,7 @@ interface Props {
   onBack: () => void;
   onSuccess?: (newId?: string) => void;
   id?: string | null;
+  defaultClient?: string | null;
 }
 
 const INPUT_CLASS = "w-full pl-12 pr-4 py-3 bg-white border border-gray-300 rounded-lg outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-500 text-sm transition-all text-gray-700 font-medium placeholder-gray-400 uppercase";
@@ -29,9 +30,9 @@ const parseCurrency = (value: string | number): number => {
     return isNaN(parsed) ? 0 : parsed;
 };
 
-const ClientPriceForm: React.FC<Props> = ({ onBack, onSuccess, id }) => {
+const ClientPriceForm: React.FC<Props> = ({ onBack, onSuccess, id, defaultClient }) => {
   const [formData, setFormData] = useState({
-    client: '',
+    client: !id && defaultClient ? defaultClient : '',
     region: '',
     description: '',
     activation_fee: '',

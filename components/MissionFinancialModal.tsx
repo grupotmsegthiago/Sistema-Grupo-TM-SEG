@@ -1954,6 +1954,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                           setEditClientTableId(null);
                       }}
                       id={editClientTableId}
+                      defaultClient={!editClientTableId ? (clientData?.name || mission?.originalClientName || mission?.client || '') : undefined}
                   />
               </div>
           </div>
