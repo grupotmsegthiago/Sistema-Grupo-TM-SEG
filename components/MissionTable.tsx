@@ -164,6 +164,7 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
   const [approvalMap, setApprovalMap] = useState<Record<string, { stage: string; date: string }[]>>({});
   const [evidenceMap, setEvidenceMap] = useState<Record<string, { url: string; uploadedBy: string; uploadedAt: string }[]>>({});
   const [lastLogMap, setLastLogMap] = useState<Record<string, MissionLog>>({});
+  const [dhlIntakeMap, setDhlIntakeMap] = useState<Record<string, { status: string; providerFilledAt: string | null; intakeId: string }>>({});
   const [resolvedClientName, setResolvedClientName] = useState('');
   const [showMyApprovalOnly, setShowMyApprovalOnly] = useState(false);
   const [approvalViewStage, setApprovalViewStage] = useState<'auditor' | 'financeiro' | null>(null);
@@ -470,7 +471,39 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
                 setLastLogMap(logMap);
             };
 
-            await Promise.all([fetchApprovalLogs(), fetchEvidenceLogs(), fetchMissionLogs()]);
+            const fetchDhlIntakes = async () => {
+                const dhlIds = mapped.filter(m => {
+                    const original = ((m as any).originalClientName || '').toUpperCase();
+                    const displayed = (m.client || '').toUpperCase();
+                    return original.includes('DHL') || displayed.includes('DHL');
+                }).map(m => m.id);
+                if (dhlIds.length === 0) { setDhlIntakeMap({}); return; }
+                const intakeMap: Record<string, { status: string; providerFilledAt: string | null; intakeId: string }> = {};
+                const batches: string[][] = [];
+                for (let i = 0; i < dhlIds.length; i += batchSize) batches.push(dhlIds.slice(i, i + batchSize));
+                const results = await Promise.all(batches.map(batch =>
+                    supabase.from('dhl_supplier_intakes')
+                        .select('id, mission_id, status, provider_filled_at, created_at')
+                        .in('mission_id', batch)
+                        .in('status', ['pendente', 'preenchido'])
+                        .order('created_at', { ascending: false })
+                ));
+                results.forEach(({ data }) => {
+                    (data || []).forEach((it: any) => {
+                        // Mantém apenas o intake mais recente por mission_id (order desc + first wins)
+                        if (!intakeMap[it.mission_id]) {
+                            intakeMap[it.mission_id] = {
+                                status: it.status,
+                                providerFilledAt: it.provider_filled_at || null,
+                                intakeId: it.id,
+                            };
+                        }
+                    });
+                });
+                setDhlIntakeMap(intakeMap);
+            };
+
+            await Promise.all([fetchApprovalLogs(), fetchEvidenceLogs(), fetchMissionLogs(), fetchDhlIntakes()]);
         }
       } catch (error: any) {
         console.error('Error fetching missions:', error.message || error);
@@ -1446,6 +1479,7 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
                                       approvalStages={approvalMap[mission.id]}
                                       evidenceList={evidenceMap[mission.id]}
                                       lastLog={lastLogMap[mission.id]}
+                                      dhlIntake={dhlIntakeMap[mission.id]}
                                       onEvidenceUploaded={() => fetchMissions(true)}
                                   />
                               </div>

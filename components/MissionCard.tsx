@@ -77,6 +77,7 @@ interface MissionCardProps {
     currentTime?: Date;
     approvalStages?: { stage: string; date: string }[];
     evidenceList?: { url: string; uploadedBy: string; uploadedAt: string }[];
+    dhlIntake?: { status: string; providerFilledAt: string | null; intakeId: string };
 }
 
 const formatCurrency = (val: number | null | undefined) => {
@@ -195,7 +196,7 @@ const compressImage = (file: File, maxWidth = 1200, quality = 0.7): Promise<Blob
 const MissionCardComponent: React.FC<MissionCardProps> = ({ 
     mission, canEditMission, isDirector, isRedLight, isImminent, minutesSinceUpdate, copiedId, isSendingEmail, hideProviderInfo,
     onViewMap, onUpdate, onOpenFinancials, onCopy, onCopyEmail, onDelete, onPrint, onViewHistory, onFullReport, onOperationalReport, lastLog, onEvidenceUploaded,
-    clientTables, providerTables, clientsData, agentPhonesMap, currentTime, approvalStages, evidenceList
+    clientTables, providerTables, clientsData, agentPhonesMap, currentTime, approvalStages, evidenceList, dhlIntake
 }) => {
     
     const { showNotification } = useNotification();
@@ -636,6 +637,45 @@ Qualquer dúvida, estamos a disposição.
                     <AlertOctagon size={12} strokeWidth={3} /> PENDENTE: {isPendingKm ? ['KM FINAL', ...missingInfo].join(' • ') : missingInfo.join(' • ')}
                 </div>
             )}
+            {(() => {
+                if (hideProviderInfo) return null;
+                if (!dhlIntake) return null;
+                if (dhlIntake.status !== 'pendente') return null;
+                if (dhlIntake.providerFilledAt) return null;
+                const isTerminalStatus = [MissionStatus.COMPLETED, MissionStatus.CANCELLED, MissionStatus.REFUSED].includes(mission.status);
+                if (isTerminalStatus) return null;
+                const now = (currentTime || new Date()).getTime();
+                const startMs = mission.startTime ? new Date(mission.startTime).getTime() : 0;
+                const minutesToStart = startMs > 0 ? (startMs - now) / 60000 : Number.POSITIVE_INFINITY;
+                const urgent = startMs > 0 && minutesToStart <= 120 && minutesToStart >= 0;
+                const hoursLabel = startMs > 0 ? (
+                    minutesToStart >= 0
+                        ? (minutesToStart >= 60 ? `${Math.floor(minutesToStart / 60)}h${String(Math.floor(minutesToStart % 60)).padStart(2, '0')}` : `${Math.max(0, Math.floor(minutesToStart))}min`)
+                        : 'INICIADA'
+                ) : '';
+                if (urgent) {
+                    return (
+                        <div
+                            className={`relative text-[10px] font-black uppercase py-1.5 px-3 flex items-center justify-center gap-2 overflow-hidden ${isExtraHourActive || (missingInfo.length > 0 || isPendingKm) ? '' : 'rounded-t-xl'} animate-pulse`}
+                            style={{ background: 'repeating-linear-gradient(135deg, #facc15 0 12px, #dc2626 12px 24px)', color: '#1f2937', textShadow: '0 1px 0 rgba(255,255,255,0.6)' }}
+                            title="Fornecedor DHL ainda nao preencheu — missao comeca em menos de 2 horas"
+                        >
+                            <span className="absolute inset-0 bg-white/20 animate-pulse pointer-events-none" />
+                            <AlertTriangle size={14} strokeWidth={3} className="text-red-900 drop-shadow animate-bounce" />
+                            <span className="tracking-wider">FORNECEDOR DHL NAO PREENCHEU — INICIO EM {hoursLabel || '< 2H'}</span>
+                            <AlertTriangle size={14} strokeWidth={3} className="text-red-900 drop-shadow animate-bounce" />
+                        </div>
+                    );
+                }
+                return (
+                    <div
+                        className={`bg-amber-300 text-amber-950 text-[10px] font-black uppercase py-1.5 px-3 flex items-center justify-center gap-2 border-y-2 border-amber-600 ${isExtraHourActive || (missingInfo.length > 0 || isPendingKm) ? '' : 'rounded-t-xl'}`}
+                        title="Fornecedor DHL ainda nao preencheu os dados — cobrar preenchimento"
+                    >
+                        <AlertTriangle size={12} strokeWidth={3} /> PENDENTE FORNECEDOR DHL PREENCHER {hoursLabel ? `• INICIO EM ${hoursLabel}` : ''}
+                    </div>
+                );
+            })()}
             <div className={`absolute bottom-0 left-0 right-0 h-1 rounded-b-xl transition-colors ${isRedLight ? 'bg-red-500' : isImminent ? 'bg-amber-500' : 'bg-transparent'}`}></div>
             <div className="grid grid-cols-1 lg:grid-cols-12 min-h-[120px] divide-y lg:divide-y-0 lg:divide-x divide-gray-100 items-stretch">
                 <div className="lg:col-span-2 p-3 flex flex-col justify-center gap-2">
