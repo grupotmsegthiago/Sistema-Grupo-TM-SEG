@@ -3,7 +3,8 @@
 // Não exige login. Memória por fornecedor com seleção/reaproveitamento.
 
 import React, { useEffect, useState, useMemo } from 'react';
-import { User, Truck, CheckCircle2, ArrowRight, ArrowLeft, Loader2, AlertCircle, Shield } from 'lucide-react';
+import { User, Truck, CheckCircle2, ArrowRight, ArrowLeft, Loader2, AlertCircle, Search } from 'lucide-react';
+import tmsegLogo from '../attached_assets/image_1779154356493.png';
 
 const INPUT = "w-full bg-white border border-gray-300 rounded-lg px-3 h-11 text-sm text-gray-800 outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-500 transition-all";
 const LABEL = "text-[10px] font-black text-gray-500 uppercase mb-1.5 block tracking-wider";
@@ -224,7 +225,7 @@ const DhlSupplierIntake: React.FC = () => {
       <header className="bg-[#1a1a1a] text-white">
         <div className="max-w-4xl mx-auto px-4 py-6 flex items-center justify-between gap-4">
           <div className="flex items-center gap-3">
-            <div className="w-12 h-12 rounded-full bg-gradient-to-br from-red-600 to-red-800 flex items-center justify-center"><Shield className="w-6 h-6 text-white" /></div>
+            <img src={tmsegLogo} alt="Grupo TM SEG" className="w-12 h-12 object-contain" />
             <div>
               <h1 className="text-lg md:text-xl font-black tracking-wide">GRUPO <span className="text-red-500">TM SEG</span></h1>
               <p className="text-[10px] uppercase tracking-widest text-yellow-400 font-bold">Intermediação de Escolta Armada</p>
@@ -353,64 +354,110 @@ const EscoltistaForm: React.FC<{
   onBack?: () => void;
   onNext: () => void;
 }> = ({ titulo, data, setData, savedList, fromSaved, onBack, onNext }) => {
-  const [mode, setMode] = useState<'novo' | 'cadastrado'>(savedList.length > 0 ? 'cadastrado' : 'novo');
   const set = (patch: Partial<Escoltista>) => setData({ ...data, ...patch });
+  const [lookupStatus, setLookupStatus] = useState<'idle' | 'found' | 'notfound'>('idle');
+
+  // Busca no cadastro do fornecedor pelo CPF (comparação só por dígitos)
+  const handleCpfChange = (raw: string) => {
+    const masked = maskCpf(raw);
+    const digits = masked.replace(/\D/g, '');
+
+    // Se o CPF mudar depois de já ter encontrado, limpa o id e libera edição
+    if (data.id && digits !== (data.cpf || '').replace(/\D/g, '')) {
+      setData({ ...EMPTY_ESCOLTISTA, cpf: masked });
+      setLookupStatus('idle');
+      return;
+    }
+
+    if (digits.length < 11) {
+      set({ cpf: masked });
+      setLookupStatus('idle');
+      return;
+    }
+
+    // CPF completo (11 dígitos): tenta encontrar no cadastro
+    const found = savedList.find(s => (s.cpf || '').replace(/\D/g, '') === digits);
+    if (found) {
+      setData(fromSaved(found));
+      setLookupStatus('found');
+    } else {
+      set({ cpf: masked });
+      setLookupStatus('notfound');
+    }
+  };
+
+  const cpfDigits = (data.cpf || '').replace(/\D/g, '');
+  const cpfComplete = cpfDigits.length === 11;
+  const isLocked = !!data.id; // dados vieram do cadastro — somente leitura
+  const showFields = cpfComplete || isLocked;
 
   return (
     <div>
       <h3 className="text-base font-black uppercase text-gray-900 mb-1 flex items-center gap-2"><User className="w-5 h-5 text-red-600" /> {titulo}</h3>
-      <p className="text-xs text-gray-500 mb-4">Selecione um escoltista já cadastrado ou preencha um novo.</p>
+      <p className="text-xs text-gray-500 mb-4">Digite o CPF do escoltista. Se ele já estiver cadastrado, os dados serão preenchidos automaticamente.</p>
 
-      {savedList.length > 0 && (
-        <div className="flex gap-2 mb-4">
-          <button type="button" onClick={() => { setMode('cadastrado'); setData({ ...EMPTY_ESCOLTISTA }); }} className={`flex-1 py-2.5 rounded-lg text-xs font-bold uppercase tracking-wide ${mode === 'cadastrado' ? 'bg-red-600 text-white' : 'bg-gray-100 text-gray-600'}`}>Selecionar cadastrado</button>
-          <button type="button" onClick={() => { setMode('novo'); setData({ ...EMPTY_ESCOLTISTA }); }} className={`flex-1 py-2.5 rounded-lg text-xs font-bold uppercase tracking-wide ${mode === 'novo' ? 'bg-red-600 text-white' : 'bg-gray-100 text-gray-600'}`}>Novo cadastro</button>
-        </div>
-      )}
-
-      {mode === 'cadastrado' && savedList.length > 0 && (
-        <div className="space-y-2">
-          <label className={LABEL}>Selecione o escoltista</label>
-          <select className={SELECT} value={data.id || ''} onChange={e => { const sel = savedList.find(s => s.id === e.target.value); setData(sel ? fromSaved(sel) : { ...EMPTY_ESCOLTISTA }); }}>
-            <option value="">— Selecione —</option>
-            {savedList.map(s => <option key={s.id} value={s.id}>{s.nome} — CPF {s.cpf}</option>)}
-          </select>
-          {data.id && (
-            <div className="mt-3 p-3 bg-green-50 border border-green-200 rounded-lg text-xs text-green-800">
-              <p className="font-bold">{data.nome}</p>
-              <p>CPF: {data.cpf} • RG: {data.rg} • CNH: {data.cnh}</p>
-              <p>{data.cidade}/{data.uf} • {data.celular}</p>
+      {/* CPF em destaque — entrada principal */}
+      <div className="bg-gray-50 border-2 border-dashed border-gray-300 rounded-xl p-4 mb-4">
+        <label className={LABEL + ' flex items-center gap-1.5'}>
+          <Search className="w-3.5 h-3.5 text-red-600" /> CPF do escoltista*
+        </label>
+        <input
+          className={INPUT + ' text-lg font-bold tracking-wider'}
+          placeholder="000.000.000-00"
+          value={data.cpf}
+          onChange={e => handleCpfChange(e.target.value)}
+          inputMode="numeric"
+          autoFocus
+          data-testid={`input-cpf-${titulo.toLowerCase().replace(/\s/g, '-')}`}
+        />
+        {lookupStatus === 'found' && (
+          <div className="mt-3 p-3 bg-green-50 border border-green-200 rounded-lg flex items-start gap-2" data-testid="badge-cpf-found">
+            <CheckCircle2 className="w-4 h-4 text-green-600 mt-0.5 flex-shrink-0" />
+            <div className="text-xs text-green-800">
+              <p className="font-bold">Encontrado no cadastro: {data.nome}</p>
+              <p className="text-green-700">Os dados abaixo foram preenchidos automaticamente. Para usar outro escoltista, apague o CPF e digite outro.</p>
             </div>
-          )}
-        </div>
-      )}
+          </div>
+        )}
+        {lookupStatus === 'notfound' && (
+          <div className="mt-3 p-3 bg-yellow-50 border border-yellow-200 rounded-lg flex items-start gap-2" data-testid="badge-cpf-notfound">
+            <AlertCircle className="w-4 h-4 text-yellow-700 mt-0.5 flex-shrink-0" />
+            <div className="text-xs text-yellow-800">
+              <p className="font-bold">CPF ainda não cadastrado</p>
+              <p>Preencha todos os campos abaixo. Esses dados ficarão salvos para as próximas OS.</p>
+            </div>
+          </div>
+        )}
+        {!cpfComplete && !isLocked && (
+          <p className="text-xs text-gray-500 mt-2 italic">Os demais campos aparecem após você digitar o CPF completo.</p>
+        )}
+      </div>
 
-      {mode === 'novo' && (
+      {showFields && (
         <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-          <div className="md:col-span-2"><label className={LABEL}>Nome*</label><input className={INPUT} value={data.nome} onChange={e => set({ nome: e.target.value })} /></div>
-          <div><label className={LABEL}>CPF*</label><input className={INPUT} placeholder="000.000.000-00" value={data.cpf} onChange={e => set({ cpf: maskCpf(e.target.value) })} /></div>
-          <div><label className={LABEL}>RG*</label><input className={INPUT} value={data.rg} onChange={e => set({ rg: e.target.value })} /></div>
-          <div className="md:col-span-2"><label className={LABEL}>Órgão emis./UF*</label><input className={INPUT} placeholder="SSP/SP" value={data.orgaoEmissor} onChange={e => set({ orgaoEmissor: e.target.value.toUpperCase() })} /></div>
-          <div><label className={LABEL}>CNH*</label><input className={INPUT} value={data.cnh} onChange={e => set({ cnh: e.target.value })} /></div>
-          <div><label className={LABEL}>Categoria*</label><select className={SELECT} value={data.cnhCategoria} onChange={e => set({ cnhCategoria: e.target.value })}><option value="">—</option>{['A','B','AB','C','AC','D','AD','E','AE'].map(c => <option key={c}>{c}</option>)}</select></div>
-          <div><label className={LABEL}>Venc. CNH*</label><input type="date" className={INPUT} value={data.cnhVencimento} onChange={e => set({ cnhVencimento: e.target.value })} /></div>
-          <div className="md:col-span-2"><label className={LABEL}>CNV Número*</label><input className={INPUT} value={data.cnvNumero} onChange={e => set({ cnvNumero: e.target.value })} /></div>
-          <div><label className={LABEL}>Validade CNV*</label><input type="date" className={INPUT} value={data.cnvValidade} onChange={e => set({ cnvValidade: e.target.value })} /></div>
-          <div className="md:col-span-2"><label className={LABEL}>Rua*</label><input className={INPUT} value={data.rua} onChange={e => set({ rua: e.target.value })} /></div>
-          <div><label className={LABEL}>Número*</label><input className={INPUT} value={data.numero} onChange={e => set({ numero: e.target.value })} /></div>
-          <div className="md:col-span-3"><label className={LABEL}>Complemento</label><input className={INPUT} value={data.complemento} onChange={e => set({ complemento: e.target.value })} /></div>
-          <div><label className={LABEL}>Bairro*</label><input className={INPUT} value={data.bairro} onChange={e => set({ bairro: e.target.value })} /></div>
-          <div><label className={LABEL}>Cidade*</label><input className={INPUT} value={data.cidade} onChange={e => set({ cidade: e.target.value })} /></div>
-          <div><label className={LABEL}>UF*</label><select className={SELECT} value={data.uf} onChange={e => set({ uf: e.target.value })}><option value="">—</option>{UF_LIST.map(u => <option key={u}>{u}</option>)}</select></div>
-          <div><label className={LABEL}>CEP*</label><input className={INPUT} placeholder="00000-000" value={data.cep} onChange={e => set({ cep: maskCep(e.target.value) })} /></div>
-          <div><label className={LABEL}>Celular*</label><input className={INPUT} placeholder="(12)34567-8910" value={data.celular} onChange={e => set({ celular: maskCelular(e.target.value) })} /></div>
-          <div><label className={LABEL}>Admissão*</label><input type="date" className={INPUT} value={data.admissao} onChange={e => set({ admissao: e.target.value })} /></div>
+          <div className="md:col-span-2"><label className={LABEL}>Nome*</label><input className={INPUT + (isLocked ? ' bg-gray-50 text-gray-600' : '')} value={data.nome} onChange={e => set({ nome: e.target.value })} readOnly={isLocked} data-testid="input-nome" /></div>
+          <div><label className={LABEL}>RG*</label><input className={INPUT + (isLocked ? ' bg-gray-50 text-gray-600' : '')} value={data.rg} onChange={e => set({ rg: e.target.value })} readOnly={isLocked} /></div>
+          <div className="md:col-span-2"><label className={LABEL}>Órgão emis./UF*</label><input className={INPUT + (isLocked ? ' bg-gray-50 text-gray-600' : '')} placeholder="SSP/SP" value={data.orgaoEmissor} onChange={e => set({ orgaoEmissor: e.target.value.toUpperCase() })} readOnly={isLocked} /></div>
+          <div><label className={LABEL}>CNH*</label><input className={INPUT + (isLocked ? ' bg-gray-50 text-gray-600' : '')} value={data.cnh} onChange={e => set({ cnh: e.target.value })} readOnly={isLocked} /></div>
+          <div><label className={LABEL}>Categoria*</label><select className={SELECT + (isLocked ? ' bg-gray-50 text-gray-600' : '')} value={data.cnhCategoria} onChange={e => set({ cnhCategoria: e.target.value })} disabled={isLocked}><option value="">—</option>{['A','B','AB','C','AC','D','AD','E','AE'].map(c => <option key={c}>{c}</option>)}</select></div>
+          <div><label className={LABEL}>Venc. CNH*</label><input type="date" className={INPUT + (isLocked ? ' bg-gray-50 text-gray-600' : '')} value={data.cnhVencimento} onChange={e => set({ cnhVencimento: e.target.value })} readOnly={isLocked} /></div>
+          <div className="md:col-span-2"><label className={LABEL}>CNV Número*</label><input className={INPUT + (isLocked ? ' bg-gray-50 text-gray-600' : '')} value={data.cnvNumero} onChange={e => set({ cnvNumero: e.target.value })} readOnly={isLocked} /></div>
+          <div><label className={LABEL}>Validade CNV*</label><input type="date" className={INPUT + (isLocked ? ' bg-gray-50 text-gray-600' : '')} value={data.cnvValidade} onChange={e => set({ cnvValidade: e.target.value })} readOnly={isLocked} /></div>
+          <div className="md:col-span-2"><label className={LABEL}>Rua*</label><input className={INPUT + (isLocked ? ' bg-gray-50 text-gray-600' : '')} value={data.rua} onChange={e => set({ rua: e.target.value })} readOnly={isLocked} /></div>
+          <div><label className={LABEL}>Número*</label><input className={INPUT + (isLocked ? ' bg-gray-50 text-gray-600' : '')} value={data.numero} onChange={e => set({ numero: e.target.value })} readOnly={isLocked} /></div>
+          <div className="md:col-span-3"><label className={LABEL}>Complemento</label><input className={INPUT + (isLocked ? ' bg-gray-50 text-gray-600' : '')} value={data.complemento} onChange={e => set({ complemento: e.target.value })} readOnly={isLocked} /></div>
+          <div><label className={LABEL}>Bairro*</label><input className={INPUT + (isLocked ? ' bg-gray-50 text-gray-600' : '')} value={data.bairro} onChange={e => set({ bairro: e.target.value })} readOnly={isLocked} /></div>
+          <div><label className={LABEL}>Cidade*</label><input className={INPUT + (isLocked ? ' bg-gray-50 text-gray-600' : '')} value={data.cidade} onChange={e => set({ cidade: e.target.value })} readOnly={isLocked} /></div>
+          <div><label className={LABEL}>UF*</label><select className={SELECT + (isLocked ? ' bg-gray-50 text-gray-600' : '')} value={data.uf} onChange={e => set({ uf: e.target.value })} disabled={isLocked}><option value="">—</option>{UF_LIST.map(u => <option key={u}>{u}</option>)}</select></div>
+          <div><label className={LABEL}>CEP*</label><input className={INPUT + (isLocked ? ' bg-gray-50 text-gray-600' : '')} placeholder="00000-000" value={data.cep} onChange={e => set({ cep: maskCep(e.target.value) })} readOnly={isLocked} /></div>
+          <div><label className={LABEL}>Celular*</label><input className={INPUT + (isLocked ? ' bg-gray-50 text-gray-600' : '')} placeholder="(12)34567-8910" value={data.celular} onChange={e => set({ celular: maskCelular(e.target.value) })} readOnly={isLocked} /></div>
+          <div><label className={LABEL}>Admissão*</label><input type="date" className={INPUT + (isLocked ? ' bg-gray-50 text-gray-600' : '')} value={data.admissao} onChange={e => set({ admissao: e.target.value })} readOnly={isLocked} /></div>
         </div>
       )}
 
       <div className="flex justify-between mt-6 pt-4 border-t border-gray-100">
         {onBack ? <button type="button" onClick={onBack} className="px-5 py-2.5 rounded-lg bg-gray-100 text-gray-700 text-sm font-bold flex items-center gap-2"><ArrowLeft size={16} /> Voltar</button> : <span />}
-        <button type="button" onClick={onNext} className="px-6 py-2.5 rounded-lg bg-red-600 text-white text-sm font-bold flex items-center gap-2 hover:bg-red-700">Avançar <ArrowRight size={16} /></button>
+        <button type="button" onClick={onNext} disabled={!cpfComplete && !isLocked} className="px-6 py-2.5 rounded-lg bg-red-600 text-white text-sm font-bold flex items-center gap-2 hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed" data-testid="btn-avancar-escoltista">Avançar <ArrowRight size={16} /></button>
       </div>
     </div>
   );
