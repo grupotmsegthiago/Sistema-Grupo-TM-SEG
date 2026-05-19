@@ -674,17 +674,17 @@ export async function registerRoutes(
   }
 
   async function findProviderEmail(providerName: string): Promise<{ email: string; data: any }> {
-    const { data: byName } = await supabase.from('providers').select('os_email, email, trading_name, name, status').eq('name', providerName);
+    const { data: byName } = await supabase.from('providers').select('dhl_solicitation_email, os_email, email, trading_name, name, status').eq('name', providerName);
     let provData = byName?.find(p => p.status === 'Ativo') || byName?.[0] || null;
     if (!provData) {
-      const { data: byTrading } = await supabase.from('providers').select('os_email, email, trading_name, name, status').eq('trading_name', providerName);
+      const { data: byTrading } = await supabase.from('providers').select('dhl_solicitation_email, os_email, email, trading_name, name, status').eq('trading_name', providerName);
       provData = byTrading?.find(p => p.status === 'Ativo') || byTrading?.[0] || null;
     }
     if (!provData) {
-      const { data: byIlike } = await supabase.from('providers').select('os_email, email, trading_name, name, status').ilike('trading_name', providerName);
+      const { data: byIlike } = await supabase.from('providers').select('dhl_solicitation_email, os_email, email, trading_name, name, status').ilike('trading_name', providerName);
       provData = byIlike?.find(p => p.status === 'Ativo') || byIlike?.[0] || null;
     }
-    const email = provData?.os_email?.trim() || provData?.email?.trim() || '';
+    const email = provData?.dhl_solicitation_email?.trim() || provData?.os_email?.trim() || provData?.email?.trim() || '';
     return { email, data: provData };
   }
 

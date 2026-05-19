@@ -135,6 +135,7 @@ export async function runDhlIntakeMigrations(): Promise<void> {
 
       ALTER TABLE missions ADD COLUMN IF NOT EXISTS dhl_se_number TEXT;
       ALTER TABLE providers ADD COLUMN IF NOT EXISTS dhl_channel_preference TEXT;
+      ALTER TABLE providers ADD COLUMN IF NOT EXISTS dhl_solicitation_email TEXT;
       ALTER TABLE dhl_supplier_intakes ADD COLUMN IF NOT EXISTS mirror_proof_url TEXT;
       ALTER TABLE dhl_supplier_intakes ADD COLUMN IF NOT EXISTS mirror_proof_filename TEXT;
       ALTER TABLE dhl_supplier_intakes ADD COLUMN IF NOT EXISTS first_opened_at TIMESTAMPTZ;
@@ -580,7 +581,7 @@ async function checkAndSendDhlIntakeReminders(): Promise<void> {
   let providerMap = new Map<string, any>();
   if (providerIds.length > 0) {
     const { data: provs } = await sb.from('providers')
-      .select('id, name, trading_name, email, os_email, phone')
+      .select('id, name, trading_name, email, os_email, dhl_solicitation_email, phone')
       .in('id', providerIds);
     providerMap = new Map<string, any>((provs || []).map((p: any) => [p.id, p]));
   }
@@ -647,7 +648,7 @@ async function checkAndSendDhlIntakeReminders(): Promise<void> {
   const resolveDestinos = (el: Eleg) => {
     const { intake, provider } = el;
     return {
-      email: (intake.sent_to_email || (provider.os_email || provider.email || '')).trim(),
+      email: (intake.sent_to_email || (provider.dhl_solicitation_email || provider.os_email || provider.email || '')).trim(),
       phone: maskPhone(intake.sent_to_phone || provider.phone || ''),
       name: intake.provider_name || provider.trading_name || provider.name || '—',
       link: baseUrl ? `${baseUrl}/fornecedor/dhl?token=${intake.token}` : '',
@@ -1166,7 +1167,7 @@ export function registerDhlIntakeRoutes(
 
       // Resolve fornecedor
       const { data: providerByName } = await sb.from('providers')
-        .select('id, name, trading_name, email, os_email, phone, dhl_channel_preference')
+        .select('id, name, trading_name, email, os_email, dhl_solicitation_email, phone, dhl_channel_preference')
         .or(`name.eq.${mission.provider},trading_name.eq.${mission.provider}`)
         .limit(1)
         .maybeSingle();
@@ -1183,7 +1184,7 @@ export function registerDhlIntakeRoutes(
       const wantsEmail = channel === 'email' || channel === 'both';
       const wantsWhatsapp = channel === 'whatsapp' || channel === 'both';
 
-      const providerEmail = (provider.os_email || provider.email || '').trim();
+      const providerEmail = (provider.dhl_solicitation_email || provider.os_email || provider.email || '').trim();
       const providerPhone = maskPhone(provider.phone);
 
       // Regra de negócio: se o canal escolhido envolve e-mail e o fornecedor

@@ -329,12 +329,12 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
     try {
       const { error } = await supabase
         .from('providers')
-        .update({ os_email: email })
+        .update({ dhl_solicitation_email: email })
         .eq('id', dhlEmailModal.providerId);
       if (error) throw error;
       // Atualiza estado local para refletir o e-mail recém-cadastrado
       setDbProviders(prev => prev.map(p =>
-        String(p.id) === String(dhlEmailModal.providerId) ? { ...p, os_email: email } : p
+        String(p.id) === String(dhlEmailModal.providerId) ? { ...p, dhl_solicitation_email: email } : p
       ));
       showNotification('E-mail do fornecedor salvo', `${dhlEmailModal.providerName}: ${email}`, 'success');
       const retryChannel = dhlEmailModal.retryChannel;

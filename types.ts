@@ -204,6 +204,7 @@ export interface ProviderData {
   alvaraValidity?: string; 
   alvaraUrl?: string;
   dhl_channel_preference?: 'email' | 'whatsapp' | 'both' | null;
+  dhl_solicitation_email?: string | null;
 }
 
 export interface Agent {

@@ -174,3 +174,8 @@ NOTIFY pgrst, 'reload schema';
 -- canal padrão do link DHL (e-mail, whatsapp ou ambos). Sem ela, o SELECT que
 -- carrega fornecedores no formulário de OS retorna vazio.
 ALTER TABLE providers ADD COLUMN IF NOT EXISTS dhl_channel_preference TEXT;
+
+-- ITEM 9: e-mail dedicado para a solicitação DHL ao fornecedor. Usado com
+-- prioridade pelo /api/dhl/intake/generate. Se vazio, o operador é forçado a
+-- informar e o valor é persistido aqui para todos os usuários.
+ALTER TABLE providers ADD COLUMN IF NOT EXISTS dhl_solicitation_email TEXT;

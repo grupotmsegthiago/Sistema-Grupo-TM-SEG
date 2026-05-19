@@ -30,6 +30,7 @@ const ProviderForm: React.FC<ProviderFormProps> = ({ onBack, onNavigateToVehicle
     email: '',
     os_email: '',
     medicao_email: '',
+    dhl_solicitation_email: '',
     phone: '',
     zip_code: '',
     street: '',
@@ -52,12 +53,14 @@ const ProviderForm: React.FC<ProviderFormProps> = ({ onBack, onNavigateToVehicle
   const [currentUser, setCurrentUser] = useState<any>(null);
   const [osEmailInput, setOsEmailInput] = useState('');
   const [medicaoEmailInput, setMedicaoEmailInput] = useState('');
+  const [dhlSolicitacaoEmailInput, setDhlSolicitacaoEmailInput] = useState('');
 
-  const getEmailList = (field: 'os_email' | 'medicao_email'): string[] => {
+  type MultiEmailField = 'os_email' | 'medicao_email' | 'dhl_solicitation_email';
+  const getEmailList = (field: MultiEmailField): string[] => {
     const val = formData[field] || '';
     return val.split(',').map(e => e.trim()).filter(Boolean);
   };
-  const addEmail = (field: 'os_email' | 'medicao_email', inputVal: string, setInput: (v: string) => void) => {
+  const addEmail = (field: MultiEmailField, inputVal: string, setInput: (v: string) => void) => {
     const raw = inputVal.trim().toLowerCase();
     if (!raw) return;
     const emails = raw.split(/[\s,;]+/).map(e => e.trim()).filter(e => e && e.includes('@'));
@@ -68,7 +71,7 @@ const ProviderForm: React.FC<ProviderFormProps> = ({ onBack, onNavigateToVehicle
     setFormData({ ...formData, [field]: [...current, ...newEmails].join(', ') });
     setInput('');
   };
-  const removeEmail = (field: 'os_email' | 'medicao_email', emailToRemove: string) => {
+  const removeEmail = (field: MultiEmailField, emailToRemove: string) => {
     const current = getEmailList(field).filter(e => e !== emailToRemove);
     setFormData({ ...formData, [field]: current.join(', ') });
   };
@@ -122,6 +125,7 @@ const ProviderForm: React.FC<ProviderFormProps> = ({ onBack, onNavigateToVehicle
                     email: data.email || '',
                     os_email: data.os_email || '',
                     medicao_email: data.medicao_email || '',
+                    dhl_solicitation_email: data.dhl_solicitation_email || '',
                     phone: data.phone || '',
                     zip_code: data.zip_code || '',
                     street: data.street || '',
@@ -345,6 +349,7 @@ const ProviderForm: React.FC<ProviderFormProps> = ({ onBack, onNavigateToVehicle
             email: formData.email.toLowerCase(),
             os_email: formData.os_email?.toLowerCase() || null,
             medicao_email: formData.medicao_email?.toLowerCase() || null,
+            dhl_solicitation_email: formData.dhl_solicitation_email?.toLowerCase() || null,
             phone: formData.phone,
             zip_code: formData.zip_code,
             street: formData.street.toUpperCase(),
@@ -358,21 +363,22 @@ const ProviderForm: React.FC<ProviderFormProps> = ({ onBack, onNavigateToVehicle
             alvara_url: formData.alvaraUrl,
             dhl_channel_preference: formData.dhl_channel_preference || 'both'
        };
-       const retryWithoutDhlPref = async (op: 'update' | 'insert') => {
+       const retryWithoutMissingCols = async (op: 'update' | 'insert', errMsg: string) => {
            const fallback = { ...payload };
-           delete (fallback as any).dhl_channel_preference;
+           if (/dhl_channel_preference/i.test(errMsg)) delete (fallback as any).dhl_channel_preference;
+           if (/dhl_solicitation_email/i.test(errMsg)) delete (fallback as any).dhl_solicitation_email;
            if (op === 'update') return await supabase.from('providers').update(fallback).eq('id', id);
            return await supabase.from('providers').insert([fallback]);
        };
        if (id) {
            let { error } = await supabase.from('providers').update(payload).eq('id', id);
-           if (error && /dhl_channel_preference/i.test(error.message)) ({ error } = await retryWithoutDhlPref('update'));
+           if (error && /(dhl_channel_preference|dhl_solicitation_email)/i.test(error.message)) ({ error } = await retryWithoutMissingCols('update', error.message));
            if (error) throw new Error('Erro ao salvar fornecedor: ' + error.message);
            await logAction('UPDATE', 'Provider', id, `Fornecedor atualizado: ${formData.name}`);
        } else {
            payload.created_by = currentUser?.name || 'SISTEMA';
            let { error } = await supabase.from('providers').insert([payload]);
-           if (error && /dhl_channel_preference/i.test(error.message)) ({ error } = await retryWithoutDhlPref('insert'));
+           if (error && /(dhl_channel_preference|dhl_solicitation_email)/i.test(error.message)) ({ error } = await retryWithoutMissingCols('insert', error.message));
            if (error) throw error;
            await logAction('CREATE', 'Provider', 'NEW', `Fornecedor cadastrado: ${formData.name}`);
        }
@@ -597,6 +603,27 @@ const ProviderForm: React.FC<ProviderFormProps> = ({ onBack, onNavigateToVehicle
                                 ))}
                             </div>
                         )}
+                    </div>
+                    <div className="space-y-1.5 md:col-span-2">
+                        <label className={LABEL_CLASS}>E-mail Solicitação DHL</label>
+                        <div className="flex gap-1.5">
+                            <div className="relative flex-1">
+                                <input type="text" className={`${INPUT_CLASS} pl-10 pr-10`} placeholder="Digite o e-mail..." value={dhlSolicitacaoEmailInput} onChange={e => setDhlSolicitacaoEmailInput(e.target.value.toLowerCase())} onKeyDown={e => e.key === 'Enter' && (e.preventDefault(), addEmail('dhl_solicitation_email', dhlSolicitacaoEmailInput, setDhlSolicitacaoEmailInput))} onPaste={e => { e.preventDefault(); const text = e.clipboardData.getData('text'); addEmail('dhl_solicitation_email', text, setDhlSolicitacaoEmailInput); }} data-testid="input-dhl-solicitation-email" />
+                                <Mail className="absolute left-3 top-1/2 -translate-y-1/2 text-yellow-500" size={16} />
+                            </div>
+                            <button type="button" onClick={() => addEmail('dhl_solicitation_email', dhlSolicitacaoEmailInput, setDhlSolicitacaoEmailInput)} className="p-2.5 bg-yellow-500 text-white rounded-lg hover:bg-yellow-600 transition-colors shadow-sm" data-testid="btn-add-dhl-solicitation-email"><Plus size={16}/></button>
+                        </div>
+                        {getEmailList('dhl_solicitation_email').length > 0 && (
+                            <div className="flex flex-wrap gap-1.5 mt-1.5">
+                                {getEmailList('dhl_solicitation_email').map(em => (
+                                    <span key={em} className="inline-flex items-center gap-1 px-2.5 py-1 bg-yellow-50 border border-yellow-300 rounded-full text-[10px] font-bold text-yellow-700">
+                                        {em}
+                                        <button type="button" onClick={() => removeEmail('dhl_solicitation_email', em)} className="ml-0.5 text-yellow-500 hover:text-red-600"><X size={12}/></button>
+                                    </span>
+                                ))}
+                            </div>
+                        )}
+                        <p className="text-[10px] text-gray-400 font-medium normal-case">Usado pelo sistema ao gerar o link DHL para o fornecedor. Quando vazio, o operacional será obrigado a informar e o e-mail fica salvo aqui.</p>
                     </div>
                     <div className="space-y-1.5">
                         <label className={LABEL_CLASS}>Telefone / WhatsApp</label>
