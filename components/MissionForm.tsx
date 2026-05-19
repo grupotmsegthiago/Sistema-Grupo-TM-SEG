@@ -1573,24 +1573,42 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
                                         <div className="flex items-center justify-between gap-2 mb-1">
                                           <div className="flex items-center gap-2">
                                             <span className={`px-2 py-0.5 ${badge.bg} ${badge.fg} font-black uppercase tracking-wider rounded`} data-testid={`status-dhl-intake-${it.id}`}>{badge.label}</span>
-                                            {showRowRegen && (
-                                              <button
-                                                type="button"
-                                                onClick={() => {
-                                                  const prov = dbProviders.find(p => p.name === formData.provider || p.trading_name === formData.provider);
-                                                  const pref = prov?.dhl_channel_preference;
-                                                  const preferred = (pref === 'email' || pref === 'whatsapp' || pref === 'both') ? pref : 'both';
-                                                  setDhlChannelPicker({ open: true, preferred });
-                                                }}
-                                                disabled={dhlRegenerating}
-                                                className="px-2 py-0.5 rounded bg-red-600 text-white font-black uppercase tracking-wider hover:bg-red-700 disabled:opacity-50 active:scale-95 transition-all flex items-center gap-1"
-                                                data-testid={`btn-resend-dhl-intake-${it.id}`}
-                                                title="Gerar novo link e reenviar ao fornecedor"
-                                              >
-                                                {dhlRegenerating ? <Loader2 size={10} className="animate-spin" /> : <Mail size={10} />}
-                                                {dhlRegenerating ? 'Enviando...' : 'Gerar novo link'}
-                                              </button>
-                                            )}
+                                            {showRowRegen && (() => {
+                                              const prov = dbProviders.find(p => p.name === formData.provider || p.trading_name === formData.provider);
+                                              const rawPref = prov?.dhl_channel_preference;
+                                              const hasPref = rawPref === 'email' || rawPref === 'whatsapp' || rawPref === 'both';
+                                              const preferred: 'email' | 'whatsapp' | 'both' = hasPref ? rawPref : 'both';
+                                              const prefLabel = preferred === 'email' ? 'Reenviar por e-mail' : preferred === 'whatsapp' ? 'Reenviar por WhatsApp' : 'Reenviar (e-mail + WhatsApp)';
+                                              const prefBg = preferred === 'whatsapp' ? 'bg-green-600 hover:bg-green-700' : preferred === 'both' ? 'bg-gray-900 hover:bg-black' : 'bg-red-600 hover:bg-red-700';
+                                              return (
+                                                <>
+                                                  {hasPref && (
+                                                    <button
+                                                      type="button"
+                                                      onClick={() => handleRegenerateDhlLink(preferred)}
+                                                      disabled={dhlRegenerating}
+                                                      className={`px-2 py-0.5 rounded ${prefBg} text-white font-black uppercase tracking-wider disabled:opacity-50 active:scale-95 transition-all flex items-center gap-1`}
+                                                      data-testid={`btn-resend-dhl-intake-default-${it.id}`}
+                                                      title={`Reenviar pelo canal padrão deste fornecedor (${preferred})`}
+                                                    >
+                                                      {dhlRegenerating ? <Loader2 size={10} className="animate-spin" /> : <Mail size={10} />}
+                                                      {dhlRegenerating ? 'Enviando...' : prefLabel}
+                                                    </button>
+                                                  )}
+                                                  <button
+                                                    type="button"
+                                                    onClick={() => setDhlChannelPicker({ open: true, preferred })}
+                                                    disabled={dhlRegenerating}
+                                                    className={`px-2 py-0.5 rounded ${hasPref ? 'bg-white border border-gray-300 text-gray-700 hover:bg-gray-50' : 'bg-red-600 text-white hover:bg-red-700'} font-black uppercase tracking-wider disabled:opacity-50 active:scale-95 transition-all flex items-center gap-1`}
+                                                    data-testid={`btn-resend-dhl-intake-${it.id}`}
+                                                    title={hasPref ? 'Escolher outro canal apenas para este envio' : 'Gerar novo link e reenviar ao fornecedor'}
+                                                  >
+                                                    {!hasPref && (dhlRegenerating ? <Loader2 size={10} className="animate-spin" /> : <Mail size={10} />)}
+                                                    {hasPref ? 'Outro canal…' : (dhlRegenerating ? 'Enviando...' : 'Gerar novo link')}
+                                                  </button>
+                                                </>
+                                              );
+                                            })()}
                                           </div>
                                           <span className="text-gray-500 font-mono" data-testid={`text-dhl-intake-created-${it.id}`}>Criado: {fmt(it.created_at)}</span>
                                         </div>
