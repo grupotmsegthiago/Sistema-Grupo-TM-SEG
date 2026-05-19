@@ -807,10 +807,8 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
             } else {
                 if (!isSearching && !hasActiveSpecialFilters) {
                      const hiddenStatuses = [
-                         MissionStatus.COMPLETED, 
-                         MissionStatus.CANCELLED, 
-                         MissionStatus.REFUSED,
-                         MissionStatus.PENDING 
+                         MissionStatus.COMPLETED,
+                         MissionStatus.PENDING
                      ];
                      if (hiddenStatuses.includes(mission.status as MissionStatus)) return false;
                 }
