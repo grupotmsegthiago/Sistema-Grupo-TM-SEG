@@ -642,7 +642,8 @@ export async function registerRoutes(
       'client_price_tables', 'client_routes', 'client_vehicles', 'provider_cost_tables',
       'financial_transactions', 'financial_accounts', 'financial_categories', 'financial_invoices',
       'quotes', 'commercial_proposals', 'support_agents', 'time_clock',
-      'vehicle_technologies', 'system_users', 'whatsapp_messages', 'system_logs', 'mission_logs'
+      'vehicle_technologies', 'system_users', 'whatsapp_messages', 'system_logs', 'mission_logs',
+      'dhl_supplier_intakes'
     ];
     try {
       const tableList = realtimeTables.map(t => `public.${t}`).join(', ');

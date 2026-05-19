@@ -26,6 +26,7 @@ const REALTIME_TABLES = [
   'whatsapp_messages',
   'system_logs',
   'mission_logs',
+  'dhl_supplier_intakes',
 ] as const;
 
 type TableName = (typeof REALTIME_TABLES)[number];
@@ -54,6 +55,7 @@ const TABLE_TO_QUERY_KEYS: Record<TableName, string[][]> = {
   whatsapp_messages: [['whatsapp_messages']],
   system_logs: [['system_logs']],
   mission_logs: [['mission_logs']],
+  dhl_supplier_intakes: [],
 };
 
 const DEBOUNCE_MS = 500;
@@ -84,7 +86,7 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
         }
       }
 
-      if (tables.has('missions')) {
+      if (tables.has('missions') || tables.has('dhl_supplier_intakes')) {
         window.dispatchEvent(new CustomEvent('refreshMissions'));
       }
     };
