@@ -1779,6 +1779,79 @@ export function registerDhlIntakeRoutes(
   };
 
   // ──────────────────────────────────────────────────────────────
+  // GET /api/dhl/intake/public/:token/lookup-placa/:placa
+  // Consulta WDAPI2 com o token do servidor (não expõe a chave ao cliente).
+  // Aceita apenas chamadas vinculadas a um intake válido (não cancelado e
+  // não expirado), evitando uso anônimo.
+  // ──────────────────────────────────────────────────────────────
+  // Rate limit em memória do proxy de placa — janela curta por token e por IP
+  // para conter abuso (a WDAPI2 é paga). Limpa entradas antigas a cada chamada.
+  const placaLookupHits = new Map<string, number[]>();
+  const PLACA_LOOKUP_WINDOW_MS = 60_000;
+  const PLACA_LOOKUP_MAX_PER_KEY = 12;
+  const hitRateLimit = (key: string): boolean => {
+    const now = Date.now();
+    const arr = (placaLookupHits.get(key) || []).filter((t) => now - t < PLACA_LOOKUP_WINDOW_MS);
+    arr.push(now);
+    placaLookupHits.set(key, arr);
+    // GC simples (evita crescimento ilimitado do Map)
+    if (placaLookupHits.size > 500) {
+      for (const [k, v] of placaLookupHits) {
+        if (!v.length || now - v[v.length - 1] > PLACA_LOOKUP_WINDOW_MS) placaLookupHits.delete(k);
+      }
+    }
+    return arr.length > PLACA_LOOKUP_MAX_PER_KEY;
+  };
+  app.get('/api/dhl/intake/public/:token/lookup-placa/:placa', async (req: Request, res: Response) => {
+    try {
+      const token = String(req.params.token || '');
+      const placaRaw = String(req.params.placa || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+      if (placaRaw.length !== 7) return res.status(400).json({ error: 'Placa deve conter 7 caracteres.' });
+      const ip = (req.headers['x-forwarded-for'] as string || '').split(',')[0].trim() || req.socket?.remoteAddress || 'unknown';
+      if (hitRateLimit(`tok:${token}`) || hitRateLimit(`ip:${ip}`)) {
+        return res.status(429).json({ error: 'Muitas consultas em sequência — aguarde alguns segundos.' });
+      }
+      const sb = getSb();
+      const { data: intake } = await sb.from('dhl_supplier_intakes')
+        .select('status, expires_at')
+        .eq('token', token)
+        .maybeSingle();
+      if (!intake) return res.status(404).json({ error: 'Link inválido' });
+      if (intake.status === 'cancelado') return res.status(410).json({ error: 'Link cancelado' });
+      if (intake.status === 'preenchido') return res.status(410).json({ error: 'Intake já finalizado.' });
+      if (intake.expires_at && new Date(intake.expires_at) < new Date()) {
+        return res.status(410).json({ error: 'Link expirado' });
+      }
+      const wdToken = process.env.VITE_WDAPI_TOKEN || process.env.WDAPI_TOKEN || '';
+      if (!wdToken) return res.status(503).json({ error: 'Consulta de placa indisponível no momento.' });
+      const ctrl = new AbortController();
+      const timer = setTimeout(() => ctrl.abort(), 8000);
+      try {
+        const r = await fetch(`https://wdapi2.com.br/consulta/${placaRaw}/${wdToken}`, { signal: ctrl.signal as any });
+        clearTimeout(timer);
+        if (!r.ok) {
+          if (r.status === 404) return res.status(404).json({ error: 'Placa não encontrada.' });
+          return res.status(502).json({ error: 'Falha ao consultar placa.' });
+        }
+        const j: any = await r.json();
+        // WDAPI2 retorna chaves como MARCA, MODELO, ano, anoModelo, cor, etc.
+        const marca = String(j?.MARCA || j?.marca || '').trim();
+        const modelo = String(j?.MODELO || j?.modelo || '').trim();
+        const ano = String(j?.ano || j?.anoModelo || j?.ANO || j?.anoFabricacao || '').trim();
+        const cor = String(j?.cor || j?.COR || '').trim();
+        return res.json({ ok: true, marca, modelo, ano, cor });
+      } catch (fetchErr: any) {
+        clearTimeout(timer);
+        if (fetchErr?.name === 'AbortError') return res.status(504).json({ error: 'Tempo esgotado ao consultar placa.' });
+        return res.status(502).json({ error: 'Falha de conexão ao consultar placa.' });
+      }
+    } catch (e: any) {
+      console.error('[DHL Intake] lookup-placa exception:', e);
+      return res.status(500).json({ error: e?.message || 'Erro interno' });
+    }
+  });
+
+  // ──────────────────────────────────────────────────────────────
   // GET /api/dhl/intake/public/:token — dados para a página pública
   // ──────────────────────────────────────────────────────────────
   app.get('/api/dhl/intake/public/:token', async (req: Request, res: Response) => {

@@ -3,8 +3,9 @@
 // Não exige login. Memória por fornecedor com seleção/reaproveitamento.
 
 import React, { useEffect, useState, useMemo } from 'react';
-import { User, Truck, CheckCircle2, ArrowRight, ArrowLeft, Loader2, AlertCircle, Search } from 'lucide-react';
+import { User, Truck, CheckCircle2, ArrowRight, ArrowLeft, Loader2, AlertCircle, Search, Info } from 'lucide-react';
 import tmsegLogo from '../attached_assets/tmseg_logo_transparent.png';
+import { findDhlMirrorRule } from '../shared/dhlMirrorRules';
 
 const INPUT = "w-full bg-white border border-gray-300 rounded-lg px-3 h-11 text-sm text-gray-800 outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-500 transition-all";
 const LABEL = "text-[10px] font-black text-gray-500 uppercase mb-1.5 block tracking-wider";
@@ -149,10 +150,21 @@ const DhlSupplierIntake: React.FC = () => {
             filename: snaps.mirrorProofFilename || 'espelhamento-anexado',
           });
         }
+        // Para retomar com segurança, confiamos NO SNAPSHOT (dado realmente
+        // persistido), não apenas na flag de progresso. Em intakes antigos
+        // pode existir progress_agent1=true sem agent1_snapshot, e nesse
+        // caso o fornecedor precisa preencher novamente — não pode ir
+        // direto para a Revisão e enviar vazio.
+        const hasA1 = !!snaps.agent1;
+        const hasA2 = !!snaps.agent2;
+        const hasV = !!snaps.vehicle;
+        // Espelhamento só conta como concluído se temos o arquivo
+        // efetivamente persistido (URL pública). A flag sozinha não basta.
+        const hasM = !!snaps.mirrorProofUrl;
         let nextStep: 1 | 2 | 3 | 4 = 1;
-        if (prog.agent1) nextStep = 2;
-        if (prog.agent1 && prog.agent2) nextStep = 3;
-        if (prog.agent1 && prog.agent2 && prog.vehicle && prog.mirror) nextStep = 4;
+        if (hasA1) nextStep = 2;
+        if (hasA1 && hasA2) nextStep = 3;
+        if (hasA1 && hasA2 && hasV && hasM) nextStep = 4;
         if (nextStep !== 1) {
           setStep(nextStep);
           setResumed({ step: nextStep });
@@ -430,6 +442,7 @@ const DhlSupplierIntake: React.FC = () => {
           )}
           {step === 3 && (
             <VeiculoForm
+              token={token}
               data={veiculo}
               setData={setVeiculo}
               savedList={savedVeiculos}
@@ -641,8 +654,9 @@ const EscoltistaForm: React.FC<{
 // Sub-componente: Veículo
 // ────────────────────────────────────────────────────────────
 const VeiculoForm: React.FC<{
+  token: string;
   data: Veiculo;
-  setData: (v: Veiculo) => void;
+  setData: React.Dispatch<React.SetStateAction<Veiculo>>;
   savedList: any[];
   fromSavedVeic: (s: any) => Veiculo;
   mirrorProof: { dataUrl: string; filename: string; size: number; contentType: string } | null;
@@ -652,9 +666,51 @@ const VeiculoForm: React.FC<{
   onBack: () => void;
   onNext: () => void;
   saving?: boolean;
-}> = ({ data, setData, savedList, fromSavedVeic, mirrorProof, setMirrorProof, existingMirrorProof, clearExistingMirror, onBack, onNext, saving }) => {
+}> = ({ token, data, setData, savedList, fromSavedVeic, mirrorProof, setMirrorProof, existingMirrorProof, clearExistingMirror, onBack, onNext, saving }) => {
   const [mode, setMode] = useState<'novo' | 'cadastrado'>(savedList.length > 0 ? 'cadastrado' : 'novo');
   const set = (patch: Partial<Veiculo>) => setData({ ...data, ...patch });
+
+  // ── Consulta automática da placa (WDAPI2) — backend proxy mantém o token
+  // do servidor longe do navegador. Roda quando a placa tem 7 caracteres e
+  // só preenche os campos que estão vazios (não sobrescreve edição manual).
+  const [plateLookup, setPlateLookup] = useState<'idle' | 'loading' | 'found' | 'notfound' | 'error'>('idle');
+  const [lastQueriedPlate, setLastQueriedPlate] = useState<string>('');
+  useEffect(() => {
+    if (mode !== 'novo') return;
+    const placa = (data.placa || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+    if (placa.length !== 7) { setPlateLookup('idle'); return; }
+    if (placa === lastQueriedPlate) return;
+    let cancelled = false;
+    setPlateLookup('loading');
+    setLastQueriedPlate(placa);
+    const t = setTimeout(async () => {
+      try {
+        const r = await fetch(`/api/dhl/intake/public/${encodeURIComponent(token)}/lookup-placa/${encodeURIComponent(placa)}`);
+        if (cancelled) return;
+        if (r.status === 404) { setPlateLookup('notfound'); return; }
+        if (!r.ok) { setPlateLookup('error'); return; }
+        const j = await r.json();
+        // Fill empty fields only — usa o estado MAIS RECENTE (não o capturado
+        // no closure do effect) para nunca sobrescrever uma edição que o
+        // fornecedor fez enquanto a consulta acontecia.
+        setData((prev) => ({
+          ...prev,
+          marca: prev.marca?.trim() ? prev.marca : (j.marca || ''),
+          modelo: prev.modelo?.trim() ? prev.modelo : (j.modelo || ''),
+          ano: prev.ano?.trim() ? prev.ano : (j.ano || ''),
+          cor: prev.cor?.trim() ? prev.cor : (j.cor || ''),
+        }));
+        setPlateLookup('found');
+      } catch {
+        if (!cancelled) setPlateLookup('error');
+      }
+    }, 450); // pequeno debounce
+    return () => { cancelled = true; clearTimeout(t); };
+    // Sem dependência de `data` completo para não relançar a cada tecla em outros campos
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [data.placa, mode, token]);
+
+  const mirrorRule = findDhlMirrorRule(data.tecnologia);
 
   return (
     <div>
@@ -685,16 +741,59 @@ const VeiculoForm: React.FC<{
       )}
 
       {mode === 'novo' && (
+        <>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-          <div><label className={LABEL}>Placa*</label><input className={INPUT} placeholder="ABC1D23" value={data.placa} onChange={e => set({ placa: maskPlaca(e.target.value) })} /></div>
+          <div>
+            <label className={LABEL}>Placa*</label>
+            <div className="relative">
+              <input
+                className={INPUT + ' pr-9'}
+                placeholder="ABC1D23"
+                value={data.placa}
+                onChange={e => set({ placa: maskPlaca(e.target.value) })}
+                data-testid="input-veiculo-placa"
+              />
+              {plateLookup === 'loading' && <Loader2 className="w-4 h-4 text-gray-400 animate-spin absolute right-3 top-1/2 -translate-y-1/2" />}
+              {plateLookup === 'found' && <CheckCircle2 className="w-4 h-4 text-green-600 absolute right-3 top-1/2 -translate-y-1/2" />}
+              {(plateLookup === 'notfound' || plateLookup === 'error') && <AlertCircle className="w-4 h-4 text-amber-600 absolute right-3 top-1/2 -translate-y-1/2" />}
+            </div>
+            {plateLookup === 'found' && <p className="text-[10px] text-green-700 mt-1">Dados do veículo preenchidos automaticamente. Revise antes de avançar.</p>}
+            {plateLookup === 'notfound' && <p className="text-[10px] text-amber-700 mt-1">Placa não encontrada na consulta — preencha os dados manualmente.</p>}
+            {plateLookup === 'error' && <p className="text-[10px] text-amber-700 mt-1">Não foi possível consultar a placa agora — preencha manualmente.</p>}
+          </div>
           <div className="md:col-span-2"><label className={LABEL}>Renavam*</label><input className={INPUT} value={data.renavam} onChange={e => set({ renavam: e.target.value.replace(/\D/g, '') })} /></div>
           <div><label className={LABEL}>Marca*</label><input className={INPUT} value={data.marca} onChange={e => set({ marca: e.target.value })} /></div>
           <div><label className={LABEL}>Ano*</label><input className={INPUT} value={data.ano} onChange={e => set({ ano: e.target.value.replace(/\D/g, '').slice(0, 4) })} /></div>
           <div><label className={LABEL}>Modelo*</label><input className={INPUT} value={data.modelo} onChange={e => set({ modelo: e.target.value })} /></div>
           <div><label className={LABEL}>Cor*</label><input className={INPUT} value={data.cor} onChange={e => set({ cor: e.target.value })} /></div>
-          <div><label className={LABEL}>Tecnologia*</label><select className={SELECT} value={data.tecnologia} onChange={e => set({ tecnologia: e.target.value })}><option value="">—</option>{TECNOLOGIAS.map(t => <option key={t}>{t}</option>)}</select></div>
+          <div><label className={LABEL}>Tecnologia*</label><select className={SELECT} value={data.tecnologia} onChange={e => set({ tecnologia: e.target.value })} data-testid="select-veiculo-tecnologia"><option value="">—</option>{TECNOLOGIAS.map(t => <option key={t}>{t}</option>)}</select></div>
           <div><label className={LABEL}>ID Rastreador*</label><input className={INPUT} value={data.idRastreador} onChange={e => set({ idRastreador: e.target.value })} /></div>
           <div className="md:col-span-3"><label className={LABEL}>Comunicação*</label><input className={INPUT} placeholder="GSM / Satélite / Híbrido" value={data.comunicacao} onChange={e => set({ comunicacao: e.target.value })} /></div>
+        </div>
+        {mirrorRule && (
+          <div className="mt-4 p-4 rounded-xl border-l-4 border-yellow-400 bg-yellow-50/60" data-testid="dhl-mirror-rule">
+            <div className="flex items-start gap-2">
+              <Info className="w-4 h-4 text-yellow-700 mt-0.5 flex-shrink-0" />
+              <div className="text-xs text-gray-800">
+                <p className="font-black uppercase tracking-wider text-yellow-800 mb-1">Regra de espelhamento DHL — {mirrorRule.title}</p>
+                <p className="leading-relaxed">{mirrorRule.body}</p>
+                <p className="mt-2 text-[11px] text-gray-600">Realize o espelhamento conforme acima antes de anexar o print abaixo.</p>
+              </div>
+            </div>
+          </div>
+        )}
+        </>
+      )}
+      {mode === 'cadastrado' && mirrorRule && (
+        <div className="mt-4 p-4 rounded-xl border-l-4 border-yellow-400 bg-yellow-50/60" data-testid="dhl-mirror-rule-cadastrado">
+          <div className="flex items-start gap-2">
+            <Info className="w-4 h-4 text-yellow-700 mt-0.5 flex-shrink-0" />
+            <div className="text-xs text-gray-800">
+              <p className="font-black uppercase tracking-wider text-yellow-800 mb-1">Regra de espelhamento DHL — {mirrorRule.title}</p>
+              <p className="leading-relaxed">{mirrorRule.body}</p>
+              <p className="mt-2 text-[11px] text-gray-600">Realize o espelhamento conforme acima antes de anexar o print abaixo.</p>
+            </div>
+          </div>
         </div>
       )}
 
