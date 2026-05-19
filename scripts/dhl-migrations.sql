@@ -93,6 +93,23 @@ CREATE TABLE IF NOT EXISTS public.dhl_supplier_intakes (
 CREATE INDEX IF NOT EXISTS idx_dhl_intakes_mission ON public.dhl_supplier_intakes(mission_id);
 CREATE INDEX IF NOT EXISTS idx_dhl_intakes_token ON public.dhl_supplier_intakes(token);
 
+-- 4b) Histórico de reenvios do link DHL (auditoria por OS)
+CREATE TABLE IF NOT EXISTS public.dhl_supplier_intake_resends (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  intake_id UUID NOT NULL,
+  mission_id TEXT NOT NULL,
+  sent_at TIMESTAMPTZ DEFAULT NOW(),
+  sent_by_user_id UUID,
+  sent_by_user_name TEXT,
+  target_email TEXT,
+  target_phone TEXT,
+  email_status TEXT,
+  email_error TEXT,
+  reused_existing_token BOOLEAN DEFAULT FALSE
+);
+CREATE INDEX IF NOT EXISTS idx_dhl_intake_resends_intake ON public.dhl_supplier_intake_resends(intake_id);
+CREATE INDEX IF NOT EXISTS idx_dhl_intake_resends_mission ON public.dhl_supplier_intake_resends(mission_id);
+
 -- 5) Coluna obrigatória da OS para clientes DHL — Número da S.E.
 ALTER TABLE public.missions ADD COLUMN IF NOT EXISTS dhl_se_number TEXT;
 

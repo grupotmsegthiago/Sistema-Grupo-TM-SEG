@@ -138,6 +138,23 @@ export async function runDhlIntakeMigrations(): Promise<void> {
       ALTER TABLE dhl_supplier_intakes ADD COLUMN IF NOT EXISTS provider_reminder_sent_at TIMESTAMPTZ;
       ALTER TABLE dhl_supplier_intakes ADD COLUMN IF NOT EXISTS operational_alert_sent_at TIMESTAMPTZ;
 
+      -- Histórico de reenvios do link DHL (auditoria: quem reenviou, quando, para onde, status)
+      CREATE TABLE IF NOT EXISTS dhl_supplier_intake_resends (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        intake_id UUID NOT NULL,
+        mission_id TEXT NOT NULL,
+        sent_at TIMESTAMPTZ DEFAULT NOW(),
+        sent_by_user_id UUID,
+        sent_by_user_name TEXT,
+        target_email TEXT,
+        target_phone TEXT,
+        email_status TEXT,
+        email_error TEXT,
+        reused_existing_token BOOLEAN DEFAULT FALSE
+      );
+      CREATE INDEX IF NOT EXISTS idx_dhl_intake_resends_intake ON dhl_supplier_intake_resends(intake_id);
+      CREATE INDEX IF NOT EXISTS idx_dhl_intake_resends_mission ON dhl_supplier_intake_resends(mission_id);
+
       -- Força o PostgREST a recarregar o cache de schema após ALTER TABLE
       NOTIFY pgrst, 'reload schema';
 
@@ -567,12 +584,23 @@ export function startDhlIntakeExpiryWorker(): void {
   console.log(`[DHL Expiry Worker] iniciado (intervalo ${Math.round(DHL_EXPIRY_CHECK_INTERVAL_MS / 60000)} min).`);
 }
 
+type DhlPrincipal = { id: string; name: string | null; email: string | null; role: string };
+
 export function registerDhlIntakeRoutes(
   app: Express,
   requireAuth: any,
   requireRole: any,
   resolveUserRole?: (token: string) => Promise<string | null>,
+  resolvePrincipal?: (token: string) => Promise<DhlPrincipal | null>,
 ): void {
+  const getPrincipal = async (req: Request): Promise<DhlPrincipal | null> => {
+    if (!resolvePrincipal) return null;
+    try {
+      const token = (req as any).authToken as string | undefined;
+      if (!token) return null;
+      return await resolvePrincipal(token);
+    } catch { return null; }
+  };
   const OPERATIONAL_ROLES = new Set(['administrador', 'diretoria', 'avançado', 'avancado', 'operador']);
   const userCanSeeSnapshots = async (req: Request): Promise<boolean> => {
     if (!resolveUserRole) return false;
@@ -663,6 +691,7 @@ export function registerDhlIntakeRoutes(
         intake = inserted;
       }
 
+      const reusedExistingToken = !!(existingIntake && notExpired);
       const baseUrl = getAppUrl(req);
       const link = `${baseUrl}/fornecedor/dhl?token=${token}`;
 
@@ -700,6 +729,30 @@ export function registerDhlIntakeRoutes(
         scheduledAt,
         link,
       });
+
+      // ── Registra o reenvio no histórico (auditoria) ─────────────────
+      try {
+        const principal = await getPrincipal(req);
+        const emailStatus = providerEmail
+          ? (emailSent ? 'success' : 'failure')
+          : 'skipped';
+        const { error: resendErr } = await sb.from('dhl_supplier_intake_resends').insert([{
+          intake_id: intake.id,
+          mission_id: mission.id,
+          sent_by_user_id: principal?.id || null,
+          sent_by_user_name: principal?.name || principal?.email || 'Sistema',
+          target_email: providerEmail || null,
+          target_phone: providerPhone || null,
+          email_status: emailStatus,
+          email_error: emailError,
+          reused_existing_token: reusedExistingToken,
+        }]);
+        if (resendErr) {
+          console.error('[DHL Intake] erro ao registrar histórico de reenvio:', resendErr.message);
+        }
+      } catch (e: any) {
+        console.error('[DHL Intake] exceção ao registrar histórico de reenvio:', e?.message);
+      }
 
       return res.json({
         ok: true,
@@ -754,10 +807,37 @@ export function registerDhlIntakeRoutes(
         return res.status(500).json({ error: error.message });
       }
       const now = new Date();
-      const intakes = (data || []).map((it: any) => {
+      const intakeList = (data || []) as any[];
+      const intakeIds = intakeList.map(it => it.id).filter(Boolean);
+
+      // Busca histórico de reenvios para todos os intakes desta OS.
+      let resendsByIntake: Map<string, any[]> = new Map();
+      if (intakeIds.length > 0) {
+        const { data: resends, error: rErr } = await sb.from('dhl_supplier_intake_resends')
+          .select('id, intake_id, sent_at, sent_by_user_id, sent_by_user_name, target_email, target_phone, email_status, email_error, reused_existing_token')
+          .in('intake_id', intakeIds)
+          .order('sent_at', { ascending: false });
+        if (rErr) {
+          // Tabela ausente (migração não aplicada): degrade gracioso, segue sem histórico.
+          const code = (rErr as any)?.code || '';
+          const msg = String((rErr as any)?.message || '');
+          if (!(code === 'PGRST205' || code === '42P01' || /could not find the table|schema cache|does not exist/i.test(msg))) {
+            console.error('[DHL Intake] by-mission resends error:', msg);
+          }
+        } else {
+          for (const r of (resends || [])) {
+            const list = resendsByIntake.get(r.intake_id) || [];
+            list.push(r);
+            resendsByIntake.set(r.intake_id, list);
+          }
+        }
+      }
+
+      const intakes = intakeList.map((it: any) => {
         const expired = it.expires_at ? new Date(it.expires_at) < now : false;
         const effectiveStatus = it.status === 'pendente' && expired ? 'expirado' : it.status;
-        return { ...it, expired, effective_status: effectiveStatus };
+        const resends = resendsByIntake.get(it.id) || [];
+        return { ...it, expired, effective_status: effectiveStatus, resends };
       });
       return res.json({ ok: true, intakes, canViewSnapshots: canSeeSnapshots });
     } catch (e: any) {

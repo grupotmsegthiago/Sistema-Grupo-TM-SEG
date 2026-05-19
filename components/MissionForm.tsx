@@ -1581,6 +1581,42 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
                                           <span data-testid={`text-dhl-intake-submitted-${it.id}`}>Enviado pelo fornecedor: {fmt(it.submitted_at)}</span>
                                           <span data-testid={`text-dhl-intake-expires-${it.id}`}>Expira: {fmt(it.expires_at)}</span>
                                         </div>
+                                        {Array.isArray(it.resends) && it.resends.length > 0 && (
+                                          <div className="mt-2 pt-2 border-t border-gray-100" data-testid={`block-resends-${it.id}`}>
+                                            <p className="text-[10px] font-black uppercase tracking-wider text-gray-600 mb-1">
+                                              Histórico de reenvios <span className="text-gray-400">({it.resends.length})</span>
+                                            </p>
+                                            <ul className="space-y-1">
+                                              {it.resends.map((rs: any) => {
+                                                const ok = rs.email_status === 'success';
+                                                const skipped = rs.email_status === 'skipped';
+                                                const dotCls = ok ? 'bg-green-500' : skipped ? 'bg-gray-400' : 'bg-red-500';
+                                                const statusLabel = ok ? 'Enviado' : skipped ? 'Sem e-mail' : 'Falha';
+                                                const dest = rs.target_email || rs.target_phone || '—';
+                                                return (
+                                                  <li key={rs.id} className="flex flex-wrap items-start gap-x-2 gap-y-0.5 text-gray-700" data-testid={`resend-row-${rs.id}`}>
+                                                    <span className={`inline-block w-1.5 h-1.5 rounded-full mt-1 ${dotCls}`} />
+                                                    <span className="font-mono text-gray-500" data-testid={`resend-when-${rs.id}`}>{fmt(rs.sent_at)}</span>
+                                                    <span className="text-gray-400">·</span>
+                                                    <span data-testid={`resend-user-${rs.id}`}>{rs.sent_by_user_name || 'Sistema'}</span>
+                                                    <span className="text-gray-400">·</span>
+                                                    <span className="truncate" data-testid={`resend-target-${rs.id}`}>{dest}</span>
+                                                    <span className="text-gray-400">·</span>
+                                                    <span className={`font-bold ${ok ? 'text-green-700' : skipped ? 'text-gray-500' : 'text-red-700'}`} data-testid={`resend-status-${rs.id}`}>
+                                                      {statusLabel}
+                                                    </span>
+                                                    {rs.reused_existing_token && (
+                                                      <span className="text-gray-500 italic">(mesmo link)</span>
+                                                    )}
+                                                    {rs.email_error && (
+                                                      <span className="w-full text-red-700 italic pl-3.5" data-testid={`resend-error-${rs.id}`}>{rs.email_error}</span>
+                                                    )}
+                                                  </li>
+                                                );
+                                              })}
+                                            </ul>
+                                          </div>
+                                        )}
                                         {hasSnapshots && (
                                           <>
                                             <div className="flex items-center justify-between mt-2 pt-2 border-t border-gray-100 gap-2">
