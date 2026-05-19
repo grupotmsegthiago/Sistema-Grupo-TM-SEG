@@ -1325,22 +1325,6 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
                         </button>
                     )}
 
-                    {!isRestrictedClientView && (
-                    <button
-                        data-testid="button-dhl-only"
-                        onClick={() => setShowDhlOnly(!showDhlOnly)}
-                        className={`relative flex items-center gap-2 px-4 py-2.5 rounded-lg text-xs font-black uppercase border transition-all ${
-                            showDhlOnly
-                            ? 'bg-yellow-400 text-red-700 border-red-600 shadow-md scale-105 ring-2 ring-yellow-300/50'
-                            : 'bg-white text-red-700 border-yellow-400 hover:bg-yellow-50'
-                        }`}
-                        title="Mostrar somente OS de clientes DHL"
-                    >
-                        {showDhlOnly ? <ToggleRight size={16} /> : <ToggleLeft size={16} />}
-                        <span className="flex items-center gap-1.5">OPERAÇÕES DHL{showDhlOnly && <span className="text-[8px] font-black">ON</span>}</span>
-                    </button>
-                    )}
-
                     <button onClick={() => setShowPendingOnly(!showPendingOnly)} className={`relative flex items-center gap-2 px-4 py-2.5 rounded-lg text-xs font-bold uppercase border transition-all ${showPendingOnly ? 'bg-orange-50 text-black border-orange-600 shadow-md' : pendingCount > 0 ? 'bg-orange-50 text-black border-orange-600 shadow-sm' : 'bg-white text-gray-600 border-gray-300 hover:bg-gray-50'}`}>{pendingCount > 0 ? ( <AlertTriangle size={16} className="text-black" /> ) : ( showPendingOnly ? <ToggleRight size={16} /> : <ToggleLeft size={16} /> )}{showPendingOnly ? 'Exibindo Pendências' : 'Filtrar Pendências'}{pendingCount > 0 && ( <span className="ml-1 px-1.5 py-0.5 rounded-full text-[9px] bg-white text-orange-700 font-bold">{pendingCount}</span> )}</button>
 
                     {canSeeFinancials && (
@@ -1436,10 +1420,26 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
                 </div>
                 )}
             </div>
-            <div className="flex items-center gap-2 text-xs text-gray-500">
-              <span className="hidden md:inline">Filtrados:</span>
-              <span className="font-bold text-gray-800 bg-gray-200 px-2 py-1 rounded">{filteredMissions.length}</span>
-              
+            <div className="flex items-center gap-3 text-xs text-gray-500">
+              {!isRestrictedClientView && (
+                <button
+                  data-testid="button-dhl-only"
+                  onClick={() => setShowDhlOnly(!showDhlOnly)}
+                  title="Mostrar somente OS de clientes DHL"
+                  className={`relative flex items-center gap-2 px-5 py-2.5 rounded-xl text-xs font-black uppercase border-2 transition-all shadow-md ${
+                    showDhlOnly
+                      ? 'bg-gradient-to-r from-yellow-400 to-yellow-300 text-red-700 border-red-600 scale-105 ring-2 ring-red-500/30 animate-pulse'
+                      : 'bg-white text-red-700 border-yellow-400 hover:bg-yellow-50 hover:scale-105'
+                  }`}
+                >
+                  {showDhlOnly ? <ToggleRight size={18} /> : <ToggleLeft size={18} />}
+                  <span className="flex items-center gap-1.5 tracking-wider">OPERAÇÕES DHL{showDhlOnly && <span className="text-[8px] font-black bg-red-700 text-white px-1.5 py-0.5 rounded">ON</span>}</span>
+                </button>
+              )}
+              <div className="flex items-center gap-2">
+                <span className="hidden md:inline">Filtrados:</span>
+                <span className="font-bold text-gray-800 bg-gray-200 px-2 py-1 rounded">{filteredMissions.length}</span>
+              </div>
             </div></div>
   
 
