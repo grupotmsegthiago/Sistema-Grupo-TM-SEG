@@ -179,3 +179,28 @@ ALTER TABLE providers ADD COLUMN IF NOT EXISTS dhl_channel_preference TEXT;
 -- prioridade pelo /api/dhl/intake/generate. Se vazio, o operador é forçado a
 -- informar e o valor é persistido aqui para todos os usuários.
 ALTER TABLE providers ADD COLUMN IF NOT EXISTS dhl_solicitation_email TEXT;
+
+-- ITEM 10: progresso parcial + contador de aberturas do link DHL.
+-- Permite que o operacional veja, em tempo real no painel da OS, quantas
+-- vezes o fornecedor abriu o link e quais blocos do cadastro já foram
+-- preenchidos (Escoltista 1, Escoltista 2, Veículo, Espelho).
+ALTER TABLE public.dhl_supplier_intakes ADD COLUMN IF NOT EXISTS open_count INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE public.dhl_supplier_intakes ADD COLUMN IF NOT EXISTS last_opened_at TIMESTAMPTZ;
+ALTER TABLE public.dhl_supplier_intakes ADD COLUMN IF NOT EXISTS progress_agent1 BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE public.dhl_supplier_intakes ADD COLUMN IF NOT EXISTS progress_agent2 BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE public.dhl_supplier_intakes ADD COLUMN IF NOT EXISTS progress_vehicle BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE public.dhl_supplier_intakes ADD COLUMN IF NOT EXISTS progress_mirror BOOLEAN NOT NULL DEFAULT FALSE;
+
+-- RPC atômica para registrar abertura do link (evita lost-update concorrente)
+CREATE OR REPLACE FUNCTION public.dhl_intake_register_open(p_token TEXT)
+RETURNS void
+LANGUAGE sql
+AS $func$
+  UPDATE public.dhl_supplier_intakes
+     SET open_count = COALESCE(open_count, 0) + 1,
+         last_opened_at = NOW(),
+         first_opened_at = COALESCE(first_opened_at, NOW())
+   WHERE token = p_token;
+$func$;
+
+NOTIFY pgrst, 'reload schema';

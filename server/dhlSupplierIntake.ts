@@ -151,6 +151,30 @@ export async function runDhlIntakeMigrations(): Promise<void> {
       -- com o fornecedor por outro canal). Auditoria de quem pausou também é gravada.
       ALTER TABLE dhl_supplier_intakes ADD COLUMN IF NOT EXISTS auto_reminders_paused_at TIMESTAMPTZ;
       ALTER TABLE dhl_supplier_intakes ADD COLUMN IF NOT EXISTS auto_reminders_paused_by TEXT;
+      -- Contador de aberturas do link pelo fornecedor + última abertura.
+      -- Permite ao operacional saber quantas vezes o fornecedor já entrou no link.
+      ALTER TABLE dhl_supplier_intakes ADD COLUMN IF NOT EXISTS open_count INTEGER NOT NULL DEFAULT 0;
+      ALTER TABLE dhl_supplier_intakes ADD COLUMN IF NOT EXISTS last_opened_at TIMESTAMPTZ;
+      -- Flags de progresso parcial do cadastro feitas pelo fornecedor
+      -- (cada bloco é marcado conforme o fornecedor avança no formulário público).
+      ALTER TABLE dhl_supplier_intakes ADD COLUMN IF NOT EXISTS progress_agent1 BOOLEAN NOT NULL DEFAULT FALSE;
+      ALTER TABLE dhl_supplier_intakes ADD COLUMN IF NOT EXISTS progress_agent2 BOOLEAN NOT NULL DEFAULT FALSE;
+      ALTER TABLE dhl_supplier_intakes ADD COLUMN IF NOT EXISTS progress_vehicle BOOLEAN NOT NULL DEFAULT FALSE;
+      ALTER TABLE dhl_supplier_intakes ADD COLUMN IF NOT EXISTS progress_mirror BOOLEAN NOT NULL DEFAULT FALSE;
+      -- RPC atômica para registrar abertura do link (evita lost-update em
+      -- read-modify-write concorrente). Faz tudo em UMA query: incrementa
+      -- open_count, atualiza last_opened_at e preenche first_opened_at só
+      -- na primeira vez.
+      CREATE OR REPLACE FUNCTION public.dhl_intake_register_open(p_token TEXT)
+      RETURNS void
+      LANGUAGE sql
+      AS $func$
+        UPDATE public.dhl_supplier_intakes
+           SET open_count = COALESCE(open_count, 0) + 1,
+               last_opened_at = NOW(),
+               first_opened_at = COALESCE(first_opened_at, NOW())
+         WHERE token = p_token;
+      $func$;
       -- Compatibilidade: providers.id deste sistema é numérico, então provider_id
       -- precisa aceitar qualquer string. Converte de UUID para TEXT se preciso.
       ALTER TABLE dhl_supplier_intakes ALTER COLUMN provider_id TYPE TEXT USING provider_id::TEXT;
@@ -1481,7 +1505,7 @@ export function registerDhlIntakeRoutes(
       if (!missionId) return res.status(400).json({ error: 'missionId é obrigatório' });
       const sb = getSb();
       const canSeeSnapshots = await userCanSeeSnapshots(req);
-      const baseCols = 'id, token, provider_id, provider_name, status, sent_to_email, sent_to_phone, submitted_at, created_at, expires_at, provider_reminder_count, provider_whatsapp_reminder_count, provider_reminder_sent_at, provider_whatsapp_reminder_sent_at, auto_reminders_paused_at, auto_reminders_paused_by';
+      const baseCols = 'id, token, provider_id, provider_name, status, sent_to_email, sent_to_phone, submitted_at, created_at, expires_at, provider_reminder_count, provider_whatsapp_reminder_count, provider_reminder_sent_at, provider_whatsapp_reminder_sent_at, auto_reminders_paused_at, auto_reminders_paused_by, first_opened_at, last_opened_at, open_count, progress_agent1, progress_agent2, progress_vehicle, progress_mirror';
       const sensitiveCols = ', agent1_snapshot, agent2_snapshot, vehicle_snapshot, mirror_proof_url, mirror_proof_filename';
       const { data, error } = await sb.from('dhl_supplier_intakes')
         .select(canSeeSnapshots ? baseCols + sensitiveCols : baseCols)
@@ -1555,16 +1579,14 @@ export function registerDhlIntakeRoutes(
         return res.status(410).json({ error: 'Link expirado' });
       }
 
-      // Registra a primeira abertura do link público (idempotente: só na 1ª vez).
-      if (!intake.first_opened_at && intake.status === 'pendente') {
-        try {
-          await sb.from('dhl_supplier_intakes')
-            .update({ first_opened_at: new Date().toISOString() })
-            .eq('token', token)
-            .is('first_opened_at', null);
-        } catch (e: any) {
-          console.error('[DHL Intake] erro ao registrar first_opened_at:', e?.message);
-        }
+      // Registra a abertura do link de forma ATÔMICA via RPC para evitar
+      // lost-update em acessos concorrentes (read-modify-write em JS perderia
+      // contagem). A função SQL incrementa open_count, atualiza last_opened_at
+      // e preenche first_opened_at apenas na 1ª vez — tudo em uma única query.
+      try {
+        await sb.rpc('dhl_intake_register_open', { p_token: token });
+      } catch (e: any) {
+        console.error('[DHL Intake] erro ao registrar abertura do link:', e?.message);
       }
 
       const { data: mission } = await sb.from('missions').select('id, client, provider, origin, destination, start_time, dhl_se_number, status').eq('id', intake.mission_id).maybeSingle();
@@ -1643,6 +1665,48 @@ export function registerDhlIntakeRoutes(
       });
     } catch (e: any) {
       console.error('[DHL Intake] public-get exception:', e);
+      return res.status(500).json({ error: e?.message || 'Erro interno' });
+    }
+  });
+
+  // ──────────────────────────────────────────────────────────────
+  // POST /api/dhl/intake/public/:token/progress
+  // body: { agent1?: bool, agent2?: bool, vehicle?: bool, mirror?: bool }
+  // Marca o progresso parcial conforme o fornecedor avança no formulário.
+  // Endpoint público (mesma natureza do GET/submit), só altera flags booleans.
+  // ──────────────────────────────────────────────────────────────
+  app.post('/api/dhl/intake/public/:token/progress', async (req: Request, res: Response) => {
+    try {
+      const { token } = req.params;
+      const body = (req.body || {}) as Record<string, unknown>;
+      const sb = getSb();
+      const { data: intake } = await sb.from('dhl_supplier_intakes').select('id, status, expires_at').eq('token', token).maybeSingle();
+      if (!intake) return res.status(404).json({ error: 'Link inválido' });
+      if (intake.status === 'cancelado') return res.status(410).json({ error: 'Link cancelado' });
+      if (intake.status === 'preenchido') return res.json({ ok: true, locked: true }); // já enviado, ignora
+      if (intake.expires_at && new Date(intake.expires_at) < new Date()) return res.status(410).json({ error: 'Link expirado' });
+      // Validação estrita: aceita SOMENTE as 4 chaves esperadas e apenas
+      // transição false→true (monotônica). Ignora `false` e qualquer chave
+      // extra para evitar abuso/rollback de progresso pelo link público.
+      const map: Record<string, string> = {
+        agent1: 'progress_agent1',
+        agent2: 'progress_agent2',
+        vehicle: 'progress_vehicle',
+        mirror: 'progress_mirror',
+      };
+      const patch: Record<string, boolean> = {};
+      for (const key of Object.keys(map)) {
+        if (body[key] === true) patch[map[key]] = true;
+      }
+      if (Object.keys(patch).length === 0) return res.json({ ok: true, noop: true });
+      const { error: upErr } = await sb.from('dhl_supplier_intakes').update(patch).eq('token', token);
+      if (upErr) {
+        console.error('[DHL Intake] progress update error:', upErr.message);
+        return res.status(500).json({ error: upErr.message });
+      }
+      return res.json({ ok: true });
+    } catch (e: any) {
+      console.error('[DHL Intake] progress exception:', e);
       return res.status(500).json({ error: e?.message || 'Erro interno' });
     }
   });

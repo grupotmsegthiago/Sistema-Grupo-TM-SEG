@@ -86,6 +86,17 @@ const DhlSupplierIntake: React.FC = () => {
   const [submitting, setSubmitting] = useState(false);
   const [done, setDone] = useState(false);
 
+  // Marca progresso parcial no backend (best-effort: nunca bloqueia a UI).
+  const sendProgress = async (patch: { agent1?: boolean; agent2?: boolean; vehicle?: boolean; mirror?: boolean }) => {
+    try {
+      await fetch(`/api/dhl/intake/public/${encodeURIComponent(token)}/progress`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(patch),
+      });
+    } catch {}
+  };
+
   useEffect(() => {
     if (!token) { setError('Link inválido — token ausente'); setLoading(false); return; }
     (async () => {
@@ -287,6 +298,7 @@ const DhlSupplierIntake: React.FC = () => {
               onNext={() => {
                 const err = validateEscoltista(agent1, 'Escoltista 1');
                 if (err) { alert(err); return; }
+                sendProgress({ agent1: true });
                 setStep(2);
               }}
             />
@@ -303,6 +315,7 @@ const DhlSupplierIntake: React.FC = () => {
                 const err = validateEscoltista(agent2, 'Escoltista 2');
                 if (err) { alert(err); return; }
                 if (!agent1.id && !agent2.id && agent1.cpf === agent2.cpf) { alert('CPF não pode ser igual ao do Escoltista 1'); return; }
+                sendProgress({ agent2: true });
                 setStep(3);
               }}
             />
@@ -320,6 +333,7 @@ const DhlSupplierIntake: React.FC = () => {
                 const err = validateVeiculo(veiculo);
                 if (err) { alert(err); return; }
                 if (!mirrorProof) { alert('Anexe o print do espelhamento (comprovante de que foi realizado) antes de avançar.'); return; }
+                sendProgress({ vehicle: true, mirror: true });
                 setStep(4);
               }}
             />

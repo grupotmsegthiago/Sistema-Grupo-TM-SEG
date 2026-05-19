@@ -33,6 +33,13 @@ interface DhlIntakeRow {
   provider_reminder_sent_at?: string | null;
   provider_whatsapp_reminder_sent_at?: string | null;
   whatsapp_text?: string | null;
+  first_opened_at?: string | null;
+  last_opened_at?: string | null;
+  open_count?: number | null;
+  progress_agent1?: boolean | null;
+  progress_agent2?: boolean | null;
+  progress_vehicle?: boolean | null;
+  progress_mirror?: boolean | null;
 }
 
 interface DhlReminderConfig { maxCount: number; cycleHours: number; }
@@ -396,6 +403,41 @@ const DhlIntakeTimeline: React.FC<Props> = ({ missionId, canViewSnapshots = true
                 </div>
 
                 {renderTimeline(it)}
+
+                {/* Progresso parcial do cadastro feito pelo fornecedor + contador de aberturas */}
+                {(st === 'pendente' || st === 'preenchido') && (() => {
+                  const filled = st === 'preenchido';
+                  const items: { label: string; ok: boolean }[] = [
+                    { label: 'Escoltista 1', ok: filled || !!it.progress_agent1 || !!it.agent1_snapshot },
+                    { label: 'Escoltista 2', ok: filled || !!it.progress_agent2 || !!it.agent2_snapshot },
+                    { label: 'Veículo', ok: filled || !!it.progress_vehicle || !!it.vehicle_snapshot },
+                    { label: 'Espelho', ok: filled || !!it.progress_mirror || !!it.mirror_proof_url },
+                  ];
+                  const opens = Number(it.open_count) || 0;
+                  return (
+                    <div className="mt-2 pt-2 border-t border-gray-100" data-testid={`block-progress-${it.id}`}>
+                      <div className="flex flex-wrap items-center gap-1.5 mb-1">
+                        {items.map((c, i) => (
+                          <span
+                            key={i}
+                            className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider ${c.ok ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-500'}`}
+                            data-testid={`chip-progress-${i}-${it.id}`}
+                          >
+                            {c.ok ? <CheckCircle2 size={10} /> : <Clock size={10} />}
+                            {c.label} {c.ok ? 'ok' : 'pendente'}
+                          </span>
+                        ))}
+                      </div>
+                      <p className="text-[10px] text-gray-600" data-testid={`text-opens-${it.id}`}>
+                        <span className="font-bold">Aberturas do link:</span> {opens}
+                        {opens > 0 && (it.last_opened_at || it.first_opened_at) && (
+                          <span className="text-gray-500"> · última em {fmt(it.last_opened_at || it.first_opened_at)}</span>
+                        )}
+                        {opens === 0 && <span className="text-gray-500"> · fornecedor ainda não abriu</span>}
+                      </p>
+                    </div>
+                  );
+                })()}
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-x-3 gap-y-0.5 mt-2 text-gray-600">
                   <span><Mail size={10} className="inline mr-1" />{it.sent_to_email || '—'}</span>
