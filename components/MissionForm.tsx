@@ -132,7 +132,7 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
   const [formData, setFormData] = useState({
     client: '', provider: '', origin: '', destination: '', totalDistance: '', estimatedTime: '',
     scheduledDate: defaultDate, scheduledTime: defaultTime, missionType: '', 
-    revenueValue: '', costValue: '', tollValue: '0', applyCeva200km: false, applyVtc02h: false, isSameOs: false, parentMissionId: '',
+    revenueValue: '', costValue: '', tollValue: '0', applyCeva200km: false, raioKm: 0, applyVtc02h: false, isSameOs: false, parentMissionId: '',
     clientVehicleId: '', clientVehiclePlate: '', clientVehicleModel: '',
     clientVehicleId2: '', clientVehiclePlate2: '', clientVehicleModel2: '',
     driver_name: '', driver_phone: '', startKm: '',
@@ -887,7 +887,7 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
       return { table: bestTable, reason: bestTable.reason || "MELHOR MATCH", allReasons: bestTable.allReasons || [] };
   };
 
-  const calculatePricing = useCallback(async (route: ClientRoute, providerOverride?: string, revTableId?: string, cstTableId?: string, flags?: { ceva200km: boolean, vtc02h: boolean, isSameOs: boolean }) => {
+  const calculatePricing = useCallback(async (route: ClientRoute, providerOverride?: string, revTableId?: string, cstTableId?: string, flags?: { ceva200km: boolean, vtc02h: boolean, isSameOs: boolean, raioKm?: number }) => {
       if (!formData.client || !route) return;
       setIsCalculating(true);
       let details: string[] = [];
@@ -900,7 +900,8 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
       const geoInfo = CITY_MAP[originCity] || { uf: '', region: '' };
       const locationKeywords = [originCity, geoInfo.uf, geoInfo.region];
       const activeProvider = providerOverride !== undefined ? providerOverride : formData.provider;
-      const currentFlags = flags || { ceva200km: formData.applyCeva200km, vtc02h: formData.applyVtc02h, isSameOs: formData.isSameOs };
+      const currentFlags = flags || { ceva200km: formData.applyCeva200km, vtc02h: formData.applyVtc02h, isSameOs: formData.isSameOs, raioKm: formData.raioKm };
+      const radius = currentFlags.raioKm && currentFlags.raioKm > 0 ? currentFlags.raioKm : (currentFlags.ceva200km ? 200 : 0);
 
       const isLogitech = (formData.client || '').toUpperCase().includes('CEVA') && (route.name.toUpperCase().includes('LOGITECH') || route.destination.toUpperCase().includes('LOGITECH'));
 
@@ -909,7 +910,7 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
       const isSpecialRuleActive = currentFlags.vtc02h || currentFlags.ceva200km || isLogitech;
 
       if (currentFlags.vtc02h) { effectiveDist = 100; forceKeyword = '100KM'; } 
-      else if (currentFlags.ceva200km || isLogitech) { effectiveDist = 200; forceKeyword = isLogitech ? 'LOGITECH' : '200KM'; }
+      else if (radius > 0 || isLogitech) { effectiveDist = isLogitech ? 200 : radius; forceKeyword = isLogitech ? 'LOGITECH' : `${radius}KM`; }
 
       try {
           const googleDurationMin = (route as any)._googleDurationMin;
@@ -926,7 +927,7 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
           if (revTable) {
               revenue = revTable.activation_fee;
               const revTableName = (revTable.operation_type || '').toUpperCase();
-              const isFixedPriceRevTable = revTableName.includes('LOGITECH') || revTableName.includes('200KM') || revTableName.includes('200 KM') || revTableName.includes('100KM') || revTableName.includes('100 KM');
+              const isFixedPriceRevTable = revTableName.includes('LOGITECH') || revTableName.includes('200KM') || revTableName.includes('200 KM') || revTableName.includes('100KM') || revTableName.includes('100 KM') || revTableName.includes('300KM') || revTableName.includes('300 KM');
               if (!isSpecialRuleActive && !isFixedPriceRevTable && realDist > revTable.franchise_km) revenue += (realDist - revTable.franchise_km) * (revTable.price_per_extra_km || 0);
               const revFranchiseHours = parseFloat(revTable.franchise_hours) || 0;
               if (revFranchiseHours > 0 && estHours > revFranchiseHours) {
@@ -953,7 +954,7 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
               if (cstTable) {
                   cost = cstTable.activation_cost;
                   const cstTableName = (cstTable.operation_type || '').toUpperCase();
-                  const isFixedPriceCstTable = cstTableName.includes('LOGITECH') || cstTableName.includes('200KM') || cstTableName.includes('200 KM') || cstTableName.includes('100KM') || cstTableName.includes('100 KM');
+                  const isFixedPriceCstTable = cstTableName.includes('LOGITECH') || cstTableName.includes('200KM') || cstTableName.includes('200 KM') || cstTableName.includes('100KM') || cstTableName.includes('100 KM') || cstTableName.includes('300KM') || cstTableName.includes('300 KM');
                   if (!isSpecialRuleActive && !isFixedPriceCstTable && realDist > cstTable.franchise_km) cost += (realDist - cstTable.franchise_km) * (cstTable.cost_per_extra_km || 0);
                   const cstFranchiseHours = parseFloat(cstTable.franchise_hours) || 0;
                   if (cstFranchiseHours > 0 && estHours > cstFranchiseHours) {
@@ -965,9 +966,9 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
 
           let finalDestination = route.destination;
           if (currentFlags.vtc02h) finalDestination = '02 HORAS DE ACOMPANHAMENTO';
-          else if (currentFlags.ceva200km) {
+          else if (radius > 0) {
               const isDhl = (formData.client || '').toUpperCase().includes('DHL');
-              finalDestination = isDhl ? 'RAIO 200 KM — DESTINO A DEFINIR' : '200KM DE ACOMPANHAMENTO';
+              finalDestination = isDhl ? `RAIO ${radius} KM — DESTINO A DEFINIR` : `${radius}KM DE ACOMPANHAMENTO`;
           }
 
           setFormData(prev => ({
@@ -981,7 +982,7 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
           if (revTable) setManualRevenueTableId(revTable.id.toString());
           if (cstTable) setManualCostTableId(cstTable.id.toString());
       } finally { setIsCalculating(false); }
-  }, [formData.client, formData.provider, formData.applyCeva200km, formData.applyVtc02h, formData.isSameOs, clientPriceTables, providerCostTables, manualOverrides.revenue, manualOverrides.cost]);
+  }, [formData.client, formData.provider, formData.applyCeva200km, formData.raioKm, formData.applyVtc02h, formData.isSameOs, clientPriceTables, providerCostTables, manualOverrides.revenue, manualOverrides.cost]);
 
   const calculateTollGemini = async (origin: string, destination: string): Promise<{ value: number; count: number; tolls: any[]; observacoes?: string; confianca?: string; provider?: string } | null> => {
       try {
@@ -2347,36 +2348,46 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
                               <Flag size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-blue-500 pointer-events-none z-10" />
                           </div>
                           {isDhlClient && (
-                            <button
-                              type="button"
-                              data-testid="button-dhl-raio-200"
-                              onClick={() => {
-                                if (!formData.origin) { alert('Informe primeiro o endereço de origem.'); return; }
-                                const virtualRoute: any = {
-                                  id: 'dhl-raio-200',
-                                  name: 'DHL — Raio 200 km',
-                                  origin: formData.origin,
-                                  destination: 'RAIO 200 KM — DESTINO A DEFINIR',
-                                  distance: '200',
-                                  toll_cost: 0,
-                                };
-                                setSelectedRouteId('dhl-raio-200');
-                                setRouteSearchTerm('DHL — Raio 200 km');
-                                setActiveDropdown(null);
-                                setTollDetails(null);
-                                setOperatorConfirmedCalc(false);
-                                setFormData(prev => ({ ...prev, applyCeva200km: true, destination: 'RAIO 200 KM — DESTINO A DEFINIR', tollValue: '0' }));
-                                calculatePricing(virtualRoute, undefined, '', '', { ceva200km: true, vtc02h: false, isSameOs: formData.isSameOs });
-                              }}
-                              className={`mt-2 w-full px-3 py-2 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all active:scale-95 flex items-center justify-center gap-2 ${
-                                formData.applyCeva200km
-                                  ? 'bg-orange-600 text-white shadow-md'
-                                  : 'bg-yellow-50 border border-yellow-400 text-yellow-700 hover:bg-yellow-100'
-                              }`}
-                            >
-                              <TrendingUp size={14} />
-                              {formData.applyCeva200km ? 'Raio 200 km aplicado — toque para refazer' : 'Não sei o destino — usar Raio 200 km'}
-                            </button>
+                            <div className="mt-2 space-y-1.5">
+                              <p className="text-[9px] font-black text-yellow-700 uppercase tracking-wider text-center">
+                                {formData.raioKm > 0 ? `Raio ${formData.raioKm} km aplicado — toque para refazer` : 'Não sei o destino — escolha o raio'}
+                              </p>
+                              <div className="grid grid-cols-3 gap-1.5">
+                                {[100, 200, 300].map((km) => (
+                                  <button
+                                    key={km}
+                                    type="button"
+                                    data-testid={`button-dhl-raio-${km}`}
+                                    onClick={() => {
+                                      if (!formData.origin) { alert('Informe primeiro o endereço de origem.'); return; }
+                                      const virtualRoute: any = {
+                                        id: `dhl-raio-${km}`,
+                                        name: `DHL — Raio ${km} km`,
+                                        origin: formData.origin,
+                                        destination: `RAIO ${km} KM — DESTINO A DEFINIR`,
+                                        distance: String(km),
+                                        toll_cost: 0,
+                                      };
+                                      setSelectedRouteId(`dhl-raio-${km}`);
+                                      setRouteSearchTerm(`DHL — Raio ${km} km`);
+                                      setActiveDropdown(null);
+                                      setTollDetails(null);
+                                      setOperatorConfirmedCalc(false);
+                                      setFormData(prev => ({ ...prev, applyCeva200km: true, raioKm: km, destination: `RAIO ${km} KM — DESTINO A DEFINIR`, tollValue: '0' }));
+                                      calculatePricing(virtualRoute, undefined, '', '', { ceva200km: true, vtc02h: false, isSameOs: formData.isSameOs, raioKm: km });
+                                    }}
+                                    className={`px-2 py-2 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all active:scale-95 flex items-center justify-center gap-1 ${
+                                      formData.raioKm === km
+                                        ? 'bg-orange-600 text-white shadow-md'
+                                        : 'bg-yellow-50 border border-yellow-400 text-yellow-700 hover:bg-yellow-100'
+                                    }`}
+                                  >
+                                    <TrendingUp size={12} />
+                                    {km} KM
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
                           )}
                       </div>
                   </div>
