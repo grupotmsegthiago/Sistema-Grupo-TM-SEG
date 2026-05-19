@@ -129,7 +129,7 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
     dhl_se_number: ''
   });
   const [dhlLinkModal, setDhlLinkModal] = useState<{ open: boolean; missionId: string; url: string; whatsappText: string; phone: string; channel: 'email' | 'whatsapp' | 'both'; emailSent: boolean; providerEmail: string; whatsappSent: boolean; whatsappError: string | null }>({ open: false, missionId: '', url: '', whatsappText: '', phone: '', channel: 'both', emailSent: false, providerEmail: '', whatsappSent: false, whatsappError: null });
-  const [dhlChannelPicker, setDhlChannelPicker] = useState<{ open: boolean; preferred: 'email' | 'whatsapp' | 'both' }>({ open: false, preferred: 'both' });
+  const [dhlChannelPicker, setDhlChannelPicker] = useState<{ open: boolean; preferred: 'email' | 'whatsapp' | 'both'; saveAsDefault: boolean }>({ open: false, preferred: 'both', saveAsDefault: false });
   const [dhlIntakes, setDhlIntakes] = useState<DhlIntakeRow[]>([]);
   const [dhlIntakesLoading, setDhlIntakesLoading] = useState(false);
   const [dhlRegenerating, setDhlRegenerating] = useState(false);
@@ -225,9 +225,10 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
     else setDhlIntakes([]);
   }, [isDhlClient, hasSavedOs, osId, fetchDhlIntakes]);
 
-  const handleRegenerateDhlLink = async (channel: 'email' | 'whatsapp' | 'both' = 'both') => {
+  const handleRegenerateDhlLink = async (channel: 'email' | 'whatsapp' | 'both' = 'both', opts?: { saveAsDefault?: boolean }) => {
     if (!hasSavedOs) { showNotification('OS não salva', 'Salve a OS antes de gerar o link.', 'warning'); return; }
-    setDhlChannelPicker(prev => ({ ...prev, open: false }));
+    const saveAsDefault = !!opts?.saveAsDefault;
+    setDhlChannelPicker(prev => ({ ...prev, open: false, saveAsDefault: false }));
     setDhlRegenerating(true);
     try {
       const token = localStorage.getItem('authToken') || '';
@@ -235,7 +236,7 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
         credentials: 'include',
-        body: JSON.stringify({ missionId: osId, channel }),
+        body: JSON.stringify({ missionId: osId, channel, saveAsDefault }),
       });
       const j = await r.json();
       if (r.ok && j.url) {
@@ -259,6 +260,15 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
           showNotification('E-mail não enviado', `Falha ao enviar e-mail: ${j.emailError}.`, 'warning');
         } else if (wantsEmail && !j.providerEmail) {
           showNotification('Fornecedor sem e-mail', 'Não há e-mail cadastrado para o fornecedor.', 'warning');
+        }
+        if (saveAsDefault && j.preferenceSaved) {
+          setDbProviders(prev => prev.map(p => {
+            const matches = p.name === formData.provider || p.trading_name === formData.provider;
+            return matches ? { ...p, dhl_channel_preference: channel } : p;
+          }));
+          showNotification('Canal padrão salvo', `Próximos reenvios para este fornecedor usarão "${channel === 'email' ? 'Só e-mail' : channel === 'whatsapp' ? 'Só WhatsApp' : 'Ambos'}" com um clique.`, 'success');
+        } else if (saveAsDefault && j.preferenceSaveError) {
+          showNotification('Canal padrão não salvo', `O link foi enviado, mas não foi possível salvar o canal padrão: ${j.preferenceSaveError}`, 'warning');
         }
         await fetchDhlIntakes(osId);
       } else {
@@ -1597,7 +1607,7 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
                                                   )}
                                                   <button
                                                     type="button"
-                                                    onClick={() => setDhlChannelPicker({ open: true, preferred })}
+                                                    onClick={() => setDhlChannelPicker({ open: true, preferred, saveAsDefault: false })}
                                                     disabled={dhlRegenerating}
                                                     className={`px-2 py-0.5 rounded ${hasPref ? 'bg-white border border-gray-300 text-gray-700 hover:bg-gray-50' : 'bg-red-600 text-white hover:bg-red-700'} font-black uppercase tracking-wider disabled:opacity-50 active:scale-95 transition-all flex items-center gap-1`}
                                                     data-testid={`btn-resend-dhl-intake-${it.id}`}
@@ -2514,7 +2524,7 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
                     <>
                       <button
                         type="button"
-                        onClick={() => handleRegenerateDhlLink('email')}
+                        onClick={() => handleRegenerateDhlLink('email', { saveAsDefault: dhlChannelPicker.saveAsDefault })}
                         disabled={dhlRegenerating}
                         className={`w-full px-4 h-11 rounded-lg bg-red-600 text-white text-xs font-black uppercase tracking-wider hover:bg-red-700 disabled:opacity-50 flex items-center justify-center gap-2${ring('email')}`}
                         data-testid="btn-dhl-channel-email"
@@ -2524,7 +2534,7 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
                       </button>
                       <button
                         type="button"
-                        onClick={() => handleRegenerateDhlLink('whatsapp')}
+                        onClick={() => handleRegenerateDhlLink('whatsapp', { saveAsDefault: dhlChannelPicker.saveAsDefault })}
                         disabled={dhlRegenerating}
                         className={`w-full px-4 h-11 rounded-lg bg-green-600 text-white text-xs font-black uppercase tracking-wider hover:bg-green-700 disabled:opacity-50 flex items-center justify-center gap-2${ring('whatsapp')}`}
                         data-testid="btn-dhl-channel-whatsapp"
@@ -2534,7 +2544,7 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
                       </button>
                       <button
                         type="button"
-                        onClick={() => handleRegenerateDhlLink('both')}
+                        onClick={() => handleRegenerateDhlLink('both', { saveAsDefault: dhlChannelPicker.saveAsDefault })}
                         disabled={dhlRegenerating}
                         className={`w-full px-4 h-11 rounded-lg bg-gray-900 text-white text-xs font-black uppercase tracking-wider hover:bg-black disabled:opacity-50 flex items-center justify-center gap-2${ring('both')}`}
                         data-testid="btn-dhl-channel-both"
@@ -2546,10 +2556,25 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
                   );
                 })()}
               </div>
+              <label className="flex items-start gap-2 mb-4 p-2.5 bg-yellow-50 border border-yellow-200 rounded-lg cursor-pointer hover:bg-yellow-100 transition-colors" data-testid="label-dhl-save-default">
+                <input
+                  type="checkbox"
+                  checked={dhlChannelPicker.saveAsDefault}
+                  onChange={(e) => setDhlChannelPicker(prev => ({ ...prev, saveAsDefault: e.target.checked }))}
+                  disabled={dhlRegenerating}
+                  className="mt-0.5 h-4 w-4 rounded border-gray-300 text-red-600 focus:ring-red-500 disabled:opacity-50"
+                  data-testid="checkbox-dhl-save-default"
+                />
+                <span className="text-[11px] text-gray-700 leading-snug">
+                  <span className="font-black uppercase tracking-wide text-gray-900">Tornar este o canal padrão deste fornecedor</span>
+                  <br />
+                  Próximos reenvios para este fornecedor poderão ser feitos com um clique pelo canal escolhido.
+                </span>
+              </label>
               <div className="flex justify-end">
                 <button
                   type="button"
-                  onClick={() => setDhlChannelPicker(prev => ({ ...prev, open: false }))}
+                  onClick={() => setDhlChannelPicker(prev => ({ ...prev, open: false, saveAsDefault: false }))}
                   disabled={dhlRegenerating}
                   className="px-4 h-10 rounded-lg bg-gray-100 text-gray-700 text-xs font-bold hover:bg-gray-200 disabled:opacity-50"
                   data-testid="btn-dhl-channel-cancel"

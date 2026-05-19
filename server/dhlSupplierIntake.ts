@@ -873,8 +873,9 @@ export function registerDhlIntakeRoutes(
   // ──────────────────────────────────────────────────────────────
   app.post('/api/dhl/intake/generate', requireAuth, async (req: Request, res: Response) => {
     try {
-      const { missionId, channel: rawChannel } = req.body || {};
+      const { missionId, channel: rawChannel, saveAsDefault: rawSaveAsDefault } = req.body || {};
       if (!missionId) return res.status(400).json({ error: 'missionId é obrigatório' });
+      const saveAsDefault = rawSaveAsDefault === true;
 
       const sb = getSb();
       const { data: mission, error: mErr } = await sb.from('missions').select('*').eq('id', missionId).single();
@@ -911,6 +912,29 @@ export function registerDhlIntakeRoutes(
 
       const providerEmail = (provider.os_email || provider.email || '').trim();
       const providerPhone = maskPhone(provider.phone);
+
+      // Se o operador pediu para salvar como padrão, persiste a preferência ANTES de
+      // disparar e-mail/WhatsApp — assim, mesmo se algum envio falhar, o canal padrão
+      // já fica gravado e o botão "Reenviar pelo padrão" passa a aparecer.
+      let preferenceSaved = false;
+      let preferenceSaveError: string | null = null;
+      if (saveAsDefault) {
+        try {
+          const { error: prefErr } = await sb
+            .from('providers')
+            .update({ dhl_channel_preference: channel })
+            .eq('id', provider.id);
+          if (prefErr) {
+            preferenceSaveError = prefErr.message || 'falha ao salvar preferência';
+            console.error('[DHL Intake] erro ao salvar dhl_channel_preference:', prefErr);
+          } else {
+            preferenceSaved = true;
+          }
+        } catch (e: any) {
+          preferenceSaveError = e?.message || 'falha ao salvar preferência';
+          console.error('[DHL Intake] exceção ao salvar dhl_channel_preference:', e);
+        }
+      }
 
       // Reaproveita intake pendente da mesma OS+fornecedor (dedup) — evita spam e múltiplos tokens válidos
       let token = '';
@@ -1067,6 +1091,8 @@ export function registerDhlIntakeRoutes(
         channel,
         providerEmail: providerEmail || null,
         providerPhone: providerPhone || null,
+        preferenceSaved,
+        preferenceSaveError,
       });
     } catch (e: any) {
       console.error('[DHL Intake] generate exception:', e);
