@@ -694,7 +694,10 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
             if (isOsFiltering) {
                 const osLower = osFilterTerm.toLowerCase().trim();
                 const missionIdLower = (mission.id || '').toLowerCase();
-                const matchesOs = missionIdLower.includes(osLower) || missionIdLower.replace('gtm-', '').includes(osLower.replace('gtm-', ''));
+                const seLower = String((mission as any).dhl_se_number || '').toLowerCase();
+                const matchesOs = missionIdLower.includes(osLower)
+                    || missionIdLower.replace('gtm-', '').includes(osLower.replace('gtm-', ''))
+                    || (seLower && seLower.includes(osLower.replace('se-', '').replace('se:', '').trim()));
                 if (!matchesOs) return false;
             }
 
@@ -706,7 +709,8 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
                     String(mission.vehicleId || '').toLowerCase().includes(searchLower) || 
                     (mission.provider || '').toLowerCase().includes(searchLower) || 
                     (mission.clientVehicle?.plate || '').toLowerCase().includes(searchLower) || 
-                    (mission.driver_name || '').toLowerCase().includes(searchLower);
+                    (mission.driver_name || '').toLowerCase().includes(searchLower) ||
+                    String((mission as any).dhl_se_number || '').toLowerCase().includes(searchLower);
                 if (!matchesSearch) return false;
             }
 
@@ -732,9 +736,11 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
                 if (!isNegative && !isLinkedToNegative) return false;
             }
 
-            if (showDhlOnly) {
+            {
                 const cName = ((mission as any).originalClientName || mission.client || '').toUpperCase();
-                if (!cName.includes('DHL')) return false;
+                const isDhl = cName.includes('DHL');
+                if (showDhlOnly && !isDhl) return false;
+                if (!showDhlOnly && isDhl) return false;
             }
 
             return true;
