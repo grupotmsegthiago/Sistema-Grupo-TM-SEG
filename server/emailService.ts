@@ -1462,4 +1462,122 @@ export async function sendDhlIntakeExpiredEmail(opts: {
   console.log(`[Email] DHL intake expirado → ${opts.to} | ${opts.expired.length} link(s)`);
 }
 
+export async function sendDhlIntakeReminderProviderEmail(opts: {
+  to: string;
+  providerName: string;
+  osNumber: string;
+  seNumber: string;
+  origin: string;
+  destination: string;
+  scheduledAt: string;
+  expiresAt: string;
+  link: string;
+  firstOpenedAt: string | null;
+  reason: 'opened_abandoned' | 'expiry_approaching';
+}): Promise<void> {
+  const motivoTxt = opts.reason === 'opened_abandoned'
+    ? `Notamos que o link foi aberto em <strong>${opts.firstOpenedAt}</strong>, mas o preenchimento ainda não foi concluído.`
+    : `O link de preenchimento <strong>expira em ${opts.expiresAt}</strong> e ainda não foi concluído.`;
+
+  const html = dhlTemplate(`
+    <h2>Lembrete — Preenchimento Pendente</h2>
+    <p>Olá, <strong>${opts.providerName}</strong>.</p>
+    <p>${motivoTxt}</p>
+    <p>Para que a OS possa começar com todos os dados necessários para o espelhamento e a operação, pedimos que conclua o preenchimento dos <strong>2 escoltistas e do veículo</strong> através do link abaixo:</p>
+    <p style="text-align:center; margin:20px 0;">
+      <a class="cta" href="${opts.link}">Concluir preenchimento</a>
+    </p>
+    <p style="font-size:12px; color:#888; text-align:center;">Ou copie e cole no navegador:<br/><span style="word-break:break-all;">${opts.link}</span></p>
+
+    <table class="info-table">
+      <tr><td>OS TM SEG</td><td>${opts.osNumber}</td></tr>
+      <tr><td>Nº S.E.</td><td><strong>${opts.seNumber}</strong></td></tr>
+      <tr><td>Origem</td><td>${opts.origin}</td></tr>
+      <tr><td>Destino</td><td>${opts.destination}</td></tr>
+      <tr><td>Início previsto</td><td>${opts.scheduledAt}</td></tr>
+      <tr><td>Link expira em</td><td>${opts.expiresAt}</td></tr>
+    </table>
+
+    <div class="highlight" style="margin-top:20px; background:#fff3cd; border-left:4px solid #FFCC00;">
+      <strong>Importante:</strong> sem o preenchimento, a operação não consegue prosseguir com o espelhamento. Em caso de dúvida, responda este e-mail ou fale com o Operacional TM Seg.
+    </div>
+  `);
+
+  await transporter.sendMail({
+    from: SMTP_FROM,
+    to: opts.to,
+    bcc: ['operacional@grupotmseg.com.br'],
+    subject: `[TM SEG] Lembrete: concluir preenchimento — OS ${opts.osNumber} — S.E. ${opts.seNumber}`,
+    html,
+  });
+  console.log(`[Email] DHL intake reminder (fornecedor) → ${opts.to} | OS ${opts.osNumber}`);
+}
+
+export async function sendDhlIntakeReminderOperacionalEmail(opts: {
+  to: string;
+  pending: Array<{
+    osNumber: string;
+    seNumber: string;
+    providerName: string;
+    sentAt: string;
+    sentTo: string;
+    firstOpenedAt: string | null;
+    expiresAt: string;
+    origin: string;
+    destination: string;
+    scheduledAt: string;
+    reason: 'opened_abandoned' | 'expiry_approaching';
+  }>;
+}): Promise<void> {
+  if (!opts.pending || opts.pending.length === 0) return;
+
+  const rows = opts.pending.map(item => {
+    const motivo = item.reason === 'opened_abandoned'
+      ? `<span style="color:#D40511;">Abriu mas não concluiu</span><br/><span style="color:#888; font-size:11px;">abertura: ${item.firstOpenedAt || '—'}</span>`
+      : `<span style="color:#D40511;">Link expira em breve sem preenchimento</span><br/><span style="color:#888; font-size:11px;">expira: ${item.expiresAt}</span>`;
+    return `
+    <tr>
+      <td><strong>${item.osNumber}</strong></td>
+      <td>${item.seNumber || '—'}</td>
+      <td>${item.providerName}</td>
+      <td>${item.sentTo || '—'}<br/><span style="color:#888; font-size:11px;">enviado em ${item.sentAt}</span></td>
+      <td>${item.origin} → ${item.destination}<br/><span style="color:#888; font-size:11px;">início ${item.scheduledAt}</span></td>
+      <td>${motivo}</td>
+      <td>${item.expiresAt}</td>
+    </tr>`;
+  }).join('');
+
+  const html = dhlTemplate(`
+    <h2>Atenção — Link(s) DHL aguardando preenchimento</h2>
+    <p>O(s) fornecedor(es) abaixo <strong>ainda não concluiu(ram)</strong> o preenchimento do link DHL. Um lembrete automático foi enviado por e-mail ao fornecedor; recomenda-se também contato direto.</p>
+    <p><strong>Total nesta verificação:</strong> ${opts.pending.length}</p>
+    <table class="info-table" style="width:100%;">
+      <thead>
+        <tr style="background:#fff3cd;">
+          <th style="text-align:left; padding:8px;">OS</th>
+          <th style="text-align:left; padding:8px;">S.E.</th>
+          <th style="text-align:left; padding:8px;">Fornecedor</th>
+          <th style="text-align:left; padding:8px;">Envio</th>
+          <th style="text-align:left; padding:8px;">Trajeto / Início</th>
+          <th style="text-align:left; padding:8px;">Motivo</th>
+          <th style="text-align:left; padding:8px;">Expira em</th>
+        </tr>
+      </thead>
+      <tbody>${rows}</tbody>
+    </table>
+    <div class="highlight" style="margin-top:20px; background:#fff3cd; border-left:4px solid #FFCC00;">
+      <strong>Ação recomendada:</strong> contatar o fornecedor pelo WhatsApp/telefone para garantir que o preenchimento seja concluído antes do início da OS.
+    </div>
+    <p style="margin-top:14px; font-size:12px; color:#888;">Este lembrete é enviado apenas uma vez por link (não há duplicidade).</p>
+  `);
+
+  await transporter.sendMail({
+    from: SMTP_FROM,
+    to: opts.to,
+    subject: `[DHL] ${opts.pending.length} link(s) de fornecedor aguardando preenchimento`,
+    html,
+  });
+  console.log(`[Email] DHL intake reminder (operacional) → ${opts.to} | ${opts.pending.length} link(s)`);
+}
+
 export { transporter };

@@ -13,7 +13,13 @@
 import type { Express, Request, Response } from 'express';
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import { randomUUID } from 'crypto';
-import { sendDhlSupplierIntakeEmail, sendDhlIntakeSubmittedEmail, sendDhlIntakeExpiredEmail } from './emailService';
+import {
+  sendDhlSupplierIntakeEmail,
+  sendDhlIntakeSubmittedEmail,
+  sendDhlIntakeExpiredEmail,
+  sendDhlIntakeReminderProviderEmail,
+  sendDhlIntakeReminderOperacionalEmail,
+} from './emailService';
 
 const DHL_CLIENT_NAME = 'DHL SUPPLY CHAIN (BRAZIL) LTDA';
 const OPERACIONAL_EMAIL = 'operacional@grupotmseg.com.br';
@@ -127,6 +133,10 @@ export async function runDhlIntakeMigrations(): Promise<void> {
       ALTER TABLE missions ADD COLUMN IF NOT EXISTS dhl_se_number TEXT;
       ALTER TABLE dhl_supplier_intakes ADD COLUMN IF NOT EXISTS mirror_proof_url TEXT;
       ALTER TABLE dhl_supplier_intakes ADD COLUMN IF NOT EXISTS mirror_proof_filename TEXT;
+      ALTER TABLE dhl_supplier_intakes ADD COLUMN IF NOT EXISTS first_opened_at TIMESTAMPTZ;
+      ALTER TABLE dhl_supplier_intakes ADD COLUMN IF NOT EXISTS reminder_sent_at TIMESTAMPTZ;
+      ALTER TABLE dhl_supplier_intakes ADD COLUMN IF NOT EXISTS provider_reminder_sent_at TIMESTAMPTZ;
+      ALTER TABLE dhl_supplier_intakes ADD COLUMN IF NOT EXISTS operational_alert_sent_at TIMESTAMPTZ;
 
       -- Força o PostgREST a recarregar o cache de schema após ALTER TABLE
       NOTIFY pgrst, 'reload schema';
@@ -346,14 +356,213 @@ async function checkAndNotifyExpiredDhlIntakes(): Promise<void> {
   console.log(`[DHL Expiry Worker] ${transitados.length} intake(s) marcado(s) como expirado e operacional notificado.`);
 }
 
+// ────────────────────────────────────────────────────────────────────────────
+// WORKER PERIÓDICO — envia LEMBRETE ao fornecedor e ALERTA ao operacional
+// quando:
+//   (a) o link DHL está próximo de expirar (≤ DHL_REMINDER_EXPIRY_HOURS) e
+//       ainda não foi preenchido; OU
+//   (b) o fornecedor abriu o link (first_opened_at preenchido) há
+//       ≥ DHL_REMINDER_OPENED_HOURS e não concluiu (abandono).
+//
+// Para evitar duplicidade, grava reminder_sent_at — porém somente APÓS
+// envio bem-sucedido (permite retry no próximo tick em caso de falha).
+// ────────────────────────────────────────────────────────────────────────────
+// Thresholds parametrizáveis por env (fallback para defaults razoáveis).
+const DHL_REMINDER_OPENED_THRESHOLD_HOURS =
+  Number(process.env.DHL_REMINDER_OPENED_HOURS || 4);   // abriu mas não concluiu há ≥ N h
+const DHL_REMINDER_EXPIRY_WINDOW_HOURS =
+  Number(process.env.DHL_REMINDER_EXPIRY_HOURS || 24);  // ou o link expira em ≤ N h
+
+async function checkAndSendDhlIntakeReminders(): Promise<void> {
+  const sb = getSb();
+  const now = new Date();
+  const nowIso = now.toISOString();
+
+  // Busca intakes pendentes ainda não expirados em que pelo menos um dos
+  // canais (lembrete ao fornecedor OU alerta ao operacional) ainda não foi
+  // enviado. Cada canal é controlado por sua própria flag, permitindo retry
+  // independente em caso de falha de um deles.
+  const { data: pendentes, error: selErr } = await sb.from('dhl_supplier_intakes')
+    .select('id, token, mission_id, provider_id, provider_name, sent_to_email, sent_to_phone, first_opened_at, created_at, expires_at, provider_reminder_sent_at, operational_alert_sent_at')
+    .eq('status', 'pendente')
+    .or('provider_reminder_sent_at.is.null,operational_alert_sent_at.is.null')
+    .gt('expires_at', nowIso);
+
+  if (selErr) {
+    console.error('[DHL Reminder Worker] erro ao listar pendentes:', selErr.message);
+    return;
+  }
+  const lista = Array.isArray(pendentes) ? pendentes : [];
+  if (lista.length === 0) return;
+
+  // Hidrata dados das OS (para checar start_time e detalhes do envio).
+  const missionIds = Array.from(new Set(lista.map(i => i.mission_id).filter(Boolean)));
+  const { data: missions } = await sb.from('missions')
+    .select('id, dhl_se_number, origin, destination, start_time')
+    .in('id', missionIds);
+  const missionMap = new Map<string, any>((missions || []).map((m: any) => [m.id, m]));
+
+  // Busca e-mails dos fornecedores que não foram registrados no intake (fallback).
+  const providerIds = Array.from(new Set(lista.map(i => i.provider_id).filter(Boolean)));
+  let providerMap = new Map<string, any>();
+  if (providerIds.length > 0) {
+    const { data: provs } = await sb.from('providers')
+      .select('id, name, trading_name, email, os_email, phone')
+      .in('id', providerIds);
+    providerMap = new Map<string, any>((provs || []).map((p: any) => [p.id, p]));
+  }
+
+  const fmtBr = (iso: string | null | undefined) => {
+    if (!iso) return '—';
+    try { return new Date(iso).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' }); } catch { return '—'; }
+  };
+
+  const elegiveis: Array<{ intake: any; mission: any; provider: any; reason: 'opened_abandoned' | 'expiry_approaching' }> = [];
+  for (const it of lista) {
+    const m = missionMap.get(it.mission_id) || {};
+    const firstOpened = it.first_opened_at ? new Date(it.first_opened_at).getTime() : null;
+    const expiresAt = it.expires_at ? new Date(it.expires_at).getTime() : null;
+    const hoursSinceOpened = firstOpened ? (now.getTime() - firstOpened) / 36e5 : null;
+    const hoursToExpire = expiresAt ? (expiresAt - now.getTime()) / 36e5 : null;
+
+    let reason: 'opened_abandoned' | 'expiry_approaching' | null = null;
+    if (hoursToExpire !== null && hoursToExpire > 0 && hoursToExpire <= DHL_REMINDER_EXPIRY_WINDOW_HOURS) {
+      // Prioriza o alerta de proximidade de expiração (requisito principal).
+      reason = 'expiry_approaching';
+    } else if (hoursSinceOpened !== null && hoursSinceOpened >= DHL_REMINDER_OPENED_THRESHOLD_HOURS) {
+      reason = 'opened_abandoned';
+    }
+    if (!reason) continue;
+
+    elegiveis.push({ intake: it, mission: m, provider: providerMap.get(it.provider_id) || {}, reason });
+  }
+
+  if (elegiveis.length === 0) return;
+  console.log(`[DHL Reminder Worker] ${elegiveis.length} intake(s) elegível(eis) para lembrete.`);
+
+  const baseUrl = (process.env.APP_PUBLIC_URL || '').replace(/\/$/, '')
+    || (process.env.REPLIT_DOMAINS ? `https://${(process.env.REPLIT_DOMAINS || '').split(',')[0].trim()}` : '');
+
+  // Por canal: lista de intakes que ainda precisam do envio.
+  type Eleg = typeof elegiveis[number];
+  const precisaFornecedor: Eleg[] = elegiveis.filter(el => !el.intake.provider_reminder_sent_at);
+  const precisaOperacional: Eleg[] = elegiveis.filter(el => !el.intake.operational_alert_sent_at);
+
+  // ── Canal 1: e-mail ao fornecedor (por intake) ────────────────────────
+  let marcadosFornecedor = 0;
+  for (const el of precisaFornecedor) {
+    const { intake, mission, provider, reason } = el;
+    const providerEmail = (intake.sent_to_email || (provider.os_email || provider.email || '')).trim();
+    const providerName = intake.provider_name || provider.trading_name || provider.name || '—';
+    const link = baseUrl ? `${baseUrl}/fornecedor/dhl?token=${intake.token}` : '';
+
+    if (!providerEmail || !link) {
+      // Sem destino válido para o fornecedor — não trava o fluxo, mas também
+      // NÃO marca como enviado (assim, se o cadastro for corrigido depois,
+      // o tick seguinte tentará novamente).
+      continue;
+    }
+
+    try {
+      await sendDhlIntakeReminderProviderEmail({
+        to: providerEmail,
+        providerName,
+        osNumber: intake.mission_id,
+        seNumber: mission.dhl_se_number || '—',
+        origin: mission.origin || '—',
+        destination: mission.destination || '—',
+        scheduledAt: fmtBr(mission.start_time),
+        expiresAt: fmtBr(intake.expires_at),
+        link,
+        firstOpenedAt: intake.first_opened_at ? fmtBr(intake.first_opened_at) : null,
+        reason,
+      });
+    } catch (e: any) {
+      console.error('[DHL Reminder Worker] erro ao enviar e-mail ao fornecedor (retry no próximo tick):', e?.message);
+      continue; // não marca a flag — permite retry
+    }
+
+    const { error: markErr } = await sb.from('dhl_supplier_intakes')
+      .update({ provider_reminder_sent_at: nowIso, reminder_sent_at: nowIso })
+      .eq('id', intake.id)
+      .is('provider_reminder_sent_at', null);
+    if (markErr) {
+      console.error('[DHL Reminder Worker] erro ao marcar provider_reminder_sent_at:', markErr.message);
+      continue;
+    }
+    marcadosFornecedor++;
+  }
+
+  // ── Canal 2: e-mail consolidado ao operacional + system_log ───────────
+  let marcadosOperacional = 0;
+  if (precisaOperacional.length > 0) {
+    const payloadForEmail = precisaOperacional.map(el => ({
+      osNumber: el.intake.mission_id,
+      seNumber: el.mission.dhl_se_number || '—',
+      providerName: el.intake.provider_name || el.provider.trading_name || el.provider.name || '—',
+      sentTo: el.intake.sent_to_email || el.intake.sent_to_phone || '—',
+      sentAt: fmtBr(el.intake.created_at),
+      firstOpenedAt: el.intake.first_opened_at ? fmtBr(el.intake.first_opened_at) : null,
+      expiresAt: fmtBr(el.intake.expires_at),
+      origin: el.mission.origin || '—',
+      destination: el.mission.destination || '—',
+      scheduledAt: fmtBr(el.mission.start_time),
+      reason: el.reason,
+    }));
+
+    let operacionalEmailOk = false;
+    try {
+      await sendDhlIntakeReminderOperacionalEmail({ to: OPERACIONAL_EMAIL, pending: payloadForEmail });
+      operacionalEmailOk = true;
+    } catch (e: any) {
+      console.error('[DHL Reminder Worker] erro ao enviar e-mail ao operacional (retry no próximo tick):', e?.message);
+    }
+
+    if (operacionalEmailOk) {
+      for (const el of precisaOperacional) {
+        const { intake, reason } = el;
+        const { error: markErr } = await sb.from('dhl_supplier_intakes')
+          .update({ operational_alert_sent_at: nowIso, reminder_sent_at: nowIso })
+          .eq('id', intake.id)
+          .is('operational_alert_sent_at', null);
+        if (markErr) {
+          console.error('[DHL Reminder Worker] erro ao marcar operational_alert_sent_at:', markErr.message);
+          continue;
+        }
+        marcadosOperacional++;
+
+        // Notificação in-app (toast) — uma por intake efetivamente alertado.
+        try {
+          const motivo = reason === 'opened_abandoned'
+            ? `abriu o link em ${fmtBr(intake.first_opened_at)} mas não concluiu`
+            : `o link DHL expira em até ${DHL_REMINDER_EXPIRY_WINDOW_HOURS}h e ainda não foi preenchido`;
+          await sb.from('system_logs').insert([{
+            user_name: 'Sistema',
+            action_type: 'UPDATE',
+            entity: 'Mission',
+            entity_id: intake.mission_id,
+            details: `Lembrete DHL: fornecedor ${intake.provider_name || '—'} ${motivo}.`,
+          }]);
+        } catch (e: any) {
+          console.error('[DHL Reminder Worker] erro ao inserir system_logs:', e?.message);
+        }
+      }
+    }
+  }
+
+  console.log(`[DHL Reminder Worker] fornecedor=${marcadosFornecedor}/${precisaFornecedor.length} | operacional=${marcadosOperacional}/${precisaOperacional.length}.`);
+}
+
 export function startDhlIntakeExpiryWorker(): void {
   if (_dhlExpiryWorkerTimer) return;
   // Primeira execução com um pequeno delay para não competir com o boot.
   setTimeout(() => {
     checkAndNotifyExpiredDhlIntakes().catch(e => console.error('[DHL Expiry Worker] tick inicial falhou:', e?.message));
+    checkAndSendDhlIntakeReminders().catch(e => console.error('[DHL Reminder Worker] tick inicial falhou:', e?.message));
   }, 30 * 1000);
   _dhlExpiryWorkerTimer = setInterval(() => {
     checkAndNotifyExpiredDhlIntakes().catch(e => console.error('[DHL Expiry Worker] tick falhou:', e?.message));
+    checkAndSendDhlIntakeReminders().catch(e => console.error('[DHL Reminder Worker] tick falhou:', e?.message));
   }, DHL_EXPIRY_CHECK_INTERVAL_MS);
   console.log(`[DHL Expiry Worker] iniciado (intervalo ${Math.round(DHL_EXPIRY_CHECK_INTERVAL_MS / 60000)} min).`);
 }
@@ -571,6 +780,18 @@ export function registerDhlIntakeRoutes(
       }
       if (intake.expires_at && new Date(intake.expires_at) < new Date()) {
         return res.status(410).json({ error: 'Link expirado' });
+      }
+
+      // Registra a primeira abertura do link público (idempotente: só na 1ª vez).
+      if (!intake.first_opened_at && intake.status === 'pendente') {
+        try {
+          await sb.from('dhl_supplier_intakes')
+            .update({ first_opened_at: new Date().toISOString() })
+            .eq('token', token)
+            .is('first_opened_at', null);
+        } catch (e: any) {
+          console.error('[DHL Intake] erro ao registrar first_opened_at:', e?.message);
+        }
       }
 
       const { data: mission } = await sb.from('missions').select('id, client, provider, origin, destination, start_time, dhl_se_number, status').eq('id', intake.mission_id).maybeSingle();
