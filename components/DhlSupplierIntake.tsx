@@ -509,6 +509,8 @@ const EscoltistaForm: React.FC<{
 }> = ({ titulo, data, setData, savedList, fromSaved, onBack, onNext, saving }) => {
   const set = (patch: Partial<Escoltista>) => setData({ ...data, ...patch });
   const [lookupStatus, setLookupStatus] = useState<'idle' | 'found' | 'notfound'>('idle');
+  const [searchTerm, setSearchTerm] = useState('');
+  const [showList, setShowList] = useState(false);
   // Conjunto de campos que vieram preenchidos do cadastro — só esses ficam readOnly.
   // Os que vieram em branco continuam editáveis e obrigatórios para o fornecedor.
   const [lockedFields, setLockedFields] = useState<Set<string>>(new Set());
@@ -573,6 +575,58 @@ const EscoltistaForm: React.FC<{
     <div>
       <h3 className="text-base font-black uppercase text-gray-900 mb-1 flex items-center gap-2"><User className="w-5 h-5 text-red-600" /> {titulo}</h3>
       <p className="text-xs text-gray-500 mb-4">Digite o CPF do escoltista. Se ele já estiver cadastrado, os dados serão preenchidos automaticamente.</p>
+
+      {savedList && savedList.length > 0 && (
+        <div className="bg-white border border-gray-200 rounded-xl p-3 mb-3 relative" data-testid={`search-saved-${titulo.toLowerCase().replace(/\s/g, '-')}`}>
+          <label className={LABEL + ' flex items-center gap-1.5 mb-1'}>
+            <Search className="w-3.5 h-3.5 text-red-600" /> Buscar escoltista já cadastrado
+          </label>
+          <input
+            className={INPUT}
+            placeholder="Digite NOME ou CPF para filtrar..."
+            value={searchTerm}
+            onChange={e => { setSearchTerm(e.target.value); setShowList(true); }}
+            onFocus={() => setShowList(true)}
+            onBlur={() => setTimeout(() => setShowList(false), 200)}
+          />
+          {showList && (() => {
+            const q = searchTerm.trim().toLowerCase();
+            const qDigits = q.replace(/\D/g, '');
+            const filtered = savedList.filter((s: any) => {
+              const nome = String(s.nome || '').toLowerCase();
+              const cpf = String(s.cpf || '').toLowerCase();
+              const cpfDigits = cpf.replace(/\D/g, '');
+              if (!q) return true;
+              return nome.includes(q) || cpf.includes(q) || (qDigits && cpfDigits.includes(qDigits));
+            }).slice(0, 25);
+            if (filtered.length === 0) {
+              return <div className="absolute left-3 right-3 top-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg z-20 p-3 text-xs text-gray-500">Nenhum escoltista cadastrado encontrado.</div>;
+            }
+            return (
+              <div className="absolute left-3 right-3 top-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg z-20 max-h-64 overflow-y-auto">
+                {filtered.map((s: any, idx: number) => (
+                  <button
+                    key={s.id || s.cpf || idx}
+                    type="button"
+                    className="w-full text-left px-3 py-2 hover:bg-red-50 border-b border-gray-100 last:border-b-0 flex items-center justify-between gap-2"
+                    onMouseDown={e => e.preventDefault()}
+                    onClick={() => {
+                      handleCpfChange(String(s.cpf || ''));
+                      setSearchTerm('');
+                      setShowList(false);
+                    }}
+                    data-testid={`option-escoltista-${idx}`}
+                  >
+                    <span className="text-xs font-bold text-gray-900 truncate">{s.nome || '(sem nome)'}</span>
+                    <span className="text-[10px] font-mono text-gray-500 shrink-0">{s.cpf || ''}</span>
+                  </button>
+                ))}
+              </div>
+            );
+          })()}
+          <p className="text-[10px] text-gray-400 mt-1 italic">Selecione da lista para preencher automaticamente, ou digite o CPF abaixo.</p>
+        </div>
+      )}
 
       {/* CPF em destaque — entrada principal */}
       <div className="bg-gray-50 border-2 border-dashed border-gray-300 rounded-xl p-4 mb-4">
