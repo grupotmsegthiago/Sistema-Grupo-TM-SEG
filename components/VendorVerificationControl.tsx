@@ -623,13 +623,31 @@ const VendorVerificationControl: React.FC<VendorVerificationControlProps> = ({ o
     const [divergenceTolerance, setDivergenceTolerance] = useState(10);
     const divergenceFileInputRef = React.useRef<HTMLInputElement>(null);
 
-    // Status derivado da tolerância atual (atualiza ao mudar o slider sem reprocessar)
+    // Status derivado da tolerância atual + valores SEMPRE atualizados a partir
+    // da lista viva de missões (re-resolve por id). Garante que edições na OS
+    // (cost_value, toll_value, etc) reflitam imediatamente na conferência.
+    const missionsById = useMemo(() => {
+        const map = new Map<string, any>();
+        (missions || []).forEach((m: any) => map.set(String(m.id), m));
+        return map;
+    }, [missions]);
     const divergenceResultsView = useMemo(() => {
-        return divergenceResults.map(r => ({
-            ...r,
-            status: !r.mission ? 'NOT_FOUND' : (Math.abs(r.diff) > divergenceTolerance ? 'DIVERGENT' : 'OK')
-        }));
-    }, [divergenceResults, divergenceTolerance]);
+        return divergenceResults.map(r => {
+            if (!r.mission) {
+                return { ...r, status: 'NOT_FOUND' };
+            }
+            const live = missionsById.get(String(r.mission.id)) || r.mission;
+            const systemCost = (live.cost_value || 0) + Math.max(0, live.toll_value_provider ?? live.toll_value ?? 0);
+            const diff = (r.valueProvider || 0) - systemCost;
+            return {
+                ...r,
+                mission: live,
+                valueSystem: systemCost,
+                diff,
+                status: Math.abs(diff) > divergenceTolerance ? 'DIVERGENT' : 'OK'
+            };
+        });
+    }, [divergenceResults, divergenceTolerance, missionsById]);
 
     const [statsHistory, setStatsHistory] = useState<any[]>([]);
     const loadStatsHistory = async () => {
