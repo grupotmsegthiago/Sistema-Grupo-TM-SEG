@@ -148,6 +148,7 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
   const [dhlRegenerating, setDhlRegenerating] = useState(false);
   const [dhlReleaseSending, setDhlReleaseSending] = useState(false);
   const [dhlSchemaModal, setDhlSchemaModal] = useState<{ open: boolean; message: string; sql: string; loadingSql: boolean }>({ open: false, message: '', sql: '', loadingSql: false });
+  const [dhlEmailModal, setDhlEmailModal] = useState<{ open: boolean; providerId: string | number; providerName: string; email: string; saving: boolean; retryChannel: 'email' | 'whatsapp' | 'both'; retrySaveAsDefault: boolean; retryAfterSave: 'generate' | 'submit'; retryMissionId: string }>({ open: false, providerId: '', providerName: '', email: '', saving: false, retryChannel: 'both', retrySaveAsDefault: false, retryAfterSave: 'generate', retryMissionId: '' });
   const [expandedIntakeId, setExpandedIntakeId] = useState<string | null>(null);
   const [copiedIntakeId, setCopiedIntakeId] = useState<string | null>(null);
   
@@ -291,7 +292,19 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
         await fetchDhlIntakes(osId);
       } else {
         const errMsg = j.error || 'erro desconhecido';
-        if (/banco ainda não tem as tabelas/i.test(errMsg)) {
+        if (j.code === 'PROVIDER_EMAIL_REQUIRED') {
+          setDhlEmailModal({
+            open: true,
+            providerId: j.providerId,
+            providerName: j.providerName || formData.provider || 'fornecedor',
+            email: '',
+            saving: false,
+            retryChannel: channel,
+            retrySaveAsDefault: saveAsDefault,
+            retryAfterSave: 'generate',
+            retryMissionId: osId,
+          });
+        } else if (/banco ainda não tem as tabelas/i.test(errMsg)) {
           openDhlSchemaModal('O banco do Supabase ainda não tem as tabelas do fluxo DHL. Copie o SQL abaixo e cole no Supabase Studio → SQL Editor → Run. Depois tente reenviar o link.');
         } else {
           showNotification('Falha ao gerar novo link', errMsg, 'error');
@@ -301,6 +314,79 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
       showNotification('Falha ao gerar novo link', err?.message || 'erro de rede', 'error');
     } finally {
       setDhlRegenerating(false);
+    }
+  };
+
+  // Salva o e-mail informado pelo operador no cadastro do fornecedor e
+  // dispara novamente a geração do link DHL (ou refaz o fluxo pós-save da OS).
+  const handleDhlEmailSubmit = async () => {
+    const email = (dhlEmailModal.email || '').trim();
+    if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      showNotification('E-mail inválido', 'Informe um e-mail válido para o fornecedor.', 'warning');
+      return;
+    }
+    setDhlEmailModal(prev => ({ ...prev, saving: true }));
+    try {
+      const { error } = await supabase
+        .from('providers')
+        .update({ os_email: email })
+        .eq('id', dhlEmailModal.providerId);
+      if (error) throw error;
+      // Atualiza estado local para refletir o e-mail recém-cadastrado
+      setDbProviders(prev => prev.map(p =>
+        String(p.id) === String(dhlEmailModal.providerId) ? { ...p, os_email: email } : p
+      ));
+      showNotification('E-mail do fornecedor salvo', `${dhlEmailModal.providerName}: ${email}`, 'success');
+      const retryChannel = dhlEmailModal.retryChannel;
+      const retrySaveAsDefault = dhlEmailModal.retrySaveAsDefault;
+      const retryAfterSave = dhlEmailModal.retryAfterSave;
+      const retryMissionId = dhlEmailModal.retryMissionId;
+      setDhlEmailModal({ open: false, providerId: '', providerName: '', email: '', saving: false, retryChannel: 'both', retrySaveAsDefault: false, retryAfterSave: 'generate', retryMissionId: '' });
+      if (retryAfterSave === 'generate') {
+        await handleRegenerateDhlLink(retryChannel, { saveAsDefault: retrySaveAsDefault });
+      } else {
+        // Pós-criação da OS: chama o generate diretamente com o id da OS recém-salva
+        await retryDhlGenerateAfterMissionSave(retryMissionId);
+      }
+    } catch (e: any) {
+      showNotification('Falha ao salvar e-mail', e?.message || 'erro desconhecido', 'error');
+      setDhlEmailModal(prev => ({ ...prev, saving: false }));
+    }
+  };
+
+  // Helper usado quando o erro PROVIDER_EMAIL_REQUIRED acontece logo após a
+  // criação da OS (no handleSubmit). Refaz só a geração do link, sem recriar a OS.
+  const retryDhlGenerateAfterMissionSave = async (missionId: string) => {
+    try {
+      const token = localStorage.getItem('authToken') || '';
+      const r = await fetch('/api/dhl/intake/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...(token ? { 'Authorization': `Bearer ${token}` } : {}) },
+        credentials: 'include',
+        body: JSON.stringify({ missionId }),
+      });
+      const j = await r.json();
+      if (r.ok && j.url) {
+        setDhlLinkModal({ open: true, missionId, url: j.url, whatsappText: j.whatsappText || '', phone: j.providerPhone || '', channel: 'both', emailSent: !!j.emailSent, providerEmail: j.providerEmail || '', whatsappSent: !!j.whatsappSent, whatsappError: j.whatsappError || null });
+      } else if (j.code === 'PROVIDER_EMAIL_REQUIRED') {
+        // Cobertura defensiva: se o e-mail recém-salvo ainda não refletiu no
+        // backend (cache, replicação), reabre o modal para nova tentativa.
+        setDhlEmailModal({
+          open: true,
+          providerId: j.providerId,
+          providerName: j.providerName || formData.provider || 'fornecedor',
+          email: '',
+          saving: false,
+          retryChannel: 'both',
+          retrySaveAsDefault: false,
+          retryAfterSave: 'submit',
+          retryMissionId: missionId,
+        });
+      } else {
+        alert('OS salva, mas falhou ao gerar o link DHL: ' + (j.error || 'erro desconhecido'));
+      }
+    } catch (err: any) {
+      alert('OS salva, mas falhou ao gerar o link DHL: ' + (err?.message || 'erro de rede'));
     }
   };
 
@@ -1176,7 +1262,19 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
               setDhlLinkModal({ open: true, missionId: finalId, url: j.url, whatsappText: j.whatsappText || '', phone: j.providerPhone || '', channel: 'both', emailSent: !!j.emailSent, providerEmail: j.providerEmail || '', whatsappSent: !!j.whatsappSent, whatsappError: j.whatsappError || null });
             } else {
               const errMsg = j.error || 'erro desconhecido';
-              if (/banco ainda não tem as tabelas/i.test(errMsg)) {
+              if (j.code === 'PROVIDER_EMAIL_REQUIRED') {
+                setDhlEmailModal({
+                  open: true,
+                  providerId: j.providerId,
+                  providerName: j.providerName || formData.provider || 'fornecedor',
+                  email: '',
+                  saving: false,
+                  retryChannel: 'both',
+                  retrySaveAsDefault: false,
+                  retryAfterSave: 'submit',
+                  retryMissionId: finalId,
+                });
+              } else if (/banco ainda não tem as tabelas/i.test(errMsg)) {
                 openDhlSchemaModal('OS salva, mas o banco do Supabase ainda não tem as tabelas do fluxo DHL. Copie o SQL abaixo e cole no Supabase Studio → SQL Editor → Run. Depois tente novamente.');
               } else {
                 alert('OS salva, mas falhou ao gerar o link DHL: ' + errMsg);
@@ -2740,6 +2838,55 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
               )}
           </form>
       </div>
+
+      {dhlEmailModal.open && (
+        <div className="fixed inset-0 z-[1200] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4" data-testid="modal-dhl-email-required">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full overflow-hidden">
+            <div style={{ background: '#FFCC00', height: 6 }}></div>
+            <div style={{ background: '#D40511', height: 4 }}></div>
+            <div className="p-6">
+              <h2 className="text-lg font-black uppercase tracking-wide text-gray-900 mb-1">E-mail do fornecedor obrigatório</h2>
+              <p className="text-xs text-gray-700 mb-4 leading-relaxed">
+                O fornecedor <span className="font-bold">{dhlEmailModal.providerName}</span> não tem e-mail cadastrado.
+                Para enviar o link DHL é obrigatório informar um e-mail agora. Ele ficará salvo
+                no cadastro do fornecedor para os próximos envios.
+              </p>
+              <label className="text-[10px] font-black text-gray-500 uppercase mb-1 block tracking-wider">E-mail do fornecedor</label>
+              <input
+                type="email"
+                autoFocus
+                value={dhlEmailModal.email}
+                onChange={(e) => setDhlEmailModal(prev => ({ ...prev, email: e.target.value }))}
+                onKeyDown={(e) => { if (e.key === 'Enter' && !dhlEmailModal.saving) handleDhlEmailSubmit(); }}
+                placeholder="fornecedor@empresa.com.br"
+                className="w-full border border-gray-300 rounded-lg px-3 h-11 text-sm mb-4 focus:outline-none focus:ring-2 focus:ring-yellow-400"
+                disabled={dhlEmailModal.saving}
+                data-testid="input-dhl-provider-email"
+              />
+              <div className="flex flex-wrap gap-2 justify-end">
+                <button
+                  type="button"
+                  onClick={() => setDhlEmailModal(prev => ({ ...prev, open: false }))}
+                  disabled={dhlEmailModal.saving}
+                  className="px-4 h-11 rounded-lg bg-gray-200 text-gray-800 text-xs font-bold hover:bg-gray-300 disabled:opacity-50"
+                  data-testid="btn-cancel-dhl-email"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  onClick={handleDhlEmailSubmit}
+                  disabled={dhlEmailModal.saving || !dhlEmailModal.email.trim()}
+                  className="px-4 h-11 rounded-lg bg-gray-900 text-white text-xs font-black uppercase tracking-wider hover:bg-black disabled:opacity-50"
+                  data-testid="btn-save-dhl-email"
+                >
+                  {dhlEmailModal.saving ? 'Salvando...' : 'Salvar e enviar link'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {dhlSchemaModal.open && (
         <div className="fixed inset-0 z-[1100] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4" data-testid="modal-dhl-schema-missing">

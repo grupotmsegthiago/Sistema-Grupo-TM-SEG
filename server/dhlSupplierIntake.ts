@@ -155,6 +155,12 @@ export async function runDhlIntakeMigrations(): Promise<void> {
       ALTER TABLE dhl_supplier_intakes ALTER COLUMN provider_id TYPE TEXT USING provider_id::TEXT;
       ALTER TABLE provider_escoltistas ALTER COLUMN provider_id TYPE TEXT USING provider_id::TEXT;
       ALTER TABLE provider_intake_vehicles ALTER COLUMN provider_id TYPE TEXT USING provider_id::TEXT;
+      -- Desabilita RLS — estas tabelas só são acessadas via API autenticada
+      -- do backend (nunca diretamente pelo cliente). Sem isso, INSERTs falham
+      -- com "new row violates row-level security policy".
+      ALTER TABLE dhl_supplier_intakes DISABLE ROW LEVEL SECURITY;
+      ALTER TABLE provider_escoltistas DISABLE ROW LEVEL SECURITY;
+      ALTER TABLE provider_intake_vehicles DISABLE ROW LEVEL SECURITY;
       -- Backfill: intakes pré-existentes que já receberam um lembrete (flag preenchida)
       -- contam como 1 envio, evitando que o ciclo recém-criado dispare um lembrete
       -- "extra" no período de transição.
@@ -1167,6 +1173,19 @@ export function registerDhlIntakeRoutes(
 
       const providerEmail = (provider.os_email || provider.email || '').trim();
       const providerPhone = maskPhone(provider.phone);
+
+      // Regra de negócio: se o canal escolhido envolve e-mail e o fornecedor
+      // não tem e-mail cadastrado, devolve erro específico para o frontend
+      // abrir um modal pedindo o e-mail e salvar no cadastro do fornecedor
+      // antes de prosseguir.
+      if (wantsEmail && !providerEmail) {
+        return res.status(400).json({
+          error: 'Fornecedor sem e-mail cadastrado',
+          code: 'PROVIDER_EMAIL_REQUIRED',
+          providerId: provider.id,
+          providerName: provider.trading_name || provider.name,
+        });
+      }
 
       // Se o operador pediu para salvar como padrão, persiste a preferência ANTES de
       // disparar e-mail/WhatsApp — assim, mesmo se algum envio falhar, o canal padrão

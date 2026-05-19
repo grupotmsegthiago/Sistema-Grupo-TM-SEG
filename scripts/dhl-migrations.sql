@@ -120,6 +120,14 @@ ALTER TABLE public.dhl_supplier_intakes ALTER COLUMN provider_id TYPE TEXT USING
 ALTER TABLE public.provider_escoltistas ALTER COLUMN provider_id TYPE TEXT USING provider_id::TEXT;
 ALTER TABLE public.provider_intake_vehicles ALTER COLUMN provider_id TYPE TEXT USING provider_id::TEXT;
 
+-- 5c) Estas tabelas são administrativas — só são acessadas pelo backend (API
+-- autenticada). Desabilitamos RLS, igual à tabela `missions`. Sem isso, o
+-- Supabase rejeita INSERT com "new row violates row-level security policy".
+ALTER TABLE public.dhl_supplier_intakes DISABLE ROW LEVEL SECURITY;
+ALTER TABLE public.dhl_supplier_intake_resends DISABLE ROW LEVEL SECURITY;
+ALTER TABLE public.provider_escoltistas DISABLE ROW LEVEL SECURITY;
+ALTER TABLE public.provider_intake_vehicles DISABLE ROW LEVEL SECURITY;
+
 -- 6) Trigger que invalida links DHL quando a OS é excluída/cancelada
 CREATE OR REPLACE FUNCTION public.cancel_dhl_intakes_on_mission_change() RETURNS TRIGGER AS $func$
 BEGIN
