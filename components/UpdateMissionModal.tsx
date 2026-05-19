@@ -1054,6 +1054,27 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
                 if (!iso) return '';
                 try { return new Date(iso).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', timeZone: 'America/Sao_Paulo' }); } catch { return ''; }
             };
+            let dhlOriginAt = '', dhlInTransitAt = '', dhlCompletedAt = '';
+            if (isDHL) {
+                try {
+                    const { data: statusHist } = await supabase
+                        .from('mission_history')
+                        .select('changed_at,new_value')
+                        .eq('mission_id', mission.id)
+                        .eq('field_name', 'status')
+                        .order('changed_at', { ascending: false });
+                    if (statusHist) {
+                        const lastOf = (val: string) => (statusHist as any[]).find(h => h.new_value === val)?.changed_at;
+                        dhlOriginAt = fmtDateTime(lastOf('Origem'));
+                        dhlInTransitAt = fmtDateTime(lastOf('Em Viagem'));
+                        dhlCompletedAt = fmtDateTime(lastOf('Concluída'));
+                    }
+                } catch {}
+                const nowStr = fmtDateTime(new Date().toISOString());
+                if (finalStatus === MissionStatus.ORIGIN && !dhlOriginAt) dhlOriginAt = nowStr;
+                if (finalStatus === MissionStatus.IN_TRANSIT && !dhlInTransitAt) dhlInTransitAt = nowStr;
+                if (finalStatus === MissionStatus.COMPLETED && !dhlCompletedAt) dhlCompletedAt = nowStr;
+            }
             const report = isDHL ? `*ESCOLTA ARMADA*⚡️
 
 🗒️ *SE:* ${(editData.dhl_se_number || '').toString().trim().toUpperCase()}
@@ -1070,9 +1091,9 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
 🚛 *CARRETA:* ${(editData as any).client_vehicle_plate_2 || mission.clientVehicle2?.plate || ''}
 
 🕑 *INÍCIO PREVISTO:* ${fmtDateTime(mission.createdAt)}
-🕑 *CHEGADA NA ORIGEM:* 
-🧭 *INÍCIO DE OPERAÇÃO:* ${editData.startTime ? `${dateStr} ${editData.startTime}` : fmtDateTime(mission.startTime)}
-🧭 *FIM DE OPERAÇÃO:* ${editData.endTime ? `${dateStr} ${editData.endTime}` : fmtDateTime(mission.endTime)}
+🕑 *CHEGADA NA ORIGEM:* ${dhlOriginAt}
+🧭 *INÍCIO DE OPERAÇÃO:* ${dhlInTransitAt}
+🧭 *FIM DE OPERAÇÃO:* ${dhlCompletedAt}
 
 🖋️ *STATUS:* ${finalStatus.toUpperCase()}${finalDescription ? ' — ' + finalDescription.toUpperCase() : ''}` : `*MONITORAMENTO GRUPO TMSEG*
 *OS:* ${mission.id} | *STATUS:* ${finalStatus.toUpperCase()}
