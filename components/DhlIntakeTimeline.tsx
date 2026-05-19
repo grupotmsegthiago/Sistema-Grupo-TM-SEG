@@ -3,7 +3,7 @@ import { authFetch } from '../lib/authFetch';
 import {
   Mail, Phone, Send, Clock, CheckCircle2, XCircle, AlertTriangle,
   ChevronDown, ExternalLink, Paperclip, Copy, Check, RefreshCw, Loader2,
-  MessageSquare,
+  MessageSquare, Maximize2, X, User, Truck,
 } from 'lucide-react';
 
 interface EscoltistaSnapshot {
@@ -58,6 +58,7 @@ const DhlIntakeTimeline: React.FC<Props> = ({ missionId, canViewSnapshots = true
   const [loading, setLoading] = useState(false);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [overlayId, setOverlayId] = useState<string | null>(null);
   const [copiedLink, setCopiedLink] = useState<string | null>(null);
   const [copiedWa, setCopiedWa] = useState<string | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
@@ -556,16 +557,27 @@ const DhlIntakeTimeline: React.FC<Props> = ({ missionId, canViewSnapshots = true
 
                 {hasSnapshots && (
                   <>
-                    <div className="flex items-center justify-between mt-2 pt-2 border-t border-gray-100 gap-2">
-                      <button
-                        type="button"
-                        onClick={() => setExpandedId(isExpanded ? null : it.id)}
-                        className="text-[10px] font-black uppercase tracking-wider text-red-700 hover:text-red-900 flex items-center gap-1"
-                        data-testid={`btn-toggle-intake-details-${it.id}`}
-                      >
-                        <ChevronDown size={12} className={`transition-transform ${isExpanded ? 'rotate-180' : ''}`} />
-                        {isExpanded ? 'Ocultar dados do fornecedor' : 'Ver dados preenchidos pelo fornecedor'}
-                      </button>
+                    <div className="flex items-center justify-between mt-2 pt-2 border-t border-gray-100 gap-2 flex-wrap">
+                      <div className="flex items-center gap-3 flex-wrap">
+                        <button
+                          type="button"
+                          onClick={() => setExpandedId(isExpanded ? null : it.id)}
+                          className="text-[10px] font-black uppercase tracking-wider text-red-700 hover:text-red-900 flex items-center gap-1"
+                          data-testid={`btn-toggle-intake-details-${it.id}`}
+                        >
+                          <ChevronDown size={12} className={`transition-transform ${isExpanded ? 'rotate-180' : ''}`} />
+                          {isExpanded ? 'Ocultar dados do fornecedor' : 'Ver dados preenchidos pelo fornecedor'}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setOverlayId(it.id)}
+                          className="text-[10px] font-black uppercase tracking-wider text-white bg-red-600 hover:bg-red-700 px-2 py-1 rounded flex items-center gap-1"
+                          data-testid={`btn-open-overlay-${it.id}`}
+                          title="Abrir todos os dados em uma única tela"
+                        >
+                          <Maximize2 size={11} /> Ver tudo em uma tela
+                        </button>
+                      </div>
                       {isExpanded && (
                         <button
                           type="button"
@@ -604,6 +616,150 @@ const DhlIntakeTimeline: React.FC<Props> = ({ missionId, canViewSnapshots = true
           })}
         </div>
       )}
+
+      {/* ── Overlay (sobreposto) com todos os dados em uma única tela ── */}
+      {overlayId && (() => {
+        const it = intakes.find((x) => x.id === overlayId);
+        if (!it) return null;
+        const a1 = it.agent1_snapshot;
+        const a2 = it.agent2_snapshot;
+        const v = it.vehicle_snapshot;
+        const end = (a: EscoltistaSnapshot | null | undefined) =>
+          a ? [a.rua, a.numero, a.complemento, a.bairro, a.cidade, a.uf, a.cep].filter(Boolean).join(', ') : '';
+        const Row: React.FC<{ label: string; value?: string | null }> = ({ label, value }) =>
+          value ? (
+            <div className="flex flex-col">
+              <span className="text-[9px] font-black uppercase tracking-wider text-gray-500">{label}</span>
+              <span className="text-[12px] text-gray-900 font-medium break-words">{value}</span>
+            </div>
+          ) : null;
+        const AgentBlock: React.FC<{ titulo: string; a: EscoltistaSnapshot | null | undefined }> = ({ titulo, a }) => (
+          <div className="bg-white border border-gray-200 rounded-xl p-4 shadow-sm">
+            <div className="flex items-center gap-2 mb-3 pb-2 border-b border-gray-100">
+              <User className="w-4 h-4 text-red-600" />
+              <h3 className="text-xs font-black uppercase tracking-wider text-gray-800">{titulo}</h3>
+            </div>
+            {!a ? (
+              <p className="text-xs italic text-gray-400">— não informado pelo fornecedor —</p>
+            ) : (
+              <div className="grid grid-cols-2 gap-x-3 gap-y-2">
+                <div className="col-span-2"><Row label="Nome" value={a.nome} /></div>
+                <Row label="CPF" value={a.cpf} />
+                <Row label="RG / Órgão" value={a.rg ? `${a.rg}${a.orgao_emissor ? ' / ' + a.orgao_emissor : ''}` : null} />
+                <Row label="CNH" value={a.cnh ? `${a.cnh}${a.cnh_categoria ? ' (' + a.cnh_categoria + ')' : ''}` : null} />
+                <Row label="Venc. CNH" value={a.cnh_vencimento} />
+                <Row label="CNV" value={a.cnv_numero} />
+                <Row label="Venc. CNV" value={a.cnv_validade} />
+                <Row label="Celular" value={a.celular} />
+                <Row label="Admissão" value={a.admissao} />
+                <div className="col-span-2"><Row label="Endereço" value={end(a)} /></div>
+              </div>
+            )}
+          </div>
+        );
+        return (
+          <div
+            className="fixed inset-0 z-[9999] bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-150"
+            onClick={() => setOverlayId(null)}
+            data-testid={`overlay-intake-${it.id}`}
+          >
+            <div
+              className="bg-gray-50 rounded-2xl shadow-2xl max-w-6xl w-full max-h-[92vh] overflow-hidden flex flex-col"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="px-5 py-4 bg-white border-b border-gray-200 flex items-center justify-between gap-3 flex-wrap">
+                <div className="flex items-center gap-3">
+                  <div className="px-2 py-1 rounded bg-red-600 text-white text-[10px] font-black uppercase tracking-wider">DHL</div>
+                  <div>
+                    <h2 className="text-sm font-black uppercase tracking-wider text-gray-900">Dados preenchidos pelo fornecedor</h2>
+                    <p className="text-[11px] text-gray-500">{it.provider_name || '—'} · Enviado em {fmt(it.submitted_at)}</p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => copySnapshot(it)}
+                    className="px-2.5 py-1.5 rounded bg-gray-100 hover:bg-gray-200 text-gray-700 font-black uppercase tracking-wider flex items-center gap-1 text-[10px]"
+                    data-testid={`overlay-btn-copy-${it.id}`}
+                  >
+                    {copiedId === it.id ? <><Check size={12} className="text-green-600" /> Copiado</> : <><Copy size={12} /> Copiar texto</>}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setOverlayId(null)}
+                    className="w-8 h-8 rounded-full hover:bg-gray-100 flex items-center justify-center text-gray-500 hover:text-gray-800"
+                    data-testid={`overlay-btn-close-${it.id}`}
+                    aria-label="Fechar"
+                  >
+                    <X size={18} />
+                  </button>
+                </div>
+              </div>
+              <div className="overflow-y-auto p-5 space-y-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <AgentBlock titulo="Escoltista 1" a={a1} />
+                  <AgentBlock titulo="Escoltista 2" a={a2} />
+                </div>
+                <div className="bg-white border border-gray-200 rounded-xl p-4 shadow-sm">
+                  <div className="flex items-center gap-2 mb-3 pb-2 border-b border-gray-100">
+                    <Truck className="w-4 h-4 text-red-600" />
+                    <h3 className="text-xs font-black uppercase tracking-wider text-gray-800">Veículo da escolta</h3>
+                  </div>
+                  {!v ? (
+                    <p className="text-xs italic text-gray-400">— não informado pelo fornecedor —</p>
+                  ) : (
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-x-3 gap-y-2">
+                      <Row label="Placa" value={v.placa} />
+                      <Row label="Renavam" value={v.renavam} />
+                      <Row label="Marca" value={v.marca} />
+                      <Row label="Modelo" value={v.modelo} />
+                      <Row label="Ano" value={v.ano} />
+                      <Row label="Cor" value={v.cor} />
+                      <Row label="Tecnologia" value={v.tecnologia} />
+                      <Row label="ID Rastreador" value={v.id_rastreador} />
+                      <div className="col-span-2"><Row label="Comunicação" value={v.comunicacao} /></div>
+                    </div>
+                  )}
+                </div>
+                {it.mirror_proof_url && (
+                  <div className="bg-white border border-gray-200 rounded-xl p-4 shadow-sm">
+                    <div className="flex items-center gap-2 mb-3 pb-2 border-b border-gray-100">
+                      <Paperclip className="w-4 h-4 text-red-600" />
+                      <h3 className="text-xs font-black uppercase tracking-wider text-gray-800">Print do espelhamento</h3>
+                    </div>
+                    <a
+                      href={it.mirror_proof_url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1 text-red-700 hover:text-red-900 font-black uppercase tracking-wider text-[11px]"
+                      data-testid={`overlay-link-mirror-${it.id}`}
+                    >
+                      <ExternalLink size={12} /> Abrir comprovante{it.mirror_proof_filename ? ` (${it.mirror_proof_filename})` : ''}
+                    </a>
+                    {/* Pré-visualização inline da imagem, quando aplicável */}
+                    {/\.(png|jpe?g|webp|gif)$/i.test(it.mirror_proof_url) && (
+                      <div className="mt-3">
+                        <img
+                          src={it.mirror_proof_url}
+                          alt="Print do espelhamento"
+                          className="max-h-[40vh] w-auto rounded-lg border border-gray-200"
+                          data-testid={`overlay-img-mirror-${it.id}`}
+                        />
+                      </div>
+                    )}
+                  </div>
+                )}
+                {!a1 && !a2 && !v && (
+                  <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-amber-800">
+                    <p className="text-xs font-bold">Nenhum dado foi persistido por este link.</p>
+                    <p className="text-[11px] mt-1">Provavelmente este intake foi criado em uma versão antiga do sistema. Gere um novo link para o fornecedor preencher.</p>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 };
