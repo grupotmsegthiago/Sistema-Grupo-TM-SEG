@@ -2059,7 +2059,8 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
                       </div>
                     </div>
 
-                    {/* POSICIONAMENTO GEOGRÁFICO INTELIGENTE */}
+                    {/* POSICIONAMENTO GEOGRÁFICO INTELIGENTE — só ao finalizar a missão */}
+                    {editData.status === MissionStatus.COMPLETED && (
                     <div className="p-5 bg-slate-900 rounded-[2.5rem] text-white space-y-4 shadow-2xl border border-slate-800">
                         <div className="flex items-center gap-2 border-b border-white/5 pb-3">
                             <Navigation size={16} className="text-red-500" />
@@ -2126,6 +2127,7 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
                             </div>
                         </div>
                     </div>
+                    )}
 
                     {/* RODAPÉ DE AÇÕES */}
                     <div className="pt-6 border-t border-gray-100 flex justify-end gap-3 sticky bottom-0 bg-white pb-4 px-2 shrink-0">
