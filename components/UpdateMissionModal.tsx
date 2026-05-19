@@ -390,7 +390,20 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
             setSearchAgent2(m.agent2 || '');
             setMirroringExistingUrl(m.mirroring_evidence_url || '');
 
-            refreshAuxData(m.client, m.provider, m.vehicle_id?.toString(), clientObj?.id);
+            // Aguarda os auxiliares (vehicles/agents) carregarem para então
+            // tentar recuperar o que o fornecedor já salvou via link DHL.
+            refreshAuxData(m.client, m.provider, m.vehicle_id?.toString(), clientObj?.id)
+                .then((aux) => {
+                    return recoverFromDhlIntake(
+                        m.id,
+                        m.agent1 || '',
+                        m.agent2 || '',
+                        m.vehicle_id?.toString() || '',
+                        m.mirroring_evidence_url || '',
+                        aux?.vehicles || [],
+                    );
+                })
+                .catch((err) => console.error('[UpdateMissionModal] refreshAuxData/recover falhou:', err));
 
             const currentLoc = (m.current_location || '').trim();
             const locParts = currentLoc.split('|').map((p: string) => p.trim());
@@ -478,6 +491,63 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
         const currentV = vRes.data?.find(v => v.id.toString() === currentVId);
         if (currentV) setSearchVehicle(currentV.plate);
         else setSearchVehicle('');
+        return { vehicles: vRes.data || [], allAgents: allAgents || [] };
+    };
+
+    // Recupera automaticamente o que o fornecedor já salvou via link público DHL
+    // (escoltistas, viatura e print do espelhamento). Preenche campos vazios da
+    // OS — não sobrescreve dados já editados pelo operacional.
+    const recoverFromDhlIntake = async (
+        missionId: string,
+        currentAgent1: string,
+        currentAgent2: string,
+        currentVehicleId: string,
+        currentMirrorUrl: string,
+        availableVehicles: any[],
+    ) => {
+        try {
+            const r = await authFetch(`/api/dhl/intake/by-mission/${encodeURIComponent(missionId)}`);
+            if (!r.ok) return;
+            const j = await r.json();
+            const intakes: any[] = (j?.intakes || []).filter((it: any) => it.effective_status !== 'cancelado');
+            if (intakes.length === 0) return;
+            // intakes vem ordenado por created_at desc no backend; mais recente primeiro
+            const findFirst = (key: string) => intakes.map(it => it[key]).find(v => v && (typeof v !== 'object' || Object.keys(v || {}).length > 0));
+            const a1Snap = findFirst('agent1_snapshot');
+            const a2Snap = findFirst('agent2_snapshot');
+            const vSnap = findFirst('vehicle_snapshot');
+            const mirrorUrl = findFirst('mirror_proof_url');
+
+            const updates: Partial<typeof editData> = {};
+            const a1Name = (a1Snap?.nome || a1Snap?.name || '').toString().trim();
+            const a2Name = (a2Snap?.nome || a2Snap?.name || '').toString().trim();
+            if (!currentAgent1 && a1Name) { updates.agent1 = a1Name; setSearchAgent1(a1Name); }
+            if (!currentAgent2 && a2Name) { updates.agent2 = a2Name; setSearchAgent2(a2Name); }
+
+            const placa = (vSnap?.placa || '').toString().trim().toUpperCase();
+            if (!currentVehicleId && placa) {
+                const match = availableVehicles.find((v: any) =>
+                    (v.plate || '').toString().toUpperCase().replace(/\s/g, '') === placa.replace(/\s/g, '')
+                );
+                if (match) {
+                    updates.vehicleId = String(match.id);
+                    setSearchVehicle(match.plate);
+                } else {
+                    // Sem correspondência em vehicles — mostra a placa no campo para
+                    // o operacional cadastrar a viatura (atalho "+ veículo").
+                    setSearchVehicle(placa);
+                }
+            }
+
+            if (Object.keys(updates).length > 0) {
+                setEditData(prev => ({ ...prev, ...updates }));
+            }
+            if (!currentMirrorUrl && mirrorUrl) {
+                setMirroringExistingUrl(mirrorUrl);
+            }
+        } catch (e) {
+            console.error('[UpdateMissionModal] recover DHL intake falhou:', e);
+        }
     };
 
     const handlePlaceSelect = () => {
