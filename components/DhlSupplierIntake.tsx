@@ -134,9 +134,12 @@ const DhlSupplierIntake: React.FC = () => {
   const validateEscoltista = (e: Escoltista, label: string): string | null => {
     // Mesmo registros já vindos do cadastro (com e.id) precisam ter todos os
     // campos obrigatórios. Se algum estiver vazio, o fornecedor deve preencher.
+    // CNH e Vencimento CNH NÃO são obrigatórios por escoltista — a regra é
+    // cruzada: pelo menos UM dos dois escoltistas precisa ter CNH+validade
+    // (verificado em submit() abaixo). Categoria CNH também só é exigida
+    // quando o próprio CNH está preenchido.
     const req: [keyof Escoltista, string][] = [
       ['nome','Nome'], ['cpf','CPF'], ['rg','RG'], ['orgaoEmissor','Órgão emis./UF'],
-      ['cnh','CNH'], ['cnhCategoria','Categoria CNH'], ['cnhVencimento','Vencimento CNH'],
       ['cnvNumero','CNV Número'], ['cnvValidade','Validade CNV'],
       ['rua','Rua'], ['numero','Número'], ['bairro','Bairro'], ['cidade','Cidade'],
       ['uf','UF'], ['cep','CEP'], ['celular','Celular'], ['admissao','Admissão'],
@@ -164,6 +167,32 @@ const DhlSupplierIntake: React.FC = () => {
     if (e1) { alert(e1); setStep(1); return; }
     if (e2) { alert(e2); setStep(2); return; }
     if (ev) { alert(ev); setStep(3); return; }
+    // Regra cruzada de CNH: PELO MENOS UM dos escoltistas precisa ter CNH e
+    // Vencimento da CNH preenchidos. Se ambos estiverem sem, bloqueia; caso
+    // contrário, deixa passar (um agente pode ter só CNV).
+    const a1HasCnh = !!String(agent1.cnh || '').trim() && !!String(agent1.cnhVencimento || '').trim();
+    const a2HasCnh = !!String(agent2.cnh || '').trim() && !!String(agent2.cnhVencimento || '').trim();
+    if (!a1HasCnh && !a2HasCnh) {
+      alert('Pelo menos UM dos escoltistas precisa ter CNH e Vencimento da CNH preenchidos.');
+      setStep(1);
+      return;
+    }
+    // Coerência por escoltista: se o CNH foi informado, exigir também categoria
+    // e vencimento (e vice-versa) — evita registro com dados incompletos.
+    const checkAgentCnhBlock = (a: Escoltista, label: string): string | null => {
+      const hasNum = !!String(a.cnh || '').trim();
+      const hasCat = !!String(a.cnhCategoria || '').trim();
+      const hasVal = !!String(a.cnhVencimento || '').trim();
+      if (!hasNum && !hasCat && !hasVal) return null; // bloco vazio é permitido
+      if (!hasNum) return `${label}: informe o número da CNH (você preencheu categoria/validade).`;
+      if (!hasVal) return `${label}: informe o Vencimento da CNH.`;
+      if (!hasCat) return `${label}: informe a Categoria da CNH.`;
+      return null;
+    };
+    const c1 = checkAgentCnhBlock(agent1, 'Escoltista 1');
+    if (c1) { alert(c1); setStep(1); return; }
+    const c2 = checkAgentCnhBlock(agent2, 'Escoltista 2');
+    if (c2) { alert(c2); setStep(2); return; }
     if (!agent1.id && !agent2.id && agent1.cpf === agent2.cpf) {
       alert('Escoltista 1 e Escoltista 2 não podem ter o mesmo CPF');
       return;
@@ -422,8 +451,12 @@ const EscoltistaForm: React.FC<{
   const showFields = cpfComplete || isLocked;
   const lock = (field: keyof Escoltista) => lockedFields.has(field as string);
   const lockCls = (field: keyof Escoltista) => lock(field) ? ' bg-gray-50 text-gray-600' : '';
+  // CNH/Categoria/Venc. CNH NÃO são obrigatórios por escoltista (regra
+  // cruzada validada no submit), por isso não entram nesta lista — assim a
+  // mensagem "campos faltantes" só aparece quando algo realmente exigido
+  // está vazio, evitando confundir o fornecedor.
   const missingFields = lookupStatus === 'found' && [
-    'nome','rg','orgaoEmissor','cnh','cnhCategoria','cnhVencimento','cnvNumero','cnvValidade',
+    'nome','rg','orgaoEmissor','cnvNumero','cnvValidade',
     'rua','numero','bairro','cidade','uf','cep','celular','admissao'
   ].some(k => !lockedFields.has(k));
 
@@ -483,9 +516,9 @@ const EscoltistaForm: React.FC<{
           <div className="md:col-span-2"><label className={LABEL}>Nome*</label><input className={INPUT + lockCls('nome')} value={data.nome} onChange={e => set({ nome: e.target.value })} readOnly={lock('nome')} data-testid="input-nome" /></div>
           <div><label className={LABEL}>RG*</label><input className={INPUT + lockCls('rg')} value={data.rg} onChange={e => set({ rg: e.target.value })} readOnly={lock('rg')} /></div>
           <div className="md:col-span-2"><label className={LABEL}>Órgão emis./UF*</label><input className={INPUT + lockCls('orgaoEmissor')} placeholder="SSP/SP" value={data.orgaoEmissor} onChange={e => set({ orgaoEmissor: e.target.value.toUpperCase() })} readOnly={lock('orgaoEmissor')} /></div>
-          <div><label className={LABEL}>CNH*</label><input className={INPUT + lockCls('cnh')} value={data.cnh} onChange={e => set({ cnh: e.target.value })} readOnly={lock('cnh')} /></div>
-          <div><label className={LABEL}>Categoria*</label><select className={SELECT + lockCls('cnhCategoria')} value={data.cnhCategoria} onChange={e => set({ cnhCategoria: e.target.value })} disabled={lock('cnhCategoria')}><option value="">—</option>{['A','B','AB','C','AC','D','AD','E','AE'].map(c => <option key={c}>{c}</option>)}</select></div>
-          <div><label className={LABEL}>Venc. CNH*</label><input type="date" className={INPUT + lockCls('cnhVencimento')} value={data.cnhVencimento} onChange={e => set({ cnhVencimento: e.target.value })} readOnly={lock('cnhVencimento')} /></div>
+          <div><label className={LABEL}>CNH</label><input className={INPUT + lockCls('cnh')} value={data.cnh} onChange={e => set({ cnh: e.target.value })} readOnly={lock('cnh')} /></div>
+          <div><label className={LABEL}>Categoria</label><select className={SELECT + lockCls('cnhCategoria')} value={data.cnhCategoria} onChange={e => set({ cnhCategoria: e.target.value })} disabled={lock('cnhCategoria')}><option value="">—</option>{['A','B','AB','C','AC','D','AD','E','AE'].map(c => <option key={c}>{c}</option>)}</select></div>
+          <div><label className={LABEL}>Venc. CNH</label><input type="date" className={INPUT + lockCls('cnhVencimento')} value={data.cnhVencimento} onChange={e => set({ cnhVencimento: e.target.value })} readOnly={lock('cnhVencimento')} /></div>
           <div className="md:col-span-2"><label className={LABEL}>CNV Número*</label><input className={INPUT + lockCls('cnvNumero')} value={data.cnvNumero} onChange={e => set({ cnvNumero: e.target.value })} readOnly={lock('cnvNumero')} /></div>
           <div><label className={LABEL}>Validade CNV*</label><input type="date" className={INPUT + lockCls('cnvValidade')} value={data.cnvValidade} onChange={e => set({ cnvValidade: e.target.value })} readOnly={lock('cnvValidade')} /></div>
           <div className="md:col-span-2"><label className={LABEL}>Rua*</label><input className={INPUT + lockCls('rua')} value={data.rua} onChange={e => set({ rua: e.target.value })} readOnly={lock('rua')} /></div>

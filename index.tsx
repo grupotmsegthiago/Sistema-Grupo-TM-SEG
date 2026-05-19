@@ -32,6 +32,18 @@ async function clearCachesAndSWs(): Promise<void> {
   }
 }
 
+// Rotas públicas (fornecedor DHL, cadastro operacional, reset de senha)
+// NÃO devem sofrer auto-reload por divergência de versão — o usuário externo
+// está digitando dados sensíveis e perderia tudo. Para eles, o bundle local
+// é suficiente; só o operacional interno precisa de PWA/cache-busting.
+const PUBLIC_PATHS = ['/fornecedor/dhl', '/cadastro-operacional', '/reset-password'];
+const isPublicExternalRoute = (() => {
+  try {
+    const p = window.location.pathname.toLowerCase().replace(/\/$/, '');
+    return PUBLIC_PATHS.includes(p);
+  } catch { return false; }
+})();
+
 (async () => {
   try {
     // 1) Remove SWs órfãos (de scopes ou URLs diferentes do nosso /sw.js)
@@ -56,7 +68,9 @@ async function clearCachesAndSWs(): Promise<void> {
     }
 
     // 3) Compara com versão publicada no servidor — só age se divergir.
-    if (window.location.hostname !== 'localhost' && !sessionStorage.getItem(REDIRECTED_FLAG)) {
+    //    PULA inteiramente para rotas públicas externas (ex.: fornecedor DHL),
+    //    onde um reload mid-typing fará o fornecedor perder os dados.
+    if (!isPublicExternalRoute && window.location.hostname !== 'localhost' && !sessionStorage.getItem(REDIRECTED_FLAG)) {
       try {
         const res = await fetch('/api/version', {
           cache: 'no-store',
