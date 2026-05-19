@@ -202,9 +202,17 @@ const DailyGoalThermometer: React.FC<Props> = ({ viewPeriod = 'TODAY', customSta
                                 </span>
                                 <Clock size={10} className="text-gray-300 animate-spin duration-[5000ms]" />
                             </div>
-                            <div className="flex items-center gap-1">
+                            <div className="flex items-center gap-1 flex-wrap">
                                 <span className={`w-1.5 h-1.5 rounded-full ${stats.isGoalMet ? 'bg-green-500' : 'animate-pulse ' + stats.colorClass}`}></span>
                                 <span className="text-[8px] font-black text-slate-500 uppercase tracking-widest">Sincronização Ativa</span>
+                                <span className="text-[8px] font-black text-slate-300">•</span>
+                                <span
+                                    className="text-[8px] font-black text-slate-700 uppercase tracking-widest bg-slate-100 px-1.5 py-[1px] rounded-md border border-slate-200 whitespace-nowrap"
+                                    data-testid="text-mission-count"
+                                    title="Quantidade de missões no período"
+                                >
+                                    {filteredMissions.length} {filteredMissions.length === 1 ? 'Missão' : 'Missões'}
+                                </span>
                             </div>
                         </div>
                     </div>
