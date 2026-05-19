@@ -1743,14 +1743,78 @@ export function registerDhlIntakeRoutes(
 
   // Persiste o veículo em provider_intake_vehicles (upsert por placa do
   // fornecedor). Validação mínima: placa não vazia. Quem chama exige o resto.
-  const persistVehicleCore = async (sb: any, providerId: string, v: any): Promise<{ id: string; snap: any }> => {
+  // Espelha o veículo do intake na tabela canônica `vehicles` (cadastro principal),
+  // para que apareça automaticamente no dropdown da OS e possa ser vinculado como
+  // vehicle_id da mission. Retorna o id de `vehicles` (não o de provider_intake_vehicles).
+  const mirrorIntakeVehicleToCanonical = async (
+    sb: any,
+    providerName: string | null,
+    snap: any,
+  ): Promise<string | null> => {
+    try {
+      if (!providerName) return null;
+      const placa = String(snap?.placa || '').toUpperCase().replace(/\s/g, '');
+      if (!placa) return null;
+      const trackerType = snap?.tecnologia ? String(snap.tecnologia).toUpperCase() : null;
+      const trackerId = snap?.id_rastreador ? String(snap.id_rastreador).toUpperCase() : null;
+      const payload: any = {
+        plate: placa,
+        brand: snap?.marca ? String(snap.marca).toUpperCase() : '',
+        model: snap?.modelo ? String(snap.modelo).toUpperCase() : '',
+        year: snap?.ano ? String(snap.ano) : '',
+        provider: providerName,
+        status: 'Ativo',
+        color: snap?.cor ? String(snap.cor).toUpperCase() : '',
+        tracker_type: trackerType,
+        tracker_id: trackerId,
+      };
+      // Upsert por placa (placa é única no cadastro principal). Provider mismatch:
+      // NÃO retorna o id existente — devolve null para que a OS não fique vinculada
+      // a um veículo de outro fornecedor (o filtro do dropdown esconderia o item).
+      const { data: existing } = await sb.from('vehicles').select('id, provider').eq('plate', placa).maybeSingle();
+      if (existing) {
+        const sameProvider = !existing.provider || String(existing.provider).trim().toUpperCase() === providerName.toUpperCase();
+        if (!sameProvider) {
+          console.warn(`[DHL Intake] placa ${placa} já cadastrada para outro fornecedor (${existing.provider}); ignorando espelhamento canônico.`);
+          return null;
+        }
+        await sb.from('vehicles').update(payload).eq('id', existing.id);
+        return String(existing.id);
+      }
+      // Insert com fallback atômico para corrida: se a unique de plate disparar,
+      // refaz a consulta e retorna o id já existente em vez de devolver null.
+      const { data: ins, error: insErr } = await sb.from('vehicles').insert([payload]).select('id').single();
+      if (insErr) {
+        const msg = String(insErr.message || '').toLowerCase();
+        const isUnique = msg.includes('duplicate') || msg.includes('unique') || (insErr as any).code === '23505';
+        if (isUnique) {
+          const { data: again } = await sb.from('vehicles').select('id, provider').eq('plate', placa).maybeSingle();
+          if (again) {
+            const sameProvider = !again.provider || String(again.provider).trim().toUpperCase() === providerName.toUpperCase();
+            return sameProvider ? String(again.id) : null;
+          }
+        }
+        console.error('[DHL Intake] mirror vehicles insert falhou:', insErr.message);
+        return null;
+      }
+      return ins?.id ? String(ins.id) : null;
+    } catch (e: any) {
+      console.error('[DHL Intake] mirror vehicles exception:', e?.message || e);
+      return null;
+    }
+  };
+
+  const persistVehicleCore = async (sb: any, providerId: string, providerName: string | null, v: any): Promise<{ id: string; snap: any; canonicalVehicleId: string | null }> => {
     if (v.id) {
       const { data } = await sb.from('provider_intake_vehicles')
         .select('*')
         .eq('id', v.id)
         .eq('provider_id', providerId)
         .maybeSingle();
-      if (data) return { id: data.id, snap: data };
+      if (data) {
+        const canonicalVehicleId = await mirrorIntakeVehicleToCanonical(sb, providerName, data);
+        return { id: data.id, snap: data, canonicalVehicleId };
+      }
       throw new Error('Veículo: registro selecionado não pertence ao fornecedor desta OS');
     }
     const placa = String(v.placa || '').toUpperCase().replace(/\s/g, '');
@@ -1768,14 +1832,18 @@ export function registerDhlIntakeRoutes(
       comunicacao: v.comunicacao || null,
     };
     const { data: existing } = await sb.from('provider_intake_vehicles').select('id').eq('provider_id', providerId).eq('placa', placa).maybeSingle();
+    let intakeRow: any;
     if (existing) {
       await sb.from('provider_intake_vehicles').update({ ...payload, updated_at: new Date().toISOString() }).eq('id', existing.id);
       const { data: row } = await sb.from('provider_intake_vehicles').select('*').eq('id', existing.id).single();
-      return { id: existing.id, snap: row };
+      intakeRow = row;
+    } else {
+      const { data: ins, error: insErr } = await sb.from('provider_intake_vehicles').insert([payload]).select().single();
+      if (insErr) throw new Error('Erro ao salvar veículo: ' + insErr.message);
+      intakeRow = ins;
     }
-    const { data: ins, error: insErr } = await sb.from('provider_intake_vehicles').insert([payload]).select().single();
-    if (insErr) throw new Error('Erro ao salvar veículo: ' + insErr.message);
-    return { id: ins.id, snap: ins };
+    const canonicalVehicleId = await mirrorIntakeVehicleToCanonical(sb, providerName, intakeRow);
+    return { id: intakeRow.id, snap: intakeRow, canonicalVehicleId };
   };
 
   // ──────────────────────────────────────────────────────────────
@@ -2037,9 +2105,18 @@ export function registerDhlIntakeRoutes(
       }
       if (body.vehicleData) {
         try {
-          const r = await persistVehicleCore(sb, intake.provider_id, body.vehicleData);
+          const r = await persistVehicleCore(sb, intake.provider_id, intake.provider_name || null, body.vehicleData);
           patch.vehicle_id = r.id;
           patch.vehicle_snapshot = r.snap;
+          // Espelha vehicle_id canônico em missions já no /progress, para que a OS
+          // fique pré-vinculada ao veículo cadastrado mesmo antes do submit final.
+          if (r.canonicalVehicleId && intake.mission_id) {
+            try {
+              await sb.from('missions').update({ vehicle_id: r.canonicalVehicleId }).eq('id', intake.mission_id);
+            } catch (mErr: any) {
+              console.error('[DHL Intake] /progress: falha ao espelhar vehicle_id em missions:', mErr?.message);
+            }
+          }
         } catch (e: any) {
           return res.status(400).json({ error: e?.message || 'Erro ao salvar veículo' });
         }
@@ -2211,20 +2288,24 @@ export function registerDhlIntakeRoutes(
       try {
         a1 = await persistEscoltistaCore(sb, providerId, intake.provider_name || null, agent1, 'Escoltista 1');
         a2 = await persistEscoltistaCore(sb, providerId, intake.provider_name || null, agent2, 'Escoltista 2');
-        vh = await persistVehicleCore(sb, providerId, vehicle);
+        vh = await persistVehicleCore(sb, providerId, intake.provider_name || null, vehicle);
       } catch (e: any) {
         return res.status(400).json({ error: e?.message || 'Dados inválidos' });
       }
-      // Espelha o nome dos agentes em missions.agent1/agent2 (mesmo padrão do /progress)
+      // Espelha o nome dos agentes em missions.agent1/agent2 e o vehicle_id canônico
+      // (vindo do espelhamento na tabela `vehicles`) para que a OS já fique vinculada
+      // ao veículo cadastrado, sem precisar do operacional reabrir e selecionar.
       try {
         if (intake.mission_id) {
-          await sb.from('missions').update({
+          const missionPatch: any = {
             agent1: a1.snap?.nome || null,
             agent2: a2.snap?.nome || null,
-          }).eq('id', intake.mission_id);
+          };
+          if (vh?.canonicalVehicleId) missionPatch.vehicle_id = vh.canonicalVehicleId;
+          await sb.from('missions').update(missionPatch).eq('id', intake.mission_id);
         }
       } catch (e: any) {
-        console.error('[DHL Intake] falha ao espelhar agent1/agent2 em missions:', e?.message);
+        console.error('[DHL Intake] falha ao espelhar agent1/agent2/vehicle_id em missions:', e?.message);
       }
       // Pós-persistência: garante que se um foi novo e outro selecionado, IDs ainda diferem
       if (a1.id === a2.id) {

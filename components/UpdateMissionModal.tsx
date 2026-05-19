@@ -1642,7 +1642,19 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
                             <label className={LABEL_CLASS}>Viatura (Placa)</label>
                             <div className="flex gap-1.5">
                                 <div className="relative flex-1">
-                                    <input type="text" className={INPUT_CLASS} placeholder={editData.provider ? "Placa..." : "Aguardando Fornecedor..."} value={searchVehicle} onChange={e => setSearchVehicle(e.target.value)} onFocus={() => editData.provider && setActiveDropdown('vehicle')} disabled={!editData.provider} />
+                                    <input type="text" className={INPUT_CLASS} placeholder={editData.provider ? "Placa..." : "Aguardando Fornecedor..."} value={searchVehicle} onChange={e => {
+                                        const v = e.target.value;
+                                        setSearchVehicle(v);
+                                        // Ao editar manualmente, desfaz a seleção anterior se o texto
+                                        // não corresponde mais à placa selecionada — assim o botão
+                                        // "+ Cadastrar" reflete corretamente o estado de "sem cadastro".
+                                        if (editData.vehicleId) {
+                                            const sel = vehiclesList.find(vv => vv.id.toString() === editData.vehicleId);
+                                            if (!sel || (sel.plate || '').toUpperCase() !== v.toUpperCase()) {
+                                                setEditData(prev => ({ ...prev, vehicleId: '' }));
+                                            }
+                                        }
+                                    }} onFocus={() => editData.provider && setActiveDropdown('vehicle')} disabled={!editData.provider} />
                                     <CarFront size={14} className="absolute right-3 top-3 text-gray-300" />
                                     {activeDropdown === 'vehicle' && editData.provider && (
                                         <div className="absolute z-[100] left-0 right-0 mt-1 bg-white border border-gray-200 rounded-xl shadow-2xl max-h-48 overflow-y-auto">
@@ -1655,7 +1667,23 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
                                         </div>
                                     )}
                                 </div>
-                                <button type="button" disabled={!editData.provider} onClick={() => setQuickModal('vehicle')} className="p-2.5 bg-gray-100 text-gray-600 rounded-xl hover:bg-gray-200 transition-all border border-gray-200 disabled:opacity-50"><Plus size={18}/></button>
+                                {(() => {
+                                    const typed = (searchVehicle || '').trim();
+                                    const hasMatch = typed.length > 0 && filteredVehicles.some(v => (v.plate || '').toUpperCase() === typed.toUpperCase());
+                                    const noMatchTyped = typed.length > 0 && !hasMatch;
+                                    return (
+                                        <button
+                                            type="button"
+                                            disabled={!editData.provider}
+                                            onClick={() => setQuickModal('vehicle')}
+                                            className={`p-2.5 rounded-xl transition-all border shadow-sm disabled:opacity-50 flex items-center gap-1 ${noMatchTyped ? 'bg-yellow-400 hover:bg-yellow-500 text-gray-900 border-yellow-500 animate-pulse font-black' : 'bg-gray-100 hover:bg-gray-200 text-gray-600 border-gray-200'}`}
+                                            title={noMatchTyped ? `Cadastrar nova viatura "${typed.toUpperCase()}"` : 'Cadastrar nova viatura'}
+                                            data-testid="btn-add-vehicle"
+                                        >
+                                            <Plus size={18}/>{noMatchTyped && <span className="text-[10px] uppercase tracking-wider">Cadastrar</span>}
+                                        </button>
+                                    );
+                                })()}
                             </div>
                         </div>
 
@@ -1684,7 +1712,23 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
                                         </div>
                                     )}
                                 </div>
-                                <button type="button" disabled={!editData.provider} onClick={() => setQuickModal('agent')} className="p-2.5 bg-gray-100 text-gray-600 rounded-xl hover:bg-gray-200 transition-all border border-gray-200 disabled:opacity-50"><Plus size={18}/></button>
+                                {(() => {
+                                    const typed = (searchAgent1 || '').trim();
+                                    const hasMatch = typed && filteredAgents.some(a => (a.name || '').toUpperCase() === typed.toUpperCase());
+                                    const noMatchTyped = typed.length > 0 && !hasMatch && editData.agent1 !== typed;
+                                    return (
+                                        <button
+                                            type="button"
+                                            disabled={!editData.provider}
+                                            onClick={() => setQuickModal('agent')}
+                                            className={`p-2.5 rounded-xl transition-all border shadow-sm disabled:opacity-50 flex items-center gap-1 ${noMatchTyped ? 'bg-yellow-400 hover:bg-yellow-500 text-gray-900 border-yellow-500 animate-pulse font-black' : 'bg-gray-100 hover:bg-gray-200 text-gray-600 border-gray-200'}`}
+                                            title={noMatchTyped ? `Cadastrar novo escoltista "${typed}"` : 'Cadastrar novo escoltista'}
+                                            data-testid="btn-add-agent1"
+                                        >
+                                            <Plus size={18}/>{noMatchTyped && <span className="text-[10px] uppercase tracking-wider">Cadastrar</span>}
+                                        </button>
+                                    );
+                                })()}
                             </div>
                             {blockedAgent1 && (
                                 <div className={`mt-1.5 flex items-center gap-1.5 px-3 py-2 rounded-lg ${blockedAgent1.status === 'Bloqueado / Ação Trabalhista' ? 'animate-blocked-flash-3d text-white' : 'bg-red-100 border border-red-300'}`}>
@@ -1719,7 +1763,23 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
                                         </div>
                                     )}
                                 </div>
-                                <button type="button" disabled={!editData.provider} onClick={() => setQuickModal('agent')} className="p-2.5 bg-gray-100 text-gray-600 rounded-xl hover:bg-gray-200 transition-all border border-gray-200 disabled:opacity-50"><Plus size={18}/></button>
+                                {(() => {
+                                    const typed = (searchAgent2 || '').trim();
+                                    const hasMatch = typed && filteredAgents.some(a => (a.name || '').toUpperCase() === typed.toUpperCase());
+                                    const noMatchTyped = typed.length > 0 && !hasMatch && editData.agent2 !== typed;
+                                    return (
+                                        <button
+                                            type="button"
+                                            disabled={!editData.provider}
+                                            onClick={() => setQuickModal('agent')}
+                                            className={`p-2.5 rounded-xl transition-all border shadow-sm disabled:opacity-50 flex items-center gap-1 ${noMatchTyped ? 'bg-yellow-400 hover:bg-yellow-500 text-gray-900 border-yellow-500 animate-pulse font-black' : 'bg-gray-100 hover:bg-gray-200 text-gray-600 border-gray-200'}`}
+                                            title={noMatchTyped ? `Cadastrar novo escoltista "${typed}"` : 'Cadastrar novo escoltista'}
+                                            data-testid="btn-add-agent2"
+                                        >
+                                            <Plus size={18}/>{noMatchTyped && <span className="text-[10px] uppercase tracking-wider">Cadastrar</span>}
+                                        </button>
+                                    );
+                                })()}
                             </div>
                             {blockedAgent2 && (
                                 <div className={`mt-1.5 flex items-center gap-1.5 px-3 py-2 rounded-lg ${blockedAgent2.status === 'Bloqueado / Ação Trabalhista' ? 'animate-blocked-flash-3d text-white' : 'bg-red-100 border border-red-300'}`}>
