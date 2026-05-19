@@ -225,7 +225,7 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
   }, [isDhlClient, hasSavedOs, osId, fetchDhlIntakes]);
 
   const handleRegenerateDhlLink = async () => {
-    if (!hasSavedOs) { alert('Salve a OS antes de gerar o link.'); return; }
+    if (!hasSavedOs) { showNotification('OS não salva', 'Salve a OS antes de gerar o link.', 'warning'); return; }
     setDhlRegenerating(true);
     try {
       const token = localStorage.getItem('authToken') || '';
@@ -238,12 +238,19 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
       const j = await r.json();
       if (r.ok && j.url) {
         setDhlLinkModal({ open: true, missionId: osId, url: j.url, whatsappText: j.whatsappText || '', phone: j.providerPhone || '' });
+        if (j.emailSent) {
+          showNotification('E-mail Enviado', `Novo link DHL enviado para ${j.providerEmail || 'o fornecedor'}.`, 'success');
+        } else if (j.emailError) {
+          showNotification('E-mail não enviado', `Falha ao enviar e-mail: ${j.emailError}. Use o WhatsApp para enviar manualmente.`, 'warning');
+        } else if (!j.providerEmail) {
+          showNotification('Fornecedor sem e-mail', 'Não há e-mail cadastrado para o fornecedor. Envie pelo WhatsApp.', 'warning');
+        }
         await fetchDhlIntakes(osId);
       } else {
-        alert('Falha ao regerar link DHL: ' + (j.error || 'erro desconhecido'));
+        showNotification('Falha ao gerar novo link', j.error || 'erro desconhecido', 'error');
       }
     } catch (err: any) {
-      alert('Falha ao regerar link DHL: ' + (err?.message || 'erro de rede'));
+      showNotification('Falha ao gerar novo link', err?.message || 'erro de rede', 'error');
     } finally {
       setDhlRegenerating(false);
     }
@@ -1434,23 +1441,6 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
                                 <p className="text-[10px] font-black uppercase tracking-widest" style={{ color: '#7f1d1d' }}>
                                   Links DHL desta OS {dhlIntakes.length > 0 && <span className="text-gray-500">({dhlIntakes.length})</span>}
                                 </p>
-                                {(() => {
-                                  const last = dhlIntakes[0];
-                                  const showRegen = !!last && (last.effective_status === 'cancelado' || last.effective_status === 'expirado');
-                                  if (!showRegen) return null;
-                                  return (
-                                    <button
-                                      type="button"
-                                      onClick={handleRegenerateDhlLink}
-                                      disabled={dhlRegenerating}
-                                      className="px-3 h-8 rounded-lg bg-red-600 text-white text-[10px] font-black uppercase tracking-wider hover:bg-red-700 disabled:opacity-50 active:scale-95 transition-all flex items-center gap-1"
-                                      data-testid="btn-regenerate-dhl-link"
-                                    >
-                                      {dhlRegenerating ? <Loader2 size={12} className="animate-spin" /> : <Mail size={12} />}
-                                      {dhlRegenerating ? 'Gerando...' : 'Regerar Link'}
-                                    </button>
-                                  );
-                                })()}
                               </div>
                               {dhlIntakesLoading && dhlIntakes.length === 0 ? (
                                 <p className="text-[10px] text-gray-500 italic" data-testid="text-dhl-intakes-loading">Carregando...</p>
@@ -1562,10 +1552,26 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
                                       );
                                     };
 
+                                    const showRowRegen = st === 'cancelado' || st === 'expirado';
                                     return (
                                       <div key={it.id} className="bg-white border border-gray-200 rounded-lg p-2.5 text-[10px]" data-testid={`row-dhl-intake-${it.id}`}>
                                         <div className="flex items-center justify-between gap-2 mb-1">
-                                          <span className={`px-2 py-0.5 ${badge.bg} ${badge.fg} font-black uppercase tracking-wider rounded`} data-testid={`status-dhl-intake-${it.id}`}>{badge.label}</span>
+                                          <div className="flex items-center gap-2">
+                                            <span className={`px-2 py-0.5 ${badge.bg} ${badge.fg} font-black uppercase tracking-wider rounded`} data-testid={`status-dhl-intake-${it.id}`}>{badge.label}</span>
+                                            {showRowRegen && (
+                                              <button
+                                                type="button"
+                                                onClick={handleRegenerateDhlLink}
+                                                disabled={dhlRegenerating}
+                                                className="px-2 py-0.5 rounded bg-red-600 text-white font-black uppercase tracking-wider hover:bg-red-700 disabled:opacity-50 active:scale-95 transition-all flex items-center gap-1"
+                                                data-testid={`btn-resend-dhl-intake-${it.id}`}
+                                                title="Gerar novo link e reenviar ao fornecedor"
+                                              >
+                                                {dhlRegenerating ? <Loader2 size={10} className="animate-spin" /> : <Mail size={10} />}
+                                                {dhlRegenerating ? 'Enviando...' : 'Gerar novo link'}
+                                              </button>
+                                            )}
+                                          </div>
                                           <span className="text-gray-500 font-mono" data-testid={`text-dhl-intake-created-${it.id}`}>Criado: {fmt(it.created_at)}</span>
                                         </div>
                                         <p className="font-bold text-gray-800 truncate" data-testid={`text-dhl-intake-provider-${it.id}`}>{it.provider_name || '—'}</p>
