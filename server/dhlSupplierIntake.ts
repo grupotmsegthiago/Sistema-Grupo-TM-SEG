@@ -68,7 +68,7 @@ export async function runDhlIntakeMigrations(): Promise<void> {
     await sb.rpc('exec_sql', { sql: `
       CREATE TABLE IF NOT EXISTS provider_escoltistas (
         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-        provider_id UUID NOT NULL,
+        provider_id TEXT NOT NULL,
         nome TEXT NOT NULL,
         cpf TEXT NOT NULL,
         rg TEXT,
@@ -95,7 +95,7 @@ export async function runDhlIntakeMigrations(): Promise<void> {
 
       CREATE TABLE IF NOT EXISTS provider_intake_vehicles (
         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-        provider_id UUID NOT NULL,
+        provider_id TEXT NOT NULL,
         placa TEXT NOT NULL,
         renavam TEXT,
         marca TEXT,
@@ -115,7 +115,7 @@ export async function runDhlIntakeMigrations(): Promise<void> {
         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
         token TEXT NOT NULL UNIQUE,
         mission_id TEXT NOT NULL,
-        provider_id UUID,
+        provider_id TEXT,
         provider_name TEXT,
         status TEXT NOT NULL DEFAULT 'pendente',
         agent1_id UUID,
@@ -150,6 +150,11 @@ export async function runDhlIntakeMigrations(): Promise<void> {
       -- com o fornecedor por outro canal). Auditoria de quem pausou também é gravada.
       ALTER TABLE dhl_supplier_intakes ADD COLUMN IF NOT EXISTS auto_reminders_paused_at TIMESTAMPTZ;
       ALTER TABLE dhl_supplier_intakes ADD COLUMN IF NOT EXISTS auto_reminders_paused_by TEXT;
+      -- Compatibilidade: providers.id deste sistema é numérico, então provider_id
+      -- precisa aceitar qualquer string. Converte de UUID para TEXT se preciso.
+      ALTER TABLE dhl_supplier_intakes ALTER COLUMN provider_id TYPE TEXT USING provider_id::TEXT;
+      ALTER TABLE provider_escoltistas ALTER COLUMN provider_id TYPE TEXT USING provider_id::TEXT;
+      ALTER TABLE provider_intake_vehicles ALTER COLUMN provider_id TYPE TEXT USING provider_id::TEXT;
       -- Backfill: intakes pré-existentes que já receberam um lembrete (flag preenchida)
       -- contam como 1 envio, evitando que o ciclo recém-criado dispare um lembrete
       -- "extra" no período de transição.
@@ -1219,7 +1224,7 @@ export function registerDhlIntakeRoutes(
         const { data: inserted, error: iErr } = await sb.from('dhl_supplier_intakes').insert([{
           token,
           mission_id: mission.id,
-          provider_id: provider.id,
+          provider_id: provider.id != null ? String(provider.id) : null,
           provider_name: provider.trading_name || provider.name,
           status: 'pendente',
           sent_to_email: providerEmail || null,

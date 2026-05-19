@@ -24,7 +24,7 @@ $$;
 -- 2) Memória de Escoltistas por Fornecedor
 CREATE TABLE IF NOT EXISTS public.provider_escoltistas (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  provider_id UUID NOT NULL,
+  provider_id TEXT NOT NULL,
   nome TEXT NOT NULL,
   cpf TEXT NOT NULL,
   rg TEXT,
@@ -52,7 +52,7 @@ CREATE INDEX IF NOT EXISTS idx_provider_escoltistas_cpf ON public.provider_escol
 -- 3) Memória de Veículos por Fornecedor
 CREATE TABLE IF NOT EXISTS public.provider_intake_vehicles (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  provider_id UUID NOT NULL,
+  provider_id TEXT NOT NULL,
   placa TEXT NOT NULL,
   renavam TEXT,
   marca TEXT,
@@ -73,7 +73,7 @@ CREATE TABLE IF NOT EXISTS public.dhl_supplier_intakes (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   token TEXT NOT NULL UNIQUE,
   mission_id TEXT NOT NULL,
-  provider_id UUID,
+  provider_id TEXT,
   provider_name TEXT,
   status TEXT NOT NULL DEFAULT 'pendente',
   agent1_id UUID,
@@ -112,6 +112,13 @@ CREATE INDEX IF NOT EXISTS idx_dhl_intake_resends_mission ON public.dhl_supplier
 
 -- 5) Coluna obrigatória da OS para clientes DHL — Número da S.E.
 ALTER TABLE public.missions ADD COLUMN IF NOT EXISTS dhl_se_number TEXT;
+
+-- 5b) Correção retroativa: provider_id precisa aceitar IDs numéricos (string),
+-- pois neste sistema providers.id não é UUID. Se a tabela já foi criada com
+-- UUID, converte agora.
+ALTER TABLE public.dhl_supplier_intakes ALTER COLUMN provider_id TYPE TEXT USING provider_id::TEXT;
+ALTER TABLE public.provider_escoltistas ALTER COLUMN provider_id TYPE TEXT USING provider_id::TEXT;
+ALTER TABLE public.provider_intake_vehicles ALTER COLUMN provider_id TYPE TEXT USING provider_id::TEXT;
 
 -- 6) Trigger que invalida links DHL quando a OS é excluída/cancelada
 CREATE OR REPLACE FUNCTION public.cancel_dhl_intakes_on_mission_change() RETURNS TRIGGER AS $func$
