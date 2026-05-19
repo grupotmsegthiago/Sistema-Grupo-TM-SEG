@@ -5,7 +5,7 @@ import { supabase } from '../lib/supabase';
 import { authFetch } from '../lib/authFetch';
 import { useNotification } from '../lib/NotificationContext';
 import { calculateMissionFinancials, auditMissionFinancials, extractUF, UF_TO_REGION, clientFuzzyFilter, clientNameShort } from '../lib/financialUtils';
-import { X, Calculator, Loader2, Save, CheckCircle2, TrendingUp, Landmark, Zap, RotateCcw, Building2, Briefcase, Plus, Users, MapPin, ArrowRight, BrainCircuit, AlertTriangle, AlertCircle, Edit2, Info, RefreshCw, Clock, Pencil, Lock, ShieldCheck, Camera, Image as ImageIcon, Link2, Layers, Scale, Sparkles, Navigation } from 'lucide-react';
+import { X, Calculator, Loader2, Save, CheckCircle2, TrendingUp, Landmark, Zap, RotateCcw, Building2, Briefcase, Plus, Users, MapPin, ArrowRight, BrainCircuit, AlertTriangle, AlertCircle, Edit2, Info, RefreshCw, Clock, Pencil, Lock, ShieldCheck, Camera, Image as ImageIcon, Link2, Layers, Scale, Sparkles, Navigation, History } from 'lucide-react';
 import { suggestPriceTable } from '../lib/gemini';
 import ProviderCostForm from './ProviderCostForm';
 import ClientPriceForm from './ClientPriceForm';
@@ -226,6 +226,9 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
   const [isCalculatingToll, setIsCalculatingToll] = useState(false);
   const [tollEmbeddedInCost, setTollEmbeddedInCost] = useState(false);
   const [approvalLog, setApprovalLog] = useState<Array<{user: string; role: string; stage: string; date: string}>>([]);
+  // Histórico permanente de alterações pós-aprovação (Data / Quem / Mudanças / Observação)
+  const [editHistory, setEditHistory] = useState<Array<{user: string; date: string; changes: string[]; note: string}>>([]);
+  const [editObservation, setEditObservation] = useState('');
   const [systemCalculatedCost, setSystemCalculatedCost] = useState<number | null>(null);
   const [systemCalculatedRevenue, setSystemCalculatedRevenue] = useState<number | null>(null);
   const [controllerSavedCost, setControllerSavedCost] = useState<number | null>(null);
@@ -284,9 +287,12 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
   // administrador e CEO podem destravar manualmente para corrigir algo.
   const isBillingLocked = !!(mission?.billing_verified_by || mission?.billing_approved || mission?.snapshot_approved_by);
   const canUnlockBilling = ['diretoria', 'administrador', 'ceo'].includes(userRoleLower);
+  // ADMINISTRADOR (ex: Barbara) tem liberação permanente: pode editar OS aprovada
+  // a qualquer momento. O sistema registra cada alteração no histórico permanente.
+  const isAdminFullAccess = userRoleLower === 'administrador';
   const [unlockOverride, setUnlockOverride] = useState(false);
-  useEffect(() => { setUnlockOverride(false); }, [mission?.id]);
-  const isEffectivelyLocked = isBillingLocked && !unlockOverride;
+  useEffect(() => { setUnlockOverride(false); setEditObservation(''); }, [mission?.id]);
+  const isEffectivelyLocked = isBillingLocked && !unlockOverride && !isAdminFullAccess;
   
 
   const tollCalcMissionRef = React.useRef<string | null>(null);
@@ -749,10 +755,30 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
               
               fetchHistoricalPatterns(fullMission, (ptRes.data || []) as ProviderCostTable[]);
 
-              const [approvalRes, adjustmentRes] = await Promise.all([
+              const [approvalRes, adjustmentRes, editHistRes] = await Promise.all([
                   supabase.from('system_logs').select('*').eq('entity', 'BillingApproval').eq('entity_id', initialMission.id).order('created_at', { ascending: true }),
-                  supabase.from('system_logs').select('*').eq('entity', 'BillingAdjustment').eq('entity_id', initialMission.id).order('created_at', { ascending: false }).limit(1)
+                  supabase.from('system_logs').select('*').eq('entity', 'BillingAdjustment').eq('entity_id', initialMission.id).order('created_at', { ascending: false }).limit(1),
+                  supabase.from('system_logs').select('*').eq('entity', 'MissionEditHistory').eq('entity_id', initialMission.id).order('created_at', { ascending: false })
               ]);
+
+              if (editHistRes.data && editHistRes.data.length > 0) {
+                  const hist = editHistRes.data.map((l: any) => {
+                      try {
+                          const p = JSON.parse(l.details);
+                          return {
+                              user: l.user_name || p.user || '',
+                              date: p.date || l.created_at,
+                              changes: Array.isArray(p.changes) ? p.changes : [],
+                              note: p.note || ''
+                          };
+                      } catch {
+                          return { user: l.user_name || '', date: l.created_at, changes: [], note: '' };
+                      }
+                  });
+                  setEditHistory(hist);
+              } else {
+                  setEditHistory([]);
+              }
 
               const logData = approvalRes.data;
               if (logData && logData.length > 0) {
@@ -1373,6 +1399,27 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
           return;
       }
 
+      // Detecta se a OS já estava aprovada e quais valores mudaram nesta edição.
+      // Quando há mudança em OS já aprovada, exige uma OBSERVAÇÃO curta que será
+      // gravada no histórico permanente da OS (MissionEditHistory).
+      const wasAlreadyApproved = !!(mission.billing_approved || mission.snapshot_approved_by);
+      const origRevenueService = mission.revenue_value || 0;
+      const origCost = mission.cost_value || 0;
+      const origToll = mission.toll_value || 0;
+      const origTollProv = (mission as any).toll_value_provider || 0;
+      const newRevenueService = revTotal - toll;
+      const newCostService = costTotal - tollProv;
+      const detectedChanges: string[] = [];
+      if (Math.abs(origRevenueService - newRevenueService) > 0.01) detectedChanges.push(`Serviço Cliente: R$ ${origRevenueService.toFixed(2)} → R$ ${newRevenueService.toFixed(2)}`);
+      if (Math.abs(origCost - newCostService) > 0.01) detectedChanges.push(`Serviço Fornecedor: R$ ${origCost.toFixed(2)} → R$ ${newCostService.toFixed(2)}`);
+      if (Math.abs(origToll - toll) > 0.01) detectedChanges.push(`Pedágio Cliente: R$ ${origToll.toFixed(2)} → R$ ${toll.toFixed(2)}`);
+      if (Math.abs(origTollProv - tollProv) > 0.01) detectedChanges.push(`Pedágio Fornecedor: R$ ${origTollProv.toFixed(2)} → R$ ${tollProv.toFixed(2)}`);
+      const requiresPostApprovalNote = wasAlreadyApproved && detectedChanges.length > 0 && !approve;
+      if (requiresPostApprovalNote && !editObservation.trim()) {
+          showNotification('Observação Obrigatória', 'OS já aprovada. Descreva brevemente o motivo da alteração para registrar no histórico.', 'error');
+          return;
+      }
+
       setIsUpdating(true);
       isSavingRef.current = true;
       try {
@@ -1625,6 +1672,34 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
           if (adjInsRes.error) {
               console.error('[BillingAdjustment Insert] Falha ao registrar log:', adjInsRes.error);
               showNotification('Erro', 'OS salva, mas falhou ao registrar log de ajuste: ' + adjInsRes.error.message, 'error');
+          }
+
+          // Histórico permanente de alterações da OS (Data / Quem / Mudanças /
+          // Observação). Acumulativo: nunca apaga registros anteriores. Gravado
+          // sempre que houver alteração de valor após uma aprovação prévia.
+          if (wasAlreadyApproved && detectedChanges.length > 0) {
+              const nowIso = new Date().toISOString();
+              const histPayload = {
+                  user: userName,
+                  role: userRole,
+                  date: nowIso,
+                  changes: detectedChanges,
+                  note: editObservation.trim() || (approve ? 'Reaprovação' : ''),
+                  approve
+              };
+              const histRes = await supabase.from('system_logs').insert([{
+                  user_name: userName,
+                  action_type: approve ? 'POST_APPROVAL_REAPPROVE' : 'POST_APPROVAL_EDIT',
+                  entity: 'MissionEditHistory',
+                  entity_id: mission.id,
+                  details: JSON.stringify(histPayload)
+              }]);
+              if (histRes.error) {
+                  console.error('[MissionEditHistory Insert] Falha ao registrar histórico:', histRes.error);
+              } else {
+                  setEditHistory(prev => [{ user: userName, date: nowIso, changes: detectedChanges, note: histPayload.note }, ...prev]);
+                  setEditObservation('');
+              }
           }
 
           const now = new Date();
@@ -3272,6 +3347,54 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                             {currentApprovalStatus.isFullyApproved && (
                                 <p className="text-[9px] font-black text-emerald-600 uppercase mt-1.5 tracking-wider">Faturamento 100% Aprovado</p>
                             )}
+                        </div>
+                    )}
+
+                    {/* Histórico permanente de alterações pós-aprovação */}
+                    {editHistory.length > 0 && (
+                        <div className="mx-4 mb-4 p-3 bg-amber-50 rounded-xl border border-amber-200" data-testid="panel-edit-history">
+                            <p className="text-[10px] font-black text-amber-700 uppercase tracking-widest mb-2 flex items-center gap-1.5">
+                                <History size={12} /> Histórico de Alterações ({editHistory.length})
+                            </p>
+                            <div className="flex flex-col gap-2 max-h-64 overflow-y-auto">
+                                {editHistory.map((h, i) => (
+                                    <div key={i} className="bg-white px-3 py-2 rounded-lg border border-amber-200 shadow-sm" data-testid={`edit-history-${i}`}>
+                                        <div className="flex items-center justify-between gap-2 mb-1">
+                                            <span className="text-[10px] font-black text-gray-800 uppercase">{h.user}</span>
+                                            <span className="text-[9px] text-gray-500 font-mono">{new Date(h.date).toLocaleString('pt-BR')}</span>
+                                        </div>
+                                        {h.changes.length > 0 && (
+                                            <ul className="text-[10px] text-gray-700 font-mono space-y-0.5 mb-1">
+                                                {h.changes.map((c, j) => (
+                                                    <li key={j} className="leading-tight">• {c}</li>
+                                                ))}
+                                            </ul>
+                                        )}
+                                        {h.note && (
+                                            <p className="text-[10px] italic text-amber-800 bg-amber-50 border-l-2 border-amber-300 pl-2 py-0.5 mt-1">
+                                                Obs: {h.note}
+                                            </p>
+                                        )}
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Observação obrigatória ao alterar OS já aprovada */}
+                    {isBillingLocked && !isEffectivelyLocked && (
+                        <div className="mx-4 mb-4 p-3 bg-amber-50 rounded-xl border-2 border-amber-300" data-testid="panel-edit-observation">
+                            <label className="text-[10px] font-black text-amber-800 uppercase tracking-widest mb-1.5 flex items-center gap-1.5">
+                                <AlertCircle size={12} /> Observação da Alteração (obrigatória ao salvar mudança em OS aprovada)
+                            </label>
+                            <textarea
+                                className="w-full text-xs font-bold text-gray-800 border border-amber-300 rounded-lg px-2 py-1.5 focus:ring-2 focus:ring-amber-400/30 focus:border-amber-400 outline-none bg-white resize-none"
+                                rows={2}
+                                placeholder="Descreva o motivo da alteração (será salvo no histórico permanente da OS)..."
+                                value={editObservation}
+                                onChange={e => setEditObservation(e.target.value)}
+                                data-testid="input-edit-observation"
+                            />
                         </div>
                     )}
 
