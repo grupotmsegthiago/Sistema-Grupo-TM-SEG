@@ -1157,7 +1157,8 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
   
     return (
       <div className="space-y-6 animate-fade-in pb-20 relative">
-        <div className={`p-6 rounded-xl shadow-sm border flex flex-col 2xl:flex-row 2xl:items-center justify-between gap-6 ${isCevaClient ? 'bg-[#152c54] border-[#152c54]' : 'bg-white border-gray-200'}`}>
+        <div className={`p-6 rounded-xl shadow-sm border flex flex-col gap-6 ${isCevaClient ? 'bg-[#152c54] border-[#152c54]' : 'bg-white border-gray-200'}`}>
+          <div className="flex flex-col 2xl:flex-row 2xl:items-center justify-between gap-6">
           <div className="2xl:w-[350px] shrink-0">
             <div className="flex items-center gap-3">
               <span className={`w-1.5 h-6 rounded-full ${isCevaClient ? 'bg-[#e81818]' : 'bg-red-700'}`}></span>
@@ -1165,12 +1166,45 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
             </div>
             {dbStatus === 'ok' && !isRestrictedClientView && ( <div className={`flex items-center gap-2 text-[10px] font-bold px-2 py-1 rounded w-fit border mt-2 ml-4.5 ${isCevaClient ? 'text-green-300 bg-green-900/30 border-green-700' : 'text-green-700 bg-green-50 border-green-200'}`}><Database size={12} /> Realtime Sync</div> )}
           </div>
-
-
+          <div className="flex flex-wrap gap-2 items-center justify-end 2xl:flex-1">
+                {!isRestrictedClientView && ( <div className="flex items-center gap-2 bg-indigo-50 p-1.5 rounded-lg border border-indigo-200"><input type="text" className="bg-transparent text-xs font-bold text-indigo-900 placeholder-indigo-400 outline-none w-32 pl-2" placeholder="Filtrar OS..." value={osFilterTerm} onChange={(e) => setOsFilterTerm(e.target.value)} data-testid="input-os-filter" />{osFilterTerm && <button onClick={() => setOsFilterTerm('')} className="p-1 bg-indigo-600 text-white rounded hover:bg-indigo-700" data-testid="button-clear-os-filter"><X size={14} /></button>}</div> )}
+                <button onClick={() => setShowFleetMap(!showFleetMap)} className={`flex items-center gap-2 px-3 py-2.5 rounded-lg text-[11px] font-bold uppercase transition-all border ${showFleetMap ? (isCevaClient ? 'bg-[#e81818] text-white border-[#e81818] shadow-md' : 'bg-indigo-600 text-white border-indigo-700 shadow-md') : (isCevaClient ? 'bg-white/10 text-white border-white/30 hover:bg-white/20' : 'bg-white text-indigo-600 border-indigo-200 hover:bg-indigo-50')}`}><Globe size={14} /> Mapa</button>
+                {!isRestrictedClientView && ( <button onClick={() => setShowAnalyticsDash(!showAnalyticsDash)} className={`flex items-center gap-2 px-3 py-2.5 rounded-lg text-[11px] font-bold uppercase transition-all border ${showAnalyticsDash ? 'bg-blue-600 text-white border-blue-700 shadow-md' : 'bg-white text-gray-600 border-gray-300 hover:bg-gray-50'}`}><BarChart4 size={14} /> Analytics</button> )}
+                {isRestrictedClientView && ( <button onClick={() => { setShowClientDash(!showClientDash); if (!showClientDash) { setShowClientReports(false); setShowClientCommittee(false); } }} className={`flex items-center gap-2 px-3 py-2.5 rounded-lg text-[11px] font-bold uppercase transition-all border ${showClientDash ? (isCevaClient ? 'bg-[#e81818] text-white border-[#e81818] shadow-md' : 'bg-red-700 text-white border-red-800 shadow-md') : (isCevaClient ? 'bg-white/10 text-white border-white/30 hover:bg-white/20' : 'bg-white text-gray-600 border-gray-300 hover:bg-gray-50')}`} data-testid="button-client-dashboard"><BarChart4 size={14} /> Painel</button> )}
+                {isRestrictedClientView && ( <button onClick={() => { setShowClientReports(!showClientReports); if (!showClientReports) { setShowClientDash(false); setShowClientCommittee(false); } }} className={`flex items-center gap-2 px-3 py-2.5 rounded-lg text-[11px] font-bold uppercase transition-all border ${showClientReports ? (isCevaClient ? 'bg-[#e81818] text-white border-[#e81818] shadow-md' : 'bg-red-700 text-white border-red-800 shadow-md') : (isCevaClient ? 'bg-white/10 text-white border-white/30 hover:bg-white/20' : 'bg-white text-gray-600 border-gray-300 hover:bg-gray-50')}`} data-testid="button-client-reports"><Activity size={14} /> Relatórios</button> )}
+                {isRestrictedClientView && ( <button onClick={() => { setShowClientCommittee(!showClientCommittee); if (!showClientCommittee) { setShowClientDash(false); setShowClientReports(false); } }} className={`flex items-center gap-2 px-3 py-2.5 rounded-lg text-[11px] font-bold uppercase transition-all border ${showClientCommittee ? (isCevaClient ? 'bg-[#e81818] text-white border-[#e81818] shadow-md' : 'bg-red-700 text-white border-red-800 shadow-md') : (isCevaClient ? 'bg-white/10 text-white border-white/30 hover:bg-white/20' : 'bg-white text-gray-600 border-gray-300 hover:bg-gray-50')}`} data-testid="button-client-committee"><FileSearch size={14} /> Comitê</button> )}
+                <div className="flex items-center gap-2 bg-gray-50 p-1.5 rounded-lg border border-gray-200"><Calendar size={14} className="text-gray-500 ml-1" /><select value={viewPeriod} onChange={(e) => setViewPeriod(e.target.value)} className="bg-transparent border-none text-[11px] font-bold text-gray-700 outline-none cursor-pointer uppercase focus:ring-0"><option value="TODAY">HOJE</option><option value="YESTERDAY">ONTEM</option><option value="WEEK">SEMANA</option><option value="MONTH">MÊS</option><option value="YEAR">ANO</option><option value="CUSTOM">PERSONALIZADO</option><option value="ALL">TOTAL ABERTOS</option><option value="HISTORY">HISTÓRICO</option></select></div>
+                {viewPeriod === 'CUSTOM' && (
+                    <div className="flex items-center gap-2 bg-gray-50 p-1.5 rounded-lg border border-gray-200">
+                        <input type="date" className="bg-transparent border-none text-[11px] font-bold text-gray-700 outline-none cursor-pointer" value={customStartDate} onChange={e => setCustomStartDate(e.target.value)} />
+                        <span className="text-gray-400 text-xs">até</span>
+                        <input type="date" className="bg-transparent border-none text-[11px] font-bold text-gray-700 outline-none cursor-pointer" value={customEndDate} onChange={e => setCustomEndDate(e.target.value)} />
+                    </div>
+                )}
+                {isRestrictedClientView && resolvedClientName && (
+                    <button onClick={() => setShowClientRequestModal(true)} className={`flex items-center gap-2 text-white px-4 py-2.5 rounded-lg text-[11px] font-black transition-all shadow-md uppercase ${isCevaClient ? 'bg-[#e81818] hover:bg-[#c01515]' : 'bg-red-700 hover:bg-red-800'}`} data-testid="button-client-new-request">
+                        <Plus size={16} /> Solicitar Escolta
+                    </button>
+                )}
+                {!isRestrictedClientView && accidentCount > 0 && (
+                    <button onClick={() => { setFilterStatus(MissionStatus.SOLICITED); }} className="relative flex items-center gap-2 px-4 py-2.5 rounded-lg text-[11px] font-black uppercase border-2 transition-all bg-red-600 text-white border-red-700 shadow-lg animate-pulse" data-testid="button-accident-badge">
+                        <AlertOctagon size={16} className="text-white" /> ACIDENTE
+                        <span className="absolute -top-2 -right-2 px-2 py-0.5 rounded-full text-[10px] bg-white text-red-700 font-black min-w-[20px] text-center shadow-md ring-2 ring-red-600">{accidentCount}</span>
+                    </button>
+                )}
+                {!isRestrictedClientView && solicitationCount > 0 && (
+                    <button onClick={() => { setFilterStatus(MissionStatus.SOLICITED); }} className={`relative flex items-center gap-2 px-4 py-2.5 rounded-lg text-[11px] font-black uppercase border transition-all shadow-sm hover:bg-pink-100 ${accidentCount > 0 ? 'bg-pink-50 text-pink-800 border-pink-300' : 'bg-pink-50 text-pink-800 border-pink-300 animate-pulse'}`} data-testid="button-solicitations-badge">
+                        <Mail size={14} className="text-pink-600" /> Solicitações
+                        <span className="absolute -top-1.5 -right-1.5 px-1.5 py-0.5 rounded-full text-[9px] bg-pink-600 text-white font-black min-w-[18px] text-center">{solicitationCount}</span>
+                    </button>
+                )}
+                {onNewMission && !isRestrictedClientView && ( <button onClick={onNewMission} className="flex items-center gap-2 bg-orange-500 hover:bg-orange-600 text-black px-4 py-2.5 rounded-lg text-[11px] font-black transition-all shadow-md uppercase"> <Plus size={16} /> Nova Missão </button> )}
+          </div>
+          </div>
 
           {!isRestrictedClientView && (
-          <div className="flex flex-wrap gap-3 flex-1 w-full">
-             <div className="flex-1 min-w-[300px] max-w-[450px]">
+          <div className="flex flex-wrap gap-3 w-full">
+             <div className="flex-1 min-w-[300px]">
                 <DailyGoalThermometer 
                    viewPeriod={viewPeriod} 
                    customStartDate={customStartDate} 
@@ -1226,41 +1260,6 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
              </div>
           </div>
           )}
-
-          <div className="flex flex-wrap gap-2 items-center justify-end 2xl:flex-1">
-                {!isRestrictedClientView && ( <div className="flex items-center gap-2 bg-indigo-50 p-1.5 rounded-lg border border-indigo-200"><input type="text" className="bg-transparent text-xs font-bold text-indigo-900 placeholder-indigo-400 outline-none w-32 pl-2" placeholder="Filtrar OS..." value={osFilterTerm} onChange={(e) => setOsFilterTerm(e.target.value)} data-testid="input-os-filter" />{osFilterTerm && <button onClick={() => setOsFilterTerm('')} className="p-1 bg-indigo-600 text-white rounded hover:bg-indigo-700" data-testid="button-clear-os-filter"><X size={14} /></button>}</div> )}
-                <button onClick={() => setShowFleetMap(!showFleetMap)} className={`flex items-center gap-2 px-3 py-2.5 rounded-lg text-[11px] font-bold uppercase transition-all border ${showFleetMap ? (isCevaClient ? 'bg-[#e81818] text-white border-[#e81818] shadow-md' : 'bg-indigo-600 text-white border-indigo-700 shadow-md') : (isCevaClient ? 'bg-white/10 text-white border-white/30 hover:bg-white/20' : 'bg-white text-indigo-600 border-indigo-200 hover:bg-indigo-50')}`}><Globe size={14} /> Mapa</button>
-                {!isRestrictedClientView && ( <button onClick={() => setShowAnalyticsDash(!showAnalyticsDash)} className={`flex items-center gap-2 px-3 py-2.5 rounded-lg text-[11px] font-bold uppercase transition-all border ${showAnalyticsDash ? 'bg-blue-600 text-white border-blue-700 shadow-md' : 'bg-white text-gray-600 border-gray-300 hover:bg-gray-50'}`}><BarChart4 size={14} /> Analytics</button> )}
-                {isRestrictedClientView && ( <button onClick={() => { setShowClientDash(!showClientDash); if (!showClientDash) { setShowClientReports(false); setShowClientCommittee(false); } }} className={`flex items-center gap-2 px-3 py-2.5 rounded-lg text-[11px] font-bold uppercase transition-all border ${showClientDash ? (isCevaClient ? 'bg-[#e81818] text-white border-[#e81818] shadow-md' : 'bg-red-700 text-white border-red-800 shadow-md') : (isCevaClient ? 'bg-white/10 text-white border-white/30 hover:bg-white/20' : 'bg-white text-gray-600 border-gray-300 hover:bg-gray-50')}`} data-testid="button-client-dashboard"><BarChart4 size={14} /> Painel</button> )}
-                {isRestrictedClientView && ( <button onClick={() => { setShowClientReports(!showClientReports); if (!showClientReports) { setShowClientDash(false); setShowClientCommittee(false); } }} className={`flex items-center gap-2 px-3 py-2.5 rounded-lg text-[11px] font-bold uppercase transition-all border ${showClientReports ? (isCevaClient ? 'bg-[#e81818] text-white border-[#e81818] shadow-md' : 'bg-red-700 text-white border-red-800 shadow-md') : (isCevaClient ? 'bg-white/10 text-white border-white/30 hover:bg-white/20' : 'bg-white text-gray-600 border-gray-300 hover:bg-gray-50')}`} data-testid="button-client-reports"><Activity size={14} /> Relatórios</button> )}
-                {isRestrictedClientView && ( <button onClick={() => { setShowClientCommittee(!showClientCommittee); if (!showClientCommittee) { setShowClientDash(false); setShowClientReports(false); } }} className={`flex items-center gap-2 px-3 py-2.5 rounded-lg text-[11px] font-bold uppercase transition-all border ${showClientCommittee ? (isCevaClient ? 'bg-[#e81818] text-white border-[#e81818] shadow-md' : 'bg-red-700 text-white border-red-800 shadow-md') : (isCevaClient ? 'bg-white/10 text-white border-white/30 hover:bg-white/20' : 'bg-white text-gray-600 border-gray-300 hover:bg-gray-50')}`} data-testid="button-client-committee"><FileSearch size={14} /> Comitê</button> )}
-                <div className="flex items-center gap-2 bg-gray-50 p-1.5 rounded-lg border border-gray-200"><Calendar size={14} className="text-gray-500 ml-1" /><select value={viewPeriod} onChange={(e) => setViewPeriod(e.target.value)} className="bg-transparent border-none text-[11px] font-bold text-gray-700 outline-none cursor-pointer uppercase focus:ring-0"><option value="TODAY">HOJE</option><option value="YESTERDAY">ONTEM</option><option value="WEEK">SEMANA</option><option value="MONTH">MÊS</option><option value="YEAR">ANO</option><option value="CUSTOM">PERSONALIZADO</option><option value="ALL">TOTAL ABERTOS</option><option value="HISTORY">HISTÓRICO</option></select></div>
-                {viewPeriod === 'CUSTOM' && (
-                    <div className="flex items-center gap-2 bg-gray-50 p-1.5 rounded-lg border border-gray-200">
-                        <input type="date" className="bg-transparent border-none text-[11px] font-bold text-gray-700 outline-none cursor-pointer" value={customStartDate} onChange={e => setCustomStartDate(e.target.value)} />
-                        <span className="text-gray-400 text-xs">até</span>
-                        <input type="date" className="bg-transparent border-none text-[11px] font-bold text-gray-700 outline-none cursor-pointer" value={customEndDate} onChange={e => setCustomEndDate(e.target.value)} />
-                    </div>
-                )}
-                {isRestrictedClientView && resolvedClientName && (
-                    <button onClick={() => setShowClientRequestModal(true)} className={`flex items-center gap-2 text-white px-4 py-2.5 rounded-lg text-[11px] font-black transition-all shadow-md uppercase ${isCevaClient ? 'bg-[#e81818] hover:bg-[#c01515]' : 'bg-red-700 hover:bg-red-800'}`} data-testid="button-client-new-request">
-                        <Plus size={16} /> Solicitar Escolta
-                    </button>
-                )}
-                {!isRestrictedClientView && accidentCount > 0 && (
-                    <button onClick={() => { setFilterStatus(MissionStatus.SOLICITED); }} className="relative flex items-center gap-2 px-4 py-2.5 rounded-lg text-[11px] font-black uppercase border-2 transition-all bg-red-600 text-white border-red-700 shadow-lg animate-pulse" data-testid="button-accident-badge">
-                        <AlertOctagon size={16} className="text-white" /> ACIDENTE
-                        <span className="absolute -top-2 -right-2 px-2 py-0.5 rounded-full text-[10px] bg-white text-red-700 font-black min-w-[20px] text-center shadow-md ring-2 ring-red-600">{accidentCount}</span>
-                    </button>
-                )}
-                {!isRestrictedClientView && solicitationCount > 0 && (
-                    <button onClick={() => { setFilterStatus(MissionStatus.SOLICITED); }} className={`relative flex items-center gap-2 px-4 py-2.5 rounded-lg text-[11px] font-black uppercase border transition-all shadow-sm hover:bg-pink-100 ${accidentCount > 0 ? 'bg-pink-50 text-pink-800 border-pink-300' : 'bg-pink-50 text-pink-800 border-pink-300 animate-pulse'}`} data-testid="button-solicitations-badge">
-                        <Mail size={14} className="text-pink-600" /> Solicitações
-                        <span className="absolute -top-1.5 -right-1.5 px-1.5 py-0.5 rounded-full text-[9px] bg-pink-600 text-white font-black min-w-[18px] text-center">{solicitationCount}</span>
-                    </button>
-                )}
-                {onNewMission && !isRestrictedClientView && ( <button onClick={onNewMission} className="flex items-center gap-2 bg-orange-500 hover:bg-orange-600 text-black px-4 py-2.5 rounded-lg text-[11px] font-black transition-all shadow-md uppercase"> <Plus size={16} /> Nova Missão </button> )}
-          </div>
         </div>
   
         {!isRestrictedClientView && showAnalyticsDash && (
