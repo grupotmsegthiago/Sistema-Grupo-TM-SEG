@@ -129,7 +129,7 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
     dhl_se_number: ''
   });
   const [dhlLinkModal, setDhlLinkModal] = useState<{ open: boolean; missionId: string; url: string; whatsappText: string; phone: string; channel: 'email' | 'whatsapp' | 'both'; emailSent: boolean; providerEmail: string; whatsappSent: boolean; whatsappError: string | null }>({ open: false, missionId: '', url: '', whatsappText: '', phone: '', channel: 'both', emailSent: false, providerEmail: '', whatsappSent: false, whatsappError: null });
-  const [dhlChannelPicker, setDhlChannelPicker] = useState<{ open: boolean }>({ open: false });
+  const [dhlChannelPicker, setDhlChannelPicker] = useState<{ open: boolean; preferred: 'email' | 'whatsapp' | 'both' }>({ open: false, preferred: 'both' });
   const [dhlIntakes, setDhlIntakes] = useState<DhlIntakeRow[]>([]);
   const [dhlIntakesLoading, setDhlIntakesLoading] = useState(false);
   const [dhlRegenerating, setDhlRegenerating] = useState(false);
@@ -227,7 +227,7 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
 
   const handleRegenerateDhlLink = async (channel: 'email' | 'whatsapp' | 'both' = 'both') => {
     if (!hasSavedOs) { showNotification('OS não salva', 'Salve a OS antes de gerar o link.', 'warning'); return; }
-    setDhlChannelPicker({ open: false });
+    setDhlChannelPicker(prev => ({ ...prev, open: false }));
     setDhlRegenerating(true);
     try {
       const token = localStorage.getItem('authToken') || '';
@@ -433,7 +433,7 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
     // Isso permite que fornecedores com 'Alvará Vencido' apareçam na lista para seleção
     const [clientsRes, providersRes] = await Promise.all([
          supabase.from('clients').select('id, name, trading_name').eq('status', 'Ativo').order('trading_name', { ascending: true }),
-         supabase.from('providers').select('id, name, trading_name, type').neq('status', 'Bloqueado').order('name', { ascending: true })
+         supabase.from('providers').select('id, name, trading_name, type, dhl_channel_preference').neq('status', 'Bloqueado').order('name', { ascending: true })
     ]);
     if (clientsRes.data) setDbClients(clientsRes.data as any);
     if (providersRes.data) setDbProviders(providersRes.data as any);
@@ -1576,7 +1576,12 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
                                             {showRowRegen && (
                                               <button
                                                 type="button"
-                                                onClick={() => setDhlChannelPicker({ open: true })}
+                                                onClick={() => {
+                                                  const prov = dbProviders.find(p => p.name === formData.provider || p.trading_name === formData.provider);
+                                                  const pref = prov?.dhl_channel_preference;
+                                                  const preferred = (pref === 'email' || pref === 'whatsapp' || pref === 'both') ? pref : 'both';
+                                                  setDhlChannelPicker({ open: true, preferred });
+                                                }}
                                                 disabled={dhlRegenerating}
                                                 className="px-2 py-0.5 rounded bg-red-600 text-white font-black uppercase tracking-wider hover:bg-red-700 disabled:opacity-50 active:scale-95 transition-all flex items-center gap-1"
                                                 data-testid={`btn-resend-dhl-intake-${it.id}`}
@@ -2455,40 +2460,58 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
             <div style={{ background: '#D40511', height: 4 }}></div>
             <div className="p-6">
               <h2 className="text-lg font-black uppercase tracking-wide text-gray-900 mb-1">Reenviar link DHL</h2>
-              <p className="text-xs text-gray-500 mb-4">Escolha por onde enviar o novo link ao fornecedor.</p>
+              <p className="text-xs text-gray-500 mb-4">
+                Escolha por onde enviar o novo link ao fornecedor.{' '}
+                <span className="text-gray-700 font-bold">A opção destacada é a preferida deste fornecedor</span> — você pode escolher outra apenas para este envio.
+              </p>
               <div className="flex flex-col gap-2 mb-4">
-                <button
-                  type="button"
-                  onClick={() => handleRegenerateDhlLink('email')}
-                  disabled={dhlRegenerating}
-                  className="w-full px-4 h-11 rounded-lg bg-red-600 text-white text-xs font-black uppercase tracking-wider hover:bg-red-700 disabled:opacity-50 flex items-center justify-center gap-2"
-                  data-testid="btn-dhl-channel-email"
-                >
-                  <Mail size={14} /> Só e-mail
-                </button>
-                <button
-                  type="button"
-                  onClick={() => handleRegenerateDhlLink('whatsapp')}
-                  disabled={dhlRegenerating}
-                  className="w-full px-4 h-11 rounded-lg bg-green-600 text-white text-xs font-black uppercase tracking-wider hover:bg-green-700 disabled:opacity-50 flex items-center justify-center gap-2"
-                  data-testid="btn-dhl-channel-whatsapp"
-                >
-                  Só WhatsApp
-                </button>
-                <button
-                  type="button"
-                  onClick={() => handleRegenerateDhlLink('both')}
-                  disabled={dhlRegenerating}
-                  className="w-full px-4 h-11 rounded-lg bg-gray-900 text-white text-xs font-black uppercase tracking-wider hover:bg-black disabled:opacity-50 flex items-center justify-center gap-2"
-                  data-testid="btn-dhl-channel-both"
-                >
-                  Ambos (e-mail + WhatsApp)
-                </button>
+                {(() => {
+                  const pref = dhlChannelPicker.preferred;
+                  const PreferredBadge = () => (
+                    <span className="ml-2 px-1.5 py-0.5 bg-white/25 text-[9px] font-black uppercase tracking-wider rounded">Padrão</span>
+                  );
+                  const ring = (c: 'email' | 'whatsapp' | 'both') =>
+                    pref === c ? ' ring-2 ring-offset-2 ring-yellow-400' : ' opacity-90';
+                  return (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => handleRegenerateDhlLink('email')}
+                        disabled={dhlRegenerating}
+                        className={`w-full px-4 h-11 rounded-lg bg-red-600 text-white text-xs font-black uppercase tracking-wider hover:bg-red-700 disabled:opacity-50 flex items-center justify-center gap-2${ring('email')}`}
+                        data-testid="btn-dhl-channel-email"
+                      >
+                        <Mail size={14} /> Só e-mail
+                        {pref === 'email' && <PreferredBadge />}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleRegenerateDhlLink('whatsapp')}
+                        disabled={dhlRegenerating}
+                        className={`w-full px-4 h-11 rounded-lg bg-green-600 text-white text-xs font-black uppercase tracking-wider hover:bg-green-700 disabled:opacity-50 flex items-center justify-center gap-2${ring('whatsapp')}`}
+                        data-testid="btn-dhl-channel-whatsapp"
+                      >
+                        Só WhatsApp
+                        {pref === 'whatsapp' && <PreferredBadge />}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleRegenerateDhlLink('both')}
+                        disabled={dhlRegenerating}
+                        className={`w-full px-4 h-11 rounded-lg bg-gray-900 text-white text-xs font-black uppercase tracking-wider hover:bg-black disabled:opacity-50 flex items-center justify-center gap-2${ring('both')}`}
+                        data-testid="btn-dhl-channel-both"
+                      >
+                        Ambos (e-mail + WhatsApp)
+                        {pref === 'both' && <PreferredBadge />}
+                      </button>
+                    </>
+                  );
+                })()}
               </div>
               <div className="flex justify-end">
                 <button
                   type="button"
-                  onClick={() => setDhlChannelPicker({ open: false })}
+                  onClick={() => setDhlChannelPicker(prev => ({ ...prev, open: false }))}
                   disabled={dhlRegenerating}
                   className="px-4 h-10 rounded-lg bg-gray-100 text-gray-700 text-xs font-bold hover:bg-gray-200 disabled:opacity-50"
                   data-testid="btn-dhl-channel-cancel"

@@ -131,6 +131,7 @@ export async function runDhlIntakeMigrations(): Promise<void> {
       CREATE INDEX IF NOT EXISTS idx_dhl_intakes_token ON dhl_supplier_intakes(token);
 
       ALTER TABLE missions ADD COLUMN IF NOT EXISTS dhl_se_number TEXT;
+      ALTER TABLE providers ADD COLUMN IF NOT EXISTS dhl_channel_preference TEXT;
       ALTER TABLE dhl_supplier_intakes ADD COLUMN IF NOT EXISTS mirror_proof_url TEXT;
       ALTER TABLE dhl_supplier_intakes ADD COLUMN IF NOT EXISTS mirror_proof_filename TEXT;
       ALTER TABLE dhl_supplier_intakes ADD COLUMN IF NOT EXISTS first_opened_at TIMESTAMPTZ;
@@ -623,10 +624,6 @@ export function registerDhlIntakeRoutes(
     try {
       const { missionId, channel: rawChannel } = req.body || {};
       if (!missionId) return res.status(400).json({ error: 'missionId é obrigatório' });
-      const channel: 'email' | 'whatsapp' | 'both' =
-        rawChannel === 'email' || rawChannel === 'whatsapp' || rawChannel === 'both' ? rawChannel : 'both';
-      const wantsEmail = channel === 'email' || channel === 'both';
-      const wantsWhatsapp = channel === 'whatsapp' || channel === 'both';
 
       const sb = getSb();
       const { data: mission, error: mErr } = await sb.from('missions').select('*').eq('id', missionId).single();
@@ -644,12 +641,22 @@ export function registerDhlIntakeRoutes(
 
       // Resolve fornecedor
       const { data: providerByName } = await sb.from('providers')
-        .select('id, name, trading_name, email, os_email, phone')
+        .select('id, name, trading_name, email, os_email, phone, dhl_channel_preference')
         .or(`name.eq.${mission.provider},trading_name.eq.${mission.provider}`)
         .limit(1)
         .maybeSingle();
       const provider = providerByName;
       if (!provider) return res.status(404).json({ error: 'Fornecedor não localizado no cadastro' });
+
+      // Se o operador não escolheu canal explicitamente, usa a preferência do fornecedor.
+      const providerPref = provider.dhl_channel_preference;
+      const prefValid = providerPref === 'email' || providerPref === 'whatsapp' || providerPref === 'both';
+      const channel: 'email' | 'whatsapp' | 'both' =
+        rawChannel === 'email' || rawChannel === 'whatsapp' || rawChannel === 'both'
+          ? rawChannel
+          : (prefValid ? providerPref : 'both');
+      const wantsEmail = channel === 'email' || channel === 'both';
+      const wantsWhatsapp = channel === 'whatsapp' || channel === 'both';
 
       const providerEmail = (provider.os_email || provider.email || '').trim();
       const providerPhone = maskPhone(provider.phone);

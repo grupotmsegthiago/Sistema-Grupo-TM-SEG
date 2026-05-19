@@ -39,7 +39,8 @@ const ProviderForm: React.FC<ProviderFormProps> = ({ onBack, onNavigateToVehicle
     city: '',
     state: '',
     alvaraValidity: '',
-    alvaraUrl: ''
+    alvaraUrl: '',
+    dhl_channel_preference: 'both' as 'email' | 'whatsapp' | 'both'
   });
 
   const [isSearchingCnpj, setIsSearchingCnpj] = useState(false);
@@ -130,7 +131,8 @@ const ProviderForm: React.FC<ProviderFormProps> = ({ onBack, onNavigateToVehicle
                     city: data.city || '',
                     state: data.state || '',
                     alvaraValidity: data.alvara_validity || '',
-                    alvaraUrl: data.alvara_url || ''
+                    alvaraUrl: data.alvara_url || '',
+                    dhl_channel_preference: (data.dhl_channel_preference === 'email' || data.dhl_channel_preference === 'whatsapp' || data.dhl_channel_preference === 'both') ? data.dhl_channel_preference : 'both'
                 });
                 fetchCostTables(data.name);
             }
@@ -353,7 +355,8 @@ const ProviderForm: React.FC<ProviderFormProps> = ({ onBack, onNavigateToVehicle
             state: formData.state.toUpperCase(),
             address: fullAddress,
             alvara_validity: formData.alvaraValidity || null, 
-            alvara_url: formData.alvaraUrl
+            alvara_url: formData.alvaraUrl,
+            dhl_channel_preference: formData.dhl_channel_preference || 'both'
        };
        if (id) {
            const { error } = await supabase.from('providers').update(payload).eq('id', id);
@@ -593,6 +596,20 @@ const ProviderForm: React.FC<ProviderFormProps> = ({ onBack, onNavigateToVehicle
                             <input type="text" className={`${INPUT_CLASS} pl-10`} value={formData.phone} onChange={e => setFormData({...formData, phone: e.target.value})} />
                             <PhoneIcon className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
                         </div>
+                    </div>
+                    <div className="space-y-1.5 md:col-span-3">
+                        <label className={LABEL_CLASS}>Canal preferido do link DHL (reenvio)</label>
+                        <select
+                            className={INPUT_CLASS}
+                            value={formData.dhl_channel_preference}
+                            onChange={e => setFormData({...formData, dhl_channel_preference: e.target.value as 'email' | 'whatsapp' | 'both'})}
+                            data-testid="select-dhl-channel-preference"
+                        >
+                            <option value="both">Ambos (e-mail + WhatsApp)</option>
+                            <option value="email">Somente e-mail</option>
+                            <option value="whatsapp">Somente WhatsApp</option>
+                        </select>
+                        <p className="text-[10px] text-gray-400 font-medium normal-case">Define qual opção vem pré-selecionada ao reenviar o link DHL deste fornecedor. O operacional ainda pode escolher outra pontualmente.</p>
                     </div>
                     <div className="space-y-1.5">
                         <label className={LABEL_CLASS}>CEP (Busca Automática)</label>
