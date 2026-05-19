@@ -109,6 +109,8 @@ interface DhlIntakeRow {
   provider_whatsapp_reminder_count?: number | null;
   provider_reminder_sent_at?: string | null;
   provider_whatsapp_reminder_sent_at?: string | null;
+  auto_reminders_paused_at?: string | null;
+  auto_reminders_paused_by?: string | null;
   resends?: any[];
 }
 
@@ -292,6 +294,41 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
       showNotification('Falha ao gerar novo link', err?.message || 'erro de rede', 'error');
     } finally {
       setDhlRegenerating(false);
+    }
+  };
+  const [dhlPauseToggling, setDhlPauseToggling] = useState<string | null>(null);
+  const handleToggleDhlReminders = async (intakeId: string, pause: boolean) => {
+    if (!intakeId) return;
+    setDhlPauseToggling(intakeId);
+    try {
+      const token = localStorage.getItem('authToken') || '';
+      const action = pause ? 'pause-reminders' : 'resume-reminders';
+      const r = await fetch(`/api/dhl/intake/${encodeURIComponent(intakeId)}/${action}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+        credentials: 'include',
+      });
+      const j = await r.json();
+      if (!r.ok) {
+        showNotification('Falha', j.error || 'erro desconhecido', 'error');
+        return;
+      }
+      const pausedAt = j.intake?.auto_reminders_paused_at || null;
+      const pausedBy = j.intake?.auto_reminders_paused_by || null;
+      setDhlIntakes(prev => prev.map(it => it.id === intakeId
+        ? { ...it, auto_reminders_paused_at: pausedAt, auto_reminders_paused_by: pausedBy }
+        : it));
+      showNotification(
+        pause ? 'Lembretes pausados' : 'Lembretes retomados',
+        pause
+          ? 'O sistema não enviará mais lembretes automáticos para este fornecedor nesta OS.'
+          : 'O ciclo de lembretes automáticos voltará a rodar normalmente.',
+        'success',
+      );
+    } catch (err: any) {
+      showNotification('Falha', err?.message || 'erro de rede', 'error');
+    } finally {
+      setDhlPauseToggling(null);
     }
   };
   const hasClientRules = isVtcClient || (formData.client || '').toUpperCase().includes('CEVA');
@@ -1597,11 +1634,36 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
                                     };
 
                                     const showRowRegen = st === 'cancelado' || st === 'expirado';
+                                    const isPaused = !!it.auto_reminders_paused_at;
+                                    const canPause = st === 'pendente';
                                     return (
                                       <div key={it.id} className="bg-white border border-gray-200 rounded-lg p-2.5 text-[10px]" data-testid={`row-dhl-intake-${it.id}`}>
                                         <div className="flex items-center justify-between gap-2 mb-1">
-                                          <div className="flex items-center gap-2">
+                                          <div className="flex items-center gap-2 flex-wrap">
                                             <span className={`px-2 py-0.5 ${badge.bg} ${badge.fg} font-black uppercase tracking-wider rounded`} data-testid={`status-dhl-intake-${it.id}`}>{badge.label}</span>
+                                            {isPaused && (
+                                              <span
+                                                className="px-2 py-0.5 bg-amber-100 text-amber-800 font-black uppercase tracking-wider rounded flex items-center gap-1"
+                                                title={it.auto_reminders_paused_by ? `Pausado por ${it.auto_reminders_paused_by} em ${fmt(it.auto_reminders_paused_at)}` : `Pausado em ${fmt(it.auto_reminders_paused_at)}`}
+                                                data-testid={`status-dhl-intake-paused-${it.id}`}
+                                              >
+                                                ⏸ Lembretes pausados
+                                              </span>
+                                            )}
+                                            {canPause && (
+                                              <button
+                                                type="button"
+                                                onClick={() => handleToggleDhlReminders(it.id, !isPaused)}
+                                                disabled={dhlPauseToggling === it.id}
+                                                className={`px-2 py-0.5 rounded font-black uppercase tracking-wider disabled:opacity-50 active:scale-95 transition-all flex items-center gap-1 ${isPaused ? 'bg-green-600 hover:bg-green-700 text-white' : 'bg-amber-500 hover:bg-amber-600 text-white'}`}
+                                                data-testid={`btn-toggle-dhl-reminders-${it.id}`}
+                                                title={isPaused ? 'Retomar lembretes automáticos para este fornecedor' : 'Pausar lembretes automáticos para este fornecedor (use quando estiver em contato direto por outro canal)'}
+                                              >
+                                                {dhlPauseToggling === it.id
+                                                  ? <Loader2 size={10} className="animate-spin" />
+                                                  : (isPaused ? '▶ Retomar lembretes' : '⏸ Pausar lembretes')}
+                                              </button>
+                                            )}
                                             {showRowRegen && (() => {
                                               const prov = dbProviders.find(p => p.name === formData.provider || p.trading_name === formData.provider);
                                               const rawPref = prov?.dhl_channel_preference;

@@ -143,6 +143,11 @@ export async function runDhlIntakeMigrations(): Promise<void> {
       ALTER TABLE dhl_supplier_intakes ADD COLUMN IF NOT EXISTS provider_reminder_count INTEGER NOT NULL DEFAULT 0;
       ALTER TABLE dhl_supplier_intakes ADD COLUMN IF NOT EXISTS provider_whatsapp_reminder_count INTEGER NOT NULL DEFAULT 0;
       ALTER TABLE dhl_supplier_intakes ADD COLUMN IF NOT EXISTS operational_followup_sent_at TIMESTAMPTZ;
+      -- Interruptor manual por OS: quando preenchido, o worker de lembretes
+      -- automáticos ignora este intake (o operacional está em contato direto
+      -- com o fornecedor por outro canal). Auditoria de quem pausou também é gravada.
+      ALTER TABLE dhl_supplier_intakes ADD COLUMN IF NOT EXISTS auto_reminders_paused_at TIMESTAMPTZ;
+      ALTER TABLE dhl_supplier_intakes ADD COLUMN IF NOT EXISTS auto_reminders_paused_by TEXT;
       -- Backfill: intakes pré-existentes que já receberam um lembrete (flag preenchida)
       -- contam como 1 envio, evitando que o ciclo recém-criado dispare um lembrete
       -- "extra" no período de transição.
@@ -523,9 +528,13 @@ async function checkAndSendDhlIntakeReminders(): Promise<void> {
   // intake pendente cujo link ainda não expirou — a decisão de reenviar (canal
   // por canal) é tomada adiante usando contador + último envio + ciclo mínimo.
   const { data: pendentes, error: selErr } = await sb.from('dhl_supplier_intakes')
-    .select('id, token, mission_id, provider_id, provider_name, sent_to_email, sent_to_phone, first_opened_at, created_at, expires_at, provider_reminder_sent_at, provider_whatsapp_reminder_sent_at, operational_alert_sent_at, provider_reminder_count, provider_whatsapp_reminder_count, reminder_sent_at')
+    .select('id, token, mission_id, provider_id, provider_name, sent_to_email, sent_to_phone, first_opened_at, created_at, expires_at, provider_reminder_sent_at, provider_whatsapp_reminder_sent_at, operational_alert_sent_at, provider_reminder_count, provider_whatsapp_reminder_count, reminder_sent_at, auto_reminders_paused_at')
     .eq('status', 'pendente')
-    .gt('expires_at', nowIso);
+    .gt('expires_at', nowIso)
+    // Interruptor manual: o operacional pode pausar os lembretes automáticos
+    // de uma OS específica (ex.: está em contato direto com o fornecedor por
+    // outro canal). Quando preenchido, o worker ignora este intake.
+    .is('auto_reminders_paused_at', null);
 
   if (selErr) {
     console.error('[DHL Reminder Worker] erro ao listar pendentes:', selErr.message);
@@ -1176,6 +1185,19 @@ export function registerDhlIntakeRoutes(
       if (existingIntake && notExpired) {
         token = existingIntake.token;
         intake = existingIntake;
+        // Se o intake estava com lembretes automáticos pausados, reativá-los ao
+        // regenerar o link — o operacional optou por enviar de novo, então os
+        // lembretes voltam a contar normalmente (conforme requisito da tarefa).
+        if (existingIntake.auto_reminders_paused_at) {
+          try {
+            await sb.from('dhl_supplier_intakes')
+              .update({ auto_reminders_paused_at: null, auto_reminders_paused_by: null })
+              .eq('id', existingIntake.id);
+            intake = { ...existingIntake, auto_reminders_paused_at: null, auto_reminders_paused_by: null };
+          } catch (e: any) {
+            console.error('[DHL Intake] erro ao retomar lembretes ao regenerar link:', e?.message);
+          }
+        }
       } else {
         token = randomUUID().replace(/-/g, '');
         const { data: inserted, error: iErr } = await sb.from('dhl_supplier_intakes').insert([{
@@ -1342,6 +1364,61 @@ export function registerDhlIntakeRoutes(
   });
 
   // ──────────────────────────────────────────────────────────────
+  // POST /api/dhl/intake/:id/pause-reminders — pausa o worker para este intake
+  // POST /api/dhl/intake/:id/resume-reminders — retoma o worker para este intake
+  // ──────────────────────────────────────────────────────────────
+  const togglePausedReminders = async (req: Request, res: Response, pause: boolean) => {
+    try {
+      const { id } = req.params;
+      if (!id) return res.status(400).json({ error: 'id é obrigatório' });
+      const sb = getSb();
+      const { data: existing, error: selErr } = await sb.from('dhl_supplier_intakes')
+        .select('id, status, auto_reminders_paused_at')
+        .eq('id', id)
+        .maybeSingle();
+      if (selErr) return res.status(500).json({ error: selErr.message });
+      if (!existing) return res.status(404).json({ error: 'Intake não encontrado' });
+      if (pause && existing.status !== 'pendente') {
+        return res.status(400).json({ error: 'Apenas intakes pendentes podem ter os lembretes pausados.' });
+      }
+
+      const principal = await getPrincipal(req);
+      const actor = principal?.name || principal?.email || 'Sistema';
+      const patch: any = pause
+        ? { auto_reminders_paused_at: new Date().toISOString(), auto_reminders_paused_by: actor }
+        : { auto_reminders_paused_at: null, auto_reminders_paused_by: null };
+      const { data: updated, error: upErr } = await sb.from('dhl_supplier_intakes')
+        .update(patch)
+        .eq('id', id)
+        .select('id, auto_reminders_paused_at, auto_reminders_paused_by')
+        .maybeSingle();
+      if (upErr) return res.status(500).json({ error: upErr.message });
+
+      // Auditoria leve via system_logs (aparece no feed em tempo real).
+      try {
+        await sb.from('system_logs').insert([{
+          user_name: actor,
+          action_type: 'UPDATE',
+          entity: 'DhlIntake',
+          entity_id: id,
+          details: pause
+            ? 'Lembretes automáticos do link DHL PAUSADOS manualmente.'
+            : 'Lembretes automáticos do link DHL RETOMADOS manualmente.',
+        }]);
+      } catch (e: any) {
+        console.error('[DHL Intake] log pause/resume falhou:', e?.message);
+      }
+
+      return res.json({ ok: true, intake: updated });
+    } catch (e: any) {
+      console.error('[DHL Intake] pause/resume exception:', e);
+      return res.status(500).json({ error: e?.message || 'Erro interno' });
+    }
+  };
+  app.post('/api/dhl/intake/:id/pause-reminders', requireAuth, (req, res) => togglePausedReminders(req, res, true));
+  app.post('/api/dhl/intake/:id/resume-reminders', requireAuth, (req, res) => togglePausedReminders(req, res, false));
+
+  // ──────────────────────────────────────────────────────────────
   // GET /api/dhl/intake/by-mission/:missionId — lista intakes (auth)
   // Mostra no painel da OS os links ativos, preenchidos e cancelados.
   // ──────────────────────────────────────────────────────────────
@@ -1351,7 +1428,7 @@ export function registerDhlIntakeRoutes(
       if (!missionId) return res.status(400).json({ error: 'missionId é obrigatório' });
       const sb = getSb();
       const canSeeSnapshots = await userCanSeeSnapshots(req);
-      const baseCols = 'id, token, provider_id, provider_name, status, sent_to_email, sent_to_phone, submitted_at, created_at, expires_at, provider_reminder_count, provider_whatsapp_reminder_count, provider_reminder_sent_at, provider_whatsapp_reminder_sent_at';
+      const baseCols = 'id, token, provider_id, provider_name, status, sent_to_email, sent_to_phone, submitted_at, created_at, expires_at, provider_reminder_count, provider_whatsapp_reminder_count, provider_reminder_sent_at, provider_whatsapp_reminder_sent_at, auto_reminders_paused_at, auto_reminders_paused_by';
       const sensitiveCols = ', agent1_snapshot, agent2_snapshot, vehicle_snapshot, mirror_proof_url, mirror_proof_filename';
       const { data, error } = await sb.from('dhl_supplier_intakes')
         .select(canSeeSnapshots ? baseCols + sensitiveCols : baseCols)
