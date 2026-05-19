@@ -146,6 +146,8 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
   const [dhlIntakesLoading, setDhlIntakesLoading] = useState(false);
   const [dhlReminderConfig, setDhlReminderConfig] = useState<DhlReminderConfig>({ maxCount: 3, cycleHours: 12 });
   const [dhlRegenerating, setDhlRegenerating] = useState(false);
+  const [dhlReleaseSending, setDhlReleaseSending] = useState(false);
+  const [dhlSchemaModal, setDhlSchemaModal] = useState<{ open: boolean; message: string; sql: string; loadingSql: boolean }>({ open: false, message: '', sql: '', loadingSql: false });
   const [expandedIntakeId, setExpandedIntakeId] = useState<string | null>(null);
   const [copiedIntakeId, setCopiedIntakeId] = useState<string | null>(null);
   
@@ -288,7 +290,12 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
         }
         await fetchDhlIntakes(osId);
       } else {
-        showNotification('Falha ao gerar novo link', j.error || 'erro desconhecido', 'error');
+        const errMsg = j.error || 'erro desconhecido';
+        if (/banco ainda não tem as tabelas/i.test(errMsg)) {
+          openDhlSchemaModal('O banco do Supabase ainda não tem as tabelas do fluxo DHL. Copie o SQL abaixo e cole no Supabase Studio → SQL Editor → Run. Depois tente reenviar o link.');
+        } else {
+          showNotification('Falha ao gerar novo link', errMsg, 'error');
+        }
       }
     } catch (err: any) {
       showNotification('Falha ao gerar novo link', err?.message || 'erro de rede', 'error');
@@ -296,6 +303,81 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
       setDhlRegenerating(false);
     }
   };
+
+  const openDhlSchemaModal = async (message: string) => {
+    setDhlSchemaModal({ open: true, message, sql: '', loadingSql: true });
+    try {
+      const token = localStorage.getItem('authToken') || '';
+      const r = await fetch('/api/dhl/migrations-sql', {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+        credentials: 'include',
+      });
+      const j = await r.json();
+      if (r.ok && j.sql) {
+        setDhlSchemaModal(prev => ({ ...prev, sql: j.sql, loadingSql: false }));
+      } else {
+        setDhlSchemaModal(prev => ({ ...prev, sql: '-- Não foi possível carregar o SQL: ' + (j.error || 'erro') + '\n-- Abra o arquivo scripts/dhl-migrations.sql na raiz do projeto.', loadingSql: false }));
+      }
+    } catch (err: any) {
+      setDhlSchemaModal(prev => ({ ...prev, sql: '-- Erro de rede ao carregar o SQL: ' + (err?.message || 'desconhecido') + '\n-- Abra o arquivo scripts/dhl-migrations.sql na raiz do projeto.', loadingSql: false }));
+    }
+  };
+
+  // Reenvia o e-mail comunicando que o link está LIBERADO e copia o texto do WhatsApp
+  // (mesmo texto que o fornecedor recebe), em um único clique.
+  const handleResendEmailAndCopyWhatsapp = async () => {
+    if (!hasSavedOs) { showNotification('OS não salva', 'Salve a OS antes de reenviar o link.', 'warning'); return; }
+    setDhlReleaseSending(true);
+    try {
+      const token = localStorage.getItem('authToken') || '';
+      const r = await fetch('/api/dhl/intake/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+        credentials: 'include',
+        body: JSON.stringify({ missionId: osId, channel: 'email' }),
+      });
+      const j = await r.json();
+      if (!r.ok || !j.url) {
+        const errMsg = j.error || 'erro desconhecido';
+        if (/banco ainda não tem as tabelas/i.test(errMsg)) {
+          openDhlSchemaModal('O banco do Supabase ainda não tem as tabelas do fluxo DHL. Copie o SQL abaixo e cole no Supabase Studio → SQL Editor → Run. Depois tente novamente.');
+        } else {
+          showNotification('Falha ao reenviar', errMsg, 'error');
+        }
+        return;
+      }
+      // Copia mensagem WhatsApp avisando que o link está liberado
+      const waText = j.whatsappText || `Olá! O link para preenchimento da OS ${osId} está liberado: ${j.url}`;
+      try {
+        await navigator.clipboard.writeText(waText);
+      } catch {
+        // ignora falha de clipboard — mensagem ainda fica disponível no modal abaixo
+      }
+      // Abre o modal já mostrando o status e a mensagem para copiar manualmente se preciso
+      setDhlLinkModal({
+        open: true,
+        missionId: osId,
+        url: j.url,
+        whatsappText: waText,
+        phone: j.providerPhone || '',
+        channel: 'both',
+        emailSent: !!j.emailSent,
+        providerEmail: j.providerEmail || '',
+        whatsappSent: false,
+        whatsappError: null,
+      });
+      const emailPart = j.emailSent
+        ? `E-mail reenviado para ${j.providerEmail || 'o fornecedor'}.`
+        : (j.emailError ? `E-mail não enviado (${j.emailError}).` : 'Fornecedor sem e-mail cadastrado.');
+      showNotification('Link liberado', `${emailPart} Mensagem do WhatsApp já copiada — é só colar na conversa.`, 'success');
+      await fetchDhlIntakes(osId);
+    } catch (err: any) {
+      showNotification('Falha ao reenviar', err?.message || 'erro de rede', 'error');
+    } finally {
+      setDhlReleaseSending(false);
+    }
+  };
+
   const [dhlPauseToggling, setDhlPauseToggling] = useState<string | null>(null);
   const handleToggleDhlReminders = async (intakeId: string, pause: boolean) => {
     if (!intakeId) return;
@@ -1093,7 +1175,12 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
             if (r.ok && j.url) {
               setDhlLinkModal({ open: true, missionId: finalId, url: j.url, whatsappText: j.whatsappText || '', phone: j.providerPhone || '', channel: 'both', emailSent: !!j.emailSent, providerEmail: j.providerEmail || '', whatsappSent: !!j.whatsappSent, whatsappError: j.whatsappError || null });
             } else {
-              alert('OS salva, mas falhou ao gerar o link DHL: ' + (j.error || 'erro desconhecido'));
+              const errMsg = j.error || 'erro desconhecido';
+              if (/banco ainda não tem as tabelas/i.test(errMsg)) {
+                openDhlSchemaModal('OS salva, mas o banco do Supabase ainda não tem as tabelas do fluxo DHL. Copie o SQL abaixo e cole no Supabase Studio → SQL Editor → Run. Depois tente novamente.');
+              } else {
+                alert('OS salva, mas falhou ao gerar o link DHL: ' + errMsg);
+              }
             }
           } catch (err: any) {
             alert('OS salva, mas falhou ao gerar o link DHL: ' + (err?.message || 'erro de rede'));
@@ -1696,6 +1783,17 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
                                                   >
                                                     {!hasPref && (dhlRegenerating ? <Loader2 size={10} className="animate-spin" /> : <Mail size={10} />)}
                                                     {hasPref ? 'Outro canal…' : (dhlRegenerating ? 'Enviando...' : 'Gerar novo link')}
+                                                  </button>
+                                                  <button
+                                                    type="button"
+                                                    onClick={handleResendEmailAndCopyWhatsapp}
+                                                    disabled={dhlReleaseSending || dhlRegenerating}
+                                                    className="px-2 py-0.5 rounded bg-blue-600 hover:bg-blue-700 text-white font-black uppercase tracking-wider disabled:opacity-50 active:scale-95 transition-all flex items-center gap-1"
+                                                    data-testid={`btn-resend-release-${it.id}`}
+                                                    title="Reenvia o e-mail e copia a mensagem do WhatsApp avisando que o link está liberado"
+                                                  >
+                                                    {dhlReleaseSending ? <Loader2 size={10} className="animate-spin" /> : <Mail size={10} />}
+                                                    {dhlReleaseSending ? 'Enviando...' : 'E-mail + copiar WhatsApp'}
                                                   </button>
                                                 </>
                                               );
@@ -2643,6 +2741,62 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
           </form>
       </div>
 
+      {dhlSchemaModal.open && (
+        <div className="fixed inset-0 z-[1100] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4" data-testid="modal-dhl-schema-missing">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full overflow-hidden flex flex-col" style={{ maxHeight: '90vh' }}>
+            <div style={{ background: '#FFCC00', height: 6 }}></div>
+            <div style={{ background: '#D40511', height: 4 }}></div>
+            <div className="p-6 overflow-y-auto">
+              <h2 className="text-lg font-black uppercase tracking-wide text-gray-900 mb-2">Aplicar SQL no Supabase</h2>
+              <p className="text-xs text-gray-700 mb-4 leading-relaxed" data-testid="text-dhl-schema-message">
+                {dhlSchemaModal.message}
+              </p>
+              <ol className="text-xs text-gray-600 mb-3 list-decimal pl-4 space-y-0.5">
+                <li>Clique em <span className="font-bold">Copiar SQL</span> abaixo.</li>
+                <li>Abra o <a href="https://supabase.com/dashboard/project/_/sql/new" target="_blank" rel="noreferrer" className="text-blue-600 underline">Supabase Studio → SQL Editor</a>.</li>
+                <li>Cole, clique em <span className="font-bold">Run</span> e aguarde concluir.</li>
+                <li>Volte aqui e tente gerar/reenviar o link novamente.</li>
+              </ol>
+              <label className="text-[10px] font-black text-gray-500 uppercase mb-1 block tracking-wider">scripts/dhl-migrations.sql</label>
+              <textarea
+                readOnly
+                value={dhlSchemaModal.loadingSql ? 'Carregando SQL...' : dhlSchemaModal.sql}
+                onClick={(e) => (e.target as HTMLTextAreaElement).select()}
+                className="w-full bg-gray-50 border border-gray-300 rounded-lg px-3 py-2 text-[11px] font-mono text-gray-700 mb-3"
+                rows={10}
+                data-testid="textarea-dhl-schema-sql"
+              />
+              <div className="flex flex-wrap gap-2 justify-end">
+                <button
+                  type="button"
+                  disabled={dhlSchemaModal.loadingSql || !dhlSchemaModal.sql}
+                  onClick={async () => {
+                    try {
+                      await navigator.clipboard.writeText(dhlSchemaModal.sql);
+                      showNotification('SQL copiado', 'Cole no Supabase Studio → SQL Editor e clique em Run.', 'success');
+                    } catch {
+                      alert('Não foi possível copiar automaticamente. Selecione o texto e copie manualmente (Ctrl+C).');
+                    }
+                  }}
+                  className="px-4 h-11 rounded-lg bg-gray-900 text-white text-xs font-black uppercase tracking-wider hover:bg-black disabled:opacity-50"
+                  data-testid="btn-copy-dhl-schema-sql"
+                >
+                  Copiar SQL
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setDhlSchemaModal({ open: false, message: '', sql: '', loadingSql: false })}
+                  className="px-4 h-11 rounded-lg bg-red-600 text-white text-xs font-bold hover:bg-red-700"
+                  data-testid="btn-close-dhl-schema"
+                >
+                  Fechar
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {dhlChannelPicker.open && (
         <div className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4" data-testid="modal-dhl-channel-picker">
           <div className="bg-white rounded-2xl shadow-2xl max-w-sm w-full overflow-hidden">
@@ -2773,6 +2927,19 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
               )}
 
               <div className="flex flex-wrap gap-2 justify-end">
+                <button
+                  type="button"
+                  onClick={async () => {
+                    setDhlLinkModal({ ...dhlLinkModal, open: false });
+                    await handleResendEmailAndCopyWhatsapp();
+                  }}
+                  disabled={dhlReleaseSending}
+                  className="px-4 h-11 rounded-lg bg-blue-600 text-white text-xs font-black uppercase tracking-wider hover:bg-blue-700 disabled:opacity-50"
+                  data-testid="btn-resend-email-copy-whatsapp"
+                  title="Reenvia o e-mail e copia a mensagem do WhatsApp avisando que o link está liberado"
+                >
+                  {dhlReleaseSending ? 'Enviando...' : 'Reenviar e-mail + Copiar WhatsApp'}
+                </button>
                 {dhlLinkModal.channel !== 'email' && (
                   <>
                     <button type="button" onClick={() => { navigator.clipboard.writeText(dhlLinkModal.whatsappText); alert('Mensagem copiada'); }} className="px-4 h-11 rounded-lg bg-gray-100 text-gray-700 text-xs font-bold hover:bg-gray-200" data-testid="btn-copy-whatsapp">Copiar mensagem</button>

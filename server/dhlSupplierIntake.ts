@@ -13,6 +13,8 @@
 import type { Express, Request, Response } from 'express';
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import { randomUUID } from 'crypto';
+import fs from 'fs';
+import path from 'path';
 import {
   sendDhlSupplierIntakeEmail,
   sendDhlIntakeSubmittedEmail,
@@ -1098,6 +1100,20 @@ export function registerDhlIntakeRoutes(
       console.error('[Z-API Webhook] exception:', e?.message);
       // Sempre responde 200 para evitar reenvios em loop pela Z-API.
       return res.json({ ok: false, error: e?.message || 'erro interno' });
+    }
+  });
+
+  // ──────────────────────────────────────────────────────────────
+  // GET /api/dhl/migrations-sql — devolve o conteúdo de scripts/dhl-migrations.sql
+  // para o operador copiar e colar no Supabase Studio quando o exec_sql não existe.
+  // ──────────────────────────────────────────────────────────────
+  app.get('/api/dhl/migrations-sql', requireAuth, async (_req: Request, res: Response) => {
+    try {
+      const p = path.join(process.cwd(), 'scripts', 'dhl-migrations.sql');
+      const sql = fs.readFileSync(p, 'utf8');
+      res.json({ sql, bytes: sql.length });
+    } catch (err: any) {
+      res.status(500).json({ error: 'Não foi possível ler dhl-migrations.sql: ' + (err?.message || 'erro') });
     }
   });
 
