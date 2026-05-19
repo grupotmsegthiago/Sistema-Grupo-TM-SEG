@@ -960,7 +960,7 @@ export const calculateMissionFinancials = (
     let pExtraKmVal = round2(Math.max(0, pExcessKm * pUnitCostKm));
     let pExtraHrVal = round2(Math.max(0, pExcessHr * pUnitCostHour));
 
-    const isLogitechTable = appliedTableName.includes('LOGITECH') || appliedTableName.includes('200KM') || appliedTableName.includes('200 KM');
+    const isLogitechTable = appliedTableName.includes('LOGITECH');
     if (isLogitechTable && !isZeroValueMission) {
         tollValue = 35;
     }
