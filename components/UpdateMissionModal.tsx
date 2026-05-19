@@ -181,12 +181,12 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
 
     const restrictedStatuses = [MissionStatus.CANCELLED, MissionStatus.REFUSED];
 
-    // Link Google Maps e Ocorrencia: obrigatorios SO em "Em Viagem" (tracking ativo).
-    // Origem e Concluida nao precisam — em Origem o motorista acabou de chegar ao
-    // ponto A e em Concluida a missao ja terminou, nao ha necessidade de prender
-    // o operador exigindo link/ocorrencia em cada transicao.
     const isRequirementActive = useMemo(() => {
-        return editData.status === MissionStatus.IN_TRANSIT;
+        return [
+            MissionStatus.ORIGIN, 
+            MissionStatus.IN_TRANSIT, 
+            MissionStatus.COMPLETED
+        ].includes(editData.status as MissionStatus);
     }, [editData.status]);
 
     const isOccurrenceRequired = isRequirementActive || editData.status === MissionStatus.REFUSED;
