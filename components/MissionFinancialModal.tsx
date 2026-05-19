@@ -1042,7 +1042,9 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
           }
 
           const isCevaLogitech = financialData.client?.detectionLog?.includes('LOGITECH SOBERANA');
-          if (isCevaLogitech && dbValuesLoadedRef.current && !isSavingRef.current) {
+          // Regra: depois de salvo/aprovado, NUNCA sobrescrever valores do banco
+          // por recálculo automático (mesmo no caso especial CEVA/Logitech).
+          if (isCevaLogitech && dbValuesLoadedRef.current && !isSavingRef.current && !isEffectivelyLocked) {
               const fmt = (v: number) => v.toLocaleString('pt-BR', {minimumFractionDigits: 2, maximumFractionDigits: 2});
               const calcRevTotal = financialData.client.total;
               const currentInput = parseNumber(revenueInput);
@@ -1139,6 +1141,12 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
   }
 
   const handleRecalculateClient = async () => {
+      // Regra: faturamento salvo/aprovado nunca pode ser sobrescrito por recálculo.
+      // Só permite recalcular após destravamento manual (diretoria/admin/CEO).
+      if (isEffectivelyLocked) {
+          showNotification('Faturamento travado', 'Destrave o faturamento antes de recalcular os valores do cliente.', 'error');
+          return;
+      }
       setCustomClientBase('');
       setCustomClientKm('');
       setCustomClientHour('');
@@ -1203,6 +1211,12 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
   };
 
   const handleRecalculateProvider = async () => {
+      // Regra: faturamento salvo/aprovado nunca pode ser sobrescrito por recálculo.
+      // Só permite recalcular após destravamento manual (diretoria/admin/CEO).
+      if (isEffectivelyLocked) {
+          showNotification('Faturamento travado', 'Destrave o faturamento antes de recalcular os valores do fornecedor.', 'error');
+          return;
+      }
       setCustomProviderBase('');
       setCustomProviderKm('');
       setCustomProviderHour('');
@@ -2981,6 +2995,12 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                     const calcTotalBtn = financialData ? financialData.client.total : 0;
                                     const inputValBtn = parseNumber(revenueInput);
                                     const isManualValueBtn = inputValBtn > 0 && calcTotalBtn > 0 && Math.abs(inputValBtn - calcTotalBtn) > 1;
+                                    // Faturamento travado (salvo/aprovado): nunca oferecer "Restaurar Auto".
+                                    if (isEffectivelyLocked) return (
+                                        <span className="text-[9px] font-bold text-gray-600 bg-gray-200 px-2 py-0.5 rounded flex items-center gap-1" title="Faturamento salvo/aprovado — valores travados">
+                                            <Lock size={10} /> Travado
+                                        </span>
+                                    );
                                     if (!isManualValueBtn || isController) return (
                                         <span className="text-[9px] font-bold text-green-600 bg-green-100 px-2 py-0.5 rounded flex items-center gap-1" title="Recálculo automático ativo">
                                             <RefreshCw size={10} /> Auto
@@ -3080,6 +3100,12 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                     const calcCostBtn = financialData ? (financialData.provider.serviceTotal + parseNumber(tollProviderInput)) : 0;
                                     const inputCostBtn = parseNumber(costInput);
                                     const isManualCostBtn = inputCostBtn > 0 && calcCostBtn > 0 && Math.abs(inputCostBtn - calcCostBtn) > 1;
+                                    // Faturamento travado (salvo/aprovado): nunca oferecer "Restaurar Auto".
+                                    if (isEffectivelyLocked) return (
+                                        <span className="text-[9px] font-bold text-gray-600 bg-gray-200 px-2 py-0.5 rounded flex items-center gap-1" title="Faturamento salvo/aprovado — valores travados">
+                                            <Lock size={10} /> Travado
+                                        </span>
+                                    );
                                     if (!isManualCostBtn) return (
                                         <span className="text-[9px] font-bold text-blue-600 bg-blue-100 px-2 py-0.5 rounded flex items-center gap-1" title="Recálculo automático ativo">
                                             <RefreshCw size={10} /> Auto
