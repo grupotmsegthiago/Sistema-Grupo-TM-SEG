@@ -55,6 +55,32 @@
       :root {
         --vh: 1vh;
       }
+      .print-only { display: none; }
+      @media print {
+        @page { size: A4 landscape; margin: 6mm; }
+        html, body { background: #fff !important; height: auto !important; overflow: visible !important; }
+        body.print-divergence > *:not([data-testid="modal-divergence"]) { display: none !important; }
+        body.print-divergence [data-testid="modal-divergence"] {
+          position: static !important; inset: auto !important;
+          background: #fff !important; padding: 0 !important; z-index: auto !important;
+          display: block !important;
+        }
+        body.print-divergence [data-testid="modal-divergence"] > div {
+          max-width: 100% !important; max-height: none !important; box-shadow: none !important;
+          border: none !important; border-radius: 0 !important; overflow: visible !important;
+        }
+        body.print-divergence .no-print { display: none !important; }
+        body.print-divergence .print-only { display: block !important; }
+        body.print-divergence .max-h-\[55vh\], body.print-divergence [class*="max-h-"] { max-height: none !important; overflow: visible !important; }
+        body.print-divergence .overflow-x-auto, body.print-divergence .overflow-y-auto, body.print-divergence .overflow-auto { overflow: visible !important; }
+        body.print-divergence table { font-size: 8px !important; width: 100% !important; page-break-inside: auto; }
+        body.print-divergence thead { display: table-header-group; }
+        body.print-divergence tr { page-break-inside: avoid; }
+        body.print-divergence th, body.print-divergence td { padding: 2px 4px !important; }
+        body.print-divergence textarea { display: none !important; }
+        body.print-divergence { zoom: 0.78; -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+        body.print-divergence * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+      }
       html, body {
         height: 100%;
         height: -webkit-fill-available;

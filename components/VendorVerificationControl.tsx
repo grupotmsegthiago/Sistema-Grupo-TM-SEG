@@ -10,7 +10,7 @@ import {
     FileText, Hash, Lock, Eye, X, Save, ShieldCheck,
     ImagePlus, Trash2, ZoomIn, Receipt, CreditCard,
     CheckSquare, Square, ListChecks, ArrowRight, ExternalLink,
-    Upload, Scale, FileSpreadsheet, HelpCircle, Download
+    Upload, Scale, FileSpreadsheet, HelpCircle, Download, Printer
 } from 'lucide-react';
 import { useNotification } from '../lib/NotificationContext';
 
@@ -622,6 +622,27 @@ const VendorVerificationControl: React.FC<VendorVerificationControlProps> = ({ o
     const [divergenceFilter, setDivergenceFilter] = useState<'DIVERGENT' | 'NOT_FOUND' | 'OK' | 'ALL'>('DIVERGENT');
     const [divergenceTolerance, setDivergenceTolerance] = useState(10);
     const divergenceFileInputRef = React.useRef<HTMLInputElement>(null);
+    const [divergenceNotes, setDivergenceNotes] = useState<Record<string, string>>(() => {
+        try { return JSON.parse(localStorage.getItem('divergenceNotes') || '{}'); } catch { return {}; }
+    });
+    const noteKey = useCallback((r: any) => {
+        if (r?.mission?.id) return `m:${r.mission.id}`;
+        return `n:${(r?.row?.numero || '').toUpperCase()}|${r?.row?.viaturaNorm || ''}|${r?.row?.startDt ? new Date(r.row.startDt).toISOString().slice(0,10) : ''}`;
+    }, []);
+    const updateNote = useCallback((key: string, value: string) => {
+        setDivergenceNotes(prev => {
+            const next = { ...prev, [key]: value };
+            if (!value) delete next[key];
+            try { localStorage.setItem('divergenceNotes', JSON.stringify(next)); } catch {}
+            return next;
+        });
+    }, []);
+    const printDivergenceReport = useCallback(() => {
+        document.body.classList.add('print-divergence');
+        const cleanup = () => { document.body.classList.remove('print-divergence'); window.removeEventListener('afterprint', cleanup); };
+        window.addEventListener('afterprint', cleanup);
+        setTimeout(() => window.print(), 50);
+    }, []);
 
     // Status derivado da tolerância atual + valores SEMPRE atualizados a partir
     // da lista viva de missões (re-resolve por id). Garante que edições na OS
@@ -1855,8 +1876,16 @@ const VendorVerificationControl: React.FC<VendorVerificationControlProps> = ({ o
                                             })}
                                         </div>
                                         <button
+                                            onClick={printDivergenceReport}
+                                            className="px-3 py-1.5 bg-slate-800 hover:bg-black text-white rounded-lg text-[10px] font-black uppercase tracking-widest flex items-center gap-2 no-print"
+                                            data-testid="btn-print-divergence"
+                                            title="Imprimir esta tela em uma única folha"
+                                        >
+                                            <Printer size={14} /> Imprimir
+                                        </button>
+                                        <button
                                             onClick={exportDivergenceReport}
-                                            className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-[10px] font-black uppercase tracking-widest flex items-center gap-2"
+                                            className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-[10px] font-black uppercase tracking-widest flex items-center gap-2 no-print"
                                             data-testid="btn-export-divergence"
                                         >
                                             <Download size={14} /> Exportar
@@ -1952,11 +1981,11 @@ const VendorVerificationControl: React.FC<VendorVerificationControlProps> = ({ o
                                                                 <td className={`px-3 py-2 text-right font-black ${Math.abs(r.diff) > divergenceTolerance ? 'text-red-600' : 'text-gray-500'}`}>
                                                                     {r.mission ? formatCurrency(r.diff) : <span className="text-orange-600">{formatCurrency(r.valueProvider)}</span>}
                                                                 </td>
-                                                                <td className="px-3 py-2">
+                                                                <td className="px-3 py-2 align-top">
                                                                     {isNF ? (
                                                                         <span className="px-2 py-0.5 bg-orange-100 text-orange-700 rounded text-[9px] font-black uppercase">Sem missão correspondente</span>
                                                                     ) : (
-                                                                        <div className="flex flex-wrap gap-1">
+                                                                        <div className="flex flex-wrap gap-1 mb-1">
                                                                             {(r.details || []).length === 0 && r.status === 'OK' && (
                                                                                 <span className="px-2 py-0.5 bg-emerald-100 text-emerald-700 rounded text-[9px] font-black uppercase">OK</span>
                                                                             )}
@@ -1964,10 +1993,29 @@ const VendorVerificationControl: React.FC<VendorVerificationControlProps> = ({ o
                                                                                 <span key={i} className="px-2 py-0.5 bg-amber-100 text-amber-800 rounded text-[9px] font-bold" title={`Forn: ${d.planilha} / Sist: ${d.sistema}`}>{d.field}</span>
                                                                             ))}
                                                                             {(r.reasons || []).length > 0 && (
-                                                                                <span className="text-[9px] text-gray-400 font-bold" title={`Critérios de match: ${(r.reasons || []).join(', ')}`}>match: {r.matchScore}</span>
+                                                                                <span className="text-[9px] text-gray-400 font-bold no-print" title={`Critérios de match: ${(r.reasons || []).join(', ')}`}>match: {r.matchScore}</span>
                                                                             )}
                                                                         </div>
                                                                     )}
+                                                                    {(() => {
+                                                                        const k = noteKey(r);
+                                                                        const v = divergenceNotes[k] || '';
+                                                                        return (
+                                                                            <>
+                                                                                <textarea
+                                                                                    value={v}
+                                                                                    onChange={(e) => updateNote(k, e.target.value)}
+                                                                                    placeholder="Anotação..."
+                                                                                    rows={1}
+                                                                                    className="no-print w-full min-w-[160px] text-[10px] px-2 py-1 border border-gray-200 rounded bg-white focus:border-amber-500 focus:ring-1 focus:ring-amber-300 outline-none resize-y font-medium text-gray-700"
+                                                                                    data-testid={`input-note-${idx}`}
+                                                                                />
+                                                                                {v && (
+                                                                                    <div className="hidden print-only text-[9px] text-gray-800 mt-0.5 italic whitespace-pre-wrap break-words">{v}</div>
+                                                                                )}
+                                                                            </>
+                                                                        );
+                                                                    })()}
                                                                 </td>
                                                                 <td className="px-3 py-2 text-center">
                                                                     {r.mission && (
