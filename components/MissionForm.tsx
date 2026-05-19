@@ -128,7 +128,8 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
     reference_number: '',
     dhl_se_number: ''
   });
-  const [dhlLinkModal, setDhlLinkModal] = useState<{ open: boolean; missionId: string; url: string; whatsappText: string; phone: string }>({ open: false, missionId: '', url: '', whatsappText: '', phone: '' });
+  const [dhlLinkModal, setDhlLinkModal] = useState<{ open: boolean; missionId: string; url: string; whatsappText: string; phone: string; channel: 'email' | 'whatsapp' | 'both'; emailSent: boolean; providerEmail: string }>({ open: false, missionId: '', url: '', whatsappText: '', phone: '', channel: 'both', emailSent: false, providerEmail: '' });
+  const [dhlChannelPicker, setDhlChannelPicker] = useState<{ open: boolean }>({ open: false });
   const [dhlIntakes, setDhlIntakes] = useState<DhlIntakeRow[]>([]);
   const [dhlIntakesLoading, setDhlIntakesLoading] = useState(false);
   const [dhlRegenerating, setDhlRegenerating] = useState(false);
@@ -224,8 +225,9 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
     else setDhlIntakes([]);
   }, [isDhlClient, hasSavedOs, osId, fetchDhlIntakes]);
 
-  const handleRegenerateDhlLink = async () => {
+  const handleRegenerateDhlLink = async (channel: 'email' | 'whatsapp' | 'both' = 'both') => {
     if (!hasSavedOs) { showNotification('OS não salva', 'Salve a OS antes de gerar o link.', 'warning'); return; }
+    setDhlChannelPicker({ open: false });
     setDhlRegenerating(true);
     try {
       const token = localStorage.getItem('authToken') || '';
@@ -233,17 +235,22 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
         credentials: 'include',
-        body: JSON.stringify({ missionId: osId }),
+        body: JSON.stringify({ missionId: osId, channel }),
       });
       const j = await r.json();
       if (r.ok && j.url) {
-        setDhlLinkModal({ open: true, missionId: osId, url: j.url, whatsappText: j.whatsappText || '', phone: j.providerPhone || '' });
-        if (j.emailSent) {
-          showNotification('E-mail Enviado', `Novo link DHL enviado para ${j.providerEmail || 'o fornecedor'}.`, 'success');
-        } else if (j.emailError) {
-          showNotification('E-mail não enviado', `Falha ao enviar e-mail: ${j.emailError}. Use o WhatsApp para enviar manualmente.`, 'warning');
-        } else if (!j.providerEmail) {
-          showNotification('Fornecedor sem e-mail', 'Não há e-mail cadastrado para o fornecedor. Envie pelo WhatsApp.', 'warning');
+        setDhlLinkModal({ open: true, missionId: osId, url: j.url, whatsappText: j.whatsappText || '', phone: j.providerPhone || '', channel, emailSent: !!j.emailSent, providerEmail: j.providerEmail || '' });
+        const wantsEmail = channel === 'email' || channel === 'both';
+        const wantsWhatsapp = channel === 'whatsapp' || channel === 'both';
+        if (wantsEmail && j.emailSent) {
+          const extra = wantsWhatsapp ? ' Abra o WhatsApp para enviar a mensagem manualmente.' : '';
+          showNotification('E-mail enviado', `Link DHL enviado para ${j.providerEmail || 'o fornecedor'}.${extra}`, 'success');
+        } else if (wantsEmail && j.emailError) {
+          showNotification('E-mail não enviado', `Falha ao enviar e-mail: ${j.emailError}.${wantsWhatsapp ? ' Use o WhatsApp.' : ''}`, 'warning');
+        } else if (wantsEmail && !j.providerEmail) {
+          showNotification('Fornecedor sem e-mail', `Não há e-mail cadastrado para o fornecedor.${wantsWhatsapp ? ' Envie pelo WhatsApp.' : ''}`, 'warning');
+        } else if (!wantsEmail && wantsWhatsapp) {
+          showNotification('Link pronto para WhatsApp', 'E-mail não foi enviado. Copie a mensagem ou abra o WhatsApp para enviar ao fornecedor.', 'success');
         }
         await fetchDhlIntakes(osId);
       } else {
@@ -1561,7 +1568,7 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
                                             {showRowRegen && (
                                               <button
                                                 type="button"
-                                                onClick={handleRegenerateDhlLink}
+                                                onClick={() => setDhlChannelPicker({ open: true })}
                                                 disabled={dhlRegenerating}
                                                 className="px-2 py-0.5 rounded bg-red-600 text-white font-black uppercase tracking-wider hover:bg-red-700 disabled:opacity-50 active:scale-95 transition-all flex items-center gap-1"
                                                 data-testid={`btn-resend-dhl-intake-${it.id}`}
@@ -2416,6 +2423,59 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
           </form>
       </div>
 
+      {dhlChannelPicker.open && (
+        <div className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4" data-testid="modal-dhl-channel-picker">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-sm w-full overflow-hidden">
+            <div style={{ background: '#FFCC00', height: 6 }}></div>
+            <div style={{ background: '#D40511', height: 4 }}></div>
+            <div className="p-6">
+              <h2 className="text-lg font-black uppercase tracking-wide text-gray-900 mb-1">Reenviar link DHL</h2>
+              <p className="text-xs text-gray-500 mb-4">Escolha por onde enviar o novo link ao fornecedor.</p>
+              <div className="flex flex-col gap-2 mb-4">
+                <button
+                  type="button"
+                  onClick={() => handleRegenerateDhlLink('email')}
+                  disabled={dhlRegenerating}
+                  className="w-full px-4 h-11 rounded-lg bg-red-600 text-white text-xs font-black uppercase tracking-wider hover:bg-red-700 disabled:opacity-50 flex items-center justify-center gap-2"
+                  data-testid="btn-dhl-channel-email"
+                >
+                  <Mail size={14} /> Só e-mail
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleRegenerateDhlLink('whatsapp')}
+                  disabled={dhlRegenerating}
+                  className="w-full px-4 h-11 rounded-lg bg-green-600 text-white text-xs font-black uppercase tracking-wider hover:bg-green-700 disabled:opacity-50 flex items-center justify-center gap-2"
+                  data-testid="btn-dhl-channel-whatsapp"
+                >
+                  Só WhatsApp
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleRegenerateDhlLink('both')}
+                  disabled={dhlRegenerating}
+                  className="w-full px-4 h-11 rounded-lg bg-gray-900 text-white text-xs font-black uppercase tracking-wider hover:bg-black disabled:opacity-50 flex items-center justify-center gap-2"
+                  data-testid="btn-dhl-channel-both"
+                >
+                  Ambos (e-mail + WhatsApp)
+                </button>
+              </div>
+              <div className="flex justify-end">
+                <button
+                  type="button"
+                  onClick={() => setDhlChannelPicker({ open: false })}
+                  disabled={dhlRegenerating}
+                  className="px-4 h-10 rounded-lg bg-gray-100 text-gray-700 text-xs font-bold hover:bg-gray-200 disabled:opacity-50"
+                  data-testid="btn-dhl-channel-cancel"
+                >
+                  Cancelar
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {dhlLinkModal.open && (
         <div className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4" data-testid="modal-dhl-link">
           <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full overflow-hidden">
@@ -2423,7 +2483,19 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
             <div style={{ background: '#D40511', height: 4 }}></div>
             <div className="p-6">
               <h2 className="text-lg font-black uppercase tracking-wide text-gray-900 mb-1">Link do fornecedor gerado</h2>
-              <p className="text-xs text-gray-500 mb-4">OS <span className="font-bold text-red-600">{dhlLinkModal.missionId}</span> — o fornecedor recebeu o e-mail automaticamente. Copie a mensagem para enviar pelo WhatsApp.</p>
+              <p className="text-xs text-gray-500 mb-4" data-testid="text-dhl-modal-status">
+                OS <span className="font-bold text-red-600">{dhlLinkModal.missionId}</span>
+                {(() => {
+                  const c = dhlLinkModal.channel;
+                  if (c === 'whatsapp') return ' — envio por WhatsApp apenas. Copie a mensagem ou abra o WhatsApp abaixo.';
+                  if (c === 'email') return dhlLinkModal.emailSent
+                    ? ` — e-mail enviado para ${dhlLinkModal.providerEmail || 'o fornecedor'}.`
+                    : ' — e-mail não foi enviado. Use o WhatsApp manualmente.';
+                  return dhlLinkModal.emailSent
+                    ? ` — e-mail enviado para ${dhlLinkModal.providerEmail || 'o fornecedor'}. Copie a mensagem para enviar pelo WhatsApp.`
+                    : ' — e-mail não enviado. Envie pelo WhatsApp.';
+                })()}
+              </p>
 
               <label className="text-[10px] font-black text-gray-500 uppercase mb-1 block tracking-wider">Link público</label>
               <div className="flex gap-2 mb-4">
@@ -2431,23 +2503,31 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
                 <button type="button" onClick={() => { navigator.clipboard.writeText(dhlLinkModal.url); alert('Link copiado'); }} className="px-3 h-11 rounded-lg bg-gray-900 text-white text-xs font-bold hover:bg-black" data-testid="btn-copy-dhl-url">Copiar</button>
               </div>
 
-              <label className="text-[10px] font-black text-gray-500 uppercase mb-1 block tracking-wider">Mensagem para WhatsApp</label>
-              <textarea readOnly className="w-full bg-gray-50 border border-gray-300 rounded-lg px-3 py-2 text-xs text-gray-700 mb-3" rows={6} value={dhlLinkModal.whatsappText} onClick={(e) => (e.target as HTMLTextAreaElement).select()} data-testid="textarea-dhl-whatsapp" />
+              {dhlLinkModal.channel !== 'email' && (
+                <>
+                  <label className="text-[10px] font-black text-gray-500 uppercase mb-1 block tracking-wider">Mensagem para WhatsApp</label>
+                  <textarea readOnly className="w-full bg-gray-50 border border-gray-300 rounded-lg px-3 py-2 text-xs text-gray-700 mb-3" rows={6} value={dhlLinkModal.whatsappText} onClick={(e) => (e.target as HTMLTextAreaElement).select()} data-testid="textarea-dhl-whatsapp" />
+                </>
+              )}
 
               <div className="flex flex-wrap gap-2 justify-end">
-                <button type="button" onClick={() => { navigator.clipboard.writeText(dhlLinkModal.whatsappText); alert('Mensagem copiada'); }} className="px-4 h-11 rounded-lg bg-gray-100 text-gray-700 text-xs font-bold hover:bg-gray-200" data-testid="btn-copy-whatsapp">Copiar mensagem</button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    const phone = (dhlLinkModal.phone || '').replace(/\D/g, '');
-                    const url = phone
-                      ? `https://wa.me/${phone.length <= 11 ? '55' + phone : phone}?text=${encodeURIComponent(dhlLinkModal.whatsappText)}`
-                      : `https://wa.me/?text=${encodeURIComponent(dhlLinkModal.whatsappText)}`;
-                    window.open(url, '_blank');
-                  }}
-                  className="px-4 h-11 rounded-lg bg-green-600 text-white text-xs font-bold hover:bg-green-700"
-                  data-testid="btn-open-whatsapp"
-                >Abrir no WhatsApp</button>
+                {dhlLinkModal.channel !== 'email' && (
+                  <>
+                    <button type="button" onClick={() => { navigator.clipboard.writeText(dhlLinkModal.whatsappText); alert('Mensagem copiada'); }} className="px-4 h-11 rounded-lg bg-gray-100 text-gray-700 text-xs font-bold hover:bg-gray-200" data-testid="btn-copy-whatsapp">Copiar mensagem</button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const phone = (dhlLinkModal.phone || '').replace(/\D/g, '');
+                        const url = phone
+                          ? `https://wa.me/${phone.length <= 11 ? '55' + phone : phone}?text=${encodeURIComponent(dhlLinkModal.whatsappText)}`
+                          : `https://wa.me/?text=${encodeURIComponent(dhlLinkModal.whatsappText)}`;
+                        window.open(url, '_blank');
+                      }}
+                      className="px-4 h-11 rounded-lg bg-green-600 text-white text-xs font-bold hover:bg-green-700"
+                      data-testid="btn-open-whatsapp"
+                    >Abrir no WhatsApp</button>
+                  </>
+                )}
                 <button type="button" onClick={() => setDhlLinkModal({ ...dhlLinkModal, open: false })} className="px-4 h-11 rounded-lg bg-red-600 text-white text-xs font-bold hover:bg-red-700" data-testid="btn-close-dhl-modal">Fechar</button>
               </div>
             </div>

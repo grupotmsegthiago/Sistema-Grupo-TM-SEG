@@ -619,8 +619,11 @@ export function registerDhlIntakeRoutes(
   // ──────────────────────────────────────────────────────────────
   app.post('/api/dhl/intake/generate', requireAuth, async (req: Request, res: Response) => {
     try {
-      const { missionId } = req.body || {};
+      const { missionId, channel: rawChannel } = req.body || {};
       if (!missionId) return res.status(400).json({ error: 'missionId é obrigatório' });
+      const channel: 'email' | 'whatsapp' | 'both' =
+        rawChannel === 'email' || rawChannel === 'whatsapp' || rawChannel === 'both' ? rawChannel : 'both';
+      const wantsEmail = channel === 'email' || channel === 'both';
 
       const sb = getSb();
       const { data: mission, error: mErr } = await sb.from('missions').select('*').eq('id', missionId).single();
@@ -702,23 +705,28 @@ export function registerDhlIntakeRoutes(
       // E-mail
       let emailSent = false;
       let emailError: string | null = null;
-      if (providerEmail) {
-        try {
-          await sendDhlSupplierIntakeEmail({
-            to: providerEmail,
-            providerName: provider.trading_name || provider.name,
-            osNumber: mission.id,
-            seNumber: mission.dhl_se_number,
-            origin: mission.origin || '—',
-            destination: mission.destination || '—',
-            scheduledAt,
-            link,
-          });
-          emailSent = true;
-        } catch (e: any) {
-          emailError = e?.message || 'falha no envio do e-mail';
-          console.error('[DHL Intake] erro email:', emailError);
+      let emailSkipped = false;
+      if (wantsEmail) {
+        if (providerEmail) {
+          try {
+            await sendDhlSupplierIntakeEmail({
+              to: providerEmail,
+              providerName: provider.trading_name || provider.name,
+              osNumber: mission.id,
+              seNumber: mission.dhl_se_number,
+              origin: mission.origin || '—',
+              destination: mission.destination || '—',
+              scheduledAt,
+              link,
+            });
+            emailSent = true;
+          } catch (e: any) {
+            emailError = e?.message || 'falha no envio do e-mail';
+            console.error('[DHL Intake] erro email:', emailError);
+          }
         }
+      } else {
+        emailSkipped = true;
       }
 
       const whatsappText = buildWhatsappText({
@@ -761,6 +769,8 @@ export function registerDhlIntakeRoutes(
         whatsappText,
         emailSent,
         emailError,
+        emailSkipped,
+        channel,
         providerEmail: providerEmail || null,
         providerPhone: providerPhone || null,
       });
