@@ -183,10 +183,10 @@ const DailyGoalThermometer: React.FC<Props> = ({ viewPeriod = 'TODAY', customSta
 
     return (
         <div className="group perspective-1000 w-full max-w-lg mx-auto">
-            <div className="bg-white rounded-[35px] p-5 border-x border-t border-b-4 border-gray-200/60 shadow-[0_20px_50px_rgba(0,0,0,0.06)] w-full transition-all duration-700 hover:shadow-[0_25px_60px_rgba(0,0,0,0.1)] hover:-translate-y-0.5 transform hover:rotate-0.5 border-r-[5px] ml-[0px] mr-[0px]">
+            <div className="bg-white rounded-[35px] p-4 sm:p-5 border-x border-t border-b-4 border-gray-200/60 shadow-[0_20px_50px_rgba(0,0,0,0.06)] w-full overflow-hidden transition-all duration-700 hover:shadow-[0_25px_60px_rgba(0,0,0,0.1)] hover:-translate-y-0.5 transform hover:rotate-0.5 border-r-[5px] ml-[0px] mr-[0px]">
                 
-                <div className="flex justify-between items-center mb-4">
-                    <div className="flex items-center gap-2.5">
+                <div className="flex justify-between items-center gap-2 mb-4 min-w-0">
+                    <div className="flex items-center gap-2.5 min-w-0 flex-1">
                         <div className="relative shrink-0">
                             <div className={`p-2 rounded-[15px] text-white shadow-lg transition-colors duration-500 ${accentClass ? `bg-gradient-to-br ${accentClass}` : stats.colorClass}`}>
                                 <Target size={16} strokeWidth={3} />
@@ -243,7 +243,7 @@ const DailyGoalThermometer: React.FC<Props> = ({ viewPeriod = 'TODAY', customSta
                     </div>
                 </div>
                 
-                <div className="flex justify-between items-center">
+                <div className="flex justify-between items-center gap-2 flex-wrap min-w-0">
                     <div className={`px-3 py-1.5 rounded-2xl border shadow-inner flex items-baseline gap-1.5 shrink-0 transition-all ${stats.percentage < 50 ? 'bg-red-50 border-red-100' : stats.percentage <= 90 ? 'bg-yellow-50 border-yellow-100' : 'bg-green-50 border-green-100'}`}>
                         <span className={`text-sm font-black italic leading-none ${stats.textClass}`}>
                             {stats.percentage.toFixed(1)}% 
@@ -254,18 +254,18 @@ const DailyGoalThermometer: React.FC<Props> = ({ viewPeriod = 'TODAY', customSta
                     </div>
 
                     {canSeeMonetary && (
-                        <div className="text-right min-w-0 ml-4">
+                        <div className="text-right min-w-0 shrink">
                             {stats.remaining > 0 ? (
-                                <div className="flex flex-col items-end">
-                                    <span className="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-1 truncate">Restante para Alvo</span>
+                                <div className="flex flex-col items-end min-w-0">
+                                    <span className="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-1 truncate max-w-full">Restante para Alvo</span>
                                     <span className="text-[9px] md:text-[10px] font-black text-slate-700 bg-white px-2 py-0.5 rounded-lg border border-gray-100 shadow-sm whitespace-nowrap">
                                         {formatCurrency(stats.remaining)}
                                     </span>
                                 </div>
                             ) : (
-                                <div className="flex items-center gap-1.5 bg-emerald-600 text-white px-3 py-1.5 rounded-2xl shadow-lg shadow-emerald-100 animate-bounce">
-                                    <Trophy size={12} fill="currentColor" />
-                                    <span className="text-[8px] font-black uppercase tracking-widest leading-none">Alvo Superado!</span>
+                                <div className="flex items-center gap-1.5 bg-emerald-600 text-white px-2.5 py-1 rounded-2xl shadow-lg shadow-emerald-100 animate-bounce">
+                                    <Trophy size={11} fill="currentColor" />
+                                    <span className="text-[8px] font-black uppercase tracking-widest leading-none whitespace-nowrap">Alvo Superado!</span>
                                 </div>
                             )}
                         </div>
@@ -274,18 +274,18 @@ const DailyGoalThermometer: React.FC<Props> = ({ viewPeriod = 'TODAY', customSta
 
                 {canSeeMonetary && currentRevenue > 0 && (
                     <div className="mt-3 pt-3 border-t border-dashed border-gray-200">
-                        <div className="flex items-center justify-between gap-3">
-                            <div className="flex items-center gap-1">
-                                <span className="text-[7px] font-bold text-red-400 uppercase tracking-wide">Custo:</span>
-                                <span className="text-[10px] font-extrabold text-red-600 tracking-tight whitespace-nowrap" data-testid="text-provider-cost">{formatCurrency(currentCost)}</span>
+                        <div className="flex items-center justify-between gap-x-3 gap-y-1.5 flex-wrap min-w-0">
+                            <div className="flex items-center gap-1 min-w-0">
+                                <span className="text-[7px] font-bold text-red-400 uppercase tracking-wide shrink-0">Custo:</span>
+                                <span className="text-[10px] font-extrabold text-red-600 tracking-tight whitespace-nowrap truncate" data-testid="text-provider-cost">{formatCurrency(currentCost)}</span>
                             </div>
-                            <div className="flex items-center gap-1">
-                                <span className={`text-[7px] font-bold uppercase tracking-wide ${stats.profit >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>Lucro:</span>
-                                <span className={`text-[10px] font-extrabold tracking-tight whitespace-nowrap ${stats.profit >= 0 ? 'text-emerald-600' : 'text-red-600'}`} data-testid="text-profit">{formatCurrency(stats.profit)}</span>
+                            <div className="flex items-center gap-1 min-w-0">
+                                <span className={`text-[7px] font-bold uppercase tracking-wide shrink-0 ${stats.profit >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>Lucro:</span>
+                                <span className={`text-[10px] font-extrabold tracking-tight whitespace-nowrap truncate ${stats.profit >= 0 ? 'text-emerald-600' : 'text-red-600'}`} data-testid="text-profit">{formatCurrency(stats.profit)}</span>
                             </div>
-                            <div className="flex items-center gap-1">
-                                <span className={`text-[7px] font-bold uppercase tracking-wide ${stats.marginPercent >= 30 ? 'text-emerald-400' : stats.marginPercent >= 15 ? 'text-yellow-500' : 'text-red-400'}`}>Margem:</span>
-                                <span className={`text-[10px] font-extrabold tracking-tight whitespace-nowrap ${stats.marginPercent >= 30 ? 'text-emerald-600' : stats.marginPercent >= 15 ? 'text-yellow-600' : 'text-red-600'}`} data-testid="text-margin">{stats.marginPercent.toFixed(1)}%</span>
+                            <div className="flex items-center gap-1 min-w-0">
+                                <span className={`text-[7px] font-bold uppercase tracking-wide shrink-0 ${stats.marginPercent >= 30 ? 'text-emerald-400' : stats.marginPercent >= 15 ? 'text-yellow-500' : 'text-red-400'}`}>Margem:</span>
+                                <span className={`text-[10px] font-extrabold tracking-tight whitespace-nowrap truncate ${stats.marginPercent >= 30 ? 'text-emerald-600' : stats.marginPercent >= 15 ? 'text-yellow-600' : 'text-red-600'}`} data-testid="text-margin">{stats.marginPercent.toFixed(1)}%</span>
                             </div>
                         </div>
                     </div>
