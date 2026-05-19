@@ -1005,21 +1005,21 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
         };
         const text = isDHL ? `*ESCOLTA ARMADA*⚡️
 
-🗒️*SE:* ${(mission.dhl_se_number || '').toString().trim().toUpperCase()}
-🚔*VIATURA:* ${mission.vehicleId || ''}
-🥷*AGT 1:* ${formatFL(mission.agent1)}
-🥷*AGT 2:* ${formatFL(mission.agent2)}
+🗒️ *SE:* ${(mission.dhl_se_number || '').toString().trim().toUpperCase()}
+🚔 *VIATURA:* ${mission.vehicleId || ''}
+🥷 *AGT 1:* ${formatFL(mission.agent1)}
+🥷 *AGT 2:* ${formatFL(mission.agent2)}
 
 👔 *CLIENTE:* DHL
-🏦*ORIGEM:* ${mission.origin || ''}
-🏭*DESTINO:* ${(mission.destination || '').replace(/\s*[—-]\s*DESTINO\s+A\s+DEFINIR\s*$/i, '').trim()}
-👨‍🦰*MOTORISTA:* ${formatFL(mission.driver_name)}
-📞*FONE:* ${mission.driver_phone || ''}
+🏦 *ORIGEM:* ${mission.origin || ''}
+🏭 *DESTINO:* ${(mission.destination || '').replace(/\s*[—-]\s*DESTINO\s+A\s+DEFINIR\s*$/i, '').trim()}
+👨‍🦰 *MOTORISTA:* ${formatFL(mission.driver_name)}
+📞 *FONE:* ${mission.driver_phone || ''}
 🚛 *CAVALO:* ${mission.clientVehicle?.plate || ''}
 🚛 *CARRETA:* ${mission.clientVehicle2?.plate || ''}
 
-🕑*INÍCIO PREVISTO:* ${fmtTime(mission.createdAt)}
-🕑*CHEGADA NA ORIGEM:* 
+🕑 *INÍCIO PREVISTO:* ${fmtTime(mission.createdAt)}
+🕑 *CHEGADA NA ORIGEM:* 
 🧭 *INÍCIO DE OPERAÇÃO:* ${fmtTime(mission.startTime)}
 🧭 *FIM DE OPERAÇÃO:* ${fmtTime(mission.endTime)}
 

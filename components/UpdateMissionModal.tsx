@@ -1056,21 +1056,21 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
             };
             const report = isDHL ? `*ESCOLTA ARMADA*⚡️
 
-🗒️*SE:* ${(editData.dhl_se_number || '').toString().trim().toUpperCase()}
-🚔*VIATURA:* ${searchVehicle || ''}
-🥷*AGT 1:* ${formatFL(editData.agent1)}
-🥷*AGT 2:* ${formatFL(editData.agent2)}
+🗒️ *SE:* ${(editData.dhl_se_number || '').toString().trim().toUpperCase()}
+🚔 *VIATURA:* ${searchVehicle || ''}
+🥷 *AGT 1:* ${formatFL(editData.agent1)}
+🥷 *AGT 2:* ${formatFL(editData.agent2)}
 
 👔 *CLIENTE:* DHL
-🏦*ORIGEM:* ${editData.origin?.toUpperCase() || ''}
-🏭*DESTINO:* ${(finalDestination || '').toUpperCase().replace(/\s*[—-]\s*DESTINO\s+A\s+DEFINIR\s*$/i, '').trim()}
-👨‍🦰*MOTORISTA:* ${formatFL(editData.driver_name)}
-📞*FONE:* ${editData.driver_phone || ''}
+🏦 *ORIGEM:* ${editData.origin?.toUpperCase() || ''}
+🏭 *DESTINO:* ${(finalDestination || '').toUpperCase().replace(/\s*[—-]\s*DESTINO\s+A\s+DEFINIR\s*$/i, '').trim()}
+👨‍🦰 *MOTORISTA:* ${formatFL(editData.driver_name)}
+📞 *FONE:* ${editData.driver_phone || ''}
 🚛 *CAVALO:* ${editData.client_vehicle_plate || ''}
 🚛 *CARRETA:* ${(editData as any).client_vehicle_plate_2 || mission.clientVehicle2?.plate || ''}
 
-🕑*INÍCIO PREVISTO:* ${fmtDateTime(mission.createdAt)}
-🕑*CHEGADA NA ORIGEM:* 
+🕑 *INÍCIO PREVISTO:* ${fmtDateTime(mission.createdAt)}
+🕑 *CHEGADA NA ORIGEM:* 
 🧭 *INÍCIO DE OPERAÇÃO:* ${editData.startTime ? `${dateStr} ${editData.startTime}` : fmtDateTime(mission.startTime)}
 🧭 *FIM DE OPERAÇÃO:* ${editData.endTime ? `${dateStr} ${editData.endTime}` : fmtDateTime(mission.endTime)}
 
