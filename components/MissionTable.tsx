@@ -9,7 +9,7 @@ import {
   ClipboardList, FileSearch, CalendarClock, MapPin, Truck, Flag, XCircle, UserX, AlertOctagon, ToggleLeft, ToggleRight, Calendar,
   BarChart4, Globe, Building2, LayoutDashboard, User, ExternalLink, RefreshCw,
   Target, Clock, History, CalendarPlus, ShieldAlert, Mail, MessageCircle, ClipboardCheck,
-  FileBarChart, ArrowRight, Briefcase, Printer, Filter, List, Download, Link2, TrendingDown
+  FileBarChart, ArrowRight, Briefcase, Printer, Filter, List, Download, Link2, TrendingDown, Sparkles
 } from 'lucide-react';
 import { GoogleMap, useLoadScript, Marker, InfoWindow } from '@react-google-maps/api';
 import { googleMapsLoadConfig } from '../lib/maps';
@@ -23,6 +23,7 @@ import MissionFinancialModal from './MissionFinancialModal';
 import MissionFullReportModal from './MissionFullReportModal';
 import DailyGoalThermometer from './DailyGoalThermometer';
 import ExecutiveDashboard from './ExecutiveDashboard';
+import DhlSolicitationModal from './DhlSolicitationModal';
 import ClientExecutiveDashboard from './ClientExecutiveDashboard';
 import ClientReportsTab from './ClientReportsTab';
 import ClientMissionRequest from './ClientMissionRequest';
@@ -170,6 +171,7 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
   const [approvalViewStage, setApprovalViewStage] = useState<'auditor' | 'financeiro' | null>(null);
   const [showNegativeMarginOnly, setShowNegativeMarginOnly] = useState(false);
   const [showDhlOnly, setShowDhlOnly] = useState(false);
+  const [showDhlSolicitation, setShowDhlSolicitation] = useState(false);
   const [isRecalculating, setIsRecalculating] = useState(false);
 
   // Paginação da tabela: 30 OS por página
@@ -1495,6 +1497,17 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
                   <span className="flex items-center gap-1.5 tracking-wider">OPERAÇÕES DHL{showDhlOnly && <span className="text-[8px] font-black bg-red-700 text-white px-1.5 py-0.5 rounded">ON</span>}</span>
                 </button>
               )}
+              {!isRestrictedClientView && (
+                <button
+                  data-testid="button-dhl-solicitation"
+                  onClick={() => setShowDhlSolicitation(true)}
+                  title="Gerar mensagem de solicitação para fornecedor a partir do print da DHL"
+                  className="relative flex items-center gap-2 px-5 py-2.5 rounded-xl text-xs font-black uppercase border-2 transition-all shadow-md bg-white text-red-700 border-red-500 hover:bg-red-50 hover:scale-105"
+                >
+                  <Sparkles size={16} />
+                  <span className="tracking-wider">Solicitação DHL - Fornecedor</span>
+                </button>
+              )}
               <div className="flex items-center gap-2">
                 <span className="hidden md:inline">Filtrados:</span>
                 <span className="font-bold text-gray-800 bg-gray-200 px-2 py-1 rounded">{filteredMissions.length}</span>
@@ -1623,6 +1636,7 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
         {isPrintModalOpen && missionForPrint && <MissionPrintModal mission={missionForPrint} onClose={() => setIsPrintModalOpen(false)} />}
         {isFullReportOpen && missionForFullReport && <MissionFullReportModal mission={missionForFullReport} onClose={() => { setIsFullReportOpen(false); setMissionForFullReport(null); }} hideProviderInfo={isRestrictedClientView} />}
         {showClientRequestModal && resolvedClientName && <ClientMissionRequest clientName={resolvedClientName} onClose={() => setShowClientRequestModal(false)} onSuccess={() => { fetchMissions(true); showNotification('Sucesso', 'Solicitação enviada com sucesso!', 'success'); }} />}
+        <DhlSolicitationModal isOpen={showDhlSolicitation} onClose={() => setShowDhlSolicitation(false)} />
         {missionForOpReport && <MissionOperationalReport mission={missionForOpReport} onClose={() => setMissionForOpReport(null)} isClientView={isRestrictedClientView} isInternalEditor={isDirector || (currentUser?.role || '').toLowerCase() === 'avançado'} />}
         {isDeleteModalOpen && missionToDelete && (
             <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-in fade-in">
