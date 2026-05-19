@@ -4,7 +4,7 @@
 
 import React, { useEffect, useState, useMemo } from 'react';
 import { User, Truck, CheckCircle2, ArrowRight, ArrowLeft, Loader2, AlertCircle, Search } from 'lucide-react';
-import tmsegLogo from '../attached_assets/image_1779154356493.png';
+import tmsegLogo from '../attached_assets/tmseg_logo_transparent.png';
 
 const INPUT = "w-full bg-white border border-gray-300 rounded-lg px-3 h-11 text-sm text-gray-800 outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-500 transition-all";
 const LABEL = "text-[10px] font-black text-gray-500 uppercase mb-1.5 block tracking-wider";
@@ -225,7 +225,7 @@ const DhlSupplierIntake: React.FC = () => {
       <header className="bg-[#1a1a1a] text-white">
         <div className="max-w-4xl mx-auto px-4 py-6 flex items-center justify-between gap-4">
           <div className="flex items-center gap-3">
-            <img src={tmsegLogo} alt="Grupo TM SEG" className="w-12 h-12 object-contain" />
+            <img src={tmsegLogo} alt="Grupo TM SEG" className="h-14 md:h-16 w-auto object-contain" />
             <div>
               <h1 className="text-lg md:text-xl font-black tracking-wide">GRUPO <span className="text-red-500">TM SEG</span></h1>
               <p className="text-[10px] uppercase tracking-widest text-yellow-400 font-bold">Intermediação de Escolta Armada</p>
@@ -388,7 +388,7 @@ const EscoltistaForm: React.FC<{
 
   const cpfDigits = (data.cpf || '').replace(/\D/g, '');
   const cpfComplete = cpfDigits.length === 11;
-  const isLocked = !!data.id; // dados vieram do cadastro — somente leitura
+  const isLocked = lookupStatus === 'found'; // encontrado no cadastro — somente leitura
   const showFields = cpfComplete || isLocked;
 
   return (

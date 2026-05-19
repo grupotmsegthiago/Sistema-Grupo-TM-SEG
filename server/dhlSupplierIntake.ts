@@ -1556,10 +1556,55 @@ export function registerDhlIntakeRoutes(
 
       const { data: mission } = await sb.from('missions').select('id, client, provider, origin, destination, start_time, dhl_se_number, status').eq('id', intake.mission_id).maybeSingle();
 
-      const { data: escoltistas } = await sb.from('provider_escoltistas')
+      const { data: escoltistasProv } = await sb.from('provider_escoltistas')
         .select('*')
         .eq('provider_id', intake.provider_id)
         .order('nome', { ascending: true });
+
+      // Também busca agentes cadastrados na tabela principal `agents` vinculados
+      // a este fornecedor (por nome), para que o lookup por CPF na página pública
+      // encontre escoltistas já cadastrados no sistema TM Seg mesmo que ainda não
+      // tenham passado por nenhum intake. Estes registros vêm SEM id (não
+      // pertencem a provider_escoltistas), então no submit serão upserted lá.
+      let escoltistasFromAgents: any[] = [];
+      if (intake.provider_name) {
+        const { data: agentsData } = await sb.from('agents')
+          .select('name, cpf, rg, cnh, cnh_validity, cnv, cnv_validity, phone, status, provider')
+          .eq('provider', intake.provider_name)
+          .neq('status', 'Bloqueado / Ação Trabalhista')
+          .order('name', { ascending: true });
+        escoltistasFromAgents = (agentsData || []).map((a: any) => ({
+          id: null,
+          nome: a.name || '',
+          cpf: a.cpf || '',
+          rg: a.rg || '',
+          orgao_emissor: '',
+          cnh: a.cnh || '',
+          cnh_categoria: '',
+          cnh_vencimento: a.cnh_validity || '',
+          cnv_numero: a.cnv || '',
+          cnv_validade: a.cnv_validity || '',
+          rua: '', numero: '', complemento: '',
+          bairro: '', cidade: '', uf: '', cep: '',
+          celular: a.phone || '',
+          admissao: '',
+        }));
+      }
+
+      // Dedup por CPF — provider_escoltistas tem prioridade
+      const seenCpfs = new Set<string>();
+      const escoltistas: any[] = [];
+      for (const e of (escoltistasProv || [])) {
+        const d = String(e.cpf || '').replace(/\D/g, '');
+        if (d) seenCpfs.add(d);
+        escoltistas.push(e);
+      }
+      for (const e of escoltistasFromAgents) {
+        const d = String(e.cpf || '').replace(/\D/g, '');
+        if (!d || seenCpfs.has(d)) continue;
+        seenCpfs.add(d);
+        escoltistas.push(e);
+      }
 
       const { data: vehicles } = await sb.from('provider_intake_vehicles')
         .select('*')
