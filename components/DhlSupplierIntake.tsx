@@ -3,7 +3,7 @@
 // Não exige login. Memória por fornecedor com seleção/reaproveitamento.
 
 import React, { useEffect, useState, useMemo } from 'react';
-import { User, Truck, CheckCircle2, ArrowRight, ArrowLeft, Loader2, AlertCircle, Search, Info } from 'lucide-react';
+import { User, Truck, CheckCircle2, ArrowRight, ArrowLeft, Loader2, AlertCircle, Search, Info, Camera, Image as ImageIcon, ClipboardPaste } from 'lucide-react';
 import tmsegLogo from '../attached_assets/tmseg_logo_transparent.png';
 import { findDhlMirrorRule } from '../shared/dhlMirrorRules';
 
@@ -869,29 +869,7 @@ const VeiculoForm: React.FC<{
             <button type="button" onClick={() => clearExistingMirror?.()} className="px-3 py-1.5 rounded bg-white border border-red-300 text-red-600 text-xs font-bold hover:bg-red-50">Substituir</button>
           </div>
         ) : !mirrorProof ? (
-          <label className="block border-2 border-dashed border-gray-300 rounded-lg p-5 text-center cursor-pointer hover:border-red-500 hover:bg-red-50/30 transition" data-testid="input-mirror-proof">
-            <input
-              type="file"
-              accept="image/png,image/jpeg,image/webp,application/pdf"
-              className="hidden"
-              onChange={async (e) => {
-                const f = e.target.files?.[0];
-                if (!f) return;
-                if (f.size > 8 * 1024 * 1024) { alert('Arquivo muito grande — limite de 8 MB.'); return; }
-                const allowed = ['image/png', 'image/jpeg', 'image/webp', 'application/pdf'];
-                if (!allowed.includes(f.type)) { alert('Tipo não suportado — envie PNG, JPG, WEBP ou PDF.'); return; }
-                const dataUrl: string = await new Promise((resolve, reject) => {
-                  const r = new FileReader();
-                  r.onload = () => resolve(String(r.result));
-                  r.onerror = () => reject(new Error('Falha ao ler arquivo'));
-                  r.readAsDataURL(f);
-                });
-                setMirrorProof({ dataUrl, filename: f.name, size: f.size, contentType: f.type });
-              }}
-            />
-            <p className="text-sm font-bold text-gray-700">Clique para selecionar o print</p>
-            <p className="text-[11px] text-gray-400 mt-1">ou tire uma foto da tela do sistema de rastreamento</p>
-          </label>
+          <MirrorProofUploader setMirrorProof={setMirrorProof} />
         ) : (
           <div className="border border-green-300 bg-green-50 rounded-lg p-3 flex items-center justify-between gap-3">
             <div className="flex items-center gap-3 min-w-0">
@@ -914,6 +892,129 @@ const VeiculoForm: React.FC<{
         <button type="button" onClick={onBack} className="px-5 py-2.5 rounded-lg bg-gray-100 text-gray-700 text-sm font-bold flex items-center gap-2"><ArrowLeft size={16} /> Voltar</button>
         <button type="button" onClick={onNext} disabled={!!saving} className="px-6 py-2.5 rounded-lg bg-red-600 text-white text-sm font-bold flex items-center gap-2 hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed">{saving ? <><Loader2 size={16} className="animate-spin" /> Salvando...</> : <>Revisar <ArrowRight size={16} /></>}</button>
       </div>
+    </div>
+  );
+};
+
+// ────────────────────────────────────────────────────────────
+// Sub-componente: Upload do print do espelhamento (paste / câmera / arquivo)
+// ────────────────────────────────────────────────────────────
+const MirrorProofUploader: React.FC<{
+  setMirrorProof: (p: { dataUrl: string; filename: string; size: number; contentType: string }) => void;
+}> = ({ setMirrorProof }) => {
+  const fileInputRef = React.useRef<HTMLInputElement>(null);
+  const cameraInputRef = React.useRef<HTMLInputElement>(null);
+  const [pasteFeedback, setPasteFeedback] = useState<string | null>(null);
+  const [isDragging, setIsDragging] = useState(false);
+
+  const processFile = async (f: File) => {
+    if (f.size > 8 * 1024 * 1024) { alert('Arquivo muito grande — limite de 8 MB.'); return; }
+    const allowed = ['image/png', 'image/jpeg', 'image/webp', 'image/jpg', 'application/pdf'];
+    if (!allowed.includes(f.type)) { alert('Tipo não suportado — envie PNG, JPG, WEBP ou PDF.'); return; }
+    const dataUrl: string = await new Promise((resolve, reject) => {
+      const r = new FileReader();
+      r.onload = () => resolve(String(r.result));
+      r.onerror = () => reject(new Error('Falha ao ler arquivo'));
+      r.readAsDataURL(f);
+    });
+    const filename = f.name && f.name !== 'image.png' ? f.name : `espelhamento_${Date.now()}.${(f.type.split('/')[1] || 'png')}`;
+    setMirrorProof({ dataUrl, filename, size: f.size, contentType: f.type });
+  };
+
+  // Paste global (Ctrl+V no desktop)
+  useEffect(() => {
+    const onPaste = (e: ClipboardEvent) => {
+      const items = e.clipboardData?.items;
+      if (!items) return;
+      for (let i = 0; i < items.length; i++) {
+        if (items[i].type.startsWith('image/')) {
+          const f = items[i].getAsFile();
+          if (f) {
+            e.preventDefault();
+            setPasteFeedback('Imagem colada com sucesso!');
+            processFile(f);
+            setTimeout(() => setPasteFeedback(null), 2500);
+            return;
+          }
+        }
+      }
+    };
+    window.addEventListener('paste', onPaste);
+    return () => window.removeEventListener('paste', onPaste);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(false);
+    const f = e.dataTransfer.files?.[0];
+    if (f) processFile(f);
+  };
+
+  return (
+    <div
+      onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
+      onDragLeave={() => setIsDragging(false)}
+      onDrop={handleDrop}
+      className={`border-2 border-dashed rounded-xl p-4 sm:p-6 transition ${isDragging ? 'border-red-500 bg-red-50/60' : 'border-gray-300 bg-gray-50/40'}`}
+      data-testid="dropzone-mirror-proof"
+    >
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="image/png,image/jpeg,image/webp,application/pdf"
+        className="hidden"
+        onChange={(e) => { const f = e.target.files?.[0]; if (f) processFile(f); e.target.value = ''; }}
+      />
+      <input
+        ref={cameraInputRef}
+        type="file"
+        accept="image/*"
+        capture="environment"
+        className="hidden"
+        onChange={(e) => { const f = e.target.files?.[0]; if (f) processFile(f); e.target.value = ''; }}
+      />
+
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 sm:gap-3">
+        <button
+          type="button"
+          onClick={() => cameraInputRef.current?.click()}
+          className="flex flex-col items-center justify-center gap-2 px-4 py-4 bg-white border-2 border-red-200 hover:border-red-500 hover:bg-red-50 rounded-lg transition active:scale-95"
+          data-testid="button-mirror-camera"
+        >
+          <div className="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center"><Camera size={20} className="text-red-600" /></div>
+          <span className="text-xs font-black uppercase tracking-wider text-gray-800">Tirar foto</span>
+          <span className="text-[10px] text-gray-500 -mt-1">Abre a câmera</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => fileInputRef.current?.click()}
+          className="flex flex-col items-center justify-center gap-2 px-4 py-4 bg-white border-2 border-blue-200 hover:border-blue-500 hover:bg-blue-50 rounded-lg transition active:scale-95"
+          data-testid="button-mirror-gallery"
+        >
+          <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center"><ImageIcon size={20} className="text-blue-600" /></div>
+          <span className="text-xs font-black uppercase tracking-wider text-gray-800">Galeria / Arquivo</span>
+          <span className="text-[10px] text-gray-500 -mt-1">Escolher do dispositivo</span>
+        </button>
+
+        <div className="hidden sm:flex flex-col items-center justify-center gap-2 px-4 py-4 bg-white border-2 border-dashed border-gray-300 rounded-lg">
+          <div className="w-10 h-10 rounded-full bg-gray-100 flex items-center justify-center"><ClipboardPaste size={20} className="text-gray-600" /></div>
+          <span className="text-xs font-black uppercase tracking-wider text-gray-800">Colar (Ctrl+V)</span>
+          <span className="text-[10px] text-gray-500 -mt-1">Print + colar aqui</span>
+        </div>
+      </div>
+
+      {pasteFeedback && (
+        <div className="mt-3 flex items-center justify-center gap-2 px-3 py-2 bg-green-100 border border-green-300 text-green-800 text-xs font-bold rounded-lg">
+          <CheckCircle2 size={14} /> {pasteFeedback}
+        </div>
+      )}
+
+      <p className="text-[11px] text-gray-500 text-center mt-3">
+        <span className="sm:hidden">No celular: toque em <b>Tirar foto</b> para abrir a câmera, ou em <b>Galeria</b> para escolher uma imagem já salva.</span>
+        <span className="hidden sm:inline">PNG, JPG, WEBP ou PDF — até 8 MB. Você também pode arrastar o arquivo para esta área ou colar (Ctrl+V) o print da tela.</span>
+      </p>
     </div>
   );
 };
