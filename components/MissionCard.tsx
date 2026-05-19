@@ -708,6 +708,15 @@ Qualquer dúvida, estamos a disposição.
                                 <ImageOff size={10} /> SEM EVIDÊNCIA
                             </span>
                         ) : null}
+                        {!hideProviderInfo && (/DHL/i.test(((mission as any).originalClientName || mission.client || ''))) && !dhlIntake ? (
+                            <span
+                                className="px-1.5 py-0.5 rounded text-[8px] font-black uppercase flex items-center gap-1 bg-gray-100 text-gray-600 border border-gray-300"
+                                title="Link do fornecedor ainda não foi gerado para esta OS — gere o link de Intake DHL."
+                                data-testid={`badge-intake-sem-link-${mission.id}`}
+                            >
+                                <AlertTriangle size={10} strokeWidth={3} /> DOC: AGUARDANDO LINK
+                            </span>
+                        ) : null}
                         {!hideProviderInfo && (/DHL/i.test(((mission as any).originalClientName || mission.client || ''))) && dhlIntake ? (() => {
                             const a1 = !!dhlIntake.progressAgent1;
                             const a2 = !!dhlIntake.progressAgent2;
