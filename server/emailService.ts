@@ -1580,4 +1580,74 @@ export async function sendDhlIntakeReminderOperacionalEmail(opts: {
   console.log(`[Email] DHL intake reminder (operacional) → ${opts.to} | ${opts.pending.length} link(s)`);
 }
 
+export async function sendDhlIntakeOperationalFollowupEmail(opts: {
+  to: string;
+  thresholdHours: number;
+  pending: Array<{
+    osNumber: string;
+    seNumber: string;
+    providerName: string;
+    sentTo: string;
+    reminderSentAt: string;
+    hoursSinceReminder: number;
+    firstOpenedAt: string | null;
+    expiresAt: string;
+    origin: string;
+    destination: string;
+    scheduledAt: string;
+  }>;
+}): Promise<void> {
+  if (!opts.pending || opts.pending.length === 0) return;
+
+  const rows = opts.pending.map(item => {
+    const aberto = item.firstOpenedAt
+      ? `<span style="color:#888; font-size:11px;">abriu em ${item.firstOpenedAt}</span>`
+      : `<span style="color:#D40511; font-size:11px;">não abriu o link</span>`;
+    return `
+    <tr>
+      <td><strong>${item.osNumber}</strong></td>
+      <td>${item.seNumber || '—'}</td>
+      <td>${item.providerName}</td>
+      <td>${item.sentTo || '—'}</td>
+      <td>${item.reminderSentAt}<br/><span style="color:#888; font-size:11px;">há ~${item.hoursSinceReminder}h</span></td>
+      <td>${aberto}</td>
+      <td>${item.origin} → ${item.destination}<br/><span style="color:#888; font-size:11px;">início ${item.scheduledAt}</span></td>
+      <td>${item.expiresAt}</td>
+    </tr>`;
+  }).join('');
+
+  const html = dhlTemplate(`
+    <h2>Atenção — Fornecedor(es) sem resposta ao lembrete DHL</h2>
+    <p>Já se passaram <strong>mais de ${opts.thresholdHours} hora(s)</strong> desde o lembrete automático e o(s) fornecedor(es) abaixo <strong>ainda não preencheu(ram)</strong> o link DHL. Recomenda-se contato manual imediato (ligação/WhatsApp) para evitar que o link expire.</p>
+    <p><strong>Total nesta verificação:</strong> ${opts.pending.length}</p>
+    <table class="info-table" style="width:100%;">
+      <thead>
+        <tr style="background:#fde2e1;">
+          <th style="text-align:left; padding:8px;">OS</th>
+          <th style="text-align:left; padding:8px;">S.E.</th>
+          <th style="text-align:left; padding:8px;">Fornecedor</th>
+          <th style="text-align:left; padding:8px;">Enviado para</th>
+          <th style="text-align:left; padding:8px;">Lembrete em</th>
+          <th style="text-align:left; padding:8px;">Status link</th>
+          <th style="text-align:left; padding:8px;">Trajeto / Início</th>
+          <th style="text-align:left; padding:8px;">Expira em</th>
+        </tr>
+      </thead>
+      <tbody>${rows}</tbody>
+    </table>
+    <div class="highlight" style="margin-top:20px; background:#fde2e1; border-left:4px solid #D40511;">
+      <strong>Ação imediata:</strong> ligar para o fornecedor para confirmar recebimento e desbloquear o preenchimento antes da OS começar.
+    </div>
+    <p style="margin-top:14px; font-size:12px; color:#888;">Este alerta de acompanhamento é enviado apenas uma vez por link (não há duplicidade).</p>
+  `);
+
+  await transporter.sendMail({
+    from: SMTP_FROM,
+    to: opts.to,
+    subject: `[DHL] ${opts.pending.length} fornecedor(es) sem resposta após o lembrete (>${opts.thresholdHours}h)`,
+    html,
+  });
+  console.log(`[Email] DHL intake operational follow-up → ${opts.to} | ${opts.pending.length} link(s)`);
+}
+
 export { transporter };

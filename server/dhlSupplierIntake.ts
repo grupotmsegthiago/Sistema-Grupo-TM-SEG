@@ -19,6 +19,7 @@ import {
   sendDhlIntakeExpiredEmail,
   sendDhlIntakeReminderProviderEmail,
   sendDhlIntakeReminderOperacionalEmail,
+  sendDhlIntakeOperationalFollowupEmail,
 } from './emailService';
 
 const DHL_CLIENT_NAME = 'DHL SUPPLY CHAIN (BRAZIL) LTDA';
@@ -141,6 +142,7 @@ export async function runDhlIntakeMigrations(): Promise<void> {
       ALTER TABLE dhl_supplier_intakes ADD COLUMN IF NOT EXISTS operational_alert_sent_at TIMESTAMPTZ;
       ALTER TABLE dhl_supplier_intakes ADD COLUMN IF NOT EXISTS provider_reminder_count INTEGER NOT NULL DEFAULT 0;
       ALTER TABLE dhl_supplier_intakes ADD COLUMN IF NOT EXISTS provider_whatsapp_reminder_count INTEGER NOT NULL DEFAULT 0;
+      ALTER TABLE dhl_supplier_intakes ADD COLUMN IF NOT EXISTS operational_followup_sent_at TIMESTAMPTZ;
       -- Backfill: intakes pré-existentes que já receberam um lembrete (flag preenchida)
       -- contam como 1 envio, evitando que o ciclo recém-criado dispare um lembrete
       -- "extra" no período de transição.
@@ -503,6 +505,10 @@ const DHL_REMINDER_EXPIRY_WINDOW_HOURS    = readPositiveEnv('DHL_REMINDER_EXPIRY
 // Permite reenviar lembretes ao fornecedor inerte sem deixar o link expirar em silêncio.
 const DHL_REMINDER_CYCLE_HOURS = readPositiveEnv('DHL_REMINDER_CYCLE_HOURS', 12);             // intervalo mínimo entre lembretes
 const DHL_REMINDER_MAX_COUNT   = readPositiveEnv('DHL_REMINDER_MAX_COUNT', 3);                // limite máximo de lembretes por canal
+// Após o lembrete ao fornecedor, se passarem ≥ N h sem preenchimento,
+// dispara um alerta de acompanhamento (follow-up) ao operacional para
+// que ele faça contato manual antes do link expirar.
+const DHL_OPERATIONAL_FOLLOWUP_THRESHOLD_HOURS = readPositiveEnv('DHL_OPERATIONAL_FOLLOWUP_HOURS', 6);
 
 async function checkAndSendDhlIntakeReminders(): Promise<void> {
   const sb = getSb();
@@ -800,16 +806,179 @@ async function checkAndSendDhlIntakeReminders(): Promise<void> {
   console.log(`[DHL Reminder Worker] fornecedor=${marcadosFornecedor}/${precisaFornecedor.length} | operacional=${marcadosOperacional}/${precisaOperacional.length}.`);
 }
 
+// ────────────────────────────────────────────────────────────────────────────
+// WORKER PERIÓDICO — FOLLOW-UP do operacional.
+// Após o lembrete ao fornecedor (provider_reminder_sent_at OU
+// provider_whatsapp_reminder_sent_at), se passarem
+// ≥ DHL_OPERATIONAL_FOLLOWUP_THRESHOLD_HOURS sem preenchimento, dispara um
+// e-mail consolidado + system_log para o operacional, listando os intakes
+// parados — para que ele faça contato manual antes do link expirar.
+// Idempotente via flag dedicada operational_followup_sent_at.
+// ────────────────────────────────────────────────────────────────────────────
+type DhlIntakeRow = {
+  id: string;
+  mission_id: string;
+  provider_id: string | null;
+  provider_name: string | null;
+  sent_to_email: string | null;
+  sent_to_phone: string | null;
+  first_opened_at: string | null;
+  created_at: string;
+  expires_at: string;
+  provider_reminder_sent_at: string | null;
+  provider_whatsapp_reminder_sent_at: string | null;
+  operational_followup_sent_at: string | null;
+};
+
+type DhlMissionRow = {
+  id: string;
+  dhl_se_number: string | null;
+  origin: string | null;
+  destination: string | null;
+  start_time: string | null;
+};
+
+async function checkAndSendDhlOperationalFollowups(): Promise<void> {
+  const sb = getSb();
+  const now = new Date();
+  const nowIso = now.toISOString();
+  const thresholdMs = DHL_OPERATIONAL_FOLLOWUP_THRESHOLD_HOURS * 36e5;
+
+  // Candidatos: pendentes, ainda não expirados, com lembrete já enviado
+  // (e-mail ou WhatsApp) e sem follow-up ainda.
+  const { data: pendentes, error: selErr } = await sb.from('dhl_supplier_intakes')
+    .select('id, mission_id, provider_id, provider_name, sent_to_email, sent_to_phone, first_opened_at, created_at, expires_at, provider_reminder_sent_at, provider_whatsapp_reminder_sent_at, operational_followup_sent_at')
+    .eq('status', 'pendente')
+    .is('operational_followup_sent_at', null)
+    .or('provider_reminder_sent_at.not.is.null,provider_whatsapp_reminder_sent_at.not.is.null')
+    .gt('expires_at', nowIso);
+
+  if (selErr) {
+    console.error('[DHL Followup Worker] erro ao listar pendentes:', selErr.message);
+    return;
+  }
+  const lista = (Array.isArray(pendentes) ? pendentes : []) as DhlIntakeRow[];
+  if (lista.length === 0) return;
+
+  // Helper: timestamp do primeiro lembrete enviado (e-mail ou WhatsApp).
+  const firstReminderTs = (it: DhlIntakeRow): number | null => {
+    const candidates: number[] = [];
+    if (it.provider_reminder_sent_at) candidates.push(new Date(it.provider_reminder_sent_at).getTime());
+    if (it.provider_whatsapp_reminder_sent_at) candidates.push(new Date(it.provider_whatsapp_reminder_sent_at).getTime());
+    return candidates.length ? Math.min(...candidates) : null;
+  };
+
+  // Filtra os que já atingiram o threshold desde o primeiro lembrete.
+  const elegiveis = lista.filter(it => {
+    const ts = firstReminderTs(it);
+    return ts !== null && (now.getTime() - ts) >= thresholdMs;
+  });
+  if (elegiveis.length === 0) return;
+
+  console.log(`[DHL Followup Worker] ${elegiveis.length} candidato(s) ao follow-up.`);
+
+  // Claim atômico: marca operational_followup_sent_at ANTES de enviar o
+  // e-mail consolidado. O `.is('operational_followup_sent_at', null)` evita
+  // que outra instância (ou execução concorrente) pegue os mesmos registros.
+  // Apenas os IDs efetivamente reivindicados serão notificados.
+  const candidateIds = elegiveis.map(e => e.id);
+  const { data: claimed, error: claimErr } = await sb.from('dhl_supplier_intakes')
+    .update({ operational_followup_sent_at: nowIso })
+    .in('id', candidateIds)
+    .is('operational_followup_sent_at', null)
+    .select('id');
+  if (claimErr) {
+    console.error('[DHL Followup Worker] erro ao reivindicar intakes:', claimErr.message);
+    return;
+  }
+  const claimedIds = new Set((claimed || []).map((r: { id: string }) => r.id));
+  const claimedIntakes = elegiveis.filter(e => claimedIds.has(e.id));
+  if (claimedIntakes.length === 0) return;
+
+  // Hidrata dados das OS apenas para os reivindicados.
+  const missionIds = Array.from(new Set(claimedIntakes.map(i => i.mission_id).filter(Boolean)));
+  const { data: missions } = await sb.from('missions')
+    .select('id, dhl_se_number, origin, destination, start_time')
+    .in('id', missionIds);
+  const missionMap = new Map<string, DhlMissionRow>(((missions || []) as DhlMissionRow[]).map(m => [m.id, m]));
+
+  const fmtBr = (iso: string | null | undefined) => {
+    if (!iso) return '—';
+    try { return new Date(iso).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' }); } catch { return '—'; }
+  };
+
+  const payload = claimedIntakes.map(it => {
+    const m = missionMap.get(it.mission_id) || ({} as Partial<DhlMissionRow>);
+    const reminderTs = firstReminderTs(it) as number; // garantido pelo filtro
+    const hoursSinceReminder = Math.round((now.getTime() - reminderTs) / 36e5);
+    return {
+      osNumber: it.mission_id,
+      seNumber: m.dhl_se_number || '—',
+      providerName: it.provider_name || '—',
+      sentTo: it.sent_to_email || it.sent_to_phone || '—',
+      reminderSentAt: fmtBr(new Date(reminderTs).toISOString()),
+      hoursSinceReminder,
+      firstOpenedAt: it.first_opened_at ? fmtBr(it.first_opened_at) : null,
+      expiresAt: fmtBr(it.expires_at),
+      origin: m.origin || '—',
+      destination: m.destination || '—',
+      scheduledAt: fmtBr(m.start_time),
+    };
+  });
+
+  let emailOk = false;
+  try {
+    await sendDhlIntakeOperationalFollowupEmail({
+      to: OPERACIONAL_EMAIL,
+      thresholdHours: DHL_OPERATIONAL_FOLLOWUP_THRESHOLD_HOURS,
+      pending: payload,
+    });
+    emailOk = true;
+  } catch (e: any) {
+    console.error('[DHL Followup Worker] erro ao enviar e-mail ao operacional:', e?.message);
+  }
+
+  if (!emailOk) {
+    // Rollback do claim para permitir retry no próximo tick.
+    const { error: rollbackErr } = await sb.from('dhl_supplier_intakes')
+      .update({ operational_followup_sent_at: null })
+      .in('id', Array.from(claimedIds));
+    if (rollbackErr) {
+      console.error('[DHL Followup Worker] erro ao reverter claim:', rollbackErr.message);
+    }
+    return;
+  }
+
+  // Notificação in-app (toast em tempo real) — uma por intake reivindicado.
+  for (const it of claimedIntakes) {
+    try {
+      await sb.from('system_logs').insert([{
+        user_name: 'Sistema',
+        action_type: 'UPDATE',
+        entity: 'Mission',
+        entity_id: it.mission_id,
+        details: `Follow-up DHL: fornecedor ${it.provider_name || '—'} continua SEM preencher o link após o lembrete (há ≥${DHL_OPERATIONAL_FOLLOWUP_THRESHOLD_HOURS}h). Faça contato manual antes do link expirar.`,
+      }]);
+    } catch (e: any) {
+      console.error('[DHL Followup Worker] erro ao inserir system_logs:', e?.message);
+    }
+  }
+
+  console.log(`[DHL Followup Worker] follow-up enviado para ${claimedIntakes.length}/${elegiveis.length} intake(s) (claimed).`);
+}
+
 export function startDhlIntakeExpiryWorker(): void {
   if (_dhlExpiryWorkerTimer) return;
   // Primeira execução com um pequeno delay para não competir com o boot.
   setTimeout(() => {
     checkAndNotifyExpiredDhlIntakes().catch(e => console.error('[DHL Expiry Worker] tick inicial falhou:', e?.message));
     checkAndSendDhlIntakeReminders().catch(e => console.error('[DHL Reminder Worker] tick inicial falhou:', e?.message));
+    checkAndSendDhlOperationalFollowups().catch(e => console.error('[DHL Followup Worker] tick inicial falhou:', e?.message));
   }, 30 * 1000);
   _dhlExpiryWorkerTimer = setInterval(() => {
     checkAndNotifyExpiredDhlIntakes().catch(e => console.error('[DHL Expiry Worker] tick falhou:', e?.message));
     checkAndSendDhlIntakeReminders().catch(e => console.error('[DHL Reminder Worker] tick falhou:', e?.message));
+    checkAndSendDhlOperationalFollowups().catch(e => console.error('[DHL Followup Worker] tick falhou:', e?.message));
   }, DHL_EXPIRY_CHECK_INTERVAL_MS);
   console.log(`[DHL Expiry Worker] iniciado (intervalo ${Math.round(DHL_EXPIRY_CHECK_INTERVAL_MS / 60000)} min).`);
 }
