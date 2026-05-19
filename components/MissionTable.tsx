@@ -822,17 +822,25 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
 
     const myApprovalMissions = useMemo(() => {
         if (!myApprovalStage) return [];
+        // Ordena sempre da mais recente para a mais antiga (por data de
+        // agendamento; se não houver, cai para a data de criação) — evita
+        // que a fila de aprovações fique misturada e fora de ordem.
+        const sortByDateDesc = (list: Mission[]) => [...list].sort((a, b) => {
+            const ta = new Date(a.startTime || a.createdAt || 0).getTime();
+            const tb = new Date(b.startTime || b.createdAt || 0).getTime();
+            return tb - ta;
+        });
         if (myApprovalStage === 'diretoria') {
-            if (approvalViewStage === 'auditor') return pendingByStage.auditor;
-            if (approvalViewStage === 'financeiro') return pendingByStage.financeiro;
+            if (approvalViewStage === 'auditor') return sortByDateDesc(pendingByStage.auditor);
+            if (approvalViewStage === 'financeiro') return sortByDateDesc(pendingByStage.financeiro);
             const allIds = new Set([
                 ...pendingByStage.auditor.map(m => m.id),
                 ...pendingByStage.financeiro.map(m => m.id),
                 ...pendingByStage.diretoria.map(m => m.id),
             ]);
-            return eligibleApprovalMissions.filter(m => allIds.has(m.id));
+            return sortByDateDesc(eligibleApprovalMissions.filter(m => allIds.has(m.id)));
         }
-        return pendingByStage[myApprovalStage] || [];
+        return sortByDateDesc(pendingByStage[myApprovalStage] || []);
     }, [myApprovalStage, pendingByStage, eligibleApprovalMissions, approvalViewStage]);
 
     const myApprovalCount = myApprovalMissions.length;
