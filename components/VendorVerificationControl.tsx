@@ -1981,41 +1981,40 @@ const VendorVerificationControl: React.FC<VendorVerificationControlProps> = ({ o
                                                                 <td className={`px-3 py-2 text-right font-black ${Math.abs(r.diff) > divergenceTolerance ? 'text-red-600' : 'text-gray-500'}`}>
                                                                     {r.mission ? formatCurrency(r.diff) : <span className="text-orange-600">{formatCurrency(r.valueProvider)}</span>}
                                                                 </td>
-                                                                <td className="px-3 py-2 align-top">
+                                                                <td className="px-3 py-2 align-top min-w-[260px]">
                                                                     {isNF ? (
                                                                         <span className="px-2 py-0.5 bg-orange-100 text-orange-700 rounded text-[9px] font-black uppercase">Sem missão correspondente</span>
+                                                                    ) : (r.details || []).length === 0 && r.status === 'OK' ? (
+                                                                        <span className="px-2 py-0.5 bg-emerald-100 text-emerald-700 rounded text-[9px] font-black uppercase">OK</span>
                                                                     ) : (
-                                                                        <div className="flex flex-wrap gap-1 mb-1">
-                                                                            {(r.details || []).length === 0 && r.status === 'OK' && (
-                                                                                <span className="px-2 py-0.5 bg-emerald-100 text-emerald-700 rounded text-[9px] font-black uppercase">OK</span>
-                                                                            )}
-                                                                            {(r.details || []).map((d: any, i: number) => (
-                                                                                <span key={i} className="px-2 py-0.5 bg-amber-100 text-amber-800 rounded text-[9px] font-bold" title={`Forn: ${d.planilha} / Sist: ${d.sistema}`}>{d.field}</span>
-                                                                            ))}
+                                                                        <div className="flex flex-col gap-0.5 text-[10px] leading-tight">
+                                                                            {(() => {
+                                                                                const fmt = (field: string, v: any) => {
+                                                                                    if (v === null || v === undefined || v === '') return '—';
+                                                                                    if (['Pedágio'].includes(field)) return formatCurrency(Number(v) || 0);
+                                                                                    if (['KM Inicial', 'KM Final'].includes(field)) return `${Number(v).toLocaleString('pt-BR')} km`;
+                                                                                    return String(v);
+                                                                                };
+                                                                                const items: { field: string; planilha: any; sistema: any }[] = [...(r.details || [])];
+                                                                                if (r.status === 'DIVERGENT' || (r.mission && Math.abs(r.diff) > divergenceTolerance)) {
+                                                                                    if (!items.some(d => d.field === 'Valor Total')) {
+                                                                                        items.unshift({ field: 'Valor Total', planilha: formatCurrency(r.valueProvider), sistema: formatCurrency(r.valueSystem) });
+                                                                                    }
+                                                                                }
+                                                                                return items.map((d, i) => (
+                                                                                    <div key={i} className="text-gray-700">
+                                                                                        <span className="font-black text-gray-900">{d.field}:</span>{' '}
+                                                                                        <span className="text-blue-700 font-bold">Forn. {typeof d.planilha === 'string' ? d.planilha : fmt(d.field, d.planilha)}</span>
+                                                                                        {' '}<span className="text-gray-400">/</span>{' '}
+                                                                                        <span className="text-emerald-700 font-bold">Sist. TMSEG {typeof d.sistema === 'string' ? d.sistema : fmt(d.field, d.sistema)}</span>
+                                                                                    </div>
+                                                                                ));
+                                                                            })()}
                                                                             {(r.reasons || []).length > 0 && (
-                                                                                <span className="text-[9px] text-gray-400 font-bold no-print" title={`Critérios de match: ${(r.reasons || []).join(', ')}`}>match: {r.matchScore}</span>
+                                                                                <span className="text-[9px] text-gray-400 font-bold no-print mt-0.5" title={`Critérios de match: ${(r.reasons || []).join(', ')}`}>match: {r.matchScore}</span>
                                                                             )}
                                                                         </div>
                                                                     )}
-                                                                    {(() => {
-                                                                        const k = noteKey(r);
-                                                                        const v = divergenceNotes[k] || '';
-                                                                        return (
-                                                                            <>
-                                                                                <textarea
-                                                                                    value={v}
-                                                                                    onChange={(e) => updateNote(k, e.target.value)}
-                                                                                    placeholder="Anotação..."
-                                                                                    rows={1}
-                                                                                    className="no-print w-full min-w-[160px] text-[10px] px-2 py-1 border border-gray-200 rounded bg-white focus:border-amber-500 focus:ring-1 focus:ring-amber-300 outline-none resize-y font-medium text-gray-700"
-                                                                                    data-testid={`input-note-${idx}`}
-                                                                                />
-                                                                                {v && (
-                                                                                    <div className="hidden print-only text-[9px] text-gray-800 mt-0.5 italic whitespace-pre-wrap break-words">{v}</div>
-                                                                                )}
-                                                                            </>
-                                                                        );
-                                                                    })()}
                                                                 </td>
                                                                 <td className="px-3 py-2 text-center">
                                                                     {r.mission && (
