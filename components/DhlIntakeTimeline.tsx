@@ -85,33 +85,31 @@ const DhlIntakeTimeline: React.FC<Props> = ({ missionId, canViewSnapshots = true
   const [copiedVinculoId, setCopiedVinculoId] = useState<string | null>(null);
 
   // Texto padronizado para solicitar vínculo (Escoltista 1, Escoltista 2 e
-  // veículo) na DHL. Inclui nome completo, CPF e dados essenciais do veículo.
+  // veículo) na DHL — formato pensado para colar direto no WhatsApp.
+  // CPF sai sem máscara (só dígitos), e usamos *bold* do WhatsApp para CPF
+  // e para "TM SEG" no fechamento.
+  const onlyDigits = (s?: string | null) => String(s || '').replace(/\D+/g, '');
   const buildVinculoDhlText = (it: DhlIntakeRow): string => {
     const lines: string[] = [];
     const a1 = it.agent1_snapshot;
     const a2 = it.agent2_snapshot;
     const v = it.vehicle_snapshot;
+    const cpf1 = onlyDigits(a1?.cpf);
+    const cpf2 = onlyDigits(a2?.cpf);
     lines.push('Solicitação de vínculo — DHL Supply Chain');
-    lines.push(`OS: ${missionId}`);
-    lines.push(`Fornecedor: ${it.provider_name || '—'}`);
     lines.push('');
     lines.push('Escoltista 1:');
-    lines.push(`  Nome: ${a1?.nome || '—'}`);
-    lines.push(`  CPF:  ${a1?.cpf || '—'}`);
+    lines.push(`Nome: ${a1?.nome || '—'}`);
+    lines.push(`CPF:  *${cpf1 || '—'}*`);
     lines.push('');
     lines.push('Escoltista 2:');
-    lines.push(`  Nome: ${a2?.nome || '—'}`);
-    lines.push(`  CPF:  ${a2?.cpf || '—'}`);
+    lines.push(`Nome: ${a2?.nome || '—'}`);
+    lines.push(`CPF:  *${cpf2 || '—'}*`);
     lines.push('');
     lines.push('Veículo:');
-    lines.push(`  Placa:   ${v?.placa || '—'}`);
-    lines.push(`  Marca:   ${v?.marca || '—'}`);
-    lines.push(`  Modelo:  ${v?.modelo || '—'}`);
-    lines.push(`  Ano:     ${v?.ano || '—'}`);
-    if (v?.cor) lines.push(`  Cor:     ${v.cor}`);
-    if (v?.renavam) lines.push(`  Renavam: ${v.renavam}`);
-    if (v?.tecnologia) lines.push(`  Tecnologia: ${v.tecnologia}`);
-    if (v?.id_rastreador) lines.push(`  ID Rastreador: ${v.id_rastreador}`);
+    lines.push(`Placa:   ${v?.placa || '—'}`);
+    lines.push('');
+    lines.push('Favor vincular os cadastros acima para a empresa *TM SEG*');
     return lines.join('\n');
   };
 
