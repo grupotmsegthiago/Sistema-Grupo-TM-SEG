@@ -137,6 +137,7 @@ export async function runDhlIntakeMigrations(): Promise<void> {
       ALTER TABLE dhl_supplier_intakes ADD COLUMN IF NOT EXISTS first_opened_at TIMESTAMPTZ;
       ALTER TABLE dhl_supplier_intakes ADD COLUMN IF NOT EXISTS reminder_sent_at TIMESTAMPTZ;
       ALTER TABLE dhl_supplier_intakes ADD COLUMN IF NOT EXISTS provider_reminder_sent_at TIMESTAMPTZ;
+      ALTER TABLE dhl_supplier_intakes ADD COLUMN IF NOT EXISTS provider_whatsapp_reminder_sent_at TIMESTAMPTZ;
       ALTER TABLE dhl_supplier_intakes ADD COLUMN IF NOT EXISTS operational_alert_sent_at TIMESTAMPTZ;
 
       -- Histórico de reenvios do link DHL (auditoria: quem reenviou, quando, para onde, status)
@@ -280,6 +281,85 @@ function maskPhone(value: string | null | undefined): string {
   return String(value).replace(/\D/g, '');
 }
 
+// Envia uma mensagem de texto via Z-API. Retorna { ok, error }.
+// Centraliza a chamada para reaproveitar no fluxo de geração inicial e no
+// worker de lembretes automáticos.
+async function sendZapiTextMessage(phoneDigits: string, message: string): Promise<{ ok: boolean; error: string | null; messageId: string | null }> {
+  const ZAPI_INSTANCE = process.env.ZAPI_INSTANCE_ID || process.env.VITE_ZAPI_INSTANCE_ID || '';
+  const ZAPI_TOKEN = process.env.ZAPI_TOKEN || process.env.VITE_ZAPI_TOKEN || '';
+  const ZAPI_CLIENT_TOKEN = process.env.ZAPI_CLIENT_TOKEN || process.env.VITE_ZAPI_CLIENT_TOKEN || '';
+  if (!ZAPI_INSTANCE || !ZAPI_TOKEN) {
+    return { ok: false, error: 'Z-API não configurada', messageId: null };
+  }
+  const digits = String(phoneDigits || '').replace(/\D/g, '');
+  if (!digits) return { ok: false, error: 'telefone vazio', messageId: null };
+  // Brasil: garante prefixo 55 quando vier apenas DDD+número (10/11 dígitos).
+  const phone = digits.length <= 11 ? `55${digits}` : digits;
+  try {
+    const headers: any = { 'Content-Type': 'application/json' };
+    if (ZAPI_CLIENT_TOKEN) headers['Client-Token'] = ZAPI_CLIENT_TOKEN;
+    const r = await fetch(`https://api.z-api.io/instances/${ZAPI_INSTANCE}/token/${ZAPI_TOKEN}/send-text`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ phone, message }),
+    });
+    const txt = await r.text();
+    let parsed: any = null;
+    try { parsed = JSON.parse(txt); } catch {}
+    if (!r.ok) {
+      const detail = parsed ?? txt;
+      const err = `Z-API ${r.status}: ${typeof detail === 'string' ? detail : (detail?.error || detail?.message || JSON.stringify(detail))}`;
+      return { ok: false, error: err, messageId: null };
+    }
+    let messageId: string | null = null;
+    if (parsed && typeof parsed === 'object') {
+      const mid = parsed.messageId || parsed.id || parsed.zaapId || null;
+      messageId = mid ? String(mid) : null;
+    }
+    return { ok: true, error: null, messageId };
+  } catch (e: any) {
+    return { ok: false, error: e?.message || 'falha no envio do WhatsApp', messageId: null };
+  }
+}
+
+function buildReminderWhatsappText(opts: {
+  providerName: string;
+  osNumber: string;
+  seNumber: string;
+  origin: string;
+  destination: string;
+  scheduledAt: string;
+  expiresAt: string;
+  link: string;
+  reason: 'opened_abandoned' | 'expiry_approaching';
+  firstOpenedAt?: string | null;
+}): string {
+  const motivo = opts.reason === 'opened_abandoned'
+    ? `Identificamos que o link foi aberto${opts.firstOpenedAt ? ` em ${opts.firstOpenedAt}` : ''}, mas ainda *não foi concluído*.`
+    : `O link de cadastro está prestes a *expirar* em ${opts.expiresAt} e ainda não foi preenchido.`;
+  return `*Grupo TM SEG — Lembrete: cadastro DHL pendente*
+
+Olá, ${opts.providerName}!
+
+${motivo}
+
+Por favor, finalize o preenchimento dos dados de *Escoltista 1, Escoltista 2 e Veículo* pelo link abaixo o quanto antes:
+
+🔗 ${opts.link}
+
+*Dados da OS:*
+• OS: ${opts.osNumber}
+• S.E. DHL: ${opts.seNumber}
+• Origem: ${opts.origin}
+• Destino: ${opts.destination}
+• Início: ${opts.scheduledAt}
+• Validade do link: ${opts.expiresAt}
+
+Em caso de dúvida, responda a este WhatsApp.
+
+_Grupo TM SEG — Intermediação de Escolta Armada_`;
+}
+
 // ────────────────────────────────────────────────────────────────────────────
 // WORKER PERIÓDICO — marca intakes pendentes vencidos como 'expirado' e
 // notifica o operacional (in-app via system_logs + e-mail consolidado).
@@ -407,9 +487,9 @@ async function checkAndSendDhlIntakeReminders(): Promise<void> {
   // enviado. Cada canal é controlado por sua própria flag, permitindo retry
   // independente em caso de falha de um deles.
   const { data: pendentes, error: selErr } = await sb.from('dhl_supplier_intakes')
-    .select('id, token, mission_id, provider_id, provider_name, sent_to_email, sent_to_phone, first_opened_at, created_at, expires_at, provider_reminder_sent_at, operational_alert_sent_at')
+    .select('id, token, mission_id, provider_id, provider_name, sent_to_email, sent_to_phone, first_opened_at, created_at, expires_at, provider_reminder_sent_at, provider_whatsapp_reminder_sent_at, operational_alert_sent_at')
     .eq('status', 'pendente')
-    .or('provider_reminder_sent_at.is.null,operational_alert_sent_at.is.null')
+    .or('provider_reminder_sent_at.is.null,provider_whatsapp_reminder_sent_at.is.null,operational_alert_sent_at.is.null')
     .gt('expires_at', nowIso);
 
   if (selErr) {
@@ -467,26 +547,65 @@ async function checkAndSendDhlIntakeReminders(): Promise<void> {
   const baseUrl = (process.env.APP_PUBLIC_URL || '').replace(/\/$/, '')
     || (process.env.REPLIT_DOMAINS ? `https://${(process.env.REPLIT_DOMAINS || '').split(',')[0].trim()}` : '');
 
-  // Por canal: lista de intakes que ainda precisam do envio.
+  // Por canal: lista de intakes que ainda precisam do envio. Cada canal
+  // (e-mail e WhatsApp ao fornecedor) tem sua própria flag para permitir
+  // retry independente: se o e-mail já saiu mas o WhatsApp falhou, o
+  // próximo tick reenvia apenas o WhatsApp.
   type Eleg = typeof elegiveis[number];
-  const precisaFornecedor: Eleg[] = elegiveis.filter(el => !el.intake.provider_reminder_sent_at);
+  const precisaFornecedorEmail: Eleg[] = elegiveis.filter(el => !el.intake.provider_reminder_sent_at);
+  const precisaFornecedorWhatsapp: Eleg[] = elegiveis.filter(el => !el.intake.provider_whatsapp_reminder_sent_at);
   const precisaOperacional: Eleg[] = elegiveis.filter(el => !el.intake.operational_alert_sent_at);
 
-  // ── Canal 1: e-mail ao fornecedor (por intake) ────────────────────────
-  let marcadosFornecedor = 0;
-  for (const el of precisaFornecedor) {
-    const { intake, mission, provider, reason } = el;
-    const providerEmail = (intake.sent_to_email || (provider.os_email || provider.email || '')).trim();
-    const providerName = intake.provider_name || provider.trading_name || provider.name || '—';
-    const link = baseUrl ? `${baseUrl}/fornecedor/dhl?token=${intake.token}` : '';
+  const resolveDestinos = (el: Eleg) => {
+    const { intake, provider } = el;
+    return {
+      email: (intake.sent_to_email || (provider.os_email || provider.email || '')).trim(),
+      phone: maskPhone(intake.sent_to_phone || provider.phone || ''),
+      name: intake.provider_name || provider.trading_name || provider.name || '—',
+      link: baseUrl ? `${baseUrl}/fornecedor/dhl?token=${intake.token}` : '',
+    };
+  };
 
-    if (!providerEmail || !link) {
-      // Sem destino válido para o fornecedor — não trava o fluxo, mas também
-      // NÃO marca como enviado (assim, se o cadastro for corrigido depois,
-      // o tick seguinte tentará novamente).
-      continue;
+  const auditarLembrete = async (
+    el: Eleg,
+    targetEmail: string | null,
+    targetPhone: string | null,
+    emailStatus: 'success' | 'failure' | 'skipped',
+    emailError: string | null,
+    whatsappStatus: 'success' | 'failure' | 'skipped',
+    whatsappError: string | null,
+  ) => {
+    try {
+      const { error: resendErr } = await sb.from('dhl_supplier_intake_resends').insert([{
+        intake_id: el.intake.id,
+        mission_id: el.intake.mission_id,
+        sent_by_user_id: null,
+        sent_by_user_name: `Sistema (lembrete: ${el.reason})`,
+        target_email: targetEmail || null,
+        target_phone: targetPhone || null,
+        email_status: emailStatus,
+        email_error: emailError,
+        whatsapp_status: whatsappStatus,
+        whatsapp_error: whatsappError,
+        reused_existing_token: true,
+      }]);
+      if (resendErr) {
+        console.error('[DHL Reminder Worker] erro ao registrar histórico de lembrete:', resendErr.message);
+      }
+    } catch (e: any) {
+      console.error('[DHL Reminder Worker] exceção ao registrar histórico de lembrete:', e?.message);
     }
+  };
 
+  // ── Canal 1a: lembrete por e-mail ─────────────────────────────────────
+  let marcadosEmail = 0;
+  for (const el of precisaFornecedorEmail) {
+    const { intake, mission, reason } = el;
+    const { email: providerEmail, name: providerName, link } = resolveDestinos(el);
+    if (!providerEmail || !link) continue; // sem destino — retry no próximo tick
+
+    let emailStatus: 'success' | 'failure' = 'failure';
+    let emailError: string | null = null;
     try {
       await sendDhlIntakeReminderProviderEmail({
         to: providerEmail,
@@ -501,10 +620,15 @@ async function checkAndSendDhlIntakeReminders(): Promise<void> {
         firstOpenedAt: intake.first_opened_at ? fmtBr(intake.first_opened_at) : null,
         reason,
       });
+      emailStatus = 'success';
     } catch (e: any) {
-      console.error('[DHL Reminder Worker] erro ao enviar e-mail ao fornecedor (retry no próximo tick):', e?.message);
-      continue; // não marca a flag — permite retry
+      emailError = e?.message || 'falha no envio do e-mail';
+      console.error('[DHL Reminder Worker] erro ao enviar e-mail ao fornecedor:', emailError);
     }
+
+    await auditarLembrete(el, providerEmail, null, emailStatus, emailError, 'skipped', null);
+
+    if (emailStatus !== 'success') continue; // mantém retry
 
     const { error: markErr } = await sb.from('dhl_supplier_intakes')
       .update({ provider_reminder_sent_at: nowIso, reminder_sent_at: nowIso })
@@ -514,8 +638,51 @@ async function checkAndSendDhlIntakeReminders(): Promise<void> {
       console.error('[DHL Reminder Worker] erro ao marcar provider_reminder_sent_at:', markErr.message);
       continue;
     }
-    marcadosFornecedor++;
+    marcadosEmail++;
   }
+
+  // ── Canal 1b: lembrete por WhatsApp (Z-API) ───────────────────────────
+  let marcadosWhatsapp = 0;
+  for (const el of precisaFornecedorWhatsapp) {
+    const { intake, mission, reason } = el;
+    const { phone: providerPhone, name: providerName, link } = resolveDestinos(el);
+    if (!providerPhone || !link) continue; // sem telefone — retry no próximo tick
+
+    const text = buildReminderWhatsappText({
+      providerName,
+      osNumber: intake.mission_id,
+      seNumber: mission.dhl_se_number || '—',
+      origin: mission.origin || '—',
+      destination: mission.destination || '—',
+      scheduledAt: fmtBr(mission.start_time),
+      expiresAt: fmtBr(intake.expires_at),
+      link,
+      reason,
+      firstOpenedAt: intake.first_opened_at ? fmtBr(intake.first_opened_at) : null,
+    });
+    const r = await sendZapiTextMessage(providerPhone, text);
+    const whatsappStatus: 'success' | 'failure' = r.ok ? 'success' : 'failure';
+    const whatsappError: string | null = r.error;
+    if (!r.ok) {
+      console.error('[DHL Reminder Worker] erro ao enviar WhatsApp ao fornecedor:', whatsappError);
+    }
+
+    await auditarLembrete(el, null, providerPhone, 'skipped', null, whatsappStatus, whatsappError);
+
+    if (whatsappStatus !== 'success') continue; // mantém retry
+
+    const { error: markErr } = await sb.from('dhl_supplier_intakes')
+      .update({ provider_whatsapp_reminder_sent_at: nowIso, reminder_sent_at: nowIso })
+      .eq('id', intake.id)
+      .is('provider_whatsapp_reminder_sent_at', null);
+    if (markErr) {
+      console.error('[DHL Reminder Worker] erro ao marcar provider_whatsapp_reminder_sent_at:', markErr.message);
+      continue;
+    }
+    marcadosWhatsapp++;
+  }
+  const marcadosFornecedor = marcadosEmail + marcadosWhatsapp;
+  const precisaFornecedor = { length: precisaFornecedorEmail.length + precisaFornecedorWhatsapp.length };
 
   // ── Canal 2: e-mail consolidado ao operacional + system_log ───────────
   let marcadosOperacional = 0;
@@ -833,46 +1000,23 @@ export function registerDhlIntakeRoutes(
       });
 
       // ── WhatsApp via Z-API (envio automático sem precisar copiar) ───
+      // Reaproveita o helper sendZapiTextMessage usado pelo worker de
+      // lembretes para garantir comportamento idêntico de envio/erro.
       let whatsappSent = false;
       let whatsappError: string | null = null;
       let whatsappSkipped = false;
       let whatsappMessageId: string | null = null;
       if (wantsWhatsapp) {
-        const ZAPI_INSTANCE = process.env.ZAPI_INSTANCE_ID || process.env.VITE_ZAPI_INSTANCE_ID || '';
-        const ZAPI_TOKEN = process.env.ZAPI_TOKEN || process.env.VITE_ZAPI_TOKEN || '';
-        const ZAPI_CLIENT_TOKEN = process.env.ZAPI_CLIENT_TOKEN || process.env.VITE_ZAPI_CLIENT_TOKEN || '';
         if (!providerPhone) {
           // Sem telefone cadastrado — frontend cai no fallback (copiar / wa.me).
-        } else if (!ZAPI_INSTANCE || !ZAPI_TOKEN) {
-          whatsappError = 'Z-API não configurada';
         } else {
-          // Brasil: garante prefixo 55 quando vier apenas DDD+número (10/11 dígitos).
-          const phoneDigits = providerPhone.length <= 11 ? `55${providerPhone}` : providerPhone;
-          try {
-            const headers: any = { 'Content-Type': 'application/json' };
-            if (ZAPI_CLIENT_TOKEN) headers['Client-Token'] = ZAPI_CLIENT_TOKEN;
-            const r = await fetch(`https://api.z-api.io/instances/${ZAPI_INSTANCE}/token/${ZAPI_TOKEN}/send-text`, {
-              method: 'POST',
-              headers,
-              body: JSON.stringify({ phone: phoneDigits, message: whatsappText }),
-            });
-            const txt = await r.text();
-            let parsed: any = null;
-            try { parsed = JSON.parse(txt); } catch {}
-            if (!r.ok) {
-              const detail = parsed ?? txt;
-              whatsappError = `Z-API ${r.status}: ${typeof detail === 'string' ? detail : (detail?.error || detail?.message || JSON.stringify(detail))}`;
-              console.error('[DHL Intake] erro WhatsApp:', whatsappError);
-            } else {
-              whatsappSent = true;
-              if (parsed && typeof parsed === 'object') {
-                const mid = parsed.messageId || parsed.id || parsed.zaapId || null;
-                whatsappMessageId = mid ? String(mid) : null;
-              }
-            }
-          } catch (e: any) {
-            whatsappError = e?.message || 'falha no envio do WhatsApp';
-            console.error('[DHL Intake] exceção WhatsApp:', whatsappError);
+          const r = await sendZapiTextMessage(providerPhone, whatsappText);
+          if (r.ok) {
+            whatsappSent = true;
+            whatsappMessageId = r.messageId;
+          } else {
+            whatsappError = r.error;
+            console.error('[DHL Intake] erro WhatsApp:', whatsappError);
           }
         }
       } else {
