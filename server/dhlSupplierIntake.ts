@@ -439,7 +439,17 @@ export function registerDhlIntakeRoutes(
         }]).select().single();
         if (iErr) {
           console.error('[DHL Intake] erro ao criar intake:', iErr);
-          return res.status(500).json({ error: 'Erro ao registrar intake' });
+          const code = (iErr as any)?.code || '';
+          const msg = String((iErr as any)?.message || '');
+          const schemaMissing =
+            code === 'PGRST205' || code === '42P01' || code === '42703' ||
+            /could not find the table|schema cache|does not exist/i.test(msg);
+          if (schemaMissing) {
+            return res.status(500).json({
+              error: 'O banco ainda não tem as tabelas do fluxo DHL. Abra o Supabase Studio → SQL Editor, cole o conteúdo do arquivo scripts/dhl-migrations.sql e clique em Run. Depois tente gerar o link novamente.',
+            });
+          }
+          return res.status(500).json({ error: 'Erro ao registrar intake: ' + (msg || 'falha desconhecida') });
         }
         intake = inserted;
       }
