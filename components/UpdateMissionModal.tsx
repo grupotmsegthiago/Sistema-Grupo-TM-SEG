@@ -16,6 +16,7 @@ import {
 import { useLoadScript, Autocomplete, GoogleMap, Marker } from '@react-google-maps/api';
 import { googleMapsApiKey, libraries, googleMapsLoadConfig } from '../lib/maps';
 import { extractCoordinates, calculateDistance } from '../lib/utils';
+import DhlIntakeTimeline from './DhlIntakeTimeline';
 
 // Importação dos formulários para modo modal/cadastro rápido
 import ProviderForm from './ProviderForm';
@@ -1803,6 +1804,10 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
                                 )}
                             </div>
                         </div>
+
+                        {((mission?.client || '').toUpperCase().includes('DHL')) && mission?.id && (
+                            <DhlIntakeTimeline missionId={mission.id} canViewSnapshots={true} />
+                        )}
                     </div>
 
                     {/* FICHA DE MEDIÇÃO OPERACIONAL */}
