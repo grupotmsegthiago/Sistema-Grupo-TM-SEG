@@ -52,6 +52,29 @@ interface Props {
 const fmt = (d: string | null | undefined) =>
   d ? new Date(d).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' }) : '—';
 
+// Formata datas no padrão brasileiro DD/MM/AAAA. Aceita ISO ("2031-07-13" ou
+// "2031-07-13T00:00:00Z"), "AAAA-MM-DD" puro e já-BR ("13/07/2031" passa direto).
+// Para campos só com data (sem hora) usa parsing manual para evitar shift de
+// fuso ao instanciar Date (que assume UTC e desloca para -1 no Brasil).
+const fmtDateBr = (d: string | null | undefined): string | null => {
+  if (!d) return null;
+  const s = String(d).trim();
+  if (!s) return null;
+  if (/^\d{2}\/\d{2}\/\d{4}$/.test(s)) return s;
+  const isoDate = s.match(/^(\d{4})-(\d{2})-(\d{2})(?:[T\s].*)?$/);
+  if (isoDate) {
+    const [, y, m, dd] = isoDate;
+    return `${dd}/${m}/${y}`;
+  }
+  const dt = new Date(s);
+  if (!isNaN(dt.getTime())) {
+    const dd = String(dt.getDate()).padStart(2, '0');
+    const mm = String(dt.getMonth() + 1).padStart(2, '0');
+    return `${dd}/${mm}/${dt.getFullYear()}`;
+  }
+  return s;
+};
+
 const DhlIntakeTimeline: React.FC<Props> = ({ missionId, canViewSnapshots = true }) => {
   const [intakes, setIntakes] = useState<DhlIntakeRow[]>([]);
   const [reminderConfig, setReminderConfig] = useState<DhlReminderConfig>({ maxCount: 3, cycleHours: 12 });
@@ -82,7 +105,9 @@ const DhlIntakeTimeline: React.FC<Props> = ({ missionId, canViewSnapshots = true
     lines.push('');
     lines.push('Veículo:');
     lines.push(`  Placa:   ${v?.placa || '—'}`);
-    lines.push(`  Marca/Modelo/Ano: ${[v?.marca, v?.modelo, v?.ano].filter(Boolean).join(' / ') || '—'}`);
+    lines.push(`  Marca:   ${v?.marca || '—'}`);
+    lines.push(`  Modelo:  ${v?.modelo || '—'}`);
+    lines.push(`  Ano:     ${v?.ano || '—'}`);
     if (v?.cor) lines.push(`  Cor:     ${v.cor}`);
     if (v?.renavam) lines.push(`  Renavam: ${v.renavam}`);
     if (v?.tecnologia) lines.push(`  Tecnologia: ${v.tecnologia}`);
@@ -210,12 +235,12 @@ const DhlIntakeTimeline: React.FC<Props> = ({ missionId, canViewSnapshots = true
       if (a.nome) lines.push(`Nome: ${a.nome}`);
       if (a.cpf) lines.push(`CPF: ${a.cpf}`);
       if (a.rg) lines.push(`RG: ${a.rg}${a.orgao_emissor ? ' / ' + a.orgao_emissor : ''}`);
-      if (a.cnh) lines.push(`CNH: ${a.cnh}${a.cnh_categoria ? ' (' + a.cnh_categoria + ')' : ''}${a.cnh_vencimento ? ' — venc.: ' + a.cnh_vencimento : ''}`);
-      if (a.cnv_numero) lines.push(`CNV: ${a.cnv_numero}${a.cnv_validade ? ' — venc.: ' + a.cnv_validade : ''}`);
+      if (a.cnh) lines.push(`CNH: ${a.cnh}${a.cnh_categoria ? ' (' + a.cnh_categoria + ')' : ''}${a.cnh_vencimento ? ' — venc.: ' + (fmtDateBr(a.cnh_vencimento) || a.cnh_vencimento) : ''}`);
+      if (a.cnv_numero) lines.push(`CNV: ${a.cnv_numero}${a.cnv_validade ? ' — venc.: ' + (fmtDateBr(a.cnv_validade) || a.cnv_validade) : ''}`);
       if (a.celular) lines.push(`Celular: ${a.celular}`);
       const end = [a.rua, a.numero, a.complemento, a.bairro, a.cidade, a.uf, a.cep].filter(Boolean).join(', ');
       if (end) lines.push(`Endereço: ${end}`);
-      if (a.admissao) lines.push(`Admissão: ${a.admissao}`);
+      if (a.admissao) lines.push(`Admissão: ${fmtDateBr(a.admissao) || a.admissao}`);
       lines.push('');
     };
     block('ESCOLTISTA 1', it.agent1_snapshot);
@@ -319,11 +344,11 @@ const DhlIntakeTimeline: React.FC<Props> = ({ missionId, canViewSnapshots = true
         {a.nome && <p><span className="font-bold">Nome:</span> {a.nome}</p>}
         {a.cpf && <p><span className="font-bold">CPF:</span> {a.cpf}</p>}
         {a.rg && <p><span className="font-bold">RG:</span> {a.rg}{a.orgao_emissor ? ` / ${a.orgao_emissor}` : ''}</p>}
-        {a.cnh && <p><span className="font-bold">CNH:</span> {a.cnh}{a.cnh_categoria ? ` (${a.cnh_categoria})` : ''}{a.cnh_vencimento ? ` — venc.: ${a.cnh_vencimento}` : ''}</p>}
-        {a.cnv_numero && <p><span className="font-bold">CNV:</span> {a.cnv_numero}{a.cnv_validade ? ` — venc.: ${a.cnv_validade}` : ''}</p>}
+        {a.cnh && <p><span className="font-bold">CNH:</span> {a.cnh}{a.cnh_categoria ? ` (${a.cnh_categoria})` : ''}{a.cnh_vencimento ? ` — venc.: ${fmtDateBr(a.cnh_vencimento) || a.cnh_vencimento}` : ''}</p>}
+        {a.cnv_numero && <p><span className="font-bold">CNV:</span> {a.cnv_numero}{a.cnv_validade ? ` — venc.: ${fmtDateBr(a.cnv_validade) || a.cnv_validade}` : ''}</p>}
         {a.celular && <p><span className="font-bold">Celular:</span> {a.celular}</p>}
         {end && <p><span className="font-bold">Endereço:</span> {end}</p>}
-        {a.admissao && <p><span className="font-bold">Admissão:</span> {a.admissao}</p>}
+        {a.admissao && <p><span className="font-bold">Admissão:</span> {fmtDateBr(a.admissao) || a.admissao}</p>}
       </div>
     );
   };
@@ -342,7 +367,9 @@ const DhlIntakeTimeline: React.FC<Props> = ({ missionId, canViewSnapshots = true
         <p className="font-black uppercase tracking-wider text-gray-700 mb-0.5">Veículo</p>
         {v.placa && <p><span className="font-bold">Placa:</span> {v.placa}</p>}
         {v.renavam && <p><span className="font-bold">Renavam:</span> {v.renavam}</p>}
-        {(v.marca || v.modelo || v.ano) && <p><span className="font-bold">Marca/Modelo/Ano:</span> {[v.marca, v.modelo, v.ano].filter(Boolean).join(' / ')}</p>}
+        <p><span className="font-bold">Marca:</span> {v.marca || <span className="italic text-gray-400">— não informado —</span>}</p>
+        <p><span className="font-bold">Modelo:</span> {v.modelo || <span className="italic text-gray-400">— não informado —</span>}</p>
+        <p><span className="font-bold">Ano:</span> {v.ano || <span className="italic text-gray-400">— não informado —</span>}</p>
         {v.cor && <p><span className="font-bold">Cor:</span> {v.cor}</p>}
         {v.tecnologia && <p><span className="font-bold">Tecnologia:</span> {v.tecnologia}</p>}
         {v.id_rastreador && <p><span className="font-bold">ID Rastreador:</span> {v.id_rastreador}</p>}
@@ -699,11 +726,11 @@ const DhlIntakeTimeline: React.FC<Props> = ({ missionId, canViewSnapshots = true
                 <Row label="CPF" value={a.cpf} />
                 <Row label="RG / Órgão" value={a.rg ? `${a.rg}${a.orgao_emissor ? ' / ' + a.orgao_emissor : ''}` : null} />
                 <Row label="CNH" value={a.cnh ? `${a.cnh}${a.cnh_categoria ? ' (' + a.cnh_categoria + ')' : ''}` : null} />
-                <Row label="Venc. CNH" value={a.cnh_vencimento} />
+                <Row label="Venc. CNH" value={fmtDateBr(a.cnh_vencimento)} />
                 <Row label="CNV" value={a.cnv_numero} />
-                <Row label="Venc. CNV" value={a.cnv_validade} />
+                <Row label="Venc. CNV" value={fmtDateBr(a.cnv_validade)} />
                 <Row label="Celular" value={a.celular} />
-                <Row label="Admissão" value={a.admissao} />
+                <Row label="Admissão" value={fmtDateBr(a.admissao)} />
                 <div className="col-span-2"><Row label="Endereço" value={end(a)} /></div>
               </div>
             )}
