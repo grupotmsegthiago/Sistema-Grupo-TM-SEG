@@ -164,7 +164,7 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
   const [approvalMap, setApprovalMap] = useState<Record<string, { stage: string; date: string }[]>>({});
   const [evidenceMap, setEvidenceMap] = useState<Record<string, { url: string; uploadedBy: string; uploadedAt: string }[]>>({});
   const [lastLogMap, setLastLogMap] = useState<Record<string, MissionLog>>({});
-  const [dhlIntakeMap, setDhlIntakeMap] = useState<Record<string, { status: string; providerFilledAt: string | null; intakeId: string }>>({});
+  const [dhlIntakeMap, setDhlIntakeMap] = useState<Record<string, { status: string; providerFilledAt: string | null; intakeId: string; progressAgent1?: boolean; progressAgent2?: boolean; progressVehicle?: boolean; progressMirror?: boolean }>>({});
   const [resolvedClientName, setResolvedClientName] = useState('');
   const [showMyApprovalOnly, setShowMyApprovalOnly] = useState(false);
   const [approvalViewStage, setApprovalViewStage] = useState<'auditor' | 'financeiro' | null>(null);
@@ -479,24 +479,27 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
                     return original.includes('DHL') || displayed.includes('DHL');
                 }).map(m => m.id);
                 if (dhlIds.length === 0) { setDhlIntakeMap({}); return; }
-                const intakeMap: Record<string, { status: string; providerFilledAt: string | null; intakeId: string }> = {};
+                const intakeMap: Record<string, { status: string; providerFilledAt: string | null; intakeId: string; progressAgent1?: boolean; progressAgent2?: boolean; progressVehicle?: boolean; progressMirror?: boolean }> = {};
                 const batches: string[][] = [];
                 for (let i = 0; i < dhlIds.length; i += batchSize) batches.push(dhlIds.slice(i, i + batchSize));
                 const results = await Promise.all(batches.map(batch =>
                     supabase.from('dhl_supplier_intakes')
-                        .select('id, mission_id, status, provider_filled_at, created_at')
+                        .select('id, mission_id, status, provider_filled_at, created_at, progress_agent1, progress_agent2, progress_vehicle, progress_mirror')
                         .in('mission_id', batch)
                         .in('status', ['pendente', 'preenchido'])
                         .order('created_at', { ascending: false })
                 ));
                 results.forEach(({ data }) => {
                     (data || []).forEach((it: any) => {
-                        // Mantém apenas o intake mais recente por mission_id (order desc + first wins)
                         if (!intakeMap[it.mission_id]) {
                             intakeMap[it.mission_id] = {
                                 status: it.status,
                                 providerFilledAt: it.provider_filled_at || null,
                                 intakeId: it.id,
+                                progressAgent1: !!it.progress_agent1,
+                                progressAgent2: !!it.progress_agent2,
+                                progressVehicle: !!it.progress_vehicle,
+                                progressMirror: !!it.progress_mirror,
                             };
                         }
                     });

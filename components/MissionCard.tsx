@@ -77,7 +77,7 @@ interface MissionCardProps {
     currentTime?: Date;
     approvalStages?: { stage: string; date: string }[];
     evidenceList?: { url: string; uploadedBy: string; uploadedAt: string }[];
-    dhlIntake?: { status: string; providerFilledAt: string | null; intakeId: string };
+    dhlIntake?: { status: string; providerFilledAt: string | null; intakeId: string; progressAgent1?: boolean; progressAgent2?: boolean; progressVehicle?: boolean; progressMirror?: boolean };
 }
 
 const formatCurrency = (val: number | null | undefined) => {
@@ -707,6 +707,37 @@ Qualquer dúvida, estamos a disposição.
                             <span className="px-1.5 py-0.5 rounded text-[8px] font-black uppercase flex items-center gap-1 bg-red-100 text-red-700 border border-red-300 shadow-[0_2px_8px_rgba(239,68,68,0.25)] animate-pulse" title="Sem evidência de solicitação">
                                 <ImageOff size={10} /> SEM EVIDÊNCIA
                             </span>
+                        ) : null}
+                        {!hideProviderInfo && (/DHL/i.test(((mission as any).originalClientName || mission.client || ''))) && dhlIntake ? (() => {
+                            const a1 = !!dhlIntake.progressAgent1;
+                            const a2 = !!dhlIntake.progressAgent2;
+                            const vh = !!dhlIntake.progressVehicle;
+                            const mr = !!dhlIntake.progressMirror;
+                            const done = [a1, a2, vh, mr].filter(Boolean).length;
+                            const allGreen = done === 4 || dhlIntake.status === 'preenchido' || !!dhlIntake.providerFilledAt;
+                            if (allGreen) {
+                                return (
+                                    <span
+                                        className="px-1.5 py-0.5 rounded text-[8px] font-black uppercase flex items-center gap-1 bg-emerald-600 text-white border border-emerald-700 shadow-[0_2px_8px_rgba(16,185,129,0.35)]"
+                                        title="Cadastro do fornecedor completo — apto para iniciar"
+                                        data-testid={`badge-intake-apto-${mission.id}`}
+                                    >
+                                        <Check size={10} strokeWidth={3} /> APTO
+                                    </span>
+                                );
+                            }
+                            return (
+                                <span
+                                    className="px-1.5 py-0.5 rounded text-[8px] font-black uppercase flex items-center gap-1 bg-amber-100 text-amber-800 border border-amber-400"
+                                    title={`Cadastro do fornecedor pendente — ${done}/4 itens preenchidos (Escoltista 1, Escoltista 2, Veiculo, Espelhamento)`}
+                                    data-testid={`badge-intake-pendente-${mission.id}`}
+                                >
+                                    <AlertTriangle size={10} strokeWidth={3} /> INTAKE {done}/4
+                                </span>
+                            );
+                        })() : null}
+                        {false ? (
+                            <span></span>
                         ) : null}
                     </div>
                     <div className="flex flex-col gap-1.5 mt-1">
