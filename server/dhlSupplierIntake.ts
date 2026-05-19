@@ -1965,14 +1965,46 @@ export function registerDhlIntakeRoutes(
       // encontre escoltistas já cadastrados no sistema TM Seg mesmo que ainda não
       // tenham passado por nenhum intake. Estes registros vêm SEM id (não
       // pertencem a provider_escoltistas), então no submit serão upserted lá.
+      //
+      // Match robusto: compara contra `name` E `trading_name` do fornecedor,
+      // sem case-sensitivity e ignorando acentos — evita "não achei nada"
+      // só porque a grafia divergiu (ex: SEGURANÇA vs SEGURANCA).
       let escoltistasFromAgents: any[] = [];
-      if (intake.provider_name) {
+      const normalize = (s: string) => String(s || '')
+        .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+        .replace(/\s+/g, ' ').trim().toUpperCase();
+      const candidateNames = new Set<string>();
+      const rawNames: string[] = [];
+      if (intake.provider_name) { candidateNames.add(normalize(intake.provider_name)); rawNames.push(String(intake.provider_name)); }
+      if (intake.provider_id) {
+        try {
+          const { data: prov } = await sb.from('providers')
+            .select('name, trading_name')
+            .eq('id', intake.provider_id)
+            .maybeSingle();
+          if (prov?.name) { candidateNames.add(normalize(prov.name)); rawNames.push(String(prov.name)); }
+          if (prov?.trading_name) { candidateNames.add(normalize(prov.trading_name)); rawNames.push(String(prov.trading_name)); }
+        } catch { /* ignore */ }
+      }
+      if (candidateNames.size > 0 && rawNames.length > 0) {
+        // Estreita no banco com OR de ilike (case-insensitive) sobre cada variante do nome
+        // do fornecedor — evita varrer a tabela inteira (privacidade + performance) em uma
+        // rota pública por token. Depois, normalização JS confirma o match final.
+        const escapeIlike = (s: string) => String(s).replace(/[\\,()]/g, '\\$&');
+        const orParts = rawNames.map(n => `provider.ilike.${escapeIlike(n)}`).join(',');
         const { data: agentsData } = await sb.from('agents')
           .select('name, cpf, rg, cnh, cnh_validity, cnv, cnv_validity, phone, status, provider, orgao_emissor, cnh_categoria, rua, numero, complemento, bairro, cidade, uf, cep, admissao')
-          .eq('provider', intake.provider_name)
+          .or(orParts)
           .neq('status', 'Bloqueado / Ação Trabalhista')
-          .order('name', { ascending: true });
-        escoltistasFromAgents = (agentsData || []).map((a: any) => ({
+          .order('name', { ascending: true })
+          .limit(500);
+        const matched = (agentsData || []).filter((a: any) =>
+          a.provider && candidateNames.has(normalize(a.provider))
+        );
+        if ((agentsData || []).length >= 500) {
+          console.warn('[DHL Intake] busca de escoltistas atingiu o limite de 500 — considere indexar agents.provider_id.');
+        }
+        escoltistasFromAgents = matched.map((a: any) => ({
           id: null,
           nome: a.name || '',
           cpf: a.cpf || '',
