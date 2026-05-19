@@ -1,12 +1,18 @@
 import { Mission, ClientPriceTable, ProviderCostTable, MissionStatus, Client } from '../types';
 
 const STOP_WORDS = ['LTDA','LTDA.','S.A.','S.A','SA','S/A','S/A.','DO','DE','DA','E','DAS','DOS'];
+// PostgREST trata ( ) , . : como reservados dentro de .or(); envolvemos
+// o valor com aspas duplas quando aparecer algum deles, para evitar que a
+// consulta seja interpretada incorretamente (e retorne 0 linhas).
+function quoteForOr(v: string): string {
+    return /[(),.:]/.test(v) ? `"${v.replace(/"/g, '\\"')}"` : v;
+}
 export function clientFuzzyFilter(clientName: string): string {
     const trimmed = (clientName || '').trim();
-    if (!trimmed) return `client.eq.${clientName}`;
+    if (!trimmed) return `client.eq.${quoteForOr(clientName)}`;
     const words = trimmed.split(/\s+/).filter(w => !STOP_WORDS.includes(w.toUpperCase()));
     const short = words.length >= 2 ? words[0] + ' ' + words[1].substring(0, Math.min(6, words[1].length)) : words[0] || trimmed;
-    return `client.eq.${clientName},client.ilike.%${short}%`;
+    return `client.eq.${quoteForOr(clientName)},client.ilike.${quoteForOr('%' + short + '%')}`;
 }
 
 export function clientNameShort(clientName: string): string {
