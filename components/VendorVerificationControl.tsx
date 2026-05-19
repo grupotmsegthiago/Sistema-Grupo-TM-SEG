@@ -730,8 +730,14 @@ const VendorVerificationControl: React.FC<VendorVerificationControlProps> = ({ o
             if (!hasDateCol) throw new Error('Coluna de data não encontrada (esperado "DATA INÍCIO" no cabeçalho).');
             const header = aoa[headerIdx].map((c: any) => String(c || '').toUpperCase().trim());
             const colIdx = (...names: string[]): number => {
+                // 1) match exato (prioridade)
                 for (const n of names) {
-                    const idx = header.findIndex(h => h === n || h.includes(n));
+                    const idx = header.findIndex(h => h === n);
+                    if (idx >= 0) return idx;
+                }
+                // 2) match parcial (fallback)
+                for (const n of names) {
+                    const idx = header.findIndex(h => h.includes(n));
                     if (idx >= 0) return idx;
                 }
                 return -1;
