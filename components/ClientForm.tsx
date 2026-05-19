@@ -569,7 +569,12 @@ const ClientForm: React.FC<ClientFormProps> = ({
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
             <button onClick={onBack} className="p-2 bg-white border border-gray-200 rounded-lg hover:bg-gray-50"><ArrowLeft size={20} /></button>
-            <h2 className="text-xl font-bold text-gray-900">{id ? 'Editar Cliente' : 'Novo Cliente'}</h2>
+            <div>
+                <h2 className="text-xl font-bold text-gray-900" data-testid="text-client-form-title">{id ? 'Editar Cliente' : 'Novo Cliente'}</h2>
+                {id && formData.name && (
+                    <p className="text-sm text-gray-600 font-semibold mt-0.5 uppercase tracking-wide" data-testid="text-client-form-name">{formData.name}</p>
+                )}
+            </div>
         </div>
         {isFinanceAdmin && <div className="flex gap-3">
             <button onClick={() => setShowCalculator(!showCalculator)} className={`px-6 py-2.5 rounded-xl text-sm font-black flex items-center gap-2 shadow-xl transition-all uppercase border ${showCalculator ? 'bg-red-600 text-white border-red-700' : 'bg-white text-gray-700 border-gray-200 hover:bg-gray-50'}`}>
