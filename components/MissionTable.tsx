@@ -946,10 +946,10 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
 
 🗓 *DATA:* ${dateStr} *HORA:* ${timeStr}
 🛡 *OPERAÇÃO:* ${mission.mission_type?.toUpperCase() || 'CARACTERIZADA'}
-🏢 *CLIENTE:* ${mission.client}
+🏢 *CLIENTE:* ${/DHL/i.test(mission.client || '') ? 'DHL' : mission.client}
 
 📍 *ORIGEM:* ${mission.origin || 'N/A'}
-🏁 *DESTINO:* ${mission.destination || 'N/A'}
+🏁 *DESTINO:* ${(mission.destination || 'N/A').replace(/\s*[—-]\s*DESTINO\s+A\s+DEFINIR\s*$/i, '').trim() || 'N/A'}
 
 🚛 *VEÍCULO:* ${mission.clientVehicle?.plate || 'N/A'} (${mission.clientVehicle?.model || 'N/D'})
 👤 *MOTORISTA:* ${formatFL(mission.driver_name)}

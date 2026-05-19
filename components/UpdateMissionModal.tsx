@@ -984,10 +984,10 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
 
 🗓 *DATA:* ${dateStr} *HORA:* ${timeStr}
 🛡 *OPERAÇÃO:* ${editData.missionType?.toUpperCase() || 'CARACTERIZADA'}
-🏢 *CLIENTE:* ${mission.client}
+🏢 *CLIENTE:* ${/DHL/i.test(mission.client || '') ? 'DHL' : mission.client}
 
 📍 *ORIGEM:* ${editData.origin.toUpperCase()}
-🏁 *DESTINO:* ${finalDestination.toUpperCase()}
+🏁 *DESTINO:* ${finalDestination.toUpperCase().replace(/\s*[—-]\s*DESTINO\s+A\s+DEFINIR\s*$/i, '').trim() || 'N/A'}
 
 🚛 *VEÍCULO:* ${editData.client_vehicle_plate || 'N/A'} (${editData.client_vehicle_model || 'N/D'})
 👤 *MOTORISTA:* ${formatFL(editData.driver_name)}
