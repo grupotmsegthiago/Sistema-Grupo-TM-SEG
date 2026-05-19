@@ -270,17 +270,31 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
   const userRoleLower = useMemo(() => {
     try { return (JSON.parse(localStorage.getItem('userData') || '{}').role || '').toLowerCase(); } catch { return ''; }
   }, []);
+  const userNameLower = useMemo(() => {
+    try { const u = JSON.parse(localStorage.getItem('userData') || '{}'); return ((u.name || u.username || '') as string).toLowerCase(); } catch { return ''; }
+  }, []);
   const isController = userRoleLower === 'controller';
+
+  // MODO EDIÇÃO TOTAL: Barbara e Thiago podem destravar TODOS os campos da OS
+  // (operacional, cliente, fornecedor, financeiro), inclusive em OS aprovadas.
+  // O acionamento é registrado em system_logs (MissionEditHistory).
+  const canActivateFullEdit = useMemo(() => {
+    return userRoleLower === 'administrador' || userRoleLower === 'diretoria'
+      || userNameLower.includes('barbara') || userNameLower.includes('bárbara') || userNameLower.includes('thiago');
+  }, [userRoleLower, userNameLower]);
+  const [fullEditMode, setFullEditMode] = useState(false);
+
   const canEditOpsData = useMemo(() => {
+    if (fullEditMode) return true;
     try {
       const u = JSON.parse(localStorage.getItem('userData') || '{}');
       return ['diretoria', 'administrador', 'avançado', 'avancado', 'controller'].includes(userRoleLower) || u.permissions?.includes('*');
     } catch { return false; }
-  }, [userRoleLower]);
+  }, [userRoleLower, fullEditMode]);
   const canEditEndTimeOnly = useMemo(() => {
-    return canEditOpsData || ['operacional', 'operador'].includes(userRoleLower);
-  }, [canEditOpsData, userRoleLower]);
-  const canEditClientData = canEditOpsData && !isController;
+    return canEditOpsData || ['operacional', 'operador'].includes(userRoleLower) || fullEditMode;
+  }, [canEditOpsData, userRoleLower, fullEditMode]);
+  const canEditClientData = (canEditOpsData && !isController) || fullEditMode;
 
   // TRAVA PÓS-SALVAMENTO: assim que alguém salva ou aprova um faturamento,
   // todos os campos editáveis são bloqueados em todas as telas. Diretoria,
@@ -289,9 +303,9 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
   const canUnlockBilling = ['diretoria', 'administrador', 'ceo'].includes(userRoleLower);
   // ADMINISTRADOR (ex: Barbara) tem liberação permanente: pode editar OS aprovada
   // a qualquer momento. O sistema registra cada alteração no histórico permanente.
-  const isAdminFullAccess = userRoleLower === 'administrador';
+  const isAdminFullAccess = userRoleLower === 'administrador' || fullEditMode;
   const [unlockOverride, setUnlockOverride] = useState(false);
-  useEffect(() => { setUnlockOverride(false); setEditObservation(''); }, [mission?.id]);
+  useEffect(() => { setUnlockOverride(false); setEditObservation(''); setFullEditMode(false); }, [mission?.id]);
   const isEffectivelyLocked = isBillingLocked && !unlockOverride && !isAdminFullAccess;
   
 
@@ -2042,6 +2056,40 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
               <Layers size={12} />
               {mission.is_same_os ? 'MESMA OS ✓' : 'MESMA OS'}
             </button>
+            {canActivateFullEdit && (
+              <button
+                data-testid="btn-toggle-full-edit"
+                onClick={async () => {
+                  const turningOn = !fullEditMode;
+                  if (turningOn && !confirm('Ativar MODO EDIÇÃO TOTAL? Todos os campos da OS ficarão editáveis. A ação será registrada no histórico permanente.')) return;
+                  setFullEditMode(turningOn);
+                  if (turningOn) {
+                    try {
+                      const u = JSON.parse(localStorage.getItem('userData') || '{}');
+                      await supabase.from('system_logs').insert([{
+                        user_name: u.name || u.username || 'Sistema',
+                        action_type: 'FULL_EDIT_MODE_ENABLED',
+                        entity: 'MissionEditHistory',
+                        entity_id: mission.id,
+                        details: JSON.stringify({ enabledBy: u.name || u.username, role: u.role || '', at: new Date().toISOString(), missionId: mission.id })
+                      }]);
+                    } catch (e) { console.warn('Falha ao registrar Modo Edição Total:', e); }
+                    showNotification('Modo Edição Total', 'Todos os campos liberados. Cada alteração será registrada.', 'success');
+                  } else {
+                    showNotification('Modo Edição Total Desligado', 'Travas padrão restauradas.', 'info');
+                  }
+                }}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-black uppercase transition-all shadow-md active:scale-95 ${
+                  fullEditMode
+                    ? 'bg-amber-500 text-white hover:bg-amber-600 ring-2 ring-amber-300'
+                    : 'bg-white/10 text-amber-200 hover:bg-white/20 border border-amber-400/40'
+                }`}
+                title={fullEditMode ? 'Modo Edição Total ATIVO — clique para desligar' : 'Liberar edição de TODOS os campos da OS (Barbara/Thiago)'}
+              >
+                {fullEditMode ? <ShieldCheck size={12}/> : <Lock size={12}/>}
+                {fullEditMode ? 'EDIÇÃO TOTAL ✓' : 'EDIÇÃO TOTAL'}
+              </button>
+            )}
             <button onClick={onClose} className="p-2 rounded-full hover:bg-white/10 transition-colors"><X size={24}/></button>
           </div>
           </div>
