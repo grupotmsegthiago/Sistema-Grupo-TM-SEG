@@ -1564,6 +1564,221 @@ export function registerDhlIntakeRoutes(
   });
 
   // ──────────────────────────────────────────────────────────────
+  // Helpers compartilhados entre /progress (parcial) e /submit (final)
+  // ──────────────────────────────────────────────────────────────
+
+  // Coerência do bloco CNH por agente: se algum campo de CNH foi preenchido,
+  // exige TODOS os três (número, categoria, vencimento).
+  const checkCnhBlockCoherence = (a: any, label: string): string | null => {
+    const get = (k: string) => {
+      const camel = k.replace(/_([a-z])/g, (_, c) => c.toUpperCase());
+      const v = a?.[k] ?? a?.[camel];
+      return v === undefined || v === null ? '' : String(v).trim();
+    };
+    const num = get('cnh');
+    const cat = get('cnh_categoria');
+    const val = get('cnh_vencimento');
+    if (!num && !cat && !val) return null;
+    if (!num) return `${label}: informe o número da CNH.`;
+    if (!val) return `${label}: informe o Vencimento da CNH.`;
+    if (!cat) return `${label}: informe a Categoria da CNH.`;
+    return null;
+  };
+
+  // Persiste o escoltista em provider_escoltistas (upsert por CPF) e espelha
+  // no cadastro principal `agents` (insert se não existe; patch "fill empty
+  // only" se existe). Faz validação MÍNIMA — quem chama (handler) decide o
+  // nível de exigência restante.
+  const persistEscoltistaCore = async (
+    sb: any,
+    providerId: string,
+    providerName: string | null,
+    a: any,
+    label: string,
+  ): Promise<{ id: string; snap: any }> => {
+    // Anti-IDOR: se veio com id, valida ownership
+    let existingById: any = null;
+    if (a.id) {
+      const { data } = await sb.from('provider_escoltistas')
+        .select('*')
+        .eq('id', a.id)
+        .eq('provider_id', providerId)
+        .maybeSingle();
+      if (!data) throw new Error(`${label}: registro selecionado não pertence ao fornecedor desta OS`);
+      existingById = data;
+    }
+
+    // Coerência do bloco CNH (vale em qualquer fluxo)
+    const cnhErr = checkCnhBlockCoherence(a, label);
+    if (cnhErr) throw new Error(cnhErr);
+
+    // Mínimo absoluto: nome e CPF válido (necessários para upsert por CPF)
+    const nome = String(a.nome || '').trim();
+    if (!nome) throw new Error(`${label}: Nome é obrigatório`);
+    const cpfDigits = String(a.cpf || '').replace(/\D/g, '');
+    if (cpfDigits.length !== 11) throw new Error(`${label}: CPF inválido`);
+
+    const payload: any = {
+      provider_id: providerId,
+      nome,
+      // Persiste CPF normalizado (somente dígitos) para evitar duplicidade
+      // por formatação. Lookups abaixo também usam dígitos.
+      cpf: cpfDigits,
+      rg: a.rg || null,
+      orgao_emissor: a.orgaoEmissor || a.orgao_emissor || null,
+      cnh: a.cnh || null,
+      cnh_categoria: a.cnhCategoria || a.cnh_categoria || null,
+      cnh_vencimento: a.cnhVencimento || a.cnh_vencimento || null,
+      cnv_numero: a.cnvNumero || a.cnv_numero || null,
+      cnv_validade: a.cnvValidade || a.cnv_validade || null,
+      rua: a.rua || null,
+      numero: a.numero || null,
+      complemento: a.complemento || null,
+      bairro: a.bairro || null,
+      cidade: a.cidade || null,
+      uf: a.uf || null,
+      cep: a.cep || null,
+      celular: a.celular || null,
+      admissao: a.admissao || null,
+    };
+
+    // Lookup por dígitos do CPF (formato canônico). Como fallback, também
+    // checa o formato mascarado para detectar registros legados criados antes
+    // da normalização.
+    const cpfMasked = String(a.cpf || '');
+    let existingByCpf: any = null;
+    if (!existingById) {
+      const byDigits = await sb.from('provider_escoltistas').select('*').eq('provider_id', providerId).eq('cpf', cpfDigits).maybeSingle();
+      existingByCpf = byDigits.data || null;
+      if (!existingByCpf && cpfMasked && cpfMasked !== cpfDigits) {
+        const byMasked = await sb.from('provider_escoltistas').select('*').eq('provider_id', providerId).eq('cpf', cpfMasked).maybeSingle();
+        existingByCpf = byMasked.data || null;
+      }
+    }
+    const existing = existingById || existingByCpf;
+    let resultId: string;
+    let resultSnap: any;
+    if (existing) {
+      // "fill empty only": não sobrescreve dados já refinados pelo operacional.
+      const patch: any = {};
+      for (const k of Object.keys(payload)) {
+        const cur = (existing as any)[k];
+        const incoming = (payload as any)[k];
+        if ((cur === null || cur === undefined || String(cur).trim() === '') && incoming) {
+          patch[k] = incoming;
+        }
+      }
+      if (Object.keys(patch).length > 0) {
+        patch.updated_at = new Date().toISOString();
+        await sb.from('provider_escoltistas').update(patch).eq('id', existing.id);
+      }
+      const { data: row } = await sb.from('provider_escoltistas').select('*').eq('id', existing.id).single();
+      resultId = existing.id;
+      resultSnap = row;
+    } else {
+      const { data: ins, error: insErr } = await sb.from('provider_escoltistas').insert([payload]).select().single();
+      if (insErr) throw new Error('Erro ao salvar escoltista: ' + insErr.message);
+      resultId = ins.id;
+      resultSnap = ins;
+    }
+
+    // Espelhamento na tabela principal `agents` — best-effort (não bloqueia).
+    try {
+      const cols = 'id, name, cpf, rg, cnh, cnh_validity, cnv, cnv_validity, phone, provider, orgao_emissor, cnh_categoria, rua, numero, complemento, bairro, cidade, uf, cep, admissao';
+      // Procura por CPF digits e, em fallback, pelo formato mascarado (legado).
+      let agentRow: any = (await sb.from('agents').select(cols).eq('cpf', cpfDigits).maybeSingle()).data || null;
+      if (!agentRow && cpfMasked && cpfMasked !== cpfDigits) {
+        agentRow = (await sb.from('agents').select(cols).eq('cpf', cpfMasked).maybeSingle()).data || null;
+      }
+
+      const agentPayload: any = {
+        name: payload.nome,
+        cpf: payload.cpf,
+        rg: payload.rg,
+        cnh: payload.cnh,
+        cnh_validity: payload.cnh_vencimento,
+        cnv: payload.cnv_numero,
+        cnv_validity: payload.cnv_validade,
+        phone: payload.celular,
+        orgao_emissor: payload.orgao_emissor,
+        cnh_categoria: payload.cnh_categoria,
+        rua: payload.rua,
+        numero: payload.numero,
+        complemento: payload.complemento,
+        bairro: payload.bairro,
+        cidade: payload.cidade,
+        uf: payload.uf,
+        cep: payload.cep,
+        admissao: payload.admissao,
+      };
+
+      if (agentRow) {
+        const patch: any = {};
+        for (const k of Object.keys(agentPayload)) {
+          const cur = (agentRow as any)[k];
+          if ((cur === null || cur === undefined || String(cur).trim() === '') && agentPayload[k]) {
+            patch[k] = agentPayload[k];
+          }
+        }
+        if (Object.keys(patch).length > 0) {
+          const { error: updErr } = await sb.from('agents').update(patch).eq('id', agentRow.id);
+          if (updErr) console.error('[DHL Intake] falha ao espelhar em agents (update):', updErr.message);
+        }
+      } else {
+        const insAgent: any = {
+          ...agentPayload,
+          provider: providerName || null,
+          role: 'Vigilante',
+          status: 'Ativo',
+        };
+        const { error: insAgentErr } = await sb.from('agents').insert([insAgent]);
+        if (insAgentErr) console.error('[DHL Intake] falha ao espelhar em agents (insert):', insAgentErr.message);
+      }
+    } catch (mirrorErr: any) {
+      console.error('[DHL Intake] exceção ao espelhar em agents:', mirrorErr?.message);
+    }
+
+    return { id: resultId, snap: resultSnap };
+  };
+
+  // Persiste o veículo em provider_intake_vehicles (upsert por placa do
+  // fornecedor). Validação mínima: placa não vazia. Quem chama exige o resto.
+  const persistVehicleCore = async (sb: any, providerId: string, v: any): Promise<{ id: string; snap: any }> => {
+    if (v.id) {
+      const { data } = await sb.from('provider_intake_vehicles')
+        .select('*')
+        .eq('id', v.id)
+        .eq('provider_id', providerId)
+        .maybeSingle();
+      if (data) return { id: data.id, snap: data };
+      throw new Error('Veículo: registro selecionado não pertence ao fornecedor desta OS');
+    }
+    const placa = String(v.placa || '').toUpperCase().replace(/\s/g, '');
+    if (!placa) throw new Error('Veículo: Placa é obrigatória');
+    const payload: any = {
+      provider_id: providerId,
+      placa,
+      renavam: v.renavam || null,
+      marca: v.marca || null,
+      ano: v.ano || null,
+      modelo: v.modelo || null,
+      cor: v.cor || null,
+      tecnologia: v.tecnologia || null,
+      id_rastreador: v.idRastreador || v.id_rastreador || null,
+      comunicacao: v.comunicacao || null,
+    };
+    const { data: existing } = await sb.from('provider_intake_vehicles').select('id').eq('provider_id', providerId).eq('placa', placa).maybeSingle();
+    if (existing) {
+      await sb.from('provider_intake_vehicles').update({ ...payload, updated_at: new Date().toISOString() }).eq('id', existing.id);
+      const { data: row } = await sb.from('provider_intake_vehicles').select('*').eq('id', existing.id).single();
+      return { id: existing.id, snap: row };
+    }
+    const { data: ins, error: insErr } = await sb.from('provider_intake_vehicles').insert([payload]).select().single();
+    if (insErr) throw new Error('Erro ao salvar veículo: ' + insErr.message);
+    return { id: ins.id, snap: ins };
+  };
+
+  // ──────────────────────────────────────────────────────────────
   // GET /api/dhl/intake/public/:token — dados para a página pública
   // ──────────────────────────────────────────────────────────────
   app.get('/api/dhl/intake/public/:token', async (req: Request, res: Response) => {
@@ -1662,6 +1877,21 @@ export function registerDhlIntakeRoutes(
         mission: mission || null,
         escoltistas: escoltistas || [],
         vehicles: vehicles || [],
+        // Progresso parcial + snapshots já salvos, para retomar de onde parou
+        // se o fornecedor reabrir o link sem ter finalizado.
+        progress: {
+          agent1: !!intake.progress_agent1,
+          agent2: !!intake.progress_agent2,
+          vehicle: !!intake.progress_vehicle,
+          mirror: !!intake.progress_mirror,
+        },
+        snapshots: {
+          agent1: intake.agent1_snapshot || null,
+          agent2: intake.agent2_snapshot || null,
+          vehicle: intake.vehicle_snapshot || null,
+          mirrorProofUrl: intake.mirror_proof_url || null,
+          mirrorProofFilename: intake.mirror_proof_filename || null,
+        },
       });
     } catch (e: any) {
       console.error('[DHL Intake] public-get exception:', e);
@@ -1671,40 +1901,116 @@ export function registerDhlIntakeRoutes(
 
   // ──────────────────────────────────────────────────────────────
   // POST /api/dhl/intake/public/:token/progress
-  // body: { agent1?: bool, agent2?: bool, vehicle?: bool, mirror?: bool }
-  // Marca o progresso parcial conforme o fornecedor avança no formulário.
-  // Endpoint público (mesma natureza do GET/submit), só altera flags booleans.
+  // body: {
+  //   agent1?: bool, agent2?: bool, vehicle?: bool, mirror?: bool,
+  //   agent1Data?: {...}, agent2Data?: {...}, vehicleData?: {...},
+  //   mirrorData?: { dataUrl, filename }
+  // }
+  // Marca o progresso parcial e PERSISTE os dados de cada etapa à medida
+  // que o fornecedor avança, espelhando o agente em `agents` e escrevendo
+  // o nome em missions.agent1/agent2 para que o modal já apareça preenchido.
   // ──────────────────────────────────────────────────────────────
   app.post('/api/dhl/intake/public/:token/progress', async (req: Request, res: Response) => {
     try {
       const { token } = req.params;
-      const body = (req.body || {}) as Record<string, unknown>;
+      const body = (req.body || {}) as Record<string, any>;
       const sb = getSb();
-      const { data: intake } = await sb.from('dhl_supplier_intakes').select('id, status, expires_at').eq('token', token).maybeSingle();
+      const { data: intake } = await sb.from('dhl_supplier_intakes')
+        .select('id, mission_id, provider_id, provider_name, status, expires_at, agent1_snapshot, agent2_snapshot, vehicle_snapshot, mirror_proof_url, mirror_proof_filename, agent1_id, agent2_id, vehicle_id')
+        .eq('token', token)
+        .maybeSingle();
       if (!intake) return res.status(404).json({ error: 'Link inválido' });
       if (intake.status === 'cancelado') return res.status(410).json({ error: 'Link cancelado' });
-      if (intake.status === 'preenchido') return res.json({ ok: true, locked: true }); // já enviado, ignora
+      if (intake.status === 'preenchido') return res.json({ ok: true, locked: true });
       if (intake.expires_at && new Date(intake.expires_at) < new Date()) return res.status(410).json({ error: 'Link expirado' });
-      // Validação estrita: aceita SOMENTE as 4 chaves esperadas e apenas
-      // transição false→true (monotônica). Ignora `false` e qualquer chave
-      // extra para evitar abuso/rollback de progresso pelo link público.
-      const map: Record<string, string> = {
+
+      const patch: Record<string, any> = {};
+      const flagMap: Record<string, string> = {
         agent1: 'progress_agent1',
         agent2: 'progress_agent2',
         vehicle: 'progress_vehicle',
         mirror: 'progress_mirror',
       };
-      const patch: Record<string, boolean> = {};
-      for (const key of Object.keys(map)) {
-        if (body[key] === true) patch[map[key]] = true;
+      for (const key of Object.keys(flagMap)) {
+        if (body[key] === true) patch[flagMap[key]] = true;
       }
+
+      // Persiste escoltista 1 / 2 — best-effort, falha não bloqueia o avanço
+      const persistAgent = async (data: any, label: string, slot: 1 | 2) => {
+        try {
+          const r = await persistEscoltistaCore(sb, intake.provider_id, intake.provider_name || null, data, label);
+          patch[slot === 1 ? 'agent1_id' : 'agent2_id'] = r.id;
+          patch[slot === 1 ? 'agent1_snapshot' : 'agent2_snapshot'] = r.snap;
+          // Atualiza missions.agent1 / agent2 (texto = nome) para o modal já
+          // aparecer pré-preenchido e a chip do timeline ficar consistente.
+          if (intake.mission_id && r.snap?.nome) {
+            const missionPatch: any = {};
+            missionPatch[slot === 1 ? 'agent1' : 'agent2'] = r.snap.nome;
+            await sb.from('missions').update(missionPatch).eq('id', intake.mission_id);
+          }
+          return null;
+        } catch (e: any) {
+          return e?.message || `Erro ao salvar ${label}`;
+        }
+      };
+
+      if (body.agent1Data) {
+        const err = await persistAgent(body.agent1Data, 'Escoltista 1', 1);
+        if (err) return res.status(400).json({ error: err });
+      }
+      if (body.agent2Data) {
+        const err = await persistAgent(body.agent2Data, 'Escoltista 2', 2);
+        if (err) return res.status(400).json({ error: err });
+      }
+      if (body.vehicleData) {
+        try {
+          const r = await persistVehicleCore(sb, intake.provider_id, body.vehicleData);
+          patch.vehicle_id = r.id;
+          patch.vehicle_snapshot = r.snap;
+        } catch (e: any) {
+          return res.status(400).json({ error: e?.message || 'Erro ao salvar veículo' });
+        }
+      }
+      if (body.mirrorData && body.mirrorData.dataUrl) {
+        try {
+          const dataUrl: string = String(body.mirrorData.dataUrl);
+          const m = dataUrl.match(/^data:([^;]+);base64,(.+)$/);
+          if (!m) throw new Error('Print inválido — formato não reconhecido (envie PNG/JPG/PDF).');
+          const contentType = m[1];
+          const buf = Buffer.from(m[2], 'base64');
+          if (buf.length > 8 * 1024 * 1024) throw new Error('Print muito grande — limite de 8 MB.');
+          const allowed = ['image/png', 'image/jpeg', 'image/jpg', 'image/webp', 'application/pdf'];
+          if (!allowed.includes(contentType.toLowerCase())) throw new Error('Tipo de arquivo não suportado — envie PNG, JPG, WEBP ou PDF.');
+          const extMap: Record<string, string> = { 'image/png': 'png', 'image/jpeg': 'jpg', 'image/jpg': 'jpg', 'image/webp': 'webp', 'application/pdf': 'pdf' };
+          const ext = extMap[contentType.toLowerCase()] || 'bin';
+          const safeOrig = String(body.mirrorData.filename || `espelhamento.${ext}`).replace(/[^A-Za-z0-9._-]/g, '_').slice(0, 80);
+          const filePath = `dhl-mirror-proof/${intake.mission_id}/${Date.now()}_${safeOrig}`;
+          const { error: upErr } = await sb.storage.from('mission-evidence').upload(filePath, buf, { contentType, upsert: false });
+          if (upErr) throw new Error('Falha ao salvar o print: ' + upErr.message);
+          const { data: urlData } = sb.storage.from('mission-evidence').getPublicUrl(filePath);
+          patch.mirror_proof_url = urlData?.publicUrl || null;
+          patch.mirror_proof_filename = safeOrig;
+        } catch (e: any) {
+          return res.status(400).json({ error: e?.message || 'Erro ao processar o print do espelhamento.' });
+        }
+      }
+
       if (Object.keys(patch).length === 0) return res.json({ ok: true, noop: true });
       const { error: upErr } = await sb.from('dhl_supplier_intakes').update(patch).eq('token', token);
       if (upErr) {
         console.error('[DHL Intake] progress update error:', upErr.message);
         return res.status(500).json({ error: upErr.message });
       }
-      return res.json({ ok: true });
+      return res.json({
+        ok: true,
+        snapshots: {
+          agent1: patch.agent1_snapshot ?? intake.agent1_snapshot ?? null,
+          agent2: patch.agent2_snapshot ?? intake.agent2_snapshot ?? null,
+          vehicle: patch.vehicle_snapshot ?? intake.vehicle_snapshot ?? null,
+          mirrorProofUrl: patch.mirror_proof_url ?? intake.mirror_proof_url ?? null,
+          mirrorProofFilename: patch.mirror_proof_filename ?? intake.mirror_proof_filename ?? null,
+        },
+      });
     } catch (e: any) {
       console.error('[DHL Intake] progress exception:', e);
       return res.status(500).json({ error: e?.message || 'Erro interno' });
@@ -1718,17 +2024,24 @@ export function registerDhlIntakeRoutes(
   app.post('/api/dhl/intake/public/:token/submit', async (req: Request, res: Response) => {
     try {
       const { token } = req.params;
-      const { agent1, agent2, vehicle, mirrorProof } = req.body || {};
+      const { agent1, agent2, vehicle, mirrorProof, useExistingMirror } = req.body || {};
       if (!agent1 || !agent2 || !vehicle) {
         return res.status(400).json({ error: 'Preencha os 3 blocos: Escoltista 1, Escoltista 2 e Veículo.' });
-      }
-      if (!mirrorProof || !mirrorProof.dataUrl) {
-        return res.status(400).json({ error: 'Anexe o print do espelhamento (comprovante de que foi realizado) antes de enviar.' });
       }
 
       const sb = getSb();
       const { data: intake } = await sb.from('dhl_supplier_intakes').select('*').eq('token', token).maybeSingle();
       if (!intake) return res.status(404).json({ error: 'Link inválido' });
+
+      // Print pode vir agora OU ter sido salvo num /progress anterior.
+      // Quando useExistingMirror=true, exigimos que o intake já tenha um mirror_proof_url.
+      const hasExistingMirror = !!intake.mirror_proof_url;
+      if (!useExistingMirror && (!mirrorProof || !mirrorProof.dataUrl)) {
+        return res.status(400).json({ error: 'Anexe o print do espelhamento (comprovante de que foi realizado) antes de enviar.' });
+      }
+      if (useExistingMirror && !hasExistingMirror) {
+        return res.status(400).json({ error: 'Print do espelhamento não localizado nesta sessão — anexe novamente.' });
+      }
       if (intake.status === 'cancelado') {
         return res.status(410).json({ error: 'Link cancelado — a OS foi excluída ou cancelada. Solicite um novo link ao Operacional TM Seg.' });
       }
@@ -1741,24 +2054,9 @@ export function registerDhlIntakeRoutes(
 
       const providerId = intake.provider_id;
 
-      const persistEscoltista = async (a: any, label: string): Promise<{ id: string; snap: any }> => {
-        // Anti-IDOR: se veio com id, valida ownership antes de qualquer coisa.
-        let existingById: any = null;
-        if (a.id) {
-          const { data } = await sb.from('provider_escoltistas')
-            .select('*')
-            .eq('id', a.id)
-            .eq('provider_id', providerId)
-            .maybeSingle();
-          if (!data) throw new Error(`${label}: registro selecionado não pertence ao fornecedor desta OS`);
-          existingById = data;
-        }
-        // Validação completa de servidor — alinhada com o frontend.
-        // Vale para todo submit, inclusive quando há id (campos que estavam
-        // vazios no cadastro e foram preenchidos pelo fornecedor agora).
-        // CNH/Categoria/Vencimento NÃO são obrigatórios por escoltista — a
-        // regra cruzada (ao menos um dos dois com CNH+validade) é validada
-        // antes das chamadas a persistEscoltista, abaixo no handler.
+      // Validação estrita do submit final (campos obrigatórios completos).
+      // O persistEscoltistaCore só exige nome+CPF; aqui exigimos o restante.
+      const validateAgentForSubmit = (a: any, label: string): string | null => {
         const required: [string, string][] = [
           ['nome', 'Nome'], ['cpf', 'CPF'], ['rg', 'RG'], ['orgao_emissor', 'Órgão emis./UF'],
           ['cnv_numero', 'CNV Número'], ['cnv_validade', 'Validade CNV'],
@@ -1774,165 +2072,20 @@ export function registerDhlIntakeRoutes(
           return v === undefined || v === null ? '' : String(v).trim();
         };
         for (const [k, lbl] of required) {
-          if (!pick(k)) throw new Error(`${label}: ${lbl} é obrigatório`);
+          if (!pick(k)) return `${label}: ${lbl} é obrigatório`;
         }
-        const cpfDigits = String(a.cpf).replace(/\D/g, '');
-        if (cpfDigits.length !== 11) throw new Error(`${label}: CPF inválido`);
-        const payload: any = {
-          provider_id: providerId,
-          nome: a.nome,
-          cpf: a.cpf,
-          rg: a.rg || null,
-          orgao_emissor: a.orgaoEmissor || a.orgao_emissor || null,
-          cnh: a.cnh || null,
-          cnh_categoria: a.cnhCategoria || a.cnh_categoria || null,
-          cnh_vencimento: a.cnhVencimento || a.cnh_vencimento || null,
-          cnv_numero: a.cnvNumero || a.cnv_numero || null,
-          cnv_validade: a.cnvValidade || a.cnv_validade || null,
-          rua: a.rua || null,
-          numero: a.numero || null,
-          complemento: a.complemento || null,
-          bairro: a.bairro || null,
-          cidade: a.cidade || null,
-          uf: a.uf || null,
-          cep: a.cep || null,
-          celular: a.celular || null,
-          admissao: a.admissao || null,
-        };
-        // Dedup por CPF dentro do fornecedor. Se já existe (por id ou por CPF),
-        // aplica patch "fill empty only" para não sobrescrever dados que o
-        // operacional já tenha refinado, mas garantindo que campos antes vazios
-        // sejam preenchidos com o que o fornecedor digitou agora.
-        const existingByCpf = existingById
-          ? null
-          : (await sb.from('provider_escoltistas').select('*').eq('provider_id', providerId).eq('cpf', a.cpf).maybeSingle()).data;
-        const existing = existingById || existingByCpf;
-        let resultId: string;
-        let resultSnap: any;
-        if (existing) {
-          const patch: any = {};
-          for (const k of Object.keys(payload)) {
-            const cur = (existing as any)[k];
-            const incoming = (payload as any)[k];
-            if ((cur === null || cur === undefined || String(cur).trim() === '') && incoming) {
-              patch[k] = incoming;
-            }
-          }
-          if (Object.keys(patch).length > 0) {
-            patch.updated_at = new Date().toISOString();
-            await sb.from('provider_escoltistas').update(patch).eq('id', existing.id);
-          }
-          const { data: row } = await sb.from('provider_escoltistas').select('*').eq('id', existing.id).single();
-          resultId = existing.id;
-          resultSnap = row;
-        } else {
-          const { data: ins, error: insErr } = await sb.from('provider_escoltistas').insert([payload]).select().single();
-          if (insErr) throw new Error('Erro ao salvar escoltista: ' + insErr.message);
-          resultId = ins.id;
-          resultSnap = ins;
-        }
-
-        // Espelhamento automático no cadastro principal `agents`:
-        // - se já existe agente com este CPF: atualiza só os campos vazios (não
-        //   sobrescreve dados que o operacional já tenha refinado);
-        // - se não existe: cria com provider = nome do fornecedor do intake.
-        try {
-          const { data: agentRow } = await sb.from('agents')
-            .select('id, name, cpf, rg, cnh, cnh_validity, cnv, cnv_validity, phone, provider, orgao_emissor, cnh_categoria, rua, numero, complemento, bairro, cidade, uf, cep, admissao')
-            .eq('cpf', a.cpf)
-            .maybeSingle();
-
-          const agentPayload: any = {
-            name: payload.nome,
-            cpf: payload.cpf,
-            rg: payload.rg,
-            cnh: payload.cnh,
-            cnh_validity: payload.cnh_vencimento,
-            cnv: payload.cnv_numero,
-            cnv_validity: payload.cnv_validade,
-            phone: payload.celular,
-            orgao_emissor: payload.orgao_emissor,
-            cnh_categoria: payload.cnh_categoria,
-            rua: payload.rua,
-            numero: payload.numero,
-            complemento: payload.complemento,
-            bairro: payload.bairro,
-            cidade: payload.cidade,
-            uf: payload.uf,
-            cep: payload.cep,
-            admissao: payload.admissao,
-          };
-
-          if (agentRow) {
-            // Mantém o que já existe e preenche os buracos com o que veio do intake.
-            const patch: any = {};
-            for (const k of Object.keys(agentPayload)) {
-              const cur = (agentRow as any)[k];
-              if ((cur === null || cur === undefined || String(cur).trim() === '') && agentPayload[k]) {
-                patch[k] = agentPayload[k];
-              }
-            }
-            if (Object.keys(patch).length > 0) {
-              const { error: updErr } = await sb.from('agents').update(patch).eq('id', agentRow.id);
-              if (updErr) console.error('[DHL Intake] falha ao espelhar em agents (update):', updErr.message);
-            }
-          } else {
-            const insAgent: any = {
-              ...agentPayload,
-              provider: intake.provider_name || null,
-              role: 'Vigilante',
-              status: 'Ativo',
-            };
-            const { error: insAgentErr } = await sb.from('agents').insert([insAgent]);
-            if (insAgentErr) console.error('[DHL Intake] falha ao espelhar em agents (insert):', insAgentErr.message);
-          }
-        } catch (mirrorErr: any) {
-          // O espelhamento é best-effort. Falha aqui não impede o submit do intake.
-          console.error('[DHL Intake] exceção ao espelhar em agents:', mirrorErr?.message);
-        }
-
-        return { id: resultId, snap: resultSnap };
+        return null;
       };
-
-      const persistVehicle = async (v: any): Promise<{ id: string; snap: any }> => {
-        if (v.id) {
-          // Anti-IDOR: garante que o veículo pertence ao fornecedor do intake
-          const { data } = await sb.from('provider_intake_vehicles')
-            .select('*')
-            .eq('id', v.id)
-            .eq('provider_id', providerId)
-            .maybeSingle();
-          if (data) return { id: data.id, snap: data };
-          throw new Error('Veículo: registro selecionado não pertence ao fornecedor desta OS');
-        }
+      const validateVehicleForSubmit = (v: any): string | null => {
+        if (v?.id) return null;
         const vReq: [string, string][] = [
           ['placa', 'Placa'], ['marca', 'Marca'], ['modelo', 'Modelo'],
           ['tecnologia', 'Tecnologia'],
         ];
         for (const [k, lbl] of vReq) {
-          if (!v[k] || String(v[k]).trim() === '') throw new Error(`Veículo: ${lbl} é obrigatório`);
+          if (!v[k] || String(v[k]).trim() === '') return `Veículo: ${lbl} é obrigatório`;
         }
-        const payload: any = {
-          provider_id: providerId,
-          placa: String(v.placa).toUpperCase().replace(/\s/g, ''),
-          renavam: v.renavam || null,
-          marca: v.marca || null,
-          ano: v.ano || null,
-          modelo: v.modelo || null,
-          cor: v.cor || null,
-          tecnologia: v.tecnologia || null,
-          id_rastreador: v.idRastreador || v.id_rastreador || null,
-          comunicacao: v.comunicacao || null,
-        };
-        const { data: existing } = await sb.from('provider_intake_vehicles').select('id').eq('provider_id', providerId).eq('placa', payload.placa).maybeSingle();
-        if (existing) {
-          await sb.from('provider_intake_vehicles').update({ ...payload, updated_at: new Date().toISOString() }).eq('id', existing.id);
-          const { data: row } = await sb.from('provider_intake_vehicles').select('*').eq('id', existing.id).single();
-          return { id: existing.id, snap: row };
-        }
-        const { data: ins, error: insErr } = await sb.from('provider_intake_vehicles').insert([payload]).select().single();
-        if (insErr) throw new Error('Erro ao salvar veículo: ' + insErr.message);
-        return { id: ins.id, snap: ins };
+        return null;
       };
 
       // Impede Escoltista 1 == Escoltista 2 (mesmo registro escolhido ou mesmo CPF digitado)
@@ -1973,13 +2126,32 @@ export function registerDhlIntakeRoutes(
       const cnhErr = checkCnhBlock(agent1, 'Escoltista 1') || checkCnhBlock(agent2, 'Escoltista 2');
       if (cnhErr) return res.status(400).json({ error: cnhErr });
 
+      // Validação completa dos blocos para o submit FINAL (campos obrigatórios).
+      const v1Err = validateAgentForSubmit(agent1, 'Escoltista 1');
+      if (v1Err) return res.status(400).json({ error: v1Err });
+      const v2Err = validateAgentForSubmit(agent2, 'Escoltista 2');
+      if (v2Err) return res.status(400).json({ error: v2Err });
+      const vvErr = validateVehicleForSubmit(vehicle);
+      if (vvErr) return res.status(400).json({ error: vvErr });
+
       let a1, a2, vh;
       try {
-        a1 = await persistEscoltista(agent1, 'Escoltista 1');
-        a2 = await persistEscoltista(agent2, 'Escoltista 2');
-        vh = await persistVehicle(vehicle);
+        a1 = await persistEscoltistaCore(sb, providerId, intake.provider_name || null, agent1, 'Escoltista 1');
+        a2 = await persistEscoltistaCore(sb, providerId, intake.provider_name || null, agent2, 'Escoltista 2');
+        vh = await persistVehicleCore(sb, providerId, vehicle);
       } catch (e: any) {
         return res.status(400).json({ error: e?.message || 'Dados inválidos' });
+      }
+      // Espelha o nome dos agentes em missions.agent1/agent2 (mesmo padrão do /progress)
+      try {
+        if (intake.mission_id) {
+          await sb.from('missions').update({
+            agent1: a1.snap?.nome || null,
+            agent2: a2.snap?.nome || null,
+          }).eq('id', intake.mission_id);
+        }
+      } catch (e: any) {
+        console.error('[DHL Intake] falha ao espelhar agent1/agent2 em missions:', e?.message);
       }
       // Pós-persistência: garante que se um foi novo e outro selecionado, IDs ainda diferem
       if (a1.id === a2.id) {
@@ -1987,9 +2159,14 @@ export function registerDhlIntakeRoutes(
       }
 
       // Upload do print do espelhamento → bucket mission-evidence/dhl-mirror-proof/<missionId>/
+      // Se o fornecedor já enviou o print numa etapa anterior (/progress) e
+      // marcou useExistingMirror, reutilizamos o que está salvo no intake.
       let mirrorProofUrl: string | null = null;
       let mirrorProofFilename: string | null = null;
-      try {
+      if (useExistingMirror) {
+        mirrorProofUrl = intake.mirror_proof_url || null;
+        mirrorProofFilename = intake.mirror_proof_filename || null;
+      } else try {
         const dataUrl: string = String(mirrorProof.dataUrl);
         const m = dataUrl.match(/^data:([^;]+);base64,(.+)$/);
         if (!m) throw new Error('Print inválido — formato não reconhecido (envie PNG/JPG/PDF).');

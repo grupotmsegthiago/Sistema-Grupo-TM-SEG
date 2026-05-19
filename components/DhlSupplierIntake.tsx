@@ -83,18 +83,39 @@ const DhlSupplierIntake: React.FC = () => {
   const [agent2, setAgent2] = useState<Escoltista>({ ...EMPTY_ESCOLTISTA });
   const [veiculo, setVeiculo] = useState<Veiculo>({ ...EMPTY_VEICULO });
   const [mirrorProof, setMirrorProof] = useState<{ dataUrl: string; filename: string; size: number; contentType: string } | null>(null);
+  // Marcador de que o print já foi enviado em uma sessão anterior — preserva
+  // o status visual sem trazer o arquivo original (apenas URL pública).
+  const [existingMirrorProof, setExistingMirrorProof] = useState<{ url: string; filename: string } | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [savingStep, setSavingStep] = useState(false);
   const [done, setDone] = useState(false);
+  const [resumed, setResumed] = useState<null | { step: 1 | 2 | 3 | 4 }>(null);
 
-  // Marca progresso parcial no backend (best-effort: nunca bloqueia a UI).
-  const sendProgress = async (patch: { agent1?: boolean; agent2?: boolean; vehicle?: boolean; mirror?: boolean }) => {
+  // Envia progresso ao backend com os dados da etapa concluída. Retorna
+  // string de erro (ex.: validação rejeitada pelo servidor) ou null.
+  const sendProgress = async (patch: {
+    agent1?: boolean; agent2?: boolean; vehicle?: boolean; mirror?: boolean;
+    agent1Data?: any; agent2Data?: any; vehicleData?: any;
+    mirrorData?: { dataUrl: string; filename: string } | null;
+  }): Promise<string | null> => {
     try {
-      await fetch(`/api/dhl/intake/public/${encodeURIComponent(token)}/progress`, {
+      const r = await fetch(`/api/dhl/intake/public/${encodeURIComponent(token)}/progress`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(patch),
       });
-    } catch {}
+      if (!r.ok) {
+        try {
+          const j = await r.json();
+          return j?.error || 'Erro ao salvar dados.';
+        } catch {
+          return 'Erro ao salvar dados.';
+        }
+      }
+      return null;
+    } catch {
+      return 'Falha de conexão ao salvar dados.';
+    }
   };
 
   useEffect(() => {
@@ -108,7 +129,34 @@ const DhlSupplierIntake: React.FC = () => {
         setIntake(j.intake);
         setSavedEscoltistas(j.escoltistas || []);
         setSavedVeiculos(j.vehicles || []);
-        if (j.intake?.status === 'preenchido') setDone(true);
+        if (j.intake?.status === 'preenchido') {
+          setDone(true);
+          setLoading(false);
+          return;
+        }
+        // Retoma de onde parou: pré-preenche os blocos com snapshots e
+        // posiciona o stepper na primeira etapa ainda não concluída.
+        const snaps = j.snapshots || {};
+        const prog = j.progress || {};
+        if (snaps.agent1) setAgent1(fromSaved(snaps.agent1));
+        if (snaps.agent2) setAgent2(fromSaved(snaps.agent2));
+        if (snaps.vehicle) setVeiculo(fromSavedVeic(snaps.vehicle));
+        if (snaps.mirrorProofUrl) {
+          // Marcador separado — mirrorProof permanece null (sem base64); se o
+          // usuário não substituir, o submit reutiliza o que já está salvo.
+          setExistingMirrorProof({
+            url: snaps.mirrorProofUrl,
+            filename: snaps.mirrorProofFilename || 'espelhamento-anexado',
+          });
+        }
+        let nextStep: 1 | 2 | 3 | 4 = 1;
+        if (prog.agent1) nextStep = 2;
+        if (prog.agent1 && prog.agent2) nextStep = 3;
+        if (prog.agent1 && prog.agent2 && prog.vehicle && prog.mirror) nextStep = 4;
+        if (nextStep !== 1) {
+          setStep(nextStep);
+          setResumed({ step: nextStep });
+        }
         setLoading(false);
       } catch (e: any) {
         setError('Falha ao carregar — verifique sua conexão');
@@ -160,6 +208,18 @@ const DhlSupplierIntake: React.FC = () => {
     return null;
   };
 
+  const handleStepNext = async (
+    payload: Parameters<typeof sendProgress>[0],
+    nextStep: 1 | 2 | 3 | 4,
+  ) => {
+    setSavingStep(true);
+    const err = await sendProgress(payload);
+    setSavingStep(false);
+    if (err) { alert(err); return; }
+    setResumed(null);
+    setStep(nextStep);
+  };
+
   const submit = async () => {
     const e1 = validateEscoltista(agent1, 'Escoltista 1');
     const e2 = validateEscoltista(agent2, 'Escoltista 2');
@@ -197,7 +257,7 @@ const DhlSupplierIntake: React.FC = () => {
       alert('Escoltista 1 e Escoltista 2 não podem ter o mesmo CPF');
       return;
     }
-    if (!mirrorProof) {
+    if (!mirrorProof && !existingMirrorProof) {
       alert('Anexe o print do espelhamento (comprovante de que foi realizado) antes de enviar.');
       setStep(3);
       return;
@@ -205,9 +265,17 @@ const DhlSupplierIntake: React.FC = () => {
 
     setSubmitting(true);
     try {
+      // Se já temos print salvo (etapa 3 concluída antes) e o usuário não
+      // substituiu, manda o sinal useExistingMirror para o servidor reutilizar
+      // o que foi enviado em /progress, sem precisar reenviar o base64.
+      const useExistingMirror = !mirrorProof && !!existingMirrorProof;
       const r = await fetch(`/api/dhl/intake/public/${encodeURIComponent(token)}/submit`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ agent1, agent2, vehicle: veiculo, mirrorProof }),
+        body: JSON.stringify({
+          agent1, agent2, vehicle: veiculo,
+          mirrorProof: useExistingMirror ? null : mirrorProof,
+          useExistingMirror,
+        }),
       });
       const j = await r.json();
       if (!r.ok) { alert(j.error || 'Erro ao enviar'); setSubmitting(false); return; }
@@ -292,6 +360,17 @@ const DhlSupplierIntake: React.FC = () => {
           </div>
         </div>
 
+        {/* Banner de retomada */}
+        {resumed && step > 1 && (
+          <div className="bg-blue-50 border border-blue-200 rounded-xl p-3 flex items-center gap-3" data-testid="banner-resumed">
+            <CheckCircle2 className="w-5 h-5 text-blue-600 flex-shrink-0" />
+            <div className="text-xs text-blue-800">
+              <p className="font-bold">Continuando de onde você parou — etapa {step} de 4.</p>
+              <p className="text-blue-700">As etapas anteriores já foram salvas. Revise se necessário voltando.</p>
+            </div>
+          </div>
+        )}
+
         {/* Stepper */}
         <div className="flex items-center justify-between bg-white rounded-xl shadow-sm border border-gray-200 p-3">
           {[
@@ -324,11 +403,11 @@ const DhlSupplierIntake: React.FC = () => {
               setData={setAgent1}
               savedList={savedEscoltistas}
               fromSaved={fromSaved}
-              onNext={() => {
+              saving={savingStep}
+              onNext={async () => {
                 const err = validateEscoltista(agent1, 'Escoltista 1');
                 if (err) { alert(err); return; }
-                sendProgress({ agent1: true });
-                setStep(2);
+                await handleStepNext({ agent1: true, agent1Data: agent1 }, 2);
               }}
             />
           )}
@@ -339,13 +418,13 @@ const DhlSupplierIntake: React.FC = () => {
               setData={setAgent2}
               savedList={savedEscoltistas.filter(s => !agent1.id || s.id !== agent1.id)}
               fromSaved={fromSaved}
+              saving={savingStep}
               onBack={() => setStep(1)}
-              onNext={() => {
+              onNext={async () => {
                 const err = validateEscoltista(agent2, 'Escoltista 2');
                 if (err) { alert(err); return; }
                 if (!agent1.id && !agent2.id && agent1.cpf === agent2.cpf) { alert('CPF não pode ser igual ao do Escoltista 1'); return; }
-                sendProgress({ agent2: true });
-                setStep(3);
+                await handleStepNext({ agent2: true, agent2Data: agent2 }, 3);
               }}
             />
           )}
@@ -357,13 +436,28 @@ const DhlSupplierIntake: React.FC = () => {
               fromSavedVeic={fromSavedVeic}
               mirrorProof={mirrorProof}
               setMirrorProof={setMirrorProof}
+              existingMirrorProof={existingMirrorProof}
+              clearExistingMirror={() => setExistingMirrorProof(null)}
+              saving={savingStep}
               onBack={() => setStep(2)}
-              onNext={() => {
+              onNext={async () => {
                 const err = validateVeiculo(veiculo);
                 if (err) { alert(err); return; }
-                if (!mirrorProof) { alert('Anexe o print do espelhamento (comprovante de que foi realizado) antes de avançar.'); return; }
-                sendProgress({ vehicle: true, mirror: true });
-                setStep(4);
+                if (!mirrorProof && !existingMirrorProof) {
+                  alert('Anexe o print do espelhamento (comprovante de que foi realizado) antes de avançar.');
+                  return;
+                }
+                // Só envia mirrorData se o usuário anexou um arquivo NOVO nesta
+                // sessão. Caso contrário, o print já está salvo do /progress
+                // anterior e não precisa ser reenviado.
+                const payload: any = { vehicle: true, vehicleData: veiculo };
+                if (mirrorProof && mirrorProof.dataUrl?.startsWith('data:')) {
+                  payload.mirror = true;
+                  payload.mirrorData = { dataUrl: mirrorProof.dataUrl, filename: mirrorProof.filename };
+                } else if (existingMirrorProof) {
+                  payload.mirror = true; // já estava salvo
+                }
+                await handleStepNext(payload, 4);
               }}
             />
           )}
@@ -371,6 +465,7 @@ const DhlSupplierIntake: React.FC = () => {
             <Revisao
               agent1={agent1} agent2={agent2} veiculo={veiculo}
               mirrorProof={mirrorProof}
+              existingMirrorProof={existingMirrorProof}
               onBack={() => setStep(3)}
               onSubmit={submit}
               submitting={submitting}
@@ -397,7 +492,8 @@ const EscoltistaForm: React.FC<{
   fromSaved: (s: any) => Escoltista;
   onBack?: () => void;
   onNext: () => void;
-}> = ({ titulo, data, setData, savedList, fromSaved, onBack, onNext }) => {
+  saving?: boolean;
+}> = ({ titulo, data, setData, savedList, fromSaved, onBack, onNext, saving }) => {
   const set = (patch: Partial<Escoltista>) => setData({ ...data, ...patch });
   const [lookupStatus, setLookupStatus] = useState<'idle' | 'found' | 'notfound'>('idle');
   // Conjunto de campos que vieram preenchidos do cadastro — só esses ficam readOnly.
@@ -535,7 +631,7 @@ const EscoltistaForm: React.FC<{
 
       <div className="flex justify-between mt-6 pt-4 border-t border-gray-100">
         {onBack ? <button type="button" onClick={onBack} className="px-5 py-2.5 rounded-lg bg-gray-100 text-gray-700 text-sm font-bold flex items-center gap-2"><ArrowLeft size={16} /> Voltar</button> : <span />}
-        <button type="button" onClick={onNext} disabled={!cpfComplete && !isLocked} className="px-6 py-2.5 rounded-lg bg-red-600 text-white text-sm font-bold flex items-center gap-2 hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed" data-testid="btn-avancar-escoltista">Avançar <ArrowRight size={16} /></button>
+        <button type="button" onClick={onNext} disabled={(!cpfComplete && !isLocked) || !!saving} className="px-6 py-2.5 rounded-lg bg-red-600 text-white text-sm font-bold flex items-center gap-2 hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed" data-testid="btn-avancar-escoltista">{saving ? <><Loader2 size={16} className="animate-spin" /> Salvando...</> : <>Avançar <ArrowRight size={16} /></>}</button>
       </div>
     </div>
   );
@@ -551,9 +647,12 @@ const VeiculoForm: React.FC<{
   fromSavedVeic: (s: any) => Veiculo;
   mirrorProof: { dataUrl: string; filename: string; size: number; contentType: string } | null;
   setMirrorProof: (p: { dataUrl: string; filename: string; size: number; contentType: string } | null) => void;
+  existingMirrorProof?: { url: string; filename: string } | null;
+  clearExistingMirror?: () => void;
   onBack: () => void;
   onNext: () => void;
-}> = ({ data, setData, savedList, fromSavedVeic, mirrorProof, setMirrorProof, onBack, onNext }) => {
+  saving?: boolean;
+}> = ({ data, setData, savedList, fromSavedVeic, mirrorProof, setMirrorProof, existingMirrorProof, clearExistingMirror, onBack, onNext, saving }) => {
   const [mode, setMode] = useState<'novo' | 'cadastrado'>(savedList.length > 0 ? 'cadastrado' : 'novo');
   const set = (patch: Partial<Veiculo>) => setData({ ...data, ...patch });
 
@@ -605,7 +704,18 @@ const VeiculoForm: React.FC<{
           <CheckCircle2 className="w-4 h-4 text-red-600" /> Comprovante de Espelhamento*
         </h4>
         <p className="text-xs text-gray-500 mb-3">Anexe o print confirmando que o espelhamento do sinal foi realizado (PNG, JPG, WEBP ou PDF — até 8 MB).</p>
-        {!mirrorProof ? (
+        {existingMirrorProof && !mirrorProof ? (
+          <div className="border border-blue-300 bg-blue-50 rounded-lg p-3 flex items-center justify-between gap-3">
+            <div className="flex items-center gap-3 min-w-0">
+              <div className="w-14 h-14 rounded bg-white border border-blue-300 flex items-center justify-center text-[10px] font-bold text-blue-700">OK</div>
+              <div className="min-w-0">
+                <p className="text-sm font-bold text-blue-800 truncate">{existingMirrorProof.filename}</p>
+                <p className="text-[11px] text-blue-700">Print já enviado em sessão anterior — <a href={existingMirrorProof.url} target="_blank" rel="noopener noreferrer" className="underline">ver arquivo</a></p>
+              </div>
+            </div>
+            <button type="button" onClick={() => clearExistingMirror?.()} className="px-3 py-1.5 rounded bg-white border border-red-300 text-red-600 text-xs font-bold hover:bg-red-50">Substituir</button>
+          </div>
+        ) : !mirrorProof ? (
           <label className="block border-2 border-dashed border-gray-300 rounded-lg p-5 text-center cursor-pointer hover:border-red-500 hover:bg-red-50/30 transition" data-testid="input-mirror-proof">
             <input
               type="file"
@@ -649,7 +759,7 @@ const VeiculoForm: React.FC<{
 
       <div className="flex justify-between mt-6 pt-4 border-t border-gray-100">
         <button type="button" onClick={onBack} className="px-5 py-2.5 rounded-lg bg-gray-100 text-gray-700 text-sm font-bold flex items-center gap-2"><ArrowLeft size={16} /> Voltar</button>
-        <button type="button" onClick={onNext} className="px-6 py-2.5 rounded-lg bg-red-600 text-white text-sm font-bold flex items-center gap-2 hover:bg-red-700">Revisar <ArrowRight size={16} /></button>
+        <button type="button" onClick={onNext} disabled={!!saving} className="px-6 py-2.5 rounded-lg bg-red-600 text-white text-sm font-bold flex items-center gap-2 hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed">{saving ? <><Loader2 size={16} className="animate-spin" /> Salvando...</> : <>Revisar <ArrowRight size={16} /></>}</button>
       </div>
     </div>
   );
@@ -661,8 +771,9 @@ const VeiculoForm: React.FC<{
 const Revisao: React.FC<{
   agent1: Escoltista; agent2: Escoltista; veiculo: Veiculo;
   mirrorProof: { dataUrl: string; filename: string; size: number; contentType: string } | null;
+  existingMirrorProof?: { url: string; filename: string } | null;
   onBack: () => void; onSubmit: () => void; submitting: boolean;
-}> = ({ agent1, agent2, veiculo, mirrorProof, onBack, onSubmit, submitting }) => {
+}> = ({ agent1, agent2, veiculo, mirrorProof, existingMirrorProof, onBack, onSubmit, submitting }) => {
   const Row = ({ k, v }: { k: string; v: any }) => (
     <div className="flex justify-between gap-3 py-1.5 border-b border-gray-100 text-xs">
       <span className="text-gray-500 font-bold uppercase tracking-wider">{k}</span>
@@ -722,6 +833,14 @@ const Revisao: React.FC<{
             <div>
               <p className="text-sm font-bold text-gray-800">{mirrorProof.filename}</p>
               <p className="text-[11px] text-gray-500">{(mirrorProof.size / 1024).toFixed(0)} KB</p>
+            </div>
+          </div>
+        ) : existingMirrorProof ? (
+          <div className="flex items-center gap-3">
+            <div className="w-20 h-20 rounded bg-white border border-green-300 flex items-center justify-center text-xs font-bold text-green-700">OK</div>
+            <div>
+              <p className="text-sm font-bold text-gray-800">{existingMirrorProof.filename}</p>
+              <p className="text-[11px] text-green-700">Print já enviado em sessão anterior — <a href={existingMirrorProof.url} target="_blank" rel="noopener noreferrer" className="underline">ver arquivo</a></p>
             </div>
           </div>
         ) : (
