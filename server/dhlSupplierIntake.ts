@@ -139,6 +139,19 @@ export async function runDhlIntakeMigrations(): Promise<void> {
       ALTER TABLE dhl_supplier_intakes ADD COLUMN IF NOT EXISTS provider_reminder_sent_at TIMESTAMPTZ;
       ALTER TABLE dhl_supplier_intakes ADD COLUMN IF NOT EXISTS provider_whatsapp_reminder_sent_at TIMESTAMPTZ;
       ALTER TABLE dhl_supplier_intakes ADD COLUMN IF NOT EXISTS operational_alert_sent_at TIMESTAMPTZ;
+      ALTER TABLE dhl_supplier_intakes ADD COLUMN IF NOT EXISTS provider_reminder_count INTEGER NOT NULL DEFAULT 0;
+      ALTER TABLE dhl_supplier_intakes ADD COLUMN IF NOT EXISTS provider_whatsapp_reminder_count INTEGER NOT NULL DEFAULT 0;
+      -- Backfill: intakes pré-existentes que já receberam um lembrete (flag preenchida)
+      -- contam como 1 envio, evitando que o ciclo recém-criado dispare um lembrete
+      -- "extra" no período de transição.
+      UPDATE dhl_supplier_intakes
+        SET provider_reminder_count = 1
+        WHERE provider_reminder_sent_at IS NOT NULL
+          AND provider_reminder_count = 0;
+      UPDATE dhl_supplier_intakes
+        SET provider_whatsapp_reminder_count = 1
+        WHERE provider_whatsapp_reminder_sent_at IS NOT NULL
+          AND provider_whatsapp_reminder_count = 0;
 
       -- Histórico de reenvios do link DHL (auditoria: quem reenviou, quando, para onde, status)
       CREATE TABLE IF NOT EXISTS dhl_supplier_intake_resends (
@@ -472,10 +485,24 @@ async function checkAndNotifyExpiredDhlIntakes(): Promise<void> {
 // envio bem-sucedido (permite retry no próximo tick em caso de falha).
 // ────────────────────────────────────────────────────────────────────────────
 // Thresholds parametrizáveis por env (fallback para defaults razoáveis).
-const DHL_REMINDER_OPENED_THRESHOLD_HOURS =
-  Number(process.env.DHL_REMINDER_OPENED_HOURS || 4);   // abriu mas não concluiu há ≥ N h
-const DHL_REMINDER_EXPIRY_WINDOW_HOURS =
-  Number(process.env.DHL_REMINDER_EXPIRY_HOURS || 24);  // ou o link expira em ≤ N h
+// Lê env numérico, retornando o fallback quando o valor é vazio, NaN ou <= 0.
+// Evita que um typo no env desabilite silenciosamente o envio de lembretes.
+function readPositiveEnv(name: string, fallback: number): number {
+  const raw = process.env[name];
+  if (raw === undefined || raw === null || String(raw).trim() === '') return fallback;
+  const n = Number(raw);
+  if (!Number.isFinite(n) || n <= 0) {
+    console.warn(`[DHL Reminder Worker] env ${name}=${raw} inválido — usando fallback ${fallback}.`);
+    return fallback;
+  }
+  return n;
+}
+const DHL_REMINDER_OPENED_THRESHOLD_HOURS = readPositiveEnv('DHL_REMINDER_OPENED_HOURS', 4);   // abriu mas não concluiu há ≥ N h
+const DHL_REMINDER_EXPIRY_WINDOW_HOURS    = readPositiveEnv('DHL_REMINDER_EXPIRY_HOURS', 24); // ou o link expira em ≤ N h
+// Ciclos de reenvio: a cada N horas, até no máximo M lembretes por canal.
+// Permite reenviar lembretes ao fornecedor inerte sem deixar o link expirar em silêncio.
+const DHL_REMINDER_CYCLE_HOURS = readPositiveEnv('DHL_REMINDER_CYCLE_HOURS', 12);             // intervalo mínimo entre lembretes
+const DHL_REMINDER_MAX_COUNT   = readPositiveEnv('DHL_REMINDER_MAX_COUNT', 3);                // limite máximo de lembretes por canal
 
 async function checkAndSendDhlIntakeReminders(): Promise<void> {
   const sb = getSb();
@@ -486,10 +513,12 @@ async function checkAndSendDhlIntakeReminders(): Promise<void> {
   // canais (lembrete ao fornecedor OU alerta ao operacional) ainda não foi
   // enviado. Cada canal é controlado por sua própria flag, permitindo retry
   // independente em caso de falha de um deles.
+  // Em vez de filtrar por "flag não preenchida", consideramos elegível qualquer
+  // intake pendente cujo link ainda não expirou — a decisão de reenviar (canal
+  // por canal) é tomada adiante usando contador + último envio + ciclo mínimo.
   const { data: pendentes, error: selErr } = await sb.from('dhl_supplier_intakes')
-    .select('id, token, mission_id, provider_id, provider_name, sent_to_email, sent_to_phone, first_opened_at, created_at, expires_at, provider_reminder_sent_at, provider_whatsapp_reminder_sent_at, operational_alert_sent_at')
+    .select('id, token, mission_id, provider_id, provider_name, sent_to_email, sent_to_phone, first_opened_at, created_at, expires_at, provider_reminder_sent_at, provider_whatsapp_reminder_sent_at, operational_alert_sent_at, provider_reminder_count, provider_whatsapp_reminder_count, reminder_sent_at')
     .eq('status', 'pendente')
-    .or('provider_reminder_sent_at.is.null,provider_whatsapp_reminder_sent_at.is.null,operational_alert_sent_at.is.null')
     .gt('expires_at', nowIso);
 
   if (selErr) {
@@ -552,8 +581,27 @@ async function checkAndSendDhlIntakeReminders(): Promise<void> {
   // retry independente: se o e-mail já saiu mas o WhatsApp falhou, o
   // próximo tick reenvia apenas o WhatsApp.
   type Eleg = typeof elegiveis[number];
-  const precisaFornecedorEmail: Eleg[] = elegiveis.filter(el => !el.intake.provider_reminder_sent_at);
-  const precisaFornecedorWhatsapp: Eleg[] = elegiveis.filter(el => !el.intake.provider_whatsapp_reminder_sent_at);
+  // Para cada canal de lembrete ao fornecedor, só envia se:
+  //   (1) ainda não atingiu DHL_REMINDER_MAX_COUNT lembretes naquele canal; E
+  //   (2) ou nunca foi enviado, ou já passaram >= DHL_REMINDER_CYCLE_HOURS
+  //       desde o último envio (provider_*_reminder_sent_at registra o último).
+  const cicloOk = (lastIso: string | null | undefined): boolean => {
+    if (!lastIso) return true;
+    const last = new Date(lastIso).getTime();
+    if (!isFinite(last)) return true;
+    const horas = (now.getTime() - last) / 36e5;
+    return horas >= DHL_REMINDER_CYCLE_HOURS;
+  };
+  const precisaFornecedorEmail: Eleg[] = elegiveis.filter(el =>
+    (Number(el.intake.provider_reminder_count) || 0) < DHL_REMINDER_MAX_COUNT
+    && cicloOk(el.intake.provider_reminder_sent_at),
+  );
+  const precisaFornecedorWhatsapp: Eleg[] = elegiveis.filter(el =>
+    (Number(el.intake.provider_whatsapp_reminder_count) || 0) < DHL_REMINDER_MAX_COUNT
+    && cicloOk(el.intake.provider_whatsapp_reminder_sent_at),
+  );
+  // O alerta ao operacional permanece one-shot — evita inundar a caixa do
+  // operacional cada vez que o fornecedor é reenviado.
   const precisaOperacional: Eleg[] = elegiveis.filter(el => !el.intake.operational_alert_sent_at);
 
   const resolveDestinos = (el: Eleg) => {
@@ -580,7 +628,7 @@ async function checkAndSendDhlIntakeReminders(): Promise<void> {
         intake_id: el.intake.id,
         mission_id: el.intake.mission_id,
         sent_by_user_id: null,
-        sent_by_user_name: `Sistema (lembrete: ${el.reason})`,
+        sent_by_user_name: `Sistema (lembrete: ${el.reason}; ciclo ${DHL_REMINDER_CYCLE_HOURS}h)`,
         target_email: targetEmail || null,
         target_phone: targetPhone || null,
         email_status: emailStatus,
@@ -630,10 +678,14 @@ async function checkAndSendDhlIntakeReminders(): Promise<void> {
 
     if (emailStatus !== 'success') continue; // mantém retry
 
+    const novoCount = (Number(intake.provider_reminder_count) || 0) + 1;
     const { error: markErr } = await sb.from('dhl_supplier_intakes')
-      .update({ provider_reminder_sent_at: nowIso, reminder_sent_at: nowIso })
-      .eq('id', intake.id)
-      .is('provider_reminder_sent_at', null);
+      .update({
+        provider_reminder_sent_at: nowIso,
+        provider_reminder_count: novoCount,
+        reminder_sent_at: nowIso,
+      })
+      .eq('id', intake.id);
     if (markErr) {
       console.error('[DHL Reminder Worker] erro ao marcar provider_reminder_sent_at:', markErr.message);
       continue;
@@ -671,10 +723,14 @@ async function checkAndSendDhlIntakeReminders(): Promise<void> {
 
     if (whatsappStatus !== 'success') continue; // mantém retry
 
+    const novoCount = (Number(intake.provider_whatsapp_reminder_count) || 0) + 1;
     const { error: markErr } = await sb.from('dhl_supplier_intakes')
-      .update({ provider_whatsapp_reminder_sent_at: nowIso, reminder_sent_at: nowIso })
-      .eq('id', intake.id)
-      .is('provider_whatsapp_reminder_sent_at', null);
+      .update({
+        provider_whatsapp_reminder_sent_at: nowIso,
+        provider_whatsapp_reminder_count: novoCount,
+        reminder_sent_at: nowIso,
+      })
+      .eq('id', intake.id);
     if (markErr) {
       console.error('[DHL Reminder Worker] erro ao marcar provider_whatsapp_reminder_sent_at:', markErr.message);
       continue;
