@@ -226,6 +226,10 @@ export async function registerRoutes(
 
       for (const m of allMissions) {
         try {
+          if (m.revenue_edit_reason || m.cost_edit_reason || m.snapshot_approved_by || m.billing_verified_by) {
+            skipped++;
+            continue;
+          }
           const clientMatch = (clientsRaw || []).find((c: any) => c.name === m.client || c.trading_name === m.client);
           const fd = calculateMissionFinancials(m, clientTables, providerTables, clientMatch);
 
