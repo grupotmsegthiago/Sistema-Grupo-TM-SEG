@@ -169,6 +169,7 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
   const [showMyApprovalOnly, setShowMyApprovalOnly] = useState(false);
   const [approvalViewStage, setApprovalViewStage] = useState<'auditor' | 'financeiro' | null>(null);
   const [showNegativeMarginOnly, setShowNegativeMarginOnly] = useState(false);
+  const [showDhlOnly, setShowDhlOnly] = useState(false);
   const [isRecalculating, setIsRecalculating] = useState(false);
 
   // Paginação da tabela: 30 OS por página
@@ -731,9 +732,14 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
                 if (!isNegative && !isLinkedToNegative) return false;
             }
 
+            if (showDhlOnly) {
+                const cName = ((mission as any).originalClientName || mission.client || '').toUpperCase();
+                if (!cName.includes('DHL')) return false;
+            }
+
             return true;
         });
-    }, [allMissions, periodMissions, searchTerm, osFilterTerm, showPendingOnly, showTomorrowOnly, showMyApprovalOnly, showNegativeMarginOnly, parentMissionIds, negativeLinkedIds]);
+    }, [allMissions, periodMissions, searchTerm, osFilterTerm, showPendingOnly, showTomorrowOnly, showMyApprovalOnly, showNegativeMarginOnly, showDhlOnly, parentMissionIds, negativeLinkedIds]);
 
     // Status Counts based on the FILTERED set (to sync counters with visible criteria)
     const statusCounts = useMemo(() => {
@@ -825,10 +831,13 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
     const filteredMissions = useMemo(() => {
         const isSearching = searchTerm && searchTerm.trim().length > 0;
         const isOsFiltering = osFilterTerm && osFilterTerm.trim().length > 0;
-        const hasActiveSpecialFilters = showPendingOnly || showTomorrowOnly || showMyApprovalOnly || showNegativeMarginOnly;
+        const hasActiveSpecialFilters = showPendingOnly || showTomorrowOnly || showMyApprovalOnly || showNegativeMarginOnly || showDhlOnly;
 
         if (showMyApprovalOnly && myApprovalMissions.length > 0) {
-            return myApprovalMissions;
+            const list = showDhlOnly
+                ? myApprovalMissions.filter(m => (((m as any).originalClientName || m.client || '') as string).toUpperCase().includes('DHL'))
+                : myApprovalMissions;
+            return list;
         }
 
         let baseList = filteredBySpecialCriteria;
@@ -848,7 +857,7 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
             }
             return true;
         });
-    }, [filteredBySpecialCriteria, filterStatus, searchTerm, osFilterTerm, showPendingOnly, showTomorrowOnly, showMyApprovalOnly, showNegativeMarginOnly, myApprovalMissions]);
+    }, [filteredBySpecialCriteria, filterStatus, searchTerm, osFilterTerm, showPendingOnly, showTomorrowOnly, showMyApprovalOnly, showNegativeMarginOnly, showDhlOnly, myApprovalMissions]);
   
     const activeMapMissions = useMemo(() => {
         return allMissions.filter(m => {
@@ -1314,6 +1323,22 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
                             <span className="flex items-center gap-1.5">AGENDAMENTOS FUTUROS {tomorrowCount > 0 && <span className="ml-1 px-1.5 py-0.5 rounded-full text-[9px] bg-indigo-600 text-white font-bold">{tomorrowCount}</span>}</span>
                         )}
                         </button>
+                    )}
+
+                    {!isRestrictedClientView && (
+                    <button
+                        data-testid="button-dhl-only"
+                        onClick={() => setShowDhlOnly(!showDhlOnly)}
+                        className={`relative flex items-center gap-2 px-4 py-2.5 rounded-lg text-xs font-black uppercase border transition-all ${
+                            showDhlOnly
+                            ? 'bg-yellow-400 text-red-700 border-red-600 shadow-md scale-105 ring-2 ring-yellow-300/50'
+                            : 'bg-white text-red-700 border-yellow-400 hover:bg-yellow-50'
+                        }`}
+                        title="Mostrar somente OS de clientes DHL"
+                    >
+                        {showDhlOnly ? <ToggleRight size={16} /> : <ToggleLeft size={16} />}
+                        <span className="flex items-center gap-1.5">OPERAÇÕES DHL{showDhlOnly && <span className="text-[8px] font-black">ON</span>}</span>
+                    </button>
                     )}
 
                     <button onClick={() => setShowPendingOnly(!showPendingOnly)} className={`relative flex items-center gap-2 px-4 py-2.5 rounded-lg text-xs font-bold uppercase border transition-all ${showPendingOnly ? 'bg-orange-50 text-black border-orange-600 shadow-md' : pendingCount > 0 ? 'bg-orange-50 text-black border-orange-600 shadow-sm' : 'bg-white text-gray-600 border-gray-300 hover:bg-gray-50'}`}>{pendingCount > 0 ? ( <AlertTriangle size={16} className="text-black" /> ) : ( showPendingOnly ? <ToggleRight size={16} /> : <ToggleLeft size={16} /> )}{showPendingOnly ? 'Exibindo Pendências' : 'Filtrar Pendências'}{pendingCount > 0 && ( <span className="ml-1 px-1.5 py-0.5 rounded-full text-[9px] bg-white text-orange-700 font-bold">{pendingCount}</span> )}</button>

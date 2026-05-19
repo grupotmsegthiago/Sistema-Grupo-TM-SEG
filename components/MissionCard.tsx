@@ -681,6 +681,11 @@ Qualquer dúvida, estamos a disposição.
                 <div className="lg:col-span-2 p-3 flex flex-col justify-center gap-2">
                     <div className="flex items-center gap-2 flex-wrap">
                         <span className="text-xl font-black text-gray-900 tracking-tighter leading-none">{mission.id}</span>
+                        {(/DHL/i.test(((mission as any).originalClientName || mission.client || ''))) && (mission as any).dhl_se_number ? (
+                            <span className="px-1.5 py-0.5 rounded text-[9px] font-black uppercase bg-yellow-100 text-red-700 border border-yellow-400 shadow-sm flex items-center gap-1" title="Número da SE DHL" data-testid={`badge-se-${mission.id}`}>
+                                SE: {String((mission as any).dhl_se_number).toUpperCase()}
+                            </span>
+                        ) : null}
                         {mission.is_same_os && !hideProviderInfo && (
                             <span className="bg-black text-white px-1.5 py-0.5 rounded text-[8px] font-black uppercase flex items-center gap-1 border border-black shadow-sm" title={mission.parent_mission_id ? `OS Mãe: ${mission.parent_mission_id}` : 'Missão de continuidade - Custo Fornecedor Zero'}>
                                 <Layers size={10} /> MESMA OS
