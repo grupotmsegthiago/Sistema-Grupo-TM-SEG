@@ -1120,6 +1120,22 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
                    accentClass="from-yellow-400 to-red-600"
                 />
              </div>
+             <div className="flex-1 min-w-[300px] max-w-[450px]">
+                <DailyGoalThermometer 
+                   viewPeriod={viewPeriod} 
+                   customStartDate={customStartDate} 
+                   customEndDate={customEndDate}
+                   missions={allMissions}
+                   clientTables={clientTables}
+                   providerTables={providerTables}
+                   clientsData={clientsData}
+                   onRefreshMissions={() => fetchMissions(true)}
+                   dailyGoalOverride={35000 + 40000}
+                   monthlyGoalOverride={(35000 + 40000) * 20}
+                   titleSuffix="TOTAL"
+                   accentClass="from-blue-500 to-indigo-700"
+                />
+             </div>
           </div>
           )}
 
