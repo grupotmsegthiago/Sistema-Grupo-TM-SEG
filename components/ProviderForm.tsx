@@ -92,6 +92,7 @@ const ProviderForm: React.FC<ProviderFormProps> = ({ onBack, onNavigateToVehicle
   const [isApplyingAdjustment, setIsApplyingAdjustment] = useState(false);
   const [isReverting, setIsReverting] = useState(false);
   const [selectedCostIds, setSelectedCostIds] = useState<string[]>([]);
+  const [costSearch, setCostSearch] = useState<string>('');
 
   const [costFormData, setCostFormData] = useState({
       operation_type: '',
@@ -773,6 +774,24 @@ const ProviderForm: React.FC<ProviderFormProps> = ({ onBack, onNavigateToVehicle
                   </form>
               </div>
 
+              <div className="flex items-center gap-2 px-3 py-2 bg-white border border-gray-200 rounded-xl">
+                <Search size={14} className="text-gray-400" />
+                <input
+                    type="text"
+                    value={costSearch}
+                    onChange={e => setCostSearch(e.target.value)}
+                    placeholder="Buscar por rota, região, descrição..."
+                    className="flex-1 outline-none text-xs font-bold uppercase placeholder:normal-case placeholder:font-normal placeholder:text-gray-400"
+                    data-testid="input-search-cost"
+                />
+                {costSearch && (
+                    <button onClick={() => setCostSearch('')} className="text-[10px] font-bold text-gray-500 hover:text-red-600 uppercase" data-testid="button-clear-cost-search">Limpar</button>
+                )}
+                <span className="text-[10px] font-bold text-gray-400 uppercase">
+                    {costSearch ? `${costTables.filter((t: any) => (t.operation_type || '').toLowerCase().includes(costSearch.toLowerCase())).length} / ${costTables.length}` : `${costTables.length} itens`}
+                </span>
+              </div>
+
               <div className="overflow-x-auto border border-gray-200 rounded-xl shadow-sm bg-white">
                 <table className="w-full text-left border-collapse table-auto">
                     <thead className="bg-gray-100 text-gray-600 font-bold uppercase text-[10px] tracking-widest">
@@ -794,8 +813,10 @@ const ProviderForm: React.FC<ProviderFormProps> = ({ onBack, onNavigateToVehicle
                     <tbody className="divide-y divide-gray-100">
                         {costTables.length === 0 ? (
                             <tr><td colSpan={8} className="p-10 text-center text-gray-400 italic text-xs">Nenhum custo cadastrado para este fornecedor.</td></tr>
+                        ) : costTables.filter((t: any) => !costSearch || (t.operation_type || '').toLowerCase().includes(costSearch.toLowerCase())).length === 0 ? (
+                            <tr><td colSpan={8} className="p-6 text-center text-gray-400 italic text-xs">Nenhuma rota encontrada para "{costSearch}"</td></tr>
                         ) : (
-                            costTables.map((table: any) => (
+                            costTables.filter((t: any) => !costSearch || (t.operation_type || '').toLowerCase().includes(costSearch.toLowerCase())).map((table: any) => (
                                 <tr key={table.id} className={`text-[11px] transition-all ${selectedCostIds.includes(table.id) ? 'bg-blue-50/50' : table.adjustment_status ? 'bg-green-50/30' : 'hover:bg-gray-50/50'}`}>
                                     <td className="pl-4 py-2">
                                         <button onClick={() => handleSelectCostRow(table.id)}>

@@ -136,6 +136,7 @@ const ClientForm: React.FC<ClientFormProps> = ({
   const [isApplyingAdjustment, setIsApplyingAdjustment] = useState(false);
   const [isReverting, setIsReverting] = useState(false);
   const [selectedPriceIds, setSelectedPriceIds] = useState<string[]>([]);
+  const [priceSearch, setPriceSearch] = useState<string>('');
   
   const [currentUser, setCurrentUser] = useState<any>(null);
   const [clients, setClientsList] = useState<Client[]>([]);
@@ -996,6 +997,24 @@ const ClientForm: React.FC<ClientFormProps> = ({
                 </form>
               </div>
               
+              <div className="flex items-center gap-2 px-3 py-2 bg-white border border-gray-200 rounded-xl">
+                <Search size={14} className="text-gray-400" />
+                <input
+                    type="text"
+                    value={priceSearch}
+                    onChange={e => setPriceSearch(e.target.value)}
+                    placeholder="Buscar por rota, região, descrição..."
+                    className="flex-1 outline-none text-xs font-bold uppercase placeholder:normal-case placeholder:font-normal placeholder:text-gray-400"
+                    data-testid="input-search-price"
+                />
+                {priceSearch && (
+                    <button onClick={() => setPriceSearch('')} className="text-[10px] font-bold text-gray-500 hover:text-red-600 uppercase" data-testid="button-clear-price-search">Limpar</button>
+                )}
+                <span className="text-[10px] font-bold text-gray-400 uppercase">
+                    {priceSearch ? `${priceTables.filter(t => (t.operation_type || '').toLowerCase().includes(priceSearch.toLowerCase())).length} / ${priceTables.length}` : `${priceTables.length} itens`}
+                </span>
+              </div>
+
               <div className="overflow-x-auto border border-gray-200 rounded-2xl shadow-sm">
                 <table className="w-full text-left border-collapse table-auto">
                     <thead className="bg-gray-100 text-gray-600 font-bold uppercase">
@@ -1011,7 +1030,10 @@ const ClientForm: React.FC<ClientFormProps> = ({
                         </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-100">
-                        {priceTables.map((table) => (
+                        {priceTables.filter(t => !priceSearch || (t.operation_type || '').toLowerCase().includes(priceSearch.toLowerCase())).length === 0 && priceSearch && (
+                            <tr><td colSpan={8} className="p-6 text-center text-gray-400 italic text-xs">Nenhuma tabela encontrada para "{priceSearch}"</td></tr>
+                        )}
+                        {priceTables.filter(t => !priceSearch || (t.operation_type || '').toLowerCase().includes(priceSearch.toLowerCase())).map((table) => (
                             <tr key={table.id} className={`text-[11px] transition-all ${selectedPriceIds.includes(table.id) ? 'bg-blue-50/50' : table.adjustment_status ? 'bg-green-50/30' : 'hover:bg-gray-50/30'}`}>
                                 <td className="pl-4 py-2"><button onClick={() => handleSelectPriceRow(table.id)}>{selectedPriceIds.includes(table.id) ? <CheckSquare size={16} className="text-blue-600" /> : <Square size={16} />}</button></td>
                                 <td className={`p-2 font-bold uppercase ${table.adjustment_status ? 'text-green-800' : 'text-gray-700'}`}>{table.operation_type}</td>
