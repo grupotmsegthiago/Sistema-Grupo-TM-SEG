@@ -1049,12 +1049,37 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
             const cityParts = editData.currentLocationName.split('-');
             const cityPart = cityParts.length > 1 ? cityParts[cityParts.length-2].split(',').pop()?.trim() + ' - ' + cityParts[cityParts.length-1].trim() : (editData.currentLocationName || 'S/D');
 
-            const report = `*MONITORAMENTO GRUPO TMSEG*
+            const isDHL = /DHL/i.test(mission.client || '');
+            const fmtDateTime = (iso?: string) => {
+                if (!iso) return '';
+                try { return new Date(iso).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', timeZone: 'America/Sao_Paulo' }); } catch { return ''; }
+            };
+            const report = isDHL ? `*ESCOLTA ARMADA*⚡️
+
+🗒️*SE:* ${(editData.dhl_se_number || '').toString().trim().toUpperCase()}
+🚔*VIATURA:* ${searchVehicle || ''}
+🥷*AGT 1:* ${formatFL(editData.agent1)}
+🥷*AGT 2:* ${formatFL(editData.agent2)}
+
+👔 *CLIENTE:* DHL
+🏦*ORIGEM:* ${editData.origin?.toUpperCase() || ''}
+🏭*DESTINO:* ${(finalDestination || '').toUpperCase().replace(/\s*[—-]\s*DESTINO\s+A\s+DEFINIR\s*$/i, '').trim()}
+👨‍🦰*MOTORISTA:* ${formatFL(editData.driver_name)}
+📞*FONE:* ${editData.driver_phone || ''}
+🚛 *CAVALO:* ${editData.client_vehicle_plate || ''}
+🚛 *CARRETA:* ${(editData as any).client_vehicle_plate_2 || mission.clientVehicle2?.plate || ''}
+
+🕑*INÍCIO PREVISTO:* ${fmtDateTime(mission.createdAt)}
+🕑*CHEGADA NA ORIGEM:* 
+🧭 *INÍCIO DE OPERAÇÃO:* ${editData.startTime ? `${dateStr} ${editData.startTime}` : fmtDateTime(mission.startTime)}
+🧭 *FIM DE OPERAÇÃO:* ${editData.endTime ? `${dateStr} ${editData.endTime}` : fmtDateTime(mission.endTime)}
+
+🖋️ *STATUS:* ${finalStatus.toUpperCase()}${finalDescription ? ' — ' + finalDescription.toUpperCase() : ''}` : `*MONITORAMENTO GRUPO TMSEG*
 *OS:* ${mission.id} | *STATUS:* ${finalStatus.toUpperCase()}
 
 🗓 *DATA:* ${dateStr} *HORA:* ${timeStr}
 🛡 *OPERAÇÃO:* ${editData.missionType?.toUpperCase() || 'CARACTERIZADA'}
-🏢 *CLIENTE:* ${/DHL/i.test(mission.client || '') ? `DHL   🔖 *SE:* ${(editData.dhl_se_number || '').toString().trim().toUpperCase() || 'N/A'}` : mission.client}
+🏢 *CLIENTE:* ${mission.client}
 
 📍 *ORIGEM:* ${editData.origin.toUpperCase()}
 🏁 *DESTINO:* ${finalDestination.toUpperCase().replace(/\s*[—-]\s*DESTINO\s+A\s+DEFINIR\s*$/i, '').trim() || 'N/A'}
@@ -1066,10 +1091,7 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
 🚔 *VIATURA:* ${searchVehicle || 'N/A'}
 👮 *AGENTE 01:* ${formatFL(editData.agent1)}
 👮 *AGENTE 02:* ${formatFL(editData.agent2)}
-${/DHL/i.test(mission.client || '') && finalStatus === MissionStatus.COMPLETED ? `
-⏱ *HORA INICIAL:* ${editData.startTime || 'N/A'}        🛣 *KM INICIAL:* ${editData.startKm || 'N/A'}
-⏱ *HORA FINAL:* ${editData.endTime || 'N/A'}           🛣 *KM FINAL:* ${editData.endKm || 'N/A'}
-` : ''}
+
 📈*PROGRESSO DA MISSÃO:* ${Math.floor(progressValue)}%
 📣 *OCORRÊNCIA:* ${finalDescription || 'SEM INFORMAÇÃO'}
 🏙️ *LOCALIZAÇÃO:* ${cityPart.toUpperCase()}

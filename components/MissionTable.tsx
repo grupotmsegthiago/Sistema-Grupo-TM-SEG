@@ -998,12 +998,37 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
         const addressPart = locationParts.length > 1 ? locationParts[1].trim() : locationParts[0].trim();
         const citySplit = addressPart.split('-');
         const cityField = citySplit.length > 1 ? citySplit[citySplit.length-2].split(',').pop()?.trim() + ' - ' + citySplit[citySplit.length-1].trim() : addressPart;
-        const text = `*MONITORAMENTO GRUPO TMSEG*
+        const isDHL = /DHL/i.test(mission.client || '');
+        const fmtTime = (iso?: string) => {
+            if (!iso) return '';
+            try { return new Date(iso).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', timeZone: 'America/Sao_Paulo' }); } catch { return ''; }
+        };
+        const text = isDHL ? `*ESCOLTA ARMADA*⚡️
+
+🗒️*SE:* ${(mission.dhl_se_number || '').toString().trim().toUpperCase()}
+🚔*VIATURA:* ${mission.vehicleId || ''}
+🥷*AGT 1:* ${formatFL(mission.agent1)}
+🥷*AGT 2:* ${formatFL(mission.agent2)}
+
+👔 *CLIENTE:* DHL
+🏦*ORIGEM:* ${mission.origin || ''}
+🏭*DESTINO:* ${(mission.destination || '').replace(/\s*[—-]\s*DESTINO\s+A\s+DEFINIR\s*$/i, '').trim()}
+👨‍🦰*MOTORISTA:* ${formatFL(mission.driver_name)}
+📞*FONE:* ${mission.driver_phone || ''}
+🚛 *CAVALO:* ${mission.clientVehicle?.plate || ''}
+🚛 *CARRETA:* ${mission.clientVehicle2?.plate || ''}
+
+🕑*INÍCIO PREVISTO:* ${fmtTime(mission.createdAt)}
+🕑*CHEGADA NA ORIGEM:* 
+🧭 *INÍCIO DE OPERAÇÃO:* ${fmtTime(mission.startTime)}
+🧭 *FIM DE OPERAÇÃO:* ${fmtTime(mission.endTime)}
+
+🖋️ *STATUS:* ${mission.status.toUpperCase()}${mission.currentLocation ? ' — ' + locationParts[0].trim().toUpperCase() : ''}` : `*MONITORAMENTO GRUPO TMSEG*
 *OS:* ${mission.id} | *STATUS:* ${mission.status.toUpperCase()}
 
 🗓 *DATA:* ${dateStr} *HORA:* ${timeStr}
 🛡 *OPERAÇÃO:* ${mission.mission_type?.toUpperCase() || 'CARACTERIZADA'}
-🏢 *CLIENTE:* ${/DHL/i.test(mission.client || '') ? 'DHL' : mission.client}
+🏢 *CLIENTE:* ${mission.client}
 
 📍 *ORIGEM:* ${mission.origin || 'N/A'}
 🏁 *DESTINO:* ${(mission.destination || 'N/A').replace(/\s*[—-]\s*DESTINO\s+A\s+DEFINIR\s*$/i, '').trim() || 'N/A'}
