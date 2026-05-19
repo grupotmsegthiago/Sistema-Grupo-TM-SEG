@@ -1066,7 +1066,10 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
 🚔 *VIATURA:* ${searchVehicle || 'N/A'}
 👮 *AGENTE 01:* ${formatFL(editData.agent1)}
 👮 *AGENTE 02:* ${formatFL(editData.agent2)}
-
+${/DHL/i.test(mission.client || '') && finalStatus === MissionStatus.COMPLETED ? `
+⏱ *HORA INICIAL:* ${editData.startTime || 'N/A'}        🛣 *KM INICIAL:* ${editData.startKm || 'N/A'}
+⏱ *HORA FINAL:* ${editData.endTime || 'N/A'}           🛣 *KM FINAL:* ${editData.endKm || 'N/A'}
+` : ''}
 📈*PROGRESSO DA MISSÃO:* ${Math.floor(progressValue)}%
 📣 *OCORRÊNCIA:* ${finalDescription || 'SEM INFORMAÇÃO'}
 🏙️ *LOCALIZAÇÃO:* ${cityPart.toUpperCase()}
