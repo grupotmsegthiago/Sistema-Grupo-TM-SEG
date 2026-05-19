@@ -3,12 +3,14 @@ import { authFetch } from '../lib/authFetch';
 import { formatDateBR, formatDateTimeBR } from '../lib/dateUtils';
 import { supabase } from '../lib/supabase';
 import { MissionStatus } from '../types';
+import * as XLSX from 'xlsx';
 import {
     Search, ClipboardCheck, RefreshCw, Loader2,
     Building2, CheckCircle2, AlertTriangle, Calendar,
     FileText, Hash, Lock, Eye, X, Save, ShieldCheck,
     ImagePlus, Trash2, ZoomIn, Receipt, CreditCard,
-    CheckSquare, Square, ListChecks, ArrowRight, ExternalLink
+    CheckSquare, Square, ListChecks, ArrowRight, ExternalLink,
+    Upload, Scale, FileSpreadsheet, HelpCircle, Download
 } from 'lucide-react';
 import { useNotification } from '../lib/NotificationContext';
 
@@ -216,7 +218,7 @@ const VendorVerificationControl: React.FC<VendorVerificationControlProps> = ({ o
     const loadData = async () => {
         setIsLoading(true);
         try {
-            const missionFields = 'id, client, provider, origin, destination, status, created_at, start_time, end_time, start_km, end_km, total_distance, revenue_value, cost_value, toll_value, toll_value_provider, billing_approved, vendor_os_number, invoice_number, release_date, payment_date, verified_by, verified_at, client_vehicle, client_vehicle_2';
+            const missionFields = 'id, client, provider, origin, destination, status, created_at, start_time, end_time, start_km, end_km, total_distance, revenue_value, cost_value, toll_value, toll_value_provider, billing_approved, vendor_os_number, invoice_number, release_date, payment_date, verified_by, verified_at, client_vehicle, client_vehicle_2, vehicle_id';
             const fetchAllMissions = async () => {
                 let all: any[] = [];
                 let from = 0;
@@ -236,20 +238,24 @@ const VendorVerificationControl: React.FC<VendorVerificationControlProps> = ({ o
                 return all;
             };
 
-            const [clientsRes, missionData, vehiclesRes] = await Promise.all([
+            const [clientsRes, missionData, vehiclesRes, escortVehiclesRes] = await Promise.all([
                 supabase.from('clients').select('id, name, trading_name').eq('status', 'Ativo').order('name'),
                 fetchAllMissions(),
-                supabase.from('client_vehicles').select('id, plate, model')
+                supabase.from('client_vehicles').select('id, plate, model'),
+                supabase.from('vehicles').select('id, plate, model')
             ]);
 
             if (clientsRes.data) setClients(clientsRes.data);
 
             const vehicleMap = new Map<number, { plate: string; model: string }>();
             (vehiclesRes.data || []).forEach((v: any) => vehicleMap.set(v.id, { plate: v.plate || '', model: v.model || '' }));
+            const escortMap = new Map<number, { plate: string; model: string }>();
+            (escortVehiclesRes.data || []).forEach((v: any) => escortMap.set(v.id, { plate: v.plate || '', model: v.model || '' }));
             const enrichedMissions = missionData.map((m: any) => {
                 const v1 = m.client_vehicle ? vehicleMap.get(m.client_vehicle) : null;
                 const v2 = m.client_vehicle_2 ? vehicleMap.get(m.client_vehicle_2) : null;
-                return { ...m, _plate1: v1?.plate || '', _plate2: v2?.plate || '' };
+                const ev = m.vehicle_id ? escortMap.get(m.vehicle_id) : null;
+                return { ...m, _plate1: v1?.plate || '', _plate2: v2?.plate || '', _escortPlate: ev?.plate || '' };
             });
 
             const uniqueProviders = [...new Set(enrichedMissions.map((m: any) => m.provider).filter(Boolean))].sort();
@@ -607,6 +613,24 @@ const VendorVerificationControl: React.FC<VendorVerificationControlProps> = ({ o
         }
     }, [stats, missions, saveStatsSnapshot]);
 
+    // --- Conferência de Divergências (Boletim do Fornecedor) ---
+    const [divergenceOpen, setDivergenceOpen] = useState(false);
+    const [divergenceLoading, setDivergenceLoading] = useState(false);
+    const [divergenceFileName, setDivergenceFileName] = useState('');
+    const [divergenceRows, setDivergenceRows] = useState<any[]>([]);
+    const [divergenceResults, setDivergenceResults] = useState<any[]>([]);
+    const [divergenceFilter, setDivergenceFilter] = useState<'DIVERGENT' | 'NOT_FOUND' | 'OK' | 'ALL'>('DIVERGENT');
+    const [divergenceTolerance, setDivergenceTolerance] = useState(10);
+    const divergenceFileInputRef = React.useRef<HTMLInputElement>(null);
+
+    // Status derivado da tolerância atual (atualiza ao mudar o slider sem reprocessar)
+    const divergenceResultsView = useMemo(() => {
+        return divergenceResults.map(r => ({
+            ...r,
+            status: !r.mission ? 'NOT_FOUND' : (Math.abs(r.diff) > divergenceTolerance ? 'DIVERGENT' : 'OK')
+        }));
+    }, [divergenceResults, divergenceTolerance]);
+
     const [statsHistory, setStatsHistory] = useState<any[]>([]);
     const loadStatsHistory = async () => {
         const { data } = await supabase.from('system_logs')
@@ -622,6 +646,326 @@ const VendorVerificationControl: React.FC<VendorVerificationControlProps> = ({ o
             });
             setStatsHistory(parsed);
         }
+    };
+
+    // ============== Conferência de Divergências de Valor ==============
+    const normalizePlate = (s: any): string => String(s || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+    const splitPlates = (s: any): string[] => String(s || '')
+        .toUpperCase()
+        .split(/[\s,;/|\\]+/)
+        .map(p => p.replace(/[^A-Z0-9]/g, ''))
+        .filter(p => p.length >= 6 && p.length <= 8);
+    const parseMoney = (v: any): number => {
+        if (v === null || v === undefined || v === '') return 0;
+        if (typeof v === 'number') return v;
+        const s = String(v).replace(/[R$\s.]/g, '').replace(',', '.');
+        const n = parseFloat(s);
+        return isNaN(n) ? 0 : n;
+    };
+    const parseSheetDate = (v: any): Date | null => {
+        if (v === null || v === undefined || v === '') return null;
+        if (v instanceof Date) return v;
+        if (typeof v === 'number') {
+            const d = XLSX.SSF.parse_date_code(v);
+            if (d) return new Date(d.y, d.m - 1, d.d, d.H || 0, d.M || 0, d.S || 0);
+        }
+        const s = String(v).trim();
+        const m = s.match(/^(\d{1,2})[\/-](\d{1,2})[\/-](\d{2,4})/);
+        if (m) {
+            const day = parseInt(m[1], 10);
+            const mon = parseInt(m[2], 10) - 1;
+            let yr = parseInt(m[3], 10);
+            if (yr < 100) yr += 2000;
+            return new Date(yr, mon, day);
+        }
+        const d = new Date(s);
+        return isNaN(d.getTime()) ? null : d;
+    };
+    const parseSheetTime = (v: any): { h: number; m: number } | null => {
+        if (v === null || v === undefined || v === '') return null;
+        if (typeof v === 'number') {
+            const total = Math.round(v * 24 * 60);
+            return { h: Math.floor(total / 60) % 24, m: total % 60 };
+        }
+        const s = String(v).trim();
+        const mm = s.match(/(\d{1,2})[:h](\d{1,2})/i);
+        if (mm) return { h: parseInt(mm[1], 10), m: parseInt(mm[2], 10) };
+        return null;
+    };
+    const combineDateTime = (d: Date | null, t: { h: number; m: number } | null): Date | null => {
+        if (!d) return null;
+        const out = new Date(d.getTime());
+        if (t) { out.setHours(t.h, t.m, 0, 0); }
+        return out;
+    };
+    const dateKey = (d: Date | null): string => d ? `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}` : '';
+
+    const handleDivergenceFile = async (file: File) => {
+        setDivergenceLoading(true);
+        setDivergenceFileName(file.name);
+        try {
+            const buffer = await file.arrayBuffer();
+            const wb = XLSX.read(buffer, { type: 'array', cellDates: false });
+            // Procurar primeira sheet que contenha "Boletim" no nome, senão a primeira
+            let sheetName = wb.SheetNames.find(n => /boletim/i.test(n)) || wb.SheetNames[0];
+            const ws = wb.Sheets[sheetName];
+            const aoa: any[][] = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '', raw: true });
+
+            // Detectar linha de cabeçalho: contém "VIATURA" e ("TOTAL" ou "KM INICIAL")
+            let headerIdx = -1;
+            for (let i = 0; i < Math.min(aoa.length, 30); i++) {
+                const row = aoa[i].map(c => String(c || '').toUpperCase().trim());
+                if (row.some(c => c.includes('VIATURA')) && row.some(c => c.includes('KM INICIAL'))) {
+                    headerIdx = i;
+                    break;
+                }
+            }
+            if (headerIdx === -1) {
+                throw new Error('Cabeçalho não encontrado. Verifique se a planilha possui as colunas VIATURA e KM INICIAL.');
+            }
+            const headerRow = aoa[headerIdx].map((c: any) => String(c || '').toUpperCase().trim());
+            const hasMoneyCol = headerRow.some(h => h === 'TOTAL' || h.includes('TOTAL')) || headerRow.some(h => h === 'VALOR' || h.includes('VALOR'));
+            const hasDateCol = headerRow.some(h => h.includes('DATA'));
+            if (!hasMoneyCol) throw new Error('Coluna de valor não encontrada (esperado "TOTAL" ou "VALOR" no cabeçalho).');
+            if (!hasDateCol) throw new Error('Coluna de data não encontrada (esperado "DATA INÍCIO" no cabeçalho).');
+            const header = aoa[headerIdx].map((c: any) => String(c || '').toUpperCase().trim());
+            const colIdx = (...names: string[]): number => {
+                for (const n of names) {
+                    const idx = header.findIndex(h => h === n || h.includes(n));
+                    if (idx >= 0) return idx;
+                }
+                return -1;
+            };
+            const idxNumero = colIdx('Nº', 'NUMERO', 'OS');
+            const idxRota = colIdx('ROTA');
+            const idxDataIni = colIdx('DATA INÍCIO', 'DATA INICIO', 'DATA INICIAL');
+            const idxHoraIni = colIdx('HORA INÍCIO', 'HORA INICIO', 'HORA INICIAL');
+            const idxDataFim = colIdx('DATA FIM', 'DATA FINAL', 'DATA TÉRMINO', 'DATA TERMINO');
+            const idxHoraFim = colIdx('HORA FIM', 'HORA FINAL', 'HORA TÉRMINO', 'HORA TERMINO');
+            const idxViatura = colIdx('VIATURA');
+            const idxEscoltado = colIdx('ESCOLTADO', 'VEÍC. ESCOLTADO', 'VEIC. ESCOLTADO');
+            const idxKmIni = colIdx('KM INICIAL');
+            const idxKmFim = colIdx('KM FINAL');
+            const idxKmTot = colIdx('KM TOTAL');
+            const idxPedagio = colIdx('PEDÁGIO', 'PEDAGIO');
+            const idxTotal = colIdx('TOTAL');
+            const idxValor = colIdx('VALOR');
+
+            const rows: any[] = [];
+            for (let i = headerIdx + 1; i < aoa.length; i++) {
+                const r = aoa[i];
+                if (!r || r.every((c: any) => c === '' || c === null || c === undefined)) continue;
+                const numero = String(r[idxNumero] || '').trim();
+                const dataIni = parseSheetDate(r[idxDataIni]);
+                if (!numero && !dataIni) continue;
+                // Ignorar linhas de total/rodapé (sem data e sem placa)
+                const viatura = String(r[idxViatura] || '').trim();
+                if (!viatura && !dataIni) continue;
+                const horaIni = parseSheetTime(r[idxHoraIni]);
+                const startDt = combineDateTime(dataIni, horaIni);
+                const dataFim = parseSheetDate(r[idxDataFim]);
+                const horaFim = parseSheetTime(r[idxHoraFim]);
+                const endDt = combineDateTime(dataFim, horaFim);
+                const rawValor = parseMoney(r[idxValor]);
+                const rawTotal = parseMoney(r[idxTotal]);
+                rows.push({
+                    rowNumber: i + 1,
+                    numero,
+                    rota: String(r[idxRota] || '').trim(),
+                    valor: rawValor,
+                    viatura,
+                    viaturaNorm: normalizePlate(viatura),
+                    escoltado: String(r[idxEscoltado] || '').trim(),
+                    escoltadoPlates: splitPlates(r[idxEscoltado]),
+                    dataIni,
+                    horaIni,
+                    startDt,
+                    dataFim,
+                    horaFim,
+                    endDt,
+                    kmIni: parseMoney(r[idxKmIni]),
+                    kmFim: parseMoney(r[idxKmFim]),
+                    kmTot: parseMoney(r[idxKmTot]),
+                    pedagio: parseMoney(r[idxPedagio]),
+                    total: rawTotal > 0 ? rawTotal : rawValor
+                });
+            }
+            setDivergenceRows(rows);
+
+            // ---- Matching ----
+            // Indexar missões por dateKey(start_time) e por placa escolta
+            const missionsArr = missions || [];
+            const byDate = new Map<string, any[]>();
+            missionsArr.forEach((m: any) => {
+                if (!m.start_time) return;
+                const dk = dateKey(new Date(m.start_time));
+                if (!byDate.has(dk)) byDate.set(dk, []);
+                byDate.get(dk)!.push(m);
+            });
+            const usedMissionIds = new Set<string>();
+            const results: any[] = [];
+
+            for (const row of rows) {
+                const candidates: { mission: any; score: number; reasons: string[] }[] = [];
+
+                // 1) Match direto por vendor_os_number (se preenchido)
+                if (row.numero) {
+                    missionsArr.forEach((m: any) => {
+                        if (m.vendor_os_number && String(m.vendor_os_number).trim().toUpperCase() === row.numero.toUpperCase()) {
+                            candidates.push({ mission: m, score: 200, reasons: ['Nº OS Fornecedor'] });
+                        }
+                    });
+                }
+
+                // 2) Heurística por placa escolta + data + janela
+                const dk = dateKey(row.dataIni);
+                const sameDay = byDate.get(dk) || [];
+                const prevDay = byDate.get(dateKey(row.dataIni ? new Date(row.dataIni.getTime() - 86400000) : null)) || [];
+                const nextDay = byDate.get(dateKey(row.dataIni ? new Date(row.dataIni.getTime() + 86400000) : null)) || [];
+                const pool = [...sameDay, ...prevDay, ...nextDay];
+
+                pool.forEach((m: any) => {
+                    let score = 0;
+                    const reasons: string[] = [];
+                    const mEscort = normalizePlate(m._escortPlate);
+                    if (row.viaturaNorm && mEscort && row.viaturaNorm === mEscort) {
+                        score += 80; reasons.push('Placa Escolta');
+                    }
+                    const clientPlates = [normalizePlate(m._plate1), normalizePlate(m._plate2)].filter(Boolean);
+                    if (row.escoltadoPlates.some((p: string) => clientPlates.includes(p))) {
+                        score += 50; reasons.push('Placa Escoltado');
+                    }
+                    // Data início
+                    if (m.start_time && row.startDt) {
+                        const mStart = new Date(m.start_time);
+                        const diffMs = Math.abs(mStart.getTime() - row.startDt.getTime());
+                        const diffMin = diffMs / 60000;
+                        if (dateKey(mStart) === dk) score += 25;
+                        if (diffMin <= 30) { score += 25; reasons.push('Horário'); }
+                        else if (diffMin <= 120) { score += 10; }
+                    }
+                    // KM inicial
+                    if (row.kmIni && m.start_km) {
+                        const diff = Math.abs(row.kmIni - m.start_km);
+                        if (diff <= 5) { score += 20; reasons.push('KM inicial'); }
+                        else if (diff <= 50) { score += 5; }
+                    }
+                    if (score > 0) candidates.push({ mission: m, score, reasons });
+                });
+
+                candidates.sort((a, b) => b.score - a.score);
+                // Pegar primeiro candidato não utilizado com score mínimo
+                let best: { mission: any; score: number; reasons: string[] } | null = null;
+                for (const c of candidates) {
+                    if (c.score >= 80 && !usedMissionIds.has(String(c.mission.id))) {
+                        best = c; break;
+                    }
+                }
+                // Se nenhum disponível mas há candidato forte (>=120), permitir reuso
+                if (!best && candidates.length > 0 && candidates[0].score >= 120) best = candidates[0];
+
+                if (!best) {
+                    results.push({
+                        status: 'NOT_FOUND',
+                        row,
+                        mission: null,
+                        valueProvider: row.total,
+                        valueSystem: 0,
+                        diff: row.total,
+                        reasons: [],
+                        details: []
+                    });
+                    continue;
+                }
+
+                usedMissionIds.add(String(best.mission.id));
+                const m = best.mission;
+                const systemCost = (m.cost_value || 0) + Math.max(0, m.toll_value_provider ?? m.toll_value ?? 0);
+                const diff = row.total - systemCost;
+                const details: { field: string; planilha: any; sistema: any }[] = [];
+
+                // Campo a campo
+                if (m.start_km && row.kmIni && Math.abs(row.kmIni - m.start_km) > 1) {
+                    details.push({ field: 'KM Inicial', planilha: row.kmIni, sistema: m.start_km });
+                }
+                if (m.end_km && row.kmFim && Math.abs(row.kmFim - m.end_km) > 1) {
+                    details.push({ field: 'KM Final', planilha: row.kmFim, sistema: m.end_km });
+                }
+                if (m.start_time && row.startDt) {
+                    const diffMin = Math.abs(new Date(m.start_time).getTime() - row.startDt.getTime()) / 60000;
+                    if (diffMin > 15) details.push({ field: 'Início', planilha: formatDateTimeBR(row.startDt.toISOString()), sistema: formatDateTimeBR(m.start_time) });
+                }
+                if (m.end_time && row.endDt) {
+                    const diffMin = Math.abs(new Date(m.end_time).getTime() - row.endDt.getTime()) / 60000;
+                    if (diffMin > 15) details.push({ field: 'Fim', planilha: formatDateTimeBR(row.endDt.toISOString()), sistema: formatDateTimeBR(m.end_time) });
+                }
+                if (row.pedagio && Math.abs(row.pedagio - (m.toll_value_provider ?? m.toll_value ?? 0)) > 0.5) {
+                    details.push({ field: 'Pedágio', planilha: row.pedagio, sistema: m.toll_value_provider ?? m.toll_value ?? 0 });
+                }
+                const mEscort = normalizePlate(m._escortPlate);
+                if (row.viaturaNorm && mEscort && row.viaturaNorm !== mEscort) {
+                    details.push({ field: 'Placa Escolta', planilha: row.viatura, sistema: m._escortPlate });
+                }
+
+                results.push({
+                    status: Math.abs(diff) > divergenceTolerance ? 'DIVERGENT' : 'OK',
+                    row,
+                    mission: m,
+                    valueProvider: row.total,
+                    valueSystem: systemCost,
+                    diff,
+                    matchScore: best.score,
+                    reasons: best.reasons,
+                    details
+                });
+            }
+
+            setDivergenceResults(results);
+            setDivergenceFilter('DIVERGENT');
+            showNotification(`Conferência concluída: ${results.length} linhas analisadas.`, 'success');
+        } catch (err: any) {
+            console.error(err);
+            showNotification(`Erro ao processar a planilha: ${err.message || err}`, 'error');
+            setDivergenceRows([]);
+            setDivergenceResults([]);
+        } finally {
+            setDivergenceLoading(false);
+        }
+    };
+
+    const exportDivergenceReport = () => {
+        if (divergenceResultsView.length === 0) return;
+        const data = divergenceResultsView
+            .filter(r => divergenceFilter === 'ALL' || r.status === divergenceFilter)
+            .map(r => ({
+                'OS Fornecedor': r.row.numero,
+                'OS TMSEG': r.mission ? r.mission.id : '(não encontrada)',
+                'Status': r.status,
+                'Rota': r.row.rota,
+                'Placa Escolta (Fornecedor)': r.row.viatura,
+                'Placa Escolta (TMSEG)': r.mission?._escortPlate || '',
+                'Placa Escoltado (Fornecedor)': r.row.escoltado,
+                'Placa Escoltado (TMSEG)': [r.mission?._plate1, r.mission?._plate2].filter(Boolean).join(' / '),
+                'Início Fornecedor': r.row.startDt ? formatDateTimeBR(r.row.startDt.toISOString()) : '',
+                'Início TMSEG': r.mission?.start_time ? formatDateTimeBR(r.mission.start_time) : '',
+                'KM Ini Fornecedor': r.row.kmIni || 0,
+                'KM Ini TMSEG': r.mission?.start_km || 0,
+                'KM Fim Fornecedor': r.row.kmFim || 0,
+                'KM Fim TMSEG': r.mission?.end_km || 0,
+                'Pedágio Fornecedor': r.row.pedagio || 0,
+                'Pedágio TMSEG': r.mission?.toll_value_provider ?? r.mission?.toll_value ?? 0,
+                'Total Fornecedor (R$)': r.valueProvider,
+                'Total TMSEG (R$)': r.valueSystem,
+                'Diferença (R$)': r.diff,
+                'Score Match': r.matchScore || 0,
+                'Critérios': (r.reasons || []).join(', '),
+                'Campos Divergentes': (r.details || []).map((d: any) => d.field).join(', ')
+            }));
+        const ws = XLSX.utils.json_to_sheet(data);
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, 'Divergências');
+        const fname = `Divergencias_${new Date().toISOString().slice(0, 10)}.xlsx`;
+        XLSX.writeFile(wb, fname);
     };
 
     return (
@@ -933,6 +1277,18 @@ const VendorVerificationControl: React.FC<VendorVerificationControlProps> = ({ o
                     <div>
                         <p className={`text-xs font-black uppercase tracking-widest ${showAuditPanel ? 'text-white' : 'text-red-600'}`}>Auditoria</p>
                         <p className={`text-[9px] font-bold ${showAuditPanel ? 'text-red-100' : 'text-gray-400'}`}>Rastreamento</p>
+                    </div>
+                </button>
+
+                <button
+                    data-testid="btn-open-divergence"
+                    onClick={() => setDivergenceOpen(true)}
+                    className="rounded-2xl px-5 py-3 flex items-center gap-3 min-w-[150px] bg-white border border-gray-200 hover:bg-amber-50 hover:border-amber-300 transition-all"
+                >
+                    <Scale size={24} className="text-amber-600" />
+                    <div className="text-left">
+                        <p className="text-xs font-black uppercase tracking-widest text-amber-700">Conferir Boletim</p>
+                        <p className="text-[9px] font-bold text-gray-400">Divergências de Valor</p>
                     </div>
                 </button>
             </div>
@@ -1394,6 +1750,229 @@ const VendorVerificationControl: React.FC<VendorVerificationControlProps> = ({ o
                     </div>
                 )}
             </div>
+
+            {/* ============== Modal de Conferência de Divergências ============== */}
+            {divergenceOpen && (
+                <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4" data-testid="modal-divergence">
+                    <div className="bg-white rounded-2xl shadow-2xl w-full max-w-7xl max-h-[92vh] flex flex-col overflow-hidden">
+                        <div className="bg-amber-50 border-b border-amber-200 px-6 py-4 flex items-center justify-between">
+                            <div className="flex items-center gap-3">
+                                <Scale className="text-amber-600" size={26} />
+                                <div>
+                                    <h2 className="text-base font-black text-amber-800 uppercase tracking-wide">Conferência de Divergências de Valor</h2>
+                                    <p className="text-[11px] text-amber-700 font-medium">Importe o Boletim do fornecedor (.xlsx) e compare cada OS com o sistema TMSEG.</p>
+                                </div>
+                            </div>
+                            <button onClick={() => setDivergenceOpen(false)} className="p-2 rounded-lg hover:bg-amber-100" data-testid="btn-close-divergence">
+                                <X size={20} className="text-amber-700" />
+                            </button>
+                        </div>
+
+                        <div className="p-6 overflow-y-auto flex-1">
+                            {/* Toolbar */}
+                            <div className="flex flex-wrap items-center gap-3 mb-5">
+                                <input
+                                    ref={divergenceFileInputRef}
+                                    type="file"
+                                    accept=".xlsx,.xls"
+                                    className="hidden"
+                                    onChange={e => { const f = e.target.files?.[0]; if (f) handleDivergenceFile(f); e.target.value = ''; }}
+                                    data-testid="input-divergence-file"
+                                />
+                                <button
+                                    onClick={() => divergenceFileInputRef.current?.click()}
+                                    disabled={divergenceLoading}
+                                    className="px-4 py-2.5 bg-amber-600 hover:bg-amber-700 text-white text-xs font-black uppercase tracking-widest rounded-lg flex items-center gap-2 disabled:opacity-50"
+                                    data-testid="btn-upload-divergence"
+                                >
+                                    {divergenceLoading ? <Loader2 size={16} className="animate-spin" /> : <Upload size={16} />}
+                                    {divergenceLoading ? 'Processando...' : 'Importar Boletim (.xlsx)'}
+                                </button>
+                                {divergenceFileName && (
+                                    <span className="text-xs text-gray-600 flex items-center gap-2">
+                                        <FileSpreadsheet size={14} className="text-emerald-600" />
+                                        {divergenceFileName}
+                                    </span>
+                                )}
+                                <div className="flex items-center gap-2 text-[11px] text-gray-600">
+                                    <label className="font-bold uppercase tracking-widest">Tolerância:</label>
+                                    <input
+                                        type="number"
+                                        min={0}
+                                        step={1}
+                                        value={divergenceTolerance}
+                                        onChange={e => setDivergenceTolerance(Math.max(0, parseFloat(e.target.value) || 0))}
+                                        className="w-20 px-2 py-1 border rounded text-xs"
+                                        data-testid="input-divergence-tolerance"
+                                    />
+                                    <span>R$</span>
+                                </div>
+                                {divergenceResultsView.length > 0 && (
+                                    <>
+                                        <div className="flex items-center gap-1 ml-auto">
+                                            {([
+                                                { v: 'DIVERGENT', l: 'Divergentes', c: 'red' },
+                                                { v: 'NOT_FOUND', l: 'Não Encontradas', c: 'orange' },
+                                                { v: 'OK', l: 'Conferidas', c: 'green' },
+                                                { v: 'ALL', l: 'Todas', c: 'gray' }
+                                            ] as const).map(opt => {
+                                                const count = opt.v === 'ALL' ? divergenceResultsView.length : divergenceResultsView.filter(r => r.status === opt.v).length;
+                                                const active = divergenceFilter === opt.v;
+                                                return (
+                                                    <button
+                                                        key={opt.v}
+                                                        onClick={() => setDivergenceFilter(opt.v)}
+                                                        className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${active ? `bg-${opt.c}-600 text-white` : `bg-${opt.c}-50 text-${opt.c}-700 hover:bg-${opt.c}-100`}`}
+                                                        data-testid={`btn-divfilter-${opt.v}`}
+                                                    >
+                                                        {opt.l} ({count})
+                                                    </button>
+                                                );
+                                            })}
+                                        </div>
+                                        <button
+                                            onClick={exportDivergenceReport}
+                                            className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-[10px] font-black uppercase tracking-widest flex items-center gap-2"
+                                            data-testid="btn-export-divergence"
+                                        >
+                                            <Download size={14} /> Exportar
+                                        </button>
+                                    </>
+                                )}
+                            </div>
+
+                            {/* Conteúdo */}
+                            {divergenceResultsView.length === 0 && !divergenceLoading && (
+                                <div className="text-center py-14 border-2 border-dashed border-amber-200 rounded-2xl bg-amber-50/40">
+                                    <FileSpreadsheet className="mx-auto text-amber-400 mb-3" size={48} />
+                                    <p className="text-sm font-black text-amber-800 uppercase tracking-widest">Selecione o Boletim do fornecedor</p>
+                                    <p className="text-xs text-gray-500 mt-2 max-w-md mx-auto">O sistema fará o cruzamento por placa de escolta, placa escoltada, datas/horas e KM, e apontará apenas as divergências de valor acima de <b>R$ {divergenceTolerance.toFixed(2)}</b>.</p>
+                                </div>
+                            )}
+
+                            {divergenceResultsView.length > 0 && (
+                                <>
+                                    {(() => {
+                                        const totals = divergenceResultsView.reduce((acc, r) => {
+                                            acc.provider += r.valueProvider || 0;
+                                            acc.system += r.valueSystem || 0;
+                                            if (r.status === 'DIVERGENT') { acc.divCount++; acc.divSum += r.diff; }
+                                            if (r.status === 'NOT_FOUND') { acc.nfCount++; acc.nfSum += r.valueProvider; }
+                                            if (r.status === 'OK') acc.okCount++;
+                                            return acc;
+                                        }, { provider: 0, system: 0, divCount: 0, divSum: 0, nfCount: 0, nfSum: 0, okCount: 0 });
+                                        return (
+                                            <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-5">
+                                                <div className="bg-gray-50 rounded-xl p-3 border border-gray-200">
+                                                    <p className="text-[9px] font-black text-gray-500 uppercase tracking-widest">Linhas analisadas</p>
+                                                    <p className="text-xl font-black text-gray-800">{divergenceResultsView.length}</p>
+                                                </div>
+                                                <div className="bg-emerald-50 rounded-xl p-3 border border-emerald-200">
+                                                    <p className="text-[9px] font-black text-emerald-700 uppercase tracking-widest">Conferidas</p>
+                                                    <p className="text-xl font-black text-emerald-700">{totals.okCount}</p>
+                                                </div>
+                                                <div className="bg-red-50 rounded-xl p-3 border border-red-200">
+                                                    <p className="text-[9px] font-black text-red-700 uppercase tracking-widest">Divergentes</p>
+                                                    <p className="text-xl font-black text-red-700">{totals.divCount}</p>
+                                                    <p className="text-[10px] text-red-600 font-bold">{formatCurrency(totals.divSum)}</p>
+                                                </div>
+                                                <div className="bg-orange-50 rounded-xl p-3 border border-orange-200">
+                                                    <p className="text-[9px] font-black text-orange-700 uppercase tracking-widest">Não Encontradas</p>
+                                                    <p className="text-xl font-black text-orange-700">{totals.nfCount}</p>
+                                                    <p className="text-[10px] text-orange-600 font-bold">{formatCurrency(totals.nfSum)}</p>
+                                                </div>
+                                                <div className="bg-blue-50 rounded-xl p-3 border border-blue-200">
+                                                    <p className="text-[9px] font-black text-blue-700 uppercase tracking-widest">Totais</p>
+                                                    <p className="text-[11px] font-bold text-gray-600">Forn.: <span className="text-blue-700">{formatCurrency(totals.provider)}</span></p>
+                                                    <p className="text-[11px] font-bold text-gray-600">Sist.: <span className="text-blue-700">{formatCurrency(totals.system)}</span></p>
+                                                </div>
+                                            </div>
+                                        );
+                                    })()}
+
+                                    <div className="border border-gray-200 rounded-xl overflow-hidden">
+                                        <div className="overflow-x-auto max-h-[55vh] overflow-y-auto">
+                                            <table className="w-full text-[11px]">
+                                                <thead className="bg-gray-100 sticky top-0 z-10">
+                                                    <tr className="text-gray-600 font-black uppercase text-[9px] tracking-widest">
+                                                        <th className="px-3 py-2 text-left">OS Fornecedor</th>
+                                                        <th className="px-3 py-2 text-left">OS TMSEG</th>
+                                                        <th className="px-3 py-2 text-left">Data</th>
+                                                        <th className="px-3 py-2 text-left">Placa Esc.</th>
+                                                        <th className="px-3 py-2 text-left">Escoltado</th>
+                                                        <th className="px-3 py-2 text-right">Vlr Fornec.</th>
+                                                        <th className="px-3 py-2 text-right">Vlr TMSEG</th>
+                                                        <th className="px-3 py-2 text-right">Diferença</th>
+                                                        <th className="px-3 py-2 text-left">Observações</th>
+                                                        <th className="px-3 py-2 text-center"></th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody className="divide-y divide-gray-100">
+                                                    {divergenceResultsView.filter(r => divergenceFilter === 'ALL' || r.status === divergenceFilter).map((r, idx) => {
+                                                        const isDiv = r.status === 'DIVERGENT';
+                                                        const isNF = r.status === 'NOT_FOUND';
+                                                        return (
+                                                            <tr key={idx} className={`${isDiv ? 'bg-red-50/40' : isNF ? 'bg-orange-50/40' : 'bg-white'} hover:bg-gray-50`} data-testid={`row-divergence-${idx}`}>
+                                                                <td className="px-3 py-2 font-black text-gray-800">{r.row.numero || '—'}</td>
+                                                                <td className="px-3 py-2 font-mono text-blue-700">{r.mission ? `#${String(r.mission.id).slice(-6)}` : <span className="text-orange-700 font-bold">—</span>}</td>
+                                                                <td className="px-3 py-2 text-gray-600">{r.row.startDt ? formatDateTimeBR(r.row.startDt.toISOString()) : ''}</td>
+                                                                <td className="px-3 py-2">
+                                                                    <div className="font-bold text-gray-700">{r.row.viatura}</div>
+                                                                    {r.mission?._escortPlate && normalizePlate(r.mission._escortPlate) !== r.row.viaturaNorm && (
+                                                                        <div className="text-[9px] text-red-600 font-bold">sist: {r.mission._escortPlate}</div>
+                                                                    )}
+                                                                </td>
+                                                                <td className="px-3 py-2 text-gray-700">{r.row.escoltado}</td>
+                                                                <td className="px-3 py-2 text-right font-black text-blue-700">{formatCurrency(r.valueProvider)}</td>
+                                                                <td className="px-3 py-2 text-right font-black text-emerald-700">{r.mission ? formatCurrency(r.valueSystem) : '—'}</td>
+                                                                <td className={`px-3 py-2 text-right font-black ${Math.abs(r.diff) > divergenceTolerance ? 'text-red-600' : 'text-gray-500'}`}>
+                                                                    {r.mission ? formatCurrency(r.diff) : <span className="text-orange-600">{formatCurrency(r.valueProvider)}</span>}
+                                                                </td>
+                                                                <td className="px-3 py-2">
+                                                                    {isNF ? (
+                                                                        <span className="px-2 py-0.5 bg-orange-100 text-orange-700 rounded text-[9px] font-black uppercase">Sem missão correspondente</span>
+                                                                    ) : (
+                                                                        <div className="flex flex-wrap gap-1">
+                                                                            {(r.details || []).length === 0 && r.status === 'OK' && (
+                                                                                <span className="px-2 py-0.5 bg-emerald-100 text-emerald-700 rounded text-[9px] font-black uppercase">OK</span>
+                                                                            )}
+                                                                            {(r.details || []).map((d: any, i: number) => (
+                                                                                <span key={i} className="px-2 py-0.5 bg-amber-100 text-amber-800 rounded text-[9px] font-bold" title={`Forn: ${d.planilha} / Sist: ${d.sistema}`}>{d.field}</span>
+                                                                            ))}
+                                                                            {(r.reasons || []).length > 0 && (
+                                                                                <span className="text-[9px] text-gray-400 font-bold" title={`Critérios de match: ${(r.reasons || []).join(', ')}`}>match: {r.matchScore}</span>
+                                                                            )}
+                                                                        </div>
+                                                                    )}
+                                                                </td>
+                                                                <td className="px-3 py-2 text-center">
+                                                                    {r.mission && (
+                                                                        <button
+                                                                            onClick={() => onOpenMission && onOpenMission(r.mission.id)}
+                                                                            className="p-1.5 hover:bg-blue-100 rounded text-blue-600"
+                                                                            title="Abrir OS"
+                                                                            data-testid={`btn-open-mission-${idx}`}
+                                                                        >
+                                                                            <ExternalLink size={14} />
+                                                                        </button>
+                                                                    )}
+                                                                </td>
+                                                            </tr>
+                                                        );
+                                                    })}
+                                                    {divergenceResultsView.filter(r => divergenceFilter === 'ALL' || r.status === divergenceFilter).length === 0 && (
+                                                        <tr><td colSpan={10} className="px-4 py-8 text-center text-gray-400 text-xs font-bold">Nenhum item neste filtro.</td></tr>
+                                                    )}
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                    </div>
+                                </>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 };
