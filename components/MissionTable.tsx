@@ -1089,17 +1089,39 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
           )}
 
           {!isRestrictedClientView && (
-          <div className="flex-1 w-full max-w-[450px]">
-             <DailyGoalThermometer 
-                viewPeriod={viewPeriod} 
-                customStartDate={customStartDate} 
-                customEndDate={customEndDate}
-                missions={allMissions}
-                clientTables={clientTables}
-                providerTables={providerTables}
-                clientsData={clientsData}
-                onRefreshMissions={() => fetchMissions(true)}
-             />
+          <div className="flex flex-wrap gap-3 flex-1 w-full">
+             <div className="flex-1 min-w-[300px] max-w-[450px]">
+                <DailyGoalThermometer 
+                   viewPeriod={viewPeriod} 
+                   customStartDate={customStartDate} 
+                   customEndDate={customEndDate}
+                   missions={allMissions}
+                   clientTables={clientTables}
+                   providerTables={providerTables}
+                   clientsData={clientsData}
+                   onRefreshMissions={() => fetchMissions(true)}
+                />
+             </div>
+             <div className="flex-1 min-w-[300px] max-w-[450px]">
+                <DailyGoalThermometer 
+                   viewPeriod={viewPeriod} 
+                   customStartDate={customStartDate} 
+                   customEndDate={customEndDate}
+                   missions={allMissions}
+                   clientTables={clientTables}
+                   providerTables={providerTables}
+                   clientsData={clientsData}
+                   onRefreshMissions={() => fetchMissions(true)}
+                   clientFilter={(name) => {
+                     const n = (name || '').toUpperCase();
+                     return n.includes('DHL SUPPLY CHAIN') || n.includes('DHL LOGISTICS');
+                   }}
+                   dailyGoalOverride={40000}
+                   monthlyGoalOverride={40000 * 20}
+                   titleSuffix="DHL"
+                   accentClass="from-yellow-400 to-red-600"
+                />
+             </div>
           </div>
           )}
 

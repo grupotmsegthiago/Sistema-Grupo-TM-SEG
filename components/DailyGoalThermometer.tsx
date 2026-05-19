@@ -10,35 +10,34 @@ import {
   type CanonicalPeriod,
 } from '../lib/missionFinancialsCanonical';
 
-const DAILY_GOAL = 35000.00;
-const MONTHLY_GOAL = 700000.00;
-const WEEKLY_GOAL = DAILY_GOAL * 5;
-const YEARLY_GOAL = MONTHLY_GOAL * 12;
+const DEFAULT_DAILY_GOAL = 35000.00;
+const DEFAULT_MONTHLY_GOAL = 700000.00;
 
 // Calcula a meta proporcional ao período selecionado no filtro.
 // Para CUSTOM, prorata pelos dias do intervalo (usando dias úteis ~ 20/mês).
-function getGoalForPeriod(viewPeriod: string, customStartDate?: string, customEndDate?: string): number {
+function getGoalForPeriod(viewPeriod: string, customStartDate: string | undefined, customEndDate: string | undefined, dailyGoal: number, monthlyGoal: number): number {
+    const weekly = dailyGoal * 5;
+    const yearly = monthlyGoal * 12;
     switch (viewPeriod) {
         case 'TODAY':
         case 'YESTERDAY':
-            return DAILY_GOAL;
+            return dailyGoal;
         case 'WEEK':
-            return WEEKLY_GOAL;
+            return weekly;
         case 'MONTH':
-            return MONTHLY_GOAL;
+            return monthlyGoal;
         case 'YEAR':
-            return YEARLY_GOAL;
+            return yearly;
         case 'CUSTOM': {
-            if (!customStartDate || !customEndDate) return MONTHLY_GOAL;
+            if (!customStartDate || !customEndDate) return monthlyGoal;
             const start = new Date(customStartDate);
             const end = new Date(customEndDate);
             const days = Math.max(1, Math.round((end.getTime() - start.getTime()) / 86400000) + 1);
-            // Prorata mensal: dias / 30 * meta mensal (cobre intervalos curtos e longos)
-            return (days / 30) * MONTHLY_GOAL;
+            return (days / 30) * monthlyGoal;
         }
         case 'ALL':
         default:
-            return MONTHLY_GOAL;
+            return monthlyGoal;
     }
 }
 
@@ -51,6 +50,12 @@ interface Props {
     providerTables?: ProviderCostTable[];
     clientsData?: Client[];
     onRefreshMissions?: () => void | Promise<void>;
+    // Filtros opcionais para criar variantes (ex.: META DHL)
+    clientFilter?: (clientName: string) => boolean;
+    dailyGoalOverride?: number;
+    monthlyGoalOverride?: number;
+    titleSuffix?: string; // ex.: "DHL" → "Meta Agendada DHL (Hoje)"
+    accentClass?: string; // ex.: "from-yellow-400 to-red-600" para o ícone DHL
 }
 
 const formatCurrency = (val: number) => {
@@ -65,7 +70,9 @@ function getDateRange(viewPeriod: string, customStartDate?: string, customEndDat
     return getCanonicalDateRange(period, customStartDate, customEndDate);
 }
 
-const DailyGoalThermometer: React.FC<Props> = ({ viewPeriod = 'TODAY', customStartDate, customEndDate, missions: parentMissions, clientTables: parentClientTables, providerTables: parentProviderTables, clientsData: parentClientsData, onRefreshMissions }) => {
+const DailyGoalThermometer: React.FC<Props> = ({ viewPeriod = 'TODAY', customStartDate, customEndDate, missions: parentMissions, clientTables: parentClientTables, providerTables: parentProviderTables, clientsData: parentClientsData, onRefreshMissions, clientFilter, dailyGoalOverride, monthlyGoalOverride, titleSuffix, accentClass }) => {
+    const dailyGoal = typeof dailyGoalOverride === 'number' ? dailyGoalOverride : DEFAULT_DAILY_GOAL;
+    const monthlyGoal = typeof monthlyGoalOverride === 'number' ? monthlyGoalOverride : DEFAULT_MONTHLY_GOAL;
     const [isLoading, setIsLoading] = useState(false);
     const [userRole, setUserRole] = useState<string>('');
     const [currentTime, setCurrentTime] = useState(new Date());
@@ -91,9 +98,14 @@ const DailyGoalThermometer: React.FC<Props> = ({ viewPeriod = 'TODAY', customSta
         const [start, end] = getDateRange(viewPeriod, customStartDate, customEndDate);
         return parentMissions.filter(m => {
             const d = new Date(m.startTime || m.start_time || m.createdAt || m.created_at);
-            return d >= start && d <= end;
+            if (!(d >= start && d <= end)) return false;
+            if (clientFilter) {
+                const cname = ((m as any).originalClientName || (m as any).client || (m as any).client_name || '').toString();
+                if (!clientFilter(cname)) return false;
+            }
+            return true;
         });
-    }, [parentMissions, viewPeriod, customStartDate, customEndDate]);
+    }, [parentMissions, viewPeriod, customStartDate, customEndDate, clientFilter]);
 
     // CANÔNICO: delega o cálculo para a fonte única (mesma fórmula em todo o sistema).
     const { currentRevenue, currentCost } = useMemo(() => {
@@ -107,8 +119,8 @@ const DailyGoalThermometer: React.FC<Props> = ({ viewPeriod = 'TODAY', customSta
     }, [filteredMissions, parentClientTables, parentProviderTables, parentClientsData, currentTime]);
 
     const goal = useMemo(
-        () => getGoalForPeriod(viewPeriod, customStartDate, customEndDate),
-        [viewPeriod, customStartDate, customEndDate]
+        () => getGoalForPeriod(viewPeriod, customStartDate, customEndDate, dailyGoal, monthlyGoal),
+        [viewPeriod, customStartDate, customEndDate, dailyGoal, monthlyGoal]
     );
 
     const stats = useMemo(() => {
@@ -160,13 +172,14 @@ const DailyGoalThermometer: React.FC<Props> = ({ viewPeriod = 'TODAY', customSta
         setTimeout(() => setIsRefreshing(false), 500);
     }, [onRefreshMissions]);
 
-    const labelText = viewPeriod === 'TODAY' ? 'Meta Agendada (Hoje)' :
-                      viewPeriod === 'YESTERDAY' ? 'Meta Agendada (Ontem)' :
-                      viewPeriod === 'WEEK' ? 'Meta Semanal' :
-                      viewPeriod === 'MONTH' ? 'Meta Mensal' :
-                      viewPeriod === 'YEAR' ? 'Meta Anual' :
-                      viewPeriod === 'CUSTOM' ? 'Meta Período' :
-                      'Faturamento Período';
+    const suffix = titleSuffix ? ` ${titleSuffix}` : '';
+    const labelText = viewPeriod === 'TODAY' ? `Meta Agendada${suffix} (Hoje)` :
+                      viewPeriod === 'YESTERDAY' ? `Meta Agendada${suffix} (Ontem)` :
+                      viewPeriod === 'WEEK' ? `Meta Semanal${suffix}` :
+                      viewPeriod === 'MONTH' ? `Meta Mensal${suffix}` :
+                      viewPeriod === 'YEAR' ? `Meta Anual${suffix}` :
+                      viewPeriod === 'CUSTOM' ? `Meta Período${suffix}` :
+                      `Faturamento Período${suffix}`;
 
     return (
         <div className="group perspective-1000 w-full max-w-lg mx-auto">
@@ -175,7 +188,7 @@ const DailyGoalThermometer: React.FC<Props> = ({ viewPeriod = 'TODAY', customSta
                 <div className="flex justify-between items-center mb-4">
                     <div className="flex items-center gap-2.5">
                         <div className="relative shrink-0">
-                            <div className={`p-2 rounded-[15px] text-white shadow-lg transition-colors duration-500 ${stats.colorClass}`}>
+                            <div className={`p-2 rounded-[15px] text-white shadow-lg transition-colors duration-500 ${accentClass ? `bg-gradient-to-br ${accentClass}` : stats.colorClass}`}>
                                 <Target size={16} strokeWidth={3} />
                             </div>
                             <div className="absolute -top-1 -right-1">
