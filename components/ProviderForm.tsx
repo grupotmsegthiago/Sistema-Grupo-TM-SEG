@@ -358,13 +358,21 @@ const ProviderForm: React.FC<ProviderFormProps> = ({ onBack, onNavigateToVehicle
             alvara_url: formData.alvaraUrl,
             dhl_channel_preference: formData.dhl_channel_preference || 'both'
        };
+       const retryWithoutDhlPref = async (op: 'update' | 'insert') => {
+           const fallback = { ...payload };
+           delete (fallback as any).dhl_channel_preference;
+           if (op === 'update') return await supabase.from('providers').update(fallback).eq('id', id);
+           return await supabase.from('providers').insert([fallback]);
+       };
        if (id) {
-           const { error } = await supabase.from('providers').update(payload).eq('id', id);
+           let { error } = await supabase.from('providers').update(payload).eq('id', id);
+           if (error && /dhl_channel_preference/i.test(error.message)) ({ error } = await retryWithoutDhlPref('update'));
            if (error) throw new Error('Erro ao salvar fornecedor: ' + error.message);
            await logAction('UPDATE', 'Provider', id, `Fornecedor atualizado: ${formData.name}`);
        } else {
            payload.created_by = currentUser?.name || 'SISTEMA';
-           const { error } = await supabase.from('providers').insert([payload]);
+           let { error } = await supabase.from('providers').insert([payload]);
+           if (error && /dhl_channel_preference/i.test(error.message)) ({ error } = await retryWithoutDhlPref('insert'));
            if (error) throw error;
            await logAction('CREATE', 'Provider', 'NEW', `Fornecedor cadastrado: ${formData.name}`);
        }

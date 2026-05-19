@@ -443,7 +443,12 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
     // Isso permite que fornecedores com 'Alvará Vencido' apareçam na lista para seleção
     const [clientsRes, providersRes] = await Promise.all([
          supabase.from('clients').select('id, name, trading_name').eq('status', 'Ativo').order('trading_name', { ascending: true }),
-         supabase.from('providers').select('id, name, trading_name, type, dhl_channel_preference').neq('status', 'Bloqueado').order('name', { ascending: true })
+         supabase.from('providers').select('id, name, trading_name, type, dhl_channel_preference').neq('status', 'Bloqueado').order('name', { ascending: true }).then(async (res) => {
+           if (res.error && /dhl_channel_preference/i.test(res.error.message)) {
+             return await supabase.from('providers').select('id, name, trading_name, type').neq('status', 'Bloqueado').order('name', { ascending: true });
+           }
+           return res;
+         })
     ]);
     if (clientsRes.data) setDbClients(clientsRes.data as any);
     if (providersRes.data) setDbProviders(providersRes.data as any);

@@ -154,3 +154,8 @@ ALTER TABLE public.client_price_tables
 -- 8) Recarrega o cache de schema do PostgREST (Supabase) para que a API
 --    reconheça imediatamente as novas tabelas e colunas
 NOTIFY pgrst, 'reload schema';
+
+-- ITEM 8 (pendente): coluna usada pelo cadastro de fornecedor para guardar o
+-- canal padrão do link DHL (e-mail, whatsapp ou ambos). Sem ela, o SELECT que
+-- carrega fornecedores no formulário de OS retorna vazio.
+ALTER TABLE providers ADD COLUMN IF NOT EXISTS dhl_channel_preference TEXT;
