@@ -502,6 +502,25 @@ const ClientForm: React.FC<ClientFormProps> = ({
       } finally { setIsReverting(false); }
   };
 
+  const [isBulkDeleting, setIsBulkDeleting] = useState(false);
+  const handleBulkDeletePrices = async () => {
+      if (selectedPriceIds.length === 0) { showNotification('Atenção', 'Selecione pelo menos um item para excluir.', 'warning'); return; }
+      if (!confirm(`EXCLUIR ${selectedPriceIds.length} tabela(s) de preço selecionada(s)?\n\nEsta ação não pode ser desfeita.`)) return;
+      setIsBulkDeleting(true);
+      try {
+          const ids = [...selectedPriceIds];
+          const { error } = await supabase.from('client_price_tables').delete().in('id', ids);
+          if (error) throw error;
+          await logAction('DELETE', 'ClientPriceTable', ids.join(','), `Exclusão em massa: ${ids.length} tabelas de preço do cliente ${formData.name}`);
+          showNotification('Sucesso', `${ids.length} tabela(s) excluída(s).`, 'success');
+          setSelectedPriceIds([]);
+          fetchPriceTables(formData.name);
+      } catch (e) {
+          const msg = e instanceof Error ? e.message : 'Erro desconhecido';
+          showNotification('Erro', 'Erro ao excluir: ' + msg, 'error');
+      } finally { setIsBulkDeleting(false); }
+  };
+
   const handleSelectAllPrices = () => {
       if (selectedPriceIds.length === priceTables.length && priceTables.length > 0) setSelectedPriceIds([]);
       else setSelectedPriceIds(priceTables.map(t => t.id));
@@ -926,6 +945,9 @@ const ClientForm: React.FC<ClientFormProps> = ({
                             {isApplyingAdjustment ? <Loader2 size={16} className="animate-spin" /> : <TrendingUp size={16} />} Reajustar Selecionados
                           </button>
                           <button onClick={handleUndoAdjustment} disabled={isReverting} className="bg-white/10 hover:bg-white/20 text-white px-4 py-3 rounded-xl border border-white/20 text-[10px] font-black uppercase flex items-center gap-2 transition-all" title="Restaurar backup do reajuste"><RotateCcw size={14} /> Reverter</button>
+                          <button onClick={handleBulkDeletePrices} disabled={isBulkDeleting || selectedPriceIds.length === 0} className="bg-red-700 hover:bg-red-600 text-white px-4 py-3 rounded-xl border border-red-900/40 text-[10px] font-black uppercase flex items-center gap-2 transition-all disabled:opacity-40 disabled:cursor-not-allowed" title="Excluir os itens marcados" data-testid="button-bulk-delete-prices">
+                            {isBulkDeleting ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />} Excluir Selecionados {selectedPriceIds.length > 0 ? `(${selectedPriceIds.length})` : ''}
+                          </button>
                       </div>
                   </div>
               </div>
