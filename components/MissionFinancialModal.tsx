@@ -306,6 +306,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
   const isAdminFullAccess = userRoleLower === 'administrador' || fullEditMode;
   const [unlockOverride, setUnlockOverride] = useState(false);
   useEffect(() => { setUnlockOverride(false); setEditObservation(''); setFullEditMode(false); }, [mission?.id]);
+  useEffect(() => { if (!isOpen) { setFullEditMode(false); setUnlockOverride(false); setEditObservation(''); } }, [isOpen]);
   const isEffectivelyLocked = isBillingLocked && !unlockOverride && !isAdminFullAccess;
   
 
@@ -2722,9 +2723,17 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                         disabled={isController || isEffectivelyLocked}
                                     >
                                         <option value="">Automático (IA Detectando)</option>
-                                        {[...clientTables].sort((a, b) => (a.operation_type || '').localeCompare(b.operation_type || '')).map(t => (
-                                            <option key={t.id} value={t.id}>{t.operation_type}</option>
-                                        ))}
+                                        {(() => {
+                                            const missionClientShort = clientNameShort(mission.originalClientName || mission.client || '').toLowerCase().trim();
+                                            const onlyThisClient = clientTables.filter(t => {
+                                                const tShort = clientNameShort(t.client || '').toLowerCase().trim();
+                                                return missionClientShort && tShort && (tShort === missionClientShort || tShort.startsWith(missionClientShort) || missionClientShort.startsWith(tShort));
+                                            });
+                                            const list = onlyThisClient.length > 0 ? onlyThisClient : clientTables;
+                                            return [...list].sort((a, b) => (a.operation_type || '').localeCompare(b.operation_type || '')).map(t => (
+                                                <option key={t.id} value={t.id}>{onlyThisClient.length > 0 ? t.operation_type : `${t.operation_type} — ${t.client}`}</option>
+                                            ));
+                                        })()}
                                     </select>
                                     {manualClientTableId && (
                                         <button 
