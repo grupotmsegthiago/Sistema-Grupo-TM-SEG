@@ -155,6 +155,18 @@ export async function runDhlIntakeMigrations(): Promise<void> {
       ALTER TABLE dhl_supplier_intakes ALTER COLUMN provider_id TYPE TEXT USING provider_id::TEXT;
       ALTER TABLE provider_escoltistas ALTER COLUMN provider_id TYPE TEXT USING provider_id::TEXT;
       ALTER TABLE provider_intake_vehicles ALTER COLUMN provider_id TYPE TEXT USING provider_id::TEXT;
+
+      -- Espelhamento do intake para o cadastro principal de agentes.
+      ALTER TABLE agents ADD COLUMN IF NOT EXISTS orgao_emissor TEXT;
+      ALTER TABLE agents ADD COLUMN IF NOT EXISTS cnh_categoria TEXT;
+      ALTER TABLE agents ADD COLUMN IF NOT EXISTS rua TEXT;
+      ALTER TABLE agents ADD COLUMN IF NOT EXISTS numero TEXT;
+      ALTER TABLE agents ADD COLUMN IF NOT EXISTS complemento TEXT;
+      ALTER TABLE agents ADD COLUMN IF NOT EXISTS bairro TEXT;
+      ALTER TABLE agents ADD COLUMN IF NOT EXISTS cidade TEXT;
+      ALTER TABLE agents ADD COLUMN IF NOT EXISTS uf TEXT;
+      ALTER TABLE agents ADD COLUMN IF NOT EXISTS cep TEXT;
+      ALTER TABLE agents ADD COLUMN IF NOT EXISTS admissao DATE;
       -- Desabilita RLS — estas tabelas só são acessadas via API autenticada
       -- do backend (nunca diretamente pelo cliente). Sem isso, INSERTs falham
       -- com "new row violates row-level security policy".
@@ -1569,7 +1581,7 @@ export function registerDhlIntakeRoutes(
       let escoltistasFromAgents: any[] = [];
       if (intake.provider_name) {
         const { data: agentsData } = await sb.from('agents')
-          .select('name, cpf, rg, cnh, cnh_validity, cnv, cnv_validity, phone, status, provider')
+          .select('name, cpf, rg, cnh, cnh_validity, cnv, cnv_validity, phone, status, provider, orgao_emissor, cnh_categoria, rua, numero, complemento, bairro, cidade, uf, cep, admissao')
           .eq('provider', intake.provider_name)
           .neq('status', 'Bloqueado / Ação Trabalhista')
           .order('name', { ascending: true });
@@ -1578,16 +1590,21 @@ export function registerDhlIntakeRoutes(
           nome: a.name || '',
           cpf: a.cpf || '',
           rg: a.rg || '',
-          orgao_emissor: '',
+          orgao_emissor: a.orgao_emissor || '',
           cnh: a.cnh || '',
-          cnh_categoria: '',
+          cnh_categoria: a.cnh_categoria || '',
           cnh_vencimento: a.cnh_validity || '',
           cnv_numero: a.cnv || '',
           cnv_validade: a.cnv_validity || '',
-          rua: '', numero: '', complemento: '',
-          bairro: '', cidade: '', uf: '', cep: '',
+          rua: a.rua || '',
+          numero: a.numero || '',
+          complemento: a.complemento || '',
+          bairro: a.bairro || '',
+          cidade: a.cidade || '',
+          uf: a.uf || '',
+          cep: a.cep || '',
           celular: a.phone || '',
-          admissao: '',
+          admissao: a.admissao || '',
         }));
       }
 
@@ -1660,26 +1677,37 @@ export function registerDhlIntakeRoutes(
       const providerId = intake.provider_id;
 
       const persistEscoltista = async (a: any, label: string): Promise<{ id: string; snap: any }> => {
+        // Anti-IDOR: se veio com id, valida ownership antes de qualquer coisa.
+        let existingById: any = null;
         if (a.id) {
-          // Anti-IDOR: garante que o registro pertence ao fornecedor do intake
           const { data } = await sb.from('provider_escoltistas')
             .select('*')
             .eq('id', a.id)
             .eq('provider_id', providerId)
             .maybeSingle();
-          if (data) return { id: data.id, snap: data };
-          throw new Error(`${label}: registro selecionado não pertence ao fornecedor desta OS`);
+          if (!data) throw new Error(`${label}: registro selecionado não pertence ao fornecedor desta OS`);
+          existingById = data;
         }
-        // Validação completa de servidor (não confia no front)
+        // Validação completa de servidor — alinhada com o frontend.
+        // Vale para todo submit, inclusive quando há id (campos que estavam
+        // vazios no cadastro e foram preenchidos pelo fornecedor agora).
         const required: [string, string][] = [
-          ['nome', 'Nome'], ['cpf', 'CPF'], ['rg', 'RG'],
-          ['cnh', 'CNH'], ['celular', 'Celular'],
+          ['nome', 'Nome'], ['cpf', 'CPF'], ['rg', 'RG'], ['orgao_emissor', 'Órgão emis./UF'],
+          ['cnh', 'CNH'], ['cnh_categoria', 'Categoria CNH'], ['cnh_vencimento', 'Vencimento CNH'],
+          ['cnv_numero', 'CNV Número'], ['cnv_validade', 'Validade CNV'],
+          ['celular', 'Celular'],
           ['rua', 'Rua'], ['numero', 'Número'], ['bairro', 'Bairro'],
           ['cidade', 'Cidade'], ['uf', 'UF'], ['cep', 'CEP'],
+          ['admissao', 'Admissão'],
         ];
+        const camelOf = (snake: string) => snake.replace(/_([a-z])/g, (_, c) => c.toUpperCase());
+        const pick = (k: string) => {
+          const camel = camelOf(k);
+          const v = (a as any)[k] ?? (a as any)[camel];
+          return v === undefined || v === null ? '' : String(v).trim();
+        };
         for (const [k, lbl] of required) {
-          const val = a[k] || a[k.replace(/([A-Z])/g, '_$1').toLowerCase()];
-          if (!val || String(val).trim() === '') throw new Error(`${label}: ${lbl} é obrigatório`);
+          if (!pick(k)) throw new Error(`${label}: ${lbl} é obrigatório`);
         }
         const cpfDigits = String(a.cpf).replace(/\D/g, '');
         if (cpfDigits.length !== 11) throw new Error(`${label}: CPF inválido`);
@@ -1704,16 +1732,99 @@ export function registerDhlIntakeRoutes(
           celular: a.celular || null,
           admissao: a.admissao || null,
         };
-        // Dedup por CPF dentro do fornecedor
-        const { data: existing } = await sb.from('provider_escoltistas').select('id').eq('provider_id', providerId).eq('cpf', a.cpf).maybeSingle();
+        // Dedup por CPF dentro do fornecedor. Se já existe (por id ou por CPF),
+        // aplica patch "fill empty only" para não sobrescrever dados que o
+        // operacional já tenha refinado, mas garantindo que campos antes vazios
+        // sejam preenchidos com o que o fornecedor digitou agora.
+        const existingByCpf = existingById
+          ? null
+          : (await sb.from('provider_escoltistas').select('*').eq('provider_id', providerId).eq('cpf', a.cpf).maybeSingle()).data;
+        const existing = existingById || existingByCpf;
+        let resultId: string;
+        let resultSnap: any;
         if (existing) {
-          await sb.from('provider_escoltistas').update({ ...payload, updated_at: new Date().toISOString() }).eq('id', existing.id);
+          const patch: any = {};
+          for (const k of Object.keys(payload)) {
+            const cur = (existing as any)[k];
+            const incoming = (payload as any)[k];
+            if ((cur === null || cur === undefined || String(cur).trim() === '') && incoming) {
+              patch[k] = incoming;
+            }
+          }
+          if (Object.keys(patch).length > 0) {
+            patch.updated_at = new Date().toISOString();
+            await sb.from('provider_escoltistas').update(patch).eq('id', existing.id);
+          }
           const { data: row } = await sb.from('provider_escoltistas').select('*').eq('id', existing.id).single();
-          return { id: existing.id, snap: row };
+          resultId = existing.id;
+          resultSnap = row;
+        } else {
+          const { data: ins, error: insErr } = await sb.from('provider_escoltistas').insert([payload]).select().single();
+          if (insErr) throw new Error('Erro ao salvar escoltista: ' + insErr.message);
+          resultId = ins.id;
+          resultSnap = ins;
         }
-        const { data: ins, error: insErr } = await sb.from('provider_escoltistas').insert([payload]).select().single();
-        if (insErr) throw new Error('Erro ao salvar escoltista: ' + insErr.message);
-        return { id: ins.id, snap: ins };
+
+        // Espelhamento automático no cadastro principal `agents`:
+        // - se já existe agente com este CPF: atualiza só os campos vazios (não
+        //   sobrescreve dados que o operacional já tenha refinado);
+        // - se não existe: cria com provider = nome do fornecedor do intake.
+        try {
+          const { data: agentRow } = await sb.from('agents')
+            .select('id, name, cpf, rg, cnh, cnh_validity, cnv, cnv_validity, phone, provider, orgao_emissor, cnh_categoria, rua, numero, complemento, bairro, cidade, uf, cep, admissao')
+            .eq('cpf', a.cpf)
+            .maybeSingle();
+
+          const agentPayload: any = {
+            name: payload.nome,
+            cpf: payload.cpf,
+            rg: payload.rg,
+            cnh: payload.cnh,
+            cnh_validity: payload.cnh_vencimento,
+            cnv: payload.cnv_numero,
+            cnv_validity: payload.cnv_validade,
+            phone: payload.celular,
+            orgao_emissor: payload.orgao_emissor,
+            cnh_categoria: payload.cnh_categoria,
+            rua: payload.rua,
+            numero: payload.numero,
+            complemento: payload.complemento,
+            bairro: payload.bairro,
+            cidade: payload.cidade,
+            uf: payload.uf,
+            cep: payload.cep,
+            admissao: payload.admissao,
+          };
+
+          if (agentRow) {
+            // Mantém o que já existe e preenche os buracos com o que veio do intake.
+            const patch: any = {};
+            for (const k of Object.keys(agentPayload)) {
+              const cur = (agentRow as any)[k];
+              if ((cur === null || cur === undefined || String(cur).trim() === '') && agentPayload[k]) {
+                patch[k] = agentPayload[k];
+              }
+            }
+            if (Object.keys(patch).length > 0) {
+              const { error: updErr } = await sb.from('agents').update(patch).eq('id', agentRow.id);
+              if (updErr) console.error('[DHL Intake] falha ao espelhar em agents (update):', updErr.message);
+            }
+          } else {
+            const insAgent: any = {
+              ...agentPayload,
+              provider: intake.provider_name || null,
+              role: 'Vigilante',
+              status: 'Ativo',
+            };
+            const { error: insAgentErr } = await sb.from('agents').insert([insAgent]);
+            if (insAgentErr) console.error('[DHL Intake] falha ao espelhar em agents (insert):', insAgentErr.message);
+          }
+        } catch (mirrorErr: any) {
+          // O espelhamento é best-effort. Falha aqui não impede o submit do intake.
+          console.error('[DHL Intake] exceção ao espelhar em agents:', mirrorErr?.message);
+        }
+
+        return { id: resultId, snap: resultSnap };
       };
 
       const persistVehicle = async (v: any): Promise<{ id: string; snap: any }> => {

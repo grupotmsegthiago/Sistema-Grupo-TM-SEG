@@ -25,7 +25,17 @@ const initialAgentState: Partial<Agent> = {
   cnv_validity: '',
   phone: '',
   role: 'Vigilante',
-  status: 'Ativo'
+  status: 'Ativo',
+  orgao_emissor: '',
+  cnh_categoria: '',
+  rua: '',
+  numero: '',
+  complemento: '',
+  bairro: '',
+  cidade: '',
+  uf: '',
+  cep: '',
+  admissao: '',
 };
 
 const ProviderAgentForm: React.FC<Props> = ({ onBack, id, initialProvider, onSuccess }) => {
@@ -183,6 +193,16 @@ const ProviderAgentForm: React.FC<Props> = ({ onBack, id, initialProvider, onSuc
                 role: agent.role || 'Vigilante',
                 status: agent.status || 'Ativo',
                 provider: currentProvider,
+                orgao_emissor: (agent as any).orgao_emissor || null,
+                cnh_categoria: (agent as any).cnh_categoria || null,
+                rua: (agent as any).rua || null,
+                numero: (agent as any).numero || null,
+                complemento: (agent as any).complemento || null,
+                bairro: (agent as any).bairro || null,
+                cidade: (agent as any).cidade || null,
+                uf: (agent as any).uf || null,
+                cep: (agent as any).cep || null,
+                admissao: (agent as any).admissao || null,
             };
         });
 
@@ -354,6 +374,74 @@ const ProviderAgentForm: React.FC<Props> = ({ onBack, id, initialProvider, onSuc
                                 <input type="text" className={INPUT_CLASS} placeholder="(00) 00000-0000" value={agent.phone} onChange={e => handleAgentChange(index, 'phone', e.target.value)} />
                                 <Phone size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" />
                             </div>
+                        </div>
+
+                        {/* ─── DADOS COMPLEMENTARES (vindos do intake do fornecedor) ─── */}
+                        <div className="md:col-span-2 pt-2 mt-2 border-t border-dashed border-gray-200">
+                          <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-3">Dados complementares</p>
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                            <div>
+                              <label className={LABEL_CLASS}>Órgão Emissor / UF (RG)</label>
+                              <div className="relative">
+                                <input type="text" className={INPUT_CLASS} placeholder="SSP/SP" value={(agent as any).orgao_emissor || ''} onChange={e => handleAgentChange(index, 'orgao_emissor' as any, e.target.value.toUpperCase())} />
+                                <FileText size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" />
+                              </div>
+                            </div>
+                            <div>
+                              <label className={LABEL_CLASS}>Categoria CNH</label>
+                              <div className="relative">
+                                <select className={SELECT_CLASS} value={(agent as any).cnh_categoria || ''} onChange={e => handleAgentChange(index, 'cnh_categoria' as any, e.target.value)}>
+                                  <option value="">—</option>
+                                  {['A','B','AB','C','AC','D','AD','E','AE'].map(c => <option key={c} value={c}>{c}</option>)}
+                                </select>
+                                <CreditCard size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" />
+                              </div>
+                            </div>
+                            <div>
+                              <label className={LABEL_CLASS}>Admissão</label>
+                              <div className="relative">
+                                <input type="date" className={INPUT_CLASS} value={(agent as any).admissao || ''} onChange={e => handleAgentChange(index, 'admissao' as any, e.target.value)} />
+                                <Calendar size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" />
+                              </div>
+                            </div>
+                            <div className="md:col-span-1" />
+                            <div className="md:col-span-2">
+                              <label className={LABEL_CLASS}>Rua</label>
+                              <div className="relative">
+                                <input type="text" className={INPUT_CLASS} placeholder="Rua / Avenida" value={(agent as any).rua || ''} onChange={e => handleAgentChange(index, 'rua' as any, e.target.value)} />
+                                <Briefcase size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" />
+                              </div>
+                            </div>
+                            <div>
+                              <label className={LABEL_CLASS}>Número</label>
+                              <input type="text" className={INPUT_CLASS.replace('pl-12', 'pl-4')} placeholder="000" value={(agent as any).numero || ''} onChange={e => handleAgentChange(index, 'numero' as any, e.target.value)} />
+                            </div>
+                            <div>
+                              <label className={LABEL_CLASS}>Complemento</label>
+                              <input type="text" className={INPUT_CLASS.replace('pl-12', 'pl-4')} placeholder="Apto / Bloco" value={(agent as any).complemento || ''} onChange={e => handleAgentChange(index, 'complemento' as any, e.target.value)} />
+                            </div>
+                            <div>
+                              <label className={LABEL_CLASS}>Bairro</label>
+                              <input type="text" className={INPUT_CLASS.replace('pl-12', 'pl-4')} value={(agent as any).bairro || ''} onChange={e => handleAgentChange(index, 'bairro' as any, e.target.value)} />
+                            </div>
+                            <div>
+                              <label className={LABEL_CLASS}>Cidade</label>
+                              <input type="text" className={INPUT_CLASS.replace('pl-12', 'pl-4')} value={(agent as any).cidade || ''} onChange={e => handleAgentChange(index, 'cidade' as any, e.target.value)} />
+                            </div>
+                            <div className="grid grid-cols-2 gap-3">
+                              <div>
+                                <label className={LABEL_CLASS}>UF</label>
+                                <select className={SELECT_CLASS.replace('pl-12', 'pl-4')} value={(agent as any).uf || ''} onChange={e => handleAgentChange(index, 'uf' as any, e.target.value)}>
+                                  <option value="">—</option>
+                                  {['AC','AL','AP','AM','BA','CE','DF','ES','GO','MA','MT','MS','MG','PA','PB','PR','PE','PI','RJ','RN','RS','RO','RR','SC','SP','SE','TO'].map(u => <option key={u} value={u}>{u}</option>)}
+                                </select>
+                              </div>
+                              <div>
+                                <label className={LABEL_CLASS}>CEP</label>
+                                <input type="text" className={INPUT_CLASS.replace('pl-12', 'pl-4')} placeholder="00000-000" value={(agent as any).cep || ''} onChange={e => handleAgentChange(index, 'cep' as any, e.target.value)} />
+                              </div>
+                            </div>
+                          </div>
                         </div>
 
                         <div className="border-t border-gray-100 md:col-span-2 pt-4 mt-2 grid grid-cols-1 md:grid-cols-2 gap-6">
