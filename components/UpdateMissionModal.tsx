@@ -1054,7 +1054,7 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
 
 🗓 *DATA:* ${dateStr} *HORA:* ${timeStr}
 🛡 *OPERAÇÃO:* ${editData.missionType?.toUpperCase() || 'CARACTERIZADA'}
-🏢 *CLIENTE:* ${/DHL/i.test(mission.client || '') ? 'DHL' : mission.client}
+🏢 *CLIENTE:* ${/DHL/i.test(mission.client || '') ? 'DHL' : mission.client}${/DHL/i.test(mission.client || '') ? `\n🔖 *SE:* ${(editData.dhl_se_number || '').toString().trim().toUpperCase() || 'N/A'}` : ''}
 
 📍 *ORIGEM:* ${editData.origin.toUpperCase()}
 🏁 *DESTINO:* ${finalDestination.toUpperCase().replace(/\s*[—-]\s*DESTINO\s+A\s+DEFINIR\s*$/i, '').trim() || 'N/A'}
