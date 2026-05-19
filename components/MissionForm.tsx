@@ -1619,6 +1619,17 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
                                                 const anyFailure = emailFail || waFail;
                                                 const dotCls = anySuccess ? 'bg-green-500' : anyFailure ? 'bg-red-500' : 'bg-gray-400';
                                                 const emailLabel = emailOk ? `E-mail ✓ ${rs.target_email || ''}`.trim() : emailFail ? 'E-mail ✗' : null;
+                                                // Status de entrega/leitura do WhatsApp (Z-API webhook): ✓ enviado, ✓✓ entregue, ✓✓ azul lido.
+                                                const waReadAt = rs.whatsapp_read_at as string | null | undefined;
+                                                const waDeliveredAt = rs.whatsapp_delivered_at as string | null | undefined;
+                                                let waMarks = '';
+                                                let waMarksCls = '';
+                                                let waMarksTitle = '';
+                                                if (waOk) {
+                                                  if (waReadAt) { waMarks = '✓✓'; waMarksCls = 'text-blue-600'; waMarksTitle = `Lido em ${fmt(waReadAt)}`; }
+                                                  else if (waDeliveredAt) { waMarks = '✓✓'; waMarksCls = 'text-gray-500'; waMarksTitle = `Entregue em ${fmt(waDeliveredAt)}`; }
+                                                  else { waMarks = '✓'; waMarksCls = 'text-gray-500'; waMarksTitle = 'Enviado — aguardando confirmação'; }
+                                                }
                                                 const waLabel = waOk ? `WhatsApp ✓ ${rs.target_phone || ''}`.trim() : waFail ? 'WhatsApp ✗' : null;
                                                 const labels: string[] = [];
                                                 if (emailLabel) labels.push(emailLabel);
@@ -1640,6 +1651,15 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
                                                     >
                                                       {labels.join(' · ')}
                                                     </span>
+                                                    {waMarks && (
+                                                      <span
+                                                        className={`font-black ${waMarksCls}`}
+                                                        title={waMarksTitle}
+                                                        data-testid={`resend-wa-marks-${rs.id}`}
+                                                      >
+                                                        {waMarks}
+                                                      </span>
+                                                    )}
                                                     {rs.reused_existing_token && (
                                                       <span className="text-gray-500 italic">(mesmo link)</span>
                                                     )}

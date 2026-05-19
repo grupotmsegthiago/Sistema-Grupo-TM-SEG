@@ -157,6 +157,10 @@ export async function runDhlIntakeMigrations(): Promise<void> {
       CREATE INDEX IF NOT EXISTS idx_dhl_intake_resends_mission ON dhl_supplier_intake_resends(mission_id);
       ALTER TABLE dhl_supplier_intake_resends ADD COLUMN IF NOT EXISTS whatsapp_status TEXT;
       ALTER TABLE dhl_supplier_intake_resends ADD COLUMN IF NOT EXISTS whatsapp_error TEXT;
+      ALTER TABLE dhl_supplier_intake_resends ADD COLUMN IF NOT EXISTS whatsapp_message_id TEXT;
+      ALTER TABLE dhl_supplier_intake_resends ADD COLUMN IF NOT EXISTS whatsapp_delivered_at TIMESTAMPTZ;
+      ALTER TABLE dhl_supplier_intake_resends ADD COLUMN IF NOT EXISTS whatsapp_read_at TIMESTAMPTZ;
+      CREATE INDEX IF NOT EXISTS idx_dhl_intake_resends_wa_msgid ON dhl_supplier_intake_resends(whatsapp_message_id);
 
       -- Força o PostgREST a recarregar o cache de schema após ALTER TABLE
       NOTIFY pgrst, 'reload schema';
@@ -617,6 +621,86 @@ export function registerDhlIntakeRoutes(
     }
   };
   // ──────────────────────────────────────────────────────────────
+  // POST /api/zapi/webhook/message-status — webhook público da Z-API
+  // Recebe callbacks de entrega/leitura e atualiza o histórico de reenvios
+  // (dhl_supplier_intake_resends.whatsapp_delivered_at / whatsapp_read_at).
+  //
+  // Z-API envia eventos do tipo DeliveryCallback / ReadReceiptCallback
+  // (também aceitamos MessageStatusCallback) com `status` em
+  // SENT/RECEIVED/READ/PLAYED e `ids` (array) ou `messageId`.
+  // Configure no painel Z-API: URL pública /api/zapi/webhook/message-status
+  // ──────────────────────────────────────────────────────────────
+  app.post('/api/zapi/webhook/message-status', async (req: Request, res: Response) => {
+    try {
+      // Verificação opcional de autenticidade. Configure ZAPI_WEBHOOK_SECRET e
+      // adicione o mesmo valor no painel Z-API (header customizado ou ?token=).
+      // Se a env não estiver setada, o webhook segue aberto (compatibilidade).
+      const expectedSecret = (process.env.ZAPI_WEBHOOK_SECRET || '').trim();
+      if (expectedSecret) {
+        const provided =
+          (req.headers['x-zapi-secret'] as string) ||
+          (req.headers['x-webhook-secret'] as string) ||
+          (req.query.token as string) || '';
+        if (provided !== expectedSecret) {
+          return res.status(401).json({ ok: false, error: 'invalid webhook secret' });
+        }
+      }
+      const body: any = req.body || {};
+      // Aceita lote (algumas instâncias enviam array no topo) ou objeto único.
+      const events: any[] = Array.isArray(body) ? body : [body];
+      const sb = getSb();
+      let updated = 0;
+
+      for (const ev of events) {
+        if (!ev || typeof ev !== 'object') continue;
+        const status = String(ev.status || ev.messageStatus || ev.type || '').toUpperCase();
+        const ids: string[] = [];
+        if (Array.isArray(ev.ids)) ids.push(...ev.ids.map((x: any) => String(x)));
+        if (ev.messageId) ids.push(String(ev.messageId));
+        if (ev.id) ids.push(String(ev.id));
+        if (ev.zaapId) ids.push(String(ev.zaapId));
+        const uniqIds = Array.from(new Set(ids.filter(Boolean)));
+        if (uniqIds.length === 0) continue;
+
+        const momentMs = typeof ev.momment === 'number' ? ev.momment
+                       : typeof ev.moment === 'number' ? ev.moment
+                       : typeof ev.timestamp === 'number' ? ev.timestamp
+                       : Date.now();
+        const whenIso = new Date(momentMs > 1e12 ? momentMs : momentMs * 1000).toISOString();
+
+        // IMPORTANTE: NÃO sobrescrevemos whatsapp_status — esse campo guarda
+        // o resultado do ENVIO ('success'|'failure'|'skipped') e é consumido
+        // pela UI. Entrega/leitura ficam em colunas dedicadas.
+        const patch: any = {};
+        if (status.includes('READ') || status === 'PLAYED') {
+          patch.whatsapp_read_at = whenIso;
+          patch.whatsapp_delivered_at = whenIso;
+        } else if (status.includes('RECEIVED') || status.includes('DELIVERED') || status === 'SENT' || status.includes('DELIVERY')) {
+          patch.whatsapp_delivered_at = whenIso;
+        } else {
+          continue;
+        }
+
+        const { data: rows, error } = await sb.from('dhl_supplier_intake_resends')
+          .update(patch)
+          .in('whatsapp_message_id', uniqIds)
+          .select('id');
+        if (error) {
+          console.error('[Z-API Webhook] update error:', error.message);
+          continue;
+        }
+        updated += Array.isArray(rows) ? rows.length : 0;
+      }
+
+      return res.json({ ok: true, updated });
+    } catch (e: any) {
+      console.error('[Z-API Webhook] exception:', e?.message);
+      // Sempre responde 200 para evitar reenvios em loop pela Z-API.
+      return res.json({ ok: false, error: e?.message || 'erro interno' });
+    }
+  });
+
+  // ──────────────────────────────────────────────────────────────
   // POST /api/dhl/intake/generate — operador gera link para fornecedor
   // body: { missionId: string }
   // ──────────────────────────────────────────────────────────────
@@ -752,6 +836,7 @@ export function registerDhlIntakeRoutes(
       let whatsappSent = false;
       let whatsappError: string | null = null;
       let whatsappSkipped = false;
+      let whatsappMessageId: string | null = null;
       if (wantsWhatsapp) {
         const ZAPI_INSTANCE = process.env.ZAPI_INSTANCE_ID || process.env.VITE_ZAPI_INSTANCE_ID || '';
         const ZAPI_TOKEN = process.env.ZAPI_TOKEN || process.env.VITE_ZAPI_TOKEN || '';
@@ -772,13 +857,18 @@ export function registerDhlIntakeRoutes(
               body: JSON.stringify({ phone: phoneDigits, message: whatsappText }),
             });
             const txt = await r.text();
+            let parsed: any = null;
+            try { parsed = JSON.parse(txt); } catch {}
             if (!r.ok) {
-              let detail: any = txt;
-              try { detail = JSON.parse(txt); } catch {}
+              const detail = parsed ?? txt;
               whatsappError = `Z-API ${r.status}: ${typeof detail === 'string' ? detail : (detail?.error || detail?.message || JSON.stringify(detail))}`;
               console.error('[DHL Intake] erro WhatsApp:', whatsappError);
             } else {
               whatsappSent = true;
+              if (parsed && typeof parsed === 'object') {
+                const mid = parsed.messageId || parsed.id || parsed.zaapId || null;
+                whatsappMessageId = mid ? String(mid) : null;
+              }
             }
           } catch (e: any) {
             whatsappError = e?.message || 'falha no envio do WhatsApp';
@@ -809,6 +899,7 @@ export function registerDhlIntakeRoutes(
           email_error: emailError,
           whatsapp_status: whatsappStatus,
           whatsapp_error: whatsappError,
+          whatsapp_message_id: whatsappMessageId,
           reused_existing_token: reusedExistingToken,
         }]);
         if (resendErr) {
@@ -883,7 +974,7 @@ export function registerDhlIntakeRoutes(
       let resendsByIntake: Map<string, any[]> = new Map();
       if (intakeIds.length > 0) {
         const { data: resends, error: rErr } = await sb.from('dhl_supplier_intake_resends')
-          .select('id, intake_id, sent_at, sent_by_user_id, sent_by_user_name, target_email, target_phone, email_status, email_error, whatsapp_status, whatsapp_error, reused_existing_token')
+          .select('id, intake_id, sent_at, sent_by_user_id, sent_by_user_name, target_email, target_phone, email_status, email_error, whatsapp_status, whatsapp_error, whatsapp_message_id, whatsapp_delivered_at, whatsapp_read_at, reused_existing_token')
           .in('intake_id', intakeIds)
           .order('sent_at', { ascending: false });
         if (rErr) {
