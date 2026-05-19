@@ -59,6 +59,44 @@ const DhlIntakeTimeline: React.FC<Props> = ({ missionId, canViewSnapshots = true
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [overlayId, setOverlayId] = useState<string | null>(null);
+  const [copiedVinculoId, setCopiedVinculoId] = useState<string | null>(null);
+
+  // Texto padronizado para solicitar vínculo (Escoltista 1, Escoltista 2 e
+  // veículo) na DHL. Inclui nome completo, CPF e dados essenciais do veículo.
+  const buildVinculoDhlText = (it: DhlIntakeRow): string => {
+    const lines: string[] = [];
+    const a1 = it.agent1_snapshot;
+    const a2 = it.agent2_snapshot;
+    const v = it.vehicle_snapshot;
+    lines.push('Solicitação de vínculo — DHL Supply Chain');
+    lines.push(`OS: ${missionId}`);
+    lines.push(`Fornecedor: ${it.provider_name || '—'}`);
+    lines.push('');
+    lines.push('Escoltista 1:');
+    lines.push(`  Nome: ${a1?.nome || '—'}`);
+    lines.push(`  CPF:  ${a1?.cpf || '—'}`);
+    lines.push('');
+    lines.push('Escoltista 2:');
+    lines.push(`  Nome: ${a2?.nome || '—'}`);
+    lines.push(`  CPF:  ${a2?.cpf || '—'}`);
+    lines.push('');
+    lines.push('Veículo:');
+    lines.push(`  Placa:   ${v?.placa || '—'}`);
+    lines.push(`  Marca/Modelo/Ano: ${[v?.marca, v?.modelo, v?.ano].filter(Boolean).join(' / ') || '—'}`);
+    if (v?.cor) lines.push(`  Cor:     ${v.cor}`);
+    if (v?.renavam) lines.push(`  Renavam: ${v.renavam}`);
+    if (v?.tecnologia) lines.push(`  Tecnologia: ${v.tecnologia}`);
+    if (v?.id_rastreador) lines.push(`  ID Rastreador: ${v.id_rastreador}`);
+    return lines.join('\n');
+  };
+
+  const copyVinculo = async (it: DhlIntakeRow) => {
+    try {
+      await navigator.clipboard.writeText(buildVinculoDhlText(it));
+      setCopiedVinculoId(it.id);
+      setTimeout(() => setCopiedVinculoId((c) => (c === it.id ? null : c)), 1800);
+    } catch {}
+  };
   const [copiedLink, setCopiedLink] = useState<string | null>(null);
   const [copiedWa, setCopiedWa] = useState<string | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
@@ -590,6 +628,20 @@ const DhlIntakeTimeline: React.FC<Props> = ({ missionId, canViewSnapshots = true
                       )}
                     </div>
                     {isExpanded && (
+                      <button
+                        type="button"
+                        onClick={() => copyVinculo(it)}
+                        className="mt-3 w-full px-4 h-12 rounded-lg bg-yellow-400 hover:bg-yellow-500 text-gray-900 font-black uppercase tracking-wider text-xs flex items-center justify-center gap-2 shadow-sm active:scale-[0.99] transition-all border-2 border-yellow-500"
+                        data-testid={`btn-solicitar-vinculo-${it.id}`}
+                        title="Copia para a área de transferência o texto pronto para solicitar vínculo dos escoltistas e do veículo à DHL"
+                      >
+                        {copiedVinculoId === it.id
+                          ? <><Check size={16} className="text-green-700" /> Texto de vínculo copiado — cole no e-mail/WhatsApp para a DHL</>
+                          : <><Send size={16} /> Solicitar vínculo para DHL (Escoltista 1, Escoltista 2 e veículo)</>
+                        }
+                      </button>
+                    )}
+                    {isExpanded && (
                       <div className="mt-2 grid grid-cols-1 md:grid-cols-3 gap-2 text-gray-700 animate-in slide-in-from-top-1 duration-150" data-testid={`details-intake-${it.id}`}>
                         {renderAgent('Escoltista 1', it.agent1_snapshot, 'agent1', it.id)}
                         {renderAgent('Escoltista 2', it.agent2_snapshot, 'agent2', it.id)}
@@ -676,6 +728,18 @@ const DhlIntakeTimeline: React.FC<Props> = ({ missionId, canViewSnapshots = true
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => copyVinculo(it)}
+                    className="px-3 h-10 rounded-lg bg-yellow-400 hover:bg-yellow-500 text-gray-900 font-black uppercase tracking-wider flex items-center gap-1.5 text-[11px] border-2 border-yellow-500"
+                    data-testid={`overlay-btn-vinculo-${it.id}`}
+                    title="Copia o texto pronto para solicitar vínculo dos escoltistas e do veículo à DHL"
+                  >
+                    {copiedVinculoId === it.id
+                      ? <><Check size={14} className="text-green-700" /> Vínculo copiado</>
+                      : <><Send size={14} /> Solicitar vínculo para DHL</>
+                    }
+                  </button>
                   <button
                     type="button"
                     onClick={() => copySnapshot(it)}
