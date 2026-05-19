@@ -1711,7 +1711,42 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
                               {dhlIntakesLoading && dhlIntakes.length === 0 ? (
                                 <p className="text-[10px] text-gray-500 italic" data-testid="text-dhl-intakes-loading">Carregando...</p>
                               ) : dhlIntakes.length === 0 ? (
-                                <p className="text-[10px] text-gray-500 italic" data-testid="text-dhl-intakes-empty">Nenhum link gerado ainda.</p>
+                                <div className="flex flex-col items-start gap-2" data-testid="empty-dhl-intakes">
+                                  <p className="text-[10px] text-gray-500 italic" data-testid="text-dhl-intakes-empty">
+                                    Nenhum link gerado ainda. Clique abaixo para gerar agora e enviar ao fornecedor por e-mail e WhatsApp.
+                                  </p>
+                                  <div className="flex flex-wrap gap-2">
+                                    <button
+                                      type="button"
+                                      onClick={() => handleRegenerateDhlLink('both')}
+                                      disabled={dhlRegenerating || !formData.provider}
+                                      title={!formData.provider ? 'Selecione o fornecedor antes de gerar o link' : 'Gera o link, envia e-mail e prepara mensagem de WhatsApp'}
+                                      className="px-3 h-9 rounded-lg bg-gray-900 hover:bg-black text-white text-[10px] font-black uppercase tracking-wider disabled:opacity-50 flex items-center gap-1.5 active:scale-95 transition-all"
+                                      data-testid="btn-generate-dhl-link-empty"
+                                    >
+                                      {dhlRegenerating ? <Loader2 size={12} className="animate-spin" /> : null}
+                                      {dhlRegenerating ? 'Gerando...' : 'Gerar link agora (E-mail + WhatsApp)'}
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleRegenerateDhlLink('email')}
+                                      disabled={dhlRegenerating || !formData.provider}
+                                      className="px-3 h-9 rounded-lg bg-red-600 hover:bg-red-700 text-white text-[10px] font-black uppercase tracking-wider disabled:opacity-50 active:scale-95 transition-all"
+                                      data-testid="btn-generate-dhl-link-email"
+                                    >
+                                      Só e-mail
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleRegenerateDhlLink('whatsapp')}
+                                      disabled={dhlRegenerating || !formData.provider}
+                                      className="px-3 h-9 rounded-lg bg-green-600 hover:bg-green-700 text-white text-[10px] font-black uppercase tracking-wider disabled:opacity-50 active:scale-95 transition-all"
+                                      data-testid="btn-generate-dhl-link-whatsapp"
+                                    >
+                                      Só WhatsApp
+                                    </button>
+                                  </div>
+                                </div>
                               ) : (
                                 <div className="space-y-2">
                                   {dhlIntakes.map((it) => {
