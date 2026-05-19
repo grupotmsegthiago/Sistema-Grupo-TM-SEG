@@ -192,6 +192,12 @@ export async function runDhlIntakeMigrations(): Promise<void> {
       ALTER TABLE agents ADD COLUMN IF NOT EXISTS uf TEXT;
       ALTER TABLE agents ADD COLUMN IF NOT EXISTS cep TEXT;
       ALTER TABLE agents ADD COLUMN IF NOT EXISTS admissao DATE;
+      -- Espelhamento do intake do veiculo no cadastro canonico vehicles:
+      -- renavam e comunicacao só existiam em provider_intake_vehicles. Sem
+      -- estas colunas, o que o fornecedor digita nesses dois campos não
+      -- aparecia no cadastro principal do sistema (só no snapshot do intake).
+      ALTER TABLE vehicles ADD COLUMN IF NOT EXISTS renavam TEXT;
+      ALTER TABLE vehicles ADD COLUMN IF NOT EXISTS comunicacao TEXT;
       -- Desabilita RLS — estas tabelas só são acessadas via API autenticada
       -- do backend (nunca diretamente pelo cliente). Sem isso, INSERTs falham
       -- com "new row violates row-level security policy".
@@ -1767,6 +1773,8 @@ export function registerDhlIntakeRoutes(
         color: snap?.cor ? String(snap.cor).toUpperCase() : '',
         tracker_type: trackerType,
         tracker_id: trackerId,
+        renavam: snap?.renavam ? String(snap.renavam).replace(/\D+/g, '') : null,
+        comunicacao: snap?.comunicacao ? String(snap.comunicacao).toUpperCase() : null,
       };
       // Upsert por placa (placa é única no cadastro principal). Provider mismatch:
       // NÃO retorna o id existente — devolve null para que a OS não fique vinculada
