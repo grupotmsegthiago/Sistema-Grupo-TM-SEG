@@ -3,6 +3,7 @@ import { authFetch } from '../lib/authFetch';
 import {
   Mail, Phone, Send, Clock, CheckCircle2, XCircle, AlertTriangle,
   ChevronDown, ExternalLink, Paperclip, Copy, Check, RefreshCw, Loader2,
+  MessageSquare,
 } from 'lucide-react';
 
 interface EscoltistaSnapshot {
@@ -31,6 +32,7 @@ interface DhlIntakeRow {
   provider_whatsapp_reminder_count?: number | null;
   provider_reminder_sent_at?: string | null;
   provider_whatsapp_reminder_sent_at?: string | null;
+  whatsapp_text?: string | null;
 }
 
 interface DhlReminderConfig { maxCount: number; cycleHours: number; }
@@ -50,7 +52,11 @@ const DhlIntakeTimeline: React.FC<Props> = ({ missionId, canViewSnapshots = true
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [copiedLink, setCopiedLink] = useState<string | null>(null);
+  const [copiedWa, setCopiedWa] = useState<string | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [generating, setGenerating] = useState<'email' | 'whatsapp' | 'both' | null>(null);
+  const [successMsg, setSuccessMsg] = useState<string | null>(null);
+  const [waTextById, setWaTextById] = useState<Record<string, string>>({});
 
   const load = useCallback(async () => {
     if (!missionId) return;
@@ -96,6 +102,54 @@ const DhlIntakeTimeline: React.FC<Props> = ({ missionId, canViewSnapshots = true
       setCopiedLink(url);
       setTimeout(() => setCopiedLink((c) => (c === url ? null : c)), 1500);
     } catch {}
+  };
+
+  const copyWaText = async (intakeId: string, text: string) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopiedWa(intakeId);
+      setTimeout(() => setCopiedWa((c) => (c === intakeId ? null : c)), 1500);
+    } catch {}
+  };
+
+  const generateLink = async (channel: 'email' | 'whatsapp' | 'both') => {
+    if (!missionId) return;
+    setGenerating(channel);
+    setErrorMsg(null);
+    setSuccessMsg(null);
+    try {
+      const token = localStorage.getItem('authToken') || '';
+      const r = await fetch('/api/dhl/intake/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+        credentials: 'include',
+        body: JSON.stringify({ missionId, channel }),
+      });
+      const j = await r.json().catch(() => ({} as any));
+      if (!r.ok || !j?.url) {
+        if (j?.code === 'PROVIDER_EMAIL_REQUIRED') {
+          setErrorMsg(`O fornecedor ${j.providerName || ''} ainda não tem e-mail cadastrado. Abra "Editar OS" para cadastrar o e-mail e gerar o link, ou use "Só WhatsApp".`);
+        } else {
+          setErrorMsg(j?.error || 'Falha ao gerar link.');
+        }
+        return;
+      }
+      const parts: string[] = [];
+      if ((channel === 'whatsapp' || channel === 'both') && j.whatsappSent) parts.push('WhatsApp enviado ao fornecedor.');
+      else if ((channel === 'whatsapp' || channel === 'both') && j.whatsappError) parts.push(`WhatsApp não enviado: ${j.whatsappError}.`);
+      if ((channel === 'email' || channel === 'both') && j.emailSent) parts.push(`E-mail enviado para ${j.providerEmail || 'o fornecedor'}.`);
+      else if ((channel === 'email' || channel === 'both') && j.emailError) parts.push(`E-mail não enviado: ${j.emailError}.`);
+      setSuccessMsg(parts.length ? parts.join(' ') : 'Link gerado com sucesso.');
+      if (j.intakeId && j.whatsappText) {
+        setWaTextById((prev) => ({ ...prev, [j.intakeId]: j.whatsappText }));
+      }
+      await load();
+      window.dispatchEvent(new CustomEvent('dhl-intake-changed', { detail: { mission_id: missionId } }));
+    } catch (e: any) {
+      setErrorMsg(e?.message || 'Falha de rede ao gerar o link.');
+    } finally {
+      setGenerating(null);
+    }
   };
 
   const copySnapshot = async (it: DhlIntakeRow) => {
@@ -273,13 +327,50 @@ const DhlIntakeTimeline: React.FC<Props> = ({ missionId, canViewSnapshots = true
       {errorMsg && (
         <p className="text-[10px] text-red-700 italic mb-2" data-testid="text-dhl-timeline-error">{errorMsg}</p>
       )}
+      {successMsg && (
+        <p className="text-[10px] text-green-700 italic mb-2" data-testid="text-dhl-timeline-success">{successMsg}</p>
+      )}
 
       {loading && intakes.length === 0 ? (
         <p className="text-[10px] text-gray-500 italic" data-testid="text-dhl-timeline-loading">Carregando...</p>
       ) : intakes.length === 0 ? (
-        <p className="text-[10px] text-gray-500 italic" data-testid="text-dhl-timeline-empty">
-          Nenhum link gerado para esta OS ainda.
-        </p>
+        <div className="flex flex-col items-start gap-2" data-testid="empty-dhl-timeline">
+          <p className="text-[10px] text-gray-600 italic">
+            Nenhum link gerado para esta OS ainda. Gere agora para enviar ao fornecedor por e-mail e WhatsApp — ele cadastra os escoltistas e veículo direto no link.
+          </p>
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={() => generateLink('both')}
+              disabled={generating !== null}
+              className="px-3 h-9 rounded-lg bg-gray-900 hover:bg-black text-white text-[10px] font-black uppercase tracking-wider disabled:opacity-50 flex items-center gap-1.5 active:scale-95 transition-all"
+              data-testid="btn-generate-link-empty"
+            >
+              {generating === 'both' ? <Loader2 size={12} className="animate-spin" /> : <Send size={12} />}
+              {generating === 'both' ? 'Gerando...' : 'Gerar link (E-mail + WhatsApp)'}
+            </button>
+            <button
+              type="button"
+              onClick={() => generateLink('email')}
+              disabled={generating !== null}
+              className="px-3 h-9 rounded-lg bg-red-600 hover:bg-red-700 text-white text-[10px] font-black uppercase tracking-wider disabled:opacity-50 flex items-center gap-1.5 active:scale-95 transition-all"
+              data-testid="btn-generate-link-email"
+            >
+              {generating === 'email' ? <Loader2 size={12} className="animate-spin" /> : <Mail size={12} />}
+              Só e-mail
+            </button>
+            <button
+              type="button"
+              onClick={() => generateLink('whatsapp')}
+              disabled={generating !== null}
+              className="px-3 h-9 rounded-lg bg-green-600 hover:bg-green-700 text-white text-[10px] font-black uppercase tracking-wider disabled:opacity-50 flex items-center gap-1.5 active:scale-95 transition-all"
+              data-testid="btn-generate-link-whatsapp"
+            >
+              {generating === 'whatsapp' ? <Loader2 size={12} className="animate-spin" /> : <MessageSquare size={12} />}
+              Só WhatsApp
+            </button>
+          </div>
+        </div>
       ) : (
         <div className="space-y-3">
           {intakes.map((it) => {
@@ -372,27 +463,54 @@ const DhlIntakeTimeline: React.FC<Props> = ({ missionId, canViewSnapshots = true
                 })()}
 
                 {/* Link público para o operacional acessar */}
-                {(st === 'pendente' || st === 'preenchido') && (
-                  <div className="mt-2 pt-2 border-t border-gray-100 flex flex-wrap items-center gap-2">
-                    <a
-                      href={url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="inline-flex items-center gap-1 px-2 py-1 rounded bg-red-600 hover:bg-red-700 text-white font-black uppercase tracking-wider text-[10px]"
-                      data-testid={`link-open-intake-${it.id}`}
-                    >
-                      <ExternalLink size={11} /> Abrir link do fornecedor
-                    </a>
-                    <button
-                      type="button"
-                      onClick={() => copyLink(url)}
-                      className="inline-flex items-center gap-1 px-2 py-1 rounded bg-gray-100 hover:bg-gray-200 text-gray-700 font-black uppercase tracking-wider text-[10px]"
-                      data-testid={`btn-copy-link-${it.id}`}
-                    >
-                      {copiedLink === url ? <><Check size={11} className="text-green-600" /> Copiado</> : <><Copy size={11} /> Copiar URL</>}
-                    </button>
-                  </div>
-                )}
+                {(st === 'pendente' || st === 'preenchido') && (() => {
+                  const waText = waTextById[it.id] || it.whatsapp_text || '';
+                  return (
+                    <div className="mt-2 pt-2 border-t border-gray-100 flex flex-wrap items-center gap-2">
+                      <a
+                        href={url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1 px-2 py-1 rounded bg-red-600 hover:bg-red-700 text-white font-black uppercase tracking-wider text-[10px]"
+                        data-testid={`link-open-intake-${it.id}`}
+                      >
+                        <ExternalLink size={11} /> Abrir link do fornecedor
+                      </a>
+                      <button
+                        type="button"
+                        onClick={() => copyLink(url)}
+                        className="inline-flex items-center gap-1 px-2 py-1 rounded bg-gray-100 hover:bg-gray-200 text-gray-700 font-black uppercase tracking-wider text-[10px]"
+                        data-testid={`btn-copy-link-${it.id}`}
+                      >
+                        {copiedLink === url ? <><Check size={11} className="text-green-600" /> Copiado</> : <><Copy size={11} /> Copiar URL</>}
+                      </button>
+                      {waText && (
+                        <button
+                          type="button"
+                          onClick={() => copyWaText(it.id, waText)}
+                          className="inline-flex items-center gap-1 px-2 py-1 rounded bg-green-600 hover:bg-green-700 text-white font-black uppercase tracking-wider text-[10px]"
+                          data-testid={`btn-copy-wa-${it.id}`}
+                          title="Copia a mensagem formatada de WhatsApp com link e dados da OS"
+                        >
+                          {copiedWa === it.id ? <><Check size={11} /> Copiado</> : <><MessageSquare size={11} /> Copiar WhatsApp</>}
+                        </button>
+                      )}
+                      {st === 'pendente' && (
+                        <button
+                          type="button"
+                          onClick={() => generateLink('both')}
+                          disabled={generating !== null}
+                          className="inline-flex items-center gap-1 px-2 py-1 rounded bg-gray-900 hover:bg-black text-white font-black uppercase tracking-wider text-[10px] disabled:opacity-50"
+                          data-testid={`btn-resend-link-${it.id}`}
+                          title="Reenvia o link por e-mail e WhatsApp"
+                        >
+                          {generating === 'both' ? <Loader2 size={11} className="animate-spin" /> : <Send size={11} />}
+                          Reenviar
+                        </button>
+                      )}
+                    </div>
+                  );
+                })()}
 
                 {hasSnapshots && (
                   <>
