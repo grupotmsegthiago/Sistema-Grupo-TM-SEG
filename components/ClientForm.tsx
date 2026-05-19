@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { ArrowLeft, Save, Building2, Truck, Users, Search, Loader2, AlertTriangle, DollarSign, Edit, Trash2, Plus, FileSpreadsheet, MessageCircle, RefreshCw, Navigation, FileText, MapPin, CheckSquare, Square, X, Edit2, Clock, ScrollText, TrendingUp, Percent, Send, CheckCircle, ShieldCheck, ArrowRight, RotateCcw, Copy, Lock, Calendar, Check, Mail, Phone as PhoneIcon, Map as MapIcon, Hash, Fingerprint, Calculator, Target, UserCheck } from 'lucide-react';
+import { ArrowLeft, Save, Building2, Truck, Users, Search, Loader2, AlertTriangle, DollarSign, Edit, Trash2, Plus, FileSpreadsheet, MessageCircle, RefreshCw, Navigation, FileText, MapPin, CheckSquare, Square, X, Edit2, Clock, ScrollText, TrendingUp, Percent, Send, CheckCircle, ShieldCheck, ArrowRight, RotateCcw, Copy, Lock, Calendar, Check, Mail, Phone as PhoneIcon, Map as MapIcon, Hash, Fingerprint, Calculator, Target, UserCheck, XCircle } from 'lucide-react';
 import { Client, ClientPriceTable } from '../types';
 import { supabase } from '../lib/supabase';
 import { logAction } from '../lib/logger';
@@ -52,7 +52,10 @@ const ClientForm: React.FC<ClientFormProps> = ({
     onSave, id 
 }) => {
   const { showNotification } = useNotification();
-  const [activeTab, setActiveTab] = useState<'registration' | 'costs' | 'vehicles' | 'routes' | 'quotes' | 'contracts'>('registration');
+  const [activeTab, setActiveTab] = useState<'registration' | 'costs' | 'cancellation' | 'vehicles' | 'routes' | 'quotes' | 'contracts'>('registration');
+  const [cancellationDrafts, setCancellationDrafts] = useState<Record<string, string>>({});
+  const [savingCancellationId, setSavingCancellationId] = useState<string | null>(null);
+  const [cancellationSearch, setCancellationSearch] = useState('');
   const [formData, setFormData] = useState({
     name: '',
     trading_name: '', 
@@ -591,7 +594,7 @@ const ClientForm: React.FC<ClientFormProps> = ({
       )}
 
       <div className="flex flex-wrap gap-2 bg-white p-1.5 rounded-xl w-full lg:w-fit shadow-sm border border-gray-200">
-          {[ { id: 'registration', label: 'Dados Cadastrais', icon: Users }, { id: 'contracts', label: 'Contratos', icon: ScrollText }, { id: 'costs', label: 'Tabela de Preços', icon: DollarSign }, { id: 'vehicles', label: 'Veículos (Carga)', icon: Truck }, { id: 'routes', label: 'Rotas Fixas', icon: Navigation }, { id: 'quotes', label: 'Cotações', icon: FileText } ].filter(tab => {
+          {[ { id: 'registration', label: 'Dados Cadastrais', icon: Users }, { id: 'contracts', label: 'Contratos', icon: ScrollText }, { id: 'costs', label: 'Tabela de Preços', icon: DollarSign }, { id: 'cancellation', label: 'Cancelamento', icon: XCircle }, { id: 'vehicles', label: 'Veículos (Carga)', icon: Truck }, { id: 'routes', label: 'Rotas Fixas', icon: Navigation }, { id: 'quotes', label: 'Cotações', icon: FileText } ].filter(tab => {
               if (tab.id === 'registration') return true;
               if (tab.id === 'contracts') return !!id && isFinanceAdmin;
               return isFinanceAdmin;
@@ -1033,6 +1036,102 @@ const ClientForm: React.FC<ClientFormProps> = ({
                         ))}
                     </tbody>
                 </table>
+              </div>
+          </div>
+      )}
+      {activeTab === 'cancellation' && (
+          <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 space-y-6">
+              <div className="flex flex-col md:flex-row justify-between items-center border-b border-gray-100 pb-4 gap-4">
+                  <div className="flex items-center gap-2 text-gray-800">
+                      <div className="p-2 bg-red-50 rounded-lg text-red-700"><XCircle size={20} /></div>
+                      <div>
+                          <h3 className="font-bold text-sm uppercase tracking-wide">Tabela de Cancelamento</h3>
+                          <p className="text-[10px] text-gray-500 font-bold uppercase tracking-widest mt-0.5">Valor cobrado quando o cliente cancela a OS — uma linha por região/rota</p>
+                      </div>
+                  </div>
+                  <div className="relative w-full md:w-72">
+                      <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                      <input type="text" placeholder="Filtrar por operação / rota..." className="w-full pl-9 pr-3 py-2 border border-gray-200 rounded-lg text-xs font-bold uppercase" value={cancellationSearch} onChange={e => setCancellationSearch(e.target.value)} data-testid="input-cancellation-search" />
+                  </div>
+              </div>
+
+              <div className="bg-red-50/60 border border-red-100 rounded-xl p-4 text-[11px] text-red-900 font-bold uppercase tracking-wider flex items-start gap-2">
+                  <AlertTriangle size={14} className="shrink-0 mt-0.5" />
+                  <span>As linhas abaixo são as mesmas da Tabela de Preços. Edite o valor de cancelamento por rota e clique em salvar.</span>
+              </div>
+
+              <div className="overflow-x-auto border border-gray-200 rounded-2xl shadow-sm">
+                  <table className="w-full text-left border-collapse table-auto">
+                      <thead className="bg-gray-100 text-gray-600 font-bold uppercase">
+                          <tr className="text-[10px]">
+                              <th className="p-2">Operação / Rota</th>
+                              <th className="p-2 text-right">Acionamento</th>
+                              <th className="p-2 text-center">Franquia</th>
+                              <th className="p-2 text-right w-48">Valor Cancelamento (R$)</th>
+                              <th className="p-2 text-right w-16">Ações</th>
+                          </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-100">
+                          {priceTables.filter(t => (t.operation_type || '').toLowerCase().includes(cancellationSearch.toLowerCase())).map((table) => {
+                              const draft = cancellationDrafts[table.id];
+                              const currentValue = draft !== undefined ? draft : (table.cancellation_fee ?? 0).toString();
+                              const isDirty = draft !== undefined && parseCurrency(draft) !== (table.cancellation_fee ?? 0);
+                              const isSaving = savingCancellationId === table.id;
+                              return (
+                                  <tr key={table.id} className="text-[11px] hover:bg-gray-50/30">
+                                      <td className="p-2 font-bold uppercase text-gray-700">{table.operation_type}</td>
+                                      <td className="p-2 text-right font-mono font-black text-gray-900">R$ {(table.activation_fee ?? 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</td>
+                                      <td className="p-2 text-center text-gray-500">{table.franchise_km}km / {table.franchise_hours}h</td>
+                                      <td className="p-2 text-right">
+                                          <div className="relative">
+                                              <span className="absolute left-2 top-1/2 -translate-y-1/2 text-[10px] font-black text-gray-400">R$</span>
+                                              <input
+                                                  type="text"
+                                                  className={`w-full pl-7 pr-2 py-1.5 border rounded text-xs font-bold text-right text-red-700 ${isFinanceAdmin ? 'border-gray-300 bg-white' : 'bg-gray-100 cursor-not-allowed border-gray-200'} ${isDirty ? 'border-amber-400 bg-amber-50' : ''}`}
+                                                  value={currentValue}
+                                                  onChange={e => setCancellationDrafts({ ...cancellationDrafts, [table.id]: e.target.value })}
+                                                  readOnly={!isFinanceAdmin}
+                                                  data-testid={`input-cancellation-${table.id}`}
+                                              />
+                                          </div>
+                                      </td>
+                                      <td className="p-2 text-right">
+                                          <button
+                                              disabled={!isDirty || isSaving || !isFinanceAdmin}
+                                              onClick={async () => {
+                                                  if (!isFinanceAdmin) return;
+                                                  setSavingCancellationId(table.id);
+                                                  try {
+                                                      const newValue = parseCurrency(draft ?? '');
+                                                      const { error } = await supabase.from('client_price_tables').update({ cancellation_fee: newValue }).eq('id', table.id);
+                                                      if (error) throw error;
+                                                      await logAction('UPDATE', 'ClientPriceTable', table.id, `Valor de cancelamento atualizado: ${table.client || 'N/A'} — ${table.operation_type} → R$ ${newValue.toFixed(2)}`);
+                                                      const newDrafts = { ...cancellationDrafts };
+                                                      delete newDrafts[table.id];
+                                                      setCancellationDrafts(newDrafts);
+                                                      await fetchPriceTables(formData.name);
+                                                      showNotification('Cancelamento atualizado.', 'success');
+                                                  } catch (e: any) {
+                                                      showNotification('Erro ao salvar cancelamento: ' + (e.message || e), 'error');
+                                                  } finally {
+                                                      setSavingCancellationId(null);
+                                                  }
+                                              }}
+                                              className="p-1.5 text-white bg-green-600 hover:bg-green-700 rounded disabled:opacity-30 disabled:cursor-not-allowed"
+                                              title="Salvar valor de cancelamento"
+                                              data-testid={`button-save-cancellation-${table.id}`}
+                                          >
+                                              {isSaving ? <Loader2 size={12} className="animate-spin" /> : <Save size={12} />}
+                                          </button>
+                                      </td>
+                                  </tr>
+                              );
+                          })}
+                          {priceTables.length === 0 && (
+                              <tr><td colSpan={5} className="p-6 text-center text-gray-400 text-xs font-bold uppercase">Nenhuma linha na tabela de preços deste cliente. Cadastre primeiro em Tabela de Preços.</td></tr>
+                          )}
+                      </tbody>
+                  </table>
               </div>
           </div>
       )}

@@ -1358,6 +1358,28 @@ export async function registerRoutes(
     console.log('[Migration] push_subscriptions:', e.message || 'ok');
   }
 
+  // ── Migration: coluna cancellation_fee em client_price_tables ──
+  try {
+    await supabaseAdmin.rpc('exec_sql', { sql: `
+      ALTER TABLE client_price_tables ADD COLUMN IF NOT EXISTS cancellation_fee NUMERIC DEFAULT 0;
+      NOTIFY pgrst, 'reload schema';
+    `});
+    console.log('[Migration] Coluna client_price_tables.cancellation_fee verificada/criada.');
+  } catch (e: any) {
+    console.log('[Migration] client_price_tables.cancellation_fee:', e.message || 'ok');
+  }
+  // Verificação defensiva (caso exec_sql não exista): se a coluna não existir,
+  // imprime SQL para o operador rodar no Supabase Studio.
+  try {
+    const { error: cancelColCheck } = await supabaseAdmin.from('client_price_tables').select('cancellation_fee').limit(1);
+    if (cancelColCheck && cancelColCheck.message?.includes('does not exist')) {
+      console.log('[Migration] ⚠️  Coluna cancellation_fee NÃO existe em client_price_tables.');
+      console.log('[Migration] ⚠️  Execute no Supabase SQL Editor:');
+      console.log('[Migration] ⚠️    ALTER TABLE client_price_tables ADD COLUMN IF NOT EXISTS cancellation_fee NUMERIC DEFAULT 0;');
+      console.log("[Migration] ⚠️    NOTIFY pgrst, 'reload schema';");
+    }
+  } catch (_e) { /* ignore */ }
+
   // ── Migration PlugNotas: colunas multi-provider em financial_invoices ──
   try {
     await supabaseAdmin.rpc('exec_sql', { sql: `

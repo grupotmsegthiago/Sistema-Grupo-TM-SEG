@@ -116,7 +116,8 @@ const ImportClientPriceModal: React.FC<Props> = ({ onClose, onSuccess, fixedClie
                             hours: { type: "NUMBER" },
                             activation: { type: "NUMBER" },
                             extraKm: { type: "NUMBER" },
-                            extraHour: { type: "NUMBER" }
+                            extraHour: { type: "NUMBER" },
+                            cancellation: { type: "NUMBER" }
                         },
                         required: ["description", "km", "hours", "activation", "extraKm", "extraHour"]
                     }
@@ -200,6 +201,7 @@ const ImportClientPriceModal: React.FC<Props> = ({ onClose, onSuccess, fixedClie
               franchise_km: parseFloat(item.km) || 0,
               price_per_extra_km: parseFloat(item.extraKm) || 0,
               price_per_extra_hour: parseFloat(item.extraHour) || 0,
+              cancellation_fee: parseFloat(item.cancellation) || 0,
               created_at: new Date().toISOString()
           }));
 
@@ -276,7 +278,7 @@ const ImportClientPriceModal: React.FC<Props> = ({ onClose, onSuccess, fixedClie
                         <div className="max-h-64 overflow-y-auto">
                             <table className="w-full text-left text-[10px]">
                                 <thead className="bg-white sticky top-0 border-b font-black uppercase">
-                                    <tr><th className="p-2 w-[35%]">DESCRIÇÃO</th><th className="p-2 w-[15%]">BASE</th><th className="p-2 w-[10%]">KM</th><th className="p-2 w-[10%]">H</th><th className="p-2 w-[10%]">EXC KM</th><th className="p-2 w-[10%]">EXC H</th><th className="p-2 w-8"></th></tr>
+                                    <tr><th className="p-2 w-[30%]">DESCRIÇÃO</th><th className="p-2 w-[12%]">BASE</th><th className="p-2 w-[8%]">KM</th><th className="p-2 w-[8%]">H</th><th className="p-2 w-[10%]">EXC KM</th><th className="p-2 w-[10%]">EXC H</th><th className="p-2 w-[12%]">CANCEL.</th><th className="p-2 w-8"></th></tr>
                                 </thead>
                                 <tbody className="divide-y divide-gray-50 bg-white">
                                     {displayedData.map((row, i) => (
@@ -287,6 +289,7 @@ const ImportClientPriceModal: React.FC<Props> = ({ onClose, onSuccess, fixedClie
                                             <td className="p-1"><input type="number" className="w-full p-1 border border-transparent focus:border-green-300 rounded" value={row.hours} onChange={e => handleRowChange(i, 'hours', e.target.value)} /></td>
                                             <td className="p-1"><input type="number" step="0.01" className="w-full p-1 border border-transparent focus:border-green-300 rounded" value={row.extraKm} onChange={e => handleRowChange(i, 'extraKm', e.target.value)} /></td>
                                             <td className="p-1"><input type="number" step="0.01" className="w-full p-1 border border-transparent focus:border-green-300 rounded" value={row.extraHour} onChange={e => handleRowChange(i, 'extraHour', e.target.value)} /></td>
+                                            <td className="p-1"><input type="number" step="0.01" className="w-full p-1 border border-transparent focus:border-green-300 rounded text-red-600 font-bold" value={row.cancellation || ''} onChange={e => handleRowChange(i, 'cancellation', e.target.value)} /></td>
                                             <td className="p-1 text-center"><button onClick={() => handleRemoveRow(i)} className="text-gray-300 hover:text-red-500"><Trash2 size={12} /></button></td>
                                         </tr>
                                     ))}

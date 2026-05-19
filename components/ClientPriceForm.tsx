@@ -39,7 +39,8 @@ const ClientPriceForm: React.FC<Props> = ({ onBack, onSuccess, id }) => {
     franchise_km: '',
     price_per_extra_km: '',
     price_per_extra_hour: '',
-    price_per_preservation_hour: ''
+    price_per_preservation_hour: '',
+    cancellation_fee: ''
   });
 
   const [clients, setClients] = useState<Client[]>([]);
@@ -74,6 +75,7 @@ const ClientPriceForm: React.FC<Props> = ({ onBack, onSuccess, id }) => {
                         price_per_extra_km: tableData.price_per_extra_km.toString(),
                         price_per_extra_hour: tableData.price_per_extra_hour.toString(),
                         price_per_preservation_hour: (tableData.price_per_preservation_hour ?? 0).toString(),
+                        cancellation_fee: (tableData.cancellation_fee ?? 0).toString(),
                     });
                 }
             }
@@ -106,6 +108,7 @@ const ClientPriceForm: React.FC<Props> = ({ onBack, onSuccess, id }) => {
             price_per_extra_km: parseCurrency(formData.price_per_extra_km),
             price_per_extra_hour: parseCurrency(formData.price_per_extra_hour),
             price_per_preservation_hour: parseCurrency(formData.price_per_preservation_hour),
+            cancellation_fee: parseCurrency(formData.cancellation_fee),
         };
         if (id) {
             const { error } = await supabase.from('client_price_tables').update(payload).eq('id', id);
@@ -179,6 +182,13 @@ const ClientPriceForm: React.FC<Props> = ({ onBack, onSuccess, id }) => {
                    <label className={LABEL_CLASS}>Preservação / Hora</label>
                    <div className="relative">
                       <input type="text" className={`${INPUT_CLASS} ${!isFinanceAdmin ? 'bg-gray-100 cursor-not-allowed' : ''}`} placeholder="Ex: 152,25 (opcional)" value={formData.price_per_preservation_hour} onChange={e => setFormData({...formData, price_per_preservation_hour: e.target.value})} readOnly={!isFinanceAdmin} data-testid="input-preservation-hour" />
+                      {!isFinanceAdmin && <Lock size={16} className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400" />}
+                   </div>
+               </div>
+               <div>
+                   <label className={LABEL_CLASS}>Valor de Cancelamento</label>
+                   <div className="relative">
+                      <input type="text" className={`${INPUT_CLASS} ${!isFinanceAdmin ? 'bg-gray-100 cursor-not-allowed' : ''}`} placeholder="Ex: 350,00 (cobrado se cancelar)" value={formData.cancellation_fee} onChange={e => setFormData({...formData, cancellation_fee: e.target.value})} readOnly={!isFinanceAdmin} data-testid="input-cancellation-fee" />
                       {!isFinanceAdmin && <Lock size={16} className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400" />}
                    </div>
                </div>
