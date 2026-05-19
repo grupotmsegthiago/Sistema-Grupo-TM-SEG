@@ -927,7 +927,7 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
           if (revTable) {
               revenue = revTable.activation_fee;
               const revTableName = (revTable.operation_type || '').toUpperCase();
-              const isFixedPriceRevTable = revTableName.includes('LOGITECH') || revTableName.includes('200KM') || revTableName.includes('200 KM') || revTableName.includes('100KM') || revTableName.includes('100 KM') || revTableName.includes('300KM') || revTableName.includes('300 KM');
+              const isFixedPriceRevTable = revTableName.includes('LOGITECH') || revTableName.includes('200KM') || revTableName.includes('200 KM') || revTableName.includes('100KM') || revTableName.includes('100 KM') || revTableName.includes('300KM') || revTableName.includes('300 KM') || revTableName.includes('400KM') || revTableName.includes('400 KM') || revTableName.includes('500KM') || revTableName.includes('500 KM');
               if (!isSpecialRuleActive && !isFixedPriceRevTable && realDist > revTable.franchise_km) revenue += (realDist - revTable.franchise_km) * (revTable.price_per_extra_km || 0);
               const revFranchiseHours = parseFloat(revTable.franchise_hours) || 0;
               if (revFranchiseHours > 0 && estHours > revFranchiseHours) {
@@ -954,7 +954,7 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
               if (cstTable) {
                   cost = cstTable.activation_cost;
                   const cstTableName = (cstTable.operation_type || '').toUpperCase();
-                  const isFixedPriceCstTable = cstTableName.includes('LOGITECH') || cstTableName.includes('200KM') || cstTableName.includes('200 KM') || cstTableName.includes('100KM') || cstTableName.includes('100 KM') || cstTableName.includes('300KM') || cstTableName.includes('300 KM');
+                  const isFixedPriceCstTable = cstTableName.includes('LOGITECH') || cstTableName.includes('200KM') || cstTableName.includes('200 KM') || cstTableName.includes('100KM') || cstTableName.includes('100 KM') || cstTableName.includes('300KM') || cstTableName.includes('300 KM') || cstTableName.includes('400KM') || cstTableName.includes('400 KM') || cstTableName.includes('500KM') || cstTableName.includes('500 KM');
                   if (!isSpecialRuleActive && !isFixedPriceCstTable && realDist > cstTable.franchise_km) cost += (realDist - cstTable.franchise_km) * (cstTable.cost_per_extra_km || 0);
                   const cstFranchiseHours = parseFloat(cstTable.franchise_hours) || 0;
                   if (cstFranchiseHours > 0 && estHours > cstFranchiseHours) {
@@ -2352,8 +2352,8 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
                               <p className="text-[9px] font-black text-yellow-700 uppercase tracking-wider text-center">
                                 {formData.raioKm > 0 ? `Raio ${formData.raioKm} km aplicado — toque para refazer` : 'Não sei o destino — escolha o raio'}
                               </p>
-                              <div className="grid grid-cols-3 gap-1.5">
-                                {[100, 200, 300].map((km) => (
+                              <div className="grid grid-cols-5 gap-1.5">
+                                {[100, 200, 300, 400, 500].map((km) => (
                                   <button
                                     key={km}
                                     type="button"
