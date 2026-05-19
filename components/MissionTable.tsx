@@ -1125,7 +1125,13 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
                    viewPeriod={viewPeriod} 
                    customStartDate={customStartDate} 
                    customEndDate={customEndDate}
-                   missions={allMissions}
+                   missions={[
+                     ...allMissions,
+                     ...allMissions.filter((m: any) => {
+                       const n = ((m.originalClientName || m.client || '') as string).toUpperCase();
+                       return n.includes('DHL SUPPLY CHAIN') || n.includes('DHL LOGISTICS');
+                     })
+                   ]}
                    clientTables={clientTables}
                    providerTables={providerTables}
                    clientsData={clientsData}
