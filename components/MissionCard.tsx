@@ -719,20 +719,30 @@ Qualquer dúvida, estamos a disposição.
                                 return (
                                     <span
                                         className="px-1.5 py-0.5 rounded text-[8px] font-black uppercase flex items-center gap-1 bg-emerald-600 text-white border border-emerald-700 shadow-[0_2px_8px_rgba(16,185,129,0.35)]"
-                                        title="Cadastro do fornecedor completo — apto para iniciar"
+                                        title="Documentação do fornecedor completa — Escoltista 1, Escoltista 2, Veículo e Espelhamento enviados."
                                         data-testid={`badge-intake-apto-${mission.id}`}
                                     >
-                                        <Check size={10} strokeWidth={3} /> APTO
+                                        <Check size={10} strokeWidth={3} /> DOC OK
                                     </span>
                                 );
                             }
+                            const missing: string[] = [];
+                            if (!a1) missing.push('Escoltista 1');
+                            if (!a2) missing.push('Escoltista 2');
+                            if (!vh) missing.push('Veículo');
+                            if (!mr) missing.push('Espelhamento');
+                            const isEmpty = done === 0;
                             return (
                                 <span
-                                    className="px-1.5 py-0.5 rounded text-[8px] font-black uppercase flex items-center gap-1 bg-amber-100 text-amber-800 border border-amber-400"
-                                    title={`Cadastro do fornecedor pendente — ${done}/4 itens preenchidos (Escoltista 1, Escoltista 2, Veiculo, Espelhamento)`}
+                                    className={`px-1.5 py-0.5 rounded text-[8px] font-black uppercase flex items-center gap-1 ${
+                                        isEmpty
+                                            ? 'bg-red-100 text-red-700 border border-red-400 shadow-[0_2px_8px_rgba(239,68,68,0.25)] animate-pulse'
+                                            : 'bg-amber-100 text-amber-800 border border-amber-400'
+                                    }`}
+                                    title={`Documentação faltando (${done}/4 preenchidos pelo fornecedor). Falta: ${missing.join(', ')}.`}
                                     data-testid={`badge-intake-pendente-${mission.id}`}
                                 >
-                                    <AlertTriangle size={10} strokeWidth={3} /> INTAKE {done}/4
+                                    <AlertTriangle size={10} strokeWidth={3} /> DOC FALTANDO {done}/4
                                 </span>
                             );
                         })() : null}
