@@ -27,7 +27,13 @@ interface DhlIntakeRow {
   agent2_snapshot?: EscoltistaSnapshot | null;
   vehicle_snapshot?: VehicleSnapshot | null;
   mirror_proof_url?: string | null; mirror_proof_filename?: string | null;
+  provider_reminder_count?: number | null;
+  provider_whatsapp_reminder_count?: number | null;
+  provider_reminder_sent_at?: string | null;
+  provider_whatsapp_reminder_sent_at?: string | null;
 }
+
+interface DhlReminderConfig { maxCount: number; cycleHours: number; }
 
 interface Props {
   missionId: string;
@@ -39,6 +45,7 @@ const fmt = (d: string | null | undefined) =>
 
 const DhlIntakeTimeline: React.FC<Props> = ({ missionId, canViewSnapshots = true }) => {
   const [intakes, setIntakes] = useState<DhlIntakeRow[]>([]);
+  const [reminderConfig, setReminderConfig] = useState<DhlReminderConfig>({ maxCount: 3, cycleHours: 12 });
   const [loading, setLoading] = useState(false);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
@@ -59,6 +66,9 @@ const DhlIntakeTimeline: React.FC<Props> = ({ missionId, canViewSnapshots = true
       }
       const j = await r.json();
       setIntakes(Array.isArray(j?.intakes) ? j.intakes : []);
+      if (j?.reminderConfig && typeof j.reminderConfig.maxCount === 'number' && typeof j.reminderConfig.cycleHours === 'number') {
+        setReminderConfig({ maxCount: j.reminderConfig.maxCount, cycleHours: j.reminderConfig.cycleHours });
+      }
     } catch {
       setErrorMsg('Falha de conexão ao carregar painel DHL.');
     } finally {
@@ -301,6 +311,65 @@ const DhlIntakeTimeline: React.FC<Props> = ({ missionId, canViewSnapshots = true
                   <span><Phone size={10} className="inline mr-1" />{it.sent_to_phone || '—'}</span>
                   <span>Expira: {fmt(it.expires_at)}</span>
                 </div>
+
+                {st === 'pendente' && (() => {
+                  const { maxCount, cycleHours } = reminderConfig;
+                  const row = (
+                    channel: 'email' | 'whatsapp',
+                    label: string,
+                    Icon: any,
+                    count: number,
+                    lastSentAt: string | null | undefined,
+                    hasTarget: boolean,
+                  ) => {
+                    if (!hasTarget && count <= 0) return null;
+                    const remaining = Math.max(0, maxCount - count);
+                    const limitReached = count >= maxCount;
+                    let nextLabel = '';
+                    if (!limitReached) {
+                      if (lastSentAt) {
+                        const diffH = (new Date(lastSentAt).getTime() + cycleHours * 3600000 - Date.now()) / 3600000;
+                        nextLabel = diffH <= 0 ? 'próximo a qualquer momento' : `próximo em ~${Math.max(1, Math.round(diffH))}h`;
+                      } else {
+                        nextLabel = 'próximo a qualquer momento';
+                      }
+                    }
+                    return (
+                      <li
+                        key={channel}
+                        className={`flex flex-wrap items-center gap-x-1.5 gap-y-0.5 ${limitReached ? 'text-red-700' : 'text-gray-700'}`}
+                        data-testid={`reminder-${channel}-${it.id}`}
+                      >
+                        <Icon size={10} className="inline" />
+                        <span className="font-bold">{label}:</span>
+                        <span data-testid={`reminder-${channel}-count-${it.id}`}>
+                          {count} de {maxCount} lembretes automáticos enviados
+                        </span>
+                        {limitReached ? (
+                          <span
+                            className="font-black uppercase tracking-wider text-red-700"
+                            data-testid={`reminder-${channel}-limit-${it.id}`}
+                          >
+                            · limite atingido — reenviar manualmente
+                          </span>
+                        ) : (
+                          <span className="text-gray-500" data-testid={`reminder-${channel}-next-${it.id}`}>
+                            · {nextLabel}; restam {remaining}
+                          </span>
+                        )}
+                      </li>
+                    );
+                  };
+                  const emailRow = row('email', 'E-mail', Mail, Number(it.provider_reminder_count) || 0, it.provider_reminder_sent_at, !!it.sent_to_email);
+                  const waRow = row('whatsapp', 'WhatsApp', Phone, Number(it.provider_whatsapp_reminder_count) || 0, it.provider_whatsapp_reminder_sent_at, !!it.sent_to_phone);
+                  if (!emailRow && !waRow) return null;
+                  return (
+                    <div className="mt-2 pt-2 border-t border-gray-100" data-testid={`block-reminders-${it.id}`}>
+                      <p className="text-[10px] font-black uppercase tracking-wider text-gray-600 mb-1">Lembretes automáticos</p>
+                      <ul className="space-y-0.5">{emailRow}{waRow}</ul>
+                    </div>
+                  );
+                })()}
 
                 {/* Link público para o operacional acessar */}
                 {(st === 'pendente' || st === 'preenchido') && (

@@ -1351,7 +1351,7 @@ export function registerDhlIntakeRoutes(
       if (!missionId) return res.status(400).json({ error: 'missionId é obrigatório' });
       const sb = getSb();
       const canSeeSnapshots = await userCanSeeSnapshots(req);
-      const baseCols = 'id, token, provider_id, provider_name, status, sent_to_email, sent_to_phone, submitted_at, created_at, expires_at';
+      const baseCols = 'id, token, provider_id, provider_name, status, sent_to_email, sent_to_phone, submitted_at, created_at, expires_at, provider_reminder_count, provider_whatsapp_reminder_count, provider_reminder_sent_at, provider_whatsapp_reminder_sent_at';
       const sensitiveCols = ', agent1_snapshot, agent2_snapshot, vehicle_snapshot, mirror_proof_url, mirror_proof_filename';
       const { data, error } = await sb.from('dhl_supplier_intakes')
         .select(canSeeSnapshots ? baseCols + sensitiveCols : baseCols)
@@ -1394,7 +1394,15 @@ export function registerDhlIntakeRoutes(
         const resends = resendsByIntake.get(it.id) || [];
         return { ...it, expired, effective_status: effectiveStatus, resends };
       });
-      return res.json({ ok: true, intakes, canViewSnapshots: canSeeSnapshots });
+      return res.json({
+        ok: true,
+        intakes,
+        canViewSnapshots: canSeeSnapshots,
+        reminderConfig: {
+          maxCount: DHL_REMINDER_MAX_COUNT,
+          cycleHours: DHL_REMINDER_CYCLE_HOURS,
+        },
+      });
     } catch (e: any) {
       console.error('[DHL Intake] by-mission exception:', e);
       return res.status(500).json({ error: e?.message || 'Erro interno' });
