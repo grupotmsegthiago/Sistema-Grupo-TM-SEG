@@ -154,6 +154,8 @@ export async function runDhlIntakeMigrations(): Promise<void> {
       );
       CREATE INDEX IF NOT EXISTS idx_dhl_intake_resends_intake ON dhl_supplier_intake_resends(intake_id);
       CREATE INDEX IF NOT EXISTS idx_dhl_intake_resends_mission ON dhl_supplier_intake_resends(mission_id);
+      ALTER TABLE dhl_supplier_intake_resends ADD COLUMN IF NOT EXISTS whatsapp_status TEXT;
+      ALTER TABLE dhl_supplier_intake_resends ADD COLUMN IF NOT EXISTS whatsapp_error TEXT;
 
       -- Força o PostgREST a recarregar o cache de schema após ALTER TABLE
       NOTIFY pgrst, 'reload schema';
@@ -624,6 +626,7 @@ export function registerDhlIntakeRoutes(
       const channel: 'email' | 'whatsapp' | 'both' =
         rawChannel === 'email' || rawChannel === 'whatsapp' || rawChannel === 'both' ? rawChannel : 'both';
       const wantsEmail = channel === 'email' || channel === 'both';
+      const wantsWhatsapp = channel === 'whatsapp' || channel === 'both';
 
       const sb = getSb();
       const { data: mission, error: mErr } = await sb.from('missions').select('*').eq('id', missionId).single();
@@ -738,11 +741,55 @@ export function registerDhlIntakeRoutes(
         link,
       });
 
+      // ── WhatsApp via Z-API (envio automático sem precisar copiar) ───
+      let whatsappSent = false;
+      let whatsappError: string | null = null;
+      let whatsappSkipped = false;
+      if (wantsWhatsapp) {
+        const ZAPI_INSTANCE = process.env.ZAPI_INSTANCE_ID || process.env.VITE_ZAPI_INSTANCE_ID || '';
+        const ZAPI_TOKEN = process.env.ZAPI_TOKEN || process.env.VITE_ZAPI_TOKEN || '';
+        const ZAPI_CLIENT_TOKEN = process.env.ZAPI_CLIENT_TOKEN || process.env.VITE_ZAPI_CLIENT_TOKEN || '';
+        if (!providerPhone) {
+          // Sem telefone cadastrado — frontend cai no fallback (copiar / wa.me).
+        } else if (!ZAPI_INSTANCE || !ZAPI_TOKEN) {
+          whatsappError = 'Z-API não configurada';
+        } else {
+          // Brasil: garante prefixo 55 quando vier apenas DDD+número (10/11 dígitos).
+          const phoneDigits = providerPhone.length <= 11 ? `55${providerPhone}` : providerPhone;
+          try {
+            const headers: any = { 'Content-Type': 'application/json' };
+            if (ZAPI_CLIENT_TOKEN) headers['Client-Token'] = ZAPI_CLIENT_TOKEN;
+            const r = await fetch(`https://api.z-api.io/instances/${ZAPI_INSTANCE}/token/${ZAPI_TOKEN}/send-text`, {
+              method: 'POST',
+              headers,
+              body: JSON.stringify({ phone: phoneDigits, message: whatsappText }),
+            });
+            const txt = await r.text();
+            if (!r.ok) {
+              let detail: any = txt;
+              try { detail = JSON.parse(txt); } catch {}
+              whatsappError = `Z-API ${r.status}: ${typeof detail === 'string' ? detail : (detail?.error || detail?.message || JSON.stringify(detail))}`;
+              console.error('[DHL Intake] erro WhatsApp:', whatsappError);
+            } else {
+              whatsappSent = true;
+            }
+          } catch (e: any) {
+            whatsappError = e?.message || 'falha no envio do WhatsApp';
+            console.error('[DHL Intake] exceção WhatsApp:', whatsappError);
+          }
+        }
+      } else {
+        whatsappSkipped = true;
+      }
+
       // ── Registra o reenvio no histórico (auditoria) ─────────────────
       try {
         const principal = await getPrincipal(req);
         const emailStatus = providerEmail
           ? (emailSent ? 'success' : 'failure')
+          : 'skipped';
+        const whatsappStatus = wantsWhatsapp
+          ? (providerPhone ? (whatsappSent ? 'success' : 'failure') : 'skipped')
           : 'skipped';
         const { error: resendErr } = await sb.from('dhl_supplier_intake_resends').insert([{
           intake_id: intake.id,
@@ -753,6 +800,8 @@ export function registerDhlIntakeRoutes(
           target_phone: providerPhone || null,
           email_status: emailStatus,
           email_error: emailError,
+          whatsapp_status: whatsappStatus,
+          whatsapp_error: whatsappError,
           reused_existing_token: reusedExistingToken,
         }]);
         if (resendErr) {
@@ -770,6 +819,9 @@ export function registerDhlIntakeRoutes(
         emailSent,
         emailError,
         emailSkipped,
+        whatsappSent,
+        whatsappError,
+        whatsappSkipped,
         channel,
         providerEmail: providerEmail || null,
         providerPhone: providerPhone || null,
@@ -824,7 +876,7 @@ export function registerDhlIntakeRoutes(
       let resendsByIntake: Map<string, any[]> = new Map();
       if (intakeIds.length > 0) {
         const { data: resends, error: rErr } = await sb.from('dhl_supplier_intake_resends')
-          .select('id, intake_id, sent_at, sent_by_user_id, sent_by_user_name, target_email, target_phone, email_status, email_error, reused_existing_token')
+          .select('id, intake_id, sent_at, sent_by_user_id, sent_by_user_name, target_email, target_phone, email_status, email_error, whatsapp_status, whatsapp_error, reused_existing_token')
           .in('intake_id', intakeIds)
           .order('sent_at', { ascending: false });
         if (rErr) {

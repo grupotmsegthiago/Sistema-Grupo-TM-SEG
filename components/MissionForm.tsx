@@ -128,7 +128,7 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
     reference_number: '',
     dhl_se_number: ''
   });
-  const [dhlLinkModal, setDhlLinkModal] = useState<{ open: boolean; missionId: string; url: string; whatsappText: string; phone: string; channel: 'email' | 'whatsapp' | 'both'; emailSent: boolean; providerEmail: string }>({ open: false, missionId: '', url: '', whatsappText: '', phone: '', channel: 'both', emailSent: false, providerEmail: '' });
+  const [dhlLinkModal, setDhlLinkModal] = useState<{ open: boolean; missionId: string; url: string; whatsappText: string; phone: string; channel: 'email' | 'whatsapp' | 'both'; emailSent: boolean; providerEmail: string; whatsappSent: boolean; whatsappError: string | null }>({ open: false, missionId: '', url: '', whatsappText: '', phone: '', channel: 'both', emailSent: false, providerEmail: '', whatsappSent: false, whatsappError: null });
   const [dhlChannelPicker, setDhlChannelPicker] = useState<{ open: boolean }>({ open: false });
   const [dhlIntakes, setDhlIntakes] = useState<DhlIntakeRow[]>([]);
   const [dhlIntakesLoading, setDhlIntakesLoading] = useState(false);
@@ -239,18 +239,26 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
       });
       const j = await r.json();
       if (r.ok && j.url) {
-        setDhlLinkModal({ open: true, missionId: osId, url: j.url, whatsappText: j.whatsappText || '', phone: j.providerPhone || '', channel, emailSent: !!j.emailSent, providerEmail: j.providerEmail || '' });
+        setDhlLinkModal({ open: true, missionId: osId, url: j.url, whatsappText: j.whatsappText || '', phone: j.providerPhone || '', channel, emailSent: !!j.emailSent, providerEmail: j.providerEmail || '', whatsappSent: !!j.whatsappSent, whatsappError: j.whatsappError || null });
         const wantsEmail = channel === 'email' || channel === 'both';
         const wantsWhatsapp = channel === 'whatsapp' || channel === 'both';
-        if (wantsEmail && j.emailSent) {
-          const extra = wantsWhatsapp ? ' Abra o WhatsApp para enviar a mensagem manualmente.' : '';
-          showNotification('E-mail enviado', `Link DHL enviado para ${j.providerEmail || 'o fornecedor'}.${extra}`, 'success');
+        const phoneOk = !!(j.providerPhone && String(j.providerPhone).trim());
+
+        if (wantsWhatsapp && j.whatsappSent) {
+          const extra = wantsEmail
+            ? (j.emailSent ? ` E-mail também enviado para ${j.providerEmail || 'o fornecedor'}.` : (j.emailError ? ` (Falha no e-mail: ${j.emailError})` : ''))
+            : '';
+          showNotification('WhatsApp enviado', `Mensagem enviada automaticamente ao fornecedor.${extra}`, 'success');
+        } else if (wantsWhatsapp && !phoneOk) {
+          showNotification('Fornecedor sem telefone', 'Não há telefone cadastrado para o fornecedor. Copie a mensagem ou abra o WhatsApp Web.', 'warning');
+        } else if (wantsWhatsapp && j.whatsappError) {
+          showNotification('WhatsApp não enviado', `Falha automática: ${j.whatsappError}. Use o botão para enviar pelo WhatsApp Web.`, 'warning');
+        } else if (wantsEmail && j.emailSent) {
+          showNotification('E-mail enviado', `Link DHL enviado para ${j.providerEmail || 'o fornecedor'}.`, 'success');
         } else if (wantsEmail && j.emailError) {
-          showNotification('E-mail não enviado', `Falha ao enviar e-mail: ${j.emailError}.${wantsWhatsapp ? ' Use o WhatsApp.' : ''}`, 'warning');
+          showNotification('E-mail não enviado', `Falha ao enviar e-mail: ${j.emailError}.`, 'warning');
         } else if (wantsEmail && !j.providerEmail) {
-          showNotification('Fornecedor sem e-mail', `Não há e-mail cadastrado para o fornecedor.${wantsWhatsapp ? ' Envie pelo WhatsApp.' : ''}`, 'warning');
-        } else if (!wantsEmail && wantsWhatsapp) {
-          showNotification('Link pronto para WhatsApp', 'E-mail não foi enviado. Copie a mensagem ou abra o WhatsApp para enviar ao fornecedor.', 'success');
+          showNotification('Fornecedor sem e-mail', 'Não há e-mail cadastrado para o fornecedor.', 'warning');
         }
         await fetchDhlIntakes(osId);
       } else {
@@ -1017,7 +1025,7 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
             });
             const j = await r.json();
             if (r.ok && j.url) {
-              setDhlLinkModal({ open: true, missionId: finalId, url: j.url, whatsappText: j.whatsappText || '', phone: j.providerPhone || '' });
+              setDhlLinkModal({ open: true, missionId: finalId, url: j.url, whatsappText: j.whatsappText || '', phone: j.providerPhone || '', channel: 'both', emailSent: !!j.emailSent, providerEmail: j.providerEmail || '', whatsappSent: !!j.whatsappSent, whatsappError: j.whatsappError || null });
             } else {
               alert('OS salva, mas falhou ao gerar o link DHL: ' + (j.error || 'erro desconhecido'));
             }
@@ -1595,11 +1603,25 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
                                             </p>
                                             <ul className="space-y-1">
                                               {it.resends.map((rs: any) => {
-                                                const ok = rs.email_status === 'success';
-                                                const skipped = rs.email_status === 'skipped';
-                                                const dotCls = ok ? 'bg-green-500' : skipped ? 'bg-gray-400' : 'bg-red-500';
-                                                const statusLabel = ok ? 'Enviado' : skipped ? 'Sem e-mail' : 'Falha';
-                                                const dest = rs.target_email || rs.target_phone || '—';
+                                                const emailOk = rs.email_status === 'success';
+                                                const emailSkipped = rs.email_status === 'skipped' || !rs.email_status;
+                                                const emailFail = rs.email_status === 'failure';
+                                                const waOk = rs.whatsapp_status === 'success';
+                                                const waSkipped = rs.whatsapp_status === 'skipped' || !rs.whatsapp_status;
+                                                const waFail = rs.whatsapp_status === 'failure';
+                                                // Estado geral: sucesso se qualquer canal foi entregue; falha se algum tentou e falhou e nenhum teve sucesso.
+                                                const anySuccess = emailOk || waOk;
+                                                const anyFailure = emailFail || waFail;
+                                                const dotCls = anySuccess ? 'bg-green-500' : anyFailure ? 'bg-red-500' : 'bg-gray-400';
+                                                const emailLabel = emailOk ? `E-mail ✓ ${rs.target_email || ''}`.trim() : emailFail ? 'E-mail ✗' : null;
+                                                const waLabel = waOk ? `WhatsApp ✓ ${rs.target_phone || ''}`.trim() : waFail ? 'WhatsApp ✗' : null;
+                                                const labels: string[] = [];
+                                                if (emailLabel) labels.push(emailLabel);
+                                                if (waLabel) labels.push(waLabel);
+                                                if (labels.length === 0) {
+                                                  // Nada foi tentado (ou tabela antiga sem whatsapp_status): mostra destino bruto.
+                                                  labels.push(emailSkipped && waSkipped ? 'Sem envio' : (rs.target_email || rs.target_phone || '—'));
+                                                }
                                                 return (
                                                   <li key={rs.id} className="flex flex-wrap items-start gap-x-2 gap-y-0.5 text-gray-700" data-testid={`resend-row-${rs.id}`}>
                                                     <span className={`inline-block w-1.5 h-1.5 rounded-full mt-1 ${dotCls}`} />
@@ -1607,16 +1629,19 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
                                                     <span className="text-gray-400">·</span>
                                                     <span data-testid={`resend-user-${rs.id}`}>{rs.sent_by_user_name || 'Sistema'}</span>
                                                     <span className="text-gray-400">·</span>
-                                                    <span className="truncate" data-testid={`resend-target-${rs.id}`}>{dest}</span>
-                                                    <span className="text-gray-400">·</span>
-                                                    <span className={`font-bold ${ok ? 'text-green-700' : skipped ? 'text-gray-500' : 'text-red-700'}`} data-testid={`resend-status-${rs.id}`}>
-                                                      {statusLabel}
+                                                    <span
+                                                      className={`font-bold ${anySuccess ? 'text-green-700' : anyFailure ? 'text-red-700' : 'text-gray-500'}`}
+                                                      data-testid={`resend-status-${rs.id}`}
+                                                    >
+                                                      {labels.join(' · ')}
                                                     </span>
                                                     {rs.reused_existing_token && (
                                                       <span className="text-gray-500 italic">(mesmo link)</span>
                                                     )}
-                                                    {rs.email_error && (
-                                                      <span className="w-full text-red-700 italic pl-3.5" data-testid={`resend-error-${rs.id}`}>{rs.email_error}</span>
+                                                    {(rs.email_error || rs.whatsapp_error) && (
+                                                      <span className="w-full text-red-700 italic pl-3.5" data-testid={`resend-error-${rs.id}`}>
+                                                        {[rs.email_error && `E-mail: ${rs.email_error}`, rs.whatsapp_error && `WhatsApp: ${rs.whatsapp_error}`].filter(Boolean).join(' — ')}
+                                                      </span>
                                                     )}
                                                   </li>
                                                 );
@@ -2487,13 +2512,22 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
                 OS <span className="font-bold text-red-600">{dhlLinkModal.missionId}</span>
                 {(() => {
                   const c = dhlLinkModal.channel;
-                  if (c === 'whatsapp') return ' — envio por WhatsApp apenas. Copie a mensagem ou abra o WhatsApp abaixo.';
+                  const waOk = dhlLinkModal.whatsappSent;
+                  const waErr = dhlLinkModal.whatsappError;
+                  const phone = (dhlLinkModal.phone || '').trim();
+                  const waPart = waOk
+                    ? ' — WhatsApp enviado automaticamente ao fornecedor.'
+                    : (phone
+                        ? (waErr ? ` — WhatsApp não enviado automaticamente (${waErr}). Use o botão abaixo.` : ' — WhatsApp não enviado automaticamente. Use o botão abaixo.')
+                        : ' — fornecedor sem telefone cadastrado. Copie a mensagem ou abra o WhatsApp Web.');
+                  if (c === 'whatsapp') return waPart;
                   if (c === 'email') return dhlLinkModal.emailSent
                     ? ` — e-mail enviado para ${dhlLinkModal.providerEmail || 'o fornecedor'}.`
-                    : ' — e-mail não foi enviado. Use o WhatsApp manualmente.';
-                  return dhlLinkModal.emailSent
-                    ? ` — e-mail enviado para ${dhlLinkModal.providerEmail || 'o fornecedor'}. Copie a mensagem para enviar pelo WhatsApp.`
-                    : ' — e-mail não enviado. Envie pelo WhatsApp.';
+                    : ' — e-mail não foi enviado.';
+                  const emailPart = dhlLinkModal.emailSent
+                    ? ` — e-mail enviado para ${dhlLinkModal.providerEmail || 'o fornecedor'}.`
+                    : ' — e-mail não enviado.';
+                  return emailPart + waPart;
                 })()}
               </p>
 
