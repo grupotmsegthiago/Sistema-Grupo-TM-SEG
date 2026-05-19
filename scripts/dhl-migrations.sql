@@ -146,6 +146,11 @@ CREATE TRIGGER trg_cancel_dhl_intakes_on_mission_update
   AFTER UPDATE OF status ON public.missions
   FOR EACH ROW EXECUTE FUNCTION public.cancel_dhl_intakes_on_mission_change();
 
--- 7) Recarrega o cache de schema do PostgREST (Supabase) para que a API
+-- 7) Coluna "Preservação / Hora" na tabela de preços (contrato DHL)
+--    R$ 152,25/hora — usada em rotas DHL específicas.
+ALTER TABLE public.client_price_tables
+  ADD COLUMN IF NOT EXISTS price_per_preservation_hour NUMERIC DEFAULT 0;
+
+-- 8) Recarrega o cache de schema do PostgREST (Supabase) para que a API
 --    reconheça imediatamente as novas tabelas e colunas
 NOTIFY pgrst, 'reload schema';

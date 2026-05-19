@@ -260,6 +260,7 @@ export interface ClientPriceTable {
   franchise_km: number;
   price_per_extra_km: number;
   price_per_extra_hour: number;
+  price_per_preservation_hour?: number;
   regional_costs?: QuoteItem[];
   previous_activation_fee?: number;
   previous_price_per_extra_km?: number;

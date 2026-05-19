@@ -38,7 +38,8 @@ const ClientPriceForm: React.FC<Props> = ({ onBack, onSuccess, id }) => {
     franchise_hours: '',
     franchise_km: '',
     price_per_extra_km: '',
-    price_per_extra_hour: ''
+    price_per_extra_hour: '',
+    price_per_preservation_hour: ''
   });
 
   const [clients, setClients] = useState<Client[]>([]);
@@ -72,6 +73,7 @@ const ClientPriceForm: React.FC<Props> = ({ onBack, onSuccess, id }) => {
                         franchise_km: tableData.franchise_km.toString(),
                         price_per_extra_km: tableData.price_per_extra_km.toString(),
                         price_per_extra_hour: tableData.price_per_extra_hour.toString(),
+                        price_per_preservation_hour: (tableData.price_per_preservation_hour ?? 0).toString(),
                     });
                 }
             }
@@ -102,7 +104,8 @@ const ClientPriceForm: React.FC<Props> = ({ onBack, onSuccess, id }) => {
             franchise_hours: parseCurrency(formData.franchise_hours),
             franchise_km: parseCurrency(formData.franchise_km),
             price_per_extra_km: parseCurrency(formData.price_per_extra_km),
-            price_per_extra_hour: parseCurrency(formData.price_per_extra_hour)
+            price_per_extra_hour: parseCurrency(formData.price_per_extra_hour),
+            price_per_preservation_hour: parseCurrency(formData.price_per_preservation_hour),
         };
         if (id) {
             const { error } = await supabase.from('client_price_tables').update(payload).eq('id', id);
@@ -157,7 +160,7 @@ const ClientPriceForm: React.FC<Props> = ({ onBack, onSuccess, id }) => {
 
          <div>
             <div className="flex items-center gap-2 mb-4 pb-2 border-b border-gray-100"><DollarSign size={18} className="text-red-700" /><h3 className="font-bold text-sm text-gray-800 uppercase tracking-wider">Valores Excedentes</h3></div>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                <div>
                    <label className={LABEL_CLASS}>Valor KM Extra</label>
                    <div className="relative">
@@ -169,6 +172,13 @@ const ClientPriceForm: React.FC<Props> = ({ onBack, onSuccess, id }) => {
                    <label className={LABEL_CLASS}>Valor Hora Extra</label>
                    <div className="relative">
                       <input type="text" required className={`${INPUT_CLASS} ${!isFinanceAdmin ? 'bg-gray-100 cursor-not-allowed' : ''}`} value={formData.price_per_extra_hour} onChange={e => setFormData({...formData, price_per_extra_hour: e.target.value})} readOnly={!isFinanceAdmin} />
+                      {!isFinanceAdmin && <Lock size={16} className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400" />}
+                   </div>
+               </div>
+               <div>
+                   <label className={LABEL_CLASS}>Preservação / Hora</label>
+                   <div className="relative">
+                      <input type="text" className={`${INPUT_CLASS} ${!isFinanceAdmin ? 'bg-gray-100 cursor-not-allowed' : ''}`} placeholder="Ex: 152,25 (opcional)" value={formData.price_per_preservation_hour} onChange={e => setFormData({...formData, price_per_preservation_hour: e.target.value})} readOnly={!isFinanceAdmin} data-testid="input-preservation-hour" />
                       {!isFinanceAdmin && <Lock size={16} className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400" />}
                    </div>
                </div>
