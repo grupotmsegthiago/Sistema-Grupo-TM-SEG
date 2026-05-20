@@ -1366,11 +1366,17 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
       const hasPartial = (hasAuditor || hasFinanceiro) && !isFullyApproved;
 
       let currentUserStage = '';
+      let isPrivilegedReapprover = false;
       try {
           const u = JSON.parse(localStorage.getItem('userData') || '{}');
           const uName = (u.name || '').toLowerCase();
           const uRole = (u.role || '').toLowerCase();
-          if (uName.includes('daniel') || uName.includes('michelle')) currentUserStage = 'auditor';
+          // Usuários com poder permanente de editar e re-aprovar a qualquer momento.
+          isPrivilegedReapprover = uName.includes('daniel') || uName.includes('michelle')
+              || uName.includes('barbara') || uName.includes('bárbara')
+              || uName.includes('thiago') || uName.includes('plinio') || uName.includes('plínio');
+          if (uName.includes('plinio') || uName.includes('plínio')) currentUserStage = 'diretoria';
+          else if (uName.includes('daniel') || uName.includes('michelle')) currentUserStage = 'auditor';
           else if (uRole === 'administrador' || uName.includes('barbara') || uName.includes('bárbara')) currentUserStage = 'financeiro';
           else if (uRole === 'diretoria' || uName.includes('thiago')) currentUserStage = 'diretoria';
           else if (uRole === 'controller') currentUserStage = 'controller';
@@ -1380,7 +1386,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
       let blockedMessage = '';
       // Financeiro (Bárbara/administrador) pode aprovar qualquer OS independente da aprovação prévia do Auditor.
 
-      const lockedByDiretoria = hasDiretoria && currentUserStage !== 'diretoria' && (() => { try { const u = JSON.parse(localStorage.getItem('userData') || '{}'); const r = (u.role || '').toLowerCase(); return r !== 'controller' && r !== 'administrador'; } catch { return true; } })();
+      const lockedByDiretoria = hasDiretoria && currentUserStage !== 'diretoria' && !isPrivilegedReapprover && (() => { try { const u = JSON.parse(localStorage.getItem('userData') || '{}'); const r = (u.role || '').toLowerCase(); return r !== 'controller' && r !== 'administrador'; } catch { return true; } })();
 
       return { hasAuditor, hasFinanceiro, hasDiretoria, hasController, isFullyApproved, isApprovedForBilling, missing, waitingDays, hasPartial, blockedForCurrentUser, blockedMessage, currentUserStage, lockedByDiretoria };
   }, [approvalLog, mission?.endTime]);
@@ -1455,19 +1461,32 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
           
           const newLog = [...approvalLog];
           if (approve) {
-              // Financeiro pode aprovar a qualquer momento, independente de quem já aprovou ou não.
-              const existingStages = newLog.map(l => l.stage);
-              const alreadyApproved = newLog.some(l => l.stage === stage);
-              if (!alreadyApproved) {
-                  const logEntry = { user: userName, role: userRole, stage, date: new Date().toISOString() };
+              // Re-aprovação permitida para usuários privilegiados (Plinio, Barbara, Daniel, Thiago):
+              // atualiza o carimbo do estágio com o nome e a data mais recente.
+              const uNameLow = (userName || '').toLowerCase();
+              const allowReapprove = uNameLow.includes('plinio') || uNameLow.includes('plínio')
+                  || uNameLow.includes('barbara') || uNameLow.includes('bárbara')
+                  || uNameLow.includes('daniel') || uNameLow.includes('michelle')
+                  || uNameLow.includes('thiago');
+              const existingIdx = newLog.findIndex(l => l.stage === stage);
+              const logEntry = { user: userName, role: userRole, stage, date: new Date().toISOString() };
+              if (existingIdx < 0) {
                   newLog.push(logEntry);
-                  
                   await supabase.from('system_logs').insert([{
                       user_name: userName,
                       action_type: stage,
                       entity: 'BillingApproval',
                       entity_id: mission.id,
                       details: JSON.stringify(logEntry)
+                  }]);
+              } else if (allowReapprove) {
+                  newLog[existingIdx] = logEntry;
+                  await supabase.from('system_logs').insert([{
+                      user_name: userName,
+                      action_type: `${stage}_reapproval`,
+                      entity: 'BillingApproval',
+                      entity_id: mission.id,
+                      details: JSON.stringify({ ...logEntry, reapproved: true })
                   }]);
               }
           }
