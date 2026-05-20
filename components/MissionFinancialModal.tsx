@@ -1388,7 +1388,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
 
       const lockedByDiretoria = hasDiretoria && currentUserStage !== 'diretoria' && !isPrivilegedReapprover && (() => { try { const u = JSON.parse(localStorage.getItem('userData') || '{}'); const r = (u.role || '').toLowerCase(); return r !== 'controller' && r !== 'administrador'; } catch { return true; } })();
 
-      return { hasAuditor, hasFinanceiro, hasDiretoria, hasController, isFullyApproved, isApprovedForBilling, missing, waitingDays, hasPartial, blockedForCurrentUser, blockedMessage, currentUserStage, lockedByDiretoria };
+      return { hasAuditor, hasFinanceiro, hasDiretoria, hasController, isFullyApproved, isApprovedForBilling, missing, waitingDays, hasPartial, blockedForCurrentUser, blockedMessage, currentUserStage, lockedByDiretoria, isPrivilegedReapprover };
   }, [approvalLog, mission?.endTime]);
 
   const handleUpdate = async (approve: boolean) => {
@@ -3518,13 +3518,15 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                 </button>
                                 <button 
                                     onClick={() => handleUpdate(true)} 
-                                    disabled={isUpdating || isZeroCostError || !tollConfirmed || (mission?.status === MissionStatus.PENDING && currentApprovalStatus.currentUserStage !== 'diretoria') || currentApprovalStatus.blockedForCurrentUser || currentApprovalStatus.lockedByDiretoria} 
-                                    className={`px-8 py-3 rounded-xl font-black uppercase text-xs shadow-lg flex flex-col items-center justify-center gap-1 transition-all active:scale-95 min-h-[48px] ${(isZeroCostError || !tollConfirmed || (mission?.status === MissionStatus.PENDING && currentApprovalStatus.currentUserStage !== 'diretoria')) ? 'bg-gray-400 cursor-not-allowed text-gray-200' : (currentApprovalStatus.blockedForCurrentUser || currentApprovalStatus.lockedByDiretoria) ? 'bg-amber-50 border-2 border-amber-400 text-amber-800 cursor-not-allowed shadow-amber-100' : currentApprovalStatus.hasPartial ? 'bg-gray-300 text-gray-600 border border-gray-400 cursor-pointer hover:bg-gray-400' : 'bg-blue-600 hover:bg-blue-700 text-white shadow-blue-200'}`}
+                                    disabled={isUpdating || (!currentApprovalStatus.isPrivilegedReapprover && (isZeroCostError || !tollConfirmed || (mission?.status === MissionStatus.PENDING && currentApprovalStatus.currentUserStage !== 'diretoria') || currentApprovalStatus.blockedForCurrentUser || currentApprovalStatus.lockedByDiretoria))} 
+                                    className={`px-8 py-3 rounded-xl font-black uppercase text-xs shadow-lg flex flex-col items-center justify-center gap-1 transition-all active:scale-95 min-h-[48px] ${currentApprovalStatus.isPrivilegedReapprover ? 'bg-blue-600 hover:bg-blue-700 text-white shadow-blue-200' : (isZeroCostError || !tollConfirmed || (mission?.status === MissionStatus.PENDING && currentApprovalStatus.currentUserStage !== 'diretoria')) ? 'bg-gray-400 cursor-not-allowed text-gray-200' : (currentApprovalStatus.blockedForCurrentUser || currentApprovalStatus.lockedByDiretoria) ? 'bg-amber-50 border-2 border-amber-400 text-amber-800 cursor-not-allowed shadow-amber-100' : currentApprovalStatus.hasPartial ? 'bg-gray-300 text-gray-600 border border-gray-400 cursor-pointer hover:bg-gray-400' : 'bg-blue-600 hover:bg-blue-700 text-white shadow-blue-200'}`}
                                     data-testid="button-approve-billing"
                                 >
                                     <span className="flex items-center gap-2">
-                                        {isUpdating ? <Loader2 size={16} className="animate-spin" /> : (currentApprovalStatus.blockedForCurrentUser || currentApprovalStatus.lockedByDiretoria) ? <Lock size={16} className="text-amber-600" /> : <CheckCircle2 size={16} />} 
-                                        {(mission?.status === MissionStatus.PENDING && currentApprovalStatus.currentUserStage !== 'diretoria')
+                                        {isUpdating ? <Loader2 size={16} className="animate-spin" /> : (!currentApprovalStatus.isPrivilegedReapprover && (currentApprovalStatus.blockedForCurrentUser || currentApprovalStatus.lockedByDiretoria)) ? <Lock size={16} className="text-amber-600" /> : <CheckCircle2 size={16} />} 
+                                        {currentApprovalStatus.isPrivilegedReapprover && currentApprovalStatus.isFullyApproved
+                                            ? 'Re-Aprovar Faturamento'
+                                            : (mission?.status === MissionStatus.PENDING && currentApprovalStatus.currentUserStage !== 'diretoria')
                                             ? 'OS Pendente — Não Aprovável' 
                                             : !tollConfirmed 
                                                 ? 'Confirme o Pedágio' 
