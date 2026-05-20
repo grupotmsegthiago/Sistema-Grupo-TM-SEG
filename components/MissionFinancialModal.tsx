@@ -280,7 +280,8 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
   // O acionamento é registrado em system_logs (MissionEditHistory).
   const canActivateFullEdit = useMemo(() => {
     return userRoleLower === 'administrador' || userRoleLower === 'diretoria'
-      || userNameLower.includes('barbara') || userNameLower.includes('bárbara') || userNameLower.includes('thiago');
+      || userNameLower.includes('barbara') || userNameLower.includes('bárbara') || userNameLower.includes('thiago')
+      || userNameLower.includes('plinio') || userNameLower.includes('plínio');
   }, [userRoleLower, userNameLower]);
   const [fullEditMode, setFullEditMode] = useState(false);
 
@@ -288,9 +289,10 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
     if (fullEditMode) return true;
     try {
       const u = JSON.parse(localStorage.getItem('userData') || '{}');
+      if (userNameLower.includes('plinio') || userNameLower.includes('plínio')) return true;
       return ['diretoria', 'administrador', 'avançado', 'avancado', 'controller'].includes(userRoleLower) || u.permissions?.includes('*');
     } catch { return false; }
-  }, [userRoleLower, fullEditMode]);
+  }, [userRoleLower, userNameLower, fullEditMode]);
   const canEditEndTimeOnly = useMemo(() => {
     return canEditOpsData || ['operacional', 'operador'].includes(userRoleLower) || fullEditMode;
   }, [canEditOpsData, userRoleLower, fullEditMode]);
@@ -300,10 +302,11 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
   // todos os campos editáveis são bloqueados em todas as telas. Diretoria,
   // administrador e CEO podem destravar manualmente para corrigir algo.
   const isBillingLocked = !!(mission?.billing_verified_by || mission?.billing_approved || mission?.snapshot_approved_by);
-  const canUnlockBilling = ['diretoria', 'administrador', 'ceo'].includes(userRoleLower);
+  const isPlinio = userNameLower.includes('plinio') || userNameLower.includes('plínio');
+  const canUnlockBilling = ['diretoria', 'administrador', 'ceo'].includes(userRoleLower) || isPlinio;
   // ADMINISTRADOR (ex: Barbara) tem liberação permanente: pode editar OS aprovada
   // a qualquer momento. O sistema registra cada alteração no histórico permanente.
-  const isAdminFullAccess = userRoleLower === 'administrador' || fullEditMode;
+  const isAdminFullAccess = userRoleLower === 'administrador' || fullEditMode || isPlinio;
   const [unlockOverride, setUnlockOverride] = useState(false);
   useEffect(() => { setUnlockOverride(false); setEditObservation(''); setFullEditMode(false); }, [mission?.id]);
   useEffect(() => { if (!isOpen) { setFullEditMode(false); setUnlockOverride(false); setEditObservation(''); } }, [isOpen]);
