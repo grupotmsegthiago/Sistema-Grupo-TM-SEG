@@ -2205,38 +2205,32 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                   if (!editOrigin.trim() || !editDestination.trim()) return;
                                   setIsSavingRoute(true);
                                   try {
-                                      // Recalcula a distância via Google Distance Matrix (cliente, depois fallback servidor)
+                                      // Recalcula a distância via Google Maps JavaScript API (DirectionsService)
                                       let newDistanceKm: number | null = null;
                                       try {
                                           if (isMapsLoaded && (window as any).google?.maps) {
-                                              const service = new (window as any).google.maps.DistanceMatrixService();
-                                              const result = await service.getDistanceMatrix({
-                                                  origins: [editOrigin.trim()],
-                                                  destinations: [editDestination.trim()],
-                                                  travelMode: (window as any).google.maps.TravelMode.DRIVING,
-                                                  unitSystem: (window as any).google.maps.UnitSystem.METRIC,
+                                              const ds = new (window as any).google.maps.DirectionsService();
+                                              const result: any = await new Promise((resolve, reject) => {
+                                                  ds.route({
+                                                      origin: editOrigin.trim() + ', Brasil',
+                                                      destination: editDestination.trim() + ', Brasil',
+                                                      travelMode: (window as any).google.maps.TravelMode.DRIVING,
+                                                      unitSystem: (window as any).google.maps.UnitSystem.METRIC,
+                                                      region: 'br',
+                                                  }, (res: any, status: string) => {
+                                                      if (status === 'OK') resolve(res);
+                                                      else reject(new Error('Directions status: ' + status));
+                                                  });
                                               });
-                                              const el = result?.rows?.[0]?.elements?.[0];
-                                              console.log('[DistanceMatrix client]', el?.status, el?.distance?.value);
-                                              if (el?.status === 'OK' && el.distance?.value) {
-                                                  newDistanceKm = Math.round((el.distance.value / 1000) * 100) / 100;
+                                              const legs = result?.routes?.[0]?.legs || [];
+                                              const totalMeters = legs.reduce((acc: number, l: any) => acc + (l?.distance?.value || 0), 0);
+                                              console.log('[Directions API]', 'meters:', totalMeters, 'legs:', legs.length);
+                                              if (totalMeters > 0) {
+                                                  newDistanceKm = Math.round((totalMeters / 1000) * 100) / 100;
                                               }
                                           }
                                       } catch (geoErr) {
-                                          console.warn('Falha ao calcular distância Google (cliente):', geoErr);
-                                      }
-                                      // Fallback servidor
-                                      if (newDistanceKm === null || newDistanceKm <= 0) {
-                                          try {
-                                              const r = await authFetch(`/api/distance-matrix?origin=${encodeURIComponent(editOrigin.trim())}&destination=${encodeURIComponent(editDestination.trim())}`);
-                                              const j = await r.json();
-                                              console.log('[DistanceMatrix server]', j);
-                                              if (j?.success && j.distanceKm > 0) {
-                                                  newDistanceKm = j.distanceKm;
-                                              }
-                                          } catch (srvErr) {
-                                              console.warn('Falha ao calcular distância (servidor):', srvErr);
-                                          }
+                                          console.warn('Falha ao calcular distância (Directions API):', geoErr);
                                       }
 
                                       const updatePayload: any = {
