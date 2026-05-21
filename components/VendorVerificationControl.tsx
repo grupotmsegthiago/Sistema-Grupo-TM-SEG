@@ -1546,6 +1546,28 @@ const VendorVerificationControl: React.FC<VendorVerificationControlProps> = ({ o
                         </button>
                     )}
                 </div>
+                {(() => {
+                    const pad = (n: number) => String(n).padStart(2, '0');
+                    const today = new Date();
+                    const y = today.getFullYear();
+                    const m = today.getMonth();
+                    const firstDay = `${y}-${pad(m + 1)}-01`;
+                    const lastDay = new Date(y, m + 1, 0).getDate();
+                    const monthEnd = `${y}-${pad(m + 1)}-${pad(lastDay)}`;
+                    const q1End = `${y}-${pad(m + 1)}-15`;
+                    const q2Start = `${y}-${pad(m + 1)}-16`;
+                    const isMonth = dateFrom === firstDay && dateTo === monthEnd;
+                    const isQ1 = dateFrom === firstDay && dateTo === q1End;
+                    const isQ2 = dateFrom === q2Start && dateTo === monthEnd;
+                    const btn = (active: boolean) => `py-1.5 px-3 rounded-lg text-[11px] font-black uppercase tracking-wider transition-colors ${active ? 'bg-blue-600 text-white border border-blue-700' : 'bg-gray-100 text-gray-600 border border-gray-200 hover:bg-gray-200'}`;
+                    return (
+                        <div className="flex flex-wrap gap-2 mt-3">
+                            <button type="button" onClick={() => { setDateFrom(firstDay); setDateTo(monthEnd); }} className={btn(isMonth)} data-testid="btn-quick-mes">Mês Atual</button>
+                            <button type="button" onClick={() => { setDateFrom(firstDay); setDateTo(q1End); }} className={btn(isQ1)} data-testid="btn-quick-q1">1ª Quinzena</button>
+                            <button type="button" onClick={() => { setDateFrom(q2Start); setDateTo(monthEnd); }} className={btn(isQ2)} data-testid="btn-quick-q2">2ª Quinzena</button>
+                        </div>
+                    );
+                })()}
             </div>
 
             {selectedIds.size > 0 && (
