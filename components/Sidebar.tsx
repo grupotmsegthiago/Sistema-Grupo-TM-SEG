@@ -162,7 +162,8 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, activeScreen, onNavigate, onL
       const nameLower = (currentUser?.name || '').toLowerCase();
       const allowedNames = ['daniel', 'barbara', 'bárbara', 'thiago'];
       if (allowedNames.some(n => nameLower.includes(n))) return true;
-      if (role === 'diretoria' || role === 'administrador') return true;
+      if (role === 'diretoria' || role === 'administrador' || role === 'avançado' || role === 'avancado') return true;
+      if (userPermissions.includes('mission-report')) return true;
       return false;
     }
 
