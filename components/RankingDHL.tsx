@@ -4,6 +4,11 @@ import { Trophy, Calendar, RefreshCw, Loader2 } from 'lucide-react';
 
 const VALOR_POR_OS = 10;
 
+// Usuários excluídos do ranking DHL (não recebem premiação)
+const EXCLUIDOS = new Set<string>([
+    'PLINIO ALVES PRADO DOS SANTOS',
+]);
+
 type Row = { name: string; count: number; value: number };
 
 function formatBRL(v: number) {
@@ -64,6 +69,7 @@ export default function RankingDHL() {
                 const name = String(raw).trim();
                 if (!name) continue;
                 const key = name.toUpperCase();
+                if (EXCLUIDOS.has(key)) continue;
                 map.set(key, (map.get(key) || 0) + 1);
             }
             const list: Row[] = Array.from(map.entries())
