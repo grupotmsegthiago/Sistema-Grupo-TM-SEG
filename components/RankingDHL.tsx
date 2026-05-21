@@ -9,7 +9,7 @@ const EXCLUIDOS = new Set<string>([
     'PLINIO ALVES PRADO DOS SANTOS',
 ]);
 
-type Row = { name: string; dhl: number; demais: number; value: number };
+type Row = { name: string; total: number; concluida: number; aberta: number; demais: number; value: number };
 type ProdRow = { name: string; total: number };
 
 function formatBRL(v: number) {
@@ -78,16 +78,20 @@ export default function RankingDHL() {
                 }
             }
 
-            // 3) Conta criações por usuário (DHL e Demais), 1ª criação por OS
-            //    Só conta OS com status final "Concluída" ou "Cancelada".
-            const STATUS_VALIDOS = new Set(['Concluída', 'Cancelada']);
+            // 3) Conta criações por usuário, 1ª criação por OS.
+            //    Regras:
+            //    - OS Recusada NÃO conta em nada.
+            //    - OS aberta no mês conta no mês da abertura, mesmo que ainda não fechou.
+            //    - "Concluída" no controle = status final Concluída ou Cancelada.
+            //    - "Aberta" = qualquer status intermediário (Solicitada, Documentação, Agendada, Origem, Em Viagem, Pendente).
+            const CONCLUIDAS = new Set(['Concluída', 'Cancelada']);
             const seen = new Set<string>();
-            const map = new Map<string, { dhl: number; demais: number }>();
+            const map = new Map<string, { totalDhl: number; concDhl: number; abertaDhl: number; demais: number }>();
             for (const l of (logs || [])) {
                 if (!l.entity_id || seen.has(l.entity_id)) continue;
                 seen.add(l.entity_id);
                 const st = statusMap.get(l.entity_id) || '';
-                if (!STATUS_VALIDOS.has(st)) continue; // ignora Solicitada/Em Viagem/Recusada/etc.
+                if (st === 'Recusada') continue; // OS Recusada não conta
                 const raw = (l as any).user_name;
                 if (!raw) continue;
                 const name = String(raw).trim();
@@ -96,13 +100,19 @@ export default function RankingDHL() {
                 if (EXCLUIDOS.has(key)) continue;
                 const client = (clientMap.get(l.entity_id) || '').toUpperCase();
                 const isDhl = client.includes('DHL');
-                const cur = map.get(key) || { dhl: 0, demais: 0 };
-                if (isDhl) cur.dhl += 1; else cur.demais += 1;
+                const cur = map.get(key) || { totalDhl: 0, concDhl: 0, abertaDhl: 0, demais: 0 };
+                if (isDhl) {
+                    cur.totalDhl += 1;
+                    if (CONCLUIDAS.has(st)) cur.concDhl += 1;
+                    else cur.abertaDhl += 1;
+                } else {
+                    cur.demais += 1;
+                }
                 map.set(key, cur);
             }
             const list: Row[] = Array.from(map.entries())
-                .map(([name, c]) => ({ name, dhl: c.dhl, demais: c.demais, value: c.dhl * VALOR_POR_OS }))
-                .sort((a, b) => b.dhl - a.dhl || b.demais - a.demais);
+                .map(([name, c]) => ({ name, total: c.totalDhl, concluida: c.concDhl, aberta: c.abertaDhl, demais: c.demais, value: c.totalDhl * VALOR_POR_OS }))
+                .sort((a, b) => b.total - a.total || b.demais - a.demais);
             setRows(list);
 
             // 4) Produtividade no sistema (todas atualizações no período) — somente diretoria
@@ -145,7 +155,9 @@ export default function RankingDHL() {
     useEffect(() => { loadData(); /* eslint-disable-next-line */ }, [year, month]);
 
     const totals = useMemo(() => ({
-        dhl: rows.reduce((a, r) => a + r.dhl, 0),
+        total: rows.reduce((a, r) => a + r.total, 0),
+        concluida: rows.reduce((a, r) => a + r.concluida, 0),
+        aberta: rows.reduce((a, r) => a + r.aberta, 0),
         demais: rows.reduce((a, r) => a + r.demais, 0),
         value: rows.reduce((a, r) => a + r.value, 0),
         people: rows.length,
@@ -203,21 +215,25 @@ export default function RankingDHL() {
                 </div>
             </div>
 
-            <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-6">
+            <div className="grid grid-cols-2 md:grid-cols-6 gap-3 mb-6">
                 <div className="bg-white p-4 rounded-2xl shadow-sm border border-gray-200">
-                    <div className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Mês de Referência</div>
+                    <div className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Mês</div>
                     <div className="text-base font-black text-gray-900 mt-1" data-testid="text-month-label">{monthLabel(year, month)}</div>
                 </div>
                 <div className="bg-white p-4 rounded-2xl shadow-sm border border-gray-200">
-                    <div className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Funcionários</div>
-                    <div className="text-base font-black text-blue-700 mt-1" data-testid="text-total-people">{totals.people}</div>
+                    <div className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Quantidade DHL</div>
+                    <div className="text-base font-black text-blue-700 mt-1" data-testid="text-total-count">{totals.total}</div>
                 </div>
                 <div className="bg-white p-4 rounded-2xl shadow-sm border border-gray-200">
-                    <div className="text-[10px] font-black text-gray-400 uppercase tracking-widest">OS DHL</div>
-                    <div className="text-base font-black text-emerald-700 mt-1" data-testid="text-total-count">{totals.dhl}</div>
+                    <div className="text-[10px] font-black text-gray-400 uppercase tracking-widest">OS Concluídas</div>
+                    <div className="text-base font-black text-emerald-700 mt-1" data-testid="text-total-concluida">{totals.concluida}</div>
                 </div>
                 <div className="bg-white p-4 rounded-2xl shadow-sm border border-gray-200">
-                    <div className="text-[10px] font-black text-gray-400 uppercase tracking-widest">OS Demais</div>
+                    <div className="text-[10px] font-black text-gray-400 uppercase tracking-widest">OS Abertas</div>
+                    <div className="text-base font-black text-amber-700 mt-1" data-testid="text-total-aberta">{totals.aberta}</div>
+                </div>
+                <div className="bg-white p-4 rounded-2xl shadow-sm border border-gray-200">
+                    <div className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Demais</div>
                     <div className="text-base font-black text-gray-700 mt-1" data-testid="text-total-demais">{totals.demais}</div>
                 </div>
                 <div className="bg-white p-4 rounded-2xl shadow-sm border border-gray-200 col-span-2 md:col-span-1">
@@ -237,44 +253,50 @@ export default function RankingDHL() {
                 <table className="w-full">
                     <thead className="bg-gradient-to-r from-gray-900 to-gray-700 text-white">
                         <tr>
-                            <th className="px-4 py-3 text-left text-xs font-black uppercase tracking-widest w-16">#</th>
-                            <th className="px-4 py-3 text-left text-xs font-black uppercase tracking-widest">Nome</th>
-                            <th className="px-4 py-3 text-right text-xs font-black uppercase tracking-widest">DHL</th>
-                            <th className="px-4 py-3 text-right text-xs font-black uppercase tracking-widest">Demais</th>
-                            <th className="px-4 py-3 text-right text-xs font-black uppercase tracking-widest">Valor</th>
-                            <th className="px-4 py-3 text-right text-xs font-black uppercase tracking-widest">Pagamento</th>
+                            <th className="px-3 py-3 text-left text-xs font-black uppercase tracking-widest w-16">#</th>
+                            <th className="px-3 py-3 text-left text-xs font-black uppercase tracking-widest">Nome</th>
+                            <th className="px-3 py-3 text-right text-xs font-black uppercase tracking-widest">Quantidade</th>
+                            <th className="px-3 py-3 text-right text-xs font-black uppercase tracking-widest">OS Concluída</th>
+                            <th className="px-3 py-3 text-right text-xs font-black uppercase tracking-widest">OS Aberta</th>
+                            <th className="px-3 py-3 text-right text-xs font-black uppercase tracking-widest">Demais</th>
+                            <th className="px-3 py-3 text-right text-xs font-black uppercase tracking-widest">Valor</th>
+                            <th className="px-3 py-3 text-right text-xs font-black uppercase tracking-widest">Pagamento</th>
                         </tr>
                     </thead>
                     <tbody>
                         {loading && (
-                            <tr><td colSpan={6} className="px-4 py-8 text-center text-gray-400 font-bold">
+                            <tr><td colSpan={8} className="px-4 py-8 text-center text-gray-400 font-bold">
                                 <Loader2 size={20} className="animate-spin inline mr-2" /> Carregando...
                             </td></tr>
                         )}
                         {!loading && rows.length === 0 && (
-                            <tr><td colSpan={6} className="px-4 py-8 text-center text-gray-400 font-bold" data-testid="text-empty">
+                            <tr><td colSpan={8} className="px-4 py-8 text-center text-gray-400 font-bold" data-testid="text-empty">
                                 Nenhuma OS criada neste mês.
                             </td></tr>
                         )}
                         {!loading && rows.map((r, i) => (
                             <tr key={r.name} className="border-t border-gray-100 hover:bg-gray-50" data-testid={`row-rank-${i}`}>
-                                <td className="px-4 py-3">
+                                <td className="px-3 py-3">
                                     <span className={`inline-flex items-center justify-center w-8 h-8 rounded-full text-xs font-black ${medal(i)}`}>{i + 1}</span>
                                 </td>
-                                <td className="px-4 py-3 text-sm font-bold text-gray-800" data-testid={`text-name-${i}`}>{r.name}</td>
-                                <td className="px-4 py-3 text-sm font-black text-emerald-700 text-right" data-testid={`text-dhl-${i}`}>{r.dhl}</td>
-                                <td className="px-4 py-3 text-sm font-black text-gray-700 text-right" data-testid={`text-demais-${i}`}>{r.demais}</td>
-                                <td className="px-4 py-3 text-sm font-black text-emerald-700 text-right" data-testid={`text-value-${i}`}>{formatBRL(r.value)}</td>
-                                <td className="px-4 py-3 text-sm font-black text-amber-700 text-right whitespace-nowrap" data-testid={`text-payment-${i}`}>{paymentDate}</td>
+                                <td className="px-3 py-3 text-sm font-bold text-gray-800" data-testid={`text-name-${i}`}>{r.name}</td>
+                                <td className="px-3 py-3 text-sm font-black text-blue-700 text-right" data-testid={`text-total-${i}`}>{r.total}</td>
+                                <td className="px-3 py-3 text-sm font-black text-emerald-700 text-right" data-testid={`text-concluida-${i}`}>{r.concluida}</td>
+                                <td className="px-3 py-3 text-sm font-black text-amber-700 text-right" data-testid={`text-aberta-${i}`}>{r.aberta}</td>
+                                <td className="px-3 py-3 text-sm font-black text-gray-700 text-right" data-testid={`text-demais-${i}`}>{r.demais}</td>
+                                <td className="px-3 py-3 text-sm font-black text-emerald-700 text-right" data-testid={`text-value-${i}`}>{formatBRL(r.value)}</td>
+                                <td className="px-3 py-3 text-sm font-black text-amber-700 text-right whitespace-nowrap" data-testid={`text-payment-${i}`}>{paymentDate}</td>
                             </tr>
                         ))}
                         {!loading && rows.length > 0 && (
                             <tr className="bg-gray-50 border-t-2 border-gray-300">
-                                <td colSpan={2} className="px-4 py-3 text-xs font-black uppercase tracking-widest text-gray-600 text-right">Total</td>
-                                <td className="px-4 py-3 text-sm font-black text-emerald-700 text-right">{totals.dhl}</td>
-                                <td className="px-4 py-3 text-sm font-black text-gray-700 text-right">{totals.demais}</td>
-                                <td className="px-4 py-3 text-sm font-black text-emerald-700 text-right">{formatBRL(totals.value)}</td>
-                                <td className="px-4 py-3"></td>
+                                <td colSpan={2} className="px-3 py-3 text-xs font-black uppercase tracking-widest text-gray-600 text-right">Total</td>
+                                <td className="px-3 py-3 text-sm font-black text-blue-700 text-right">{totals.total}</td>
+                                <td className="px-3 py-3 text-sm font-black text-emerald-700 text-right">{totals.concluida}</td>
+                                <td className="px-3 py-3 text-sm font-black text-amber-700 text-right">{totals.aberta}</td>
+                                <td className="px-3 py-3 text-sm font-black text-gray-700 text-right">{totals.demais}</td>
+                                <td className="px-3 py-3 text-sm font-black text-emerald-700 text-right">{formatBRL(totals.value)}</td>
+                                <td className="px-3 py-3"></td>
                             </tr>
                         )}
                     </tbody>
