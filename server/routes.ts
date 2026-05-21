@@ -4943,6 +4943,32 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
     nominatimProcessing = false;
   };
 
+  app.get('/api/distance-matrix', requireAuth, async (req: Request, res: Response) => {
+    try {
+      const origin = (req.query.origin as string || '').trim();
+      const destination = (req.query.destination as string || '').trim();
+      if (!origin || !destination) {
+        return res.status(400).json({ success: false, error: 'origin e destination são obrigatórios' });
+      }
+      const key = process.env.GOOGLE_MAPS_API_KEY || process.env.VITE_GOOGLE_MAPS_API_KEY || '';
+      if (!key) {
+        return res.status(500).json({ success: false, error: 'GOOGLE_MAPS_API_KEY não configurada' });
+      }
+      const url = `https://maps.googleapis.com/maps/api/distancematrix/json?origins=${encodeURIComponent(origin)}&destinations=${encodeURIComponent(destination)}&mode=driving&units=metric&language=pt-BR&region=br&key=${key}`;
+      const r = await fetch(url);
+      const data: any = await r.json();
+      const el = data?.rows?.[0]?.elements?.[0];
+      if (el?.status === 'OK' && el.distance?.value) {
+        const distanceKm = Math.round((el.distance.value / 1000) * 100) / 100;
+        const durationMin = el.duration?.value ? Math.round(el.duration.value / 60) : null;
+        return res.json({ success: true, distanceKm, durationMin });
+      }
+      return res.json({ success: false, error: el?.status || data?.status || 'NO_RESULT' });
+    } catch (e: any) {
+      return res.status(500).json({ success: false, error: e?.message || 'erro' });
+    }
+  });
+
   app.get('/api/reverse-geocode', requireAuth, async (req: Request, res: Response) => {
     try {
       const lat = parseFloat(req.query.lat as string);

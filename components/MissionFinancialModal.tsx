@@ -2205,7 +2205,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                   if (!editOrigin.trim() || !editDestination.trim()) return;
                                   setIsSavingRoute(true);
                                   try {
-                                      // Recalcula a distância via Google Distance Matrix
+                                      // Recalcula a distância via Google Distance Matrix (cliente, depois fallback servidor)
                                       let newDistanceKm: number | null = null;
                                       try {
                                           if (isMapsLoaded && (window as any).google?.maps) {
@@ -2217,12 +2217,26 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                                   unitSystem: (window as any).google.maps.UnitSystem.METRIC,
                                               });
                                               const el = result?.rows?.[0]?.elements?.[0];
+                                              console.log('[DistanceMatrix client]', el?.status, el?.distance?.value);
                                               if (el?.status === 'OK' && el.distance?.value) {
                                                   newDistanceKm = Math.round((el.distance.value / 1000) * 100) / 100;
                                               }
                                           }
                                       } catch (geoErr) {
-                                          console.warn('Falha ao calcular distância Google:', geoErr);
+                                          console.warn('Falha ao calcular distância Google (cliente):', geoErr);
+                                      }
+                                      // Fallback servidor
+                                      if (newDistanceKm === null || newDistanceKm <= 0) {
+                                          try {
+                                              const r = await authFetch(`/api/distance-matrix?origin=${encodeURIComponent(editOrigin.trim())}&destination=${encodeURIComponent(editDestination.trim())}`);
+                                              const j = await r.json();
+                                              console.log('[DistanceMatrix server]', j);
+                                              if (j?.success && j.distanceKm > 0) {
+                                                  newDistanceKm = j.distanceKm;
+                                              }
+                                          } catch (srvErr) {
+                                              console.warn('Falha ao calcular distância (servidor):', srvErr);
+                                          }
                                       }
 
                                       const updatePayload: any = {
@@ -2253,6 +2267,8 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                       setIsEditingRoute(false);
                                       const kmMsg = newDistanceKm !== null && newDistanceKm > 0 ? ` (${newDistanceKm.toFixed(2)} km)` : '';
                                       showNotification('Rota Atualizada', `${editOrigin.trim()} → ${editDestination.trim()}${kmMsg}`, 'success');
+                                      // Recarrega o modal por completo (tabelas de cliente/fornecedor reavaliadas para a nova rota)
+                                      await loadData();
                                       if (onUpdate) onUpdate();
                                   } catch (err: any) {
                                       showNotification('Erro', err.message, 'error');
