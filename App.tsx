@@ -330,7 +330,10 @@ const App: React.FC = () => {
         const u = (() => { try { return JSON.parse(localStorage.getItem('userData') || '{}'); } catch { return {}; } })();
         const nm = (u.name || '').toLowerCase();
         const rl = (u.role || '').toLowerCase();
-        const allowed = ['daniel', 'barbara', 'bárbara', 'thiago'].some(n => nm.includes(n)) || rl === 'diretoria' || rl === 'administrador';
+        const perms: string[] = Array.isArray(u.permissions) ? u.permissions : [];
+        const allowed = ['daniel', 'barbara', 'bárbara', 'thiago'].some(n => nm.includes(n))
+          || rl === 'diretoria' || rl === 'administrador' || rl === 'avançado' || rl === 'avancado'
+          || perms.includes('mission-report');
         return allowed ? <MissionReportPage /> : <Dashboard />;
       }
       case 'support-network': return <SupportMapFinder onNavigate={navigateTo} />;
