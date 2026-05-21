@@ -1941,10 +1941,16 @@ const VendorVerificationControl: React.FC<VendorVerificationControlProps> = ({ o
                                                     {(() => {
                                                         const diff = totals.provider - totals.system;
                                                         const cls = Math.abs(diff) < 0.01 ? 'text-gray-600' : diff > 0 ? 'text-red-700' : 'text-emerald-700';
+                                                        const aprovado = Math.abs(diff) <= 500;
                                                         return (
-                                                            <p className="text-[11px] font-black border-t border-blue-200 mt-1 pt-1 text-gray-700">
-                                                                Dif.: <span className={cls}>{formatCurrency(diff)}</span>
-                                                            </p>
+                                                            <>
+                                                                <p className="text-[11px] font-black border-t border-blue-200 mt-1 pt-1 text-gray-700">
+                                                                    Dif.: <span className={cls}>{formatCurrency(diff)}</span>
+                                                                </p>
+                                                                <p className={`mt-1 text-center text-[10px] font-black uppercase tracking-widest rounded px-2 py-0.5 ${aprovado ? 'bg-emerald-600 text-white' : 'bg-amber-500 text-white'}`} data-testid="status-aprovacao-divergencia">
+                                                                    {aprovado ? 'Aprovado' : 'Revisar'}
+                                                                </p>
+                                                            </>
                                                         );
                                                     })()}
                                                 </div>
