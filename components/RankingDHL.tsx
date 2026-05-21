@@ -60,24 +60,34 @@ export default function RankingDHL() {
                 .lt('created_at', end);
             if (logErr) throw logErr;
 
-            // 2) Busca todas as missões criadas pra saber o cliente
+            // 2) Busca todas as missões criadas pra saber cliente e status
+            // Somente OS finalizadas (Concluída ou Cancelada) entram no controle.
+            // OS Recusada e status intermediários não contam.
             const ids = Array.from(new Set((logs || []).map(l => l.entity_id).filter(Boolean)));
             const clientMap = new Map<string, string>();
+            const statusMap = new Map<string, string>();
             if (ids.length > 0) {
                 const { data: ms, error: mErr } = await supabase
                     .from('missions')
-                    .select('id, client')
+                    .select('id, client, status')
                     .in('id', ids);
                 if (mErr) throw mErr;
-                for (const m of (ms || []) as any[]) clientMap.set(m.id, String(m.client || ''));
+                for (const m of (ms || []) as any[]) {
+                    clientMap.set(m.id, String(m.client || ''));
+                    statusMap.set(m.id, String(m.status || ''));
+                }
             }
 
             // 3) Conta criações por usuário (DHL e Demais), 1ª criação por OS
+            //    Só conta OS com status final "Concluída" ou "Cancelada".
+            const STATUS_VALIDOS = new Set(['Concluída', 'Cancelada']);
             const seen = new Set<string>();
             const map = new Map<string, { dhl: number; demais: number }>();
             for (const l of (logs || [])) {
                 if (!l.entity_id || seen.has(l.entity_id)) continue;
                 seen.add(l.entity_id);
+                const st = statusMap.get(l.entity_id) || '';
+                if (!STATUS_VALIDOS.has(st)) continue; // ignora Solicitada/Em Viagem/Recusada/etc.
                 const raw = (l as any).user_name;
                 if (!raw) continue;
                 const name = String(raw).trim();
