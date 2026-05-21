@@ -641,6 +641,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                   endKm: d.end_km ?? initialMission.endKm,
                   startTime: d.start_time ?? initialMission.startTime,
                   endTime: d.end_time ?? initialMission.endTime,
+                  totalDistance: d.total_distance ?? initialMission.totalDistance,
               };
               setMission(fullMission);
 
