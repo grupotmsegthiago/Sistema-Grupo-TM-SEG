@@ -337,7 +337,12 @@ const App: React.FC = () => {
           || perms.includes('mission-report');
         return allowed ? <MissionReportPage /> : <Dashboard />;
       }
-      case 'ranking-dhl': return <RankingDHL />;
+      case 'ranking-dhl': {
+        const u = (() => { try { return JSON.parse(localStorage.getItem('userData') || '{}'); } catch { return {}; } })();
+        const rl = (u.role || '').toLowerCase();
+        const allowed = rl === 'avançado' || rl === 'avancado' || rl === 'diretoria' || rl === 'administrador';
+        return allowed ? <RankingDHL /> : <Dashboard />;
+      }
       case 'support-network': return <SupportMapFinder onNavigate={navigateTo} />;
       default: return <Dashboard />;
     }

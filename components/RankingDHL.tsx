@@ -31,7 +31,7 @@ function isDiretoria(): boolean {
     try {
         const u = JSON.parse(localStorage.getItem('userData') || '{}');
         const role = (u.role || '').toLowerCase();
-        return role === 'diretoria' || role === 'administrador';
+        return role === 'diretoria';
     } catch { return false; }
 }
 
@@ -232,16 +232,17 @@ export default function RankingDHL() {
                             <th className="px-4 py-3 text-right text-xs font-black uppercase tracking-widest">DHL</th>
                             <th className="px-4 py-3 text-right text-xs font-black uppercase tracking-widest">Demais</th>
                             <th className="px-4 py-3 text-right text-xs font-black uppercase tracking-widest">Valor</th>
+                            <th className="px-4 py-3 text-right text-xs font-black uppercase tracking-widest">Pagamento</th>
                         </tr>
                     </thead>
                     <tbody>
                         {loading && (
-                            <tr><td colSpan={5} className="px-4 py-8 text-center text-gray-400 font-bold">
+                            <tr><td colSpan={6} className="px-4 py-8 text-center text-gray-400 font-bold">
                                 <Loader2 size={20} className="animate-spin inline mr-2" /> Carregando...
                             </td></tr>
                         )}
                         {!loading && rows.length === 0 && (
-                            <tr><td colSpan={5} className="px-4 py-8 text-center text-gray-400 font-bold" data-testid="text-empty">
+                            <tr><td colSpan={6} className="px-4 py-8 text-center text-gray-400 font-bold" data-testid="text-empty">
                                 Nenhuma OS criada neste mês.
                             </td></tr>
                         )}
@@ -254,6 +255,7 @@ export default function RankingDHL() {
                                 <td className="px-4 py-3 text-sm font-black text-emerald-700 text-right" data-testid={`text-dhl-${i}`}>{r.dhl}</td>
                                 <td className="px-4 py-3 text-sm font-black text-gray-700 text-right" data-testid={`text-demais-${i}`}>{r.demais}</td>
                                 <td className="px-4 py-3 text-sm font-black text-emerald-700 text-right" data-testid={`text-value-${i}`}>{formatBRL(r.value)}</td>
+                                <td className="px-4 py-3 text-sm font-black text-amber-700 text-right whitespace-nowrap" data-testid={`text-payment-${i}`}>{paymentDate}</td>
                             </tr>
                         ))}
                         {!loading && rows.length > 0 && (
@@ -262,6 +264,7 @@ export default function RankingDHL() {
                                 <td className="px-4 py-3 text-sm font-black text-emerald-700 text-right">{totals.dhl}</td>
                                 <td className="px-4 py-3 text-sm font-black text-gray-700 text-right">{totals.demais}</td>
                                 <td className="px-4 py-3 text-sm font-black text-emerald-700 text-right">{formatBRL(totals.value)}</td>
+                                <td className="px-4 py-3"></td>
                             </tr>
                         )}
                     </tbody>
