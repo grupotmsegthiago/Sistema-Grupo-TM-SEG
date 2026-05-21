@@ -156,7 +156,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, activeScreen, onNavigate, onL
   const hasAccess = (itemId: string) => {
     const role = (currentUser?.role || '').toLowerCase();
     
-    if (itemId === 'monitoring-group' || itemId === 'missions') return true;
+    if (itemId === 'monitoring-group' || itemId === 'missions' || itemId === 'ranking-dhl') return true;
 
     if (itemId === 'mission-report') {
       const nameLower = (currentUser?.name || '').toLowerCase();

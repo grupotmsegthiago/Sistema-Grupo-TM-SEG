@@ -81,6 +81,7 @@ export const NAV_ITEMS: NavItem[] = [
     children: [
       { name: 'Painel de OS', id: 'missions' },
       { name: 'Relatório de OS', id: 'mission-report' },
+      { name: 'Ranking DHL', id: 'ranking-dhl' },
     ]
   },
   { name: 'Rede de Apoio (QRF)', icon: 'Map', id: 'support-network' },

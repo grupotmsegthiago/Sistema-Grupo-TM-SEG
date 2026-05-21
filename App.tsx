@@ -46,6 +46,7 @@ import ClientVehicleForm from './components/ClientVehicleForm';
 import SystemLogs from './components/SystemLogs';
 import ReportsDashboard from './components/ReportsDashboard';
 import MissionReportPage from './components/MissionReportPage';
+import RankingDHL from './components/RankingDHL';
 import QuoteList from './components/QuoteList';
 import QuoteForm from './components/QuoteForm';
 import PublicAgentRegistration from './components/PublicAgentRegistration';
@@ -336,6 +337,7 @@ const App: React.FC = () => {
           || perms.includes('mission-report');
         return allowed ? <MissionReportPage /> : <Dashboard />;
       }
+      case 'ranking-dhl': return <RankingDHL />;
       case 'support-network': return <SupportMapFinder onNavigate={navigateTo} />;
       default: return <Dashboard />;
     }
