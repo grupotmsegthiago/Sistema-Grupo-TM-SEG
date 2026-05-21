@@ -1,7 +1,9 @@
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { Mission, ClientPriceTable, ProviderCostTable, MissionStatus, Client } from '../types';
 import { supabase } from '../lib/supabase';
+import { useLoadScript, Autocomplete } from '@react-google-maps/api';
+import { googleMapsLoadConfig } from '../lib/maps';
 import { authFetch } from '../lib/authFetch';
 import { useNotification } from '../lib/NotificationContext';
 import { calculateMissionFinancials, auditMissionFinancials, extractUF, UF_TO_REGION, clientFuzzyFilter, clientNameShort } from '../lib/financialUtils';
@@ -263,6 +265,9 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
   const [editEndTime, setEditEndTime] = useState('');
   const [isEditingOpsData, setIsEditingOpsData] = useState(false);
   const [editOrigin, setEditOrigin] = useState('');
+  const { isLoaded: isMapsLoaded } = useLoadScript(googleMapsLoadConfig);
+  const originAutocompleteRef = useRef<any>(null);
+  const destinationAutocompleteRef = useRef<any>(null);
   const [editDestination, setEditDestination] = useState('');
   const [isEditingRoute, setIsEditingRoute] = useState(false);
   const [isSavingRoute, setIsSavingRoute] = useState(false);
@@ -2126,28 +2131,72 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                           <MapPin size={14} className="text-red-500 mt-2 flex-shrink-0" />
                           <div className="flex-1 min-w-0">
                               <label className="text-[10px] font-black text-gray-400 uppercase tracking-wider">Origem</label>
-                              <input
-                                  type="text"
-                                  value={editOrigin}
-                                  onChange={e => setEditOrigin(e.target.value.toUpperCase())}
-                                  className="w-full bg-white/10 border border-white/30 rounded px-2 py-1.5 text-sm font-bold text-white uppercase outline-none focus:border-red-400 mt-0.5"
-                                  placeholder="Origem"
-                                  data-testid="input-edit-origin"
-                              />
+                              {isMapsLoaded ? (
+                                  <Autocomplete
+                                      onLoad={ref => (originAutocompleteRef.current = ref)}
+                                      onPlaceChanged={() => {
+                                          const place = originAutocompleteRef.current?.getPlace();
+                                          if (place && place.formatted_address) {
+                                              setEditOrigin(place.formatted_address.toUpperCase());
+                                          }
+                                      }}
+                                      options={{ componentRestrictions: { country: 'br' } }}
+                                  >
+                                      <input
+                                          type="text"
+                                          value={editOrigin}
+                                          onChange={e => setEditOrigin(e.target.value.toUpperCase())}
+                                          className="w-full bg-white/10 border border-white/30 rounded px-2 py-1.5 text-sm font-bold text-white uppercase outline-none focus:border-red-400 mt-0.5"
+                                          placeholder="Buscar endereço de origem..."
+                                          data-testid="input-edit-origin"
+                                      />
+                                  </Autocomplete>
+                              ) : (
+                                  <input
+                                      type="text"
+                                      value={editOrigin}
+                                      onChange={e => setEditOrigin(e.target.value.toUpperCase())}
+                                      className="w-full bg-white/10 border border-white/30 rounded px-2 py-1.5 text-sm font-bold text-white uppercase outline-none focus:border-red-400 mt-0.5"
+                                      placeholder="Origem"
+                                      data-testid="input-edit-origin"
+                                  />
+                              )}
                           </div>
                       </div>
                       <div className="flex items-start gap-2">
                           <MapPin size={14} className="text-green-500 mt-2 flex-shrink-0" />
                           <div className="flex-1 min-w-0">
                               <label className="text-[10px] font-black text-gray-400 uppercase tracking-wider">Destino</label>
-                              <input
-                                  type="text"
-                                  value={editDestination}
-                                  onChange={e => setEditDestination(e.target.value.toUpperCase())}
-                                  className="w-full bg-white/10 border border-white/30 rounded px-2 py-1.5 text-sm font-bold text-white uppercase outline-none focus:border-red-400 mt-0.5"
-                                  placeholder="Destino"
-                                  data-testid="input-edit-destination"
-                              />
+                              {isMapsLoaded ? (
+                                  <Autocomplete
+                                      onLoad={ref => (destinationAutocompleteRef.current = ref)}
+                                      onPlaceChanged={() => {
+                                          const place = destinationAutocompleteRef.current?.getPlace();
+                                          if (place && place.formatted_address) {
+                                              setEditDestination(place.formatted_address.toUpperCase());
+                                          }
+                                      }}
+                                      options={{ componentRestrictions: { country: 'br' } }}
+                                  >
+                                      <input
+                                          type="text"
+                                          value={editDestination}
+                                          onChange={e => setEditDestination(e.target.value.toUpperCase())}
+                                          className="w-full bg-white/10 border border-white/30 rounded px-2 py-1.5 text-sm font-bold text-white uppercase outline-none focus:border-red-400 mt-0.5"
+                                          placeholder="Buscar endereço de destino..."
+                                          data-testid="input-edit-destination"
+                                      />
+                                  </Autocomplete>
+                              ) : (
+                                  <input
+                                      type="text"
+                                      value={editDestination}
+                                      onChange={e => setEditDestination(e.target.value.toUpperCase())}
+                                      className="w-full bg-white/10 border border-white/30 rounded px-2 py-1.5 text-sm font-bold text-white uppercase outline-none focus:border-red-400 mt-0.5"
+                                      placeholder="Destino"
+                                      data-testid="input-edit-destination"
+                                  />
+                              )}
                           </div>
                       </div>
                       <div className="flex items-center gap-2 pt-1">
