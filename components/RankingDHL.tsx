@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { supabase } from '../lib/supabase';
-import { Trophy, Calendar, RefreshCw, Loader2, Activity, Lock } from 'lucide-react';
+import { Trophy, Calendar, RefreshCw, Loader2, Activity, Lock, AlertTriangle } from 'lucide-react';
 
 const VALOR_POR_OS = 10;
 
@@ -242,11 +242,24 @@ export default function RankingDHL() {
                 </div>
             </div>
 
-            <div className="bg-amber-50 border border-amber-200 rounded-2xl p-3 mb-6 flex flex-wrap items-center gap-x-3 gap-y-1">
+            <div className="bg-amber-50 border border-amber-200 rounded-2xl p-3 mb-4 flex flex-wrap items-center gap-x-3 gap-y-1">
                 <Calendar className="text-amber-700 flex-shrink-0" size={18} />
                 <span className="text-[10px] font-black text-amber-700 uppercase tracking-widest">Data de Pagamento:</span>
                 <span className="text-base font-black text-amber-900" data-testid="text-payment-date">{paymentDate}</span>
                 <span className="text-xs font-bold text-amber-700">(fim do mês de referência + 40 dias)</span>
+            </div>
+
+            <div className="bg-red-50 border-2 border-red-300 rounded-2xl p-4 mb-6 flex items-start gap-3" data-testid="alert-produtividade">
+                <AlertTriangle className="text-red-600 flex-shrink-0 mt-0.5" size={22} />
+                <div className="text-sm text-red-900 leading-relaxed">
+                    <div className="font-black uppercase tracking-wide text-red-700 text-xs mb-1">Atenção — Produtividade Geral</div>
+                    <p className="font-semibold">
+                        A produtividade <span className="font-black">normal de cada funcionário está sendo avaliada o tempo todo</span>.
+                        Não foque apenas em OS DHL e deixe de atender os demais clientes.
+                        Se isso acontecer, o <span className="font-black">prêmio poderá ser cortado</span>,
+                        e quem for advertido <span className="font-black">sairá do Ranking DHL</span>.
+                    </p>
+                </div>
             </div>
 
             <div className="bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden">
