@@ -1938,6 +1938,15 @@ const VendorVerificationControl: React.FC<VendorVerificationControlProps> = ({ o
                                                     <p className="text-[9px] font-black text-blue-700 uppercase tracking-widest">Totais</p>
                                                     <p className="text-[11px] font-bold text-gray-600">Forn.: <span className="text-blue-700">{formatCurrency(totals.provider)}</span></p>
                                                     <p className="text-[11px] font-bold text-gray-600">Sist.: <span className="text-blue-700">{formatCurrency(totals.system)}</span></p>
+                                                    {(() => {
+                                                        const diff = totals.provider - totals.system;
+                                                        const cls = Math.abs(diff) < 0.01 ? 'text-gray-600' : diff > 0 ? 'text-red-700' : 'text-emerald-700';
+                                                        return (
+                                                            <p className="text-[11px] font-black border-t border-blue-200 mt-1 pt-1 text-gray-700">
+                                                                Dif.: <span className={cls}>{formatCurrency(diff)}</span>
+                                                            </p>
+                                                        );
+                                                    })()}
                                                 </div>
                                             </div>
                                         );
