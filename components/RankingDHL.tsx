@@ -33,16 +33,33 @@ export default function RankingDHL() {
         try {
             const start = new Date(year, month, 1).toISOString();
             const end = new Date(year, month + 1, 1).toISOString();
-            const { data, error } = await supabase
-                .from('missions')
-                .select('id, updated_by, created_at, client')
-                .ilike('client', '%DHL%')
+            // 1) Logs de CRIAÇÃO de OS no período
+            const { data: logs, error: logErr } = await supabase
+                .from('system_logs')
+                .select('entity_id, user_name')
+                .eq('entity', 'Mission')
+                .eq('action_type', 'CREATE')
                 .gte('created_at', start)
                 .lt('created_at', end);
-            if (error) throw error;
+            if (logErr) throw logErr;
+            const ids = Array.from(new Set((logs || []).map(l => l.entity_id).filter(Boolean)));
+            if (ids.length === 0) { setRows([]); setLoading(false); return; }
+            // 2) Filtra apenas missões do cliente DHL
+            const { data: ms, error: mErr } = await supabase
+                .from('missions')
+                .select('id, client')
+                .in('id', ids)
+                .ilike('client', '%DHL%');
+            if (mErr) throw mErr;
+            const dhlIds = new Set((ms || []).map((m: any) => m.id));
+            // 3) Conta criações por usuário (apenas 1ª criação por OS — evita duplicidade)
+            const seen = new Set<string>();
             const map = new Map<string, number>();
-            for (const m of (data || [])) {
-                const raw = (m as any).updated_by;
+            for (const l of (logs || [])) {
+                if (!dhlIds.has(l.entity_id)) continue;
+                if (seen.has(l.entity_id)) continue;
+                seen.add(l.entity_id);
+                const raw = (l as any).user_name;
                 if (!raw) continue;
                 const name = String(raw).trim();
                 if (!name) continue;

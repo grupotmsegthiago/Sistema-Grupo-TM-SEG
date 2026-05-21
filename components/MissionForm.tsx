@@ -1246,6 +1246,16 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
             }
             if (!error) saved = true; else if (error.code === '23505') attempts++; else throw error;
         }
+        // Registro de criação (usado pelo Ranking DHL e auditoria)
+        try {
+            await supabase.from('system_logs').insert([{
+                user_name: userData.name || 'Sistema',
+                action_type: 'CREATE',
+                entity: 'Mission',
+                entity_id: finalId,
+                details: JSON.stringify({ client: formData.client, origin: formData.origin, destination: formData.destination })
+            }]);
+        } catch (logErr) { console.warn('Falha ao registrar log de criação da OS:', logErr); }
         await uploadEvidences(finalId);
 
         // ── DHL: gerar link público para o fornecedor e abrir modal ──
