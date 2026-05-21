@@ -2260,6 +2260,12 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                           (mission as any).total_distance = newDistanceKm;
                                       }
                                       setIsEditingRoute(false);
+                                      // Limpa overrides manuais para forçar o auto-match com a nova rota
+                                      setManualClientTableId('');
+                                      setManualProviderTableId('');
+                                      setCustomClientBase(''); setCustomClientKm(''); setCustomClientHour('');
+                                      setCustomProviderBase(''); setCustomProviderKm(''); setCustomProviderHour('');
+                                      setMemoryLoaded(false);
                                       const kmMsg = newDistanceKm !== null && newDistanceKm > 0 ? ` (${newDistanceKm.toFixed(2)} km)` : '';
                                       showNotification('Rota Atualizada', `${editOrigin.trim()} → ${editDestination.trim()}${kmMsg}`, 'success');
                                       // Recarrega o modal por completo (tabelas de cliente/fornecedor reavaliadas para a nova rota)
