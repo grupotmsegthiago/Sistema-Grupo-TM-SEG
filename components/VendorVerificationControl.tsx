@@ -847,22 +847,25 @@ const VendorVerificationControl: React.FC<VendorVerificationControlProps> = ({ o
                 if (!byDate.has(dk)) byDate.set(dk, []);
                 byDate.get(dk)!.push(m);
             });
-            const usedMissionIds = new Set<string>();
-            const results: any[] = [];
+            // ---- Matching com atribuição GLOBAL por melhor score ----
+            // Em vez de greedy por ordem da planilha (que "consome" a missão na 1ª linha
+            // que bater placa de escolta), calculamos o score de TODAS as combinações
+            // (row × mission) e atribuímos do melhor para o pior, garantindo que cada
+            // missão fique com a linha do boletim que melhor corresponde a ela.
+            type Pair = { rowIdx: number; mission: any; score: number; reasons: string[] };
+            const allPairs: Pair[] = [];
 
-            for (const row of rows) {
-                const candidates: { mission: any; score: number; reasons: string[] }[] = [];
-
-                // 1) Match direto por vendor_os_number (se preenchido)
+            rows.forEach((row, rowIdx) => {
+                // 1) Match direto por vendor_os_number (se preenchido) — peso máximo
                 if (row.numero) {
                     missionsArr.forEach((m: any) => {
                         if (m.vendor_os_number && String(m.vendor_os_number).trim().toUpperCase() === row.numero.toUpperCase()) {
-                            candidates.push({ mission: m, score: 200, reasons: ['Nº OS Fornecedor'] });
+                            allPairs.push({ rowIdx, mission: m, score: 500, reasons: ['Nº OS Fornecedor'] });
                         }
                     });
                 }
 
-                // 2) Heurística por placa escolta + data + janela
+                // 2) Heurística sobre missões da mesma data (± 1 dia)
                 const dk = dateKey(row.dataIni);
                 const sameDay = byDate.get(dk) || [];
                 const prevDay = byDate.get(dateKey(row.dataIni ? new Date(row.dataIni.getTime() - 86400000) : null)) || [];
@@ -872,42 +875,58 @@ const VendorVerificationControl: React.FC<VendorVerificationControlProps> = ({ o
                 pool.forEach((m: any) => {
                     let score = 0;
                     const reasons: string[] = [];
-                    const mEscort = normalizePlate(m._escortPlate);
-                    if (row.viaturaNorm && mEscort && row.viaturaNorm === mEscort) {
-                        score += 80; reasons.push('Placa Escolta');
-                    }
+                    // Placa Escoltado: identifica unicamente a viagem (placa do caminhão do cliente)
                     const clientPlates = [normalizePlate(m._plate1), normalizePlate(m._plate2)].filter(Boolean);
                     if (row.escoltadoPlates.some((p: string) => clientPlates.includes(p))) {
-                        score += 50; reasons.push('Placa Escoltado');
+                        score += 100; reasons.push('Placa Escoltado');
                     }
-                    // Data início
+                    // Placa Escolta: o mesmo veículo do fornecedor faz dezenas de OS, peso menor
+                    const mEscort = normalizePlate(m._escortPlate);
+                    if (row.viaturaNorm && mEscort && row.viaturaNorm === mEscort) {
+                        score += 40; reasons.push('Placa Escolta');
+                    }
+                    // Horário de início
                     if (m.start_time && row.startDt) {
                         const mStart = new Date(m.start_time);
-                        const diffMs = Math.abs(mStart.getTime() - row.startDt.getTime());
-                        const diffMin = diffMs / 60000;
-                        if (dateKey(mStart) === dk) score += 25;
-                        if (diffMin <= 30) { score += 25; reasons.push('Horário'); }
-                        else if (diffMin <= 120) { score += 10; }
+                        const diffMin = Math.abs(mStart.getTime() - row.startDt.getTime()) / 60000;
+                        if (dateKey(mStart) === dk) score += 20;
+                        if (diffMin <= 15) { score += 50; reasons.push('Horário'); }
+                        else if (diffMin <= 60) { score += 25; }
+                        else if (diffMin <= 180) { score += 10; }
                     }
-                    // KM inicial
+                    // KM inicial (forte indicador, é único da viagem)
                     if (row.kmIni && m.start_km) {
                         const diff = Math.abs(row.kmIni - m.start_km);
-                        if (diff <= 5) { score += 20; reasons.push('KM inicial'); }
-                        else if (diff <= 50) { score += 5; }
+                        if (diff <= 5) { score += 60; reasons.push('KM inicial'); }
+                        else if (diff <= 50) { score += 15; }
                     }
-                    if (score > 0) candidates.push({ mission: m, score, reasons });
+                    // KM final (também único da viagem)
+                    if (row.kmFim && m.end_km) {
+                        const diff = Math.abs(row.kmFim - m.end_km);
+                        if (diff <= 5) { score += 30; reasons.push('KM final'); }
+                    }
+                    if (score > 0) allPairs.push({ rowIdx, mission: m, score, reasons });
                 });
+            });
 
-                candidates.sort((a, b) => b.score - a.score);
-                // Pegar primeiro candidato não utilizado com score mínimo
-                let best: { mission: any; score: number; reasons: string[] } | null = null;
-                for (const c of candidates) {
-                    if (c.score >= 80 && !usedMissionIds.has(String(c.mission.id))) {
-                        best = c; break;
-                    }
-                }
-                // Se nenhum disponível mas há candidato forte (>=120), permitir reuso
-                if (!best && candidates.length > 0 && candidates[0].score >= 120) best = candidates[0];
+            // Ordenar globalmente do melhor para o pior e atribuir 1-a-1
+            allPairs.sort((a, b) => b.score - a.score);
+            const matchedRows = new Map<number, Pair>();
+            const usedMissionIds = new Set<string>();
+            const MIN_SCORE = 60;
+            for (const p of allPairs) {
+                if (matchedRows.has(p.rowIdx)) continue;
+                if (usedMissionIds.has(String(p.mission.id))) continue;
+                if (p.score < MIN_SCORE) continue;
+                matchedRows.set(p.rowIdx, p);
+                usedMissionIds.add(String(p.mission.id));
+            }
+
+            const results: any[] = [];
+
+            for (let rowIdx = 0; rowIdx < rows.length; rowIdx++) {
+                const row = rows[rowIdx];
+                const best = matchedRows.get(rowIdx) || null;
 
                 if (!best) {
                     results.push({
@@ -923,7 +942,6 @@ const VendorVerificationControl: React.FC<VendorVerificationControlProps> = ({ o
                     continue;
                 }
 
-                usedMissionIds.add(String(best.mission.id));
                 const m = best.mission;
                 const systemCost = (m.cost_value || 0) + Math.max(0, m.toll_value_provider ?? m.toll_value ?? 0);
                 const diff = row.total - systemCost;
