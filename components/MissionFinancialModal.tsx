@@ -2205,11 +2205,36 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                   if (!editOrigin.trim() || !editDestination.trim()) return;
                                   setIsSavingRoute(true);
                                   try {
-                                      const { error } = await supabase.from('missions').update({
+                                      // Recalcula a distância via Google Distance Matrix
+                                      let newDistanceKm: number | null = null;
+                                      try {
+                                          if (isMapsLoaded && (window as any).google?.maps) {
+                                              const service = new (window as any).google.maps.DistanceMatrixService();
+                                              const result = await service.getDistanceMatrix({
+                                                  origins: [editOrigin.trim()],
+                                                  destinations: [editDestination.trim()],
+                                                  travelMode: (window as any).google.maps.TravelMode.DRIVING,
+                                                  unitSystem: (window as any).google.maps.UnitSystem.METRIC,
+                                              });
+                                              const el = result?.rows?.[0]?.elements?.[0];
+                                              if (el?.status === 'OK' && el.distance?.value) {
+                                                  newDistanceKm = Math.round((el.distance.value / 1000) * 100) / 100;
+                                              }
+                                          }
+                                      } catch (geoErr) {
+                                          console.warn('Falha ao calcular distância Google:', geoErr);
+                                      }
+
+                                      const updatePayload: any = {
                                           origin: editOrigin.trim(),
                                           destination: editDestination.trim(),
                                           last_update: new Date().toISOString()
-                                      }).eq('id', mission.id).select('id').single();
+                                      };
+                                      if (newDistanceKm !== null && newDistanceKm > 0) {
+                                          updatePayload.total_distance = newDistanceKm;
+                                      }
+
+                                      const { error } = await supabase.from('missions').update(updatePayload).eq('id', mission.id).select('id').single();
                                       if (error) throw error;
                                       const userData = JSON.parse(localStorage.getItem('userData') || '{}');
                                       await supabase.from('system_logs').insert([{
@@ -2217,12 +2242,18 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                           action_type: 'UPDATE',
                                           entity: 'Mission',
                                           entity_id: mission.id,
-                                          details: JSON.stringify({ field: 'route', oldOrigin: mission.origin, newOrigin: editOrigin.trim(), oldDestination: mission.destination, newDestination: editDestination.trim() })
+                                          details: JSON.stringify({ field: 'route', oldOrigin: mission.origin, newOrigin: editOrigin.trim(), oldDestination: mission.destination, newDestination: editDestination.trim(), newDistanceKm })
                                       }]);
                                       mission.origin = editOrigin.trim();
                                       mission.destination = editDestination.trim();
+                                      if (newDistanceKm !== null && newDistanceKm > 0) {
+                                          (mission as any).totalDistance = newDistanceKm;
+                                          (mission as any).total_distance = newDistanceKm;
+                                      }
                                       setIsEditingRoute(false);
-                                      showNotification('Rota Atualizada', `${editOrigin.trim()} → ${editDestination.trim()}`, 'success');
+                                      const kmMsg = newDistanceKm !== null && newDistanceKm > 0 ? ` (${newDistanceKm.toFixed(2)} km)` : '';
+                                      showNotification('Rota Atualizada', `${editOrigin.trim()} → ${editDestination.trim()}${kmMsg}`, 'success');
+                                      if (onUpdate) onUpdate();
                                   } catch (err: any) {
                                       showNotification('Erro', err.message, 'error');
                                   }
