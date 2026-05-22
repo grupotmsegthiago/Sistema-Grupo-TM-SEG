@@ -231,6 +231,12 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
   // Histórico permanente de alterações pós-aprovação (Data / Quem / Mudanças / Observação)
   const [editHistory, setEditHistory] = useState<Array<{user: string; date: string; changes: string[]; note: string}>>([]);
   const [editObservation, setEditObservation] = useState('');
+  // Histórico financeiro (FINANCIAL_RECALC + billing_override) por OS, com filtro por período.
+  const [finHistory, setFinHistory] = useState<Array<any>>([]);
+  const [finHistLoading, setFinHistLoading] = useState(false);
+  const [finHistStart, setFinHistStart] = useState('');
+  const [finHistEnd, setFinHistEnd] = useState('');
+  const [finHistOpen, setFinHistOpen] = useState(false);
   const [systemCalculatedCost, setSystemCalculatedCost] = useState<number | null>(null);
   const [systemCalculatedRevenue, setSystemCalculatedRevenue] = useState<number | null>(null);
   const [controllerSavedCost, setControllerSavedCost] = useState<number | null>(null);
@@ -865,6 +871,36 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
           
       } catch (e) { console.error(e); } finally { setIsLoading(false); }
   };
+
+  const loadFinancialHistory = async () => {
+      if (!mission?.id) return;
+      setFinHistLoading(true);
+      try {
+          const params = new URLSearchParams();
+          if (finHistStart) params.append('startDate', finHistStart);
+          if (finHistEnd) params.append('endDate', finHistEnd);
+          const qs = params.toString();
+          const res = await authFetch(`/api/missions/${mission.id}/financial-history${qs ? `?${qs}` : ''}`);
+          if (res.ok) {
+              const json = await res.json();
+              setFinHistory(json.items || []);
+          } else {
+              setFinHistory([]);
+          }
+      } catch (e) {
+          console.error('[FinancialHistory] erro ao carregar:', e);
+          setFinHistory([]);
+      } finally {
+          setFinHistLoading(false);
+      }
+  };
+
+  useEffect(() => {
+      if (finHistOpen && mission?.id) {
+          loadFinancialHistory();
+      }
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [finHistOpen, mission?.id]);
 
   const handleNewCostTableSuccess = async (newTableId?: string) => {
       if (!mission) return;
@@ -3505,6 +3541,142 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                             )}
                         </div>
                     )}
+
+                    {/* Histórico Financeiro: FINANCIAL_RECALC + billing_override (Task #47) */}
+                    <div className="mx-4 mb-4 p-3 bg-slate-50 rounded-xl border border-slate-200" data-testid="panel-financial-history">
+                        <div className="flex items-center justify-between gap-2 mb-2">
+                            <button
+                                type="button"
+                                onClick={() => setFinHistOpen(v => !v)}
+                                className="text-[10px] font-black text-slate-700 uppercase tracking-widest flex items-center gap-1.5 hover:text-slate-900"
+                                data-testid="button-toggle-financial-history"
+                            >
+                                <History size={12} /> Histórico Financeiro {finHistory.length > 0 ? `(${finHistory.length})` : ''}
+                                <span className="text-[9px] font-bold text-slate-400 normal-case">— recálculos, ajustes e aprovações</span>
+                            </button>
+                            {finHistOpen && (
+                                <button
+                                    type="button"
+                                    onClick={loadFinancialHistory}
+                                    className="text-[9px] font-black text-slate-600 hover:text-slate-900 flex items-center gap-1"
+                                    data-testid="button-refresh-financial-history"
+                                    title="Atualizar"
+                                >
+                                    <RefreshCw size={10} /> Atualizar
+                                </button>
+                            )}
+                        </div>
+
+                        {finHistOpen && (
+                            <>
+                                <div className="flex flex-wrap items-end gap-2 mb-3 p-2 bg-white rounded-lg border border-slate-200">
+                                    <div className="flex flex-col">
+                                        <label className="text-[9px] font-black text-slate-500 uppercase">Início</label>
+                                        <input
+                                            type="date"
+                                            value={finHistStart}
+                                            onChange={e => setFinHistStart(e.target.value)}
+                                            className="text-[11px] border border-slate-300 rounded px-1.5 py-1"
+                                            data-testid="input-financial-history-start"
+                                        />
+                                    </div>
+                                    <div className="flex flex-col">
+                                        <label className="text-[9px] font-black text-slate-500 uppercase">Fim</label>
+                                        <input
+                                            type="date"
+                                            value={finHistEnd}
+                                            onChange={e => setFinHistEnd(e.target.value)}
+                                            className="text-[11px] border border-slate-300 rounded px-1.5 py-1"
+                                            data-testid="input-financial-history-end"
+                                        />
+                                    </div>
+                                    <button
+                                        type="button"
+                                        onClick={loadFinancialHistory}
+                                        className="px-2.5 py-1 bg-slate-800 text-white text-[10px] font-black uppercase rounded hover:bg-slate-900"
+                                        data-testid="button-apply-financial-history-filter"
+                                    >
+                                        Filtrar
+                                    </button>
+                                    {(finHistStart || finHistEnd) && (
+                                        <button
+                                            type="button"
+                                            onClick={() => { setFinHistStart(''); setFinHistEnd(''); setTimeout(loadFinancialHistory, 0); }}
+                                            className="px-2 py-1 text-slate-500 text-[10px] font-bold uppercase rounded hover:bg-slate-100"
+                                            data-testid="button-clear-financial-history-filter"
+                                        >
+                                            Limpar
+                                        </button>
+                                    )}
+                                    <span className="ml-auto text-[9px] text-slate-400 font-mono">OS #{mission.id}</span>
+                                </div>
+
+                                {finHistLoading ? (
+                                    <div className="flex items-center gap-2 text-slate-500 text-xs py-3 justify-center">
+                                        <Loader2 size={12} className="animate-spin" /> Carregando histórico…
+                                    </div>
+                                ) : finHistory.length === 0 ? (
+                                    <p className="text-[11px] italic text-slate-500 py-2 text-center" data-testid="text-financial-history-empty">
+                                        Nenhuma alteração financeira registrada para esta OS{(finHistStart || finHistEnd) ? ' no período selecionado' : ''}.
+                                    </p>
+                                ) : (
+                                    <div className="flex flex-col gap-2 max-h-72 overflow-y-auto">
+                                        {finHistory.map((h, idx) => {
+                                            const fmtVal = (v: any) => {
+                                                if (v === null || v === undefined) return '—';
+                                                if (typeof v === 'number') return formatCurrency(v);
+                                                if (typeof v === 'boolean') return v ? 'SIM' : 'NÃO';
+                                                if (typeof v === 'object') return 'snapshot';
+                                                return String(v);
+                                            };
+                                            const fields = ['revenue_value', 'cost_value', 'toll_value', 'toll_value_provider', 'billing_approved', 'snapshot_data'];
+                                            const before = h.before || {};
+                                            const after = h.after || {};
+                                            const changedFields = fields.filter(f => {
+                                                const b = before[f];
+                                                const a = after[f];
+                                                if (b === undefined && a === undefined) return false;
+                                                if (typeof b === 'number' && typeof a === 'number') return Math.abs(b - a) > 0.005;
+                                                return JSON.stringify(b ?? null) !== JSON.stringify(a ?? null);
+                                            });
+                                            return (
+                                                <div key={h.id || idx} className="bg-white px-3 py-2 rounded-lg border border-slate-200 shadow-sm" data-testid={`financial-history-${idx}`}>
+                                                    <div className="flex items-center justify-between gap-2 mb-1.5">
+                                                        <div className="flex items-center gap-2 min-w-0">
+                                                            <span className={`text-[8px] font-black px-1.5 py-0.5 rounded uppercase shrink-0 ${h.action_type === 'FINANCIAL_RECALC' ? 'bg-indigo-100 text-indigo-700' : 'bg-amber-100 text-amber-700'}`}>
+                                                                {h.action_type === 'FINANCIAL_RECALC' ? 'RECÁLCULO' : 'OVERRIDE'}
+                                                            </span>
+                                                            <span className="text-[10px] font-black text-gray-800 uppercase truncate">{h.user_name}</span>
+                                                        </div>
+                                                        <span className="text-[9px] text-gray-500 font-mono shrink-0">{new Date(h.created_at).toLocaleString('pt-BR')}</span>
+                                                    </div>
+                                                    {h.source && (
+                                                        <p className="text-[9px] text-slate-500 font-mono mb-1 truncate" title={h.source}>Origem: {h.source}</p>
+                                                    )}
+                                                    {changedFields.length > 0 ? (
+                                                        <ul className="text-[10px] text-gray-700 font-mono space-y-0.5">
+                                                            {changedFields.map(f => (
+                                                                <li key={f} className="leading-tight">
+                                                                    • <span className="font-black">{f}</span>: <span className="text-red-600">{fmtVal(before[f])}</span> → <span className="text-emerald-700">{fmtVal(after[f])}</span>
+                                                                </li>
+                                                            ))}
+                                                        </ul>
+                                                    ) : (
+                                                        <p className="text-[10px] text-slate-500 italic">Sem alteração de valores (registro de auditoria).</p>
+                                                    )}
+                                                    {h.reason && (
+                                                        <p className="text-[10px] italic text-amber-800 bg-amber-50 border-l-2 border-amber-300 pl-2 py-0.5 mt-1">
+                                                            Motivo: {h.reason}
+                                                        </p>
+                                                    )}
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                )}
+                            </>
+                        )}
+                    </div>
 
                     {/* Histórico permanente de alterações pós-aprovação */}
                     {editHistory.length > 0 && (

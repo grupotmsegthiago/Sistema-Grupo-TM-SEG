@@ -1976,12 +1976,71 @@ export async function registerRoutes(
           entity_id: missionId,
           details: JSON.stringify({ revenue_value: updatePayload.revenue_value, reason: updatePayload.revenue_edit_reason || null, source: 'planilha_compare' })
         }]);
+        const beforeRec: any = {
+          revenue_value: (mission as any).revenue_value ?? null,
+          toll_value: mission.toll_value ?? null,
+          billing_approved: (mission as any).billing_approved ?? null,
+        };
+        const afterRec: any = {
+          revenue_value: updatePayload.revenue_value,
+          toll_value: updatePayload.toll_value ?? mission.toll_value ?? null,
+          billing_approved: updatePayload.billing_approved,
+        };
+        await supabaseAdmin.from('system_logs').insert([{
+          user_name: billing_verified_by,
+          action_type: 'FINANCIAL_RECALC',
+          entity: 'Mission',
+          entity_id: missionId,
+          details: JSON.stringify({
+            source: 'PATCH /api/missions/:id/billing-override',
+            before: beforeRec,
+            after: afterRec,
+            reason: updatePayload.revenue_edit_reason || null,
+          })
+        }]);
       } catch (logErr) { /* log opcional */ }
 
       return res.json({ success: true, mission: data });
     } catch (err: any) {
       console.error('[billing-override] erro', err);
       return res.status(500).json({ error: err?.message || 'Erro interno' });
+    }
+  });
+
+  app.get("/api/missions/:id/financial-history", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const missionId = req.params.id;
+      const { startDate, endDate } = req.query as { startDate?: string; endDate?: string };
+      let query = supabaseAdmin
+        .from('system_logs')
+        .select('*')
+        .eq('entity', 'Mission')
+        .eq('entity_id', missionId)
+        .in('action_type', ['FINANCIAL_RECALC', 'billing_override'])
+        .order('created_at', { ascending: false })
+        .limit(500);
+      if (startDate) query = query.gte('created_at', `${startDate}T00:00:00.000Z`);
+      if (endDate) query = query.lte('created_at', `${endDate}T23:59:59.999Z`);
+      const { data, error } = await query;
+      if (error) return res.status(500).json({ error: error.message });
+      const items = (data || []).map((r: any) => {
+        let parsed: any = null;
+        try { parsed = typeof r.details === 'string' ? JSON.parse(r.details) : r.details; } catch { parsed = { raw: r.details }; }
+        return {
+          id: r.id,
+          created_at: r.created_at,
+          user_name: r.user_name || r.created_by || 'Sistema',
+          action_type: r.action_type,
+          source: parsed?.source || null,
+          before: parsed?.before || null,
+          after: parsed?.after || null,
+          reason: parsed?.reason || null,
+          details: parsed,
+        };
+      });
+      res.json({ items });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
     }
   });
 
@@ -2181,6 +2240,32 @@ export async function registerRoutes(
             created_by: 'Sistema (Recalcular e Comparar)',
           });
 
+          try {
+            await supabaseAdmin.from('system_logs').insert([{
+              user_name: (req as any).user?.name || 'Sistema (Recalcular e Comparar)',
+              action_type: 'FINANCIAL_RECALC',
+              entity: 'Mission',
+              entity_id: raw.id,
+              details: JSON.stringify({
+                source: 'POST /api/billing/recalculate-client',
+                client: clientName,
+                period: { startDate: startDate || null, endDate: endDate || null },
+                before: {
+                  revenue_value: oldRevenue,
+                  cost_value: oldCost,
+                  toll_value: raw.toll_value ?? null,
+                  snapshot_data: raw.snapshot_data ?? null,
+                },
+                after: {
+                  revenue_value: newRevenue,
+                  cost_value: newCost,
+                  toll_value: newToll,
+                  snapshot_data: snapData,
+                },
+              })
+            }]);
+          } catch {}
+
           if (Math.abs(newRevenue - oldRevenue) > 0.01 || Math.abs(newCost - oldCost) > 0.01) {
             changes.push({ id: raw.id, oldRev: oldRevenue, newRev: newRevenue, oldCost: oldCost, newCost: newCost, toll: newToll });
             updated++;
@@ -2349,6 +2434,29 @@ export async function registerRoutes(
 
             if (upErr) { errorList.push(`${m.id}: ${upErr.message}`); continue; }
 
+            try {
+              await supabaseAdmin.from('system_logs').insert([{
+                user_name: (req as any).user?.name || 'Sistema (Corrigir Divergências)',
+                action_type: 'FINANCIAL_RECALC',
+                entity: 'Mission',
+                entity_id: m.id,
+                details: JSON.stringify({
+                  source: 'POST /api/missions/fix-divergences',
+                  before: {
+                    revenue_value: m.revenue_value || 0,
+                    cost_value: savedCost,
+                    toll_value: m.toll_value ?? null,
+                  },
+                  after: {
+                    revenue_value: newRevenue,
+                    cost_value: m.is_same_os ? 0 : calcCost,
+                    toll_value: result.tollValue || m.toll_value || 0,
+                  },
+                  diffCost: Math.round((calcCost - savedCost) * 100) / 100,
+                })
+              }]);
+            } catch {}
+
             fixedList.push({
               id: m.id,
               provider: (m.provider || '').substring(0, 40),
@@ -2453,6 +2561,20 @@ export async function registerRoutes(
             }).eq('id', m.id);
 
             if (upErr) { errors.push(`${m.id}: ${upErr.message}`); continue; }
+
+            try {
+              await supabaseAdmin.from('system_logs').insert([{
+                user_name: (req as any).user?.name || 'Sistema (Recalcular Todas)',
+                action_type: 'FINANCIAL_RECALC',
+                entity: 'Mission',
+                entity_id: m.id,
+                details: JSON.stringify({
+                  source: 'POST /api/missions/recalculate-all',
+                  before: { revenue_value: oldRevenue, cost_value: oldCost },
+                  after: { revenue_value: newRevenue, cost_value: newCost },
+                })
+              }]);
+            } catch {}
 
             details.push({
               id: m.id,
