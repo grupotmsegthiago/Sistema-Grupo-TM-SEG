@@ -1890,18 +1890,27 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
               reasonFields.cost_edit_reason = `[${userName} - ${new Date().toLocaleString('pt-BR')}] Valor zero confirmado`;
           }
           // Proteção contra reversão pelo /api/recalculate-all:
-          // se os valores salvos divergem do que o sistema calcularia mas a
-          // pessoa não preencheu motivo, ainda assim marca um motivo padrão
-          // para que o recalculador automático não sobrescreva a edição manual.
+          // QUALQUER clique em "Salvar Ajustes" trava a OS contra o
+          // recalculador automático. Se houve divergência ou edição manual
+          // explícita, a mensagem detalha; caso contrário, marca apenas que
+          // foi um salvamento manual confirmado pelo usuário. Isso garante
+          // que abrir a tela de Missões novamente NUNCA reverta o valor.
           const brl = (v: number) => (v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
-          if (revDivergent && !reasonFields.revenue_edit_reason) {
-              reasonFields.revenue_edit_reason = `[${userName} - ${new Date().toLocaleString('pt-BR')}] Edição manual (sem justificativa) — receita salva: ${brl(r2(revServiceOnly))} | sistema sugeria: ${brl(r2(calcRevTotal))}`;
+          const stamp = `[${userName} - ${new Date().toLocaleString('pt-BR')}]`;
+          if (!reasonFields.revenue_edit_reason) {
+              reasonFields.revenue_edit_reason = revDivergent
+                  ? `${stamp} Edição manual (sem justificativa) — receita salva: ${brl(r2(revServiceOnly))} | sistema sugeria: ${brl(r2(calcRevTotal))}`
+                  : `${stamp} Salvamento manual confirmado — receita: ${brl(r2(revServiceOnly))}`;
           }
-          if ((costDivergent || autoEngineDivergent) && !reasonFields.cost_edit_reason) {
-              const sysHint = autoEngineDivergent
-                  ? `motor auto sugeria: ${brl(autoEngineSuggestedCost || 0)}`
-                  : `sistema sugeria: ${brl(r2(calcCostTotal))}`;
-              reasonFields.cost_edit_reason = `[${userName} - ${new Date().toLocaleString('pt-BR')}] Edição manual (sem justificativa) — custo salvo: ${brl(r2(costServiceOnly))} | ${sysHint}`;
+          if (!reasonFields.cost_edit_reason) {
+              if (costDivergent || autoEngineDivergent) {
+                  const sysHint = autoEngineDivergent
+                      ? `motor auto sugeria: ${brl(autoEngineSuggestedCost || 0)}`
+                      : `sistema sugeria: ${brl(r2(calcCostTotal))}`;
+                  reasonFields.cost_edit_reason = `${stamp} Edição manual (sem justificativa) — custo salvo: ${brl(r2(costServiceOnly))} | ${sysHint}`;
+              } else {
+                  reasonFields.cost_edit_reason = `${stamp} Salvamento manual confirmado — custo: ${brl(r2(costServiceOnly))}`;
+              }
           }
 
           const fullPayload = { ...basePayload, toll_value_provider: isSameOs ? 0 : r2(tollProv), ...reasonFields };
