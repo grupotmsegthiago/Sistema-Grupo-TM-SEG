@@ -64,11 +64,14 @@ export function generateAutoBands(config: ProviderAutoMasterConfig): ProviderAut
     return bands;
 }
 
-// Arredonda KM real para a faixa mais próxima (corte em 51 km).
-// Ex: 0..150→100, 151..250→200, 251..350→300, ... 2951..3000→3000.
+// Arredonda KM real para a faixa, com corte em 51 km dentro de cada faixa de 100.
+// Regra: km <= base+50 → base; km >= base+51 → próxima faixa.
+// Ex: 0..150→100, 151..250→200, 251..350→300, ..., 2951..3000→3000.
+// Implementação determinística: floor((km + 49) / 100) * 100, clamp [100, 3000].
 export function selectAutoBandKm(realKm: number, _config?: ProviderAutoMasterConfig): number {
-    if (!Number.isFinite(realKm) || realKm <= AUTO_BAND_STEP_KM) return AUTO_BAND_STEP_KM;
-    let band = Math.round(realKm / AUTO_BAND_STEP_KM) * AUTO_BAND_STEP_KM;
+    if (!Number.isFinite(realKm) || realKm <= 0) return AUTO_BAND_STEP_KM;
+    const CUTOFF_OFFSET = AUTO_BAND_STEP_KM - 51; // 49 → corte em 51 km dentro da faixa
+    let band = Math.floor((realKm + CUTOFF_OFFSET) / AUTO_BAND_STEP_KM) * AUTO_BAND_STEP_KM;
     if (band < AUTO_BAND_STEP_KM) band = AUTO_BAND_STEP_KM;
     if (band > AUTO_BAND_MAX_KM) band = AUTO_BAND_MAX_KM;
     return band;
