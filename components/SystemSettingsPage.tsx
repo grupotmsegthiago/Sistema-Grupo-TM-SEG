@@ -120,18 +120,30 @@ const SystemSettingsPage: React.FC<{ onNavigate?: (id: string) => void }> = () =
     } catch { return false; }
   }, []);
 
+  // Task #99 — Última execução desse relatório falhou? Habilita modo "Reexecutar agora".
+  const lastRunFailed = (key: ReportKey): boolean => {
+    const list = runs[key] || [];
+    if (list.length === 0) return false;
+    return list[0].success === false;
+  };
+
   const handleRunNow = async (key: ReportKey) => {
     const report = REPORTS.find(r => r.key === key);
     if (!report || !settings) return;
     const overrideRaw = (overrideEmails[key] || '').trim();
     const overrideList = overrideRaw.split(',').map(x => x.trim()).filter(Boolean);
     const isTest = overrideList.length > 0;
+    const isRetry = !isTest && lastRunFailed(key);
 
     if (isTest) {
       const emailRe = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
       const bad = overrideList.find(e => !emailRe.test(e));
       if (bad) { alert(`E-mail inválido em "Enviar somente para": ${bad}`); return; }
       if (!confirm(`Envio de TESTE do relatório "${report.title}".\n\nSerá enviado APENAS para:\n${overrideList.join(', ')}\n\nA configuração salva no banco NÃO será alterada nem usada neste envio.`)) return;
+    } else if (isRetry) {
+      const dest = (settings[key].emails || '').split(',').map(x => x.trim()).filter(Boolean).join(', ');
+      if (!dest) { alert('Defina pelo menos um destinatário antes de reexecutar.'); return; }
+      if (!confirm(`Reexecutar agora o relatório "${report.title}"?\n\nA última execução falhou. Será feita uma nova tentativa imediatamente usando os destinatários SALVOS:\n${dest}\n\nSe der sucesso, o cooldown de alerta de falha (24h) será zerado.`)) return;
     } else {
       const dest = (settings[key].emails || '').split(',').map(x => x.trim()).filter(Boolean).join(', ');
       if (!dest) { alert('Defina pelo menos um destinatário antes de enviar.'); return; }
@@ -547,19 +559,38 @@ const SystemSettingsPage: React.FC<{ onNavigate?: (id: string) => void }> = () =
                           className="border border-amber-300 bg-amber-50 placeholder-amber-700/60 text-amber-900 rounded-lg px-2 py-1 text-xs w-64 focus:outline-none focus:ring-2 focus:ring-amber-400"
                           data-testid={`input-override-emails-${r.key}`}
                         />
-                        <button
-                          type="button"
-                          onClick={() => handleRunNow(r.key)}
-                          disabled={runningKey !== null}
-                          className={`${(overrideEmails[r.key] || '').trim() ? 'bg-amber-600 hover:bg-amber-700' : 'bg-emerald-600 hover:bg-emerald-700'} disabled:opacity-50 text-white px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5`}
-                          title={(overrideEmails[r.key] || '').trim() ? 'Envio de TESTE: vai apenas para o e-mail digitado e NÃO usa a configuração salva' : 'Dispara o envio agora usando os destinatários SALVOS no banco'}
-                          data-testid={`button-run-now-${r.key}`}
-                        >
-                          {runningKey === r.key ? <Loader2 size={12} className="animate-spin" /> : <Send size={12} />}
-                          {runningKey === r.key
-                            ? 'Enviando...'
-                            : ((overrideEmails[r.key] || '').trim() ? 'Enviar teste' : 'Enviar agora')}
-                        </button>
+                        {(() => {
+                          const hasOverride = (overrideEmails[r.key] || '').trim().length > 0;
+                          const isRetry = !hasOverride && lastRunFailed(r.key);
+                          const colorCls = hasOverride
+                            ? 'bg-amber-600 hover:bg-amber-700'
+                            : isRetry
+                              ? 'bg-red-600 hover:bg-red-700'
+                              : 'bg-emerald-600 hover:bg-emerald-700';
+                          const title = hasOverride
+                            ? 'Envio de TESTE: vai apenas para o e-mail digitado e NÃO usa a configuração salva'
+                            : isRetry
+                              ? 'A última execução falhou. Reexecuta imediatamente usando os destinatários SALVOS — se der sucesso, o cooldown de alerta de falha é zerado.'
+                              : 'Dispara o envio agora usando os destinatários SALVOS no banco';
+                          const label = runningKey === r.key
+                            ? (isRetry ? 'Reexecutando...' : 'Enviando...')
+                            : (hasOverride ? 'Enviar teste' : isRetry ? 'Reexecutar agora' : 'Enviar agora');
+                          return (
+                            <button
+                              type="button"
+                              onClick={() => handleRunNow(r.key)}
+                              disabled={runningKey !== null}
+                              className={`${colorCls} disabled:opacity-50 text-white px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5`}
+                              title={title}
+                              data-testid={`button-run-now-${r.key}`}
+                            >
+                              {runningKey === r.key
+                                ? <Loader2 size={12} className="animate-spin" />
+                                : isRetry ? <AlertTriangle size={12} /> : <Send size={12} />}
+                              {label}
+                            </button>
+                          );
+                        })()}
                       </>
                     )}
                   </div>

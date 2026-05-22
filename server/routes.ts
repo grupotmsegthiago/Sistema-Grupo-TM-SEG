@@ -232,6 +232,13 @@ export async function registerRoutes(
         }),
       }]);
 
+      // Task #99 — Reexecução manual bem-sucedida zera o cooldown do alerta de falha,
+      // para que o próximo agendamento volte a alertar imediatamente se falhar de novo.
+      // Ignora envios em modo teste (overrideEmails) — esses não validam o canal de produção.
+      if (info.success === true && !info.overrideEmails) {
+        clearReportFailureCooldown(info.reportKey).catch(() => { /* helper já loga */ });
+      }
+
       // Task #93 — Alerta quando o disparo manual usa "Enviar somente para"
       // com algum e-mail fora dos domínios confiáveis (system_settings/alert_recipients).
       if (info.overrideEmails) {
@@ -5833,6 +5840,11 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
         emailTo: emailToArr,
       }).catch(() => { /* notifier já loga internamente */ });
     }
+    // Task #99 — Reexecução manual bem-sucedida zera o cooldown do alerta de falha,
+    // para que o próximo agendamento volte a alertar imediatamente se falhar de novo.
+    if (payload.success === true && source === 'manual') {
+      clearReportFailureCooldown(reportKey).catch(() => { /* helper já loga */ });
+    }
   };
 
   // ═══════════════════════════════════════════════════════
@@ -5851,6 +5863,35 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
     missingInfo: 'OS com Dados Faltantes',
     stuckNf: 'NFs Travadas',
   };
+  // Task #99 — Limpa o cooldown de falha quando uma reexecução manual termina com sucesso,
+  // permitindo que o próximo alerta de falha (se houver) seja entregue imediatamente sem
+  // aguardar 24h. Só roda em manual+success e silencia erros (best-effort).
+  const clearReportFailureCooldown = async (reportKey: ManualReportKey) => {
+    try {
+      const { data: cdRow } = await supabaseAdmin
+        .from('system_settings')
+        .select('value')
+        .eq('key', REPORT_FAILURE_COOLDOWNS_KEY)
+        .maybeSingle();
+      const raw = cdRow?.value;
+      let cooldowns: Record<string, string> = {};
+      try {
+        cooldowns = (raw && typeof raw === 'object') ? { ...raw } : (typeof raw === 'string' ? JSON.parse(raw) : {});
+      } catch { cooldowns = {}; }
+      if (!cooldowns[reportKey]) return;
+      delete cooldowns[reportKey];
+      await supabaseAdmin.from('system_settings').upsert([{
+        key: REPORT_FAILURE_COOLDOWNS_KEY,
+        value: cooldowns,
+        updated_by: 'Sistema',
+        updated_at: new Date().toISOString(),
+      }], { onConflict: 'key' });
+      console.log(`[Report Failure Alert] Cooldown de "${reportKey}" resetado após reexecução manual com sucesso.`);
+    } catch (e: any) {
+      console.error(`[Report Failure Alert] Falha ao resetar cooldown de "${reportKey}":`, e?.message || e);
+    }
+  };
+
   const notifyReportFailure = async (
     reportKey: ManualReportKey,
     info: { errorMessage: string | null; date: string | null; emailTo: string[] },
