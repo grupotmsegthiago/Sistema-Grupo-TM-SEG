@@ -4122,8 +4122,8 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
         mission={mission}
         initialValue={tollInput}
         source="financial_modal"
-        allowClose={tollConfirmed}
-        onClose={() => setShowTollConfirmDialog(false)}
+        allowClose={true}
+        onClose={() => { setShowTollConfirmDialog(false); setTollConfirmAutoOpened(true); }}
         onConfirm={applyTollConfirmation}
       />
     </div>
