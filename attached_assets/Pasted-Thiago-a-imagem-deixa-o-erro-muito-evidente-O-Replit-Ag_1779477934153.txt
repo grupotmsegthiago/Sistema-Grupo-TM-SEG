@@ -1,0 +1,48 @@
+Thiago, a imagem deixa o erro muito evidente. O Replit Agent implementou o motor de cálculo perfeitamente na interface de cima (cartão verde da Armada Real), mas na hora de consolidar o valor final no bloco de baixo, ele cometeu um erro clássico de desenvolvimento: ele não vinculou a variável de saída do motor automático ao input final do fornecedor, limpando o campo e deixando R$ 0,00.
+
+Analisando os dados da tela:
+
+Custo Base: R$ 533,00
+
+Custo Horas Extras: R$ 367,24
+
+Custo Total Calculado pelo Motor: R$ 900,24
+
+Pedágio Fornecedor: R$ 0,00
+
+O que deveria aparecer no campo azul: R$ 900,24 (R$ 900,24 do motor + R$ 0,00 de pedágio).
+
+Como ele deixou um log de que o valor foi forçado para zero ([Barbara Sgarlata - 19/05/2026, 17:46:42] Valor zero confirmado), o código está priorizando um estado antigo ou limpando o campo quando o motor automático roda.
+
+Para corrigir isso de vez, copie o texto abaixo, cole no chat do seu Replit Agent e peça para ele executar a correção:
+
+Prompt de Correção para o Replit Agent (Copie e Cole):
+Título: Correção de Bug - Vinculação do Custo Total Automatizado no Pagamento do Fornecedor
+
+Identificação do Bug:
+Na tela de Auditar Faturamento (MissionFinancialModal), o motor de cálculo automático para o fornecedor está funcionando perfeitamente (calculando corretamente R$ 900,24 com base em R$ 533,00 base + R$ 367,24 de horas extras). No entanto, o valor consolidado final no bloco "PAGAMENTO FORNECEDOR (TABELA + PEDÁGIO)" está sendo zerado (R$ 0,00), ignorando o resultado do motor.
+
+Ações necessárias para correção:
+
+Vinculação do Estado (State Connection):
+
+Localize onde o valor final do input de pagamento do fornecedor é renderizado no componente.
+
+Garanta que quando a flag de cálculo automático estiver ativa (auto_calc_enabled), o valor padrão/inicial deste campo seja a soma exata de: Custo Total Calculado pelo Motor + Valor do Pedágio do Fornecedor.
+
+No cenário da imagem, o campo azul deve assumir automaticamente o valor de R$ 900,24.
+
+Tratamento do Histórico / Reset de Sobrescrita:
+
+O sistema possui um log de alteração manual (Valor zero confirmado). Garanta que sempre que o motor automático recalcular a missão (ou quando o modal for aberto com o motor ativo), o sistema atualize o estado do input final com o novo valor calculado, a menos que o usuário clique explicitamente para editar manualmente de forma intencional após o cálculo.
+
+Cálculo da Margem Líquida:
+
+Verifique se a Margem Líquida % e o Resultado Operacional Final na barra inferior estão sendo recalculados usando os R$ 900,24 corretos do fornecedor, e não o valor zerado (atualmente a margem está calculando sobre o fornecedor custando zero, o que mascara o resultado real).
+
+Corrija a atribuição desse estado no frontend para plugar o resultado do motor direto no campo azul de pagamento.
+
+O que vai acontecer agora:
+O Replit vai abrir o arquivo do Modal Financeiro (MissionFinancialModal ou similar) e procurar a função que define o valor desse campo azul. Ele vai mudar a lógica para que ela diga: "Se o motor automático calculou R$ 900,24, jogue esse valor mais o pedágio diretamente aqui dentro".
+
+Pode enviar para ele que ele resolve rápido!

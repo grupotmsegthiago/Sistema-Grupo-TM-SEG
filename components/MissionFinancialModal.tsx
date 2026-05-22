@@ -1237,10 +1237,14 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
           }
 
           // Motor automático é fonte oficial: se está ativo e o valor salvo
-          // no banco diverge do calculado, sobrescreve o costInput (mesmo
-          // que dbValuesLoadedRef já esteja true). Não roda quando faturamento
-          // está travado nem quando o operador acabou de editar manualmente.
-          if (financialData.autoEngine?.active && !isEffectivelyLocked && !userManuallyEditedRef.current && !isSavingRef.current) {
+          // no banco diverge do calculado, sobrescreve o costInput para
+          // refletir o cálculo correto na tela (R$ 533 + R$ 367,24 + pedágio).
+          // Roda mesmo com a OS travada — o operador continua precisando
+          // destravar/usar EDIÇÃO TOTAL para salvar, mas o valor exibido
+          // passa a ser o do motor, evitando o "R$ 0,00" remanescente de
+          // gravações antigas (anteriores ao motor).
+          // Só não roda durante salvamento ou logo após edição manual.
+          if (financialData.autoEngine?.active && !userManuallyEditedRef.current && !isSavingRef.current) {
               const engineCostTotal = financialData.provider.serviceTotal + parseNumber(tollProviderInput);
               const currentCostInput = parseNumber(costInput);
               if (engineCostTotal > 0 && Math.abs(currentCostInput - engineCostTotal) > 1) {
