@@ -8,6 +8,10 @@ import {
     Building2, Briefcase, Printer, Filter, Zap, Scale
 } from 'lucide-react';
 import { SystemLog, MissionStatus } from '../types';
+import {
+    ComposedChart, Bar, Line, XAxis, YAxis, CartesianGrid, Tooltip,
+    ResponsiveContainer, Legend
+} from 'recharts';
 
 const formatCurrencyBR = (val: number) => (val || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 
@@ -198,7 +202,8 @@ const ReportsDashboard: React.FC = () => {
         } else if (period === 'MONTH') {
             start = new Date(now.getFullYear(), now.getMonth(), 1);
         } else if (period === 'YEAR') {
-            start = new Date(now.getFullYear(), 0, 1);
+            // Janela móvel de 12 meses (mês atual + 11 anteriores) para a visão Anual.
+            start = new Date(now.getFullYear(), now.getMonth() - 11, 1);
         }
         // Para TODAY, start já é agora.
 
@@ -856,6 +861,45 @@ const ReportsDashboard: React.FC = () => {
                     const totalDivergence = totalSaved - totalSuggested;
                     const divergentCount = filtered.filter(r => r.divergent).length;
 
+                    // Agregação mensal para acompanhar a evolução de uso do motor (Task #61).
+                    // Gera todos os buckets entre startDate e endDate (inclusive) para que
+                    // meses sem registros apareçam zerados — essencial para a visão Anual (12 meses).
+                    const monthlyMap: Record<string, { month: string; count: number; suggested: number; saved: number; divergenceAbs: number }> = {};
+                    const monthKey = (y: number, m0: number) => `${y}-${String(m0 + 1).padStart(2, '0')}`;
+                    const [sy, sm] = startDate.split('-').map(Number);
+                    const [ey, em] = endDate.split('-').map(Number);
+                    if (sy && sm && ey && em) {
+                        let cursor = new Date(sy, sm - 1, 1);
+                        const lastBucket = new Date(ey, em - 1, 1);
+                        // safety cap: no more than 24 buckets
+                        let guard = 0;
+                        while (cursor.getTime() <= lastBucket.getTime() && guard < 24) {
+                            const k = monthKey(cursor.getFullYear(), cursor.getMonth());
+                            monthlyMap[k] = { month: k, count: 0, suggested: 0, saved: 0, divergenceAbs: 0 };
+                            cursor = new Date(cursor.getFullYear(), cursor.getMonth() + 1, 1);
+                            guard++;
+                        }
+                    }
+                    filtered.forEach(r => {
+                        const d = new Date(r.createdAt);
+                        if (isNaN(d.getTime())) return;
+                        const key = monthKey(d.getFullYear(), d.getMonth());
+                        if (!monthlyMap[key]) monthlyMap[key] = { month: key, count: 0, suggested: 0, saved: 0, divergenceAbs: 0 };
+                        monthlyMap[key].count++;
+                        monthlyMap[key].suggested += r.suggestedTotal;
+                        monthlyMap[key].saved += r.savedCost;
+                        monthlyMap[key].divergenceAbs += Math.abs(r.divergence);
+                    });
+                    const monthlyData = Object.values(monthlyMap)
+                        .sort((a, b) => a.month.localeCompare(b.month))
+                        .map(m => {
+                            const [y, mo] = m.month.split('-');
+                            const label = new Date(Number(y), Number(mo) - 1, 1)
+                                .toLocaleDateString('pt-BR', { month: 'short', year: '2-digit' })
+                                .replace('.', '');
+                            return { ...m, label };
+                        });
+
                     const byProvider: Record<string, { provider: string; count: number; suggested: number; saved: number; divergent: number }> = {};
                     filtered.forEach(r => {
                         const key = (r.provider || '—').toUpperCase().trim();
@@ -966,6 +1010,57 @@ const ReportsDashboard: React.FC = () => {
                                                 {totalDivergence >= 0 ? '+' : ''}{formatCurrencyBR(totalDivergence)}
                                             </p>
                                             <p className="text-[9px] text-gray-500 font-bold mt-1">{totalDivergence > 0.01 ? 'Salvou MAIS que o motor' : totalDivergence < -0.01 ? 'Salvou MENOS que o motor' : 'Sem desvio'}</p>
+                                        </div>
+                                    </div>
+
+                                    {/* Evolução mensal do uso do motor (Task #61) */}
+                                    <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+                                        <div className="px-5 py-3 bg-indigo-50 border-b border-indigo-200 flex items-center justify-between gap-2">
+                                            <h4 className="text-xs font-black text-indigo-800 uppercase flex items-center gap-2">
+                                                <TrendingUp size={14} /> Evolução Mensal — Motor Automático
+                                            </h4>
+                                            <span className="text-[10px] font-bold text-indigo-600">
+                                                {monthlyData.length} mês(es) no período · clique "Ano" para janela móvel de 12 meses
+                                            </span>
+                                        </div>
+                                        <div className="p-4">
+                                            {monthlyData.length === 0 ? (
+                                                <div className="py-10 text-center text-xs text-gray-400" data-testid="empty-auto-engine-monthly">
+                                                    Nenhum dado mensal do motor no período selecionado.
+                                                </div>
+                                            ) : (
+                                                <div className="w-full" style={{ height: 320 }} data-testid="chart-auto-engine-monthly">
+                                                    <ResponsiveContainer width="100%" height="100%">
+                                                        <ComposedChart data={monthlyData} margin={{ top: 10, right: 20, left: 0, bottom: 5 }}>
+                                                            <CartesianGrid strokeDasharray="3 3" stroke="#eef2ff" />
+                                                            <XAxis dataKey="label" tick={{ fontSize: 11, fill: '#4b5563' }} />
+                                                            <YAxis
+                                                                yAxisId="left"
+                                                                tick={{ fontSize: 11, fill: '#4338ca' }}
+                                                                label={{ value: 'OS', angle: -90, position: 'insideLeft', style: { fontSize: 10, fill: '#4338ca' } }}
+                                                            />
+                                                            <YAxis
+                                                                yAxisId="right"
+                                                                orientation="right"
+                                                                tick={{ fontSize: 11, fill: '#b45309' }}
+                                                                tickFormatter={(v: number) => `R$ ${(v / 1000).toFixed(0)}k`}
+                                                            />
+                                                            <Tooltip
+                                                                formatter={(value: any, name: string) => {
+                                                                    if (name === 'OS processadas') return [value, name];
+                                                                    return [formatCurrencyBR(Number(value)), name];
+                                                                }}
+                                                                contentStyle={{ fontSize: 12, borderRadius: 8, border: '1px solid #e5e7eb' }}
+                                                            />
+                                                            <Legend wrapperStyle={{ fontSize: 11 }} />
+                                                            <Bar yAxisId="left" dataKey="count" name="OS processadas" fill="#4f46e5" radius={[4, 4, 0, 0]} barSize={18} />
+                                                            <Bar yAxisId="right" dataKey="suggested" name="Total Sugerido" fill="#3b82f6" radius={[4, 4, 0, 0]} barSize={18} />
+                                                            <Bar yAxisId="right" dataKey="saved" name="Total Salvo" fill="#f59e0b" radius={[4, 4, 0, 0]} barSize={18} />
+                                                            <Line yAxisId="right" type="monotone" dataKey="divergenceAbs" name="Divergência absoluta" stroke="#dc2626" strokeWidth={2} dot={{ r: 3 }} />
+                                                        </ComposedChart>
+                                                    </ResponsiveContainer>
+                                                </div>
+                                            )}
                                         </div>
                                     </div>
 
