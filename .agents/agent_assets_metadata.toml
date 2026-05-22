@@ -60,3 +60,9 @@ id = "pR9wAh7JkcZnjS3q107kO"
 uri = "file://public/motivation/m2.jpg"
 type = "image"
 title = "Novo corte (sem nada do Instagram)"
+
+[[outputs]]
+id = "izmrPzbCYgoMePhXK72e6"
+uri = "file://exports/dhl-antes-depois.xlsx"
+type = "table"
+title = "DHL — Antes x Depois (motor automático)"
