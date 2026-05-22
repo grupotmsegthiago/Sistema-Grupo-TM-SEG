@@ -193,6 +193,49 @@ export async function registerRoutes(
     return cleaned.join(', ');
   }
 
+  // Task #89 — Auditoria de disparos manuais de relatório.
+  // Registra cada POST nas 5 rotas de relatório em system_logs com
+  // action_type='manual_report_run' para que se possa rastrear quem
+  // disparou o quê (teste ou oficial) e para quais destinatários.
+  async function logManualReportRun(
+    req: Request,
+    info: {
+      reportKey: 'legal' | 'pending' | 'approval' | 'missingInfo' | 'stuckNf';
+      testMode: boolean;
+      overrideEmails: string | null;
+      effectiveEmails: string | null;
+      total: number | null;
+      success: boolean;
+      error?: string | null;
+    },
+  ): Promise<void> {
+    try {
+      const principal = (req as any).user || (req as any).auth || {};
+      const userName = principal.name || principal.email || 'Sistema';
+      const userId = principal.id || null;
+      await supabaseAdmin.from('system_logs').insert([{
+        user_name: userName,
+        action_type: 'manual_report_run',
+        entity: 'DailyReport',
+        entity_id: info.reportKey,
+        details: JSON.stringify({
+          report_key: info.reportKey,
+          test_mode: info.testMode,
+          override_emails: info.overrideEmails,
+          effective_emails: info.effectiveEmails,
+          total: info.total,
+          success: info.success,
+          error: info.error || null,
+          user_id: userId,
+          user_name: userName,
+          at: new Date().toISOString(),
+        }),
+      }]);
+    } catch (e: any) {
+      console.error('[manual_report_run] Falha ao registrar auditoria:', e?.message);
+    }
+  }
+
   app.post('/api/recalculate-all', requireAuth, requireRole('diretoria', 'administrador', 'ceo', 'financeiro'), async (req: Request, res: Response) => {
     try {
       const sbUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || '';
@@ -5771,17 +5814,20 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
   scheduleDailyLegalReport();
 
   app.post("/api/datajud/relatorio-diario", requireAuth, requireRole('administrador', 'diretoria'), async (req: Request, res: Response) => {
+    let override: string | null = null;
+    let emails: string | null = null;
     try {
-      let override: string | null = null;
       try { override = parseOverrideEmails(req); }
       catch (e: any) { return res.status(400).json({ error: e.message }); }
-      const emails = override ?? (await getLegalEmail());
+      emails = override ?? (await getLegalEmail());
       const { processos, total } = await runDailyLegalSearch();
       const searchDate = new Date().toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' });
       const sent = await sendLegalReportEmail(emails, processos, searchDate);
+      await logManualReportRun(req, { reportKey: 'legal', testMode: override !== null, overrideEmails: override, effectiveEmails: emails, total, success: sent });
       res.json({ success: sent, total, emailTo: emails, date: searchDate, testMode: override !== null });
     } catch (err: any) {
       console.error('[Jurídico Diário] Erro manual:', err.message);
+      await logManualReportRun(req, { reportKey: 'legal', testMode: override !== null, overrideEmails: override, effectiveEmails: emails, total: null, success: false, error: err.message });
       res.status(500).json({ error: err.message });
     }
   });
@@ -5858,17 +5904,20 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
   scheduleDailyPendingReport();
 
   app.post("/api/relatorio-pendencias", requireAuth, requireRole('administrador', 'diretoria'), async (req: Request, res: Response) => {
+    let override: string | null = null;
+    let emails: string | null = null;
     try {
-      let override: string | null = null;
       try { override = parseOverrideEmails(req); }
       catch (e: any) { return res.status(400).json({ error: e.message }); }
-      const emails = override ?? (await loadDailyReportsSettings()).pending.emails;
+      emails = override ?? (await loadDailyReportsSettings()).pending.emails;
       const pendingMissions = await findCompletedMissionsWithPendingInfo();
       const reportDate = new Date().toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' });
       const sent = await sendPendingInfoReport(emails, pendingMissions, reportDate);
+      await logManualReportRun(req, { reportKey: 'pending', testMode: override !== null, overrideEmails: override, effectiveEmails: emails, total: pendingMissions.length, success: sent });
       res.json({ success: sent, total: pendingMissions.length, emailTo: emails, date: reportDate, testMode: override !== null });
     } catch (err: any) {
       console.error('[Pendências] Erro manual:', err.message);
+      await logManualReportRun(req, { reportKey: 'pending', testMode: override !== null, overrideEmails: override, effectiveEmails: emails, total: null, success: false, error: err.message });
       res.status(500).json({ error: err.message });
     }
   });
@@ -5932,17 +5981,20 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
   scheduleDailyApprovalReport();
 
   app.post("/api/relatorio-aprovacoes", requireAuth, requireRole('administrador', 'diretoria'), async (req: Request, res: Response) => {
+    let override: string | null = null;
+    let emails: string | null = null;
     try {
-      let override: string | null = null;
       try { override = parseOverrideEmails(req); }
       catch (e: any) { return res.status(400).json({ error: e.message }); }
-      const emails = override ?? (await loadDailyReportsSettings()).approval.emails;
+      emails = override ?? (await loadDailyReportsSettings()).approval.emails;
       const pendingApproval = await findMissionsPendingApproval();
       const reportDate = new Date().toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' });
       const sent = await sendApprovalPendingReport(emails, pendingApproval, reportDate);
+      await logManualReportRun(req, { reportKey: 'approval', testMode: override !== null, overrideEmails: override, effectiveEmails: emails, total: pendingApproval.length, success: sent });
       res.json({ success: sent, total: pendingApproval.length, emailTo: emails, date: reportDate, testMode: override !== null });
     } catch (err: any) {
       console.error('[Aprovações] Erro manual:', err.message);
+      await logManualReportRun(req, { reportKey: 'approval', testMode: override !== null, overrideEmails: override, effectiveEmails: emails, total: null, success: false, error: err.message });
       res.status(500).json({ error: err.message });
     }
   });
@@ -6020,17 +6072,20 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
   scheduleDailyMissingInfoReport();
 
   app.post("/api/relatorio-dados-faltantes", requireAuth, requireRole('administrador', 'diretoria'), async (req: Request, res: Response) => {
+    let override: string | null = null;
+    let emails: string | null = null;
     try {
-      let override: string | null = null;
       try { override = parseOverrideEmails(req); }
       catch (e: any) { return res.status(400).json({ error: e.message }); }
-      const emails = override ?? (await loadDailyReportsSettings()).missingInfo.emails;
+      emails = override ?? (await loadDailyReportsSettings()).missingInfo.emails;
       const missions = await findAllMissionsWithMissingInfo();
       const reportDate = new Date().toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' });
       const sent = await sendDailyMissingInfoReport(emails, missions, reportDate);
+      await logManualReportRun(req, { reportKey: 'missingInfo', testMode: override !== null, overrideEmails: override, effectiveEmails: emails, total: missions.length, success: sent });
       res.json({ success: sent, total: missions.length, emailTo: emails, date: reportDate, testMode: override !== null });
     } catch (err: any) {
       console.error('[Dados Faltantes] Erro manual:', err.message);
+      await logManualReportRun(req, { reportKey: 'missingInfo', testMode: override !== null, overrideEmails: override, effectiveEmails: emails, total: null, success: false, error: err.message });
       res.status(500).json({ error: err.message });
     }
   });
@@ -6803,6 +6858,53 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
     }
   });
 
+  // Task #89 — Lista os últimos disparos manuais de relatório registrados em system_logs.
+  // Filtros opcionais: report_key (legal|pending|approval|missingInfo|stuckNf) e
+  // mode ('test' | 'official'). Sempre retorna no máximo 20 itens.
+  app.get('/api/admin/system-settings/manual-report-runs', requireAuth, requireRole('diretoria', 'administrador'), async (req: Request, res: Response) => {
+    try {
+      const reportKey = String(req.query.report_key || '').trim();
+      const mode = String(req.query.mode || '').trim();
+      const validKeys = ['legal', 'pending', 'approval', 'missingInfo', 'stuckNf'];
+      let query = supabaseAdmin
+        .from('system_logs')
+        .select('id, created_at, user_name, details')
+        .eq('action_type', 'manual_report_run')
+        .order('created_at', { ascending: false })
+        .limit(100);
+      if (reportKey && validKeys.includes(reportKey)) {
+        query = query.eq('entity_id', reportKey);
+      }
+      const { data, error } = await query;
+      if (error) throw error;
+      const rows = (data || []).map((r: any) => {
+        let d: any = {};
+        try { d = typeof r.details === 'string' ? JSON.parse(r.details) : (r.details || {}); } catch {}
+        return {
+          id: r.id,
+          createdAt: r.created_at,
+          userName: r.user_name || d.user_name || '—',
+          userId: d.user_id || null,
+          reportKey: d.report_key || null,
+          testMode: d.test_mode === true,
+          overrideEmails: d.override_emails || null,
+          effectiveEmails: d.effective_emails || null,
+          total: typeof d.total === 'number' ? d.total : null,
+          success: d.success === true,
+          error: d.error || null,
+        };
+      });
+      const filtered = mode === 'test'
+        ? rows.filter(r => r.testMode)
+        : mode === 'official'
+          ? rows.filter(r => !r.testMode)
+          : rows;
+      res.json({ ok: true, runs: filtered.slice(0, 20) });
+    } catch (e: any) {
+      res.status(500).json({ ok: false, error: e?.message || 'Falha ao carregar disparos manuais' });
+    }
+  });
+
   app.get('/api/admin/system-settings/daily-reports/history', requireAuth, requireRole('diretoria', 'administrador'), async (_req: Request, res: Response) => {
     try {
       const { data, error } = await supabaseAdmin
@@ -6963,17 +7065,20 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
   scheduleDailyStuckNfReport();
 
   app.post("/api/relatorio-nfs-travadas", requireAuth, requireRole('administrador', 'diretoria', 'financeiro'), async (req: Request, res: Response) => {
+    let override: string | null = null;
+    let emails: string | null = null;
     try {
-      let override: string | null = null;
       try { override = parseOverrideEmails(req); }
       catch (e: any) { return res.status(400).json({ error: e.message }); }
-      const emails = override ?? (await loadDailyReportsSettings()).stuckNf.emails;
+      emails = override ?? (await loadDailyReportsSettings()).stuckNf.emails;
       const { listStuckNfs } = await import('./nfRetryWorker');
       const items = await listStuckNfs();
       const reportDate = new Date().toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' });
       const sent = items.length > 0 ? await sendStuckNfsReport(emails, items, reportDate) : false;
+      await logManualReportRun(req, { reportKey: 'stuckNf', testMode: override !== null, overrideEmails: override, effectiveEmails: emails, total: items.length, success: sent });
       res.json({ success: sent, total: items.length, emailTo: emails, date: reportDate, testMode: override !== null });
     } catch (err: any) {
+      await logManualReportRun(req, { reportKey: 'stuckNf', testMode: override !== null, overrideEmails: override, effectiveEmails: emails, total: null, success: false, error: err.message });
       res.status(500).json({ error: err.message });
     }
   });

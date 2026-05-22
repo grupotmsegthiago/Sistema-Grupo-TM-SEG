@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Settings, Mail, Clock, Save, Loader2, RefreshCw, History, FileBarChart, Send, CheckCircle2, AlertTriangle } from 'lucide-react';
+import { Settings, Mail, Clock, Save, Loader2, RefreshCw, History, FileBarChart, Send, CheckCircle2, AlertTriangle, ListChecks } from 'lucide-react';
 import ManualOverrideAlertSettings from './ManualOverrideAlertSettings';
 import AlertRecipientsSettings from './AlertRecipientsSettings';
 
@@ -30,6 +30,18 @@ type HistoryEntry = {
   changedFields: string[];
   summary: string;
 };
+type ManualRunEntry = {
+  id: string;
+  createdAt: string;
+  userName: string;
+  reportKey: ReportKey | null;
+  testMode: boolean;
+  overrideEmails: string | null;
+  effectiveEmails: string | null;
+  total: number | null;
+  success: boolean;
+  error: string | null;
+};
 
 const REPORTS: { key: ReportKey; title: string; description: string; endpoint: string }[] = [
   { key: 'legal',       title: 'Jurídico Diário',           description: 'Consulta diária no DataJud e envio do relatório de processos monitorados.', endpoint: '/api/datajud/relatorio-diario' },
@@ -57,6 +69,10 @@ const SystemSettingsPage: React.FC<{ onNavigate?: (id: string) => void }> = () =
   const [runningKey, setRunningKey] = useState<ReportKey | null>(null);
   const [runResults, setRunResults] = useState<Partial<Record<ReportKey, RunResult>>>({});
   const [overrideEmails, setOverrideEmails] = useState<Partial<Record<ReportKey, string>>>({});
+  const [manualRuns, setManualRuns] = useState<ManualRunEntry[]>([]);
+  const [manualRunsLoading, setManualRunsLoading] = useState(false);
+  const [manualRunsFilterKey, setManualRunsFilterKey] = useState<'' | ReportKey>('');
+  const [manualRunsFilterMode, setManualRunsFilterMode] = useState<'' | 'test' | 'official'>('');
 
   const canRunReports = useMemo(() => {
     try {
@@ -122,6 +138,22 @@ const SystemSettingsPage: React.FC<{ onNavigate?: (id: string) => void }> = () =
     }
   };
 
+  const fetchManualRuns = async (key: '' | ReportKey, mode: '' | 'test' | 'official') => {
+    setManualRunsLoading(true);
+    try {
+      const qs = new URLSearchParams();
+      if (key) qs.set('report_key', key);
+      if (mode) qs.set('mode', mode);
+      const res = await fetch(`/api/admin/system-settings/manual-report-runs${qs.toString() ? `?${qs.toString()}` : ''}`, { headers: authHeaders() });
+      const json = await res.json();
+      if (json?.ok) setManualRuns(json.runs || []);
+    } catch {
+      // silencioso — bloco informativo
+    } finally {
+      setManualRunsLoading(false);
+    }
+  };
+
   const fetchAll = async () => {
     setIsLoading(true);
     try {
@@ -140,6 +172,7 @@ const SystemSettingsPage: React.FC<{ onNavigate?: (id: string) => void }> = () =
         alert('Erro ao carregar: ' + (sJson?.error || 'desconhecido'));
       }
       if (hJson?.ok) setHistory(hJson.history || []);
+      await fetchManualRuns(manualRunsFilterKey, manualRunsFilterMode);
     } catch (e: any) {
       alert('Erro ao carregar configurações: ' + (e?.message || 'desconhecido'));
     } finally {
@@ -148,6 +181,7 @@ const SystemSettingsPage: React.FC<{ onNavigate?: (id: string) => void }> = () =
   };
 
   useEffect(() => { fetchAll(); }, []);
+  useEffect(() => { fetchManualRuns(manualRunsFilterKey, manualRunsFilterMode); }, [manualRunsFilterKey, manualRunsFilterMode]);
 
   const updateField = (key: keyof DailyReports, field: keyof Schedule, value: string | number) => {
     if (!settings) return;
@@ -358,6 +392,99 @@ const SystemSettingsPage: React.FC<{ onNavigate?: (id: string) => void }> = () =
       <AlertRecipientsSettings />
 
       <ManualOverrideAlertSettings />
+
+      <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200" data-testid="card-manual-report-runs">
+        <div className="flex flex-wrap items-start justify-between gap-3 mb-3">
+          <div className="flex items-start gap-3">
+            <ListChecks className="text-blue-600 mt-1" />
+            <div>
+              <h3 className="text-lg font-bold text-gray-800">Disparos manuais recentes</h3>
+              <p className="text-sm text-gray-500">Últimas 20 execuções de "Enviar agora" / "Enviar teste" registradas para auditoria.</p>
+            </div>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <select
+              value={manualRunsFilterKey}
+              onChange={(e) => setManualRunsFilterKey(e.target.value as '' | ReportKey)}
+              className="border border-gray-300 rounded-lg px-2 py-1 text-xs bg-white"
+              data-testid="select-manual-runs-report"
+            >
+              <option value="">Todos os relatórios</option>
+              {REPORTS.map(r => (
+                <option key={r.key} value={r.key}>{r.title}</option>
+              ))}
+            </select>
+            <select
+              value={manualRunsFilterMode}
+              onChange={(e) => setManualRunsFilterMode(e.target.value as '' | 'test' | 'official')}
+              className="border border-gray-300 rounded-lg px-2 py-1 text-xs bg-white"
+              data-testid="select-manual-runs-mode"
+            >
+              <option value="">Teste e oficial</option>
+              <option value="test">Apenas teste</option>
+              <option value="official">Apenas oficial</option>
+            </select>
+            <button
+              onClick={() => fetchManualRuns(manualRunsFilterKey, manualRunsFilterMode)}
+              className="text-xs text-gray-500 hover:text-gray-800 flex items-center gap-1"
+              data-testid="button-refresh-manual-runs"
+            >
+              <RefreshCw size={14} /> Atualizar
+            </button>
+          </div>
+        </div>
+        {manualRunsLoading ? (
+          <div className="flex items-center gap-2 text-sm text-gray-500"><Loader2 size={14} className="animate-spin" /> Carregando...</div>
+        ) : manualRuns.length === 0 ? (
+          <p className="text-sm text-gray-500">Nenhum disparo manual registrado ainda.</p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs">
+              <thead className="bg-gray-50 text-gray-600 uppercase">
+                <tr>
+                  <th className="px-3 py-2 text-left">Data</th>
+                  <th className="px-3 py-2 text-left">Usuário</th>
+                  <th className="px-3 py-2 text-left">Relatório</th>
+                  <th className="px-3 py-2 text-left">Modo</th>
+                  <th className="px-3 py-2 text-left">Destinatários</th>
+                  <th className="px-3 py-2 text-right">Total</th>
+                  <th className="px-3 py-2 text-left">Resultado</th>
+                </tr>
+              </thead>
+              <tbody>
+                {manualRuns.map(r => {
+                  const reportMeta = REPORTS.find(x => x.key === r.reportKey);
+                  return (
+                    <tr key={r.id} className="border-t border-gray-100 align-top" data-testid={`row-manual-run-${r.id}`}>
+                      <td className="px-3 py-2 whitespace-nowrap">{fmtDate(r.createdAt)}</td>
+                      <td className="px-3 py-2">{r.userName || '—'}</td>
+                      <td className="px-3 py-2">{reportMeta?.title || r.reportKey || '—'}</td>
+                      <td className="px-3 py-2">
+                        {r.testMode ? (
+                          <span className="bg-amber-100 text-amber-800 px-1.5 py-0.5 rounded text-[10px]">Teste</span>
+                        ) : (
+                          <span className="bg-emerald-100 text-emerald-800 px-1.5 py-0.5 rounded text-[10px]">Oficial</span>
+                        )}
+                      </td>
+                      <td className="px-3 py-2 text-gray-700 break-all">{r.effectiveEmails || r.overrideEmails || '—'}</td>
+                      <td className="px-3 py-2 text-right tabular-nums">{r.total != null ? r.total : '—'}</td>
+                      <td className="px-3 py-2">
+                        {r.success ? (
+                          <span className="inline-flex items-center gap-1 text-emerald-700"><CheckCircle2 size={12} /> Enviado</span>
+                        ) : r.error ? (
+                          <span className="inline-flex items-center gap-1 text-red-700" title={r.error}><AlertTriangle size={12} /> Erro</span>
+                        ) : (
+                          <span className="text-gray-500">Sem envio</span>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
 
       <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200">
         <h3 className="text-lg font-bold flex items-center gap-2 text-gray-800 mb-3">
