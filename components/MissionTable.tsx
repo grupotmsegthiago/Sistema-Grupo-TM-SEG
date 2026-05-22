@@ -1025,6 +1025,30 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
     const handleUpdateSuccess = (reportText?: string) => { setIsUpdateModalOpen(false); setSelectedMission(null); fetchMissions(true); if (reportText) handleCopyToClipboard(reportText, 'relatorio', true); };
     const handleOpenStatusModal = async (mission: Mission) => { setMissionForStatusView(mission); setIsStatusModalOpen(true); const { data } = await supabase.from('mission_logs').select('*').eq('mission_id', mission.id).order('created_at', { ascending: false }); if (data) setMissionLogs(data as MissionLog[]); };
     const handleOpenFinancialModal = (mission: Mission) => { setMissionForFinancials(mission); setIsFinancialModalOpen(true); };
+
+    // Task #116: deep-link ?openMission=<id> abre o modal financeiro da OS
+    // correspondente assim que as missões forem carregadas (uma única vez por
+    // sessão). Usado pelo badge "Memória do Auditor" para abrir a OS de origem
+    // da sugestão em outra aba.
+    const openMissionDeepLinkConsumedRef = useRef(false);
+    useEffect(() => {
+        if (openMissionDeepLinkConsumedRef.current) return;
+        if (!allMissions || allMissions.length === 0) return;
+        try {
+            const params = new URLSearchParams(window.location.search);
+            const targetId = params.get('openMission');
+            if (!targetId) return;
+            const found = allMissions.find(m => String(m.id) === String(targetId));
+            if (!found) return;
+            openMissionDeepLinkConsumedRef.current = true;
+            setMissionForFinancials(found);
+            setIsFinancialModalOpen(true);
+            params.delete('openMission');
+            const qs = params.toString();
+            const newUrl = window.location.pathname + (qs ? `?${qs}` : '') + window.location.hash;
+            window.history.replaceState({}, '', newUrl);
+        } catch { /* ignore */ }
+    }, [allMissions]);
     const handleOpenPrintModal = (mission: Mission) => { setMissionForPrint(mission); setIsPrintModalOpen(true); };
     const handleDeleteClick = (mission: Mission) => { setMissionToDelete(mission); setDeletePassword(''); setCancelEscortAtOrigin(null); setIsDeleteModalOpen(true); };
     

@@ -188,6 +188,9 @@ export interface DhlCorrectionRecord {
   // que o auditor remova entradas específicas direto do painel "Memória DHL".
   // Pode ser omitido para inserções otimistas que ainda não receberam o id.
   logId?: string | number | null;
+  // Task #116: rastreabilidade — qual OS originou a correção e quem aplicou.
+  missionId?: string | null;
+  userName?: string | null;
 }
 
 let DHL_CORRECTIONS_CACHE: DhlCorrectionRecord[] = [];
@@ -197,6 +200,37 @@ export const setDhlCorrectionsCache = (records: DhlCorrectionRecord[]): void => 
 };
 
 export const getDhlCorrectionsCache = (): DhlCorrectionRecord[] => DHL_CORRECTIONS_CACHE.slice();
+
+// Task #116: dado um match memory_route / memory_region, devolve a correção
+// (mais recente) que originou a sugestão. Usado pelo badge do modal financeiro
+// para mostrar a OS de origem, a data e quem aplicou a correção.
+export const findDhlCorrectionSource = (
+  matchLevel: 'memory_route' | 'memory_region',
+  region: string,
+  band: number,
+  originCity?: string | null,
+  destCity?: string | null,
+  chosenTableId?: string | null,
+): DhlCorrectionRecord | null => {
+  if (!region || !band) return null;
+  const normCity = (s?: string | null): string =>
+    (s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim().toUpperCase();
+  const oCity = normCity(originCity);
+  const dCity = normCity(destCity);
+  const chosen = chosenTableId ? String(chosenTableId) : '';
+  const matches = DHL_CORRECTIONS_CACHE.filter(c => {
+    if (c.region !== region || c.band !== band) return false;
+    if (chosen && String(c.chosenTableId) !== chosen) return false;
+    if (matchLevel === 'memory_route') {
+      if (!oCity || !dCity) return false;
+      return c.originCity === oCity && c.destCity === dCity;
+    }
+    return true;
+  });
+  if (matches.length === 0) return null;
+  matches.sort((a, b) => (Date.parse(b.createdAt || '') || 0) - (Date.parse(a.createdAt || '') || 0));
+  return matches[0];
+};
 
 export const getDhlCorrectionStatsByRegion = (
   daysWindow = 30,

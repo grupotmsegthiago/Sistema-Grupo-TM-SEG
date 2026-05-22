@@ -13,6 +13,7 @@ import {
   computeDhlBand,
   setDhlCorrectionsCache,
   getDhlCorrectionStatsByRegion,
+  findDhlCorrectionSource,
   type DhlCorrectionRecord,
 } from '../lib/dhlAutoTableSelector';
 import { X, Calculator, Loader2, Save, CheckCircle2, TrendingUp, Landmark, Zap, RotateCcw, Building2, Briefcase, Plus, Users, MapPin, ArrowRight, BrainCircuit, AlertTriangle, AlertCircle, Edit2, Info, RefreshCw, Clock, Pencil, Lock, ShieldCheck, Camera, Image as ImageIcon, Link2, Layers, Scale, Sparkles, Navigation, History } from 'lucide-react';
@@ -585,7 +586,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
     const cutoff = new Date(Date.now() - 90 * 86400000).toISOString();
     supabase
       .from('system_logs')
-      .select('id, details, created_at')
+      .select('id, details, created_at, user_name, entity_id')
       .eq('entity', 'DhlTableCorrection')
       .gte('created_at', cutoff)
       .order('created_at', { ascending: false })
@@ -608,6 +609,9 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
               chosenTableId: String(d.chosenTableId),
               createdAt: row.created_at || new Date().toISOString(),
               logId: row.id ?? null,
+              // Task #116: preserva OS de origem e auditor que aplicou a correção.
+              missionId: d.missionId ? String(d.missionId) : (row.entity_id ? String(row.entity_id) : null),
+              userName: row.user_name ? String(row.user_name) : null,
             });
           } catch { /* ignore */ }
         }
@@ -3252,6 +3256,9 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                                                 chosenTableId: payload.chosenTableId,
                                                                 createdAt: payload.date,
                                                                 logId: newLogId,
+                                                                // Task #116: rastreabilidade da nova correção.
+                                                                missionId: String(payload.missionId),
+                                                                userName: userName,
                                                             },
                                                             ...dhlCorrections,
                                                         ];
@@ -3317,7 +3324,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                     <BrainCircuit size={12} className="text-blue-500" />
                                     <span>IA Detectou: {financialData.client.detectionLog}</span>
                                 </div>
-                                {/* Task #108/#111: badge do motor DHL (exact_route / region_band / region_any_km / memory_route / memory_region / none) */}
+                                {/* Task #108/#111/#116: badge do motor DHL (exact_route / region_band / region_any_km / memory_route / memory_region / none) */}
                                 {(() => {
                                     const log = financialData.client.detectionLog || '';
                                     const m = log.match(/^DHL Auto \[(exact_route|region_band|region_any_km|memory_route|memory_region|none)\]:\s*(.+)$/);
@@ -3346,13 +3353,77 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                             : level === 'region_any_km'
                                             ? 'IA DHL — Proximidade Regional (fallback de KM)'
                                             : 'DHL — Sem tabela encontrada';
+
+                                    // Task #116: para sugestões vindas da memória, descobre qual OS
+                                    // gerou aquela correção (mesma região/faixa, idealmente mesma rota
+                                    // e mesma tabela escolhida) para mostrar tooltip + link.
+                                    let source: DhlCorrectionRecord | null = null;
+                                    if ((level === 'memory_route' || level === 'memory_region') && mission) {
+                                        const originUF = extractUF(mission.origin || '');
+                                        const region = UF_TO_REGION[originUF] || '';
+                                        const band = computeDhlBand(financialData?.realTraveledKm || 0);
+                                        const chosenId = financialData?.client?.tableId ? String(financialData.client.tableId) : null;
+                                        source = findDhlCorrectionSource(
+                                            level as 'memory_route' | 'memory_region',
+                                            region,
+                                            band,
+                                            extractCityFromAddress(mission.origin || ''),
+                                            extractCityFromAddress(mission.destination || ''),
+                                            chosenId,
+                                        );
+                                    }
+
+                                    const fmtDate = (iso?: string | null) => {
+                                        if (!iso) return '';
+                                        try {
+                                            return new Date(iso).toLocaleString('pt-BR', {
+                                                day: '2-digit', month: '2-digit', year: 'numeric',
+                                                hour: '2-digit', minute: '2-digit',
+                                                timeZone: 'America/Sao_Paulo',
+                                            });
+                                        } catch { return ''; }
+                                    };
+
+                                    const tooltip = source
+                                        ? `Sugestão veio da OS ${source.missionId || '(sem ID)'}`
+                                          + (source.userName ? ` — correção aplicada por ${source.userName}` : '')
+                                          + (source.createdAt ? ` em ${fmtDate(source.createdAt)}` : '')
+                                          + (mission && source.missionId && String(source.missionId) !== String(mission.id)
+                                              ? ' • Clique para abrir em outra aba'
+                                              : '')
+                                        : undefined;
+
+                                    const canOpen = !!(source && source.missionId && mission && String(source.missionId) !== String(mission.id));
+                                    const openSourceMission = () => {
+                                        if (!canOpen) return;
+                                        try {
+                                            const url = `${window.location.origin}/?page=missions&openMission=${encodeURIComponent(String(source!.missionId))}`;
+                                            window.open(url, '_blank', 'noopener,noreferrer');
+                                        } catch { /* ignore */ }
+                                    };
+
                                     return (
                                         <div
-                                            className={`mt-2 text-[10px] font-black uppercase tracking-wide flex items-center gap-1.5 p-2 rounded-lg border ${styles}`}
+                                            className={`mt-2 text-[10px] font-black uppercase tracking-wide flex items-center gap-1.5 p-2 rounded-lg border ${styles} ${canOpen ? 'cursor-pointer hover:brightness-95 active:scale-[0.99] transition-all' : ''}`}
                                             data-testid={`badge-dhl-auto-${level}`}
+                                            title={tooltip}
+                                            onClick={canOpen ? openSourceMission : undefined}
+                                            role={canOpen ? 'button' : undefined}
+                                            tabIndex={canOpen ? 0 : undefined}
+                                            onKeyDown={canOpen ? (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openSourceMission(); } } : undefined}
                                         >
                                             <Sparkles size={12} />
                                             <span>{prefix}: {reason}</span>
+                                            {source && (
+                                                <span className="ml-auto flex items-center gap-1 normal-case font-bold opacity-80">
+                                                    <span data-testid={`text-dhl-memory-source-${level}`}>
+                                                        OS {source.missionId || '—'}
+                                                        {source.userName ? ` • ${source.userName}` : ''}
+                                                        {source.createdAt ? ` • ${fmtDate(source.createdAt)}` : ''}
+                                                    </span>
+                                                    {canOpen && <Link2 size={10} />}
+                                                </span>
+                                            )}
                                         </div>
                                     );
                                 })()}
