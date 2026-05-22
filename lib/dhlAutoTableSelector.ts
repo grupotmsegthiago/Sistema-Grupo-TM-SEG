@@ -3,15 +3,48 @@ import { UF_TO_REGION, extractUF, extractCityFromAddress } from './financialUtil
 
 export const DHL_CLIENT_NAME = 'DHL SUPPLY CHAIN (BRAZIL) LTDA';
 
+// Task #109: registro de razões sociais DHL cobertas pelo motor automático.
+// Cada entrada é uma razão social distinta. O motor isola as tabelas por
+// nome exato (após normalização), garantindo que contratos de empresas DHL
+// diferentes nunca se misturem. Para adicionar uma nova razão social, basta
+// incluir o nome canônico aqui — o gatilho e o filtro de tabelas se ajustam
+// automaticamente.
+export const DHL_AUTO_CLIENT_NAMES: readonly string[] = [
+  DHL_CLIENT_NAME,
+  'DHL EXPRESS BRAZIL LTDA',
+  'DHL GLOBAL FORWARDING (BRAZIL) LTDA',
+  'DHL LOGISTICS (BRASIL) LTDA',
+];
+
 const normalize = (s?: string | null): string => {
   if (!s) return '';
   return s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim().toUpperCase();
+};
+
+const NORMALIZED_DHL_CLIENTS: ReadonlyMap<string, string> = new Map(
+  DHL_AUTO_CLIENT_NAMES.map(name => [normalize(name), name]),
+);
+
+export const findDhlAutoClient = (clientName?: string | null): string | null => {
+  const n = normalize(clientName);
+  if (!n) return null;
+  return NORMALIZED_DHL_CLIENTS.get(n) ?? null;
+};
+
+export const isDhlAutoClient = (clientName?: string | null): boolean => {
+  return findDhlAutoClient(clientName) !== null;
 };
 
 export const isDhlSupplyClient = (clientName?: string | null): boolean => {
   const n = normalize(clientName);
   if (!n) return false;
   return n === normalize(DHL_CLIENT_NAME);
+};
+
+const sameDhlClient = (a?: string | null, b?: string | null): boolean => {
+  const na = normalize(a);
+  const nb = normalize(b);
+  return !!na && na === nb;
 };
 
 export const computeDhlBand = (km: number): number => {
@@ -72,20 +105,35 @@ export interface DhlSelectionResult {
   detectedRegion: string;
   band: number;
   reason: string;
+  clientName: string;
+}
+
+export interface DhlSelectionOptions {
+  /**
+   * Razão social DHL alvo. Quando informada, o motor isola as tabelas
+   * exclusivamente para esse cliente, evitando misturar contratos entre
+   * empresas diferentes do grupo DHL. Quando omitida (compatibilidade
+   * retro), assume DHL SUPPLY CHAIN (BRAZIL) LTDA.
+   */
+  clientName?: string | null;
 }
 
 export const selectDhlClientTable = (
   tables: ClientPriceTable[],
   mission: { origin?: string | null; destination?: string | null },
   googleKm: number,
+  options?: DhlSelectionOptions,
 ): DhlSelectionResult => {
+  const targetClient = findDhlAutoClient(options?.clientName) || DHL_CLIENT_NAME;
   const originUF = extractUF(mission.origin || '');
   const detectedRegion = UF_TO_REGION[originUF] || '';
   const band = computeDhlBand(googleKm);
   const originCity = normalize(extractCityFromAddress(mission.origin || ''));
   const destCity = normalize(extractCityFromAddress(mission.destination || ''));
 
-  const dhlTables = (tables || []).filter(t => isDhlSupplyClient(t.client));
+  // Task #109: isola tabelas pelo nome exato (normalizado) do cliente alvo.
+  // Garante que tabelas de outras empresas DHL não vazem para este motor.
+  const dhlTables = (tables || []).filter(t => sameDhlClient(t.client, targetClient));
 
   if (!detectedRegion) {
     return {
@@ -94,6 +142,7 @@ export const selectDhlClientTable = (
       detectedRegion: '',
       band,
       reason: `Origem sem UF identificada (faixa ${band}km) — selecione manualmente`,
+      clientName: targetClient,
     };
   }
 
@@ -118,6 +167,7 @@ export const selectDhlClientTable = (
         detectedRegion,
         band,
         reason: `Rota Exata (${detectedRegion} + ${band}km)`,
+        clientName: targetClient,
       };
     }
   }
@@ -136,6 +186,7 @@ export const selectDhlClientTable = (
       detectedRegion,
       band,
       reason: `Sem tabela DHL para ${detectedRegion} + ${band}km — selecione manualmente`,
+      clientName: targetClient,
     };
   }
 
@@ -160,5 +211,6 @@ export const selectDhlClientTable = (
     detectedRegion,
     band,
     reason: `Sugestão por Proximidade (${detectedRegion} + ${band}km)`,
+    clientName: targetClient,
   };
 };

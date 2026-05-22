@@ -7,7 +7,7 @@ import {
     isAutoMasterRow,
     type ProviderAutoCalcBreakdown,
 } from './providerAutoPricing';
-import { isDhlSupplyClient, selectDhlClientTable } from './dhlAutoTableSelector';
+import { findDhlAutoClient, selectDhlClientTable } from './dhlAutoTableSelector';
 
 const STOP_WORDS = ['LTDA','LTDA.','S.A.','S.A','SA','S/A','S/A.','DO','DE','DA','E','DAS','DOS'];
 // PostgREST trata ( ) , . : como reservados dentro de .or(); envolvemos
@@ -660,24 +660,30 @@ export const calculateMissionFinancials = (
             isManualOverride = true;
         }
     }
-    // Task #108: motor automático exclusivo para DHL SUPPLY CHAIN (BRAZIL) LTDA.
-    // Quando o cliente é DHL e não há override manual, seleciona a tabela por
-    // região da origem + faixa de KM do Google. Não cai no selectStrictTable
+    // Task #108/#109: motor automático para razões sociais DHL registradas
+    // (DHL Supply Chain, DHL Express, DHL Global Forwarding, DHL Logistics).
+    // Cada empresa tem seu próprio gatilho via findDhlAutoClient e o seletor
+    // isola as tabelas pelo nome exato do cliente, sem misturar contratos
+    // entre empresas diferentes do grupo DHL. Não cai no selectStrictTable
     // nem nos blocos de fallback genéricos — mesmo no caso "none".
     let dhlEngineHandled = false;
-    if (!appliedClientTable && !isManualOverride && isDhlSupplyClient(missionClientName)) {
+    const dhlClientCanonical = !appliedClientTable && !isManualOverride
+      ? findDhlAutoClient(missionClientName)
+      : null;
+    if (dhlClientCanonical) {
       const dhlResult = selectDhlClientTable(
         clientTablesFiltered,
         { origin: mission.origin || '', destination: mission.destination || '' },
         totalDistance,
+        { clientName: dhlClientCanonical },
       );
       dhlEngineHandled = true;
       if (dhlResult.table) {
         appliedClientTable = dhlResult.table;
-        clientLog = `DHL Auto [${dhlResult.matchLevel}]: ${dhlResult.reason}`;
+        clientLog = `DHL Auto [${dhlClientCanonical}][${dhlResult.matchLevel}]: ${dhlResult.reason}`;
       } else {
         appliedClientTable = null;
-        clientLog = `DHL Auto [none]: ${dhlResult.reason}`;
+        clientLog = `DHL Auto [${dhlClientCanonical}][none]: ${dhlResult.reason}`;
       }
     }
 
