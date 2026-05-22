@@ -1054,6 +1054,22 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
                 dhl_se_number: editData.dhl_se_number ? editData.dhl_se_number.trim().toUpperCase() : null
             };
 
+            // REGRA PRIORITÁRIA: OS Recusada SEMPRE zera valores de cliente,
+            // fornecedor e pedágio — independente do que estiver salvo. Sem
+            // exceções, sem snapshot, sem aprovação.
+            if (finalStatus === MissionStatus.REFUSED) {
+                updateData.revenue_value = 0;
+                updateData.cost_value = 0;
+                updateData.toll_value = 0;
+                updateData.toll_value_provider = 0;
+                updateData.snapshot_data = null;
+                updateData.billing_approved = false;
+                updateData.valor_zero_motivo = 'OS Recusada — zerado automaticamente';
+                // Constraint check_valor_zero_motivo exige edit_reason quando valor = 0.
+                updateData.revenue_edit_reason = 'OS Recusada — zerado automaticamente';
+                updateData.cost_edit_reason = 'OS Recusada — zerado automaticamente';
+            }
+
             console.log(`[LOCATION] Enviando localização para OS ${mission.id}:`, {
                 map_link: updateData.map_link,
                 current_location: updateData.current_location,
