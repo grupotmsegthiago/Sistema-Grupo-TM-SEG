@@ -172,6 +172,8 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
   const [showNegativeMarginOnly, setShowNegativeMarginOnly] = useState(false);
   const [showDhlOnly, setShowDhlOnly] = useState(false);
   const [showDhlSolicitation, setShowDhlSolicitation] = useState(false);
+  const [tollConfirmMap, setTollConfirmMap] = useState<Record<string, { user: string; date: string; hasToll: boolean; value: number; source?: string }>>({});
+  const [showTollNotConfirmedOnly, setShowTollNotConfirmedOnly] = useState(false);
 
   // Paginação da tabela: 30 OS por página
   const PAGE_SIZE = 30;
@@ -508,7 +510,30 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
                 setDhlIntakeMap(intakeMap);
             };
 
-            await Promise.all([fetchApprovalLogs(), fetchEvidenceLogs(), fetchMissionLogs(), fetchDhlIntakes()]);
+            const fetchTollConfirmations = async () => {
+                if (allIds.length === 0) { setTollConfirmMap({}); return; }
+                const tcMap: Record<string, { user: string; date: string; hasToll: boolean; value: number; source?: string }> = {};
+                const batches = [];
+                for (let i = 0; i < allIds.length; i += batchSize) batches.push(allIds.slice(i, i + batchSize));
+                const results = await Promise.all(batches.map(batch => supabase.from('system_logs').select('entity_id, user_name, details, created_at').eq('entity', 'MissionTollConfirmation').in('entity_id', batch).order('created_at', { ascending: false })));
+                results.forEach(({ data }) => {
+                    (data || []).forEach((l: any) => {
+                        if (tcMap[l.entity_id]) return; // keep most recent only
+                        let parsed: any = {};
+                        try { parsed = JSON.parse(l.details || '{}'); } catch {}
+                        tcMap[l.entity_id] = {
+                            user: parsed.user || l.user_name || 'Usuário',
+                            date: parsed.confirmed_at || l.created_at,
+                            hasToll: !!parsed.has_toll,
+                            value: Number(parsed.value) || 0,
+                            source: parsed.source,
+                        };
+                    });
+                });
+                setTollConfirmMap(tcMap);
+            };
+
+            await Promise.all([fetchApprovalLogs(), fetchEvidenceLogs(), fetchMissionLogs(), fetchDhlIntakes(), fetchTollConfirmations()]);
         }
       } catch (error: any) {
         console.error('Error fetching missions:', error.message || error);
@@ -697,10 +722,10 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
 
     const filteredBySpecialCriteria = useMemo(() => {
         const isSearching = searchTerm && searchTerm.trim().length > 0;
-        const hasActiveSpecialFilters = showPendingOnly || showTomorrowOnly || showMyApprovalOnly || showNegativeMarginOnly;
+        const hasActiveSpecialFilters = showPendingOnly || showTomorrowOnly || showMyApprovalOnly || showNegativeMarginOnly || showTollNotConfirmedOnly;
         const isOsFiltering = osFilterTerm && osFilterTerm.trim().length > 0;
 
-        const needsAllMissions = showPendingOnly || showTomorrowOnly || showMyApprovalOnly || showNegativeMarginOnly || isOsFiltering;
+        const needsAllMissions = showPendingOnly || showTomorrowOnly || showMyApprovalOnly || showNegativeMarginOnly || showTollNotConfirmedOnly || isOsFiltering;
         const sourceMissions = needsAllMissions ? allMissions : periodMissions;
 
         return sourceMissions.filter(mission => {
@@ -740,6 +765,12 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
                 if (mDate < tomorrow.getTime() || !isInitialStatus) return false;
             }
 
+            if (showTollNotConfirmedOnly) {
+                const isCompletedUnapproved = mission.status === MissionStatus.COMPLETED && !mission.billing_approved;
+                if (!isCompletedUnapproved) return false;
+                if (tollConfirmMap[mission.id]) return false;
+            }
+
             if (showNegativeMarginOnly) {
                 const rev = mission.revenue_value || 0;
                 const cost = mission.is_same_os ? 0 : (mission.cost_value || 0);
@@ -758,7 +789,7 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
 
             return true;
         });
-    }, [allMissions, periodMissions, searchTerm, osFilterTerm, showPendingOnly, showTomorrowOnly, showMyApprovalOnly, showNegativeMarginOnly, showDhlOnly, parentMissionIds, negativeLinkedIds]);
+    }, [allMissions, periodMissions, searchTerm, osFilterTerm, showPendingOnly, showTomorrowOnly, showMyApprovalOnly, showNegativeMarginOnly, showTollNotConfirmedOnly, tollConfirmMap, showDhlOnly, parentMissionIds, negativeLinkedIds]);
 
     // Status Counts based on the FILTERED set (to sync counters with visible criteria)
     const statusCounts = useMemo(() => {
@@ -784,6 +815,9 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
         }).length;
     }, [periodMissions, allMissions, parentMissionIds]);
     const pendingCount = useMemo(() => allMissions.filter(m => isMissionPending(m)).length, [allMissions]);
+    const tollNotConfirmedCount = useMemo(() => {
+        return allMissions.filter(m => m.status === MissionStatus.COMPLETED && !m.billing_approved && !tollConfirmMap[m.id]).length;
+    }, [allMissions, tollConfirmMap]);
     const tomorrowCount = useMemo(() => {
         const tomorrow = new Date();
         tomorrow.setDate(tomorrow.getDate() + 1);
@@ -858,7 +892,7 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
     const filteredMissions = useMemo(() => {
         const isSearching = searchTerm && searchTerm.trim().length > 0;
         const isOsFiltering = osFilterTerm && osFilterTerm.trim().length > 0;
-        const hasActiveSpecialFilters = showPendingOnly || showTomorrowOnly || showMyApprovalOnly || showNegativeMarginOnly || showDhlOnly;
+        const hasActiveSpecialFilters = showPendingOnly || showTomorrowOnly || showMyApprovalOnly || showNegativeMarginOnly || showTollNotConfirmedOnly || showDhlOnly;
 
         if (showMyApprovalOnly && myApprovalMissions.length > 0) {
             const list = showDhlOnly
@@ -884,7 +918,7 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
             }
             return true;
         });
-    }, [filteredBySpecialCriteria, filterStatus, searchTerm, osFilterTerm, showPendingOnly, showTomorrowOnly, showMyApprovalOnly, showNegativeMarginOnly, showDhlOnly, myApprovalMissions]);
+    }, [filteredBySpecialCriteria, filterStatus, searchTerm, osFilterTerm, showPendingOnly, showTomorrowOnly, showMyApprovalOnly, showNegativeMarginOnly, showTollNotConfirmedOnly, showDhlOnly, myApprovalMissions]);
   
     const activeMapMissions = useMemo(() => {
         return allMissions.filter(m => {
@@ -985,7 +1019,7 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
     }, [sortedMissions, safePage]);
 
     // Reset pra página 1 sempre que algum filtro mudar
-    useEffect(() => { setCurrentPage(1); }, [searchTerm, osFilterTerm, filterStatus, viewPeriod, customStartDate, customEndDate, showPendingOnly, showTomorrowOnly, showMyApprovalOnly, showNegativeMarginOnly, approvalViewStage]);
+    useEffect(() => { setCurrentPage(1); }, [searchTerm, osFilterTerm, filterStatus, viewPeriod, customStartDate, customEndDate, showPendingOnly, showTomorrowOnly, showMyApprovalOnly, showNegativeMarginOnly, showTollNotConfirmedOnly, approvalViewStage]);
 
     const handleOpenUpdateModal = (mission: Mission) => { setSelectedMission(mission); setIsUpdateModalOpen(true); };
     const handleUpdateSuccess = (reportText?: string) => { setIsUpdateModalOpen(false); setSelectedMission(null); fetchMissions(true); if (reportText) handleCopyToClipboard(reportText, 'relatorio', true); };
@@ -1330,7 +1364,7 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
   
         <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-10 gap-1.5">
             {/* BOX TOTAL: Reflete o volume absoluto do período conforme solicitado */}
-            <StatCard icon={Activity} title={totalVolumeCount < allMissions.length ? `Total (${allMissions.length})` : "Total"} value={totalVolumeCount} bgColor="bg-gray-800" loading={isLoading} isActive={filterStatus === 'ALL' && !showPendingOnly && !showTomorrowOnly && !showMyApprovalOnly && !showNegativeMarginOnly} onClick={() => { setFilterStatus('ALL'); setShowPendingOnly(false); setShowTomorrowOnly(false); setShowMyApprovalOnly(false); setApprovalViewStage(null); setShowNegativeMarginOnly(false); }} />
+            <StatCard icon={Activity} title={totalVolumeCount < allMissions.length ? `Total (${allMissions.length})` : "Total"} value={totalVolumeCount} bgColor="bg-gray-800" loading={isLoading} isActive={filterStatus === 'ALL' && !showPendingOnly && !showTomorrowOnly && !showMyApprovalOnly && !showNegativeMarginOnly && !showTollNotConfirmedOnly} onClick={() => { setFilterStatus('ALL'); setShowPendingOnly(false); setShowTomorrowOnly(false); setShowMyApprovalOnly(false); setApprovalViewStage(null); setShowNegativeMarginOnly(false); setShowTollNotConfirmedOnly(false); }} />
             {STATUS_CONFIG.filter(s => isRestrictedClientView ? s.id !== MissionStatus.PENDING : true).map((status) => ( <StatCard key={status.id} icon={status.icon} title={status.label} value={statusCounts[status.id] || 0} bgColor={status.color} loading={isLoading} isActive={filterStatus === status.id} onClick={() => { setFilterStatus(status.id); }} /> ))}
         </div>
   
@@ -1365,6 +1399,27 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
                     )}
 
                     <button onClick={() => setShowPendingOnly(!showPendingOnly)} className={`relative flex items-center gap-2 px-4 py-2.5 rounded-lg text-xs font-bold uppercase border transition-all ${showPendingOnly ? 'bg-orange-50 text-black border-orange-600 shadow-md' : pendingCount > 0 ? 'bg-orange-50 text-black border-orange-600 shadow-sm' : 'bg-white text-gray-600 border-gray-300 hover:bg-gray-50'}`}>{pendingCount > 0 ? ( <AlertTriangle size={16} className="text-black" /> ) : ( showPendingOnly ? <ToggleRight size={16} /> : <ToggleLeft size={16} /> )}{showPendingOnly ? 'Exibindo Pendências' : 'Filtrar Pendências'}{pendingCount > 0 && ( <span className="ml-1 px-1.5 py-0.5 rounded-full text-[9px] bg-white text-orange-700 font-bold">{pendingCount}</span> )}</button>
+
+                    <button
+                        data-testid="button-toll-not-confirmed"
+                        onClick={() => setShowTollNotConfirmedOnly(!showTollNotConfirmedOnly)}
+                        title="OS concluídas ainda sem confirmação manual de pedágio (entity=MissionTollConfirmation)"
+                        className={`relative flex items-center gap-2 px-4 py-2.5 rounded-lg text-xs font-black uppercase border transition-all ${
+                            showTollNotConfirmedOnly
+                                ? 'bg-amber-600 text-white border-amber-700 shadow-md scale-105 ring-2 ring-amber-500/20'
+                                : tollNotConfirmedCount > 0
+                                    ? 'bg-amber-50 text-amber-700 border-amber-300 shadow-sm'
+                                    : 'bg-white text-amber-600 border-amber-200 hover:bg-amber-50'
+                        }`}
+                    >
+                        <AlertTriangle size={16} />
+                        <span className="flex items-center gap-1.5">
+                            PEDÁGIO NÃO CONFIRMADO
+                            {tollNotConfirmedCount > 0 && (
+                                <span className={`ml-1 px-1.5 py-0.5 rounded-full text-[9px] font-bold ${showTollNotConfirmedOnly ? 'bg-white text-amber-700' : 'bg-amber-600 text-white'}`}>{tollNotConfirmedCount}</span>
+                            )}
+                        </span>
+                    </button>
 
                     {canSeeFinancials && (
                         <button 
@@ -1555,6 +1610,7 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
                                       evidenceList={evidenceMap[mission.id]}
                                       lastLog={lastLogMap[mission.id]}
                                       dhlIntake={dhlIntakeMap[mission.id]}
+                                      tollConfirmation={tollConfirmMap[mission.id]}
                                       onEvidenceUploaded={() => fetchMissions(true)}
                                   />
                               </div>

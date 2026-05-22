@@ -78,6 +78,7 @@ interface MissionCardProps {
     approvalStages?: { stage: string; date: string }[];
     evidenceList?: { url: string; uploadedBy: string; uploadedAt: string }[];
     dhlIntake?: { status: string; providerFilledAt: string | null; intakeId: string; progressAgent1?: boolean; progressAgent2?: boolean; progressVehicle?: boolean; progressMirror?: boolean };
+    tollConfirmation?: { user: string; date: string; hasToll: boolean; value: number; source?: string };
 }
 
 const formatCurrency = (val: number | null | undefined) => {
@@ -196,7 +197,7 @@ const compressImage = (file: File, maxWidth = 1200, quality = 0.7): Promise<Blob
 const MissionCardComponent: React.FC<MissionCardProps> = ({ 
     mission, canEditMission, isDirector, isRedLight, isImminent, minutesSinceUpdate, copiedId, isSendingEmail, hideProviderInfo,
     onViewMap, onUpdate, onOpenFinancials, onCopy, onCopyEmail, onDelete, onPrint, onViewHistory, onFullReport, onOperationalReport, lastLog, onEvidenceUploaded,
-    clientTables, providerTables, clientsData, agentPhonesMap, currentTime, approvalStages, evidenceList, dhlIntake
+    clientTables, providerTables, clientsData, agentPhonesMap, currentTime, approvalStages, evidenceList, dhlIntake, tollConfirmation
 }) => {
     
     const { showNotification } = useNotification();
@@ -699,6 +700,26 @@ Qualquer dúvida, estamos a disposição.
                         <span className={`px-1.5 py-0.5 rounded text-[9px] font-extrabold uppercase border tracking-wider ${isPendingKm && !hideProviderInfo ? 'bg-amber-100 text-amber-800 border-amber-300' : getStatusBadgeClass(mission.status)}`}>
                             {isPendingKm && !hideProviderInfo ? 'PENDENTE KM' : mission.status}
                         </span>
+                        {(() => {
+                            if (tollConfirmation) {
+                                const dt = tollConfirmation.date ? new Date(tollConfirmation.date) : null;
+                                const dtStr = dt && !isNaN(dt.getTime()) ? dt.toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' }) : '—';
+                                const label = tollConfirmation.hasToll ? `Pedágio confirmado (R$ ${tollConfirmation.value.toFixed(2)}) por ${tollConfirmation.user} em ${dtStr}` : `Pedágio confirmado como ZERO por ${tollConfirmation.user} em ${dtStr}`;
+                                return (
+                                    <span title={label} className="px-1.5 py-0.5 rounded text-[8px] font-black uppercase flex items-center gap-1 bg-green-100 text-green-700 border border-green-300 shadow-sm" data-testid={`badge-toll-status-confirmed-${mission.id}`}>
+                                        <Check size={10} strokeWidth={3} /> PEDÁGIO OK
+                                    </span>
+                                );
+                            }
+                            if (mission.status === MissionStatus.COMPLETED && !mission.billing_approved) {
+                                return (
+                                    <span title="Pedágio ainda não confirmado manualmente — operacional precisa validar antes do faturamento" className="px-1.5 py-0.5 rounded text-[8px] font-black uppercase flex items-center gap-1 bg-amber-100 text-amber-700 border border-amber-300 shadow-sm animate-pulse" data-testid={`badge-toll-status-unconfirmed-${mission.id}`}>
+                                        <AlertTriangle size={10} strokeWidth={3} /> PEDÁGIO PEND.
+                                    </span>
+                                );
+                            }
+                            return null;
+                        })()}
                         {hasEvidence ? (
                             <button onClick={() => setShowEvidenceModal(true)} className="px-1.5 py-0.5 rounded text-[8px] font-black uppercase border bg-emerald-50 text-emerald-700 border-emerald-300 flex items-center gap-1 hover:bg-emerald-100 transition-all cursor-pointer shadow-sm" data-testid={`badge-evidence-${mission.id}`} title="Evidência anexada - clique para ver">
                                 <Image size={10} /> EVIDÊNCIA
@@ -1036,9 +1057,29 @@ Qualquer dúvida, estamos a disposição.
                                <p className="text-[7px] font-black text-blue-600 uppercase tracking-wider leading-none mb-0.5">Km Extra</p>
                                <p className={`text-[10px] font-black font-mono leading-none ${financials.client.extraKmVal > 0 ? 'text-blue-800' : 'text-gray-400'}`}>{formatCurrency(financials.client.extraKmVal)}</p>
                            </div>
-                           <div className={`rounded-lg p-1.5 shadow-sm border ${financials.tollValue > 0 ? 'bg-purple-50 border-purple-200' : 'bg-gray-50 border-gray-200'}`}>
+                           <div className={`rounded-lg p-1.5 shadow-sm border relative ${financials.tollValue > 0 ? 'bg-purple-50 border-purple-200' : 'bg-gray-50 border-gray-200'}`}>
                                <p className="text-[7px] font-black text-purple-600 uppercase tracking-wider leading-none mb-0.5">Pedágio</p>
                                <p className={`text-[10px] font-black font-mono leading-none ${financials.tollValue > 0 ? 'text-purple-800' : 'text-gray-400'}`}>{formatCurrency(financials.tollValue)}</p>
+                               {(() => {
+                                   if (tollConfirmation) {
+                                       const dt = tollConfirmation.date ? new Date(tollConfirmation.date) : null;
+                                       const dtStr = dt && !isNaN(dt.getTime()) ? dt.toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' }) : '—';
+                                       const label = tollConfirmation.hasToll ? `Pedágio confirmado (R$ ${tollConfirmation.value.toFixed(2)}) por ${tollConfirmation.user} em ${dtStr}` : `Pedágio confirmado como ZERO por ${tollConfirmation.user} em ${dtStr}`;
+                                       return (
+                                           <span title={label} className="absolute -top-1 -right-1 w-3.5 h-3.5 rounded-full bg-green-600 text-white flex items-center justify-center border border-white shadow" data-testid={`badge-toll-confirmed-${mission.id}`}>
+                                               <Check size={9} strokeWidth={4} />
+                                           </span>
+                                       );
+                                   }
+                                   if (mission.status === MissionStatus.COMPLETED && !mission.billing_approved) {
+                                       return (
+                                           <span title="Pedágio ainda não confirmado manualmente — operacional precisa validar antes do faturamento" className="absolute -top-1 -right-1 w-3.5 h-3.5 rounded-full bg-amber-500 text-white flex items-center justify-center border border-white shadow animate-pulse" data-testid={`badge-toll-unconfirmed-${mission.id}`}>
+                                               <AlertTriangle size={9} strokeWidth={3} />
+                                           </span>
+                                       );
+                                   }
+                                   return null;
+                               })()}
                            </div>
                            <div className="rounded-lg p-1.5 shadow-sm border border-green-400" style={{ background: 'linear-gradient(135deg, #dcfce7 0%, #bbf7d0 100%)' }}>
                                <p className="text-[7px] font-black text-green-700 uppercase tracking-wider leading-none mb-0.5">Valor Total</p>
