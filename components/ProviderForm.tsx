@@ -5,7 +5,7 @@ import { supabase } from '../lib/supabase';
 import { logAction } from '../lib/logger';
 import { ProviderCostTable } from '../types';
 import ImportProviderCostModal from './ImportProviderCostModal';
-import { AUTO_MASTER_OP_TYPE, generateAutoBands, isAutoMasterRow, type ProviderAutoMasterConfig } from '../lib/providerAutoPricing';
+import { AUTO_MASTER_OP_TYPE, generateAutoBands, isAutoMasterRow, suggestAutoMasterFromManualTables, type ProviderAutoMasterConfig } from '../lib/providerAutoPricing';
 import { useNotification } from '../lib/NotificationContext';
 import ClientContractTab from './ClientContractTab';
 
@@ -118,6 +118,26 @@ const ProviderForm: React.FC<ProviderFormProps> = ({ onBack, onNavigateToVehicle
   });
   const [isSavingMaster, setIsSavingMaster] = useState(false);
   const [showAutoPreview, setShowAutoPreview] = useState(false);
+  const [lastSuggestionInfo, setLastSuggestionInfo] = useState<string | null>(null);
+
+  const handleSuggestAutoMaster = () => {
+      if (!canEditAutoMaster) { showNotification('Sem permissão', 'Apenas diretoria/administrador/financeiro pode configurar o motor automático.', 'error'); return; }
+      const suggestion = suggestAutoMasterFromManualTables(costTables as any[]);
+      if (!suggestion) {
+          showNotification('Sem dados', 'Não há tabelas manuais cadastradas para gerar uma sugestão.', 'warning');
+          return;
+      }
+      const { config, sampleCount } = suggestion;
+      setAutoMasterForm({
+          baseActivationValue: config.baseActivationValue ? String(config.baseActivationValue) : '',
+          baseKmAllowance: config.baseKmAllowance ? String(config.baseKmAllowance) : '100',
+          baseHourAllowance: config.baseHourAllowance ? String(config.baseHourAllowance) : '3',
+          extraKmValue: config.extraKmValue ? String(config.extraKmValue) : '',
+          extraHourValue: config.extraHourValue ? String(config.extraHourValue) : '',
+      });
+      setLastSuggestionInfo(`Sugestão calculada a partir da mediana de ${sampleCount} tabela${sampleCount > 1 ? 's' : ''} manual${sampleCount > 1 ? 'is' : ''}. Revise antes de salvar.`);
+      showNotification('Sugestão pronta', `Valores pré-preenchidos com a mediana de ${sampleCount} tabela${sampleCount > 1 ? 's' : ''}. Revise e ajuste antes de ativar o motor.`, 'success');
+  };
 
   const autoMasterConfig = useMemo<ProviderAutoMasterConfig>(() => ({
       baseActivationValue: parseFloat(autoMasterForm.baseActivationValue) || 0,
@@ -247,6 +267,7 @@ const ProviderForm: React.FC<ProviderFormProps> = ({ onBack, onNavigateToVehicle
               details: JSON.stringify({ source: 'provider_auto_master_config', config: cfg, timestamp: new Date().toISOString() })
           }]);
           setAutoMasterEnabled(true);
+          setLastSuggestionInfo(null);
           showNotification('Sucesso', 'Configuração mestre salva. Motor automático ativo para este fornecedor.', 'success');
           fetchCostTables(formData.name);
       } catch (err: any) {
@@ -911,11 +932,23 @@ const ProviderForm: React.FC<ProviderFormProps> = ({ onBack, onNavigateToVehicle
                       </div>
                   </div>
 
-                  <div className="flex items-center justify-between mt-4 pt-3 border-t border-gray-200">
-                      <button type="button" onClick={() => setShowAutoPreview(v => !v)} disabled={autoPreviewBands.length === 0} className="text-[11px] font-black uppercase tracking-widest text-indigo-700 hover:underline disabled:opacity-40 flex items-center gap-1" data-testid="button-toggle-auto-preview">
-                          {showAutoPreview ? 'Ocultar' : 'Ver'} faixas geradas ({autoPreviewBands.length})
-                      </button>
-                      <div className="flex items-center gap-2">
+                  <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 mt-4 pt-3 border-t border-gray-200">
+                      <div className="flex items-center gap-3 flex-wrap">
+                          <button type="button" onClick={() => setShowAutoPreview(v => !v)} disabled={autoPreviewBands.length === 0} className="text-[11px] font-black uppercase tracking-widest text-indigo-700 hover:underline disabled:opacity-40 flex items-center gap-1" data-testid="button-toggle-auto-preview">
+                              {showAutoPreview ? 'Ocultar' : 'Ver'} faixas geradas ({autoPreviewBands.length})
+                          </button>
+                          <button
+                              type="button"
+                              onClick={handleSuggestAutoMaster}
+                              disabled={!canEditAutoMaster || costTables.filter(t => !isAutoMasterRow(t as any)).length === 0}
+                              className="text-[11px] font-black uppercase tracking-widest px-3 py-2 rounded-lg border border-indigo-200 text-indigo-700 bg-indigo-50 hover:bg-indigo-100 disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1.5"
+                              title="Pré-preenche os 5 campos com a mediana das tabelas manuais cadastradas"
+                              data-testid="button-suggest-auto-master"
+                          >
+                              <TrendingUp size={12}/> Sugerir a partir das tabelas atuais
+                          </button>
+                      </div>
+                      <div className="flex items-center gap-2 flex-wrap">
                           {autoMasterEnabled && (
                               <button type="button" onClick={handleMaterializeBands} disabled={!canEditAutoMaster || isMaterializingBands || autoPreviewBands.length === 0} className="px-4 py-2 bg-indigo-600 text-white rounded-lg text-xs font-black uppercase tracking-widest hover:bg-indigo-700 disabled:opacity-50 flex items-center gap-2" data-testid="button-materialize-bands" title="Cria 30 tabelas manuais (AUTO 100KM, AUTO 200KM, ...) para aparecer ao vincular no fornecedor/rota.">
                                   {isMaterializingBands ? <Loader2 size={12} className="animate-spin" /> : <Save size={12} />} Salvar Faixas como Tabelas
@@ -926,6 +959,12 @@ const ProviderForm: React.FC<ProviderFormProps> = ({ onBack, onNavigateToVehicle
                           </button>
                       </div>
                   </div>
+
+                  {lastSuggestionInfo && (
+                      <p className="text-[10px] font-bold text-indigo-700 mt-2 flex items-center gap-1" data-testid="text-suggestion-info">
+                          <TrendingUp size={10}/> {lastSuggestionInfo}
+                      </p>
+                  )}
 
                   {!canEditAutoMaster && (
                       <p className="text-[10px] font-bold text-amber-700 mt-2 flex items-center gap-1"><Lock size={10}/> Somente diretoria/administrador/financeiro podem editar.</p>

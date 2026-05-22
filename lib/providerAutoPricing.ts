@@ -129,6 +129,46 @@ export interface ProviderAutoCalcBreakdown {
     totalCost: number;
 }
 
+// Task #56 — Sugestão de configuração mestre a partir das tabelas manuais existentes.
+// Calcula a mediana de cada uma das 5 variáveis sobre as linhas manuais (ignora a linha mestre).
+// Retorna null quando não há linhas manuais aproveitáveis.
+export interface ProviderAutoMasterSuggestion {
+    config: ProviderAutoMasterConfig;
+    sampleCount: number;
+}
+
+function median(values: number[]): number {
+    const arr = values.filter(v => Number.isFinite(v)).slice().sort((a, b) => a - b);
+    if (arr.length === 0) return 0;
+    const mid = Math.floor(arr.length / 2);
+    return arr.length % 2 === 0 ? (arr[mid - 1] + arr[mid]) / 2 : arr[mid];
+}
+
+export function suggestAutoMasterFromManualTables(rows: any[] | null | undefined): ProviderAutoMasterSuggestion | null {
+    if (!rows || rows.length === 0) return null;
+    const manual = rows.filter(r => r && !isAutoMasterRow(r));
+    if (manual.length === 0) return null;
+
+    const activation = manual.map(r => Number(r.activation_cost)).filter(v => Number.isFinite(v) && v > 0);
+    const km = manual.map(r => Number(r.franchise_km)).filter(v => Number.isFinite(v) && v > 0);
+    const hours = manual.map(r => Number(r.franchise_hours)).filter(v => Number.isFinite(v) && v > 0);
+    const extraKm = manual.map(r => Number(r.cost_per_extra_km)).filter(v => Number.isFinite(v) && v >= 0);
+    const extraHour = manual.map(r => Number(r.cost_per_extra_hour)).filter(v => Number.isFinite(v) && v >= 0);
+
+    if (activation.length === 0 && km.length === 0 && hours.length === 0 && extraKm.length === 0 && extraHour.length === 0) return null;
+
+    return {
+        sampleCount: manual.length,
+        config: {
+            baseActivationValue: truncTo2(median(activation)),
+            baseKmAllowance: Math.round(median(km)) || 100,
+            baseHourAllowance: Math.round(median(hours)) || 3,
+            extraKmValue: truncTo2(median(extraKm)),
+            extraHourValue: truncTo2(median(extraHour)),
+        },
+    };
+}
+
 export function calculateProviderCostAuto(
     realKm: number,
     config: ProviderAutoMasterConfig,
