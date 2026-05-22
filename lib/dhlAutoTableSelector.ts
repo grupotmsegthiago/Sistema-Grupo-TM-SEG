@@ -90,6 +90,53 @@ export const regionFromDhlOperationType = (op?: string | null): string | null =>
   return stripDhlOpDescription(op).region;
 };
 
+export interface DhlNameValidation {
+  valid: boolean;
+  hasRegionPrefix: boolean;
+  hasValidRegion: boolean;
+  hasKmSuffix: boolean;
+  reason: string;
+}
+
+export const validateDhlTableName = (op?: string | null): DhlNameValidation => {
+  const raw = (op || '').trim();
+  if (!raw) {
+    return {
+      valid: false,
+      hasRegionPrefix: false,
+      hasValidRegion: false,
+      hasKmSuffix: false,
+      reason: 'Nome da tabela vazio.',
+    };
+  }
+  const regionMatch = raw.match(/^REGI[ÃA]O\s*-\s*([A-ZÀ-Ú\- ]+?)\s*-\s*(.+)$/i);
+  const hasRegionPrefix = !!regionMatch;
+  const hasValidRegion = hasRegionPrefix && VALID_REGIONS.has(normalize(regionMatch![1]));
+  const rest = regionMatch ? regionMatch[2] : raw;
+  const hasKmSuffix = /\s+\d{2,5}\s*KM\s*$/i.test(rest);
+
+  if (hasRegionPrefix && hasValidRegion && hasKmSuffix) {
+    return { valid: true, hasRegionPrefix, hasValidRegion, hasKmSuffix, reason: '' };
+  }
+
+  const problems: string[] = [];
+  if (!hasRegionPrefix) {
+    problems.push('falta o prefixo "REGIÃO - {REGIÃO} -"');
+  } else if (!hasValidRegion) {
+    problems.push(`região "${regionMatch![1].trim()}" não é válida (use SUDESTE, SUL, CENTRO-OESTE, NORDESTE, NORTE ou BRASIL)`);
+  }
+  if (!hasKmSuffix) {
+    problems.push('falta a faixa de KM no final (ex.: "... 300KM")');
+  }
+  return {
+    valid: false,
+    hasRegionPrefix,
+    hasValidRegion,
+    hasKmSuffix,
+    reason: problems.join('; '),
+  };
+};
+
 const extractEmbeddedKms = (desc: string): number[] => {
   const matches = desc.matchAll(/(\d{2,5})(?!\d)/g);
   const out: number[] = [];

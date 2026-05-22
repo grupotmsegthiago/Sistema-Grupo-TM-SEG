@@ -7,6 +7,7 @@ import { googleMapsLoadConfig } from '../lib/maps';
 import { authFetch } from '../lib/authFetch';
 import { useNotification } from '../lib/NotificationContext';
 import { calculateMissionFinancials, auditMissionFinancials, extractUF, UF_TO_REGION, clientFuzzyFilter, clientNameShort } from '../lib/financialUtils';
+import { isDhlSupplyClient, validateDhlTableName } from '../lib/dhlAutoTableSelector';
 import { X, Calculator, Loader2, Save, CheckCircle2, TrendingUp, Landmark, Zap, RotateCcw, Building2, Briefcase, Plus, Users, MapPin, ArrowRight, BrainCircuit, AlertTriangle, AlertCircle, Edit2, Info, RefreshCw, Clock, Pencil, Lock, ShieldCheck, Camera, Image as ImageIcon, Link2, Layers, Scale, Sparkles, Navigation, History } from 'lucide-react';
 import { suggestPriceTable } from '../lib/gemini';
 import ProviderCostForm from './ProviderCostForm';
@@ -3126,9 +3127,15 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                                 return missionClientShort && tShort && (tShort === missionClientShort || tShort.startsWith(missionClientShort) || missionClientShort.startsWith(tShort));
                                             });
                                             const list = onlyThisClient.length > 0 ? onlyThisClient : clientTables;
-                                            return [...list].sort((a, b) => (a.operation_type || '').localeCompare(b.operation_type || '')).map(t => (
-                                                <option key={t.id} value={t.id}>{onlyThisClient.length > 0 ? t.operation_type : `${t.operation_type} — ${t.client}`}</option>
-                                            ));
+                                            return [...list].sort((a, b) => (a.operation_type || '').localeCompare(b.operation_type || '')).map(t => {
+                                                const isDhl = isDhlSupplyClient(t.client);
+                                                const dhlBad = isDhl && !validateDhlTableName(t.operation_type).valid;
+                                                const prefix = dhlBad ? '⚠️ ' : '';
+                                                const label = onlyThisClient.length > 0 ? t.operation_type : `${t.operation_type} — ${t.client}`;
+                                                return (
+                                                    <option key={t.id} value={t.id} title={dhlBad ? 'Tabela DHL fora do padrão — não é sugerida automaticamente' : undefined}>{prefix}{label}</option>
+                                                );
+                                            });
                                         })()}
                                     </select>
                                     {manualClientTableId && (

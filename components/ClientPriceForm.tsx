@@ -3,6 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import { ArrowLeft, Save, DollarSign, Clock, Gauge, Building2, Shield, Loader2, AlertTriangle, MapPin, Lock } from 'lucide-react';
 import { Client } from '../types';
+import { isDhlSupplyClient, validateDhlTableName } from '../lib/dhlAutoTableSelector';
 
 interface Props {
   onBack: () => void;
@@ -95,6 +96,10 @@ const ClientPriceForm: React.FC<Props> = ({ onBack, onSuccess, id, defaultClient
 
   const getFullOperationType = () => formData.region ? `${formData.region} - ${formData.description}` : formData.description;
 
+  const isDhlClient = isDhlSupplyClient(formData.client);
+  const dhlValidation = isDhlClient ? validateDhlTableName(getFullOperationType()) : null;
+  const showDhlWarning = isDhlClient && dhlValidation && !dhlValidation.valid && (formData.region || formData.description);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (duplicateError || !formData.region) return;
@@ -145,6 +150,17 @@ const ClientPriceForm: React.FC<Props> = ({ onBack, onSuccess, id, defaultClient
                 <div><label className={`${LABEL_CLASS} flex items-center gap-1.5`}><MapPin size={14} className="text-red-600" /> Região</label><select required className={SELECT_CLASS} value={formData.region} onChange={e => setFormData({...formData, region: e.target.value})}><option value="">Selecione...</option>{REGIONS.map(r => <option key={r} value={r}>{r}</option>)}</select></div>
                 <div><label className={LABEL_CLASS}>Descrição / Operação</label><input required type="text" className={INPUT_CLASS} value={formData.description} onChange={e => setFormData({...formData, description: e.target.value.toUpperCase()})} placeholder="Ex: CARACTERIZADA" /></div>
             </div>
+            {showDhlWarning && (
+                <div className="mt-4 flex items-start gap-3 p-3 rounded-lg border-2 border-amber-300 bg-amber-50" data-testid="warning-dhl-format">
+                    <AlertTriangle size={18} className="text-amber-600 shrink-0 mt-0.5" />
+                    <div className="text-xs text-amber-900">
+                        <p className="font-bold uppercase mb-1">Atenção: nome fora do padrão DHL</p>
+                        <p className="mb-1">O motor automático só sugere tabelas DHL no formato <code className="bg-amber-100 px-1 rounded">REGIÃO - {'{REGIÃO}'} - {'{DESC}'} {'{KM}'}KM</code> (ex.: <code className="bg-amber-100 px-1 rounded">REGIÃO - SUDESTE - GRU 100KM</code>).</p>
+                        <p className="mb-1"><span className="font-bold">Problema:</span> {dhlValidation?.reason}</p>
+                        <p className="font-semibold">Você ainda pode salvar, mas essa tabela <span className="underline">não será sugerida automaticamente</span> em novas missões — só ficará disponível para seleção manual.</p>
+                    </div>
+                </div>
+            )}
          </div>
 
          <div>
