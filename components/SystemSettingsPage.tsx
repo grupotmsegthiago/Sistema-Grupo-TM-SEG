@@ -1,5 +1,5 @@
-import React, { useEffect, useState } from 'react';
-import { Settings, Mail, Clock, Save, Loader2, RefreshCw, History, FileBarChart } from 'lucide-react';
+import React, { useEffect, useMemo, useState } from 'react';
+import { Settings, Mail, Clock, Save, Loader2, RefreshCw, History, FileBarChart, Send, CheckCircle2, AlertTriangle } from 'lucide-react';
 import ManualOverrideAlertSettings from './ManualOverrideAlertSettings';
 import AlertRecipientsSettings from './AlertRecipientsSettings';
 
@@ -11,6 +11,15 @@ type DailyReports = {
   missingInfo: Schedule;
   stuckNf: Schedule;
 };
+type ReportKey = keyof DailyReports;
+type RunResult = {
+  ok: boolean;
+  total?: number;
+  emailTo?: string | string[];
+  date?: string;
+  message: string;
+  at: string;
+};
 type HistoryEntry = {
   id: string;
   createdAt: string;
@@ -21,12 +30,12 @@ type HistoryEntry = {
   summary: string;
 };
 
-const REPORTS: { key: keyof DailyReports; title: string; description: string }[] = [
-  { key: 'legal',       title: 'Jurídico Diário',           description: 'Consulta diária no DataJud e envio do relatório de processos monitorados.' },
-  { key: 'pending',     title: 'Pendências (OS Concluídas)', description: 'OS concluídas com campos faltando (KM, horário, agente, etc.).' },
-  { key: 'approval',    title: 'Aprovações Pendentes',       description: 'OS concluídas aguardando aprovação financeira.' },
-  { key: 'missingInfo', title: 'Dados Faltantes (Geral)',    description: 'Todas as OS (exceto canceladas/recusadas) com dados faltantes.' },
-  { key: 'stuckNf',     title: 'NF Travadas',                description: 'NFs presas no PlugNotas há mais tempo que o limite.' },
+const REPORTS: { key: ReportKey; title: string; description: string; endpoint: string }[] = [
+  { key: 'legal',       title: 'Jurídico Diário',           description: 'Consulta diária no DataJud e envio do relatório de processos monitorados.', endpoint: '/api/datajud/relatorio-diario' },
+  { key: 'pending',     title: 'Pendências (OS Concluídas)', description: 'OS concluídas com campos faltando (KM, horário, agente, etc.).',           endpoint: '/api/relatorio-pendencias' },
+  { key: 'approval',    title: 'Aprovações Pendentes',       description: 'OS concluídas aguardando aprovação financeira.',                            endpoint: '/api/relatorio-aprovacoes' },
+  { key: 'missingInfo', title: 'Dados Faltantes (Geral)',    description: 'Todas as OS (exceto canceladas/recusadas) com dados faltantes.',           endpoint: '/api/relatorio-dados-faltantes' },
+  { key: 'stuckNf',     title: 'NF Travadas',                description: 'NFs presas no PlugNotas há mais tempo que o limite.',                       endpoint: '/api/relatorio-nfs-travadas' },
 ];
 
 const authHeaders = (): Record<string, string> => {
@@ -44,6 +53,54 @@ const SystemSettingsPage: React.FC<{ onNavigate?: (id: string) => void }> = () =
   const [history, setHistory] = useState<HistoryEntry[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
+  const [runningKey, setRunningKey] = useState<ReportKey | null>(null);
+  const [runResults, setRunResults] = useState<Partial<Record<ReportKey, RunResult>>>({});
+
+  const canRunReports = useMemo(() => {
+    try {
+      const raw = localStorage.getItem('userData');
+      if (!raw) return false;
+      const u = JSON.parse(raw);
+      const role = String(u?.role || '').toLowerCase();
+      if (role === 'administrador' || role === 'diretoria') return true;
+      const perms: string[] = Array.isArray(u?.permissions) ? u.permissions : [];
+      return perms.includes('*');
+    } catch { return false; }
+  }, []);
+
+  const handleRunNow = async (key: ReportKey) => {
+    const report = REPORTS.find(r => r.key === key);
+    if (!report || !settings) return;
+    const dest = (settings[key].emails || '').split(',').map(x => x.trim()).filter(Boolean).join(', ');
+    if (!dest) { alert('Defina pelo menos um destinatário antes de enviar.'); return; }
+    if (!confirm(`Disparar agora o relatório "${report.title}"?\n\nDestinatários atuais:\n${dest}\n\nAtenção: o envio usa os destinatários SALVOS no banco. Se você editou os campos acima e não clicou em "Salvar", a alteração NÃO será considerada.`)) return;
+
+    setRunningKey(key);
+    try {
+      const res = await fetch(report.endpoint, { method: 'POST', headers: authHeaders() });
+      let json: any = {};
+      try { json = await res.json(); } catch {}
+      const at = new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' });
+      if (!res.ok) {
+        setRunResults(prev => ({ ...prev, [key]: { ok: false, message: json?.error || `HTTP ${res.status}`, at } }));
+      } else {
+        const total = typeof json?.total === 'number' ? json.total : undefined;
+        const sent = json?.success === true;
+        const emailTo = Array.isArray(json?.emailTo) ? json.emailTo.join(', ') : (json?.emailTo || '');
+        const message = sent
+          ? `Enviado com sucesso${total != null ? ` — ${total} registro(s)` : ''}${emailTo ? ` para ${emailTo}` : ''}.`
+          : (total === 0
+              ? 'Execução concluída — sem itens para reportar, e-mail não enviado.'
+              : `Execução concluída sem envio${emailTo ? ` (destinatários: ${emailTo})` : ''}.`);
+        setRunResults(prev => ({ ...prev, [key]: { ok: true, total, emailTo, date: json?.date, message, at } }));
+      }
+    } catch (e: any) {
+      const at = new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' });
+      setRunResults(prev => ({ ...prev, [key]: { ok: false, message: e?.message || 'Erro desconhecido', at } }));
+    } finally {
+      setRunningKey(null);
+    }
+  };
 
   const fetchAll = async () => {
     setIsLoading(true);
@@ -164,10 +221,37 @@ const SystemSettingsPage: React.FC<{ onNavigate?: (id: string) => void }> = () =
                     <h4 className="font-semibold text-gray-800">{r.title}</h4>
                     <p className="text-xs text-gray-500">{r.description}</p>
                   </div>
-                  <span className="text-[11px] text-gray-500 whitespace-nowrap">
-                    Padrão: <strong>{fmtTime(d.hour, d.minute)}</strong>
-                  </span>
+                  <div className="flex items-center gap-2 whitespace-nowrap">
+                    <span className="text-[11px] text-gray-500">
+                      Padrão: <strong>{fmtTime(d.hour, d.minute)}</strong>
+                    </span>
+                    {canRunReports && (
+                      <button
+                        type="button"
+                        onClick={() => handleRunNow(r.key)}
+                        disabled={runningKey !== null}
+                        className="bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5"
+                        title="Dispara o envio agora usando os destinatários SALVOS no banco"
+                        data-testid={`button-run-now-${r.key}`}
+                      >
+                        {runningKey === r.key ? <Loader2 size={12} className="animate-spin" /> : <Send size={12} />}
+                        {runningKey === r.key ? 'Enviando...' : 'Enviar agora'}
+                      </button>
+                    )}
+                  </div>
                 </div>
+                {runResults[r.key] && (
+                  <div
+                    className={`mb-3 text-xs px-3 py-2 rounded-md flex items-start gap-2 ${runResults[r.key]!.ok ? 'bg-emerald-50 text-emerald-800 border border-emerald-200' : 'bg-red-50 text-red-800 border border-red-200'}`}
+                    data-testid={`text-run-result-${r.key}`}
+                  >
+                    {runResults[r.key]!.ok ? <CheckCircle2 size={14} className="mt-0.5 shrink-0" /> : <AlertTriangle size={14} className="mt-0.5 shrink-0" />}
+                    <div className="flex-1">
+                      <div>{runResults[r.key]!.message}</div>
+                      <div className="opacity-70 mt-0.5">Em {runResults[r.key]!.at}</div>
+                    </div>
+                  </div>
+                )}
 
                 <div className="grid grid-cols-1 md:grid-cols-12 gap-3">
                   <div className="md:col-span-8">
