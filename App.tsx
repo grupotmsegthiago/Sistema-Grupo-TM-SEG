@@ -266,6 +266,15 @@ const App: React.FC = () => {
   };
   const navigateTo = (screen: string) => { setSelectedId(null); setCurrentScreen(screen); };
   const handleEdit = (screen: string, id: string) => { setSelectedId(id); setCurrentScreen(screen); };
+
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const screen = (e as CustomEvent<string>).detail;
+      if (typeof screen === 'string' && screen) navigateTo(screen);
+    };
+    window.addEventListener('tmseg:navigate', handler as EventListener);
+    return () => window.removeEventListener('tmseg:navigate', handler as EventListener);
+  }, []);
   const handleSaveAndContinue = (missionId: string) => { localStorage.setItem('openMissionOnLoad', missionId); navigateTo('missions'); };
 
   if (isPublicRoute) { return ( <NotificationProvider> <PublicAgentRegistration /> </NotificationProvider> ); }

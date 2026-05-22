@@ -160,6 +160,38 @@ const ReportsDashboard: React.FC = () => {
         } finally { setOverrideActionBusy(null); }
     };
 
+    // Task #77 — Configuração atual do alerta de edições manuais (para avisar quando estiver frouxa)
+    const [overrideAlertSettings, setOverrideAlertSettings] = useState<{
+        threshold: number;
+        windowDays: number;
+        cooldownHours: number;
+        updatedBy: string | null;
+        updatedAt: string | null;
+    } | null>(null);
+    useEffect(() => {
+        if (activeTab !== 'manualOverride') return;
+        let aborted = false;
+        (async () => {
+            try {
+                const token = localStorage.getItem('authToken');
+                const res = await fetch('/api/admin/manual-override-settings', {
+                    headers: token ? { Authorization: `Bearer ${token}` } : {},
+                });
+                if (!res.ok) return;
+                const json = await res.json();
+                if (aborted || !json?.ok || !json?.settings) return;
+                setOverrideAlertSettings({
+                    threshold: Number(json.settings.threshold),
+                    windowDays: Number(json.settings.windowDays),
+                    cooldownHours: Number(json.settings.cooldownHours),
+                    updatedBy: json.updatedBy ?? null,
+                    updatedAt: json.updatedAt ?? null,
+                });
+            } catch { /* silencioso: o painel não depende disso */ }
+        })();
+        return () => { aborted = true; };
+    }, [activeTab]);
+
     // Task #67 — Deep-link vindo do e-mail/notificação de alerta de edições manuais.
     // Aceita ?tab=manualOverride&user=...&provider=...&from=YYYY-MM-DD&to=YYYY-MM-DD
     useEffect(() => {
@@ -1507,8 +1539,63 @@ const ReportsDashboard: React.FC = () => {
                     };
                     const onlyRealAlerts = overrideAlerts.filter(a => a.actionType === 'MANUAL_OVERRIDE_ALERT');
 
+                    const s = overrideAlertSettings;
+                    const isLoose = !!s && (s.threshold > 50 || s.windowDays > 30 || s.cooldownHours > 72);
+                    const fmtUpdatedAt = (iso: string | null) => {
+                        if (!iso) return '—';
+                        try { return new Date(iso).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' }); }
+                        catch { return iso; }
+                    };
+                    const goToSettings = () => {
+                        try { window.dispatchEvent(new CustomEvent('tmseg:navigate', { detail: 'manual-override-settings' })); }
+                        catch { /* ignore */ }
+                    };
+
                     return (
                         <div className="space-y-4 animate-in fade-in slide-in-from-bottom-4">
+                            {s && (
+                                <div
+                                    className={`p-3 rounded-r-lg border-l-4 no-print ${isLoose ? 'bg-yellow-50 border-yellow-400' : 'bg-gray-50 border-gray-300'}`}
+                                    data-testid="banner-manual-override-settings"
+                                >
+                                    <div className="flex items-start gap-2">
+                                        <AlertTriangle size={14} className={`shrink-0 mt-0.5 ${isLoose ? 'text-yellow-600' : 'text-gray-500'}`} />
+                                        <div className="flex-1 text-xs">
+                                            <p className={`font-semibold ${isLoose ? 'text-yellow-900' : 'text-gray-700'}`}>
+                                                {isLoose ? (
+                                                    <>Atenção: o alerta de edições manuais está com configuração frouxa e pode estar deixando passar problemas.</>
+                                                ) : (
+                                                    <>Configuração atual do alerta de edições manuais.</>
+                                                )}
+                                            </p>
+                                            <p className={`mt-1 ${isLoose ? 'text-yellow-800' : 'text-gray-600'}`}>
+                                                Limite: <strong data-testid="text-override-threshold">{s.threshold}</strong> edições
+                                                {' '}· Janela: <strong data-testid="text-override-window">{s.windowDays}</strong> dia(s)
+                                                {' '}· Cooldown: <strong data-testid="text-override-cooldown">{s.cooldownHours}</strong> h
+                                            </p>
+                                            {isLoose && (
+                                                <p className="text-[11px] text-yellow-800 mt-1">
+                                                    Piso recomendado: limite ≤ 50, janela ≤ 30 dias e cooldown ≤ 72 h.
+                                                </p>
+                                            )}
+                                            <p className="text-[11px] text-gray-500 mt-1">
+                                                Última alteração:{' '}
+                                                <strong data-testid="text-override-updated-by">{s.updatedBy || '—'}</strong>
+                                                {' '}em{' '}
+                                                <strong data-testid="text-override-updated-at">{fmtUpdatedAt(s.updatedAt)}</strong>
+                                            </p>
+                                        </div>
+                                        <button
+                                            onClick={goToSettings}
+                                            className={`shrink-0 text-xs font-bold px-3 py-1.5 rounded-lg ${isLoose ? 'bg-yellow-500 hover:bg-yellow-600 text-white' : 'bg-gray-200 hover:bg-gray-300 text-gray-800'}`}
+                                            data-testid="btn-open-manual-override-settings"
+                                        >
+                                            Ajustar
+                                        </button>
+                                    </div>
+                                </div>
+                            )}
+
                             <div className="bg-amber-50 border-l-4 border-amber-400 p-3 rounded-r-lg no-print">
                                 <p className="text-xs text-amber-800 font-semibold flex items-start gap-2">
                                     <AlertTriangle size={14} className="shrink-0 mt-0.5" />
