@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Settings, Mail, Clock, Save, Loader2, RefreshCw, History, FileBarChart, Send, CheckCircle2, AlertTriangle, ListChecks, Download } from 'lucide-react';
+import { Settings, Mail, Clock, Save, Loader2, RefreshCw, History, FileBarChart, Send, CheckCircle2, AlertTriangle, ListChecks, Calendar, User, Download, X, Filter, ChevronLeft, ChevronRight } from 'lucide-react';
 import ManualOverrideAlertSettings from './ManualOverrideAlertSettings';
 import AlertRecipientsSettings from './AlertRecipientsSettings';
 
@@ -76,6 +76,35 @@ const SystemSettingsPage: React.FC<{ onNavigate?: (id: string) => void }> = () =
   const [manualRunsFilterMode, setManualRunsFilterMode] = useState<'' | 'test' | 'official'>('');
   const [manualRunsFilterFrom, setManualRunsFilterFrom] = useState<string>('');
   const [manualRunsFilterTo, setManualRunsFilterTo] = useState<string>('');
+  const [runs, setRuns] = useState<Record<string, Array<{
+    id: string;
+    createdAt: string;
+    userName: string;
+    source: 'manual' | 'scheduled';
+    total: number | null;
+    emailTo: string[];
+    success: boolean;
+    errorMessage: string | null;
+    date: string | null;
+  }>>>({});
+  const [runsLoading, setRunsLoading] = useState(false);
+
+  // Task #90 — Modal de histórico filtrável + CSV
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [historyRows, setHistoryRows] = useState<Array<{
+    id: string; createdAt: string; userName: string; reportKey: string; reportTitle: string;
+    source: 'manual' | 'scheduled'; total: number | null; emailTo: string[];
+    success: boolean; errorMessage: string | null; date: string | null;
+  }>>([]);
+  const [historyTotal, setHistoryTotal] = useState(0);
+  const [historyExporting, setHistoryExporting] = useState(false);
+  const [historyFilters, setHistoryFilters] = useState<{
+    reportKey: '' | ReportKey; from: string; to: string; user: string;
+    source: '' | 'manual' | 'scheduled'; status: '' | 'success' | 'error';
+  }>({ reportKey: '', from: '', to: '', user: '', source: '', status: '' });
+  const HISTORY_PAGE_SIZE = 25;
+  const [historyPage, setHistoryPage] = useState(0);
 
   const canRunReports = useMemo(() => {
     try {
@@ -153,6 +182,92 @@ const SystemSettingsPage: React.FC<{ onNavigate?: (id: string) => void }> = () =
     } finally {
       setRunsLoading(false);
     }
+  };
+
+  const buildHistoryQuery = (page: number, format?: 'csv') => {
+    const qs = new URLSearchParams();
+    if (historyFilters.reportKey) qs.set('report_key', historyFilters.reportKey);
+    if (historyFilters.from) qs.set('from', historyFilters.from);
+    if (historyFilters.to) qs.set('to', historyFilters.to);
+    if (historyFilters.user.trim()) qs.set('user', historyFilters.user.trim());
+    if (historyFilters.source) qs.set('source', historyFilters.source);
+    if (historyFilters.status) qs.set('status', historyFilters.status);
+    if (format === 'csv') {
+      qs.set('format', 'csv');
+    } else {
+      qs.set('limit', String(HISTORY_PAGE_SIZE));
+      qs.set('offset', String(page * HISTORY_PAGE_SIZE));
+    }
+    return qs.toString();
+  };
+
+  const fetchHistory = async (page = historyPage) => {
+    setHistoryLoading(true);
+    try {
+      const res = await fetch(`/api/admin/system-settings/daily-reports/runs/history?${buildHistoryQuery(page)}`, { headers: authHeaders() });
+      const json = await res.json();
+      if (json?.ok) {
+        setHistoryRows(json.runs || []);
+        setHistoryTotal(typeof json.total === 'number' ? json.total : (json.runs || []).length);
+      } else {
+        alert('Erro ao carregar histórico: ' + (json?.error || 'desconhecido'));
+      }
+    } catch (e: any) {
+      alert('Erro ao carregar histórico: ' + (e?.message || 'desconhecido'));
+    } finally {
+      setHistoryLoading(false);
+    }
+  };
+
+  const handleExportHistoryCsv = async () => {
+    setHistoryExporting(true);
+    try {
+      const res = await fetch(`/api/admin/system-settings/daily-reports/runs/history?${buildHistoryQuery(0, 'csv')}`, { headers: authHeaders() });
+      if (!res.ok) {
+        let msg = `HTTP ${res.status}`;
+        try { const j = await res.json(); if (j?.error) msg = j.error; } catch {}
+        throw new Error(msg);
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
+      a.href = url;
+      a.download = `historico-disparos-${stamp}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (e: any) {
+      alert('Erro ao exportar CSV: ' + (e?.message || 'desconhecido'));
+    } finally {
+      setHistoryExporting(false);
+    }
+  };
+
+  const openHistoryModal = () => {
+    setHistoryOpen(true);
+    setHistoryPage(0);
+    fetchHistory(0);
+  };
+
+  const applyHistoryFilters = () => {
+    setHistoryPage(0);
+    fetchHistory(0);
+  };
+
+  const clearHistoryFilters = () => {
+    setHistoryFilters({ reportKey: '', from: '', to: '', user: '', source: '', status: '' });
+    setHistoryPage(0);
+    setTimeout(() => fetchHistory(0), 0);
+  };
+
+  const changeHistoryPage = (delta: number) => {
+    const totalPages = Math.max(1, Math.ceil(historyTotal / HISTORY_PAGE_SIZE));
+    const next = Math.min(totalPages - 1, Math.max(0, historyPage + delta));
+    if (next === historyPage) return;
+    setHistoryPage(next);
+    fetchHistory(next);
   };
 
   const fetchManualRuns = async (key: '' | ReportKey, mode: '' | 'test' | 'official', from?: string, to?: string) => {
@@ -256,7 +371,10 @@ const SystemSettingsPage: React.FC<{ onNavigate?: (id: string) => void }> = () =
         alert('Erro ao carregar: ' + (sJson?.error || 'desconhecido'));
       }
       if (hJson?.ok) setHistory(hJson.history || []);
-      await fetchManualRuns(manualRunsFilterKey, manualRunsFilterMode, manualRunsFilterFrom, manualRunsFilterTo);
+      await Promise.all([
+        fetchManualRuns(manualRunsFilterKey, manualRunsFilterMode, manualRunsFilterFrom, manualRunsFilterTo),
+        fetchRuns(),
+      ]);
     } catch (e: any) {
       alert('Erro ao carregar configurações: ' + (e?.message || 'desconhecido'));
     } finally {
@@ -340,12 +458,23 @@ const SystemSettingsPage: React.FC<{ onNavigate?: (id: string) => void }> = () =
       </div>
 
       <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200">
-        <div className="flex items-start gap-3 mb-4">
-          <FileBarChart className="text-blue-600 mt-1" />
-          <div>
-            <h3 className="text-lg font-bold text-gray-800">Relatórios Diários por E-mail</h3>
-            <p className="text-sm text-gray-500">Horários em fuso de Brasília. Use vírgula para múltiplos destinatários.</p>
+        <div className="flex items-start justify-between gap-3 mb-4 flex-wrap">
+          <div className="flex items-start gap-3">
+            <FileBarChart className="text-blue-600 mt-1" />
+            <div>
+              <h3 className="text-lg font-bold text-gray-800">Relatórios Diários por E-mail</h3>
+              <p className="text-sm text-gray-500">Horários em fuso de Brasília. Use vírgula para múltiplos destinatários.</p>
+            </div>
           </div>
+          <button
+            type="button"
+            onClick={openHistoryModal}
+            className="text-xs bg-gray-100 hover:bg-gray-200 text-gray-800 px-3 py-1.5 rounded-lg font-semibold flex items-center gap-1.5"
+            data-testid="button-open-runs-history"
+            title="Abrir histórico completo de disparos (manuais + agendados) com filtros e exportação CSV"
+          >
+            <History size={14} /> Histórico completo / CSV
+          </button>
         </div>
 
         <div className="space-y-4">
@@ -740,6 +869,212 @@ const SystemSettingsPage: React.FC<{ onNavigate?: (id: string) => void }> = () =
           </div>
         )}
       </div>
+      {historyOpen && (
+        <div
+          className="fixed inset-0 bg-black/50 z-50 flex items-start justify-center p-4 overflow-y-auto"
+          onClick={() => setHistoryOpen(false)}
+          data-testid="modal-runs-history"
+        >
+          <div
+            className="bg-white rounded-xl shadow-xl w-full max-w-6xl my-8"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between px-5 py-3 border-b border-gray-200">
+              <h3 className="text-lg font-bold text-gray-800 flex items-center gap-2">
+                <History className="text-blue-600" /> Histórico de disparos de relatórios
+              </h3>
+              <button
+                onClick={() => setHistoryOpen(false)}
+                className="text-gray-500 hover:text-gray-800 p-1 rounded"
+                data-testid="button-close-runs-history"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="px-5 py-3 border-b border-gray-100 bg-gray-50">
+              <div className="grid grid-cols-1 md:grid-cols-6 gap-2 items-end">
+                <div className="md:col-span-2">
+                  <label className="text-[11px] font-semibold text-gray-700 block mb-1">Relatório</label>
+                  <select
+                    value={historyFilters.reportKey}
+                    onChange={(e) => setHistoryFilters(f => ({ ...f, reportKey: e.target.value as '' | ReportKey }))}
+                    className="w-full border border-gray-300 rounded-lg px-2 py-1.5 text-xs bg-white"
+                    data-testid="select-history-report"
+                  >
+                    <option value="">Todos os relatórios</option>
+                    {REPORTS.map(r => (
+                      <option key={r.key} value={r.key}>{r.title}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="text-[11px] font-semibold text-gray-700 block mb-1">De</label>
+                  <input
+                    type="date"
+                    value={historyFilters.from}
+                    onChange={(e) => setHistoryFilters(f => ({ ...f, from: e.target.value }))}
+                    className="w-full border border-gray-300 rounded-lg px-2 py-1.5 text-xs bg-white"
+                    data-testid="input-history-from"
+                  />
+                </div>
+                <div>
+                  <label className="text-[11px] font-semibold text-gray-700 block mb-1">Até</label>
+                  <input
+                    type="date"
+                    value={historyFilters.to}
+                    onChange={(e) => setHistoryFilters(f => ({ ...f, to: e.target.value }))}
+                    className="w-full border border-gray-300 rounded-lg px-2 py-1.5 text-xs bg-white"
+                    data-testid="input-history-to"
+                  />
+                </div>
+                <div>
+                  <label className="text-[11px] font-semibold text-gray-700 block mb-1">Usuário</label>
+                  <input
+                    type="text"
+                    value={historyFilters.user}
+                    onChange={(e) => setHistoryFilters(f => ({ ...f, user: e.target.value }))}
+                    placeholder="Nome ou e-mail"
+                    className="w-full border border-gray-300 rounded-lg px-2 py-1.5 text-xs bg-white"
+                    data-testid="input-history-user"
+                  />
+                </div>
+                <div>
+                  <label className="text-[11px] font-semibold text-gray-700 block mb-1">Fonte</label>
+                  <select
+                    value={historyFilters.source}
+                    onChange={(e) => setHistoryFilters(f => ({ ...f, source: e.target.value as '' | 'manual' | 'scheduled' }))}
+                    className="w-full border border-gray-300 rounded-lg px-2 py-1.5 text-xs bg-white"
+                    data-testid="select-history-source"
+                  >
+                    <option value="">Todas</option>
+                    <option value="manual">Manual</option>
+                    <option value="scheduled">Agendado</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="text-[11px] font-semibold text-gray-700 block mb-1">Status</label>
+                  <select
+                    value={historyFilters.status}
+                    onChange={(e) => setHistoryFilters(f => ({ ...f, status: e.target.value as '' | 'success' | 'error' }))}
+                    className="w-full border border-gray-300 rounded-lg px-2 py-1.5 text-xs bg-white"
+                    data-testid="select-history-status"
+                  >
+                    <option value="">Todos</option>
+                    <option value="success">Sucesso</option>
+                    <option value="error">Erro</option>
+                  </select>
+                </div>
+              </div>
+              <div className="flex flex-wrap items-center gap-2 mt-3">
+                <button
+                  onClick={applyHistoryFilters}
+                  className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5"
+                  data-testid="button-apply-history-filters"
+                >
+                  <Filter size={12} /> Aplicar filtros
+                </button>
+                <button
+                  onClick={clearHistoryFilters}
+                  className="bg-gray-100 hover:bg-gray-200 text-gray-800 px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5"
+                  data-testid="button-clear-history-filters"
+                >
+                  <RefreshCw size={12} /> Limpar
+                </button>
+                <button
+                  onClick={handleExportHistoryCsv}
+                  disabled={historyExporting}
+                  className="ml-auto bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5"
+                  data-testid="button-export-history-csv"
+                  title="Exporta até 5.000 registros aplicando os filtros atuais"
+                >
+                  {historyExporting ? <Loader2 size={12} className="animate-spin" /> : <Download size={12} />}
+                  Exportar CSV
+                </button>
+              </div>
+            </div>
+
+            <div className="px-5 py-3 max-h-[60vh] overflow-y-auto">
+              {historyLoading ? (
+                <div className="flex items-center gap-2 text-sm text-gray-500"><Loader2 size={14} className="animate-spin" /> Carregando...</div>
+              ) : historyRows.length === 0 ? (
+                <p className="text-sm text-gray-500" data-testid="text-history-empty">Nenhum disparo encontrado para os filtros aplicados.</p>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-xs">
+                    <thead className="bg-gray-50 text-gray-600 uppercase sticky top-0">
+                      <tr>
+                        <th className="px-3 py-2 text-left">Data</th>
+                        <th className="px-3 py-2 text-left">Usuário</th>
+                        <th className="px-3 py-2 text-left">Relatório</th>
+                        <th className="px-3 py-2 text-left">Fonte</th>
+                        <th className="px-3 py-2 text-right">Total</th>
+                        <th className="px-3 py-2 text-left">Destinatários</th>
+                        <th className="px-3 py-2 text-left">Status</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {historyRows.map(r => (
+                        <tr key={r.id} className="border-t border-gray-100 align-top" data-testid={`row-history-run-${r.id}`}>
+                          <td className="px-3 py-2 whitespace-nowrap">
+                            <span className="inline-flex items-center gap-1"><Calendar size={10} /> {fmtDate(r.createdAt)}</span>
+                          </td>
+                          <td className="px-3 py-2"><span className="inline-flex items-center gap-1"><User size={10} /> {r.userName || '—'}</span></td>
+                          <td className="px-3 py-2">{r.reportTitle || r.reportKey || '—'}</td>
+                          <td className="px-3 py-2">
+                            <span className={`px-1.5 py-0.5 rounded text-[10px] font-semibold ${r.source === 'manual' ? 'bg-blue-100 text-blue-800' : 'bg-gray-100 text-gray-700'}`}>
+                              {r.source === 'manual' ? 'Manual' : 'Agendado'}
+                            </span>
+                          </td>
+                          <td className="px-3 py-2 text-right tabular-nums">{r.total != null ? r.total : '—'}</td>
+                          <td className="px-3 py-2 text-gray-700 break-all">
+                            {r.emailTo.length === 0 ? '—' : (
+                              <span title={r.emailTo.join(', ')}>{r.emailTo.length} dest. {r.emailTo.length <= 2 ? `(${r.emailTo.join(', ')})` : ''}</span>
+                            )}
+                          </td>
+                          <td className="px-3 py-2">
+                            {r.success ? (
+                              <span className="inline-flex items-center gap-1 text-emerald-700"><CheckCircle2 size={12} /> Enviado</span>
+                            ) : (
+                              <span className="inline-flex items-center gap-1 text-red-700" title={r.errorMessage || ''}><AlertTriangle size={12} /> {r.errorMessage ? 'Erro' : 'Sem envio'}</span>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+
+            <div className="px-5 py-3 border-t border-gray-100 flex items-center gap-3 text-xs text-gray-600">
+              <span data-testid="text-history-summary">
+                {historyTotal === 0
+                  ? 'Sem registros'
+                  : `Mostrando ${historyPage * HISTORY_PAGE_SIZE + 1}–${Math.min(historyTotal, historyPage * HISTORY_PAGE_SIZE + historyRows.length)} de ${historyTotal}`}
+              </span>
+              <div className="ml-auto flex items-center gap-1">
+                <button
+                  onClick={() => changeHistoryPage(-1)}
+                  disabled={historyPage === 0 || historyLoading}
+                  className="bg-gray-100 hover:bg-gray-200 disabled:opacity-40 px-2 py-1 rounded flex items-center gap-1"
+                  data-testid="button-history-prev"
+                >
+                  <ChevronLeft size={12} /> Anterior
+                </button>
+                <button
+                  onClick={() => changeHistoryPage(1)}
+                  disabled={(historyPage + 1) * HISTORY_PAGE_SIZE >= historyTotal || historyLoading}
+                  className="bg-gray-100 hover:bg-gray-200 disabled:opacity-40 px-2 py-1 rounded flex items-center gap-1"
+                  data-testid="button-history-next"
+                >
+                  Próxima <ChevronRight size={12} />
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

@@ -7405,5 +7405,148 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
     }
   });
 
+  // ═══════════════════════════════════════════════════════
+  // Task #90 — Histórico filtrável + exportação CSV das execuções de relatórios
+  // Lê os mesmos registros gravados por `logReportRun` (action_type='MANUAL_REPORT_RUN',
+  // entity='DailyReport'), aplicando filtros por relatório, período, usuário,
+  // fonte (manual/agendado) e status (sucesso/erro). Suporta `?format=csv`.
+  // ═══════════════════════════════════════════════════════
+  app.get('/api/admin/system-settings/daily-reports/runs/history', requireAuth, requireRole('diretoria', 'administrador', 'financeiro'), async (req: Request, res: Response) => {
+    try {
+      const VALID_KEYS: ManualReportKey[] = ['legal', 'pending', 'approval', 'missingInfo', 'stuckNf'];
+      const REPORT_TITLES: Record<ManualReportKey, string> = {
+        legal: 'Jurídico Diário',
+        pending: 'Pendências (OS Concluídas)',
+        approval: 'Aprovações Pendentes',
+        missingInfo: 'Dados Faltantes (Geral)',
+        stuckNf: 'NF Travadas',
+      };
+      const reportKey = String(req.query.report_key || '').trim();
+      const from = String(req.query.from || '').trim();
+      const to = String(req.query.to || '').trim();
+      const userFilter = String(req.query.user || '').trim();
+      const source = String(req.query.source || '').trim().toLowerCase();
+      const status = String(req.query.status || '').trim().toLowerCase();
+      const format = String(req.query.format || '').trim().toLowerCase();
+      const limit = Math.max(1, Math.min(500, Number(req.query.limit) || 50));
+      const offset = Math.max(0, Number(req.query.offset) || 0);
+      const isCsv = format === 'csv';
+
+      let query = supabaseAdmin
+        .from('system_logs')
+        .select('id, created_at, user_name, entity_id, details', { count: 'exact' })
+        .eq('entity', 'DailyReport')
+        .eq('action_type', 'MANUAL_REPORT_RUN')
+        .order('created_at', { ascending: false });
+
+      if (reportKey && VALID_KEYS.includes(reportKey as ManualReportKey)) {
+        query = query.eq('entity_id', reportKey);
+      }
+      if (from) {
+        const d = new Date(from);
+        if (!isNaN(d.getTime())) query = query.gte('created_at', d.toISOString());
+      }
+      if (to) {
+        const d = new Date(to);
+        if (!isNaN(d.getTime())) {
+          // se vier só a data (YYYY-MM-DD), considera o fim do dia
+          if (/^\d{4}-\d{2}-\d{2}$/.test(to)) d.setUTCHours(23, 59, 59, 999);
+          query = query.lte('created_at', d.toISOString());
+        }
+      }
+      if (userFilter) {
+        query = query.ilike('user_name', `%${userFilter}%`);
+      }
+
+      // Paginação: para CSV trazemos um lote grande (até 5000) ignorando offset.
+      if (isCsv) {
+        query = query.range(0, 4999);
+      } else {
+        query = query.range(offset, offset + limit - 1);
+      }
+
+      const { data, error, count } = await query;
+      if (error) throw error;
+
+      const allRows = (data || []).map((r: any) => {
+        let d: any = {};
+        try { d = typeof r.details === 'string' ? JSON.parse(r.details) : (r.details || {}); } catch {}
+        const key = (r.entity_id || d.reportKey || '') as string;
+        return {
+          id: r.id as string,
+          createdAt: r.created_at as string,
+          userName: (r.user_name || 'Sistema') as string,
+          reportKey: key,
+          reportTitle: REPORT_TITLES[key as ManualReportKey] || key || '—',
+          source: (d.source || 'manual') as string,
+          total: typeof d.total === 'number' ? d.total : null,
+          emailTo: Array.isArray(d.emailTo) ? d.emailTo : [],
+          success: d.success === true,
+          errorMessage: (d.errorMessage || null) as string | null,
+          date: (d.date || null) as string | null,
+        };
+      });
+
+      // Filtros pós-leitura (source/status estão dentro do JSON details)
+      let rows = allRows;
+      if (source === 'manual' || source === 'scheduled') {
+        rows = rows.filter(r => r.source === source);
+      }
+      if (status === 'success') {
+        rows = rows.filter(r => r.success);
+      } else if (status === 'error') {
+        rows = rows.filter(r => !r.success);
+      }
+
+      if (isCsv) {
+        const escape = (v: any) => {
+          const s = v === null || v === undefined ? '' : String(v);
+          return /[",\n;]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+        };
+        const header = [
+          'data_hora_brasilia', 'data_hora_utc', 'usuario', 'relatorio_chave', 'relatorio_titulo',
+          'fonte', 'status', 'total_registros', 'qtde_destinatarios', 'destinatarios',
+          'data_referencia', 'mensagem_erro',
+        ];
+        const lines = [header.join(',')];
+        for (const r of rows) {
+          let brt = r.createdAt;
+          try { brt = new Date(r.createdAt).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' }); } catch {}
+          lines.push([
+            brt,
+            r.createdAt,
+            r.userName,
+            r.reportKey,
+            r.reportTitle,
+            r.source === 'scheduled' ? 'agendado' : 'manual',
+            r.success ? 'sucesso' : 'erro',
+            r.total != null ? r.total : '',
+            r.emailTo.length,
+            r.emailTo.join('; '),
+            r.date || '',
+            r.errorMessage || '',
+          ].map(escape).join(','));
+        }
+        const csv = '\uFEFF' + lines.join('\r\n') + '\r\n';
+        const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
+        res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+        res.setHeader('Content-Disposition', `attachment; filename="historico-disparos-${stamp}.csv"`);
+        return res.status(200).send(csv);
+      }
+
+      res.json({
+        ok: true,
+        runs: rows,
+        total: typeof count === 'number' ? count : rows.length,
+        limit,
+        offset,
+        appliedSourceFilter: source || null,
+        appliedStatusFilter: status || null,
+      });
+    } catch (e: any) {
+      res.status(500).json({ ok: false, error: e?.message || 'Falha ao carregar histórico de execuções' });
+    }
+  });
+
   return httpServer;
 }
