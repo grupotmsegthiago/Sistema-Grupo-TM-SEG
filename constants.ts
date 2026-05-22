@@ -100,6 +100,7 @@ export const NAV_ITEMS: NavItem[] = [
       { name: 'Gerenciar Contas (Bancos)', id: 'fin-accounts' },
       { name: 'Categorias Financeiras', id: 'fin-categories' },
       { name: 'Controle OS Fornecedor', id: 'fin-vendor-verification' },
+      { name: 'Tabelas DHL Fora do Padrão', id: 'fin-dhl-noncompliant' },
     ]
   },
   { 

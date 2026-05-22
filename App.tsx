@@ -56,6 +56,7 @@ import PushNotificationManager from './components/PushNotificationManager';
 import CostOptimizationDashboard from './components/CostOptimizationDashboard';
 import MaintenanceDashboard from './components/MaintenanceDashboard';
 import ContractManager from './components/ContractManager';
+import DhlNonCompliantTables from './components/DhlNonCompliantTables';
 import EquipmentManager from './components/EquipmentManager';
 import ManualOverrideAlertSettings from './components/ManualOverrideAlertSettings';
 import SystemSettingsPage from './components/SystemSettingsPage';
@@ -312,6 +313,7 @@ const App: React.FC = () => {
       case 'fin-daily-movement': return <DailyCashMovement />;
       case 'fin-vendor-verification': return <VendorVerificationControl onNavigate={navigateTo} onOpenMission={handleOpenBillingMission} />;
       case 'fin-invoices': return <FinancialInvoiceControl />;
+      case 'fin-dhl-noncompliant': return <DhlNonCompliantTables onBack={() => navigateTo('fin-billing')} />;
       case 'clients': return <ClientList onAddClient={() => navigateTo('client-form')} onEdit={(id) => handleEdit('client-form', id)} />;
       case 'client-form': return ( <ClientForm id={selectedId} onBack={() => navigateTo('clients')} onSave={() => {}} onAddVehicle={() => navigateTo('client-vehicle-form')} onEditVehicle={(vid) => handleEdit('client-vehicle-form', vid)} onAddRoute={() => navigateTo('client-route-form')} onEditRoute={(rid) => handleEdit('client-route-form', rid)} onAddQuote={() => navigateTo('quote-form')} onEditQuote={(qid) => handleEdit('quote-form', qid)} /> );
       case 'contract-manager': return <ContractManager />;
