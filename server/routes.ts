@@ -6980,13 +6980,15 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
     try {
       const reportKey = String(req.query.report_key || '').trim();
       const mode = String(req.query.mode || '').trim();
+      const exportAll = String(req.query.export || '').trim() === '1';
       const validKeys = ['legal', 'pending', 'approval', 'missingInfo', 'stuckNf'];
+      const fetchLimit = exportAll ? 5000 : 100;
       let query = supabaseAdmin
         .from('system_logs')
         .select('id, created_at, user_name, details')
         .eq('action_type', 'manual_report_run')
         .order('created_at', { ascending: false })
-        .limit(100);
+        .limit(fetchLimit);
       if (reportKey && validKeys.includes(reportKey)) {
         query = query.eq('entity_id', reportKey);
       }
@@ -7014,7 +7016,7 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
         : mode === 'official'
           ? rows.filter(r => !r.testMode)
           : rows;
-      res.json({ ok: true, runs: filtered.slice(0, 20) });
+      res.json({ ok: true, runs: exportAll ? filtered : filtered.slice(0, 20) });
     } catch (e: any) {
       res.status(500).json({ ok: false, error: e?.message || 'Falha ao carregar disparos manuais' });
     }

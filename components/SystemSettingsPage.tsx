@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Settings, Mail, Clock, Save, Loader2, RefreshCw, History, FileBarChart, Send, CheckCircle2, AlertTriangle, ListChecks } from 'lucide-react';
+import { Settings, Mail, Clock, Save, Loader2, RefreshCw, History, FileBarChart, Send, CheckCircle2, AlertTriangle, ListChecks, Download } from 'lucide-react';
 import ManualOverrideAlertSettings from './ManualOverrideAlertSettings';
 import AlertRecipientsSettings from './AlertRecipientsSettings';
 
@@ -71,6 +71,7 @@ const SystemSettingsPage: React.FC<{ onNavigate?: (id: string) => void }> = () =
   const [overrideEmails, setOverrideEmails] = useState<Partial<Record<ReportKey, string>>>({});
   const [manualRuns, setManualRuns] = useState<ManualRunEntry[]>([]);
   const [manualRunsLoading, setManualRunsLoading] = useState(false);
+  const [manualRunsExporting, setManualRunsExporting] = useState(false);
   const [manualRunsFilterKey, setManualRunsFilterKey] = useState<'' | ReportKey>('');
   const [manualRunsFilterMode, setManualRunsFilterMode] = useState<'' | 'test' | 'official'>('');
 
@@ -165,6 +166,67 @@ const SystemSettingsPage: React.FC<{ onNavigate?: (id: string) => void }> = () =
       // silencioso — bloco informativo
     } finally {
       setManualRunsLoading(false);
+    }
+  };
+
+  const exportManualRunsCsv = async () => {
+    setManualRunsExporting(true);
+    try {
+      const qs = new URLSearchParams();
+      if (manualRunsFilterKey) qs.set('report_key', manualRunsFilterKey);
+      if (manualRunsFilterMode) qs.set('mode', manualRunsFilterMode);
+      qs.set('export', '1');
+      const res = await fetch(`/api/admin/system-settings/manual-report-runs?${qs.toString()}`, { headers: authHeaders() });
+      const json = await res.json();
+      if (!res.ok || !json?.ok) {
+        alert('Falha ao exportar: ' + (json?.error || `HTTP ${res.status}`));
+        return;
+      }
+      const runs: ManualRunEntry[] = json.runs || [];
+      if (runs.length === 0) {
+        alert('Nenhum disparo manual encontrado para os filtros selecionados.');
+        return;
+      }
+      const headers = ['Data', 'Usuário', 'Relatório', 'Modo', 'Destinatários', 'Total', 'Resultado', 'Erro'];
+      const escape = (v: any) => {
+        const s = v == null ? '' : String(v);
+        return /[",;\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+      };
+      const lines = [headers.join(';')];
+      for (const r of runs) {
+        const reportMeta = REPORTS.find(x => x.key === r.reportKey);
+        const dest = r.effectiveEmails || r.overrideEmails || '';
+        const result = r.success ? 'Enviado' : (r.error ? 'Erro' : 'Sem envio');
+        lines.push([
+          fmtDate(r.createdAt),
+          r.userName || '',
+          reportMeta?.title || r.reportKey || '',
+          r.testMode ? 'Teste' : 'Oficial',
+          dest,
+          r.total != null ? r.total : '',
+          result,
+          r.error || '',
+        ].map(escape).join(';'));
+      }
+      const csv = '\uFEFF' + lines.join('\r\n');
+      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
+      const parts = ['disparos-manuais'];
+      if (manualRunsFilterKey) parts.push(manualRunsFilterKey);
+      if (manualRunsFilterMode) parts.push(manualRunsFilterMode);
+      parts.push(stamp);
+      a.download = `${parts.join('_')}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (e: any) {
+      alert('Erro ao exportar CSV: ' + (e?.message || 'desconhecido'));
+    } finally {
+      setManualRunsExporting(false);
     }
   };
 
@@ -488,6 +550,16 @@ const SystemSettingsPage: React.FC<{ onNavigate?: (id: string) => void }> = () =
               data-testid="button-refresh-manual-runs"
             >
               <RefreshCw size={14} /> Atualizar
+            </button>
+            <button
+              onClick={exportManualRunsCsv}
+              disabled={manualRunsExporting || manualRunsLoading}
+              className="text-xs bg-blue-600 hover:bg-blue-700 disabled:bg-blue-300 text-white px-2.5 py-1 rounded-lg flex items-center gap-1"
+              data-testid="button-export-manual-runs-csv"
+              title="Baixa todos os disparos manuais (respeita os filtros aplicados)"
+            >
+              {manualRunsExporting ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />}
+              Exportar CSV
             </button>
           </div>
         </div>
