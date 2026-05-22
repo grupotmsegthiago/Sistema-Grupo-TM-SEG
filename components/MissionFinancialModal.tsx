@@ -193,6 +193,11 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
   const [mission, setMission] = useState<Mission | null>(initialMission);
   const [clientTables, setClientTables] = useState<ClientPriceTable[]>([]);
   const [providerTables, setProviderTables] = useState<ProviderCostTable[]>([]);
+  // Lista de fornecedores (id, name, trading_name) para resolver apelidos
+  // razão social x nome fantasia (ex: ARMADA REAL vs CENTURIÃO - PE).
+  const [providersList, setProvidersList] = useState<Array<{ id: string; name: string; trading_name?: string | null }>>([]);
+  // Apelidos normalizados do fornecedor da OS atual (razão social + nome fantasia)
+  const [providerAliases, setProviderAliases] = useState<string[]>([]);
   const [clientData, setClientData] = useState<Client | undefined>(undefined);
   const [isLoading, setIsLoading] = useState(true);
   const [isUpdating, setIsUpdating] = useState(false);
@@ -641,14 +646,57 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
       dbValuesLoadedRef.current = false;
       setUseSavedValues(false);
       setIsLoading(true);
+      // Reseta apelidos do fornecedor para evitar carry-over de uma OS
+      // anterior caso a busca atual não encontre nenhum match.
+      setProvidersList([]);
+      setProviderAliases([]);
       try {
           const clientName = initialMission.originalClientName || initialMission.client;
           const ctShort = clientNameShort(clientName);
           const providerName = (initialMission.provider || '').trim();
-          let ptQuery = supabase.from('provider_cost_tables').select('*');
+          // Resolve apelidos do fornecedor (razão social x nome fantasia)
+          // ANTES de buscar tabelas de custo, para que cadastros sob qualquer
+          // dos dois nomes apareçam (ex: tabela cadastrada como CENTURIÃO
+          // sendo usada por OS que referencia ARMADA REAL).
+          let aliasesForQuery: string[] = [];
           if (providerName) {
-              // Usa só ilike — .or() quebra com vírgulas no valor (PGRST100).
-              // Pega o primeiro token significativo (>2 chars) para ampliar a busca.
+              const firstToken = providerName.split(/[\s,.\-\/]+/).find((w: string) => w.length > 2) || providerName;
+              const { data: provMatches } = await supabase
+                  .from('providers')
+                  .select('id, name, trading_name')
+                  .or(`name.ilike.%${firstToken}%,trading_name.ilike.%${firstToken}%`);
+              if (provMatches && provMatches.length > 0) {
+                  const normAlias = (s: string) => (s || '')
+                      .toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+                      .replace(/[.,\/&\-]/g, ' ').replace(/\s+/g, ' ').trim();
+                  const target = normAlias(providerName);
+                  // Filtra apenas o fornecedor cuja razão social OU nome fantasia
+                  // bate exatamente com o nome usado na OS, e coleta seus dois apelidos.
+                  const exact = provMatches.find((p: any) => normAlias(p.name) === target || normAlias(p.trading_name || '') === target);
+                  const picks = exact ? [exact] : provMatches;
+                  const set = new Set<string>();
+                  for (const p of picks as any[]) {
+                      if (p.name) set.add(p.name);
+                      if (p.trading_name) set.add(p.trading_name);
+                  }
+                  aliasesForQuery = Array.from(set);
+                  setProvidersList(picks as any);
+                  setProviderAliases(Array.from(set).map(normAlias));
+              }
+          }
+          // Monta a query de provider_cost_tables expandindo a busca para
+          // todos os apelidos do fornecedor.
+          let ptQuery = supabase.from('provider_cost_tables').select('*');
+          if (aliasesForQuery.length > 0) {
+              // Faz uma busca por OR de ilike em cada apelido (usa o primeiro
+              // token de cada para tolerar variações). Vírgulas em valores
+              // quebram .or() — então tokenizamos.
+              const tokens = aliasesForQuery
+                  .map(a => a.split(/[\s,.\-\/]+/).find((w: string) => w.length > 2) || a)
+                  .filter((v, i, arr) => arr.indexOf(v) === i);
+              const orExpr = tokens.map(t => `provider.ilike.%${t}%`).join(',');
+              if (orExpr) ptQuery = ptQuery.or(orExpr);
+          } else if (providerName) {
               const firstToken = providerName.split(/[\s,.\-\/]+/).find((w: string) => w.length > 2) || providerName;
               ptQuery = ptQuery.ilike('provider', `%${firstToken}%`);
           }
@@ -974,8 +1022,22 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
       if (!mission) return;
       const provName = (mission.provider || '').trim();
       let ptRefreshQuery = supabase.from('provider_cost_tables').select('*');
-      if (provName) {
-          ptRefreshQuery = ptRefreshQuery.or(`provider.ilike.%${provName}%,provider.eq.${provName}`);
+      // Usa apelidos (razão social + nome fantasia) se já resolvidos, para
+      // que tabelas cadastradas sob qualquer apelido sejam recarregadas.
+      const refreshAliases: string[] = [];
+      for (const p of providersList) {
+          if (p.name) refreshAliases.push(p.name);
+          if (p.trading_name) refreshAliases.push(p.trading_name);
+      }
+      if (refreshAliases.length > 0) {
+          const tokens = refreshAliases
+              .map(a => a.split(/[\s,.\-\/]+/).find((w: string) => w.length > 2) || a)
+              .filter((v, i, arr) => arr.indexOf(v) === i);
+          const orExpr = tokens.map(t => `provider.ilike.%${t}%`).join(',');
+          if (orExpr) ptRefreshQuery = ptRefreshQuery.or(orExpr);
+      } else if (provName) {
+          const firstToken = provName.split(/[\s,.\-\/]+/).find((w: string) => w.length > 2) || provName;
+          ptRefreshQuery = ptRefreshQuery.ilike('provider', `%${firstToken}%`);
       }
       const { data } = await ptRefreshQuery;
       if (data) {
@@ -1160,8 +1222,8 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
           customClientBase: customClientBase ? parseNumber(customClientBase) : undefined,
           customProviderBase: customProviderBase ? parseNumber(customProviderBase) : undefined,
           providerOpsOverride: providerOpsOverride
-      });
-  }, [mission, clientTables, providerTables, clientData, manualClientTableId, manualProviderTableId, iblEnabled, tollInput, customProviderKm, customProviderHour, customClientKm, customClientHour, customClientBase, customProviderBase, providerOpsOverride]);
+      }, providersList);
+  }, [mission, clientTables, providerTables, clientData, manualClientTableId, manualProviderTableId, iblEnabled, tollInput, customProviderKm, customProviderHour, customClientKm, customClientHour, customClientBase, customProviderBase, providerOpsOverride, providersList]);
 
     useEffect(() => {
       if (financialData && mission && !isLoading) {
@@ -2016,23 +2078,34 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
           .trim();
       const target = norm(mission.provider);
       if (!target) return providerTables;
-      // 1) match exato
-      const exact = providerTables.filter(t => norm(t.provider || '') === target);
+      // Conjunto de chaves aceitas: o nome da OS + todos os apelidos do
+      // fornecedor (razão social e nome fantasia).
+      const acceptedExact = new Set<string>([target, ...providerAliases]);
+      // 1) match exato (em qualquer apelido)
+      const exact = providerTables.filter(t => acceptedExact.has(norm(t.provider || '')));
       if (exact.length) return exact;
-      // 2) um contém o outro (mesmo padrão usado em lib/financialUtils.ts)
+      // 2) um contém o outro — testando contra o nome da OS e contra cada apelido
       const contains = providerTables.filter(t => {
           const tp = norm(t.provider || '');
-          return tp.length > 2 && (tp.includes(target) || target.includes(tp));
+          if (tp.length <= 2) return false;
+          if (tp.includes(target) || target.includes(tp)) return true;
+          for (const a of providerAliases) {
+              if (a.length > 2 && (tp.includes(a) || a.includes(tp))) return true;
+          }
+          return false;
       });
       if (contains.length) return contains;
       // 3) compartilha pelo menos uma palavra significativa (>2 chars)
-      const words = target.split(' ').filter(w => w.length > 2);
-      if (!words.length) return providerTables;
+      const allWords = new Set<string>();
+      [target, ...providerAliases].forEach(s => s.split(' ').filter(w => w.length > 2).forEach(w => allWords.add(w)));
+      if (allWords.size === 0) return providerTables;
       return providerTables.filter(t => {
           const tp = norm(t.provider || '');
-          return tp.length > 2 && words.some(w => tp.includes(w));
+          if (tp.length <= 2) return false;
+          for (const w of allWords) { if (tp.includes(w)) return true; }
+          return false;
       });
-  }, [providerTables, mission?.provider]);
+  }, [providerTables, mission?.provider, providerAliases]);
 
   const handleAiSuggest = async () => {
       if (!mission || aiLoading) return;

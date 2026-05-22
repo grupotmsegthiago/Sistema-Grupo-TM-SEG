@@ -314,6 +314,26 @@ export const calculateMissionFinancials = (
             providerTables = [...providerTables, ...autoRows];
         }
     }
+    // Resolução de apelidos (razão social x nome fantasia): a missão pode
+    // referenciar o fornecedor por qualquer um dos dois nomes, mas as
+    // tabelas de custo podem estar cadastradas sob o outro. Constrói o
+    // conjunto de apelidos normalizados a partir de providers e usa para
+    // expandir o casamento mais abaixo (procurar por providerAliasSet).
+    const providerAliasSet: Set<string> = new Set();
+    if (providers && providers.length > 0 && mission?.provider) {
+        const missionProvNorm = normalize(mission.provider);
+        const match = providers.find((p: any) => {
+            const n = normalize(p?.name || '');
+            const tn = normalize(p?.trading_name || '');
+            return (n && n === missionProvNorm) || (tn && tn === missionProvNorm);
+        });
+        if (match) {
+            const n = normalize(match.name || '');
+            const tn = normalize(match.trading_name || '');
+            if (n) providerAliasSet.add(n);
+            if (tn) providerAliasSet.add(tn);
+        }
+    }
     const isTerminalStatus = [MissionStatus.COMPLETED, MissionStatus.CANCELLED, MissionStatus.REFUSED].includes(mission.status as MissionStatus);
     const isFinished = mission.status === MissionStatus.COMPLETED;
     const isCancelled = mission.status === MissionStatus.CANCELLED;
@@ -737,7 +757,13 @@ export const calculateMissionFinancials = (
     // Task #55: separa a linha mestre (__AUTO_MASTER__) das tabelas regulares.
     // A mestre nunca participa do score; é consumida exclusivamente pelo motor auto.
     const providerTablesNoMaster = providerTables.filter(t => !isAutoMasterRow(t));
-    const autoMasterRows = providerTables.filter(t => normalize(t.provider) === missionProviderName && isAutoMasterRow(t));
+    const matchesProviderAlias = (tProv: string) => {
+        if (!tProv) return false;
+        if (tProv === missionProviderName) return true;
+        if (providerAliasSet.size > 0 && providerAliasSet.has(tProv)) return true;
+        return false;
+    };
+    const autoMasterRows = providerTables.filter(t => matchesProviderAlias(normalize(t.provider)) && isAutoMasterRow(t));
     const autoMasterConfig = extractAutoMasterConfig(autoMasterRows);
     // Task #55: motor automático é a fonte oficial quando ligado. NÃO depende de
     // manualTableOverrides.providerTableId — seleções manuais de tabela legada
@@ -749,11 +775,17 @@ export const calculateMissionFinancials = (
     // será sobrescrito por uma tabela sintética derivada da configuração mestre.
     let filteredProviderTables = autoEngineActive
         ? []
-        : providerTablesNoMaster.filter(t => normalize(t.provider) === missionProviderName);
+        : providerTablesNoMaster.filter(t => matchesProviderAlias(normalize(t.provider)));
     if (filteredProviderTables.length === 0 && missionProviderName.length > 2) {
          filteredProviderTables = providerTablesNoMaster.filter(t => {
             const tProv = normalize(t.provider);
-            return (tProv.includes(missionProviderName) || missionProviderName.includes(tProv)) && tProv.length > 2;
+            if (tProv.length <= 2) return false;
+            if (tProv.includes(missionProviderName) || missionProviderName.includes(tProv)) return true;
+            // Tenta também via apelidos (razão social x nome fantasia)
+            for (const alias of providerAliasSet) {
+                if (alias.length > 2 && (tProv.includes(alias) || alias.includes(tProv))) return true;
+            }
+            return false;
          });
     }
     if (filteredProviderTables.length === 0 && missionProviderName.length > 3) {
