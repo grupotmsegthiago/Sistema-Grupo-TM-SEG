@@ -17,6 +17,7 @@ import { useLoadScript, Autocomplete, GoogleMap, Marker } from '@react-google-ma
 import { googleMapsApiKey, libraries, googleMapsLoadConfig } from '../lib/maps';
 import { extractCoordinates, calculateDistance } from '../lib/utils';
 import DhlIntakeTimeline from './DhlIntakeTimeline';
+import TollConfirmationDialog from './TollConfirmationDialog';
 
 // Importação dos formulários para modo modal/cadastro rápido
 import ProviderForm from './ProviderForm';
@@ -65,6 +66,15 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
     
     const [isLoadingData, setIsLoadingData] = useState(false);
     const [isUpdating, setIsUpdating] = useState(false);
+    const [pendingTollConfirm, setPendingTollConfirm] = useState<{ kind: 'pre-save' } | null>(null);
+    const resumeSubmitRef = useRef<(() => void) | null>(null);
+    const tollConfirmedRef = useRef(false);
+
+    useEffect(() => {
+        tollConfirmedRef.current = false;
+        resumeSubmitRef.current = null;
+        setPendingTollConfirm(null);
+    }, [mission?.id, isOpen]);
     
     // Controle de Relógio em Tempo Real
     const [isEndTimeLocked, setIsEndTimeLocked] = useState(false);
@@ -842,6 +852,55 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
             }
         }
 
+        // GATE de pedágio (Task #45): precede QUALQUER persistência.
+        // Se esta submissão vai marcar a OS como Concluída e ainda não há
+        // confirmação explícita de pedágio (log TOLL_CONFIRMATION com
+        // valor casando com mission.toll_value), abrimos o dialog e
+        // suspendemos o submit. Após confirmação, persistimos toll_value
+        // e re-disparamos o submit para gravar status/dados juntos.
+        if (!tollConfirmedRef.current && !mission.billing_approved) {
+            const _sKm = parseNumber(editData.startKm);
+            const _eKm = parseNumber(editData.endKm);
+            const _hasStart = _sKm > 0 && editData.startDate && editData.startTime;
+            const _hasEnd = _eKm > 0 && _eKm >= _sKm && editData.endDate && editData.endTime;
+            let _fs = editData.status as MissionStatus;
+            const _isPending = _fs === MissionStatus.PENDING;
+            const _isInFlight = [MissionStatus.IN_TRANSIT, MissionStatus.ORIGIN].includes(_fs);
+            const _isExplicitRevert = isCompletedMission && canRevertStatus && _fs === MissionStatus.IN_TRANSIT;
+            if ((_isPending || _isInFlight) && _hasStart && _hasEnd && !_isExplicitRevert) _fs = MissionStatus.COMPLETED;
+            if (_fs === MissionStatus.COMPLETED && (!_hasStart || !_hasEnd)) _fs = MissionStatus.PENDING;
+            const willBeCompleted = _fs === MissionStatus.COMPLETED && mission.status !== MissionStatus.COMPLETED;
+            if (willBeCompleted) {
+                let alreadyConfirmed = false;
+                try {
+                    const { data: tollLogs } = await supabase
+                        .from('system_logs')
+                        .select('details')
+                        .eq('entity', 'MissionTollConfirmation')
+                        .eq('entity_id', mission.id)
+                        .order('created_at', { ascending: false })
+                        .limit(1);
+                    const log = tollLogs && tollLogs[0];
+                    if (log) {
+                        const parsed = typeof log.details === 'string' ? JSON.parse(log.details) : log.details;
+                        const loggedValue = Number(parsed?.value ?? 0);
+                        const dbValue = Number(mission.toll_value ?? 0);
+                        if (Math.abs(loggedValue - dbValue) < 0.01) alreadyConfirmed = true;
+                    }
+                } catch (lookupErr) {
+                    console.error('[TollConfirm] lookup falhou', lookupErr);
+                }
+                if (!alreadyConfirmed) {
+                    resumeSubmitRef.current = () => {
+                        tollConfirmedRef.current = true;
+                        handleUpdateSubmit({ preventDefault: () => {} } as React.FormEvent);
+                    };
+                    setPendingTollConfirm({ kind: 'pre-save' });
+                    return;
+                }
+            }
+        }
+
         setIsUpdating(true);
         try {
             const finalDescription = editData.description.trim().toUpperCase();
@@ -1257,8 +1316,28 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
             }
 
             setEditData(prev => ({ ...prev, currentLocationName: '', mapLink: '' }));
+
             onSuccess(report);
         } catch (error: any) { alert(error.message); } finally { setIsUpdating(false); }
+    };
+
+    const handleTollConfirmedAfterCompletion = async (result: { hasToll: boolean; value: number }) => {
+        if (!mission) return;
+        const v = result.hasToll ? result.value : 0;
+        // Persistência é OBRIGATÓRIA: se falhar, propaga o erro para o
+        // dialog (mantém aberto). Em sucesso, re-dispara o submit que
+        // estava suspenso (toll_value já gravado, status agora pode ir
+        // junto). Task #45.
+        const { error } = await supabase.from('missions').update({ toll_value: v }).eq('id', mission.id);
+        if (error) {
+            console.error('[TollConfirm] persistência falhou', error);
+            throw new Error('Não foi possível salvar o pedágio confirmado. Tente novamente.');
+        }
+        mission.toll_value = v;
+        const resume = resumeSubmitRef.current;
+        resumeSubmitRef.current = null;
+        setPendingTollConfirm(null);
+        if (resume) resume();
     };
 
     const filteredProviders = providersList.filter(p => p.name.toLowerCase().includes(searchProvider.toLowerCase()));
@@ -2314,6 +2393,13 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
                 </form>
             )}
           </div>
+          <TollConfirmationDialog
+            isOpen={!!pendingTollConfirm}
+            mission={mission}
+            source="completion"
+            allowClose={false}
+            onConfirm={handleTollConfirmedAfterCompletion}
+          />
         </div>
     );
 };

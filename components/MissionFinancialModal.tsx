@@ -11,6 +11,7 @@ import { X, Calculator, Loader2, Save, CheckCircle2, TrendingUp, Landmark, Zap, 
 import { suggestPriceTable } from '../lib/gemini';
 import ProviderCostForm from './ProviderCostForm';
 import ClientPriceForm from './ClientPriceForm';
+import TollConfirmationDialog from './TollConfirmationDialog';
 import { formatProviderName } from '../lib/utils';
 import html2canvas from 'html2canvas';
 
@@ -225,6 +226,8 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
   const [editClientTableId, setEditClientTableId] = useState<string | null>(null);
   const [memoryLoaded, setMemoryLoaded] = useState(false);
   const [tollConfirmed, setTollConfirmed] = useState(false);
+  const [showTollConfirmDialog, setShowTollConfirmDialog] = useState(false);
+  const [tollConfirmAutoOpened, setTollConfirmAutoOpened] = useState(false);
   const [isCalculatingToll, setIsCalculatingToll] = useState(false);
   const [tollEmbeddedInCost, setTollEmbeddedInCost] = useState(false);
   const [approvalLog, setApprovalLog] = useState<Array<{user: string; role: string; stage: string; date: string}>>([]);
@@ -319,9 +322,47 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
   // a qualquer momento. O sistema registra cada alteração no histórico permanente.
   const isAdminFullAccess = userRoleLower === 'administrador' || fullEditMode || isPlinio;
   const [unlockOverride, setUnlockOverride] = useState(false);
-  useEffect(() => { setUnlockOverride(false); setEditObservation(''); setFullEditMode(false); }, [mission?.id]);
-  useEffect(() => { if (!isOpen) { setFullEditMode(false); setUnlockOverride(false); setEditObservation(''); } }, [isOpen]);
+  useEffect(() => { setUnlockOverride(false); setEditObservation(''); setFullEditMode(false); setTollConfirmAutoOpened(false); }, [mission?.id]);
+  useEffect(() => { if (!isOpen) { setFullEditMode(false); setUnlockOverride(false); setEditObservation(''); setShowTollConfirmDialog(false); setTollConfirmAutoOpened(false); } }, [isOpen]);
   const isEffectivelyLocked = isBillingLocked && !unlockOverride && !isAdminFullAccess;
+
+  // Confirmação obrigatória de pedágio: ao abrir o modal sem pedágio confirmado,
+  // exige resposta explícita do operador (Sim com valor / Não, sem pedágio).
+  // Não dispara para faturamentos já aprovados/travados nem para Controller.
+  useEffect(() => {
+    if (!isOpen || !mission || isController) return;
+    if (isEffectivelyLocked) return;
+    if (tollConfirmed || tollConfirmAutoOpened || showTollConfirmDialog) return;
+    if (isCalculatingToll) return;
+    const hasApprovedToll = !!mission.billing_approved && mission.toll_value != null;
+    if (hasApprovedToll) return;
+    const t = setTimeout(() => {
+      setShowTollConfirmDialog(true);
+      setTollConfirmAutoOpened(true);
+    }, 600);
+    return () => clearTimeout(t);
+  }, [isOpen, mission?.id, tollConfirmed, tollConfirmAutoOpened, showTollConfirmDialog, isCalculatingToll, isController, isEffectivelyLocked, mission?.billing_approved, mission?.toll_value]);
+
+  const applyTollConfirmation = (result: { hasToll: boolean; value: number }) => {
+    const v = result.hasToll ? result.value : 0;
+    const formatted = v.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    const prevToll = parseNumber(tollInput);
+    const prevTollProv = parseNumber(tollProviderInput);
+    setTollInput(formatted);
+    if (prevTollProv <= 0 || prevTollProv === prevToll) {
+        setTollProviderInput(formatted);
+        const currentCost = parseNumber(costInput);
+        const updatedCost = currentCost - prevTollProv + v;
+        setCostInput(updatedCost.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
+    }
+    const currentRev = parseNumber(revenueInput);
+    const updatedRev = currentRev - prevToll + v;
+    setRevenueInput(updatedRev.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
+    setTollConfirmed(true);
+    setTollSource(result.hasToll ? `CONFIRMADO (R$ ${formatted})` : 'CONFIRMADO SEM PEDÁGIO');
+    setShowTollConfirmDialog(false);
+  };
+
   
 
   const tollCalcMissionRef = React.useRef<string | null>(null);
@@ -503,7 +544,8 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
              setTollSource(dbToll === 0 ? 'VALOR SALVO (R$ 0,00)' : 'VALOR SALVO');
              setTollInput(dbToll.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
              setTollProviderInput(dbTollProv.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
-             setTollConfirmed(true);
+             // Não marca como confirmado automaticamente: a confirmação explícita
+             // (TOLL_CONFIRMATION em system_logs) é carregada em useEffect próprio.
           } else {
              setSuggestedToll(0);
              setTollInput('0,00');
@@ -712,8 +754,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
               if (mRes.data.is_same_os) {
                   setTollInput(dbToll.toLocaleString('pt-BR', {minimumFractionDigits: 2, maximumFractionDigits: 2}));
                   setTollProviderInput('0,00');
-                  setTollConfirmed(true);
-                  setTollSource(dbToll === 0 ? 'MESMA OS (R$ 0,00)' : 'MESMA OS');
+                  setTollSource(dbToll === 0 ? 'MESMA OS (R$ 0,00) — confirmar' : 'MESMA OS — confirmar');
               } else if (mRes.data.billing_approved) {
                   setTollInput(dbToll.toLocaleString('pt-BR', {minimumFractionDigits: 2, maximumFractionDigits: 2}));
                   setTollProviderInput(dbTollProvider.toLocaleString('pt-BR', {minimumFractionDigits: 2, maximumFractionDigits: 2}));
@@ -722,8 +763,9 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
               } else if (hasSavedData || dbToll > 0) {
                   setTollInput(dbToll.toLocaleString('pt-BR', {minimumFractionDigits: 2, maximumFractionDigits: 2}));
                   setTollProviderInput(dbTollProvider.toLocaleString('pt-BR', {minimumFractionDigits: 2, maximumFractionDigits: 2}));
-                  setTollConfirmed(true);
-                  setTollSource(dbToll === 0 ? 'VALOR SALVO (R$ 0,00)' : 'VALOR SALVO');
+                  // Não marca confirmado automaticamente: depende de TOLL_CONFIRMATION
+                  // explícito em system_logs (carregado abaixo) ou nova confirmação via dialog.
+                  setTollSource(dbToll === 0 ? 'VALOR SALVO (R$ 0,00) — confirmação pendente' : 'VALOR SALVO — confirmação pendente');
               } else {
                   setTollInput('0,00');
                   setTollProviderInput('0,00');
@@ -764,11 +806,31 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
               
               fetchHistoricalPatterns(fullMission, (ptRes.data || []) as ProviderCostTable[]);
 
-              const [approvalRes, adjustmentRes, editHistRes] = await Promise.all([
+              const [approvalRes, adjustmentRes, editHistRes, tollConfRes] = await Promise.all([
                   supabase.from('system_logs').select('*').eq('entity', 'BillingApproval').eq('entity_id', initialMission.id).order('created_at', { ascending: true }),
                   supabase.from('system_logs').select('*').eq('entity', 'BillingAdjustment').eq('entity_id', initialMission.id).order('created_at', { ascending: false }).limit(1),
-                  supabase.from('system_logs').select('*').eq('entity', 'MissionEditHistory').eq('entity_id', initialMission.id).order('created_at', { ascending: false })
+                  supabase.from('system_logs').select('*').eq('entity', 'MissionEditHistory').eq('entity_id', initialMission.id).order('created_at', { ascending: false }),
+                  supabase.from('system_logs').select('details, created_at, user_name').eq('entity', 'MissionTollConfirmation').eq('entity_id', initialMission.id).order('created_at', { ascending: false }).limit(1)
               ]);
+
+              // Task #45: confirmação explícita de pedágio é restaurada apenas
+              // se houver TOLL_CONFIRMATION em system_logs casando com o valor
+              // atual da OS. Mudança de toll_value invalida a confirmação
+              // antiga e força nova resposta Sim/Não no dialog.
+              if (!mRes.data.billing_approved && !mRes.data.is_same_os) {
+                  const tollLog = tollConfRes.data && tollConfRes.data[0];
+                  if (tollLog) {
+                      try {
+                          const parsed = typeof tollLog.details === 'string' ? JSON.parse(tollLog.details) : tollLog.details;
+                          const loggedValue = Number(parsed?.value ?? 0);
+                          const dbValue = Number(mRes.data.toll_value ?? 0);
+                          if (Math.abs(loggedValue - dbValue) < 0.01) {
+                              setTollConfirmed(true);
+                              setTollSource(`CONFIRMADO por ${tollLog.user_name || parsed?.user || 'usuário'}`);
+                          }
+                      } catch {}
+                  }
+              }
 
               if (editHistRes.data && editHistRes.data.length > 0) {
                   const hist = editHistRes.data.map((l: any) => {
@@ -1172,8 +1234,10 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
       const oldToll = parseNumber(tollInput);
       const newToll = parseNumber(val);
       setTollInput(val);
-      setTollSource('MANUAL (Editando...)');
-      setTollConfirmed(true);
+      setTollSource('MANUAL (Editando — confirme abaixo)');
+      // Edição manual NÃO conta como confirmação explícita: o usuário precisa
+      // responder Sim/Não no dialog para liberar a aprovação (Task #45).
+      setTollConfirmed(false);
       if (!userManuallyEditedRef.current) {
           const currentRev = parseNumber(revenueInput);
           const updatedRev = currentRev - oldToll + newToll;
@@ -1193,8 +1257,9 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
       const oldTollProv = parseNumber(tollProviderInput);
       const newTollProv = parseNumber(val);
       setTollProviderInput(val);
-      setTollSource('MANUAL (Editando...)');
-      setTollConfirmed(true);
+      setTollSource('MANUAL (Editando — confirme abaixo)');
+      // Edição manual NÃO conta como confirmação (Task #45).
+      setTollConfirmed(false);
       const currentCost = parseNumber(costInput);
       const updatedCost = currentCost - oldTollProv + newTollProv;
       setCostInput(updatedCost.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
@@ -1421,6 +1486,44 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
       if (currentApprovalStatus.lockedByDiretoria) {
           showNotification('Bloqueado', 'Esta OS foi aprovada pela Diretoria. Somente a Diretoria pode editar.', 'error');
           return;
+      }
+      // Gate de pedágio (Task #45): a aprovação requer confirmação manual
+      // explícita, mesmo para reaprovação privilegiada ou OS bloqueada.
+      // Confirma cruzando com system_logs (TOLL_CONFIRMATION) e o valor
+      // do input atual, sem confiar apenas em estado local.
+      if (approve && !mission.billing_approved) {
+          if (!tollConfirmed) {
+              setShowTollConfirmDialog(true);
+              showNotification('Pedágio Não Confirmado', 'Confirme se há ou não pedágio antes de aprovar.', 'error');
+              return;
+          }
+          try {
+              const inputToll = parseNumber(tollInput);
+              const { data: tollLogs } = await supabase
+                  .from('system_logs')
+                  .select('details')
+                  .eq('entity', 'MissionTollConfirmation')
+                  .eq('entity_id', mission.id)
+                  .order('created_at', { ascending: false })
+                  .limit(1);
+              const log = tollLogs && tollLogs[0];
+              let matched = false;
+              if (log) {
+                  const parsed = typeof log.details === 'string' ? JSON.parse(log.details) : log.details;
+                  const loggedValue = Number(parsed?.value ?? 0);
+                  if (Math.abs(loggedValue - inputToll) < 0.01) matched = true;
+              }
+              if (!matched) {
+                  setTollConfirmed(false);
+                  setShowTollConfirmDialog(true);
+                  showNotification('Pedágio Não Confirmado', 'O valor exibido não corresponde à última confirmação registrada. Confirme novamente.', 'error');
+                  return;
+              }
+          } catch (e) {
+              console.error('[TollConfirm] verificação pré-aprovação falhou', e);
+              showNotification('Erro', 'Não foi possível validar a confirmação de pedágio. Tente novamente.', 'error');
+              return;
+          }
       }
 
       const originalRevenue = (mission.revenue_value || 0) + (mission.toll_value || 0);
@@ -3201,11 +3304,22 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                     </div>
                                 )}
                                 {!isCalculatingToll && !tollConfirmed && (
-                                    <button 
-                                        onClick={() => { setTollConfirmed(true); setTollSource(`CONFERIDO (R$ ${tollInput})`); }}
+                                    <button
+                                        onClick={() => setShowTollConfirmDialog(true)}
                                         className="flex items-center gap-1.5 text-[10px] font-black text-white bg-orange-500 hover:bg-orange-600 px-3 py-1.5 rounded-lg border border-orange-600 animate-pulse cursor-pointer transition-colors"
+                                        data-testid="button-open-toll-confirmation"
                                     >
                                         <AlertTriangle size={12}/> CONFIRMAR PEDÁGIO
+                                    </button>
+                                )}
+                                {!isCalculatingToll && tollConfirmed && !isEffectivelyLocked && (
+                                    <button
+                                        onClick={() => setShowTollConfirmDialog(true)}
+                                        className="flex items-center gap-1.5 text-[10px] font-black text-indigo-700 hover:text-indigo-900 px-2 py-1 rounded-lg border border-indigo-200 hover:bg-indigo-50"
+                                        data-testid="button-reconfirm-toll"
+                                        title="Reconfirmar / ver histórico de pedágio"
+                                    >
+                                        <History size={12}/> HISTÓRICO
                                     </button>
                                 )}
                             </div>
@@ -3766,8 +3880,8 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                 </button>
                                 <button 
                                     onClick={() => handleUpdate(true)} 
-                                    disabled={isUpdating || (!currentApprovalStatus.isPrivilegedReapprover && (isZeroCostError || !tollConfirmed || (mission?.status === MissionStatus.PENDING && currentApprovalStatus.currentUserStage !== 'diretoria') || currentApprovalStatus.blockedForCurrentUser || currentApprovalStatus.lockedByDiretoria))} 
-                                    className={`px-8 py-3 rounded-xl font-black uppercase text-xs shadow-lg flex flex-col items-center justify-center gap-1 transition-all active:scale-95 min-h-[48px] ${currentApprovalStatus.isPrivilegedReapprover ? 'bg-blue-600 hover:bg-blue-700 text-white shadow-blue-200' : (isZeroCostError || !tollConfirmed || (mission?.status === MissionStatus.PENDING && currentApprovalStatus.currentUserStage !== 'diretoria')) ? 'bg-gray-400 cursor-not-allowed text-gray-200' : (currentApprovalStatus.blockedForCurrentUser || currentApprovalStatus.lockedByDiretoria) ? 'bg-amber-50 border-2 border-amber-400 text-amber-800 cursor-not-allowed shadow-amber-100' : currentApprovalStatus.hasPartial ? 'bg-gray-300 text-gray-600 border border-gray-400 cursor-pointer hover:bg-gray-400' : 'bg-blue-600 hover:bg-blue-700 text-white shadow-blue-200'}`}
+                                    disabled={isUpdating || !tollConfirmed || (!currentApprovalStatus.isPrivilegedReapprover && (isZeroCostError || (mission?.status === MissionStatus.PENDING && currentApprovalStatus.currentUserStage !== 'diretoria') || currentApprovalStatus.blockedForCurrentUser || currentApprovalStatus.lockedByDiretoria))} 
+                                    className={`px-8 py-3 rounded-xl font-black uppercase text-xs shadow-lg flex flex-col items-center justify-center gap-1 transition-all active:scale-95 min-h-[48px] ${!tollConfirmed ? 'bg-gray-400 cursor-not-allowed text-gray-200' : currentApprovalStatus.isPrivilegedReapprover ? 'bg-blue-600 hover:bg-blue-700 text-white shadow-blue-200' : (isZeroCostError || (mission?.status === MissionStatus.PENDING && currentApprovalStatus.currentUserStage !== 'diretoria')) ? 'bg-gray-400 cursor-not-allowed text-gray-200' : (currentApprovalStatus.blockedForCurrentUser || currentApprovalStatus.lockedByDiretoria) ? 'bg-amber-50 border-2 border-amber-400 text-amber-800 cursor-not-allowed shadow-amber-100' : currentApprovalStatus.hasPartial ? 'bg-gray-300 text-gray-600 border border-gray-400 cursor-pointer hover:bg-gray-400' : 'bg-blue-600 hover:bg-blue-700 text-white shadow-blue-200'}`}
                                     data-testid="button-approve-billing"
                                 >
                                     <span className="flex items-center gap-2">
@@ -3805,6 +3919,15 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
             )}
         </div>
       </div>
+      <TollConfirmationDialog
+        isOpen={showTollConfirmDialog}
+        mission={mission}
+        initialValue={tollInput}
+        source="financial_modal"
+        allowClose={tollConfirmed}
+        onClose={() => setShowTollConfirmDialog(false)}
+        onConfirm={applyTollConfirmation}
+      />
     </div>
   );
 };
