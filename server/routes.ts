@@ -5540,7 +5540,63 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
     }
   });
 
-  const LEGAL_EMAIL_TO = 'thiago@grupotmseg.com.br';
+  // ═══════════════════════════════════════════════════════
+  // Task #76 — Configurações dos relatórios diários
+  // Centralizadas em system_settings/key=daily_reports (auditadas em system_logs).
+  // Defaults preservam destinatários/horários originais para retrocompatibilidade.
+  // ═══════════════════════════════════════════════════════
+  const DAILY_REPORTS_SETTINGS_KEY = 'daily_reports';
+  type ReportSchedule = { emails: string; hour: number; minute: number };
+  type DailyReportsSettings = {
+    legal: ReportSchedule;
+    pending: ReportSchedule;
+    approval: ReportSchedule;
+    missingInfo: ReportSchedule;
+    stuckNf: ReportSchedule;
+  };
+  const DAILY_REPORTS_DEFAULTS: DailyReportsSettings = {
+    legal:       { emails: 'thiago@grupotmseg.com.br', hour: 7, minute: 0 },
+    pending:     { emails: 'michelle@grupotmseg.com.br', hour: 7, minute: 30 },
+    approval:    { emails: 'daniel@grupotmseg.com.br', hour: 7, minute: 30 },
+    missingInfo: { emails: 'barbara@grupotmseg.com.br, michelle@grupotmseg.com.br, thiago@grupotmseg.com.br, daniel@grupotmseg.com.br', hour: 8, minute: 0 },
+    stuckNf:     { emails: 'thiago@grupotmseg.com.br, michelle@grupotmseg.com.br, daniel@grupotmseg.com.br', hour: 9, minute: 0 },
+  };
+  const sanitizeReportSchedule = (raw: any, def: ReportSchedule): ReportSchedule => ({
+    emails: typeof raw?.emails === 'string' && raw.emails.trim() ? raw.emails.trim() : def.emails,
+    hour:   Math.max(0, Math.min(23, Number.isFinite(Number(raw?.hour)) ? Number(raw.hour) : def.hour)),
+    minute: Math.max(0, Math.min(59, Number.isFinite(Number(raw?.minute)) ? Number(raw.minute) : def.minute)),
+  });
+  const sanitizeDailyReportsSettings = (raw: any): DailyReportsSettings => ({
+    legal:       sanitizeReportSchedule(raw?.legal,       DAILY_REPORTS_DEFAULTS.legal),
+    pending:     sanitizeReportSchedule(raw?.pending,     DAILY_REPORTS_DEFAULTS.pending),
+    approval:    sanitizeReportSchedule(raw?.approval,    DAILY_REPORTS_DEFAULTS.approval),
+    missingInfo: sanitizeReportSchedule(raw?.missingInfo, DAILY_REPORTS_DEFAULTS.missingInfo),
+    stuckNf:     sanitizeReportSchedule(raw?.stuckNf,     DAILY_REPORTS_DEFAULTS.stuckNf),
+  });
+  let dailyReportsCache: { value: DailyReportsSettings; expiresAt: number } | null = null;
+  const DAILY_REPORTS_CACHE_TTL = 60 * 1000;
+  const loadDailyReportsSettings = async (): Promise<DailyReportsSettings> => {
+    if (dailyReportsCache && dailyReportsCache.expiresAt > Date.now()) return dailyReportsCache.value;
+    try {
+      const { data, error } = await supabase
+        .from('system_settings')
+        .select('value')
+        .eq('key', DAILY_REPORTS_SETTINGS_KEY)
+        .maybeSingle();
+      const value = (error || !data?.value)
+        ? { ...DAILY_REPORTS_DEFAULTS }
+        : sanitizeDailyReportsSettings(typeof data.value === 'string' ? JSON.parse(data.value) : data.value);
+      dailyReportsCache = { value, expiresAt: Date.now() + DAILY_REPORTS_CACHE_TTL };
+      return value;
+    } catch {
+      const value = { ...DAILY_REPORTS_DEFAULTS };
+      dailyReportsCache = { value, expiresAt: Date.now() + DAILY_REPORTS_CACHE_TTL };
+      return value;
+    }
+  };
+  const invalidateDailyReportsCache = () => { dailyReportsCache = null; };
+
+  const getLegalEmail = async () => (await loadDailyReportsSettings()).legal.emails;
 
   async function runDailyLegalSearch(): Promise<{ total: number; processos: any[] }> {
     if (!DATAJUD_API_KEY) {
@@ -5622,13 +5678,14 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
 
   async function executeDailyLegalReport() {
     try {
+      const emails = await getLegalEmail();
       const { processos } = await runDailyLegalSearch();
       const searchDate = new Date().toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' });
-      const sent = await sendLegalReportEmail(LEGAL_EMAIL_TO, processos, searchDate);
+      const sent = await sendLegalReportEmail(emails, processos, searchDate);
       if (sent) {
-        console.log(`[Jurídico Diário] Relatório enviado com sucesso para ${LEGAL_EMAIL_TO}`);
+        console.log(`[Jurídico Diário] Relatório enviado com sucesso para ${emails}`);
       } else {
-        console.error(`[Jurídico Diário] Falha ao enviar relatório para ${LEGAL_EMAIL_TO}`);
+        console.error(`[Jurídico Diário] Falha ao enviar relatório para ${emails}`);
       }
     } catch (err: any) {
       console.error(`[Jurídico Diário] Erro fatal:`, err.message);
@@ -5636,36 +5693,32 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
   }
 
   function scheduleDailyLegalReport() {
-    const checkInterval = () => {
-      const now = new Date();
-      const brasiliaTime = new Date(now.toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' }));
-      const hour = brasiliaTime.getHours();
-      const minute = brasiliaTime.getMinutes();
-
-      if (hour === 7 && minute === 0) {
+    const checkInterval = async () => {
+      const cfg = (await loadDailyReportsSettings()).legal;
+      const brasiliaTime = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' }));
+      if (brasiliaTime.getHours() === cfg.hour && brasiliaTime.getMinutes() === cfg.minute) {
         executeDailyLegalReport();
       }
     };
 
     setInterval(checkInterval, 60 * 1000);
-    console.log('[Jurídico Diário] Agendamento ativo — relatório será enviado todos os dias às 07:00 (Brasília) para ' + LEGAL_EMAIL_TO);
+    console.log('[Jurídico Diário] Agendamento ativo — horário e destinatários lidos de system_settings (daily_reports.legal).');
   }
 
   scheduleDailyLegalReport();
 
   app.post("/api/datajud/relatorio-diario", requireAuth, requireRole('administrador', 'diretoria'), async (_req: Request, res: Response) => {
     try {
+      const emails = await getLegalEmail();
       const { processos, total } = await runDailyLegalSearch();
       const searchDate = new Date().toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' });
-      const sent = await sendLegalReportEmail(LEGAL_EMAIL_TO, processos, searchDate);
-      res.json({ success: sent, total, emailTo: LEGAL_EMAIL_TO, date: searchDate });
+      const sent = await sendLegalReportEmail(emails, processos, searchDate);
+      res.json({ success: sent, total, emailTo: emails, date: searchDate });
     } catch (err: any) {
       console.error('[Jurídico Diário] Erro manual:', err.message);
       res.status(500).json({ error: err.message });
     }
   });
-
-  const PENDING_REPORT_EMAIL = 'michelle@grupotmseg.com.br';
 
   async function findCompletedMissionsWithPendingInfo(): Promise<any[]> {
     const allMissions: any[] = [];
@@ -5703,16 +5756,17 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
     const now = new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' });
     console.log(`[Pendências Diário] Iniciando busca — ${now}`);
     try {
+      const emails = (await loadDailyReportsSettings()).pending.emails;
       const pendingMissions = await findCompletedMissionsWithPendingInfo();
       console.log(`[Pendências Diário] ${pendingMissions.length} OS concluídas com pendências encontradas`);
 
       const reportDate = new Date().toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' });
       if (pendingMissions.length > 0) {
-        const sent = await sendPendingInfoReport(PENDING_REPORT_EMAIL, pendingMissions, reportDate);
+        const sent = await sendPendingInfoReport(emails, pendingMissions, reportDate);
         if (sent) {
-          console.log(`[Pendências Diário] Relatório enviado com sucesso para ${PENDING_REPORT_EMAIL}`);
+          console.log(`[Pendências Diário] Relatório enviado com sucesso para ${emails}`);
         } else {
-          console.error(`[Pendências Diário] Falha ao enviar relatório para ${PENDING_REPORT_EMAIL}`);
+          console.error(`[Pendências Diário] Falha ao enviar relatório para ${emails}`);
         }
       } else {
         console.log(`[Pendências Diário] Nenhuma OS com pendências — email não enviado.`);
@@ -5723,36 +5777,32 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
   }
 
   function scheduleDailyPendingReport() {
-    const checkInterval = () => {
-      const now = new Date();
-      const brasiliaTime = new Date(now.toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' }));
-      const hour = brasiliaTime.getHours();
-      const minute = brasiliaTime.getMinutes();
-
-      if (hour === 7 && minute === 30) {
+    const checkInterval = async () => {
+      const cfg = (await loadDailyReportsSettings()).pending;
+      const brasiliaTime = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' }));
+      if (brasiliaTime.getHours() === cfg.hour && brasiliaTime.getMinutes() === cfg.minute) {
         executeDailyPendingReport();
       }
     };
 
     setInterval(checkInterval, 60 * 1000);
-    console.log(`[Pendências Diário] Agendamento ativo — relatório será enviado todos os dias às 07:30 (Brasília) para ${PENDING_REPORT_EMAIL}`);
+    console.log(`[Pendências Diário] Agendamento ativo — horário e destinatários lidos de system_settings (daily_reports.pending).`);
   }
 
   scheduleDailyPendingReport();
 
   app.post("/api/relatorio-pendencias", requireAuth, requireRole('administrador', 'diretoria'), async (_req: Request, res: Response) => {
     try {
+      const emails = (await loadDailyReportsSettings()).pending.emails;
       const pendingMissions = await findCompletedMissionsWithPendingInfo();
       const reportDate = new Date().toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' });
-      const sent = await sendPendingInfoReport(PENDING_REPORT_EMAIL, pendingMissions, reportDate);
-      res.json({ success: sent, total: pendingMissions.length, emailTo: PENDING_REPORT_EMAIL, date: reportDate });
+      const sent = await sendPendingInfoReport(emails, pendingMissions, reportDate);
+      res.json({ success: sent, total: pendingMissions.length, emailTo: emails, date: reportDate });
     } catch (err: any) {
       console.error('[Pendências] Erro manual:', err.message);
       res.status(500).json({ error: err.message });
     }
   });
-
-  const APPROVAL_REPORT_EMAIL = 'daniel@grupotmseg.com.br';
 
   async function findMissionsPendingApproval(): Promise<any[]> {
     const allMissions: any[] = [];
@@ -5777,16 +5827,17 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
     const now = new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' });
     console.log(`[Aprovações Diário] Iniciando busca — ${now}`);
     try {
+      const emails = (await loadDailyReportsSettings()).approval.emails;
       const pendingApproval = await findMissionsPendingApproval();
       console.log(`[Aprovações Diário] ${pendingApproval.length} OS pendentes de aprovação`);
 
       const reportDate = new Date().toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' });
       if (pendingApproval.length > 0) {
-        const sent = await sendApprovalPendingReport(APPROVAL_REPORT_EMAIL, pendingApproval, reportDate);
+        const sent = await sendApprovalPendingReport(emails, pendingApproval, reportDate);
         if (sent) {
-          console.log(`[Aprovações Diário] Relatório enviado para ${APPROVAL_REPORT_EMAIL}`);
+          console.log(`[Aprovações Diário] Relatório enviado para ${emails}`);
         } else {
-          console.error(`[Aprovações Diário] Falha ao enviar para ${APPROVAL_REPORT_EMAIL}`);
+          console.error(`[Aprovações Diário] Falha ao enviar para ${emails}`);
         }
       } else {
         console.log(`[Aprovações Diário] Nenhuma OS pendente — email não enviado.`);
@@ -5797,36 +5848,32 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
   }
 
   function scheduleDailyApprovalReport() {
-    const checkInterval = () => {
-      const now = new Date();
-      const brasiliaTime = new Date(now.toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' }));
-      const hour = brasiliaTime.getHours();
-      const minute = brasiliaTime.getMinutes();
-
-      if (hour === 7 && minute === 30) {
+    const checkInterval = async () => {
+      const cfg = (await loadDailyReportsSettings()).approval;
+      const brasiliaTime = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' }));
+      if (brasiliaTime.getHours() === cfg.hour && brasiliaTime.getMinutes() === cfg.minute) {
         executeDailyApprovalReport();
       }
     };
 
     setInterval(checkInterval, 60 * 1000);
-    console.log(`[Aprovações Diário] Agendamento ativo — relatório será enviado todos os dias às 07:30 (Brasília) para ${APPROVAL_REPORT_EMAIL}`);
+    console.log(`[Aprovações Diário] Agendamento ativo — horário e destinatários lidos de system_settings (daily_reports.approval).`);
   }
 
   scheduleDailyApprovalReport();
 
   app.post("/api/relatorio-aprovacoes", requireAuth, requireRole('administrador', 'diretoria'), async (_req: Request, res: Response) => {
     try {
+      const emails = (await loadDailyReportsSettings()).approval.emails;
       const pendingApproval = await findMissionsPendingApproval();
       const reportDate = new Date().toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' });
-      const sent = await sendApprovalPendingReport(APPROVAL_REPORT_EMAIL, pendingApproval, reportDate);
-      res.json({ success: sent, total: pendingApproval.length, emailTo: APPROVAL_REPORT_EMAIL, date: reportDate });
+      const sent = await sendApprovalPendingReport(emails, pendingApproval, reportDate);
+      res.json({ success: sent, total: pendingApproval.length, emailTo: emails, date: reportDate });
     } catch (err: any) {
       console.error('[Aprovações] Erro manual:', err.message);
       res.status(500).json({ error: err.message });
     }
   });
-
-  const MISSING_INFO_REPORT_EMAILS = 'barbara@grupotmseg.com.br, michelle@grupotmseg.com.br, thiago@grupotmseg.com.br, daniel@grupotmseg.com.br';
 
   async function findAllMissionsWithMissingInfo(): Promise<any[]> {
     const allMissions: any[] = [];
@@ -5865,14 +5912,15 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
     const now = new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' });
     console.log(`[Dados Faltantes Diário] Iniciando busca — ${now}`);
     try {
+      const emails = (await loadDailyReportsSettings()).missingInfo.emails;
       const missions = await findAllMissionsWithMissingInfo();
       console.log(`[Dados Faltantes Diário] ${missions.length} OS com dados faltantes encontradas`);
 
       const reportDate = new Date().toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' });
       if (missions.length > 0) {
-        const sent = await sendDailyMissingInfoReport(MISSING_INFO_REPORT_EMAILS, missions, reportDate);
+        const sent = await sendDailyMissingInfoReport(emails, missions, reportDate);
         if (sent) {
-          console.log(`[Dados Faltantes Diário] Relatório enviado para ${MISSING_INFO_REPORT_EMAILS}`);
+          console.log(`[Dados Faltantes Diário] Relatório enviado para ${emails}`);
         } else {
           console.error(`[Dados Faltantes Diário] Falha ao enviar relatório`);
         }
@@ -5885,29 +5933,27 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
   }
 
   function scheduleDailyMissingInfoReport() {
-    const checkInterval = () => {
-      const now = new Date();
-      const brasiliaTime = new Date(now.toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' }));
-      const hour = brasiliaTime.getHours();
-      const minute = brasiliaTime.getMinutes();
-
-      if (hour === 8 && minute === 0) {
+    const checkInterval = async () => {
+      const cfg = (await loadDailyReportsSettings()).missingInfo;
+      const brasiliaTime = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' }));
+      if (brasiliaTime.getHours() === cfg.hour && brasiliaTime.getMinutes() === cfg.minute) {
         executeDailyMissingInfoReport();
       }
     };
 
     setInterval(checkInterval, 60 * 1000);
-    console.log(`[Dados Faltantes Diário] Agendamento ativo — relatório será enviado todos os dias às 08:00 (Brasília) para ${MISSING_INFO_REPORT_EMAILS}`);
+    console.log(`[Dados Faltantes Diário] Agendamento ativo — horário e destinatários lidos de system_settings (daily_reports.missingInfo).`);
   }
 
   scheduleDailyMissingInfoReport();
 
   app.post("/api/relatorio-dados-faltantes", requireAuth, requireRole('administrador', 'diretoria'), async (_req: Request, res: Response) => {
     try {
+      const emails = (await loadDailyReportsSettings()).missingInfo.emails;
       const missions = await findAllMissionsWithMissingInfo();
       const reportDate = new Date().toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' });
-      const sent = await sendDailyMissingInfoReport(MISSING_INFO_REPORT_EMAILS, missions, reportDate);
-      res.json({ success: sent, total: missions.length, emailTo: MISSING_INFO_REPORT_EMAILS, date: reportDate });
+      const sent = await sendDailyMissingInfoReport(emails, missions, reportDate);
+      res.json({ success: sent, total: missions.length, emailTo: emails, date: reportDate });
     } catch (err: any) {
       console.error('[Dados Faltantes] Erro manual:', err.message);
       res.status(500).json({ error: err.message });
@@ -6614,21 +6660,118 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
   });
 
   // ═══════════════════════════════════════════════════════
-  // NF Travadas — relatório diário às 09:00
+  // Task #76 — Endpoints da tela "Configurações do Sistema"
+  // GET/PUT/history para a chave daily_reports em system_settings
   // ═══════════════════════════════════════════════════════
-  const STUCK_NF_REPORT_EMAILS = 'thiago@grupotmseg.com.br, michelle@grupotmseg.com.br, daniel@grupotmseg.com.br';
+  app.get('/api/admin/system-settings/daily-reports', requireAuth, requireRole('diretoria', 'administrador'), async (_req: Request, res: Response) => {
+    try {
+      const current = await loadDailyReportsSettings();
+      const { data: row } = await supabaseAdmin
+        .from('system_settings')
+        .select('updated_by, updated_at')
+        .eq('key', DAILY_REPORTS_SETTINGS_KEY)
+        .maybeSingle();
+      res.json({
+        ok: true,
+        settings: current,
+        defaults: DAILY_REPORTS_DEFAULTS,
+        updatedBy: row?.updated_by || null,
+        updatedAt: row?.updated_at || null,
+      });
+    } catch (e: any) {
+      res.status(500).json({ ok: false, error: e?.message || 'Falha ao carregar configurações' });
+    }
+  });
 
+  app.put('/api/admin/system-settings/daily-reports', requireAuth, requireRole('diretoria', 'administrador'), async (req: Request, res: Response) => {
+    try {
+      const prev = await loadDailyReportsSettings();
+      const next = sanitizeDailyReportsSettings(req.body || {});
+      const principal = (req as any).user || (req as any).auth || {};
+      const editorName = principal.name || principal.email || 'Sistema';
+
+      const { error: upErr } = await supabaseAdmin
+        .from('system_settings')
+        .upsert([{
+          key: DAILY_REPORTS_SETTINGS_KEY,
+          value: next,
+          updated_by: editorName,
+          updated_at: new Date().toISOString(),
+        }], { onConflict: 'key' });
+      if (upErr) throw upErr;
+      invalidateDailyReportsCache();
+
+      const changedFields: string[] = [];
+      (Object.keys(next) as Array<keyof DailyReportsSettings>).forEach(k => {
+        const a = (prev as any)[k] || {};
+        const b = (next as any)[k] || {};
+        ['emails', 'hour', 'minute'].forEach(f => {
+          if (String(a[f]) !== String(b[f])) changedFields.push(`${k}.${f}`);
+        });
+      });
+      await supabaseAdmin.from('system_logs').insert([{
+        user_name: editorName,
+        action_type: 'UPDATE',
+        entity: 'SystemSetting',
+        entity_id: DAILY_REPORTS_SETTINGS_KEY,
+        details: JSON.stringify({
+          summary: `Configurações dos relatórios diários atualizadas (${changedFields.join(', ') || 'sem alterações'}).`,
+          before: prev,
+          after: next,
+          changedFields,
+        }),
+      }]);
+
+      res.json({ ok: true, settings: next, defaults: DAILY_REPORTS_DEFAULTS });
+    } catch (e: any) {
+      res.status(500).json({ ok: false, error: e?.message || 'Falha ao salvar configurações' });
+    }
+  });
+
+  app.get('/api/admin/system-settings/daily-reports/history', requireAuth, requireRole('diretoria', 'administrador'), async (_req: Request, res: Response) => {
+    try {
+      const { data, error } = await supabaseAdmin
+        .from('system_logs')
+        .select('id, created_at, user_name, details')
+        .eq('entity', 'SystemSetting')
+        .eq('entity_id', DAILY_REPORTS_SETTINGS_KEY)
+        .order('created_at', { ascending: false })
+        .limit(50);
+      if (error) throw error;
+      const history = (data || []).map((r: any) => {
+        let d: any = {};
+        try { d = typeof r.details === 'string' ? JSON.parse(r.details) : (r.details || {}); } catch {}
+        return {
+          id: r.id,
+          createdAt: r.created_at,
+          userName: r.user_name,
+          before: d.before || null,
+          after: d.after || null,
+          changedFields: d.changedFields || [],
+          summary: d.summary || '',
+        };
+      });
+      res.json({ ok: true, history });
+    } catch (e: any) {
+      res.status(500).json({ ok: false, error: e?.message || 'Falha ao carregar histórico' });
+    }
+  });
+
+  // ═══════════════════════════════════════════════════════
+  // NF Travadas — relatório diário (horário/emails em system_settings)
+  // ═══════════════════════════════════════════════════════
   async function executeDailyStuckNfReport() {
     const now = new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' });
     console.log(`[NF Travadas Diário] Iniciando varredura — ${now}`);
     try {
+      const emails = (await loadDailyReportsSettings()).stuckNf.emails;
       const { listStuckNfs } = await import('./nfRetryWorker');
       const items = await listStuckNfs();
       console.log(`[NF Travadas Diário] ${items.length} NF(s) travadas encontradas`);
       if (items.length > 0) {
         const reportDate = new Date().toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' });
-        const sent = await sendStuckNfsReport(STUCK_NF_REPORT_EMAILS, items, reportDate);
-        if (sent) console.log(`[NF Travadas Diário] Relatório enviado para ${STUCK_NF_REPORT_EMAILS}`);
+        const sent = await sendStuckNfsReport(emails, items, reportDate);
+        if (sent) console.log(`[NF Travadas Diário] Relatório enviado para ${emails}`);
       } else {
         console.log(`[NF Travadas Diário] Sem NFs travadas — email não enviado.`);
       }
@@ -6638,26 +6781,27 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
   }
 
   function scheduleDailyStuckNfReport() {
-    const checkInterval = () => {
-      const now = new Date();
-      const brasiliaTime = new Date(now.toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' }));
-      if (brasiliaTime.getHours() === 9 && brasiliaTime.getMinutes() === 0) {
+    const checkInterval = async () => {
+      const cfg = (await loadDailyReportsSettings()).stuckNf;
+      const brasiliaTime = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' }));
+      if (brasiliaTime.getHours() === cfg.hour && brasiliaTime.getMinutes() === cfg.minute) {
         executeDailyStuckNfReport();
       }
     };
     setInterval(checkInterval, 60 * 1000);
-    console.log(`[NF Travadas Diário] Agendamento ativo — relatório será enviado todos os dias às 09:00 (Brasília) para ${STUCK_NF_REPORT_EMAILS}`);
+    console.log(`[NF Travadas Diário] Agendamento ativo — horário e destinatários lidos de system_settings (daily_reports.stuckNf).`);
   }
 
   scheduleDailyStuckNfReport();
 
   app.post("/api/relatorio-nfs-travadas", requireAuth, requireRole('administrador', 'diretoria', 'financeiro'), async (_req: Request, res: Response) => {
     try {
+      const emails = (await loadDailyReportsSettings()).stuckNf.emails;
       const { listStuckNfs } = await import('./nfRetryWorker');
       const items = await listStuckNfs();
       const reportDate = new Date().toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' });
-      const sent = items.length > 0 ? await sendStuckNfsReport(STUCK_NF_REPORT_EMAILS, items, reportDate) : false;
-      res.json({ success: sent, total: items.length, emailTo: STUCK_NF_REPORT_EMAILS, date: reportDate });
+      const sent = items.length > 0 ? await sendStuckNfsReport(emails, items, reportDate) : false;
+      res.json({ success: sent, total: items.length, emailTo: emails, date: reportDate });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }

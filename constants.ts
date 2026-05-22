@@ -140,7 +140,7 @@ export const NAV_ITEMS: NavItem[] = [
       { name: 'Equipe Interna', id: 'internal-users' },
       { name: 'Patrimônio & Equipamentos', id: 'equipment-manager' },
       { name: 'Perfis de Acesso', id: 'profiles' },
-      { name: 'Alertas de Edições Manuais', id: 'manual-override-settings' },
+      { name: 'Configurações do Sistema', id: 'system-settings' },
       { name: 'Auditoria & Logs', id: 'system-logs' },
       { name: 'Status do Servidor', id: 'server-stats' },
     ]
