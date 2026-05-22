@@ -1,0 +1,55 @@
+me ajude fazer ele interpletar isso..
+
+
+
+Exemplo
+
+
+
+ele localizou a região "SUDESTE"
+
+
+
+Tem alguma do sudeste que tem esse km? não , ok..
+
+então tem alguma outra rota que tem esse km? sim, REGIÃO - SUDESTE - GUARULHOS-FORTALEZA 2927KM é que chega próximo, então pode usar ela..
+
+
+
+entendeu a lógica? da pra passar pro replit?
+
+Entendi perfeitamente, Thiago. Isso é o que chamamos em programação de "Fallback por Proximidade de KM Absoluta".
+
+Quando o motor busca por Região (SUDESTE) + Faixa (Centena mais próxima), ele não vai achar uma tabela exata de 2800 km para João Pessoa. Então, em vez de desistir e deixar em branco de primeira, ele deve fazer uma segunda varredura no banco de dados: buscar qualquer tabela que parta da mesma região (SUDESTE) e pegar a que tiver a quilometragem cadastrada mais próxima da rota real (os 2772,5 km do Google), que no seu caso é a rota de Fortaleza (2927 km).
+
+Essa inteligência vai evitar que rotas longas do Nordeste fiquem sem preço só porque mudou a cidade de destino.
+
+Aqui está o prompt técnico exato para você passar para o Replit Agent (já em Plan Mode) entender e atualizar o plano dele:
+
+Prompt para o Replit Agent (Copie e Cole):
+Título: Refinamento do Algoritmo de Fallback da DHL — Proximidade de KM na Região
+
+Contexto sobre a imagem enviada (OS GTM-5053):
+A rota real é Guarulhos/SP ➔ João Pessoa/PB (KM Google: 2772,5 km). A região detectada foi SUDESTE. O sistema não encontrou nenhuma tabela exata para João Pessoa nessa faixa.
+
+Ajuste na Lógica de Busca (Regra de Proximidade Regional):
+Altere o algoritmo de busca na client_price_tables para o cliente DHL para seguir estes 3 passos sequenciais:
+
+Passo 1 (Rota Exata): Procura por Origem/Destino exatos. (Não encontrou).
+
+Passo 2 (Região + Faixa Exata): Procura por tabelas da região SUDESTE na faixa arredondada de 2800 km. (Não encontrou).
+
+Passo 3 (Fallback por Proximidade Absoluta na Região - NOVO): >    - Se os passos 1 e 2 falharem, o motor deve buscar TODAS as tabelas cadastradas para a DHL onde a origem seja da mesma região detectada (Ex: SUDESTE).
+
+O sistema deve calcular a diferença absoluta entre o KM Google (2772,5) e o KM cadastrado nas tabelas encontradas.
+
+O motor deve selecionar a tabela que tiver a menor diferença de KM, independentemente da cidade de destino.
+
+Exemplo real: O sistema vai encontrar a tabela SUDESTE - GUARULHOS-FORTALEZA (2927 KM). Como a diferença é a menor encontrada na região, o sistema aplica essa tabela automaticamente como sugestão para a missão de João Pessoa.
+
+Passo 4 (Bloqueio Geral): Se mesmo assim não houver nenhuma tabela na região do Sudeste, aí sim exibe "sem tabela encontrada".
+
+Atualize o arquivo de plano .local/tasks/motor-precificacao-fornecedores.md para incluir este terceiro nível de busca por proximidade na região e me apresente o plano final.
+
+O que isso muda no sistema?
+Agora o robô sabe que para a DHL, o KM manda mais do que o nome da cidade. Se você tem o preço para Fortaleza saindo do Sudeste, esse preço serve de base para João Pessoa, Natal, ou qualquer outra cidade daquela mesma faixa de distância.
