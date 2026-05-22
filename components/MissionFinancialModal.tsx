@@ -1535,15 +1535,31 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
       const calcCostTotal = financialData ? (financialData.provider.serviceTotal + tollProv) : 0;
       const revDivergent = isController ? false : Math.abs(revTotal - calcRevTotal) > 1;
       const costDivergent = Math.abs(costTotal - calcCostTotal) > 1;
+      // Task #66 — quando o motor automático de fornecedor está ativo, qualquer
+      // divergência (> 1 centavo) entre o custo salvo (sem pedágio) e a sugestão
+      // do motor deve obrigar o operador a informar o motivo, garantindo
+      // rastreabilidade real das exceções na aba "Edições Manuais".
+      const autoEngineActive = !!financialData?.autoEngine?.active;
+      const autoEngineSuggestedCost = autoEngineActive ? (financialData!.autoEngine!.totalCost || 0) : null;
+      const savedCostServiceOnly = costTotal - tollProv;
+      const autoEngineDivergent = autoEngineActive
+          && autoEngineSuggestedCost !== null
+          && Math.abs(savedCostServiceOnly - autoEngineSuggestedCost) > 0.01;
 
       if (revDivergent && !revenueEditReason.trim()) {
           setShowRevenueReasonInput(true);
           showNotification('Motivo Obrigatório', 'O valor do cliente foi alterado manualmente. Informe o motivo da alteração.', 'error');
           return;
       }
-      if (costDivergent && !costEditReason.trim()) {
+      if ((costDivergent || autoEngineDivergent) && !costEditReason.trim()) {
           setShowCostReasonInput(true);
-          showNotification('Motivo Obrigatório', 'O valor do fornecedor foi alterado manualmente. Informe o motivo da alteração.', 'error');
+          showNotification(
+              'Motivo Obrigatório',
+              autoEngineDivergent
+                  ? `O custo informado (R$ ${savedCostServiceOnly.toFixed(2)}) diverge da sugestão do motor automático (R$ ${(autoEngineSuggestedCost || 0).toFixed(2)}). Informe o motivo para registrar a exceção.`
+                  : 'O valor do fornecedor foi alterado manualmente. Informe o motivo da alteração.',
+              'error'
+          );
           return;
       }
 
@@ -1680,8 +1696,11 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
           if (revDivergent && revenueEditReason.trim()) {
               reasonFields.revenue_edit_reason = `[${userName} - ${new Date().toLocaleString('pt-BR')}] ${revenueEditReason.trim()}`;
           }
-          if (costDivergent && costEditReason.trim()) {
-              reasonFields.cost_edit_reason = `[${userName} - ${new Date().toLocaleString('pt-BR')}] ${costEditReason.trim()}`;
+          if ((costDivergent || autoEngineDivergent) && costEditReason.trim()) {
+              const prefix = autoEngineDivergent
+                  ? `[${userName} - ${new Date().toLocaleString('pt-BR')}] [DIVERGENTE DO MOTOR AUTO R$ ${(autoEngineSuggestedCost || 0).toFixed(2)}]`
+                  : `[${userName} - ${new Date().toLocaleString('pt-BR')}]`;
+              reasonFields.cost_edit_reason = `${prefix} ${costEditReason.trim()}`;
           }
           if (r2(revServiceOnly) === 0 && !reasonFields.revenue_edit_reason) {
               reasonFields.revenue_edit_reason = `[${userName} - ${new Date().toLocaleString('pt-BR')}] Valor zero confirmado`;
@@ -1719,18 +1738,32 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                       details: JSON.stringify({ ...snapshot_data, approved_by: snapshot_approved_by, approved_at: snapshot_approved_at })
                   }]);
               }
-              if (Object.keys(reasonFields).length > 0) {
+          }
+          if (result.error) throw result.error;
+          if (!result.data) throw new Error('Falha na persistência: registro não retornado após UPDATE');
+
+          // Task #66 — VALUE_EDIT_REASON sempre é gravado quando há divergência
+          // (do motor automático ou da tabela manual), garantindo que a aba
+          // "Edições Manuais" sempre tenha o motivo registrado.
+          if (Object.keys(reasonFields).length > 0) {
+              try {
                   await supabase.from('system_logs').insert([{
                       user_name: userName,
                       action_type: 'VALUE_EDIT_REASON',
                       entity: 'Mission',
                       entity_id: mission.id,
-                      details: JSON.stringify(reasonFields)
+                      details: JSON.stringify({
+                          ...reasonFields,
+                          autoEngineActive,
+                          autoEngineSuggestedCost,
+                          savedCostServiceOnly: r2(costServiceOnly),
+                          autoEngineDivergent,
+                      })
                   }]);
+              } catch (logErr) {
+                  console.warn('[Task #66] Falha ao gravar VALUE_EDIT_REASON', logErr);
               }
           }
-          if (result.error) throw result.error;
-          if (!result.data) throw new Error('Falha na persistência: registro não retornado após UPDATE');
 
           // Task #55 — Audit log do motor auto quando ativo
           if (financialData?.autoEngine?.active && !isSameOs) {
