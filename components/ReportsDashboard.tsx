@@ -12,6 +12,8 @@ import {
     ComposedChart, Bar, Line, XAxis, YAxis, CartesianGrid, Tooltip,
     ResponsiveContainer, Legend
 } from 'recharts';
+import { calculateMissionFinancials } from '../lib/financialUtils';
+import { isAutoMasterRow } from '../lib/providerAutoPricing';
 
 const formatCurrencyBR = (val: number) => (val || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 
@@ -33,6 +35,9 @@ interface AutoEngineLogRow {
     revenueEditReason: string;
     reasonUser: string;
     reasonAt: string;
+    manualCost: number | null;
+    manualTableName: string | null;
+    manualDivergence: number | null;
 }
 
 interface UserStats {
@@ -107,7 +112,7 @@ const ReportsDashboard: React.FC = () => {
                 .limit(5000);
             if (logsErr) throw logsErr;
 
-            const parsed: Array<Omit<AutoEngineLogRow, 'provider' | 'client'> & { missionId: string }> = [];
+            const parsed: Array<Omit<AutoEngineLogRow, 'provider' | 'client' | 'costEditReason' | 'revenueEditReason' | 'reasonUser' | 'reasonAt' | 'manualCost' | 'manualTableName' | 'manualDivergence'> & { missionId: string }> = [];
             (logsData || []).forEach((l: any) => {
                 try {
                     const d = typeof l.details === 'string' ? JSON.parse(l.details) : (l.details || {});
@@ -131,18 +136,18 @@ const ReportsDashboard: React.FC = () => {
             });
 
             const missionIds = Array.from(new Set(parsed.map(p => p.missionId))).filter(Boolean);
-            const missionInfo: Record<string, { provider: string; client: string }> = {};
+            const missionsById: Record<string, any> = {};
             if (missionIds.length > 0) {
                 const CHUNK = 200;
                 for (let i = 0; i < missionIds.length; i += CHUNK) {
                     const slice = missionIds.slice(i, i + CHUNK);
                     const { data: mData, error: mErr } = await supabase
                         .from('missions')
-                        .select('id, provider, client')
+                        .select('*')
                         .in('id', slice);
                     if (mErr) throw mErr;
                     (mData || []).forEach((m: any) => {
-                        missionInfo[String(m.id)] = { provider: m.provider || '-', client: m.client || '-' };
+                        missionsById[String(m.id)] = m;
                     });
                 }
             }
@@ -177,15 +182,75 @@ const ReportsDashboard: React.FC = () => {
                 }
             }
 
-            const enriched: AutoEngineLogRow[] = parsed.map(p => ({
-                ...p,
-                provider: missionInfo[p.missionId]?.provider || '—',
-                client: missionInfo[p.missionId]?.client || '—',
-                costEditReason: reasonByMission[p.missionId]?.costEditReason || '',
-                revenueEditReason: reasonByMission[p.missionId]?.revenueEditReason || '',
-                reasonUser: reasonByMission[p.missionId]?.userName || '',
-                reasonAt: reasonByMission[p.missionId]?.at || '',
-            }));
+            // Carrega tabelas e clientes uma única vez para recomputar o custo (Task #60)
+            // usando apenas as linhas manuais (não-AUTO_MASTER) do mesmo fornecedor.
+            const [ptRes, ctRes, clRes] = await Promise.all([
+                supabase.from('provider_cost_tables').select('*'),
+                supabase.from('client_price_tables').select('*'),
+                supabase.from('clients').select('*'),
+            ]);
+            if (ptRes.error) throw ptRes.error;
+            if (ctRes.error) throw ctRes.error;
+            if (clRes.error) throw clRes.error;
+            const allProviderTables = (ptRes.data || []) as any[];
+            const allClientTables = (ctRes.data || []) as any[];
+            const allClients = (clRes.data || []) as any[];
+            // Pré-computa tabelas manuais (sem AUTO_MASTER) para a recomputação.
+            const providerTablesManualOnly = allProviderTables.filter(t => !isAutoMasterRow(t));
+
+            const normalize = (s: string) => (s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim().toUpperCase();
+
+            const enriched: AutoEngineLogRow[] = parsed.map(p => {
+                const mission = missionsById[p.missionId];
+                const provider = mission?.provider || '—';
+                const client = mission?.client || '—';
+
+                let manualCost: number | null = null;
+                let manualTableName: string | null = null;
+                if (mission) {
+                    try {
+                        const providerNorm = normalize(provider);
+                        // Existe ao menos uma linha manual para este fornecedor?
+                        const hasManualRows = providerTablesManualOnly.some(t => {
+                            const tProv = normalize(t.provider);
+                            if (!tProv || tProv.length < 3) return false;
+                            return tProv === providerNorm || tProv.includes(providerNorm) || providerNorm.includes(tProv);
+                        });
+                        if (hasManualRows) {
+                            const matchedClient = allClients.find(c => normalize(c.name) === normalize(client))
+                                || allClients.find(c => normalize(c.name).includes(normalize(client)) || normalize(client).includes(normalize(c.name)));
+                            const fin = calculateMissionFinancials(
+                                mission as any,
+                                allClientTables as any,
+                                providerTablesManualOnly as any,
+                                matchedClient as any,
+                            );
+                            if (fin.hasProviderTable) {
+                                // provider.total inclui pedágio; o motor sugerido é só serviço.
+                                manualCost = fin.provider.serviceTotal;
+                                manualTableName = fin.provider.tableName || null;
+                            }
+                        }
+                    } catch (err) {
+                        console.warn('Falha ao recomputar custo manual para OS', p.missionId, err);
+                    }
+                }
+
+                const manualDivergence = manualCost != null ? (p.suggestedTotal - manualCost) : null;
+
+                return {
+                    ...p,
+                    provider,
+                    client,
+                    costEditReason: reasonByMission[p.missionId]?.costEditReason || '',
+                    revenueEditReason: reasonByMission[p.missionId]?.revenueEditReason || '',
+                    reasonUser: reasonByMission[p.missionId]?.userName || '',
+                    reasonAt: reasonByMission[p.missionId]?.at || '',
+                    manualCost,
+                    manualTableName,
+                    manualDivergence,
+                };
+            });
             setAutoEngineRows(enriched);
         } catch (e) {
             console.error('Erro ao carregar relatório do motor automático:', e);
@@ -949,19 +1014,25 @@ const ReportsDashboard: React.FC = () => {
                             return { ...m, label };
                         });
 
-                    const byProvider: Record<string, { provider: string; count: number; suggested: number; saved: number; divergent: number }> = {};
+
+                    const byProvider: Record<string, { provider: string; count: number; suggested: number; saved: number; divergent: number; manual: number; manualCount: number; suggestedOnManualSubset: number }> = {};
                     filtered.forEach(r => {
                         const key = (r.provider || '—').toUpperCase().trim();
-                        if (!byProvider[key]) byProvider[key] = { provider: r.provider || '—', count: 0, suggested: 0, saved: 0, divergent: 0 };
+                        if (!byProvider[key]) byProvider[key] = { provider: r.provider || '—', count: 0, suggested: 0, saved: 0, divergent: 0, manual: 0, manualCount: 0, suggestedOnManualSubset: 0 };
                         byProvider[key].count++;
                         byProvider[key].suggested += r.suggestedTotal;
                         byProvider[key].saved += r.savedCost;
                         if (r.divergent) byProvider[key].divergent++;
+                        if (r.manualCost != null) {
+                            byProvider[key].manual += r.manualCost;
+                            byProvider[key].manualCount++;
+                            byProvider[key].suggestedOnManualSubset += r.suggestedTotal;
+                        }
                     });
                     const providerRows = Object.values(byProvider).sort((a, b) => Math.abs(b.saved - b.suggested) - Math.abs(a.saved - a.suggested));
 
                     const handleExportCsv = () => {
-                        const header = ['Data/Hora', 'OS', 'Cliente', 'Fornecedor', 'KM Real', 'Faixa KM', 'Horas (Regra Ouro)', 'Custo Sugerido (Motor)', 'Custo Salvo', 'Divergência', 'Usuário'];
+                        const header = ['Data/Hora', 'OS', 'Cliente', 'Fornecedor', 'KM Real', 'Faixa KM', 'Horas (Regra Ouro)', 'Custo Sugerido (Motor)', 'Custo Salvo', 'Divergência', 'Custo Tabela Manual', 'Tabela Manual Aplicada', 'Divergência Motor − Manual', 'Usuário'];
                         const lines = [header.join(';')];
                         filtered.forEach(r => {
                             lines.push([
@@ -975,6 +1046,9 @@ const ReportsDashboard: React.FC = () => {
                                 r.suggestedTotal.toFixed(2).replace('.', ','),
                                 r.savedCost.toFixed(2).replace('.', ','),
                                 r.divergence.toFixed(2).replace('.', ','),
+                                r.manualCost != null ? r.manualCost.toFixed(2).replace('.', ',') : '',
+                                (r.manualTableName || '').replace(/;/g, ','),
+                                r.manualDivergence != null ? r.manualDivergence.toFixed(2).replace('.', ',') : '',
                                 (r.userName || '').replace(/;/g, ','),
                             ].join(';'));
                         });
@@ -1130,13 +1204,16 @@ const ReportsDashboard: React.FC = () => {
                                                         <th className="px-4 py-2 text-right">Sugerido (Motor)</th>
                                                         <th className="px-4 py-2 text-right">Salvo</th>
                                                         <th className="px-4 py-2 text-right">Divergência</th>
+                                                        <th className="px-4 py-2 text-right" title="Custo recomputado usando as tabelas manuais (não-AUTO) do próprio fornecedor.">Tabela Manual</th>
+                                                        <th className="px-4 py-2 text-right" title="Motor − Tabela Manual. Positivo = motor cobra MAIS que a tabela legada.">Motor − Manual</th>
                                                     </tr>
                                                 </thead>
                                                 <tbody>
                                                     {providerRows.length === 0 ? (
-                                                        <tr><td colSpan={6} className="px-4 py-6 text-center text-xs text-gray-400">Nenhum registro do motor automático no período.</td></tr>
+                                                        <tr><td colSpan={8} className="px-4 py-6 text-center text-xs text-gray-400">Nenhum registro do motor automático no período.</td></tr>
                                                     ) : providerRows.map((p, i) => {
                                                         const div = p.saved - p.suggested;
+                                                        const motorVsManual = p.manualCount > 0 ? (p.suggestedOnManualSubset - p.manual) : null;
                                                         return (
                                                             <tr key={i} className="border-t border-gray-100 hover:bg-indigo-50/30" data-testid={`row-auto-engine-provider-${i}`}>
                                                                 <td className="px-4 py-2 text-sm font-bold text-gray-800">{p.provider}</td>
@@ -1151,21 +1228,42 @@ const ReportsDashboard: React.FC = () => {
                                                                 <td className={`px-4 py-2 text-sm font-mono font-black text-right ${Math.abs(div) < 0.01 ? 'text-gray-500' : div > 0 ? 'text-red-700' : 'text-emerald-700'}`}>
                                                                     {div >= 0 ? '+' : ''}{formatCurrencyBR(div)}
                                                                 </td>
+                                                                <td className="px-4 py-2 text-sm font-mono text-purple-700 text-right" title={p.manualCount < p.count ? `${p.manualCount}/${p.count} OS com tabela manual disponível` : undefined}>
+                                                                    {p.manualCount > 0 ? formatCurrencyBR(p.manual) : <span className="text-gray-400">—</span>}
+                                                                    {p.manualCount > 0 && p.manualCount < p.count && (
+                                                                        <span className="ml-1 text-[9px] text-gray-400">({p.manualCount}/{p.count})</span>
+                                                                    )}
+                                                                </td>
+                                                                <td className={`px-4 py-2 text-sm font-mono font-black text-right ${motorVsManual == null ? 'text-gray-400' : Math.abs(motorVsManual) < 0.01 ? 'text-gray-500' : motorVsManual > 0 ? 'text-red-700' : 'text-emerald-700'}`}>
+                                                                    {motorVsManual == null ? '—' : `${motorVsManual >= 0 ? '+' : ''}${formatCurrencyBR(motorVsManual)}`}
+                                                                </td>
                                                             </tr>
                                                         );
                                                     })}
-                                                    {providerRows.length > 0 && (
-                                                        <tr className="bg-indigo-50 border-t-2 border-indigo-200">
-                                                            <td className="px-4 py-2 text-xs font-black text-indigo-800 uppercase">Total</td>
-                                                            <td className="px-4 py-2 text-sm font-black text-indigo-800 text-right">{filtered.length}</td>
-                                                            <td className="px-4 py-2 text-sm font-black text-red-700 text-right">{divergentCount}</td>
-                                                            <td className="px-4 py-2 text-sm font-mono font-black text-blue-800 text-right">{formatCurrencyBR(totalSuggested)}</td>
-                                                            <td className="px-4 py-2 text-sm font-mono font-black text-amber-800 text-right">{formatCurrencyBR(totalSaved)}</td>
-                                                            <td className={`px-4 py-2 text-sm font-mono font-black text-right ${Math.abs(totalDivergence) < 0.01 ? 'text-gray-500' : totalDivergence > 0 ? 'text-red-800' : 'text-emerald-800'}`}>
-                                                                {totalDivergence >= 0 ? '+' : ''}{formatCurrencyBR(totalDivergence)}
-                                                            </td>
-                                                        </tr>
-                                                    )}
+                                                    {providerRows.length > 0 && (() => {
+                                                        const totalManual = providerRows.reduce((a, p) => a + p.manual, 0);
+                                                        const totalManualCount = providerRows.reduce((a, p) => a + p.manualCount, 0);
+                                                        const motorSubsetForManual = providerRows.reduce((a, p) => a + p.suggestedOnManualSubset, 0);
+                                                        const totalMotorVsManualSubset = motorSubsetForManual - totalManual;
+                                                        return (
+                                                                <tr className="bg-indigo-50 border-t-2 border-indigo-200">
+                                                                    <td className="px-4 py-2 text-xs font-black text-indigo-800 uppercase">Total</td>
+                                                                    <td className="px-4 py-2 text-sm font-black text-indigo-800 text-right">{filtered.length}</td>
+                                                                    <td className="px-4 py-2 text-sm font-black text-red-700 text-right">{divergentCount}</td>
+                                                                    <td className="px-4 py-2 text-sm font-mono font-black text-blue-800 text-right">{formatCurrencyBR(totalSuggested)}</td>
+                                                                    <td className="px-4 py-2 text-sm font-mono font-black text-amber-800 text-right">{formatCurrencyBR(totalSaved)}</td>
+                                                                    <td className={`px-4 py-2 text-sm font-mono font-black text-right ${Math.abs(totalDivergence) < 0.01 ? 'text-gray-500' : totalDivergence > 0 ? 'text-red-800' : 'text-emerald-800'}`}>
+                                                                        {totalDivergence >= 0 ? '+' : ''}{formatCurrencyBR(totalDivergence)}
+                                                                    </td>
+                                                                    <td className="px-4 py-2 text-sm font-mono font-black text-purple-800 text-right" title={`${totalManualCount}/${filtered.length} OS com tabela manual disponível`}>
+                                                                        {totalManualCount > 0 ? formatCurrencyBR(totalManual) : <span className="text-gray-400">—</span>}
+                                                                    </td>
+                                                                    <td className={`px-4 py-2 text-sm font-mono font-black text-right ${totalManualCount === 0 ? 'text-gray-400' : Math.abs(totalMotorVsManualSubset) < 0.01 ? 'text-gray-500' : totalMotorVsManualSubset > 0 ? 'text-red-800' : 'text-emerald-800'}`} title={totalManualCount > 0 ? `Motor cobrou ${formatCurrencyBR(motorSubsetForManual)} nessas ${totalManualCount} OS; tabela manual cobraria ${formatCurrencyBR(totalManual)}.` : undefined}>
+                                                                        {totalManualCount === 0 ? '—' : `${totalMotorVsManualSubset >= 0 ? '+' : ''}${formatCurrencyBR(totalMotorVsManualSubset)}`}
+                                                                    </td>
+                                                                </tr>
+                                                            );
+                                                        })()}
                                                 </tbody>
                                             </table>
                                         </div>
@@ -1191,11 +1289,13 @@ const ReportsDashboard: React.FC = () => {
                                                         <th className="px-4 py-2 text-right">Sugerido</th>
                                                         <th className="px-4 py-2 text-right">Salvo</th>
                                                         <th className="px-4 py-2 text-right">Divergência</th>
+                                                        <th className="px-4 py-2 text-right" title="Custo recomputado usando as tabelas manuais (não-AUTO) do próprio fornecedor.">Tabela Manual</th>
+                                                        <th className="px-4 py-2 text-right" title="Motor − Tabela Manual. Positivo = motor cobra MAIS que a tabela legada.">Motor − Manual</th>
                                                     </tr>
                                                 </thead>
                                                 <tbody>
                                                     {filtered.length === 0 ? (
-                                                        <tr><td colSpan={9} className="px-4 py-6 text-center text-xs text-gray-400">Nenhum registro encontrado no período/filtro.</td></tr>
+                                                        <tr><td colSpan={11} className="px-4 py-6 text-center text-xs text-gray-400">Nenhum registro encontrado no período/filtro.</td></tr>
                                                     ) : filtered.slice(0, 500).map(r => (
                                                         <tr key={r.logId} className={`border-t border-gray-100 hover:bg-gray-50 ${r.divergent ? 'bg-red-50/30' : ''}`} data-testid={`row-auto-engine-${r.missionId}`}>
                                                             <td className="px-4 py-2 text-[11px] text-gray-500 font-mono whitespace-nowrap">{new Date(r.createdAt).toLocaleString('pt-BR')}</td>
@@ -1208,6 +1308,12 @@ const ReportsDashboard: React.FC = () => {
                                                             <td className="px-4 py-2 text-xs font-mono text-amber-700 text-right">{formatCurrencyBR(r.savedCost)}</td>
                                                             <td className={`px-4 py-2 text-xs font-mono font-black text-right ${!r.divergent ? 'text-gray-400' : r.divergence > 0 ? 'text-red-700' : 'text-emerald-700'}`}>
                                                                 {r.divergent ? `${r.divergence >= 0 ? '+' : ''}${formatCurrencyBR(r.divergence)}` : '—'}
+                                                            </td>
+                                                            <td className="px-4 py-2 text-xs font-mono text-purple-700 text-right" title={r.manualTableName ? `Tabela aplicada: ${r.manualTableName}` : 'Sem tabela manual cadastrada para este fornecedor.'}>
+                                                                {r.manualCost != null ? formatCurrencyBR(r.manualCost) : <span className="text-gray-400">—</span>}
+                                                            </td>
+                                                            <td className={`px-4 py-2 text-xs font-mono font-black text-right ${r.manualDivergence == null ? 'text-gray-400' : Math.abs(r.manualDivergence) < 0.01 ? 'text-gray-500' : r.manualDivergence > 0 ? 'text-red-700' : 'text-emerald-700'}`}>
+                                                                {r.manualDivergence == null ? '—' : `${r.manualDivergence >= 0 ? '+' : ''}${formatCurrencyBR(r.manualDivergence)}`}
                                                             </td>
                                                         </tr>
                                                     ))}
