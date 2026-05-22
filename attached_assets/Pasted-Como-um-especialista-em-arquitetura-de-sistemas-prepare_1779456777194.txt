@@ -1,0 +1,77 @@
+Como um especialista em arquitetura de sistemas, preparei um Prompt de Engenharia de Software completo. Este prompt foi desenhado para que o Replit Agent entenda não apenas a interface, mas a integridade dos dados, a lógica de back-end e a automação do fluxo de trabalho.
+
+Este prompt cobre desde a estrutura do banco de dados (Supabase) até a lógica de arredondamento e o gatilho de auditoria.
+
+Copie e cole este prompt no seu Replit:
+Título: Implementação do Motor de Precificação Dinâmica e Automação de Faturamento - Grupo TM SEG
+
+Objetivo: Reformular o módulo de faturamento para que os custos de fornecedores sejam baseados em variáveis mestre, com geração automática de tabelas e aplicação imediata na auditoria de missões.
+
+1. Estrutura de Dados e Backend (Supabase/PostgreSQL):
+
+Novos Campos: Atualize a tabela de fornecedores ou price_configs para incluir as variáveis mestre:
+
+base_activation_value (Decimal): Valor do acionamento inicial.
+
+base_km_allowance (Integer): KM inicial (Ex: 100).
+
+base_hour_allowance (Integer): Horas iniciais (Ex: 3).
+
+extra_km_value (Decimal): Valor por KM excedente.
+
+extra_hour_value (Decimal): Valor por hora excedente.
+
+Função de Geração de Tabela (DB Level ou Utility): Criar uma lógica que projete faixas de 100km em 100km até 3000km.
+
+Cálculo da Franquia de Horas: ceil(KM_da_Faixa / 40).
+
+Cálculo do Valor da Faixa: base_activation_value + ((KM_da_Faixa - base_km_allowance) * extra_km_value).
+
+2. Frontend - Nova Tela de Gestão de Preços:
+
+Localização: Tela de "Tabela de Preço dos Fornecedores".
+
+Funcionalidade: Adicionar um card de "Configuração de Cálculo Padrão".
+
+Comportamento: Ao salvar os campos mestre, o sistema deve exibir uma pré-visualização da tabela gerada (faixas de 100km, 200km, etc.) para conferência antes de aplicar globalmente.
+
+Flags de Cálculo: Adicionar um toggle "Aplicar Cálculo Automático" para que o sistema saiba quais fornecedores seguem esta regra.
+
+3. Lógica de Processamento de Missão (Core Engine):
+
+Seleção de Faixa (Regra de Proximidade): Implementar lógica onde o KM Real é arredondado para a centena mais próxima para definir a franquia:
+
+Ex: Até 150km -> Faixa 100; De 151km a 250km -> Faixa 200.
+
+Cálculo de Tempo Real:
+
+Início: Se arrival_time < scheduled_time, use scheduled_time. Se mission_start < scheduled_time, use mission_start.
+
+Duração: Truncar a duração total em minutos antes de calcular horas extras.
+
+Cálculo de Extras:
+
+KM_Extra = max(0, KM_Real - KM_Faixa_Aplicada) * extra_km_value.
+
+Hora_Extra = max(0, Horas_Reais - Franquia_Horas_Faixa) * extra_hour_value.
+
+4. Automação na Tela de "Auditar Faturamento":
+
+Ação: Ao abrir a tela de auditoria/aprovação de uma missão:
+
+O sistema deve rodar automaticamente o motor de cálculo baseado no KM da API do Google e nos logs de tempo.
+
+Deve exibir um comparativo entre o Cálculo Sugerido (pela regra mestre) e o Valor em Aberto.
+
+Ao clicar em "Aprovar Missão", o sistema deve persistir os valores finais em revenue_value e toll_value no banco de dados.
+
+5. Regras de Segurança (Proteção de Dados):
+
+REGRA SUPREMA: O módulo de relatórios e faturamento final deve ser Read-Only para os campos revenue_value. O cálculo só acontece na configuração e na auditoria. Uma vez aprovado, o valor é imutável para garantir a integridade financeira.
+
+O que este prompt garante para você:
+Precisão Cirúrgica: A regra do KM/40 com ceil (arredondamento para cima) garante que se a conta der 7.1 horas, o fornecedor ganha 8 horas de franquia, como você pediu.
+
+Agilidade na Auditoria: Você não vai mais precisar calcular na mão se o fornecedor está cobrando certo. O sistema vai te dizer: "Pela regra de 130km, o valor deve ser X. O fornecedor pediu Y. Aprovar?"
+
+Escalabilidade: Se amanhã você tiver 50 fornecedores, você só ajusta as 5 variáveis mestre e o sistema "trabalha" por você criando as 3.000 linhas de tabela de cada um.
