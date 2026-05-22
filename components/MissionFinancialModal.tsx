@@ -3398,7 +3398,26 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                                 <p className="text-[9px] text-emerald-600 font-bold">Faixa {financialData.autoEngine.bandKm}KM / Franquia {financialData.autoEngine.bandHours}h (Regra de Ouro)</p>
                                             </div>
                                         </div>
-                                        <span className="text-[9px] font-bold text-emerald-700 bg-emerald-100 border border-emerald-200 px-2 py-1 rounded uppercase tracking-wider">Aplicado automaticamente</span>
+                                        <div className="flex items-center gap-2">
+                                            <span className="text-[9px] font-bold text-emerald-700 bg-emerald-100 border border-emerald-200 px-2 py-1 rounded uppercase tracking-wider">Aplicado automaticamente</span>
+                                            <button
+                                                type="button"
+                                                onClick={() => {
+                                                    const engineTotal = financialData.provider.serviceTotal + parseNumber(tollProviderInput);
+                                                    if (engineTotal <= 0) return;
+                                                    if (canUnlockBilling && isBillingLocked) setUnlockOverride(true);
+                                                    userManuallyEditedRef.current = false;
+                                                    setCostInput(engineTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
+                                                    setCostEditReason('');
+                                                    showNotification('Recalculado', `Pagamento do fornecedor atualizado para R$ ${engineTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} (motor automático).`, 'success');
+                                                }}
+                                                className="px-2 py-1 rounded text-[9px] font-black text-white bg-emerald-600 hover:bg-emerald-700 border border-emerald-700 uppercase tracking-wider shadow-sm flex items-center gap-1"
+                                                data-testid="button-auto-engine-recalc"
+                                                title="Recalcular pagamento do fornecedor com o valor do motor automático (destrava se necessário)"
+                                            >
+                                                <RefreshCw size={10} /> Recalcular
+                                            </button>
+                                        </div>
                                     </div>
                                     <div className="grid grid-cols-4 gap-2 text-center text-[10px]">
                                         <div className="bg-white rounded-lg p-2 border border-emerald-100">
