@@ -135,6 +135,20 @@ const SystemSettingsPage: React.FC<{ onNavigate?: (id: string) => void }> = () =
       setRunResults(prev => ({ ...prev, [key]: { ok: false, message: e?.message || 'Erro desconhecido', at } }));
     } finally {
       setRunningKey(null);
+      fetchRuns();
+    }
+  };
+
+  const fetchRuns = async () => {
+    setRunsLoading(true);
+    try {
+      const res = await fetch('/api/admin/system-settings/daily-reports/runs?limit=5', { headers: authHeaders() });
+      const json = await res.json();
+      if (json?.ok) setRuns(json.runs || {});
+    } catch {
+      // silencioso — execuções são informacionais
+    } finally {
+      setRunsLoading(false);
     }
   };
 
@@ -320,6 +334,50 @@ const SystemSettingsPage: React.FC<{ onNavigate?: (id: string) => void }> = () =
                     </div>
                   </div>
                 )}
+
+                {(() => {
+                  const list = runs[r.key] || [];
+                  return (
+                    <div className="mb-3 border border-gray-200 rounded-md bg-white" data-testid={`runs-${r.key}`}>
+                      <div className="px-3 py-1.5 text-[11px] font-semibold text-gray-600 border-b border-gray-100 flex items-center gap-1.5">
+                        <History size={12} /> Últimas execuções
+                        {runsLoading && <Loader2 size={10} className="animate-spin opacity-60" />}
+                        <span className="ml-auto opacity-60 font-normal">(manuais + agendadas)</span>
+                      </div>
+                      {list.length === 0 ? (
+                        <div className="px-3 py-2 text-[11px] text-gray-400">Nenhuma execução registrada ainda.</div>
+                      ) : (
+                        <ul className="divide-y divide-gray-100">
+                          {list.map(run => (
+                            <li key={run.id} className="px-3 py-1.5 text-[11px] flex items-center gap-2" data-testid={`run-${r.key}-${run.id}`}>
+                              {run.success
+                                ? <CheckCircle2 size={12} className="text-emerald-600 shrink-0" />
+                                : <AlertTriangle size={12} className="text-red-600 shrink-0" />}
+                              <span className={`px-1.5 py-0.5 rounded text-[10px] font-semibold shrink-0 ${run.source === 'manual' ? 'bg-blue-100 text-blue-800' : 'bg-gray-100 text-gray-700'}`}>
+                                {run.source === 'manual' ? 'Manual' : 'Agendado'}
+                              </span>
+                              <span className="text-gray-500 inline-flex items-center gap-1 shrink-0">
+                                <Calendar size={10} /> {fmtDate(run.createdAt)}
+                              </span>
+                              <span className="text-gray-700 inline-flex items-center gap-1 truncate">
+                                <User size={10} /> {run.userName || '—'}
+                              </span>
+                              <span className="ml-auto text-gray-600 shrink-0">
+                                {run.total != null ? `${run.total} reg.` : '—'}
+                                {run.emailTo.length > 0 && (
+                                  <span className="text-gray-400"> · {run.emailTo.length} destinatário(s)</span>
+                                )}
+                                {!run.success && run.errorMessage && (
+                                  <span className="text-red-600" title={run.errorMessage}> · erro</span>
+                                )}
+                              </span>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </div>
+                  );
+                })()}
 
                 <div className="grid grid-cols-1 md:grid-cols-12 gap-3">
                   <div className="md:col-span-8">

@@ -5656,6 +5656,55 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
   const invalidateDailyReportsCache = () => { dailyReportsCache = null; };
 
   // ═══════════════════════════════════════════════════════
+  // Task #86 — Auditoria de execuções (manuais e agendadas) dos relatórios diários
+  // Cada disparo (POST manual ou cron) grava uma linha em system_logs com
+  // action_type='MANUAL_REPORT_RUN', entity='DailyReport', entity_id=<reportKey>.
+  // Os cartões de Configurações leem as últimas 5 execuções por relatório.
+  // ═══════════════════════════════════════════════════════
+  type ManualReportKey = 'legal' | 'pending' | 'approval' | 'missingInfo' | 'stuckNf';
+  type ReportRunSource = 'manual' | 'scheduled';
+  const logReportRun = async (
+    reportKey: ManualReportKey,
+    source: ReportRunSource,
+    payload: {
+      userName?: string | null;
+      userId?: string | null;
+      total?: number | null;
+      emailTo?: string | string[] | null;
+      success?: boolean | null;
+      errorMessage?: string | null;
+      date?: string | null;
+    }
+  ) => {
+    try {
+      const emailToArr = Array.isArray(payload.emailTo)
+        ? payload.emailTo
+        : typeof payload.emailTo === 'string'
+          ? payload.emailTo.split(',').map(s => s.trim()).filter(Boolean)
+          : [];
+      await supabaseAdmin.from('system_logs').insert([{
+        user_name: payload.userName || 'Sistema',
+        action_type: 'MANUAL_REPORT_RUN',
+        entity: 'DailyReport',
+        entity_id: reportKey,
+        details: JSON.stringify({
+          source,
+          reportKey,
+          total: typeof payload.total === 'number' ? payload.total : null,
+          emailTo: emailToArr,
+          success: payload.success === true,
+          errorMessage: payload.errorMessage || null,
+          date: payload.date || null,
+          userId: payload.userId || null,
+          at: new Date().toISOString(),
+        }),
+      }]);
+    } catch (logErr: any) {
+      console.error(`[ReportRun:${reportKey}] Falha ao registrar execução em system_logs:`, logErr?.message || logErr);
+    }
+  };
+
+  // ═══════════════════════════════════════════════════════
   // Task #82 — Alertas pontuais (prejuízo, OS cancelada sem dados, fallback operacional)
   // Centralizados em system_settings/key=alert_recipients (auditados em system_logs).
   // Defaults preservam destinatários originais para retrocompatibilidade.
@@ -5782,19 +5831,37 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
     return { total: allProcessos.length, processos: allProcessos };
   }
 
-  async function executeDailyLegalReport() {
+  async function executeDailyLegalReport(source: ReportRunSource = 'scheduled', actor?: { name?: string | null; id?: string | null }, overrideEmails?: string | null) {
+    let emails = '';
+    let total = 0;
+    let sent = false;
+    const testMode = !!overrideEmails;
+    const searchDate = new Date().toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' });
     try {
-      const emails = await getLegalEmail();
-      const { processos } = await runDailyLegalSearch();
-      const searchDate = new Date().toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' });
-      const sent = await sendLegalReportEmail(emails, processos, searchDate);
+      emails = overrideEmails || await getLegalEmail();
+      const result = await runDailyLegalSearch();
+      total = result.total;
+      sent = await sendLegalReportEmail(emails, result.processos, searchDate);
       if (sent) {
         console.log(`[Jurídico Diário] Relatório enviado com sucesso para ${emails}`);
       } else {
         console.error(`[Jurídico Diário] Falha ao enviar relatório para ${emails}`);
       }
+      await logReportRun('legal', source, {
+        userName: actor?.name || null,
+        userId: actor?.id || null,
+        total, emailTo: emails, success: sent, date: searchDate,
+      });
+      return { total, emails, sent, date: searchDate, testMode };
     } catch (err: any) {
       console.error(`[Jurídico Diário] Erro fatal:`, err.message);
+      await logReportRun('legal', source, {
+        userName: actor?.name || null,
+        userId: actor?.id || null,
+        total, emailTo: emails, success: false,
+        errorMessage: err?.message || String(err), date: searchDate,
+      });
+      throw err;
     }
   }
 
@@ -5864,17 +5931,22 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
     });
   }
 
-  async function executeDailyPendingReport() {
+  async function executeDailyPendingReport(source: ReportRunSource = 'scheduled', actor?: { name?: string | null; id?: string | null }, overrideEmails?: string | null) {
     const now = new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' });
     console.log(`[Pendências Diário] Iniciando busca — ${now}`);
+    let emails = '';
+    let total = 0;
+    let sent = false;
+    const testMode = !!overrideEmails;
+    const reportDate = new Date().toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' });
     try {
-      const emails = (await loadDailyReportsSettings()).pending.emails;
+      emails = overrideEmails || (await loadDailyReportsSettings()).pending.emails;
       const pendingMissions = await findCompletedMissionsWithPendingInfo();
-      console.log(`[Pendências Diário] ${pendingMissions.length} OS concluídas com pendências encontradas`);
+      total = pendingMissions.length;
+      console.log(`[Pendências Diário] ${total} OS concluídas com pendências encontradas`);
 
-      const reportDate = new Date().toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' });
-      if (pendingMissions.length > 0) {
-        const sent = await sendPendingInfoReport(emails, pendingMissions, reportDate);
+      if (total > 0) {
+        sent = await sendPendingInfoReport(emails, pendingMissions, reportDate);
         if (sent) {
           console.log(`[Pendências Diário] Relatório enviado com sucesso para ${emails}`);
         } else {
@@ -5883,8 +5955,19 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
       } else {
         console.log(`[Pendências Diário] Nenhuma OS com pendências — email não enviado.`);
       }
+      await logReportRun('pending', source, {
+        userName: actor?.name || null, userId: actor?.id || null,
+        total, emailTo: emails, success: sent, date: reportDate,
+      });
+      return { total, emails, sent, date: reportDate, testMode };
     } catch (err: any) {
       console.error(`[Pendências Diário] Erro fatal:`, err.message);
+      await logReportRun('pending', source, {
+        userName: actor?.name || null, userId: actor?.id || null,
+        total, emailTo: emails, success: false,
+        errorMessage: err?.message || String(err), date: reportDate,
+      });
+      throw err;
     }
   }
 
@@ -5941,17 +6024,22 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
     return allMissions;
   }
 
-  async function executeDailyApprovalReport() {
+  async function executeDailyApprovalReport(source: ReportRunSource = 'scheduled', actor?: { name?: string | null; id?: string | null }, overrideEmails?: string | null) {
     const now = new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' });
     console.log(`[Aprovações Diário] Iniciando busca — ${now}`);
+    let emails = '';
+    let total = 0;
+    let sent = false;
+    const testMode = !!overrideEmails;
+    const reportDate = new Date().toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' });
     try {
-      const emails = (await loadDailyReportsSettings()).approval.emails;
+      emails = overrideEmails || (await loadDailyReportsSettings()).approval.emails;
       const pendingApproval = await findMissionsPendingApproval();
-      console.log(`[Aprovações Diário] ${pendingApproval.length} OS pendentes de aprovação`);
+      total = pendingApproval.length;
+      console.log(`[Aprovações Diário] ${total} OS pendentes de aprovação`);
 
-      const reportDate = new Date().toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' });
-      if (pendingApproval.length > 0) {
-        const sent = await sendApprovalPendingReport(emails, pendingApproval, reportDate);
+      if (total > 0) {
+        sent = await sendApprovalPendingReport(emails, pendingApproval, reportDate);
         if (sent) {
           console.log(`[Aprovações Diário] Relatório enviado para ${emails}`);
         } else {
@@ -5960,8 +6048,19 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
       } else {
         console.log(`[Aprovações Diário] Nenhuma OS pendente — email não enviado.`);
       }
+      await logReportRun('approval', source, {
+        userName: actor?.name || null, userId: actor?.id || null,
+        total, emailTo: emails, success: sent, date: reportDate,
+      });
+      return { total, emails, sent, date: reportDate, testMode };
     } catch (err: any) {
       console.error(`[Aprovações Diário] Erro fatal:`, err.message);
+      await logReportRun('approval', source, {
+        userName: actor?.name || null, userId: actor?.id || null,
+        total, emailTo: emails, success: false,
+        errorMessage: err?.message || String(err), date: reportDate,
+      });
+      throw err;
     }
   }
 
@@ -6032,17 +6131,22 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
     });
   }
 
-  async function executeDailyMissingInfoReport() {
+  async function executeDailyMissingInfoReport(source: ReportRunSource = 'scheduled', actor?: { name?: string | null; id?: string | null }, overrideEmails?: string | null) {
     const now = new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' });
     console.log(`[Dados Faltantes Diário] Iniciando busca — ${now}`);
+    let emails = '';
+    let total = 0;
+    let sent = false;
+    const testMode = !!overrideEmails;
+    const reportDate = new Date().toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' });
     try {
-      const emails = (await loadDailyReportsSettings()).missingInfo.emails;
+      emails = overrideEmails || (await loadDailyReportsSettings()).missingInfo.emails;
       const missions = await findAllMissionsWithMissingInfo();
-      console.log(`[Dados Faltantes Diário] ${missions.length} OS com dados faltantes encontradas`);
+      total = missions.length;
+      console.log(`[Dados Faltantes Diário] ${total} OS com dados faltantes encontradas`);
 
-      const reportDate = new Date().toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' });
-      if (missions.length > 0) {
-        const sent = await sendDailyMissingInfoReport(emails, missions, reportDate);
+      if (total > 0) {
+        sent = await sendDailyMissingInfoReport(emails, missions, reportDate);
         if (sent) {
           console.log(`[Dados Faltantes Diário] Relatório enviado para ${emails}`);
         } else {
@@ -6051,8 +6155,19 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
       } else {
         console.log(`[Dados Faltantes Diário] Nenhuma OS com dados faltantes — email não enviado.`);
       }
+      await logReportRun('missingInfo', source, {
+        userName: actor?.name || null, userId: actor?.id || null,
+        total, emailTo: emails, success: sent, date: reportDate,
+      });
+      return { total, emails, sent, date: reportDate, testMode };
     } catch (err: any) {
       console.error(`[Dados Faltantes Diário] Erro fatal:`, err.message);
+      await logReportRun('missingInfo', source, {
+        userName: actor?.name || null, userId: actor?.id || null,
+        total, emailTo: emails, success: false,
+        errorMessage: err?.message || String(err), date: reportDate,
+      });
+      throw err;
     }
   }
 
@@ -7030,23 +7145,39 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
   // ═══════════════════════════════════════════════════════
   // NF Travadas — relatório diário (horário/emails em system_settings)
   // ═══════════════════════════════════════════════════════
-  async function executeDailyStuckNfReport() {
+  async function executeDailyStuckNfReport(source: ReportRunSource = 'scheduled', actor?: { name?: string | null; id?: string | null }, overrideEmails?: string | null) {
     const now = new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' });
     console.log(`[NF Travadas Diário] Iniciando varredura — ${now}`);
+    let emails = '';
+    let total = 0;
+    let sent = false;
+    const testMode = !!overrideEmails;
+    const reportDate = new Date().toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' });
     try {
-      const emails = (await loadDailyReportsSettings()).stuckNf.emails;
+      emails = overrideEmails || (await loadDailyReportsSettings()).stuckNf.emails;
       const { listStuckNfs } = await import('./nfRetryWorker');
       const items = await listStuckNfs();
-      console.log(`[NF Travadas Diário] ${items.length} NF(s) travadas encontradas`);
-      if (items.length > 0) {
-        const reportDate = new Date().toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' });
-        const sent = await sendStuckNfsReport(emails, items, reportDate);
+      total = items.length;
+      console.log(`[NF Travadas Diário] ${total} NF(s) travadas encontradas`);
+      if (total > 0) {
+        sent = await sendStuckNfsReport(emails, items, reportDate);
         if (sent) console.log(`[NF Travadas Diário] Relatório enviado para ${emails}`);
       } else {
         console.log(`[NF Travadas Diário] Sem NFs travadas — email não enviado.`);
       }
+      await logReportRun('stuckNf', source, {
+        userName: actor?.name || null, userId: actor?.id || null,
+        total, emailTo: emails, success: sent, date: reportDate,
+      });
+      return { total, emails, sent, date: reportDate, testMode };
     } catch (err: any) {
       console.error(`[NF Travadas Diário] Erro fatal:`, err.message);
+      await logReportRun('stuckNf', source, {
+        userName: actor?.name || null, userId: actor?.id || null,
+        total, emailTo: emails, success: false,
+        errorMessage: err?.message || String(err), date: reportDate,
+      });
+      throw err;
     }
   }
 
@@ -7080,6 +7211,49 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
     } catch (err: any) {
       await logManualReportRun(req, { reportKey: 'stuckNf', testMode: override !== null, overrideEmails: override, effectiveEmails: emails, total: null, success: false, error: err.message });
       res.status(500).json({ error: err.message });
+    }
+  });
+
+  // ═══════════════════════════════════════════════════════
+  // Task #86 — Últimas execuções (manuais e agendadas) dos 5 relatórios diários.
+  // Mantido em paralelo ao endpoint de manual-report-runs do Task #89 porque
+  // este lê os logs de execuções **agendadas** gravados via `logReportRun`
+  // pelos executores, complementando a auditoria de disparos manuais.
+  // ═══════════════════════════════════════════════════════
+  app.get('/api/admin/system-settings/daily-reports/runs', requireAuth, requireRole('diretoria', 'administrador', 'financeiro'), async (req: Request, res: Response) => {
+    try {
+      const limit = Math.max(1, Math.min(20, Number(req.query.limit) || 5));
+      const KEYS: ManualReportKey[] = ['legal', 'pending', 'approval', 'missingInfo', 'stuckNf'];
+      const result: Record<string, any[]> = {};
+      await Promise.all(KEYS.map(async (key) => {
+        const { data, error } = await supabaseAdmin
+          .from('system_logs')
+          .select('id, created_at, user_name, details')
+          .eq('entity', 'DailyReport')
+          .eq('entity_id', key)
+          .eq('action_type', 'MANUAL_REPORT_RUN')
+          .order('created_at', { ascending: false })
+          .limit(limit);
+        if (error) { result[key] = []; return; }
+        result[key] = (data || []).map((r: any) => {
+          let d: any = {};
+          try { d = typeof r.details === 'string' ? JSON.parse(r.details) : (r.details || {}); } catch {}
+          return {
+            id: r.id,
+            createdAt: r.created_at,
+            userName: r.user_name,
+            source: d.source || 'manual',
+            total: typeof d.total === 'number' ? d.total : null,
+            emailTo: Array.isArray(d.emailTo) ? d.emailTo : [],
+            success: d.success === true,
+            errorMessage: d.errorMessage || null,
+            date: d.date || null,
+          };
+        });
+      }));
+      res.json({ ok: true, runs: result });
+    } catch (e: any) {
+      res.status(500).json({ ok: false, error: e?.message || 'Falha ao carregar execuções' });
     }
   });
 
