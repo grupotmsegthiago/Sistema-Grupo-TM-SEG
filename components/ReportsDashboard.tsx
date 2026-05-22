@@ -5,7 +5,7 @@ import {
     FileBarChart, Calendar, Clock, User, Download, Search, Loader2, 
     ArrowRight, Shield, Activity, FileText, BarChart2, PieChart, Users, 
     MousePointer2, AlertTriangle, CheckCircle2, TrendingUp, List, MapPin, 
-    Building2, Briefcase, Printer, Filter, Zap, Scale
+    Building2, Briefcase, Printer, Filter, Zap, Scale, UserCheck
 } from 'lucide-react';
 import { SystemLog, MissionStatus } from '../types';
 import {
@@ -29,6 +29,10 @@ interface AutoEngineLogRow {
     goldenHours: number | null;
     provider: string;
     client: string;
+    costEditReason: string;
+    revenueEditReason: string;
+    reasonUser: string;
+    reasonAt: string;
 }
 
 interface UserStats {
@@ -44,7 +48,7 @@ interface UserStats {
 }
 
 const ReportsDashboard: React.FC = () => {
-    const [activeTab, setActiveTab] = useState<'dashboard' | 'ranking' | 'logs' | 'timeline' | 'autoEngine'>('dashboard');
+    const [activeTab, setActiveTab] = useState<'dashboard' | 'ranking' | 'logs' | 'timeline' | 'autoEngine' | 'manualOverride'>('dashboard');
     
     // Helper para formatar data local (YYYY-MM-DD)
     const getLocalISODate = (date: Date) => {
@@ -74,15 +78,19 @@ const ReportsDashboard: React.FC = () => {
     const [autoEngineProviderFilter, setAutoEngineProviderFilter] = useState('');
     const [autoEngineOnlyDivergent, setAutoEngineOnlyDivergent] = useState(false);
 
+    // Auditoria de Edições Manuais sobre o Motor (Task #62)
+    const [manualOverrideProviderFilter, setManualOverrideProviderFilter] = useState('');
+    const [manualOverrideUserFilter, setManualOverrideUserFilter] = useState('');
+
     useEffect(() => {
         fetchData();
         if (activeTab === 'timeline') fetchTimelineData();
-        if (activeTab === 'autoEngine') fetchAutoEngineData();
+        if (activeTab === 'autoEngine' || activeTab === 'manualOverride') fetchAutoEngineData();
     }, [startDate, endDate]);
 
     useEffect(() => {
         if (activeTab === 'timeline' && timelineMissions.length === 0) fetchTimelineData();
-        if (activeTab === 'autoEngine') fetchAutoEngineData();
+        if (activeTab === 'autoEngine' || activeTab === 'manualOverride') fetchAutoEngineData();
     }, [activeTab]);
 
     const fetchAutoEngineData = async () => {
@@ -139,10 +147,44 @@ const ReportsDashboard: React.FC = () => {
                 }
             }
 
+            // Cruzar com logs VALUE_EDIT_REASON da mesma OS (Task #62) para anexar motivo
+            const reasonByMission: Record<string, { costEditReason: string; revenueEditReason: string; userName: string; at: string }> = {};
+            if (missionIds.length > 0) {
+                const CHUNK = 200;
+                for (let i = 0; i < missionIds.length; i += CHUNK) {
+                    const slice = missionIds.slice(i, i + CHUNK);
+                    const { data: rData, error: rErr } = await supabase
+                        .from('system_logs')
+                        .select('entity_id, user_name, created_at, details')
+                        .eq('entity', 'Mission')
+                        .eq('action_type', 'VALUE_EDIT_REASON')
+                        .in('entity_id', slice)
+                        .order('created_at', { ascending: false });
+                    if (rErr) throw rErr;
+                    (rData || []).forEach((r: any) => {
+                        const mid = String(r.entity_id);
+                        if (reasonByMission[mid]) return; // queremos só o mais recente
+                        try {
+                            const d = typeof r.details === 'string' ? JSON.parse(r.details) : (r.details || {});
+                            reasonByMission[mid] = {
+                                costEditReason: d.cost_edit_reason || '',
+                                revenueEditReason: d.revenue_edit_reason || '',
+                                userName: r.user_name || '-',
+                                at: r.created_at || '',
+                            };
+                        } catch { /* ignore */ }
+                    });
+                }
+            }
+
             const enriched: AutoEngineLogRow[] = parsed.map(p => ({
                 ...p,
                 provider: missionInfo[p.missionId]?.provider || '—',
                 client: missionInfo[p.missionId]?.client || '—',
+                costEditReason: reasonByMission[p.missionId]?.costEditReason || '',
+                revenueEditReason: reasonByMission[p.missionId]?.revenueEditReason || '',
+                reasonUser: reasonByMission[p.missionId]?.userName || '',
+                reasonAt: reasonByMission[p.missionId]?.at || '',
             }));
             setAutoEngineRows(enriched);
         } catch (e) {
@@ -380,6 +422,13 @@ const ReportsDashboard: React.FC = () => {
                     data-testid="tab-auto-engine"
                 >
                     <Zap size={16} /> Motor Auto vs Manual
+                </button>
+                <button 
+                    onClick={() => setActiveTab('manualOverride')}
+                    className={`px-4 py-2 rounded-lg text-sm font-bold transition-all flex items-center gap-2 ${activeTab === 'manualOverride' ? 'bg-white text-red-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+                    data-testid="tab-manual-override"
+                >
+                    <UserCheck size={16} /> Edições Manuais
                 </button>
             </div>
 
@@ -1167,6 +1216,282 @@ const ReportsDashboard: React.FC = () => {
                                             {filtered.length > 500 && (
                                                 <div className="p-2 text-center text-[10px] text-gray-400 bg-gray-50 border-t border-gray-200">
                                                     Exibindo as 500 OS mais recentes de {filtered.length}. Refine o período ou o filtro de fornecedor para reduzir.
+                                                </div>
+                                            )}
+                                        </div>
+                                    </div>
+                                </>
+                            )}
+                        </div>
+                    );
+                })()}
+
+                {/* 6. AUDITORIA DE EDIÇÕES MANUAIS SOBRE O MOTOR (Task #62) */}
+                {activeTab === 'manualOverride' && (() => {
+                    const divergentRows = autoEngineRows.filter(r => r.divergent);
+                    const filtered = divergentRows.filter(r => {
+                        if (manualOverrideProviderFilter && !(r.provider || '').toUpperCase().includes(manualOverrideProviderFilter.toUpperCase())) return false;
+                        if (manualOverrideUserFilter && !(r.userName || '').toUpperCase().includes(manualOverrideUserFilter.toUpperCase())) return false;
+                        return true;
+                    });
+
+                    const totalSuggested = filtered.reduce((a, r) => a + r.suggestedTotal, 0);
+                    const totalSaved = filtered.reduce((a, r) => a + r.savedCost, 0);
+                    const totalDivergence = totalSaved - totalSuggested;
+
+                    // Ranking por usuário e por fornecedor
+                    const byUser: Record<string, { user: string; count: number; divergence: number }> = {};
+                    const byProvider: Record<string, { provider: string; count: number; divergence: number }> = {};
+                    filtered.forEach(r => {
+                        const u = r.userName || '—';
+                        const p = r.provider || '—';
+                        if (!byUser[u]) byUser[u] = { user: u, count: 0, divergence: 0 };
+                        byUser[u].count++;
+                        byUser[u].divergence += r.divergence;
+                        if (!byProvider[p]) byProvider[p] = { provider: p, count: 0, divergence: 0 };
+                        byProvider[p].count++;
+                        byProvider[p].divergence += r.divergence;
+                    });
+                    const userRows = Object.values(byUser).sort((a, b) => b.count - a.count);
+                    const providerRows = Object.values(byProvider).sort((a, b) => b.count - a.count);
+
+                    const reasonOf = (r: AutoEngineLogRow) => r.costEditReason || r.revenueEditReason || '';
+
+                    const handleExportCsv = () => {
+                        const header = ['Data/Hora Edicao', 'OS', 'Usuario (Recalculo)', 'Cliente', 'Fornecedor', 'Custo Sugerido (Motor)', 'Custo Salvo', 'Diferenca', 'Motivo (Custo)', 'Motivo (Receita)', 'Usuario (Motivo)', 'Data Motivo'];
+                        const lines = [header.join(';')];
+                        filtered.forEach(r => {
+                            lines.push([
+                                new Date(r.createdAt).toLocaleString('pt-BR'),
+                                r.missionId,
+                                (r.userName || '').replace(/[;\n\r]/g, ' '),
+                                (r.client || '').replace(/[;\n\r]/g, ' '),
+                                (r.provider || '').replace(/[;\n\r]/g, ' '),
+                                r.suggestedTotal.toFixed(2).replace('.', ','),
+                                r.savedCost.toFixed(2).replace('.', ','),
+                                r.divergence.toFixed(2).replace('.', ','),
+                                (r.costEditReason || '').replace(/[;\n\r]/g, ' '),
+                                (r.revenueEditReason || '').replace(/[;\n\r]/g, ' '),
+                                (r.reasonUser || '').replace(/[;\n\r]/g, ' '),
+                                r.reasonAt ? new Date(r.reasonAt).toLocaleString('pt-BR') : '',
+                            ].join(';'));
+                        });
+                        const blob = new Blob(['\ufeff' + lines.join('\n')], { type: 'text/csv;charset=utf-8;' });
+                        const url = URL.createObjectURL(blob);
+                        const a = document.createElement('a');
+                        a.href = url;
+                        a.download = `auditoria_edicoes_manuais_${startDate}_${endDate}.csv`;
+                        document.body.appendChild(a);
+                        a.click();
+                        document.body.removeChild(a);
+                        URL.revokeObjectURL(url);
+                    };
+
+                    return (
+                        <div className="space-y-4 animate-in fade-in slide-in-from-bottom-4">
+                            <div className="bg-amber-50 border-l-4 border-amber-400 p-3 rounded-r-lg no-print">
+                                <p className="text-xs text-amber-800 font-semibold flex items-start gap-2">
+                                    <AlertTriangle size={14} className="shrink-0 mt-0.5" />
+                                    <span>
+                                        Lista apenas as OS em que o operador salvou um custo <strong>diferente</strong> do sugerido pelo motor automático.
+                                        Cruzamos com os motivos cadastrados em <code className="bg-amber-100 px-1 rounded text-[10px]">VALUE_EDIT_REASON</code> para identificar quem editou, quando e por quê.
+                                    </span>
+                                </p>
+                            </div>
+
+                            <div className="flex flex-wrap gap-3 items-center no-print">
+                                <div className="flex items-center gap-2">
+                                    <Filter size={14} className="text-gray-400" />
+                                    <input
+                                        type="text"
+                                        placeholder="Filtrar fornecedor..."
+                                        value={manualOverrideProviderFilter}
+                                        onChange={e => setManualOverrideProviderFilter(e.target.value)}
+                                        className="px-3 py-1.5 border border-gray-300 rounded-lg text-xs w-44"
+                                        data-testid="input-manual-override-provider-filter"
+                                    />
+                                    <input
+                                        type="text"
+                                        placeholder="Filtrar usuário..."
+                                        value={manualOverrideUserFilter}
+                                        onChange={e => setManualOverrideUserFilter(e.target.value)}
+                                        className="px-3 py-1.5 border border-gray-300 rounded-lg text-xs w-44"
+                                        data-testid="input-manual-override-user-filter"
+                                    />
+                                </div>
+                                <div className="ml-auto flex gap-2">
+                                    <button
+                                        onClick={handleExportCsv}
+                                        className="px-4 py-1.5 bg-gray-100 hover:bg-gray-200 rounded-lg text-xs font-bold flex items-center gap-2 transition-colors"
+                                        data-testid="btn-export-manual-override-csv"
+                                    >
+                                        <Download size={14} /> CSV
+                                    </button>
+                                    <button
+                                        onClick={() => window.print()}
+                                        className="px-4 py-1.5 bg-gray-100 hover:bg-gray-200 rounded-lg text-xs font-bold flex items-center gap-2 transition-colors"
+                                        data-testid="btn-print-manual-override"
+                                    >
+                                        <Printer size={14} /> Imprimir
+                                    </button>
+                                </div>
+                            </div>
+
+                            {autoEngineLoading ? (
+                                <div className="flex items-center justify-center py-20">
+                                    <Loader2 size={32} className="animate-spin text-red-500" />
+                                </div>
+                            ) : (
+                                <>
+                                    <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                                        <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm">
+                                            <p className="text-[9px] font-black text-gray-400 uppercase mb-1">OS Editadas Manualmente</p>
+                                            <p className="text-2xl font-black text-red-700" data-testid="kpi-manual-override-count">{filtered.length}</p>
+                                            <p className="text-[9px] text-gray-500 font-bold mt-1">de {divergentRows.length} divergente(s) no período</p>
+                                        </div>
+                                        <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm">
+                                            <p className="text-[9px] font-black text-gray-400 uppercase mb-1">Sugerido pelo Motor</p>
+                                            <p className="text-lg font-black text-blue-700 font-mono" data-testid="kpi-manual-override-suggested">{formatCurrencyBR(totalSuggested)}</p>
+                                        </div>
+                                        <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm">
+                                            <p className="text-[9px] font-black text-gray-400 uppercase mb-1">Custo Salvo (Manual)</p>
+                                            <p className="text-lg font-black text-amber-700 font-mono" data-testid="kpi-manual-override-saved">{formatCurrencyBR(totalSaved)}</p>
+                                        </div>
+                                        <div className={`p-4 rounded-xl border-2 shadow-sm ${Math.abs(totalDivergence) > 0.01 ? (totalDivergence > 0 ? 'border-red-300 bg-red-50' : 'border-emerald-300 bg-emerald-50') : 'border-gray-200 bg-white'}`}>
+                                            <p className="text-[9px] font-black text-gray-400 uppercase mb-1">Diferença Total (Salvo − Motor)</p>
+                                            <p className={`text-lg font-black font-mono ${totalDivergence > 0.01 ? 'text-red-700' : totalDivergence < -0.01 ? 'text-emerald-700' : 'text-gray-700'}`} data-testid="kpi-manual-override-divergence">
+                                                {totalDivergence >= 0 ? '+' : ''}{formatCurrencyBR(totalDivergence)}
+                                            </p>
+                                        </div>
+                                    </div>
+
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                        <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+                                            <div className="px-4 py-2 bg-gray-50 border-b border-gray-200">
+                                                <h4 className="text-[10px] font-black text-gray-700 uppercase flex items-center gap-2">
+                                                    <Users size={12} /> Ranking por Usuário
+                                                </h4>
+                                            </div>
+                                            <div className="overflow-x-auto max-h-60">
+                                                <table className="w-full text-left">
+                                                    <thead>
+                                                        <tr className="text-[9px] font-black text-gray-500 uppercase bg-gray-50">
+                                                            <th className="px-3 py-2">Usuário</th>
+                                                            <th className="px-3 py-2 text-right">Edições</th>
+                                                            <th className="px-3 py-2 text-right">Δ Acumulado</th>
+                                                        </tr>
+                                                    </thead>
+                                                    <tbody>
+                                                        {userRows.length === 0 ? (
+                                                            <tr><td colSpan={3} className="px-3 py-4 text-center text-[11px] text-gray-400">Sem edições manuais no período.</td></tr>
+                                                        ) : userRows.map((u, i) => (
+                                                            <tr key={i} className="border-t border-gray-100 hover:bg-gray-50" data-testid={`row-manual-override-user-${i}`}>
+                                                                <td className="px-3 py-1.5 text-xs font-bold text-gray-800 truncate max-w-[180px]">{u.user}</td>
+                                                                <td className="px-3 py-1.5 text-xs text-right">{u.count}</td>
+                                                                <td className={`px-3 py-1.5 text-xs font-mono text-right ${Math.abs(u.divergence) < 0.01 ? 'text-gray-500' : u.divergence > 0 ? 'text-red-700' : 'text-emerald-700'}`}>
+                                                                    {u.divergence >= 0 ? '+' : ''}{formatCurrencyBR(u.divergence)}
+                                                                </td>
+                                                            </tr>
+                                                        ))}
+                                                    </tbody>
+                                                </table>
+                                            </div>
+                                        </div>
+
+                                        <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+                                            <div className="px-4 py-2 bg-gray-50 border-b border-gray-200">
+                                                <h4 className="text-[10px] font-black text-gray-700 uppercase flex items-center gap-2">
+                                                    <Briefcase size={12} /> Ranking por Fornecedor
+                                                </h4>
+                                            </div>
+                                            <div className="overflow-x-auto max-h-60">
+                                                <table className="w-full text-left">
+                                                    <thead>
+                                                        <tr className="text-[9px] font-black text-gray-500 uppercase bg-gray-50">
+                                                            <th className="px-3 py-2">Fornecedor</th>
+                                                            <th className="px-3 py-2 text-right">Edições</th>
+                                                            <th className="px-3 py-2 text-right">Δ Acumulado</th>
+                                                        </tr>
+                                                    </thead>
+                                                    <tbody>
+                                                        {providerRows.length === 0 ? (
+                                                            <tr><td colSpan={3} className="px-3 py-4 text-center text-[11px] text-gray-400">Sem edições manuais no período.</td></tr>
+                                                        ) : providerRows.map((p, i) => (
+                                                            <tr key={i} className="border-t border-gray-100 hover:bg-gray-50" data-testid={`row-manual-override-provider-${i}`}>
+                                                                <td className="px-3 py-1.5 text-xs font-bold text-gray-800 truncate max-w-[180px]">{p.provider}</td>
+                                                                <td className="px-3 py-1.5 text-xs text-right">{p.count}</td>
+                                                                <td className={`px-3 py-1.5 text-xs font-mono text-right ${Math.abs(p.divergence) < 0.01 ? 'text-gray-500' : p.divergence > 0 ? 'text-red-700' : 'text-emerald-700'}`}>
+                                                                    {p.divergence >= 0 ? '+' : ''}{formatCurrencyBR(p.divergence)}
+                                                                </td>
+                                                            </tr>
+                                                        ))}
+                                                    </tbody>
+                                                </table>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+                                        <div className="px-5 py-3 bg-red-50 border-b border-red-200">
+                                            <h4 className="text-xs font-black text-red-800 uppercase flex items-center gap-2">
+                                                <UserCheck size={14} /> Edições Manuais com Motivo
+                                            </h4>
+                                        </div>
+                                        <div className="overflow-x-auto">
+                                            <table className="w-full text-left">
+                                                <thead>
+                                                    <tr className="text-[9px] font-black text-gray-500 uppercase bg-gray-50">
+                                                        <th className="px-3 py-2">Data</th>
+                                                        <th className="px-3 py-2">OS</th>
+                                                        <th className="px-3 py-2">Usuário</th>
+                                                        <th className="px-3 py-2">Cliente / Fornecedor</th>
+                                                        <th className="px-3 py-2 text-right">Sugerido</th>
+                                                        <th className="px-3 py-2 text-right">Salvo</th>
+                                                        <th className="px-3 py-2 text-right">Diferença</th>
+                                                        <th className="px-3 py-2">Motivo</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody>
+                                                    {filtered.length === 0 ? (
+                                                        <tr><td colSpan={8} className="px-3 py-6 text-center text-xs text-gray-400">Nenhuma edição manual divergente do motor no período/filtros selecionados.</td></tr>
+                                                    ) : filtered.slice(0, 500).map(r => {
+                                                        const reason = reasonOf(r);
+                                                        return (
+                                                            <tr key={r.logId} className="border-t border-gray-100 hover:bg-red-50/20" data-testid={`row-manual-override-${r.missionId}`}>
+                                                                <td className="px-3 py-2 text-[11px] text-gray-500 font-mono whitespace-nowrap">{new Date(r.createdAt).toLocaleString('pt-BR')}</td>
+                                                                <td className="px-3 py-2 text-xs font-black text-gray-800">{r.missionId}</td>
+                                                                <td className="px-3 py-2 text-xs font-bold text-gray-700 truncate max-w-[140px]" title={r.userName}>{r.userName || '-'}</td>
+                                                                <td className="px-3 py-2 text-[11px] text-gray-600">
+                                                                    <div className="truncate max-w-[180px] font-bold" title={r.client}>{r.client}</div>
+                                                                    <div className="truncate max-w-[180px] text-gray-500" title={r.provider}>{r.provider}</div>
+                                                                </td>
+                                                                <td className="px-3 py-2 text-xs font-mono text-blue-700 text-right">{formatCurrencyBR(r.suggestedTotal)}</td>
+                                                                <td className="px-3 py-2 text-xs font-mono text-amber-700 text-right">{formatCurrencyBR(r.savedCost)}</td>
+                                                                <td className={`px-3 py-2 text-xs font-mono font-black text-right ${r.divergence > 0 ? 'text-red-700' : 'text-emerald-700'}`}>
+                                                                    {r.divergence >= 0 ? '+' : ''}{formatCurrencyBR(r.divergence)}
+                                                                </td>
+                                                                <td className="px-3 py-2 text-[11px] text-gray-700 max-w-[260px]">
+                                                                    {reason ? (
+                                                                        <div>
+                                                                            <div className="whitespace-pre-wrap break-words" title={reason}>{reason}</div>
+                                                                            {r.reasonUser && (
+                                                                                <div className="text-[9px] text-gray-400 mt-0.5">
+                                                                                    por {r.reasonUser}{r.reasonAt ? ` · ${new Date(r.reasonAt).toLocaleString('pt-BR')}` : ''}
+                                                                                </div>
+                                                                            )}
+                                                                        </div>
+                                                                    ) : (
+                                                                        <span className="text-[10px] italic text-gray-400">Sem motivo registrado</span>
+                                                                    )}
+                                                                </td>
+                                                            </tr>
+                                                        );
+                                                    })}
+                                                </tbody>
+                                            </table>
+                                            {filtered.length > 500 && (
+                                                <div className="p-2 text-center text-[10px] text-gray-400 bg-gray-50 border-t border-gray-200">
+                                                    Exibindo as 500 OS mais recentes de {filtered.length}. Refine o período ou os filtros para reduzir.
                                                 </div>
                                             )}
                                         </div>
