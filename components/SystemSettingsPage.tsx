@@ -572,6 +572,52 @@ const SystemSettingsPage: React.FC<{ onNavigate?: (id: string) => void }> = () =
                 data-testid="input-manual-runs-to"
               />
             </label>
+            {(() => {
+              const toLocalISO = (d: Date) => {
+                const y = d.getFullYear();
+                const m = String(d.getMonth() + 1).padStart(2, '0');
+                const day = String(d.getDate()).padStart(2, '0');
+                return `${y}-${m}-${day}`;
+              };
+              const today = new Date();
+              const todayStr = toLocalISO(today);
+              const sevenDaysAgo = new Date(today);
+              sevenDaysAgo.setDate(today.getDate() - 6);
+              const sevenStr = toLocalISO(sevenDaysAgo);
+              const firstOfMonth = toLocalISO(new Date(today.getFullYear(), today.getMonth(), 1));
+              const firstOfPrevMonth = toLocalISO(new Date(today.getFullYear(), today.getMonth() - 1, 1));
+              const lastOfPrevMonth = toLocalISO(new Date(today.getFullYear(), today.getMonth(), 0));
+              const shortcuts: Array<{ key: string; label: string; from: string; to: string }> = [
+                { key: 'today', label: 'Hoje', from: todayStr, to: todayStr },
+                { key: '7d', label: 'Últimos 7 dias', from: sevenStr, to: todayStr },
+                { key: 'month', label: 'Mês atual', from: firstOfMonth, to: todayStr },
+                { key: 'prev-month', label: 'Mês anterior', from: firstOfPrevMonth, to: lastOfPrevMonth },
+              ];
+              const applyShortcut = (from: string, to: string) => {
+                const isActive = manualRunsFilterFrom === from && manualRunsFilterTo === to;
+                if (isActive) {
+                  setManualRunsFilterFrom('');
+                  setManualRunsFilterTo('');
+                } else {
+                  setManualRunsFilterFrom(from);
+                  setManualRunsFilterTo(to);
+                }
+              };
+              return shortcuts.map(s => {
+                const active = manualRunsFilterFrom === s.from && manualRunsFilterTo === s.to;
+                return (
+                  <button
+                    key={s.key}
+                    onClick={() => applyShortcut(s.from, s.to)}
+                    className={`text-xs px-2 py-1 rounded-lg border ${active ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'}`}
+                    data-testid={`button-manual-runs-shortcut-${s.key}`}
+                    title={active ? 'Clique novamente para limpar' : s.label}
+                  >
+                    {s.label}
+                  </button>
+                );
+              });
+            })()}
             {(manualRunsFilterFrom || manualRunsFilterTo) && (
               <button
                 onClick={() => { setManualRunsFilterFrom(''); setManualRunsFilterTo(''); }}
