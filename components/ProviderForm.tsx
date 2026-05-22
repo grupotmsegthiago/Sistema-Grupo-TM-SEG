@@ -256,6 +256,50 @@ const ProviderForm: React.FC<ProviderFormProps> = ({ onBack, onNavigateToVehicle
       }
   };
 
+  const [isMaterializingBands, setIsMaterializingBands] = useState(false);
+  const handleMaterializeBands = async () => {
+      if (!formData.name) { showNotification('Atenção', 'Salve o fornecedor primeiro.', 'warning'); return; }
+      if (!canEditAutoMaster) { showNotification('Sem permissão', 'Apenas diretoria/administrador/financeiro pode gerar tabelas.', 'error'); return; }
+      const cfg = autoMasterConfig;
+      if (cfg.baseActivationValue <= 0 || cfg.baseKmAllowance <= 0) {
+          showNotification('Atenção', 'Configure as variáveis mestre antes de gerar as tabelas.', 'warning');
+          return;
+      }
+      const bands = generateAutoBands(cfg);
+      if (bands.length === 0) { showNotification('Atenção', 'Nenhuma faixa para salvar.', 'warning'); return; }
+      if (!confirm(`Salvar as ${bands.length} faixas como tabelas de custo manuais para "${formData.name}"?\n\nElas aparecerão no seletor de tabela do fornecedor ao vincular missões/rotas. Tabelas anteriores com prefixo "AUTO " serão substituídas.`)) return;
+      setIsMaterializingBands(true);
+      try {
+          await supabase.from('provider_cost_tables').delete().eq('provider', formData.name).like('operation_type', 'AUTO %');
+          const rows = bands.map(b => ({
+              provider: formData.name,
+              operation_type: `AUTO ${b.kmFaixa}KM`,
+              activation_cost: b.valorBase,
+              franchise_km: b.kmFaixa,
+              franchise_hours: b.franquiaHoras,
+              cost_per_extra_km: cfg.extraKmValue,
+              cost_per_extra_hour: cfg.extraHourValue,
+              cancellation_fee: 0,
+          }));
+          const { error } = await supabase.from('provider_cost_tables').insert(rows);
+          if (error) throw error;
+          await logAction('CREATE', 'ProviderCostTable', formData.name, `Geradas ${rows.length} tabelas AUTO a partir do motor automático (${formData.name})`);
+          await supabase.from('system_logs').insert([{
+              user_name: currentUser?.name || 'SISTEMA',
+              action_type: 'FINANCIAL_RECALC',
+              entity: 'ProviderCostTable',
+              entity_id: formData.name,
+              details: JSON.stringify({ source: 'provider_auto_materialize', count: rows.length, config: cfg, timestamp: new Date().toISOString() })
+          }]);
+          showNotification('Sucesso', `${rows.length} tabelas AUTO geradas. Agora aparecem ao vincular tabela do fornecedor.`, 'success');
+          fetchCostTables(formData.name);
+      } catch (err: any) {
+          showNotification('Erro', 'Falha ao gerar tabelas: ' + (err?.message || 'erro desconhecido'), 'error');
+      } finally {
+          setIsMaterializingBands(false);
+      }
+  };
+
   const handleDisableAutoMaster = async () => {
       if (!autoMasterId) { setAutoMasterEnabled(false); return; }
       if (!canEditAutoMaster) { showNotification('Sem permissão', 'Apenas diretoria/administrador/financeiro pode alterar.', 'error'); return; }
@@ -871,9 +915,16 @@ const ProviderForm: React.FC<ProviderFormProps> = ({ onBack, onNavigateToVehicle
                       <button type="button" onClick={() => setShowAutoPreview(v => !v)} disabled={autoPreviewBands.length === 0} className="text-[11px] font-black uppercase tracking-widest text-indigo-700 hover:underline disabled:opacity-40 flex items-center gap-1" data-testid="button-toggle-auto-preview">
                           {showAutoPreview ? 'Ocultar' : 'Ver'} faixas geradas ({autoPreviewBands.length})
                       </button>
-                      <button type="button" onClick={handleSaveAutoMaster} disabled={!canEditAutoMaster || isSavingMaster} className="px-5 py-2 bg-emerald-600 text-white rounded-lg text-xs font-black uppercase tracking-widest hover:bg-emerald-700 disabled:opacity-50 flex items-center gap-2" data-testid="button-save-auto-master">
-                          {isSavingMaster ? <Loader2 size={12} className="animate-spin" /> : <Save size={12} />} {autoMasterId ? 'Atualizar' : 'Ativar Motor'}
-                      </button>
+                      <div className="flex items-center gap-2">
+                          {autoMasterEnabled && (
+                              <button type="button" onClick={handleMaterializeBands} disabled={!canEditAutoMaster || isMaterializingBands || autoPreviewBands.length === 0} className="px-4 py-2 bg-indigo-600 text-white rounded-lg text-xs font-black uppercase tracking-widest hover:bg-indigo-700 disabled:opacity-50 flex items-center gap-2" data-testid="button-materialize-bands" title="Cria 30 tabelas manuais (AUTO 100KM, AUTO 200KM, ...) para aparecer ao vincular no fornecedor/rota.">
+                                  {isMaterializingBands ? <Loader2 size={12} className="animate-spin" /> : <Save size={12} />} Salvar Faixas como Tabelas
+                              </button>
+                          )}
+                          <button type="button" onClick={handleSaveAutoMaster} disabled={!canEditAutoMaster || isSavingMaster} className="px-5 py-2 bg-emerald-600 text-white rounded-lg text-xs font-black uppercase tracking-widest hover:bg-emerald-700 disabled:opacity-50 flex items-center gap-2" data-testid="button-save-auto-master">
+                              {isSavingMaster ? <Loader2 size={12} className="animate-spin" /> : <Save size={12} />} {autoMasterId ? 'Atualizar' : 'Ativar Motor'}
+                          </button>
+                      </div>
                   </div>
 
                   {!canEditAutoMaster && (
