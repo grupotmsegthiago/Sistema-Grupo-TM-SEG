@@ -6188,6 +6188,96 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
         } catch (e: any) {
           console.error('[OverrideAlert] Falha ao enviar e-mail:', e?.message);
         }
+
+        // 3) WhatsApp (Z-API) — Task #74. Lista configurável por env, telefones separados por vírgula.
+        // Formato esperado: DDI+DDD+número, ex.: 5511999999999.
+        try {
+          const rawPhones = process.env.MANUAL_OVERRIDE_ALERT_WHATSAPP || '';
+          const phones = rawPhones.split(/[,;\s]+/).map(s => s.replace(/\D/g, '')).filter(p => p.length >= 10);
+          if (phones.length > 0 && ZAPI_INSTANCE && ZAPI_TOKEN) {
+            const waMessage =
+              `⚠️ *TM SEG — Excesso de edições manuais*\n\n` +
+              `${scopeLabel}: *${name}*\n` +
+              `Edições divergentes: *${r2(count)}* (limite ${MANUAL_OVERRIDE_THRESHOLD})\n` +
+              `Janela: ${fromDay} → ${toDay}\n\n` +
+              `Auditoria filtrada:\n${link}`;
+            const headers: any = { 'Content-Type': 'application/json' };
+            if (ZAPI_CLIENT_TOKEN) headers['Client-Token'] = ZAPI_CLIENT_TOKEN;
+            for (const phone of phones) {
+              try {
+                const r = await fetch(`${zapiBase()}/send-text`, {
+                  method: 'POST',
+                  headers,
+                  body: JSON.stringify({ phone, message: waMessage }),
+                });
+                if (!r.ok) {
+                  const t = await r.text().catch(() => '');
+                  console.warn(`[OverrideAlert] WhatsApp ${phone} HTTP ${r.status}: ${t.slice(0, 200)}`);
+                } else {
+                  console.log(`[OverrideAlert] WhatsApp enviado para ${phone} (${scope}=${name})`);
+                }
+              } catch (e: any) {
+                console.warn(`[OverrideAlert] WhatsApp ${phone} falhou:`, e?.message);
+              }
+            }
+          }
+        } catch (e: any) {
+          console.error('[OverrideAlert] Falha no bloco WhatsApp:', e?.message);
+        }
+
+        // 4) Push notification — Task #74. Filtra inscritos por role (env MANUAL_OVERRIDE_ALERT_PUSH_ROLES).
+        // Default: diretoria, administrador, financeiro. Para enviar a todos: defina "*".
+        try {
+          const rolesRaw = (process.env.MANUAL_OVERRIDE_ALERT_PUSH_ROLES ||
+            'diretoria,administrador,financeiro').toLowerCase();
+          const allowAll = rolesRaw.trim() === '*';
+          const allowedRoles = new Set(rolesRaw.split(/[,;\s]+/).map(s => s.trim()).filter(Boolean));
+          const subs = await pushSubsLoadAll();
+          if (subs.length > 0) {
+            let targets = subs;
+            if (!allowAll) {
+              const userIds = Array.from(new Set(subs.map(s => s.key).filter(Boolean)));
+              const roleByUser: Record<string, string> = {};
+              const CHUNK = 200;
+              for (let i = 0; i < userIds.length; i += CHUNK) {
+                const slice = userIds.slice(i, i + CHUNK);
+                try {
+                  const { data: usrs } = await supabaseAdmin
+                    .from('system_users')
+                    .select('id, status, profiles:profile_id ( name )')
+                    .in('id', slice);
+                  (usrs || []).forEach((u: any) => {
+                    if (u.status !== 'Ativo') return;
+                    const role = ((u.profiles as any)?.name || '').toLowerCase();
+                    if (role) roleByUser[String(u.id)] = role;
+                  });
+                } catch { /* ignore */ }
+              }
+              targets = subs.filter(s => allowedRoles.has(roleByUser[s.key] || ''));
+            }
+            if (targets.length > 0) {
+              const pushPayload = JSON.stringify({
+                title: `⚠️ ${scopeLabel}: ${name}`,
+                body: `${r2(count)} edições manuais sobre o motor (últimos ${MANUAL_OVERRIDE_WINDOW_DAYS}d). Toque para abrir a auditoria.`,
+                tag: `manual-override-${scope}-${name}`,
+                icon: '/favicon.png',
+                url: link,
+              });
+              for (const { key, subscription } of targets) {
+                try {
+                  await webpush.sendNotification(subscription, pushPayload);
+                } catch (err: any) {
+                  if (err?.statusCode === 410 || err?.statusCode === 404) {
+                    await pushSubsDelete(key);
+                  }
+                }
+              }
+              console.log(`[OverrideAlert] Push enviado para ${targets.length} dispositivo(s) (${scope}=${name})`);
+            }
+          }
+        } catch (e: any) {
+          console.error('[OverrideAlert] Falha no bloco Push:', e?.message);
+        }
       };
 
       let alertsSent = 0;
