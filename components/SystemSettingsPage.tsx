@@ -19,6 +19,7 @@ type RunResult = {
   date?: string;
   message: string;
   at: string;
+  testMode?: boolean;
 };
 type HistoryEntry = {
   id: string;
@@ -55,6 +56,7 @@ const SystemSettingsPage: React.FC<{ onNavigate?: (id: string) => void }> = () =
   const [isSaving, setIsSaving] = useState(false);
   const [runningKey, setRunningKey] = useState<ReportKey | null>(null);
   const [runResults, setRunResults] = useState<Partial<Record<ReportKey, RunResult>>>({});
+  const [overrideEmails, setOverrideEmails] = useState<Partial<Record<ReportKey, string>>>({});
 
   const canRunReports = useMemo(() => {
     try {
@@ -71,13 +73,28 @@ const SystemSettingsPage: React.FC<{ onNavigate?: (id: string) => void }> = () =
   const handleRunNow = async (key: ReportKey) => {
     const report = REPORTS.find(r => r.key === key);
     if (!report || !settings) return;
-    const dest = (settings[key].emails || '').split(',').map(x => x.trim()).filter(Boolean).join(', ');
-    if (!dest) { alert('Defina pelo menos um destinatário antes de enviar.'); return; }
-    if (!confirm(`Disparar agora o relatório "${report.title}"?\n\nDestinatários atuais:\n${dest}\n\nAtenção: o envio usa os destinatários SALVOS no banco. Se você editou os campos acima e não clicou em "Salvar", a alteração NÃO será considerada.`)) return;
+    const overrideRaw = (overrideEmails[key] || '').trim();
+    const overrideList = overrideRaw.split(',').map(x => x.trim()).filter(Boolean);
+    const isTest = overrideList.length > 0;
+
+    if (isTest) {
+      const emailRe = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      const bad = overrideList.find(e => !emailRe.test(e));
+      if (bad) { alert(`E-mail inválido em "Enviar somente para": ${bad}`); return; }
+      if (!confirm(`Envio de TESTE do relatório "${report.title}".\n\nSerá enviado APENAS para:\n${overrideList.join(', ')}\n\nA configuração salva no banco NÃO será alterada nem usada neste envio.`)) return;
+    } else {
+      const dest = (settings[key].emails || '').split(',').map(x => x.trim()).filter(Boolean).join(', ');
+      if (!dest) { alert('Defina pelo menos um destinatário antes de enviar.'); return; }
+      if (!confirm(`Disparar agora o relatório "${report.title}"?\n\nDestinatários atuais:\n${dest}\n\nAtenção: o envio usa os destinatários SALVOS no banco. Se você editou os campos acima e não clicou em "Salvar", a alteração NÃO será considerada.`)) return;
+    }
 
     setRunningKey(key);
     try {
-      const res = await fetch(report.endpoint, { method: 'POST', headers: authHeaders() });
+      const res = await fetch(report.endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...authHeaders() },
+        body: JSON.stringify(isTest ? { overrideEmails: overrideList } : {}),
+      });
       let json: any = {};
       try { json = await res.json(); } catch {}
       const at = new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' });
@@ -87,12 +104,15 @@ const SystemSettingsPage: React.FC<{ onNavigate?: (id: string) => void }> = () =
         const total = typeof json?.total === 'number' ? json.total : undefined;
         const sent = json?.success === true;
         const emailTo = Array.isArray(json?.emailTo) ? json.emailTo.join(', ') : (json?.emailTo || '');
+        const testMode = json?.testMode === true || isTest;
+        const prefix = testMode ? '[TESTE] ' : '';
         const message = sent
-          ? `Enviado com sucesso${total != null ? ` — ${total} registro(s)` : ''}${emailTo ? ` para ${emailTo}` : ''}.`
+          ? `${prefix}Enviado com sucesso${total != null ? ` — ${total} registro(s)` : ''}${emailTo ? ` para ${emailTo}` : ''}.${testMode ? ' A configuração salva não foi alterada.' : ''}`
           : (total === 0
-              ? 'Execução concluída — sem itens para reportar, e-mail não enviado.'
-              : `Execução concluída sem envio${emailTo ? ` (destinatários: ${emailTo})` : ''}.`);
-        setRunResults(prev => ({ ...prev, [key]: { ok: true, total, emailTo, date: json?.date, message, at } }));
+              ? `${prefix}Execução concluída — sem itens para reportar, e-mail não enviado${testMode && emailTo ? ` (teste seria enviado para ${emailTo})` : ''}.`
+              : `${prefix}Execução concluída sem envio${emailTo ? ` (destinatários: ${emailTo})` : ''}.`);
+        setRunResults(prev => ({ ...prev, [key]: { ok: true, total, emailTo, date: json?.date, message, at, testMode } }));
+        if (testMode) setOverrideEmails(prev => ({ ...prev, [key]: '' }));
       }
     } catch (e: any) {
       const at = new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' });
@@ -221,22 +241,36 @@ const SystemSettingsPage: React.FC<{ onNavigate?: (id: string) => void }> = () =
                     <h4 className="font-semibold text-gray-800">{r.title}</h4>
                     <p className="text-xs text-gray-500">{r.description}</p>
                   </div>
-                  <div className="flex items-center gap-2 whitespace-nowrap">
+                  <div className="flex items-center gap-2 whitespace-nowrap flex-wrap justify-end">
                     <span className="text-[11px] text-gray-500">
                       Padrão: <strong>{fmtTime(d.hour, d.minute)}</strong>
                     </span>
                     {canRunReports && (
-                      <button
-                        type="button"
-                        onClick={() => handleRunNow(r.key)}
-                        disabled={runningKey !== null}
-                        className="bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5"
-                        title="Dispara o envio agora usando os destinatários SALVOS no banco"
-                        data-testid={`button-run-now-${r.key}`}
-                      >
-                        {runningKey === r.key ? <Loader2 size={12} className="animate-spin" /> : <Send size={12} />}
-                        {runningKey === r.key ? 'Enviando...' : 'Enviar agora'}
-                      </button>
+                      <>
+                        <input
+                          type="text"
+                          value={overrideEmails[r.key] || ''}
+                          onChange={(e) => setOverrideEmails(prev => ({ ...prev, [r.key]: e.target.value }))}
+                          disabled={runningKey !== null}
+                          placeholder="Enviar somente para (teste)"
+                          title="Opcional: se preenchido, este disparo manual vai APENAS para esses e-mails e ignora a configuração salva. Não altera o banco."
+                          className="border border-amber-300 bg-amber-50 placeholder-amber-700/60 text-amber-900 rounded-lg px-2 py-1 text-xs w-64 focus:outline-none focus:ring-2 focus:ring-amber-400"
+                          data-testid={`input-override-emails-${r.key}`}
+                        />
+                        <button
+                          type="button"
+                          onClick={() => handleRunNow(r.key)}
+                          disabled={runningKey !== null}
+                          className={`${(overrideEmails[r.key] || '').trim() ? 'bg-amber-600 hover:bg-amber-700' : 'bg-emerald-600 hover:bg-emerald-700'} disabled:opacity-50 text-white px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5`}
+                          title={(overrideEmails[r.key] || '').trim() ? 'Envio de TESTE: vai apenas para o e-mail digitado e NÃO usa a configuração salva' : 'Dispara o envio agora usando os destinatários SALVOS no banco'}
+                          data-testid={`button-run-now-${r.key}`}
+                        >
+                          {runningKey === r.key ? <Loader2 size={12} className="animate-spin" /> : <Send size={12} />}
+                          {runningKey === r.key
+                            ? 'Enviando...'
+                            : ((overrideEmails[r.key] || '').trim() ? 'Enviar teste' : 'Enviar agora')}
+                        </button>
+                      </>
                     )}
                   </div>
                 </div>

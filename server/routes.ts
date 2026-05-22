@@ -177,6 +177,22 @@ export async function registerRoutes(
     res.json({ status: 'ok', timestamp: Date.now(), uptime: process.uptime() });
   });
 
+  // Task #87 — Permite enviar um relatório manual para um e-mail de teste sem
+  // alterar a configuração persistida. Retorna a lista normalizada como string
+  // "a@x.com, b@y.com" pronta para uso nos senders ou null quando ausente.
+  function parseOverrideEmails(req: Request): string | null {
+    const raw: unknown = req.body && ((req.body as any).overrideEmails ?? (req.body as any).override_emails);
+    if (raw == null || raw === '') return null;
+    const list = Array.isArray(raw) ? raw.map(String) : String(raw).split(',');
+    const cleaned = list.map(s => s.trim()).filter(Boolean);
+    if (cleaned.length === 0) return null;
+    const emailRe = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    for (const e of cleaned) {
+      if (!emailRe.test(e)) throw new Error(`E-mail inválido em "Enviar somente para": ${e}`);
+    }
+    return cleaned.join(', ');
+  }
+
   app.post('/api/recalculate-all', requireAuth, requireRole('diretoria', 'administrador', 'ceo', 'financeiro'), async (req: Request, res: Response) => {
     try {
       const sbUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || '';
@@ -5754,13 +5770,16 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
 
   scheduleDailyLegalReport();
 
-  app.post("/api/datajud/relatorio-diario", requireAuth, requireRole('administrador', 'diretoria'), async (_req: Request, res: Response) => {
+  app.post("/api/datajud/relatorio-diario", requireAuth, requireRole('administrador', 'diretoria'), async (req: Request, res: Response) => {
     try {
-      const emails = await getLegalEmail();
+      let override: string | null = null;
+      try { override = parseOverrideEmails(req); }
+      catch (e: any) { return res.status(400).json({ error: e.message }); }
+      const emails = override ?? (await getLegalEmail());
       const { processos, total } = await runDailyLegalSearch();
       const searchDate = new Date().toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' });
       const sent = await sendLegalReportEmail(emails, processos, searchDate);
-      res.json({ success: sent, total, emailTo: emails, date: searchDate });
+      res.json({ success: sent, total, emailTo: emails, date: searchDate, testMode: override !== null });
     } catch (err: any) {
       console.error('[Jurídico Diário] Erro manual:', err.message);
       res.status(500).json({ error: err.message });
@@ -5838,13 +5857,16 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
 
   scheduleDailyPendingReport();
 
-  app.post("/api/relatorio-pendencias", requireAuth, requireRole('administrador', 'diretoria'), async (_req: Request, res: Response) => {
+  app.post("/api/relatorio-pendencias", requireAuth, requireRole('administrador', 'diretoria'), async (req: Request, res: Response) => {
     try {
-      const emails = (await loadDailyReportsSettings()).pending.emails;
+      let override: string | null = null;
+      try { override = parseOverrideEmails(req); }
+      catch (e: any) { return res.status(400).json({ error: e.message }); }
+      const emails = override ?? (await loadDailyReportsSettings()).pending.emails;
       const pendingMissions = await findCompletedMissionsWithPendingInfo();
       const reportDate = new Date().toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' });
       const sent = await sendPendingInfoReport(emails, pendingMissions, reportDate);
-      res.json({ success: sent, total: pendingMissions.length, emailTo: emails, date: reportDate });
+      res.json({ success: sent, total: pendingMissions.length, emailTo: emails, date: reportDate, testMode: override !== null });
     } catch (err: any) {
       console.error('[Pendências] Erro manual:', err.message);
       res.status(500).json({ error: err.message });
@@ -5909,13 +5931,16 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
 
   scheduleDailyApprovalReport();
 
-  app.post("/api/relatorio-aprovacoes", requireAuth, requireRole('administrador', 'diretoria'), async (_req: Request, res: Response) => {
+  app.post("/api/relatorio-aprovacoes", requireAuth, requireRole('administrador', 'diretoria'), async (req: Request, res: Response) => {
     try {
-      const emails = (await loadDailyReportsSettings()).approval.emails;
+      let override: string | null = null;
+      try { override = parseOverrideEmails(req); }
+      catch (e: any) { return res.status(400).json({ error: e.message }); }
+      const emails = override ?? (await loadDailyReportsSettings()).approval.emails;
       const pendingApproval = await findMissionsPendingApproval();
       const reportDate = new Date().toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' });
       const sent = await sendApprovalPendingReport(emails, pendingApproval, reportDate);
-      res.json({ success: sent, total: pendingApproval.length, emailTo: emails, date: reportDate });
+      res.json({ success: sent, total: pendingApproval.length, emailTo: emails, date: reportDate, testMode: override !== null });
     } catch (err: any) {
       console.error('[Aprovações] Erro manual:', err.message);
       res.status(500).json({ error: err.message });
@@ -5994,13 +6019,16 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
 
   scheduleDailyMissingInfoReport();
 
-  app.post("/api/relatorio-dados-faltantes", requireAuth, requireRole('administrador', 'diretoria'), async (_req: Request, res: Response) => {
+  app.post("/api/relatorio-dados-faltantes", requireAuth, requireRole('administrador', 'diretoria'), async (req: Request, res: Response) => {
     try {
-      const emails = (await loadDailyReportsSettings()).missingInfo.emails;
+      let override: string | null = null;
+      try { override = parseOverrideEmails(req); }
+      catch (e: any) { return res.status(400).json({ error: e.message }); }
+      const emails = override ?? (await loadDailyReportsSettings()).missingInfo.emails;
       const missions = await findAllMissionsWithMissingInfo();
       const reportDate = new Date().toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' });
       const sent = await sendDailyMissingInfoReport(emails, missions, reportDate);
-      res.json({ success: sent, total: missions.length, emailTo: emails, date: reportDate });
+      res.json({ success: sent, total: missions.length, emailTo: emails, date: reportDate, testMode: override !== null });
     } catch (err: any) {
       console.error('[Dados Faltantes] Erro manual:', err.message);
       res.status(500).json({ error: err.message });
@@ -6934,14 +6962,17 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
 
   scheduleDailyStuckNfReport();
 
-  app.post("/api/relatorio-nfs-travadas", requireAuth, requireRole('administrador', 'diretoria', 'financeiro'), async (_req: Request, res: Response) => {
+  app.post("/api/relatorio-nfs-travadas", requireAuth, requireRole('administrador', 'diretoria', 'financeiro'), async (req: Request, res: Response) => {
     try {
-      const emails = (await loadDailyReportsSettings()).stuckNf.emails;
+      let override: string | null = null;
+      try { override = parseOverrideEmails(req); }
+      catch (e: any) { return res.status(400).json({ error: e.message }); }
+      const emails = override ?? (await loadDailyReportsSettings()).stuckNf.emails;
       const { listStuckNfs } = await import('./nfRetryWorker');
       const items = await listStuckNfs();
       const reportDate = new Date().toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' });
       const sent = items.length > 0 ? await sendStuckNfsReport(emails, items, reportDate) : false;
-      res.json({ success: sent, total: items.length, emailTo: emails, date: reportDate });
+      res.json({ success: sent, total: items.length, emailTo: emails, date: reportDate, testMode: override !== null });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }
