@@ -148,7 +148,18 @@ Se algum campo não estiver visível ou legível, use string vazia "" para esse 
   };
 
   const buildMessage = (data: ExtractedData) => {
-    return `*GRUPO TM SEG - SOLICITAÇÃO DE ESCOLTA*\n\nORIGEM: ${data.origem}\nDESTINO: ${data.destino}\nAPRESENTAÇÃO: ${data.apresentacao}`;
+    const linhas = [
+      `*GRUPO TM SEG - SOLICITAÇÃO DE ESCOLTA*`,
+      ``,
+      `ORIGEM: ${data.origem}`,
+      `DESTINO: ${data.destino}`,
+      ``,
+      `APRESENTAÇÃO: ${data.apresentacao}`,
+    ];
+    if (data.numero && data.numero.trim()) {
+      linhas.push(``, `SE ${data.numero.trim()}`);
+    }
+    return linhas.join('\n');
   };
 
   const handleCopy = async () => {
