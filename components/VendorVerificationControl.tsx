@@ -10,7 +10,7 @@ import {
     FileText, Hash, Lock, Eye, X, Save, ShieldCheck,
     ImagePlus, Trash2, ZoomIn, Receipt, CreditCard,
     CheckSquare, Square, ListChecks, ArrowRight, ExternalLink,
-    Upload, Scale, FileSpreadsheet, HelpCircle, Download, Printer
+    Upload, Scale, FileSpreadsheet, HelpCircle, Download, Printer, Filter
 } from 'lucide-react';
 import { useNotification } from '../lib/NotificationContext';
 
@@ -51,6 +51,9 @@ const VendorVerificationControl: React.FC<VendorVerificationControlProps> = ({ o
     const [isLoading, setIsLoading] = useState(true);
     const [dateFrom, setDateFrom] = useState('2026-01-01');
     const [dateTo, setDateTo] = useState('');
+    // Filtros tipo Excel por coluna
+    const [columnFilters, setColumnFilters] = useState<Record<string, string[]>>({});
+    const [openColumnFilter, setOpenColumnFilter] = useState<string | null>(null);
 
     const [selectedMission, setSelectedMission] = useState<any | null>(null);
     const [modalOpen, setModalOpen] = useState(false);
@@ -573,8 +576,31 @@ const VendorVerificationControl: React.FC<VendorVerificationControlProps> = ({ o
 
     const isLocked = Boolean(verifiedBy && verifiedAt);
 
+    // Extratores das 16 colunas da grade — usados pelos filtros tipo Excel
+    const columnGetters = useMemo<Record<string, (m: any) => string>>(() => {
+        const timeOf = (iso: string | null | undefined) => iso ? new Date(iso).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', timeZone: 'America/Sao_Paulo' }) : '—';
+        return {
+            os: m => m.id || '—',
+            fornecedor: m => `${m.provider || '—'} / ${m.client || '—'}`,
+            origem: m => m.origin || '—',
+            destino: m => m.destination || '—',
+            dt_inicial: m => m.start_time ? formatDateBR(m.start_time) : '—',
+            dt_final: m => m.end_time ? formatDateBR(m.end_time) : '—',
+            hr_inicial: m => timeOf(m.start_time),
+            hr_final: m => timeOf(m.end_time),
+            km_inicial: m => m.start_km != null ? String(m.start_km) : '—',
+            km_final: m => m.end_km != null ? String(m.end_km) : '—',
+            custo: m => formatCurrency((m.cost_value || 0) + Math.max(0, m.toll_value_provider ?? m.toll_value ?? 0)),
+            os_forn: m => m.vendor_os_number || '—',
+            nf: m => m.invoice_number || '—',
+            liberacao: m => m.release_date ? fmtDate(m.release_date) : '—',
+            pgto: m => m.payment_date ? fmtDate(m.payment_date) : '—',
+            status: m => (m.verified_by && m.verified_at) ? 'Verificado' : 'Pendente',
+        };
+    }, []);
+
     const filteredMissions = useMemo(() => {
-        return missions.filter(m => {
+        const baseFiltered = missions.filter(m => {
             const matchesProvider = selectedProvider === 'ALL' || m.provider === selectedProvider;
             const isVerified = Boolean(m.verified_by && m.verified_at);
             const matchesStatus = filterStatus === 'ALL' || (filterStatus === 'VERIFIED' && isVerified) || (filterStatus === 'PENDING' && !isVerified);
@@ -597,7 +623,16 @@ const VendorVerificationControl: React.FC<VendorVerificationControlProps> = ({ o
                 String(m.total_distance || '').includes(searchLower);
             return matchesProvider && matchesStatus && matchesDateFrom && matchesDateTo && matchesSearch;
         });
-    }, [missions, selectedProvider, filterStatus, searchTerm, dateFrom, dateTo]);
+        // Aplica filtros tipo Excel por coluna (interseção). Cada filtro ativo
+        // é uma lista de valores aceitos para aquela coluna.
+        const activeColEntries = Object.entries(columnFilters).filter(([, vals]) => vals && vals.length > 0);
+        if (activeColEntries.length === 0) return baseFiltered;
+        return baseFiltered.filter(m => activeColEntries.every(([key, vals]) => {
+            const getter = columnGetters[key];
+            if (!getter) return true;
+            return vals.includes(getter(m));
+        }));
+    }, [missions, selectedProvider, filterStatus, searchTerm, dateFrom, dateTo, columnFilters, columnGetters]);
 
     const stats = useMemo(() => {
         const total = missions.length;
@@ -1030,6 +1065,104 @@ const VendorVerificationControl: React.FC<VendorVerificationControlProps> = ({ o
         const fname = `Divergencias_${new Date().toISOString().slice(0, 10)}.xlsx`;
         XLSX.writeFile(wb, fname);
     };
+
+    // Componente de cabeçalho com filtro tipo Excel (funil + popover com busca e checkboxes)
+    const HeaderCellWithFilter: React.FC<{ colKey: string; label: string; align?: 'left' | 'center' | 'right' }> = ({ colKey, label, align = 'left' }) => {
+        const [search, setSearch] = useState('');
+        const isOpen = openColumnFilter === colKey;
+        const selected = columnFilters[colKey] || [];
+        const isActive = selected.length > 0;
+        const uniqueValues = useMemo(() => {
+            const getter = columnGetters[colKey];
+            if (!getter) return [] as string[];
+            const set = new Set<string>();
+            for (const m of missions) set.add(getter(m));
+            return Array.from(set).sort((a, b) => a.localeCompare(b, 'pt-BR', { numeric: true }));
+        }, [colKey, missions]);
+        const filteredValues = useMemo(() => {
+            if (!search.trim()) return uniqueValues;
+            const s = search.toLowerCase();
+            return uniqueValues.filter(v => v.toLowerCase().includes(s));
+        }, [uniqueValues, search]);
+        const toggleValue = (v: string) => {
+            setColumnFilters(prev => {
+                const cur = prev[colKey] || [];
+                const next = cur.includes(v) ? cur.filter(x => x !== v) : [...cur, v];
+                const copy = { ...prev };
+                if (next.length === 0) delete copy[colKey]; else copy[colKey] = next;
+                return copy;
+            });
+        };
+        const markAll = () => setColumnFilters(prev => ({ ...prev, [colKey]: filteredValues }));
+        const clearAll = () => setColumnFilters(prev => { const copy = { ...prev }; delete copy[colKey]; return copy; });
+        const justify = align === 'right' ? 'justify-end' : align === 'center' ? 'justify-center' : 'justify-start';
+        return (
+            <th className={`px-4 py-3 text-${align} relative`}>
+                <div className={`flex items-center gap-1.5 ${justify}`}>
+                    <span>{label}</span>
+                    <button
+                        type="button"
+                        onClick={(e) => { e.stopPropagation(); setOpenColumnFilter(isOpen ? null : colKey); }}
+                        className={`p-0.5 rounded transition-colors ${isActive ? 'bg-amber-400 text-gray-900' : 'text-white/60 hover:bg-white/10 hover:text-white'}`}
+                        title={isActive ? `Filtro ativo: ${selected.length} valor(es)` : 'Filtrar esta coluna'}
+                        data-testid={`button-filter-${colKey}`}
+                    >
+                        <Filter size={11} />
+                    </button>
+                </div>
+                {isOpen && (
+                    <>
+                        <div className="fixed inset-0 z-40" onClick={() => setOpenColumnFilter(null)} />
+                        <div
+                            className="absolute z-50 mt-2 left-0 w-72 bg-white text-gray-800 rounded-lg shadow-2xl border border-gray-200 normal-case font-normal tracking-normal"
+                            onClick={(e) => e.stopPropagation()}
+                            data-testid={`popover-filter-${colKey}`}
+                        >
+                            <div className="p-2 border-b border-gray-100">
+                                <div className="relative">
+                                    <Search size={12} className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-400" />
+                                    <input
+                                        type="text"
+                                        autoFocus
+                                        value={search}
+                                        onChange={e => setSearch(e.target.value)}
+                                        placeholder="Buscar..."
+                                        className="w-full pl-7 pr-2 py-1.5 text-xs border border-gray-200 rounded focus:outline-none focus:border-blue-400"
+                                        data-testid={`input-filter-search-${colKey}`}
+                                    />
+                                </div>
+                                <div className="flex justify-between mt-2 text-[10px]">
+                                    <button onClick={markAll} className="text-blue-600 font-bold hover:underline" data-testid={`button-filter-select-all-${colKey}`}>Marcar tudo</button>
+                                    <button onClick={clearAll} className="text-red-600 font-bold hover:underline" data-testid={`button-filter-clear-${colKey}`}>Limpar</button>
+                                </div>
+                            </div>
+                            <div className="max-h-64 overflow-y-auto">
+                                {filteredValues.length === 0 ? (
+                                    <div className="p-3 text-[11px] text-gray-400 text-center">Nenhum valor.</div>
+                                ) : filteredValues.map(v => (
+                                    <label key={v} className="flex items-center gap-2 px-3 py-1.5 hover:bg-gray-50 cursor-pointer text-xs" data-testid={`option-filter-${colKey}-${v}`}>
+                                        <input
+                                            type="checkbox"
+                                            checked={selected.includes(v)}
+                                            onChange={() => toggleValue(v)}
+                                            className="rounded"
+                                        />
+                                        <span className="truncate flex-1" title={v}>{v || '(vazio)'}</span>
+                                    </label>
+                                ))}
+                            </div>
+                            <div className="px-3 py-2 border-t border-gray-100 bg-gray-50 text-[10px] text-gray-500 flex justify-between items-center">
+                                <span>{selected.length} de {uniqueValues.length}</span>
+                                <button onClick={() => setOpenColumnFilter(null)} className="text-blue-700 font-black uppercase hover:underline" data-testid={`button-filter-close-${colKey}`}>Fechar</button>
+                            </div>
+                        </div>
+                    </>
+                )}
+            </th>
+        );
+    };
+
+    const activeColumnFilterCount = Object.values(columnFilters).filter(v => v && v.length > 0).length;
 
     return (
         <div className="space-y-6 animate-fade-in pb-20" data-testid="vendor-verification-control">
@@ -1702,22 +1835,22 @@ const VendorVerificationControl: React.FC<VendorVerificationControlProps> = ({ o
                                             ? <CheckSquare size={16} /> : <Square size={16} />}
                                     </button>
                                 </th>
-                                <th className="px-4 py-3">OS</th>
-                                <th className="px-4 py-3">Fornecedor / Cliente</th>
-                                <th className="px-4 py-3">Origem</th>
-                                <th className="px-4 py-3">Destino</th>
-                                <th className="px-4 py-3 text-center">Dt. Inicial</th>
-                                <th className="px-4 py-3 text-center">Dt. Final</th>
-                                <th className="px-4 py-3 text-center">Hr. Inicial</th>
-                                <th className="px-4 py-3 text-center">Hr. Final</th>
-                                <th className="px-4 py-3 text-center">KM Inicial</th>
-                                <th className="px-4 py-3 text-center">KM Final</th>
-                                <th className="px-4 py-3 text-right">Custo</th>
-                                <th className="px-4 py-3 text-center">OS Forn.</th>
-                                <th className="px-4 py-3 text-center">NF</th>
-                                <th className="px-4 py-3 text-center">Liberação</th>
-                                <th className="px-4 py-3 text-center">Pgto.</th>
-                                <th className="px-4 py-3 text-center">Status</th>
+                                <HeaderCellWithFilter colKey="os" label="OS" />
+                                <HeaderCellWithFilter colKey="fornecedor" label="Fornecedor / Cliente" />
+                                <HeaderCellWithFilter colKey="origem" label="Origem" />
+                                <HeaderCellWithFilter colKey="destino" label="Destino" />
+                                <HeaderCellWithFilter colKey="dt_inicial" label="Dt. Inicial" align="center" />
+                                <HeaderCellWithFilter colKey="dt_final" label="Dt. Final" align="center" />
+                                <HeaderCellWithFilter colKey="hr_inicial" label="Hr. Inicial" align="center" />
+                                <HeaderCellWithFilter colKey="hr_final" label="Hr. Final" align="center" />
+                                <HeaderCellWithFilter colKey="km_inicial" label="KM Inicial" align="center" />
+                                <HeaderCellWithFilter colKey="km_final" label="KM Final" align="center" />
+                                <HeaderCellWithFilter colKey="custo" label="Custo" align="right" />
+                                <HeaderCellWithFilter colKey="os_forn" label="OS Forn." align="center" />
+                                <HeaderCellWithFilter colKey="nf" label="NF" align="center" />
+                                <HeaderCellWithFilter colKey="liberacao" label="Liberação" align="center" />
+                                <HeaderCellWithFilter colKey="pgto" label="Pgto." align="center" />
+                                <HeaderCellWithFilter colKey="status" label="Status" align="center" />
                                 <th className="px-4 py-3 text-center">Ação</th>
                             </tr>
                         </thead>
@@ -1830,7 +1963,16 @@ const VendorVerificationControl: React.FC<VendorVerificationControlProps> = ({ o
                 </div>
                 {!isLoading && filteredMissions.length > 0 && (
                     <div className="px-4 py-3 bg-gray-50 border-t border-gray-200 text-[10px] font-bold text-gray-500 uppercase tracking-widest flex justify-between">
-                        <span>Exibindo {filteredMissions.length} de {missions.length} missões</span>
+                        <span className="flex items-center gap-2">
+                            <span>Exibindo {filteredMissions.length} de {missions.length} missões</span>
+                            {activeColumnFilterCount > 0 && (
+                                <span className="inline-flex items-center gap-1 text-amber-700 bg-amber-100 border border-amber-300 px-2 py-0.5 rounded normal-case" data-testid="badge-active-column-filters">
+                                    <Filter size={10} />
+                                    {activeColumnFilterCount} filtro{activeColumnFilterCount > 1 ? 's' : ''} de coluna ativo{activeColumnFilterCount > 1 ? 's' : ''}
+                                    <button onClick={() => setColumnFilters({})} className="ml-1 text-red-600 font-black hover:underline" data-testid="button-clear-all-column-filters">Limpar todos</button>
+                                </span>
+                            )}
+                        </span>
                         <span>Total Custo: <span className="text-red-600 font-black">{formatCurrency(filteredMissions.reduce((sum, m) => sum + (m.cost_value || 0) + Math.max(0, m.toll_value_provider ?? m.toll_value ?? 0), 0))}</span></span>
                     </div>
                 )}
