@@ -3164,6 +3164,35 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                     <BrainCircuit size={12} className="text-blue-500" />
                                     <span>IA Detectou: {financialData.client.detectionLog}</span>
                                 </div>
+                                {/* Task #108: badge do motor DHL (exact_route / region_band / none) */}
+                                {(() => {
+                                    const log = financialData.client.detectionLog || '';
+                                    const m = log.match(/^DHL Auto \[(exact_route|region_band|none)\]:\s*(.+)$/);
+                                    if (!m) return null;
+                                    const level = m[1];
+                                    const reason = m[2];
+                                    const styles =
+                                        level === 'exact_route'
+                                            ? 'bg-blue-50 text-blue-800 border-blue-300'
+                                            : level === 'region_band'
+                                            ? 'bg-emerald-50 text-emerald-800 border-emerald-300'
+                                            : 'bg-gray-100 text-gray-700 border-gray-300';
+                                    const prefix =
+                                        level === 'exact_route'
+                                            ? 'IA DHL — Rota Exata'
+                                            : level === 'region_band'
+                                            ? 'IA DHL — Sugestão por Proximidade'
+                                            : 'DHL — Sem tabela encontrada';
+                                    return (
+                                        <div
+                                            className={`mt-2 text-[10px] font-black uppercase tracking-wide flex items-center gap-1.5 p-2 rounded-lg border ${styles}`}
+                                            data-testid={`badge-dhl-auto-${level}`}
+                                        >
+                                            <Sparkles size={12} />
+                                            <span>{prefix}: {reason}</span>
+                                        </div>
+                                    );
+                                })()}
                             </div>
 
                             {financialData.client.tableName && (

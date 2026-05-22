@@ -7,6 +7,7 @@ import {
     isAutoMasterRow,
     type ProviderAutoCalcBreakdown,
 } from './providerAutoPricing';
+import { isDhlSupplyClient, selectDhlClientTable } from './dhlAutoTableSelector';
 
 const STOP_WORDS = ['LTDA','LTDA.','S.A.','S.A','SA','S/A','S/A.','DO','DE','DA','E','DAS','DOS'];
 // PostgREST trata ( ) , . : como reservados dentro de .or(); envolvemos
@@ -659,14 +660,35 @@ export const calculateMissionFinancials = (
             isManualOverride = true;
         }
     }
-    if (!appliedClientTable && isCancelled && clientTablesFiltered.length > 0) {
+    // Task #108: motor automático exclusivo para DHL SUPPLY CHAIN (BRAZIL) LTDA.
+    // Quando o cliente é DHL e não há override manual, seleciona a tabela por
+    // região da origem + faixa de KM do Google. Não cai no selectStrictTable
+    // nem nos blocos de fallback genéricos — mesmo no caso "none".
+    let dhlEngineHandled = false;
+    if (!appliedClientTable && !isManualOverride && !isCancelled && isDhlSupplyClient(missionClientName)) {
+      const dhlResult = selectDhlClientTable(
+        clientTablesFiltered,
+        { origin: mission.origin || '', destination: mission.destination || '' },
+        totalDistance,
+      );
+      dhlEngineHandled = true;
+      if (dhlResult.table) {
+        appliedClientTable = dhlResult.table;
+        clientLog = `DHL Auto [${dhlResult.matchLevel}]: ${dhlResult.reason}`;
+      } else {
+        appliedClientTable = null;
+        clientLog = `DHL Auto [none]: ${dhlResult.reason}`;
+      }
+    }
+
+    if (!appliedClientTable && !dhlEngineHandled && isCancelled && clientTablesFiltered.length > 0) {
         const sorted = [...clientTablesFiltered]
             .filter(t => (t.activation_fee || 0) > 0)
             .sort((a, b) => (a.activation_fee || 0) - (b.activation_fee || 0));
         appliedClientTable = sorted.length > 0 ? sorted[0] : clientTablesFiltered[0];
         clientLog = `Cancelada → Menor Acionamento (${appliedClientTable?.operation_type})`;
     }
-    if (!appliedClientTable) {
+    if (!appliedClientTable && !dhlEngineHandled) {
         const clientDistReference = Math.max(totalDistance, distanceForCalculation);
         const result = selectStrictTable(
             clientTablesFiltered, 
