@@ -7,6 +7,7 @@ type Settings = {
   operationalFallback: string;
   externalReportAlert: string;
   trustedEmailDomains: string;
+  reportFailure: string;
 };
 
 type HistoryEntry = {
@@ -49,6 +50,12 @@ const FIELDS: { key: keyof Settings; title: string; description: string; placeho
     title: 'Domínios confiáveis',
     description: 'Lista de domínios considerados internos/seguros. Qualquer e-mail de teste fora desta lista dispara o alerta acima. Separe por vírgula, sem @.',
     placeholder: 'ex.: grupotmseg.com.br, tmsecurity.com.br',
+  },
+  {
+    key: 'reportFailure',
+    title: 'Falha em relatório diário agendado',
+    description: 'Destinatários do alerta enviado quando uma execução agendada de um dos 5 relatórios diários falha (SMTP fora, DataJud/PlugNotas indisponível). Um alerta no máximo a cada 24h por relatório.',
+    placeholder: 'ex.: thiago@grupotmseg.com.br, daniel@grupotmseg.com.br',
   },
 ];
 

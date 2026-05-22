@@ -5799,12 +5799,12 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
       date?: string | null;
     }
   ) => {
+    const emailToArr = Array.isArray(payload.emailTo)
+      ? payload.emailTo
+      : typeof payload.emailTo === 'string'
+        ? payload.emailTo.split(',').map(s => s.trim()).filter(Boolean)
+        : [];
     try {
-      const emailToArr = Array.isArray(payload.emailTo)
-        ? payload.emailTo
-        : typeof payload.emailTo === 'string'
-          ? payload.emailTo.split(',').map(s => s.trim()).filter(Boolean)
-          : [];
       await supabaseAdmin.from('system_logs').insert([{
         user_name: payload.userName || 'Sistema',
         action_type: 'MANUAL_REPORT_RUN',
@@ -5825,6 +5825,134 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
     } catch (logErr: any) {
       console.error(`[ReportRun:${reportKey}] Falha ao registrar execução em system_logs:`, logErr?.message || logErr);
     }
+    // Task #91 — Alerta de falha (somente execuções agendadas), com cooldown de 24h.
+    if (payload.success === false && source === 'scheduled') {
+      notifyReportFailure(reportKey, {
+        errorMessage: payload.errorMessage || null,
+        date: payload.date || null,
+        emailTo: emailToArr,
+      }).catch(() => { /* notifier já loga internamente */ });
+    }
+  };
+
+  // ═══════════════════════════════════════════════════════
+  // Task #91 — Alerta in-app + e-mail quando um relatório diário falha
+  // Lê destinatários de system_settings/alert_recipients.reportFailure.
+  // Cooldown de 24h por reportKey gravado em system_settings/report_failure_cooldowns.
+  // In-app notification: insere linha em system_logs com action_type='REPORT_FAILURE_ALERT'
+  // que é capturada pelo listener Realtime do NotificationContext.
+  // ═══════════════════════════════════════════════════════
+  const REPORT_FAILURE_COOLDOWNS_KEY = 'report_failure_cooldowns';
+  const REPORT_FAILURE_COOLDOWN_MS = 24 * 60 * 60 * 1000;
+  const REPORT_FAILURE_LABELS: Record<ManualReportKey, string> = {
+    legal: 'Jurídico Diário',
+    pending: 'OS Pendentes',
+    approval: 'Fila de Aprovação Financeira',
+    missingInfo: 'OS com Dados Faltantes',
+    stuckNf: 'NFs Travadas',
+  };
+  const notifyReportFailure = async (
+    reportKey: ManualReportKey,
+    info: { errorMessage: string | null; date: string | null; emailTo: string[] },
+  ) => {
+    try {
+      // 1) Verifica cooldown
+      const { data: cdRow } = await supabaseAdmin
+        .from('system_settings')
+        .select('value')
+        .eq('key', REPORT_FAILURE_COOLDOWNS_KEY)
+        .maybeSingle();
+      let cooldowns: Record<string, string> = {};
+      try {
+        const raw = cdRow?.value;
+        cooldowns = (raw && typeof raw === 'object') ? { ...raw } : (typeof raw === 'string' ? JSON.parse(raw) : {});
+      } catch { cooldowns = {}; }
+      const last = cooldowns[reportKey] ? Date.parse(cooldowns[reportKey]) : 0;
+      const now = Date.now();
+      if (last && (now - last) < REPORT_FAILURE_COOLDOWN_MS) {
+        console.log(`[Report Failure Alert] ${reportKey} em cooldown (último alerta: ${cooldowns[reportKey]}). Suprimido.`);
+        return;
+      }
+      cooldowns[reportKey] = new Date(now).toISOString();
+      await supabaseAdmin.from('system_settings').upsert([{
+        key: REPORT_FAILURE_COOLDOWNS_KEY,
+        value: cooldowns,
+        updated_by: 'Sistema',
+        updated_at: new Date().toISOString(),
+      }], { onConflict: 'key' });
+
+      const label = REPORT_FAILURE_LABELS[reportKey] || reportKey;
+      const recipients = (await loadAlertRecipientsSettings()).reportFailure;
+      const occurredAt = new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' });
+      const reason = info.errorMessage || 'Falha de envio (SMTP/integração indisponível ou destinatários inválidos).';
+      const intendedTo = (info.emailTo || []).join(', ') || '—';
+
+      // 2) Envia e-mail
+      try {
+        const { transporter } = await import('./emailService');
+        const SMTP_FROM = `"Grupo TM SEG" <adm@grupotmseg.com.br>`;
+        const html = `<!DOCTYPE html>
+<html lang="pt-BR"><head><meta charset="UTF-8"><style>
+  body { margin:0; padding:0; background:#f4f4f4; font-family: 'Segoe UI', Arial, sans-serif; }
+  .container { max-width:600px; margin:0 auto; background:#fff; border-radius:8px; overflow:hidden; box-shadow:0 2px 12px rgba(0,0,0,0.08); }
+  .header { background:#1a1a1a; padding:28px 32px; text-align:center; }
+  .header h1 { color:#fff; font-size:22px; margin:0 0 4px; }
+  .header .accent { color:#c0392b; font-weight:700; }
+  .body-content { padding:32px; color:#333; line-height:1.7; font-size:14px; }
+  .info-table { width:100%; border-collapse:collapse; margin:16px 0; }
+  .info-table td { padding:10px 14px; border-bottom:1px solid #eee; vertical-align:top; }
+  .info-table td:first-child { font-weight:600; color:#1a1a1a; width:35%; }
+  .err-box { background:#fdf2f2; border:2px solid #c0392b; padding:14px 18px; margin:16px 0; border-radius:8px; }
+  .err-box pre { margin:0; white-space:pre-wrap; word-break:break-word; font-family: ui-monospace, Menlo, monospace; font-size:12px; color:#7b2018; }
+  .footer { background:#1a1a1a; padding:20px; text-align:center; border-top:3px solid #c0392b; }
+  .footer p { color:#999; font-size:12px; margin:4px 0; }
+</style></head><body>
+<div class="container">
+  <div class="header"><h1>GRUPO <span class="accent">TM SEG</span></h1></div>
+  <div class="body-content">
+    <h2 style="color:#c0392b;">⚠️ Falha em Relatório Diário</h2>
+    <p>O envio agendado do relatório abaixo <strong>não foi concluído com sucesso</strong>. Verifique a integração responsável (SMTP / DataJud / PlugNotas) e o painel de Configurações.</p>
+    <table class="info-table">
+      <tr><td>Relatório</td><td><strong>${label}</strong></td></tr>
+      <tr><td>Data de referência</td><td>${info.date || '—'}</td></tr>
+      <tr><td>Detectado em</td><td>${occurredAt}</td></tr>
+      <tr><td>Destinatários previstos</td><td>${intendedTo}</td></tr>
+    </table>
+    <div class="err-box">
+      <p style="margin:0 0 6px; font-size:12px; color:#666; text-transform:uppercase; letter-spacing:.5px;">Motivo</p>
+      <pre>${String(reason).replace(/[<>&]/g, c => ({ '<':'&lt;', '>':'&gt;', '&':'&amp;' } as any)[c])}</pre>
+    </div>
+    <p style="font-size:12px; color:#666;">Próximo alerta para este relatório só será enviado em 24h (cooldown). Execuções repetidas no período são suprimidas para evitar spam.</p>
+    <p style="font-size:12px; color:#999; margin-top:24px;">Este alerta é gerado automaticamente pelo sistema TMSEGo.</p>
+  </div>
+  <div class="footer"><p>Grupo TM SEG — Sistema TMSEGo</p></div>
+</div></body></html>`;
+        await transporter.sendMail({
+          from: SMTP_FROM,
+          to: recipients,
+          subject: `⚠️ Relatório diário falhou: ${label}`,
+          html,
+        });
+        console.log(`[Report Failure Alert] E-mail enviado → ${recipients} | Relatório: ${label}`);
+      } catch (mailErr: any) {
+        console.error(`[Report Failure Alert] Falha ao enviar e-mail:`, mailErr?.message || mailErr);
+      }
+
+      // 3) Notificação in-app (broadcast via system_logs Realtime)
+      try {
+        await supabaseAdmin.from('system_logs').insert([{
+          user_name: 'Sistema',
+          action_type: 'REPORT_FAILURE_ALERT',
+          entity: 'DailyReport',
+          entity_id: reportKey,
+          details: `Falha no relatório "${label}" — ${reason} Verifique em Configurações → Relatórios Diários.`,
+        }]);
+      } catch (logErr: any) {
+        console.error(`[Report Failure Alert] Falha ao inserir notificação in-app:`, logErr?.message || logErr);
+      }
+    } catch (e: any) {
+      console.error(`[Report Failure Alert] Erro inesperado:`, e?.message || e);
+    }
   };
 
   // ═══════════════════════════════════════════════════════
@@ -5839,6 +5967,7 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
     operationalFallback: string;
     externalReportAlert: string;
     trustedEmailDomains: string;
+    reportFailure: string;
   };
   const ALERT_RECIPIENTS_DEFAULTS: AlertRecipientsSettings = {
     lossAlert: 'barbara@grupotmseg.com.br, thiago@grupotmseg.com.br',
@@ -5846,6 +5975,7 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
     operationalFallback: 'operacional@grupotmseg.com.br',
     externalReportAlert: 'barbara@grupotmseg.com.br, thiago@grupotmseg.com.br',
     trustedEmailDomains: 'grupotmseg.com.br',
+    reportFailure: 'thiago@grupotmseg.com.br, daniel@grupotmseg.com.br',
   };
   const sanitizeAlertRecipientsSettings = (raw: any): AlertRecipientsSettings => ({
     lossAlert: typeof raw?.lossAlert === 'string' && raw.lossAlert.trim()
@@ -5858,6 +5988,8 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
       ? raw.externalReportAlert.trim() : ALERT_RECIPIENTS_DEFAULTS.externalReportAlert,
     trustedEmailDomains: typeof raw?.trustedEmailDomains === 'string' && raw.trustedEmailDomains.trim()
       ? raw.trustedEmailDomains.trim().toLowerCase() : ALERT_RECIPIENTS_DEFAULTS.trustedEmailDomains,
+    reportFailure: typeof raw?.reportFailure === 'string' && raw.reportFailure.trim()
+      ? raw.reportFailure.trim() : ALERT_RECIPIENTS_DEFAULTS.reportFailure,
   });
   let alertRecipientsCache: { value: AlertRecipientsSettings; expiresAt: number } | null = null;
   const ALERT_RECIPIENTS_CACHE_TTL = 60 * 1000;
