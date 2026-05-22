@@ -1363,6 +1363,21 @@ export async function registerRoutes(
     console.log('[Migration] push_subscriptions:', e.message || 'ok');
   }
 
+  // ── Migration: tabela system_settings (configurações administrativas key/value) ──
+  try {
+    await supabaseAdmin.rpc('exec_sql', { sql: `
+      CREATE TABLE IF NOT EXISTS system_settings (
+        key TEXT PRIMARY KEY,
+        value JSONB NOT NULL,
+        updated_by TEXT,
+        updated_at TIMESTAMPTZ DEFAULT NOW()
+      );
+    `});
+    console.log('[Migration] Tabela system_settings verificada/criada.');
+  } catch (e: any) {
+    console.log('[Migration] system_settings:', e.message || 'ok');
+  }
+
   // ── Migration: coluna cancellation_fee em client_price_tables ──
   try {
     await supabaseAdmin.rpc('exec_sql', { sql: `
@@ -5906,14 +5921,52 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
   // por usuário e por fornecedor numa janela móvel. Se ultrapassar o limite, dispara alerta
   // in-app (system_logs) + e-mail para os gestores financeiros, com link para a aba
   // "Edições Manuais" do Relatórios já filtrada.
-  const MANUAL_OVERRIDE_ALERT_EMAILS = (process.env.MANUAL_OVERRIDE_ALERT_EMAILS ||
-    'thiago@grupotmseg.com.br, barbara@grupotmseg.com.br').trim();
-  const MANUAL_OVERRIDE_WINDOW_DAYS = Math.max(1, Number(process.env.MANUAL_OVERRIDE_WINDOW_DAYS) || 7);
-  const MANUAL_OVERRIDE_THRESHOLD = Math.max(1, Number(process.env.MANUAL_OVERRIDE_THRESHOLD) || 10);
-  // Janela de silêncio entre alertas do mesmo escopo (user:X ou provider:Y)
-  const MANUAL_OVERRIDE_COOLDOWN_HOURS = Math.max(1, Number(process.env.MANUAL_OVERRIDE_COOLDOWN_HOURS) || 24);
+  // Defaults vindos das envs — usados como fallback inicial caso a tabela
+  // system_settings ainda não tenha um registro para a chave abaixo.
+  // Task #72: gestor financeiro pode ajustar pela tela "Alertas de Edições Manuais"
+  // em Configurações, sem mexer em env/código.
+  const MANUAL_OVERRIDE_SETTINGS_KEY = 'manual_override_alert';
+  const MANUAL_OVERRIDE_DEFAULTS = {
+    emails: (process.env.MANUAL_OVERRIDE_ALERT_EMAILS ||
+      'thiago@grupotmseg.com.br, barbara@grupotmseg.com.br').trim(),
+    windowDays: Math.max(1, Number(process.env.MANUAL_OVERRIDE_WINDOW_DAYS) || 7),
+    threshold: Math.max(1, Number(process.env.MANUAL_OVERRIDE_THRESHOLD) || 10),
+    cooldownHours: Math.max(1, Number(process.env.MANUAL_OVERRIDE_COOLDOWN_HOURS) || 24),
+  };
   const MANUAL_OVERRIDE_PUBLIC_URL =
     process.env.MANUAL_OVERRIDE_PUBLIC_URL || process.env.PUBLIC_APP_URL || 'https://tmsego.replit.app';
+
+  type ManualOverrideSettings = {
+    emails: string;
+    windowDays: number;
+    threshold: number;
+    cooldownHours: number;
+  };
+
+  const sanitizeManualOverrideSettings = (raw: any): ManualOverrideSettings => {
+    const emails = typeof raw?.emails === 'string' && raw.emails.trim()
+      ? raw.emails.trim()
+      : MANUAL_OVERRIDE_DEFAULTS.emails;
+    const windowDays = Math.max(1, Math.min(365, Number(raw?.windowDays) || MANUAL_OVERRIDE_DEFAULTS.windowDays));
+    const threshold = Math.max(1, Math.min(10000, Number(raw?.threshold) || MANUAL_OVERRIDE_DEFAULTS.threshold));
+    const cooldownHours = Math.max(1, Math.min(720, Number(raw?.cooldownHours) || MANUAL_OVERRIDE_DEFAULTS.cooldownHours));
+    return { emails, windowDays, threshold, cooldownHours };
+  };
+
+  const loadManualOverrideSettings = async (): Promise<ManualOverrideSettings> => {
+    try {
+      const { data, error } = await supabaseAdmin
+        .from('system_settings')
+        .select('value')
+        .eq('key', MANUAL_OVERRIDE_SETTINGS_KEY)
+        .maybeSingle();
+      if (error || !data?.value) return { ...MANUAL_OVERRIDE_DEFAULTS };
+      const raw = typeof data.value === 'string' ? JSON.parse(data.value) : data.value;
+      return sanitizeManualOverrideSettings(raw);
+    } catch {
+      return { ...MANUAL_OVERRIDE_DEFAULTS };
+    }
+  };
 
   const buildOverrideLink = (scope: 'user' | 'provider', value: string, from: string, to: string) => {
     const base = MANUAL_OVERRIDE_PUBLIC_URL.replace(/\/+$/, '');
@@ -5929,6 +5982,12 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
 
   async function runManualOverrideAlertCheck() {
     try {
+      const settings = await loadManualOverrideSettings();
+      const MANUAL_OVERRIDE_ALERT_EMAILS = settings.emails;
+      const MANUAL_OVERRIDE_WINDOW_DAYS = settings.windowDays;
+      const MANUAL_OVERRIDE_THRESHOLD = settings.threshold;
+      const MANUAL_OVERRIDE_COOLDOWN_HOURS = settings.cooldownHours;
+
       const endDate = new Date();
       const startDate = new Date(endDate.getTime() - MANUAL_OVERRIDE_WINDOW_DAYS * 24 * 60 * 60 * 1000);
       const startISO = startDate.toISOString();
@@ -6136,6 +6195,99 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
   app.post('/api/admin/run-manual-override-alert', requireAuth, requireRole('diretoria', 'administrador', 'financeiro'), async (_req: Request, res: Response) => {
     const r = await runManualOverrideAlertCheck();
     res.json(r);
+  });
+
+  // GET: configurações atuais + defaults para a tela administrativa (Task #72)
+  app.get('/api/admin/manual-override-settings', requireAuth, requireRole('diretoria', 'administrador', 'financeiro'), async (_req: Request, res: Response) => {
+    try {
+      const current = await loadManualOverrideSettings();
+      const { data: row } = await supabaseAdmin
+        .from('system_settings')
+        .select('updated_by, updated_at')
+        .eq('key', MANUAL_OVERRIDE_SETTINGS_KEY)
+        .maybeSingle();
+      res.json({
+        ok: true,
+        settings: current,
+        defaults: MANUAL_OVERRIDE_DEFAULTS,
+        updatedBy: row?.updated_by || null,
+        updatedAt: row?.updated_at || null,
+      });
+    } catch (e: any) {
+      res.status(500).json({ ok: false, error: e?.message || 'Falha ao carregar configurações' });
+    }
+  });
+
+  // PUT: atualiza as configurações e registra histórico em system_logs
+  app.put('/api/admin/manual-override-settings', requireAuth, requireRole('diretoria', 'administrador', 'financeiro'), async (req: Request, res: Response) => {
+    try {
+      const prev = await loadManualOverrideSettings();
+      const next = sanitizeManualOverrideSettings(req.body || {});
+      const principal = (req as any).user || (req as any).auth || {};
+      const editorName = principal.name || principal.email || 'Sistema';
+
+      const { error: upErr } = await supabaseAdmin
+        .from('system_settings')
+        .upsert([{
+          key: MANUAL_OVERRIDE_SETTINGS_KEY,
+          value: next,
+          updated_by: editorName,
+          updated_at: new Date().toISOString(),
+        }], { onConflict: 'key' });
+      if (upErr) throw upErr;
+
+      // Histórico: registra mudança em system_logs (campos antes/depois para auditoria)
+      const changedFields: string[] = [];
+      (Object.keys(next) as Array<keyof ManualOverrideSettings>).forEach(k => {
+        if (String((prev as any)[k]) !== String((next as any)[k])) changedFields.push(k);
+      });
+      await supabaseAdmin.from('system_logs').insert([{
+        user_name: editorName,
+        action_type: 'UPDATE',
+        entity: 'SystemSetting',
+        entity_id: MANUAL_OVERRIDE_SETTINGS_KEY,
+        details: JSON.stringify({
+          summary: `Configurações do alerta de edições manuais atualizadas (${changedFields.join(', ') || 'sem alterações'}).`,
+          before: prev,
+          after: next,
+          changedFields,
+        }),
+      }]);
+
+      res.json({ ok: true, settings: next, defaults: MANUAL_OVERRIDE_DEFAULTS });
+    } catch (e: any) {
+      res.status(500).json({ ok: false, error: e?.message || 'Falha ao salvar configurações' });
+    }
+  });
+
+  // GET: histórico das últimas alterações da configuração
+  app.get('/api/admin/manual-override-settings/history', requireAuth, requireRole('diretoria', 'administrador', 'financeiro'), async (_req: Request, res: Response) => {
+    try {
+      const { data, error } = await supabaseAdmin
+        .from('system_logs')
+        .select('id, created_at, user_name, details')
+        .eq('entity', 'SystemSetting')
+        .eq('entity_id', MANUAL_OVERRIDE_SETTINGS_KEY)
+        .order('created_at', { ascending: false })
+        .limit(50);
+      if (error) throw error;
+      const history = (data || []).map((r: any) => {
+        let d: any = {};
+        try { d = typeof r.details === 'string' ? JSON.parse(r.details) : (r.details || {}); } catch { /* ignore */ }
+        return {
+          id: r.id,
+          createdAt: r.created_at,
+          userName: r.user_name,
+          before: d.before || null,
+          after: d.after || null,
+          changedFields: d.changedFields || [],
+          summary: d.summary || '',
+        };
+      });
+      res.json({ ok: true, history });
+    } catch (e: any) {
+      res.status(500).json({ ok: false, error: e?.message || 'Falha ao carregar histórico' });
+    }
   });
 
   // ═══════════════════════════════════════════════════════

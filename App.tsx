@@ -57,6 +57,7 @@ import CostOptimizationDashboard from './components/CostOptimizationDashboard';
 import MaintenanceDashboard from './components/MaintenanceDashboard';
 import ContractManager from './components/ContractManager';
 import EquipmentManager from './components/EquipmentManager';
+import ManualOverrideAlertSettings from './components/ManualOverrideAlertSettings';
 
 // INTELIGÊNCIA ARTIFICIAL
 import AIChatbot from './components/AIChatbot';
@@ -330,6 +331,7 @@ const App: React.FC = () => {
       case 'server-stats': return <ServerStats />;
       case 'equipment-manager': return <EquipmentManager />;
       case 'system-logs': return <SystemLogs />;
+      case 'manual-override-settings': return <ManualOverrideAlertSettings />;
       case 'legal-dashboard': return <LegalDashboard />;
       case 'reports': return <ReportsDashboard />;
       case 'mission-report': {
