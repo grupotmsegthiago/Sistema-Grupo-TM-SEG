@@ -23,6 +23,7 @@ import ClientPriceForm from './ClientPriceForm';
 import TollConfirmationDialog from './TollConfirmationDialog';
 import { formatProviderName } from '../lib/utils';
 import html2canvas from 'html2canvas';
+import FilterableSelect, { type FilterableSelectOption } from './FilterableSelect';
 
 interface Props {
   isOpen: boolean;
@@ -3205,11 +3206,30 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                             <div className="mb-4">
                                 <label className={LABEL_CLASS}>Tabela de Preço Aplicada</label>
                                 <div className="flex gap-2">
-                                    <select 
-                                        className={`w-full p-2 bg-gray-50 border border-gray-200 rounded-lg text-xs font-bold text-gray-700 uppercase outline-none focus:border-blue-500 ${(isController || isEffectivelyLocked) ? 'pointer-events-none opacity-60' : ''}`}
-                                        value={manualClientTableId || ''}
-                                        onChange={(e) => { if (!isController && !isEffectivelyLocked) {
-                                            const newTableId = e.target.value;
+                                    {(() => {
+                                        const missionClientShort = clientNameShort(mission.originalClientName || mission.client || '').toLowerCase().trim();
+                                        const onlyThisClient = clientTables.filter(t => {
+                                            const tShort = clientNameShort(t.client || '').toLowerCase().trim();
+                                            return missionClientShort && tShort && (tShort === missionClientShort || tShort.startsWith(missionClientShort) || missionClientShort.startsWith(tShort));
+                                        });
+                                        const list = onlyThisClient.length > 0 ? onlyThisClient : clientTables;
+                                        const options: FilterableSelectOption[] = [
+                                            { value: '', label: 'Automático (IA Detectando)' },
+                                            ...[...list].sort((a, b) => (a.operation_type || '').localeCompare(b.operation_type || '')).map(t => {
+                                                const isDhl = isDhlSupplyClient(t.client);
+                                                const dhlBad = isDhl && !validateDhlTableName(t.operation_type).valid;
+                                                const prefix = dhlBad ? '⚠️ ' : '';
+                                                const label = onlyThisClient.length > 0 ? t.operation_type : `${t.operation_type} — ${t.client}`;
+                                                return {
+                                                    value: String(t.id),
+                                                    label,
+                                                    prefix,
+                                                    title: dhlBad ? 'Tabela DHL fora do padrão — não é sugerida automaticamente' : undefined,
+                                                };
+                                            }),
+                                        ];
+                                        const handleChange = (newTableId: string) => {
+                                            if (isController || isEffectivelyLocked) return;
                                             // Task #111: registra correção do auditor quando troca a sugestão do motor DHL.
                                             try {
                                                 const sug = dhlEngineSuggestionRef.current;
@@ -3272,28 +3292,31 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                             } catch (err) {
                                                 console.warn('[DHL Memória] Erro ao capturar correção:', err);
                                             }
-                                            setManualClientTableId(newTableId); setCustomClientBase(''); setCustomClientKm(''); setCustomClientHour(''); setUseSavedValues(false); userManuallyEditedRef.current = false; setMission(prev => prev ? { ...prev, revenue_edit_reason: '', cost_edit_reason: '', billing_verified_by: null } : prev); if (mission) { supabase.from('missions').update({ revenue_edit_reason: '', cost_edit_reason: '', billing_verified_by: null }).eq('id', mission.id).then(res => { if (res.error) { console.error('[Tabela Cliente] Falha ao limpar verificação:', res.error); showNotification('Erro', 'Não foi possível atualizar a tabela de preço: ' + res.error.message, 'error'); } }); } } }}
-                                        disabled={isController || isEffectivelyLocked}
-                                    >
-                                        <option value="">Automático (IA Detectando)</option>
-                                        {(() => {
-                                            const missionClientShort = clientNameShort(mission.originalClientName || mission.client || '').toLowerCase().trim();
-                                            const onlyThisClient = clientTables.filter(t => {
-                                                const tShort = clientNameShort(t.client || '').toLowerCase().trim();
-                                                return missionClientShort && tShort && (tShort === missionClientShort || tShort.startsWith(missionClientShort) || missionClientShort.startsWith(tShort));
-                                            });
-                                            const list = onlyThisClient.length > 0 ? onlyThisClient : clientTables;
-                                            return [...list].sort((a, b) => (a.operation_type || '').localeCompare(b.operation_type || '')).map(t => {
-                                                const isDhl = isDhlSupplyClient(t.client);
-                                                const dhlBad = isDhl && !validateDhlTableName(t.operation_type).valid;
-                                                const prefix = dhlBad ? '⚠️ ' : '';
-                                                const label = onlyThisClient.length > 0 ? t.operation_type : `${t.operation_type} — ${t.client}`;
-                                                return (
-                                                    <option key={t.id} value={t.id} title={dhlBad ? 'Tabela DHL fora do padrão — não é sugerida automaticamente' : undefined}>{prefix}{label}</option>
-                                                );
-                                            });
-                                        })()}
-                                    </select>
+                                            setManualClientTableId(newTableId);
+                                            setCustomClientBase(''); setCustomClientKm(''); setCustomClientHour('');
+                                            setUseSavedValues(false);
+                                            userManuallyEditedRef.current = false;
+                                            setMission(prev => prev ? { ...prev, revenue_edit_reason: '', cost_edit_reason: '', billing_verified_by: null } : prev);
+                                            if (mission) {
+                                                supabase.from('missions').update({ revenue_edit_reason: '', cost_edit_reason: '', billing_verified_by: null }).eq('id', mission.id).then(res => {
+                                                    if (res.error) {
+                                                        console.error('[Tabela Cliente] Falha ao limpar verificação:', res.error);
+                                                        showNotification('Erro', 'Não foi possível atualizar a tabela de preço: ' + res.error.message, 'error');
+                                                    }
+                                                });
+                                            }
+                                        };
+                                        return (
+                                            <FilterableSelect
+                                                value={manualClientTableId || ''}
+                                                onChange={handleChange}
+                                                options={options}
+                                                disabled={isController || isEffectivelyLocked}
+                                                accentColor="blue"
+                                                data-testid="select-client-table"
+                                            />
+                                        );
+                                    })()}
                                     {manualClientTableId && (
                                         <button 
                                             onClick={() => { setEditClientTableId(manualClientTableId); setIsEditClientTableOpen(true); }}
@@ -3666,18 +3689,38 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                     </div>
                                 )}
                                 <div className="flex gap-2">
-                                    <select 
-                                        className={`w-full p-2 bg-gray-50 border rounded-lg text-xs font-bold text-gray-700 uppercase outline-none focus:border-red-500 ${isZeroCostError ? 'border-red-300 bg-red-50 text-red-900 animate-pulse' : 'border-gray-200'} ${financialData.autoEngine?.active ? 'opacity-50 cursor-not-allowed' : ''}`}
-                                        value={financialData.autoEngine?.active ? '' : (manualProviderTableId || '')}
-                                        onChange={(e) => { if (isEffectivelyLocked || financialData.autoEngine?.active) return; setManualProviderTableId(e.target.value); setCustomProviderBase(''); setCustomProviderKm(''); setCustomProviderHour(''); setUseSavedValues(false); userManuallyEditedRef.current = false; setMission(prev => prev ? { ...prev, revenue_edit_reason: '', cost_edit_reason: '', billing_verified_by: null } : prev); if (mission) supabase.from('missions').update({ revenue_edit_reason: '', cost_edit_reason: '', billing_verified_by: null }).eq('id', mission.id); }}
-                                        disabled={mission.is_same_os || isEffectivelyLocked || !!financialData.autoEngine?.active}
-                                        data-testid="select-provider-table"
-                                    >
-                                        <option value="">{financialData.autoEngine?.active ? `AUTO ${financialData.autoEngine.bandKm}KM / ${financialData.autoEngine.bandHours}h` : (mission.is_same_os ? 'Custo Zero (Mesma OS)' : 'IA Detectando Melhor Custo...')}</option>
-                                        {!mission.is_same_os && !financialData.autoEngine?.active && [...filteredProviderTables].sort((a, b) => (a.operation_type || '').localeCompare(b.operation_type || '')).map(t => (
-                                            <option key={t.id} value={t.id}>{t.operation_type}</option>
-                                        ))}
-                                    </select>
+                                    {(() => {
+                                        const placeholderLabel = financialData.autoEngine?.active
+                                            ? `AUTO ${financialData.autoEngine.bandKm}KM / ${financialData.autoEngine.bandHours}h`
+                                            : (mission.is_same_os ? 'Custo Zero (Mesma OS)' : 'IA Detectando Melhor Custo...');
+                                        const options: FilterableSelectOption[] = [
+                                            { value: '', label: placeholderLabel },
+                                            ...(!mission.is_same_os && !financialData.autoEngine?.active
+                                                ? [...filteredProviderTables].sort((a, b) => (a.operation_type || '').localeCompare(b.operation_type || ''))
+                                                    .map(t => ({ value: String(t.id), label: t.operation_type || '' }))
+                                                : []),
+                                        ];
+                                        const handleChange = (val: string) => {
+                                            if (isEffectivelyLocked || financialData.autoEngine?.active) return;
+                                            setManualProviderTableId(val);
+                                            setCustomProviderBase(''); setCustomProviderKm(''); setCustomProviderHour('');
+                                            setUseSavedValues(false);
+                                            userManuallyEditedRef.current = false;
+                                            setMission(prev => prev ? { ...prev, revenue_edit_reason: '', cost_edit_reason: '', billing_verified_by: null } : prev);
+                                            if (mission) supabase.from('missions').update({ revenue_edit_reason: '', cost_edit_reason: '', billing_verified_by: null }).eq('id', mission.id);
+                                        };
+                                        return (
+                                            <FilterableSelect
+                                                value={financialData.autoEngine?.active ? '' : (manualProviderTableId || '')}
+                                                onChange={handleChange}
+                                                options={options}
+                                                disabled={mission.is_same_os || isEffectivelyLocked || !!financialData.autoEngine?.active}
+                                                accentColor="red"
+                                                buttonClassName={`w-full p-2 bg-gray-50 border rounded-lg text-xs font-bold text-gray-700 uppercase outline-none focus:border-red-500 flex items-center justify-between gap-2 ${isZeroCostError ? 'border-red-300 bg-red-50 text-red-900 animate-pulse' : 'border-gray-200 hover:border-gray-300'} ${(mission.is_same_os || isEffectivelyLocked || financialData.autoEngine?.active) ? 'opacity-60 cursor-not-allowed' : ''}`}
+                                                data-testid="select-provider-table"
+                                            />
+                                        );
+                                    })()}
                                     {!mission.is_same_os && manualProviderTableId && (
                                         <button 
                                             onClick={() => { setEditCostTableId(manualProviderTableId); setIsAddCostModalOpen(true); }}
