@@ -53,7 +53,28 @@ interface UserStats {
 }
 
 const ReportsDashboard: React.FC = () => {
-    const [activeTab, setActiveTab] = useState<'dashboard' | 'ranking' | 'logs' | 'timeline' | 'autoEngine' | 'manualOverride'>('dashboard');
+    const [activeTab, setActiveTab] = useState<'dashboard' | 'ranking' | 'logs' | 'timeline' | 'autoEngine' | 'manualOverride' | 'dhlMemory'>('dashboard');
+
+    // Task #117 — Painel global da memória DHL
+    interface DhlMemoryRow {
+        id: string;
+        createdAt: string;
+        userName: string;
+        missionId: string;
+        region: string;
+        band: number;
+        originUF: string;
+        originCity: string;
+        destCity: string;
+        suggestedTableOp: string | null;
+        suggestedMatchLevel: string | null;
+        chosenTableOp: string | null;
+    }
+    const [dhlMemoryRows, setDhlMemoryRows] = useState<DhlMemoryRow[]>([]);
+    const [dhlMemoryLoading, setDhlMemoryLoading] = useState(false);
+    const [dhlMemoryRegionFilter, setDhlMemoryRegionFilter] = useState('');
+    const [dhlMemoryBandFilter, setDhlMemoryBandFilter] = useState('');
+    const [dhlMemorySearchTerm, setDhlMemorySearchTerm] = useState('');
     
     // Helper para formatar data local (YYYY-MM-DD)
     const getLocalISODate = (date: Date) => {
@@ -226,7 +247,7 @@ const ReportsDashboard: React.FC = () => {
             const provider = qs.get('provider');
             const from = qs.get('from');
             const to = qs.get('to');
-            if (tab === 'manualOverride' || tab === 'autoEngine' || tab === 'timeline' || tab === 'dashboard' || tab === 'ranking' || tab === 'logs') {
+            if (tab === 'manualOverride' || tab === 'autoEngine' || tab === 'timeline' || tab === 'dashboard' || tab === 'ranking' || tab === 'logs' || tab === 'dhlMemory') {
                 setActiveTab(tab as any);
             }
             if (user) setManualOverrideUserFilter(user);
@@ -241,13 +262,59 @@ const ReportsDashboard: React.FC = () => {
         fetchData();
         if (activeTab === 'timeline') fetchTimelineData();
         if (activeTab === 'autoEngine' || activeTab === 'manualOverride') fetchAutoEngineData();
+        if (activeTab === 'dhlMemory') fetchDhlMemoryData();
     }, [startDate, endDate]);
 
     useEffect(() => {
         if (activeTab === 'timeline' && timelineMissions.length === 0) fetchTimelineData();
         if (activeTab === 'autoEngine' || activeTab === 'manualOverride') fetchAutoEngineData();
         if (activeTab === 'manualOverride') fetchOverrideAlerts();
+        if (activeTab === 'dhlMemory') fetchDhlMemoryData();
     }, [activeTab]);
+
+    // Task #117 — Carrega correções DHL (system_logs entity=DhlTableCorrection)
+    const fetchDhlMemoryData = async () => {
+        setDhlMemoryLoading(true);
+        try {
+            const { data, error } = await supabase
+                .from('system_logs')
+                .select('id, created_at, user_name, entity_id, details')
+                .eq('entity', 'DhlTableCorrection')
+                .gte('created_at', `${startDate}T00:00:00`)
+                .lte('created_at', `${endDate}T23:59:59`)
+                .order('created_at', { ascending: false })
+                .limit(5000);
+            if (error) {
+                console.warn('[DHL Memória Painel] Falha ao carregar correções:', error.message);
+                setDhlMemoryRows([]);
+                return;
+            }
+            const rows: DhlMemoryRow[] = [];
+            for (const row of (data || []) as any[]) {
+                try {
+                    const d = typeof row.details === 'string' ? JSON.parse(row.details) : row.details;
+                    if (!d) continue;
+                    rows.push({
+                        id: String(row.id),
+                        createdAt: row.created_at || '',
+                        userName: String(row.user_name || ''),
+                        missionId: String(d.missionId || row.entity_id || ''),
+                        region: String(d.region || ''),
+                        band: Number(d.band || 0),
+                        originUF: String(d.originUF || ''),
+                        originCity: String(d.originCity || ''),
+                        destCity: String(d.destCity || ''),
+                        suggestedTableOp: d.suggestedTableOp || null,
+                        suggestedMatchLevel: d.suggestedMatchLevel || null,
+                        chosenTableOp: d.chosenTableOp || null,
+                    });
+                } catch { /* ignore */ }
+            }
+            setDhlMemoryRows(rows);
+        } finally {
+            setDhlMemoryLoading(false);
+        }
+    };
 
     const fetchAutoEngineData = async () => {
         setAutoEngineLoading(true);
@@ -645,6 +712,13 @@ const ReportsDashboard: React.FC = () => {
                     data-testid="tab-manual-override"
                 >
                     <UserCheck size={16} /> Edições Manuais
+                </button>
+                <button
+                    onClick={() => setActiveTab('dhlMemory')}
+                    className={`px-4 py-2 rounded-lg text-sm font-bold transition-all flex items-center gap-2 ${activeTab === 'dhlMemory' ? 'bg-white text-red-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+                    data-testid="tab-dhl-memory"
+                >
+                    <MapPin size={16} /> Memória DHL
                 </button>
             </div>
 
@@ -2036,6 +2110,251 @@ const ReportsDashboard: React.FC = () => {
                                             {filtered.length > 500 && (
                                                 <div className="p-2 text-center text-[10px] text-gray-400 bg-gray-50 border-t border-gray-200">
                                                     Exibindo as 500 OS mais recentes de {filtered.length}. Refine o período ou os filtros para reduzir.
+                                                </div>
+                                            )}
+                                        </div>
+                                    </div>
+                                </>
+                            )}
+                        </div>
+                    );
+                })()}
+
+                {/* Task #117 — PAINEL GLOBAL DA MEMÓRIA DHL */}
+                {activeTab === 'dhlMemory' && (() => {
+                    const VALID_REGIONS = ['SUDESTE', 'SUL', 'CENTRO-OESTE', 'NORDESTE', 'NORTE', 'BRASIL'];
+                    const bandsSet = new Set<number>();
+                    dhlMemoryRows.forEach(r => { if (r.band) bandsSet.add(r.band); });
+                    const allBands = Array.from(bandsSet).sort((a, b) => a - b);
+                    const search = dhlMemorySearchTerm.trim().toUpperCase();
+                    const filtered = dhlMemoryRows.filter(r => {
+                        if (dhlMemoryRegionFilter && r.region !== dhlMemoryRegionFilter) return false;
+                        if (dhlMemoryBandFilter && String(r.band) !== dhlMemoryBandFilter) return false;
+                        if (search) {
+                            const blob = `${r.originCity} ${r.destCity} ${r.originUF} ${r.userName} ${r.missionId} ${r.chosenTableOp || ''} ${r.suggestedTableOp || ''}`.toUpperCase();
+                            if (!blob.includes(search)) return false;
+                        }
+                        return true;
+                    });
+
+                    const totalGeral = filtered.length;
+                    const countsByRegion: Record<string, number> = {};
+                    const countsByBand: Record<string, number> = {};
+                    filtered.forEach(r => {
+                        const reg = r.region || '—';
+                        countsByRegion[reg] = (countsByRegion[reg] || 0) + 1;
+                        const b = r.band ? String(r.band) : '—';
+                        countsByBand[b] = (countsByBand[b] || 0) + 1;
+                    });
+                    const regionRows = Object.entries(countsByRegion).sort((a, b) => b[1] - a[1]);
+                    const bandRows = Object.entries(countsByBand).sort((a, b) => Number(a[0]) - Number(b[0]));
+
+                    const handleExportCsv = () => {
+                        const header = ['Data/Hora', 'Usuário', 'OS', 'Região', 'Faixa KM', 'UF Origem', 'Origem', 'Destino', 'Match Sugerido', 'Tabela Sugerida', 'Tabela Escolhida'];
+                        const lines = [header.join(';')];
+                        filtered.forEach(r => {
+                            lines.push([
+                                new Date(r.createdAt).toLocaleString('pt-BR'),
+                                (r.userName || '').replace(/;/g, ','),
+                                r.missionId,
+                                r.region || '',
+                                r.band ? String(r.band) : '',
+                                r.originUF || '',
+                                (r.originCity || '').replace(/;/g, ','),
+                                (r.destCity || '').replace(/;/g, ','),
+                                r.suggestedMatchLevel || '',
+                                (r.suggestedTableOp || '').replace(/;/g, ','),
+                                (r.chosenTableOp || '').replace(/;/g, ','),
+                            ].join(';'));
+                        });
+                        const blob = new Blob(['\ufeff' + lines.join('\n')], { type: 'text/csv;charset=utf-8;' });
+                        const url = URL.createObjectURL(blob);
+                        const a = document.createElement('a');
+                        a.href = url;
+                        a.download = `memoria_dhl_${startDate}_${endDate}.csv`;
+                        document.body.appendChild(a);
+                        a.click();
+                        document.body.removeChild(a);
+                        URL.revokeObjectURL(url);
+                    };
+
+                    return (
+                        <div className="space-y-4 animate-in fade-in slide-in-from-bottom-4">
+                            <div className="flex flex-wrap gap-3 items-center no-print">
+                                <div className="flex items-center gap-2">
+                                    <Filter size={14} className="text-gray-400" />
+                                    <select
+                                        value={dhlMemoryRegionFilter}
+                                        onChange={e => setDhlMemoryRegionFilter(e.target.value)}
+                                        className="px-3 py-1.5 border border-gray-300 rounded-lg text-xs"
+                                        data-testid="select-dhl-memory-region"
+                                    >
+                                        <option value="">Todas as regiões</option>
+                                        {VALID_REGIONS.map(r => <option key={r} value={r}>{r}</option>)}
+                                    </select>
+                                    <select
+                                        value={dhlMemoryBandFilter}
+                                        onChange={e => setDhlMemoryBandFilter(e.target.value)}
+                                        className="px-3 py-1.5 border border-gray-300 rounded-lg text-xs"
+                                        data-testid="select-dhl-memory-band"
+                                    >
+                                        <option value="">Todas as faixas</option>
+                                        {allBands.map(b => <option key={b} value={String(b)}>{b} km</option>)}
+                                    </select>
+                                    <input
+                                        type="text"
+                                        placeholder="Buscar rota, OS, usuário..."
+                                        value={dhlMemorySearchTerm}
+                                        onChange={e => setDhlMemorySearchTerm(e.target.value)}
+                                        className="px-3 py-1.5 border border-gray-300 rounded-lg text-xs w-56"
+                                        data-testid="input-dhl-memory-search"
+                                    />
+                                </div>
+                                <div className="ml-auto flex gap-2">
+                                    <button
+                                        onClick={handleExportCsv}
+                                        className="px-4 py-1.5 bg-gray-100 hover:bg-gray-200 rounded-lg text-xs font-bold flex items-center gap-2 transition-colors"
+                                        data-testid="btn-export-dhl-memory-csv"
+                                    >
+                                        <Download size={14} /> CSV
+                                    </button>
+                                    <button
+                                        onClick={() => window.print()}
+                                        className="px-4 py-1.5 bg-gray-100 hover:bg-gray-200 rounded-lg text-xs font-bold flex items-center gap-2 transition-colors"
+                                        data-testid="btn-print-dhl-memory"
+                                    >
+                                        <Printer size={14} /> Imprimir
+                                    </button>
+                                </div>
+                            </div>
+
+                            {dhlMemoryLoading ? (
+                                <div className="flex items-center justify-center py-20">
+                                    <Loader2 size={32} className="animate-spin text-red-500" />
+                                </div>
+                            ) : (
+                                <>
+                                    <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                                        <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm">
+                                            <p className="text-[9px] font-black text-gray-400 uppercase mb-1">Total de Correções</p>
+                                            <p className="text-3xl font-black text-red-700" data-testid="kpi-dhl-memory-total">{totalGeral}</p>
+                                            <p className="text-[9px] text-gray-500 font-bold mt-1">no período {startDate} → {endDate}</p>
+                                        </div>
+                                        <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm md:col-span-2">
+                                            <p className="text-[9px] font-black text-gray-400 uppercase mb-2">Por Região</p>
+                                            <div className="flex flex-wrap gap-2">
+                                                {regionRows.length === 0 ? (
+                                                    <span className="text-[11px] italic text-gray-400">Sem correções no período.</span>
+                                                ) : regionRows.map(([reg, n]) => (
+                                                    <div key={reg} className="px-3 py-1.5 rounded-lg bg-red-50 border border-red-200 flex items-center gap-2" data-testid={`kpi-dhl-memory-region-${reg}`}>
+                                                        <span className="text-[10px] font-black text-red-700 uppercase">{reg}</span>
+                                                        <span className="text-sm font-black text-red-900 font-mono">{n}</span>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                        <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+                                            <div className="px-4 py-2 bg-gray-50 border-b border-gray-200">
+                                                <h4 className="text-[10px] font-black text-gray-700 uppercase">Correções por Faixa KM</h4>
+                                            </div>
+                                            <div className="overflow-x-auto max-h-60">
+                                                <table className="w-full text-left">
+                                                    <thead>
+                                                        <tr className="text-[9px] font-black text-gray-500 uppercase bg-gray-50">
+                                                            <th className="px-3 py-2">Faixa</th>
+                                                            <th className="px-3 py-2 text-right">Correções</th>
+                                                        </tr>
+                                                    </thead>
+                                                    <tbody>
+                                                        {bandRows.length === 0 ? (
+                                                            <tr><td colSpan={2} className="px-3 py-4 text-center text-[11px] text-gray-400">Sem dados.</td></tr>
+                                                        ) : bandRows.map(([b, n]) => (
+                                                            <tr key={b} className="border-t border-gray-100 hover:bg-gray-50">
+                                                                <td className="px-3 py-1.5 text-xs font-bold text-gray-800">{b === '—' ? '—' : `${b} km`}</td>
+                                                                <td className="px-3 py-1.5 text-xs text-right font-mono">{n}</td>
+                                                            </tr>
+                                                        ))}
+                                                    </tbody>
+                                                </table>
+                                            </div>
+                                        </div>
+                                        <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+                                            <div className="px-4 py-2 bg-gray-50 border-b border-gray-200">
+                                                <h4 className="text-[10px] font-black text-gray-700 uppercase">Resumo por Região</h4>
+                                            </div>
+                                            <div className="overflow-x-auto max-h-60">
+                                                <table className="w-full text-left">
+                                                    <thead>
+                                                        <tr className="text-[9px] font-black text-gray-500 uppercase bg-gray-50">
+                                                            <th className="px-3 py-2">Região</th>
+                                                            <th className="px-3 py-2 text-right">Correções</th>
+                                                            <th className="px-3 py-2 text-right">% do Total</th>
+                                                        </tr>
+                                                    </thead>
+                                                    <tbody>
+                                                        {regionRows.length === 0 ? (
+                                                            <tr><td colSpan={3} className="px-3 py-4 text-center text-[11px] text-gray-400">Sem dados.</td></tr>
+                                                        ) : regionRows.map(([reg, n]) => (
+                                                            <tr key={reg} className="border-t border-gray-100 hover:bg-gray-50">
+                                                                <td className="px-3 py-1.5 text-xs font-bold text-gray-800">{reg}</td>
+                                                                <td className="px-3 py-1.5 text-xs text-right font-mono">{n}</td>
+                                                                <td className="px-3 py-1.5 text-xs text-right font-mono text-gray-500">{totalGeral > 0 ? ((n / totalGeral) * 100).toFixed(1) : '0.0'}%</td>
+                                                            </tr>
+                                                        ))}
+                                                    </tbody>
+                                                </table>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+                                        <div className="px-4 py-2 bg-gray-50 border-b border-gray-200 flex items-center justify-between">
+                                            <h4 className="text-[10px] font-black text-gray-700 uppercase">Correções Detalhadas ({filtered.length})</h4>
+                                        </div>
+                                        <div className="overflow-x-auto max-h-[520px]">
+                                            <table className="w-full text-left">
+                                                <thead className="sticky top-0 bg-gray-50">
+                                                    <tr className="text-[9px] font-black text-gray-500 uppercase">
+                                                        <th className="px-3 py-2">Data/Hora</th>
+                                                        <th className="px-3 py-2">Usuário</th>
+                                                        <th className="px-3 py-2">OS</th>
+                                                        <th className="px-3 py-2">Região</th>
+                                                        <th className="px-3 py-2 text-right">Faixa</th>
+                                                        <th className="px-3 py-2">Rota</th>
+                                                        <th className="px-3 py-2">Sugerida</th>
+                                                        <th className="px-3 py-2">Escolhida</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody>
+                                                    {filtered.length === 0 ? (
+                                                        <tr><td colSpan={8} className="px-3 py-8 text-center text-[11px] text-gray-400">Nenhuma correção encontrada para os filtros atuais.</td></tr>
+                                                    ) : filtered.slice(0, 500).map((r, i) => (
+                                                        <tr key={r.id} className="border-t border-gray-100 hover:bg-gray-50" data-testid={`row-dhl-memory-${i}`}>
+                                                            <td className="px-3 py-1.5 text-[11px] text-gray-700 whitespace-nowrap">{new Date(r.createdAt).toLocaleString('pt-BR')}</td>
+                                                            <td className="px-3 py-1.5 text-[11px] text-gray-700 truncate max-w-[140px]">{r.userName}</td>
+                                                            <td className="px-3 py-1.5 text-[11px] font-mono text-gray-700">{r.missionId.slice(0, 8)}</td>
+                                                            <td className="px-3 py-1.5 text-[11px] font-bold text-red-700">{r.region || '—'}</td>
+                                                            <td className="px-3 py-1.5 text-[11px] text-right font-mono">{r.band || '—'}</td>
+                                                            <td className="px-3 py-1.5 text-[11px] text-gray-700 truncate max-w-[220px]" title={`${r.originCity} → ${r.destCity}`}>
+                                                                {r.originCity || '—'} → {r.destCity || '—'}
+                                                            </td>
+                                                            <td className="px-3 py-1.5 text-[10px] text-gray-600 truncate max-w-[200px]" title={r.suggestedTableOp || ''}>
+                                                                {r.suggestedTableOp || <span className="italic text-gray-400">—</span>}
+                                                                {r.suggestedMatchLevel && <span className="ml-1 text-[9px] text-gray-400">({r.suggestedMatchLevel})</span>}
+                                                            </td>
+                                                            <td className="px-3 py-1.5 text-[10px] font-bold text-emerald-700 truncate max-w-[200px]" title={r.chosenTableOp || ''}>
+                                                                {r.chosenTableOp || <span className="italic text-gray-400">—</span>}
+                                                            </td>
+                                                        </tr>
+                                                    ))}
+                                                </tbody>
+                                            </table>
+                                            {filtered.length > 500 && (
+                                                <div className="p-2 text-center text-[10px] text-gray-400 bg-gray-50 border-t border-gray-200">
+                                                    Exibindo as 500 correções mais recentes de {filtered.length}. Refine o período ou os filtros para reduzir.
                                                 </div>
                                             )}
                                         </div>
