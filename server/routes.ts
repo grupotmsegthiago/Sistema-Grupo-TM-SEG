@@ -7112,6 +7112,8 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
       const reportKey = String(req.query.report_key || '').trim();
       const mode = String(req.query.mode || '').trim();
       const exportAll = String(req.query.export || '').trim() === '1';
+      const fromRaw = String(req.query.from || '').trim();
+      const toRaw = String(req.query.to || '').trim();
       const validKeys = ['legal', 'pending', 'approval', 'missingInfo', 'stuckNf'];
       const fetchLimit = exportAll ? 5000 : 100;
       let query = supabaseAdmin
@@ -7122,6 +7124,19 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
         .limit(fetchLimit);
       if (reportKey && validKeys.includes(reportKey)) {
         query = query.eq('entity_id', reportKey);
+      }
+      if (fromRaw) {
+        const fromDate = new Date(fromRaw);
+        if (!isNaN(fromDate.getTime())) {
+          query = query.gte('created_at', fromDate.toISOString());
+        }
+      }
+      if (toRaw) {
+        const isDateOnly = /^\d{4}-\d{2}-\d{2}$/.test(toRaw);
+        const toDate = isDateOnly ? new Date(`${toRaw}T23:59:59.999`) : new Date(toRaw);
+        if (!isNaN(toDate.getTime())) {
+          query = query.lte('created_at', toDate.toISOString());
+        }
       }
       const { data, error } = await query;
       if (error) throw error;

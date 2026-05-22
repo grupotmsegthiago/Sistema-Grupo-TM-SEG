@@ -74,6 +74,8 @@ const SystemSettingsPage: React.FC<{ onNavigate?: (id: string) => void }> = () =
   const [manualRunsExporting, setManualRunsExporting] = useState(false);
   const [manualRunsFilterKey, setManualRunsFilterKey] = useState<'' | ReportKey>('');
   const [manualRunsFilterMode, setManualRunsFilterMode] = useState<'' | 'test' | 'official'>('');
+  const [manualRunsFilterFrom, setManualRunsFilterFrom] = useState<string>('');
+  const [manualRunsFilterTo, setManualRunsFilterTo] = useState<string>('');
 
   const canRunReports = useMemo(() => {
     try {
@@ -153,12 +155,14 @@ const SystemSettingsPage: React.FC<{ onNavigate?: (id: string) => void }> = () =
     }
   };
 
-  const fetchManualRuns = async (key: '' | ReportKey, mode: '' | 'test' | 'official') => {
+  const fetchManualRuns = async (key: '' | ReportKey, mode: '' | 'test' | 'official', from?: string, to?: string) => {
     setManualRunsLoading(true);
     try {
       const qs = new URLSearchParams();
       if (key) qs.set('report_key', key);
       if (mode) qs.set('mode', mode);
+      if (from) qs.set('from', from);
+      if (to) qs.set('to', to);
       const res = await fetch(`/api/admin/system-settings/manual-report-runs${qs.toString() ? `?${qs.toString()}` : ''}`, { headers: authHeaders() });
       const json = await res.json();
       if (json?.ok) setManualRuns(json.runs || []);
@@ -175,6 +179,8 @@ const SystemSettingsPage: React.FC<{ onNavigate?: (id: string) => void }> = () =
       const qs = new URLSearchParams();
       if (manualRunsFilterKey) qs.set('report_key', manualRunsFilterKey);
       if (manualRunsFilterMode) qs.set('mode', manualRunsFilterMode);
+      if (manualRunsFilterFrom) qs.set('from', manualRunsFilterFrom);
+      if (manualRunsFilterTo) qs.set('to', manualRunsFilterTo);
       qs.set('export', '1');
       const res = await fetch(`/api/admin/system-settings/manual-report-runs?${qs.toString()}`, { headers: authHeaders() });
       const json = await res.json();
@@ -217,6 +223,8 @@ const SystemSettingsPage: React.FC<{ onNavigate?: (id: string) => void }> = () =
       const parts = ['disparos-manuais'];
       if (manualRunsFilterKey) parts.push(manualRunsFilterKey);
       if (manualRunsFilterMode) parts.push(manualRunsFilterMode);
+      if (manualRunsFilterFrom) parts.push(`de-${manualRunsFilterFrom}`);
+      if (manualRunsFilterTo) parts.push(`ate-${manualRunsFilterTo}`);
       parts.push(stamp);
       a.download = `${parts.join('_')}.csv`;
       document.body.appendChild(a);
@@ -248,7 +256,7 @@ const SystemSettingsPage: React.FC<{ onNavigate?: (id: string) => void }> = () =
         alert('Erro ao carregar: ' + (sJson?.error || 'desconhecido'));
       }
       if (hJson?.ok) setHistory(hJson.history || []);
-      await fetchManualRuns(manualRunsFilterKey, manualRunsFilterMode);
+      await fetchManualRuns(manualRunsFilterKey, manualRunsFilterMode, manualRunsFilterFrom, manualRunsFilterTo);
     } catch (e: any) {
       alert('Erro ao carregar configurações: ' + (e?.message || 'desconhecido'));
     } finally {
@@ -257,7 +265,7 @@ const SystemSettingsPage: React.FC<{ onNavigate?: (id: string) => void }> = () =
   };
 
   useEffect(() => { fetchAll(); }, []);
-  useEffect(() => { fetchManualRuns(manualRunsFilterKey, manualRunsFilterMode); }, [manualRunsFilterKey, manualRunsFilterMode]);
+  useEffect(() => { fetchManualRuns(manualRunsFilterKey, manualRunsFilterMode, manualRunsFilterFrom, manualRunsFilterTo); }, [manualRunsFilterKey, manualRunsFilterMode, manualRunsFilterFrom, manualRunsFilterTo]);
 
   const updateField = (key: keyof DailyReports, field: keyof Schedule, value: string | number) => {
     if (!settings) return;
@@ -544,8 +552,37 @@ const SystemSettingsPage: React.FC<{ onNavigate?: (id: string) => void }> = () =
               <option value="test">Apenas teste</option>
               <option value="official">Apenas oficial</option>
             </select>
+            <label className="text-xs text-gray-500 flex items-center gap-1">
+              De:
+              <input
+                type="date"
+                value={manualRunsFilterFrom}
+                onChange={(e) => setManualRunsFilterFrom(e.target.value)}
+                className="border border-gray-300 rounded-lg px-2 py-1 text-xs bg-white"
+                data-testid="input-manual-runs-from"
+              />
+            </label>
+            <label className="text-xs text-gray-500 flex items-center gap-1">
+              Até:
+              <input
+                type="date"
+                value={manualRunsFilterTo}
+                onChange={(e) => setManualRunsFilterTo(e.target.value)}
+                className="border border-gray-300 rounded-lg px-2 py-1 text-xs bg-white"
+                data-testid="input-manual-runs-to"
+              />
+            </label>
+            {(manualRunsFilterFrom || manualRunsFilterTo) && (
+              <button
+                onClick={() => { setManualRunsFilterFrom(''); setManualRunsFilterTo(''); }}
+                className="text-xs text-gray-500 hover:text-gray-800"
+                data-testid="button-clear-manual-runs-dates"
+              >
+                Limpar datas
+              </button>
+            )}
             <button
-              onClick={() => fetchManualRuns(manualRunsFilterKey, manualRunsFilterMode)}
+              onClick={() => fetchManualRuns(manualRunsFilterKey, manualRunsFilterMode, manualRunsFilterFrom, manualRunsFilterTo)}
               className="text-xs text-gray-500 hover:text-gray-800 flex items-center gap-1"
               data-testid="button-refresh-manual-runs"
             >
