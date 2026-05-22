@@ -24,6 +24,7 @@ import MissionFullReportModal from './MissionFullReportModal';
 import DailyGoalThermometer from './DailyGoalThermometer';
 import ExecutiveDashboard from './ExecutiveDashboard';
 import DhlSolicitationModal from './DhlSolicitationModal';
+import LossesDialog from './LossesDialog';
 import ClientExecutiveDashboard from './ClientExecutiveDashboard';
 import ClientReportsTab from './ClientReportsTab';
 import ClientMissionRequest from './ClientMissionRequest';
@@ -159,6 +160,7 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
   
   const [isFinancialModalOpen, setIsFinancialModalOpen] = useState(false);
   const [missionForFinancials, setMissionForFinancials] = useState<Mission | null>(null);
+  const [isLossesOpen, setIsLossesOpen] = useState(false);
   const [showClientRequestModal, setShowClientRequestModal] = useState(false);
   const [solicitationCount, setSolicitationCount] = useState(0);
   const [accidentCount, setAccidentCount] = useState(0);
@@ -1316,6 +1318,20 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
                    accentClass="from-blue-500 to-indigo-700"
                 />
              </div>
+             {canSeeFinancials && (
+             <div className="w-full sm:w-auto sm:shrink-0 flex items-stretch">
+                <button
+                   onClick={() => setIsLossesOpen(true)}
+                   className="group w-full sm:w-[200px] h-full min-h-[110px] flex flex-col items-center justify-center gap-1.5 px-4 py-3 rounded-[35px] bg-gradient-to-br from-red-500 to-orange-600 text-white shadow-[0_20px_50px_rgba(239,68,68,0.25)] hover:shadow-[0_25px_60px_rgba(239,68,68,0.4)] hover:-translate-y-0.5 transition-all border-x border-t border-b-4 border-red-700/40"
+                   title="Listar OS onde o custo do fornecedor superou a receita do cliente"
+                   data-testid="button-open-losses"
+                >
+                   <TrendingDown size={22} strokeWidth={2.5} className="drop-shadow" />
+                   <span className="text-[11px] font-black uppercase tracking-wider leading-tight text-center">OS com Prejuízo</span>
+                   <span className="text-[9px] font-semibold uppercase tracking-widest opacity-90">Clique para ver a lista</span>
+                </button>
+             </div>
+             )}
           </div>
           )}
         </div>
@@ -1689,6 +1705,20 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
   
         {isStatusModalOpen && <MissionStatusModal isOpen={isStatusModalOpen} onClose={() => setIsStatusModalOpen(false)} mission={missionForStatusView!} logs={missionLogs} onUpdate={() => fetchMissions(true)} hideProviderInfo={isRestrictedClientView} />}
         {isFinancialModalOpen && <MissionFinancialModal isOpen={isFinancialModalOpen} onClose={() => setIsFinancialModalOpen(false)} mission={missionForFinancials} onUpdate={() => fetchMissions(true)} />}
+        {isLossesOpen && canSeeFinancials && (
+          <LossesDialog
+            isOpen={isLossesOpen}
+            onClose={() => setIsLossesOpen(false)}
+            missions={allMissions}
+            clientTables={clientTables}
+            providerTables={providerTables}
+            clientsData={clientsData}
+            viewPeriod={viewPeriod}
+            customStartDate={customStartDate}
+            customEndDate={customEndDate}
+            onOpenMission={(m) => handleOpenFinancialModal(m)}
+          />
+        )}
         {isHistoryModalOpen && <MissionHistoryModal missionId={historyMissionId} onClose={() => setIsHistoryModalOpen(false)} />}
         {isUpdateModalOpen && <UpdateMissionModal isOpen={isUpdateModalOpen} onClose={() => setIsUpdateModalOpen(false)} mission={selectedMission} currentUser={currentUser} onSuccess={handleUpdateSuccess} hideProviderInfo={isRestrictedClientView} />}
         {isPrintModalOpen && missionForPrint && <MissionPrintModal mission={missionForPrint} onClose={() => setIsPrintModalOpen(false)} />}
