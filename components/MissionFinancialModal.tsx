@@ -568,34 +568,13 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                  if (details.customProviderBase) setCustomProviderBase(details.customProviderBase);
                  if (details.customProviderKm) setCustomProviderKm(details.customProviderKm);
                  if (details.customProviderHour) setCustomProviderHour(details.customProviderHour);
-                 if (details.tollValue !== undefined && details.tollValue !== null) {
-                     const memToll = Number(details.tollValue);
-                     setTollInput(memToll.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
-                     setSuggestedToll(memToll);
-                     setTollSource('MEMÓRIA (Rota Anterior)');
-                     setTollConfirmed(false);
-                     if (details.tollProviderValue !== undefined && details.tollProviderValue !== null) {
-                         const memTollProv = Number(details.tollProviderValue);
-                         setTollProviderInput(memTollProv.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
-                     } else if (memToll > 0) {
-                         setTollProviderInput(memToll.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
-                     }
-                 } else if (details.tollProviderValue !== undefined && details.tollProviderValue !== null) {
-                     const memTollProv = Number(details.tollProviderValue);
-                     setTollProviderInput(memTollProv.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
-                     setTollInput(memTollProv.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
-                     setSuggestedToll(memTollProv);
-                     setTollSource('MEMÓRIA (Rota Anterior)');
-                     setTollConfirmed(false);
-                 }
+                 // BLINDAGEM: Pedágio NUNCA mais é herdado de outras OS via memória.
+                 // O usuário deve confirmar manualmente o pedágio em cada OS.
+                 // Histórico continua disponível apenas como consulta (não aplicado).
                  setMemoryLoaded(true);
                  const hasCustomValues = details.customClientBase || details.customProviderBase;
-                 const hasTollMemory = details.tollValue !== undefined && details.tollValue !== null && Number(details.tollValue) > 0;
-                 const extraInfo = [
-                     hasCustomValues ? 'valores ajustados' : null,
-                     hasTollMemory ? `pedágio R$ ${Number(details.tollValue).toFixed(2)}` : null
-                 ].filter(Boolean).join(' + ');
-                 showNotification('Memória Evolutiva', `Tabela${extraInfo ? ` (${extraInfo})` : ''} aplicados (${memorySource === 'EXATA' ? 'mesmo fornecedor' : 'mesma rota'}).`, 'success');
+                 const extraInfo = hasCustomValues ? ' (valores ajustados)' : '';
+                 showNotification('Memória Evolutiva', `Tabela${extraInfo} aplicada (${memorySource === 'EXATA' ? 'mesmo fornecedor' : 'mesma rota'}). Pedágio precisa ser confirmado manualmente.`, 'success');
              } catch (e) { console.error("Erro ao ler memória:", e); }
           }
           

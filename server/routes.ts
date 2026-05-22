@@ -1914,7 +1914,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/missions/force-recalculate-by-os/:osNumber", async (req: Request, res: Response) => {
+  app.post("/api/missions/force-recalculate-by-os/:osNumber", requireAuth, requireRole('diretoria', 'administrador', 'financeiro'), async (req: Request, res: Response) => {
     try {
       const osNumber = req.params.osNumber;
       const missionId = osNumber.startsWith('GTM-') ? osNumber : `GTM-${osNumber}`;
@@ -1979,12 +1979,26 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/missions/:id/force-recalculate", async (req: Request, res: Response) => {
+  app.post("/api/missions/:id/force-recalculate", requireAuth, requireRole('diretoria', 'administrador', 'financeiro'), async (req: Request, res: Response) => {
     try {
       const missionId = req.params.id;
+      const { confirm } = req.body || {};
 
       const { data: mission, error: mErr } = await supabaseAdmin.from('missions').select('*').eq('id', missionId).single();
       if (mErr || !mission) return res.status(404).json({ error: 'Missão não encontrada' });
+
+      // BLINDAGEM: OS aprovada nunca pode ser recalculada automaticamente.
+      if (mission.billing_approved) {
+        return res.status(403).json({ error: 'OS aprovada para faturamento — recálculo bloqueado. Desfaça a aprovação primeiro.' });
+      }
+      // BLINDAGEM: se houve edição manual com motivo, exige confirmação dupla explícita.
+      if ((mission.revenue_edit_reason || mission.cost_edit_reason) && confirm !== 'OVERWRITE_MANUAL_EDIT') {
+        return res.status(409).json({
+          error: 'OS possui edição manual registrada. Envie body { "confirm": "OVERWRITE_MANUAL_EDIT" } para sobrescrever.',
+          revenue_edit_reason: mission.revenue_edit_reason || null,
+          cost_edit_reason: mission.cost_edit_reason || null,
+        });
+      }
 
       await supabaseAdmin.from('system_logs').delete().eq('entity', 'BillingAdjustment').eq('entity_id', missionId);
 
@@ -2020,6 +2034,21 @@ export async function registerRoutes(
           snapshot_approved_by: null,
         }).eq('id', missionId);
 
+        try {
+          await supabaseAdmin.from('system_logs').insert([{
+            user_name: (req as any).user?.name || 'Sistema',
+            action_type: 'FINANCIAL_RECALC',
+            entity: 'Mission',
+            entity_id: missionId,
+            details: JSON.stringify({
+              source: '/api/missions/:id/force-recalculate',
+              before: { revenue_value: mission.revenue_value, cost_value: mission.cost_value, toll_value: mission.toll_value },
+              after: { revenue_value: newRevenue, cost_value: newCost, toll_value: result.tollValue || mission.toll_value || 0 },
+              confirmed_overwrite: !!(mission.revenue_edit_reason || mission.cost_edit_reason),
+            })
+          }]);
+        } catch {}
+
         return res.json({
           success: true,
           mission_id: missionId,
@@ -2044,7 +2073,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/billing/recalculate-client", async (req: Request, res: Response) => {
+  app.post("/api/billing/recalculate-client", requireAuth, requireRole('diretoria', 'administrador', 'financeiro'), async (req: Request, res: Response) => {
     try {
       const { clientName, startDate, endDate } = req.body;
       if (!clientName) return res.status(400).json({ error: 'clientName obrigatório' });
@@ -2073,6 +2102,11 @@ export async function registerRoutes(
       for (const raw of (missions || [])) {
         try {
           if (raw.billing_approved) {
+            skipped++;
+            continue;
+          }
+          // BLINDAGEM: pular OS com edição manual registrada (motivo informado).
+          if (raw.revenue_edit_reason || raw.cost_edit_reason) {
             skipped++;
             continue;
           }
@@ -2156,8 +2190,12 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/billing/repair-snapshots", async (req: Request, res: Response) => {
+  app.post("/api/billing/repair-snapshots", requireAuth, requireRole('diretoria', 'administrador', 'financeiro'), async (req: Request, res: Response) => {
     try {
+      const { confirm } = req.body || {};
+      if (confirm !== 'REPAIR_SNAPSHOTS') {
+        return res.status(409).json({ error: 'Confirmação obrigatória. Envie body { "confirm": "REPAIR_SNAPSHOTS" }.' });
+      }
       const { data: damaged } = await supabaseAdmin.from('missions')
         .select('id, billing_approved, snapshot_approved_by')
         .eq('snapshot_approved_by', 'Sistema (Recalcular e Comparar)')
@@ -2179,7 +2217,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/missions/scan-divergences", async (req: Request, res: Response) => {
+  app.post("/api/missions/scan-divergences", requireAuth, requireRole('diretoria', 'administrador', 'financeiro'), async (req: Request, res: Response) => {
     try {
       const fetchAll = async (table: string) => {
         const allRows: any[] = [];
@@ -2248,7 +2286,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/missions/fix-divergences", async (req: Request, res: Response) => {
+  app.post("/api/missions/fix-divergences", requireAuth, requireRole('diretoria', 'administrador', 'financeiro'), async (req: Request, res: Response) => {
     try {
       const fetchAll = async (table: string) => {
         const allRows: any[] = [];
@@ -2280,6 +2318,8 @@ export async function registerRoutes(
 
       for (const m of completed) {
         try {
+          // BLINDAGEM: pular OS com edição manual registrada (motivo informado).
+          if (m.revenue_edit_reason || m.cost_edit_reason) { skipped++; continue; }
           const clientData = (clients || []).find((c: any) => c.name === m.client);
           const mObj = { ...m, startKm: m.start_km, endKm: m.end_km, startTime: m.start_time, endTime: m.end_time, agentCount: m.agent_count || 1 };
           const result = calculateMissionFinancials(mObj, clientTables || [], providerTables || [], clientData);
@@ -2341,7 +2381,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/missions/recalculate-all", async (req: Request, res: Response) => {
+  app.post("/api/missions/recalculate-all", requireAuth, requireRole('diretoria', 'administrador', 'financeiro'), async (req: Request, res: Response) => {
     try {
       const fetchAll = async (table: string) => {
         const allRows: any[] = [];
@@ -2377,6 +2417,8 @@ export async function registerRoutes(
           if (m.status === 'REFUSED' || m.status === 'Recusada') { skipped++; continue; }
           if (!TERMINAL_STATUSES.includes(m.status)) { skipped++; continue; }
           if (m.billing_approved || m.billing_verified_by) { skipped++; continue; }
+          // BLINDAGEM: pular OS com edição manual registrada (motivo informado).
+          if (m.revenue_edit_reason || m.cost_edit_reason) { skipped++; continue; }
           if (m.revenue_value > 0 || m.cost_value > 0) { skipped++; continue; }
 
           const missionObj = {
@@ -3326,6 +3368,8 @@ export async function registerRoutes(
           const clientData = (clients || []).find((c: any) => c.name?.toUpperCase() === (m.client || '').toUpperCase()) || null;
 
           if (raw.billing_approved || raw.billing_verified_by) { skipped++; continue; }
+          // BLINDAGEM: pular OS com edição manual registrada (motivo informado).
+          if (raw.revenue_edit_reason || raw.cost_edit_reason) { skipped++; continue; }
           if ((Number(raw.revenue_value) || 0) > 0 || (Number(raw.cost_value) || 0) > 0) { skipped++; continue; }
 
           const calc = calculateMissionFinancials(m, clientTables || [], providerTables || [], clientData, now);

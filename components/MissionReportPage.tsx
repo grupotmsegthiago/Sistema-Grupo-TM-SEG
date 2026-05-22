@@ -246,9 +246,22 @@ const MissionReportPage: React.FC = () => {
   const handleRecalcRow = async (missionId: string) => {
     setRecalcRowId(missionId);
     try {
-      const res = await authFetch(`/api/missions/${missionId}/force-recalculate`, { method: 'POST', headers: { 'Content-Type': 'application/json' } });
-      const data = await res.json();
-      if (data.success) {
+      const doCall = async (confirm?: string) => {
+        const body = confirm ? JSON.stringify({ confirm }) : undefined;
+        return authFetch(`/api/missions/${missionId}/force-recalculate`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body });
+      };
+      let res = await doCall();
+      let data = await res.json();
+      if (res.status === 409 && (data.revenue_edit_reason || data.cost_edit_reason)) {
+        const reason = data.revenue_edit_reason || data.cost_edit_reason;
+        const ok = window.confirm(`Esta OS tem edição manual registrada:\n\n"${reason}"\n\nDeseja realmente sobrescrever com o recálculo automático?`);
+        if (!ok) { setRecalcRowId(null); return; }
+        res = await doCall('OVERWRITE_MANUAL_EDIT');
+        data = await res.json();
+      }
+      if (res.status === 403) {
+        showNotification('Bloqueado', data.error || 'OS aprovada — desfaça a aprovação antes de recalcular.', 'error');
+      } else if (data.success) {
         showNotification('Sucesso', `OS ${missionId} recalculada: Receita R$ ${(data.new.revenue || 0).toFixed(2)} | Custo R$ ${(data.new.cost || 0).toFixed(2)}`, 'success');
         fetchMissions(true);
       } else {
