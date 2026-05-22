@@ -1236,6 +1236,18 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
               setCostInput(newCostStr);
           }
 
+          // Motor automático é fonte oficial: se está ativo e o valor salvo
+          // no banco diverge do calculado, sobrescreve o costInput (mesmo
+          // que dbValuesLoadedRef já esteja true). Não roda quando faturamento
+          // está travado nem quando o operador acabou de editar manualmente.
+          if (financialData.autoEngine?.active && !isEffectivelyLocked && !userManuallyEditedRef.current && !isSavingRef.current) {
+              const engineCostTotal = financialData.provider.serviceTotal + parseNumber(tollProviderInput);
+              const currentCostInput = parseNumber(costInput);
+              if (engineCostTotal > 0 && Math.abs(currentCostInput - engineCostTotal) > 1) {
+                  setCostInput(engineCostTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
+              }
+          }
+
           const isCevaLogitech = financialData.client?.detectionLog?.includes('LOGITECH SOBERANA');
           // Regra: depois de salvo/aprovado, NUNCA sobrescrever valores do banco
           // por recálculo automático (mesmo no caso especial CEVA/Logitech).
