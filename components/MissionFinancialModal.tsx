@@ -3378,20 +3378,11 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                         <div className="flex items-center gap-2">
                                             <div className="p-1.5 bg-emerald-600 text-white rounded-lg"><Calculator size={14}/></div>
                                             <div>
-                                                <p className="text-[11px] font-black text-emerald-800 uppercase tracking-widest">Cálculo Sugerido — Motor Automático</p>
+                                                <p className="text-[11px] font-black text-emerald-800 uppercase tracking-widest">Cálculo do Motor Automático</p>
                                                 <p className="text-[9px] text-emerald-600 font-bold">Faixa {financialData.autoEngine.bandKm}KM / Franquia {financialData.autoEngine.bandHours}h (Regra de Ouro)</p>
                                             </div>
                                         </div>
-                                        <button type="button" onClick={() => {
-                                            if (isEffectivelyLocked || !financialData.autoEngine) return;
-                                            const ae = financialData.autoEngine;
-                                            // Aplica explicitamente os valores do motor nos campos custom para que
-                                            // o serviceTotal persistido seja determinístico (base + extras).
-                                            setCustomProviderBase(ae.baseValue.toFixed(2));
-                                            setCustomProviderKm(ae.config.extraKmValue.toFixed(2));
-                                            setCustomProviderHour(ae.config.extraHourValue.toFixed(2));
-                                            showNotification('Aplicado', `Custo sugerido R$ ${ae.totalCost.toFixed(2)} carregado (faixa ${ae.bandKm}KM / ${ae.bandHours}h). Salve para persistir.`, 'success');
-                                        }} disabled={isEffectivelyLocked} className="text-[10px] font-black uppercase tracking-widest px-3 py-2 rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-50" data-testid="button-apply-auto-suggestion">Usar valor sugerido</button>
+                                        <span className="text-[9px] font-bold text-emerald-700 bg-emerald-100 border border-emerald-200 px-2 py-1 rounded uppercase tracking-wider">Aplicado automaticamente</span>
                                     </div>
                                     <div className="grid grid-cols-4 gap-2 text-center text-[10px]">
                                         <div className="bg-white rounded-lg p-2 border border-emerald-100">
@@ -3408,11 +3399,11 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                         </div>
                                         <div className="bg-white rounded-lg p-2 border border-emerald-100">
                                             <p className="text-emerald-500 font-black uppercase">+Horas</p>
-                                            <p className="text-emerald-900 font-black text-sm font-mono">{financialData.autoEngine.extraHours.toFixed(2)} → R$ {financialData.autoEngine.extraHourValue.toFixed(2)}</p>
+                                            <p className="text-emerald-900 font-black text-sm font-mono">{formatHoursHHMM(financialData.autoEngine.extraHours)} → R$ {financialData.autoEngine.extraHourValue.toFixed(2)}</p>
                                         </div>
                                     </div>
                                     <div className="mt-3 pt-3 border-t border-emerald-200 flex items-center justify-between">
-                                        <p className="text-[10px] font-black text-emerald-700 uppercase tracking-widest">Custo Total Sugerido</p>
+                                        <p className="text-[10px] font-black text-emerald-700 uppercase tracking-widest">Custo Total Calculado</p>
                                         <p className="text-xl font-black text-emerald-700 font-mono">R$ {financialData.autoEngine.totalCost.toFixed(2)}</p>
                                     </div>
                                 </div>
