@@ -551,33 +551,6 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
     return () => clearInterval(timer);
   }, []);
 
-  // Task #111: registra a última sugestão emitida pelo motor DHL (quando
-  // não há override manual) — usada para detectar quando o auditor troca
-  // a tabela sugerida e gravar a correção em system_logs.
-  useEffect(() => {
-    const log = financialData?.client?.detectionLog || '';
-    const m = log.match(/^DHL Auto \[(exact_route|region_band|region_any_km|memory_route|memory_region|none)\]:/);
-    if (!m || !mission) {
-      dhlEngineSuggestionRef.current = null;
-      return;
-    }
-    if (manualClientTableId) return; // sugestão original já foi substituída por override
-    const matchLevel = m[1];
-    const originUF = extractUF(mission.origin || '');
-    const region = UF_TO_REGION[originUF] || '';
-    const band = computeDhlBand(financialData?.realTraveledKm || 0);
-    const normalizeCity = (s: string) => (s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim().toUpperCase();
-    dhlEngineSuggestionRef.current = {
-      tableId: financialData?.client?.tableId ? String(financialData.client.tableId) : null,
-      matchLevel,
-      region,
-      band,
-      originCity: normalizeCity(extractCityFromAddress(mission.origin || '')),
-      destCity: normalizeCity(extractCityFromAddress(mission.destination || '')),
-      originUF,
-    };
-  }, [financialData?.client?.detectionLog, financialData?.client?.tableId, financialData?.realTraveledKm, manualClientTableId, mission]);
-
   // Task #111: carrega correções DHL recentes (últimos 90 dias) e popula
   // o cache do dhlAutoTableSelector para que selectDhlClientTable possa
   // priorizar a tabela escolhida pelo auditor em missões parecidas.
@@ -1314,6 +1287,36 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
           providerOpsOverride: providerOpsOverride
       }, providersList);
   }, [mission, clientTables, providerTables, clientData, manualClientTableId, manualProviderTableId, iblEnabled, tollInput, customProviderKm, customProviderHour, customClientKm, customClientHour, customClientBase, customProviderBase, providerOpsOverride, providersList]);
+
+  // Task #111: registra a última sugestão emitida pelo motor DHL (quando
+  // não há override manual) — usada para detectar quando o auditor troca
+  // a tabela sugerida e gravar a correção em system_logs.
+  // Movido para depois do `financialData` para evitar TDZ ("Cannot access
+  // 'financialData' before initialization") quando o array de dependências
+  // é avaliado durante o render.
+  useEffect(() => {
+    const log = financialData?.client?.detectionLog || '';
+    const m = log.match(/^DHL Auto \[(exact_route|region_band|region_any_km|memory_route|memory_region|none)\]:/);
+    if (!m || !mission) {
+      dhlEngineSuggestionRef.current = null;
+      return;
+    }
+    if (manualClientTableId) return; // sugestão original já foi substituída por override
+    const matchLevel = m[1];
+    const originUF = extractUF(mission.origin || '');
+    const region = UF_TO_REGION[originUF] || '';
+    const band = computeDhlBand(financialData?.realTraveledKm || 0);
+    const normalizeCity = (s: string) => (s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim().toUpperCase();
+    dhlEngineSuggestionRef.current = {
+      tableId: financialData?.client?.tableId ? String(financialData.client.tableId) : null,
+      matchLevel,
+      region,
+      band,
+      originCity: normalizeCity(extractCityFromAddress(mission.origin || '')),
+      destCity: normalizeCity(extractCityFromAddress(mission.destination || '')),
+      originUF,
+    };
+  }, [financialData?.client?.detectionLog, financialData?.client?.tableId, financialData?.realTraveledKm, manualClientTableId, mission]);
 
     useEffect(() => {
       if (financialData && mission && !isLoading) {
