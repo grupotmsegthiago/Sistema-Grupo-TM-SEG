@@ -25,6 +25,12 @@ import DailyGoalThermometer from './DailyGoalThermometer';
 import ExecutiveDashboard from './ExecutiveDashboard';
 import DhlSolicitationModal from './DhlSolicitationModal';
 import LossesDialog from './LossesDialog';
+import {
+  computeCanonicalRevenueCost as computeCanonicalRC,
+  getCanonicalDateRange as getCanonicalDR,
+  filterMissionsByPeriod as filterByPeriodCanonical,
+  type CanonicalPeriod as CanonicalPeriodT,
+} from '../lib/missionFinancialsCanonical';
 import ClientExecutiveDashboard from './ClientExecutiveDashboard';
 import ClientReportsTab from './ClientReportsTab';
 import ClientMissionRequest from './ClientMissionRequest';
@@ -235,6 +241,30 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
     const roleLower = (currentUser.role || '').toLowerCase();
     return nameLower.includes('daniel') || nameLower.includes('michelle') || nameLower.includes('barbara') || nameLower.includes('bárbara') || nameLower.includes('thiago') || roleLower === 'controller';
   }, [currentUser]);
+
+  // Conta quantas OS estão com prejuízo direto (custo > receita) no período
+  // canônico selecionado. Usado para esconder o botão "OS com Prejuízo"
+  // quando não há nenhuma OS com prejuízo no período.
+  const lossesCount = useMemo(() => {
+    if (!canSeeFinancials) return 0;
+    try {
+      const allowed: CanonicalPeriodT[] = ['TODAY', 'YESTERDAY', 'WEEK', 'MONTH', 'YEAR', 'CUSTOM', 'ALL'];
+      const period = (allowed.includes(viewPeriod as CanonicalPeriodT) ? viewPeriod : 'TODAY') as CanonicalPeriodT;
+      const [start, end] = getCanonicalDR(period, customStartDate, customEndDate);
+      const inPeriod = filterByPeriodCanonical(allMissions || [], start, end);
+      const refs = { clientTables, providerTables, clientsData };
+      let count = 0;
+      for (const m of inPeriod) {
+        if ((m as any).status === MissionStatus.REFUSED) continue;
+        const r = computeCanonicalRC(m as any, refs);
+        if (r.rev <= 0 && r.cost <= 0) continue;
+        if (r.cost - r.rev > 0) count++;
+      }
+      return count;
+    } catch {
+      return 0;
+    }
+  }, [canSeeFinancials, allMissions, clientTables, providerTables, clientsData, viewPeriod, customStartDate, customEndDate]);
   
   const isCommercial = useMemo(() => {
       if (!currentUser) return false;
@@ -1318,17 +1348,17 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
                    accentClass="from-blue-500 to-indigo-700"
                 />
              </div>
-             {canSeeFinancials && (
+             {canSeeFinancials && lossesCount > 0 && (
              <div className="w-full sm:w-auto sm:shrink-0 flex items-stretch">
                 <button
                    onClick={() => setIsLossesOpen(true)}
                    className="group w-full sm:w-[200px] h-full min-h-[110px] flex flex-col items-center justify-center gap-1.5 px-4 py-3 rounded-[35px] bg-gradient-to-br from-red-500 to-orange-600 text-white shadow-[0_20px_50px_rgba(239,68,68,0.25)] hover:shadow-[0_25px_60px_rgba(239,68,68,0.4)] hover:-translate-y-0.5 transition-all border-x border-t border-b-4 border-red-700/40"
-                   title="Listar OS onde o custo do fornecedor superou a receita do cliente"
+                   title={`Listar OS onde o custo do fornecedor superou a receita do cliente (${lossesCount} OS)`}
                    data-testid="button-open-losses"
                 >
                    <TrendingDown size={22} strokeWidth={2.5} className="drop-shadow" />
                    <span className="text-[11px] font-black uppercase tracking-wider leading-tight text-center">OS com Prejuízo</span>
-                   <span className="text-[9px] font-semibold uppercase tracking-widest opacity-90">Clique para ver a lista</span>
+                   <span className="text-[10px] font-black uppercase tracking-widest bg-white/20 px-2 py-0.5 rounded-full">{lossesCount} {lossesCount === 1 ? 'OS' : 'OS'}</span>
                 </button>
              </div>
              )}
