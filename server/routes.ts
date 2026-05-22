@@ -6067,17 +6067,42 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
         return { ok: true, scanned: (logs || []).length, divergent: divergent.length, alerts: 0 };
       }
 
-      // Filtra escopos que já receberam alerta dentro do cooldown
+      // Filtra escopos que já receberam alerta dentro do cooldown OU foram silenciados manualmente
       const cooldownMs = MANUAL_OVERRIDE_COOLDOWN_HOURS * 60 * 60 * 1000;
       const cooldownSinceISO = new Date(Date.now() - cooldownMs).toISOString();
-      const { data: recentAlerts } = await supabaseAdmin
+      // Task #73 — busca alertas, silenciamentos e reopens dos últimos 60 dias para aplicar o cooldown corretamente
+      const lookbackISO = new Date(Date.now() - 60 * 24 * 60 * 60 * 1000).toISOString();
+      const { data: scopeLogs } = await supabaseAdmin
         .from('system_logs')
-        .select('entity_id, created_at')
+        .select('entity_id, action_type, created_at, details')
         .eq('entity', 'ManualOverrideAlert')
-        .eq('action_type', 'MANUAL_OVERRIDE_ALERT')
-        .gte('created_at', cooldownSinceISO);
+        .in('action_type', ['MANUAL_OVERRIDE_ALERT', 'MANUAL_OVERRIDE_ALERT_SILENCE', 'MANUAL_OVERRIDE_ALERT_REOPEN'])
+        .gte('created_at', lookbackISO);
+      const nowMs = Date.now();
+      const reopenedAt = new Map<string, number>();
+      (scopeLogs || []).forEach((s: any) => {
+        if (s.action_type !== 'MANUAL_OVERRIDE_ALERT_REOPEN' || !s.entity_id) return;
+        const t = Date.parse(s.created_at);
+        const prev = reopenedAt.get(String(s.entity_id)) || 0;
+        if (t > prev) reopenedAt.set(String(s.entity_id), t);
+      });
       const recentScopes = new Set<string>();
-      (recentAlerts || []).forEach((r: any) => { if (r.entity_id) recentScopes.add(String(r.entity_id)); });
+      (scopeLogs || []).forEach((s: any) => {
+        const key = String(s.entity_id || '');
+        if (!key) return;
+        const reopened = reopenedAt.get(key) || 0;
+        const t = Date.parse(s.created_at);
+        if (t <= reopened) return;
+        if (s.action_type === 'MANUAL_OVERRIDE_ALERT') {
+          if (t >= Date.parse(cooldownSinceISO)) recentScopes.add(key);
+        } else if (s.action_type === 'MANUAL_OVERRIDE_ALERT_SILENCE') {
+          try {
+            const d = typeof s.details === 'string' ? JSON.parse(s.details) : (s.details || {});
+            const until = d.silenceUntil ? Date.parse(d.silenceUntil) : 0;
+            if (until && until > nowMs) recentScopes.add(key);
+          } catch { /* ignore */ }
+        }
+      });
 
       const pendingUser = overUser.filter(([name]) => !recentScopes.has(`user:${name}`));
       const pendingProvider = overProvider.filter(([name]) => !recentScopes.has(`provider:${name}`));
@@ -6287,6 +6312,142 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
       res.json({ ok: true, history });
     } catch (e: any) {
       res.status(500).json({ ok: false, error: e?.message || 'Falha ao carregar histórico' });
+    }
+  });
+
+  // Task #73 — Painel de alertas de edições manuais já disparados
+  // Lista os últimos alertas + escopos atualmente em cooldown (auto ou silenciados).
+  app.get('/api/admin/manual-override-alerts', requireAuth, requireRole('diretoria', 'administrador', 'financeiro'), async (req: Request, res: Response) => {
+    try {
+      const settings = await loadManualOverrideSettings();
+      const MANUAL_OVERRIDE_WINDOW_DAYS = settings.windowDays;
+      const MANUAL_OVERRIDE_THRESHOLD = settings.threshold;
+      const MANUAL_OVERRIDE_COOLDOWN_HOURS = settings.cooldownHours;
+      const limit = Math.min(200, Math.max(1, Number(req.query.limit) || 50));
+      const { data: alerts, error } = await supabaseAdmin
+        .from('system_logs')
+        .select('id, created_at, user_name, entity_id, action_type, details')
+        .eq('entity', 'ManualOverrideAlert')
+        .in('action_type', ['MANUAL_OVERRIDE_ALERT', 'MANUAL_OVERRIDE_ALERT_SILENCE', 'MANUAL_OVERRIDE_ALERT_REOPEN'])
+        .order('created_at', { ascending: false })
+        .limit(limit);
+      if (error) return res.status(500).json({ error: error.message });
+
+      const cooldownMs = MANUAL_OVERRIDE_COOLDOWN_HOURS * 60 * 60 * 1000;
+      const nowMs = Date.now();
+      const cooldownSinceMs = nowMs - cooldownMs;
+
+      // Calcula cooldown vigente por escopo, considerando reopens que zeram silenciamentos/alertas anteriores
+      type CooldownInfo = { scope: 'user' | 'provider'; name: string; until: string; source: 'auto' | 'silence' };
+      const cooldowns = new Map<string, CooldownInfo>();
+      const reopenedAt = new Map<string, number>();
+      // Primeiro: anotar timestamp do reopen mais recente por escopo
+      for (const a of (alerts || []) as any[]) {
+        if (a.action_type !== 'MANUAL_OVERRIDE_ALERT_REOPEN' || !a.entity_id) continue;
+        const t = Date.parse(a.created_at);
+        const prev = reopenedAt.get(String(a.entity_id)) || 0;
+        if (t > prev) reopenedAt.set(String(a.entity_id), t);
+      }
+      for (const a of (alerts || []) as any[]) {
+        const key = String(a.entity_id || '');
+        if (!key) continue;
+        const reopened = reopenedAt.get(key) || 0;
+        const t = Date.parse(a.created_at);
+        if (t <= reopened) continue;
+        const [scopeRaw, ...rest] = key.split(':');
+        const scope = (scopeRaw === 'user' || scopeRaw === 'provider') ? scopeRaw : null;
+        if (!scope) continue;
+        const name = rest.join(':');
+        if (a.action_type === 'MANUAL_OVERRIDE_ALERT') {
+          if (t < cooldownSinceMs) continue;
+          const untilMs = t + cooldownMs;
+          const existing = cooldowns.get(key);
+          if (!existing || Date.parse(existing.until) < untilMs) {
+            cooldowns.set(key, { scope, name, until: new Date(untilMs).toISOString(), source: 'auto' });
+          }
+        } else if (a.action_type === 'MANUAL_OVERRIDE_ALERT_SILENCE') {
+          try {
+            const d = typeof a.details === 'string' ? JSON.parse(a.details) : (a.details || {});
+            const untilMs = d.silenceUntil ? Date.parse(d.silenceUntil) : 0;
+            if (untilMs > nowMs) {
+              const existing = cooldowns.get(key);
+              if (!existing || Date.parse(existing.until) < untilMs) {
+                cooldowns.set(key, { scope, name, until: new Date(untilMs).toISOString(), source: 'silence' });
+              }
+            }
+          } catch { /* ignore */ }
+        }
+      }
+
+      const cooldownList = Array.from(cooldowns.values()).sort((a, b) => Date.parse(b.until) - Date.parse(a.until));
+
+      return res.json({
+        ok: true,
+        windowDays: MANUAL_OVERRIDE_WINDOW_DAYS,
+        threshold: MANUAL_OVERRIDE_THRESHOLD,
+        cooldownHours: MANUAL_OVERRIDE_COOLDOWN_HOURS,
+        alerts: (alerts || []).map((a: any) => {
+          let parsed: any = {};
+          try { parsed = typeof a.details === 'string' ? JSON.parse(a.details) : (a.details || {}); } catch { /* ignore */ }
+          return {
+            id: a.id,
+            createdAt: a.created_at,
+            userName: a.user_name || 'Sistema',
+            actionType: a.action_type,
+            entityId: a.entity_id,
+            details: parsed,
+          };
+        }),
+        cooldowns: cooldownList,
+      });
+    } catch (e: any) {
+      return res.status(500).json({ error: e?.message || String(e) });
+    }
+  });
+
+  app.post('/api/admin/manual-override-alerts/silence', requireAuth, requireRole('diretoria', 'administrador', 'financeiro'), async (req: Request, res: Response) => {
+    try {
+      const scope = String(req.body?.scope || '').trim();
+      const name = String(req.body?.name || '').trim();
+      const hours = Math.min(24 * 30, Math.max(1, Number(req.body?.hours) || 24));
+      if (scope !== 'user' && scope !== 'provider') return res.status(400).json({ error: 'scope inválido' });
+      if (!name) return res.status(400).json({ error: 'name obrigatório' });
+      const session: any = (req as any).session || {};
+      const actor = session.user?.name || session.user?.email || 'Sistema';
+      const silenceUntil = new Date(Date.now() + hours * 60 * 60 * 1000).toISOString();
+      const { error } = await supabaseAdmin.from('system_logs').insert([{
+        user_name: actor,
+        action_type: 'MANUAL_OVERRIDE_ALERT_SILENCE',
+        entity: 'ManualOverrideAlert',
+        entity_id: `${scope}:${name}`,
+        details: JSON.stringify({ scope, name, hours, silenceUntil, actor }),
+      }]);
+      if (error) return res.status(500).json({ error: error.message });
+      return res.json({ ok: true, silenceUntil });
+    } catch (e: any) {
+      return res.status(500).json({ error: e?.message || String(e) });
+    }
+  });
+
+  app.post('/api/admin/manual-override-alerts/reopen', requireAuth, requireRole('diretoria', 'administrador', 'financeiro'), async (req: Request, res: Response) => {
+    try {
+      const scope = String(req.body?.scope || '').trim();
+      const name = String(req.body?.name || '').trim();
+      if (scope !== 'user' && scope !== 'provider') return res.status(400).json({ error: 'scope inválido' });
+      if (!name) return res.status(400).json({ error: 'name obrigatório' });
+      const session: any = (req as any).session || {};
+      const actor = session.user?.name || session.user?.email || 'Sistema';
+      const { error } = await supabaseAdmin.from('system_logs').insert([{
+        user_name: actor,
+        action_type: 'MANUAL_OVERRIDE_ALERT_REOPEN',
+        entity: 'ManualOverrideAlert',
+        entity_id: `${scope}:${name}`,
+        details: JSON.stringify({ scope, name, actor, reopenedAt: new Date().toISOString() }),
+      }]);
+      if (error) return res.status(500).json({ error: error.message });
+      return res.json({ ok: true });
+    } catch (e: any) {
+      return res.status(500).json({ error: e?.message || String(e) });
     }
   });
 

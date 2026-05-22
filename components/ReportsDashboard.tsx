@@ -87,6 +87,79 @@ const ReportsDashboard: React.FC = () => {
     const [manualOverrideProviderFilter, setManualOverrideProviderFilter] = useState('');
     const [manualOverrideUserFilter, setManualOverrideUserFilter] = useState('');
 
+    // Task #73 — Painel de alertas já disparados
+    type OverrideAlertItem = {
+        id: string;
+        createdAt: string;
+        userName: string;
+        actionType: 'MANUAL_OVERRIDE_ALERT' | 'MANUAL_OVERRIDE_ALERT_SILENCE' | 'MANUAL_OVERRIDE_ALERT_REOPEN';
+        entityId: string;
+        details: any;
+    };
+    type OverrideCooldown = { scope: 'user' | 'provider'; name: string; until: string; source: 'auto' | 'silence' };
+    const [overrideAlerts, setOverrideAlerts] = useState<OverrideAlertItem[]>([]);
+    const [overrideCooldowns, setOverrideCooldowns] = useState<OverrideCooldown[]>([]);
+    const [overrideAlertsConfig, setOverrideAlertsConfig] = useState<{ windowDays: number; threshold: number; cooldownHours: number } | null>(null);
+    const [overrideAlertsLoading, setOverrideAlertsLoading] = useState(false);
+    const [overrideActionBusy, setOverrideActionBusy] = useState<string | null>(null);
+
+    const fetchOverrideAlerts = async () => {
+        setOverrideAlertsLoading(true);
+        try {
+            const r = await fetch('/api/admin/manual-override-alerts?limit=100', { credentials: 'include' });
+            if (r.ok) {
+                const j = await r.json();
+                setOverrideAlerts(j.alerts || []);
+                setOverrideCooldowns(j.cooldowns || []);
+                setOverrideAlertsConfig({ windowDays: j.windowDays, threshold: j.threshold, cooldownHours: j.cooldownHours });
+            }
+        } catch { /* ignore */ }
+        finally { setOverrideAlertsLoading(false); }
+    };
+
+    const silenceOverrideScope = async (scope: 'user' | 'provider', name: string) => {
+        const hoursStr = window.prompt(`Silenciar ${scope === 'user' ? 'usuário' : 'fornecedor'} "${name}" por quantas horas? (1 a 720)`, '72');
+        if (!hoursStr) return;
+        const hours = Math.max(1, Math.min(720, Number(hoursStr) || 0));
+        if (!hours) { window.alert('Informe um número entre 1 e 720.'); return; }
+        const key = `silence:${scope}:${name}`;
+        setOverrideActionBusy(key);
+        try {
+            const r = await fetch('/api/admin/manual-override-alerts/silence', {
+                method: 'POST',
+                credentials: 'include',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ scope, name, hours }),
+            });
+            if (!r.ok) {
+                const j = await r.json().catch(() => ({}));
+                window.alert(`Falha ao silenciar: ${j?.error || r.statusText}`);
+            } else {
+                await fetchOverrideAlerts();
+            }
+        } finally { setOverrideActionBusy(null); }
+    };
+
+    const reopenOverrideScope = async (scope: 'user' | 'provider', name: string) => {
+        if (!window.confirm(`Reabrir alertas para ${scope === 'user' ? 'usuário' : 'fornecedor'} "${name}"? O cooldown atual será encerrado e um novo alerta poderá ser disparado na próxima varredura.`)) return;
+        const key = `reopen:${scope}:${name}`;
+        setOverrideActionBusy(key);
+        try {
+            const r = await fetch('/api/admin/manual-override-alerts/reopen', {
+                method: 'POST',
+                credentials: 'include',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ scope, name }),
+            });
+            if (!r.ok) {
+                const j = await r.json().catch(() => ({}));
+                window.alert(`Falha ao reabrir: ${j?.error || r.statusText}`);
+            } else {
+                await fetchOverrideAlerts();
+            }
+        } finally { setOverrideActionBusy(null); }
+    };
+
     // Task #67 — Deep-link vindo do e-mail/notificação de alerta de edições manuais.
     // Aceita ?tab=manualOverride&user=...&provider=...&from=YYYY-MM-DD&to=YYYY-MM-DD
     useEffect(() => {
@@ -118,6 +191,7 @@ const ReportsDashboard: React.FC = () => {
     useEffect(() => {
         if (activeTab === 'timeline' && timelineMissions.length === 0) fetchTimelineData();
         if (activeTab === 'autoEngine' || activeTab === 'manualOverride') fetchAutoEngineData();
+        if (activeTab === 'manualOverride') fetchOverrideAlerts();
     }, [activeTab]);
 
     const fetchAutoEngineData = async () => {
@@ -1415,6 +1489,24 @@ const ReportsDashboard: React.FC = () => {
                         URL.revokeObjectURL(url);
                     };
 
+                    const formatDateTimeBR = (iso: string) => {
+                        try { return new Date(iso).toLocaleString('pt-BR'); } catch { return iso; }
+                    };
+                    const formatCooldownRemaining = (untilIso: string) => {
+                        const ms = Date.parse(untilIso) - Date.now();
+                        if (ms <= 0) return 'expirando';
+                        const totalMin = Math.floor(ms / 60000);
+                        const h = Math.floor(totalMin / 60);
+                        const m = totalMin % 60;
+                        if (h >= 24) {
+                            const d = Math.floor(h / 24);
+                            const hh = h % 24;
+                            return `${d}d ${hh}h`;
+                        }
+                        return h > 0 ? `${h}h ${m}m` : `${m}m`;
+                    };
+                    const onlyRealAlerts = overrideAlerts.filter(a => a.actionType === 'MANUAL_OVERRIDE_ALERT');
+
                     return (
                         <div className="space-y-4 animate-in fade-in slide-in-from-bottom-4">
                             <div className="bg-amber-50 border-l-4 border-amber-400 p-3 rounded-r-lg no-print">
@@ -1425,6 +1517,141 @@ const ReportsDashboard: React.FC = () => {
                                         Cruzamos com os motivos cadastrados em <code className="bg-amber-100 px-1 rounded text-[10px]">VALUE_EDIT_REASON</code> para identificar quem editou, quando e por quê.
                                     </span>
                                 </p>
+                            </div>
+
+                            {/* Task #73 — Alertas já disparados + cooldown */}
+                            <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden no-print" data-testid="panel-override-alerts">
+                                <div className="px-4 py-2.5 bg-red-50 border-b border-red-200 flex flex-wrap items-center gap-3">
+                                    <h4 className="text-xs font-black text-red-800 uppercase flex items-center gap-2">
+                                        <AlertTriangle size={14} /> Alertas Disparados ao Gestor
+                                    </h4>
+                                    <span className="text-[10px] font-bold text-gray-600 bg-white border border-gray-200 px-2 py-0.5 rounded-full" data-testid="badge-override-cooldown-count">
+                                        {overrideCooldowns.length} escopo(s) em cooldown
+                                    </span>
+                                    {overrideAlertsConfig && (
+                                        <span className="text-[10px] text-gray-500">
+                                            Limite: {overrideAlertsConfig.threshold} edições / {overrideAlertsConfig.windowDays}d · Cooldown padrão: {overrideAlertsConfig.cooldownHours}h
+                                        </span>
+                                    )}
+                                    <button
+                                        onClick={fetchOverrideAlerts}
+                                        className="ml-auto px-2 py-1 text-[10px] font-bold bg-white border border-gray-300 rounded hover:bg-gray-50"
+                                        data-testid="btn-refresh-override-alerts"
+                                    >
+                                        Atualizar
+                                    </button>
+                                </div>
+                                {overrideAlertsLoading ? (
+                                    <div className="flex items-center justify-center py-8">
+                                        <Loader2 size={20} className="animate-spin text-red-500" />
+                                    </div>
+                                ) : (
+                                    <div className="grid grid-cols-1 lg:grid-cols-2">
+                                        {/* Cooldowns ativos */}
+                                        <div className="border-b lg:border-b-0 lg:border-r border-gray-200">
+                                            <div className="px-4 py-2 bg-gray-50 border-b border-gray-200 text-[10px] font-black text-gray-600 uppercase">
+                                                Em Cooldown Agora
+                                            </div>
+                                            {overrideCooldowns.length === 0 ? (
+                                                <div className="px-4 py-6 text-center text-[11px] text-gray-400">Nenhum escopo silenciado no momento.</div>
+                                            ) : (
+                                                <ul className="divide-y divide-gray-100 max-h-72 overflow-y-auto">
+                                                    {overrideCooldowns.map(c => {
+                                                        const reopenKey = `reopen:${c.scope}:${c.name}`;
+                                                        const busy = overrideActionBusy === reopenKey;
+                                                        return (
+                                                            <li key={`${c.scope}:${c.name}`} className="px-4 py-2 flex items-center gap-3" data-testid={`row-override-cooldown-${c.scope}-${c.name}`}>
+                                                                <div className="flex-1 min-w-0">
+                                                                    <div className="text-[11px] font-black text-gray-800 truncate">
+                                                                        <span className={`inline-block px-1.5 py-0.5 rounded text-[9px] mr-1.5 ${c.scope === 'user' ? 'bg-blue-100 text-blue-700' : 'bg-purple-100 text-purple-700'}`}>
+                                                                            {c.scope === 'user' ? 'USUÁRIO' : 'FORNECEDOR'}
+                                                                        </span>
+                                                                        {c.name}
+                                                                    </div>
+                                                                    <div className="text-[10px] text-gray-500 mt-0.5">
+                                                                        Termina em <strong className="font-mono">{formatCooldownRemaining(c.until)}</strong>
+                                                                        {' · '}
+                                                                        <span className={c.source === 'silence' ? 'text-amber-700 font-bold' : ''}>
+                                                                            {c.source === 'silence' ? 'silenciado manualmente' : 'cooldown automático'}
+                                                                        </span>
+                                                                    </div>
+                                                                </div>
+                                                                <button
+                                                                    onClick={() => reopenOverrideScope(c.scope, c.name)}
+                                                                    disabled={busy}
+                                                                    className="px-2 py-1 text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 rounded hover:bg-emerald-100 disabled:opacity-50"
+                                                                    data-testid={`btn-override-reopen-${c.scope}-${c.name}`}
+                                                                >
+                                                                    {busy ? '...' : 'Reabrir'}
+                                                                </button>
+                                                            </li>
+                                                        );
+                                                    })}
+                                                </ul>
+                                            )}
+                                        </div>
+
+                                        {/* Alertas recentes */}
+                                        <div>
+                                            <div className="px-4 py-2 bg-gray-50 border-b border-gray-200 text-[10px] font-black text-gray-600 uppercase">
+                                                Últimos Alertas Disparados
+                                            </div>
+                                            {onlyRealAlerts.length === 0 ? (
+                                                <div className="px-4 py-6 text-center text-[11px] text-gray-400">Nenhum alerta disparado ainda.</div>
+                                            ) : (
+                                                <ul className="divide-y divide-gray-100 max-h-72 overflow-y-auto">
+                                                    {onlyRealAlerts.slice(0, 30).map(a => {
+                                                        const scope = a.details?.scope as 'user' | 'provider' | undefined;
+                                                        const name = String(a.details?.name || '');
+                                                        const count = Number(a.details?.count || 0);
+                                                        const link = a.details?.link as string | undefined;
+                                                        const silenceKey = scope && name ? `silence:${scope}:${name}` : '';
+                                                        const busy = !!silenceKey && overrideActionBusy === silenceKey;
+                                                        return (
+                                                            <li key={a.id} className="px-4 py-2" data-testid={`row-override-alert-${a.id}`}>
+                                                                <div className="flex items-center gap-2">
+                                                                    <div className="flex-1 min-w-0">
+                                                                        <div className="text-[11px] font-black text-gray-800 truncate">
+                                                                            {scope && (
+                                                                                <span className={`inline-block px-1.5 py-0.5 rounded text-[9px] mr-1.5 ${scope === 'user' ? 'bg-blue-100 text-blue-700' : 'bg-purple-100 text-purple-700'}`}>
+                                                                                    {scope === 'user' ? 'USUÁRIO' : 'FORNECEDOR'}
+                                                                                </span>
+                                                                            )}
+                                                                            {name || a.entityId}
+                                                                            <span className="ml-2 text-red-700 font-mono">{count} edições</span>
+                                                                        </div>
+                                                                        <div className="text-[10px] text-gray-500 mt-0.5 font-mono">{formatDateTimeBR(a.createdAt)}</div>
+                                                                    </div>
+                                                                    <div className="flex items-center gap-1.5 shrink-0">
+                                                                        {link && (
+                                                                            <a
+                                                                                href={link}
+                                                                                className="px-2 py-1 text-[10px] font-bold bg-gray-100 text-gray-700 border border-gray-200 rounded hover:bg-gray-200"
+                                                                                data-testid={`link-override-alert-${a.id}`}
+                                                                            >
+                                                                                Auditar
+                                                                            </a>
+                                                                        )}
+                                                                        {scope && name && (
+                                                                            <button
+                                                                                onClick={() => silenceOverrideScope(scope, name)}
+                                                                                disabled={busy}
+                                                                                className="px-2 py-1 text-[10px] font-bold bg-amber-50 text-amber-700 border border-amber-200 rounded hover:bg-amber-100 disabled:opacity-50"
+                                                                                data-testid={`btn-override-silence-${a.id}`}
+                                                                            >
+                                                                                {busy ? '...' : 'Silenciar'}
+                                                                            </button>
+                                                                        )}
+                                                                    </div>
+                                                                </div>
+                                                            </li>
+                                                        );
+                                                    })}
+                                                </ul>
+                                            )}
+                                        </div>
+                                    </div>
+                                )}
                             </div>
 
                             <div className="flex flex-wrap gap-3 items-center no-print">
