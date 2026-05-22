@@ -1731,6 +1731,33 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
           }
           if (result.error) throw result.error;
           if (!result.data) throw new Error('Falha na persistência: registro não retornado após UPDATE');
+
+          // Task #55 — Audit log do motor auto quando ativo
+          if (financialData?.autoEngine?.active && !isSameOs) {
+              try {
+                  await supabase.from('system_logs').insert([{
+                      user_name: userName,
+                      action_type: 'FINANCIAL_RECALC',
+                      entity: 'Mission',
+                      entity_id: mission.id,
+                      details: JSON.stringify({
+                          source: 'provider_auto_engine',
+                          bandKm: financialData.autoEngine.bandKm,
+                          bandHours: financialData.autoEngine.bandHours,
+                          realKm: financialData.autoEngine.realKm,
+                          goldenHours: financialData.autoEngine.durationHours,
+                          effectiveStart: financialData.autoEngine.effectiveStartIso,
+                          end: financialData.autoEngine.endIso,
+                          suggestedTotal: financialData.autoEngine.totalCost,
+                          savedCost: r2(costServiceOnly),
+                          divergent: Math.abs(financialData.autoEngine.totalCost - costServiceOnly) > 0.01,
+                          timestamp: new Date().toISOString(),
+                      }),
+                  }]);
+              } catch (logErr) {
+                  console.warn('[Task #55] Falha ao gravar audit FINANCIAL_RECALC', logErr);
+              }
+          }
           
           const savedRevCheck = safeNumber(result.data.revenue_value);
           const savedTollCheck = safeNumber(result.data.toll_value);
@@ -3222,6 +3249,53 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                     </div>
                                 </div>
                             </div>
+
+                            {/* Task #55 — Painel de Cálculo Sugerido pelo motor automático */}
+                            {financialData.autoEngine?.active && (
+                                <div className="mb-4 p-4 rounded-xl border-2 border-emerald-300 bg-gradient-to-br from-emerald-50 to-white" data-testid="panel-auto-engine">
+                                    <div className="flex items-center justify-between mb-3">
+                                        <div className="flex items-center gap-2">
+                                            <div className="p-1.5 bg-emerald-600 text-white rounded-lg"><Calculator size={14}/></div>
+                                            <div>
+                                                <p className="text-[11px] font-black text-emerald-800 uppercase tracking-widest">Cálculo Sugerido — Motor Automático</p>
+                                                <p className="text-[9px] text-emerald-600 font-bold">Faixa {financialData.autoEngine.bandKm}KM / Franquia {financialData.autoEngine.bandHours}h (Regra de Ouro)</p>
+                                            </div>
+                                        </div>
+                                        <button type="button" onClick={() => {
+                                            if (isEffectivelyLocked || !financialData.autoEngine) return;
+                                            const ae = financialData.autoEngine;
+                                            // Aplica explicitamente os valores do motor nos campos custom para que
+                                            // o serviceTotal persistido seja determinístico (base + extras).
+                                            setCustomProviderBase(ae.baseValue.toFixed(2));
+                                            setCustomProviderKm(ae.config.extraKmValue.toFixed(2));
+                                            setCustomProviderHour(ae.config.extraHourValue.toFixed(2));
+                                            showNotification('Aplicado', `Custo sugerido R$ ${ae.totalCost.toFixed(2)} carregado (faixa ${ae.bandKm}KM / ${ae.bandHours}h). Salve para persistir.`, 'success');
+                                        }} disabled={isEffectivelyLocked} className="text-[10px] font-black uppercase tracking-widest px-3 py-2 rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-50" data-testid="button-apply-auto-suggestion">Usar valor sugerido</button>
+                                    </div>
+                                    <div className="grid grid-cols-4 gap-2 text-center text-[10px]">
+                                        <div className="bg-white rounded-lg p-2 border border-emerald-100">
+                                            <p className="text-emerald-500 font-black uppercase">KM real</p>
+                                            <p className="text-emerald-900 font-black text-sm font-mono">{financialData.autoEngine.realKm.toFixed(1)}</p>
+                                        </div>
+                                        <div className="bg-white rounded-lg p-2 border border-emerald-100">
+                                            <p className="text-emerald-500 font-black uppercase">Duração</p>
+                                            <p className="text-emerald-900 font-black text-sm font-mono">{formatHoursHHMM(financialData.autoEngine.durationHours)}</p>
+                                        </div>
+                                        <div className="bg-white rounded-lg p-2 border border-emerald-100">
+                                            <p className="text-emerald-500 font-black uppercase">+KM</p>
+                                            <p className="text-emerald-900 font-black text-sm font-mono">{financialData.autoEngine.extraKm.toFixed(1)} → R$ {financialData.autoEngine.extraKmValue.toFixed(2)}</p>
+                                        </div>
+                                        <div className="bg-white rounded-lg p-2 border border-emerald-100">
+                                            <p className="text-emerald-500 font-black uppercase">+Horas</p>
+                                            <p className="text-emerald-900 font-black text-sm font-mono">{financialData.autoEngine.extraHours.toFixed(2)} → R$ {financialData.autoEngine.extraHourValue.toFixed(2)}</p>
+                                        </div>
+                                    </div>
+                                    <div className="mt-3 pt-3 border-t border-emerald-200 flex items-center justify-between">
+                                        <p className="text-[10px] font-black text-emerald-700 uppercase tracking-widest">Custo Total Sugerido</p>
+                                        <p className="text-xl font-black text-emerald-700 font-mono">R$ {financialData.autoEngine.totalCost.toFixed(2)}</p>
+                                    </div>
+                                </div>
+                            )}
 
                             <div className="grid grid-cols-3 gap-0 mb-4 rounded-xl border border-gray-200 overflow-hidden">
                                 <div className="bg-gray-50 p-3 flex flex-col justify-between">

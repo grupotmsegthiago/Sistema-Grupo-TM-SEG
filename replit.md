@@ -57,6 +57,7 @@ Manages all operational aspects of a Brazilian security escort company, includin
 -   **Backend AI Proxying:** All AI calls are proxied through server routes to protect API keys and integrate with Replit AI Integrations (Google Gemini).
 -   **Immutable Financial Snapshots:** Upon billing approval, a frozen snapshot of all financial values is stored directly on the mission record (`snapshot_data`) to ensure immutability and prevent discrepancies from future price table changes.
 -   **Client/Provider Table Selection Logic:** Provider table selection prioritizes a score-based matching algorithm over "lowest cost" optimization, with manual overrides taking precedence. Strict franchise rules are applied for specific clients.
+-   **Motor de cálculo automático de fornecedor (Task #55):** Quando um fornecedor tem uma linha mestre em `provider_cost_tables` com `operation_type = '__AUTO_MASTER__'`, `lib/financialUtils.ts` desvia para o motor em `lib/providerAutoPricing.ts` e ignora as tabelas manuais desse fornecedor para novos cálculos de custo. Faixas de 100→3000 km (corte em 51), franquia de horas = `ceil(km_faixa / 40)`, Regra de Ouro do tempo (`max(scheduled_time, start_time)`). Escopo: somente `cost_value`; não toca receita do cliente nem pedágio.
 
 ## Product
 

@@ -1,4 +1,10 @@
 import { Mission, ClientPriceTable, ProviderCostTable, MissionStatus, Client } from '../types';
+import {
+    extractAutoMasterConfig,
+    calculateProviderCostAuto,
+    isAutoMasterRow,
+    type ProviderAutoCalcBreakdown,
+} from './providerAutoPricing';
 
 const STOP_WORDS = ['LTDA','LTDA.','S.A.','S.A','SA','S/A','S/A.','DO','DE','DA','E','DAS','DOS'];
 // PostgREST trata ( ) , . : como reservados dentro de .or(); envolvemos
@@ -23,6 +29,29 @@ export function clientNameShort(clientName: string): string {
 }
 
 export interface CalculatedFinancials {
+    autoEngine?: {
+        active: boolean;
+        bandKm: number;
+        bandHours: number;
+        realKm: number;
+        durationHours: number;
+        durationMinutes: number;
+        effectiveStartIso: string | null;
+        endIso: string | null;
+        extraKm: number;
+        extraHours: number;
+        baseValue: number;
+        extraKmValue: number;
+        extraHourValue: number;
+        totalCost: number;
+        config: {
+            baseActivationValue: number;
+            baseKmAllowance: number;
+            baseHourAllowance: number;
+            extraKmValue: number;
+            extraHourValue: number;
+        };
+    };
     realTraveledKm: number;
     durationHours: number;
     tollValue: number;
@@ -693,9 +722,16 @@ export const calculateMissionFinancials = (
     let appliedProviderTable: any = null;
     let providerLog = 'Manual';
 
-    let filteredProviderTables = providerTables.filter(t => normalize(t.provider) === missionProviderName);
+    // Task #55: separa a linha mestre (__AUTO_MASTER__) das tabelas regulares.
+    // A mestre nunca participa do score; é consumida exclusivamente pelo motor auto.
+    const providerTablesNoMaster = providerTables.filter(t => !isAutoMasterRow(t));
+    const autoMasterRows = providerTables.filter(t => normalize(t.provider) === missionProviderName && isAutoMasterRow(t));
+    const autoMasterConfig = extractAutoMasterConfig(autoMasterRows);
+    const autoEngineActive = !!autoMasterConfig && !manualTableOverrides?.providerTableId && !mission.is_same_os && !isZeroValueMission;
+
+    let filteredProviderTables = providerTablesNoMaster.filter(t => normalize(t.provider) === missionProviderName);
     if (filteredProviderTables.length === 0 && missionProviderName.length > 2) {
-         filteredProviderTables = providerTables.filter(t => {
+         filteredProviderTables = providerTablesNoMaster.filter(t => {
             const tProv = normalize(t.provider);
             return (tProv.includes(missionProviderName) || missionProviderName.includes(tProv)) && tProv.length > 2;
          });
@@ -703,7 +739,7 @@ export const calculateMissionFinancials = (
     if (filteredProviderTables.length === 0 && missionProviderName.length > 3) {
          const providerWords = missionProviderName.split(/\s+/).filter(w => w.length > 2);
          if (providerWords.length > 0) {
-             filteredProviderTables = providerTables.filter(t => {
+             filteredProviderTables = providerTablesNoMaster.filter(t => {
                  const tProv = normalize(t.provider);
                  return providerWords.some(w => tProv.includes(w)) && tProv.length > 2;
              });
@@ -813,6 +849,39 @@ export const calculateMissionFinancials = (
         }
     }
 
+    // Task #55: Motor automático de fornecedor. Quando ativo, sobrescreve
+    // appliedProviderTable por uma tabela sintética derivada das 5 variáveis
+    // mestre + Regra de Ouro do tempo. Custos manuais (customProviderBase/Km/Hour)
+    // continuam tendo prioridade via os checks `!== undefined` mais abaixo.
+    let autoBreakdown: ProviderAutoCalcBreakdown | null = null;
+    if (autoEngineActive && autoMasterConfig) {
+        const realKmForAuto = manualTableOverrides?.providerOpsOverride
+            ? manualTableOverrides.providerOpsOverride.distanceKm
+            : (isFinished && hasValidKms ? realTraveledKm : Math.max(totalDistance, distanceForCalculation));
+        const goldenStart = (mission as any).provider_start_time || mission.startTime || (mission as any).start_time;
+        const goldenScheduled = mission.startTime || (mission as any).start_time;
+        const goldenEnd = (mission as any).provider_end_time || mission.endTime || (mission as any).end_time;
+        autoBreakdown = calculateProviderCostAuto(
+            realKmForAuto,
+            autoMasterConfig,
+            goldenScheduled,
+            goldenStart,
+            goldenEnd,
+        );
+        appliedProviderTable = {
+            id: `auto-${missionProviderName}-${autoBreakdown.bandKm}`,
+            provider: mission.provider,
+            operation_type: `AUTO ${autoBreakdown.bandKm}KM / ${autoBreakdown.bandHours}H`,
+            activation_cost: autoBreakdown.baseValue,
+            franchise_km: autoBreakdown.bandKm,
+            franchise_hours: autoBreakdown.bandHours,
+            cost_per_extra_km: autoMasterConfig.extraKmValue,
+            cost_per_extra_hour: autoMasterConfig.extraHourValue,
+            cancellation_fee: 0,
+        };
+        providerLog = `Motor Auto → Faixa ${autoBreakdown.bandKm}KM (${autoBreakdown.bandHours}h)`;
+    }
+
     const cBase = isRefused ? 0 : (manualTableOverrides?.customClientBase !== undefined 
         ? manualTableOverrides.customClientBase 
         : Math.max(0, (appliedClientTable?.activation_fee || 0) * clientMultiplier));
@@ -883,6 +952,13 @@ export const calculateMissionFinancials = (
 
     if (is200kmAccompaniment && !isZeroValueMission) {
         providerDistForCalc = Math.min(providerDistForCalc, 200);
+    }
+
+    // Task #55: quando motor auto está ativo, força a duração do fornecedor
+    // a usar a Regra de Ouro do tempo (independente do que o cliente vê).
+    if (autoEngineActive && autoBreakdown) {
+        providerDurationForCalc = autoBreakdown.durationHours;
+        providerDistForCalc = autoBreakdown.realKm;
     }
 
     const rawBaseCost = appliedProviderTable?.activation_cost || 0;
@@ -978,6 +1054,29 @@ export const calculateMissionFinancials = (
     const totalCost = round2(providerServiceTotal + tollValue);
 
     return {
+        autoEngine: autoBreakdown ? {
+            active: true,
+            bandKm: autoBreakdown.bandKm,
+            bandHours: autoBreakdown.bandHours,
+            realKm: autoBreakdown.realKm,
+            durationHours: autoBreakdown.durationHours,
+            durationMinutes: autoBreakdown.durationMinutes,
+            effectiveStartIso: autoBreakdown.effectiveStartIso,
+            endIso: autoBreakdown.endIso,
+            extraKm: autoBreakdown.extraKm,
+            extraHours: autoBreakdown.extraHours,
+            baseValue: autoBreakdown.baseValue,
+            extraKmValue: autoBreakdown.extraKmValue,
+            extraHourValue: autoBreakdown.extraHourValue,
+            totalCost: autoBreakdown.totalCost,
+            config: {
+                baseActivationValue: autoMasterConfig!.baseActivationValue,
+                baseKmAllowance: autoMasterConfig!.baseKmAllowance,
+                baseHourAllowance: autoMasterConfig!.baseHourAllowance,
+                extraKmValue: autoMasterConfig!.extraKmValue,
+                extraHourValue: autoMasterConfig!.extraHourValue,
+            },
+        } : undefined,
         realTraveledKm, durationHours, tollValue, isCompleted: isFinished, hasValidKms,
         clientMult: clientMultiplier, providerMult: providerMultiplier, 
         agentCount, hasTwoAgentsOnMission: agentCount === 2,

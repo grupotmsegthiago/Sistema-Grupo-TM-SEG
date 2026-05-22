@@ -5,6 +5,7 @@ import { supabase } from '../lib/supabase';
 import { logAction } from '../lib/logger';
 import { ProviderCostTable } from '../types';
 import ImportProviderCostModal from './ImportProviderCostModal';
+import { AUTO_MASTER_OP_TYPE, generateAutoBands, isAutoMasterRow, type ProviderAutoMasterConfig } from '../lib/providerAutoPricing';
 import { useNotification } from '../lib/NotificationContext';
 import ClientContractTab from './ClientContractTab';
 
@@ -105,6 +106,39 @@ const ProviderForm: React.FC<ProviderFormProps> = ({ onBack, onNavigateToVehicle
   });
   const [isSavingCost, setIsSavingCost] = useState(false);
 
+  // Task #55 — Motor de Precificação Automática
+  const [autoMasterId, setAutoMasterId] = useState<string | null>(null);
+  const [autoMasterEnabled, setAutoMasterEnabled] = useState(false);
+  const [autoMasterForm, setAutoMasterForm] = useState({
+      baseActivationValue: '',
+      baseKmAllowance: '100',
+      baseHourAllowance: '3',
+      extraKmValue: '',
+      extraHourValue: '',
+  });
+  const [isSavingMaster, setIsSavingMaster] = useState(false);
+  const [showAutoPreview, setShowAutoPreview] = useState(false);
+
+  const autoMasterConfig = useMemo<ProviderAutoMasterConfig>(() => ({
+      baseActivationValue: parseFloat(autoMasterForm.baseActivationValue) || 0,
+      baseKmAllowance: parseFloat(autoMasterForm.baseKmAllowance) || 0,
+      baseHourAllowance: parseFloat(autoMasterForm.baseHourAllowance) || 0,
+      extraKmValue: parseFloat(autoMasterForm.extraKmValue) || 0,
+      extraHourValue: parseFloat(autoMasterForm.extraHourValue) || 0,
+  }), [autoMasterForm]);
+
+  const autoPreviewBands = useMemo(() => {
+      const cfg = autoMasterConfig;
+      if (cfg.baseActivationValue <= 0 || cfg.baseKmAllowance <= 0) return [];
+      return generateAutoBands(cfg);
+  }, [autoMasterConfig]);
+
+  const canEditAutoMaster = (() => {
+      if (!currentUser) return false;
+      const r = (currentUser?.role || '').toLowerCase();
+      return r === 'diretoria' || r === 'administrador' || r === 'financeiro';
+  })();
+
   useEffect(() => {
     const storedUser = localStorage.getItem('userData');
     if (storedUser) {
@@ -154,13 +188,95 @@ const ProviderForm: React.FC<ProviderFormProps> = ({ onBack, onNavigateToVehicle
 
   const fetchCostTables = async (providerName: string) => {
       const { data } = await supabase.from('provider_cost_tables').select('*').eq('provider', providerName).order('franchise_km', { ascending: true });
-      if (data) setCostTables(data as any);
+      if (data) {
+          setCostTables(data as any);
+          // Task #55: detecta linha mestre
+          const master = (data as any[]).find(isAutoMasterRow);
+          if (master) {
+              setAutoMasterId(String(master.id));
+              setAutoMasterEnabled(true);
+              setAutoMasterForm({
+                  baseActivationValue: String(master.activation_cost ?? ''),
+                  baseKmAllowance: String(master.franchise_km ?? '100'),
+                  baseHourAllowance: String(master.franchise_hours ?? '3'),
+                  extraKmValue: String(master.cost_per_extra_km ?? ''),
+                  extraHourValue: String(master.cost_per_extra_hour ?? ''),
+              });
+          } else {
+              setAutoMasterId(null);
+              setAutoMasterEnabled(false);
+          }
+      }
       setSelectedCostIds([]);
   };
 
+  const handleSaveAutoMaster = async () => {
+      if (!formData.name) { showNotification('Atenção', 'Salve o fornecedor primeiro.', 'warning'); return; }
+      if (!canEditAutoMaster) { showNotification('Sem permissão', 'Apenas diretoria/administrador/financeiro pode configurar o motor automático.', 'error'); return; }
+      const cfg = autoMasterConfig;
+      if (cfg.baseActivationValue <= 0 || cfg.baseKmAllowance <= 0 || cfg.baseHourAllowance <= 0 || cfg.extraKmValue < 0 || cfg.extraHourValue < 0) {
+          showNotification('Atenção', 'Preencha as 5 variáveis mestre com valores positivos.', 'warning');
+          return;
+      }
+      setIsSavingMaster(true);
+      try {
+          const payload: any = {
+              provider: formData.name,
+              operation_type: AUTO_MASTER_OP_TYPE,
+              activation_cost: cfg.baseActivationValue,
+              franchise_km: cfg.baseKmAllowance,
+              franchise_hours: cfg.baseHourAllowance,
+              cost_per_extra_km: cfg.extraKmValue,
+              cost_per_extra_hour: cfg.extraHourValue,
+              cancellation_fee: 0,
+          };
+          if (autoMasterId) {
+              const { error } = await supabase.from('provider_cost_tables').update(payload).eq('id', autoMasterId);
+              if (error) throw error;
+          } else {
+              const { data, error } = await supabase.from('provider_cost_tables').insert([payload]).select('id').single();
+              if (error) throw error;
+              if (data?.id) setAutoMasterId(String(data.id));
+          }
+          await logAction('UPDATE', 'ProviderAutoMaster', formData.name, `Motor Auto — ${formData.name}: base R$${cfg.baseActivationValue}, ${cfg.baseKmAllowance}km/${cfg.baseHourAllowance}h, +R$${cfg.extraKmValue}/km, +R$${cfg.extraHourValue}/h`);
+          await supabase.from('system_logs').insert([{
+              user_name: currentUser?.name || 'SISTEMA',
+              action_type: 'FINANCIAL_RECALC',
+              entity: 'ProviderAutoMaster',
+              entity_id: formData.name,
+              details: JSON.stringify({ source: 'provider_auto_master_config', config: cfg, timestamp: new Date().toISOString() })
+          }]);
+          setAutoMasterEnabled(true);
+          showNotification('Sucesso', 'Configuração mestre salva. Motor automático ativo para este fornecedor.', 'success');
+          fetchCostTables(formData.name);
+      } catch (err: any) {
+          showNotification('Erro', 'Falha ao salvar configuração mestre: ' + (err?.message || 'erro desconhecido'), 'error');
+      } finally {
+          setIsSavingMaster(false);
+      }
+  };
+
+  const handleDisableAutoMaster = async () => {
+      if (!autoMasterId) { setAutoMasterEnabled(false); return; }
+      if (!canEditAutoMaster) { showNotification('Sem permissão', 'Apenas diretoria/administrador/financeiro pode alterar.', 'error'); return; }
+      if (!confirm('Desligar o motor automático? As tabelas manuais voltarão a ser usadas. (As OS já aprovadas permanecem imutáveis.)')) return;
+      try {
+          const { error } = await supabase.from('provider_cost_tables').delete().eq('id', autoMasterId);
+          if (error) throw error;
+          await logAction('DELETE', 'ProviderAutoMaster', formData.name, `Motor Auto desligado: ${formData.name}`);
+          setAutoMasterId(null);
+          setAutoMasterEnabled(false);
+          showNotification('Sucesso', 'Motor automático desligado.', 'success');
+          fetchCostTables(formData.name);
+      } catch (err: any) {
+          showNotification('Erro', 'Falha ao desligar: ' + (err?.message || 'erro desconhecido'), 'error');
+      }
+  };
+
   const handleSelectAllCosts = () => {
-      if (selectedCostIds.length === costTables.length && costTables.length > 0) setSelectedCostIds([]);
-      else setSelectedCostIds(costTables.map(t => t.id));
+      const selectableTables = costTables.filter((t: any) => !isAutoMasterRow(t));
+      if (selectedCostIds.length === selectableTables.length && selectableTables.length > 0) setSelectedCostIds([]);
+      else setSelectedCostIds(selectableTables.map(t => t.id));
   };
 
   const handleSelectCostRow = (id: string) => {
@@ -704,6 +820,100 @@ const ProviderForm: React.FC<ProviderFormProps> = ({ onBack, onNavigateToVehicle
                   <button onClick={() => setIsImportModalOpen(true)} className="bg-indigo-50 text-indigo-700 px-4 py-2 rounded-lg text-xs font-black uppercase border border-indigo-200 hover:bg-indigo-100 transition-colors flex items-center gap-1.5"><FileSpreadsheet size={16} /> Importar Custos (IA)</button>
               </div>
 
+              {/* Task #55 — Motor de Precificação Automática */}
+              <div className={`rounded-2xl border-2 p-5 ${autoMasterEnabled ? 'border-emerald-300 bg-gradient-to-br from-emerald-50 to-white' : 'border-gray-200 bg-gray-50'}`} data-testid="card-auto-master">
+                  <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 mb-4">
+                      <div className="flex items-center gap-3">
+                          <div className={`p-2 rounded-lg ${autoMasterEnabled ? 'bg-emerald-600 text-white' : 'bg-gray-300 text-gray-600'}`}>
+                              <TrendingUp size={18} />
+                          </div>
+                          <div>
+                              <h4 className="font-black text-sm uppercase tracking-wide text-gray-800">Configuração de Cálculo Padrão</h4>
+                              <p className="text-[10px] text-gray-500 uppercase font-bold tracking-widest">
+                                  {autoMasterEnabled ? 'Motor ativo — tabelas manuais serão ignoradas' : 'Defina 5 variáveis e ative o cálculo automático por faixa'}
+                              </p>
+                          </div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                          {autoMasterEnabled && (
+                              <span className="text-[10px] font-black px-2 py-1 rounded-full bg-emerald-600 text-white uppercase tracking-widest">Ativo</span>
+                          )}
+                          {autoMasterId && canEditAutoMaster && (
+                              <button type="button" onClick={handleDisableAutoMaster} className="text-[10px] font-black uppercase tracking-widest px-3 py-2 rounded-lg border border-red-200 text-red-600 hover:bg-red-50" data-testid="button-disable-auto-master">Desligar</button>
+                          )}
+                      </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-5 gap-3">
+                      <div>
+                          <label className={LABEL_CLASS}>Valor Base (Acionamento)</label>
+                          <input type="number" step="0.01" disabled={!canEditAutoMaster} value={autoMasterForm.baseActivationValue} onChange={e => setAutoMasterForm({...autoMasterForm, baseActivationValue: e.target.value})} className="w-full p-2 border rounded text-xs font-bold text-emerald-700 bg-white" placeholder="900.00" data-testid="input-auto-base-activation" />
+                      </div>
+                      <div>
+                          <label className={LABEL_CLASS}>KM Franquia Base</label>
+                          <input type="number" disabled={!canEditAutoMaster} value={autoMasterForm.baseKmAllowance} onChange={e => setAutoMasterForm({...autoMasterForm, baseKmAllowance: e.target.value})} className="w-full p-2 border rounded text-xs font-bold bg-white" placeholder="100" data-testid="input-auto-base-km" />
+                      </div>
+                      <div>
+                          <label className={LABEL_CLASS}>Horas Franquia Base</label>
+                          <input type="number" disabled={!canEditAutoMaster} value={autoMasterForm.baseHourAllowance} onChange={e => setAutoMasterForm({...autoMasterForm, baseHourAllowance: e.target.value})} className="w-full p-2 border rounded text-xs font-bold bg-white" placeholder="3" data-testid="input-auto-base-hr" />
+                      </div>
+                      <div>
+                          <label className={LABEL_CLASS}>Valor KM Extra</label>
+                          <input type="number" step="0.01" disabled={!canEditAutoMaster} value={autoMasterForm.extraKmValue} onChange={e => setAutoMasterForm({...autoMasterForm, extraKmValue: e.target.value})} className="w-full p-2 border rounded text-xs font-bold bg-white" placeholder="2.50" data-testid="input-auto-extra-km" />
+                      </div>
+                      <div>
+                          <label className={LABEL_CLASS}>Valor Hora Extra</label>
+                          <input type="number" step="0.01" disabled={!canEditAutoMaster} value={autoMasterForm.extraHourValue} onChange={e => setAutoMasterForm({...autoMasterForm, extraHourValue: e.target.value})} className="w-full p-2 border rounded text-xs font-bold bg-white" placeholder="40.00" data-testid="input-auto-extra-hr" />
+                      </div>
+                  </div>
+
+                  <div className="flex items-center justify-between mt-4 pt-3 border-t border-gray-200">
+                      <button type="button" onClick={() => setShowAutoPreview(v => !v)} disabled={autoPreviewBands.length === 0} className="text-[11px] font-black uppercase tracking-widest text-indigo-700 hover:underline disabled:opacity-40 flex items-center gap-1" data-testid="button-toggle-auto-preview">
+                          {showAutoPreview ? 'Ocultar' : 'Ver'} faixas geradas ({autoPreviewBands.length})
+                      </button>
+                      <button type="button" onClick={handleSaveAutoMaster} disabled={!canEditAutoMaster || isSavingMaster} className="px-5 py-2 bg-emerald-600 text-white rounded-lg text-xs font-black uppercase tracking-widest hover:bg-emerald-700 disabled:opacity-50 flex items-center gap-2" data-testid="button-save-auto-master">
+                          {isSavingMaster ? <Loader2 size={12} className="animate-spin" /> : <Save size={12} />} {autoMasterId ? 'Atualizar' : 'Ativar Motor'}
+                      </button>
+                  </div>
+
+                  {!canEditAutoMaster && (
+                      <p className="text-[10px] font-bold text-amber-700 mt-2 flex items-center gap-1"><Lock size={10}/> Somente diretoria/administrador/financeiro podem editar.</p>
+                  )}
+
+                  {showAutoPreview && autoPreviewBands.length > 0 && (
+                      <div className="mt-4 max-h-64 overflow-y-auto border border-gray-200 rounded-lg bg-white" data-testid="preview-auto-bands">
+                          <table className="w-full text-[10px]">
+                              <thead className="bg-gray-100 sticky top-0">
+                                  <tr className="text-left font-black uppercase tracking-widest text-gray-500">
+                                      <th className="p-2">Faixa (km)</th>
+                                      <th className="p-2">Horas Franquia</th>
+                                      <th className="p-2">Base</th>
+                                      <th className="p-2">+KM</th>
+                                      <th className="p-2">+Hora</th>
+                                  </tr>
+                              </thead>
+                              <tbody>
+                                  {autoPreviewBands.map(b => (
+                                      <tr key={b.kmFaixa} className="border-t border-gray-100 font-mono">
+                                          <td className="p-2 font-black text-gray-800">{b.kmFaixa}</td>
+                                          <td className="p-2">{b.franquiaHoras}h</td>
+                                          <td className="p-2 text-emerald-700 font-black">R$ {b.valorBase.toFixed(2)}</td>
+                                          <td className="p-2">R$ {autoMasterConfig.extraKmValue.toFixed(2)}</td>
+                                          <td className="p-2">R$ {autoMasterConfig.extraHourValue.toFixed(2)}</td>
+                                      </tr>
+                                  ))}
+                              </tbody>
+                          </table>
+                      </div>
+                  )}
+              </div>
+
+              {autoMasterEnabled && (
+                  <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg text-[11px] text-amber-800 font-bold">
+                      <AlertTriangle size={12} className="inline mr-1"/> Motor automático ATIVO. As tabelas manuais abaixo estão preservadas, mas serão ignoradas no cálculo de novas OS. OS já aprovadas (com snapshot) permanecem imutáveis.
+                  </div>
+              )}
+
               {/* PAINEL DE REAJUSTE SELETIVO (IGUAL AO CLIENTE) */}
               <div className="p-6 rounded-2xl shadow-xl border bg-gradient-to-r from-gray-900 via-gray-800 to-indigo-950 border-indigo-900/40 text-white">
                   <div className="flex flex-col md:flex-row items-center justify-between gap-6">
@@ -788,7 +998,10 @@ const ProviderForm: React.FC<ProviderFormProps> = ({ onBack, onNavigateToVehicle
                     <button onClick={() => setCostSearch('')} className="text-[10px] font-bold text-gray-500 hover:text-red-600 uppercase" data-testid="button-clear-cost-search">Limpar</button>
                 )}
                 <span className="text-[10px] font-bold text-gray-400 uppercase">
-                    {costSearch ? `${costTables.filter((t: any) => (t.operation_type || '').toLowerCase().includes(costSearch.toLowerCase())).length} / ${costTables.length}` : `${costTables.length} itens`}
+                    {(() => {
+                        const visible = costTables.filter((t: any) => !isAutoMasterRow(t));
+                        return costSearch ? `${visible.filter((t: any) => (t.operation_type || '').toLowerCase().includes(costSearch.toLowerCase())).length} / ${visible.length}` : `${visible.length} itens`;
+                    })()}
                 </span>
               </div>
 
@@ -798,7 +1011,7 @@ const ProviderForm: React.FC<ProviderFormProps> = ({ onBack, onNavigateToVehicle
                         <tr>
                             <th className="pl-4 py-3 w-8">
                                 <button onClick={handleSelectAllCosts} className="flex items-center text-gray-400">
-                                    {selectedCostIds.length === costTables.length && costTables.length > 0 ? <CheckSquare size={16} className="text-blue-600" /> : <Square size={16} />}
+                                    {(() => { const sel = costTables.filter((t: any) => !isAutoMasterRow(t)); return selectedCostIds.length === sel.length && sel.length > 0 ? <CheckSquare size={16} className="text-blue-600" /> : <Square size={16} />; })()}
                                 </button>
                             </th>
                             <th className="p-4">Operação / Rota</th>
@@ -811,12 +1024,12 @@ const ProviderForm: React.FC<ProviderFormProps> = ({ onBack, onNavigateToVehicle
                         </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-100">
-                        {costTables.length === 0 ? (
+                        {costTables.filter((t: any) => !isAutoMasterRow(t)).length === 0 ? (
                             <tr><td colSpan={8} className="p-10 text-center text-gray-400 italic text-xs">Nenhum custo cadastrado para este fornecedor.</td></tr>
-                        ) : costTables.filter((t: any) => !costSearch || (t.operation_type || '').toLowerCase().includes(costSearch.toLowerCase())).length === 0 ? (
+                        ) : costTables.filter((t: any) => !isAutoMasterRow(t) && (!costSearch || (t.operation_type || '').toLowerCase().includes(costSearch.toLowerCase()))).length === 0 ? (
                             <tr><td colSpan={8} className="p-6 text-center text-gray-400 italic text-xs">Nenhuma rota encontrada para "{costSearch}"</td></tr>
                         ) : (
-                            costTables.filter((t: any) => !costSearch || (t.operation_type || '').toLowerCase().includes(costSearch.toLowerCase())).map((table: any) => (
+                            costTables.filter((t: any) => !isAutoMasterRow(t) && (!costSearch || (t.operation_type || '').toLowerCase().includes(costSearch.toLowerCase()))).map((table: any) => (
                                 <tr key={table.id} className={`text-[11px] transition-all ${selectedCostIds.includes(table.id) ? 'bg-blue-50/50' : table.adjustment_status ? 'bg-green-50/30' : 'hover:bg-gray-50/50'}`}>
                                     <td className="pl-4 py-2">
                                         <button onClick={() => handleSelectCostRow(table.id)}>
