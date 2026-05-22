@@ -86,6 +86,21 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
         return role === 'comercial';
     }, [currentUser]);
 
+    // Apenas Plinio, Barbara e Simone preenchem o pedágio ao finalizar.
+    // Operadores (Michele, Beatriz, Lucas, Daniel, etc.) finalizam a OS
+    // sem o gate de pedágio — o valor é cobrado depois, no fluxo financeiro.
+    const isTollResponsibleUser = useMemo(() => {
+        if (!currentUser) return false;
+        const norm = (s: string) => (s || '')
+            .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+            .toLowerCase().trim();
+        const name = norm(currentUser.name || currentUser.username || '');
+        if (!name) return false;
+        const allowedFirstNames = ['plinio', 'barbara', 'simone'];
+        const firstName = name.split(/\s+/)[0];
+        return allowedFirstNames.includes(firstName) || allowedFirstNames.some(n => name.includes(n));
+    }, [currentUser]);
+
     const canEditRoute = useMemo(() => {
         if (!currentUser) return false;
         const role = (currentUser.role || '').toLowerCase();
@@ -858,7 +873,7 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
         // valor casando com mission.toll_value), abrimos o dialog e
         // suspendemos o submit. Após confirmação, persistimos toll_value
         // e re-disparamos o submit para gravar status/dados juntos.
-        if (!tollConfirmedRef.current && !mission.billing_approved) {
+        if (!tollConfirmedRef.current && !mission.billing_approved && isTollResponsibleUser) {
             const _sKm = parseNumber(editData.startKm);
             const _eKm = parseNumber(editData.endKm);
             const _hasStart = _sKm > 0 && editData.startDate && editData.startTime;
