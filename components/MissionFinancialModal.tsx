@@ -1889,6 +1889,20 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
           if (r2(costServiceOnly) === 0 && !reasonFields.cost_edit_reason) {
               reasonFields.cost_edit_reason = `[${userName} - ${new Date().toLocaleString('pt-BR')}] Valor zero confirmado`;
           }
+          // Proteção contra reversão pelo /api/recalculate-all:
+          // se os valores salvos divergem do que o sistema calcularia mas a
+          // pessoa não preencheu motivo, ainda assim marca um motivo padrão
+          // para que o recalculador automático não sobrescreva a edição manual.
+          const brl = (v: number) => (v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+          if (revDivergent && !reasonFields.revenue_edit_reason) {
+              reasonFields.revenue_edit_reason = `[${userName} - ${new Date().toLocaleString('pt-BR')}] Edição manual (sem justificativa) — receita salva: ${brl(r2(revServiceOnly))} | sistema sugeria: ${brl(r2(calcRevTotal))}`;
+          }
+          if ((costDivergent || autoEngineDivergent) && !reasonFields.cost_edit_reason) {
+              const sysHint = autoEngineDivergent
+                  ? `motor auto sugeria: ${brl(autoEngineSuggestedCost || 0)}`
+                  : `sistema sugeria: ${brl(r2(calcCostTotal))}`;
+              reasonFields.cost_edit_reason = `[${userName} - ${new Date().toLocaleString('pt-BR')}] Edição manual (sem justificativa) — custo salvo: ${brl(r2(costServiceOnly))} | ${sysHint}`;
+          }
 
           const fullPayload = { ...basePayload, toll_value_provider: isSameOs ? 0 : r2(tollProv), ...reasonFields };
           let result = await supabase.from('missions').update(fullPayload).eq('id', mission.id).select('id, revenue_value, cost_value, toll_value, last_update').single();
