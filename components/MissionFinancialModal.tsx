@@ -6,8 +6,15 @@ import { useLoadScript, Autocomplete } from '@react-google-maps/api';
 import { googleMapsLoadConfig } from '../lib/maps';
 import { authFetch } from '../lib/authFetch';
 import { useNotification } from '../lib/NotificationContext';
-import { calculateMissionFinancials, auditMissionFinancials, extractUF, UF_TO_REGION, clientFuzzyFilter, clientNameShort } from '../lib/financialUtils';
-import { isDhlSupplyClient, validateDhlTableName } from '../lib/dhlAutoTableSelector';
+import { calculateMissionFinancials, auditMissionFinancials, extractUF, UF_TO_REGION, clientFuzzyFilter, clientNameShort, extractCityFromAddress } from '../lib/financialUtils';
+import {
+  isDhlSupplyClient,
+  validateDhlTableName,
+  computeDhlBand,
+  setDhlCorrectionsCache,
+  getDhlCorrectionStatsByRegion,
+  type DhlCorrectionRecord,
+} from '../lib/dhlAutoTableSelector';
 import { X, Calculator, Loader2, Save, CheckCircle2, TrendingUp, Landmark, Zap, RotateCcw, Building2, Briefcase, Plus, Users, MapPin, ArrowRight, BrainCircuit, AlertTriangle, AlertCircle, Edit2, Info, RefreshCw, Clock, Pencil, Lock, ShieldCheck, Camera, Image as ImageIcon, Link2, Layers, Scale, Sparkles, Navigation, History } from 'lucide-react';
 import { suggestPriceTable } from '../lib/gemini';
 import ProviderCostForm from './ProviderCostForm';
@@ -220,6 +227,18 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
 
   const [manualClientTableId, setManualClientTableId] = useState<string>('');
   const [manualProviderTableId, setManualProviderTableId] = useState<string>('');
+  // Task #111: memória de correções DHL — cache de registros recentes e ref
+  // com a última sugestão emitida pelo motor (para detectar override).
+  const [dhlCorrections, setDhlCorrections] = useState<DhlCorrectionRecord[]>([]);
+  const dhlEngineSuggestionRef = useRef<{
+    tableId: string | null;
+    matchLevel: string;
+    region: string;
+    band: number;
+    originCity: string;
+    destCity: string;
+    originUF: string;
+  } | null>(null);
   const [iblEnabled, setIblEnabled] = useState(false);
   const [linkedMissions, setLinkedMissions] = useState<Array<{id: string; origin: string; destination: string; status: string; is_same_os: boolean; revenue_value: number; cost_value: number; start_time: string}>>([]);
 
@@ -530,6 +549,71 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
     const timer = setInterval(() => setCurrentTime(new Date()), 1000); 
     return () => clearInterval(timer);
   }, []);
+
+  // Task #111: registra a última sugestão emitida pelo motor DHL (quando
+  // não há override manual) — usada para detectar quando o auditor troca
+  // a tabela sugerida e gravar a correção em system_logs.
+  useEffect(() => {
+    const log = financialData?.client?.detectionLog || '';
+    const m = log.match(/^DHL Auto \[(exact_route|region_band|memory_route|memory_region|none)\]:/);
+    if (!m || !mission) {
+      dhlEngineSuggestionRef.current = null;
+      return;
+    }
+    if (manualClientTableId) return; // sugestão original já foi substituída por override
+    const matchLevel = m[1];
+    const originUF = extractUF(mission.origin || '');
+    const region = UF_TO_REGION[originUF] || '';
+    const band = computeDhlBand(financialData?.realTraveledKm || 0);
+    const normalizeCity = (s: string) => (s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim().toUpperCase();
+    dhlEngineSuggestionRef.current = {
+      tableId: financialData?.client?.tableId ? String(financialData.client.tableId) : null,
+      matchLevel,
+      region,
+      band,
+      originCity: normalizeCity(extractCityFromAddress(mission.origin || '')),
+      destCity: normalizeCity(extractCityFromAddress(mission.destination || '')),
+      originUF,
+    };
+  }, [financialData?.client?.detectionLog, financialData?.client?.tableId, financialData?.realTraveledKm, manualClientTableId, mission]);
+
+  // Task #111: carrega correções DHL recentes (últimos 90 dias) e popula
+  // o cache do dhlAutoTableSelector para que selectDhlClientTable possa
+  // priorizar a tabela escolhida pelo auditor em missões parecidas.
+  useEffect(() => {
+    if (!isOpen) return;
+    const cutoff = new Date(Date.now() - 90 * 86400000).toISOString();
+    supabase
+      .from('system_logs')
+      .select('details, created_at')
+      .eq('entity', 'DhlTableCorrection')
+      .gte('created_at', cutoff)
+      .order('created_at', { ascending: false })
+      .limit(1000)
+      .then(({ data, error }) => {
+        if (error) {
+          console.warn('[DHL Memória] Falha ao carregar correções:', error.message);
+          return;
+        }
+        const records: DhlCorrectionRecord[] = [];
+        for (const row of (data || []) as any[]) {
+          try {
+            const d = typeof row.details === 'string' ? JSON.parse(row.details) : row.details;
+            if (!d || !d.chosenTableId) continue;
+            records.push({
+              region: String(d.region || ''),
+              band: Number(d.band || 0),
+              originCity: String(d.originCity || ''),
+              destCity: String(d.destCity || ''),
+              chosenTableId: String(d.chosenTableId),
+              createdAt: row.created_at || new Date().toISOString(),
+            });
+          } catch { /* ignore */ }
+        }
+        setDhlCorrections(records);
+        setDhlCorrectionsCache(records);
+      });
+  }, [isOpen]);
 
   // Busca Inteligente de Padrões (Memória Evolutiva)
   // BLINDAGEM: Pedágio NUNCA é herdado de outras missões (IDs diferentes).
@@ -3116,7 +3200,66 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                     <select 
                                         className={`w-full p-2 bg-gray-50 border border-gray-200 rounded-lg text-xs font-bold text-gray-700 uppercase outline-none focus:border-blue-500 ${(isController || isEffectivelyLocked) ? 'pointer-events-none opacity-60' : ''}`}
                                         value={manualClientTableId || ''}
-                                        onChange={(e) => { if (!isController && !isEffectivelyLocked) { setManualClientTableId(e.target.value); setCustomClientBase(''); setCustomClientKm(''); setCustomClientHour(''); setUseSavedValues(false); userManuallyEditedRef.current = false; setMission(prev => prev ? { ...prev, revenue_edit_reason: '', cost_edit_reason: '', billing_verified_by: null } : prev); if (mission) { supabase.from('missions').update({ revenue_edit_reason: '', cost_edit_reason: '', billing_verified_by: null }).eq('id', mission.id).then(res => { if (res.error) { console.error('[Tabela Cliente] Falha ao limpar verificação:', res.error); showNotification('Erro', 'Não foi possível atualizar a tabela de preço: ' + res.error.message, 'error'); } }); } } }}
+                                        onChange={(e) => { if (!isController && !isEffectivelyLocked) {
+                                            const newTableId = e.target.value;
+                                            // Task #111: registra correção do auditor quando troca a sugestão do motor DHL.
+                                            try {
+                                                const sug = dhlEngineSuggestionRef.current;
+                                                if (
+                                                    mission &&
+                                                    newTableId &&
+                                                    isDhlSupplyClient(mission.originalClientName || mission.client) &&
+                                                    sug &&
+                                                    sug.region &&
+                                                    String(sug.tableId || '') !== String(newTableId)
+                                                ) {
+                                                    const chosen = clientTables.find(t => String(t.id) === String(newTableId));
+                                                    const suggested = sug.tableId ? clientTables.find(t => String(t.id) === String(sug.tableId)) : null;
+                                                    const userName = (() => { try { const u = JSON.parse(localStorage.getItem('userData') || '{}'); return (u.name || u.username || 'auditor') as string; } catch { return 'auditor'; } })();
+                                                    const payload = {
+                                                        missionId: mission.id,
+                                                        region: sug.region,
+                                                        band: sug.band,
+                                                        originUF: sug.originUF,
+                                                        originCity: sug.originCity,
+                                                        destCity: sug.destCity,
+                                                        suggestedTableId: sug.tableId,
+                                                        suggestedTableOp: suggested?.operation_type || null,
+                                                        suggestedMatchLevel: sug.matchLevel,
+                                                        chosenTableId: String(newTableId),
+                                                        chosenTableOp: chosen?.operation_type || null,
+                                                        date: new Date().toISOString(),
+                                                    };
+                                                    supabase.from('system_logs').insert([{
+                                                        user_name: userName,
+                                                        action_type: 'DHL_TABLE_CORRECTION',
+                                                        entity: 'DhlTableCorrection',
+                                                        entity_id: mission.id,
+                                                        details: JSON.stringify(payload),
+                                                    }]).then(({ error }) => {
+                                                        if (error) {
+                                                            console.warn('[DHL Memória] Falha ao registrar correção:', error.message);
+                                                            return;
+                                                        }
+                                                        const updated: DhlCorrectionRecord[] = [
+                                                            {
+                                                                region: payload.region,
+                                                                band: payload.band,
+                                                                originCity: payload.originCity,
+                                                                destCity: payload.destCity,
+                                                                chosenTableId: payload.chosenTableId,
+                                                                createdAt: payload.date,
+                                                            },
+                                                            ...dhlCorrections,
+                                                        ];
+                                                        setDhlCorrections(updated);
+                                                        setDhlCorrectionsCache(updated);
+                                                    });
+                                                }
+                                            } catch (err) {
+                                                console.warn('[DHL Memória] Erro ao capturar correção:', err);
+                                            }
+                                            setManualClientTableId(newTableId); setCustomClientBase(''); setCustomClientKm(''); setCustomClientHour(''); setUseSavedValues(false); userManuallyEditedRef.current = false; setMission(prev => prev ? { ...prev, revenue_edit_reason: '', cost_edit_reason: '', billing_verified_by: null } : prev); if (mission) { supabase.from('missions').update({ revenue_edit_reason: '', cost_edit_reason: '', billing_verified_by: null }).eq('id', mission.id).then(res => { if (res.error) { console.error('[Tabela Cliente] Falha ao limpar verificação:', res.error); showNotification('Erro', 'Não foi possível atualizar a tabela de preço: ' + res.error.message, 'error'); } }); } } }}
                                         disabled={isController || isEffectivelyLocked}
                                     >
                                         <option value="">Automático (IA Detectando)</option>
@@ -3171,21 +3314,27 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                     <BrainCircuit size={12} className="text-blue-500" />
                                     <span>IA Detectou: {financialData.client.detectionLog}</span>
                                 </div>
-                                {/* Task #108: badge do motor DHL (exact_route / region_band / none) */}
+                                {/* Task #108/#111: badge do motor DHL (exact_route / region_band / memory_route / memory_region / none) */}
                                 {(() => {
                                     const log = financialData.client.detectionLog || '';
-                                    const m = log.match(/^DHL Auto \[(exact_route|region_band|none)\]:\s*(.+)$/);
+                                    const m = log.match(/^DHL Auto \[(exact_route|region_band|memory_route|memory_region|none)\]:\s*(.+)$/);
                                     if (!m) return null;
                                     const level = m[1];
                                     const reason = m[2];
                                     const styles =
-                                        level === 'exact_route'
+                                        level === 'memory_route' || level === 'memory_region'
+                                            ? 'bg-purple-50 text-purple-800 border-purple-300'
+                                            : level === 'exact_route'
                                             ? 'bg-blue-50 text-blue-800 border-blue-300'
                                             : level === 'region_band'
                                             ? 'bg-emerald-50 text-emerald-800 border-emerald-300'
                                             : 'bg-gray-100 text-gray-700 border-gray-300';
                                     const prefix =
-                                        level === 'exact_route'
+                                        level === 'memory_route'
+                                            ? 'IA DHL — Memória do Auditor (rota)'
+                                            : level === 'memory_region'
+                                            ? 'IA DHL — Memória do Auditor (região)'
+                                            : level === 'exact_route'
                                             ? 'IA DHL — Rota Exata'
                                             : level === 'region_band'
                                             ? 'IA DHL — Sugestão por Proximidade'
@@ -3197,6 +3346,38 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                         >
                                             <Sparkles size={12} />
                                             <span>{prefix}: {reason}</span>
+                                        </div>
+                                    );
+                                })()}
+                                {/* Task #111: relatório simples — correções por região nos últimos 30 dias (apenas para missões DHL). */}
+                                {isDhlSupplyClient(mission.originalClientName || mission.client) && (() => {
+                                    const stats = getDhlCorrectionStatsByRegion(30);
+                                    const entries = Object.entries(stats).sort((a, b) => b[1] - a[1]);
+                                    const total = entries.reduce((s, [, n]) => s + n, 0);
+                                    return (
+                                        <div
+                                            className="mt-2 p-2 rounded-lg border border-purple-100 bg-purple-50/60"
+                                            data-testid="panel-dhl-correction-stats"
+                                        >
+                                            <div className="flex items-center gap-1.5 text-[10px] font-black text-purple-700 uppercase tracking-wide">
+                                                <BrainCircuit size={12} />
+                                                <span>Memória DHL — Correções nos últimos 30 dias ({total})</span>
+                                            </div>
+                                            {entries.length === 0 ? (
+                                                <p className="text-[9px] text-purple-500 mt-1">Sem correções registradas no período.</p>
+                                            ) : (
+                                                <div className="flex flex-wrap gap-1 mt-1">
+                                                    {entries.map(([region, count]) => (
+                                                        <span
+                                                            key={region}
+                                                            className="text-[9px] font-bold text-purple-800 bg-white border border-purple-200 px-1.5 py-0.5 rounded"
+                                                            data-testid={`stat-dhl-region-${region}`}
+                                                        >
+                                                            {region}: {count}
+                                                        </span>
+                                                    ))}
+                                                </div>
+                                            )}
                                         </div>
                                     );
                                 })()}

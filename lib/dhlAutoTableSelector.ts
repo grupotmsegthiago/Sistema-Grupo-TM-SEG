@@ -144,7 +144,12 @@ const extractEmbeddedKms = (desc: string): number[] => {
   return out;
 };
 
-export type DhlMatchLevel = 'exact_route' | 'region_band' | 'none';
+export type DhlMatchLevel =
+  | 'exact_route'
+  | 'region_band'
+  | 'memory_route'
+  | 'memory_region'
+  | 'none';
 
 export interface DhlSelectionResult {
   table: ClientPriceTable | null;
@@ -164,6 +169,67 @@ export interface DhlSelectionOptions {
    */
   clientName?: string | null;
 }
+
+// Task #111: Memória de correções DHL.
+// O modal financeiro carrega correções recentes (últimos 90 dias) do
+// system_logs (entity='DhlTableCorrection') e popula este cache via
+// setDhlCorrectionsCache. selectDhlClientTable consulta o cache antes de
+// rodar a heurística para priorizar a tabela que o auditor escolheu em
+// missões parecidas (mesma região + faixa, idealmente mesma rota).
+export interface DhlCorrectionRecord {
+  region: string;
+  band: number;
+  originCity: string;
+  destCity: string;
+  chosenTableId: string;
+  createdAt: string;
+}
+
+let DHL_CORRECTIONS_CACHE: DhlCorrectionRecord[] = [];
+
+export const setDhlCorrectionsCache = (records: DhlCorrectionRecord[]): void => {
+  DHL_CORRECTIONS_CACHE = Array.isArray(records) ? records.slice() : [];
+};
+
+export const getDhlCorrectionsCache = (): DhlCorrectionRecord[] => DHL_CORRECTIONS_CACHE.slice();
+
+export const getDhlCorrectionStatsByRegion = (
+  daysWindow = 30,
+): Record<string, number> => {
+  const cutoff = Date.now() - daysWindow * 86400000;
+  const out: Record<string, number> = {};
+  for (const r of DHL_CORRECTIONS_CACHE) {
+    const ts = Date.parse(r.createdAt || '');
+    if (!Number.isFinite(ts) || ts < cutoff) continue;
+    const key = r.region || '—';
+    out[key] = (out[key] || 0) + 1;
+  }
+  return out;
+};
+
+const pickFromCorrections = (
+  candidates: DhlCorrectionRecord[],
+  dhlTables: ClientPriceTable[],
+): ClientPriceTable | null => {
+  if (candidates.length === 0) return null;
+  // Conta votos por tableId, desempate pelo registro mais recente.
+  const tally = new Map<string, { count: number; latest: number }>();
+  for (const c of candidates) {
+    const ts = Date.parse(c.createdAt || '') || 0;
+    const cur = tally.get(c.chosenTableId);
+    if (!cur) tally.set(c.chosenTableId, { count: 1, latest: ts });
+    else { cur.count += 1; if (ts > cur.latest) cur.latest = ts; }
+  }
+  const ranked = Array.from(tally.entries()).sort((a, b) => {
+    if (b[1].count !== a[1].count) return b[1].count - a[1].count;
+    return b[1].latest - a[1].latest;
+  });
+  for (const [tableId] of ranked) {
+    const found = dhlTables.find(t => String(t.id) === String(tableId));
+    if (found) return found;
+  }
+  return null;
+};
 
 export const selectDhlClientTable = (
   tables: ClientPriceTable[],
@@ -191,6 +257,41 @@ export const selectDhlClientTable = (
       reason: `Origem sem UF identificada (faixa ${band}km) — selecione manualmente`,
       clientName: targetClient,
     };
+  }
+
+  // Task #111: Memória — prioriza correções anteriores do auditor.
+  // 1º) mesma região + faixa + mesma rota (origem/destino normalizados).
+  // 2º) mesma região + faixa (qualquer rota).
+  if (DHL_CORRECTIONS_CACHE.length > 0) {
+    const routeMatches = originCity && destCity
+      ? DHL_CORRECTIONS_CACHE.filter(c =>
+          c.region === detectedRegion &&
+          c.band === band &&
+          c.originCity === originCity &&
+          c.destCity === destCity)
+      : [];
+    const routeChosen = pickFromCorrections(routeMatches, dhlTables);
+    if (routeChosen) {
+      return {
+        table: routeChosen,
+        matchLevel: 'memory_route',
+        detectedRegion,
+        band,
+        reason: `Memória do auditor (rota ${originCity}→${destCity}, ${detectedRegion} + ${band}km)`,
+      };
+    }
+    const regionMatches = DHL_CORRECTIONS_CACHE.filter(c =>
+      c.region === detectedRegion && c.band === band);
+    const regionChosen = pickFromCorrections(regionMatches, dhlTables);
+    if (regionChosen) {
+      return {
+        table: regionChosen,
+        matchLevel: 'memory_region',
+        detectedRegion,
+        band,
+        reason: `Memória do auditor (${detectedRegion} + ${band}km)`,
+      };
+    }
   }
 
   if (originCity && destCity) {
