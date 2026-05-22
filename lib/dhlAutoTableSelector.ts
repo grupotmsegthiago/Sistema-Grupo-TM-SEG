@@ -11,7 +11,7 @@ const normalize = (s?: string | null): string => {
 export const isDhlSupplyClient = (clientName?: string | null): boolean => {
   const n = normalize(clientName);
   if (!n) return false;
-  return n.includes('DHL SUPPLY CHAIN') && n.includes('BRAZIL');
+  return n === normalize(DHL_CLIENT_NAME);
 };
 
 export const computeDhlBand = (km: number): number => {
@@ -126,7 +126,6 @@ export const selectDhlClientTable = (
     if ((t.franchise_km || 0) !== band) return false;
     const region = regionFromDhlOperationType(t.operation_type);
     if (!region) return false;
-    if (region === 'BRASIL') return true;
     return region === detectedRegion;
   });
 

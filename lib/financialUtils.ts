@@ -665,7 +665,7 @@ export const calculateMissionFinancials = (
     // região da origem + faixa de KM do Google. Não cai no selectStrictTable
     // nem nos blocos de fallback genéricos — mesmo no caso "none".
     let dhlEngineHandled = false;
-    if (!appliedClientTable && !isManualOverride && !isCancelled && isDhlSupplyClient(missionClientName)) {
+    if (!appliedClientTable && !isManualOverride && isDhlSupplyClient(missionClientName)) {
       const dhlResult = selectDhlClientTable(
         clientTablesFiltered,
         { origin: mission.origin || '', destination: mission.destination || '' },
