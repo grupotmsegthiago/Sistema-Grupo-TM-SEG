@@ -1,12 +1,11 @@
 // Motor de precificação automática de fornecedores (Task #55).
-// Armazenamento: linha em `provider_cost_tables` com operation_type === AUTO_MASTER_OP_TYPE.
-// Esta linha é a "configuração mestre"; sua presença = auto_calc_enabled.
-// Mapeamento das 5 variáveis para colunas existentes (evita migration):
-//   activation_cost      → valor do acionamento (cobre KM da faixa + franquia de horas da faixa)
-//   franchise_km         → KM da faixa-base (ex: 100)
-//   franchise_hours      → horas da faixa-base (usada só como referência; engine recalcula via ceil(km/40))
-//   cost_per_extra_km    → R$/KM excedente
-//   cost_per_extra_hour  → R$/hora excedente
+// Task #58: a configuração agora vive em colunas dedicadas em providers
+//   (auto_calc_enabled, auto_base_value, auto_base_km, auto_base_hr,
+//   auto_extra_km, auto_extra_hr). A antiga linha __AUTO_MASTER__ em
+//   provider_cost_tables foi descontinuada e migrada via SQL.
+//   Helpers legados (`AUTO_MASTER_OP_TYPE`, `isAutoMasterRow`,
+//   `extractAutoMasterConfig`) ficam só para compatibilidade durante a
+//   transição e não devem ser usados em código novo.
 
 export const AUTO_MASTER_OP_TYPE = '__AUTO_MASTER__';
 
@@ -16,6 +15,56 @@ export interface ProviderAutoMasterConfig {
     baseHourAllowance: number;
     extraKmValue: number;
     extraHourValue: number;
+}
+
+// Task #58: lê a configuração mestre direto do registro do fornecedor.
+export function extractAutoMasterConfigFromProvider(
+    provider: any | null | undefined,
+): ProviderAutoMasterConfig | null {
+    if (!provider) return null;
+    if (!provider.auto_calc_enabled) return null;
+    const cfg: ProviderAutoMasterConfig = {
+        baseActivationValue: Number(provider.auto_base_value) || 0,
+        baseKmAllowance: Number(provider.auto_base_km) || 0,
+        baseHourAllowance: Number(provider.auto_base_hr) || 0,
+        extraKmValue: Number(provider.auto_extra_km) || 0,
+        extraHourValue: Number(provider.auto_extra_hr) || 0,
+    };
+    // Salvaguarda: motor exige pelo menos valor base e km franquia > 0.
+    if (cfg.baseActivationValue <= 0 || cfg.baseKmAllowance <= 0) return null;
+    return cfg;
+}
+
+// Task #58: sintetiza uma "linha mestre" (no formato ProviderCostTable) a
+// partir do registro de provider. Usado pelo engine financeiro pra preservar
+// o contrato interno sem precisar reescrever toda a engine.
+export function synthesizeAutoMasterRow(provider: any | null | undefined): any | null {
+    const cfg = extractAutoMasterConfigFromProvider(provider);
+    if (!cfg) return null;
+    return {
+        id: `__auto_master__:${provider?.id || provider?.name || 'unknown'}`,
+        provider: provider?.name || '',
+        operation_type: AUTO_MASTER_OP_TYPE,
+        activation_cost: cfg.baseActivationValue,
+        franchise_km: cfg.baseKmAllowance,
+        franchise_hours: cfg.baseHourAllowance,
+        cost_per_extra_km: cfg.extraKmValue,
+        cost_per_extra_hour: cfg.extraHourValue,
+        cancellation_fee: 0,
+        __synthetic_auto_master: true,
+    };
+}
+
+// Task #58: dado um array de providers, gera as linhas-mestre sintéticas
+// pra todos os fornecedores com motor ligado.
+export function buildAutoMasterRowsFromProviders(providers: any[] | null | undefined): any[] {
+    if (!providers || providers.length === 0) return [];
+    const out: any[] = [];
+    for (const p of providers) {
+        const row = synthesizeAutoMasterRow(p);
+        if (row) out.push(row);
+    }
+    return out;
 }
 
 export interface ProviderAutoBand {

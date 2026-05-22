@@ -5,7 +5,7 @@ import { supabase } from '../lib/supabase';
 import { logAction } from '../lib/logger';
 import { ProviderCostTable } from '../types';
 import ImportProviderCostModal from './ImportProviderCostModal';
-import { AUTO_MASTER_OP_TYPE, generateAutoBands, isAutoMasterRow, suggestAutoMasterFromManualTables, type ProviderAutoMasterConfig } from '../lib/providerAutoPricing';
+import { AUTO_MASTER_OP_TYPE, generateAutoBands, suggestAutoMasterFromManualTables, type ProviderAutoMasterConfig } from '../lib/providerAutoPricing';
 import { useNotification } from '../lib/NotificationContext';
 import ClientContractTab from './ClientContractTab';
 
@@ -106,8 +106,7 @@ const ProviderForm: React.FC<ProviderFormProps> = ({ onBack, onNavigateToVehicle
   });
   const [isSavingCost, setIsSavingCost] = useState(false);
 
-  // Task #55 — Motor de Precificação Automática
-  const [autoMasterId, setAutoMasterId] = useState<string | null>(null);
+  // Task #55/#58 — Motor de Precificação Automática (colunas dedicadas em providers)
   const [autoMasterEnabled, setAutoMasterEnabled] = useState(false);
   const [autoMasterForm, setAutoMasterForm] = useState({
       baseActivationValue: '',
@@ -193,6 +192,19 @@ const ProviderForm: React.FC<ProviderFormProps> = ({ onBack, onNavigateToVehicle
                     alvaraUrl: data.alvara_url || '',
                     dhl_channel_preference: (data.dhl_channel_preference === 'email' || data.dhl_channel_preference === 'whatsapp' || data.dhl_channel_preference === 'both') ? data.dhl_channel_preference : 'both'
                 });
+                // Task #58: carrega motor automático das colunas dedicadas em providers.
+                if (data.auto_calc_enabled) {
+                    setAutoMasterEnabled(true);
+                    setAutoMasterForm({
+                        baseActivationValue: data.auto_base_value != null ? String(data.auto_base_value) : '',
+                        baseKmAllowance: data.auto_base_km != null ? String(data.auto_base_km) : '100',
+                        baseHourAllowance: data.auto_base_hr != null ? String(data.auto_base_hr) : '3',
+                        extraKmValue: data.auto_extra_km != null ? String(data.auto_extra_km) : '',
+                        extraHourValue: data.auto_extra_hr != null ? String(data.auto_extra_hr) : '',
+                    });
+                } else {
+                    setAutoMasterEnabled(false);
+                }
                 fetchCostTables(data.name);
             }
             setIsLoading(false);
@@ -209,29 +221,14 @@ const ProviderForm: React.FC<ProviderFormProps> = ({ onBack, onNavigateToVehicle
   const fetchCostTables = async (providerName: string) => {
       const { data } = await supabase.from('provider_cost_tables').select('*').eq('provider', providerName).order('franchise_km', { ascending: true });
       if (data) {
+          // Task #58: linha __AUTO_MASTER__ não existe mais; config vive em providers.
           setCostTables(data as any);
-          // Task #55: detecta linha mestre
-          const master = (data as any[]).find(isAutoMasterRow);
-          if (master) {
-              setAutoMasterId(String(master.id));
-              setAutoMasterEnabled(true);
-              setAutoMasterForm({
-                  baseActivationValue: String(master.activation_cost ?? ''),
-                  baseKmAllowance: String(master.franchise_km ?? '100'),
-                  baseHourAllowance: String(master.franchise_hours ?? '3'),
-                  extraKmValue: String(master.cost_per_extra_km ?? ''),
-                  extraHourValue: String(master.cost_per_extra_hour ?? ''),
-              });
-          } else {
-              setAutoMasterId(null);
-              setAutoMasterEnabled(false);
-          }
       }
       setSelectedCostIds([]);
   };
 
   const handleSaveAutoMaster = async () => {
-      if (!formData.name) { showNotification('Atenção', 'Salve o fornecedor primeiro.', 'warning'); return; }
+      if (!id || !formData.name) { showNotification('Atenção', 'Salve o fornecedor primeiro.', 'warning'); return; }
       if (!canEditAutoMaster) { showNotification('Sem permissão', 'Apenas diretoria/administrador/financeiro pode configurar o motor automático.', 'error'); return; }
       const cfg = autoMasterConfig;
       if (cfg.baseActivationValue <= 0 || cfg.baseKmAllowance <= 0 || cfg.baseHourAllowance <= 0 || cfg.extraKmValue < 0 || cfg.extraHourValue < 0) {
@@ -240,7 +237,24 @@ const ProviderForm: React.FC<ProviderFormProps> = ({ onBack, onNavigateToVehicle
       }
       setIsSavingMaster(true);
       try {
-          const payload: any = {
+          // Task #58: persiste direto em providers (colunas dedicadas).
+          const updates: any = {
+              auto_calc_enabled: true,
+              auto_base_value: cfg.baseActivationValue,
+              auto_base_km: cfg.baseKmAllowance,
+              auto_base_hr: cfg.baseHourAllowance,
+              auto_extra_km: cfg.extraKmValue,
+              auto_extra_hr: cfg.extraHourValue,
+          };
+          const { error } = await supabase.from('providers').update(updates).eq('id', id);
+          if (error) throw error;
+
+          // Compat (transição): também mantém a linha legada __AUTO_MASTER__ em
+          // provider_cost_tables, porque o engine financeiro ainda lê dela
+          // quando os callers não passam `providers`. Pode ser removido em
+          // uma task futura, depois que todas as chamadas de
+          // calculateMissionFinancials passarem `providers`.
+          const legacyPayload: any = {
               provider: formData.name,
               operation_type: AUTO_MASTER_OP_TYPE,
               activation_cost: cfg.baseActivationValue,
@@ -250,14 +264,19 @@ const ProviderForm: React.FC<ProviderFormProps> = ({ onBack, onNavigateToVehicle
               cost_per_extra_hour: cfg.extraHourValue,
               cancellation_fee: 0,
           };
-          if (autoMasterId) {
-              const { error } = await supabase.from('provider_cost_tables').update(payload).eq('id', autoMasterId);
-              if (error) throw error;
-          } else {
-              const { data, error } = await supabase.from('provider_cost_tables').insert([payload]).select('id').single();
-              if (error) throw error;
-              if (data?.id) setAutoMasterId(String(data.id));
-          }
+          try {
+              const { data: existing } = await supabase
+                  .from('provider_cost_tables')
+                  .select('id')
+                  .eq('provider', formData.name)
+                  .eq('operation_type', AUTO_MASTER_OP_TYPE)
+                  .limit(1);
+              if (existing && existing.length > 0) {
+                  await supabase.from('provider_cost_tables').update(legacyPayload).eq('id', (existing[0] as any).id);
+              } else {
+                  await supabase.from('provider_cost_tables').insert([legacyPayload]);
+              }
+          } catch { /* legacy fallback é best-effort */ }
           await logAction('UPDATE', 'ProviderAutoMaster', formData.name, `Motor Auto — ${formData.name}: base R$${cfg.baseActivationValue}, ${cfg.baseKmAllowance}km/${cfg.baseHourAllowance}h, +R$${cfg.extraKmValue}/km, +R$${cfg.extraHourValue}/h`);
           await supabase.from('system_logs').insert([{
               user_name: currentUser?.name || 'SISTEMA',
@@ -269,7 +288,6 @@ const ProviderForm: React.FC<ProviderFormProps> = ({ onBack, onNavigateToVehicle
           setAutoMasterEnabled(true);
           setLastSuggestionInfo(null);
           showNotification('Sucesso', 'Configuração mestre salva. Motor automático ativo para este fornecedor.', 'success');
-          fetchCostTables(formData.name);
       } catch (err: any) {
           showNotification('Erro', 'Falha ao salvar configuração mestre: ' + (err?.message || 'erro desconhecido'), 'error');
       } finally {
@@ -322,26 +340,34 @@ const ProviderForm: React.FC<ProviderFormProps> = ({ onBack, onNavigateToVehicle
   };
 
   const handleDisableAutoMaster = async () => {
-      if (!autoMasterId) { setAutoMasterEnabled(false); return; }
+      if (!id) { setAutoMasterEnabled(false); return; }
       if (!canEditAutoMaster) { showNotification('Sem permissão', 'Apenas diretoria/administrador/financeiro pode alterar.', 'error'); return; }
       if (!confirm('Desligar o motor automático? As tabelas manuais voltarão a ser usadas. (As OS já aprovadas permanecem imutáveis.)')) return;
       try {
-          const { error } = await supabase.from('provider_cost_tables').delete().eq('id', autoMasterId);
+          // Task #58: desliga via coluna em providers (mantém os parâmetros gravados pra reativação rápida).
+          const { error } = await supabase.from('providers').update({ auto_calc_enabled: false }).eq('id', id);
           if (error) throw error;
+          // Compat (transição): remove a linha legada __AUTO_MASTER__ pra
+          // garantir que o engine pare de aplicar o motor automático
+          // mesmo quando o caller não passa `providers`.
+          try {
+              await supabase
+                  .from('provider_cost_tables')
+                  .delete()
+                  .eq('provider', formData.name)
+                  .eq('operation_type', AUTO_MASTER_OP_TYPE);
+          } catch { /* best-effort */ }
           await logAction('DELETE', 'ProviderAutoMaster', formData.name, `Motor Auto desligado: ${formData.name}`);
-          setAutoMasterId(null);
           setAutoMasterEnabled(false);
           showNotification('Sucesso', 'Motor automático desligado.', 'success');
-          fetchCostTables(formData.name);
       } catch (err: any) {
           showNotification('Erro', 'Falha ao desligar: ' + (err?.message || 'erro desconhecido'), 'error');
       }
   };
 
   const handleSelectAllCosts = () => {
-      const selectableTables = costTables.filter((t: any) => !isAutoMasterRow(t));
-      if (selectedCostIds.length === selectableTables.length && selectableTables.length > 0) setSelectedCostIds([]);
-      else setSelectedCostIds(selectableTables.map(t => t.id));
+      if (selectedCostIds.length === costTables.length && costTables.length > 0) setSelectedCostIds([]);
+      else setSelectedCostIds(costTables.map(t => t.id));
   };
 
   const handleSelectCostRow = (id: string) => {
@@ -1043,10 +1069,9 @@ const ProviderForm: React.FC<ProviderFormProps> = ({ onBack, onNavigateToVehicle
                     <button onClick={() => setCostSearch('')} className="text-[10px] font-bold text-gray-500 hover:text-red-600 uppercase" data-testid="button-clear-cost-search">Limpar</button>
                 )}
                 <span className="text-[10px] font-bold text-gray-400 uppercase">
-                    {(() => {
-                        const visible = costTables.filter((t: any) => !isAutoMasterRow(t));
-                        return costSearch ? `${visible.filter((t: any) => (t.operation_type || '').toLowerCase().includes(costSearch.toLowerCase())).length} / ${visible.length}` : `${visible.length} itens`;
-                    })()}
+                    {costSearch
+                        ? `${costTables.filter((t: any) => (t.operation_type || '').toLowerCase().includes(costSearch.toLowerCase())).length} / ${costTables.length}`
+                        : `${costTables.length} itens`}
                 </span>
               </div>
 
@@ -1056,7 +1081,7 @@ const ProviderForm: React.FC<ProviderFormProps> = ({ onBack, onNavigateToVehicle
                         <tr>
                             <th className="pl-4 py-3 w-8">
                                 <button onClick={handleSelectAllCosts} className="flex items-center text-gray-400">
-                                    {(() => { const sel = costTables.filter((t: any) => !isAutoMasterRow(t)); return selectedCostIds.length === sel.length && sel.length > 0 ? <CheckSquare size={16} className="text-blue-600" /> : <Square size={16} />; })()}
+                                    {selectedCostIds.length === costTables.length && costTables.length > 0 ? <CheckSquare size={16} className="text-blue-600" /> : <Square size={16} />}
                                 </button>
                             </th>
                             <th className="p-4">Operação / Rota</th>
@@ -1069,12 +1094,12 @@ const ProviderForm: React.FC<ProviderFormProps> = ({ onBack, onNavigateToVehicle
                         </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-100">
-                        {costTables.filter((t: any) => !isAutoMasterRow(t)).length === 0 ? (
+                        {costTables.length === 0 ? (
                             <tr><td colSpan={8} className="p-10 text-center text-gray-400 italic text-xs">Nenhum custo cadastrado para este fornecedor.</td></tr>
-                        ) : costTables.filter((t: any) => !isAutoMasterRow(t) && (!costSearch || (t.operation_type || '').toLowerCase().includes(costSearch.toLowerCase()))).length === 0 ? (
+                        ) : costTables.filter((t: any) => !costSearch || (t.operation_type || '').toLowerCase().includes(costSearch.toLowerCase())).length === 0 ? (
                             <tr><td colSpan={8} className="p-6 text-center text-gray-400 italic text-xs">Nenhuma rota encontrada para "{costSearch}"</td></tr>
                         ) : (
-                            costTables.filter((t: any) => !isAutoMasterRow(t) && (!costSearch || (t.operation_type || '').toLowerCase().includes(costSearch.toLowerCase()))).map((table: any) => (
+                            costTables.filter((t: any) => !costSearch || (t.operation_type || '').toLowerCase().includes(costSearch.toLowerCase())).map((table: any) => (
                                 <tr key={table.id} className={`text-[11px] transition-all ${selectedCostIds.includes(table.id) ? 'bg-blue-50/50' : table.adjustment_status ? 'bg-green-50/30' : 'hover:bg-gray-50/50'}`}>
                                     <td className="pl-4 py-2">
                                         <button onClick={() => handleSelectCostRow(table.id)}>

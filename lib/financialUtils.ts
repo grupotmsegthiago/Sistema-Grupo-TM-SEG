@@ -1,6 +1,8 @@
 import { Mission, ClientPriceTable, ProviderCostTable, MissionStatus, Client } from '../types';
 import {
     extractAutoMasterConfig,
+    extractAutoMasterConfigFromProvider,
+    buildAutoMasterRowsFromProviders,
     calculateProviderCostAuto,
     isAutoMasterRow,
     type ProviderAutoCalcBreakdown,
@@ -300,8 +302,18 @@ export const calculateMissionFinancials = (
             distanceKm: number;
             durationHours: number;
         };
-    }
+    },
+    providers?: any[] | null,
 ): CalculatedFinancials => {
+    // Task #58: anexa linhas mestre sintéticas derivadas das colunas
+    // dedicadas em providers (auto_calc_enabled etc.). Mantém o contrato
+    // interno do engine intacto (continua filtrando via isAutoMasterRow).
+    if (providers && providers.length > 0) {
+        const autoRows = buildAutoMasterRowsFromProviders(providers);
+        if (autoRows.length > 0) {
+            providerTables = [...providerTables, ...autoRows];
+        }
+    }
     const isTerminalStatus = [MissionStatus.COMPLETED, MissionStatus.CANCELLED, MissionStatus.REFUSED].includes(mission.status as MissionStatus);
     const isFinished = mission.status === MissionStatus.COMPLETED;
     const isCancelled = mission.status === MissionStatus.CANCELLED;
@@ -1145,7 +1157,8 @@ export const auditMissionFinancials = (
     clientTables: ClientPriceTable[],
     providerTables: ProviderCostTable[],
     clientData?: Client,
-    tolerance: number = 5
+    tolerance: number = 5,
+    providers?: any[] | null,
 ): AuditResult => {
     const m = mission as any;
     const hasManualOverride = !!(m.revenue_edit_reason) || !!(m.cost_edit_reason) || !!(m.snapshot_approved_by);
@@ -1166,7 +1179,7 @@ export const auditMissionFinancials = (
         };
     }
 
-    const fin = calculateMissionFinancials(mission, clientTables, providerTables, clientData);
+    const fin = calculateMissionFinancials(mission, clientTables, providerTables, clientData, new Date(), undefined, providers);
     
     const storedRevenue = safeNumber(mission.revenue_value) + safeNumber(mission.toll_value);
     const storedCost = safeNumber(mission.cost_value) + safeNumber(mission.toll_value_provider != null ? mission.toll_value_provider : mission.toll_value);
