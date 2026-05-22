@@ -96,9 +96,31 @@ const ReportsDashboard: React.FC = () => {
         entityId: string;
         details: any;
     };
-    type OverrideCooldown = { scope: 'user' | 'provider'; name: string; until: string; source: 'auto' | 'silence' };
+    type OverrideScopeHistoryEntry = { actionType: string; actor: string; at: string; hours?: number; silenceUntil?: string };
+    type OverrideCooldown = {
+        scope: 'user' | 'provider';
+        name: string;
+        until: string;
+        source: 'auto' | 'silence';
+        actor?: string | null;
+        startedAt?: string | null;
+        hours?: number | null;
+        history?: OverrideScopeHistoryEntry[];
+    };
+    type OverrideModerationEvent = {
+        id: string;
+        at: string;
+        actionType: 'MANUAL_OVERRIDE_ALERT_SILENCE' | 'MANUAL_OVERRIDE_ALERT_REOPEN';
+        actor: string;
+        scope: 'user' | 'provider' | null;
+        name: string;
+        hours?: number | null;
+        silenceUntil?: string | null;
+    };
     const [overrideAlerts, setOverrideAlerts] = useState<OverrideAlertItem[]>([]);
     const [overrideCooldowns, setOverrideCooldowns] = useState<OverrideCooldown[]>([]);
+    const [overrideModerationTimeline, setOverrideModerationTimeline] = useState<OverrideModerationEvent[]>([]);
+    const [overrideExpandedScope, setOverrideExpandedScope] = useState<string | null>(null);
     const [overrideAlertsConfig, setOverrideAlertsConfig] = useState<{ windowDays: number; threshold: number; cooldownHours: number } | null>(null);
     const [overrideAlertsLoading, setOverrideAlertsLoading] = useState(false);
     const [overrideActionBusy, setOverrideActionBusy] = useState<string | null>(null);
@@ -111,6 +133,7 @@ const ReportsDashboard: React.FC = () => {
                 const j = await r.json();
                 setOverrideAlerts(j.alerts || []);
                 setOverrideCooldowns(j.cooldowns || []);
+                setOverrideModerationTimeline(j.moderationTimeline || []);
                 setOverrideAlertsConfig({ windowDays: j.windowDays, threshold: j.threshold, cooldownHours: j.cooldownHours });
             }
         } catch { /* ignore */ }
@@ -1646,31 +1669,71 @@ const ReportsDashboard: React.FC = () => {
                                                     {overrideCooldowns.map(c => {
                                                         const reopenKey = `reopen:${c.scope}:${c.name}`;
                                                         const busy = overrideActionBusy === reopenKey;
+                                                        const scopeKey = `${c.scope}:${c.name}`;
+                                                        const expanded = overrideExpandedScope === scopeKey;
+                                                        const history = c.history || [];
+                                                        const actorLabel = c.actor || 'Sistema';
+                                                        const startedLabel = c.startedAt ? formatDateTimeBR(c.startedAt) : '';
+                                                        const tooltip = c.source === 'silence'
+                                                            ? `Silenciado por ${actorLabel}${startedLabel ? ' em ' + startedLabel : ''}${c.hours ? ' · duração: ' + c.hours + 'h' : ''}`
+                                                            : `Disparado automaticamente após o limite${startedLabel ? ' em ' + startedLabel : ''}${actorLabel && actorLabel !== 'Sistema' ? ' · última edição por ' + actorLabel : ''}`;
                                                         return (
-                                                            <li key={`${c.scope}:${c.name}`} className="px-4 py-2 flex items-center gap-3" data-testid={`row-override-cooldown-${c.scope}-${c.name}`}>
-                                                                <div className="flex-1 min-w-0">
-                                                                    <div className="text-[11px] font-black text-gray-800 truncate">
-                                                                        <span className={`inline-block px-1.5 py-0.5 rounded text-[9px] mr-1.5 ${c.scope === 'user' ? 'bg-blue-100 text-blue-700' : 'bg-purple-100 text-purple-700'}`}>
-                                                                            {c.scope === 'user' ? 'USUÁRIO' : 'FORNECEDOR'}
-                                                                        </span>
-                                                                        {c.name}
+                                                            <li key={scopeKey} className="px-4 py-2" data-testid={`row-override-cooldown-${c.scope}-${c.name}`}>
+                                                                <div className="flex items-center gap-3">
+                                                                    <div className="flex-1 min-w-0">
+                                                                        <div className="text-[11px] font-black text-gray-800 truncate">
+                                                                            <span className={`inline-block px-1.5 py-0.5 rounded text-[9px] mr-1.5 ${c.scope === 'user' ? 'bg-blue-100 text-blue-700' : 'bg-purple-100 text-purple-700'}`}>
+                                                                                {c.scope === 'user' ? 'USUÁRIO' : 'FORNECEDOR'}
+                                                                            </span>
+                                                                            {c.name}
+                                                                        </div>
+                                                                        <div className="text-[10px] text-gray-500 mt-0.5" title={tooltip}>
+                                                                            Termina em <strong className="font-mono">{formatCooldownRemaining(c.until)}</strong>
+                                                                            {' · '}
+                                                                            <span className={c.source === 'silence' ? 'text-amber-700 font-bold' : ''}>
+                                                                                {c.source === 'silence' ? 'silenciado manualmente' : 'cooldown automático'}
+                                                                            </span>
+                                                                        </div>
+                                                                        {c.source === 'silence' && (
+                                                                            <div className="text-[10px] text-gray-600 mt-0.5" data-testid={`text-override-cooldown-actor-${c.scope}-${c.name}`}>
+                                                                                Por <strong>{actorLabel}</strong>
+                                                                                {startedLabel && <span className="font-mono"> · {startedLabel}</span>}
+                                                                                {c.hours ? <span className="text-gray-400"> · {c.hours}h</span> : null}
+                                                                            </div>
+                                                                        )}
+                                                                        {history.length > 0 && (
+                                                                            <button
+                                                                                onClick={() => setOverrideExpandedScope(expanded ? null : scopeKey)}
+                                                                                className="text-[10px] text-blue-700 hover:underline mt-0.5"
+                                                                                data-testid={`btn-override-history-toggle-${c.scope}-${c.name}`}
+                                                                            >
+                                                                                {expanded ? 'Ocultar histórico' : `Ver histórico (${history.length})`}
+                                                                            </button>
+                                                                        )}
                                                                     </div>
-                                                                    <div className="text-[10px] text-gray-500 mt-0.5">
-                                                                        Termina em <strong className="font-mono">{formatCooldownRemaining(c.until)}</strong>
-                                                                        {' · '}
-                                                                        <span className={c.source === 'silence' ? 'text-amber-700 font-bold' : ''}>
-                                                                            {c.source === 'silence' ? 'silenciado manualmente' : 'cooldown automático'}
-                                                                        </span>
-                                                                    </div>
+                                                                    <button
+                                                                        onClick={() => reopenOverrideScope(c.scope, c.name)}
+                                                                        disabled={busy}
+                                                                        className="px-2 py-1 text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 rounded hover:bg-emerald-100 disabled:opacity-50"
+                                                                        data-testid={`btn-override-reopen-${c.scope}-${c.name}`}
+                                                                    >
+                                                                        {busy ? '...' : 'Reabrir'}
+                                                                    </button>
                                                                 </div>
-                                                                <button
-                                                                    onClick={() => reopenOverrideScope(c.scope, c.name)}
-                                                                    disabled={busy}
-                                                                    className="px-2 py-1 text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 rounded hover:bg-emerald-100 disabled:opacity-50"
-                                                                    data-testid={`btn-override-reopen-${c.scope}-${c.name}`}
-                                                                >
-                                                                    {busy ? '...' : 'Reabrir'}
-                                                                </button>
+                                                                {expanded && history.length > 0 && (
+                                                                    <ul className="mt-2 ml-2 border-l-2 border-gray-200 pl-2 space-y-1" data-testid={`list-override-history-${c.scope}-${c.name}`}>
+                                                                        {history.map((h, idx) => (
+                                                                            <li key={idx} className="text-[10px] text-gray-600">
+                                                                                <span className={`inline-block px-1 py-0.5 rounded text-[9px] font-bold mr-1.5 ${h.actionType === 'MANUAL_OVERRIDE_ALERT_SILENCE' ? 'bg-amber-100 text-amber-800' : 'bg-emerald-100 text-emerald-800'}`}>
+                                                                                    {h.actionType === 'MANUAL_OVERRIDE_ALERT_SILENCE' ? 'SILENCIOU' : 'REABRIU'}
+                                                                                </span>
+                                                                                <strong>{h.actor}</strong>
+                                                                                <span className="font-mono text-gray-500"> · {formatDateTimeBR(h.at)}</span>
+                                                                                {h.hours ? <span className="text-gray-400"> · {h.hours}h</span> : null}
+                                                                            </li>
+                                                                        ))}
+                                                                    </ul>
+                                                                )}
                                                             </li>
                                                         );
                                                     })}
@@ -1738,6 +1801,45 @@ const ReportsDashboard: React.FC = () => {
                                             )}
                                         </div>
                                     </div>
+                                )}
+                            </div>
+
+                            {/* Task #75 — Linha do tempo de moderação (silenciamentos / reaberturas) */}
+                            <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden no-print" data-testid="panel-override-moderation-timeline">
+                                <div className="px-4 py-2.5 bg-gray-50 border-b border-gray-200 flex flex-wrap items-center gap-3">
+                                    <h4 className="text-xs font-black text-gray-700 uppercase flex items-center gap-2">
+                                        <AlertTriangle size={14} className="text-amber-500" /> Histórico de Silenciamentos e Reaberturas
+                                    </h4>
+                                    <span className="text-[10px] text-gray-500">Últimos {overrideModerationTimeline.length} eventos · cada linha mostra quem agiu e quando</span>
+                                </div>
+                                {overrideModerationTimeline.length === 0 ? (
+                                    <div className="px-4 py-6 text-center text-[11px] text-gray-400">Nenhum silenciamento ou reabertura registrado ainda.</div>
+                                ) : (
+                                    <ul className="divide-y divide-gray-100 max-h-72 overflow-y-auto" data-testid="list-override-moderation-timeline">
+                                        {overrideModerationTimeline.map(ev => (
+                                            <li key={ev.id} className="px-4 py-2 flex items-center gap-3" data-testid={`row-override-moderation-${ev.id}`}>
+                                                <span className={`inline-block px-1.5 py-0.5 rounded text-[9px] font-bold shrink-0 ${ev.actionType === 'MANUAL_OVERRIDE_ALERT_SILENCE' ? 'bg-amber-100 text-amber-800' : 'bg-emerald-100 text-emerald-800'}`}>
+                                                    {ev.actionType === 'MANUAL_OVERRIDE_ALERT_SILENCE' ? 'SILENCIOU' : 'REABRIU'}
+                                                </span>
+                                                <div className="flex-1 min-w-0">
+                                                    <div className="text-[11px] text-gray-800 truncate">
+                                                        <strong data-testid={`text-override-moderation-actor-${ev.id}`}>{ev.actor}</strong>
+                                                        {ev.scope && (
+                                                            <>
+                                                                {' · '}
+                                                                <span className={`inline-block px-1 py-0.5 rounded text-[9px] mr-1 ${ev.scope === 'user' ? 'bg-blue-100 text-blue-700' : 'bg-purple-100 text-purple-700'}`}>
+                                                                    {ev.scope === 'user' ? 'USUÁRIO' : 'FORNECEDOR'}
+                                                                </span>
+                                                                {ev.name}
+                                                            </>
+                                                        )}
+                                                        {ev.hours ? <span className="text-gray-400"> · {ev.hours}h</span> : null}
+                                                    </div>
+                                                    <div className="text-[10px] text-gray-500 font-mono">{formatDateTimeBR(ev.at)}</div>
+                                                </div>
+                                            </li>
+                                        ))}
+                                    </ul>
                                 )}
                             </div>
 

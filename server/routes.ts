@@ -6428,15 +6428,48 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
       const cooldownSinceMs = nowMs - cooldownMs;
 
       // Calcula cooldown vigente por escopo, considerando reopens que zeram silenciamentos/alertas anteriores
-      type CooldownInfo = { scope: 'user' | 'provider'; name: string; until: string; source: 'auto' | 'silence' };
+      // Task #75 — Inclui autor / quando, e histórico completo do escopo (silence/reopen) para auditoria.
+      type ScopeHistoryEntry = { actionType: string; actor: string; at: string; hours?: number; silenceUntil?: string };
+      type CooldownInfo = {
+        scope: 'user' | 'provider';
+        name: string;
+        until: string;
+        source: 'auto' | 'silence';
+        actor: string | null;
+        startedAt: string | null;
+        hours: number | null;
+        history: ScopeHistoryEntry[];
+      };
       const cooldowns = new Map<string, CooldownInfo>();
       const reopenedAt = new Map<string, number>();
-      // Primeiro: anotar timestamp do reopen mais recente por escopo
+      const scopeHistories = new Map<string, ScopeHistoryEntry[]>();
+      // Primeiro: anotar timestamp do reopen mais recente por escopo e construir histórico cronológico
       for (const a of (alerts || []) as any[]) {
-        if (a.action_type !== 'MANUAL_OVERRIDE_ALERT_REOPEN' || !a.entity_id) continue;
-        const t = Date.parse(a.created_at);
-        const prev = reopenedAt.get(String(a.entity_id)) || 0;
-        if (t > prev) reopenedAt.set(String(a.entity_id), t);
+        if (!a.entity_id) continue;
+        const key = String(a.entity_id);
+        if (a.action_type === 'MANUAL_OVERRIDE_ALERT_REOPEN') {
+          const t = Date.parse(a.created_at);
+          const prev = reopenedAt.get(key) || 0;
+          if (t > prev) reopenedAt.set(key, t);
+        }
+        if (a.action_type === 'MANUAL_OVERRIDE_ALERT_SILENCE' || a.action_type === 'MANUAL_OVERRIDE_ALERT_REOPEN') {
+          let d: any = {};
+          try { d = typeof a.details === 'string' ? JSON.parse(a.details) : (a.details || {}); } catch { /* ignore */ }
+          const entry: ScopeHistoryEntry = {
+            actionType: a.action_type,
+            actor: a.user_name || d.actor || 'Sistema',
+            at: a.created_at,
+            hours: a.action_type === 'MANUAL_OVERRIDE_ALERT_SILENCE' ? Number(d.hours) || undefined : undefined,
+            silenceUntil: a.action_type === 'MANUAL_OVERRIDE_ALERT_SILENCE' ? (d.silenceUntil || undefined) : undefined,
+          };
+          const arr = scopeHistories.get(key) || [];
+          arr.push(entry);
+          scopeHistories.set(key, arr);
+        }
+      }
+      // Ordena cada histórico por data desc
+      for (const arr of scopeHistories.values()) {
+        arr.sort((a, b) => Date.parse(b.at) - Date.parse(a.at));
       }
       for (const a of (alerts || []) as any[]) {
         const key = String(a.entity_id || '');
@@ -6448,12 +6481,21 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
         const scope = (scopeRaw === 'user' || scopeRaw === 'provider') ? scopeRaw : null;
         if (!scope) continue;
         const name = rest.join(':');
+        const fullHistory = scopeHistories.get(key) || [];
         if (a.action_type === 'MANUAL_OVERRIDE_ALERT') {
           if (t < cooldownSinceMs) continue;
           const untilMs = t + cooldownMs;
           const existing = cooldowns.get(key);
           if (!existing || Date.parse(existing.until) < untilMs) {
-            cooldowns.set(key, { scope, name, until: new Date(untilMs).toISOString(), source: 'auto' });
+            cooldowns.set(key, {
+              scope, name,
+              until: new Date(untilMs).toISOString(),
+              source: 'auto',
+              actor: a.user_name || 'Sistema',
+              startedAt: a.created_at,
+              hours: MANUAL_OVERRIDE_COOLDOWN_HOURS,
+              history: fullHistory,
+            });
           }
         } else if (a.action_type === 'MANUAL_OVERRIDE_ALERT_SILENCE') {
           try {
@@ -6462,7 +6504,15 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
             if (untilMs > nowMs) {
               const existing = cooldowns.get(key);
               if (!existing || Date.parse(existing.until) < untilMs) {
-                cooldowns.set(key, { scope, name, until: new Date(untilMs).toISOString(), source: 'silence' });
+                cooldowns.set(key, {
+                  scope, name,
+                  until: new Date(untilMs).toISOString(),
+                  source: 'silence',
+                  actor: a.user_name || d.actor || 'Sistema',
+                  startedAt: a.created_at,
+                  hours: Number(d.hours) || null,
+                  history: fullHistory,
+                });
               }
             }
           } catch { /* ignore */ }
@@ -6470,6 +6520,27 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
       }
 
       const cooldownList = Array.from(cooldowns.values()).sort((a, b) => Date.parse(b.until) - Date.parse(a.until));
+
+      // Linha do tempo recente de silence/reopen (todos os escopos) para auditoria rápida
+      const moderationTimeline = ((alerts || []) as any[])
+        .filter(a => a.action_type === 'MANUAL_OVERRIDE_ALERT_SILENCE' || a.action_type === 'MANUAL_OVERRIDE_ALERT_REOPEN')
+        .slice(0, 30)
+        .map(a => {
+          let d: any = {};
+          try { d = typeof a.details === 'string' ? JSON.parse(a.details) : (a.details || {}); } catch { /* ignore */ }
+          const [scopeRaw, ...rest] = String(a.entity_id || '').split(':');
+          const scope = (scopeRaw === 'user' || scopeRaw === 'provider') ? scopeRaw : null;
+          return {
+            id: a.id,
+            at: a.created_at,
+            actionType: a.action_type,
+            actor: a.user_name || d.actor || 'Sistema',
+            scope,
+            name: rest.join(':'),
+            hours: d.hours || null,
+            silenceUntil: d.silenceUntil || null,
+          };
+        });
 
       return res.json({
         ok: true,
@@ -6489,6 +6560,7 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
           };
         }),
         cooldowns: cooldownList,
+        moderationTimeline,
       });
     } catch (e: any) {
       return res.status(500).json({ error: e?.message || String(e) });
