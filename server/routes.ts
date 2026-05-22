@@ -5900,6 +5900,245 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
   });
 
   // ═══════════════════════════════════════════════════════
+  // Task #67 — Alerta de excesso de edições manuais sobre o motor
+  // ═══════════════════════════════════════════════════════
+  // Conta divergências do motor automático (FINANCIAL_RECALC com source=provider_auto_engine)
+  // por usuário e por fornecedor numa janela móvel. Se ultrapassar o limite, dispara alerta
+  // in-app (system_logs) + e-mail para os gestores financeiros, com link para a aba
+  // "Edições Manuais" do Relatórios já filtrada.
+  const MANUAL_OVERRIDE_ALERT_EMAILS = (process.env.MANUAL_OVERRIDE_ALERT_EMAILS ||
+    'thiago@grupotmseg.com.br, barbara@grupotmseg.com.br').trim();
+  const MANUAL_OVERRIDE_WINDOW_DAYS = Math.max(1, Number(process.env.MANUAL_OVERRIDE_WINDOW_DAYS) || 7);
+  const MANUAL_OVERRIDE_THRESHOLD = Math.max(1, Number(process.env.MANUAL_OVERRIDE_THRESHOLD) || 10);
+  // Janela de silêncio entre alertas do mesmo escopo (user:X ou provider:Y)
+  const MANUAL_OVERRIDE_COOLDOWN_HOURS = Math.max(1, Number(process.env.MANUAL_OVERRIDE_COOLDOWN_HOURS) || 24);
+  const MANUAL_OVERRIDE_PUBLIC_URL =
+    process.env.MANUAL_OVERRIDE_PUBLIC_URL || process.env.PUBLIC_APP_URL || 'https://tmsego.replit.app';
+
+  const buildOverrideLink = (scope: 'user' | 'provider', value: string, from: string, to: string) => {
+    const base = MANUAL_OVERRIDE_PUBLIC_URL.replace(/\/+$/, '');
+    const params = new URLSearchParams({
+      page: 'reports',
+      tab: 'manualOverride',
+      from,
+      to,
+      [scope]: value,
+    });
+    return `${base}/?${params.toString()}`;
+  };
+
+  async function runManualOverrideAlertCheck() {
+    try {
+      const endDate = new Date();
+      const startDate = new Date(endDate.getTime() - MANUAL_OVERRIDE_WINDOW_DAYS * 24 * 60 * 60 * 1000);
+      const startISO = startDate.toISOString();
+      const endISO = endDate.toISOString();
+      const fromDay = startISO.slice(0, 10);
+      const toDay = endISO.slice(0, 10);
+
+      const { data: logs, error: logsErr } = await supabaseAdmin
+        .from('system_logs')
+        .select('id, created_at, user_name, entity_id, details')
+        .eq('entity', 'Mission')
+        .eq('action_type', 'FINANCIAL_RECALC')
+        .gte('created_at', startISO)
+        .lte('created_at', endISO)
+        .order('created_at', { ascending: false })
+        .limit(10000);
+      if (logsErr) {
+        console.error('[OverrideAlert] Erro ao ler system_logs:', logsErr.message);
+        return { ok: false, error: logsErr.message };
+      }
+
+      type Row = { missionId: string; userName: string; createdAt: string };
+      const divergent: Row[] = [];
+      (logs || []).forEach((l: any) => {
+        try {
+          const d = typeof l.details === 'string' ? JSON.parse(l.details) : (l.details || {});
+          if ((d.source || '') !== 'provider_auto_engine') return;
+          const suggested = Number(d.suggestedTotal) || 0;
+          const saved = Number(d.savedCost) || 0;
+          const isDivergent = !!d.divergent || Math.abs(saved - suggested) > 0.01;
+          if (!isDivergent) return;
+          divergent.push({
+            missionId: String(l.entity_id || ''),
+            userName: (l.user_name || '').trim() || 'Desconhecido',
+            createdAt: l.created_at,
+          });
+        } catch { /* ignore */ }
+      });
+
+      if (divergent.length === 0) {
+        return { ok: true, scanned: (logs || []).length, divergent: 0, alerts: 0 };
+      }
+
+      // Cruza com fornecedores das missões para ranking por provider
+      const missionIds = Array.from(new Set(divergent.map(d => d.missionId))).filter(Boolean);
+      const missionToProvider: Record<string, string> = {};
+      if (missionIds.length > 0) {
+        const CHUNK = 200;
+        for (let i = 0; i < missionIds.length; i += CHUNK) {
+          const slice = missionIds.slice(i, i + CHUNK);
+          const { data: mData } = await supabaseAdmin
+            .from('missions')
+            .select('id, provider')
+            .in('id', slice);
+          (mData || []).forEach((m: any) => {
+            missionToProvider[String(m.id)] = (m.provider || '').trim() || '—';
+          });
+        }
+      }
+
+      const byUser = new Map<string, number>();
+      const byProvider = new Map<string, number>();
+      for (const d of divergent) {
+        byUser.set(d.userName, (byUser.get(d.userName) || 0) + 1);
+        const prov = missionToProvider[d.missionId] || '—';
+        byProvider.set(prov, (byProvider.get(prov) || 0) + 1);
+      }
+
+      const overUser = Array.from(byUser.entries())
+        .filter(([, c]) => c >= MANUAL_OVERRIDE_THRESHOLD)
+        .sort((a, b) => b[1] - a[1]);
+      const overProvider = Array.from(byProvider.entries())
+        .filter(([name, c]) => name && name !== '—' && c >= MANUAL_OVERRIDE_THRESHOLD)
+        .sort((a, b) => b[1] - a[1]);
+
+      if (overUser.length === 0 && overProvider.length === 0) {
+        return { ok: true, scanned: (logs || []).length, divergent: divergent.length, alerts: 0 };
+      }
+
+      // Filtra escopos que já receberam alerta dentro do cooldown
+      const cooldownMs = MANUAL_OVERRIDE_COOLDOWN_HOURS * 60 * 60 * 1000;
+      const cooldownSinceISO = new Date(Date.now() - cooldownMs).toISOString();
+      const { data: recentAlerts } = await supabaseAdmin
+        .from('system_logs')
+        .select('entity_id, created_at')
+        .eq('entity', 'ManualOverrideAlert')
+        .eq('action_type', 'MANUAL_OVERRIDE_ALERT')
+        .gte('created_at', cooldownSinceISO);
+      const recentScopes = new Set<string>();
+      (recentAlerts || []).forEach((r: any) => { if (r.entity_id) recentScopes.add(String(r.entity_id)); });
+
+      const pendingUser = overUser.filter(([name]) => !recentScopes.has(`user:${name}`));
+      const pendingProvider = overProvider.filter(([name]) => !recentScopes.has(`provider:${name}`));
+
+      if (pendingUser.length === 0 && pendingProvider.length === 0) {
+        return { ok: true, scanned: (logs || []).length, divergent: divergent.length, alerts: 0, skipped: 'cooldown' };
+      }
+
+      const r2 = (v: number) => v.toLocaleString('pt-BR');
+      const nowBR = new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' });
+
+      const sendAlert = async (scope: 'user' | 'provider', name: string, count: number) => {
+        const link = buildOverrideLink(scope, name, fromDay, toDay);
+        const scopeLabel = scope === 'user' ? 'Usuário' : 'Fornecedor';
+        const summary = `${scopeLabel} "${name}" acumulou ${r2(count)} edições divergentes do motor nos últimos ${MANUAL_OVERRIDE_WINDOW_DAYS} dia(s) (limite: ${MANUAL_OVERRIDE_THRESHOLD}).`;
+
+        // 1) Notificação in-app via system_logs (consumida pelo Realtime do NotificationProvider)
+        await supabaseAdmin.from('system_logs').insert([{
+          user_name: 'Sistema',
+          action_type: 'MANUAL_OVERRIDE_ALERT',
+          entity: 'ManualOverrideAlert',
+          entity_id: `${scope}:${name}`,
+          details: JSON.stringify({
+            scope,
+            name,
+            count,
+            threshold: MANUAL_OVERRIDE_THRESHOLD,
+            windowDays: MANUAL_OVERRIDE_WINDOW_DAYS,
+            link,
+            summary,
+            from: fromDay,
+            to: toDay,
+          }),
+        }]);
+
+        // 2) E-mail para gestores
+        try {
+          const { transporter } = await import('./emailService');
+          const SMTP_FROM = `"Grupo TM SEG" <adm@grupotmseg.com.br>`;
+          const html = `<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8"><style>
+            body{margin:0;padding:0;background:#f4f4f4;font-family:'Segoe UI',Arial,sans-serif}
+            .container{max-width:600px;margin:0 auto;background:#fff;border-radius:8px;overflow:hidden;box-shadow:0 2px 12px rgba(0,0,0,.08)}
+            .header{background:#1a1a1a;padding:24px 32px;text-align:center}
+            .header h1{color:#fff;font-size:20px;margin:0}
+            .header .accent{color:#c0392b;font-weight:700}
+            .body-content{padding:28px 32px;color:#333;line-height:1.6;font-size:14px}
+            .alert-box{background:#fdf2f2;border:2px solid #c0392b;padding:16px 20px;margin:16px 0;border-radius:8px}
+            .alert-box .count{font-size:32px;font-weight:800;color:#c0392b;text-align:center;display:block;margin:6px 0}
+            .info-table{width:100%;border-collapse:collapse;margin:14px 0}
+            .info-table td{padding:8px 12px;border-bottom:1px solid #eee}
+            .info-table td:first-child{font-weight:600;color:#1a1a1a;width:40%}
+            .cta{display:inline-block;background:#c0392b;color:#fff !important;text-decoration:none;padding:12px 22px;border-radius:6px;font-weight:700;margin-top:8px}
+            .footer{background:#1a1a1a;padding:18px;text-align:center;border-top:3px solid #c0392b}
+            .footer p{color:#999;font-size:12px;margin:4px 0}
+          </style></head><body><div class="container">
+            <div class="header"><h1>GRUPO <span class="accent">TM SEG</span></h1></div>
+            <div class="body-content">
+              <h2 style="color:#c0392b;margin-top:0">⚠️ Excesso de edições manuais sobre o motor</h2>
+              <p>${summary}</p>
+              <div class="alert-box">
+                <p style="margin:0;font-size:12px;color:#666;text-align:center">EDIÇÕES DIVERGENTES (${MANUAL_OVERRIDE_WINDOW_DAYS} DIA${MANUAL_OVERRIDE_WINDOW_DAYS > 1 ? 'S' : ''})</p>
+                <span class="count">${r2(count)}</span>
+              </div>
+              <table class="info-table">
+                <tr><td>${scopeLabel}</td><td><strong>${name}</strong></td></tr>
+                <tr><td>Janela analisada</td><td>${fromDay} → ${toDay}</td></tr>
+                <tr><td>Limite configurado</td><td>${MANUAL_OVERRIDE_THRESHOLD} edição(ões)</td></tr>
+                <tr><td>Gerado em</td><td>${nowBR}</td></tr>
+              </table>
+              <p style="margin-top:18px">Abra a aba <strong>Edições Manuais</strong> do Relatórios já filtrada para investigar:</p>
+              <p style="text-align:center"><a class="cta" href="${link}">Abrir auditoria filtrada</a></p>
+              <p style="font-size:11px;color:#999;margin-top:18px">Alerta automático — cooldown de ${MANUAL_OVERRIDE_COOLDOWN_HOURS}h por escopo evita repetição.</p>
+            </div>
+            <div class="footer"><p>Grupo TM SEG — Sistema TMSEGo</p></div>
+          </div></body></html>`;
+          await transporter.sendMail({
+            from: SMTP_FROM,
+            to: MANUAL_OVERRIDE_ALERT_EMAILS,
+            subject: `⚠️ ${scopeLabel} "${name}" — ${count} edições manuais sobre o motor (últimos ${MANUAL_OVERRIDE_WINDOW_DAYS}d)`,
+            html,
+          });
+          console.log(`[OverrideAlert] ${scope}=${name} count=${count} → e-mail enviado para ${MANUAL_OVERRIDE_ALERT_EMAILS}`);
+        } catch (e: any) {
+          console.error('[OverrideAlert] Falha ao enviar e-mail:', e?.message);
+        }
+      };
+
+      let alertsSent = 0;
+      for (const [name, count] of pendingUser) { await sendAlert('user', name, count); alertsSent++; }
+      for (const [name, count] of pendingProvider) { await sendAlert('provider', name, count); alertsSent++; }
+
+      return {
+        ok: true,
+        scanned: (logs || []).length,
+        divergent: divergent.length,
+        thresholds: { count: MANUAL_OVERRIDE_THRESHOLD, windowDays: MANUAL_OVERRIDE_WINDOW_DAYS },
+        offenders: {
+          users: overUser.map(([n, c]) => ({ name: n, count: c })),
+          providers: overProvider.map(([n, c]) => ({ name: n, count: c })),
+        },
+        alertsSent,
+      };
+    } catch (e: any) {
+      console.error('[OverrideAlert] Erro fatal:', e?.message);
+      return { ok: false, error: e?.message };
+    }
+  }
+
+  // Agendamento: roda 12 minutos após o boot e depois a cada 6 horas.
+  setTimeout(() => {
+    runManualOverrideAlertCheck().then(r => console.log('[OverrideAlert] Primeira execução:', JSON.stringify(r))).catch(() => {});
+    setInterval(() => { runManualOverrideAlertCheck().catch(() => {}); }, 6 * 60 * 60 * 1000);
+  }, 12 * 60 * 1000);
+
+  app.post('/api/admin/run-manual-override-alert', requireAuth, requireRole('diretoria', 'administrador', 'financeiro'), async (_req: Request, res: Response) => {
+    const r = await runManualOverrideAlertCheck();
+    res.json(r);
+  });
+
+  // ═══════════════════════════════════════════════════════
   // NF Travadas — relatório diário às 09:00
   // ═══════════════════════════════════════════════════════
   const STUCK_NF_REPORT_EMAILS = 'thiago@grupotmseg.com.br, michelle@grupotmseg.com.br, daniel@grupotmseg.com.br';

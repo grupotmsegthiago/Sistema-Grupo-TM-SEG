@@ -87,6 +87,28 @@ const ReportsDashboard: React.FC = () => {
     const [manualOverrideProviderFilter, setManualOverrideProviderFilter] = useState('');
     const [manualOverrideUserFilter, setManualOverrideUserFilter] = useState('');
 
+    // Task #67 — Deep-link vindo do e-mail/notificação de alerta de edições manuais.
+    // Aceita ?tab=manualOverride&user=...&provider=...&from=YYYY-MM-DD&to=YYYY-MM-DD
+    useEffect(() => {
+        try {
+            if (typeof window === 'undefined') return;
+            const qs = new URLSearchParams(window.location.search);
+            const tab = qs.get('tab');
+            const user = qs.get('user');
+            const provider = qs.get('provider');
+            const from = qs.get('from');
+            const to = qs.get('to');
+            if (tab === 'manualOverride' || tab === 'autoEngine' || tab === 'timeline' || tab === 'dashboard' || tab === 'ranking' || tab === 'logs') {
+                setActiveTab(tab as any);
+            }
+            if (user) setManualOverrideUserFilter(user);
+            if (provider) setManualOverrideProviderFilter(provider);
+            if (from && /^\d{4}-\d{2}-\d{2}$/.test(from)) setStartDate(from);
+            if (to && /^\d{4}-\d{2}-\d{2}$/.test(to)) setEndDate(to);
+        } catch { /* ignore */ }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
+
     useEffect(() => {
         fetchData();
         if (activeTab === 'timeline') fetchTimelineData();

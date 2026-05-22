@@ -95,7 +95,12 @@ const App: React.FC = () => {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [needsPasswordChange, setNeedsPasswordChange] = useState(false);
   const [isProfileSettingsOpen, setIsProfileSettingsOpen] = useState(false);
-  const [currentScreen, setCurrentScreen] = useState('dashboard'); 
+  const [currentScreen, setCurrentScreen] = useState(() => {
+    try {
+      const page = new URLSearchParams(window.location.search).get('page');
+      return page && /^[a-z0-9-]+$/i.test(page) ? page : 'dashboard';
+    } catch { return 'dashboard'; }
+  });
   const [selectedId, setSelectedId] = useState<string | null>(null);
   
   const [rebootCountdown, setRebootCountdown] = useState<number | null>(null);
