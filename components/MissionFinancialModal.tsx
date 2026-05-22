@@ -293,6 +293,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
   const [provEditStartTime, setProvEditStartTime] = useState('');
   const [provEditEndTime, setProvEditEndTime] = useState('');
   const [isEditingProvOpsData, setIsEditingProvOpsData] = useState(false);
+  const [showRecalcProviderDialog, setShowRecalcProviderDialog] = useState(false);
   const [revenueEditReason, setRevenueEditReason] = useState('');
   const [costEditReason, setCostEditReason] = useState('');
   const [showRevenueReasonInput, setShowRevenueReasonInput] = useState(false);
@@ -3679,28 +3680,68 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                 {!mission.is_same_os && !isEffectivelyLocked && (
                                     <button
                                         data-testid="btn-recalculate-provider"
-                                        onClick={async () => {
-                                            const currentTableId = manualProviderTableId;
-                                            setCustomProviderBase('');
-                                            setCustomProviderKm('');
-                                            setCustomProviderHour('');
-                                            setUseSavedValues(false);
-                                            userManuallyEditedRef.current = false;
-                                            setMission(prev => prev ? { ...prev, revenue_edit_reason: '', cost_edit_reason: '', billing_verified_by: null } : prev);
-                                            setManualProviderTableId('');
-                                            await supabase.from('missions').update({ revenue_edit_reason: '', cost_edit_reason: '', billing_verified_by: null }).eq('id', mission.id);
-                                            await supabase.from('system_logs').delete().eq('entity', 'BillingAdjustment').eq('entity_id', mission.id);
-                                            setTimeout(() => {
-                                                setManualProviderTableId(currentTableId);
-                                                showNotification('Recalculado', 'Valores do fornecedor recalculados com sucesso.', 'success');
-                                            }, 100);
-                                        }}
+                                        onClick={() => setShowRecalcProviderDialog(true)}
                                         className="flex items-center gap-1.5 px-3 py-1.5 bg-red-600 text-white text-[10px] font-black uppercase rounded-lg hover:bg-red-700 transition-all shadow-md active:scale-95"
                                         title="Recalcular custos do fornecedor"
                                     >
                                         <RefreshCw size={12} />
                                         Recalcular
                                     </button>
+                                )}
+                                {showRecalcProviderDialog && (
+                                    <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/70 backdrop-blur-sm p-4 animate-in fade-in" onClick={() => setShowRecalcProviderDialog(false)}>
+                                        <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6" onClick={(e) => e.stopPropagation()}>
+                                            <h3 className="text-base font-black text-gray-900 uppercase tracking-widest mb-2">Recalcular pagamento do fornecedor</h3>
+                                            <p className="text-xs text-gray-600 mb-5">Escolha como você quer recalcular o custo desta OS.</p>
+                                            <div className="flex flex-col gap-3">
+                                                <button
+                                                    data-testid="btn-recalc-and-reset"
+                                                    onClick={async () => {
+                                                        setShowRecalcProviderDialog(false);
+                                                        const currentTableId = manualProviderTableId;
+                                                        setCustomProviderBase('');
+                                                        setCustomProviderKm('');
+                                                        setCustomProviderHour('');
+                                                        setUseSavedValues(false);
+                                                        userManuallyEditedRef.current = false;
+                                                        setMission(prev => prev ? { ...prev, revenue_edit_reason: '', cost_edit_reason: '', billing_verified_by: null } : prev);
+                                                        setManualProviderTableId('');
+                                                        if (mission) {
+                                                            await supabase.from('missions').update({ revenue_edit_reason: '', cost_edit_reason: '', billing_verified_by: null }).eq('id', mission.id);
+                                                            await supabase.from('system_logs').delete().eq('entity', 'BillingAdjustment').eq('entity_id', mission.id);
+                                                        }
+                                                        setTimeout(() => {
+                                                            setManualProviderTableId(currentTableId);
+                                                            showNotification('Recalculado', 'Dados zerados. Sistema refez o cálculo automaticamente.', 'success');
+                                                        }, 100);
+                                                    }}
+                                                    className="w-full text-left px-4 py-3 bg-red-600 hover:bg-red-700 text-white rounded-xl shadow-md transition-all"
+                                                >
+                                                    <div className="text-sm font-black uppercase tracking-wider">Recalcular e Zerar dados</div>
+                                                    <div className="text-[11px] font-medium opacity-90 mt-0.5">Apaga edições manuais e refaz todo o cálculo a partir das tabelas.</div>
+                                                </button>
+                                                <button
+                                                    data-testid="btn-recalc-manual-adjust"
+                                                    onClick={() => {
+                                                        setShowRecalcProviderDialog(false);
+                                                        setUseSavedValues(false);
+                                                        userManuallyEditedRef.current = true;
+                                                        showNotification('Ajuste Manual', 'Edite os campos de custo abaixo. Ao clicar em Salvar Ajustes, os valores serão preservados.', 'info');
+                                                    }}
+                                                    className="w-full text-left px-4 py-3 bg-slate-900 hover:bg-black text-white rounded-xl shadow-md transition-all"
+                                                >
+                                                    <div className="text-sm font-black uppercase tracking-wider">Ajuste Manual</div>
+                                                    <div className="text-[11px] font-medium opacity-90 mt-0.5">Mantém os valores e libera edição livre dos campos abaixo.</div>
+                                                </button>
+                                                <button
+                                                    onClick={() => setShowRecalcProviderDialog(false)}
+                                                    className="w-full px-4 py-2 text-xs font-bold text-gray-600 hover:text-gray-900 uppercase tracking-widest mt-1"
+                                                >
+                                                    Cancelar
+                                                </button>
+                                            </div>
+                                        </div>
+                                    </div>
                                 )}
                             </div>
 
