@@ -151,7 +151,24 @@ const TollConfirmationDialog: React.FC<Props> = ({ isOpen, mission, initialValue
                         <p className="text-[11px] font-bold text-amber-900 leading-relaxed">
                             Para evitar aprovações com pedágio acidentalmente zerado, confirme manualmente o pedágio desta OS antes de prosseguir.
                         </p>
-                        <p className="text-[10px] font-bold text-amber-700 mt-1 uppercase tracking-wide">Rota: {routeLabel}</p>
+                        <div className="mt-2 space-y-1">
+                            <p className="text-[10px] font-bold text-amber-800 leading-snug" data-testid="text-toll-origin">
+                                <span className="uppercase tracking-wide text-amber-700">Origem:</span>{' '}
+                                <span className="text-amber-900">{mission.origin || '—'}</span>
+                            </p>
+                            <p className="text-[10px] font-bold text-amber-800 leading-snug" data-testid="text-toll-destination">
+                                <span className="uppercase tracking-wide text-amber-700">Destino:</span>{' '}
+                                <span className="text-amber-900">{mission.destination || '—'}</span>
+                            </p>
+                            <p className="text-[10px] font-bold text-amber-800 leading-snug" data-testid="text-toll-total-km">
+                                <span className="uppercase tracking-wide text-amber-700">Total de KM:</span>{' '}
+                                <span className="text-amber-900">
+                                    {Number(mission.totalDistance || (mission as any).total_distance || 0) > 0
+                                        ? `${Number(mission.totalDistance || (mission as any).total_distance).toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })} km`
+                                        : '—'}
+                                </span>
+                            </p>
+                        </div>
                     </div>
 
                     <div className="grid grid-cols-2 gap-3">
