@@ -1922,9 +1922,15 @@ export async function registerRoutes(
       const { data: checkMission } = await supabaseAdmin.from('missions').select('id').eq('id', missionId).single();
       if (!checkMission) return res.status(404).json({ error: `OS ${osNumber} (ID: ${missionId}) não encontrada` });
       const url = `${req.protocol}://${req.get('host')}/api/missions/${missionId}/force-recalculate`;
-      const response = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' } });
-      const result = await response.json();
-      return res.json(result);
+      const fwdHeaders: Record<string, string> = { 'Content-Type': 'application/json' };
+      const auth = req.headers['authorization'];
+      if (typeof auth === 'string') fwdHeaders['Authorization'] = auth;
+      const cookie = req.headers['cookie'];
+      if (typeof cookie === 'string') fwdHeaders['Cookie'] = cookie;
+      const bodyStr = req.body && typeof req.body === 'object' && Object.keys(req.body).length > 0 ? JSON.stringify(req.body) : undefined;
+      const response = await fetch(url, { method: 'POST', headers: fwdHeaders, body: bodyStr });
+      const result = await response.json().catch(() => ({}));
+      return res.status(response.status).json(result);
     } catch (e: any) {
       res.status(500).json({ error: e.message });
     }
