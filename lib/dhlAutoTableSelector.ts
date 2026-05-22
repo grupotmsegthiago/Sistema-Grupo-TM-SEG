@@ -184,6 +184,10 @@ export interface DhlCorrectionRecord {
   destCity: string;
   chosenTableId: string;
   createdAt: string;
+  // Task #115: id da linha em system_logs, quando disponível, para permitir
+  // que o auditor remova entradas específicas direto do painel "Memória DHL".
+  // Pode ser omitido para inserções otimistas que ainda não receberam o id.
+  logId?: string | number | null;
 }
 
 let DHL_CORRECTIONS_CACHE: DhlCorrectionRecord[] = [];

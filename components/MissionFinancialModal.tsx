@@ -585,7 +585,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
     const cutoff = new Date(Date.now() - 90 * 86400000).toISOString();
     supabase
       .from('system_logs')
-      .select('details, created_at')
+      .select('id, details, created_at')
       .eq('entity', 'DhlTableCorrection')
       .gte('created_at', cutoff)
       .order('created_at', { ascending: false })
@@ -607,6 +607,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
               destCity: String(d.destCity || ''),
               chosenTableId: String(d.chosenTableId),
               createdAt: row.created_at || new Date().toISOString(),
+              logId: row.id ?? null,
             });
           } catch { /* ignore */ }
         }
@@ -3236,11 +3237,12 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                                         entity: 'DhlTableCorrection',
                                                         entity_id: mission.id,
                                                         details: JSON.stringify(payload),
-                                                    }]).then(({ error }) => {
+                                                    }]).select('id').then(({ data: insData, error }) => {
                                                         if (error) {
                                                             console.warn('[DHL Memória] Falha ao registrar correção:', error.message);
                                                             return;
                                                         }
+                                                        const newLogId = (insData && insData[0]?.id) ?? null;
                                                         const updated: DhlCorrectionRecord[] = [
                                                             {
                                                                 region: payload.region,
@@ -3249,6 +3251,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                                                 destCity: payload.destCity,
                                                                 chosenTableId: payload.chosenTableId,
                                                                 createdAt: payload.date,
+                                                                logId: newLogId,
                                                             },
                                                             ...dhlCorrections,
                                                         ];
@@ -3353,11 +3356,33 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                         </div>
                                     );
                                 })()}
-                                {/* Task #111: relatório simples — correções por região nos últimos 30 dias (apenas para missões DHL). */}
+                                {/* Task #111/#115: painel "Memória DHL" — estatísticas por região nos
+                                    últimos 30 dias e lista das correções mais recentes com botão para
+                                    o auditor remover (apaga a linha em system_logs e atualiza o cache
+                                    do dhlAutoTableSelector imediatamente). */}
                                 {isDhlSupplyClient(mission.originalClientName || mission.client) && (() => {
                                     const stats = getDhlCorrectionStatsByRegion(30);
                                     const entries = Object.entries(stats).sort((a, b) => b[1] - a[1]);
                                     const total = entries.reduce((s, [, n]) => s + n, 0);
+                                    const recent = dhlCorrections.slice(0, 15);
+                                    const handleForget = (rec: DhlCorrectionRecord) => {
+                                        if (!rec.logId) {
+                                            showNotification('Aviso', 'Esta correção ainda não foi sincronizada — reabra o modal antes de removê-la.', 'info');
+                                            return;
+                                        }
+                                        if (!window.confirm('Esquecer esta correção DHL? Ela não vai mais influenciar as próximas sugestões.')) return;
+                                        supabase.from('system_logs').delete().eq('id', rec.logId).then(({ error }) => {
+                                            if (error) {
+                                                console.warn('[DHL Memória] Falha ao remover correção:', error.message);
+                                                showNotification('Erro', 'Não foi possível remover esta correção: ' + error.message, 'error');
+                                                return;
+                                            }
+                                            const updated = dhlCorrections.filter(c => String(c.logId ?? '') !== String(rec.logId));
+                                            setDhlCorrections(updated);
+                                            setDhlCorrectionsCache(updated);
+                                            showNotification('Memória DHL', 'Correção esquecida com sucesso.', 'success');
+                                        });
+                                    };
                                     return (
                                         <div
                                             className="mt-2 p-2 rounded-lg border border-purple-100 bg-purple-50/60"
@@ -3380,6 +3405,52 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                                             {region}: {count}
                                                         </span>
                                                     ))}
+                                                </div>
+                                            )}
+                                            {recent.length > 0 && (
+                                                <div className="mt-2 pt-2 border-t border-purple-200">
+                                                    <div className="text-[9px] font-black text-purple-700 uppercase tracking-wide mb-1">
+                                                        Correções recentes (últimas {recent.length})
+                                                    </div>
+                                                    <ul className="space-y-1 max-h-44 overflow-y-auto pr-1" data-testid="list-dhl-corrections">
+                                                        {recent.map((rec, idx) => {
+                                                            const chosenTable = clientTables.find(t => String(t.id) === String(rec.chosenTableId));
+                                                            const tableLabel = chosenTable?.operation_type || `Tabela #${rec.chosenTableId}`;
+                                                            const when = rec.createdAt ? new Date(rec.createdAt).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' }) : '—';
+                                                            const route = (rec.originCity || rec.destCity)
+                                                                ? `${rec.originCity || '?'} → ${rec.destCity || '?'}`
+                                                                : 'Rota não informada';
+                                                            const key = rec.logId != null ? String(rec.logId) : `${rec.createdAt}-${idx}`;
+                                                            return (
+                                                                <li
+                                                                    key={key}
+                                                                    className="flex items-start gap-2 bg-white border border-purple-200 rounded p-1.5"
+                                                                    data-testid={`item-dhl-correction-${key}`}
+                                                                >
+                                                                    <div className="flex-1 min-w-0">
+                                                                        <div className="text-[9px] text-purple-500 font-bold">{when}</div>
+                                                                        <div className="text-[10px] font-bold text-purple-900 truncate" title={route}>{route}</div>
+                                                                        <div className="text-[9px] text-purple-700">
+                                                                            <span className="font-bold">{rec.region || '—'}</span>
+                                                                            <span> · {rec.band || 0}km</span>
+                                                                        </div>
+                                                                        <div className="text-[9px] text-purple-800 truncate" title={tableLabel}>
+                                                                            → {tableLabel}
+                                                                        </div>
+                                                                    </div>
+                                                                    <button
+                                                                        type="button"
+                                                                        onClick={() => handleForget(rec)}
+                                                                        className="shrink-0 text-[9px] font-black uppercase px-2 py-1 rounded bg-red-50 text-red-700 border border-red-200 hover:bg-red-100 active:scale-95 transition-all"
+                                                                        title="Esquecer esta correção"
+                                                                        data-testid={`button-forget-dhl-correction-${key}`}
+                                                                    >
+                                                                        Esquecer
+                                                                    </button>
+                                                                </li>
+                                                            );
+                                                        })}
+                                                    </ul>
                                                 </div>
                                             )}
                                         </div>
