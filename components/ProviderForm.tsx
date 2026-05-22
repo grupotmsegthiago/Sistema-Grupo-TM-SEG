@@ -990,51 +990,6 @@ const ProviderForm: React.FC<ProviderFormProps> = ({ onBack, onNavigateToVehicle
                   </div>
               </div>
               
-              <div className="bg-gray-50 p-4 rounded-xl border border-gray-200">
-                  <h4 className="text-xs font-bold text-gray-500 uppercase mb-3 flex items-center gap-2">{editingCostId ? <Edit size={14}/> : <Plus size={14}/>} {editingCostId ? 'Editar Custo' : 'Adicionar Novo Custo'}</h4>
-                  <form onSubmit={handleCostSubmit} className="space-y-4">
-                      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                          <div className="md:col-span-2">
-                              <label className={LABEL_CLASS}>Operação / Rota</label>
-                              <input required type="text" className="w-full p-2 border rounded text-xs uppercase font-bold" value={costFormData.operation_type} onChange={e => setCostFormData({...costFormData, operation_type: e.target.value})} placeholder="Ex: CARACTERIZADA - SUDESTE" />
-                          </div>
-                          <div className="relative">
-                              <label className={LABEL_CLASS}>Custo Base (Acionamento)</label>
-                              <input required type="number" step="0.01" className={`w-full p-2 border rounded text-xs font-bold text-red-600 ${!isFinanceAdmin ? 'bg-gray-100 cursor-not-allowed' : ''}`} value={costFormData.activation_cost} onChange={e => setCostFormData({...costFormData, activation_cost: e.target.value})} readOnly={!isFinanceAdmin} />
-                              {!isFinanceAdmin && <Lock size={12} className="absolute right-2 top-2.5 text-gray-400" />}
-                          </div>
-                          <div>
-                              <label className={LABEL_CLASS}>KM Franquia</label>
-                              <input required type="number" className="w-full p-2 border rounded text-xs" value={costFormData.franchise_km} onChange={e => setCostFormData({...costFormData, franchise_km: e.target.value})} />
-                          </div>
-                          <div>
-                              <label className={LABEL_CLASS}>Horas Franquia</label>
-                              <input required type="number" className="w-full p-2 border rounded text-xs" value={costFormData.franchise_hours} onChange={e => setCostFormData({...costFormData, franchise_hours: e.target.value})} />
-                          </div>
-                          <div className="relative">
-                              <label className={LABEL_CLASS}>KM Extra</label>
-                              <input required type="number" step="0.01" className={`w-full p-2 border rounded text-xs ${!isFinanceAdmin ? 'bg-gray-100 cursor-not-allowed' : ''}`} value={costFormData.cost_per_extra_km} onChange={e => setCostFormData({...costFormData, cost_per_extra_km: e.target.value})} readOnly={!isFinanceAdmin} />
-                              {!isFinanceAdmin && <Lock size={12} className="absolute right-2 top-2.5 text-gray-400" />}
-                          </div>
-                          <div className="relative">
-                              <label className={LABEL_CLASS}>Hora Extra</label>
-                              <input required type="number" step="0.01" className={`w-full p-2 border rounded text-xs ${!isFinanceAdmin ? 'bg-gray-100 cursor-not-allowed' : ''}`} value={costFormData.cost_per_extra_hour} onChange={e => setCostFormData({...costFormData, cost_per_extra_hour: e.target.value})} readOnly={!isFinanceAdmin} />
-                              {!isFinanceAdmin && <Lock size={12} className="absolute right-2 top-2.5 text-gray-400" />}
-                          </div>
-                          <div>
-                              <label className={LABEL_CLASS}>Taxa Cancelamento</label>
-                              <input type="number" step="0.01" className="w-full p-2 border rounded text-xs" value={costFormData.cancellation_fee} onChange={e => setCostFormData({...costFormData, cancellation_fee: e.target.value})} />
-                          </div>
-                      </div>
-                      <div className="flex justify-end gap-2">
-                          {editingCostId && <button type="button" onClick={() => setEditingCostId(null)} className="px-4 py-1.5 border rounded text-xs font-bold text-gray-500">Cancelar</button>}
-                          <button type="submit" disabled={isSavingCost} className="px-4 py-1.5 bg-black text-white text-xs font-bold rounded hover:bg-gray-800 flex items-center gap-2">
-                              {isSavingCost ? <Loader2 size={12} className="animate-spin" /> : <Save size={12} />} Salvar Custo
-                          </button>
-                      </div>
-                  </form>
-              </div>
-
               <div className="flex items-center gap-2 px-3 py-2 bg-white border border-gray-200 rounded-xl">
                 <Search size={14} className="text-gray-400" />
                 <input
