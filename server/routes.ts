@@ -7505,7 +7505,24 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
       const limit = Math.max(1, Math.min(20, Number(req.query.limit) || 5));
       const KEYS: ManualReportKey[] = ['legal', 'pending', 'approval', 'missingInfo', 'stuckNf'];
       const result: Record<string, any[]> = {};
+      const lastScheduled: Record<string, any | null> = {};
+      const mapRow = (r: any) => {
+        let d: any = {};
+        try { d = typeof r.details === 'string' ? JSON.parse(r.details) : (r.details || {}); } catch {}
+        return {
+          id: r.id,
+          createdAt: r.created_at,
+          userName: r.user_name,
+          source: (d.source === 'scheduled' ? 'scheduled' : 'manual'),
+          total: typeof d.total === 'number' ? d.total : null,
+          emailTo: Array.isArray(d.emailTo) ? d.emailTo : [],
+          success: d.success === true,
+          errorMessage: d.errorMessage || null,
+          date: d.date || null,
+        };
+      };
       await Promise.all(KEYS.map(async (key) => {
+        // Lista curta (display "Últimas execuções"): manuais + agendadas misturadas.
         const { data, error } = await supabaseAdmin
           .from('system_logs')
           .select('id, created_at, user_name, details')
@@ -7514,24 +7531,24 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
           .eq('action_type', 'MANUAL_REPORT_RUN')
           .order('created_at', { ascending: false })
           .limit(limit);
-        if (error) { result[key] = []; return; }
-        result[key] = (data || []).map((r: any) => {
-          let d: any = {};
-          try { d = typeof r.details === 'string' ? JSON.parse(r.details) : (r.details || {}); } catch {}
-          return {
-            id: r.id,
-            createdAt: r.created_at,
-            userName: r.user_name,
-            source: d.source || 'manual',
-            total: typeof d.total === 'number' ? d.total : null,
-            emailTo: Array.isArray(d.emailTo) ? d.emailTo : [],
-            success: d.success === true,
-            errorMessage: d.errorMessage || null,
-            date: d.date || null,
-          };
-        });
+        if (error) { result[key] = []; }
+        else { result[key] = (data || []).map(mapRow); }
+
+        // Task #98 — Último agendado garantido por relatório, independente do `limit`.
+        // Como `source` está no JSON em `details`, varremos um lote maior (até 200)
+        // e selecionamos a primeira ocorrência com source='scheduled'.
+        const { data: schedScan } = await supabaseAdmin
+          .from('system_logs')
+          .select('id, created_at, user_name, details')
+          .eq('entity', 'DailyReport')
+          .eq('entity_id', key)
+          .eq('action_type', 'MANUAL_REPORT_RUN')
+          .order('created_at', { ascending: false })
+          .limit(200);
+        const mapped = (schedScan || []).map(mapRow);
+        lastScheduled[key] = mapped.find(r => r.source === 'scheduled') || null;
       }));
-      res.json({ ok: true, runs: result });
+      res.json({ ok: true, runs: result, lastScheduled });
     } catch (e: any) {
       res.status(500).json({ ok: false, error: e?.message || 'Falha ao carregar execuções' });
     }

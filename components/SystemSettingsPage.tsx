@@ -76,7 +76,7 @@ const SystemSettingsPage: React.FC<{ onNavigate?: (id: string) => void }> = () =
   const [manualRunsFilterMode, setManualRunsFilterMode] = useState<'' | 'test' | 'official'>('');
   const [manualRunsFilterFrom, setManualRunsFilterFrom] = useState<string>('');
   const [manualRunsFilterTo, setManualRunsFilterTo] = useState<string>('');
-  const [runs, setRuns] = useState<Record<string, Array<{
+  type RunEntry = {
     id: string;
     createdAt: string;
     userName: string;
@@ -86,7 +86,9 @@ const SystemSettingsPage: React.FC<{ onNavigate?: (id: string) => void }> = () =
     success: boolean;
     errorMessage: string | null;
     date: string | null;
-  }>>>({});
+  };
+  const [runs, setRuns] = useState<Record<string, RunEntry[]>>({});
+  const [lastScheduled, setLastScheduled] = useState<Record<string, RunEntry | null>>({});
   const [runsLoading, setRunsLoading] = useState(false);
 
   // Task #90 — Modal de histórico filtrável + CSV
@@ -176,7 +178,10 @@ const SystemSettingsPage: React.FC<{ onNavigate?: (id: string) => void }> = () =
     try {
       const res = await fetch('/api/admin/system-settings/daily-reports/runs?limit=5', { headers: authHeaders() });
       const json = await res.json();
-      if (json?.ok) setRuns(json.runs || {});
+      if (json?.ok) {
+        setRuns(json.runs || {});
+        setLastScheduled(json.lastScheduled || {});
+      }
     } catch {
       // silencioso — execuções são informacionais
     } finally {
@@ -184,14 +189,15 @@ const SystemSettingsPage: React.FC<{ onNavigate?: (id: string) => void }> = () =
     }
   };
 
-  const buildHistoryQuery = (page: number, format?: 'csv') => {
+  const buildHistoryQuery = (page: number, format?: 'csv', filtersOverride?: typeof historyFilters) => {
+    const f = filtersOverride || historyFilters;
     const qs = new URLSearchParams();
-    if (historyFilters.reportKey) qs.set('report_key', historyFilters.reportKey);
-    if (historyFilters.from) qs.set('from', historyFilters.from);
-    if (historyFilters.to) qs.set('to', historyFilters.to);
-    if (historyFilters.user.trim()) qs.set('user', historyFilters.user.trim());
-    if (historyFilters.source) qs.set('source', historyFilters.source);
-    if (historyFilters.status) qs.set('status', historyFilters.status);
+    if (f.reportKey) qs.set('report_key', f.reportKey);
+    if (f.from) qs.set('from', f.from);
+    if (f.to) qs.set('to', f.to);
+    if (f.user.trim()) qs.set('user', f.user.trim());
+    if (f.source) qs.set('source', f.source);
+    if (f.status) qs.set('status', f.status);
     if (format === 'csv') {
       qs.set('format', 'csv');
     } else {
@@ -201,10 +207,10 @@ const SystemSettingsPage: React.FC<{ onNavigate?: (id: string) => void }> = () =
     return qs.toString();
   };
 
-  const fetchHistory = async (page = historyPage) => {
+  const fetchHistory = async (page = historyPage, filtersOverride?: typeof historyFilters) => {
     setHistoryLoading(true);
     try {
-      const res = await fetch(`/api/admin/system-settings/daily-reports/runs/history?${buildHistoryQuery(page)}`, { headers: authHeaders() });
+      const res = await fetch(`/api/admin/system-settings/daily-reports/runs/history?${buildHistoryQuery(page, undefined, filtersOverride)}`, { headers: authHeaders() });
       const json = await res.json();
       if (json?.ok) {
         setHistoryRows(json.runs || []);
@@ -245,10 +251,16 @@ const SystemSettingsPage: React.FC<{ onNavigate?: (id: string) => void }> = () =
     }
   };
 
-  const openHistoryModal = () => {
+  const openHistoryModal = (presetReportKey?: ReportKey) => {
     setHistoryOpen(true);
     setHistoryPage(0);
-    fetchHistory(0);
+    if (presetReportKey) {
+      const nextFilters = { ...historyFilters, reportKey: presetReportKey };
+      setHistoryFilters(nextFilters);
+      fetchHistory(0, nextFilters);
+    } else {
+      fetchHistory(0);
+    }
   };
 
   const applyHistoryFilters = () => {
@@ -481,11 +493,42 @@ const SystemSettingsPage: React.FC<{ onNavigate?: (id: string) => void }> = () =
           {REPORTS.map(r => {
             const s = settings[r.key];
             const d = defaults[r.key];
+            const lastScheduledRun = lastScheduled[r.key] || null;
+            const badgeBase = 'inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold border transition-colors cursor-pointer';
+            const badgeStyle = !lastScheduledRun
+              ? 'bg-gray-100 text-gray-600 border-gray-200 hover:bg-gray-200'
+              : (lastScheduledRun.success
+                  ? 'bg-emerald-100 text-emerald-800 border-emerald-200 hover:bg-emerald-200'
+                  : 'bg-red-100 text-red-800 border-red-200 hover:bg-red-200');
+            const badgeLabel = !lastScheduledRun
+              ? 'Nunca executado'
+              : `${lastScheduledRun.success ? 'OK' : 'FALHOU'} em ${(() => {
+                  try {
+                    return new Date(lastScheduledRun.createdAt).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+                  } catch { return lastScheduledRun.createdAt; }
+                })()}`;
+            const badgeTitle = !lastScheduledRun
+              ? 'Nenhuma execução agendada registrada. Clique para abrir o histórico.'
+              : `Última execução agendada: ${lastScheduledRun.success ? 'sucesso' : 'falha'} em ${fmtDate(lastScheduledRun.createdAt)}${lastScheduledRun.errorMessage ? ` — ${lastScheduledRun.errorMessage}` : ''}. Clique para abrir o histórico.`;
             return (
               <div key={r.key} className="border border-gray-200 rounded-lg p-4 bg-gray-50" data-testid={`card-report-${r.key}`}>
                 <div className="flex items-center justify-between gap-3 mb-3">
                   <div>
-                    <h4 className="font-semibold text-gray-800">{r.title}</h4>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <h4 className="font-semibold text-gray-800">{r.title}</h4>
+                      <button
+                        type="button"
+                        onClick={() => openHistoryModal(r.key)}
+                        className={`${badgeBase} ${badgeStyle}`}
+                        title={badgeTitle}
+                        data-testid={`badge-last-scheduled-${r.key}`}
+                      >
+                        {!lastScheduled
+                          ? <Clock size={10} />
+                          : (lastScheduled.success ? <CheckCircle2 size={10} /> : <AlertTriangle size={10} />)}
+                        {badgeLabel}
+                      </button>
+                    </div>
                     <p className="text-xs text-gray-500">{r.description}</p>
                   </div>
                   <div className="flex items-center gap-2 whitespace-nowrap flex-wrap justify-end">
