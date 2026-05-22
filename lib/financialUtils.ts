@@ -727,9 +727,17 @@ export const calculateMissionFinancials = (
     const providerTablesNoMaster = providerTables.filter(t => !isAutoMasterRow(t));
     const autoMasterRows = providerTables.filter(t => normalize(t.provider) === missionProviderName && isAutoMasterRow(t));
     const autoMasterConfig = extractAutoMasterConfig(autoMasterRows);
-    const autoEngineActive = !!autoMasterConfig && !manualTableOverrides?.providerTableId && !mission.is_same_os && !isZeroValueMission;
+    // Task #55: motor automático é a fonte oficial quando ligado. NÃO depende de
+    // manualTableOverrides.providerTableId — seleções manuais de tabela legada
+    // ficam desativadas para fornecedores com motor ativo.
+    const autoEngineActive = !!autoMasterConfig && !mission.is_same_os && !isZeroValueMission;
 
-    let filteredProviderTables = providerTablesNoMaster.filter(t => normalize(t.provider) === missionProviderName);
+    // Quando o motor está ativo, esvazia a lista de tabelas regulares para que
+    // a lógica de score abaixo não selecione nada — o `appliedProviderTable`
+    // será sobrescrito por uma tabela sintética derivada da configuração mestre.
+    let filteredProviderTables = autoEngineActive
+        ? []
+        : providerTablesNoMaster.filter(t => normalize(t.provider) === missionProviderName);
     if (filteredProviderTables.length === 0 && missionProviderName.length > 2) {
          filteredProviderTables = providerTablesNoMaster.filter(t => {
             const tProv = normalize(t.provider);

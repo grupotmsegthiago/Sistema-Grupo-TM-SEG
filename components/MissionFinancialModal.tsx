@@ -3163,15 +3163,21 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
 
                             <div className="mb-4">
                                 <label className={LABEL_CLASS}>Tabela de Custo de Referência</label>
+                                {financialData.autoEngine?.active && (
+                                    <div className="mb-2 p-2 rounded-lg bg-emerald-50 border border-emerald-200 text-[10px] font-bold text-emerald-800 uppercase tracking-widest flex items-center gap-1.5">
+                                        <Zap size={11}/> Motor Automático ATIVO — tabelas manuais ignoradas
+                                    </div>
+                                )}
                                 <div className="flex gap-2">
                                     <select 
-                                        className={`w-full p-2 bg-gray-50 border rounded-lg text-xs font-bold text-gray-700 uppercase outline-none focus:border-red-500 ${isZeroCostError ? 'border-red-300 bg-red-50 text-red-900 animate-pulse' : 'border-gray-200'}`}
-                                        value={manualProviderTableId || ''}
-                                        onChange={(e) => { if (isEffectivelyLocked) return; setManualProviderTableId(e.target.value); setCustomProviderBase(''); setCustomProviderKm(''); setCustomProviderHour(''); setUseSavedValues(false); userManuallyEditedRef.current = false; setMission(prev => prev ? { ...prev, revenue_edit_reason: '', cost_edit_reason: '', billing_verified_by: null } : prev); if (mission) supabase.from('missions').update({ revenue_edit_reason: '', cost_edit_reason: '', billing_verified_by: null }).eq('id', mission.id); }}
-                                        disabled={mission.is_same_os || isEffectivelyLocked}
+                                        className={`w-full p-2 bg-gray-50 border rounded-lg text-xs font-bold text-gray-700 uppercase outline-none focus:border-red-500 ${isZeroCostError ? 'border-red-300 bg-red-50 text-red-900 animate-pulse' : 'border-gray-200'} ${financialData.autoEngine?.active ? 'opacity-50 cursor-not-allowed' : ''}`}
+                                        value={financialData.autoEngine?.active ? '' : (manualProviderTableId || '')}
+                                        onChange={(e) => { if (isEffectivelyLocked || financialData.autoEngine?.active) return; setManualProviderTableId(e.target.value); setCustomProviderBase(''); setCustomProviderKm(''); setCustomProviderHour(''); setUseSavedValues(false); userManuallyEditedRef.current = false; setMission(prev => prev ? { ...prev, revenue_edit_reason: '', cost_edit_reason: '', billing_verified_by: null } : prev); if (mission) supabase.from('missions').update({ revenue_edit_reason: '', cost_edit_reason: '', billing_verified_by: null }).eq('id', mission.id); }}
+                                        disabled={mission.is_same_os || isEffectivelyLocked || !!financialData.autoEngine?.active}
+                                        data-testid="select-provider-table"
                                     >
-                                        <option value="">{mission.is_same_os ? 'Custo Zero (Mesma OS)' : 'IA Detectando Melhor Custo...'}</option>
-                                        {!mission.is_same_os && [...filteredProviderTables].sort((a, b) => (a.operation_type || '').localeCompare(b.operation_type || '')).map(t => (
+                                        <option value="">{financialData.autoEngine?.active ? `AUTO ${financialData.autoEngine.bandKm}KM / ${financialData.autoEngine.bandHours}h` : (mission.is_same_os ? 'Custo Zero (Mesma OS)' : 'IA Detectando Melhor Custo...')}</option>
+                                        {!mission.is_same_os && !financialData.autoEngine?.active && [...filteredProviderTables].sort((a, b) => (a.operation_type || '').localeCompare(b.operation_type || '')).map(t => (
                                             <option key={t.id} value={t.id}>{t.operation_type}</option>
                                         ))}
                                     </select>
