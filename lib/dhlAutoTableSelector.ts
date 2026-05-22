@@ -147,6 +147,7 @@ const extractEmbeddedKms = (desc: string): number[] => {
 export type DhlMatchLevel =
   | 'exact_route'
   | 'region_band'
+  | 'region_any_km'
   | 'memory_route'
   | 'memory_region'
   | 'none';
@@ -278,6 +279,7 @@ export const selectDhlClientTable = (
         detectedRegion,
         band,
         reason: `Memória do auditor (rota ${originCity}→${destCity}, ${detectedRegion} + ${band}km)`,
+        clientName: targetClient,
       };
     }
     const regionMatches = DHL_CORRECTIONS_CACHE.filter(c =>
@@ -290,6 +292,7 @@ export const selectDhlClientTable = (
         detectedRegion,
         band,
         reason: `Memória do auditor (${detectedRegion} + ${band}km)`,
+        clientName: targetClient,
       };
     }
   }
@@ -320,6 +323,8 @@ export const selectDhlClientTable = (
     }
   }
 
+  const k = Math.max(0, Number(googleKm) || 0);
+
   const regionCandidates = dhlTables.filter(t => {
     if ((t.franchise_km || 0) !== band) return false;
     const region = regionFromDhlOperationType(t.operation_type);
@@ -327,38 +332,75 @@ export const selectDhlClientTable = (
     return region === detectedRegion;
   });
 
-  if (regionCandidates.length === 0) {
+  if (regionCandidates.length > 0) {
+    const scored = regionCandidates.map(t => {
+      const desc = stripDhlOpDescription(t.operation_type).desc;
+      const embedded = extractEmbeddedKms(desc);
+      const diff = embedded.length > 0
+        ? Math.min(...embedded.map(n => Math.abs(n - k)))
+        : Number.POSITIVE_INFINITY;
+      return { t, diff, op: t.operation_type || '' };
+    });
+    scored.sort((a, b) => {
+      if (a.diff !== b.diff) return a.diff - b.diff;
+      return a.op.localeCompare(b.op);
+    });
     return {
-      table: null,
-      matchLevel: 'none',
+      table: scored[0].t,
+      matchLevel: 'region_band',
       detectedRegion,
       band,
-      reason: `Sem tabela DHL para ${detectedRegion} + ${band}km — selecione manualmente`,
+      reason: `Sugestão por Proximidade (${detectedRegion} + ${band}km)`,
       clientName: targetClient,
     };
   }
 
-  const k = Math.max(0, Number(googleKm) || 0);
-  const scored = regionCandidates.map(t => {
-    const desc = stripDhlOpDescription(t.operation_type).desc;
-    const embedded = extractEmbeddedKms(desc);
-    const diff = embedded.length > 0
-      ? Math.min(...embedded.map(n => Math.abs(n - k)))
-      : Number.POSITIVE_INFINITY;
-    return { t, diff, op: t.operation_type || '' };
+  // Fallback por Proximidade Absoluta na Região: quando não há nenhuma
+  // tabela DHL para a região detectada na faixa de KM exata, varre
+  // TODAS as tabelas DHL da MESMA região (ignorando a faixa) e escolhe
+  // aquela cuja distância cadastrada (franchise_km ou KM embutido no
+  // nome) seja a mais próxima do KM Google da rota. Evita que rotas
+  // longas (ex.: Sudeste → Nordeste com 2700+ km) fiquem sem sugestão
+  // só porque a cidade de destino é diferente das já cadastradas.
+  const sameRegionAnyKm = dhlTables.filter(t => {
+    const region = regionFromDhlOperationType(t.operation_type);
+    return region === detectedRegion;
   });
-  scored.sort((a, b) => {
-    if (a.diff !== b.diff) return a.diff - b.diff;
-    return a.op.localeCompare(b.op);
-  });
-  const chosen = scored[0].t;
+  if (sameRegionAnyKm.length > 0) {
+    const scored = sameRegionAnyKm.map(t => {
+      const desc = stripDhlOpDescription(t.operation_type).desc;
+      const embedded = extractEmbeddedKms(desc);
+      const fk = Number(t.franchise_km || 0);
+      const candidates = [...embedded];
+      if (fk > 0) candidates.push(fk);
+      const diff = candidates.length > 0
+        ? Math.min(...candidates.map(n => Math.abs(n - k)))
+        : Number.POSITIVE_INFINITY;
+      return { t, diff, fk, op: t.operation_type || '' };
+    });
+    scored.sort((a, b) => {
+      if (a.diff !== b.diff) return a.diff - b.diff;
+      // desempate: franquia maior primeiro (mais cobertura), depois alfabético
+      if (a.fk !== b.fk) return b.fk - a.fk;
+      return a.op.localeCompare(b.op);
+    });
+    const best = scored[0];
+    return {
+      table: best.t,
+      matchLevel: 'region_any_km',
+      detectedRegion,
+      band,
+      reason: `Proximidade Regional (${detectedRegion}, mais próxima de ${Math.round(k)}km)`,
+      clientName: targetClient,
+    };
+  }
 
   return {
-    table: chosen,
-    matchLevel: 'region_band',
+    table: null,
+    matchLevel: 'none',
     detectedRegion,
     band,
-    reason: `Sugestão por Proximidade (${detectedRegion} + ${band}km)`,
+    reason: `Sem tabela DHL para ${detectedRegion} — selecione manualmente`,
     clientName: targetClient,
   };
 };

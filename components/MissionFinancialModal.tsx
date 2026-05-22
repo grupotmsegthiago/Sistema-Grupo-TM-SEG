@@ -555,7 +555,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
   // a tabela sugerida e gravar a correção em system_logs.
   useEffect(() => {
     const log = financialData?.client?.detectionLog || '';
-    const m = log.match(/^DHL Auto \[(exact_route|region_band|memory_route|memory_region|none)\]:/);
+    const m = log.match(/^DHL Auto \[(exact_route|region_band|region_any_km|memory_route|memory_region|none)\]:/);
     if (!m || !mission) {
       dhlEngineSuggestionRef.current = null;
       return;
@@ -3314,10 +3314,10 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                     <BrainCircuit size={12} className="text-blue-500" />
                                     <span>IA Detectou: {financialData.client.detectionLog}</span>
                                 </div>
-                                {/* Task #108/#111: badge do motor DHL (exact_route / region_band / memory_route / memory_region / none) */}
+                                {/* Task #108/#111: badge do motor DHL (exact_route / region_band / region_any_km / memory_route / memory_region / none) */}
                                 {(() => {
                                     const log = financialData.client.detectionLog || '';
-                                    const m = log.match(/^DHL Auto \[(exact_route|region_band|memory_route|memory_region|none)\]:\s*(.+)$/);
+                                    const m = log.match(/^DHL Auto \[(exact_route|region_band|region_any_km|memory_route|memory_region|none)\]:\s*(.+)$/);
                                     if (!m) return null;
                                     const level = m[1];
                                     const reason = m[2];
@@ -3328,6 +3328,8 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                             ? 'bg-blue-50 text-blue-800 border-blue-300'
                                             : level === 'region_band'
                                             ? 'bg-emerald-50 text-emerald-800 border-emerald-300'
+                                            : level === 'region_any_km'
+                                            ? 'bg-amber-50 text-amber-800 border-amber-300'
                                             : 'bg-gray-100 text-gray-700 border-gray-300';
                                     const prefix =
                                         level === 'memory_route'
@@ -3338,6 +3340,8 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                             ? 'IA DHL — Rota Exata'
                                             : level === 'region_band'
                                             ? 'IA DHL — Sugestão por Proximidade'
+                                            : level === 'region_any_km'
+                                            ? 'IA DHL — Proximidade Regional (fallback de KM)'
                                             : 'DHL — Sem tabela encontrada';
                                     return (
                                         <div

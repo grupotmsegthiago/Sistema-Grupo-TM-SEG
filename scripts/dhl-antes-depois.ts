@@ -63,6 +63,9 @@ const fmtBR = (n: number) =>
   const rows: any[] = [];
   let countExact = 0,
     countRegion = 0,
+    countAnyKm = 0,
+    countMemoryRoute = 0,
+    countMemoryRegion = 0,
     countNone = 0,
     countSame = 0,
     countDiff = 0,
@@ -94,6 +97,9 @@ const fmtBR = (n: number) =>
     const sel = selectDhlClientTable(tables as any, { origin, destination }, km);
     if (sel.matchLevel === 'exact_route') countExact++;
     else if (sel.matchLevel === 'region_band') countRegion++;
+    else if (sel.matchLevel === 'region_any_km') countAnyKm++;
+    else if (sel.matchLevel === 'memory_route') countMemoryRoute++;
+    else if (sel.matchLevel === 'memory_region') countMemoryRegion++;
     else countNone++;
 
     // Calcula a receita projetada com a tabela sugerida pelo motor
@@ -167,6 +173,9 @@ const fmtBR = (n: number) =>
     { Indicador: 'Tabelas DHL cadastradas', Valor: tables.length },
     { Indicador: 'Sugeriu ROTA EXATA (azul)', Valor: countExact },
     { Indicador: 'Sugeriu REGIÃO + FAIXA (verde)', Valor: countRegion },
+    { Indicador: 'Sugeriu PROXIMIDADE REGIONAL — fallback de KM (âmbar)', Valor: countAnyKm },
+    { Indicador: 'Sugeriu MEMÓRIA DO AUDITOR — rota (roxo)', Valor: countMemoryRoute },
+    { Indicador: 'Sugeriu MEMÓRIA DO AUDITOR — região (roxo)', Valor: countMemoryRegion },
     { Indicador: 'SEM sugestão (cinza)', Valor: countNone },
     { Indicador: 'Missões com valor igual', Valor: countSame },
     { Indicador: 'Missões com diferença', Valor: countDiff },
@@ -197,7 +206,7 @@ const fmtBR = (n: number) =>
   const outPath = `/tmp/dhl-antes-depois-${ts}.xlsx`;
   XLSX.writeFile(wb, outPath);
   console.log(`\nPlanilha gerada: ${outPath}`);
-  console.log(`Resumo: ${missions.length} missões | rota exata: ${countExact} | região+faixa: ${countRegion} | sem sugestão: ${countNone}`);
+  console.log(`Resumo: ${missions.length} missões | rota exata: ${countExact} | região+faixa: ${countRegion} | proximidade regional: ${countAnyKm} | memória rota: ${countMemoryRoute} | memória região: ${countMemoryRegion} | sem sugestão: ${countNone}`);
   console.log(`Diferença total: R$ ${fmtBR(totalDelta)}`);
 
   // Sai limpo
