@@ -231,8 +231,131 @@ export async function registerRoutes(
           at: new Date().toISOString(),
         }),
       }]);
+
+      // Task #93 — Alerta quando o disparo manual usa "Enviar somente para"
+      // com algum e-mail fora dos domínios confiáveis (system_settings/alert_recipients).
+      if (info.overrideEmails) {
+        try {
+          await checkExternalReportOverride({
+            reportKey: info.reportKey,
+            overrideEmails: info.overrideEmails,
+            userName,
+            userId,
+          });
+        } catch (e: any) {
+          console.error('[manual_report_run] Falha ao checar domínios externos:', e?.message);
+        }
+      }
     } catch (e: any) {
       console.error('[manual_report_run] Falha ao registrar auditoria:', e?.message);
+    }
+  }
+
+  // Task #93 — Detecta e notifica disparos manuais para domínios não confiáveis.
+  async function checkExternalReportOverride(p: {
+    reportKey: 'legal' | 'pending' | 'approval' | 'missingInfo' | 'stuckNf';
+    overrideEmails: string;
+    userName: string;
+    userId: string | null;
+  }) {
+    const settings = await loadAlertRecipientsSettings();
+    const trusted = settings.trustedEmailDomains
+      .split(',')
+      .map(s => s.trim().toLowerCase().replace(/^@/, ''))
+      .filter(Boolean);
+    if (trusted.length === 0) return;
+
+    const emailList = p.overrideEmails.split(',').map(s => s.trim()).filter(Boolean);
+    const isUntrusted = (e: string) => {
+      const at = e.lastIndexOf('@');
+      if (at < 0) return false;
+      const dom = e.slice(at + 1).toLowerCase();
+      return !trusted.some(t => dom === t || dom.endsWith('.' + t));
+    };
+    const externalEmails = emailList.filter(isUntrusted);
+    if (externalEmails.length === 0) return;
+
+    const recipients = (settings.externalReportAlert || '').split(',').map(s => s.trim()).filter(Boolean);
+    const reportLabels: Record<string, string> = {
+      legal: 'Jurídico Diário',
+      pending: 'Pendências Diário',
+      approval: 'Aprovações Diário',
+      missingInfo: 'Dados Faltantes Diário',
+      stuckNf: 'NF Travadas Diário',
+    };
+    const reportLabel = reportLabels[p.reportKey] || p.reportKey;
+    const summary = `${p.userName} disparou o relatório "${reportLabel}" para ${externalEmails.length} e-mail(s) fora dos domínios confiáveis (${trusted.join(', ')}).`;
+    const nowBR = new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' });
+
+    // 1) Notificação in-app via system_logs (consumida pelo Realtime do NotificationProvider)
+    await supabaseAdmin.from('system_logs').insert([{
+      user_name: 'Sistema',
+      action_type: 'EXTERNAL_REPORT_ALERT',
+      entity: 'DailyReport',
+      entity_id: p.reportKey,
+      details: JSON.stringify({
+        summary,
+        report_key: p.reportKey,
+        report_label: reportLabel,
+        sender_name: p.userName,
+        sender_id: p.userId,
+        override_emails: p.overrideEmails,
+        external_emails: externalEmails,
+        trusted_domains: trusted,
+        at: new Date().toISOString(),
+      }),
+    }]);
+
+    // 2) E-mail para a diretoria
+    if (recipients.length > 0) {
+      try {
+        const { transporter } = await import('./emailService');
+        const SMTP_FROM = `"Grupo TM SEG" <adm@grupotmseg.com.br>`;
+        const externalList = externalEmails.map(e => `<li><strong>${e}</strong></li>`).join('');
+        const fullList = emailList.map(e => `<li>${isUntrusted(e) ? `<strong style="color:#c0392b">${e}</strong> (externo)` : e}</li>`).join('');
+        const html = `<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8"><style>
+          body{margin:0;padding:0;background:#f4f4f4;font-family:'Segoe UI',Arial,sans-serif}
+          .container{max-width:600px;margin:0 auto;background:#fff;border-radius:8px;overflow:hidden;box-shadow:0 2px 12px rgba(0,0,0,.08)}
+          .header{background:#1a1a1a;padding:24px 32px;text-align:center}
+          .header h1{color:#fff;font-size:20px;margin:0}
+          .header .accent{color:#c0392b;font-weight:700}
+          .body-content{padding:28px 32px;color:#333;line-height:1.6;font-size:14px}
+          .alert-box{background:#fdf2f2;border:2px solid #c0392b;padding:16px 20px;margin:16px 0;border-radius:8px}
+          .info-table{width:100%;border-collapse:collapse;margin:14px 0}
+          .info-table td{padding:8px 12px;border-bottom:1px solid #eee;vertical-align:top}
+          .info-table td:first-child{font-weight:600;color:#1a1a1a;width:40%}
+          .footer{background:#1a1a1a;padding:18px;text-align:center;border-top:3px solid #c0392b}
+          .footer p{color:#999;font-size:12px;margin:4px 0}
+        </style></head><body><div class="container">
+          <div class="header"><h1>GRUPO <span class="accent">TM SEG</span></h1></div>
+          <div class="body-content">
+            <h2 style="color:#c0392b;margin-top:0">⚠️ Relatório enviado para e-mail externo</h2>
+            <p>${summary}</p>
+            <div class="alert-box">
+              <p style="margin:0 0 6px;font-weight:700">E-mails externos detectados:</p>
+              <ul style="margin:0;padding-left:18px">${externalList}</ul>
+            </div>
+            <table class="info-table">
+              <tr><td>Relatório</td><td><strong>${reportLabel}</strong></td></tr>
+              <tr><td>Disparado por</td><td>${p.userName}</td></tr>
+              <tr><td>Disparado em</td><td>${nowBR}</td></tr>
+              <tr><td>Domínios confiáveis</td><td>${trusted.join(', ')}</td></tr>
+              <tr><td>Todos os destinatários</td><td><ul style="margin:0;padding-left:18px">${fullList}</ul></td></tr>
+            </table>
+            <p style="font-size:12px;color:#666;margin-top:18px">Alerta automático — ajuste os domínios confiáveis em Configurações → Alertas pontuais.</p>
+          </div>
+          <div class="footer"><p>Grupo TM SEG — Sistema TMSEGo</p></div>
+        </div></body></html>`;
+        await transporter.sendMail({
+          from: SMTP_FROM,
+          to: recipients.join(', '),
+          subject: `⚠️ Relatório "${reportLabel}" enviado para e-mail externo por ${p.userName}`,
+          html,
+        });
+        console.log(`[ExternalReportAlert] ${p.reportKey} por ${p.userName} → ${externalEmails.join(', ')} (notificado: ${recipients.join(', ')})`);
+      } catch (e: any) {
+        console.error('[ExternalReportAlert] Falha ao enviar e-mail:', e?.message);
+      }
     }
   }
 
@@ -5714,11 +5837,15 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
     lossAlert: string;
     cancelMissingInfo: string;
     operationalFallback: string;
+    externalReportAlert: string;
+    trustedEmailDomains: string;
   };
   const ALERT_RECIPIENTS_DEFAULTS: AlertRecipientsSettings = {
     lossAlert: 'barbara@grupotmseg.com.br, thiago@grupotmseg.com.br',
     cancelMissingInfo: 'barbara@grupotmseg.com.br, michelle@grupotmseg.com.br, thiago@grupotmseg.com.br, daniel@grupotmseg.com.br',
     operationalFallback: 'operacional@grupotmseg.com.br',
+    externalReportAlert: 'barbara@grupotmseg.com.br, thiago@grupotmseg.com.br',
+    trustedEmailDomains: 'grupotmseg.com.br',
   };
   const sanitizeAlertRecipientsSettings = (raw: any): AlertRecipientsSettings => ({
     lossAlert: typeof raw?.lossAlert === 'string' && raw.lossAlert.trim()
@@ -5727,6 +5854,10 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
       ? raw.cancelMissingInfo.trim() : ALERT_RECIPIENTS_DEFAULTS.cancelMissingInfo,
     operationalFallback: typeof raw?.operationalFallback === 'string' && raw.operationalFallback.trim()
       ? raw.operationalFallback.trim() : ALERT_RECIPIENTS_DEFAULTS.operationalFallback,
+    externalReportAlert: typeof raw?.externalReportAlert === 'string' && raw.externalReportAlert.trim()
+      ? raw.externalReportAlert.trim() : ALERT_RECIPIENTS_DEFAULTS.externalReportAlert,
+    trustedEmailDomains: typeof raw?.trustedEmailDomains === 'string' && raw.trustedEmailDomains.trim()
+      ? raw.trustedEmailDomains.trim().toLowerCase() : ALERT_RECIPIENTS_DEFAULTS.trustedEmailDomains,
   });
   let alertRecipientsCache: { value: AlertRecipientsSettings; expiresAt: number } | null = null;
   const ALERT_RECIPIENTS_CACHE_TTL = 60 * 1000;

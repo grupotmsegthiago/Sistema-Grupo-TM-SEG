@@ -5,6 +5,8 @@ type Settings = {
   lossAlert: string;
   cancelMissingInfo: string;
   operationalFallback: string;
+  externalReportAlert: string;
+  trustedEmailDomains: string;
 };
 
 type HistoryEntry = {
@@ -35,6 +37,18 @@ const FIELDS: { key: keyof Settings; title: string; description: string; placeho
     title: 'Fallback operacional (cliente/fornecedor sem e-mail)',
     description: 'E-mail usado como destinatário quando o cliente ou fornecedor da OS não possui e-mail cadastrado. Normalmente um único endereço.',
     placeholder: 'ex.: operacional@grupotmseg.com.br',
+  },
+  {
+    key: 'externalReportAlert',
+    title: 'Alerta de relatório enviado para fora da empresa',
+    description: 'Destinatários (diretoria) que recebem aviso quando alguém usa "Enviar somente para" em um relatório manual com e-mail fora dos domínios confiáveis.',
+    placeholder: 'ex.: barbara@grupotmseg.com.br, thiago@grupotmseg.com.br',
+  },
+  {
+    key: 'trustedEmailDomains',
+    title: 'Domínios confiáveis',
+    description: 'Lista de domínios considerados internos/seguros. Qualquer e-mail de teste fora desta lista dispara o alerta acima. Separe por vírgula, sem @.',
+    placeholder: 'ex.: grupotmseg.com.br, tmsecurity.com.br',
   },
 ];
 
