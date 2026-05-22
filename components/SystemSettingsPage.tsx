@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Settings, Mail, Clock, Save, Loader2, RefreshCw, History, FileBarChart } from 'lucide-react';
 import ManualOverrideAlertSettings from './ManualOverrideAlertSettings';
+import AlertRecipientsSettings from './AlertRecipientsSettings';
 
 type Schedule = { emails: string; hour: number; minute: number };
 type DailyReports = {
@@ -235,6 +236,8 @@ const SystemSettingsPage: React.FC<{ onNavigate?: (id: string) => void }> = () =
           </span>
         </div>
       </div>
+
+      <AlertRecipientsSettings />
 
       <ManualOverrideAlertSettings />
 

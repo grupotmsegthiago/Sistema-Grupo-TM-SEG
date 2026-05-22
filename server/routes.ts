@@ -306,7 +306,7 @@ export async function registerRoutes(
         return res.json({ success: true, sent: false, reason: 'Todos os dados cruciais estão preenchidos' });
       }
 
-      const recipients = 'barbara@grupotmseg.com.br, michelle@grupotmseg.com.br, thiago@grupotmseg.com.br, daniel@grupotmseg.com.br';
+      const recipients = (await loadAlertRecipientsSettings()).cancelMissingInfo;
       const sent = await sendCancelledMissingInfoEmail(recipients, mission, missingFields);
 
       res.json({ success: true, sent, missingFields });
@@ -320,7 +320,7 @@ export async function registerRoutes(
     try {
       const { missionId, client, provider, origin, destination, revenueTotal, costTotal, toll, tollProvider, resultado, userName } = req.body;
 
-      const LOSS_ALERT_EMAILS = 'barbara@grupotmseg.com.br, thiago@grupotmseg.com.br';
+      const LOSS_ALERT_EMAILS = (await loadAlertRecipientsSettings()).lossAlert;
       const now = new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' });
       const r2 = (v: number) => (v || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
@@ -951,7 +951,7 @@ export async function registerRoutes(
       const enrichedMission = { ...missionData, agent1, agent2, escort_vehicle_plate: escortVehiclePlate, driver_name: driverName, driver_phone: driverPhone };
 
       if (!clientEmail) {
-        const fallback = 'operacional@grupotmseg.com.br';
+        const fallback = (await loadAlertRecipientsSettings()).operationalFallback;
         const alertMission = { ...enrichedMission, _noEmailAlert: true, _alertEntity: 'Cliente', _alertName: missionData.client };
         const result = await sendMissionEmailToClient(alertMission, fallback, clientVehicleLabel, grEspelhamento, trackerInfo, senderName);
         const success = typeof result === 'object' ? result.success : result;
@@ -1016,7 +1016,7 @@ export async function registerRoutes(
       const { email: provEmail } = await findProviderEmail(missionData.provider);
       
       if (!provEmail) {
-        const fallback = 'operacional@grupotmseg.com.br';
+        const fallback = (await loadAlertRecipientsSettings()).operationalFallback;
         const alertMission = { ...missionData, _noEmailAlert: true, _alertEntity: 'Fornecedor', _alertName: missionData.provider };
         const success = await sendMissionEmailToProvider(alertMission, fallback, cargoVehicleLabel, senderName);
         return res.json({ success, message: success ? `⚠️ Fornecedor "${missionData.provider}" sem e-mail — notificação enviada para operacional.` : 'Falha ao enviar' });
@@ -1107,7 +1107,7 @@ export async function registerRoutes(
       const missionData: any = { id: missionId, client, origin: origin || '', destination: destination || '', start_time: start_time || '', mission_type: mission_type || 'Caracterizada' };
       const threadMessageId = missionRow?.email_message_id || '';
 
-      const targetEmail = clientEmail || 'operacional@grupotmseg.com.br';
+      const targetEmail = clientEmail || (await loadAlertRecipientsSettings()).operationalFallback;
       if (!clientEmail) {
         missionData._noEmailAlert = true;
         missionData._alertEntity = 'Cliente';
@@ -1170,7 +1170,7 @@ export async function registerRoutes(
 
       const mirroringUrl = missionRow.mirroring_evidence_url || '';
       const threadMessageId = missionRow.email_message_id || '';
-      const targetEmail = clientEmail || 'operacional@grupotmseg.com.br';
+      const targetEmail = clientEmail || (await loadAlertRecipientsSettings()).operationalFallback;
       if (!clientEmail) {
         missionData._noEmailAlert = true;
         missionData._alertEntity = 'Cliente';
@@ -5596,6 +5596,53 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
   };
   const invalidateDailyReportsCache = () => { dailyReportsCache = null; };
 
+  // ═══════════════════════════════════════════════════════
+  // Task #82 — Alertas pontuais (prejuízo, OS cancelada sem dados, fallback operacional)
+  // Centralizados em system_settings/key=alert_recipients (auditados em system_logs).
+  // Defaults preservam destinatários originais para retrocompatibilidade.
+  // ═══════════════════════════════════════════════════════
+  const ALERT_RECIPIENTS_SETTINGS_KEY = 'alert_recipients';
+  type AlertRecipientsSettings = {
+    lossAlert: string;
+    cancelMissingInfo: string;
+    operationalFallback: string;
+  };
+  const ALERT_RECIPIENTS_DEFAULTS: AlertRecipientsSettings = {
+    lossAlert: 'barbara@grupotmseg.com.br, thiago@grupotmseg.com.br',
+    cancelMissingInfo: 'barbara@grupotmseg.com.br, michelle@grupotmseg.com.br, thiago@grupotmseg.com.br, daniel@grupotmseg.com.br',
+    operationalFallback: 'operacional@grupotmseg.com.br',
+  };
+  const sanitizeAlertRecipientsSettings = (raw: any): AlertRecipientsSettings => ({
+    lossAlert: typeof raw?.lossAlert === 'string' && raw.lossAlert.trim()
+      ? raw.lossAlert.trim() : ALERT_RECIPIENTS_DEFAULTS.lossAlert,
+    cancelMissingInfo: typeof raw?.cancelMissingInfo === 'string' && raw.cancelMissingInfo.trim()
+      ? raw.cancelMissingInfo.trim() : ALERT_RECIPIENTS_DEFAULTS.cancelMissingInfo,
+    operationalFallback: typeof raw?.operationalFallback === 'string' && raw.operationalFallback.trim()
+      ? raw.operationalFallback.trim() : ALERT_RECIPIENTS_DEFAULTS.operationalFallback,
+  });
+  let alertRecipientsCache: { value: AlertRecipientsSettings; expiresAt: number } | null = null;
+  const ALERT_RECIPIENTS_CACHE_TTL = 60 * 1000;
+  const loadAlertRecipientsSettings = async (): Promise<AlertRecipientsSettings> => {
+    if (alertRecipientsCache && alertRecipientsCache.expiresAt > Date.now()) return alertRecipientsCache.value;
+    try {
+      const { data, error } = await supabase
+        .from('system_settings')
+        .select('value')
+        .eq('key', ALERT_RECIPIENTS_SETTINGS_KEY)
+        .maybeSingle();
+      const value = (error || !data?.value)
+        ? { ...ALERT_RECIPIENTS_DEFAULTS }
+        : sanitizeAlertRecipientsSettings(typeof data.value === 'string' ? JSON.parse(data.value) : data.value);
+      alertRecipientsCache = { value, expiresAt: Date.now() + ALERT_RECIPIENTS_CACHE_TTL };
+      return value;
+    } catch {
+      const value = { ...ALERT_RECIPIENTS_DEFAULTS };
+      alertRecipientsCache = { value, expiresAt: Date.now() + ALERT_RECIPIENTS_CACHE_TTL };
+      return value;
+    }
+  };
+  const invalidateAlertRecipientsCache = () => { alertRecipientsCache = null; };
+
   const getLegalEmail = async () => (await loadDailyReportsSettings()).legal.emails;
 
   async function runDailyLegalSearch(): Promise<{ total: number; processos: any[] }> {
@@ -6735,6 +6782,99 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
         .select('id, created_at, user_name, details')
         .eq('entity', 'SystemSetting')
         .eq('entity_id', DAILY_REPORTS_SETTINGS_KEY)
+        .order('created_at', { ascending: false })
+        .limit(50);
+      if (error) throw error;
+      const history = (data || []).map((r: any) => {
+        let d: any = {};
+        try { d = typeof r.details === 'string' ? JSON.parse(r.details) : (r.details || {}); } catch {}
+        return {
+          id: r.id,
+          createdAt: r.created_at,
+          userName: r.user_name,
+          before: d.before || null,
+          after: d.after || null,
+          changedFields: d.changedFields || [],
+          summary: d.summary || '',
+        };
+      });
+      res.json({ ok: true, history });
+    } catch (e: any) {
+      res.status(500).json({ ok: false, error: e?.message || 'Falha ao carregar histórico' });
+    }
+  });
+
+  // ═══════════════════════════════════════════════════════
+  // Task #82 — Endpoints da seção "Alertas pontuais" (system_settings/alert_recipients)
+  // ═══════════════════════════════════════════════════════
+  app.get('/api/admin/system-settings/alert-recipients', requireAuth, requireRole('diretoria', 'administrador'), async (_req: Request, res: Response) => {
+    try {
+      const current = await loadAlertRecipientsSettings();
+      const { data: row } = await supabaseAdmin
+        .from('system_settings')
+        .select('updated_by, updated_at')
+        .eq('key', ALERT_RECIPIENTS_SETTINGS_KEY)
+        .maybeSingle();
+      res.json({
+        ok: true,
+        settings: current,
+        defaults: ALERT_RECIPIENTS_DEFAULTS,
+        updatedBy: row?.updated_by || null,
+        updatedAt: row?.updated_at || null,
+      });
+    } catch (e: any) {
+      res.status(500).json({ ok: false, error: e?.message || 'Falha ao carregar configurações' });
+    }
+  });
+
+  app.put('/api/admin/system-settings/alert-recipients', requireAuth, requireRole('diretoria', 'administrador'), async (req: Request, res: Response) => {
+    try {
+      const prev = await loadAlertRecipientsSettings();
+      const next = sanitizeAlertRecipientsSettings(req.body || {});
+      const principal = (req as any).user || (req as any).auth || {};
+      const editorName = principal.name || principal.email || 'Sistema';
+
+      const { error: upErr } = await supabaseAdmin
+        .from('system_settings')
+        .upsert([{
+          key: ALERT_RECIPIENTS_SETTINGS_KEY,
+          value: next,
+          updated_by: editorName,
+          updated_at: new Date().toISOString(),
+        }], { onConflict: 'key' });
+      if (upErr) throw upErr;
+      invalidateAlertRecipientsCache();
+
+      const changedFields: string[] = [];
+      (Object.keys(next) as Array<keyof AlertRecipientsSettings>).forEach(k => {
+        if (String((prev as any)[k] || '') !== String((next as any)[k] || '')) changedFields.push(k);
+      });
+      await supabaseAdmin.from('system_logs').insert([{
+        user_name: editorName,
+        action_type: 'UPDATE',
+        entity: 'SystemSetting',
+        entity_id: ALERT_RECIPIENTS_SETTINGS_KEY,
+        details: JSON.stringify({
+          summary: `Destinatários de alertas pontuais atualizados (${changedFields.join(', ') || 'sem alterações'}).`,
+          before: prev,
+          after: next,
+          changedFields,
+        }),
+      }]);
+
+      res.json({ ok: true, settings: next, defaults: ALERT_RECIPIENTS_DEFAULTS });
+    } catch (e: any) {
+      res.status(500).json({ ok: false, error: e?.message || 'Falha ao salvar configurações' });
+    }
+  });
+
+  app.get('/api/admin/system-settings/alert-recipients/history', requireAuth, requireRole('diretoria', 'administrador'), async (_req: Request, res: Response) => {
+    try {
+      const { data, error } = await supabaseAdmin
+        .from('system_logs')
+        .select('id, created_at, user_name, details')
+        .eq('entity', 'SystemSetting')
+        .eq('entity_id', ALERT_RECIPIENTS_SETTINGS_KEY)
         .order('created_at', { ascending: false })
         .limit(50);
       if (error) throw error;
