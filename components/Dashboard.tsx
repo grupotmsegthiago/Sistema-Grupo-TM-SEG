@@ -2,6 +2,7 @@ import React from 'react';
 import { Newspaper, ShieldCheck, MapPin } from 'lucide-react';
 import OperationalInfoPanel from './OperationalInfoPanel';
 import PendingTollConfirmationBanner from './PendingTollConfirmationBanner';
+import ManualOverrideLooseBanner from './ManualOverrideLooseBanner';
 
 interface DashboardProps {
     onOpenMission?: (missionId: string) => void;
@@ -12,6 +13,8 @@ const Dashboard: React.FC<DashboardProps> = ({ onOpenMission }) => {
     <div className="space-y-8 animate-in fade-in pb-20">
 
         <PendingTollConfirmationBanner onOpenMission={onOpenMission} />
+
+        <ManualOverrideLooseBanner />
 
         {/* HERO SECTION / BANNER */}
         <div className="bg-gradient-to-r from-gray-900 to-black rounded-2xl p-8 text-white shadow-xl relative overflow-hidden">
