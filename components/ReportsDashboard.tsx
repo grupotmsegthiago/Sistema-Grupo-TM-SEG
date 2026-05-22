@@ -5,9 +5,27 @@ import {
     FileBarChart, Calendar, Clock, User, Download, Search, Loader2, 
     ArrowRight, Shield, Activity, FileText, BarChart2, PieChart, Users, 
     MousePointer2, AlertTriangle, CheckCircle2, TrendingUp, List, MapPin, 
-    Building2, Briefcase, Printer, Filter
+    Building2, Briefcase, Printer, Filter, Zap, Scale
 } from 'lucide-react';
 import { SystemLog, MissionStatus } from '../types';
+
+const formatCurrencyBR = (val: number) => (val || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+
+interface AutoEngineLogRow {
+    logId: string;
+    createdAt: string;
+    userName: string;
+    missionId: string;
+    suggestedTotal: number;
+    savedCost: number;
+    divergence: number;
+    divergent: boolean;
+    bandKm: number | null;
+    realKm: number | null;
+    goldenHours: number | null;
+    provider: string;
+    client: string;
+}
 
 interface UserStats {
     userId: string;
@@ -22,7 +40,7 @@ interface UserStats {
 }
 
 const ReportsDashboard: React.FC = () => {
-    const [activeTab, setActiveTab] = useState<'dashboard' | 'ranking' | 'logs' | 'timeline'>('dashboard');
+    const [activeTab, setActiveTab] = useState<'dashboard' | 'ranking' | 'logs' | 'timeline' | 'autoEngine'>('dashboard');
     
     // Helper para formatar data local (YYYY-MM-DD)
     const getLocalISODate = (date: Date) => {
@@ -46,14 +64,89 @@ const ReportsDashboard: React.FC = () => {
     const [timelineProviderFilter, setTimelineProviderFilter] = useState('');
     const [timelineStatusFilter, setTimelineStatusFilter] = useState('');
 
+    // Motor Automático vs Manual (Task #57)
+    const [autoEngineRows, setAutoEngineRows] = useState<AutoEngineLogRow[]>([]);
+    const [autoEngineLoading, setAutoEngineLoading] = useState(false);
+    const [autoEngineProviderFilter, setAutoEngineProviderFilter] = useState('');
+    const [autoEngineOnlyDivergent, setAutoEngineOnlyDivergent] = useState(false);
+
     useEffect(() => {
         fetchData();
         if (activeTab === 'timeline') fetchTimelineData();
+        if (activeTab === 'autoEngine') fetchAutoEngineData();
     }, [startDate, endDate]);
 
     useEffect(() => {
         if (activeTab === 'timeline' && timelineMissions.length === 0) fetchTimelineData();
+        if (activeTab === 'autoEngine') fetchAutoEngineData();
     }, [activeTab]);
+
+    const fetchAutoEngineData = async () => {
+        setAutoEngineLoading(true);
+        try {
+            const { data: logsData, error: logsErr } = await supabase
+                .from('system_logs')
+                .select('id, created_at, user_name, entity_id, details')
+                .eq('entity', 'Mission')
+                .eq('action_type', 'FINANCIAL_RECALC')
+                .gte('created_at', `${startDate}T00:00:00`)
+                .lte('created_at', `${endDate}T23:59:59`)
+                .order('created_at', { ascending: false })
+                .limit(5000);
+            if (logsErr) throw logsErr;
+
+            const parsed: Array<Omit<AutoEngineLogRow, 'provider' | 'client'> & { missionId: string }> = [];
+            (logsData || []).forEach((l: any) => {
+                try {
+                    const d = typeof l.details === 'string' ? JSON.parse(l.details) : (l.details || {});
+                    if ((d.source || '') !== 'provider_auto_engine') return;
+                    const suggested = Number(d.suggestedTotal) || 0;
+                    const saved = Number(d.savedCost) || 0;
+                    parsed.push({
+                        logId: l.id,
+                        createdAt: l.created_at,
+                        userName: l.user_name || '-',
+                        missionId: String(l.entity_id),
+                        suggestedTotal: suggested,
+                        savedCost: saved,
+                        divergence: saved - suggested,
+                        divergent: !!d.divergent || Math.abs(saved - suggested) > 0.01,
+                        bandKm: d.bandKm != null ? Number(d.bandKm) : null,
+                        realKm: d.realKm != null ? Number(d.realKm) : null,
+                        goldenHours: d.goldenHours != null ? Number(d.goldenHours) : null,
+                    });
+                } catch { /* ignore malformed log */ }
+            });
+
+            const missionIds = Array.from(new Set(parsed.map(p => p.missionId))).filter(Boolean);
+            const missionInfo: Record<string, { provider: string; client: string }> = {};
+            if (missionIds.length > 0) {
+                const CHUNK = 200;
+                for (let i = 0; i < missionIds.length; i += CHUNK) {
+                    const slice = missionIds.slice(i, i + CHUNK);
+                    const { data: mData, error: mErr } = await supabase
+                        .from('missions')
+                        .select('id, provider, client')
+                        .in('id', slice);
+                    if (mErr) throw mErr;
+                    (mData || []).forEach((m: any) => {
+                        missionInfo[String(m.id)] = { provider: m.provider || '-', client: m.client || '-' };
+                    });
+                }
+            }
+
+            const enriched: AutoEngineLogRow[] = parsed.map(p => ({
+                ...p,
+                provider: missionInfo[p.missionId]?.provider || '—',
+                client: missionInfo[p.missionId]?.client || '—',
+            }));
+            setAutoEngineRows(enriched);
+        } catch (e) {
+            console.error('Erro ao carregar relatório do motor automático:', e);
+        } finally {
+            setAutoEngineLoading(false);
+        }
+    };
 
     const fetchTimelineData = async () => {
         setTimelineLoading(true);
@@ -275,6 +368,13 @@ const ReportsDashboard: React.FC = () => {
                     data-testid="tab-timeline"
                 >
                     <List size={16} /> Timeline de OS
+                </button>
+                <button 
+                    onClick={() => setActiveTab('autoEngine')}
+                    className={`px-4 py-2 rounded-lg text-sm font-bold transition-all flex items-center gap-2 ${activeTab === 'autoEngine' ? 'bg-white text-red-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+                    data-testid="tab-auto-engine"
+                >
+                    <Zap size={16} /> Motor Auto vs Manual
                 </button>
             </div>
 
@@ -743,6 +843,244 @@ const ReportsDashboard: React.FC = () => {
                         })()}
                     </div>
                 )}
+
+                {/* 5. MOTOR AUTOMÁTICO vs MANUAL (Task #57) */}
+                {activeTab === 'autoEngine' && (() => {
+                    const filtered = autoEngineRows.filter(r => {
+                        if (autoEngineProviderFilter && !(r.provider || '').toUpperCase().includes(autoEngineProviderFilter.toUpperCase())) return false;
+                        if (autoEngineOnlyDivergent && !r.divergent) return false;
+                        return true;
+                    });
+                    const totalSuggested = filtered.reduce((a, r) => a + r.suggestedTotal, 0);
+                    const totalSaved = filtered.reduce((a, r) => a + r.savedCost, 0);
+                    const totalDivergence = totalSaved - totalSuggested;
+                    const divergentCount = filtered.filter(r => r.divergent).length;
+
+                    const byProvider: Record<string, { provider: string; count: number; suggested: number; saved: number; divergent: number }> = {};
+                    filtered.forEach(r => {
+                        const key = (r.provider || '—').toUpperCase().trim();
+                        if (!byProvider[key]) byProvider[key] = { provider: r.provider || '—', count: 0, suggested: 0, saved: 0, divergent: 0 };
+                        byProvider[key].count++;
+                        byProvider[key].suggested += r.suggestedTotal;
+                        byProvider[key].saved += r.savedCost;
+                        if (r.divergent) byProvider[key].divergent++;
+                    });
+                    const providerRows = Object.values(byProvider).sort((a, b) => Math.abs(b.saved - b.suggested) - Math.abs(a.saved - a.suggested));
+
+                    const handleExportCsv = () => {
+                        const header = ['Data/Hora', 'OS', 'Cliente', 'Fornecedor', 'KM Real', 'Faixa KM', 'Horas (Regra Ouro)', 'Custo Sugerido (Motor)', 'Custo Salvo', 'Divergência', 'Usuário'];
+                        const lines = [header.join(';')];
+                        filtered.forEach(r => {
+                            lines.push([
+                                new Date(r.createdAt).toLocaleString('pt-BR'),
+                                r.missionId,
+                                (r.client || '').replace(/;/g, ','),
+                                (r.provider || '').replace(/;/g, ','),
+                                r.realKm ?? '',
+                                r.bandKm ?? '',
+                                r.goldenHours != null ? r.goldenHours.toFixed(2) : '',
+                                r.suggestedTotal.toFixed(2).replace('.', ','),
+                                r.savedCost.toFixed(2).replace('.', ','),
+                                r.divergence.toFixed(2).replace('.', ','),
+                                (r.userName || '').replace(/;/g, ','),
+                            ].join(';'));
+                        });
+                        const blob = new Blob(['\ufeff' + lines.join('\n')], { type: 'text/csv;charset=utf-8;' });
+                        const url = URL.createObjectURL(blob);
+                        const a = document.createElement('a');
+                        a.href = url;
+                        a.download = `motor_auto_vs_manual_${startDate}_${endDate}.csv`;
+                        document.body.appendChild(a);
+                        a.click();
+                        document.body.removeChild(a);
+                        URL.revokeObjectURL(url);
+                    };
+
+                    return (
+                        <div className="space-y-4 animate-in fade-in slide-in-from-bottom-4">
+                            <div className="flex flex-wrap gap-3 items-center no-print">
+                                <div className="flex items-center gap-2">
+                                    <Filter size={14} className="text-gray-400" />
+                                    <input
+                                        type="text"
+                                        placeholder="Filtrar fornecedor..."
+                                        value={autoEngineProviderFilter}
+                                        onChange={e => setAutoEngineProviderFilter(e.target.value)}
+                                        className="px-3 py-1.5 border border-gray-300 rounded-lg text-xs w-48"
+                                        data-testid="input-auto-engine-provider-filter"
+                                    />
+                                    <label className="flex items-center gap-1.5 text-xs font-bold text-gray-600 cursor-pointer">
+                                        <input
+                                            type="checkbox"
+                                            checked={autoEngineOnlyDivergent}
+                                            onChange={e => setAutoEngineOnlyDivergent(e.target.checked)}
+                                            className="accent-red-600"
+                                            data-testid="checkbox-auto-engine-divergent"
+                                        />
+                                        Apenas divergentes
+                                    </label>
+                                </div>
+                                <div className="ml-auto flex gap-2">
+                                    <button
+                                        onClick={handleExportCsv}
+                                        className="px-4 py-1.5 bg-gray-100 hover:bg-gray-200 rounded-lg text-xs font-bold flex items-center gap-2 transition-colors"
+                                        data-testid="btn-export-auto-engine-csv"
+                                    >
+                                        <Download size={14} /> CSV
+                                    </button>
+                                    <button
+                                        onClick={() => window.print()}
+                                        className="px-4 py-1.5 bg-gray-100 hover:bg-gray-200 rounded-lg text-xs font-bold flex items-center gap-2 transition-colors"
+                                        data-testid="btn-print-auto-engine"
+                                    >
+                                        <Printer size={14} /> Imprimir
+                                    </button>
+                                </div>
+                            </div>
+
+                            {autoEngineLoading ? (
+                                <div className="flex items-center justify-center py-20">
+                                    <Loader2 size={32} className="animate-spin text-red-500" />
+                                </div>
+                            ) : (
+                                <>
+                                    <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                                        <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm">
+                                            <p className="text-[9px] font-black text-gray-400 uppercase mb-1">OS calculadas pelo motor</p>
+                                            <p className="text-2xl font-black text-indigo-700" data-testid="kpi-auto-engine-count">{filtered.length}</p>
+                                            <p className="text-[9px] text-gray-500 font-bold mt-1">{divergentCount} divergente(s)</p>
+                                        </div>
+                                        <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm">
+                                            <p className="text-[9px] font-black text-gray-400 uppercase mb-1">Custo Sugerido (Motor)</p>
+                                            <p className="text-lg font-black text-blue-700 font-mono" data-testid="kpi-auto-engine-suggested">{formatCurrencyBR(totalSuggested)}</p>
+                                            <p className="text-[9px] text-blue-500 font-bold mt-1">Total no período</p>
+                                        </div>
+                                        <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm">
+                                            <p className="text-[9px] font-black text-gray-400 uppercase mb-1">Custo Salvo (Canônico)</p>
+                                            <p className="text-lg font-black text-amber-700 font-mono" data-testid="kpi-auto-engine-saved">{formatCurrencyBR(totalSaved)}</p>
+                                            <p className="text-[9px] text-amber-500 font-bold mt-1">Total no período</p>
+                                        </div>
+                                        <div className={`p-4 rounded-xl border-2 shadow-sm ${Math.abs(totalDivergence) > 0.01 ? (totalDivergence > 0 ? 'border-red-300 bg-red-50' : 'border-emerald-300 bg-emerald-50') : 'border-gray-200 bg-white'}`}>
+                                            <p className="text-[9px] font-black text-gray-400 uppercase mb-1">Divergência (Salvo − Sugerido)</p>
+                                            <p className={`text-lg font-black font-mono ${totalDivergence > 0.01 ? 'text-red-700' : totalDivergence < -0.01 ? 'text-emerald-700' : 'text-gray-700'}`} data-testid="kpi-auto-engine-divergence">
+                                                {totalDivergence >= 0 ? '+' : ''}{formatCurrencyBR(totalDivergence)}
+                                            </p>
+                                            <p className="text-[9px] text-gray-500 font-bold mt-1">{totalDivergence > 0.01 ? 'Salvou MAIS que o motor' : totalDivergence < -0.01 ? 'Salvou MENOS que o motor' : 'Sem desvio'}</p>
+                                        </div>
+                                    </div>
+
+                                    {/* Totalizador por fornecedor */}
+                                    <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+                                        <div className="px-5 py-3 bg-indigo-50 border-b border-indigo-200">
+                                            <h4 className="text-xs font-black text-indigo-800 uppercase flex items-center gap-2">
+                                                <Scale size={14} /> Totalizador por Fornecedor
+                                            </h4>
+                                        </div>
+                                        <div className="overflow-x-auto">
+                                            <table className="w-full text-left">
+                                                <thead>
+                                                    <tr className="text-[9px] font-black text-indigo-700 uppercase bg-indigo-50/40">
+                                                        <th className="px-4 py-2">Fornecedor</th>
+                                                        <th className="px-4 py-2 text-right">OS</th>
+                                                        <th className="px-4 py-2 text-right">Divergentes</th>
+                                                        <th className="px-4 py-2 text-right">Sugerido (Motor)</th>
+                                                        <th className="px-4 py-2 text-right">Salvo</th>
+                                                        <th className="px-4 py-2 text-right">Divergência</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody>
+                                                    {providerRows.length === 0 ? (
+                                                        <tr><td colSpan={6} className="px-4 py-6 text-center text-xs text-gray-400">Nenhum registro do motor automático no período.</td></tr>
+                                                    ) : providerRows.map((p, i) => {
+                                                        const div = p.saved - p.suggested;
+                                                        return (
+                                                            <tr key={i} className="border-t border-gray-100 hover:bg-indigo-50/30" data-testid={`row-auto-engine-provider-${i}`}>
+                                                                <td className="px-4 py-2 text-sm font-bold text-gray-800">{p.provider}</td>
+                                                                <td className="px-4 py-2 text-sm text-gray-600 text-right">{p.count}</td>
+                                                                <td className="px-4 py-2 text-sm text-right">
+                                                                    {p.divergent > 0
+                                                                        ? <span className="font-bold text-red-600">{p.divergent}</span>
+                                                                        : <span className="text-gray-400">0</span>}
+                                                                </td>
+                                                                <td className="px-4 py-2 text-sm font-mono text-blue-700 text-right">{formatCurrencyBR(p.suggested)}</td>
+                                                                <td className="px-4 py-2 text-sm font-mono text-amber-700 text-right">{formatCurrencyBR(p.saved)}</td>
+                                                                <td className={`px-4 py-2 text-sm font-mono font-black text-right ${Math.abs(div) < 0.01 ? 'text-gray-500' : div > 0 ? 'text-red-700' : 'text-emerald-700'}`}>
+                                                                    {div >= 0 ? '+' : ''}{formatCurrencyBR(div)}
+                                                                </td>
+                                                            </tr>
+                                                        );
+                                                    })}
+                                                    {providerRows.length > 0 && (
+                                                        <tr className="bg-indigo-50 border-t-2 border-indigo-200">
+                                                            <td className="px-4 py-2 text-xs font-black text-indigo-800 uppercase">Total</td>
+                                                            <td className="px-4 py-2 text-sm font-black text-indigo-800 text-right">{filtered.length}</td>
+                                                            <td className="px-4 py-2 text-sm font-black text-red-700 text-right">{divergentCount}</td>
+                                                            <td className="px-4 py-2 text-sm font-mono font-black text-blue-800 text-right">{formatCurrencyBR(totalSuggested)}</td>
+                                                            <td className="px-4 py-2 text-sm font-mono font-black text-amber-800 text-right">{formatCurrencyBR(totalSaved)}</td>
+                                                            <td className={`px-4 py-2 text-sm font-mono font-black text-right ${Math.abs(totalDivergence) < 0.01 ? 'text-gray-500' : totalDivergence > 0 ? 'text-red-800' : 'text-emerald-800'}`}>
+                                                                {totalDivergence >= 0 ? '+' : ''}{formatCurrencyBR(totalDivergence)}
+                                                            </td>
+                                                        </tr>
+                                                    )}
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                    </div>
+
+                                    {/* Detalhe por OS */}
+                                    <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+                                        <div className="px-5 py-3 bg-gray-50 border-b border-gray-200">
+                                            <h4 className="text-xs font-black text-gray-700 uppercase flex items-center gap-2">
+                                                <FileText size={14} /> Detalhe por OS — Custo Sugerido vs. Custo Salvo
+                                            </h4>
+                                        </div>
+                                        <div className="overflow-x-auto">
+                                            <table className="w-full text-left">
+                                                <thead>
+                                                    <tr className="text-[9px] font-black text-gray-500 uppercase bg-gray-50">
+                                                        <th className="px-4 py-2">Data</th>
+                                                        <th className="px-4 py-2">OS</th>
+                                                        <th className="px-4 py-2">Cliente</th>
+                                                        <th className="px-4 py-2">Fornecedor</th>
+                                                        <th className="px-4 py-2 text-right">KM (Real / Faixa)</th>
+                                                        <th className="px-4 py-2 text-right">Horas</th>
+                                                        <th className="px-4 py-2 text-right">Sugerido</th>
+                                                        <th className="px-4 py-2 text-right">Salvo</th>
+                                                        <th className="px-4 py-2 text-right">Divergência</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody>
+                                                    {filtered.length === 0 ? (
+                                                        <tr><td colSpan={9} className="px-4 py-6 text-center text-xs text-gray-400">Nenhum registro encontrado no período/filtro.</td></tr>
+                                                    ) : filtered.slice(0, 500).map(r => (
+                                                        <tr key={r.logId} className={`border-t border-gray-100 hover:bg-gray-50 ${r.divergent ? 'bg-red-50/30' : ''}`} data-testid={`row-auto-engine-${r.missionId}`}>
+                                                            <td className="px-4 py-2 text-[11px] text-gray-500 font-mono whitespace-nowrap">{new Date(r.createdAt).toLocaleString('pt-BR')}</td>
+                                                            <td className="px-4 py-2 text-xs font-black text-gray-800">{r.missionId}</td>
+                                                            <td className="px-4 py-2 text-xs text-gray-600 truncate max-w-[160px]" title={r.client}>{r.client}</td>
+                                                            <td className="px-4 py-2 text-xs font-bold text-gray-700 truncate max-w-[160px]" title={r.provider}>{r.provider}</td>
+                                                            <td className="px-4 py-2 text-[11px] font-mono text-gray-600 text-right whitespace-nowrap">{r.realKm ?? '-'} / {r.bandKm ?? '-'}</td>
+                                                            <td className="px-4 py-2 text-[11px] font-mono text-gray-600 text-right">{r.goldenHours != null ? r.goldenHours.toFixed(2) : '-'}</td>
+                                                            <td className="px-4 py-2 text-xs font-mono text-blue-700 text-right">{formatCurrencyBR(r.suggestedTotal)}</td>
+                                                            <td className="px-4 py-2 text-xs font-mono text-amber-700 text-right">{formatCurrencyBR(r.savedCost)}</td>
+                                                            <td className={`px-4 py-2 text-xs font-mono font-black text-right ${!r.divergent ? 'text-gray-400' : r.divergence > 0 ? 'text-red-700' : 'text-emerald-700'}`}>
+                                                                {r.divergent ? `${r.divergence >= 0 ? '+' : ''}${formatCurrencyBR(r.divergence)}` : '—'}
+                                                            </td>
+                                                        </tr>
+                                                    ))}
+                                                </tbody>
+                                            </table>
+                                            {filtered.length > 500 && (
+                                                <div className="p-2 text-center text-[10px] text-gray-400 bg-gray-50 border-t border-gray-200">
+                                                    Exibindo as 500 OS mais recentes de {filtered.length}. Refine o período ou o filtro de fornecedor para reduzir.
+                                                </div>
+                                            )}
+                                        </div>
+                                    </div>
+                                </>
+                            )}
+                        </div>
+                    );
+                })()}
             </div>
             
             <style>{`
