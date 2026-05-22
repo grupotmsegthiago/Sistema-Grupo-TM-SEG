@@ -67,7 +67,9 @@ export const stripDhlOpDescription = (op?: string | null): DhlOpParts => {
   let region: string | null = null;
   let rest = raw;
 
-  const m = raw.match(/^REGI[ÃA]O\s*-\s*([A-ZÀ-Ú\- ]+?)\s*-\s*(.+)$/i);
+  // Ancorar nas regiões válidas (alternação) evita o bug onde regex genérica
+  // captura "CENTRO" em "CENTRO-OESTE" e descarta a tabela inteira.
+  const m = raw.match(/^REGI[ÃA]O\s*-\s*(CENTRO-OESTE|SUDESTE|NORDESTE|NORTE|SUL|BRASIL)\s*-\s*(.+)$/i);
   if (m) {
     const candidate = normalize(m[1]);
     if (VALID_REGIONS.has(candidate)) {
@@ -109,7 +111,7 @@ export const validateDhlTableName = (op?: string | null): DhlNameValidation => {
       reason: 'Nome da tabela vazio.',
     };
   }
-  const regionMatch = raw.match(/^REGI[ÃA]O\s*-\s*([A-ZÀ-Ú\- ]+?)\s*-\s*(.+)$/i);
+  const regionMatch = raw.match(/^REGI[ÃA]O\s*-\s*(CENTRO-OESTE|SUDESTE|NORDESTE|NORTE|SUL|BRASIL)\s*-\s*(.+)$/i);
   const hasRegionPrefix = !!regionMatch;
   const hasValidRegion = hasRegionPrefix && VALID_REGIONS.has(normalize(regionMatch![1]));
   const rest = regionMatch ? regionMatch[2] : raw;
