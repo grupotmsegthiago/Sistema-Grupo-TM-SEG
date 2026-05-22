@@ -329,11 +329,17 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
   // Confirmação obrigatória de pedágio: ao abrir o modal sem pedágio confirmado,
   // exige resposta explícita do operador (Sim com valor / Não, sem pedágio).
   // Não dispara para faturamentos já aprovados/travados nem para Controller.
+  // Só é exigido quando a missão está Concluída ou Cancelada — em outros status
+  // (Pendente, Em Andamento, etc.) o operador pode lançar pedágio à vontade
+  // sem o bloqueio do diálogo.
   useEffect(() => {
     if (!isOpen || !mission || isController) return;
     if (isEffectivelyLocked) return;
     if (tollConfirmed || tollConfirmAutoOpened || showTollConfirmDialog) return;
     if (isCalculatingToll) return;
+    const status = (mission.status || '').trim();
+    const requiresToll = status === 'Concluída' || status === 'Cancelada';
+    if (!requiresToll) return;
     const hasApprovedToll = !!mission.billing_approved && mission.toll_value != null;
     if (hasApprovedToll) return;
     const t = setTimeout(() => {
@@ -341,7 +347,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
       setTollConfirmAutoOpened(true);
     }, 600);
     return () => clearTimeout(t);
-  }, [isOpen, mission?.id, tollConfirmed, tollConfirmAutoOpened, showTollConfirmDialog, isCalculatingToll, isController, isEffectivelyLocked, mission?.billing_approved, mission?.toll_value]);
+  }, [isOpen, mission?.id, mission?.status, tollConfirmed, tollConfirmAutoOpened, showTollConfirmDialog, isCalculatingToll, isController, isEffectivelyLocked, mission?.billing_approved, mission?.toll_value]);
 
   const applyTollConfirmation = (result: { hasToll: boolean; value: number }) => {
     const v = result.hasToll ? result.value : 0;
@@ -1491,7 +1497,10 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
       // explícita, mesmo para reaprovação privilegiada ou OS bloqueada.
       // Confirma cruzando com system_logs (TOLL_CONFIRMATION) e o valor
       // do input atual, sem confiar apenas em estado local.
-      if (approve && !mission.billing_approved) {
+      // Só é exigido quando a missão está Concluída ou Cancelada.
+      const missionStatusTrim = (mission.status || '').trim();
+      const requiresTollGate = missionStatusTrim === 'Concluída' || missionStatusTrim === 'Cancelada';
+      if (approve && !mission.billing_approved && requiresTollGate) {
           if (!tollConfirmed) {
               setShowTollConfirmDialog(true);
               showNotification('Pedágio Não Confirmado', 'Confirme se há ou não pedágio antes de aprovar.', 'error');
