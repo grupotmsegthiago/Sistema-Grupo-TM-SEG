@@ -280,7 +280,7 @@ const App: React.FC = () => {
 
   const renderContent = () => {
     switch (currentScreen) {
-      case 'dashboard': return <Dashboard />; 
+      case 'dashboard': return <Dashboard onOpenMission={handleOpenBillingMission} />; 
       case 'missions': return <MissionTable onNewMission={() => navigateTo('new-mission')} />;
       case 'new-mission': return <MissionForm onBack={() => navigateTo('missions')} onSaveAndContinue={handleSaveAndContinue} onAddClient={() => navigateTo('client-form')} />;
       case 'ai-support': return null;
