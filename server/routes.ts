@@ -5928,6 +5928,17 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
       const reason = info.errorMessage || 'Falha de envio (SMTP/integração indisponível ou destinatários inválidos).';
       const intendedTo = (info.emailTo || []).join(', ') || '—';
 
+      // Task #105 — Deep-link autenticado para o card do relatório em Configurações.
+      // Usa APP_PUBLIC_URL (preferido) → REPLIT_DOMAINS → fallback grupotmseg.com.br.
+      const appBaseUrl = (() => {
+        const fromEnv = (process.env.APP_PUBLIC_URL || '').trim().replace(/\/$/, '');
+        if (fromEnv) return fromEnv;
+        const replitDomain = (process.env.REPLIT_DOMAINS || '').split(',')[0].trim();
+        if (replitDomain) return `https://${replitDomain}`;
+        return 'https://app.grupotmseg.com.br';
+      })();
+      const deepLink = `${appBaseUrl}/?page=system-settings&focus=report&key=${encodeURIComponent(reportKey)}`;
+
       // 2) Envia e-mail
       try {
         const { transporter } = await import('./emailService');
@@ -5962,6 +5973,12 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
     <div class="err-box">
       <p style="margin:0 0 6px; font-size:12px; color:#666; text-transform:uppercase; letter-spacing:.5px;">Motivo</p>
       <pre>${String(reason).replace(/[<>&]/g, c => ({ '<':'&lt;', '>':'&gt;', '&':'&amp;' } as any)[c])}</pre>
+    </div>
+    <div style="text-align:center; margin:24px 0;">
+      <a href="${deepLink}" style="display:inline-block; background:#c0392b; color:#fff; text-decoration:none; padding:12px 24px; border-radius:8px; font-weight:700; font-size:14px;">
+        Reexecutar agora
+      </a>
+      <p style="margin:8px 0 0; font-size:11px; color:#999;">Abre Configurações → Relatórios Diários direto no card de "${label}". É necessário estar logado no sistema.</p>
     </div>
     <p style="font-size:12px; color:#666;">Próximo alerta para este relatório só será enviado em 24h (cooldown). Execuções repetidas no período são suprimidas para evitar spam.</p>
     <p style="font-size:12px; color:#999; margin-top:24px;">Este alerta é gerado automaticamente pelo sistema TMSEGo.</p>

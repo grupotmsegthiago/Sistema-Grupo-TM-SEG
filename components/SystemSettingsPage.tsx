@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Settings, Mail, Clock, Save, Loader2, RefreshCw, History, FileBarChart, Send, CheckCircle2, AlertTriangle, ListChecks, Calendar, User, Download, X, Filter, ChevronLeft, ChevronRight } from 'lucide-react';
 import ManualOverrideAlertSettings from './ManualOverrideAlertSettings';
 import AlertRecipientsSettings from './AlertRecipientsSettings';
@@ -90,6 +90,20 @@ const SystemSettingsPage: React.FC<{ onNavigate?: (id: string) => void }> = () =
   const [runs, setRuns] = useState<Record<string, RunEntry[]>>({});
   const [lastScheduled, setLastScheduled] = useState<Record<string, RunEntry | null>>({});
   const [runsLoading, setRunsLoading] = useState(false);
+
+  // Task #105 — Deep-link do e-mail de falha: lê ?focus=report&key=<reportKey>
+  // e dá scroll + highlight temporário no card correspondente.
+  const cardRefs = useRef<Partial<Record<ReportKey, HTMLDivElement | null>>>({});
+  const [focusedKey, setFocusedKey] = useState<ReportKey | null>(() => {
+    try {
+      const sp = new URLSearchParams(window.location.search);
+      if (sp.get('focus') !== 'report') return null;
+      const k = sp.get('key') as ReportKey | null;
+      const valid: ReportKey[] = ['legal', 'pending', 'approval', 'missingInfo', 'stuckNf'];
+      return k && (valid as string[]).includes(k) ? k : null;
+    } catch { return null; }
+  });
+  const [didScrollToFocus, setDidScrollToFocus] = useState(false);
 
   // Task #90 — Modal de histórico filtrável + CSV
   const [historyOpen, setHistoryOpen] = useState(false);
@@ -407,6 +421,28 @@ const SystemSettingsPage: React.FC<{ onNavigate?: (id: string) => void }> = () =
   };
 
   useEffect(() => { fetchAll(); }, []);
+
+  // Task #105 — Após carregar settings, scroll até o card focado e remove
+  // o highlight em ~5s. Também limpa ?focus=...&key=... da URL para evitar
+  // que F5 re-aplique o destaque indefinidamente.
+  useEffect(() => {
+    if (isLoading || !focusedKey || didScrollToFocus) return;
+    const el = cardRefs.current[focusedKey];
+    if (!el) return;
+    setDidScrollToFocus(true);
+    try {
+      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    } catch { /* no-op */ }
+    try {
+      const url = new URL(window.location.href);
+      url.searchParams.delete('focus');
+      url.searchParams.delete('key');
+      window.history.replaceState({}, '', url.toString());
+    } catch { /* no-op */ }
+    const t = setTimeout(() => setFocusedKey(null), 5000);
+    return () => clearTimeout(t);
+  }, [isLoading, focusedKey, didScrollToFocus]);
+
   useEffect(() => { fetchManualRuns(manualRunsFilterKey, manualRunsFilterMode, manualRunsFilterFrom, manualRunsFilterTo); }, [manualRunsFilterKey, manualRunsFilterMode, manualRunsFilterFrom, manualRunsFilterTo]);
 
   const updateField = (key: keyof DailyReports, field: keyof Schedule, value: string | number) => {
@@ -522,8 +558,14 @@ const SystemSettingsPage: React.FC<{ onNavigate?: (id: string) => void }> = () =
             const badgeTitle = !lastScheduledRun
               ? 'Nenhuma execução agendada registrada. Clique para abrir o histórico.'
               : `Última execução agendada: ${lastScheduledRun.success ? 'sucesso' : 'falha'} em ${fmtDate(lastScheduledRun.createdAt)}${lastScheduledRun.errorMessage ? ` — ${lastScheduledRun.errorMessage}` : ''}. Clique para abrir o histórico.`;
+            const isFocused = focusedKey === r.key;
             return (
-              <div key={r.key} className="border border-gray-200 rounded-lg p-4 bg-gray-50" data-testid={`card-report-${r.key}`}>
+              <div
+                key={r.key}
+                ref={(el) => { cardRefs.current[r.key] = el; }}
+                className={`border rounded-lg p-4 transition-all duration-500 ${isFocused ? 'border-red-400 bg-red-50 ring-4 ring-red-200 shadow-lg' : 'border-gray-200 bg-gray-50'}`}
+                data-testid={`card-report-${r.key}`}
+              >
                 <div className="flex items-center justify-between gap-3 mb-3">
                   <div>
                     <div className="flex items-center gap-2 flex-wrap">
