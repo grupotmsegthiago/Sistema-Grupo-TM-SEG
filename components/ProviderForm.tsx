@@ -929,7 +929,7 @@ const ProviderForm: React.FC<ProviderFormProps> = ({ onBack, onNavigateToVehicle
                           {autoMasterEnabled && (
                               <span className="text-[10px] font-black px-2 py-1 rounded-full bg-emerald-600 text-white uppercase tracking-widest">Ativo</span>
                           )}
-                          {autoMasterId && canEditAutoMaster && (
+                          {autoMasterEnabled && canEditAutoMaster && (
                               <button type="button" onClick={handleDisableAutoMaster} className="text-[10px] font-black uppercase tracking-widest px-3 py-2 rounded-lg border border-red-200 text-red-600 hover:bg-red-50" data-testid="button-disable-auto-master">Desligar</button>
                           )}
                       </div>
@@ -981,7 +981,7 @@ const ProviderForm: React.FC<ProviderFormProps> = ({ onBack, onNavigateToVehicle
                               </button>
                           )}
                           <button type="button" onClick={handleSaveAutoMaster} disabled={!canEditAutoMaster || isSavingMaster} className="px-5 py-2 bg-emerald-600 text-white rounded-lg text-xs font-black uppercase tracking-widest hover:bg-emerald-700 disabled:opacity-50 flex items-center gap-2" data-testid="button-save-auto-master">
-                              {isSavingMaster ? <Loader2 size={12} className="animate-spin" /> : <Save size={12} />} {autoMasterId ? 'Atualizar' : 'Ativar Motor'}
+                              {isSavingMaster ? <Loader2 size={12} className="animate-spin" /> : <Save size={12} />} {autoMasterEnabled ? 'Atualizar' : 'Ativar Motor'}
                           </button>
                       </div>
                   </div>
