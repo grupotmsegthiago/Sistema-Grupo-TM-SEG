@@ -67,19 +67,33 @@ export const stripDhlOpDescription = (op?: string | null): DhlOpParts => {
   let region: string | null = null;
   let rest = raw;
 
+  // Formato legado: "REGIÃO - SUDESTE - DESC 1200KM".
   // Ancorar nas regiões válidas (alternação) evita o bug onde regex genérica
   // captura "CENTRO" em "CENTRO-OESTE" e descarta a tabela inteira.
-  const m = raw.match(/^REGI[ÃA]O\s*-\s*(CENTRO-OESTE|SUDESTE|NORDESTE|NORTE|SUL|BRASIL)\s*-\s*(.+)$/i);
-  if (m) {
-    const candidate = normalize(m[1]);
+  const mLegacy = raw.match(/^REGI[ÃA]O\s*-\s*(CENTRO-OESTE|SUDESTE|NORDESTE|NORTE|SUL|BRASIL)\s*-\s*(.+)$/i);
+  if (mLegacy) {
+    const candidate = normalize(mLegacy[1]);
     if (VALID_REGIONS.has(candidate)) {
       region = candidate;
-      rest = m[2];
+      rest = mLegacy[2];
+    }
+  } else {
+    // Formato novo (motor automático): "SUDESTE - 1200KM" ou "SUDESTE - DESC 1200KM".
+    // Aceita o nome da região direto no início, sem o prefixo "REGIÃO - ".
+    const mShort = raw.match(/^(CENTRO-OESTE|SUDESTE|NORDESTE|NORTE|SUL|BRASIL)\s*-\s*(.+)$/i);
+    if (mShort) {
+      const candidate = normalize(mShort[1]);
+      if (VALID_REGIONS.has(candidate)) {
+        region = candidate;
+        rest = mShort[2];
+      }
     }
   }
 
   let km: number | null = null;
-  const kmMatch = rest.match(/\s+(\d{2,5})\s*KM\s*$/i);
+  // Aceita "1200KM" colado no início ("1200KM"), no fim de uma descrição
+  // ("DESC 1200KM") ou isolado.
+  const kmMatch = rest.match(/(?:^|\s)(\d{2,5})\s*KM\s*$/i);
   if (kmMatch) {
     km = parseInt(kmMatch[1], 10);
     rest = rest.slice(0, kmMatch.index).trim();
@@ -111,11 +125,14 @@ export const validateDhlTableName = (op?: string | null): DhlNameValidation => {
       reason: 'Nome da tabela vazio.',
     };
   }
-  const regionMatch = raw.match(/^REGI[ÃA]O\s*-\s*(CENTRO-OESTE|SUDESTE|NORDESTE|NORTE|SUL|BRASIL)\s*-\s*(.+)$/i);
+  // Aceita formato legado ("REGIÃO - SUDESTE - ...") e formato novo ("SUDESTE - 1200KM").
+  const legacyMatch = raw.match(/^REGI[ÃA]O\s*-\s*(CENTRO-OESTE|SUDESTE|NORDESTE|NORTE|SUL|BRASIL)\s*-\s*(.+)$/i);
+  const shortMatch = !legacyMatch ? raw.match(/^(CENTRO-OESTE|SUDESTE|NORDESTE|NORTE|SUL|BRASIL)\s*-\s*(.+)$/i) : null;
+  const regionMatch = legacyMatch || shortMatch;
   const hasRegionPrefix = !!regionMatch;
   const hasValidRegion = hasRegionPrefix && VALID_REGIONS.has(normalize(regionMatch![1]));
   const rest = regionMatch ? regionMatch[2] : raw;
-  const hasKmSuffix = /\s+\d{2,5}\s*KM\s*$/i.test(rest);
+  const hasKmSuffix = /(?:^|\s)\d{2,5}\s*KM\s*$/i.test(rest);
 
   if (hasRegionPrefix && hasValidRegion && hasKmSuffix) {
     return { valid: true, hasRegionPrefix, hasValidRegion, hasKmSuffix, reason: '' };
