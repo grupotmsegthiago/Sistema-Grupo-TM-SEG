@@ -4,6 +4,7 @@ import { Client, ClientPriceTable } from '../types';
 import { supabase } from '../lib/supabase';
 import { logAction } from '../lib/logger';
 import { clientFuzzyFilter } from '../lib/financialUtils';
+import { generateAutoBands, suggestAutoMasterFromManualTables, type ProviderAutoMasterConfig } from '../lib/providerAutoPricing';
 import { useNotification } from '../lib/NotificationContext';
 import ImportClientPriceModal from './ImportClientPriceModal';
 import ClientVehicleList from './ClientVehicleList';
@@ -142,6 +143,28 @@ const ClientForm: React.FC<ClientFormProps> = ({
   const [clients, setClientsList] = useState<Client[]>([]);
   const [copySourceClientId, setCopySourceClientId] = useState('');
 
+  // Motor de Precificação Automática (cópia da lógica de ProviderForm, com REGIÃO)
+  const AUTO_MASTER_PREFIX = '__AUTO_MASTER__';
+  const buildMasterOpType = (region: string) => `${AUTO_MASTER_PREFIX} ${region}`.toUpperCase().trim();
+  const parseMasterRegion = (opType: string | null | undefined): string | null => {
+    const s = (opType || '').toUpperCase().trim();
+    if (!s.startsWith(AUTO_MASTER_PREFIX)) return null;
+    return s.substring(AUTO_MASTER_PREFIX.length).trim() || null;
+  };
+  const [autoMasterRegion, setAutoMasterRegion] = useState<string>('SUDESTE');
+  const [autoMasterForm, setAutoMasterForm] = useState({
+      baseActivationValue: '',
+      baseKmAllowance: '100',
+      baseHourAllowance: '3',
+      extraKmValue: '',
+      extraHourValue: '',
+  });
+  const [autoMasterRows, setAutoMasterRows] = useState<any[]>([]);
+  const [isSavingMaster, setIsSavingMaster] = useState(false);
+  const [isMaterializingBands, setIsMaterializingBands] = useState(false);
+  const [showAutoPreview, setShowAutoPreview] = useState(false);
+  const [lastSuggestionInfo, setLastSuggestionInfo] = useState<string | null>(null);
+
   const fetchClientData = async () => {
     if (id) {
         setIsLoading(true);
@@ -276,8 +299,178 @@ const ClientForm: React.FC<ClientFormProps> = ({
 
   const fetchPriceTables = async (clientName: string) => {
       const { data } = await supabase.from('client_price_tables').select('*').or(clientFuzzyFilter(clientName)).order('franchise_km', { ascending: true });
-      if (data) setPriceTables(data as any);
+      if (data) {
+          const masters: any[] = [];
+          const regular: any[] = [];
+          (data as any[]).forEach(r => {
+              if (parseMasterRegion(r.operation_type)) masters.push(r);
+              else regular.push(r);
+          });
+          setPriceTables(regular as any);
+          setAutoMasterRows(masters);
+      }
       setSelectedPriceIds([]); 
+  };
+
+  // Sincroniza o formulário do motor com a região selecionada (carrega master existente)
+  useEffect(() => {
+      const existing = autoMasterRows.find(r => parseMasterRegion(r.operation_type) === autoMasterRegion);
+      if (existing) {
+          setAutoMasterForm({
+              baseActivationValue: existing.activation_fee != null ? String(existing.activation_fee) : '',
+              baseKmAllowance: existing.franchise_km != null ? String(existing.franchise_km) : '100',
+              baseHourAllowance: existing.franchise_hours != null ? String(existing.franchise_hours) : '3',
+              extraKmValue: existing.price_per_extra_km != null ? String(existing.price_per_extra_km) : '',
+              extraHourValue: existing.price_per_extra_hour != null ? String(existing.price_per_extra_hour) : '',
+          });
+      } else {
+          setAutoMasterForm({ baseActivationValue: '', baseKmAllowance: '100', baseHourAllowance: '3', extraKmValue: '', extraHourValue: '' });
+      }
+      setLastSuggestionInfo(null);
+      setShowAutoPreview(false);
+  }, [autoMasterRegion, autoMasterRows]);
+
+  const canEditAutoMaster = (() => {
+      if (!currentUser) return false;
+      const r = (currentUser?.role || '').toLowerCase();
+      return r === 'diretoria' || r === 'administrador' || r === 'financeiro' || r === 'comercial';
+  })();
+
+  const autoMasterConfig: ProviderAutoMasterConfig = {
+      baseActivationValue: parseFloat(autoMasterForm.baseActivationValue) || 0,
+      baseKmAllowance: parseFloat(autoMasterForm.baseKmAllowance) || 0,
+      baseHourAllowance: parseFloat(autoMasterForm.baseHourAllowance) || 0,
+      extraKmValue: parseFloat(autoMasterForm.extraKmValue) || 0,
+      extraHourValue: parseFloat(autoMasterForm.extraHourValue) || 0,
+  };
+
+  const autoPreviewBands = (() => {
+      const cfg = autoMasterConfig;
+      if (cfg.baseActivationValue <= 0 || cfg.baseKmAllowance <= 0) return [];
+      return generateAutoBands(cfg);
+  })();
+
+  const currentMasterRow = autoMasterRows.find(r => parseMasterRegion(r.operation_type) === autoMasterRegion);
+  const autoMasterEnabled = !!currentMasterRow;
+
+  const handleSuggestAutoMaster = () => {
+      if (!canEditAutoMaster) { showNotification('Sem permissão', 'Apenas diretoria/administrador/financeiro/comercial pode configurar o motor automático.', 'error'); return; }
+      // Filtra tabelas manuais pela região selecionada (prefixo "<REGIÃO> - ...")
+      const prefix = `${autoMasterRegion} - `.toUpperCase();
+      const sample = priceTables.filter(t => (t.operation_type || '').toUpperCase().startsWith(prefix));
+      // Adapta para o formato esperado pelo helper (que espera campos do provider)
+      const adapted = sample.map(t => ({
+          operation_type: t.operation_type,
+          activation_cost: t.activation_fee,
+          franchise_km: t.franchise_km,
+          franchise_hours: t.franchise_hours,
+          cost_per_extra_km: t.price_per_extra_km,
+          cost_per_extra_hour: t.price_per_extra_hour,
+      }));
+      const suggestion = suggestAutoMasterFromManualTables(adapted);
+      if (!suggestion) {
+          showNotification('Sem dados', `Não há tabelas manuais para a região ${autoMasterRegion} cadastradas.`, 'warning');
+          return;
+      }
+      const { config, sampleCount } = suggestion;
+      setAutoMasterForm({
+          baseActivationValue: config.baseActivationValue ? String(config.baseActivationValue) : '',
+          baseKmAllowance: config.baseKmAllowance ? String(config.baseKmAllowance) : '100',
+          baseHourAllowance: config.baseHourAllowance ? String(config.baseHourAllowance) : '3',
+          extraKmValue: config.extraKmValue ? String(config.extraKmValue) : '',
+          extraHourValue: config.extraHourValue ? String(config.extraHourValue) : '',
+      });
+      setLastSuggestionInfo(`Sugestão calculada a partir da mediana de ${sampleCount} tabela${sampleCount > 1 ? 's' : ''} manual${sampleCount > 1 ? 'is' : ''} da região ${autoMasterRegion}. Revise antes de salvar.`);
+      showNotification('Sugestão pronta', `Valores pré-preenchidos com a mediana de ${sampleCount} tabela${sampleCount > 1 ? 's' : ''}. Revise e ajuste antes de ativar.`, 'success');
+  };
+
+  const handleSaveAutoMaster = async () => {
+      if (!id || !formData.name) { showNotification('Atenção', 'Salve o cliente primeiro.', 'warning'); return; }
+      if (!canEditAutoMaster) { showNotification('Sem permissão', 'Apenas diretoria/administrador/financeiro/comercial pode configurar o motor automático.', 'error'); return; }
+      if (!autoMasterRegion) { showNotification('Atenção', 'Selecione uma região.', 'warning'); return; }
+      const cfg = autoMasterConfig;
+      if (cfg.baseActivationValue <= 0 || cfg.baseKmAllowance <= 0 || cfg.baseHourAllowance <= 0 || cfg.extraKmValue < 0 || cfg.extraHourValue < 0) {
+          showNotification('Atenção', 'Preencha as 5 variáveis mestre com valores positivos.', 'warning');
+          return;
+      }
+      setIsSavingMaster(true);
+      try {
+          const opType = buildMasterOpType(autoMasterRegion);
+          const payload: any = {
+              client: formData.name,
+              operation_type: opType,
+              activation_fee: cfg.baseActivationValue,
+              franchise_km: cfg.baseKmAllowance,
+              franchise_hours: cfg.baseHourAllowance,
+              price_per_extra_km: cfg.extraKmValue,
+              price_per_extra_hour: cfg.extraHourValue,
+          };
+          if (currentMasterRow) {
+              const { error } = await supabase.from('client_price_tables').update(payload).eq('id', currentMasterRow.id);
+              if (error) throw error;
+          } else {
+              const { error } = await supabase.from('client_price_tables').insert([payload]);
+              if (error) throw error;
+          }
+          await logAction('UPDATE', 'ClientAutoMaster', formData.name, `Motor Auto Cliente — ${formData.name} / ${autoMasterRegion}: base R$${cfg.baseActivationValue}, ${cfg.baseKmAllowance}km/${cfg.baseHourAllowance}h, +R$${cfg.extraKmValue}/km, +R$${cfg.extraHourValue}/h`);
+          setLastSuggestionInfo(null);
+          showNotification('Sucesso', `Configuração mestre salva para ${autoMasterRegion}.`, 'success');
+          fetchPriceTables(formData.name);
+      } catch (err: any) {
+          showNotification('Erro', 'Falha ao salvar configuração mestre: ' + (err?.message || 'erro desconhecido'), 'error');
+      } finally {
+          setIsSavingMaster(false);
+      }
+  };
+
+  const handleDisableAutoMaster = async () => {
+      if (!currentMasterRow) return;
+      if (!canEditAutoMaster) { showNotification('Sem permissão', 'Apenas diretoria/administrador/financeiro/comercial pode alterar.', 'error'); return; }
+      if (!confirm(`Desligar o motor automático para a região ${autoMasterRegion}? As tabelas manuais continuarão sendo usadas.`)) return;
+      try {
+          const { error } = await supabase.from('client_price_tables').delete().eq('id', currentMasterRow.id);
+          if (error) throw error;
+          await logAction('DELETE', 'ClientAutoMaster', formData.name, `Motor Auto Cliente desligado: ${formData.name} / ${autoMasterRegion}`);
+          showNotification('Sucesso', `Motor automático desligado para ${autoMasterRegion}.`, 'success');
+          fetchPriceTables(formData.name);
+      } catch (err: any) {
+          showNotification('Erro', 'Falha ao desligar: ' + (err?.message || 'erro desconhecido'), 'error');
+      }
+  };
+
+  const handleMaterializeBands = async () => {
+      if (!formData.name) { showNotification('Atenção', 'Salve o cliente primeiro.', 'warning'); return; }
+      if (!canEditAutoMaster) { showNotification('Sem permissão', 'Apenas diretoria/administrador/financeiro/comercial pode gerar tabelas.', 'error'); return; }
+      const cfg = autoMasterConfig;
+      if (cfg.baseActivationValue <= 0 || cfg.baseKmAllowance <= 0) {
+          showNotification('Atenção', 'Configure as variáveis mestre antes de gerar as tabelas.', 'warning');
+          return;
+      }
+      const bands = generateAutoBands(cfg);
+      if (bands.length === 0) { showNotification('Atenção', 'Nenhuma faixa para salvar.', 'warning'); return; }
+      if (!confirm(`Salvar as ${bands.length} faixas como tabelas de preço para "${formData.name}" na região ${autoMasterRegion}?\n\nTabelas anteriores com prefixo "${autoMasterRegion} - AUTO " serão substituídas.`)) return;
+      setIsMaterializingBands(true);
+      try {
+          await supabase.from('client_price_tables').delete().eq('client', formData.name).like('operation_type', `${autoMasterRegion} - AUTO %`);
+          const rows = bands.map(b => ({
+              client: formData.name,
+              operation_type: `${autoMasterRegion} - AUTO ${b.kmFaixa}KM`,
+              activation_fee: b.valorBase,
+              franchise_km: b.kmFaixa,
+              franchise_hours: b.franquiaHoras,
+              price_per_extra_km: cfg.extraKmValue,
+              price_per_extra_hour: cfg.extraHourValue,
+          }));
+          const { error } = await supabase.from('client_price_tables').insert(rows);
+          if (error) throw error;
+          await logAction('CREATE', 'ClientPriceTable', formData.name, `Geradas ${rows.length} tabelas AUTO (${autoMasterRegion}) para o cliente ${formData.name}`);
+          showNotification('Sucesso', `${rows.length} tabelas AUTO geradas para ${autoMasterRegion}.`, 'success');
+          fetchPriceTables(formData.name);
+      } catch (err: any) {
+          showNotification('Erro', 'Falha ao gerar tabelas: ' + (err?.message || 'erro desconhecido'), 'error');
+      } finally {
+          setIsMaterializingBands(false);
+      }
   };
 
   const handleApplyAnnualAdjustment = async () => {
@@ -934,6 +1127,118 @@ const ClientForm: React.FC<ClientFormProps> = ({
                   </div>
               </div>
               
+              {/* Motor de Precificação Automática — Cliente (por REGIÃO) */}
+              <div className={`rounded-2xl border-2 p-5 ${autoMasterEnabled ? 'border-emerald-300 bg-gradient-to-br from-emerald-50 to-white' : 'border-gray-200 bg-gray-50'}`} data-testid="card-client-auto-master">
+                  <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 mb-4">
+                      <div className="flex items-center gap-3">
+                          <div className={`p-2 rounded-lg ${autoMasterEnabled ? 'bg-emerald-600 text-white' : 'bg-gray-300 text-gray-600'}`}>
+                              <TrendingUp size={18} />
+                          </div>
+                          <div>
+                              <h4 className="font-black text-sm uppercase tracking-wide text-gray-800">Configuração de Cálculo Padrão</h4>
+                              <p className="text-[10px] text-gray-500 uppercase font-bold tracking-widest">
+                                  {autoMasterEnabled ? `Motor ativo para ${autoMasterRegion} — tabelas manuais desta região serão ignoradas` : 'Defina a REGIÃO e 5 variáveis para ativar o cálculo automático por faixa'}
+                              </p>
+                          </div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                          {autoMasterEnabled && (
+                              <span className="text-[10px] font-black px-2 py-1 rounded-full bg-emerald-600 text-white uppercase tracking-widest">Ativo · {autoMasterRegion}</span>
+                          )}
+                          {autoMasterEnabled && canEditAutoMaster && (
+                              <button type="button" onClick={handleDisableAutoMaster} className="text-[10px] font-black uppercase tracking-widest px-3 py-2 rounded-lg border border-red-200 text-red-600 hover:bg-red-50" data-testid="button-disable-client-auto-master">Desligar</button>
+                          )}
+                      </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-6 gap-3">
+                      <div>
+                          <label className={LABEL_CLASS}>Região</label>
+                          <select disabled={!canEditAutoMaster} value={autoMasterRegion} onChange={e => setAutoMasterRegion(e.target.value)} className="w-full p-2 border rounded text-xs font-bold bg-white uppercase" data-testid="select-client-auto-region">
+                              {REGIONS.map(r => <option key={r} value={r}>{r}{autoMasterRows.some(m => parseMasterRegion(m.operation_type) === r) ? ' ✓' : ''}</option>)}
+                          </select>
+                      </div>
+                      <div>
+                          <label className={LABEL_CLASS}>Valor Base (Acionamento)</label>
+                          <input type="number" step="0.01" disabled={!canEditAutoMaster} value={autoMasterForm.baseActivationValue} onChange={e => setAutoMasterForm({...autoMasterForm, baseActivationValue: e.target.value})} className="w-full p-2 border rounded text-xs font-bold text-emerald-700 bg-white" placeholder="900.00" data-testid="input-client-auto-base-activation" />
+                      </div>
+                      <div>
+                          <label className={LABEL_CLASS}>KM Franquia Base</label>
+                          <input type="number" disabled={!canEditAutoMaster} value={autoMasterForm.baseKmAllowance} onChange={e => setAutoMasterForm({...autoMasterForm, baseKmAllowance: e.target.value})} className="w-full p-2 border rounded text-xs font-bold bg-white" placeholder="100" data-testid="input-client-auto-base-km" />
+                      </div>
+                      <div>
+                          <label className={LABEL_CLASS}>Horas Franquia Base</label>
+                          <input type="number" disabled={!canEditAutoMaster} value={autoMasterForm.baseHourAllowance} onChange={e => setAutoMasterForm({...autoMasterForm, baseHourAllowance: e.target.value})} className="w-full p-2 border rounded text-xs font-bold bg-white" placeholder="3" data-testid="input-client-auto-base-hr" />
+                      </div>
+                      <div>
+                          <label className={LABEL_CLASS}>Valor KM Extra</label>
+                          <input type="number" step="0.01" disabled={!canEditAutoMaster} value={autoMasterForm.extraKmValue} onChange={e => setAutoMasterForm({...autoMasterForm, extraKmValue: e.target.value})} className="w-full p-2 border rounded text-xs font-bold bg-white" placeholder="2.50" data-testid="input-client-auto-extra-km" />
+                      </div>
+                      <div>
+                          <label className={LABEL_CLASS}>Valor Hora Extra</label>
+                          <input type="number" step="0.01" disabled={!canEditAutoMaster} value={autoMasterForm.extraHourValue} onChange={e => setAutoMasterForm({...autoMasterForm, extraHourValue: e.target.value})} className="w-full p-2 border rounded text-xs font-bold bg-white" placeholder="40.00" data-testid="input-client-auto-extra-hr" />
+                      </div>
+                  </div>
+
+                  <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 mt-4 pt-3 border-t border-gray-200">
+                      <div className="flex items-center gap-3 flex-wrap">
+                          <button type="button" onClick={() => setShowAutoPreview(v => !v)} disabled={autoPreviewBands.length === 0} className="text-[11px] font-black uppercase tracking-widest text-indigo-700 hover:underline disabled:opacity-40 flex items-center gap-1" data-testid="button-toggle-client-auto-preview">
+                              {showAutoPreview ? 'Ocultar' : 'Ver'} faixas geradas ({autoPreviewBands.length})
+                          </button>
+                          <button type="button" onClick={handleSuggestAutoMaster} disabled={!canEditAutoMaster} className="text-[11px] font-black uppercase tracking-widest px-3 py-2 rounded-lg border border-indigo-200 text-indigo-700 bg-indigo-50 hover:bg-indigo-100 disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1.5" title={`Pré-preenche os 5 campos com a mediana das tabelas manuais da região ${autoMasterRegion}`} data-testid="button-suggest-client-auto-master">
+                              <TrendingUp size={12}/> Sugerir a partir das tabelas atuais
+                          </button>
+                      </div>
+                      <div className="flex items-center gap-2 flex-wrap">
+                          {autoMasterEnabled && (
+                              <button type="button" onClick={handleMaterializeBands} disabled={!canEditAutoMaster || isMaterializingBands || autoPreviewBands.length === 0} className="px-4 py-2 bg-indigo-600 text-white rounded-lg text-xs font-black uppercase tracking-widest hover:bg-indigo-700 disabled:opacity-50 flex items-center gap-2" data-testid="button-materialize-client-bands" title={`Cria 30 tabelas manuais (${autoMasterRegion} - AUTO 100KM, ...) para aparecer ao vincular no cliente/rota.`}>
+                                  {isMaterializingBands ? <Loader2 size={12} className="animate-spin" /> : <Save size={12} />} Salvar Faixas como Tabelas
+                              </button>
+                          )}
+                          <button type="button" onClick={handleSaveAutoMaster} disabled={!canEditAutoMaster || isSavingMaster} className="px-5 py-2 bg-emerald-600 text-white rounded-lg text-xs font-black uppercase tracking-widest hover:bg-emerald-700 disabled:opacity-50 flex items-center gap-2" data-testid="button-save-client-auto-master">
+                              {isSavingMaster ? <Loader2 size={12} className="animate-spin" /> : <Save size={12} />} {autoMasterEnabled ? 'Atualizar' : 'Ativar Motor'}
+                          </button>
+                      </div>
+                  </div>
+
+                  {lastSuggestionInfo && (
+                      <p className="text-[10px] font-bold text-indigo-700 mt-2 flex items-center gap-1" data-testid="text-client-suggestion-info">
+                          <TrendingUp size={10}/> {lastSuggestionInfo}
+                      </p>
+                  )}
+
+                  {!canEditAutoMaster && (
+                      <p className="text-[10px] font-bold text-amber-700 mt-2 flex items-center gap-1"><Lock size={10}/> Somente diretoria/administrador/financeiro/comercial podem editar.</p>
+                  )}
+
+                  {showAutoPreview && autoPreviewBands.length > 0 && (
+                      <div className="mt-3 max-h-64 overflow-y-auto border border-gray-200 rounded-lg">
+                          <table className="w-full text-[11px]">
+                              <thead className="bg-gray-100 sticky top-0">
+                                  <tr className="text-gray-600 font-black uppercase">
+                                      <th className="p-2 text-left">Faixa KM</th>
+                                      <th className="p-2 text-center">Horas</th>
+                                      <th className="p-2 text-right">Valor Base</th>
+                                      <th className="p-2 text-right">+ R$/km extra</th>
+                                      <th className="p-2 text-right">+ R$/h extra</th>
+                                  </tr>
+                              </thead>
+                              <tbody className="divide-y divide-gray-100">
+                                  {autoPreviewBands.map(b => (
+                                      <tr key={b.kmFaixa}>
+                                          <td className="p-2 font-bold">{b.kmFaixa} km</td>
+                                          <td className="p-2 text-center">{b.franquiaHoras}h</td>
+                                          <td className="p-2 text-right font-mono">R$ {b.valorBase.toFixed(2)}</td>
+                                          <td className="p-2 text-right">R$ {autoMasterConfig.extraKmValue.toFixed(2)}</td>
+                                          <td className="p-2 text-right">R$ {autoMasterConfig.extraHourValue.toFixed(2)}</td>
+                                      </tr>
+                                  ))}
+                              </tbody>
+                          </table>
+                      </div>
+                  )}
+              </div>
+
               <div className="p-6 rounded-2xl shadow-xl border bg-gradient-to-r from-gray-900 via-gray-800 to-red-950 border-red-900/40 text-white">
                   <div className="flex flex-col md:flex-row items-center justify-between gap-6">
                       <div className="flex items-center gap-4">
