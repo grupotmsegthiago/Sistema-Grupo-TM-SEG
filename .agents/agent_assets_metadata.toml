@@ -66,3 +66,15 @@ id = "izmrPzbCYgoMePhXK72e6"
 uri = "file://exports/dhl-antes-depois.xlsx"
 type = "table"
 title = "DHL — Antes x Depois (com fallback de proximidade)"
+
+[[outputs]]
+id = "CcnrNKRqf4WHUgOPwCK79"
+uri = "file://.local/exports/DHL_tabelas_OS.xlsx"
+type = "table"
+title = "DHL — Tabelas por OS (73 missões)"
+
+[[outputs]]
+id = "3xXetgMscf-N6hED6dkag"
+uri = "file://.local/exports/TORRES_tabelas_OS.xlsx"
+type = "table"
+title = "TORRES — Tabelas por OS (143 missões)"
