@@ -5,7 +5,7 @@ import { supabase } from '../lib/supabase';
 import { logAction } from '../lib/logger';
 import { ProviderCostTable } from '../types';
 import ImportProviderCostModal from './ImportProviderCostModal';
-import { AUTO_MASTER_OP_TYPE, generateAutoBands, suggestAutoMasterFromManualTables, type ProviderAutoMasterConfig } from '../lib/providerAutoPricing';
+import { AUTO_MASTER_OP_TYPE, generateAutoBands, suggestAutoMasterFromManualTables, isAutoMasterRow, type ProviderAutoMasterConfig } from '../lib/providerAutoPricing';
 import { useNotification } from '../lib/NotificationContext';
 import ClientContractTab from './ClientContractTab';
 
