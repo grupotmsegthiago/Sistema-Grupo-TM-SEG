@@ -71,10 +71,10 @@ title = "DHL — Antes x Depois (com fallback de proximidade)"
 id = "CcnrNKRqf4WHUgOPwCK79"
 uri = "file://.local/exports/DHL_tabelas_OS.xlsx"
 type = "table"
-title = "DHL — Tabelas por OS (73 missões)"
+title = "DHL — KM / Região / Tabela aplicada"
 
 [[outputs]]
 id = "3xXetgMscf-N6hED6dkag"
 uri = "file://.local/exports/TORRES_tabelas_OS.xlsx"
 type = "table"
-title = "TORRES — Tabelas por OS (143 missões)"
+title = "TORRES — KM / Tabela aplicada"
