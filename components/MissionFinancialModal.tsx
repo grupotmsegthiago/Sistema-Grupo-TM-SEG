@@ -3232,11 +3232,14 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                 <div className="flex gap-2">
                                     {(() => {
                                         const missionClientShort = clientNameShort(mission.originalClientName || mission.client || '').toLowerCase().trim();
+                                        // Esconde linhas de configuração do motor automático (operation_type que começa com "__AUTO_MASTER__")
+                                        const isMasterRow = (t: any) => /^__AUTO_MASTER__/i.test((t.operation_type || '').trim());
                                         const onlyThisClient = clientTables.filter(t => {
+                                            if (isMasterRow(t)) return false;
                                             const tShort = clientNameShort(t.client || '').toLowerCase().trim();
                                             return missionClientShort && tShort && (tShort === missionClientShort || tShort.startsWith(missionClientShort) || missionClientShort.startsWith(tShort));
                                         });
-                                        const list = onlyThisClient.length > 0 ? onlyThisClient : clientTables;
+                                        const list = onlyThisClient.length > 0 ? onlyThisClient : clientTables.filter(t => !isMasterRow(t));
                                         const options: FilterableSelectOption[] = [
                                             { value: '', label: 'Automático (IA Detectando)' },
                                             ...[...list].sort((a, b) => (a.operation_type || '').localeCompare(b.operation_type || '')).map(t => {
