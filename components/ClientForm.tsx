@@ -448,13 +448,24 @@ const ClientForm: React.FC<ClientFormProps> = ({
       }
       const bands = generateAutoBands(cfg);
       if (bands.length === 0) { showNotification('Atenção', 'Nenhuma faixa para salvar.', 'warning'); return; }
-      if (!confirm(`Salvar as ${bands.length} faixas como tabelas de preço para "${formData.name}" na região ${autoMasterRegion}?\n\nTabelas anteriores com prefixo "${autoMasterRegion} - AUTO " serão substituídas.`)) return;
+      if (!confirm(`Salvar as ${bands.length} faixas como tabelas de preço para "${formData.name}" na região ${autoMasterRegion}?\n\nTabelas anteriores com nome "${autoMasterRegion} - <KM>KM" (faixas automáticas) serão substituídas.`)) return;
       setIsMaterializingBands(true);
       try {
-          await supabase.from('client_price_tables').delete().eq('client', formData.name).like('operation_type', `${autoMasterRegion} - AUTO %`);
+          // Limpa faixas anteriores: tanto o formato novo "REGIÃO - 100KM" quanto o legado "REGIÃO - AUTO 100KM".
+          const { data: oldRows } = await supabase
+              .from('client_price_tables')
+              .select('id, operation_type')
+              .eq('client', formData.name)
+              .like('operation_type', `${autoMasterRegion} - %KM`);
+          const oldIds = (oldRows || [])
+              .filter(r => /^\s*[A-ZÇÃÊÉÁÍÓÚ\-]+\s+-\s+(AUTO\s+)?\d+KM\s*$/i.test(r.operation_type || ''))
+              .map(r => r.id);
+          if (oldIds.length > 0) {
+              await supabase.from('client_price_tables').delete().in('id', oldIds);
+          }
           const rows = bands.map(b => ({
               client: formData.name,
-              operation_type: `${autoMasterRegion} - AUTO ${b.kmFaixa}KM`,
+              operation_type: `${autoMasterRegion} - ${b.kmFaixa}KM`,
               activation_fee: b.valorBase,
               franchise_km: b.kmFaixa,
               franchise_hours: b.franquiaHoras,
