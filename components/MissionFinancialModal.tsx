@@ -2706,6 +2706,22 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                           <span className="text-lg font-black text-white tracking-tight" data-testid="text-route-totalkm">
                               {(mission.totalDistance || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} <span className="text-xs font-bold text-gray-400">km</span>
                           </span>
+                          {(() => {
+                              const uf = extractUF(mission.origin || '');
+                              const region = UF_TO_REGION[uf] || '';
+                              if (!region) return null;
+                              return (
+                                  <span
+                                      className="ml-3 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-indigo-500/20 border border-indigo-400/40 text-indigo-200 text-[11px] font-black uppercase tracking-wider"
+                                      title={`Região detectada pela UF de origem (${uf})`}
+                                      data-testid="badge-route-region"
+                                  >
+                                      <span className="text-[9px] font-bold text-indigo-300/80">REGIÃO</span>
+                                      <span className="text-white">{region}</span>
+                                      <span className="text-[9px] font-bold text-indigo-300/80">({uf})</span>
+                                  </span>
+                              );
+                          })()}
                           {canEditOpsData && !isEffectivelyLocked && (
                               <button
                                   onClick={() => { setEditOrigin(mission.origin || ''); setEditDestination(mission.destination || ''); setIsEditingRoute(true); }}
