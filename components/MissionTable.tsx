@@ -1304,6 +1304,12 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
                    providerTables={providerTables}
                    clientsData={clientsData}
                    onRefreshMissions={() => fetchMissions(true)}
+                   clientFilter={(name) => {
+                     const n = (name || '').toUpperCase();
+                     return !n.includes('DHL SUPPLY CHAIN') && !n.includes('DHL LOGISTICS');
+                   }}
+                   dailyGoalOverride={35000}
+                   monthlyGoalOverride={35000 * 20}
                 />
              </div>
              <div className="w-full sm:w-[320px] sm:shrink-0">
@@ -1331,13 +1337,7 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
                    viewPeriod={viewPeriod} 
                    customStartDate={customStartDate} 
                    customEndDate={customEndDate}
-                   missions={[
-                     ...allMissions,
-                     ...allMissions.filter((m: any) => {
-                       const n = ((m.originalClientName || m.client || '') as string).toUpperCase();
-                       return n.includes('DHL SUPPLY CHAIN') || n.includes('DHL LOGISTICS');
-                     })
-                   ]}
+                   missions={allMissions}
                    clientTables={clientTables}
                    providerTables={providerTables}
                    clientsData={clientsData}
