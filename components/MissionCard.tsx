@@ -333,12 +333,16 @@ const MissionCardComponent: React.FC<MissionCardProps> = ({
     }, [mission, clientTables, providerTables, clientsData, isDirector, hideProviderInfo, currentTime]);
 
     const isExtraHourActive = useMemo(() => {
-        if (!hideProviderInfo) return false;
+        if (!hideProviderInfo && !isDirector) return false;
         if (!financials) return false;
         if (isTerminal) return false;
-        if (mission.status !== MissionStatus.IN_TRANSIT) return false;
-        return financials.client.excessHours > 0;
-    }, [financials, isTerminal, mission.status, hideProviderInfo]);
+        if (![MissionStatus.ORIGIN, MissionStatus.IN_TRANSIT].includes(mission.status as MissionStatus)) return false;
+        // Para cliente restrito mantém a leitura pela tabela do cliente.
+        // Para diretoria, considera estourada se QUALQUER lado (cliente ou fornecedor) já passou da franquia.
+        const clientExcess = financials.client.excessHours > 0;
+        const providerExcess = financials.provider?.excessHours > 0;
+        return hideProviderInfo ? clientExcess : (clientExcess || providerExcess);
+    }, [financials, isTerminal, mission.status, hideProviderInfo, isDirector]);
 
     const formatExcessTime = (hours: number) => {
         const totalSeconds = Math.round(hours * 3600);
@@ -627,7 +631,7 @@ Qualquer dúvida, estamos a disposição.
                             Hora Extra Ativa
                         </span>
                         <span className="text-[10px] font-black text-yellow-100 bg-black/20 px-2 py-0.5 rounded-full" style={{ boxShadow: 'inset 0 1px 2px rgba(0,0,0,0.2)' }}>
-                            +{financials ? formatExcessTime(financials.client.excessHours) : ''}
+                            +{financials ? formatExcessTime(Math.max(financials.client.excessHours || 0, financials.provider?.excessHours || 0)) : ''}
                         </span>
                     </div>
                     <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/10 to-transparent animate-pulse pointer-events-none"></div>
