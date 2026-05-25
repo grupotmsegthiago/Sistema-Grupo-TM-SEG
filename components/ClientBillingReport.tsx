@@ -1891,6 +1891,17 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
     };
 
     const openInvoiceModal = () => {
+        // Bloqueio: não permite gerar fatura se houver OS sem aprovação no período.
+        const pendentes = rowsData.filter(r => !r.isApproved);
+        if (pendentes.length > 0) {
+            const lista = pendentes.slice(0, 10).map(r => `• ${r.id} (${r.missionStatus})`).join('\n');
+            const extra = pendentes.length > 10 ? `\n…e mais ${pendentes.length - 10} OS.` : '';
+            alert(
+                `Não é possível gerar a fatura: existem ${pendentes.length} OS no período ainda sem aprovação.\n\n` +
+                `Conclua a auditoria/aprovação dessas OS antes de faturar:\n${lista}${extra}`
+            );
+            return;
+        }
         const clientObj = clients.find(c => c.id.toString() === selectedClient);
         const razaoSocial = clientObj?.name || clientObj?.trading_name || '';
         const tomador = razaoSocial;
@@ -2511,10 +2522,19 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
                             <button onClick={handleFetchCharts} disabled={chartsLoading} className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2.5 rounded-lg text-sm font-bold shadow-sm flex items-center justify-center gap-2" data-testid="button-generate-charts">
                                 {chartsLoading ? <Loader2 size={18} className="animate-spin" /> : <BarChart3 size={18} />} Gráficos
                             </button>
-                            {reportGenerated && (
+                            {reportGenerated && (() => {
+                                const pendCount = rowsData.filter(r => !r.isApproved).length;
+                                const blocked = pendCount > 0;
+                                return (
                                 <>
-                                    <button onClick={openInvoiceModal} className="bg-red-700 hover:bg-red-800 text-white px-4 py-2.5 rounded-lg text-sm font-bold shadow-sm flex items-center justify-center gap-2" data-testid="btn-generate-invoice">
-                                        <Receipt size={18} /> Gerar Fatura
+                                    <button
+                                        onClick={openInvoiceModal}
+                                        disabled={blocked}
+                                        title={blocked ? `Há ${pendCount} OS no período sem aprovação. Aprove todas antes de faturar.` : 'Gerar fatura do período'}
+                                        className={`px-4 py-2.5 rounded-lg text-sm font-bold shadow-sm flex items-center justify-center gap-2 text-white ${blocked ? 'bg-gray-400 cursor-not-allowed' : 'bg-red-700 hover:bg-red-800'}`}
+                                        data-testid="btn-generate-invoice"
+                                    >
+                                        <Receipt size={18} /> Gerar Fatura{blocked ? ` (${pendCount} pendente${pendCount > 1 ? 's' : ''})` : ''}
                                     </button>
                                     <button onClick={() => { setShowPasteModal(true); setPasteText(''); setPasteResult(null); }} className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2.5 rounded-lg text-sm font-bold shadow-sm flex items-center justify-center gap-2" data-testid="btn-paste-spreadsheet">
                                         <ScanLine size={18} /> Colar Planilha
@@ -2526,7 +2546,8 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
                                         <Printer size={18} /> PDF
                                     </button>
                                 </>
-                            )}
+                                );
+                            })()}
                         </div>
                     </div>
                 </div>
