@@ -1377,7 +1377,7 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
     const cellStyle: React.CSSProperties = {
         border: '1px solid #e5c4c4',
         padding: '7px 8px',
-        fontSize: '13px',
+        fontSize: '14px',
         fontFamily: "'Inter', 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif",
         textAlign: 'center',
         whiteSpace: 'nowrap',
@@ -1395,7 +1395,7 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
         ...cellStyle,
         backgroundColor: '#fecaca',
         fontWeight: 900,
-        fontSize: '11px',
+        fontSize: '12px',
         textTransform: 'uppercase' as const,
         color: '#7f1d1d',
         padding: '7px 8px',
@@ -1404,7 +1404,7 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
         ...headerStyle,
         backgroundColor: '#b91c1c',
         color: '#ffffff',
-        fontSize: '12px',
+        fontSize: '13px',
         letterSpacing: '0.3px',
         padding: '6px 5px',
     };
@@ -3024,7 +3024,7 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
                                 ) : (
                                     filtered.map((r, i) => (
                                         <tr key={i} title={r.frozen ? `Dados Congelados - Aprovado por ${r.frozenBy}` : !r.isApproved ? `Status: ${r.missionStatus} (não aprovada)` : ''} style={!r.isApproved ? { backgroundColor: '#fce4e4', animation: 'blink-pending 2s ease-in-out infinite' } : undefined}>
-                                            <td style={{ ...cellStyle, fontSize: '9px', color: '#9ca3af', textAlign: 'center', padding: '2px' }}>{i + 1}</td>
+                                            <td style={{ ...cellStyle, fontSize: '11px', color: '#9ca3af', textAlign: 'center', padding: '2px' }}>{i + 1}</td>
                                             <td style={cellBold}>
                                                 <span onClick={(e) => handleOpenOS(`GTM-${r.id}`, e)} data-testid={`boletim-open-os-${r.id}`} style={{ cursor: 'pointer' }}>
                                                     {r.frozen && <Lock size={8} style={{ display: 'inline', marginRight: '2px', color: '#92400e' }} />}
@@ -3041,10 +3041,10 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
                                                     style={{ marginLeft: '4px', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: '14px', height: '14px', border: 'none', borderRadius: '3px', background: '#fee2e2', color: '#dc2626', fontSize: '10px', fontWeight: 900, cursor: actionBusy ? 'not-allowed' : 'pointer', verticalAlign: 'middle', lineHeight: 1, padding: 0, opacity: actionBusy === `GTM-${r.id}` ? 0.4 : 1 }}
                                                 >×</button>
                                             </td>
-                                            {isCeslogBilling && <td style={{ ...cellStyle, fontWeight: 700, color: '#7e22ce', fontSize: '11px' }}>{r.referenceNumber || '-'}</td>}
-                                            {isDhlBilling && <td style={{ ...cellStyle, fontWeight: 800, color: '#D40511', fontSize: '11px', backgroundColor: '#fffbe6' }} data-testid={`cell-se-${r.id}`}>{r.seNumber || '-'}</td>}
-                                            <td style={{ ...cellStyle, fontWeight: 800, fontSize: '10px', textTransform: 'uppercase', color: r.isApproved ? '#065f46' : '#991b1b', backgroundColor: r.isApproved ? '#ecfdf5' : '#fee2e2' }} data-testid={`cell-status-${r.id}`}>{r.missionStatus}</td>
-                                            <td className="route-cell" style={{ ...cellStyle, textAlign: 'left', whiteSpace: 'normal', wordWrap: 'break-word', wordBreak: 'break-word', overflowWrap: 'break-word', lineHeight: '1.25', fontSize: '12px', maxWidth: '320px' }} title={r.route}>{r.route}</td>
+                                            {isCeslogBilling && <td style={{ ...cellStyle, fontWeight: 700, color: '#7e22ce', fontSize: '12px' }}>{r.referenceNumber || '-'}</td>}
+                                            {isDhlBilling && <td style={{ ...cellStyle, fontWeight: 800, color: '#D40511', fontSize: '12px', backgroundColor: '#fffbe6' }} data-testid={`cell-se-${r.id}`}>{r.seNumber || '-'}</td>}
+                                            <td style={{ ...cellStyle, fontWeight: 800, fontSize: '11px', textTransform: 'uppercase', color: r.isApproved ? '#065f46' : '#991b1b', backgroundColor: r.isApproved ? '#ecfdf5' : '#fee2e2' }} data-testid={`cell-status-${r.id}`}>{r.missionStatus}</td>
+                                            <td className="route-cell" style={{ ...cellStyle, textAlign: 'left', whiteSpace: 'normal', wordWrap: 'break-word', wordBreak: 'break-word', overflowWrap: 'break-word', lineHeight: '1.25', fontSize: '13px', maxWidth: '320px' }} title={r.route}>{r.route}</td>
                                             <td style={cellStyle}>{fmtBRL(r.activationFee)}</td>
                                             <td style={cellStyle}>{r.franchiseHoursFmt}</td>
                                             <td style={isDhlBilling && dhlWarningsById.has(r.id) ? { ...cellStyle, background: '#fff7ed', color: '#9a3412', fontWeight: 900, border: '1.5px solid #ea580c' } : cellStyle} title={isDhlBilling && dhlWarningsById.has(r.id) ? `Divergente: KM real ${dhlWarningsById.get(r.id)!.kmTotal} → tabela esperada ${dhlWarningsById.get(r.id)!.expected}KM (aplicada ${dhlWarningsById.get(r.id)!.actual}KM)` : undefined}>
@@ -3083,8 +3083,8 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
                             {rowsData.length > 0 && (
                                 <tfoot>
                                     <tr style={{ backgroundColor: '#7f1d1d', color: '#fff' }}>
-                                        <td colSpan={28 + (isCeslogBilling ? 1 : 0) + (isDhlBilling ? 1 : 0)} style={{ ...cellStyle, textAlign: 'right', fontWeight: 900, fontSize: '14px', color: '#fff', border: '1px solid #991b1b', padding: '8px 10px' }}>TOTAL</td>
-                                        <td style={{ ...cellStyle, fontWeight: 900, fontSize: '15px', color: '#fff', border: '1px solid #991b1b', padding: '8px 10px' }}>{fmtBRL(grandTotal)}</td>
+                                        <td colSpan={28 + (isCeslogBilling ? 1 : 0) + (isDhlBilling ? 1 : 0)} style={{ ...cellStyle, textAlign: 'right', fontWeight: 900, fontSize: '15px', color: '#fff', border: '1px solid #991b1b', padding: '8px 10px' }}>TOTAL</td>
+                                        <td style={{ ...cellStyle, fontWeight: 900, fontSize: '16px', color: '#fff', border: '1px solid #991b1b', padding: '8px 10px' }}>{fmtBRL(grandTotal)}</td>
                                     </tr>
                                 </tfoot>
                             )}
