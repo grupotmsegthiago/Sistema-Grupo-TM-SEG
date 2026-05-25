@@ -6,6 +6,7 @@ import { Mission, Client, ClientPriceTable, ProviderCostTable } from '../types';
 import { FileText, Search, Printer, Loader2, FileSpreadsheet, BarChart3, Users, Building2, ChevronDown, ChevronRight, List, ExternalLink, Receipt, Camera, Sparkles, X, AlertCircle, CheckCircle2, ScanLine, Image as ImageIcon, DollarSign, Plus, Trash2, GitBranch, Calendar, Lock, Pencil, ArrowRight, ArrowLeftRight, Check, RefreshCw } from 'lucide-react';
 import { calculateMissionFinancials, extractCityFromAddress, clientFuzzyFilter, clientNameShort } from '../lib/financialUtils';
 import { computeDhlBand } from '../lib/dhlAutoTableSelector';
+import MissionFinancialModal from './MissionFinancialModal';
 
 // PostgREST .or() trata ( ) , . : como reservados. Para nomes com parênteses
 // (ex: "DHL SUPPLY CHAIN (BRAZIL) LTDA"), o valor precisa vir entre aspas
@@ -26,6 +27,7 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
     const [endDate, setEndDate] = useState('');
     const [selectedMonth, setSelectedMonth] = useState('');
     const [missions, setMissions] = useState<any[]>([]);
+    const [editMission, setEditMission] = useState<any | null>(null);
     const [priceTables, setPriceTables] = useState<ClientPriceTable[]>([]);
     const [providerTables, setProviderTables] = useState<ProviderCostTable[]>([]);
     const [isLoading, setIsLoading] = useState(false);
@@ -2860,15 +2862,28 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
                                     A faixa esperada é definida pelo KM total da viagem (ex.: 200 km → tabela 200KM). Ajuste a tabela das OS abaixo no Modal Financeiro — o aviso some automaticamente após a correção.
                                 </p>
                                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
-                                    {dhlBandWarnings.slice(0, 30).map(w => (
-                                        <span key={w.id} title={`KM real: ${w.kmTotal} | Esperado: ${w.expected}KM | Aplicado: ${w.actual}KM`} style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', background: '#fff', border: '1px solid #ea580c', borderRadius: '4px', padding: '2px 6px', fontSize: '10px', fontWeight: 800, color: '#9a3412' }}>
-                                            {w.id}
-                                            <span style={{ color: '#6b7280', fontWeight: 600 }}>{w.kmTotal}km</span>
-                                            <span style={{ color: '#dc2626' }}>{w.actual}KM</span>
-                                            <ArrowRight size={9} style={{ color: '#16a34a' }} />
-                                            <span style={{ color: '#16a34a' }}>{w.expected}KM</span>
-                                        </span>
-                                    ))}
+                                    {dhlBandWarnings.slice(0, 30).map(w => {
+                                        const fullId = w.id.startsWith('GTM-') ? w.id : `GTM-${w.id}`;
+                                        const mObj = missions.find(mm => mm.id === fullId);
+                                        return (
+                                            <button
+                                                key={w.id}
+                                                type="button"
+                                                onClick={() => { if (mObj) setEditMission(mObj); }}
+                                                disabled={!mObj}
+                                                title={`Clique para abrir a Auditoria de Faturamento — KM real: ${w.kmTotal} | Esperado: ${w.expected}KM | Aplicado: ${w.actual}KM`}
+                                                data-testid={`btn-edit-dhl-warning-${w.id}`}
+                                                style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', background: '#fff', border: '1px solid #ea580c', borderRadius: '4px', padding: '2px 6px', fontSize: '10px', fontWeight: 800, color: '#9a3412', cursor: mObj ? 'pointer' : 'not-allowed', textDecoration: 'underline' }}
+                                            >
+                                                <Pencil size={9} />
+                                                {w.id}
+                                                <span style={{ color: '#6b7280', fontWeight: 600 }}>{w.kmTotal}km</span>
+                                                <span style={{ color: '#dc2626' }}>{w.actual}KM</span>
+                                                <ArrowRight size={9} style={{ color: '#16a34a' }} />
+                                                <span style={{ color: '#16a34a' }}>{w.expected}KM</span>
+                                            </button>
+                                        );
+                                    })}
                                     {dhlBandWarnings.length > 30 && (
                                         <span style={{ fontSize: '10px', fontWeight: 700, color: '#9a3412', alignSelf: 'center' }}>+{dhlBandWarnings.length - 30} OS</span>
                                     )}
@@ -3466,6 +3481,20 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
                         </div>
                     </div>
                 </div>
+            )}
+            {editMission && (
+                <MissionFinancialModal
+                    isOpen={!!editMission}
+                    onClose={() => setEditMission(null)}
+                    mission={editMission}
+                    onUpdate={() => {
+                        // O listener realtime já regera o boletim; aqui só
+                        // garantimos o fechamento caso o modal não dispare.
+                        if (reportGeneratedRef.current && selectedClientRef.current) {
+                            handleGenerateRef.current();
+                        }
+                    }}
+                />
             )}
         </div>
     );
