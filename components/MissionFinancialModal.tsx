@@ -2005,18 +2005,61 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
 
           if (!shouldSnapshot && mission.snapshot_approved_by && mission.snapshot_data) {
               const existingSnap = mission.snapshot_data as any;
+              const usedTableNow = clientTables.find((t: any) => t.id.toString() === (manualClientTableId || financialData?.client.tableId));
+              const newClientTableId = manualClientTableId || financialData?.client.tableId || null;
+              const newActivationFee = usedTableNow?.activation_fee ?? financialData?.client.base ?? existingSnap.activationFee ?? 0;
+              const newFranchiseKm = usedTableNow?.franchise_km ?? existingSnap.franchiseKm ?? 0;
+              const newFranchiseHours = usedTableNow?.franchise_hours ?? existingSnap.franchiseHours ?? 0;
+              const newUnitKm = usedTableNow?.price_per_extra_km ?? existingSnap.unitKm ?? 0;
+              const newUnitHr = usedTableNow?.price_per_extra_hour ?? existingSnap.unitHr ?? 0;
+              const newKmExtraQtd = financialData?.client.excessKm ?? existingSnap.kmExtraQtd ?? 0;
+              const newKmExtraTotal = financialData?.client.extraKmVal ?? existingSnap.kmExtraTotal ?? 0;
+              const newHrExtraQtd = financialData?.client.excessHours ?? existingSnap.hrExtraQtd ?? 0;
+              const newHrExtraTotal = financialData?.client.extraHrVal ?? existingSnap.hrExtraTotal ?? 0;
+              const newDurationHours = financialData?.durationHours ?? existingSnap.durationHours ?? 0;
+              const newTableName = usedTableNow?.operation_type ?? existingSnap.tableName ?? '-';
+
               const revenueChanged = existingSnap.revenueServiceOnly !== revServiceOnly;
               const costChanged = existingSnap.costServiceOnly !== costServiceOnly;
               const tollChanged = existingSnap.tollVal !== toll;
               const tollProvChanged = existingSnap.tollProvider !== tollProv;
-              if (revenueChanged || costChanged || tollChanged || tollProvChanged) {
+              const tableChanged = String(existingSnap.clientTableId || '') !== String(newClientTableId || '');
+              const breakdownChanged = (
+                  r2(existingSnap.activationFee || 0) !== r2(newActivationFee) ||
+                  (existingSnap.franchiseKm || 0) !== newFranchiseKm ||
+                  (existingSnap.franchiseHours || 0) !== newFranchiseHours ||
+                  r2(existingSnap.unitKm || 0) !== r2(newUnitKm) ||
+                  r2(existingSnap.unitHr || 0) !== r2(newUnitHr) ||
+                  r2(existingSnap.kmExtraTotal || 0) !== r2(newKmExtraTotal) ||
+                  r2(existingSnap.hrExtraTotal || 0) !== r2(newHrExtraTotal)
+              );
+
+              if (revenueChanged || costChanged || tollChanged || tollProvChanged || tableChanged || breakdownChanged) {
                   const updatedSnap = {
                       ...existingSnap,
+                      // valores financeiros
                       revenueServiceOnly: r2(revServiceOnly),
                       costServiceOnly: r2(costServiceOnly),
                       tollVal: r2(toll),
                       tollProvider: r2(tollProv),
                       totalGeral: r2(revServiceOnly + toll),
+                      // tabela e breakdown atual — mantém o snapshot
+                      // alinhado com a tabela escolhida na auditoria
+                      clientTableId: newClientTableId,
+                      providerTableId: manualProviderTableId || financialData?.provider.tableId || existingSnap.providerTableId || null,
+                      tableName: newTableName,
+                      activationFee: r2(newActivationFee),
+                      franchiseKm: newFranchiseKm,
+                      franchiseHours: newFranchiseHours,
+                      unitKm: r2(newUnitKm),
+                      unitHr: r2(newUnitHr),
+                      kmExtraQtd: newKmExtraQtd,
+                      kmExtraTotal: r2(newKmExtraTotal),
+                      hrExtraQtd: newHrExtraQtd,
+                      hrExtraTotal: r2(newHrExtraTotal),
+                      durationHours: newDurationHours,
+                      snapshot_resynced_at: new Date().toISOString(),
+                      snapshot_resynced_by: userName,
                   };
                   const snapUpdRes = await supabase.from('missions').update({ snapshot_data: updatedSnap }).eq('id', mission.id);
                   if (snapUpdRes.error) {

@@ -923,7 +923,10 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
                     tollLabel: 'À PARTE',
                     status: 'CONCLUÍDO',
                     missionStatus: m.status || 'Concluída',
-                    isApproved: true,
+                    // Mesmo com snapshot congelado, se a OS foi cancelada
+                    // (ou voltou para algum status não-aprovado) ela NÃO
+                    // pode aparecer como aprovada/verde no boletim.
+                    isApproved: ['Concluída', 'Auditada', 'Em Viagem'].includes(m.status),
                     startDate: fmtDate(m.start_time),
                     startTime: fmtTime(m.start_time),
                     viatura: m.company_vehicle ? `${m.company_vehicle.model || ''} ${m.company_vehicle.plate || ''}`.trim() || '-' : m.vehicle_id || '-',
