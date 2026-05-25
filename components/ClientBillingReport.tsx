@@ -202,6 +202,21 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
         }
     };
 
+    const handleSetWeekSundayToSunday = (offset: 0 | -1) => {
+        // Semana de Domingo a Domingo (7 dias, inclusive).
+        // offset=0 → semana atual (último domingo → próximo domingo)
+        // offset=-1 → semana anterior
+        const refDate = startDate ? new Date(startDate + 'T12:00:00') : new Date();
+        const day = refDate.getDay(); // 0=Dom, 1=Seg, ... 6=Sab
+        const sunday = new Date(refDate);
+        sunday.setDate(refDate.getDate() - day + (offset * 7));
+        const nextSunday = new Date(sunday);
+        nextSunday.setDate(sunday.getDate() + 7);
+        const fmt = (d: Date) => `${d.getFullYear()}-${(d.getMonth() + 1).toString().padStart(2, '0')}-${d.getDate().toString().padStart(2, '0')}`;
+        setStartDate(fmt(sunday));
+        setEndDate(fmt(nextSunday));
+    };
+
     const handleSetMonth = (value: string) => {
         setSelectedMonth(value);
         if (!value) return;
@@ -2480,6 +2495,8 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
                                     <input type="month" className="text-[11px] font-bold uppercase px-2 py-0.5 rounded border border-red-300 bg-red-50 text-red-700 outline-none focus:border-red-500 cursor-pointer" value={selectedMonth} onChange={e => handleSetMonth(e.target.value)} data-testid="input-month-selector" />
                                     <button onClick={() => handleSetFortnight(1)} className="text-[10px] font-black uppercase text-blue-600 bg-blue-50 hover:bg-blue-100 px-2 py-0.5 rounded border border-blue-200">1ª Quinzena</button>
                                     <button onClick={() => handleSetFortnight(2)} className="text-[10px] font-black uppercase text-blue-600 bg-blue-50 hover:bg-blue-100 px-2 py-0.5 rounded border border-blue-200">2ª Quinzena</button>
+                                    <button onClick={() => handleSetWeekSundayToSunday(-1)} className="text-[10px] font-black uppercase text-purple-700 bg-purple-50 hover:bg-purple-100 px-2 py-0.5 rounded border border-purple-200" data-testid="btn-week-prev-sun-sun" title="Domingo passado → próximo domingo (semana anterior)">Sem. Ant. (Dom→Dom)</button>
+                                    <button onClick={() => handleSetWeekSundayToSunday(0)} className="text-[10px] font-black uppercase text-purple-700 bg-purple-50 hover:bg-purple-100 px-2 py-0.5 rounded border border-purple-200" data-testid="btn-week-cur-sun-sun" title="Último domingo → próximo domingo (semana atual)">Semana (Dom→Dom)</button>
                                 </div>
                             </div>
                             <div className="flex gap-2">
