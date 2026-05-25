@@ -5,6 +5,13 @@ import { supabase } from '../lib/supabase';
 import { Mission, Client, ClientPriceTable, ProviderCostTable } from '../types';
 import { FileText, Search, Printer, Loader2, FileSpreadsheet, BarChart3, Users, Building2, ChevronDown, ChevronRight, List, ExternalLink, Receipt, Camera, Sparkles, X, AlertCircle, CheckCircle2, ScanLine, Image as ImageIcon, DollarSign, Plus, Trash2, GitBranch, Calendar, Lock, Pencil, ArrowRight, ArrowLeftRight, Check, RefreshCw } from 'lucide-react';
 import { calculateMissionFinancials, extractCityFromAddress, clientFuzzyFilter, clientNameShort } from '../lib/financialUtils';
+
+// PostgREST .or() trata ( ) , . : como reservados. Para nomes com parênteses
+// (ex: "DHL SUPPLY CHAIN (BRAZIL) LTDA"), o valor precisa vir entre aspas
+// duplas, senão a consulta retorna 0 linhas silenciosamente.
+function quoteOrValue(v: string): string {
+    return /[(),.:]/.test(v) ? `"${v.replace(/"/g, '\\"')}"` : v;
+}
 import { generateContent } from '../lib/gemini';
 import {
     BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, LabelList
@@ -241,9 +248,9 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
             const rangeStart = `${startDate}T03:00:00.000Z`;
             const rangeEnd = new Date(new Date(`${endDate}T03:00:00.000Z`).getTime() + 86400000 - 1).toISOString();
 
-            const clientFilters = [`client.ilike.%${escapedClientName}%`];
+            const clientFilters = [`client.ilike.${quoteOrValue('%' + escapedClientName + '%')}`];
             if (escapedTradingName && escapedTradingName !== escapedClientName) {
-                clientFilters.push(`client.ilike.%${escapedTradingName}%`);
+                clientFilters.push(`client.ilike.${quoteOrValue('%' + escapedTradingName + '%')}`);
             }
             // BUG anterior: usávamos só `length > 2` como filtro de palavras, então
             // pra "ET DO BRASIL LTDA" sobrava ["BRASIL","LTDA"] → padrão
@@ -257,11 +264,11 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
                 .filter(p => p.length >= 4 && !STOP_WORDS.has(p.toUpperCase()));
             if (meaningfulParts.length >= 2) {
                 const coreFilter = meaningfulParts.slice(0, 3).join('%');
-                clientFilters.push(`client.ilike.%${coreFilter}%`);
+                clientFilters.push(`client.ilike.${quoteOrValue('%' + coreFilter + '%')}`);
             }
             const shortName = clientNameShort(clientName);
             if (shortName && shortName.split(/\s+/).every(w => w.length >= 3)) {
-                clientFilters.push(`client.ilike.%${shortName}%`);
+                clientFilters.push(`client.ilike.${quoteOrValue('%' + shortName + '%')}`);
             }
 
             // Regra padrão: filtra por start_time (mês da viagem).
