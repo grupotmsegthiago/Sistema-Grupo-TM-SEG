@@ -269,20 +269,19 @@ export async function exportFormattedExcel(config: ExcelExportConfig): Promise<B
     dataRow.height = 18;
     const isZebra = rowIdx % 2 === 1;
     const status = rowStatus[rowIdx];
-    let bgColor = isZebra ? COLORS.zebraDark : COLORS.zebraLight;
-    let textColor = COLORS.textDark;
-    let rowBold = false;
+    const bgColor = isZebra ? COLORS.zebraDark : COLORS.zebraLight;
+    // Pinta SOMENTE a coluna STATUS (não a linha inteira).
+    let statusBg: string | null = null;
+    let statusText: string = COLORS.textDark;
     if (status === 'cancelled') {
-      bgColor = COLORS.cancelledBg;
-      textColor = COLORS.cancelledText;
-      rowBold = true;
+      statusBg = COLORS.cancelledBg;
+      statusText = COLORS.cancelledText;
     } else if (status === 'approved') {
-      bgColor = COLORS.approvedBg;
-      textColor = COLORS.approvedText;
-      rowBold = true;
+      statusBg = COLORS.approvedBg;
+      statusText = COLORS.approvedText;
     } else if (status === 'pending') {
-      bgColor = COLORS.pendingBg;
-      textColor = COLORS.pendingText;
+      statusBg = COLORS.pendingBg;
+      statusText = COLORS.pendingText;
     }
 
     rowData.forEach((val, colIdx) => {
@@ -296,8 +295,11 @@ export async function exportFormattedExcel(config: ExcelExportConfig): Promise<B
         cell.value = val ?? '';
       }
 
-      cell.font = { size: 8, color: { argb: textColor }, bold: rowBold || colIdx === statusIdx };
-      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: bgColor } };
+      const isStatusCell = colIdx === statusIdx;
+      const cellBg = isStatusCell && statusBg ? statusBg : bgColor;
+      const cellTextColor = isStatusCell && statusBg ? statusText : COLORS.textDark;
+      cell.font = { size: 8, color: { argb: cellTextColor }, bold: isStatusCell };
+      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: cellBg } };
       // Tudo centralizado, conforme pedido. Moeda mantém o numFmt R$,
       // mas alinhada ao centro para um visual mais limpo.
       cell.alignment = {
