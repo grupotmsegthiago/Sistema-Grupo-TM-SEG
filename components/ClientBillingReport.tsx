@@ -5,6 +5,7 @@ import { supabase } from '../lib/supabase';
 import { Mission, Client, ClientPriceTable, ProviderCostTable } from '../types';
 import { FileText, Search, Printer, Loader2, FileSpreadsheet, BarChart3, Users, Building2, ChevronDown, ChevronRight, List, ExternalLink, Receipt, Camera, Sparkles, X, AlertCircle, CheckCircle2, ScanLine, Image as ImageIcon, DollarSign, Plus, Trash2, GitBranch, Calendar, Lock, Pencil, ArrowRight, ArrowLeftRight, Check, RefreshCw } from 'lucide-react';
 import { calculateMissionFinancials, extractCityFromAddress, clientFuzzyFilter, clientNameShort } from '../lib/financialUtils';
+import { computeDhlBand } from '../lib/dhlAutoTableSelector';
 
 // PostgREST .or() trata ( ) , . : como reservados. Para nomes com parênteses
 // (ex: "DHL SUPPLY CHAIN (BRAZIL) LTDA"), o valor precisa vir entre aspas
@@ -1036,6 +1037,30 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
             };
         });
     }, [missions, priceTables, providerTables, clientData, displayClientName, billingAdjustments]);
+
+    // DHL: diagnóstico de banda — verifica se a tabela aplicada corresponde
+    // à faixa de KM real da OS. computeDhlBand(km) define a banda esperada
+    // (100 / 200 / 300 / ...). Se r.franchiseKm divergir, gera aviso.
+    const dhlBandWarnings = useMemo(() => {
+        if (!isDhlBilling) return [] as Array<{ id: string; kmTotal: number; expected: number; actual: number }>;
+        const out: Array<{ id: string; kmTotal: number; expected: number; actual: number }> = [];
+        for (const r of rowsData) {
+            if (!r.isApproved) continue; // só avalia OS aprovadas (não pendentes)
+            const km = Number(r.kmTotal) || 0;
+            const actual = Number(r.franchiseKm) || 0;
+            if (km <= 0 || actual <= 0) continue;
+            const expected = computeDhlBand(km);
+            if (expected !== actual) {
+                out.push({ id: r.id, kmTotal: km, expected, actual });
+            }
+        }
+        return out;
+    }, [rowsData, isDhlBilling]);
+    const dhlWarningsById = useMemo(() => {
+        const m = new Map<string, { expected: number; actual: number; kmTotal: number }>();
+        dhlBandWarnings.forEach(w => m.set(w.id, { expected: w.expected, actual: w.actual, kmTotal: w.kmTotal }));
+        return m;
+    }, [dhlBandWarnings]);
 
     const grandTotal = useMemo(() => {
         return missions.reduce((s: number, m: any) => {
@@ -2816,6 +2841,33 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
                                 <span style={{ fontSize: '10px', fontWeight: 700, color: '#92400e', textTransform: 'uppercase' }}>Dados Congelados — Documento Mestre para Faturamento</span>
                             </div>
                         )}
+                        {isDhlBilling && dhlBandWarnings.length > 0 && (
+                            <div data-testid="boletim-dhl-band-warning" className="no-print" style={{ marginTop: '8px', textAlign: 'left', background: '#fff7ed', border: '2px solid #ea580c', borderRadius: '8px', padding: '10px 12px' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
+                                    <AlertCircle size={16} style={{ color: '#c2410c' }} />
+                                    <span style={{ fontSize: '12px', fontWeight: 900, color: '#9a3412', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                                        Diagnóstico DHL — {dhlBandWarnings.length} OS com faixa de KM divergente da tabela aplicada
+                                    </span>
+                                </div>
+                                <p style={{ fontSize: '11px', fontWeight: 600, color: '#9a3412', margin: '0 0 6px 0' }}>
+                                    A faixa esperada é definida pelo KM total da viagem (ex.: 200 km → tabela 200KM). Ajuste a tabela das OS abaixo no Modal Financeiro — o aviso some automaticamente após a correção.
+                                </p>
+                                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
+                                    {dhlBandWarnings.slice(0, 30).map(w => (
+                                        <span key={w.id} title={`KM real: ${w.kmTotal} | Esperado: ${w.expected}KM | Aplicado: ${w.actual}KM`} style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', background: '#fff', border: '1px solid #ea580c', borderRadius: '4px', padding: '2px 6px', fontSize: '10px', fontWeight: 800, color: '#9a3412' }}>
+                                            {w.id}
+                                            <span style={{ color: '#6b7280', fontWeight: 600 }}>{w.kmTotal}km</span>
+                                            <span style={{ color: '#dc2626' }}>{w.actual}KM</span>
+                                            <ArrowRight size={9} style={{ color: '#16a34a' }} />
+                                            <span style={{ color: '#16a34a' }}>{w.expected}KM</span>
+                                        </span>
+                                    ))}
+                                    {dhlBandWarnings.length > 30 && (
+                                        <span style={{ fontSize: '10px', fontWeight: 700, color: '#9a3412', alignSelf: 'center' }}>+{dhlBandWarnings.length - 30} OS</span>
+                                    )}
+                                </div>
+                            </div>
+                        )}
                         {rowsData.some(r => !r.isApproved) && (
                             <div data-testid="boletim-pending-header" style={{ marginTop: '6px', display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
                                 <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', background: '#fce4e4', border: '1px solid #dc2626', borderRadius: '6px', padding: '4px 12px' }}>
@@ -2969,7 +3021,12 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
                                             <td className="route-cell" style={{ ...cellStyle, textAlign: 'left', whiteSpace: 'normal', wordWrap: 'break-word', wordBreak: 'break-word', overflowWrap: 'break-word', lineHeight: '1.25', fontSize: '12px', maxWidth: '320px' }} title={r.route}>{r.route}</td>
                                             <td style={cellStyle}>{fmtBRL(r.activationFee)}</td>
                                             <td style={cellStyle}>{r.franchiseHoursFmt}</td>
-                                            <td style={cellStyle}>{fmtNum(r.franchiseKm)}</td>
+                                            <td style={isDhlBilling && dhlWarningsById.has(r.id) ? { ...cellStyle, background: '#fff7ed', color: '#9a3412', fontWeight: 900, border: '1.5px solid #ea580c' } : cellStyle} title={isDhlBilling && dhlWarningsById.has(r.id) ? `Divergente: KM real ${dhlWarningsById.get(r.id)!.kmTotal} → tabela esperada ${dhlWarningsById.get(r.id)!.expected}KM (aplicada ${dhlWarningsById.get(r.id)!.actual}KM)` : undefined}>
+                                                {fmtNum(r.franchiseKm)}
+                                                {isDhlBilling && dhlWarningsById.has(r.id) && (
+                                                    <span className="no-print" style={{ display: 'inline-block', marginLeft: '4px', fontSize: '8px', fontWeight: 900, color: '#fff', backgroundColor: '#ea580c', borderRadius: '3px', padding: '0 3px', verticalAlign: 'middle' }}>!{dhlWarningsById.get(r.id)!.expected}</span>
+                                                )}
+                                            </td>
                                             <td style={cellStyle}>{fmtBRL(r.unitHr)}</td>
                                             <td style={cellStyle}>{fmtBRL(r.unitKm)}</td>
                                             <td style={cellStyle}>{r.startDate}</td>
