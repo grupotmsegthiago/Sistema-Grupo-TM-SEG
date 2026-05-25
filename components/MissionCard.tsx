@@ -119,10 +119,10 @@ const AgingTimelineBar: React.FC<{ minutes: number; status: string }> = ({ minut
     return (
         <div className={`flex flex-col w-full rounded-lg border ${borderColor} ${bgBase} p-2 shadow-sm`} title="Tempo sem atualização (Ociosidade)">
             <div className="flex justify-between items-center mb-1.5">
-                <span className={`text-[9px] font-bold uppercase ${textColor} flex items-center gap-1`}>
+                <span className={`text-[11px] font-bold uppercase ${textColor} flex items-center gap-1`}>
                     <History size={10} /> {label}
                 </span>
-                <span className={`text-[9px] font-mono font-bold uppercase ${textColor}`}>
+                <span className={`text-[11px] font-mono font-bold uppercase ${textColor}`}>
                     {timeDisplay}
                 </span>
             </div>
@@ -616,7 +616,7 @@ Qualquer dúvida, estamos a disposição.
                 <div className="relative overflow-hidden rounded-t-xl" style={{ background: 'linear-gradient(135deg, #dc2626 0%, #b91c1c 50%, #991b1b 100%)', boxShadow: 'inset 0 2px 4px rgba(255,255,255,0.2), 0 4px 12px rgba(220,38,38,0.3)' }}>
                     <div className="flex items-center justify-center gap-2 py-1.5 px-3 relative z-10">
                         <AlertTriangle size={13} className="text-white drop-shadow-md animate-pulse" strokeWidth={3} />
-                        <span className="text-[10px] font-black text-white uppercase tracking-widest drop-shadow-md">PREJUÍZO — {profitMargin.toFixed(1)}%</span>
+                        <span className="text-[12px] font-black text-white uppercase tracking-widest drop-shadow-md">PREJUÍZO — {profitMargin.toFixed(1)}%</span>
                     </div>
                 </div>
             )}
@@ -627,10 +627,10 @@ Qualquer dúvida, estamos a disposição.
                             <Clock size={14} className="text-white drop-shadow-md animate-pulse" strokeWidth={3} />
                             <div className="absolute -inset-1 bg-white/20 rounded-full blur-sm animate-ping"></div>
                         </div>
-                        <span className="text-[11px] font-black text-white uppercase tracking-widest drop-shadow-md" style={{ textShadow: '0 1px 3px rgba(0,0,0,0.4), 0 0 8px rgba(255,255,255,0.15)' }}>
+                        <span className="text-[13px] font-black text-white uppercase tracking-widest drop-shadow-md" style={{ textShadow: '0 1px 3px rgba(0,0,0,0.4), 0 0 8px rgba(255,255,255,0.15)' }}>
                             Hora Extra Ativa
                         </span>
-                        <span className="text-[10px] font-black text-yellow-100 bg-black/20 px-2 py-0.5 rounded-full" style={{ boxShadow: 'inset 0 1px 2px rgba(0,0,0,0.2)' }}>
+                        <span className="text-[12px] font-black text-yellow-100 bg-black/20 px-2 py-0.5 rounded-full" style={{ boxShadow: 'inset 0 1px 2px rgba(0,0,0,0.2)' }}>
                             +{financials ? formatExcessTime(Math.max(financials.client.excessHours || 0, financials.provider?.excessHours || 0)) : ''}
                         </span>
                     </div>
@@ -638,7 +638,7 @@ Qualquer dúvida, estamos a disposição.
                 </div>
             )}
             {!hideProviderInfo && (missingInfo.length > 0 || isPendingKm) && (
-                <div className={`bg-red-600 text-white text-[10px] font-bold uppercase py-1.5 px-3 flex items-center justify-center gap-2 animate-pulse ${isExtraHourActive ? '' : 'rounded-t-xl'}`}>
+                <div className={`bg-red-600 text-white text-[12px] font-bold uppercase py-1.5 px-3 flex items-center justify-center gap-2 animate-pulse ${isExtraHourActive ? '' : 'rounded-t-xl'}`}>
                     <AlertOctagon size={12} strokeWidth={3} /> PENDENTE: {isPendingKm ? ['KM FINAL', ...missingInfo].join(' • ') : missingInfo.join(' • ')}
                 </div>
             )}
@@ -661,7 +661,7 @@ Qualquer dúvida, estamos a disposição.
                 if (urgent) {
                     return (
                         <div
-                            className={`relative text-[10px] font-black uppercase py-1.5 px-3 flex items-center justify-center gap-2 overflow-hidden ${isExtraHourActive || (missingInfo.length > 0 || isPendingKm) ? '' : 'rounded-t-xl'} animate-pulse`}
+                            className={`relative text-[12px] font-black uppercase py-1.5 px-3 flex items-center justify-center gap-2 overflow-hidden ${isExtraHourActive || (missingInfo.length > 0 || isPendingKm) ? '' : 'rounded-t-xl'} animate-pulse`}
                             style={{ background: 'repeating-linear-gradient(135deg, #facc15 0 12px, #dc2626 12px 24px)', color: '#1f2937', textShadow: '0 1px 0 rgba(255,255,255,0.6)' }}
                             title="Fornecedor DHL ainda nao preencheu — missao comeca em menos de 2 horas"
                         >
@@ -674,7 +674,7 @@ Qualquer dúvida, estamos a disposição.
                 }
                 return (
                     <div
-                        className={`bg-amber-300 text-amber-950 text-[10px] font-black uppercase py-1.5 px-3 flex items-center justify-center gap-2 border-y-2 border-amber-600 ${isExtraHourActive || (missingInfo.length > 0 || isPendingKm) ? '' : 'rounded-t-xl'}`}
+                        className={`bg-amber-300 text-amber-950 text-[12px] font-black uppercase py-1.5 px-3 flex items-center justify-center gap-2 border-y-2 border-amber-600 ${isExtraHourActive || (missingInfo.length > 0 || isPendingKm) ? '' : 'rounded-t-xl'}`}
                         title="Fornecedor DHL ainda nao preencheu os dados — cobrar preenchimento"
                     >
                         <AlertTriangle size={12} strokeWidth={3} /> PENDENTE FORNECEDOR DHL PREENCHER {hoursLabel ? `• INICIO EM ${hoursLabel}` : ''}
@@ -687,21 +687,21 @@ Qualquer dúvida, estamos a disposição.
                     <div className="flex items-center gap-2 flex-wrap">
                         <span className="text-xl font-black text-gray-900 tracking-tighter leading-none">{mission.id}</span>
                         {(/DHL/i.test(((mission as any).originalClientName || mission.client || ''))) && (mission as any).dhl_se_number ? (
-                            <span className="px-1.5 py-0.5 rounded text-[9px] font-black uppercase bg-yellow-100 text-red-700 border border-yellow-400 shadow-sm flex items-center gap-1" title="Número da SE DHL" data-testid={`badge-se-${mission.id}`}>
+                            <span className="px-1.5 py-0.5 rounded text-[11px] font-black uppercase bg-yellow-100 text-red-700 border border-yellow-400 shadow-sm flex items-center gap-1" title="Número da SE DHL" data-testid={`badge-se-${mission.id}`}>
                                 SE: {String((mission as any).dhl_se_number).toUpperCase()}
                             </span>
                         ) : null}
                         {mission.is_same_os && !hideProviderInfo && (
-                            <span className="bg-black text-white px-1.5 py-0.5 rounded text-[8px] font-black uppercase flex items-center gap-1 border border-black shadow-sm" title={mission.parent_mission_id ? `OS Mãe: ${mission.parent_mission_id}` : 'Missão de continuidade - Custo Fornecedor Zero'}>
+                            <span className="bg-black text-white px-1.5 py-0.5 rounded text-[10px] font-black uppercase flex items-center gap-1 border border-black shadow-sm" title={mission.parent_mission_id ? `OS Mãe: ${mission.parent_mission_id}` : 'Missão de continuidade - Custo Fornecedor Zero'}>
                                 <Layers size={10} /> MESMA OS
                             </span>
                         )}
                         {mission.parent_mission_id && !hideProviderInfo && (
-                            <span className="bg-blue-600 text-white px-1.5 py-0.5 rounded text-[8px] font-black uppercase flex items-center gap-1 border border-blue-700 shadow-sm" title={`Vinculada à OS Principal: ${mission.parent_mission_id}`}>
+                            <span className="bg-blue-600 text-white px-1.5 py-0.5 rounded text-[10px] font-black uppercase flex items-center gap-1 border border-blue-700 shadow-sm" title={`Vinculada à OS Principal: ${mission.parent_mission_id}`}>
                                 <Link2 size={10} /> MÃE: {mission.parent_mission_id}
                             </span>
                         )}
-                        <span className={`px-1.5 py-0.5 rounded text-[9px] font-extrabold uppercase border tracking-wider ${isPendingKm && !hideProviderInfo ? 'bg-amber-100 text-amber-800 border-amber-300' : getStatusBadgeClass(mission.status)}`}>
+                        <span className={`px-1.5 py-0.5 rounded text-[11px] font-extrabold uppercase border tracking-wider ${isPendingKm && !hideProviderInfo ? 'bg-amber-100 text-amber-800 border-amber-300' : getStatusBadgeClass(mission.status)}`}>
                             {isPendingKm && !hideProviderInfo ? 'PENDENTE KM' : mission.status}
                         </span>
                         {(() => {
@@ -710,14 +710,14 @@ Qualquer dúvida, estamos a disposição.
                                 const dtStr = dt && !isNaN(dt.getTime()) ? dt.toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' }) : '—';
                                 const label = tollConfirmation.hasToll ? `Pedágio confirmado (R$ ${tollConfirmation.value.toFixed(2)}) por ${tollConfirmation.user} em ${dtStr}` : `Pedágio confirmado como ZERO por ${tollConfirmation.user} em ${dtStr}`;
                                 return (
-                                    <span title={label} className="px-1.5 py-0.5 rounded text-[8px] font-black uppercase flex items-center gap-1 bg-green-100 text-green-700 border border-green-300 shadow-sm" data-testid={`badge-toll-status-confirmed-${mission.id}`}>
+                                    <span title={label} className="px-1.5 py-0.5 rounded text-[10px] font-black uppercase flex items-center gap-1 bg-green-100 text-green-700 border border-green-300 shadow-sm" data-testid={`badge-toll-status-confirmed-${mission.id}`}>
                                         <Check size={10} strokeWidth={3} /> PEDÁGIO OK
                                     </span>
                                 );
                             }
                             if (mission.status === MissionStatus.COMPLETED && !mission.billing_approved) {
                                 return (
-                                    <span title="Pedágio ainda não confirmado manualmente — operacional precisa validar antes do faturamento" className="px-1.5 py-0.5 rounded text-[8px] font-black uppercase flex items-center gap-1 bg-amber-100 text-amber-700 border border-amber-300 shadow-sm animate-pulse" data-testid={`badge-toll-status-unconfirmed-${mission.id}`}>
+                                    <span title="Pedágio ainda não confirmado manualmente — operacional precisa validar antes do faturamento" className="px-1.5 py-0.5 rounded text-[10px] font-black uppercase flex items-center gap-1 bg-amber-100 text-amber-700 border border-amber-300 shadow-sm animate-pulse" data-testid={`badge-toll-status-unconfirmed-${mission.id}`}>
                                         <AlertTriangle size={10} strokeWidth={3} /> PEDÁGIO PEND.
                                     </span>
                                 );
@@ -725,17 +725,17 @@ Qualquer dúvida, estamos a disposição.
                             return null;
                         })()}
                         {hasEvidence ? (
-                            <button onClick={() => setShowEvidenceModal(true)} className="px-1.5 py-0.5 rounded text-[8px] font-black uppercase border bg-emerald-50 text-emerald-700 border-emerald-300 flex items-center gap-1 hover:bg-emerald-100 transition-all cursor-pointer shadow-sm" data-testid={`badge-evidence-${mission.id}`} title="Evidência anexada - clique para ver">
+                            <button onClick={() => setShowEvidenceModal(true)} className="px-1.5 py-0.5 rounded text-[10px] font-black uppercase border bg-emerald-50 text-emerald-700 border-emerald-300 flex items-center gap-1 hover:bg-emerald-100 transition-all cursor-pointer shadow-sm" data-testid={`badge-evidence-${mission.id}`} title="Evidência anexada - clique para ver">
                                 <Image size={10} /> EVIDÊNCIA
                             </button>
                         ) : requiresEvidence ? (
-                            <span className="px-1.5 py-0.5 rounded text-[8px] font-black uppercase flex items-center gap-1 bg-red-100 text-red-700 border border-red-300 shadow-[0_2px_8px_rgba(239,68,68,0.25)] animate-pulse" title="Sem evidência de solicitação">
+                            <span className="px-1.5 py-0.5 rounded text-[10px] font-black uppercase flex items-center gap-1 bg-red-100 text-red-700 border border-red-300 shadow-[0_2px_8px_rgba(239,68,68,0.25)] animate-pulse" title="Sem evidência de solicitação">
                                 <ImageOff size={10} /> SEM EVIDÊNCIA
                             </span>
                         ) : null}
                         {!hideProviderInfo && (/DHL/i.test(((mission as any).originalClientName || mission.client || ''))) && !dhlIntake ? (
                             <span
-                                className="px-1.5 py-0.5 rounded text-[8px] font-black uppercase flex items-center gap-1 bg-gray-100 text-gray-600 border border-gray-300"
+                                className="px-1.5 py-0.5 rounded text-[10px] font-black uppercase flex items-center gap-1 bg-gray-100 text-gray-600 border border-gray-300"
                                 title="Link do fornecedor ainda não foi gerado para esta OS — gere o link de Intake DHL."
                                 data-testid={`badge-intake-sem-link-${mission.id}`}
                             >
@@ -752,7 +752,7 @@ Qualquer dúvida, estamos a disposição.
                             if (allGreen) {
                                 return (
                                     <span
-                                        className="px-1.5 py-0.5 rounded text-[8px] font-black uppercase flex items-center gap-1 bg-emerald-600 text-white border border-emerald-700 shadow-[0_2px_8px_rgba(16,185,129,0.35)]"
+                                        className="px-1.5 py-0.5 rounded text-[10px] font-black uppercase flex items-center gap-1 bg-emerald-600 text-white border border-emerald-700 shadow-[0_2px_8px_rgba(16,185,129,0.35)]"
                                         title="Documentação do fornecedor completa — Escoltista 1, Escoltista 2, Veículo e Espelhamento enviados."
                                         data-testid={`badge-intake-apto-${mission.id}`}
                                     >
@@ -768,7 +768,7 @@ Qualquer dúvida, estamos a disposição.
                             const isEmpty = done === 0;
                             return (
                                 <span
-                                    className={`px-1.5 py-0.5 rounded text-[8px] font-black uppercase flex items-center gap-1 ${
+                                    className={`px-1.5 py-0.5 rounded text-[10px] font-black uppercase flex items-center gap-1 ${
                                         isEmpty
                                             ? 'bg-red-100 text-red-700 border border-red-400 shadow-[0_2px_8px_rgba(239,68,68,0.25)] animate-pulse'
                                             : 'bg-amber-100 text-amber-800 border border-amber-400'
@@ -785,17 +785,17 @@ Qualquer dúvida, estamos a disposição.
                         ) : null}
                     </div>
                     <div className="flex flex-col gap-1.5 mt-1">
-                        <div className="flex items-center gap-2"><div className="p-0.5 bg-blue-50 rounded text-blue-600 shrink-0"><FileText size={10} /></div><div className="flex items-center gap-1.5"><span className="text-[9px] font-bold text-gray-400 uppercase tracking-wider">Criação</span><span className="text-[10px] font-bold text-gray-800">{formatDateTime(mission.createdAt)}</span></div></div>
-                        <div className="flex items-center gap-2"><div className="p-0.5 bg-orange-50 rounded text-orange-600 shrink-0"><Clock size={10} /></div><div className="flex items-center gap-1.5"><span className="text-[9px] font-bold text-gray-400 uppercase tracking-wider">Agendamento</span><span className="text-[10px] font-bold text-gray-800">{mission.startTime ? formatDateTime(mission.startTime) : 'Imediato'}</span></div></div>
+                        <div className="flex items-center gap-2"><div className="p-0.5 bg-blue-50 rounded text-blue-600 shrink-0"><FileText size={10} /></div><div className="flex items-center gap-1.5"><span className="text-[11px] font-bold text-gray-400 uppercase tracking-wider">Criação</span><span className="text-[12px] font-bold text-gray-800">{formatDateTime(mission.createdAt)}</span></div></div>
+                        <div className="flex items-center gap-2"><div className="p-0.5 bg-orange-50 rounded text-orange-600 shrink-0"><Clock size={10} /></div><div className="flex items-center gap-1.5"><span className="text-[11px] font-bold text-gray-400 uppercase tracking-wider">Agendamento</span><span className="text-[12px] font-bold text-gray-800">{mission.startTime ? formatDateTime(mission.startTime) : 'Imediato'}</span></div></div>
                     </div>
                     <MissionTimer status={isPendingKm && !hideProviderInfo ? MissionStatus.PENDING : mission.status} startTime={mission.startTime} createdAt={mission.createdAt} />
-                    <div className="w-full">{isActive && !(isPendingKm && !hideProviderInfo) ? (<AgingTimelineBar minutes={minutesSinceUpdate} status={mission.status} />) : (<div className="h-6 w-full text-center text-[10px] text-gray-400 font-bold uppercase tracking-wider opacity-50">{isPendingKm && !hideProviderInfo ? 'KM PENDENTE' : '-'}</div>)}</div>
+                    <div className="w-full">{isActive && !(isPendingKm && !hideProviderInfo) ? (<AgingTimelineBar minutes={minutesSinceUpdate} status={mission.status} />) : (<div className="h-6 w-full text-center text-[12px] text-gray-400 font-bold uppercase tracking-wider opacity-50">{isPendingKm && !hideProviderInfo ? 'KM PENDENTE' : '-'}</div>)}</div>
                 </div>
                 
                 <div className="lg:col-span-3 p-3 flex flex-col justify-center bg-gray-50/20 border-r border-gray-100">
                     <div className="flex flex-col gap-3">
                         <div className="flex flex-wrap gap-2">
-                            <span className="text-[10px] font-black text-slate-800 bg-white px-2 py-1 rounded border border-slate-200 uppercase tracking-widest shadow-sm">
+                            <span className="text-[12px] font-black text-slate-800 bg-white px-2 py-1 rounded border border-slate-200 uppercase tracking-widest shadow-sm">
                                 <Building2 size={10} className="inline mr-1 text-red-600" /> {mission.client}
                             </span>
                         </div>
@@ -804,18 +804,18 @@ Qualquer dúvida, estamos a disposição.
                             <div className="flex items-center gap-2.5">
                                 <div className="p-1.5 bg-white rounded-lg text-blue-600 border border-gray-100 shadow-sm"><Truck size={12}/></div>
                                 <div className="min-w-0">
-                                    <span className="text-[11px] font-black text-gray-900 uppercase block leading-none">{mission.clientVehicle?.plate || '---'}</span>
-                                    <span className="text-[9px] text-gray-500 font-bold uppercase truncate block mt-1">{mission.clientVehicle?.model || 'MODELO N/D'}</span>
+                                    <span className="text-[13px] font-black text-gray-900 uppercase block leading-none">{mission.clientVehicle?.plate || '---'}</span>
+                                    <span className="text-[11px] text-gray-500 font-bold uppercase truncate block mt-1">{mission.clientVehicle?.model || 'MODELO N/D'}</span>
                                 </div>
                             </div>
                             <div className="flex items-center gap-2.5">
                                 <div className="p-1.5 bg-white rounded-lg text-green-600 border border-gray-100 shadow-sm"><User size={12}/></div>
                                 <div className="flex-1 min-w-0 flex items-center gap-2">
                                     <div className="min-w-0 flex-1">
-                                        <span className="text-[10px] font-bold text-gray-800 uppercase block leading-none truncate" title={mission.driver_name}>{getAgentDisplayName(mission.driver_name) || '---'}</span>
+                                        <span className="text-[12px] font-bold text-gray-800 uppercase block leading-none truncate" title={mission.driver_name}>{getAgentDisplayName(mission.driver_name) || '---'}</span>
                                         <div className="flex items-center gap-1 mt-1">
                                             <Phone size={8} className="text-gray-400" />
-                                            <span className="text-[9px] font-mono text-gray-400 font-medium">{mission.driver_phone || ''}</span>
+                                            <span className="text-[11px] font-mono text-gray-400 font-medium">{mission.driver_phone || ''}</span>
                                         </div>
                                     </div>
                                     {mission.driver_phone && (
@@ -831,7 +831,7 @@ Qualquer dúvida, estamos a disposição.
                             </div>
                             <div className="flex items-center gap-2 bg-blue-50/50 rounded-lg px-2 py-1 border border-blue-100 mt-2" title={mission.currentLocation || lastLog?.description || ''} data-testid={`last-log-${mission.id}`}>
                                 <Clock size={10} className="text-blue-500 shrink-0" />
-                                <p className="text-[9px] font-bold text-blue-800 truncate min-w-0">
+                                <p className="text-[11px] font-bold text-blue-800 truncate min-w-0">
                                     <span className="font-black text-blue-400 uppercase tracking-wider">Última Atualização: </span>
                                     {(() => {
                                         const dt = lastLog ? new Date(lastLog.created_at) : mission.lastUpdate ? new Date(mission.lastUpdate) : null;
@@ -850,7 +850,7 @@ Qualquer dúvida, estamos a disposição.
                     <div className="flex flex-col gap-2">
                         {!hideProviderInfo && (
                         <div className="flex flex-wrap gap-2 mb-1">
-                            <span className="text-[10px] font-black text-slate-800 bg-white px-2 py-1 rounded border border-slate-200 uppercase tracking-widest shadow-sm">
+                            <span className="text-[12px] font-black text-slate-800 bg-white px-2 py-1 rounded border border-slate-200 uppercase tracking-widest shadow-sm">
                                 <Briefcase size={10} className="inline mr-1 text-blue-600" /> 
                                 {formatProviderName(mission.provider) || 'PENDENTE'}
                             </span>
@@ -860,11 +860,11 @@ Qualquer dúvida, estamos a disposição.
                         <div className="flex items-center gap-2.5">
                             <div className="p-1.5 bg-white rounded-lg text-red-600 border border-gray-100 shadow-sm"><CarFront size={12}/></div>
                             <div className="min-w-0 flex items-center gap-2">
-                                <span className="text-[11px] font-black text-gray-900 uppercase block leading-none">
+                                <span className="text-[13px] font-black text-gray-900 uppercase block leading-none">
                                     {mission.vehicleId || '---'}
                                 </span>
                                 <span className="text-gray-300 font-black">-</span>
-                                <span className={`text-[10px] font-black uppercase px-2 py-0.5 rounded-md border shadow-sm ${
+                                <span className={`text-[12px] font-black uppercase px-2 py-0.5 rounded-md border shadow-sm ${
                                     mission.mission_type?.toUpperCase().includes('VELADA') 
                                     ? 'bg-indigo-50 text-indigo-700 border-indigo-200' 
                                     : 'bg-red-50 text-red-700 border-red-200'
@@ -879,7 +879,7 @@ Qualquer dúvida, estamos a disposição.
                             <div className="p-1.5 bg-white rounded-lg text-blue-600 border border-gray-100 shadow-sm"><ShieldCheck size={12}/></div>
                             <div className="flex-1 min-w-0 flex flex-col gap-1.5">
                                 <div className="flex items-center justify-between">
-                                    <span className="text-[10px] font-bold text-gray-800 uppercase block leading-tight" title={mission.agent1}>
+                                    <span className="text-[12px] font-bold text-gray-800 uppercase block leading-tight" title={mission.agent1}>
                                         {getAgentDisplayName(mission.agent1)}
                                     </span>
                                     {mission.agent1 && (
@@ -894,7 +894,7 @@ Qualquer dúvida, estamos a disposição.
                                 </div>
                                 {mission.agent2 && mission.agent2 !== '---' && (
                                     <div className="flex items-center justify-between border-t border-gray-50 pt-1">
-                                        <span className="text-[10px] font-bold text-gray-800 uppercase block leading-tight" title={mission.agent2}>
+                                        <span className="text-[12px] font-bold text-gray-800 uppercase block leading-tight" title={mission.agent2}>
                                             {getAgentDisplayName(mission.agent2)}
                                         </span>
                                         <button 
@@ -919,7 +919,7 @@ Qualquer dúvida, estamos a disposição.
                             <div className="w-4 h-4 rounded-full bg-green-600 shadow-md flex items-center justify-center ring-4 ring-white shrink-0">
                                 <MapPin size={8} className="text-white" />
                             </div>
-                            <div className="text-[9px] min-w-0 flex-1">
+                            <div className="text-[11px] min-w-0 flex-1">
                                 <span className="font-black text-gray-400 uppercase tracking-widest block leading-none mb-1">Ponto A (Origem)</span>
                                 <span className="font-black text-gray-900 uppercase truncate block" title={mission.origin}>{mission.origin || '---'}</span>
                             </div>
@@ -934,12 +934,12 @@ Qualquer dúvida, estamos a disposição.
                                     <div className="w-4 h-4 rounded-full bg-yellow-500 shadow-md flex items-center justify-center ring-4 ring-white shrink-0">
                                         <Truck size={8} className="text-white" />
                                     </div>
-                                    <div className="text-[9px] min-w-0 flex-1">
+                                    <div className="text-[11px] min-w-0 flex-1">
                                         <span className="font-black text-yellow-500 uppercase tracking-widest block leading-none mb-1">Ponto B (Última Localização)</span>
                                         {isLoading ? (
                                             <span className="font-bold text-yellow-400 italic truncate block" data-testid="text-last-location-city">Resolvendo endereço...</span>
                                         ) : (
-                                            <span className={`font-black uppercase truncate block ${isCoordOnly ? 'text-yellow-600 italic text-[8px]' : 'text-yellow-700'}`} data-testid="text-last-location-city" title={finalAddress || ''}>{finalAddress}</span>
+                                            <span className={`font-black uppercase truncate block ${isCoordOnly ? 'text-yellow-600 italic text-[10px]' : 'text-yellow-700'}`} data-testid="text-last-location-city" title={finalAddress || ''}>{finalAddress}</span>
                                         )}
                                     </div>
                                 </div>
@@ -950,7 +950,7 @@ Qualquer dúvida, estamos a disposição.
                             <div className="w-4 h-4 rounded-full bg-red-600 shadow-md flex items-center justify-center ring-4 ring-white shrink-0">
                                 <Flag size={8} className="text-white" />
                             </div>
-                            <div className="text-[9px] min-w-0 flex-1">
+                            <div className="text-[11px] min-w-0 flex-1">
                                 <span className="font-black text-gray-400 uppercase tracking-widest block leading-none mb-1">Ponto C (Destino)</span>
                                 <span className="font-black text-gray-900 uppercase truncate block" title={mission.destination}>{mission.destination?.toUpperCase() || '---'}</span>
                             </div>
@@ -959,15 +959,15 @@ Qualquer dúvida, estamos a disposição.
                         <div className="mt-3 pt-1 border-t border-gray-100">
                             <div className="flex justify-between items-center mb-1 px-1">
                                 <div className="flex items-center gap-1.5">
-                                    <span className="text-[8px] font-black text-gray-400 uppercase tracking-widest">Acompanhamento</span>
-                                    <span className="text-[9px] font-black text-gray-900 bg-gray-100 px-1.5 rounded-full border border-gray-200" title="Distância total da rota (Regra aplicada se ativa)">
+                                    <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Acompanhamento</span>
+                                    <span className="text-[11px] font-black text-gray-900 bg-gray-100 px-1.5 rounded-full border border-gray-200" title="Distância total da rota (Regra aplicada se ativa)">
                                         {displayPlannedKm}
                                     </span>
                                 </div>
                                 {odometerAnomaly && (
-                                    <span className="text-[7px] font-black text-amber-700 bg-amber-100 px-1 py-0.5 rounded border border-amber-300 animate-pulse" title="KM do hodômetro é muito superior à distância prevista da rota">⚠ HODÔMETRO</span>
+                                    <span className="text-[9px] font-black text-amber-700 bg-amber-100 px-1 py-0.5 rounded border border-amber-300 animate-pulse" title="KM do hodômetro é muito superior à distância prevista da rota">⚠ HODÔMETRO</span>
                                 )}
-                                <span className={`text-[9px] font-black tabular-nums px-1 rounded ${odometerAnomaly ? 'text-amber-700 bg-amber-50' : progressReal > 100 ? 'text-amber-700 bg-amber-50 animate-pulse' : 'text-red-600 bg-red-50'}`}>{progressReal}%</span>
+                                <span className={`text-[11px] font-black tabular-nums px-1 rounded ${odometerAnomaly ? 'text-amber-700 bg-amber-50' : progressReal > 100 ? 'text-amber-700 bg-amber-50 animate-pulse' : 'text-red-600 bg-red-50'}`}>{progressReal}%</span>
                             </div>
                             <div className="relative w-full h-2 bg-gray-200 rounded-full overflow-visible shadow-inner border border-gray-300">
                                 <div 
@@ -989,13 +989,13 @@ Qualquer dúvida, estamos a disposição.
                     {isDirector && !hideProviderInfo && (
                         <div className="flex flex-col gap-1">
                            <div className="bg-white border border-green-200 rounded-lg p-1 shadow-sm">
-                               <p className="text-[7px] font-black text-green-500 uppercase tracking-tighter leading-none mb-0.5">Faturamento {mission.billing_approved ? '(Auditado)' : isAdjustedRevenue ? '(Salvo)' : '(Projetado)'}</p>
-                               <p className="text-[10px] font-black text-green-700 font-mono leading-none tracking-tighter">{formatCurrency(displayRevenue)}</p>
+                               <p className="text-[9px] font-black text-green-500 uppercase tracking-tighter leading-none mb-0.5">Faturamento {mission.billing_approved ? '(Auditado)' : isAdjustedRevenue ? '(Salvo)' : '(Projetado)'}</p>
+                               <p className="text-[12px] font-black text-green-700 font-mono leading-none tracking-tighter">{formatCurrency(displayRevenue)}</p>
                            </div>
 
                            <div className="bg-white border border-red-200 rounded-lg p-1 shadow-sm">
-                               <p className="text-[7px] font-black text-red-400 uppercase tracking-tighter leading-none mb-0.5">Fornecedor {mission.billing_approved ? '(Auditado)' : isAdjustedCost ? '(Salvo)' : '(Projetado)'}</p>
-                               <p className="text-[10px] font-black text-red-600 font-mono leading-none tracking-tighter">{formatCurrency(displayCost)}</p>
+                               <p className="text-[9px] font-black text-red-400 uppercase tracking-tighter leading-none mb-0.5">Fornecedor {mission.billing_approved ? '(Auditado)' : isAdjustedCost ? '(Salvo)' : '(Projetado)'}</p>
+                               <p className="text-[12px] font-black text-red-600 font-mono leading-none tracking-tighter">{formatCurrency(displayCost)}</p>
                            </div>
 
                            {(() => {
@@ -1005,10 +1005,10 @@ Qualquer dúvida, estamos a disposição.
                                return (
                                    <div className={`w-full rounded-lg border p-1 flex items-center justify-center gap-1 shadow-sm transition-all ${isNegative ? 'bg-red-100 border-red-300 animate-pulse' : isLow ? 'bg-amber-50 border-amber-300' : 'bg-emerald-50 border-emerald-200'}`}>
                                        {isNegative ? <TrendingDown size={10} className="text-red-600" /> : isLow ? <AlertOctagon size={10} className="text-amber-600" /> : <TrendingUp size={10} className="text-emerald-600" />}
-                                       <span className={`text-[9px] font-black font-mono leading-none ${isNegative ? 'text-red-700' : isLow ? 'text-amber-700' : 'text-emerald-700'}`}>
+                                       <span className={`text-[11px] font-black font-mono leading-none ${isNegative ? 'text-red-700' : isLow ? 'text-amber-700' : 'text-emerald-700'}`}>
                                            {margin.toFixed(1)}%
                                        </span>
-                                       <span className={`text-[6px] font-black uppercase leading-none ${isNegative ? 'text-red-500' : isLow ? 'text-amber-500' : 'text-emerald-500'}`}>
+                                       <span className={`text-[8px] font-black uppercase leading-none ${isNegative ? 'text-red-500' : isLow ? 'text-amber-500' : 'text-emerald-500'}`}>
                                            {isNegative ? 'PREJUÍZO' : 'MARGEM'}
                                        </span>
                                    </div>
@@ -1019,28 +1019,28 @@ Qualquer dúvida, estamos a disposição.
                               {auditResult?.isInconsistent ? (
                                   <>
                                       <AlertOctagon size={12} className="text-amber-600 animate-pulse" />
-                                      <span className="text-[7px] font-black text-amber-700 uppercase leading-none">Divergente</span>
+                                      <span className="text-[9px] font-black text-amber-700 uppercase leading-none">Divergente</span>
                                   </>
                               ) : mission.billing_approved ? (
                                   <>
                                       <ShieldCheck size={12} className="text-blue-600" />
-                                      <span className="text-[7px] font-black text-blue-700 uppercase leading-none">Auditado</span>
+                                      <span className="text-[9px] font-black text-blue-700 uppercase leading-none">Auditado</span>
                                   </>
                               ) : pendingApproval?.hasPartial ? (
                                   <>
                                       <Clock size={10} className="text-gray-500" />
-                                      <span className="text-[7px] font-black text-gray-600 uppercase leading-none truncate w-full text-center">Falta: {pendingApproval.missing.join(', ')}</span>
-                                      <span className="text-[7px] font-bold text-gray-400 leading-none">({pendingApproval.waitingDays}d)</span>
+                                      <span className="text-[9px] font-black text-gray-600 uppercase leading-none truncate w-full text-center">Falta: {pendingApproval.missing.join(', ')}</span>
+                                      <span className="text-[9px] font-bold text-gray-400 leading-none">({pendingApproval.waitingDays}d)</span>
                                   </>
                               ) : hasBeenVerified ? (
                                   <>
                                       <ShieldCheck size={12} className="text-green-600" />
-                                      <span className="text-[7px] font-black text-green-700 uppercase leading-none">Salvo</span>
+                                      <span className="text-[9px] font-black text-green-700 uppercase leading-none">Salvo</span>
                                   </>
                               ) : (
                                   <>
                                       <Clock size={12} className="text-orange-600" />
-                                      <span className="text-[7px] font-black text-orange-700 uppercase leading-none">Pendente</span>
+                                      <span className="text-[9px] font-black text-orange-700 uppercase leading-none">Pendente</span>
                                   </>
                               )}
                            </div>
@@ -1049,21 +1049,21 @@ Qualquer dúvida, estamos a disposição.
                     {hideProviderInfo && financials && (
                         <div className="flex flex-col gap-1" data-testid={`client-billing-${mission.id}`}>
                            <div className="rounded-lg p-1.5 shadow-sm border" style={{ background: 'linear-gradient(135deg, #f0fdf4 0%, #dcfce7 100%)', borderColor: '#86efac' }}>
-                               <p className="text-[7px] font-black text-green-600 uppercase tracking-wider leading-none mb-0.5">Faturamento</p>
-                               <p className="text-[11px] font-black text-green-800 font-mono leading-none tracking-tight">{formatCurrency(financials.client.base)}</p>
+                               <p className="text-[9px] font-black text-green-600 uppercase tracking-wider leading-none mb-0.5">Faturamento</p>
+                               <p className="text-[13px] font-black text-green-800 font-mono leading-none tracking-tight">{formatCurrency(financials.client.base)}</p>
                            </div>
                            <div className={`rounded-lg p-1.5 shadow-sm border ${financials.client.extraHrVal > 0 ? 'bg-amber-50 border-amber-300' : 'bg-gray-50 border-gray-200'}`}>
-                               <p className="text-[7px] font-black text-amber-700 uppercase tracking-wider leading-none mb-0.5">Hora Extra</p>
-                               <p className={`text-[10px] font-black font-mono leading-none ${financials.client.extraHrVal > 0 ? 'text-amber-800' : 'text-gray-400'}`}>{formatCurrency(financials.client.extraHrVal)}</p>
-                               {financials.client.excessHours > 0 && <p className="text-[7px] font-bold text-amber-500 mt-0.5">+{formatExcessTime(financials.client.excessHours)}</p>}
+                               <p className="text-[9px] font-black text-amber-700 uppercase tracking-wider leading-none mb-0.5">Hora Extra</p>
+                               <p className={`text-[12px] font-black font-mono leading-none ${financials.client.extraHrVal > 0 ? 'text-amber-800' : 'text-gray-400'}`}>{formatCurrency(financials.client.extraHrVal)}</p>
+                               {financials.client.excessHours > 0 && <p className="text-[9px] font-bold text-amber-500 mt-0.5">+{formatExcessTime(financials.client.excessHours)}</p>}
                            </div>
                            <div className={`rounded-lg p-1.5 shadow-sm border ${financials.client.extraKmVal > 0 ? 'bg-blue-50 border-blue-200' : 'bg-gray-50 border-gray-200'}`}>
-                               <p className="text-[7px] font-black text-blue-600 uppercase tracking-wider leading-none mb-0.5">Km Extra</p>
-                               <p className={`text-[10px] font-black font-mono leading-none ${financials.client.extraKmVal > 0 ? 'text-blue-800' : 'text-gray-400'}`}>{formatCurrency(financials.client.extraKmVal)}</p>
+                               <p className="text-[9px] font-black text-blue-600 uppercase tracking-wider leading-none mb-0.5">Km Extra</p>
+                               <p className={`text-[12px] font-black font-mono leading-none ${financials.client.extraKmVal > 0 ? 'text-blue-800' : 'text-gray-400'}`}>{formatCurrency(financials.client.extraKmVal)}</p>
                            </div>
                            <div className={`rounded-lg p-1.5 shadow-sm border relative ${financials.tollValue > 0 ? 'bg-purple-50 border-purple-200' : 'bg-gray-50 border-gray-200'}`}>
-                               <p className="text-[7px] font-black text-purple-600 uppercase tracking-wider leading-none mb-0.5">Pedágio</p>
-                               <p className={`text-[10px] font-black font-mono leading-none ${financials.tollValue > 0 ? 'text-purple-800' : 'text-gray-400'}`}>{formatCurrency(financials.tollValue)}</p>
+                               <p className="text-[9px] font-black text-purple-600 uppercase tracking-wider leading-none mb-0.5">Pedágio</p>
+                               <p className={`text-[12px] font-black font-mono leading-none ${financials.tollValue > 0 ? 'text-purple-800' : 'text-gray-400'}`}>{formatCurrency(financials.tollValue)}</p>
                                {(() => {
                                    if (tollConfirmation) {
                                        const dt = tollConfirmation.date ? new Date(tollConfirmation.date) : null;
@@ -1086,7 +1086,7 @@ Qualquer dúvida, estamos a disposição.
                                })()}
                            </div>
                            <div className="rounded-lg p-1.5 shadow-sm border border-green-400" style={{ background: 'linear-gradient(135deg, #dcfce7 0%, #bbf7d0 100%)' }}>
-                               <p className="text-[7px] font-black text-green-700 uppercase tracking-wider leading-none mb-0.5">Valor Total</p>
+                               <p className="text-[9px] font-black text-green-700 uppercase tracking-wider leading-none mb-0.5">Valor Total</p>
                                <p className="text-[12px] font-black text-green-900 font-mono leading-none tracking-tight">{formatCurrency(financials.client.base + financials.client.extraHrVal + financials.client.extraKmVal + financials.tollValue)}</p>
                            </div>
                         </div>
@@ -1102,7 +1102,7 @@ Qualquer dúvida, estamos a disposição.
                         {(isDirector || canEditMission) && onOpenFinancials && (
                             <button onClick={() => onOpenFinancials(mission)} className={`flex items-center justify-center rounded-md transition-all duration-200 hover:shadow-sm active:scale-95 border ${mission.billing_approved ? 'w-7 h-7 bg-blue-600 text-white border-blue-700' : pendingApproval?.hasPartial ? 'h-7 px-1.5 gap-1 bg-gray-100 text-gray-500 border-gray-300 hover:bg-gray-200' : 'w-7 h-7 bg-green-50 text-green-700 border-green-200 hover:bg-green-600 hover:text-white'}`} title={mission.billing_approved ? "Faturamento Aprovado - Visualizar" : pendingApproval?.hasPartial ? `Aguardando: ${pendingApproval.missing.join(', ')} (${pendingApproval.waitingDays}d)` : "Conferência e Aprovação de Faturamento"}>
                                 <Calculator size={14} />
-                                {pendingApproval?.hasPartial && <span className="text-[7px] font-black text-gray-500 leading-none whitespace-nowrap">{pendingApproval.missing[0]} ({pendingApproval.waitingDays}d)</span>}
+                                {pendingApproval?.hasPartial && <span className="text-[9px] font-black text-gray-500 leading-none whitespace-nowrap">{pendingApproval.missing[0]} ({pendingApproval.waitingDays}d)</span>}
                             </button>
                         )}
                         
@@ -1129,7 +1129,7 @@ Qualquer dúvida, estamos a disposição.
                             <div className="p-2 bg-cyan-100 rounded-xl text-cyan-600"><Camera size={18} /></div>
                             <div>
                                 <h3 className="text-sm font-black text-gray-900 uppercase">Anexar Evidência</h3>
-                                <p className="text-[10px] font-bold text-gray-400">{mission.id} — {mission.client}</p>
+                                <p className="text-[12px] font-bold text-gray-400">{mission.id} — {mission.client}</p>
                             </div>
                         </div>
                         <button onClick={() => { setShowUploadModal(false); pendingFiles.forEach(f => URL.revokeObjectURL(f.preview)); setPendingFiles([]); }} className="p-2 hover:bg-gray-200 rounded-full transition-all" data-testid="button-close-upload-modal"><X size={18} /></button>
@@ -1138,7 +1138,7 @@ Qualquer dúvida, estamos a disposição.
                         <div className="border-2 border-dashed border-gray-300 rounded-xl p-6 text-center bg-gray-50/50 focus-within:border-cyan-400 transition-colors">
                             <Camera size={32} className="mx-auto text-gray-400 mb-2" />
                             <p className="text-sm font-bold text-gray-700">Cole o print aqui (Ctrl+V)</p>
-                            <p className="text-[10px] text-gray-400 mt-1">ou selecione um arquivo abaixo</p>
+                            <p className="text-[12px] text-gray-400 mt-1">ou selecione um arquivo abaixo</p>
                         </div>
                         <div className="flex gap-2">
                             <input ref={uploadFileInputRef} type="file" accept="image/*" multiple className="hidden" onChange={handleFileSelectInModal} data-testid={`input-evidence-file-${mission.id}`} />
@@ -1148,7 +1148,7 @@ Qualquer dúvida, estamos a disposição.
                         </div>
                         {pendingFiles.length > 0 && (
                             <div className="space-y-2">
-                                <p className="text-[10px] font-black text-gray-500 uppercase">{pendingFiles.length} imagem(ns) pronta(s)</p>
+                                <p className="text-[12px] font-black text-gray-500 uppercase">{pendingFiles.length} imagem(ns) pronta(s)</p>
                                 <div className="grid grid-cols-3 gap-2">
                                     {pendingFiles.map((pf, idx) => (
                                         <div key={idx} className="relative group rounded-lg overflow-hidden border border-gray-200 shadow-sm">
@@ -1175,18 +1175,18 @@ Qualquer dúvida, estamos a disposição.
                             <div className="p-2 bg-emerald-100 rounded-xl text-emerald-600"><Image size={18} /></div>
                             <div>
                                 <h3 className="text-sm font-black text-gray-900 uppercase">Evidência da Solicitação</h3>
-                                <p className="text-[10px] font-bold text-gray-400">{mission.id} — {mission.client}</p>
+                                <p className="text-[12px] font-bold text-gray-400">{mission.id} — {mission.client}</p>
                             </div>
                         </div>
                         <div className="flex items-center gap-2">
                             {!hideProviderInfo && (
-                                <button onClick={() => { setShowEvidenceModal(false); setShowUploadModal(true); }} className="px-3 py-1.5 bg-cyan-100 text-cyan-700 rounded-lg text-[10px] font-black uppercase hover:bg-cyan-200 transition-all flex items-center gap-1.5" data-testid="button-add-more-evidence"><Camera size={12} /> Adicionar</button>
+                                <button onClick={() => { setShowEvidenceModal(false); setShowUploadModal(true); }} className="px-3 py-1.5 bg-cyan-100 text-cyan-700 rounded-lg text-[12px] font-black uppercase hover:bg-cyan-200 transition-all flex items-center gap-1.5" data-testid="button-add-more-evidence"><Camera size={12} /> Adicionar</button>
                             )}
                             <button onClick={() => setShowEvidenceModal(false)} className="p-2 hover:bg-gray-200 rounded-full transition-all" data-testid="button-close-evidence-modal"><X size={18} /></button>
                         </div>
                     </div>
                     <div className="p-4 space-y-4">
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-[10px]">
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-[12px]">
                             <div className="bg-blue-50 p-3 rounded-xl border border-blue-100">
                                 <span className="font-black text-blue-400 uppercase tracking-widest block mb-1">Solicitação</span>
                                 <span className="font-black text-blue-900">{formatDateTime(mission.createdAt)}</span>
@@ -1203,7 +1203,7 @@ Qualquer dúvida, estamos a disposição.
                         {evidenceList!.map((ev, idx) => (
                             <div key={idx} className="border border-gray-200 rounded-xl overflow-hidden shadow-sm cursor-pointer" onClick={() => setFullScreenImage(ev.url)} data-testid={`evidence-image-${idx}`}>
                                 <img src={ev.url} alt={`Evidência ${idx + 1}`} className="w-full object-contain max-h-[60vh] bg-gray-100" />
-                                <div className="p-2 bg-gray-50 flex items-center justify-between text-[9px]">
+                                <div className="p-2 bg-gray-50 flex items-center justify-between text-[11px]">
                                     <span className="font-bold text-gray-500">Enviado por <span className="text-gray-800 font-black">{ev.uploadedBy}</span></span>
                                     <span className="font-bold text-gray-400">{formatDateTime(ev.uploadedAt)}</span>
                                 </div>
