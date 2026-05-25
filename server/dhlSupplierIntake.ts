@@ -1195,14 +1195,56 @@ export function registerDhlIntakeRoutes(
         return res.status(400).json({ error: 'Selecione um fornecedor na OS antes de gerar o link.' });
       }
 
-      // Resolve fornecedor
-      const { data: providerByName } = await sb.from('providers')
-        .select('id, name, trading_name, email, os_email, dhl_solicitation_email, phone, dhl_channel_preference')
-        .or(`name.eq.${mission.provider},trading_name.eq.${mission.provider}`)
-        .limit(1)
-        .maybeSingle();
-      const provider = providerByName;
-      if (!provider) return res.status(404).json({ error: 'Fornecedor não localizado no cadastro' });
+      // Resolve fornecedor.
+      // IMPORTANTE: NÃO usar `.or()` com o nome direto na string porque o filtro
+      // do PostgREST trata vírgula como separador de condições — fornecedores
+      // com vírgula no nome (ex.: "SOUZA SOARES VIGILANCIA, SEGURANCA LTDA")
+      // quebravam a query e caíam em "Fornecedor não localizado". Fazemos
+      // duas buscas separadas (name e trading_name) com `.eq()`, que escapa
+      // o valor automaticamente. Também tentamos um match case-insensitive
+      // como rede de segurança contra diferenças de caixa/espaço.
+      const PROVIDER_COLUMNS = 'id, name, trading_name, email, os_email, dhl_solicitation_email, phone, dhl_channel_preference';
+      const providerNameRaw = String(mission.provider || '').trim();
+      let provider: any = null;
+      if (providerNameRaw) {
+        const { data: byName } = await sb.from('providers')
+          .select(PROVIDER_COLUMNS)
+          .eq('name', providerNameRaw)
+          .limit(1)
+          .maybeSingle();
+        if (byName) provider = byName;
+        if (!provider) {
+          const { data: byTrading } = await sb.from('providers')
+            .select(PROVIDER_COLUMNS)
+            .eq('trading_name', providerNameRaw)
+            .limit(1)
+            .maybeSingle();
+          if (byTrading) provider = byTrading;
+        }
+        // Fallback case-insensitive (ilike sem wildcard = igualdade ignorando caixa)
+        if (!provider) {
+          const { data: byNameIlike } = await sb.from('providers')
+            .select(PROVIDER_COLUMNS)
+            .ilike('name', providerNameRaw)
+            .limit(1)
+            .maybeSingle();
+          if (byNameIlike) provider = byNameIlike;
+        }
+        if (!provider) {
+          const { data: byTradingIlike } = await sb.from('providers')
+            .select(PROVIDER_COLUMNS)
+            .ilike('trading_name', providerNameRaw)
+            .limit(1)
+            .maybeSingle();
+          if (byTradingIlike) provider = byTradingIlike;
+        }
+      }
+      if (!provider) {
+        return res.status(404).json({
+          error: `Fornecedor "${providerNameRaw || '(vazio)'}" não localizado no cadastro. Verifique se o nome na OS é exatamente igual ao cadastrado em Fornecedores.`,
+          providerName: providerNameRaw,
+        });
+      }
 
       // Se o operador não escolheu canal explicitamente, usa a preferência do fornecedor.
       const providerPref = provider.dhl_channel_preference;
