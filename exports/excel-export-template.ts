@@ -18,6 +18,12 @@ export interface ExcelExportConfig {
   logoPath?: string;
   footerLeft?: string;
   footerRight?: string;
+  /**
+   * Status por linha (mesma ordem de `rows`). Se informado, a linha recebe
+   * cor de destaque: cancelada=vermelho, aprovada=verde escuro, pendente=
+   * amarelo claro. Use 'other' (ou omita) para manter o zebrado padrão.
+   */
+  rowStatus?: Array<'approved' | 'cancelled' | 'pending' | 'other' | undefined>;
 }
 
 const COLORS = {
@@ -32,6 +38,13 @@ const COLORS = {
   textDark: '1F2937',
   textMuted: '6B7280',
   borderLight: 'E5E7EB',
+  // status — fundo claro, texto forte
+  approvedBg: 'DCFCE7',
+  approvedText: '065F46',
+  cancelledBg: 'FEE2E2',
+  cancelledText: '991B1B',
+  pendingBg: 'FEF3C7',
+  pendingText: '92400E',
 };
 
 function applyBorder(cell: ExcelJS.Cell, color = COLORS.borderLight) {
@@ -99,7 +112,10 @@ function computeAutoWidths(
     });
   }
 
-  return widths.map(w => Math.max(w, 4));
+  // Limites para evitar colunas largas demais (texto longo de rota) ou
+  // estreitas demais (cabeçalho cortado). Mantém a tabela "apertada" sem
+  // sobras visuais e sem hifenização.
+  return widths.map(w => Math.min(Math.max(w, 5), 28));
 }
 
 export async function exportFormattedExcel(config: ExcelExportConfig): Promise<Blob> {
@@ -119,6 +135,7 @@ export async function exportFormattedExcel(config: ExcelExportConfig): Promise<B
     companyCnpj,
     footerLeft,
     footerRight,
+    rowStatus = [],
   } = config;
 
   let { logoBase64, logoPath } = config;
@@ -129,11 +146,14 @@ export async function exportFormattedExcel(config: ExcelExportConfig): Promise<B
 
   const totalCols = Math.max(headers.length, 1);
 
+  // Larguras 100% baseadas no conteúdo real (cabeçalho + dados + total).
+  // Ignoramos larguras manuais para eliminar espaços extras — se o caller
+  // ainda assim quiser forçar uma largura mínima, respeitamos só como piso.
   const autoWidths = computeAutoWidths(headers, rows, totalsRow, currencyColumns);
   const finalWidths = headers.map((_, i) => {
-    const manual = manualColWidths?.[i];
     const auto = autoWidths[i];
-    return Math.max(manual ?? 0, auto);
+    const manualMin = manualColWidths?.[i];
+    return manualMin ? Math.max(auto, Math.min(manualMin, 28)) : auto;
   });
 
   const ws = wb.addWorksheet(sheetName, {
@@ -242,11 +262,28 @@ export async function exportFormattedExcel(config: ExcelExportConfig): Promise<B
   });
   currentRow++;
 
+  const statusIdx = headers.findIndex(h => h.trim().toUpperCase() === 'STATUS');
+
   rows.forEach((rowData, rowIdx) => {
     const dataRow = ws.getRow(currentRow);
     dataRow.height = 18;
     const isZebra = rowIdx % 2 === 1;
-    const bgColor = isZebra ? COLORS.zebraDark : COLORS.zebraLight;
+    const status = rowStatus[rowIdx];
+    let bgColor = isZebra ? COLORS.zebraDark : COLORS.zebraLight;
+    let textColor = COLORS.textDark;
+    let rowBold = false;
+    if (status === 'cancelled') {
+      bgColor = COLORS.cancelledBg;
+      textColor = COLORS.cancelledText;
+      rowBold = true;
+    } else if (status === 'approved') {
+      bgColor = COLORS.approvedBg;
+      textColor = COLORS.approvedText;
+      rowBold = true;
+    } else if (status === 'pending') {
+      bgColor = COLORS.pendingBg;
+      textColor = COLORS.pendingText;
+    }
 
     rowData.forEach((val, colIdx) => {
       const cell = dataRow.getCell(colIdx + 1);
@@ -259,10 +296,12 @@ export async function exportFormattedExcel(config: ExcelExportConfig): Promise<B
         cell.value = val ?? '';
       }
 
-      cell.font = { size: 8, color: { argb: COLORS.textDark } };
+      cell.font = { size: 8, color: { argb: textColor }, bold: rowBold || colIdx === statusIdx };
       cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: bgColor } };
+      // Tudo centralizado, conforme pedido. Moeda mantém o numFmt R$,
+      // mas alinhada ao centro para um visual mais limpo.
       cell.alignment = {
-        horizontal: isCurrency ? 'right' : (typeof val === 'number' ? 'center' : 'left'),
+        horizontal: 'center',
         vertical: 'middle',
         wrapText: false,
       };
@@ -298,7 +337,7 @@ export async function exportFormattedExcel(config: ExcelExportConfig): Promise<B
       cell.font = { bold: true, size: 9, color: { argb: COLORS.darkBar } };
       cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: COLORS.totalBg } };
       cell.alignment = {
-        horizontal: isCurrency ? 'right' : (typeof val === 'number' ? 'center' : (colIdx === 0 ? 'right' : 'center')),
+        horizontal: 'center',
         vertical: 'middle',
         wrapText: false,
       };

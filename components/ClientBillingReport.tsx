@@ -1331,22 +1331,23 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
             'PEDÁGIO', 'TOTAL'
         );
 
-        const colWidths: number[] = [6];
-        if (isCeslogBilling) colWidths.push(14);
-        if (isDhlBilling) colWidths.push(10);
-        colWidths.push(12);
-        colWidths.push(
-            30, 12, 7, 7, 12, 12,
-            12, 8, 10, 12, 12, 8,
-            9, 9, 8,
-            7, 7, 7,
-            6, 12, 12,
-            7, 12, 12,
-            12, 14
-        );
+        // Larguras agora 100% automáticas (largura mínima = 5, máxima = 28
+        // aplicadas pelo template). Mantemos só um piso para a coluna ROTA,
+        // que costuma ter texto longo e merece um pouco mais de respiro.
+        const colWidths: number[] = [];
+        const routeColIdx = 3 + extraColOffset;
+        colWidths[routeColIdx] = 22;
 
         const currBase = [3, 6, 7, 21, 22, 24, 25, 26, 27];
         const currencyColumns = currBase.map(c => c + extraColOffset);
+
+        // Status por linha para colorir vermelho (cancelada) / verde (aprovada/concluída)
+        const rowStatus = rowsData.map<'approved' | 'cancelled' | 'pending'>(r => {
+            const s = (r.missionStatus || '').toLowerCase();
+            if (s.startsWith('cancel')) return 'cancelled';
+            if (r.isApproved) return 'approved';
+            return 'pending';
+        });
 
         await exportFormattedExcel({
             title: `BOLETIM DE MEDIÇÃO`,
@@ -1363,6 +1364,7 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
             headers,
             colWidths,
             rows: dataRows,
+            rowStatus,
             totalsRow: totalRowData,
             currencyColumns,
             fileName: `Boletim_${clientLabel.replace(/[^a-zA-Z0-9]/g, '_').substring(0, 20)}_${periodShort}.xlsx`,
