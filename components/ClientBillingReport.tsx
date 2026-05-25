@@ -3042,7 +3042,7 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
                                                 >×</button>
                                             </td>
                                             {isCeslogBilling && <td style={{ ...cellStyle, fontWeight: 700, color: '#7e22ce', fontSize: '14px' }}>{r.referenceNumber || '-'}</td>}
-                                            {isDhlBilling && <td style={{ ...cellStyle, fontWeight: 800, color: '#D40511', fontSize: '14px', backgroundColor: '#fffbe6' }} data-testid={`cell-se-${r.id}`}>{r.seNumber || '-'}</td>}
+                                            {isDhlBilling && <td style={{ ...cellStyle, fontWeight: 900, color: '#D40511', fontSize: '17px', backgroundColor: '#fffbe6', letterSpacing: '0.5px' }} data-testid={`cell-se-${r.id}`}>{r.seNumber || '-'}</td>}
                                             <td style={{ ...cellStyle, fontWeight: 800, fontSize: '13px', textTransform: 'uppercase', color: r.isApproved ? '#065f46' : '#991b1b', backgroundColor: r.isApproved ? '#ecfdf5' : '#fee2e2' }} data-testid={`cell-status-${r.id}`}>{r.missionStatus}</td>
                                             <td className="route-cell" style={{ ...cellStyle, textAlign: 'left', whiteSpace: 'normal', wordWrap: 'break-word', wordBreak: 'break-word', overflowWrap: 'break-word', lineHeight: '1.3', fontSize: '15px', maxWidth: '340px' }} title={r.route}>{r.route}</td>
                                             <td style={cellStyle}>{fmtBRL(r.activationFee)}</td>
