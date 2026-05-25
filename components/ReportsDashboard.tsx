@@ -1917,6 +1917,60 @@ const ReportsDashboard: React.FC = () => {
                                 )}
                             </div>
 
+                            {/* Filtros rápidos de período — atalho para o filtro global de datas (topo) */}
+                            <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-3 no-print" data-testid="panel-manual-override-presets">
+                                <div className="flex flex-wrap items-center gap-2">
+                                    <span className="text-[11px] font-bold text-gray-500 uppercase tracking-wide mr-1">Histórico:</span>
+                                    {([
+                                        { id: 'today', label: 'Hoje', days: 0 },
+                                        { id: 'yesterday', label: 'Ontem', days: 1, single: true },
+                                        { id: '7d', label: 'Últimos 7 dias', days: 7 },
+                                        { id: '30d', label: 'Últimos 30 dias', days: 30 },
+                                        { id: 'month', label: 'Mês atual', month: true },
+                                    ] as const).map(p => {
+                                        const apply = () => {
+                                            const now = new Date();
+                                            let s = new Date(now);
+                                            let e = new Date(now);
+                                            if ('single' in p && p.single) {
+                                                s.setDate(now.getDate() - p.days);
+                                                e = new Date(s);
+                                            } else if ('month' in p && p.month) {
+                                                s = new Date(now.getFullYear(), now.getMonth(), 1);
+                                            } else if ('days' in p && p.days > 0) {
+                                                s.setDate(now.getDate() - p.days);
+                                            }
+                                            setStartDate(getLocalISODate(s));
+                                            setEndDate(getLocalISODate(e));
+                                        };
+                                        const active = (() => {
+                                            const today = getLocalISODate(new Date());
+                                            if (p.id === 'today') return startDate === today && endDate === today;
+                                            if (p.id === 'yesterday') {
+                                                const y = new Date(); y.setDate(y.getDate() - 1);
+                                                const ys = getLocalISODate(y);
+                                                return startDate === ys && endDate === ys;
+                                            }
+                                            return false;
+                                        })();
+                                        return (
+                                            <button
+                                                key={p.id}
+                                                onClick={apply}
+                                                className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-all ${active ? 'bg-red-600 text-white shadow-sm' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}
+                                                data-testid={`btn-period-${p.id}`}
+                                            >
+                                                {p.label}
+                                            </button>
+                                        );
+                                    })}
+                                    <div className="ml-auto flex items-center gap-2 text-[11px] text-gray-500">
+                                        <Calendar size={12} />
+                                        Período aplicado: <strong className="text-gray-800 font-mono" data-testid="text-applied-period">{startDate} → {endDate}</strong>
+                                    </div>
+                                </div>
+                            </div>
+
                             <div className="flex flex-wrap gap-3 items-center no-print">
                                 <div className="flex items-center gap-2">
                                     <Filter size={14} className="text-gray-400" />

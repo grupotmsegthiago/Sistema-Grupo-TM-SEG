@@ -6544,6 +6544,9 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
     windowDays: Math.max(1, Number(process.env.MANUAL_OVERRIDE_WINDOW_DAYS) || 7),
     threshold: Math.max(1, Number(process.env.MANUAL_OVERRIDE_THRESHOLD) || 10),
     cooldownHours: Math.max(1, Number(process.env.MANUAL_OVERRIDE_COOLDOWN_HOURS) || 24),
+    notifyEmail: true,
+    notifyWhatsapp: true,
+    notifyPush: true,
   };
   const MANUAL_OVERRIDE_PUBLIC_URL =
     process.env.MANUAL_OVERRIDE_PUBLIC_URL || process.env.PUBLIC_APP_URL || 'https://tmsego.replit.app';
@@ -6553,6 +6556,9 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
     windowDays: number;
     threshold: number;
     cooldownHours: number;
+    notifyEmail: boolean;
+    notifyWhatsapp: boolean;
+    notifyPush: boolean;
   };
 
   const sanitizeManualOverrideSettings = (raw: any): ManualOverrideSettings => {
@@ -6562,7 +6568,17 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
     const windowDays = Math.max(1, Math.min(365, Number(raw?.windowDays) || MANUAL_OVERRIDE_DEFAULTS.windowDays));
     const threshold = Math.max(1, Math.min(10000, Number(raw?.threshold) || MANUAL_OVERRIDE_DEFAULTS.threshold));
     const cooldownHours = Math.max(1, Math.min(720, Number(raw?.cooldownHours) || MANUAL_OVERRIDE_DEFAULTS.cooldownHours));
-    return { emails, windowDays, threshold, cooldownHours };
+    // Booleanos: default true; aceita string "false"/"true" também.
+    const toBool = (v: any, def: boolean) => {
+      if (v === undefined || v === null) return def;
+      if (typeof v === 'boolean') return v;
+      if (typeof v === 'string') return v.toLowerCase() !== 'false' && v !== '0';
+      return !!v;
+    };
+    const notifyEmail = toBool(raw?.notifyEmail, MANUAL_OVERRIDE_DEFAULTS.notifyEmail);
+    const notifyWhatsapp = toBool(raw?.notifyWhatsapp, MANUAL_OVERRIDE_DEFAULTS.notifyWhatsapp);
+    const notifyPush = toBool(raw?.notifyPush, MANUAL_OVERRIDE_DEFAULTS.notifyPush);
+    return { emails, windowDays, threshold, cooldownHours, notifyEmail, notifyWhatsapp, notifyPush };
   };
 
   const loadManualOverrideSettings = async (): Promise<ManualOverrideSettings> => {
@@ -6599,6 +6615,9 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
       const MANUAL_OVERRIDE_WINDOW_DAYS = settings.windowDays;
       const MANUAL_OVERRIDE_THRESHOLD = settings.threshold;
       const MANUAL_OVERRIDE_COOLDOWN_HOURS = settings.cooldownHours;
+      const MANUAL_OVERRIDE_NOTIFY_EMAIL = settings.notifyEmail;
+      const MANUAL_OVERRIDE_NOTIFY_WHATSAPP = settings.notifyWhatsapp;
+      const MANUAL_OVERRIDE_NOTIFY_PUSH = settings.notifyPush;
 
       const endDate = new Date();
       const startDate = new Date(endDate.getTime() - MANUAL_OVERRIDE_WINDOW_DAYS * 24 * 60 * 60 * 1000);
@@ -6790,13 +6809,17 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
             </div>
             <div class="footer"><p>Grupo TM SEG — Sistema TMSEGo</p></div>
           </div></body></html>`;
-          await transporter.sendMail({
-            from: SMTP_FROM,
-            to: MANUAL_OVERRIDE_ALERT_EMAILS,
-            subject: `⚠️ ${scopeLabel} "${name}" — ${count} edições manuais sobre o motor (últimos ${MANUAL_OVERRIDE_WINDOW_DAYS}d)`,
-            html,
-          });
-          console.log(`[OverrideAlert] ${scope}=${name} count=${count} → e-mail enviado para ${MANUAL_OVERRIDE_ALERT_EMAILS}`);
+          if (!MANUAL_OVERRIDE_NOTIFY_EMAIL) {
+            console.log(`[OverrideAlert] ${scope}=${name} count=${count} → e-mail desativado nas configurações; pulando envio.`);
+          } else {
+            await transporter.sendMail({
+              from: SMTP_FROM,
+              to: MANUAL_OVERRIDE_ALERT_EMAILS,
+              subject: `⚠️ ${scopeLabel} "${name}" — ${count} edições manuais sobre o motor (últimos ${MANUAL_OVERRIDE_WINDOW_DAYS}d)`,
+              html,
+            });
+            console.log(`[OverrideAlert] ${scope}=${name} count=${count} → e-mail enviado para ${MANUAL_OVERRIDE_ALERT_EMAILS}`);
+          }
         } catch (e: any) {
           console.error('[OverrideAlert] Falha ao enviar e-mail:', e?.message);
         }
@@ -6804,6 +6827,9 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
         // 3) WhatsApp (Z-API) — Task #74. Lista configurável por env, telefones separados por vírgula.
         // Formato esperado: DDI+DDD+número, ex.: 5511999999999.
         try {
+          if (!MANUAL_OVERRIDE_NOTIFY_WHATSAPP) {
+            console.log(`[OverrideAlert] ${scope}=${name} → WhatsApp desativado nas configurações; pulando envio.`);
+          } else {
           const rawPhones = process.env.MANUAL_OVERRIDE_ALERT_WHATSAPP || '';
           const phones = rawPhones.split(/[,;\s]+/).map(s => s.replace(/\D/g, '')).filter(p => p.length >= 10);
           if (phones.length > 0 && ZAPI_INSTANCE && ZAPI_TOKEN) {
@@ -6833,6 +6859,7 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
               }
             }
           }
+          }
         } catch (e: any) {
           console.error('[OverrideAlert] Falha no bloco WhatsApp:', e?.message);
         }
@@ -6840,6 +6867,9 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
         // 4) Push notification — Task #74. Filtra inscritos por role (env MANUAL_OVERRIDE_ALERT_PUSH_ROLES).
         // Default: diretoria, administrador, financeiro. Para enviar a todos: defina "*".
         try {
+          if (!MANUAL_OVERRIDE_NOTIFY_PUSH) {
+            console.log(`[OverrideAlert] ${scope}=${name} → push desativado nas configurações; pulando envio.`);
+          } else {
           const rolesRaw = (process.env.MANUAL_OVERRIDE_ALERT_PUSH_ROLES ||
             'diretoria,administrador,financeiro').toLowerCase();
           const allowAll = rolesRaw.trim() === '*';
@@ -6886,6 +6916,7 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
               }
               console.log(`[OverrideAlert] Push enviado para ${targets.length} dispositivo(s) (${scope}=${name})`);
             }
+          }
           }
         } catch (e: any) {
           console.error('[OverrideAlert] Falha no bloco Push:', e?.message);

@@ -1,11 +1,14 @@
 import React, { useEffect, useState } from 'react';
-import { AlertTriangle, Save, Loader2, RefreshCw, History, Mail, Clock, Hash, Calendar, PlayCircle } from 'lucide-react';
+import { AlertTriangle, Save, Loader2, RefreshCw, History, Mail, Clock, Hash, Calendar, PlayCircle, MessageCircle, Bell } from 'lucide-react';
 
 type Settings = {
   emails: string;
   windowDays: number;
   threshold: number;
   cooldownHours: number;
+  notifyEmail: boolean;
+  notifyWhatsapp: boolean;
+  notifyPush: boolean;
 };
 
 type HistoryEntry = {
@@ -23,6 +26,9 @@ const FIELD_LABELS: Record<keyof Settings, string> = {
   windowDays: 'Janela (dias)',
   threshold: 'Limite (edições)',
   cooldownHours: 'Cooldown (horas)',
+  notifyEmail: 'Avisar por e-mail',
+  notifyWhatsapp: 'Avisar por WhatsApp',
+  notifyPush: 'Avisar por push',
 };
 
 const authHeaders = (): Record<string, string> => {
@@ -73,8 +79,8 @@ const ManualOverrideAlertSettings: React.FC = () => {
       return;
     }
     const emailsValid = settings.emails.split(',').map(s => s.trim()).filter(Boolean);
-    if (emailsValid.length === 0) {
-      alert('Informe pelo menos um e-mail destinatário.');
+    if (settings.notifyEmail && emailsValid.length === 0) {
+      alert('Informe pelo menos um e-mail destinatário ou desative o envio por e-mail.');
       return;
     }
     setIsSaving(true);
@@ -213,6 +219,45 @@ const ManualOverrideAlertSettings: React.FC = () => {
           </div>
         </div>
 
+        {/* Canais de notificação — permite desligar e-mail, WhatsApp ou push sem perder a contagem in-app */}
+        <div className="mt-5 border-t border-gray-200 pt-4">
+          <p className="text-xs font-bold text-gray-700 uppercase mb-2">Canais de notificação</p>
+          <p className="text-[11px] text-gray-500 mb-3">
+            Desligando um canal o sistema continua contando as edições e registrando no histórico in-app — só deixa de enviar o aviso pelo canal escolhido.
+          </p>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            {([
+              { key: 'notifyEmail', label: 'E-mail', icon: <Mail size={16} /> },
+              { key: 'notifyWhatsapp', label: 'WhatsApp', icon: <MessageCircle size={16} /> },
+              { key: 'notifyPush', label: 'Push (navegador)', icon: <Bell size={16} /> },
+            ] as const).map(c => {
+              const on = (settings as any)[c.key] as boolean;
+              return (
+                <label
+                  key={c.key}
+                  className={`flex items-center justify-between gap-3 px-3 py-2 rounded-lg border cursor-pointer transition-colors ${on ? 'bg-emerald-50 border-emerald-200' : 'bg-gray-50 border-gray-200'}`}
+                  data-testid={`toggle-${c.key}`}
+                >
+                  <span className="flex items-center gap-2 text-sm font-semibold text-gray-700">
+                    {c.icon} {c.label}
+                  </span>
+                  <span className="relative inline-flex items-center">
+                    <input
+                      type="checkbox"
+                      className="sr-only peer"
+                      checked={on}
+                      onChange={(e) => setSettings({ ...settings, [c.key]: e.target.checked } as Settings)}
+                      data-testid={`input-${c.key}`}
+                    />
+                    <span className="w-10 h-5 bg-gray-300 rounded-full peer-checked:bg-emerald-500 transition-colors" />
+                    <span className={`absolute left-0.5 top-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${on ? 'translate-x-5' : ''}`} />
+                  </span>
+                </label>
+              );
+            })}
+          </div>
+        </div>
+
         <div className="mt-5 flex flex-wrap items-center gap-3">
           <button
             onClick={handleSave}
@@ -292,13 +337,16 @@ const ManualOverrideAlertSettings: React.FC = () => {
                         <span className="text-gray-400">—</span>
                       ) : (
                         <ul className="space-y-0.5">
-                          {h.changedFields.map(f => (
-                            <li key={f} className="text-[11px]">
-                              <strong>{FIELD_LABELS[f as keyof Settings] || f}:</strong>{' '}
-                              <span className="text-red-600 line-through">{String((h.before as any)[f])}</span>{' '}→{' '}
-                              <span className="text-green-700">{String((h.after as any)[f])}</span>
-                            </li>
-                          ))}
+                          {h.changedFields.map(f => {
+                            const fmt = (v: any) => typeof v === 'boolean' ? (v ? 'Ligado' : 'Desligado') : String(v ?? '—');
+                            return (
+                              <li key={f} className="text-[11px]">
+                                <strong>{FIELD_LABELS[f as keyof Settings] || f}:</strong>{' '}
+                                <span className="text-red-600 line-through">{fmt((h.before as any)[f])}</span>{' '}→{' '}
+                                <span className="text-green-700">{fmt((h.after as any)[f])}</span>
+                              </li>
+                            );
+                          })}
                         </ul>
                       )}
                     </td>
