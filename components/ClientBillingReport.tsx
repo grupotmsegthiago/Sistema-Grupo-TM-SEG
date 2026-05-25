@@ -203,17 +203,18 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
     };
 
     const handleSetWeekSundayToSunday = (offset: 0 | -1) => {
-        // Semana de Domingo a Sábado (7 dias). Usa a data ATUAL como referência
-        // (ignora o startDate atual) para evitar "andar" pela semana errada.
-        // offset=0 → semana em curso (domingo desta semana → sábado desta semana)
+        // Semana de Segunda a Domingo (7 dias). Usa a data ATUAL como referência.
+        // offset=0 → semana em curso (segunda desta semana → domingo desta semana)
         // offset=-1 → semana anterior
         const ref = new Date();
         const day = ref.getDay(); // 0=Dom, 1=Seg, ... 6=Sab
-        const sunday = new Date(ref.getFullYear(), ref.getMonth(), ref.getDate() - day + (offset * 7));
-        const saturday = new Date(sunday.getFullYear(), sunday.getMonth(), sunday.getDate() + 6);
+        // Distância até a segunda-feira desta semana: Dom=-6, Seg=0, Ter=-1, ..., Sab=-5
+        const diffToMonday = day === 0 ? -6 : 1 - day;
+        const monday = new Date(ref.getFullYear(), ref.getMonth(), ref.getDate() + diffToMonday + (offset * 7));
+        const sunday = new Date(monday.getFullYear(), monday.getMonth(), monday.getDate() + 6);
         const fmt = (d: Date) => `${d.getFullYear()}-${(d.getMonth() + 1).toString().padStart(2, '0')}-${d.getDate().toString().padStart(2, '0')}`;
-        setStartDate(fmt(sunday));
-        setEndDate(fmt(saturday));
+        setStartDate(fmt(monday));
+        setEndDate(fmt(sunday));
     };
 
     const handleSetMonth = (value: string) => {
@@ -2494,8 +2495,8 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
                                     <input type="month" className="text-[11px] font-bold uppercase px-2 py-0.5 rounded border border-red-300 bg-red-50 text-red-700 outline-none focus:border-red-500 cursor-pointer" value={selectedMonth} onChange={e => handleSetMonth(e.target.value)} data-testid="input-month-selector" />
                                     <button onClick={() => handleSetFortnight(1)} className="text-[10px] font-black uppercase text-blue-600 bg-blue-50 hover:bg-blue-100 px-2 py-0.5 rounded border border-blue-200">1ª Quinzena</button>
                                     <button onClick={() => handleSetFortnight(2)} className="text-[10px] font-black uppercase text-blue-600 bg-blue-50 hover:bg-blue-100 px-2 py-0.5 rounded border border-blue-200">2ª Quinzena</button>
-                                    <button onClick={() => handleSetWeekSundayToSunday(-1)} className="text-[10px] font-black uppercase text-purple-700 bg-purple-50 hover:bg-purple-100 px-2 py-0.5 rounded border border-purple-200" data-testid="btn-week-prev-sun-sat" title="Semana anterior — Domingo a Sábado (7 dias)">Sem. Ant. (Dom→Sáb)</button>
-                                    <button onClick={() => handleSetWeekSundayToSunday(0)} className="text-[10px] font-black uppercase text-purple-700 bg-purple-50 hover:bg-purple-100 px-2 py-0.5 rounded border border-purple-200" data-testid="btn-week-cur-sun-sat" title="Semana em curso — Domingo a Sábado (7 dias)">Semana (Dom→Sáb)</button>
+                                    <button onClick={() => handleSetWeekSundayToSunday(-1)} className="text-[10px] font-black uppercase text-purple-700 bg-purple-50 hover:bg-purple-100 px-2 py-0.5 rounded border border-purple-200" data-testid="btn-week-prev-mon-sun" title="Semana anterior — Segunda a Domingo (7 dias)">Sem. Ant. (Seg→Dom)</button>
+                                    <button onClick={() => handleSetWeekSundayToSunday(0)} className="text-[10px] font-black uppercase text-purple-700 bg-purple-50 hover:bg-purple-100 px-2 py-0.5 rounded border border-purple-200" data-testid="btn-week-cur-mon-sun" title="Semana em curso — Segunda a Domingo (7 dias)">Semana (Seg→Dom)</button>
                                 </div>
                             </div>
                             <div className="flex gap-2">
