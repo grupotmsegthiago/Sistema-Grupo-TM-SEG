@@ -1272,9 +1272,7 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
         const extraColOffset = (isCeslogBilling ? 1 : 0) + (isDhlBilling ? 1 : 0);
 
         const dataRows = rowsData.map(r => {
-            const row: (string | number)[] = [
-                !r.isApproved ? `[${r.missionStatus.toUpperCase()}] ${r.id}` : r.id,
-            ];
+            const row: (string | number)[] = [r.id];
             if (isCeslogBilling) row.push(r.referenceNumber || '-');
             if (isDhlBilling) row.push(r.seNumber || '-');
             row.push(r.missionStatus || '-');
