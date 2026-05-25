@@ -156,35 +156,36 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
     selectedClientRef.current = selectedClient;
 
     useEffect(() => {
-        const handleRefresh = () => {
-            if (reportGeneratedRef.current && selectedClientRef.current) {
+        // Debounce para não regerar o boletim várias vezes em rajadas de
+        // updates (ex: salvar Modal Financeiro dispara 2-3 UPDATEs seguidos).
+        let refreshTimer: ReturnType<typeof setTimeout> | null = null;
+        const scheduleRefresh = () => {
+            if (!reportGeneratedRef.current || !selectedClientRef.current) return;
+            if (refreshTimer) clearTimeout(refreshTimer);
+            refreshTimer = setTimeout(() => {
+                refreshTimer = null;
                 handleGenerateRef.current();
-            }
+            }, 350);
         };
+
+        const handleRefresh = () => scheduleRefresh();
         window.addEventListener('refreshMissions', handleRefresh);
 
+        // Qualquer mudança em missions/snapshots/vínculos atualiza o boletim
+        // em tempo real. Antes, só um subconjunto de campos disparava
+        // refresh — agora capturamos qualquer UPDATE/INSERT/DELETE.
         const channel = supabase.channel('billing-financial-sync')
-            .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'missions' }, (payload: any) => {
-                const changed = payload.new;
-                const old = payload.old;
-                if (changed && old && (
-                    changed.revenue_value !== old.revenue_value ||
-                    changed.cost_value !== old.cost_value ||
-                    changed.toll_value !== old.toll_value ||
-                    changed.billing_release !== old.billing_release ||
-                    changed.reference_number !== old.reference_number ||
-                    changed.billing_approved !== old.billing_approved ||
-                    changed.snapshot_approved_by !== old.snapshot_approved_by ||
-                    changed.billing_verified_by !== old.billing_verified_by
-                )) {
-                    if (reportGeneratedRef.current && selectedClientRef.current) {
-                        handleGenerateRef.current();
-                    }
-                }
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'missions' }, () => scheduleRefresh())
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'client_vehicles' }, () => scheduleRefresh())
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'vehicles' }, () => scheduleRefresh())
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'system_logs' }, (payload: any) => {
+                const ent = payload?.new?.entity || payload?.old?.entity;
+                if (ent === 'BillingAdjustment' || ent === 'BillingSnapshot') scheduleRefresh();
             })
             .subscribe();
 
         return () => {
+            if (refreshTimer) clearTimeout(refreshTimer);
             window.removeEventListener('refreshMissions', handleRefresh);
             supabase.removeChannel(channel);
         };
