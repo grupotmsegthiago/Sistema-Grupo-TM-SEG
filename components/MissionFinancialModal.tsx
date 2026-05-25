@@ -3301,7 +3301,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                         const list = onlyThisClient.length > 0 ? onlyThisClient : clientTables.filter(t => !isMasterRow(t));
                                         const options: FilterableSelectOption[] = [
                                             { value: '', label: 'Automático (IA Detectando)' },
-                                            ...[...list].sort((a, b) => (a.operation_type || '').localeCompare(b.operation_type || '')).map(t => {
+                                            ...[...list].sort((a, b) => (a.operation_type || '').localeCompare(b.operation_type || '', 'pt-BR', { numeric: true, sensitivity: 'base' })).map(t => {
                                                 const isDhl = isDhlSupplyClient(t.client);
                                                 const dhlBad = isDhl && !validateDhlTableName(t.operation_type).valid;
                                                 const prefix = dhlBad ? '⚠️ ' : '';
@@ -3822,7 +3822,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                         const options: FilterableSelectOption[] = [
                                             { value: '', label: placeholderLabel },
                                             ...(!mission.is_same_os && !financialData.autoEngine?.active
-                                                ? [...filteredProviderTables].sort((a, b) => (a.operation_type || '').localeCompare(b.operation_type || ''))
+                                                ? [...filteredProviderTables].sort((a, b) => (a.operation_type || '').localeCompare(b.operation_type || '', 'pt-BR', { numeric: true, sensitivity: 'base' }))
                                                     .map(t => ({ value: String(t.id), label: t.operation_type || '' }))
                                                 : []),
                                         ];
