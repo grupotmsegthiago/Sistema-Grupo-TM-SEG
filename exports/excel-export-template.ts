@@ -112,10 +112,11 @@ function computeAutoWidths(
     });
   }
 
-  // Limites para evitar colunas largas demais (texto longo de rota) ou
-  // estreitas demais (cabeçalho cortado). Mantém a tabela "apertada" sem
-  // sobras visuais e sem hifenização.
-  return widths.map(w => Math.min(Math.max(w, 5), 28));
+  // Auto-fit: cada coluna expande para caber o maior conteúdo (cabeçalho,
+  // dado ou total), sem cortar. Mantém só um piso (5) para colunas vazias
+  // não colapsarem, e um teto generoso (80) apenas para evitar uma coluna
+  // patológica espalhar a planilha inteira.
+  return widths.map(w => Math.min(Math.max(w, 5), 80));
 }
 
 export async function exportFormattedExcel(config: ExcelExportConfig): Promise<Blob> {
@@ -153,7 +154,9 @@ export async function exportFormattedExcel(config: ExcelExportConfig): Promise<B
   const finalWidths = headers.map((_, i) => {
     const auto = autoWidths[i];
     const manualMin = manualColWidths?.[i];
-    return manualMin ? Math.max(auto, Math.min(manualMin, 28)) : auto;
+    // Auto-fit prevalece. Largura manual atua só como piso (caso o caller
+    // queira garantir uma largura mínima maior que a calculada).
+    return manualMin ? Math.max(auto, manualMin) : auto;
   });
 
   const ws = wb.addWorksheet(sheetName, {
