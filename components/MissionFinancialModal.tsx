@@ -2465,7 +2465,19 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
             <div className="flex items-center gap-4 flex-1 min-w-0">
               <div className="p-2.5 bg-red-600 rounded-xl shadow-lg shrink-0"><Calculator size={24} /></div>
               <div className="min-w-0 flex-1">
-                  <h3 className="font-bold text-xl leading-tight truncate">Auditoria de Faturamento <span className="text-gray-400 text-sm font-normal"># {mission.id}</span></h3>
+                  <h3 className="font-bold text-xl leading-tight truncate">
+                    Auditoria de Faturamento
+                    <span className="text-gray-400 text-sm font-normal"> # {mission.id}</span>
+                    {isDhlSupplyClient(mission.originalClientName || mission.client) && (mission as any).dhl_se_number && (
+                      <span
+                        data-testid="text-dhl-se-number"
+                        className="ml-2 align-middle text-amber-300 text-xs font-bold bg-amber-900/40 border border-amber-500/40 px-2 py-0.5 rounded"
+                        title="Número da S.E. DHL"
+                      >
+                        S.E. {String((mission as any).dhl_se_number).trim()}
+                      </span>
+                    )}
+                  </h3>
                   <div className="flex flex-wrap gap-1.5 mt-2">
                       <span className="bg-blue-900 text-blue-200 text-[9px] px-2 py-0.5 rounded font-bold uppercase flex items-center gap-1" title={mission.client}><Building2 size={10}/> <span className="truncate max-w-[180px]">{mission.client}</span></span>
                       <span className="bg-indigo-900 text-indigo-200 text-[9px] px-2 py-0.5 rounded font-bold uppercase flex items-center gap-1" title={formatProviderName(mission.provider)}><Briefcase size={10}/> <span className="truncate max-w-[180px]">{formatProviderName(mission.provider)}</span></span>
