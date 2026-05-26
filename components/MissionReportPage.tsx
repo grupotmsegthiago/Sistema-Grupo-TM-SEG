@@ -691,36 +691,36 @@ const MissionReportPage: React.FC = () => {
                           </td>
                           {(() => {
                             // Regras de cor da % LUCRO:
-                            // - APROVADO pelo usuário → normal (verde) + ícone verificado, independente do %
-                            // - < 10% (não aprovado) → vermelho (alerta forte)
-                            // - 10% a < 20% (não aprovado) → amarelo "Atenção"
-                            // - >= 20% (não aprovado) → normal verde
-                            // - lucro negativo (não aprovado) → vermelho
+                            // - APROVADO pelo usuário → confirma que a margem foi conferida.
+                            //   Pinta normal (branco/verde) e mostra tag "Verificado",
+                            //   independente do percentual.
+                            // - < 20% (não aprovado) → amarelo, alerta para conferir.
+                            // - >= 20% (não aprovado) → normal verde.
                             const hasValue = rev > 0;
                             const isApproved = !!m.billing_approved;
+                            const isLow = hasValue && lucroPerc < 20;
                             let cellClass = 'text-emerald-700';
                             let icon: React.ReactNode = null;
                             let title = '';
-                            if (hasValue && !isApproved) {
-                              if (lucroPerc < 10) {
-                                cellClass = 'text-red-700 bg-red-100';
-                                icon = <ShieldAlert size={12} className="text-red-700" />;
-                                title = 'Margem crítica (abaixo de 10%) — revisar';
-                              } else if (lucroPerc < 20) {
-                                cellClass = 'text-amber-700 bg-amber-100';
-                                icon = <AlertTriangle size={12} className="text-amber-700" />;
-                                title = 'Atenção: margem entre 10% e 20%';
-                              }
-                            } else if (hasValue && isApproved) {
+                            if (hasValue && isApproved) {
                               icon = <BadgeCheck size={12} className="text-emerald-600" />;
-                              title = 'Aprovado pela conferência';
+                              title = isLow
+                                ? `Verificado — margem ${lucroPerc.toFixed(1)}% aprovada pela conferência`
+                                : 'Aprovado pela conferência';
+                            } else if (isLow) {
+                              cellClass = 'text-amber-700 bg-amber-100';
+                              icon = <AlertTriangle size={12} className="text-amber-700" />;
+                              title = 'Atenção: margem abaixo de 20% — revisar';
                             }
                             return (
                               <td className={`px-3 py-2 border-r border-gray-100 text-right font-black whitespace-nowrap ${cellClass}`} title={title}>
                                 {hasValue ? (
                                   <div className="flex items-center justify-end gap-1">
                                     {icon}
-                                    {!isApproved && lucroPerc >= 10 && lucroPerc < 20 && (
+                                    {isApproved && isLow && (
+                                      <span className="text-[9px] font-black uppercase tracking-wider text-emerald-700">Verificado</span>
+                                    )}
+                                    {!isApproved && isLow && (
                                       <span className="text-[9px] font-black uppercase tracking-wider">Atenção</span>
                                     )}
                                     <span>{lucroPerc.toFixed(1)}%</span>
