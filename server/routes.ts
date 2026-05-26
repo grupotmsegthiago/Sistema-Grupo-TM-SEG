@@ -2248,6 +2248,100 @@ export async function registerRoutes(
     }
   });
 
+  // Recalcula receita/custo quando a OS muda de status para Cancelada (ou
+  // confirma o estado Cancelada). Disponível para qualquer usuário autenticado,
+  // pois o operacional aciona o cancelamento e o sistema deve refletir os
+  // valores de cancelamento na hora — sem precisar abrir o modal financeiro.
+  //
+  // Salvaguardas:
+  //   - OS aprovada para faturamento: NÃO recalcula (snapshot imutável).
+  //   - OS com edição manual (revenue_edit_reason/cost_edit_reason): NÃO recalcula.
+  //   - Status diferente de Cancelada: NÃO recalcula.
+  //   - Se valores já estão corretos (diff < R$ 0,01): no-op.
+  app.post("/api/missions/:id/recalc-on-cancel", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const missionId = req.params.id;
+      const { data: mission, error: mErr } = await supabaseAdmin.from('missions').select('*').eq('id', missionId).single();
+      if (mErr || !mission) return res.status(404).json({ error: 'Missão não encontrada' });
+
+      if (mission.status !== 'Cancelada') {
+        return res.json({ skipped: true, reason: 'status_not_cancelada', status: mission.status });
+      }
+      if (mission.billing_approved) {
+        return res.json({ skipped: true, reason: 'billing_approved' });
+      }
+      if (mission.revenue_edit_reason || mission.cost_edit_reason) {
+        return res.json({ skipped: true, reason: 'manual_edit' });
+      }
+
+      const { data: clientTables } = await supabaseAdmin.from('client_price_tables').select('*');
+      const { data: providerTables } = await supabaseAdmin.from('provider_cost_tables').select('*');
+      const { data: clients } = await supabaseAdmin.from('clients').select('*');
+      const missionClientTrimmed = (mission.client || '').trim().toUpperCase();
+      const clientData = (clients || []).find((c: any) => (c.name || '').trim().toUpperCase() === missionClientTrimmed);
+
+      const { calculateMissionFinancials } = await import('../lib/financialUtils');
+      const missionObj: any = {
+        ...mission,
+        startKm: mission.start_km, endKm: mission.end_km,
+        startTime: mission.start_time, endTime: mission.end_time,
+        agentCount: mission.agent_count || 1,
+        is_same_os: mission.is_same_os || false,
+      };
+      const result = calculateMissionFinancials(missionObj, clientTables || [], providerTables || [], clientData);
+      if (!result?.client || !result?.provider) {
+        return res.status(400).json({ error: 'Não foi possível calcular financeiro' });
+      }
+
+      const r2 = (n: number) => Math.round(Number(n || 0) * 100) / 100;
+      const newRevenue = r2(result.client.serviceTotal || 0);
+      const newCost = mission.is_same_os ? 0 : r2(result.provider.serviceTotal || 0);
+      const newToll = r2(result.tollValue ?? mission.toll_value ?? 0);
+      const oldRevenue = Number(mission.revenue_value || 0);
+      const oldCost = Number(mission.cost_value || 0);
+
+      if (Math.abs(newRevenue - oldRevenue) < 0.01 && Math.abs(newCost - oldCost) < 0.01) {
+        return res.json({ skipped: true, reason: 'no_change', revenue: oldRevenue, cost: oldCost });
+      }
+
+      const { error: upErr } = await supabaseAdmin.from('missions').update({
+        revenue_value: newRevenue,
+        cost_value: newCost,
+        toll_value: newToll,
+        last_update: new Date().toISOString(),
+      }).eq('id', missionId);
+      if (upErr) return res.status(500).json({ error: upErr.message });
+
+      try {
+        await supabaseAdmin.from('system_logs').insert([{
+          user_name: (req as any).user?.name || 'Sistema',
+          action_type: 'FINANCIAL_RECALC',
+          entity: 'Mission',
+          entity_id: missionId,
+          details: JSON.stringify({
+            source: '/api/missions/:id/recalc-on-cancel',
+            trigger: 'auto_on_cancel',
+            before: { revenue_value: oldRevenue, cost_value: oldCost },
+            after: { revenue_value: newRevenue, cost_value: newCost, toll_value: newToll },
+            client_table: result.client.tableName,
+            provider_table: result.provider.tableName,
+          }),
+        }]);
+      } catch {}
+
+      return res.json({
+        success: true,
+        mission_id: missionId,
+        old: { revenue: oldRevenue, cost: oldCost },
+        new: { revenue: newRevenue, cost: newCost, toll: newToll },
+        client_table: result.client.tableName,
+        provider_table: result.provider.tableName,
+      });
+    } catch (e: any) {
+      return res.status(500).json({ error: e?.message || 'erro inesperado' });
+    }
+  });
+
   app.post("/api/missions/:id/force-recalculate", requireAuth, requireRole('diretoria', 'administrador', 'financeiro'), async (req: Request, res: Response) => {
     try {
       const missionId = req.params.id;

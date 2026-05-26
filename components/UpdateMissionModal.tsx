@@ -1106,7 +1106,26 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
             }
 
             const isRevertFromCompleted = isCompletedMission && finalStatus === MissionStatus.IN_TRANSIT;
-            
+
+            // Gatilho automático: ao MUDAR para Cancelada, dispara recálculo
+            // server-side para aplicar a regra de cancellation_fee — assim o
+            // operacional não precisa abrir o modal financeiro e apertar
+            // "Recalcular". O endpoint já tem salvaguardas (OS aprovada e
+            // edição manual NÃO são tocadas).
+            if (finalStatus === MissionStatus.CANCELLED && mission.status !== MissionStatus.CANCELLED) {
+                try {
+                    const r = await authFetch(`/api/missions/${mission.id}/recalc-on-cancel`, { method: 'POST' });
+                    if (r.ok) {
+                        const j = await r.json().catch(() => ({} as any));
+                        if (j?.success) {
+                            console.log(`[CANCEL RECALC] OS ${mission.id}: receita ${j.old?.revenue} → ${j.new?.revenue}, custo ${j.old?.cost} → ${j.new?.cost}`);
+                        }
+                    }
+                } catch (e) {
+                    console.warn('[CANCEL RECALC] Falha no recálculo automático:', e);
+                }
+            }
+
             await supabase.from('system_logs').insert([{
                 user_name: currentUser.name || 'Usuário',
                 action_type: isRevertFromCompleted ? 'MISSION_STATUS_REVERT' : 'MISSION_UPDATE',
