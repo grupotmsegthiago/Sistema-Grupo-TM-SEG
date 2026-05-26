@@ -929,12 +929,54 @@ export const calculateMissionFinancials = (
         }
     }
 
+    // Regra soberana 200KM acompanhamento também para o fornecedor.
+    // Quando o cliente caiu em "200KM acompanhamento" (regra CEVA/LOGITECH),
+    // procuramos uma tabela manual do fornecedor com 200KM na região
+    // detectada (ex.: "SUDESTE ... 200KM"). Se existir, ela vence inclusive
+    // o motor automático — mesma soberania que a regra tem do lado do cliente.
+    // Busca em providerTablesNoMaster (não filtrada pelo "esvaziamento" do
+    // motor auto) e considera apelidos do fornecedor.
+    let logitech200ProviderApplied = false;
+    if (is200kmAccompaniment && !manualTableOverrides?.providerTableId) {
+        const candidatePool = providerTablesNoMaster.filter(t => {
+            const tProv = normalize(t.provider);
+            if (matchesProviderAlias(tProv)) return true;
+            if (tProv.length > 2 && missionProviderName.length > 2 &&
+                (tProv.includes(missionProviderName) || missionProviderName.includes(tProv))) return true;
+            for (const alias of providerAliasSet) {
+                if (alias.length > 2 && (tProv.includes(alias) || alias.includes(tProv))) return true;
+            }
+            return false;
+        });
+        const region = String(detectedRegion || '').toUpperCase();
+        const is200Km = (t: any) => {
+            const op = normalize(t.operation_type || '');
+            return op.includes('200KM') || op.includes('200 KM') || op.includes('ATE 200') ||
+                   (Number(t.franchise_km) >= 200 && Number(t.franchise_km) <= 200);
+        };
+        // 1ª tentativa: 200KM + região detectada batendo no operation_type
+        let prov200 = region
+            ? candidatePool.find(t => {
+                const op = normalize(t.operation_type || '');
+                return is200Km(t) && op.includes(region);
+              })
+            : null;
+        // 2ª tentativa: qualquer tabela 200KM do fornecedor (fallback sem região)
+        if (!prov200) prov200 = candidatePool.find(t => is200Km(t));
+        if (prov200) {
+            appliedProviderTable = prov200;
+            providerLog = `REGRA 200KM SOBERANA → ${prov200.operation_type}${region ? ' [' + region + ']' : ''} (motor auto ignorado)`;
+            logitech200ProviderApplied = true;
+        }
+    }
+
     // Task #55: Motor automático de fornecedor. Quando ativo, sobrescreve
     // appliedProviderTable por uma tabela sintética derivada das 5 variáveis
     // mestre + Regra de Ouro do tempo. Custos manuais (customProviderBase/Km/Hour)
     // continuam tendo prioridade via os checks `!== undefined` mais abaixo.
+    // Exceção: regra 200KM soberana acima vence o motor (mesma lógica do cliente LOGITECH).
     let autoBreakdown: ProviderAutoCalcBreakdown | null = null;
-    if (autoEngineActive && autoMasterConfig) {
+    if (autoEngineActive && autoMasterConfig && !logitech200ProviderApplied) {
         const realKmForAuto = manualTableOverrides?.providerOpsOverride
             ? manualTableOverrides.providerOpsOverride.distanceKm
             : (isFinished && hasValidKms ? realTraveledKm : Math.max(totalDistance, distanceForCalculation));
