@@ -688,11 +688,26 @@ export const calculateMissionFinancials = (
     }
 
     if (!appliedClientTable && !dhlEngineHandled && isCancelled && clientTablesFiltered.length > 0) {
-        const sorted = [...clientTablesFiltered]
-            .filter(t => (t.activation_fee || 0) > 0)
-            .sort((a, b) => (a.activation_fee || 0) - (b.activation_fee || 0));
-        appliedClientTable = sorted.length > 0 ? sorted[0] : clientTablesFiltered[0];
-        clientLog = `Cancelada → Menor Acionamento (${appliedClientTable?.operation_type})`;
+        // OS Cancelada: sempre cobra pela menor faixa da tabela (tipicamente a
+        // rota de 100KM). Critério: menor franchise_km > 0, com desempate pelo
+        // menor activation_fee. Fallback para menor activation_fee se nenhuma
+        // tabela tiver franchise_km informado.
+        const withKm = clientTablesFiltered.filter(t => (t.franchise_km || 0) > 0 && (t.activation_fee || 0) > 0);
+        if (withKm.length > 0) {
+            const sorted = [...withKm].sort((a, b) => {
+                const km = (a.franchise_km || 0) - (b.franchise_km || 0);
+                if (km !== 0) return km;
+                return (a.activation_fee || 0) - (b.activation_fee || 0);
+            });
+            appliedClientTable = sorted[0];
+            clientLog = `Cancelada → Menor Faixa KM (${appliedClientTable?.operation_type}, ${appliedClientTable?.franchise_km}km)`;
+        } else {
+            const sorted = [...clientTablesFiltered]
+                .filter(t => (t.activation_fee || 0) > 0)
+                .sort((a, b) => (a.activation_fee || 0) - (b.activation_fee || 0));
+            appliedClientTable = sorted.length > 0 ? sorted[0] : clientTablesFiltered[0];
+            clientLog = `Cancelada → Menor Acionamento (${appliedClientTable?.operation_type})`;
+        }
     }
     if (!appliedClientTable && !dhlEngineHandled) {
         const clientDistReference = Math.max(totalDistance, distanceForCalculation);
@@ -834,11 +849,25 @@ export const calculateMissionFinancials = (
         appliedProviderTable = providerTables.find(t => t.id.toString() === manualTableOverrides.providerTableId);
         providerLog = 'Seleção Manual / Memória';
     } else if (isCancelled && filteredProviderTables.length > 0) {
-        const sorted = [...filteredProviderTables]
-            .filter(t => (t.activation_cost || 0) > 0)
-            .sort((a, b) => (a.activation_cost || 0) - (b.activation_cost || 0));
-        appliedProviderTable = sorted.length > 0 ? sorted[0] : filteredProviderTables[0];
-        providerLog = `Cancelada → Menor Custo (${appliedProviderTable?.operation_type})`;
+        // OS Cancelada: sempre cobra pela menor faixa da tabela do fornecedor
+        // (tipicamente a rota de 100KM). Critério: menor franchise_km > 0,
+        // com desempate pelo menor activation_cost.
+        const withKm = filteredProviderTables.filter(t => (t.franchise_km || 0) > 0 && (t.activation_cost || 0) > 0);
+        if (withKm.length > 0) {
+            const sorted = [...withKm].sort((a, b) => {
+                const km = (a.franchise_km || 0) - (b.franchise_km || 0);
+                if (km !== 0) return km;
+                return (a.activation_cost || 0) - (b.activation_cost || 0);
+            });
+            appliedProviderTable = sorted[0];
+            providerLog = `Cancelada → Menor Faixa KM (${appliedProviderTable?.operation_type}, ${appliedProviderTable?.franchise_km}km)`;
+        } else {
+            const sorted = [...filteredProviderTables]
+                .filter(t => (t.activation_cost || 0) > 0)
+                .sort((a, b) => (a.activation_cost || 0) - (b.activation_cost || 0));
+            appliedProviderTable = sorted.length > 0 ? sorted[0] : filteredProviderTables[0];
+            providerLog = `Cancelada → Menor Custo (${appliedProviderTable?.operation_type})`;
+        }
     } else if (isSpecialProvider && filteredProviderTables.length > 0) {
         const prontaResposta = filteredProviderTables.filter(t => {
             const op = normalize(t.operation_type || '');
@@ -977,12 +1006,17 @@ export const calculateMissionFinancials = (
     // Exceção: regra 200KM soberana acima vence o motor (mesma lógica do cliente LOGITECH).
     let autoBreakdown: ProviderAutoCalcBreakdown | null = null;
     if (autoEngineActive && autoMasterConfig && !logitech200ProviderApplied) {
-        const realKmForAuto = manualTableOverrides?.providerOpsOverride
-            ? manualTableOverrides.providerOpsOverride.distanceKm
-            : (isFinished && hasValidKms ? realTraveledKm : Math.max(totalDistance, distanceForCalculation));
-        const goldenStart = (mission as any).provider_start_time || mission.startTime || (mission as any).start_time;
-        const goldenScheduled = mission.startTime || (mission as any).start_time;
-        const goldenEnd = (mission as any).provider_end_time || mission.endTime || (mission as any).end_time;
+        // OS Cancelada no motor automático: força a menor faixa (100KM) e
+        // zera horas extras. Mesma filosofia da regra para tabelas manuais:
+        // cancelamento cobra sempre o piso da tabela.
+        const realKmForAuto = isCancelled
+            ? 0
+            : (manualTableOverrides?.providerOpsOverride
+                ? manualTableOverrides.providerOpsOverride.distanceKm
+                : (isFinished && hasValidKms ? realTraveledKm : Math.max(totalDistance, distanceForCalculation)));
+        const goldenStart = isCancelled ? null : ((mission as any).provider_start_time || mission.startTime || (mission as any).start_time);
+        const goldenScheduled = isCancelled ? null : (mission.startTime || (mission as any).start_time);
+        const goldenEnd = isCancelled ? null : ((mission as any).provider_end_time || mission.endTime || (mission as any).end_time);
         autoBreakdown = calculateProviderCostAuto(
             realKmForAuto,
             autoMasterConfig,
