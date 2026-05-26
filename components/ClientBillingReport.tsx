@@ -1015,7 +1015,7 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
                 isApproved: ['Concluída', 'Auditada', 'Em Viagem'].includes(m.status),
                 startDate: fmtDate(m.start_time),
                 startTime: fmtTime(m.start_time),
-                viatura: m.company_vehicle ? `${m.company_vehicle.model || ''} ${m.company_vehicle.plate || ''}`.trim() || '-' : m.vehicle_id || '-',
+                viatura: m.company_vehicle?.plate || m.vehicle_id || '-',
                 cargoPlate: m._clientVehicle?.plate || cargoPlate,
                 endDate: fmtDate(m.end_time),
                 endTime: fmtTime(m.end_time),
@@ -1275,7 +1275,7 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
             const row: (string | number)[] = [r.id];
             if (isCeslogBilling) row.push(r.referenceNumber || '-');
             if (isDhlBilling) row.push(r.seNumber || '-');
-            row.push(r.missionStatus || '-');
+            row.push((r.missionStatus || '-').toUpperCase());
             row.push(
                 r.route,
                 r.activationFee,
