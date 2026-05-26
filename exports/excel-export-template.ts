@@ -299,10 +299,11 @@ export async function exportFormattedExcel(config: ExcelExportConfig): Promise<B
       }
 
       const isStatusCell = colIdx === statusIdx;
-      const cellBg = isStatusCell && statusBg ? statusBg : bgColor;
+      // Coluna STATUS: só a cor do texto muda (verde/vermelho/amarelo),
+      // mantendo o fundo zebrado padrão — sem preenchimento colorido.
       const cellTextColor = isStatusCell && statusBg ? statusText : COLORS.textDark;
       cell.font = { size: 8, color: { argb: cellTextColor }, bold: isStatusCell };
-      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: cellBg } };
+      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: bgColor } };
       // Tudo centralizado, conforme pedido. Moeda mantém o numFmt R$,
       // mas alinhada ao centro para um visual mais limpo.
       cell.alignment = {
