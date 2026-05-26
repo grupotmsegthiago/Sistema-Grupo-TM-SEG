@@ -1198,6 +1198,17 @@ export const calculateMissionFinancials = (
         pExcessHr = 0;
     }
 
+    // OS Cancelada: cobra APENAS o acionamento da menor faixa (ex.: R$ 690
+    // da SUDESTE - 100KM da DHL). Zera todos os excessos (KM e hora) tanto
+    // do cliente quanto do fornecedor — não importa a distância real nem a
+    // duração da operação.
+    if (isCancelled) {
+        cExcessKm = 0;
+        cExcessHr = 0;
+        pExcessKm = 0;
+        pExcessHr = 0;
+    }
+
     let cExtraKmVal = round2(Math.max(0, cExcessKm * cUnitPriceKm));
     let cExtraHrVal = round2(Math.max(0, cExcessHr * cUnitPriceHour));
 
