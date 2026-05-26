@@ -931,7 +931,7 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
                     isApproved: ['Concluída', 'Auditada', 'Em Viagem'].includes(m.status),
                     startDate: fmtDate(m.start_time),
                     startTime: fmtTime(m.start_time),
-                    viatura: m.company_vehicle ? `${m.company_vehicle.model || ''} ${m.company_vehicle.plate || ''}`.trim() || '-' : m.vehicle_id || '-',
+                    viatura: m.company_vehicle?.plate || m.vehicle_id || '-',
                     cargoPlate: m._clientVehicle?.plate || '-',
                     endDate: fmtDate(m.end_time),
                     endTime: fmtTime(m.end_time),
