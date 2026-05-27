@@ -2722,7 +2722,8 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                       showNotification('Rota Atualizada', `${editOrigin.trim()} → ${editDestination.trim()}${kmMsg}`, 'success');
                                       // Recarrega o modal por completo (tabelas de cliente/fornecedor reavaliadas para a nova rota)
                                       await loadData();
-                                      if (onUpdate) onUpdate();
+                                      // Atualiza listas por trás SEM fechar o modal (onUpdate fecharia).
+                                      try { window.dispatchEvent(new CustomEvent('refreshMissions')); } catch {}
                                   } catch (err: any) {
                                       showNotification('Erro', err.message, 'error');
                                   }
