@@ -438,6 +438,29 @@ const ProviderForm: React.FC<ProviderFormProps> = ({ onBack, onNavigateToVehicle
       }
   };
 
+  const [isDeletingSelected, setIsDeletingSelected] = useState(false);
+  const handleDeleteSelected = async () => {
+      if (selectedCostIds.length === 0) { showNotification('Atenção', 'Selecione os itens para excluir.', 'warning'); return; }
+      const tablesToDelete = costTables.filter(t => selectedCostIds.includes(t.id));
+      if (tablesToDelete.length === 0) return;
+      const preview = tablesToDelete.slice(0, 5).map((t: any) => `• ${t.operation_type}`).join('\n');
+      const more = tablesToDelete.length > 5 ? `\n... e mais ${tablesToDelete.length - 5}` : '';
+      if (!confirm(`EXCLUIR ${tablesToDelete.length} TABELA(S) DE CUSTO DE "${formData.name}"?\n\n${preview}${more}\n\nEsta ação não pode ser desfeita.`)) return;
+      setIsDeletingSelected(true);
+      try {
+          const { error } = await supabase.from('provider_cost_tables').delete().in('id', selectedCostIds);
+          if (error) throw error;
+          await logAction('DELETE', 'ProviderCostTable', formData.name, `Excluídas ${tablesToDelete.length} tabelas de custo: ${tablesToDelete.map((t: any) => t.operation_type).join(', ')}`);
+          showNotification('Sucesso', `${tablesToDelete.length} tabela(s) excluída(s).`, 'success');
+          setSelectedCostIds([]);
+          fetchCostTables(formData.name);
+      } catch (e: any) {
+          showNotification('Erro', 'Erro ao excluir: ' + (e instanceof Error ? e.message : 'erro desconhecido'), 'error');
+      } finally {
+          setIsDeletingSelected(false);
+      }
+  };
+
   const handleUndoAdjustment = async () => {
       if (selectedCostIds.length === 0) { showNotification('Atenção', 'Selecione os itens para reverter.', 'warning'); return; }
       if (!confirm("Deseja restaurar os valores originais dos custos selecionados?")) return;
@@ -1189,6 +1212,7 @@ const ProviderForm: React.FC<ProviderFormProps> = ({ onBack, onNavigateToVehicle
                             {isApplyingAdjustment ? <Loader2 size={16} className="animate-spin" /> : <TrendingUp size={16} />} Reajustar Selecionados
                           </button>
                           <button onClick={handleUndoAdjustment} disabled={isReverting || selectedCostIds.length === 0} className="bg-white/10 hover:bg-white/20 text-white px-4 py-3 rounded-xl border border-white/20 text-[10px] font-black uppercase flex items-center gap-2 transition-all" title="Restaurar backup do reajuste"><RotateCcw size={14} /> Reverter</button>
+                          <button onClick={handleDeleteSelected} disabled={isDeletingSelected || selectedCostIds.length === 0} className="bg-red-600/90 hover:bg-red-500 text-white px-4 py-3 rounded-xl border border-red-400/40 text-[10px] font-black uppercase flex items-center gap-2 transition-all disabled:opacity-50" title="Excluir tabelas selecionadas" data-testid="button-delete-selected-costs">{isDeletingSelected ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />} Excluir Selecionados</button>
                       </div>
                   </div>
               </div>
