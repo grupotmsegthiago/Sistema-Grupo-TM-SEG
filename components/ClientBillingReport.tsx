@@ -4,7 +4,7 @@ import { authFetch } from '../lib/authFetch';
 import { supabase } from '../lib/supabase';
 import { Mission, Client, ClientPriceTable, ProviderCostTable } from '../types';
 import { FileText, Search, Printer, Loader2, FileSpreadsheet, BarChart3, Users, Building2, ChevronDown, ChevronRight, List, ExternalLink, Receipt, Camera, Sparkles, X, AlertCircle, CheckCircle2, ScanLine, Image as ImageIcon, DollarSign, Plus, Trash2, GitBranch, Calendar, Lock, Pencil, ArrowRight, ArrowLeftRight, Check, RefreshCw } from 'lucide-react';
-import { calculateMissionFinancials, extractCityFromAddress, clientFuzzyFilter, clientNameShort } from '../lib/financialUtils';
+import { calculateMissionFinancials, extractCityFromAddress, extractUF, clientFuzzyFilter, clientNameShort } from '../lib/financialUtils';
 import { computeDhlBand } from '../lib/dhlAutoTableSelector';
 import MissionFinancialModal from './MissionFinancialModal';
 
@@ -965,7 +965,15 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
                     seNumber: (m as any).dhl_se_number || '',
                     smNumber: (m as any).dhl_sm_number || '',
                     billingRelease: m.billing_release || '',
-                    tipo: ((m.mission_type || '').toString().toUpperCase().includes('VELAD') ? 'PRONTA RESPOSTA' : 'CARACTERIZADA')
+                    tipo: ((m.mission_type || '').toString().toUpperCase().includes('VELAD') ? 'PRONTA RESPOSTA' : 'CARACTERIZADA'),
+                    providerName: m.provider || '',
+                    originFull: m.origin || '',
+                    destinationFull: m.destination || '',
+                    originUf: extractUF(m.origin || ''),
+                    destinationUf: extractUF(m.destination || ''),
+                    operationTypeRaw: (m as any).operation_type || '',
+                    rawStartTime: m.start_time || '',
+                    rawEndTime: m.end_time || ''
                 };
             }
 
@@ -1060,7 +1068,15 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
                 seNumber: (m as any).dhl_se_number || '',
                 smNumber: (m as any).dhl_sm_number || '',
                 billingRelease: m.billing_release || '',
-                tipo: ((m.mission_type || '').toString().toUpperCase().includes('VELAD') ? 'PRONTA RESPOSTA' : 'CARACTERIZADA')
+                tipo: ((m.mission_type || '').toString().toUpperCase().includes('VELAD') ? 'PRONTA RESPOSTA' : 'CARACTERIZADA'),
+                providerName: m.provider || '',
+                originFull: m.origin || '',
+                destinationFull: m.destination || '',
+                originUf: extractUF(m.origin || ''),
+                destinationUf: extractUF(m.destination || ''),
+                operationTypeRaw: (m as any).operation_type || '',
+                rawStartTime: m.start_time || '',
+                rawEndTime: m.end_time || ''
             };
         });
     }, [missions, priceTables, providerTables, clientData, displayClientName, billingAdjustments]);
@@ -1398,6 +1414,96 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
             footerRight: 'ASSINATURA / CARIMBO CLIENTE',
         });
     }, [rowsData, grandTotal, displayClientName, startDate, endDate, isCeslogBilling, isCevaBilling, isDhlBilling]);
+
+    const handleExportDhlFaturamento = useCallback(async () => {
+        if (rowsData.length === 0) return;
+        const { exportDhlFaturamento, downloadBlob } = await import('../exports/dhl-faturamento-export');
+
+        const periodoLabel = (() => {
+            if (!startDate || !endDate) return getPeriodLabel();
+            const [ya, ma, da] = startDate.split('-');
+            const [yb, mb, db] = endDate.split('-');
+            return `${da}/${ma} A ${db}/${mb}/${(yb || '').slice(2)}`;
+        })();
+
+        const fmtDT = (iso: string) => {
+            if (!iso) return '';
+            const d = new Date(iso);
+            const dd = d.toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' });
+            const hh = d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit', timeZone: 'America/Sao_Paulo' });
+            return `${dd} ${hh}`;
+        };
+        const fmtHMS = (totalH: number) => {
+            const sec = Math.max(0, Math.round(totalH * 3600));
+            const h = Math.floor(sec / 3600);
+            const m = Math.floor((sec % 3600) / 60);
+            const s = sec % 60;
+            return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+        };
+        const fmtFrancHr = (h: number) => {
+            if (!h || h <= 0) return '';
+            return fmtHMS(h);
+        };
+        const buildDescricao = (r: any): string => {
+            const opType = (r.operationTypeRaw || '').toString().toUpperCase();
+            if (opType.includes('PRESERV')) return 'PRESERVAÇÃO';
+            if (opType.includes('URBAN')) return 'URBANO';
+            if (opType.includes('PONTA')) return 'PONTA A PONTA';
+            if (r.franchiseKm > 0) return `RAIO-${r.franchiseKm}KM`;
+            return opType || '-';
+        };
+
+        const rows = rowsData.map(r => {
+            const isCancel = (r.missionStatus || '').toLowerCase().startsWith('cancel');
+            const startDt = fmtDT(r.rawStartTime);
+            const endDt = fmtDT(r.rawEndTime);
+            let totalH = 0;
+            if (r.rawStartTime && r.rawEndTime) {
+                totalH = (new Date(r.rawEndTime).getTime() - new Date(r.rawStartTime).getTime()) / 3600000;
+                if (totalH < 0) totalH = 0;
+            }
+            return {
+                ciaEscolta: (r.providerName || '').toUpperCase(),
+                periodo: periodoLabel,
+                operacao: (displayClientName || 'DHL').toUpperCase(),
+                cancelada: isCancel ? 'SIM' : 'NÃO',
+                descricao: isCancel ? '' : buildDescricao(r),
+                seNumber: r.seNumber || '',
+                smNumber: r.smNumber || '',
+                osNumber: r.id || '',
+                placaViatura: r.viatura && r.viatura !== '-' ? r.viatura : '',
+                placaVeiculo: r.cargoPlate && r.cargoPlate !== '-' ? r.cargoPlate : '',
+                origem: r.originFull || '',
+                ufOrigem: r.originUf || '',
+                destino: r.destinationFull || '',
+                ufDestino: r.destinationUf || '',
+                kmInicio: isCancel ? 0 : (r.kmStart || 0),
+                kmFinal: isCancel ? 0 : (r.kmEnd || 0),
+                kmTotal: r.kmTotal || 0,
+                franquiaKm: r.franchiseKm || 0,
+                kmExcedente: r.kmExtraQtd || 0,
+                kmDeslocamento: 0,
+                horaInicio: startDt,
+                horaFinal: endDt,
+                horaTotal: totalH > 0 ? fmtHMS(totalH) : '00:00:00',
+                franquiaHr: fmtFrancHr(r.franchiseHours || 0),
+                horaExcedente: r.hrExtraQtd > 0 ? fmtHMS(r.hrExtraQtd) : '00:00:00',
+                vlrHoraExcedenteTab: r.hrExtraUnit || 0,
+                vlrKmExcedenteTab: r.kmExtraUnit || 0,
+                vlrTotalHoraExcedente: r.hrExtraTotal || 0,
+                vlrTotalKmExcedidos: r.kmExtraTotal || 0,
+                vlrDeslocamento: 0,
+                franquiaTabela: isCancel ? 0 : (r.activationFee || 0),
+                pedagio: r.tollVal || 0,
+                totalFornecedor: isCancel ? 0 : (r.totalGeral || 0),
+            } as any;
+        });
+
+        const periodShort = startDate && endDate ? `${startDate.replace(/-/g, '')}_${endDate.replace(/-/g, '')}` : 'PERIODO';
+        const fileName = `RELATORIO_DHL_FATURAMENTO_${periodShort}.xlsx`;
+        const blob = await exportDhlFaturamento({ periodLabel: periodoLabel, rows, fileName });
+        downloadBlob(blob, fileName);
+    }, [rowsData, startDate, endDate, displayClientName]);
 
     const cellStyle: React.CSSProperties = {
         border: '1px solid #e5c4c4',
@@ -2608,6 +2714,17 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
                                     <button onClick={handleExportExcel} className="bg-emerald-700 hover:bg-emerald-800 text-white px-4 py-2.5 rounded-lg text-sm font-bold shadow-sm flex items-center justify-center gap-2">
                                         <FileSpreadsheet size={18} /> Excel
                                     </button>
+                                    {isDhlBilling && (
+                                        <button
+                                            onClick={handleExportDhlFaturamento}
+                                            className="px-4 py-2.5 rounded-lg text-sm font-bold shadow-sm flex items-center justify-center gap-2"
+                                            style={{ background: 'linear-gradient(135deg, #D40511 0%, #B30410 100%)', color: '#FFCC00' }}
+                                            data-testid="btn-export-dhl-faturamento"
+                                            title="Exporta planilha-padrão DHL de faturamento (layout oficial)"
+                                        >
+                                            <FileSpreadsheet size={18} /> Relatório DHL
+                                        </button>
+                                    )}
                                     <button onClick={handlePrint} className="bg-gray-800 hover:bg-gray-900 text-white px-4 py-2.5 rounded-lg text-sm font-bold shadow-sm flex items-center justify-center gap-2">
                                         <Printer size={18} /> PDF
                                     </button>
