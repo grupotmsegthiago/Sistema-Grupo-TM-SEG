@@ -185,7 +185,7 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
         driver_name: '', driver_phone: '', gr_espelhamento: '',
         client_vehicle_id: '',
         client_vehicle_plate: '', client_vehicle_model: '',
-        reference_number: '', billing_release: '', dhl_se_number: ''
+        reference_number: '', billing_release: '', dhl_se_number: '', dhl_sm_number: ''
     });
 
     const [currentPreviewCoords, setCurrentPreviewCoords] = useState<{ lat: number, lng: number } | null>(null);
@@ -405,7 +405,8 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
                 client_vehicle_model: mission.clientVehicle?.model || '',
                 reference_number: m.reference_number || '',
                 billing_release: m.billing_release || '',
-                dhl_se_number: m.dhl_se_number || ''
+                dhl_se_number: m.dhl_se_number || '',
+                dhl_sm_number: (m as any).dhl_sm_number || ''
             });
 
             setSearchTerm(m.provider || '');
@@ -1051,7 +1052,8 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
                 destination: finalDestination.toUpperCase(),
                 reference_number: editData.reference_number || null,
                 billing_release: editData.billing_release || null,
-                dhl_se_number: editData.dhl_se_number ? editData.dhl_se_number.trim().toUpperCase() : null
+                dhl_se_number: editData.dhl_se_number ? editData.dhl_se_number.trim().toUpperCase() : null,
+                dhl_sm_number: editData.dhl_sm_number ? editData.dhl_sm_number.trim().toUpperCase() : null
             };
 
             // REGRA PRIORITÁRIA: OS Recusada SEMPRE zera valores de cliente,
@@ -2031,6 +2033,9 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
                             )}
                             {((mission?.client || '').toUpperCase().includes('DHL')) && (
                                 <div><label className={LABEL_CLASS}><span className="text-red-600 font-black">Nº S.E. (DHL)</span></label><input type="text" className={`${INPUT_CLASS} border-red-300 bg-yellow-50/40`} placeholder="Ex: SE-123456 / 4912345" value={editData.dhl_se_number} onChange={e => setEditData({...editData, dhl_se_number: e.target.value.toUpperCase()})} data-testid="input-edit-dhl-se-number" /></div>
+                            )}
+                            {((mission?.client || '').toUpperCase().includes('DHL')) && (
+                                <div><label className={LABEL_CLASS}><span className="text-amber-700 font-black">Nº SM (DHL)</span></label><input type="text" className={`${INPUT_CLASS} border-amber-300 bg-amber-50/40`} placeholder="Ex: SM-789012 (opcional)" value={editData.dhl_sm_number} onChange={e => setEditData({...editData, dhl_sm_number: e.target.value.toUpperCase()})} data-testid="input-edit-dhl-sm-number" /></div>
                             )}
                             {((mission?.client || '').toUpperCase().includes('CEVA')) && (
                                 <div><label className={LABEL_CLASS}><span className="text-teal-600 font-black">Liberação de Faturamento</span></label><input type="text" className={`${INPUT_CLASS} border-teal-300 bg-teal-50/30`} placeholder="Ex: A001, B002..." value={editData.billing_release} onChange={e => setEditData({...editData, billing_release: e.target.value.toUpperCase()})} data-testid="input-edit-billing-release" /></div>
