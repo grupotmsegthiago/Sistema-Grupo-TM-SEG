@@ -308,6 +308,11 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
   const [editDestination, setEditDestination] = useState('');
   const [isEditingRoute, setIsEditingRoute] = useState(false);
   const [isSavingRoute, setIsSavingRoute] = useState(false);
+  // KM manual: permite sobrescrever o valor "banded" (100/200/300...) vindo da
+  // criação da OS. Quando preenchido, o save usa este valor em vez de recalcular
+  // pela Directions API.
+  const [editKmManual, setEditKmManual] = useState('');
+  const [disableKmAutoCalc, setDisableKmAutoCalc] = useState(false);
 
   const userRoleLower = useMemo(() => {
     try { return (JSON.parse(localStorage.getItem('userData') || '{}').role || '').toLowerCase(); } catch { return ''; }
@@ -2652,14 +2657,52 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                               )}
                           </div>
                       </div>
+                      {/* KM manual + toggle para desabilitar o cálculo automático (regra 100/200/300...) */}
+                      <div className="flex items-start gap-2">
+                          <Navigation size={14} className="text-amber-400 mt-2 flex-shrink-0" />
+                          <div className="flex-1 min-w-0">
+                              <label className="text-[10px] font-black text-gray-400 uppercase tracking-wider">KM Total {disableKmAutoCalc ? '(Manual)' : '(será recalculado pelo Google)'}</label>
+                              <div className="flex items-center gap-2 mt-0.5">
+                                  <input
+                                      type="number"
+                                      step="0.01"
+                                      min="0"
+                                      value={editKmManual}
+                                      onChange={e => setEditKmManual(e.target.value)}
+                                      disabled={!disableKmAutoCalc}
+                                      placeholder={disableKmAutoCalc ? 'Digite o KM exato' : 'Recalculo automático ativo'}
+                                      className={`w-40 bg-white/10 border border-white/30 rounded px-2 py-1.5 text-sm font-bold text-white outline-none focus:border-amber-400 ${!disableKmAutoCalc ? 'opacity-50 cursor-not-allowed' : ''}`}
+                                      data-testid="input-edit-km-manual"
+                                  />
+                                  <label className="flex items-center gap-1.5 text-[10px] font-bold text-gray-300 cursor-pointer select-none">
+                                      <input
+                                          type="checkbox"
+                                          checked={disableKmAutoCalc}
+                                          onChange={e => setDisableKmAutoCalc(e.target.checked)}
+                                          className="w-3.5 h-3.5 accent-amber-500"
+                                          data-testid="checkbox-disable-km-auto"
+                                      />
+                                      DESABILITAR REGRA AUTOMÁTICA (100/200/300...) — USAR KM MANUAL
+                                  </label>
+                              </div>
+                          </div>
+                      </div>
                       <div className="flex items-center gap-2 pt-1">
                           <button
                               onClick={async () => {
                                   if (!editOrigin.trim() || !editDestination.trim()) return;
                                   setIsSavingRoute(true);
                                   try {
-                                      // Recalcula a distância via Google Maps JavaScript API (DirectionsService)
+                                      // OS Cancelada: força KM = 0 (regra do negócio).
+                                      const isCancelledStatus = mission.status === MissionStatus.CANCELLED;
+                                      // Modo manual: usa o valor digitado, sem chamar a API.
                                       let newDistanceKm: number | null = null;
+                                      if (isCancelledStatus) {
+                                          newDistanceKm = 0;
+                                      } else if (disableKmAutoCalc) {
+                                          const v = parseFloat((editKmManual || '').replace(',', '.'));
+                                          newDistanceKm = isFinite(v) && v >= 0 ? Math.round(v * 100) / 100 : null;
+                                      } else {
                                       try {
                                           if (isMapsLoaded && (window as any).google?.maps) {
                                               const ds = new (window as any).google.maps.DirectionsService();
@@ -2685,13 +2728,15 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                       } catch (geoErr) {
                                           console.warn('Falha ao calcular distância (Directions API):', geoErr);
                                       }
+                                      } // fecha else (modo Directions automático)
 
                                       const updatePayload: any = {
                                           origin: editOrigin.trim(),
                                           destination: editDestination.trim(),
                                           last_update: new Date().toISOString()
                                       };
-                                      if (newDistanceKm !== null && newDistanceKm > 0) {
+                                      // Persiste o KM mesmo quando for 0 (caso CANCELADA ou manual = 0).
+                                      if (newDistanceKm !== null && newDistanceKm >= 0 && (isCancelledStatus || disableKmAutoCalc || newDistanceKm > 0)) {
                                           updatePayload.total_distance = newDistanceKm;
                                       }
 
@@ -2703,11 +2748,11 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                           action_type: 'UPDATE',
                                           entity: 'Mission',
                                           entity_id: mission.id,
-                                          details: JSON.stringify({ field: 'route', oldOrigin: mission.origin, newOrigin: editOrigin.trim(), oldDestination: mission.destination, newDestination: editDestination.trim(), newDistanceKm })
+                                          details: JSON.stringify({ field: 'route', oldOrigin: mission.origin, newOrigin: editOrigin.trim(), oldDestination: mission.destination, newDestination: editDestination.trim(), newDistanceKm, cancelled: isCancelledStatus, manual: disableKmAutoCalc })
                                       }]);
                                       mission.origin = editOrigin.trim();
                                       mission.destination = editDestination.trim();
-                                      if (newDistanceKm !== null && newDistanceKm > 0) {
+                                      if (newDistanceKm !== null && newDistanceKm >= 0 && (isCancelledStatus || disableKmAutoCalc || newDistanceKm > 0)) {
                                           (mission as any).totalDistance = newDistanceKm;
                                           (mission as any).total_distance = newDistanceKm;
                                       }
@@ -2718,7 +2763,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                       setCustomClientBase(''); setCustomClientKm(''); setCustomClientHour('');
                                       setCustomProviderBase(''); setCustomProviderKm(''); setCustomProviderHour('');
                                       setMemoryLoaded(false);
-                                      const kmMsg = newDistanceKm !== null && newDistanceKm > 0 ? ` (${newDistanceKm.toFixed(2)} km)` : '';
+                                      const kmMsg = newDistanceKm !== null && newDistanceKm >= 0 ? ` (${newDistanceKm.toFixed(2)} km)` : '';
                                       showNotification('Rota Atualizada', `${editOrigin.trim()} → ${editDestination.trim()}${kmMsg}`, 'success');
                                       // Recarrega o modal por completo (tabelas de cliente/fornecedor reavaliadas para a nova rota)
                                       await loadData();
@@ -2763,7 +2808,10 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                           <Navigation size={16} className="text-amber-400 flex-shrink-0" />
                           <span className="font-black text-sm text-gray-200 uppercase tracking-wider">KM total:</span>
                           <span className="text-lg font-black text-white tracking-tight" data-testid="text-route-totalkm">
-                              {(mission.totalDistance || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} <span className="text-xs font-bold text-gray-400">km</span>
+                              {((mission.status === MissionStatus.CANCELLED) ? 0 : (mission.totalDistance || 0)).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} <span className="text-xs font-bold text-gray-400">km</span>
+                              {mission.status === MissionStatus.CANCELLED && (mission.totalDistance || 0) > 0 && (
+                                  <span className="ml-2 text-[9px] font-black bg-red-600 text-white px-1.5 py-0.5 rounded uppercase" title="OS Cancelada: KM forçado para 0">CANCELADA → KM 0</span>
+                              )}
                           </span>
                           {(() => {
                               const uf = extractUF(mission.origin || '');
@@ -2783,7 +2831,14 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                           })()}
                           {canEditOpsData && !isEffectivelyLocked && (
                               <button
-                                  onClick={() => { setEditOrigin(mission.origin || ''); setEditDestination(mission.destination || ''); setIsEditingRoute(true); }}
+                                  onClick={() => {
+                                      setEditOrigin(mission.origin || '');
+                                      setEditDestination(mission.destination || '');
+                                      const curKm = safeNumber((mission as any).totalDistance);
+                                      setEditKmManual(curKm > 0 ? curKm.toString() : '');
+                                      setDisableKmAutoCalc(false);
+                                      setIsEditingRoute(true);
+                                  }}
                                   className="ml-auto p-1.5 text-gray-500 hover:text-white transition-colors rounded hover:bg-white/10"
                                   title="Editar Origem e Destino"
                                   data-testid="button-edit-route"
