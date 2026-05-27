@@ -820,12 +820,17 @@ export const calculateMissionFinancials = (
     };
     const autoMasterRows = providerTables.filter(t => matchesProviderAlias(normalize(t.provider)) && isAutoMasterRow(t));
     const autoMasterConfig = extractAutoMasterConfig(autoMasterRows);
-    // Filtro de região do motor: se a config tem uma região definida, o motor
-    // só atua quando a região detectada da missão bate. Caso contrário, a
-    // missão cai nas tabelas manuais (comportamento legado).
+    // Filtro do motor: aceita Região (SUDESTE, SUL...) OU Estado (SP, RJ...).
+    // Detecção: valor com 2 letras = UF (compara com originUF). Senão = região
+    // (compara com detectedRegion). Vazio = aplica a tudo.
     const autoRegionFilter = (autoMasterConfig?.region || '').toString().toUpperCase().trim();
+    const originUFUpper = String(originUF || '').toUpperCase().trim();
     const missionRegionUpper = String(detectedRegion || '').toUpperCase().trim();
-    const autoRegionMatches = !autoRegionFilter || (!!missionRegionUpper && autoRegionFilter === missionRegionUpper);
+    const filterIsUF = autoRegionFilter.length === 2 && !!UF_TO_REGION[autoRegionFilter];
+    const autoRegionMatches = !autoRegionFilter
+        || (filterIsUF
+            ? (!!originUFUpper && autoRegionFilter === originUFUpper)
+            : (!!missionRegionUpper && autoRegionFilter === missionRegionUpper));
     // Task #55: motor automático é a fonte oficial quando ligado. NÃO depende de
     // manualTableOverrides.providerTableId — seleções manuais de tabela legada
     // ficam desativadas para fornecedores com motor ativo.

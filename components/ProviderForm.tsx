@@ -999,14 +999,45 @@ const ProviderForm: React.FC<ProviderFormProps> = ({ onBack, onNavigateToVehicle
                           <input type="number" step="0.01" disabled={!canEditAutoMaster} value={autoMasterForm.extraHourValue} onChange={e => setAutoMasterForm({...autoMasterForm, extraHourValue: e.target.value})} className="w-full p-2 border rounded text-xs font-bold bg-white" placeholder="40.00" data-testid="input-auto-extra-hr" />
                       </div>
                       <div>
-                          <label className={LABEL_CLASS} title="Quando preenchida, o motor só calcula custo para missões dessa região (UF→região). Outras regiões usam as tabelas manuais.">Região (Filtro)</label>
+                          <label className={LABEL_CLASS} title="Filtro do motor: escolha uma Região (SUDESTE, SUL...) OU um Estado específico (SP, RJ...). Missões fora do filtro usam as tabelas manuais.">Filtro (Região/Estado)</label>
                           <select disabled={!canEditAutoMaster} value={autoMasterForm.region} onChange={e => setAutoMasterForm({...autoMasterForm, region: e.target.value})} className="w-full p-2 border rounded text-xs font-bold bg-white" data-testid="select-auto-region">
-                              <option value="">TODAS as regiões</option>
-                              <option value="SUDESTE">SUDESTE</option>
-                              <option value="SUL">SUL</option>
-                              <option value="CENTRO-OESTE">CENTRO-OESTE</option>
-                              <option value="NORDESTE">NORDESTE</option>
-                              <option value="NORTE">NORTE</option>
+                              <option value="">TODAS (sem filtro)</option>
+                              <optgroup label="Por Região">
+                                  <option value="SUDESTE">SUDESTE</option>
+                                  <option value="SUL">SUL</option>
+                                  <option value="CENTRO-OESTE">CENTRO-OESTE</option>
+                                  <option value="NORDESTE">NORDESTE</option>
+                                  <option value="NORTE">NORTE</option>
+                              </optgroup>
+                              <optgroup label="Por Estado (UF)">
+                                  <option value="SP">SP — São Paulo</option>
+                                  <option value="RJ">RJ — Rio de Janeiro</option>
+                                  <option value="MG">MG — Minas Gerais</option>
+                                  <option value="ES">ES — Espírito Santo</option>
+                                  <option value="PR">PR — Paraná</option>
+                                  <option value="SC">SC — Santa Catarina</option>
+                                  <option value="RS">RS — Rio Grande do Sul</option>
+                                  <option value="DF">DF — Distrito Federal</option>
+                                  <option value="GO">GO — Goiás</option>
+                                  <option value="MT">MT — Mato Grosso</option>
+                                  <option value="MS">MS — Mato Grosso do Sul</option>
+                                  <option value="BA">BA — Bahia</option>
+                                  <option value="PE">PE — Pernambuco</option>
+                                  <option value="CE">CE — Ceará</option>
+                                  <option value="RN">RN — Rio Grande do Norte</option>
+                                  <option value="PB">PB — Paraíba</option>
+                                  <option value="AL">AL — Alagoas</option>
+                                  <option value="SE">SE — Sergipe</option>
+                                  <option value="PI">PI — Piauí</option>
+                                  <option value="MA">MA — Maranhão</option>
+                                  <option value="AM">AM — Amazonas</option>
+                                  <option value="PA">PA — Pará</option>
+                                  <option value="AC">AC — Acre</option>
+                                  <option value="RO">RO — Rondônia</option>
+                                  <option value="RR">RR — Roraima</option>
+                                  <option value="AP">AP — Amapá</option>
+                                  <option value="TO">TO — Tocantins</option>
+                              </optgroup>
                           </select>
                       </div>
                   </div>
