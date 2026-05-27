@@ -3047,7 +3047,12 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
                                     <tr><td colSpan={29 + (isCeslogBilling ? 1 : 0) + (isDhlBilling ? 1 : 0) + (isCevaBilling ? 1 : 0)} style={{ ...cellStyle, padding: '20px', fontSize: '14px', fontWeight: 700, color: '#9ca3af' }}>{boletimFilter !== 'todas' ? `NENHUMA MISSÃO ${boletimFilter === 'aprovadas' ? 'APROVADA' : 'PENDENTE'} NO PERÍODO.` : 'NENHUMA MISSÃO NO PERÍODO.'}</td></tr>
                                 ) : (
                                     filtered.map((r, i) => (
-                                        <tr key={i} title={r.frozen ? `Dados Congelados - Aprovado por ${r.frozenBy}` : !r.isApproved ? `Status: ${r.missionStatus} (não aprovada)` : ''} style={!r.isApproved ? { backgroundColor: '#fce4e4', animation: 'blink-pending 2s ease-in-out infinite' } : undefined}>
+                                        <tr key={i} title={r.frozen ? `Dados Congelados - Aprovado por ${r.frozenBy}` : !r.isApproved ? `Status: ${r.missionStatus} (não aprovada)` : ''} style={(() => {
+                                            const s = (r.missionStatus || '').toLowerCase();
+                                            if (s.includes('cancel')) return { backgroundColor: '#fee2e2' };
+                                            if (r.isApproved || s.includes('conclu')) return { backgroundColor: '#dcfce7' };
+                                            return { backgroundColor: '#fce4e4', animation: 'blink-pending 2s ease-in-out infinite' };
+                                        })()}>
                                             <td style={{ ...cellStyle, fontSize: '13px', color: '#9ca3af', textAlign: 'center', padding: '2px' }}>{i + 1}</td>
                                             <td style={cellBold}>
                                                 <span onClick={(e) => handleOpenOS(`GTM-${r.id}`, e)} data-testid={`boletim-open-os-${r.id}`} style={{ cursor: 'pointer' }}>
