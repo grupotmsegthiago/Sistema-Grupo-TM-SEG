@@ -959,7 +959,7 @@ export const calculateMissionFinancials = (
         }
     }
 
-    if (is200kmAccompaniment && !manualTableOverrides?.providerTableId && filteredProviderTables.length > 0) {
+    if (is200kmAccompaniment && !isCancelled && !manualTableOverrides?.providerTableId && filteredProviderTables.length > 0) {
         const provider200 = filteredProviderTables.find(t => {
             const op = normalize(t.operation_type || '');
             return (op.includes('ATE 200') || op.includes('200 KM') || op.includes('200KM')) && t.franchise_km >= 200 && t.franchise_km <= 200;
@@ -978,7 +978,7 @@ export const calculateMissionFinancials = (
     // Busca em providerTablesNoMaster (não filtrada pelo "esvaziamento" do
     // motor auto) e considera apelidos do fornecedor.
     let logitech200ProviderApplied = false;
-    if (is200kmAccompaniment && !manualTableOverrides?.providerTableId) {
+    if (is200kmAccompaniment && !isCancelled && !manualTableOverrides?.providerTableId) {
         const candidatePool = providerTablesNoMaster.filter(t => {
             const tProv = normalize(t.provider);
             if (matchesProviderAlias(tProv)) return true;
