@@ -1040,6 +1040,114 @@ const ProviderForm: React.FC<ProviderFormProps> = ({ onBack, onNavigateToVehicle
                   </div>
               )}
 
+              {/* FORMULÁRIO DE CADASTRO MANUAL DE TABELA DE CUSTO */}
+              <form onSubmit={handleCostSubmit} className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6 space-y-4">
+                  <div className="flex items-center justify-between border-b border-gray-100 pb-3">
+                      <div className="flex items-center gap-2">
+                          {editingCostId ? <Edit className="text-blue-600" size={16} /> : <Plus className="text-green-600" size={16} />}
+                          <h3 className="font-black text-xs uppercase text-gray-700 tracking-widest">
+                              {editingCostId ? 'Editar Tabela de Custo' : 'Adicionar Nova Tabela de Custo'}
+                          </h3>
+                      </div>
+                      {editingCostId && (
+                          <button
+                              type="button"
+                              onClick={() => {
+                                  setEditingCostId(null);
+                                  setCostFormData({ operation_type: '', activation_cost: '', franchise_hours: '', franchise_km: '', cost_per_extra_km: '', cost_per_extra_hour: '', cancellation_fee: '' });
+                              }}
+                              className="text-[10px] font-bold uppercase text-gray-500 hover:text-red-600 flex items-center gap-1"
+                              data-testid="button-cancel-edit-cost"
+                          ><X size={12} /> Cancelar Edição</button>
+                      )}
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                      <div className="space-y-1.5 lg:col-span-2">
+                          <label className={LABEL_CLASS}>Operação / Rota *</label>
+                          <input
+                              type="text"
+                              required
+                              className={INPUT_CLASS}
+                              placeholder="Ex.: SUDESTE - 100KM"
+                              value={costFormData.operation_type}
+                              onChange={e => setCostFormData({ ...costFormData, operation_type: e.target.value })}
+                              data-testid="input-cost-operation-type"
+                          />
+                      </div>
+                      <div className="space-y-1.5">
+                          <label className={LABEL_CLASS}>Custo Base (R$) *</label>
+                          <input
+                              type="number" step="0.01" min="0" required
+                              className={INPUT_CLASS}
+                              value={costFormData.activation_cost}
+                              onChange={e => setCostFormData({ ...costFormData, activation_cost: e.target.value })}
+                              data-testid="input-cost-activation"
+                          />
+                      </div>
+                      <div className="space-y-1.5">
+                          <label className={LABEL_CLASS}>Taxa Cancelamento (R$)</label>
+                          <input
+                              type="number" step="0.01" min="0"
+                              className={INPUT_CLASS}
+                              value={costFormData.cancellation_fee}
+                              onChange={e => setCostFormData({ ...costFormData, cancellation_fee: e.target.value })}
+                              data-testid="input-cost-cancellation-fee"
+                          />
+                      </div>
+                      <div className="space-y-1.5">
+                          <label className={LABEL_CLASS}>Franquia KM</label>
+                          <input
+                              type="number" step="1" min="0"
+                              className={INPUT_CLASS}
+                              value={costFormData.franchise_km}
+                              onChange={e => setCostFormData({ ...costFormData, franchise_km: e.target.value })}
+                              data-testid="input-cost-franchise-km"
+                          />
+                      </div>
+                      <div className="space-y-1.5">
+                          <label className={LABEL_CLASS}>Franquia Horas</label>
+                          <input
+                              type="number" step="0.5" min="0"
+                              className={INPUT_CLASS}
+                              value={costFormData.franchise_hours}
+                              onChange={e => setCostFormData({ ...costFormData, franchise_hours: e.target.value })}
+                              data-testid="input-cost-franchise-hours"
+                          />
+                      </div>
+                      <div className="space-y-1.5">
+                          <label className={LABEL_CLASS}>KM Extra (R$)</label>
+                          <input
+                              type="number" step="0.01" min="0"
+                              className={INPUT_CLASS}
+                              value={costFormData.cost_per_extra_km}
+                              onChange={e => setCostFormData({ ...costFormData, cost_per_extra_km: e.target.value })}
+                              data-testid="input-cost-extra-km"
+                          />
+                      </div>
+                      <div className="space-y-1.5">
+                          <label className={LABEL_CLASS}>Hora Extra (R$)</label>
+                          <input
+                              type="number" step="0.01" min="0"
+                              className={INPUT_CLASS}
+                              value={costFormData.cost_per_extra_hour}
+                              onChange={e => setCostFormData({ ...costFormData, cost_per_extra_hour: e.target.value })}
+                              data-testid="input-cost-extra-hour"
+                          />
+                      </div>
+                  </div>
+                  <div className="flex justify-end pt-2">
+                      <button
+                          type="submit"
+                          disabled={isSavingCost || !costFormData.operation_type || !costFormData.activation_cost}
+                          className={`px-6 py-3 rounded-xl font-black text-xs uppercase shadow-lg transition-all disabled:opacity-50 flex items-center gap-2 text-white ${editingCostId ? 'bg-blue-600 hover:bg-blue-500' : 'bg-green-600 hover:bg-green-500'}`}
+                          data-testid="button-save-cost"
+                      >
+                          {isSavingCost ? <Loader2 size={16} className="animate-spin" /> : (editingCostId ? <Save size={16} /> : <Plus size={16} />)}
+                          {editingCostId ? 'Salvar Alterações' : 'Adicionar Tabela'}
+                      </button>
+                  </div>
+              </form>
+
               {/* PAINEL DE REAJUSTE SELETIVO (IGUAL AO CLIENTE) */}
               <div className="p-6 rounded-2xl shadow-xl border bg-gradient-to-r from-gray-900 via-gray-800 to-indigo-950 border-indigo-900/40 text-white">
                   <div className="flex flex-col md:flex-row items-center justify-between gap-6">
