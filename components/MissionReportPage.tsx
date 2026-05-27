@@ -678,10 +678,14 @@ const MissionReportPage: React.FC = () => {
                               {tableInfoMap.get(m.id) && <span className="text-[8px] text-green-500 font-normal truncate max-w-[100px]">{tableInfoMap.get(m.id)?.clientTable}</span>}
                             </div>
                           </td>
-                          <td className="px-3 py-2 border-r border-gray-100 text-right font-bold text-blue-700 whitespace-nowrap" title={tableInfoMap.get(m.id)?.providerTable || ''}>
+                          <td className="px-3 py-2 border-r border-gray-100 text-right font-bold text-blue-700 whitespace-nowrap" title={m.is_same_os && cost === 0 ? 'Custo zerado: missão compartilha OS principal (reaproveitamento)' : (tableInfoMap.get(m.id)?.providerTable || '')}>
                             <div className="flex flex-col items-end">
-                              <span>{cost > 0 ? fmtMoney(cost) : '-'}</span>
-                              {tableInfoMap.get(m.id) && <span className="text-[8px] text-blue-500 font-normal truncate max-w-[100px]">{tableInfoMap.get(m.id)?.providerTable}</span>}
+                              {m.is_same_os && cost === 0 ? (
+                                <span className="text-[10px] font-black uppercase tracking-wider text-amber-600">MESMA OS</span>
+                              ) : (
+                                <span>{cost > 0 ? fmtMoney(cost) : '-'}</span>
+                              )}
+                              {!(m.is_same_os && cost === 0) && tableInfoMap.get(m.id) && <span className="text-[8px] text-blue-500 font-normal truncate max-w-[100px]">{tableInfoMap.get(m.id)?.providerTable}</span>}
                             </div>
                           </td>
                           <td className="px-3 py-2 border-r border-gray-100 text-right text-orange-600 whitespace-nowrap">{toll > 0 ? fmtMoney(toll) : '-'}</td>
