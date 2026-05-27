@@ -497,7 +497,7 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
         }
     };
 
-    interface MissionDetail { id: string; route: string; revenue: number; cost: number; lucro: number; pct: number; date: string; provider: string; client: string; km: number; }
+    interface MissionDetail { id: string; route: string; revenue: number; cost: number; lucro: number; pct: number; date: string; provider: string; client: string; km: number; isSameOs?: boolean; }
     type ChartItem = { nome: string; valor: number; custo: number; lucro: number; pct: number; count: number; fullName: string; missions: MissionDetail[]; receita?: number; };
 
     const [expandedClient, setExpandedClient] = useState<string | null>(null);
@@ -546,7 +546,8 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
                 date: m.created_at ? new Date(m.created_at).toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' }) : '-',
                 provider: providerName,
                 client: displayClient,
-                km: m.total_distance || m.traveled_distance || 0
+                km: m.total_distance || m.traveled_distance || 0,
+                isSameOs: !!(m as any).is_same_os,
             };
 
             if (!clientTotals[displayClient]) clientTotals[displayClient] = { revenue: 0, cost: 0, count: 0, missions: [] };
@@ -2670,7 +2671,7 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
                                                                 <td className="px-2 py-1 text-gray-600 font-bold truncate max-w-[100px]" title={m.provider}>{m.provider}</td>
                                                                 <td className="px-2 py-1 text-right text-gray-600 font-bold">{m.km > 0 ? Math.round(m.km) : '-'}</td>
                                                                 <td className="px-2 py-1 text-right font-bold text-blue-700">{fmtBRL(m.revenue)}</td>
-                                                                <td className="px-2 py-1 text-right font-bold text-red-600">{fmtBRL(m.cost)}</td>
+                                                                <td className="px-2 py-1 text-right font-bold text-red-600">{m.isSameOs && (m.cost || 0) === 0 ? <span className="text-amber-600 text-[9px] font-black uppercase tracking-wider" title="Custo zerado: missão compartilha OS principal (reaproveitamento)">MESMA OS</span> : fmtBRL(m.cost)}</td>
                                                                 <td className={`px-2 py-1 text-right font-black ${m.lucro >= 0 ? 'text-emerald-600' : 'text-red-700'}`}>{fmtBRL(m.lucro)}</td>
                                                                 <td className={`px-2 py-1 text-right font-black ${m.pct >= 0 ? 'text-emerald-600' : 'text-red-700'}`}>{m.pct}%</td>
                                                                 <td className="px-1 py-1 text-center">
@@ -2756,7 +2757,7 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
                                                                 <td className="px-2 py-1 text-gray-600 font-bold truncate max-w-[100px]" title={m.client}>{m.client}</td>
                                                                 <td className="px-2 py-1 text-right text-gray-600 font-bold">{m.km > 0 ? Math.round(m.km) : '-'}</td>
                                                                 <td className="px-2 py-1 text-right font-bold text-blue-700">{fmtBRL(m.revenue)}</td>
-                                                                <td className="px-2 py-1 text-right font-bold text-red-600">{fmtBRL(m.cost)}</td>
+                                                                <td className="px-2 py-1 text-right font-bold text-red-600">{m.isSameOs && (m.cost || 0) === 0 ? <span className="text-amber-600 text-[9px] font-black uppercase tracking-wider" title="Custo zerado: missão compartilha OS principal (reaproveitamento)">MESMA OS</span> : fmtBRL(m.cost)}</td>
                                                                 <td className={`px-2 py-1 text-right font-black ${m.lucro >= 0 ? 'text-emerald-600' : 'text-red-700'}`}>{fmtBRL(m.lucro)}</td>
                                                                 <td className={`px-2 py-1 text-right font-black ${m.pct >= 0 ? 'text-emerald-600' : 'text-red-700'}`}>{m.pct}%</td>
                                                                 <td className="px-1 py-1 text-center">
@@ -2817,7 +2818,7 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
                                                 <td className="px-2 py-1 text-gray-600 font-bold truncate max-w-[120px]" title={m.route}>{m.route}</td>
                                                 <td className="px-2 py-1 text-right text-gray-600 font-bold">{m.km > 0 ? Math.round(m.km) : '-'}</td>
                                                 <td className="px-2 py-1 text-right font-bold text-blue-700">{fmtBRL(m.revenue)}</td>
-                                                <td className="px-2 py-1 text-right font-bold text-red-600">{fmtBRL(m.cost)}</td>
+                                                <td className="px-2 py-1 text-right font-bold text-red-600">{m.isSameOs && (m.cost || 0) === 0 ? <span className="text-amber-600 text-[9px] font-black uppercase tracking-wider" title="Custo zerado: missão compartilha OS principal (reaproveitamento)">MESMA OS</span> : fmtBRL(m.cost)}</td>
                                                 <td className={`px-2 py-1 text-right font-black ${m.lucro >= 0 ? 'text-emerald-600' : 'text-red-700'}`}>{fmtBRL(m.lucro)}</td>
                                                 <td className={`px-2 py-1 text-right font-black ${m.pct >= 0 ? 'text-emerald-600' : 'text-red-700'}`}>{m.pct}%</td>
                                                 <td className="px-1 py-1 text-center">
