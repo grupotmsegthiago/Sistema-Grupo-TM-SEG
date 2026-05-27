@@ -375,6 +375,7 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
             }
 
             setReportGenerated(true);
+            setBoletimFilter('todas');
         } catch (err) {
             console.error(err);
             alert("Erro ao gerar relatório.");
@@ -2891,12 +2892,14 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
                                 </div>
                             </div>
                         )}
-                        {rowsData.some(r => !r.isApproved) && (
+                        {rowsData.length > 0 && (
                             <div data-testid="boletim-pending-header" style={{ marginTop: '6px', display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                                {rowsData.some(r => !r.isApproved) && (
                                 <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', background: '#fce4e4', border: '1px solid #dc2626', borderRadius: '6px', padding: '4px 12px' }}>
                                     <span style={{ fontSize: '10px', fontWeight: 900, color: '#fff', backgroundColor: '#dc2626', borderRadius: '3px', padding: '0 4px' }}>!</span>
                                     <span style={{ fontSize: '10px', fontWeight: 700, color: '#991b1b', textTransform: 'uppercase' }}>Linhas piscando = Missões pendentes</span>
                                 </div>
+                                )}
                                 <div style={{ display: 'inline-flex', gap: '3px', background: '#f3f4f6', borderRadius: '6px', padding: '2px', border: '1px solid #d1d5db' }}>
                                     {([['todas', 'Todas'], ['aprovadas', 'Aprovadas'], ['pendentes', 'Pendentes']] as const).map(([val, label]) => (
                                         <button
