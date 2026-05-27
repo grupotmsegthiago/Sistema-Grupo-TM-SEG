@@ -114,6 +114,7 @@ const ProviderForm: React.FC<ProviderFormProps> = ({ onBack, onNavigateToVehicle
       baseHourAllowance: '3',
       extraKmValue: '',
       extraHourValue: '',
+      region: '',
   });
   const [isSavingMaster, setIsSavingMaster] = useState(false);
   const [showAutoPreview, setShowAutoPreview] = useState(false);
@@ -127,13 +128,14 @@ const ProviderForm: React.FC<ProviderFormProps> = ({ onBack, onNavigateToVehicle
           return;
       }
       const { config, sampleCount } = suggestion;
-      setAutoMasterForm({
+      setAutoMasterForm(prev => ({
           baseActivationValue: config.baseActivationValue ? String(config.baseActivationValue) : '',
           baseKmAllowance: config.baseKmAllowance ? String(config.baseKmAllowance) : '100',
           baseHourAllowance: config.baseHourAllowance ? String(config.baseHourAllowance) : '3',
           extraKmValue: config.extraKmValue ? String(config.extraKmValue) : '',
           extraHourValue: config.extraHourValue ? String(config.extraHourValue) : '',
-      });
+          region: prev.region || '',
+      }));
       setLastSuggestionInfo(`Sugestão calculada a partir da mediana de ${sampleCount} tabela${sampleCount > 1 ? 's' : ''} manual${sampleCount > 1 ? 'is' : ''}. Revise antes de salvar.`);
       showNotification('Sugestão pronta', `Valores pré-preenchidos com a mediana de ${sampleCount} tabela${sampleCount > 1 ? 's' : ''}. Revise e ajuste antes de ativar o motor.`, 'success');
   };
@@ -201,6 +203,7 @@ const ProviderForm: React.FC<ProviderFormProps> = ({ onBack, onNavigateToVehicle
                         baseHourAllowance: data.auto_base_hr != null ? String(data.auto_base_hr) : '3',
                         extraKmValue: data.auto_extra_km != null ? String(data.auto_extra_km) : '',
                         extraHourValue: data.auto_extra_hr != null ? String(data.auto_extra_hr) : '',
+                        region: data.auto_region ? String(data.auto_region).toUpperCase() : '',
                     });
                 } else {
                     setAutoMasterEnabled(false);
@@ -238,6 +241,7 @@ const ProviderForm: React.FC<ProviderFormProps> = ({ onBack, onNavigateToVehicle
       setIsSavingMaster(true);
       try {
           // Task #58: persiste direto em providers (colunas dedicadas).
+          const regionValue = (autoMasterForm.region || '').toString().toUpperCase().trim();
           const updates: any = {
               auto_calc_enabled: true,
               auto_base_value: cfg.baseActivationValue,
@@ -245,6 +249,7 @@ const ProviderForm: React.FC<ProviderFormProps> = ({ onBack, onNavigateToVehicle
               auto_base_hr: cfg.baseHourAllowance,
               auto_extra_km: cfg.extraKmValue,
               auto_extra_hr: cfg.extraHourValue,
+              auto_region: regionValue || null,
           };
           const { error } = await supabase.from('providers').update(updates).eq('id', id);
           if (error) throw error;
@@ -263,6 +268,7 @@ const ProviderForm: React.FC<ProviderFormProps> = ({ onBack, onNavigateToVehicle
               cost_per_extra_km: cfg.extraKmValue,
               cost_per_extra_hour: cfg.extraHourValue,
               cancellation_fee: 0,
+              auto_region: regionValue || null,
           };
           try {
               const { data: existing } = await supabase
@@ -277,7 +283,7 @@ const ProviderForm: React.FC<ProviderFormProps> = ({ onBack, onNavigateToVehicle
                   await supabase.from('provider_cost_tables').insert([legacyPayload]);
               }
           } catch { /* legacy fallback é best-effort */ }
-          await logAction('UPDATE', 'ProviderAutoMaster', formData.name, `Motor Auto — ${formData.name}: base R$${cfg.baseActivationValue}, ${cfg.baseKmAllowance}km/${cfg.baseHourAllowance}h, +R$${cfg.extraKmValue}/km, +R$${cfg.extraHourValue}/h`);
+          await logAction('UPDATE', 'ProviderAutoMaster', formData.name, `Motor Auto — ${formData.name}: base R$${cfg.baseActivationValue}, ${cfg.baseKmAllowance}km/${cfg.baseHourAllowance}h, +R$${cfg.extraKmValue}/km, +R$${cfg.extraHourValue}/h${regionValue ? `, região=${regionValue}` : ', região=TODAS'}`);
           await supabase.from('system_logs').insert([{
               user_name: currentUser?.name || 'SISTEMA',
               action_type: 'FINANCIAL_RECALC',
@@ -945,7 +951,7 @@ const ProviderForm: React.FC<ProviderFormProps> = ({ onBack, onNavigateToVehicle
                       </div>
                   </div>
 
-                  <div className="grid grid-cols-1 md:grid-cols-5 gap-3">
+                  <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-6 gap-3">
                       <div>
                           <label className={LABEL_CLASS}>Valor Base (Acionamento)</label>
                           <input type="number" step="0.01" disabled={!canEditAutoMaster} value={autoMasterForm.baseActivationValue} onChange={e => setAutoMasterForm({...autoMasterForm, baseActivationValue: e.target.value})} className="w-full p-2 border rounded text-xs font-bold text-emerald-700 bg-white" placeholder="900.00" data-testid="input-auto-base-activation" />
@@ -965,6 +971,17 @@ const ProviderForm: React.FC<ProviderFormProps> = ({ onBack, onNavigateToVehicle
                       <div>
                           <label className={LABEL_CLASS}>Valor Hora Extra</label>
                           <input type="number" step="0.01" disabled={!canEditAutoMaster} value={autoMasterForm.extraHourValue} onChange={e => setAutoMasterForm({...autoMasterForm, extraHourValue: e.target.value})} className="w-full p-2 border rounded text-xs font-bold bg-white" placeholder="40.00" data-testid="input-auto-extra-hr" />
+                      </div>
+                      <div>
+                          <label className={LABEL_CLASS} title="Quando preenchida, o motor só calcula custo para missões dessa região (UF→região). Outras regiões usam as tabelas manuais.">Região (Filtro)</label>
+                          <select disabled={!canEditAutoMaster} value={autoMasterForm.region} onChange={e => setAutoMasterForm({...autoMasterForm, region: e.target.value})} className="w-full p-2 border rounded text-xs font-bold bg-white" data-testid="select-auto-region">
+                              <option value="">TODAS as regiões</option>
+                              <option value="SUDESTE">SUDESTE</option>
+                              <option value="SUL">SUL</option>
+                              <option value="CENTRO-OESTE">CENTRO-OESTE</option>
+                              <option value="NORDESTE">NORDESTE</option>
+                              <option value="NORTE">NORTE</option>
+                          </select>
                       </div>
                   </div>
 

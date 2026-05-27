@@ -15,6 +15,10 @@ export interface ProviderAutoMasterConfig {
     baseHourAllowance: number;
     extraKmValue: number;
     extraHourValue: number;
+    // Filtro opcional: quando preenchido (ex: "SUDESTE", "SUL"), o motor só
+    // calcula custo para missões cuja região detectada (UF→região) bate com
+    // este valor. Vazio/null = aplica para todas as regiões.
+    region?: string | null;
 }
 
 // Task #58: lê a configuração mestre direto do registro do fornecedor.
@@ -29,6 +33,7 @@ export function extractAutoMasterConfigFromProvider(
         baseHourAllowance: Number(provider.auto_base_hr) || 0,
         extraKmValue: Number(provider.auto_extra_km) || 0,
         extraHourValue: Number(provider.auto_extra_hr) || 0,
+        region: provider.auto_region ? String(provider.auto_region).toUpperCase().trim() : null,
     };
     // Salvaguarda: motor exige pelo menos valor base e km franquia > 0.
     if (cfg.baseActivationValue <= 0 || cfg.baseKmAllowance <= 0) return null;
@@ -51,6 +56,7 @@ export function synthesizeAutoMasterRow(provider: any | null | undefined): any |
         cost_per_extra_km: cfg.extraKmValue,
         cost_per_extra_hour: cfg.extraHourValue,
         cancellation_fee: 0,
+        auto_region: cfg.region || null,
         __synthetic_auto_master: true,
     };
 }
@@ -94,6 +100,7 @@ export function extractAutoMasterConfig(rows: any[] | null | undefined): Provide
         baseHourAllowance: Number(master.franchise_hours) || 0,
         extraKmValue: Number(master.cost_per_extra_km) || 0,
         extraHourValue: Number(master.cost_per_extra_hour) || 0,
+        region: master.auto_region ? String(master.auto_region).toUpperCase().trim() : null,
     };
 }
 
