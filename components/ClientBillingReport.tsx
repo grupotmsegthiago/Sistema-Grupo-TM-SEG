@@ -906,8 +906,14 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
                     } catch (e) { /* mantém zeros se falhar */ }
                 }
 
-                const kmTotal = (snap.kmTotal ?? 0) > 0 ? (snap.kmTotal ?? 0)
+                const isCancelledSnap = (m.status || '').toString().toLowerCase().includes('cancel');
+                const kmTotalRawSnap = (snap.kmTotal ?? 0) > 0 ? (snap.kmTotal ?? 0)
                     : ((m.start_km > 0 && m.end_km > 0 && m.end_km >= m.start_km) ? (m.end_km - m.start_km) : (m.total_distance || m.traveled_distance || 0));
+                const kmTotal = isCancelledSnap ? 0 : kmTotalRawSnap;
+                // Sincroniza KM FRAN com a banda DHL do KM real, mesmo em snapshots congelados.
+                if (isDhlBilling && kmTotal > 0) {
+                    snapFranchiseKm = computeDhlBand(kmTotal);
+                }
 
                 const refCidades2 = snap.route || (() => {
                     const co = extractCityFromAddress(m.origin || '');
@@ -978,14 +984,23 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
             } : undefined;
             const fin = calculateMissionFinancials(m, priceTables, providerTables, clientData, new Date(), overrides);
             const usedTable = priceTables.find(t => t.id.toString() === fin.client.tableId);
-            const franchiseKm = usedTable?.franchise_km ?? 0;
             const franchiseHours = usedTable?.franchise_hours ?? 0;
             const activationFee = usedTable?.activation_fee ?? 0;
             const unitKm = usedTable?.price_per_extra_km ?? 0;
             const unitHr = usedTable?.price_per_extra_hour ?? 0;
 
-            const kmTotal = fin.realTraveledKm > 0 ? fin.realTraveledKm 
+            // OS Cancelada: KM = 0 (regra do negócio).
+            const isCancelled = (m.status || '').toString().toLowerCase().includes('cancel');
+            const kmTotalRaw = fin.realTraveledKm > 0 ? fin.realTraveledKm 
                 : ((m.start_km > 0 && m.end_km > 0 && m.end_km >= m.start_km) ? (m.end_km - m.start_km) : (m.total_distance || m.traveled_distance || 0));
+            const kmTotal = isCancelled ? 0 : kmTotalRaw;
+            // KM FRAN sincroniza com o KM real da OS (banda DHL = ceil((km-50)/100)*100).
+            // Se a tabela aplicada estiver divergente da banda esperada, mostramos a banda
+            // correspondente ao KM real — não o franchise da tabela aplicada.
+            const tableFranchise = usedTable?.franchise_km ?? 0;
+            const franchiseKm = (isDhlBilling && kmTotal > 0)
+                ? computeDhlBand(kmTotal)
+                : tableFranchise;
             const kmExtraQtd = fin.client.excessKm;
             const kmExtraTotal = fin.client.extraKmVal;
             const hrExtraQtd = fin.client.excessHours;
