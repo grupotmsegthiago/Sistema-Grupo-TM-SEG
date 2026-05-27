@@ -10,7 +10,7 @@ import {
     FileText, Hash, Lock, Eye, X, Save, ShieldCheck,
     ImagePlus, Trash2, ZoomIn, Receipt, CreditCard,
     CheckSquare, Square, ListChecks, ArrowRight, ExternalLink,
-    Upload, Scale, FileSpreadsheet, HelpCircle, Download, Printer, Filter
+    Upload, Scale, FileSpreadsheet, HelpCircle, Download, Printer, Filter, Link2
 } from 'lucide-react';
 import { useNotification } from '../lib/NotificationContext';
 
@@ -221,7 +221,7 @@ const VendorVerificationControl: React.FC<VendorVerificationControlProps> = ({ o
     const loadData = async () => {
         setIsLoading(true);
         try {
-            const missionFields = 'id, client, provider, origin, destination, status, created_at, start_time, end_time, start_km, end_km, total_distance, revenue_value, cost_value, toll_value, toll_value_provider, billing_approved, vendor_os_number, invoice_number, release_date, payment_date, verified_by, verified_at, client_vehicle, client_vehicle_2, vehicle_id';
+            const missionFields = 'id, client, provider, origin, destination, status, created_at, start_time, end_time, start_km, end_km, total_distance, revenue_value, cost_value, toll_value, toll_value_provider, billing_approved, vendor_os_number, invoice_number, release_date, payment_date, verified_by, verified_at, client_vehicle, client_vehicle_2, vehicle_id, is_same_os, parent_mission_id';
             const fetchAllMissions = async () => {
                 let all: any[] = [];
                 let from = 0;
@@ -1875,6 +1875,28 @@ const VendorVerificationControl: React.FC<VendorVerificationControlProps> = ({ o
                                             <td className="px-4 py-3">
                                                 <span className="font-black text-gray-900 text-xs font-mono">{m.id}</span>
                                                 <div className="text-[9px] text-gray-400 font-bold">{fmtDate(m.created_at)}</div>
+                                                {(m as any).is_same_os && (m as any).parent_mission_id && (
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => onOpenMission?.((m as any).parent_mission_id)}
+                                                        className="mt-1 inline-flex items-center gap-1 text-[8px] font-black bg-blue-600 hover:bg-blue-700 text-white px-1.5 py-0.5 rounded uppercase transition-colors"
+                                                        title={`Esta OS é filha (MESMA OS) da ${(m as any).parent_mission_id}. Clique para abrir a OS mãe.`}
+                                                        data-testid={`link-parent-${m.id}`}
+                                                    >
+                                                        <Link2 size={9} /> FILHA DE: {(m as any).parent_mission_id}
+                                                    </button>
+                                                )}
+                                                {!(m as any).is_same_os && (m as any).parent_mission_id && (
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => onOpenMission?.((m as any).parent_mission_id)}
+                                                        className="mt-1 inline-flex items-center gap-1 text-[8px] font-black bg-amber-500 hover:bg-amber-600 text-white px-1.5 py-0.5 rounded uppercase transition-colors"
+                                                        title={`Vinculada à OS ${(m as any).parent_mission_id}. Clique para abrir.`}
+                                                        data-testid={`link-parent-${m.id}`}
+                                                    >
+                                                        <Link2 size={9} /> VINCULADA: {(m as any).parent_mission_id}
+                                                    </button>
+                                                )}
                                             </td>
                                             <td className="px-4 py-3">
                                                 <div className="text-[10px] font-black text-blue-800 uppercase">{m.provider}</div>
