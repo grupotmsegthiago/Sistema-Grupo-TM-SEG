@@ -1905,7 +1905,11 @@ const VendorVerificationControl: React.FC<VendorVerificationControlProps> = ({ o
                                                 <span className="text-[10px] font-bold text-gray-700">{m.end_km != null ? Number(m.end_km).toLocaleString('pt-BR') : '—'}</span>
                                             </td>
                                             <td className="px-4 py-3 text-right">
-                                                <span className="text-xs font-black text-red-600">{formatCurrency(totalCost)}</span>
+                                                {(m as any).is_same_os && totalCost === 0 ? (
+                                                    <span className="text-[10px] font-black uppercase tracking-wider text-amber-600" title="Custo zerado: missão compartilha OS principal (reaproveitamento)">MESMA OS</span>
+                                                ) : (
+                                                    <span className="text-xs font-black text-red-600">{formatCurrency(totalCost)}</span>
+                                                )}
                                             </td>
                                             <td className="px-4 py-3 text-center">
                                                 <span className="text-[10px] font-bold text-gray-700">{m.vendor_os_number || '—'}</span>

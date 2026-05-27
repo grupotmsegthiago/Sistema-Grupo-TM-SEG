@@ -995,7 +995,11 @@ Qualquer dúvida, estamos a disposição.
 
                            <div className="bg-white border border-red-200 rounded-lg p-1 shadow-sm">
                                <p className="text-[9px] font-black text-red-400 uppercase tracking-tighter leading-none mb-0.5">Fornecedor {mission.billing_approved ? '(Auditado)' : isAdjustedCost ? '(Salvo)' : '(Projetado)'}</p>
-                               <p className="text-[12px] font-black text-red-600 font-mono leading-none tracking-tighter">{formatCurrency(displayCost)}</p>
+                               {(mission as any).is_same_os && displayCost === 0 ? (
+                                   <p className="text-[10px] font-black uppercase tracking-wider text-amber-600 leading-none" title="Custo zerado: missão compartilha OS principal (reaproveitamento)">MESMA OS</p>
+                               ) : (
+                                   <p className="text-[12px] font-black text-red-600 font-mono leading-none tracking-tighter">{formatCurrency(displayCost)}</p>
+                               )}
                            </div>
 
                            {(() => {

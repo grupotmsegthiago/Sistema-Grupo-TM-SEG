@@ -1158,7 +1158,11 @@ const ReportsDashboard: React.FC = () => {
                                                                     {(revTotal > 0 || costTotal > 0) && (
                                                                         <div className="flex gap-4 mt-2 text-[10px]">
                                                                             <span className="font-bold text-green-700">Receita: R$ {revTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
-                                                                            <span className="font-bold text-blue-700">Custo: R$ {costTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
+                                                                            {m.is_same_os && costTotal === 0 ? (
+                                                                                <span className="font-black uppercase tracking-wider text-amber-600" title="Custo zerado: missão compartilha OS principal (reaproveitamento)">Custo: MESMA OS</span>
+                                                                            ) : (
+                                                                                <span className="font-bold text-blue-700">Custo: R$ {costTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
+                                                                            )}
                                                                             {revTotal > 0 && costTotal > 0 && (
                                                                                 <span className={`font-black ${revTotal - costTotal >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
                                                                                     Margem: {((1 - costTotal / revTotal) * 100).toFixed(1)}%

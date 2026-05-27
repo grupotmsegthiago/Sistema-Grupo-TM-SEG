@@ -302,7 +302,7 @@ const BillingControlCenter: React.FC = () => {
                                             </td>
                                             <td className="px-6 py-4 text-right">
                                                 <div className="text-xs font-black text-green-700">REC: {formatCurrency(revInDb)}</div>
-                                                <div className="text-xs font-black text-red-600">CUST: {formatCurrency(costInDb)}</div>
+                                                <div className="text-xs font-black text-red-600">CUST: {m.is_same_os && costInDb === 0 ? <span className="text-amber-600" title="Custo zerado: missão compartilha OS principal (reaproveitamento)">MESMA OS</span> : formatCurrency(costInDb)}</div>
                                                 {hasDiff && <span className="text-[8px] bg-red-100 text-red-700 px-1.5 py-0.5 rounded font-black animate-pulse uppercase mt-1 block w-fit ml-auto">Conferir</span>}
                                             </td>
                                             <td className="px-6 py-4 text-center">
