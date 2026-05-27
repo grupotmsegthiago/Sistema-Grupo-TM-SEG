@@ -312,23 +312,26 @@ const ProviderForm: React.FC<ProviderFormProps> = ({ onBack, onNavigateToVehicle
       }
       const bands = generateAutoBands(cfg);
       if (bands.length === 0) { showNotification('Atenção', 'Nenhuma faixa para salvar.', 'warning'); return; }
-      if (!confirm(`Salvar as ${bands.length} faixas como tabelas de custo manuais para "${formData.name}"?\n\nElas aparecerão no seletor de tabela do fornecedor ao vincular missões/rotas. Tabelas anteriores com nome "<KM>KM" (faixas automáticas) e o formato legado "AUTO <KM>KM" serão substituídas.`)) return;
+      const regionPrefix = (autoMasterForm.region || '').toString().toUpperCase().trim();
+      const buildOpType = (km: number) => regionPrefix ? `${regionPrefix} - ${km}KM` : `${km}KM`;
+      if (!confirm(`Salvar as ${bands.length} faixas como tabelas de custo manuais para "${formData.name}"?\n\nElas aparecerão como "${buildOpType(bands[0].kmFaixa)}", "${buildOpType(bands[1]?.kmFaixa ?? bands[0].kmFaixa)}"... no seletor de tabela do fornecedor.\n\nTabelas anteriores no formato "<KM>KM", "AUTO <KM>KM" ou "<REGIÃO> - <KM>KM" serão substituídas.`)) return;
       setIsMaterializingBands(true);
       try {
-          // Limpa tanto o formato novo "100KM" quanto o legado "AUTO 100KM".
+          // Limpa o formato novo "100KM", o legado "AUTO 100KM" e o novo
+          // "SUDESTE - 100KM" (qualquer região-prefixo).
           const { data: oldRows } = await supabase
               .from('provider_cost_tables')
               .select('id, operation_type')
               .eq('provider', formData.name);
           const oldIds = (oldRows || [])
-              .filter(r => /^\s*(AUTO\s+)?\d+\s*KM\s*$/i.test(r.operation_type || ''))
+              .filter(r => /^\s*([A-ZÀ-Ÿ\-]+\s*-\s*)?(AUTO\s+)?\d+\s*KM\s*$/i.test(r.operation_type || ''))
               .map(r => r.id);
           if (oldIds.length > 0) {
               await supabase.from('provider_cost_tables').delete().in('id', oldIds);
           }
           const rows = bands.map(b => ({
               provider: formData.name,
-              operation_type: `${b.kmFaixa}KM`,
+              operation_type: buildOpType(b.kmFaixa),
               activation_cost: b.valorBase,
               franchise_km: b.kmFaixa,
               franchise_hours: b.franquiaHoras,
