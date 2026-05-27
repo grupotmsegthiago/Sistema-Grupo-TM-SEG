@@ -90,6 +90,7 @@ export interface Mission {
   reference_number?: string;
   billing_release?: string;
   dhl_se_number?: string;
+  dhl_sm_number?: string;
 
   // Controles manuais do Boletim de Medição (não afetam o sistema):
   // - billing_period_override: data alternativa usada pelo boletim em vez de start_time.

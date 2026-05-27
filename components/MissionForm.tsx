@@ -138,7 +138,8 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
     driver_name: '', driver_phone: '', startKm: '',
     driver_name_2: '', driver_phone_2: '',
     reference_number: '',
-    dhl_se_number: ''
+    dhl_se_number: '',
+    dhl_sm_number: ''
   });
   const [dhlLinkModal, setDhlLinkModal] = useState<{ open: boolean; missionId: string; url: string; whatsappText: string; phone: string; channel: 'email' | 'whatsapp' | 'both'; emailSent: boolean; providerEmail: string; whatsappSent: boolean; whatsappError: string | null }>({ open: false, missionId: '', url: '', whatsappText: '', phone: '', channel: 'both', emailSent: false, providerEmail: '', whatsappSent: false, whatsappError: null });
   const [dhlChannelPicker, setDhlChannelPicker] = useState<{ open: boolean; preferred: 'email' | 'whatsapp' | 'both'; saveAsDefault: boolean }>({ open: false, preferred: 'both', saveAsDefault: false });
@@ -1196,6 +1197,7 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
     const clientUpper = (formData.client || '').toUpperCase();
     if ((clientUpper.includes('CESLOG') || clientUpper.includes('CESARI')) && !formData.reference_number.trim()) return alert("Para clientes CESLOG/CESARI, o Nº da Referência é obrigatório.");
     if (clientUpper.includes('DHL') && !formData.dhl_se_number.trim()) return alert("Para o cliente DHL, o Número da S.E. é obrigatório.");
+    if (clientUpper.includes('DHL') && !formData.dhl_sm_number.trim()) return alert("Para o cliente DHL, o Número da SM é obrigatório.");
 
     const scheduledDateTime = new Date(`${formData.scheduledDate}T${formData.scheduledTime}:00`);
     const now = new Date();
@@ -1236,7 +1238,8 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
                 start_km: parseFloat(formData.startKm) || null,
                 snapshot_data: '', snapshot_approved_by: null, snapshot_approved_at: null,
                 reference_number: formData.reference_number || null,
-                dhl_se_number: formData.dhl_se_number ? formData.dhl_se_number.trim().toUpperCase() : null
+                dhl_se_number: formData.dhl_se_number ? formData.dhl_se_number.trim().toUpperCase() : null,
+                dhl_sm_number: formData.dhl_sm_number ? formData.dhl_sm_number.trim().toUpperCase() : null
             };
             let { error } = await supabase.from('missions').insert([missionPayload]);
             if (error && error.message?.includes('valor_zero_motivo')) {
@@ -1666,42 +1669,61 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
                               <div style={{ width: 8, height: 24, background: '#D40511', borderRadius: 2 }}></div>
                               <p className="text-[10px] font-black uppercase tracking-widest" style={{ color: '#7f1d1d' }}>Cliente DHL — Dados Obrigatórios</p>
                           </div>
-                          <label className={LABEL_CLASS}><span className="text-red-600">*</span> Número da S.E. (Solicitação de Escolta)</label>
-                          <div className="flex gap-2 items-stretch">
-                              <input
-                                  type="text"
-                                  required
-                                  className={`${INPUT_CLASS} flex-1`}
-                                  placeholder="Ex: SE-123456 / 4912345"
-                                  value={formData.dhl_se_number}
-                                  onChange={e => {
-                                      const v = e.target.value.toUpperCase();
-                                      setFormData(prev => ({ ...prev, dhl_se_number: v }));
-                                      if (dhlSeConfirmed && dhlSeConfirmed.toUpperCase() !== v) setDhlSeConfirmed('');
-                                  }}
-                                  data-testid="input-dhl-se-number"
-                              />
-                              {(() => {
-                                  const current = formData.dhl_se_number.trim();
-                                  const confirmed = !!current && dhlSeConfirmed.trim().toUpperCase() === current.toUpperCase();
-                                  return (
-                                      <button
-                                          type="button"
-                                          disabled={!current || confirmed}
-                                          onClick={() => setDhlSeConfirmed(current)}
-                                          data-testid="button-confirm-dhl-se"
-                                          className={`px-4 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all active:scale-95 flex items-center gap-1 ${
-                                              confirmed
-                                                  ? 'bg-green-600 text-white cursor-default'
-                                                  : current
-                                                      ? 'bg-red-600 text-white hover:bg-red-700'
-                                                      : 'bg-gray-200 text-gray-400 cursor-not-allowed'
-                                          }`}
-                                      >
-                                          {confirmed ? <><Check size={12} /> Confirmado</> : 'Confirmar'}
-                                      </button>
-                                  );
-                              })()}
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                              <div>
+                                  <label className={LABEL_CLASS}><span className="text-red-600">*</span> Número da S.E. (Solicitação de Escolta)</label>
+                                  <div className="flex gap-2 items-stretch">
+                                      <input
+                                          type="text"
+                                          required
+                                          className={`${INPUT_CLASS} flex-1`}
+                                          placeholder="Ex: SE-123456 / 4912345"
+                                          value={formData.dhl_se_number}
+                                          onChange={e => {
+                                              const v = e.target.value.toUpperCase();
+                                              setFormData(prev => ({ ...prev, dhl_se_number: v }));
+                                              if (dhlSeConfirmed && dhlSeConfirmed.toUpperCase() !== v) setDhlSeConfirmed('');
+                                          }}
+                                          data-testid="input-dhl-se-number"
+                                      />
+                                      {(() => {
+                                          const current = formData.dhl_se_number.trim();
+                                          const confirmed = !!current && dhlSeConfirmed.trim().toUpperCase() === current.toUpperCase();
+                                          return (
+                                              <button
+                                                  type="button"
+                                                  disabled={!current || confirmed}
+                                                  onClick={() => setDhlSeConfirmed(current)}
+                                                  data-testid="button-confirm-dhl-se"
+                                                  className={`px-4 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all active:scale-95 flex items-center gap-1 ${
+                                                      confirmed
+                                                          ? 'bg-green-600 text-white cursor-default'
+                                                          : current
+                                                              ? 'bg-red-600 text-white hover:bg-red-700'
+                                                              : 'bg-gray-200 text-gray-400 cursor-not-allowed'
+                                                  }`}
+                                              >
+                                                  {confirmed ? <><Check size={12} /> Confirmado</> : 'Confirmar'}
+                                              </button>
+                                          );
+                                      })()}
+                                  </div>
+                              </div>
+                              <div>
+                                  <label className={LABEL_CLASS}><span className="text-red-600">*</span> Número da SM (Solicitação de Monitoramento)</label>
+                                  <input
+                                      type="text"
+                                      required
+                                      className={`${INPUT_CLASS} w-full`}
+                                      placeholder="Ex: SM-789012"
+                                      value={formData.dhl_sm_number}
+                                      onChange={e => {
+                                          const v = e.target.value.toUpperCase();
+                                          setFormData(prev => ({ ...prev, dhl_sm_number: v }));
+                                      }}
+                                      data-testid="input-dhl-sm-number"
+                                  />
+                              </div>
                           </div>
                           {!dhlSeOk && formData.dhl_se_number.trim() && (
                               <p className="text-[10px] font-black mt-2 px-3 py-2 rounded-lg bg-red-50 border border-red-300 text-red-700 uppercase tracking-wider">
