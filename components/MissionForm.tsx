@@ -1197,7 +1197,6 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
     const clientUpper = (formData.client || '').toUpperCase();
     if ((clientUpper.includes('CESLOG') || clientUpper.includes('CESARI')) && !formData.reference_number.trim()) return alert("Para clientes CESLOG/CESARI, o Nº da Referência é obrigatório.");
     if (clientUpper.includes('DHL') && !formData.dhl_se_number.trim()) return alert("Para o cliente DHL, o Número da S.E. é obrigatório.");
-    if (clientUpper.includes('DHL') && !formData.dhl_sm_number.trim()) return alert("Para o cliente DHL, o Número da SM é obrigatório.");
 
     const scheduledDateTime = new Date(`${formData.scheduledDate}T${formData.scheduledTime}:00`);
     const now = new Date();
@@ -1710,12 +1709,11 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
                                   </div>
                               </div>
                               <div>
-                                  <label className={LABEL_CLASS}><span className="text-red-600">*</span> Número da SM (Solicitação de Monitoramento)</label>
+                                  <label className={LABEL_CLASS}>Número da SM (Solicitação de Monitoramento)</label>
                                   <input
                                       type="text"
-                                      required
                                       className={`${INPUT_CLASS} w-full`}
-                                      placeholder="Ex: SM-789012"
+                                      placeholder="Ex: SM-789012 (opcional)"
                                       value={formData.dhl_sm_number}
                                       onChange={e => {
                                           const v = e.target.value.toUpperCase();
