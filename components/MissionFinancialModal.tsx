@@ -321,6 +321,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
   const canActivateFullEdit = useMemo(() => {
     return userRoleLower === 'administrador' || userRoleLower === 'diretoria'
       || userNameLower.includes('barbara') || userNameLower.includes('bárbara') || userNameLower.includes('thiago')
+      || userNameLower.includes('simone')
       || userNameLower.includes('plinio') || userNameLower.includes('plínio');
   }, [userRoleLower, userNameLower]);
   const [fullEditMode, setFullEditMode] = useState(false);
@@ -3841,7 +3842,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                                 : []),
                                         ];
                                         const handleChange = (val: string) => {
-                                            if (isEffectivelyLocked || financialData.autoEngine?.active) return;
+                                            if ((isEffectivelyLocked || financialData.autoEngine?.active) && !fullEditMode) return;
                                             setManualProviderTableId(val);
                                             setCustomProviderBase(''); setCustomProviderKm(''); setCustomProviderHour('');
                                             setUseSavedValues(false);
@@ -3849,19 +3850,22 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                             setMission(prev => prev ? { ...prev, revenue_edit_reason: '', cost_edit_reason: '', billing_verified_by: null } : prev);
                                             if (mission) supabase.from('missions').update({ revenue_edit_reason: '', cost_edit_reason: '', billing_verified_by: null }).eq('id', mission.id);
                                         };
+                                        // EDIÇÃO TOTAL (Barbara/Thiago/Simone/diretoria/admin) destrava o
+                                        // seletor mesmo em MESMA OS, motor auto ativo ou faturamento travado.
+                                        const providerSelectorDisabled = !fullEditMode && (mission.is_same_os || isEffectivelyLocked || !!financialData.autoEngine?.active);
                                         return (
                                             <FilterableSelect
-                                                value={financialData.autoEngine?.active ? '' : (manualProviderTableId || '')}
+                                                value={(!fullEditMode && financialData.autoEngine?.active) ? '' : (manualProviderTableId || '')}
                                                 onChange={handleChange}
                                                 options={options}
-                                                disabled={mission.is_same_os || isEffectivelyLocked || !!financialData.autoEngine?.active}
+                                                disabled={providerSelectorDisabled}
                                                 accentColor="red"
-                                                buttonClassName={`w-full p-2 bg-gray-50 border rounded-lg text-xs font-bold text-gray-700 uppercase outline-none focus:border-red-500 flex items-center justify-between gap-2 ${isZeroCostError ? 'border-red-300 bg-red-50 text-red-900 animate-pulse' : 'border-gray-200 hover:border-gray-300'} ${(mission.is_same_os || isEffectivelyLocked || financialData.autoEngine?.active) ? 'opacity-60 cursor-not-allowed' : ''}`}
+                                                buttonClassName={`w-full p-2 bg-gray-50 border rounded-lg text-xs font-bold text-gray-700 uppercase outline-none focus:border-red-500 flex items-center justify-between gap-2 ${isZeroCostError ? 'border-red-300 bg-red-50 text-red-900 animate-pulse' : 'border-gray-200 hover:border-gray-300'} ${providerSelectorDisabled ? 'opacity-60 cursor-not-allowed' : ''}`}
                                                 data-testid="select-provider-table"
                                             />
                                         );
                                     })()}
-                                    {!mission.is_same_os && manualProviderTableId && (
+                                    {(!mission.is_same_os || fullEditMode) && manualProviderTableId && (
                                         <button 
                                             onClick={() => { setEditCostTableId(manualProviderTableId); setIsAddCostModalOpen(true); }}
                                             className="p-2 bg-amber-600 text-white rounded-lg hover:bg-amber-700 transition-all shadow-md active:scale-95"
@@ -3870,7 +3874,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                             <Edit2 size={14}/>
                                         </button>
                                     )}
-                                    {!mission.is_same_os && (
+                                    {(!mission.is_same_os || fullEditMode) && (
                                         <button 
                                             onClick={() => { setEditCostTableId(null); setIsAddCostModalOpen(true); }}
                                             className="p-2 bg-slate-900 text-white rounded-lg hover:bg-black transition-all shadow-md active:scale-95"
