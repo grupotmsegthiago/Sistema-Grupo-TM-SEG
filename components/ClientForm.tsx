@@ -287,7 +287,7 @@ const ClientForm: React.FC<ClientFormProps> = ({
       const r = (currentUser.role || '').toLowerCase();
       const perms = currentUser.permissions || [];
       return r === 'diretoria' || r === 'administrador' || r === 'comercial' ||
-             perms.includes('*');
+             perms.includes('*') || perms.includes('client-prices');
   })();
 
   const canEditOsEmail = currentUser && (() => {
