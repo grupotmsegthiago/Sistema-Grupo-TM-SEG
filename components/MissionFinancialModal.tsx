@@ -315,8 +315,6 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
   const userNameLower = useMemo(() => {
     try { const u = JSON.parse(localStorage.getItem('userData') || '{}'); return ((u.name || u.username || '') as string).toLowerCase(); } catch { return ''; }
   }, []);
-  const isController = userRoleLower === 'controller';
-
   // MODO EDIÇÃO TOTAL: Barbara e Thiago podem destravar TODOS os campos da OS
   // (operacional, cliente, fornecedor, financeiro), inclusive em OS aprovadas.
   // O acionamento é registrado em system_logs (MissionEditHistory).
@@ -326,6 +324,10 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
       || userNameLower.includes('plinio') || userNameLower.includes('plínio');
   }, [userRoleLower, userNameLower]);
   const [fullEditMode, setFullEditMode] = useState(false);
+  // isController: identifica o cargo Controller para travas de edição.
+  // Quando EDIÇÃO TOTAL está ligada, o gate de Controller é suspenso para
+  // que TODOS os campos (cliente, pedágio, etc.) fiquem editáveis.
+  const isController = userRoleLower === 'controller' && !fullEditMode;
 
   const canEditOpsData = useMemo(() => {
     if (fullEditMode) return true;
@@ -4340,10 +4342,10 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                 <input 
                                     type="text" 
                                     inputMode="decimal"
-                                    className={`w-full bg-white/60 border border-blue-200 rounded-lg px-2 py-1 outline-none font-black text-3xl text-blue-900 font-mono focus:ring-2 focus:ring-blue-400 focus:border-blue-400 ${(!canEditOpsData || (mission?.verified_by && mission?.verified_at && !['diretoria', 'administrador', 'ceo', 'controller'].includes(userRoleLower))) ? 'pointer-events-none opacity-70' : 'cursor-text'}`}
+                                    className={`w-full bg-white/60 border border-blue-200 rounded-lg px-2 py-1 outline-none font-black text-3xl text-blue-900 font-mono focus:ring-2 focus:ring-blue-400 focus:border-blue-400 ${(!canEditOpsData || (!fullEditMode && mission?.verified_by && mission?.verified_at && !['diretoria', 'administrador', 'ceo', 'controller'].includes(userRoleLower))) ? 'pointer-events-none opacity-70' : 'cursor-text'}`}
                                     value={costInput} 
-                                    onChange={e => { if (canEditOpsData && !(mission?.verified_by && mission?.verified_at && !['diretoria', 'administrador', 'ceo', 'controller'].includes(userRoleLower))) { userManuallyEditedRef.current = true; setUseSavedValues(true); setCostInput(e.target.value); setShowCostReasonInput(true); } }}
-                                    readOnly={!canEditOpsData || !!(mission?.verified_by && mission?.verified_at && !['diretoria', 'administrador', 'ceo', 'controller'].includes(userRoleLower))}
+                                    onChange={e => { if (canEditOpsData && (fullEditMode || !(mission?.verified_by && mission?.verified_at && !['diretoria', 'administrador', 'ceo', 'controller'].includes(userRoleLower)))) { userManuallyEditedRef.current = true; setUseSavedValues(true); setCostInput(e.target.value); setShowCostReasonInput(true); } }}
+                                    readOnly={!canEditOpsData || (!fullEditMode && !!(mission?.verified_by && mission?.verified_at && !['diretoria', 'administrador', 'ceo', 'controller'].includes(userRoleLower)))}
                                     data-testid="input-cost-total"
                                 />
                             </div>
