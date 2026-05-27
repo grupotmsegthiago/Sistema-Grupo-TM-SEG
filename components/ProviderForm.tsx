@@ -314,17 +314,22 @@ const ProviderForm: React.FC<ProviderFormProps> = ({ onBack, onNavigateToVehicle
       if (bands.length === 0) { showNotification('Atenção', 'Nenhuma faixa para salvar.', 'warning'); return; }
       const regionPrefix = (autoMasterForm.region || '').toString().toUpperCase().trim();
       const buildOpType = (km: number) => regionPrefix ? `${regionPrefix} - ${km}KM` : `${km}KM`;
-      if (!confirm(`Salvar as ${bands.length} faixas como tabelas de custo manuais para "${formData.name}"?\n\nElas aparecerão como "${buildOpType(bands[0].kmFaixa)}", "${buildOpType(bands[1]?.kmFaixa ?? bands[0].kmFaixa)}"... no seletor de tabela do fornecedor.\n\nTabelas anteriores no formato "<KM>KM", "AUTO <KM>KM" ou "<REGIÃO> - <KM>KM" serão substituídas.`)) return;
+      if (!confirm(`Salvar as ${bands.length} faixas como tabelas de custo manuais para "${formData.name}"?\n\nElas aparecerão como "${buildOpType(bands[0].kmFaixa)}", "${buildOpType(bands[1]?.kmFaixa ?? bands[0].kmFaixa)}"... no seletor de tabela do fornecedor.\n\nObs.: tabelas de outras regiões/estados são preservadas. Apenas faixas com o MESMO prefixo (${regionPrefix || 'sem prefixo'}) serão substituídas para evitar duplicatas.`)) return;
       setIsMaterializingBands(true);
       try {
-          // Limpa o formato novo "100KM", o legado "AUTO 100KM" e o novo
-          // "SUDESTE - 100KM" (qualquer região-prefixo).
+          // Só substitui faixas que têm o MESMO prefixo de região/estado
+          // (ou sem prefixo, quando o filtro está vazio). Faixas de outras
+          // regiões/estados são preservadas — assim podemos materializar
+          // várias configurações no mesmo fornecedor.
           const { data: oldRows } = await supabase
               .from('provider_cost_tables')
               .select('id, operation_type')
               .eq('provider', formData.name);
+          const samePrefixRe = regionPrefix
+              ? new RegExp(`^\\s*${regionPrefix.replace(/[-/\\^$*+?.()|[\\]{}]/g, '\\$&')}\\s*-\\s*\\d+\\s*KM\\s*$`, 'i')
+              : /^\s*(AUTO\s+)?\d+\s*KM\s*$/i;
           const oldIds = (oldRows || [])
-              .filter(r => /^\s*([A-ZÀ-Ÿ\-]+\s*-\s*)?(AUTO\s+)?\d+\s*KM\s*$/i.test(r.operation_type || ''))
+              .filter(r => samePrefixRe.test(r.operation_type || ''))
               .map(r => r.id);
           if (oldIds.length > 0) {
               await supabase.from('provider_cost_tables').delete().in('id', oldIds);
