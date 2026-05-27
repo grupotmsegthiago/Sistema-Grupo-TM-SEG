@@ -372,14 +372,26 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
               return all;
           };
 
-          const [vehiclesRes, clientVehiclesRes, allAgentPhones] = await Promise.all([
-              vehicleIds.length > 0 ? supabase.from('vehicles').select('*').in('id', vehicleIds) : { data: [] },
-              clientVehicleIds.length > 0 ? supabase.from('client_vehicles').select('id, plate, model, brand, color').in('id', clientVehicleIds) : { data: [] },
+          // PostgREST retorna no máximo 1000 linhas por chamada. Se houver
+          // mais IDs do que isso, precisamos quebrar em lotes — caso contrário
+          // veículos como o 1122 ficam de fora e o card mostra "VEÍCULO NÃO
+          // LOCALIZADO" mesmo o registro existindo no banco.
+          const fetchInChunks = async (table: string, columns: string, ids: any[], chunkSize = 500) => {
+              if (ids.length === 0) return [] as any[];
+              const chunks: any[][] = [];
+              for (let i = 0; i < ids.length; i += chunkSize) chunks.push(ids.slice(i, i + chunkSize));
+              const results = await Promise.all(chunks.map(c => supabase.from(table).select(columns).in('id', c)));
+              return results.flatMap(r => r.data || []);
+          };
+
+          const [vehiclesRows, clientVehiclesRows, allAgentPhones] = await Promise.all([
+              fetchInChunks('vehicles', '*', vehicleIds),
+              fetchInChunks('client_vehicles', 'id, plate, model, brand, color', clientVehicleIds),
               fetchAllAgentPhones()
           ]);
 
-          const vehicleMap = (vehiclesRes.data || []).reduce((acc: any, v: any) => ({ ...acc, [v.id]: v }), {});
-          const clientVehicleMap = (clientVehiclesRes.data || []).reduce((acc: any, v: any) => ({ ...acc, [v.id.toString()]: v }), {});
+          const vehicleMap = vehiclesRows.reduce((acc: any, v: any) => ({ ...acc, [v.id]: v }), {});
+          const clientVehicleMap = clientVehiclesRows.reduce((acc: any, v: any) => ({ ...acc, [v.id.toString()]: v }), {});
           
           const agentPhoneIndex = new Map<string, string>();
           for (const a of allAgentPhones) {
