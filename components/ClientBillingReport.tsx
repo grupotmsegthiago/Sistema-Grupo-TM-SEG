@@ -1779,33 +1779,39 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
                     if (hasValidSnapshot) {
                         // Reproduz EXATAMENTE os valores congelados do snapshot para
                         // que o total da planilha case com o boletim ao centavo. A
-                        // HORA FINAL e o KM FINAL são reconstruídos de forma sintética
-                        // (início + franquia + excedentes congelados) para que as
-                        // fórmulas do Excel devolvam as mesmas horas/km extras.
+                        // KM INÍCIO/FINAL (colunas O/P) mantêm os valores REAIS que o
+                        // usuário registrou no sistema. Apenas a HORA FINAL é
+                        // reconstruída (início + franquia + horas extras congeladas),
+                        // pois o end_time administrativo pode estar incorreto. O total
+                        // continua casando com o boletim ao centavo via a franquia de
+                        // tabela, que "balanceia" qualquer diferença.
                         franchiseHours = snap.franchiseHours ?? 0;
                         unitHr = snap.unitHr ?? 0;
                         unitKm = snap.unitKm ?? 0;
-                        franchiseKm = snap.franchiseKm ?? 0;
                         const hrEx = snap.hrExtraTotal ?? 0;
-                        const kmEx = isCancel ? 0 : (snap.kmExtraTotal ?? 0);
-                        // Quantidades de excedente: usa as congeladas; se um snapshot
+                        const kmExSnap = isCancel ? 0 : (snap.kmExtraTotal ?? 0);
+                        // Quantidade de horas extras: usa a congelada; se um snapshot
                         // legado tiver só o total (sem a quantidade), recupera a
-                        // quantidade a partir do total / valor unitário, para que as
-                        // fórmulas do Excel reproduzam o mesmo valor extra.
+                        // quantidade a partir do total / valor unitário, para que a
+                        // fórmula do Excel reproduza o mesmo valor extra.
                         const hrQ = (snap.hrExtraQtd ?? 0) > 0 ? snap.hrExtraQtd
                             : (hrEx > 0 && unitHr > 0 ? hrEx / unitHr : 0);
-                        const kmQ = isCancel ? 0 : ((snap.kmExtraQtd ?? 0) > 0 ? snap.kmExtraQtd
-                            : (kmEx > 0 && unitKm > 0 ? kmEx / unitKm : 0));
                         const tollSnap = Math.max(0, (m.toll_value ?? snap.tollVal ?? 0));
                         const dbTotal = (m.revenue_value ?? 0) + Math.max(0, m.toll_value || 0);
                         const edited = !!(m.billing_verified_by || m.revenue_edit_reason);
                         const snapTotal = snap.totalGeral ?? 0;
-                        const useTotal = edited ? dbTotal : (snapTotal > 0 ? snapTotal : ((snap.activationFee ?? 0) + kmEx + hrEx + tollSnap));
-                        // A franquia de tabela "balanceia" o total p/ casar com o
-                        // boletim mesmo em edições manuais ou snapshots legados.
-                        activationFee = useTotal - hrEx - kmEx - tollSnap;
+                        const useTotal = edited ? dbTotal : (snapTotal > 0 ? snapTotal : ((snap.activationFee ?? 0) + kmExSnap + hrEx + tollSnap));
+                        // KM REAIS informados pelo usuário (cancelada => 0 pela regra).
                         kmInicioVal = isCancel ? 0 : (m.start_km || 0);
-                        kmFinalVal = isCancel ? 0 : (kmInicioVal + franchiseKm + kmQ);
+                        kmFinalVal = isCancel ? 0 : (m.end_km || 0);
+                        const kmTotalReal = isCancel ? 0 : Math.max(0, kmFinalVal - kmInicioVal);
+                        // Franquia KM espelha o boletim: banda do KM real quando há KM.
+                        franchiseKm = (isDhlBilling && kmTotalReal > 0) ? computeDhlBand(kmTotalReal) : (snap.franchiseKm ?? 0);
+                        // KM excedente calculado sobre o KM REAL (fórmula S = Q - R).
+                        const acKm = Math.max(0, kmTotalReal - franchiseKm) * unitKm;
+                        // A franquia de tabela "balanceia" o total p/ casar com o
+                        // boletim ao centavo, preservando os KM reais nas colunas O/P.
+                        activationFee = useTotal - hrEx - acKm - tollSnap;
                         cancelledBeforeFill = isCancel && hrQ <= 0;
                         rowStart = m.start_time || '';
                         const synDur = franchiseHours + hrQ;
