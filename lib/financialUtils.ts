@@ -140,6 +140,26 @@ export const UF_TO_REGION: Record<string, string> = {
     'AM': 'NORTE', 'PA': 'NORTE', 'AC': 'NORTE', 'RO': 'NORTE', 'RR': 'NORTE', 'AP': 'NORTE', 'TO': 'NORTE'
 };
 
+// Regra de OS CANCELADA: a HORA INÍCIO e a HORA FINAL devem ser iguais ao
+// momento em que o status foi alterado para "Cancelada" (mission_history),
+// resultando em 0 horas. Se a OS foi cancelada ANTES do horário agendado
+// (start_time), usa-se a data/hora do agendamento. Retorna a ISO efetiva a
+// ser usada TANTO em início QUANTO em fim, ou null se não houver base.
+export const resolveCancelledTime = (
+    scheduledIso?: string | null,
+    cancelIso?: string | null
+): string | null => {
+    const sched = scheduledIso ? new Date(scheduledIso) : null;
+    const cancel = cancelIso ? new Date(cancelIso) : null;
+    const schedOk = !!sched && !isNaN(sched.getTime());
+    const cancelOk = !!cancel && !isNaN(cancel.getTime());
+    if (!cancelOk && !schedOk) return null;
+    if (!cancelOk) return scheduledIso as string;
+    if (!schedOk) return cancelIso as string;
+    // Cancelada antes do agendamento -> usa o agendamento.
+    return cancel!.getTime() < sched!.getTime() ? (scheduledIso as string) : (cancelIso as string);
+};
+
 export const extractUF = (address: string): string => {
     if (!address) return '';
     const cleanAddr = address.split('(')[0].trim(); 
