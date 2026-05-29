@@ -433,6 +433,10 @@ export const calculateMissionFinancials = (
     durationHours = Math.floor(durationHours * 60) / 60;
 
     const cancelledWithHours = isCancelled && durationHours > 0 && !!parseSafeDate(mission.endTime || (mission as any).end_time);
+    // OS que foi EXECUTADA e cancelada depois (possui hora de fim real) deve
+    // cobrar tempo/distância reais como uma OS normal. Apenas o cancelamento
+    // ANTES da execução (sem hora de fim real) cobra somente o acionamento base.
+    const cancelledBeforeExecution = isCancelled && !cancelledWithHours;
     if (isZeroValueMission && !cancelledWithHours) {
         durationHours = 0;
     }
@@ -1049,17 +1053,17 @@ export const calculateMissionFinancials = (
     // Exceção: regra 200KM soberana acima vence o motor (mesma lógica do cliente LOGITECH).
     let autoBreakdown: ProviderAutoCalcBreakdown | null = null;
     if (autoEngineActive && autoMasterConfig && !logitech200ProviderApplied) {
-        // OS Cancelada no motor automático: força a menor faixa (100KM) e
-        // zera horas extras. Mesma filosofia da regra para tabelas manuais:
-        // cancelamento cobra sempre o piso da tabela.
-        const realKmForAuto = isCancelled
+        // OS cancelada ANTES da execução no motor automático: força a menor
+        // faixa (100KM) e zera horas extras (cancelamento cobra o piso da tabela).
+        // OS executada e cancelada depois usa km/tempo reais normalmente.
+        const realKmForAuto = cancelledBeforeExecution
             ? 0
             : (manualTableOverrides?.providerOpsOverride
                 ? manualTableOverrides.providerOpsOverride.distanceKm
                 : (isFinished && hasValidKms ? realTraveledKm : Math.max(totalDistance, distanceForCalculation)));
-        const goldenStart = isCancelled ? null : ((mission as any).provider_start_time || mission.startTime || (mission as any).start_time);
-        const goldenScheduled = isCancelled ? null : (mission.startTime || (mission as any).start_time);
-        const goldenEnd = isCancelled ? null : ((mission as any).provider_end_time || mission.endTime || (mission as any).end_time);
+        const goldenStart = cancelledBeforeExecution ? null : ((mission as any).provider_start_time || mission.startTime || (mission as any).start_time);
+        const goldenScheduled = cancelledBeforeExecution ? null : (mission.startTime || (mission as any).start_time);
+        const goldenEnd = cancelledBeforeExecution ? null : ((mission as any).provider_end_time || mission.endTime || (mission as any).end_time);
         autoBreakdown = calculateProviderCostAuto(
             realKmForAuto,
             autoMasterConfig,
@@ -1229,11 +1233,12 @@ export const calculateMissionFinancials = (
         pExcessHr = 0;
     }
 
-    // OS Cancelada: cobra APENAS o acionamento da menor faixa (ex.: R$ 690
-    // da SUDESTE - 100KM da DHL). Zera todos os excessos (KM e hora) tanto
-    // do cliente quanto do fornecedor — não importa a distância real nem a
-    // duração da operação.
-    if (isCancelled) {
+    // OS cancelada ANTES da execução: cobra APENAS o acionamento da menor faixa
+    // (ex.: R$ 690 da SUDESTE - 100KM da DHL). Zera todos os excessos (KM e hora)
+    // tanto do cliente quanto do fornecedor. OS que foi executada e cancelada
+    // depois (com hora de fim real) mantém os excedentes reais e cobra hora/KM
+    // extra normalmente.
+    if (cancelledBeforeExecution) {
         cExcessKm = 0;
         cExcessHr = 0;
         pExcessKm = 0;

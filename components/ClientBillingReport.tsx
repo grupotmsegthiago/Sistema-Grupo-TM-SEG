@@ -1028,16 +1028,19 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
 
             // OS Cancelada: KM = 0 (regra do negócio).
             const isCancelled = (m.status || '').toString().toLowerCase().includes('cancel');
-            // OS Cancelada: HORA INÍCIO = HORA FINAL = momento do cancelamento
-            // (ou agendamento, se cancelada antes). Resulta em 0 horas.
-            const cancelEffTime = isCancelled
+            // OS executada e cancelada depois (tem hora de fim real posterior ao
+            // início) cobra tempo real normalmente. Apenas o cancelamento ANTES da
+            // execução zera as horas (início = fim = momento do cancelamento).
+            const wasExecuted = isCancelled && !!m.end_time && !!m.start_time && new Date(m.end_time).getTime() > new Date(m.start_time).getTime();
+            const cancelledBefore = isCancelled && !wasExecuted;
+            const cancelEffTime = cancelledBefore
                 ? resolveCancelledTime(m.start_time, m._cancelStatusAt)
                 : null;
-            const effStartTime = isCancelled ? (cancelEffTime || m.start_time || '') : (m.start_time || '');
-            const effEndTime = isCancelled ? (cancelEffTime || m.start_time || '') : (m.end_time || '');
+            const effStartTime = cancelledBefore ? (cancelEffTime || m.start_time || '') : (m.start_time || '');
+            const effEndTime = cancelledBefore ? (cancelEffTime || m.start_time || '') : (m.end_time || '');
             const kmTotalRaw = fin.realTraveledKm > 0 ? fin.realTraveledKm 
                 : ((m.start_km > 0 && m.end_km > 0 && m.end_km >= m.start_km) ? (m.end_km - m.start_km) : (m.total_distance || m.traveled_distance || 0));
-            const kmTotal = isCancelled ? 0 : kmTotalRaw;
+            const kmTotal = cancelledBefore ? 0 : kmTotalRaw;
             // KM FRAN sincroniza com o KM real da OS (banda DHL = ceil((km-50)/100)*100).
             // Se a tabela aplicada estiver divergente da banda esperada, mostramos a banda
             // correspondente ao KM real — não o franchise da tabela aplicada.
@@ -1085,7 +1088,7 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
                 kmTotal,
                 timeStart: fmtTime(effStartTime),
                 timeEnd: fmtTime(effEndTime),
-                timeTotal: isCancelled ? fmtHHMM(0) : fmtHHMM(durationHours),
+                timeTotal: cancelledBefore ? fmtHHMM(0) : fmtHHMM(durationHours),
                 kmExtraQtd,
                 kmExtraUnit: unitKm,
                 kmExtraTotal,
@@ -1489,6 +1492,9 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
 
         const rows = rowsData.map(r => {
             const isCancel = (r.missionStatus || '').toLowerCase().startsWith('cancel');
+            // OS executada e cancelada depois cobra normalmente; só cancelada antes da execução zera.
+            const wasExecutedRow = isCancel && !!r.rawEndTime && !!r.rawStartTime && new Date(r.rawEndTime).getTime() > new Date(r.rawStartTime).getTime();
+            const cancelledBeforeRow = isCancel && !wasExecutedRow;
             const startDt = fmtDT(r.rawStartTime);
             const endDt = fmtDT(r.rawEndTime);
             let totalH = 0;
@@ -1501,7 +1507,7 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
                 periodo: periodoLabel,
                 operacao: (displayClientName || 'DHL').toUpperCase(),
                 cancelada: isCancel ? 'SIM' : 'NÃO',
-                descricao: isCancel ? '' : buildDescricao(r),
+                descricao: cancelledBeforeRow ? '' : buildDescricao(r),
                 seNumber: r.seNumber || '',
                 smNumber: r.smNumber || '',
                 osNumber: r.id || '',
@@ -1511,8 +1517,8 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
                 ufOrigem: r.originUf || '',
                 destino: r.destinationFull || '',
                 ufDestino: r.destinationUf || '',
-                kmInicio: isCancel ? 0 : (r.kmStart || 0),
-                kmFinal: isCancel ? 0 : (r.kmEnd || 0),
+                kmInicio: cancelledBeforeRow ? 0 : (r.kmStart || 0),
+                kmFinal: cancelledBeforeRow ? 0 : (r.kmEnd || 0),
                 kmTotal: r.kmTotal || 0,
                 franquiaKm: r.franchiseKm || 0,
                 kmExcedente: r.kmExtraQtd || 0,
@@ -1527,9 +1533,9 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
                 vlrTotalHoraExcedente: r.hrExtraTotal || 0,
                 vlrTotalKmExcedidos: r.kmExtraTotal || 0,
                 vlrDeslocamento: 0,
-                franquiaTabela: isCancel ? 0 : (r.activationFee || 0),
+                franquiaTabela: cancelledBeforeRow ? 0 : (r.activationFee || 0),
                 pedagio: r.tollVal || 0,
-                totalFornecedor: isCancel ? 0 : (r.totalGeral || 0),
+                totalFornecedor: cancelledBeforeRow ? 0 : (r.totalGeral || 0),
             } as any;
         });
 
@@ -1751,11 +1757,13 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
                     const m = bySe.get(se);
                     if (!m) { notFound.push(se); continue; }
                     const isCancel = (m.status || '').toString().toLowerCase().includes('cancel');
-                    // OS cancelada: HORA INÍCIO = HORA FINAL = momento do cancelamento
-                    // (ou agendamento, se cancelada antes). Resulta em 0 horas.
-                    const cancelEff = isCancel ? resolveCancelledTime(m.start_time, fillCancelTimeMap[m.id]) : null;
-                    const rowStart = isCancel ? (cancelEff || m.start_time || '') : (m.start_time || '');
-                    const rowEnd = isCancel ? (cancelEff || m.start_time || '') : (m.end_time || '');
+                    // OS executada e cancelada depois cobra tempo real; só cancelada
+                    // ANTES da execução zera (início = fim = momento do cancelamento).
+                    const wasExecutedFill = isCancel && !!m.end_time && !!m.start_time && new Date(m.end_time).getTime() > new Date(m.start_time).getTime();
+                    const cancelledBeforeFill = isCancel && !wasExecutedFill;
+                    const cancelEff = cancelledBeforeFill ? resolveCancelledTime(m.start_time, fillCancelTimeMap[m.id]) : null;
+                    const rowStart = cancelledBeforeFill ? (cancelEff || m.start_time || '') : (m.start_time || '');
+                    const rowEnd = cancelledBeforeFill ? (cancelEff || m.start_time || '') : (m.end_time || '');
                     const fin = calculateMissionFinancials(m as any, fillPriceTables as any, fillProviderTables as any, dhlClient as any, new Date());
                     const usedTable = fillPriceTables.find((t: any) => t.id.toString() === fin.client.tableId);
                     const franchiseHours = usedTable?.franchise_hours ?? 0;
@@ -1764,7 +1772,7 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
                     const unitHr = usedTable?.price_per_extra_hour ?? 0;
                     const kmTotalRaw = fin.realTraveledKm > 0 ? fin.realTraveledKm
                         : ((m.start_km > 0 && m.end_km > 0 && m.end_km >= m.start_km) ? (m.end_km - m.start_km) : (m.total_distance || m.traveled_distance || 0));
-                    const kmTotal = isCancel ? 0 : kmTotalRaw;
+                    const kmTotal = cancelledBeforeFill ? 0 : kmTotalRaw;
                     const franchiseKm = kmTotal > 0 ? computeDhlBand(kmTotal) : (usedTable?.franchise_km ?? 0);
                     const imp = seInfo.get(se);
                     rows.push({
@@ -1772,7 +1780,7 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
                         periodo: periodLabel || monthLabel(m.start_time),
                         operacao: 'DHL',
                         cancelada: (imp?.situacao || (isCancel ? 'CANCELADA' : 'FINALIZADA')).toUpperCase(),
-                        descricao: imp?.descricao || (isCancel ? '' : buildDescricao((m as any).operation_type || '', franchiseKm)),
+                        descricao: imp?.descricao || (cancelledBeforeFill ? '' : buildDescricao((m as any).operation_type || '', franchiseKm)),
                         seNumber: se,
                         smNumber: (m as any).dhl_sm_number || '',
                         osNumber: (m.id || '').toString().replace('GTM-', ''),
@@ -1782,8 +1790,8 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
                         ufOrigem: extractUF(m.origin || ''),
                         destino: m.destination || '',
                         ufDestino: extractUF(m.destination || ''),
-                        kmInicio: isCancel ? 0 : (m.start_km || 0),
-                        kmFinal: isCancel ? 0 : (m.end_km || 0),
+                        kmInicio: cancelledBeforeFill ? 0 : (m.start_km || 0),
+                        kmFinal: cancelledBeforeFill ? 0 : (m.end_km || 0),
                         franquiaKm: franchiseKm || 0,
                         kmDeslocamento: 0,
                         rawStart: rowStart,
@@ -1791,7 +1799,7 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
                         franquiaHrDays: franchiseHours > 0 ? franchiseHours / 24 : 0,
                         vlrHoraExcedenteTab: unitHr || 0,
                         vlrKmExcedenteTab: unitKm || 0,
-                        franquiaTabela: isCancel ? 0 : (activationFee || 0),
+                        franquiaTabela: cancelledBeforeFill ? 0 : (activationFee || 0),
                         pedagio: Math.max(0, m.toll_value || 0),
                     });
                 }
