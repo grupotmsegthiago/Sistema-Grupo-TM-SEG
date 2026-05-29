@@ -328,6 +328,14 @@ export async function exportDhlFaturamentoFilled(config: DhlFilledConfig): Promi
     c.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
     applyBorder(c, 'BFBFBF');
   });
+  // Colunas que o cliente preenche/valida (R, X, Z, AA, AE): fundo vermelho,
+  // letras brancas — no cabecalho e nos dados.
+  const RED_COLS = [18, 24, 26, 27, 31];
+  RED_COLS.forEach(col => {
+    const c = headerRow.getCell(col);
+    c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF0000' } };
+    c.font = { bold: true, size: 10, color: { argb: 'FFFFFF' } };
+  });
   headerRow.height = 30;
 
   const moneyFmt = 'R$ #,##0.00';
@@ -389,8 +397,8 @@ export async function exportDhlFaturamentoFilled(config: DhlFilledConfig): Promi
     set(31, r.franquiaTabela || 0);
     // AF = PEDAGIO (dado)
     set(32, r.pedagio || 0);
-    // AG = TOTAL FORNECEDOR (formula)
-    row.getCell(33).value = { formula: `AB${n}+AC${n}+AD${n}+AE${n}+AF${n}` } as any;
+    // AG = TOTAL FORNECEDOR (formula =SOMA(AB:AF))
+    row.getCell(33).value = { formula: `SUM(AB${n}:AF${n})` } as any;
     // AH..AL = colunas de validacao do cliente (deixar vazias)
 
     // Formatos numericos / data / hora
@@ -406,6 +414,11 @@ export async function exportDhlFaturamentoFilled(config: DhlFilledConfig): Promi
       cell.alignment = { vertical: 'middle', horizontal: (c >= 11 && c <= 13) ? 'left' : 'center', wrapText: false };
       applyBorder(cell, 'E5E7EB');
     }
+    RED_COLS.forEach(col => {
+      const cell = row.getCell(col);
+      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF0000' } };
+      cell.font = { size: 10, color: { argb: 'FFFFFF' }, bold: true };
+    });
     row.height = 18;
   });
 

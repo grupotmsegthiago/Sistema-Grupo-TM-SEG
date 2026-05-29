@@ -1573,6 +1573,35 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
                     }
                 }
 
+                // Captura, por SE, a Situacao (coluna Q da planilha importada) e a
+                // Descricao SE (coluna G) para preencher as colunas D e E da saida,
+                // e o periodo do relatorio (linha de titulo "Periodo: ...").
+                const findImportCol = (re: RegExp, fallback: number) => {
+                    if (headerRowIdx < 0) return fallback;
+                    const hdr = matrix[headerRowIdx] || [];
+                    for (let c = 0; c < hdr.length; c++) { if (re.test(normHdr(hdr[c]))) return c; }
+                    return fallback;
+                };
+                const situacaoCol = findImportCol(/\bSITUAC/, 16);   // coluna Q
+                const descricaoCol = findImportCol(/DESCRI.*\bSE\b/, 6); // coluna G
+                let periodLabel = '';
+                for (let r = 0; r < Math.min(matrix.length, 20); r++) {
+                    const txt = ((matrix[r] || [])[0] ?? '').toString();
+                    const mm = txt.match(/per[íi]odo:\s*(.+)$/i);
+                    if (mm) { periodLabel = mm[1].trim(); break; }
+                }
+                const seInfo = new Map<string, { situacao: string; descricao: string }>();
+                if (seCol >= 0) {
+                    for (let r = headerRowIdx + 1; r < matrix.length; r++) {
+                        const k = onlyDigits((matrix[r] || [])[seCol]);
+                        if (!k || seInfo.has(k)) continue;
+                        seInfo.set(k, {
+                            situacao: ((matrix[r] || [])[situacaoCol] ?? '').toString().trim(),
+                            descricao: ((matrix[r] || [])[descricaoCol] ?? '').toString().trim(),
+                        });
+                    }
+                }
+
                 const seList = Array.from(seSet);
                 if (seList.length === 0) {
                     alert('Não encontrei nenhum número de SE na planilha enviada. Verifique se há uma coluna com o título "Nº SE".');
@@ -1665,12 +1694,13 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
                         : ((m.start_km > 0 && m.end_km > 0 && m.end_km >= m.start_km) ? (m.end_km - m.start_km) : (m.total_distance || m.traveled_distance || 0));
                     const kmTotal = isCancel ? 0 : kmTotalRaw;
                     const franchiseKm = kmTotal > 0 ? computeDhlBand(kmTotal) : (usedTable?.franchise_km ?? 0);
+                    const imp = seInfo.get(se);
                     rows.push({
-                        ciaEscolta: (m.provider || 'T.M SEG').toUpperCase(),
-                        periodo: monthLabel(m.start_time),
+                        ciaEscolta: 'TM SEG',
+                        periodo: periodLabel || monthLabel(m.start_time),
                         operacao: 'DHL',
-                        cancelada: isCancel ? 'CANCELADA' : 'FINALIZADA',
-                        descricao: isCancel ? '' : buildDescricao((m as any).operation_type || '', franchiseKm),
+                        cancelada: (imp?.situacao || (isCancel ? 'CANCELADA' : 'FINALIZADA')).toUpperCase(),
+                        descricao: imp?.descricao || (isCancel ? '' : buildDescricao((m as any).operation_type || '', franchiseKm)),
                         seNumber: se,
                         smNumber: (m as any).dhl_sm_number || '',
                         osNumber: (m.id || '').toString().replace('GTM-', ''),
