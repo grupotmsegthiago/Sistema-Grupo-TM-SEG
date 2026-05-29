@@ -408,15 +408,18 @@ export async function exportDhlFaturamentoFilled(config: DhlFilledConfig): Promi
     [23, 24, 25].forEach(col => { row.getCell(col).numFmt = timeFmt; });
     [26, 27, 28, 29, 30, 31, 32, 33].forEach(col => { row.getCell(col).numFmt = moneyFmt; });
 
-    // Linha preenchida (SE encontrada no sistema): fundo AZUL claro para o
-    // funcionário identificar rapidamente as linhas com dados e completar os
-    // campos manuais (colunas vermelhas). Linhas em branco não recebem cor.
+    // Em linhas com dados (SE encontrada), pinta de AZUL claro SOMENTE as
+    // células VAZIAS da coluna A até a AG (1..33), para o funcionário ver
+    // exatamente o que falta preencher. Células já preenchidas e fórmulas
+    // permanecem sem cor. As colunas vermelhas continuam vermelhas (abaixo).
     const isFilled = !!(r.osNumber && r.osNumber.toString().trim());
+    const isBlankCell = (v: any) =>
+      v === null || v === undefined || (typeof v === 'string' && v.trim() === '');
     for (let c = 1; c <= FILLED_HEADERS.length; c++) {
       const cell = row.getCell(c);
       cell.font = { size: 10 };
       cell.alignment = { vertical: 'middle', horizontal: (c >= 11 && c <= 13) ? 'left' : 'center', wrapText: false };
-      if (isFilled) {
+      if (isFilled && c <= 33 && isBlankCell(cell.value)) {
         cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'DDEBF7' } };
       }
       applyBorder(cell, 'E5E7EB');
