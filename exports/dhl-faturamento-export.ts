@@ -408,10 +408,17 @@ export async function exportDhlFaturamentoFilled(config: DhlFilledConfig): Promi
     [23, 24, 25].forEach(col => { row.getCell(col).numFmt = timeFmt; });
     [26, 27, 28, 29, 30, 31, 32, 33].forEach(col => { row.getCell(col).numFmt = moneyFmt; });
 
+    // Linha preenchida (SE encontrada no sistema): fundo AZUL claro para o
+    // funcionário identificar rapidamente as linhas com dados e completar os
+    // campos manuais (colunas vermelhas). Linhas em branco não recebem cor.
+    const isFilled = !!(r.osNumber && r.osNumber.toString().trim());
     for (let c = 1; c <= FILLED_HEADERS.length; c++) {
       const cell = row.getCell(c);
       cell.font = { size: 10 };
       cell.alignment = { vertical: 'middle', horizontal: (c >= 11 && c <= 13) ? 'left' : 'center', wrapText: false };
+      if (isFilled) {
+        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'DDEBF7' } };
+      }
       applyBorder(cell, 'E5E7EB');
     }
     RED_COLS.forEach(col => {

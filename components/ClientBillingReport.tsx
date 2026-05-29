@@ -1658,6 +1658,14 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
                     if (data) foundMissions = foundMissions.concat(data);
                 }
 
+                // Regra: OS "Recusada" NÃO entra no boletim. Se uma SE tiver uma OS
+                // recusada e outra concluída/cancelada, sobra apenas a não-recusada
+                // (prioriza a válida). Se a SE só tiver recusada, ela cai em "não
+                // encontrada" e fica em branco para o funcionário tratar. Ex.: SE 179209.
+                foundMissions = foundMissions.filter(
+                    m => !(m.status || '').toString().toLowerCase().includes('recus')
+                );
+
                 // Enriquece com veiculo do cliente.
                 const cvIds = [...new Set(foundMissions.map(m => m.client_vehicle).filter(Boolean))];
                 const cvMap: Record<string, any> = {};
