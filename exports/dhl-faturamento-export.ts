@@ -242,6 +242,181 @@ export async function exportDhlFaturamento(config: DhlFaturamentoConfig): Promis
   return new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
 }
 
+// ===========================================================================
+// PREENCHIMENTO DE PLANILHA-MODELO DHL (Task: preencher planilha virgem por SE)
+// ---------------------------------------------------------------------------
+// Gera a planilha no MESMO formato do modelo do cliente (cabecalho unico na
+// linha 1, dados a partir da linha 2), porem SEM cores. As colunas de formula
+// (em vermelho no modelo) sao escritas como FORMULAS reais (preservando a regra
+// do cliente). As colunas de dados (em amarelo no modelo) sao preenchidas com
+// os valores buscados no sistema.
+// ===========================================================================
+
+export interface DhlFilledRow {
+  ciaEscolta: string;
+  periodo: string;
+  operacao: string;
+  cancelada: string;
+  descricao: string;
+  seNumber: string;
+  smNumber: string;
+  osNumber: string;
+  placaViatura: string;
+  placaVeiculo: string;
+  origem: string;
+  ufOrigem: string;
+  destino: string;
+  ufDestino: string;
+  kmInicio: number;
+  kmFinal: number;
+  franquiaKm: number;
+  kmDeslocamento: number;
+  rawStart: string; // ISO datetime (HORA INICIO)
+  rawEnd: string;   // ISO datetime (HORA FINAL)
+  franquiaHrDays: number; // franquia de horas em fracao de dia (ex.: 3h = 0.125)
+  vlrHoraExcedenteTab: number;
+  vlrKmExcedenteTab: number;
+  franquiaTabela: number;
+  pedagio: number;
+}
+
+export interface DhlFilledConfig {
+  rows: DhlFilledRow[];
+}
+
+const FILLED_HEADERS: string[] = [
+  'CIA DE ESCOLTA ', 'PERÍODO', 'OPERAÇÃO', 'OPERAÇÃO CANCELADA?', 'DESCRIÇÃO DA MISSÃO',
+  'Nº SE', 'Nº SM', 'Nº OS', 'PLACA DA VIATURA', 'PLACA VEÍCULO',
+  'ORIGEM ', 'UF ORIGEM', 'DESTINO', 'UF DESTINO', 'KM INÍCIO',
+  'KM FINAL', 'KM TOTAL ', 'FRANQUIA KM', 'KM EXCEDENTE', 'KM DESLOCAMENTO',
+  'HORA INÍCIO', 'HORA FINAL', 'HORA TOTAL', 'FRANQUIA HR', 'HORA EXCEDENTE',
+  'VALOR H. EXCEDENTE TABELADO', 'VLR KM EXDECENTE TABELADO', 'VLR TOTAL HORA EXCEDENTE',
+  "VLR TOTAL DOS KM'S EXCEDIDOS", 'VALOR DESLOCAMENTO', 'FRANQUIA TABELA / PRESERVAÇÃO',
+  'PEDÁGIO', 'TOTAL FORNECEDOR', 'HORA E KM', 'VALOR', 'KM EXCEDENTE ', 'VALIDAÇÃO CLP', 'T.M SEG',
+];
+
+// Converte um ISO datetime para o serial do Excel usando a hora de parede
+// (America/Sao_Paulo), evitando ambiguidade de fuso ao escrever a celula.
+function isoToExcelSerial(iso: string): number | null {
+  if (!iso) return null;
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return null;
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/Sao_Paulo', year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23',
+  }).formatToParts(d);
+  const get = (t: string) => Number(parts.find(p => p.type === t)?.value || '0');
+  const utcMs = Date.UTC(get('year'), get('month') - 1, get('day'), get('hour'), get('minute'), get('second'));
+  return utcMs / 86400000 + 25569;
+}
+
+export async function exportDhlFaturamentoFilled(config: DhlFilledConfig): Promise<Blob> {
+  const wb = new ExcelJS.Workbook();
+  wb.creator = 'Grupo TM SEG';
+  wb.created = new Date();
+  const ws = wb.addWorksheet('ESCOLTA', {
+    pageSetup: { paperSize: 9, orientation: 'landscape', fitToPage: true, fitToWidth: 1, fitToHeight: 0 },
+    views: [{ state: 'frozen', xSplit: 0, ySplit: 1, showGridLines: true }],
+  });
+
+  // Cabecalho (linha 1) - sem preenchimento de cor.
+  const headerRow = ws.getRow(1);
+  FILLED_HEADERS.forEach((title, i) => {
+    const c = headerRow.getCell(i + 1);
+    c.value = title.trim();
+    c.font = { bold: true, size: 10 };
+    c.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
+    applyBorder(c, 'BFBFBF');
+  });
+  headerRow.height = 30;
+
+  const moneyFmt = 'R$ #,##0.00';
+  const intFmt = '#,##0';
+  const timeFmt = '[h]:mm:ss';
+  const dtFmt = 'dd/mm/yyyy hh:mm:ss';
+
+  config.rows.forEach((r, idx) => {
+    const n = 2 + idx; // dados a partir da linha 2
+    const row = ws.getRow(n);
+    const set = (col: number, value: any) => { row.getCell(col).value = value; };
+
+    set(1, r.ciaEscolta);
+    set(2, r.periodo);
+    set(3, r.operacao);
+    set(4, r.cancelada);
+    set(5, r.descricao);
+    set(6, r.seNumber);
+    set(7, r.smNumber);
+    set(8, r.osNumber);
+    set(9, r.placaViatura);
+    set(10, r.placaVeiculo);
+    set(11, r.origem);
+    set(12, r.ufOrigem);
+    set(13, r.destino);
+    set(14, r.ufDestino);
+    // O, P = KM inicio / final (dados)
+    set(15, r.kmInicio || 0);
+    set(16, r.kmFinal || 0);
+    // Q = KM TOTAL (formula =P-O)
+    row.getCell(17).value = { formula: `P${n}-O${n}` } as any;
+    // R = FRANQUIA KM (dado)
+    set(18, r.franquiaKm || 0);
+    // S = KM EXCEDENTE (formula)
+    row.getCell(19).value = { formula: `IF(Q${n}-R${n}<0,"0",Q${n}-R${n})` } as any;
+    // T = KM DESLOCAMENTO (dado)
+    set(20, r.kmDeslocamento || 0);
+    // U, V = HORA INICIO / FINAL (datas seriais)
+    const su = isoToExcelSerial(r.rawStart);
+    const sv = isoToExcelSerial(r.rawEnd);
+    if (su != null) set(21, su); else set(21, '');
+    if (sv != null) set(22, sv); else set(22, '');
+    // W = HORA TOTAL (formula =V-U)
+    row.getCell(23).value = { formula: `V${n}-U${n}` } as any;
+    // X = FRANQUIA HR (dado, fracao de dia)
+    set(24, r.franquiaHrDays || 0);
+    // Y = HORA EXCEDENTE (formula)
+    row.getCell(25).value = { formula: `IF(W${n}-X${n}<0,"00:00:00",W${n}-X${n})` } as any;
+    // Z, AA = valores tabelados (dados)
+    set(26, r.vlrHoraExcedenteTab || 0);
+    set(27, r.vlrKmExcedenteTab || 0);
+    // AB = VLR TOTAL HORA EXCEDENTE (formula =Y*Z*24)
+    row.getCell(28).value = { formula: `Y${n}*Z${n}*24` } as any;
+    // AC = VLR TOTAL KM EXCEDIDOS (formula =S*AA)
+    row.getCell(29).value = { formula: `S${n}*AA${n}` } as any;
+    // AD = VALOR DESLOCAMENTO (formula =T*AA)
+    row.getCell(30).value = { formula: `T${n}*AA${n}` } as any;
+    // AE = FRANQUIA TABELA (dado)
+    set(31, r.franquiaTabela || 0);
+    // AF = PEDAGIO (dado)
+    set(32, r.pedagio || 0);
+    // AG = TOTAL FORNECEDOR (formula)
+    row.getCell(33).value = { formula: `AB${n}+AC${n}+AD${n}+AE${n}+AF${n}` } as any;
+    // AH..AL = colunas de validacao do cliente (deixar vazias)
+
+    // Formatos numericos / data / hora
+    [15, 16, 17, 18, 19, 20].forEach(col => { row.getCell(col).numFmt = intFmt; });
+    row.getCell(21).numFmt = dtFmt;
+    row.getCell(22).numFmt = dtFmt;
+    [23, 24, 25].forEach(col => { row.getCell(col).numFmt = timeFmt; });
+    [26, 27, 28, 29, 30, 31, 32, 33].forEach(col => { row.getCell(col).numFmt = moneyFmt; });
+
+    for (let c = 1; c <= FILLED_HEADERS.length; c++) {
+      const cell = row.getCell(c);
+      cell.font = { size: 10 };
+      cell.alignment = { vertical: 'middle', horizontal: (c >= 11 && c <= 13) ? 'left' : 'center', wrapText: false };
+      applyBorder(cell, 'E5E7EB');
+    }
+    row.height = 18;
+  });
+
+  // Larguras aproximadas
+  const widths = [16, 12, 10, 14, 18, 12, 14, 10, 14, 14, 28, 9, 28, 9, 11, 11, 11, 11, 12, 13, 18, 18, 12, 11, 12, 14, 14, 14, 14, 14, 16, 12, 14, 12, 12, 14, 14, 12];
+  widths.forEach((w, i) => { ws.getColumn(i + 1).width = w; });
+
+  const buf = await wb.xlsx.writeBuffer();
+  return new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+}
+
 export function downloadBlob(blob: Blob, filename: string) {
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');

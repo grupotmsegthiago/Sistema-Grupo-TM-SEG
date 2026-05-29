@@ -1505,6 +1505,213 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
         downloadBlob(blob, fileName);
     }, [rowsData, startDate, endDate, displayClientName]);
 
+    // =====================================================================
+    // PREENCHIMENTO DE PLANILHA-MODELO DHL POR Nº SE
+    // ---------------------------------------------------------------------
+    // O usuario sobe uma planilha (virgem) contendo os numeros de SE. Para
+    // cada SE, buscamos a OS em TODO o sistema (qualquer data), calculamos os
+    // valores com o mesmo motor financeiro e geramos a planilha preenchida no
+    // mesmo formato do modelo, porem sem cores e com as formulas do cliente.
+    // =====================================================================
+    const [fillingSheet, setFillingSheet] = useState(false);
+
+    const handleFillDhlSheet = useCallback(() => {
+        const input = document.createElement('input');
+        input.type = 'file';
+        input.accept = '.xlsx,.xlsb,.xls,.csv';
+        input.onchange = async () => {
+            const file = input.files?.[0];
+            if (!file) return;
+            setFillingSheet(true);
+            try {
+                const XLSX = await import('xlsx');
+                const buf = await file.arrayBuffer();
+                const wbIn = XLSX.read(buf, { type: 'array' });
+                const sheet = wbIn.Sheets[wbIn.SheetNames[0]];
+                const matrix: any[][] = XLSX.utils.sheet_to_json(sheet, { header: 1, blankrows: false, defval: '' });
+
+                // Localiza a coluna de SE: procura um cabecalho que contenha "SE".
+                let seCol = -1;
+                let headerRowIdx = -1;
+                for (let r = 0; r < Math.min(matrix.length, 15); r++) {
+                    const rowArr = matrix[r] || [];
+                    for (let c = 0; c < rowArr.length; c++) {
+                        const txt = (rowArr[c] ?? '').toString().toUpperCase().replace(/[^A-Z0-9º ]/g, ' ').trim();
+                        if (txt === 'SE' || txt === 'Nº SE' || txt === 'N SE' || txt === 'NUMERO SE' || txt === 'N° SE' || txt.includes('Nº SE') || txt.includes('NUMERO DA SE')) {
+                            seCol = c; headerRowIdx = r; break;
+                        }
+                    }
+                    if (seCol >= 0) break;
+                }
+
+                const seSet = new Set<string>();
+                const onlyDigits = (v: any) => (v ?? '').toString().replace(/\D/g, '');
+                if (seCol >= 0) {
+                    for (let r = headerRowIdx + 1; r < matrix.length; r++) {
+                        const v = onlyDigits((matrix[r] || [])[seCol]);
+                        if (v) seSet.add(v);
+                    }
+                } else {
+                    // Fallback: varre toda a planilha por numeros de 5-7 digitos (formato tipico de SE).
+                    for (let r = 0; r < matrix.length; r++) {
+                        for (const cell of (matrix[r] || [])) {
+                            const v = onlyDigits(cell);
+                            if (v.length >= 5 && v.length <= 7) seSet.add(v);
+                        }
+                    }
+                }
+
+                const seList = Array.from(seSet);
+                if (seList.length === 0) {
+                    alert('Não encontrei nenhum número de SE na planilha enviada. Verifique se há uma coluna com o título "Nº SE".');
+                    return;
+                }
+
+                // Busca as OS por dhl_se_number em todo o sistema (qualquer data), em lotes.
+                const chunk = <T,>(arr: T[], size: number) => {
+                    const out: T[][] = [];
+                    for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size));
+                    return out;
+                };
+                let foundMissions: any[] = [];
+                for (const batch of chunk(seList, 100)) {
+                    const { data, error } = await supabase
+                        .from('missions')
+                        .select('*, company_vehicle:vehicles(*)')
+                        .in('dhl_se_number', batch);
+                    if (error) throw error;
+                    if (data) foundMissions = foundMissions.concat(data);
+                }
+
+                // Enriquece com veiculo do cliente.
+                const cvIds = [...new Set(foundMissions.map(m => m.client_vehicle).filter(Boolean))];
+                const cvMap: Record<string, any> = {};
+                if (cvIds.length > 0) {
+                    const { data: cvData } = await supabase.from('client_vehicles').select('id, plate, model, brand, color').in('id', cvIds);
+                    if (cvData) cvData.forEach((v: any) => { cvMap[v.id.toString()] = v; });
+                }
+                foundMissions = foundMissions.map(m => ({ ...m, _clientVehicle: m.client_vehicle ? cvMap[m.client_vehicle.toString()] : null }));
+
+                // Tabelas de preco/custo do cliente DHL para o motor financeiro.
+                const dhlClient = clients.find(c => (c.name || '').toUpperCase().includes('DHL') || (c.trading_name || '').toUpperCase().includes('DHL')) || clientData;
+                const dhlClientName = dhlClient ? (dhlClient.name || dhlClient.trading_name || 'DHL') : 'DHL';
+                const [ptRes, pctRes] = await Promise.all([
+                    supabase.from('client_price_tables').select('*').or(clientFuzzyFilter(dhlClientName)),
+                    supabase.from('provider_cost_tables').select('*'),
+                ]);
+                const fillPriceTables = (ptRes.data || priceTables) as any[];
+                const fillProviderTables = (pctRes.data || providerTables) as any[];
+
+                // Indexa por SE. Quando houver MAIS de uma OS para a mesma SE,
+                // escolhe de forma deterministica (prioriza nao-cancelada e a
+                // de start_time mais recente) e registra a SE duplicada para
+                // avisar o usuario — evita preencher silenciosamente com a OS errada.
+                const bySe = new Map<string, any>();
+                const duplicatedSe = new Set<string>();
+                foundMissions.forEach(m => {
+                    const k = onlyDigits((m as any).dhl_se_number);
+                    if (!k) return;
+                    const prev = bySe.get(k);
+                    if (!prev) { bySe.set(k, m); return; }
+                    duplicatedSe.add(k);
+                    const isCancel = (x: any) => (x.status || '').toString().toLowerCase().includes('cancel');
+                    const t = (x: any) => new Date(x.start_time || 0).getTime();
+                    // Prefere a finalizada; em empate, a mais recente.
+                    if ((isCancel(prev) && !isCancel(m)) || (isCancel(prev) === isCancel(m) && t(m) > t(prev))) {
+                        bySe.set(k, m);
+                    }
+                });
+
+                const monthLabel = (iso: string) => {
+                    if (!iso) return '';
+                    const d = new Date(iso);
+                    if (isNaN(d.getTime())) return '';
+                    return d.toLocaleDateString('pt-BR', { month: 'long', timeZone: 'America/Sao_Paulo' }).toUpperCase();
+                };
+                const buildDescricao = (opType: string, franchiseKm: number): string => {
+                    const o = (opType || '').toUpperCase();
+                    if (o.includes('PRESERV')) return 'PRESERVAÇÃO';
+                    if (o.includes('URBAN')) return 'URBANO';
+                    if (o.includes('PONTA')) return 'PONTA A PONTA';
+                    if (franchiseKm > 0) return `RAIO-${franchiseKm}KM`;
+                    return o || '-';
+                };
+
+                const rows: any[] = [];
+                const notFound: string[] = [];
+                for (const se of seList) {
+                    const m = bySe.get(se);
+                    if (!m) { notFound.push(se); continue; }
+                    const isCancel = (m.status || '').toString().toLowerCase().includes('cancel');
+                    const fin = calculateMissionFinancials(m as any, fillPriceTables as any, fillProviderTables as any, dhlClient as any, new Date());
+                    const usedTable = fillPriceTables.find((t: any) => t.id.toString() === fin.client.tableId);
+                    const franchiseHours = usedTable?.franchise_hours ?? 0;
+                    const activationFee = usedTable?.activation_fee ?? 0;
+                    const unitKm = usedTable?.price_per_extra_km ?? 0;
+                    const unitHr = usedTable?.price_per_extra_hour ?? 0;
+                    const kmTotalRaw = fin.realTraveledKm > 0 ? fin.realTraveledKm
+                        : ((m.start_km > 0 && m.end_km > 0 && m.end_km >= m.start_km) ? (m.end_km - m.start_km) : (m.total_distance || m.traveled_distance || 0));
+                    const kmTotal = isCancel ? 0 : kmTotalRaw;
+                    const franchiseKm = kmTotal > 0 ? computeDhlBand(kmTotal) : (usedTable?.franchise_km ?? 0);
+                    rows.push({
+                        ciaEscolta: (m.provider || 'T.M SEG').toUpperCase(),
+                        periodo: monthLabel(m.start_time),
+                        operacao: 'DHL',
+                        cancelada: isCancel ? 'CANCELADA' : 'FINALIZADA',
+                        descricao: isCancel ? '' : buildDescricao((m as any).operation_type || '', franchiseKm),
+                        seNumber: se,
+                        smNumber: (m as any).dhl_sm_number || '',
+                        osNumber: (m.id || '').toString().replace('GTM-', ''),
+                        placaViatura: (m.company_vehicle?.plate && m.company_vehicle.plate !== '-') ? m.company_vehicle.plate : (m.vehicle_id || ''),
+                        placaVeiculo: (m._clientVehicle?.plate && m._clientVehicle.plate !== '-') ? m._clientVehicle.plate : '',
+                        origem: m.origin || '',
+                        ufOrigem: extractUF(m.origin || ''),
+                        destino: m.destination || '',
+                        ufDestino: extractUF(m.destination || ''),
+                        kmInicio: isCancel ? 0 : (m.start_km || 0),
+                        kmFinal: isCancel ? 0 : (m.end_km || 0),
+                        franquiaKm: franchiseKm || 0,
+                        kmDeslocamento: 0,
+                        rawStart: m.start_time || '',
+                        rawEnd: m.end_time || '',
+                        franquiaHrDays: franchiseHours > 0 ? franchiseHours / 24 : 0,
+                        vlrHoraExcedenteTab: unitHr || 0,
+                        vlrKmExcedenteTab: unitKm || 0,
+                        franquiaTabela: isCancel ? 0 : (activationFee || 0),
+                        pedagio: Math.max(0, m.toll_value || 0),
+                    });
+                }
+
+                if (rows.length === 0) {
+                    alert(`Nenhuma das ${seList.length} SE(s) da planilha foi encontrada no sistema.`);
+                    return;
+                }
+
+                const { exportDhlFaturamentoFilled, downloadBlob } = await import('../exports/dhl-faturamento-export');
+                const blob = await exportDhlFaturamentoFilled({ rows });
+                const fileName = `PLANILHA_DHL_PREENCHIDA_${new Date().toISOString().slice(0, 10).replace(/-/g, '')}.xlsx`;
+                downloadBlob(blob, fileName);
+
+                const avisos: string[] = [`Planilha preenchida com ${rows.length} SE(s).`];
+                if (notFound.length > 0) {
+                    avisos.push(`\n${notFound.length} SE(s) não encontrada(s) no sistema:\n${notFound.join(', ')}`);
+                }
+                if (duplicatedSe.size > 0) {
+                    avisos.push(`\nAtenção: ${duplicatedSe.size} SE(s) com mais de uma OS no sistema (usei a finalizada/mais recente):\n${Array.from(duplicatedSe).join(', ')}`);
+                }
+                if (notFound.length > 0 || duplicatedSe.size > 0) {
+                    alert(avisos.join('\n'));
+                }
+            } catch (err: any) {
+                console.error('[FillDhlSheet] erro:', err);
+                alert('Erro ao preencher a planilha: ' + (err?.message || err));
+            } finally {
+                setFillingSheet(false);
+            }
+        };
+        input.click();
+    }, [clients, clientData, priceTables, providerTables]);
+
     const cellStyle: React.CSSProperties = {
         border: '1px solid #e5c4c4',
         padding: '8px 9px',
@@ -2723,6 +2930,18 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
                                             title="Exporta planilha-padrão DHL de faturamento (layout oficial)"
                                         >
                                             <FileSpreadsheet size={18} /> Relatório DHL
+                                        </button>
+                                    )}
+                                    {isDhlBilling && (
+                                        <button
+                                            onClick={handleFillDhlSheet}
+                                            disabled={fillingSheet}
+                                            className="px-4 py-2.5 rounded-lg text-sm font-bold shadow-sm flex items-center justify-center gap-2 disabled:opacity-60"
+                                            style={{ background: 'linear-gradient(135deg, #FFCC00 0%, #E6B800 100%)', color: '#7A0009' }}
+                                            data-testid="btn-fill-dhl-sheet"
+                                            title="Sobe uma planilha com os números de SE e o sistema preenche todos os dados (busca em todas as OS, qualquer data)"
+                                        >
+                                            {fillingSheet ? <Loader2 size={18} className="animate-spin" /> : <FileSpreadsheet size={18} />} {fillingSheet ? 'Preenchendo...' : 'Preencher Planilha (SE)'}
                                         </button>
                                     )}
                                     <button onClick={handlePrint} className="bg-gray-800 hover:bg-gray-900 text-white px-4 py-2.5 rounded-lg text-sm font-bold shadow-sm flex items-center justify-center gap-2">
