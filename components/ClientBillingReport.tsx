@@ -1530,16 +1530,28 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
                 const sheet = wbIn.Sheets[wbIn.SheetNames[0]];
                 const matrix: any[][] = XLSX.utils.sheet_to_json(sheet, { header: 1, blankrows: false, defval: '' });
 
-                // Localiza a coluna de SE: procura um cabecalho que contenha "SE".
+                // Localiza a coluna do NUMERO da SE. O cabecalho pode nao estar
+                // na 1a linha (o relatorio operacional do cliente tem titulo nas
+                // linhas 1-4 e cabecalho na linha 5) e a planilha pode ter outras
+                // colunas que contem "SE" (ex.: "Tipo SE", "Descricao SE") — por
+                // isso aceitamos apenas variantes do NUMERO da SE ("N. da SE",
+                // "Nº SE", "Numero SE" etc.).
+                const normHdr = (raw: any) => (raw ?? '').toString().toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^A-Z0-9 ]/g, ' ').replace(/\s+/g, ' ').trim();
+                const isSeNumberHeader = (raw: any) => {
+                    const t = normHdr(raw);
+                    if (!t) return false;
+                    if (t === 'SE') return true;
+                    const hasSe = /\bSE\b/.test(t);
+                    const isNumber = /^N\b/.test(t) || /\bNUMERO\b/.test(t) || /\bNUM\b/.test(t) || /\bNRO\b/.test(t);
+                    const banned = /(TIPO|DESCRI|EMAIL|ENVIO|CANCEL|OBSERV)/.test(t);
+                    return hasSe && isNumber && !banned;
+                };
                 let seCol = -1;
                 let headerRowIdx = -1;
-                for (let r = 0; r < Math.min(matrix.length, 15); r++) {
+                for (let r = 0; r < Math.min(matrix.length, 20); r++) {
                     const rowArr = matrix[r] || [];
                     for (let c = 0; c < rowArr.length; c++) {
-                        const txt = (rowArr[c] ?? '').toString().toUpperCase().replace(/[^A-Z0-9º ]/g, ' ').trim();
-                        if (txt === 'SE' || txt === 'Nº SE' || txt === 'N SE' || txt === 'NUMERO SE' || txt === 'N° SE' || txt.includes('Nº SE') || txt.includes('NUMERO DA SE')) {
-                            seCol = c; headerRowIdx = r; break;
-                        }
+                        if (isSeNumberHeader(rowArr[c])) { seCol = c; headerRowIdx = r; break; }
                     }
                     if (seCol >= 0) break;
                 }
