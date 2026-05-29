@@ -432,7 +432,11 @@ export const calculateMissionFinancials = (
     // Truncamos para o minuto inteiro (igual ao display), zerando os segundos.
     durationHours = Math.floor(durationHours * 60) / 60;
 
-    const cancelledWithHours = isCancelled && durationHours > 0 && !!parseSafeDate(mission.endTime || (mission as any).end_time);
+    // Detecção de execução alinhada com a exibição (boletim): a OS é considerada
+    // EXECUTADA quando tem hora de fim real POSTERIOR ao início (end > start),
+    // independente da duração truncada ao minuto. Assim o motor e o boletim
+    // classificam igual mesmo em durações < 1 min.
+    const cancelledWithHours = isCancelled && !!dbEndTime && diffMs > 0;
     // OS que foi EXECUTADA e cancelada depois (possui hora de fim real) deve
     // cobrar tempo/distância reais como uma OS normal. Apenas o cancelamento
     // ANTES da execução (sem hora de fim real) cobra somente o acionamento base.
@@ -684,12 +688,13 @@ export const calculateMissionFinancials = (
             isManualOverride = true;
         }
     }
-    // OS Cancelada vence o motor DHL e qualquer outro fallback: cobra-se
-    // sempre a menor faixa da tabela (tipicamente 100KM). Critério: menor
+    // OS Cancelada ANTES da execução vence o motor DHL e qualquer outro fallback:
+    // cobra-se a menor faixa da tabela (tipicamente 100KM). OS executada e
+    // cancelada depois segue o fluxo normal de seleção. Critério: menor
     // franchise_km > 0; desempate por menor activation_fee. Quando há
     // detectedRegion (ex.: SUDESTE), priorizamos a tabela 100KM dessa região.
     let dhlEngineHandled = false;
-    if (!appliedClientTable && isCancelled && clientTablesFiltered.length > 0) {
+    if (!appliedClientTable && cancelledBeforeExecution && clientTablesFiltered.length > 0) {
         const region = String(detectedRegion || '').toUpperCase();
         const isAutoMaster = (op: string) => (op || '').toUpperCase().includes('__AUTO_MASTER__');
         const withKm = clientTablesFiltered.filter(t =>
@@ -726,7 +731,7 @@ export const calculateMissionFinancials = (
     // isola as tabelas pelo nome exato do cliente, sem misturar contratos
     // entre empresas diferentes do grupo DHL. Não cai no selectStrictTable
     // nem nos blocos de fallback genéricos — mesmo no caso "none".
-    const dhlClientCanonical = !appliedClientTable && !isManualOverride && !isCancelled
+    const dhlClientCanonical = !appliedClientTable && !isManualOverride && !cancelledBeforeExecution
       ? findDhlAutoClient(missionClientName)
       : null;
     if (dhlClientCanonical) {
@@ -801,7 +806,7 @@ export const calculateMissionFinancials = (
     if (isCevaClient && cevaTablesPool.length === 0) {
         cevaTablesPool = clientTables.filter(t => normalize(t.client || '').includes('CEVA'));
     }
-    if (cevaLogitech && !isCancelled && !isManualOverride && cevaTablesPool.length > 0) {
+    if (cevaLogitech && !cancelledBeforeExecution && !isManualOverride && cevaTablesPool.length > 0) {
         const logitech200 = cevaTablesPool.find(t => {
             const op = normalize(t.operation_type || '');
             return (op.includes('LOGITECH') || op.includes('200KM') || op.includes('200 KM')) && t.franchise_km >= 200;
@@ -819,7 +824,7 @@ export const calculateMissionFinancials = (
     const isCubataoSantos = (normalizedOriginCity.includes('CUBATAO') && normalizedDestCity2.includes('SANTOS')) || 
                             (normalizedOriginCity.includes('SANTOS') && normalizedDestCity2.includes('CUBATAO'));
     
-    if (isCeslogClient && isCubataoSantos && !isCancelled && !isManualOverride) {
+    if (isCeslogClient && isCubataoSantos && !cancelledBeforeExecution && !isManualOverride) {
         const cubSantosTable = allClientTablesForThisClient.find(t => {
             const op = normalize(t.operation_type || '');
             return op.includes('CUBATAO') && op.includes('SANTOS') && !op.includes('PRONTA RESPOSTA') && !op.includes('PRONTA');
@@ -895,8 +900,8 @@ export const calculateMissionFinancials = (
     if (manualTableOverrides?.providerTableId) {
         appliedProviderTable = providerTables.find(t => t.id.toString() === manualTableOverrides.providerTableId);
         providerLog = 'Seleção Manual / Memória';
-    } else if (isCancelled && filteredProviderTables.length > 0) {
-        // OS Cancelada: sempre cobra pela menor faixa da tabela do fornecedor
+    } else if (cancelledBeforeExecution && filteredProviderTables.length > 0) {
+        // OS Cancelada ANTES da execução: cobra pela menor faixa da tabela do fornecedor
         // (tipicamente a rota de 100KM). Critério: menor franchise_km > 0,
         // com desempate pelo menor activation_cost.
         const withKm = filteredProviderTables.filter(t => (t.franchise_km || 0) > 0 && (t.activation_cost || 0) > 0);
@@ -967,7 +972,7 @@ export const calculateMissionFinancials = (
         providerLog = result.log;
     }
 
-    if (isCeslogClient && isCubataoSantos && !isCancelled && !manualTableOverrides?.providerTableId) {
+    if (isCeslogClient && isCubataoSantos && !cancelledBeforeExecution && !manualTableOverrides?.providerTableId) {
         const allProvForRoute = providerTables.filter(t => {
             const op = normalize(t.operation_type || '');
             return op.includes('CUBATAO') && op.includes('SANTOS') && !op.includes('PRONTA');
@@ -994,7 +999,7 @@ export const calculateMissionFinancials = (
         }
     }
 
-    if (is200kmAccompaniment && !isCancelled && !manualTableOverrides?.providerTableId && filteredProviderTables.length > 0) {
+    if (is200kmAccompaniment && !cancelledBeforeExecution && !manualTableOverrides?.providerTableId && filteredProviderTables.length > 0) {
         const provider200 = filteredProviderTables.find(t => {
             const op = normalize(t.operation_type || '');
             return (op.includes('ATE 200') || op.includes('200 KM') || op.includes('200KM')) && t.franchise_km >= 200 && t.franchise_km <= 200;
@@ -1013,7 +1018,7 @@ export const calculateMissionFinancials = (
     // Busca em providerTablesNoMaster (não filtrada pelo "esvaziamento" do
     // motor auto) e considera apelidos do fornecedor.
     let logitech200ProviderApplied = false;
-    if (is200kmAccompaniment && !isCancelled && !manualTableOverrides?.providerTableId) {
+    if (is200kmAccompaniment && !cancelledBeforeExecution && !manualTableOverrides?.providerTableId) {
         const candidatePool = providerTablesNoMaster.filter(t => {
             const tProv = normalize(t.provider);
             if (matchesProviderAlias(tProv)) return true;

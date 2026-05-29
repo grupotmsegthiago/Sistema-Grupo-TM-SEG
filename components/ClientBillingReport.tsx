@@ -934,9 +934,12 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
                 }
 
                 const isCancelledSnap = (m.status || '').toString().toLowerCase().includes('cancel');
+                // OS executada e cancelada depois (hora de fim real) mostra KM real; só cancelada antes zera.
+                const wasExecutedSnap = isCancelledSnap && !!m.end_time && !!m.start_time && new Date(m.end_time).getTime() > new Date(m.start_time).getTime();
+                const cancelledBeforeSnap = isCancelledSnap && !wasExecutedSnap;
                 const kmTotalRawSnap = (snap.kmTotal ?? 0) > 0 ? (snap.kmTotal ?? 0)
                     : ((m.start_km > 0 && m.end_km > 0 && m.end_km >= m.start_km) ? (m.end_km - m.start_km) : (m.total_distance || m.traveled_distance || 0));
-                const kmTotal = isCancelledSnap ? 0 : kmTotalRawSnap;
+                const kmTotal = cancelledBeforeSnap ? 0 : kmTotalRawSnap;
                 // Sincroniza KM FRAN com a banda DHL do KM real, mesmo em snapshots congelados.
                 if (isDhlBilling && kmTotal > 0) {
                     snapFranchiseKm = computeDhlBand(kmTotal);
