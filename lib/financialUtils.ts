@@ -160,6 +160,33 @@ export const resolveCancelledTime = (
     return cancel!.getTime() < sched!.getTime() ? (scheduledIso as string) : (cancelIso as string);
 };
 
+// Janela de cobrança de OS CANCELADA (todas as OS). Define INÍCIO e FIM a
+// partir do AGENDAMENTO e do momento do CANCELAMENTO (mission_history), nunca
+// do end_time administrativo:
+//  - Cancelada ANTES do agendamento (cancel <= agendamento): início = fim =
+//    agendamento (0h) -> cobra somente o mínimo.
+//  - Cancelada DEPOIS: início = agendamento, fim = cancelamento -> soma as
+//    horas extras (descontada a franquia da tabela mínima).
+export const resolveCancelledWindow = (
+    scheduledIso?: string | null,
+    cancelIso?: string | null
+): { start: string; end: string; cancelledBefore: boolean } => {
+    const sched = scheduledIso ? new Date(scheduledIso) : null;
+    const cancel = cancelIso ? new Date(cancelIso) : null;
+    const schedOk = !!sched && !isNaN(sched.getTime());
+    const cancelOk = !!cancel && !isNaN(cancel.getTime());
+    const startIso = schedOk ? (scheduledIso as string) : (cancelOk ? (cancelIso as string) : '');
+    if (!schedOk || !cancelOk) {
+        return { start: startIso, end: startIso, cancelledBefore: true };
+    }
+    const cancelledBefore = cancel!.getTime() <= sched!.getTime();
+    return {
+        start: scheduledIso as string,
+        end: cancelledBefore ? (scheduledIso as string) : (cancelIso as string),
+        cancelledBefore,
+    };
+};
+
 export const extractUF = (address: string): string => {
     if (!address) return '';
     const cleanAddr = address.split('(')[0].trim(); 
@@ -397,7 +424,9 @@ export const calculateMissionFinancials = (
     // a "Tabela Oficial" deve refletir apenas o acionamento mínimo da
     // menor tabela regional. Zeramos KM da OS sempre, para que o cálculo
     // a seguir não some extra-km na referência oficial.
-    if (isCancelled && !hasValidKms) {
+    if (isCancelled) {
+        // Regra de cancelada (todas as OS): KM sempre zerado — cobra-se apenas o
+        // acionamento mínimo (+ horas extras quando cancelada após a franquia).
         distanceForCalculation = 0;
     }
     
@@ -421,6 +450,20 @@ export const calculateMissionFinancials = (
         endDateObj = currentTime;
     }
 
+    // REGRA DE CANCELADA (todas as OS): o "fim" para cobrança é o momento do
+    // CANCELAMENTO registrado em mission_history (_cancelStatusAt), NÃO o
+    // end_time administrativo — que pode ser gravado dias depois e inflar as
+    // horas (ex.: OS agendada 19/05 com end_time 27/05 -> ~200h falsas).
+    // Cancelada ANTES do agendamento (cancelAt <= agendamento) cobra só o
+    // mínimo (fim = início, 0h). Cancelada DEPOIS soma as horas extras do
+    // AGENDAMENTO até o cancelamento.
+    const cancelStatusAt = parseSafeDate((mission as any).cancelStatusAt || (mission as any)._cancelStatusAt);
+    if (isCancelled) {
+        endDateObj = (cancelStatusAt && cancelStatusAt.getTime() > effectiveStartDate.getTime())
+            ? cancelStatusAt
+            : effectiveStartDate;
+    }
+
     const diffMs = endDateObj.getTime() - effectiveStartDate.getTime();
     let durationHours = Math.max(0, diffMs / (1000 * 60 * 60));
 
@@ -436,7 +479,7 @@ export const calculateMissionFinancials = (
     // EXECUTADA quando tem hora de fim real POSTERIOR ao início (end > start),
     // independente da duração truncada ao minuto. Assim o motor e o boletim
     // classificam igual mesmo em durações < 1 min.
-    const cancelledWithHours = isCancelled && !!dbEndTime && diffMs > 0;
+    const cancelledWithHours = isCancelled && !!cancelStatusAt && cancelStatusAt.getTime() > effectiveStartDate.getTime();
     // OS que foi EXECUTADA e cancelada depois (possui hora de fim real) deve
     // cobrar tempo/distância reais como uma OS normal. Apenas o cancelamento
     // ANTES da execução (sem hora de fim real) cobra somente o acionamento base.
@@ -694,7 +737,7 @@ export const calculateMissionFinancials = (
     // franchise_km > 0; desempate por menor activation_fee. Quando há
     // detectedRegion (ex.: SUDESTE), priorizamos a tabela 100KM dessa região.
     let dhlEngineHandled = false;
-    if (!appliedClientTable && cancelledBeforeExecution && clientTablesFiltered.length > 0) {
+    if (!appliedClientTable && isCancelled && clientTablesFiltered.length > 0) {
         const region = String(detectedRegion || '').toUpperCase();
         const isAutoMaster = (op: string) => (op || '').toUpperCase().includes('__AUTO_MASTER__');
         const withKm = clientTablesFiltered.filter(t =>
@@ -731,7 +774,7 @@ export const calculateMissionFinancials = (
     // isola as tabelas pelo nome exato do cliente, sem misturar contratos
     // entre empresas diferentes do grupo DHL. Não cai no selectStrictTable
     // nem nos blocos de fallback genéricos — mesmo no caso "none".
-    const dhlClientCanonical = !appliedClientTable && !isManualOverride && !cancelledBeforeExecution
+    const dhlClientCanonical = !appliedClientTable && !isManualOverride && !isCancelled
       ? findDhlAutoClient(missionClientName)
       : null;
     if (dhlClientCanonical) {
@@ -863,7 +906,7 @@ export const calculateMissionFinancials = (
     // Task #55: motor automático é a fonte oficial quando ligado. NÃO depende de
     // manualTableOverrides.providerTableId — seleções manuais de tabela legada
     // ficam desativadas para fornecedores com motor ativo.
-    const autoEngineActive = !!autoMasterConfig && !mission.is_same_os && !isZeroValueMission && autoRegionMatches;
+    const autoEngineActive = !!autoMasterConfig && !mission.is_same_os && !isZeroValueMission && !isCancelled && autoRegionMatches;
 
     // Quando o motor está ativo, esvazia a lista de tabelas regulares para que
     // a lógica de score abaixo não selecione nada — o `appliedProviderTable`
@@ -900,10 +943,11 @@ export const calculateMissionFinancials = (
     if (manualTableOverrides?.providerTableId) {
         appliedProviderTable = providerTables.find(t => t.id.toString() === manualTableOverrides.providerTableId);
         providerLog = 'Seleção Manual / Memória';
-    } else if (cancelledBeforeExecution && filteredProviderTables.length > 0) {
-        // OS Cancelada ANTES da execução: cobra pela menor faixa da tabela do fornecedor
-        // (tipicamente a rota de 100KM). Critério: menor franchise_km > 0,
-        // com desempate pelo menor activation_cost.
+    } else if (isCancelled && filteredProviderTables.length > 0) {
+        // OS Cancelada (todas): cobra pela menor faixa da tabela do fornecedor
+        // (tipicamente a rota de 100KM). Cancelada antes -> só o mínimo; cancelada
+        // depois -> mínimo + horas extras (calculadas adiante). Critério: menor
+        // franchise_km > 0, com desempate pelo menor activation_cost.
         const withKm = filteredProviderTables.filter(t => (t.franchise_km || 0) > 0 && (t.activation_cost || 0) > 0);
         if (withKm.length > 0) {
             const sorted = [...withKm].sort((a, b) => {

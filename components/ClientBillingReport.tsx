@@ -4,7 +4,7 @@ import { authFetch } from '../lib/authFetch';
 import { supabase } from '../lib/supabase';
 import { Mission, Client, ClientPriceTable, ProviderCostTable } from '../types';
 import { FileText, Search, Printer, Loader2, FileSpreadsheet, BarChart3, Users, Building2, ChevronDown, ChevronRight, List, ExternalLink, Receipt, Camera, Sparkles, X, AlertCircle, CheckCircle2, ScanLine, Image as ImageIcon, DollarSign, Plus, Trash2, GitBranch, Calendar, Lock, Pencil, ArrowRight, ArrowLeftRight, Check, RefreshCw } from 'lucide-react';
-import { calculateMissionFinancials, extractCityFromAddress, extractUF, clientFuzzyFilter, clientNameShort, resolveCancelledTime } from '../lib/financialUtils';
+import { calculateMissionFinancials, extractCityFromAddress, extractUF, clientFuzzyFilter, clientNameShort, resolveCancelledWindow } from '../lib/financialUtils';
 import { computeDhlBand } from '../lib/dhlAutoTableSelector';
 import MissionFinancialModal from './MissionFinancialModal';
 
@@ -1031,19 +1031,16 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
 
             // OS Cancelada: KM = 0 (regra do negócio).
             const isCancelled = (m.status || '').toString().toLowerCase().includes('cancel');
-            // OS executada e cancelada depois (tem hora de fim real posterior ao
-            // início) cobra tempo real normalmente. Apenas o cancelamento ANTES da
-            // execução zera as horas (início = fim = momento do cancelamento).
-            const wasExecuted = isCancelled && !!m.end_time && !!m.start_time && new Date(m.end_time).getTime() > new Date(m.start_time).getTime();
-            const cancelledBefore = isCancelled && !wasExecuted;
-            const cancelEffTime = cancelledBefore
-                ? resolveCancelledTime(m.start_time, m._cancelStatusAt)
-                : null;
-            const effStartTime = cancelledBefore ? (cancelEffTime || m.start_time || '') : (m.start_time || '');
-            const effEndTime = cancelledBefore ? (cancelEffTime || m.start_time || '') : (m.end_time || '');
+            // Regra de cancelada (todas as OS): início = agendamento; fim =
+            // agendamento (cancelada ANTES -> 0h, só mínimo) ou hora do
+            // cancelamento (cancelada DEPOIS -> soma horas extras). KM sempre 0.
+            const cancelWindow = isCancelled ? resolveCancelledWindow(m.start_time, m._cancelStatusAt) : null;
+            const cancelledBefore = !!cancelWindow?.cancelledBefore;
+            const effStartTime = isCancelled ? (cancelWindow!.start || m.start_time || '') : (m.start_time || '');
+            const effEndTime = isCancelled ? (cancelWindow!.end || m.start_time || '') : (m.end_time || '');
             const kmTotalRaw = fin.realTraveledKm > 0 ? fin.realTraveledKm 
                 : ((m.start_km > 0 && m.end_km > 0 && m.end_km >= m.start_km) ? (m.end_km - m.start_km) : (m.total_distance || m.traveled_distance || 0));
-            const kmTotal = cancelledBefore ? 0 : kmTotalRaw;
+            const kmTotal = isCancelled ? 0 : kmTotalRaw;
             // KM FRAN sincroniza com o KM real da OS (banda DHL = ceil((km-50)/100)*100).
             // Se a tabela aplicada estiver divergente da banda esperada, mostramos a banda
             // correspondente ao KM real — não o franchise da tabela aplicada.
@@ -1495,9 +1492,10 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
 
         const rows = rowsData.map(r => {
             const isCancel = (r.missionStatus || '').toLowerCase().startsWith('cancel');
-            // OS executada e cancelada depois cobra normalmente; só cancelada antes da execução zera.
-            const wasExecutedRow = isCancel && !!r.rawEndTime && !!r.rawStartTime && new Date(r.rawEndTime).getTime() > new Date(r.rawStartTime).getTime();
-            const cancelledBeforeRow = isCancel && !wasExecutedRow;
+            // Regra de cancelada: rawStart/rawEnd já vêm da janela de cancelamento
+            // (início = agendamento; fim = agendamento se cancelada antes, ou hora
+            // do cancelamento se depois). Cancelada antes => início = fim => 0h.
+            const cancelledBeforeRow = isCancel && (!r.rawEndTime || !r.rawStartTime || new Date(r.rawEndTime).getTime() <= new Date(r.rawStartTime).getTime());
             const startDt = fmtDT(r.rawStartTime);
             const endDt = fmtDT(r.rawEndTime);
             let totalH = 0;
@@ -1520,8 +1518,8 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
                 ufOrigem: r.originUf || '',
                 destino: r.destinationFull || '',
                 ufDestino: r.destinationUf || '',
-                kmInicio: cancelledBeforeRow ? 0 : (r.kmStart || 0),
-                kmFinal: cancelledBeforeRow ? 0 : (r.kmEnd || 0),
+                kmInicio: isCancel ? 0 : (r.kmStart || 0),
+                kmFinal: isCancel ? 0 : (r.kmEnd || 0),
                 kmTotal: r.kmTotal || 0,
                 franquiaKm: r.franchiseKm || 0,
                 kmExcedente: r.kmExtraQtd || 0,
@@ -1536,9 +1534,9 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
                 vlrTotalHoraExcedente: r.hrExtraTotal || 0,
                 vlrTotalKmExcedidos: r.kmExtraTotal || 0,
                 vlrDeslocamento: 0,
-                franquiaTabela: cancelledBeforeRow ? 0 : (r.activationFee || 0),
+                franquiaTabela: r.activationFee || 0,
                 pedagio: r.tollVal || 0,
-                totalFornecedor: cancelledBeforeRow ? 0 : (r.totalGeral || 0),
+                totalFornecedor: r.totalGeral || 0,
             } as any;
         });
 
@@ -1760,23 +1758,92 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
                     const m = bySe.get(se);
                     if (!m) { notFound.push(se); continue; }
                     const isCancel = (m.status || '').toString().toLowerCase().includes('cancel');
-                    // OS executada e cancelada depois cobra tempo real; só cancelada
-                    // ANTES da execução zera (início = fim = momento do cancelamento).
-                    const wasExecutedFill = isCancel && !!m.end_time && !!m.start_time && new Date(m.end_time).getTime() > new Date(m.start_time).getTime();
-                    const cancelledBeforeFill = isCancel && !wasExecutedFill;
-                    const cancelEff = cancelledBeforeFill ? resolveCancelledTime(m.start_time, fillCancelTimeMap[m.id]) : null;
-                    const rowStart = cancelledBeforeFill ? (cancelEff || m.start_time || '') : (m.start_time || '');
-                    const rowEnd = cancelledBeforeFill ? (cancelEff || m.start_time || '') : (m.end_time || '');
-                    const fin = calculateMissionFinancials(m as any, fillPriceTables as any, fillProviderTables as any, dhlClient as any, new Date());
-                    const usedTable = fillPriceTables.find((t: any) => t.id.toString() === fin.client.tableId);
-                    const franchiseHours = usedTable?.franchise_hours ?? 0;
-                    const activationFee = usedTable?.activation_fee ?? 0;
-                    const unitKm = usedTable?.price_per_extra_km ?? 0;
-                    const unitHr = usedTable?.price_per_extra_hour ?? 0;
-                    const kmTotalRaw = fin.realTraveledKm > 0 ? fin.realTraveledKm
-                        : ((m.start_km > 0 && m.end_km > 0 && m.end_km >= m.start_km) ? (m.end_km - m.start_km) : (m.total_distance || m.traveled_distance || 0));
-                    const kmTotal = cancelledBeforeFill ? 0 : kmTotalRaw;
-                    const franchiseKm = kmTotal > 0 ? computeDhlBand(kmTotal) : (usedTable?.franchise_km ?? 0);
+                    const snap = (m as any).snapshot_data;
+                    // ESPELHA O BOLETIM: missão com snapshot é CONGELADA (fonte única
+                    // da verdade). O boletim trata qualquer snapshot_data como
+                    // congelado (sintetiza 'Sistema' quando falta aprovador), então
+                    // aqui detectamos pelo próprio snapshot_data.
+                    const hasValidSnapshot = !!snap;
+
+                    let rowStart: string;
+                    let rowEnd: string;
+                    let franchiseHours = 0;
+                    let activationFee = 0;
+                    let unitKm = 0;
+                    let unitHr = 0;
+                    let franchiseKm = 0;
+                    let kmInicioVal = 0;
+                    let kmFinalVal = 0;
+                    let cancelledBeforeFill = false;
+
+                    if (hasValidSnapshot) {
+                        // Reproduz EXATAMENTE os valores congelados do snapshot para
+                        // que o total da planilha case com o boletim ao centavo. A
+                        // HORA FINAL e o KM FINAL são reconstruídos de forma sintética
+                        // (início + franquia + excedentes congelados) para que as
+                        // fórmulas do Excel devolvam as mesmas horas/km extras.
+                        franchiseHours = snap.franchiseHours ?? 0;
+                        unitHr = snap.unitHr ?? 0;
+                        unitKm = snap.unitKm ?? 0;
+                        franchiseKm = snap.franchiseKm ?? 0;
+                        const hrEx = snap.hrExtraTotal ?? 0;
+                        const kmEx = isCancel ? 0 : (snap.kmExtraTotal ?? 0);
+                        // Quantidades de excedente: usa as congeladas; se um snapshot
+                        // legado tiver só o total (sem a quantidade), recupera a
+                        // quantidade a partir do total / valor unitário, para que as
+                        // fórmulas do Excel reproduzam o mesmo valor extra.
+                        const hrQ = (snap.hrExtraQtd ?? 0) > 0 ? snap.hrExtraQtd
+                            : (hrEx > 0 && unitHr > 0 ? hrEx / unitHr : 0);
+                        const kmQ = isCancel ? 0 : ((snap.kmExtraQtd ?? 0) > 0 ? snap.kmExtraQtd
+                            : (kmEx > 0 && unitKm > 0 ? kmEx / unitKm : 0));
+                        const tollSnap = Math.max(0, (m.toll_value ?? snap.tollVal ?? 0));
+                        const dbTotal = (m.revenue_value ?? 0) + Math.max(0, m.toll_value || 0);
+                        const edited = !!(m.billing_verified_by || m.revenue_edit_reason);
+                        const snapTotal = snap.totalGeral ?? 0;
+                        const useTotal = edited ? dbTotal : (snapTotal > 0 ? snapTotal : ((snap.activationFee ?? 0) + kmEx + hrEx + tollSnap));
+                        // A franquia de tabela "balanceia" o total p/ casar com o
+                        // boletim mesmo em edições manuais ou snapshots legados.
+                        activationFee = useTotal - hrEx - kmEx - tollSnap;
+                        kmInicioVal = isCancel ? 0 : (m.start_km || 0);
+                        kmFinalVal = isCancel ? 0 : (kmInicioVal + franchiseKm + kmQ);
+                        cancelledBeforeFill = isCancel && hrQ <= 0;
+                        rowStart = m.start_time || '';
+                        const synDur = franchiseHours + hrQ;
+                        rowEnd = rowStart ? new Date(new Date(rowStart).getTime() + synDur * 3600000).toISOString() : rowStart;
+                    } else {
+                        // Sem snapshot congelado: recalcula pela regra atual do motor.
+                        // Regra de cancelada (todas as OS): início = agendamento; fim =
+                        // agendamento (cancelada ANTES -> 0h, só mínimo) ou hora do
+                        // cancelamento (mission_history) se cancelada DEPOIS -> soma
+                        // horas extras. Nunca usa o end_time administrativo.
+                        const cancelWindow = isCancel ? resolveCancelledWindow(m.start_time, fillCancelTimeMap[m.id]) : null;
+                        cancelledBeforeFill = !!cancelWindow?.cancelledBefore;
+                        rowStart = isCancel ? (cancelWindow!.start || m.start_time || '') : (m.start_time || '');
+                        rowEnd = isCancel ? (cancelWindow!.end || m.start_time || '') : (m.end_time || '');
+                        const mForCalc = isCancel ? { ...m, _cancelStatusAt: fillCancelTimeMap[m.id] } : m;
+                        const fin = calculateMissionFinancials(mForCalc as any, fillPriceTables as any, fillProviderTables as any, dhlClient as any, new Date());
+                        const usedTable = fillPriceTables.find((t: any) => t.id.toString() === fin.client.tableId);
+                        franchiseHours = usedTable?.franchise_hours ?? 0;
+                        unitKm = usedTable?.price_per_extra_km ?? 0;
+                        unitHr = usedTable?.price_per_extra_hour ?? 0;
+                        const kmTotalRaw = fin.realTraveledKm > 0 ? fin.realTraveledKm
+                            : ((m.start_km > 0 && m.end_km > 0 && m.end_km >= m.start_km) ? (m.end_km - m.start_km) : (m.total_distance || m.traveled_distance || 0));
+                        const kmTotal = isCancel ? 0 : kmTotalRaw;
+                        franchiseKm = kmTotal > 0 ? computeDhlBand(kmTotal) : (usedTable?.franchise_km ?? 0);
+                        kmInicioVal = isCancel ? 0 : (m.start_km || 0);
+                        kmFinalVal = isCancel ? 0 : (m.end_km || 0);
+                        // Quando há receita salva (revenue_value), o boletim a trata
+                        // como canônica; a franquia de tabela balanceia para casar.
+                        const saved = m.revenue_value || 0;
+                        if (saved > 0) {
+                            const W = (rowStart && rowEnd) ? Math.max(0, (new Date(rowEnd).getTime() - new Date(rowStart).getTime()) / 3600000) : 0;
+                            const AB = Math.max(0, W - franchiseHours) * unitHr;
+                            const AC = Math.max(0, (kmFinalVal - kmInicioVal) - franchiseKm) * unitKm;
+                            activationFee = saved - AB - AC;
+                        } else {
+                            activationFee = usedTable?.activation_fee ?? 0;
+                        }
+                    }
                     const imp = seInfo.get(se);
                     rows.push({
                         ciaEscolta: 'TM SEG',
@@ -1793,8 +1860,8 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
                         ufOrigem: extractUF(m.origin || ''),
                         destino: m.destination || '',
                         ufDestino: extractUF(m.destination || ''),
-                        kmInicio: cancelledBeforeFill ? 0 : (m.start_km || 0),
-                        kmFinal: cancelledBeforeFill ? 0 : (m.end_km || 0),
+                        kmInicio: kmInicioVal,
+                        kmFinal: kmFinalVal,
                         franquiaKm: franchiseKm || 0,
                         kmDeslocamento: 0,
                         rawStart: rowStart,
@@ -1802,7 +1869,7 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
                         franquiaHrDays: franchiseHours > 0 ? franchiseHours / 24 : 0,
                         vlrHoraExcedenteTab: unitHr || 0,
                         vlrKmExcedenteTab: unitKm || 0,
-                        franquiaTabela: cancelledBeforeFill ? 0 : (activationFee || 0),
+                        franquiaTabela: activationFee || 0,
                         pedagio: Math.max(0, m.toll_value || 0),
                     });
                 }
