@@ -12,9 +12,9 @@ There is NO RLS in this project. Data isolation for the `comercial` profile is e
 - The guard for "owner-scoped comercial" is always: `role === 'comercial' && !permissions.includes('*')`. Never gate on role alone — a `*` permission must bypass scoping.
 - Comercial also keeps visibility of clients linked via `client_view:<id>` permissions (vinculados), so client/mission/quote scoping uses `created_by.eq.<name>` OR `id.in.(<client_view ids>)`. This OR is intentional, not a leak.
 
-## Two confusable Thiagos
-- THIAGO MOREIRA DOS SANTOS = Diretoria (director, full access). Thiago Arruda = comercial (must be scoped).
-- Any director-identity check by name MUST match the substring `'thiago moreira'`, never bare `'thiago'`, or Arruda is wrongly elevated. This applies to financial visibility AND the billing approval-stage routing.
+## Two users sharing a first name
+- Two staff records share the same first name: one is a Diretoria (director, full access), the other is a comercial user (must be scoped).
+- Any director-identity check done by matching a name substring MUST use the fuller/more-specific substring (first + last name), never the bare first name, or the comercial user is wrongly elevated. This applies to financial visibility AND the billing approval-stage routing.
 
 ## Pitfalls when adding a new list component
 - **First-load race:** if `isCommercial` is a `useState` set inside the same effect that also calls the fetch, the first fetch reads the stale `false` and returns ALL rows. Either derive the guard from the local user object inside the fetch, or gate the query with React Query `enabled: !!currentUser` + put the flag in the `queryKey`.
