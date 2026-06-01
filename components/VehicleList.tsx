@@ -36,7 +36,16 @@ const VehicleList: React.FC<VehicleListProps> = ({ onAddVehicle, onEdit }) => {
       setIsLoading(true);
       setDbStatus(null);
       try {
-          const { data, error } = await supabase.from('vehicles').select('*').order('created_at', { ascending: false });
+          const stored = localStorage.getItem('userData');
+          const user = stored ? JSON.parse(stored) : null;
+          const role = (user?.role || '').toLowerCase();
+          let query = supabase.from('vehicles').select('*').order('created_at', { ascending: false });
+          if (role === 'comercial' && !user?.permissions?.includes('*')) {
+              const { data: myProv } = await supabase.from('providers').select('name').eq('created_by', user?.name);
+              const names = (myProv || []).map((p: any) => p.name);
+              query = query.in('provider', names.length ? names : ['__NONE__']);
+          }
+          const { data, error } = await query;
           if(error) throw error;
           
           setDbStatus('ok');

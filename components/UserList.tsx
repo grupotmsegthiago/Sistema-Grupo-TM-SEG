@@ -69,10 +69,37 @@ const UserList: React.FC<UserListProps> = ({ onAddUser, onEdit, userType }) => {
     setIsLoading(true);
     setDbStatus(null);
     try {
-        const { data: usersData, error: userError } = await supabase
+        const currentUserData = (() => {
+            try { return JSON.parse(localStorage.getItem('userData') || '{}'); } catch { return {}; }
+        })();
+        const isComercialUser = (currentUserData.role || '').toLowerCase() === 'comercial' && !(currentUserData.permissions || []).includes('*');
+
+        let usersQuery = supabase
             .from('system_users')
             .select('*')
             .order('created_at', { ascending: false });
+
+        if (isComercialUser) {
+            const [myClientsRes, myProvidersRes] = await Promise.all([
+                supabase.from('clients').select('id').eq('created_by', currentUserData.name),
+                supabase.from('providers').select('id').eq('created_by', currentUserData.name),
+            ]);
+            const allowedClientIds = (myClientsRes.data || []).map((c: any) => c.id);
+            const allowedProviderIds = (myProvidersRes.data || []).map((p: any) => p.id);
+            const relevant = userType === 'client' ? allowedClientIds : userType === 'provider' ? allowedProviderIds : [];
+            if (relevant.length === 0) {
+                setUsers([]);
+                setDbStatus('ok');
+                return;
+            }
+            if (userType === 'client') {
+                usersQuery = usersQuery.in('client_id', allowedClientIds);
+            } else if (userType === 'provider') {
+                usersQuery = usersQuery.in('provider_id', allowedProviderIds);
+            }
+        }
+
+        const { data: usersData, error: userError } = await usersQuery;
 
         if (userError) throw userError;
         
@@ -104,9 +131,6 @@ const UserList: React.FC<UserListProps> = ({ onAddUser, onEdit, userType }) => {
             providers: user.provider_id ? { name: providerMap[user.provider_id] || 'Desconhecido' } : null,
         }));
 
-        const currentUserData = (() => {
-            try { return JSON.parse(localStorage.getItem('userData') || '{}'); } catch { return {}; }
-        })();
         const currentUserClientId = currentUserData.clientId || currentUserData.client_id || '';
 
         const filteredUsers = enrichedUsers.filter((u: any) => {

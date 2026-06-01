@@ -44,10 +44,17 @@ const AlvaraControl: React.FC = () => {
     const fetchData = async () => {
         setLoading(true);
         try {
-            const { data, error } = await supabase
+            const stored = localStorage.getItem('userData');
+            const user = stored ? JSON.parse(stored) : null;
+            const role = (user?.role || '').toLowerCase();
+            let query = supabase
                 .from('providers')
                 .select('*')
                 .order('alvara_validity', { ascending: true });
+            if (role === 'comercial' && !user?.permissions?.includes('*')) {
+                query = query.eq('created_by', user?.name);
+            }
+            const { data, error } = await query;
             
             if (error) throw error;
 

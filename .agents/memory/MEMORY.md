@@ -1,1 +1,2 @@
 - [Toll confirmation persistence](toll-confirmation-persistence.md) — confirming pedágio must persist toll_value to DB, not just write the audit log; revenue/cost are service-only, toll is additive.
+- [Comercial data isolation](comercial-data-isolation.md) — no RLS; comercial role scoped 100% via frontend Supabase filters (created_by===name), guard `role==='comercial' && !perms('*')`; 'thiago moreira'≠'thiago'.

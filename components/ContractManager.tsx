@@ -46,11 +46,18 @@ const ContractManager: React.FC = () => {
     const fetchContracts = async () => {
         setIsLoading(true);
         try {
-            const { data } = await supabase
+            const stored = localStorage.getItem('userData');
+            const user = stored ? JSON.parse(stored) : null;
+            const role = (user?.role || '').toLowerCase();
+            let query = supabase
                 .from('system_logs')
                 .select('*')
                 .eq('entity', 'ClientContract')
                 .order('created_at', { ascending: false });
+            if (role === 'comercial' && !user?.permissions?.includes('*')) {
+                query = query.eq('user_name', user?.name);
+            }
+            const { data } = await query;
 
             if (data) {
                 const parsed = data.map(row => {

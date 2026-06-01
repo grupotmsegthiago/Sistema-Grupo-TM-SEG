@@ -27,6 +27,7 @@ const ProviderList: React.FC<ProviderListProps> = ({ onAddProvider, onEdit }) =>
   const [isToggling, setIsToggling] = useState<string | null>(null);
   const [isAdmin, setIsAdmin] = useState(false);
   const [isDirector, setIsDirector] = useState(false);
+  const [isCommercial, setIsCommercial] = useState(false);
   const [currentUser, setCurrentUser] = useState<any>(null);
   const [userNamesMap, setUserNamesMap] = useState<Record<string, string>>({});
   
@@ -46,6 +47,9 @@ const ProviderList: React.FC<ProviderListProps> = ({ onAddProvider, onEdit }) =>
         }
         if (role === 'diretoria' || user.permissions?.includes('*')) {
             setIsDirector(true);
+        }
+        if (role === 'comercial' && !user.permissions?.includes('*')) {
+            setIsCommercial(true);
         }
     }
     fetchInternalUsers();
@@ -73,17 +77,26 @@ const ProviderList: React.FC<ProviderListProps> = ({ onAddProvider, onEdit }) =>
   }, [currentUser]);
 
   const { data: dbProviders = [], isLoading, isError: providersError, refetch: refetchProviders } = useQuery<ProviderWithTableStatus[]>({
-    queryKey: ['providers'],
+    queryKey: ['providers', isCommercial, currentUser?.id],
+    enabled: !!currentUser,
     queryFn: async () => {
       let providersData: any[] | null = null;
-      const { data, error } = await supabase.from('providers').select('*').order('name', { ascending: true });
+      let baseQuery = supabase.from('providers').select('*').order('name', { ascending: true });
+      if (isCommercial) {
+          baseQuery = baseQuery.eq('created_by', currentUser?.name);
+      }
+      const { data, error } = await baseQuery;
       
       if (error) {
           if (error.message?.includes('schema cache')) {
-               const { data: fallbackData, error: fbError } = await supabase
+               let fbQuery = supabase
                  .from('providers')
                  .select('id, name, trading_name, cnpj, type, contact_name, status')
                  .order('name', { ascending: true });
+               if (isCommercial) {
+                   fbQuery = fbQuery.eq('created_by', currentUser?.name);
+               }
+               const { data: fallbackData, error: fbError } = await fbQuery;
                if (fbError) throw fbError;
                providersData = fallbackData;
           } else {

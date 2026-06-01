@@ -34,11 +34,22 @@ const ProviderAgentList: React.FC<Props> = ({ onAdd, onEdit }) => {
     setIsLoading(true);
     setDbStatus(null);
     try {
+        const stored = localStorage.getItem('userData');
+        const user = stored ? JSON.parse(stored) : null;
+        const role = (user?.role || '').toLowerCase();
+        let allowedNames: string[] | null = null;
+        if (role === 'comercial' && !user?.permissions?.includes('*')) {
+            const { data: myProv } = await supabase.from('providers').select('name').eq('created_by', user?.name);
+            allowedNames = (myProv || []).map((p: any) => p.name);
+            if (allowedNames.length === 0) allowedNames = ['__NONE__'];
+        }
         let allData: any[] = [];
         let from = 0;
         const pageSize = 1000;
         while (true) {
-            const { data, error } = await supabase.from('agents').select('*').order('name').range(from, from + pageSize - 1);
+            let agentsQuery = supabase.from('agents').select('*').order('name').range(from, from + pageSize - 1);
+            if (allowedNames) agentsQuery = agentsQuery.in('provider', allowedNames);
+            const { data, error } = await agentsQuery;
             if (error) throw error;
             if (data) allData = allData.concat(data);
             if (!data || data.length < pageSize) break;

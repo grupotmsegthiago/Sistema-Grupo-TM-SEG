@@ -239,7 +239,8 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
     if (!currentUser) return false;
     const nameLower = (currentUser.name || '').toLowerCase();
     const roleLower = (currentUser.role || '').toLowerCase();
-    return nameLower.includes('daniel') || nameLower.includes('michelle') || nameLower.includes('barbara') || nameLower.includes('bárbara') || nameLower.includes('thiago') || roleLower === 'controller';
+    if (roleLower === 'comercial') return false;
+    return nameLower.includes('daniel') || nameLower.includes('michelle') || nameLower.includes('barbara') || nameLower.includes('bárbara') || nameLower.includes('thiago moreira') || roleLower === 'controller';
   }, [currentUser]);
 
   // Conta quantas OS estão com prejuízo direto (custo > receita) no período
@@ -269,9 +270,7 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
   const isCommercial = useMemo(() => {
       if (!currentUser) return false;
       const roleLower = (currentUser.role || '').toLowerCase();
-      if (roleLower !== 'comercial') return false;
-      const hasClientViewPerms = currentUser.permissions?.some((p: string) => p.startsWith('client_view:'));
-      return !!hasClientViewPerms;
+      return roleLower === 'comercial' && !currentUser.permissions?.includes('*');
   }, [currentUser]);
 
   const canEditMission = useMemo(() => {
@@ -883,7 +882,7 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
         const roleLower = (currentUser.role || '').toLowerCase();
         if (nameLower.includes('daniel') || nameLower.includes('michelle')) return 'auditor';
         if (nameLower.includes('barbara') || nameLower.includes('bárbara') || roleLower === 'administrador') return 'financeiro';
-        if (nameLower.includes('thiago') || roleLower === 'diretoria') return 'diretoria';
+        if (nameLower.includes('thiago moreira') || roleLower === 'diretoria') return 'diretoria';
         return null;
     }, [currentUser]);
 
