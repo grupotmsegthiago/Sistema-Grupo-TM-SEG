@@ -873,6 +873,15 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
     const isCevaBilling = (clientData?.name || '').toUpperCase().includes('CEVA') || (clientData?.trading_name || '').toUpperCase().includes('CEVA');
     const isDhlBilling = (clientData?.name || '').toUpperCase().includes('DHL') || (clientData?.trading_name || '').toUpperCase().includes('DHL');
 
+    const canFillDhlSheet = (() => {
+        try {
+            const role = (JSON.parse(localStorage.getItem('userData') || '{}').role || '').toLowerCase();
+            return role === 'administrador' || role === 'diretoria';
+        } catch {
+            return false;
+        }
+    })();
+
     const getPeriodLabel = () => {
         if (!startDate || !endDate) return '';
         const sDate = new Date(startDate + 'T12:00:00');
@@ -3130,7 +3139,7 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
                                             <FileSpreadsheet size={18} /> Relatório DHL
                                         </button>
                                     )}
-                                    {isDhlBilling && (
+                                    {isDhlBilling && canFillDhlSheet && (
                                         <button
                                             onClick={handleFillDhlSheet}
                                             disabled={fillingSheet}

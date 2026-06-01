@@ -385,11 +385,39 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
     return () => clearTimeout(t);
   }, [isOpen, mission?.id, mission?.status, tollConfirmed, tollConfirmAutoOpened, showTollConfirmDialog, isCalculatingToll, isController, isEffectivelyLocked, mission?.billing_approved, mission?.toll_value]);
 
-  const applyTollConfirmation = (result: { hasToll: boolean; value: number }) => {
+  const applyTollConfirmation = async (result: { hasToll: boolean; value: number }) => {
     const v = result.hasToll ? result.value : 0;
     const formatted = v.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
     const prevToll = parseNumber(tollInput);
     const prevTollProv = parseNumber(tollProviderInput);
+    // Valor do pedágio do fornecedor: espelha o cliente quando ainda não havia
+    // pedágio de fornecedor distinto; caso contrário preserva o valor existente.
+    const newTollProv = (prevTollProv <= 0 || prevTollProv === prevToll) ? v : prevTollProv;
+
+    // Persiste o pedágio direto na OS para que a confirmação fique salva
+    // mesmo sem passar pelo fluxo de "Salvar Ajustes". toll_value e
+    // toll_value_provider são aditivos (revenue_value/cost_value seguem
+    // sendo apenas o serviço), então não tocamos receita/custo aqui.
+    if (mission?.id) {
+        const r2 = (n: number) => Math.round(n * 100) / 100;
+        const isSameOs = mission.is_same_os === true;
+        const payload: any = {
+            toll_value: r2(v),
+            toll_value_provider: isSameOs ? 0 : r2(newTollProv),
+            last_update: new Date().toISOString(),
+        };
+        let { error } = await supabase.from('missions').update(payload).eq('id', mission.id);
+        if (error && error.message?.includes('does not exist')) {
+            const { toll_value_provider, ...minimal } = payload;
+            ({ error } = await supabase.from('missions').update(minimal).eq('id', mission.id));
+        }
+        if (error) {
+            console.error('[TollConfirm] falha ao salvar pedágio na OS', error);
+            throw new Error(`Não foi possível salvar o pedágio na OS: ${error.message}`);
+        }
+        try { window.dispatchEvent(new Event('refreshMissions')); } catch {}
+    }
+
     setTollInput(formatted);
     if (prevTollProv <= 0 || prevTollProv === prevToll) {
         setTollProviderInput(formatted);

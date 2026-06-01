@@ -1,0 +1,1 @@
+- [Toll confirmation persistence](toll-confirmation-persistence.md) — confirming pedágio must persist toll_value to DB, not just write the audit log; revenue/cost are service-only, toll is additive.
