@@ -352,7 +352,7 @@ const App: React.FC = () => {
         const nm = (u.name || '').toLowerCase();
         const rl = (u.role || '').toLowerCase();
         const perms: string[] = Array.isArray(u.permissions) ? u.permissions : [];
-        const allowed = ['daniel', 'barbara', 'bárbara', 'thiago'].some(n => nm.includes(n))
+        const allowed = ['daniel', 'barbara', 'bárbara', 'thiago moreira'].some(n => nm.includes(n))
           || rl === 'diretoria' || rl === 'administrador' || rl === 'avançado' || rl === 'avancado'
           || perms.includes('mission-report');
         return allowed ? <MissionReportPage /> : <Dashboard />;
