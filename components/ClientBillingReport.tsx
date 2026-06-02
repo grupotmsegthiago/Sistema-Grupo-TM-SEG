@@ -872,6 +872,7 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
     const isCeslogBilling = (clientData?.name || '').toUpperCase().includes('CESLOG') || (clientData?.name || '').toUpperCase().includes('CESARI') || (clientData?.trading_name || '').toUpperCase().includes('CESLOG') || (clientData?.trading_name || '').toUpperCase().includes('CESARI');
     const isCevaBilling = (clientData?.name || '').toUpperCase().includes('CEVA') || (clientData?.trading_name || '').toUpperCase().includes('CEVA');
     const isDhlBilling = (clientData?.name || '').toUpperCase().includes('DHL') || (clientData?.trading_name || '').toUpperCase().includes('DHL');
+    const isIntermodalBilling = (clientData?.name || '').toUpperCase().includes('INTERMODAL') || (clientData?.trading_name || '').toUpperCase().includes('INTERMODAL');
 
     const canFillDhlSheet = (() => {
         try {
@@ -1352,7 +1353,7 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
 
         const { exportFormattedExcel } = await import('../exports/excel-export-template');
 
-        const extraColOffset = (isCeslogBilling ? 1 : 0) + (isDhlBilling ? 2 : 0) + (isCevaBilling ? 1 : 0);
+        const extraColOffset = (isCeslogBilling ? 1 : 0) + (isDhlBilling ? 2 : 0) + (isCevaBilling ? 1 : 0) + (isIntermodalBilling ? 1 : 0);
 
         const dataRows = rowsData.map(r => {
             const row: (string | number)[] = [r.id];
@@ -1360,6 +1361,7 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
             if (isDhlBilling) row.push(r.seNumber || '-');
             if (isDhlBilling) row.push(r.smNumber || '-');
             if (isCevaBilling) row.push(r.tipo || '-');
+            if (isIntermodalBilling) row.push(r.destinationUf || '-');
             row.push((r.missionStatus || '-').toUpperCase());
             row.push(
                 r.route,
@@ -1405,6 +1407,7 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
         if (isDhlBilling) headers.push('S.E.');
         if (isDhlBilling) headers.push('SM');
         if (isCevaBilling) headers.push('TIPO');
+        if (isIntermodalBilling) headers.push('UF');
         headers.push('STATUS');
         headers.push(
             'ROTA', 'VALOR', 'HR FRANQ', 'KM FRANQ', 'HR EXTRA', 'KM EXTRA',
@@ -1459,7 +1462,7 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
             footerLeft: 'DOCUMENTO GERADO ELETRONICAMENTE PELO GRUPO TM SEG',
             footerRight: 'ASSINATURA / CARIMBO CLIENTE',
         });
-    }, [rowsData, grandTotal, displayClientName, startDate, endDate, isCeslogBilling, isCevaBilling, isDhlBilling]);
+    }, [rowsData, grandTotal, displayClientName, startDate, endDate, isCeslogBilling, isCevaBilling, isDhlBilling, isIntermodalBilling]);
 
     const handleExportDhlFaturamento = useCallback(async () => {
         if (rowsData.length === 0) return;
@@ -3514,6 +3517,7 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
                                 <col style={{ minWidth: '30px', width: '30px' }} />
                                 <col style={{ minWidth: '45px' }} />
                                 {(isCeslogBilling || isDhlBilling) && <col style={{ minWidth: '70px' }} />}
+                                {isIntermodalBilling && <col style={{ minWidth: '50px' }} />}
                                 <col style={{ minWidth: '80px' }} />
                                 <col style={{ minWidth: '250px' }} />
                                 <col style={{ minWidth: '70px' }} />
@@ -3544,7 +3548,7 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
                             </colgroup>
                             <thead>
                                 <tr className="group-hdr">
-                                    <th style={groupHeaderStyle} colSpan={9 + (isCeslogBilling ? 1 : 0) + (isDhlBilling ? 2 : 0) + (isCevaBilling ? 1 : 0)}>TABELA ACORDADA</th>
+                                    <th style={groupHeaderStyle} colSpan={9 + (isCeslogBilling ? 1 : 0) + (isDhlBilling ? 2 : 0) + (isCevaBilling ? 1 : 0) + (isIntermodalBilling ? 1 : 0)}>TABELA ACORDADA</th>
                                     <th style={groupHeaderStyle} colSpan={6}>INFORMAÇÕES DA VIAGEM</th>
                                     <th style={grpKm} colSpan={3}>KILOMETRAGEM</th>
                                     <th style={grpHr} colSpan={3}>HORÁRIOS</th>
@@ -3559,6 +3563,7 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
                                     {isDhlBilling && <th style={{ ...headerStyle, backgroundColor: '#D40511', color: '#FFCC00', fontSize: '17px', letterSpacing: '0.5px' }}>S.E.</th>}
                                     {isDhlBilling && <th style={{ ...headerStyle, backgroundColor: '#7f1d1d', color: '#FFCC00', fontSize: '17px', letterSpacing: '0.5px' }}>SM</th>}
                                     {isCevaBilling && <th style={{ ...headerStyle, backgroundColor: '#0f766e', color: '#fff' }}>TIPO</th>}
+                                    {isIntermodalBilling && <th style={{ ...headerStyle, backgroundColor: '#1d4ed8', color: '#fff' }}>UF</th>}
                                     <th style={headerStyle}>STATUS</th>
                                     <th style={{ ...headerStyle, textAlign: 'left' }}>ROTA</th>
                                     <th style={headerStyle}>VALOR</th>
@@ -3592,7 +3597,7 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
                                 {(() => {
                                     const filtered = boletimFilter === 'aprovadas' ? rowsData.filter(r => r.isApproved) : boletimFilter === 'pendentes' ? rowsData.filter(r => !r.isApproved) : rowsData;
                                     return filtered.length === 0 ? (
-                                    <tr><td colSpan={29 + (isCeslogBilling ? 1 : 0) + (isDhlBilling ? 2 : 0) + (isCevaBilling ? 1 : 0)} style={{ ...cellStyle, padding: '20px', fontSize: '14px', fontWeight: 700, color: '#9ca3af' }}>{boletimFilter !== 'todas' ? `NENHUMA MISSÃO ${boletimFilter === 'aprovadas' ? 'APROVADA' : 'PENDENTE'} NO PERÍODO.` : 'NENHUMA MISSÃO NO PERÍODO.'}</td></tr>
+                                    <tr><td colSpan={29 + (isCeslogBilling ? 1 : 0) + (isDhlBilling ? 2 : 0) + (isCevaBilling ? 1 : 0) + (isIntermodalBilling ? 1 : 0)} style={{ ...cellStyle, padding: '20px', fontSize: '14px', fontWeight: 700, color: '#9ca3af' }}>{boletimFilter !== 'todas' ? `NENHUMA MISSÃO ${boletimFilter === 'aprovadas' ? 'APROVADA' : 'PENDENTE'} NO PERÍODO.` : 'NENHUMA MISSÃO NO PERÍODO.'}</td></tr>
                                 ) : (
                                     filtered.map((r, i) => (
                                         <tr key={i} title={r.frozen ? `Dados Congelados - Aprovado por ${r.frozenBy}` : !r.isApproved ? `Status: ${r.missionStatus} (não aprovada)` : ''} style={(() => {
@@ -3622,6 +3627,7 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
                                             {isDhlBilling && <td style={{ ...cellStyle, fontWeight: 900, color: '#D40511', fontSize: '20px', backgroundColor: '#fffbe6', letterSpacing: '0.8px', padding: '10px 12px' }} data-testid={`cell-se-${r.id}`}>{r.seNumber || '-'}</td>}
                                             {isDhlBilling && <td style={{ ...cellStyle, fontWeight: 900, color: '#7f1d1d', fontSize: '18px', backgroundColor: '#fff7ed', letterSpacing: '0.8px', padding: '10px 12px' }} data-testid={`cell-sm-${r.id}`}>{r.smNumber || '-'}</td>}
                                             {isCevaBilling && <td style={{ ...cellStyle, fontWeight: 800, color: r.tipo === 'PRONTA RESPOSTA' ? '#9a3412' : '#0f766e', fontSize: '11px', backgroundColor: r.tipo === 'PRONTA RESPOSTA' ? '#fff7ed' : '#f0fdfa', letterSpacing: '0.3px' }} data-testid={`cell-tipo-${r.id}`}>{r.tipo}</td>}
+                                            {isIntermodalBilling && <td style={{ ...cellStyle, fontWeight: 800, color: '#1d4ed8', fontSize: '13px' }} data-testid={`cell-uf-${r.id}`}>{r.destinationUf || '-'}</td>}
                                             <td style={{ ...cellStyle, fontWeight: 800, fontSize: '13px', textTransform: 'uppercase', color: r.isApproved ? '#065f46' : '#991b1b', backgroundColor: r.isApproved ? '#ecfdf5' : '#fee2e2' }} data-testid={`cell-status-${r.id}`}>{r.missionStatus}</td>
                                             <td className="route-cell" style={{ ...cellStyle, textAlign: 'left', whiteSpace: 'normal', wordWrap: 'break-word', wordBreak: 'break-word', overflowWrap: 'break-word', lineHeight: '1.3', fontSize: '15px', maxWidth: '340px' }} title={r.route}>{r.route}</td>
                                             <td style={cellStyle}>{fmtBRL(r.activationFee)}</td>
@@ -3662,7 +3668,7 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
                             {rowsData.length > 0 && (
                                 <tfoot>
                                     <tr style={{ backgroundColor: '#7f1d1d', color: '#fff' }}>
-                                        <td colSpan={28 + (isCeslogBilling ? 1 : 0) + (isDhlBilling ? 2 : 0) + (isCevaBilling ? 1 : 0)} style={{ ...cellStyle, textAlign: 'right', fontWeight: 900, fontSize: '17px', color: '#fff', border: '1px solid #991b1b', padding: '10px 12px' }}>TOTAL</td>
+                                        <td colSpan={28 + (isCeslogBilling ? 1 : 0) + (isDhlBilling ? 2 : 0) + (isCevaBilling ? 1 : 0) + (isIntermodalBilling ? 1 : 0)} style={{ ...cellStyle, textAlign: 'right', fontWeight: 900, fontSize: '17px', color: '#fff', border: '1px solid #991b1b', padding: '10px 12px' }}>TOTAL</td>
                                         <td style={{ ...cellStyle, fontWeight: 900, fontSize: '18px', color: '#fff', border: '1px solid #991b1b', padding: '10px 12px' }}>{fmtBRL(grandTotal)}</td>
                                     </tr>
                                 </tfoot>
