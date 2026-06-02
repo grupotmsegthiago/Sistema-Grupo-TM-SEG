@@ -118,6 +118,23 @@ const DailyGoalThermometer: React.FC<Props> = ({ viewPeriod = 'TODAY', customSta
         return { currentRevenue: sums.rev, currentCost: sums.cost };
     }, [filteredMissions, parentClientTables, parentProviderTables, parentClientsData, currentTime]);
 
+    // Custo separado do fornecedor TORRES (subconjunto das missões do período).
+    const torresCost = useMemo(() => {
+        if (!parentClientTables || !parentProviderTables || !parentClientsData) return 0;
+        const torresMissions = filteredMissions.filter(m => {
+            const p = ((m as any).provider || (m as any).providerName || (m as any).provider_name || '').toString().toUpperCase();
+            return p.includes('TORRES');
+        });
+        if (torresMissions.length === 0) return 0;
+        return sumCanonical(
+            torresMissions,
+            { clientTables: parentClientTables, providerTables: parentProviderTables, clientsData: parentClientsData },
+            currentTime,
+        ).cost;
+    }, [filteredMissions, parentClientTables, parentProviderTables, parentClientsData, currentTime]);
+
+    const otherCost = Math.max(0, currentCost - torresCost);
+
     const goal = useMemo(
         () => getGoalForPeriod(viewPeriod, customStartDate, customEndDate, dailyGoal, monthlyGoal),
         [viewPeriod, customStartDate, customEndDate, dailyGoal, monthlyGoal]
@@ -296,6 +313,18 @@ const DailyGoalThermometer: React.FC<Props> = ({ viewPeriod = 'TODAY', customSta
                                 <span className={`text-[10px] font-extrabold tracking-tight whitespace-nowrap truncate ${stats.marginPercent >= 30 ? 'text-emerald-600' : stats.marginPercent >= 15 ? 'text-yellow-600' : 'text-red-600'}`} data-testid="text-margin">{stats.marginPercent.toFixed(1)}%</span>
                             </div>
                         </div>
+                        {torresCost > 0 && (
+                            <div className="mt-2 pt-2 border-t border-dashed border-gray-200 flex items-center justify-between gap-x-3 gap-y-1.5 flex-wrap min-w-0">
+                                <div className="flex items-center gap-1 min-w-0">
+                                    <span className="text-[7px] font-bold text-amber-500 uppercase tracking-wide shrink-0">Custo Torres:</span>
+                                    <span className="text-[10px] font-extrabold text-amber-600 tracking-tight whitespace-nowrap truncate" data-testid="text-torres-cost">{formatCurrency(torresCost)}</span>
+                                </div>
+                                <div className="flex items-center gap-1 min-w-0">
+                                    <span className="text-[7px] font-bold text-slate-400 uppercase tracking-wide shrink-0">Demais:</span>
+                                    <span className="text-[10px] font-extrabold text-slate-600 tracking-tight whitespace-nowrap truncate" data-testid="text-other-cost">{formatCurrency(otherCost)}</span>
+                                </div>
+                            </div>
+                        )}
                     </div>
                 )}
             </div>
