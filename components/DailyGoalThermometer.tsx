@@ -320,7 +320,7 @@ const DailyGoalThermometer: React.FC<Props> = ({ viewPeriod = 'TODAY', customSta
                                     <span className="text-[10px] font-extrabold text-amber-600 tracking-tight whitespace-nowrap truncate" data-testid="text-torres-cost">{formatCurrency(torresCost)}</span>
                                 </div>
                                 <div className="flex items-center gap-1 min-w-0">
-                                    <span className="text-[7px] font-bold text-slate-400 uppercase tracking-wide shrink-0">Demais:</span>
+                                    <span className="text-[7px] font-bold text-slate-400 uppercase tracking-wide shrink-0">Custo Fornecedores:</span>
                                     <span className="text-[10px] font-extrabold text-slate-600 tracking-tight whitespace-nowrap truncate" data-testid="text-other-cost">{formatCurrency(otherCost)}</span>
                                 </div>
                             </div>
