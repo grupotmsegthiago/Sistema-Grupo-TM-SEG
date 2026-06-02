@@ -903,10 +903,22 @@ export const calculateMissionFinancials = (
         || (filterIsUF
             ? (!!originUFUpper && autoRegionFilter === originUFUpper)
             : (!!missionRegionUpper && autoRegionFilter === missionRegionUpper));
-    // Task #55: motor automático é a fonte oficial quando ligado. NÃO depende de
-    // manualTableOverrides.providerTableId — seleções manuais de tabela legada
-    // ficam desativadas para fornecedores com motor ativo.
-    const autoEngineActive = !!autoMasterConfig && !mission.is_same_os && !isZeroValueMission && !isCancelled && autoRegionMatches;
+    // Task #55: motor automático é a fonte oficial quando ligado.
+    // OS 5046: uma seleção MANUAL de uma tabela REAL (id existente) tem prioridade
+    // e DESLIGA o motor para esta missão — permite que a auditoria (Thiago
+    // Moreira/Simone/Barbara) corrija casos em que o valor automático está
+    // incorreto. IMPORTANTE: a tabela sintética gerada pelo próprio motor tem id
+    // "auto-..." e NÃO conta como override (senão o motor se desligaria sozinho).
+    // As telas de relatório/canônico só passam providerTableId quando há ajuste
+    // manual salvo, então continuam usando o motor (ou o valor já salvo) sem regressão.
+    // Normaliza o override de tabela do fornecedor UMA vez: um id sintético do
+    // motor ("auto-...") nunca conta como seleção manual, em nenhum ramo abaixo.
+    const effectiveProviderTableId = (manualTableOverrides?.providerTableId
+        && !String(manualTableOverrides.providerTableId).startsWith('auto-'))
+        ? manualTableOverrides.providerTableId
+        : undefined;
+    const hasManualProviderOverride = !!effectiveProviderTableId;
+    const autoEngineActive = !!autoMasterConfig && !mission.is_same_os && !isZeroValueMission && !isCancelled && autoRegionMatches && !hasManualProviderOverride;
 
     // Quando o motor está ativo, esvazia a lista de tabelas regulares para que
     // a lógica de score abaixo não selecione nada — o `appliedProviderTable`
@@ -940,8 +952,8 @@ export const calculateMissionFinancials = (
         ? manualTableOverrides.providerOpsOverride.distanceKm 
         : Math.max(totalDistance, distanceForCalculation);
 
-    if (manualTableOverrides?.providerTableId) {
-        appliedProviderTable = providerTables.find(t => t.id.toString() === manualTableOverrides.providerTableId);
+    if (effectiveProviderTableId) {
+        appliedProviderTable = providerTables.find(t => t.id.toString() === effectiveProviderTableId);
         providerLog = 'Seleção Manual / Memória';
     } else if (isCancelled && filteredProviderTables.length > 0) {
         // OS Cancelada (todas): cobra pela menor faixa da tabela do fornecedor
@@ -1016,7 +1028,7 @@ export const calculateMissionFinancials = (
         providerLog = result.log;
     }
 
-    if (isCeslogClient && isCubataoSantos && !cancelledBeforeExecution && !manualTableOverrides?.providerTableId) {
+    if (isCeslogClient && isCubataoSantos && !cancelledBeforeExecution && !effectiveProviderTableId) {
         const allProvForRoute = providerTables.filter(t => {
             const op = normalize(t.operation_type || '');
             return op.includes('CUBATAO') && op.includes('SANTOS') && !op.includes('PRONTA');
@@ -1027,7 +1039,7 @@ export const calculateMissionFinancials = (
         }
     }
 
-    if (!manualTableOverrides?.providerTableId && appliedProviderTable && filteredProviderTables.length > 1) {
+    if (!effectiveProviderTableId && appliedProviderTable && filteredProviderTables.length > 1) {
         const appliedOp = normalize(appliedProviderTable.operation_type || '');
         const appliedIs200 = appliedOp.includes('200KM') || appliedOp.includes('200 KM') || appliedOp.includes('ATE 200') || (appliedProviderTable.franchise_km >= 200);
         if (appliedIs200 && providerDistReference <= 200) {
@@ -1043,7 +1055,7 @@ export const calculateMissionFinancials = (
         }
     }
 
-    if (is200kmAccompaniment && !cancelledBeforeExecution && !manualTableOverrides?.providerTableId && filteredProviderTables.length > 0) {
+    if (is200kmAccompaniment && !cancelledBeforeExecution && !effectiveProviderTableId && filteredProviderTables.length > 0) {
         const provider200 = filteredProviderTables.find(t => {
             const op = normalize(t.operation_type || '');
             return (op.includes('ATE 200') || op.includes('200 KM') || op.includes('200KM')) && t.franchise_km >= 200 && t.franchise_km <= 200;
@@ -1062,7 +1074,7 @@ export const calculateMissionFinancials = (
     // Busca em providerTablesNoMaster (não filtrada pelo "esvaziamento" do
     // motor auto) e considera apelidos do fornecedor.
     let logitech200ProviderApplied = false;
-    if (is200kmAccompaniment && !cancelledBeforeExecution && !manualTableOverrides?.providerTableId) {
+    if (is200kmAccompaniment && !cancelledBeforeExecution && !effectiveProviderTableId) {
         const candidatePool = providerTablesNoMaster.filter(t => {
             const tProv = normalize(t.provider);
             if (matchesProviderAlias(tProv)) return true;

@@ -2507,7 +2507,7 @@ export async function registerRoutes(
             costServiceOnly: calc.provider.serviceTotal || 0,
             totalGeral: clientServiceOnly + newToll,
             clientTableId: calc.client.tableId || null,
-            providerTableId: calc.provider.tableId || null,
+            providerTableId: (calc.provider.tableId && !String(calc.provider.tableId).startsWith('auto-')) ? calc.provider.tableId : null,
             tableName: calc.client.tableName || '',
             route: (() => {
               const co = (raw.origin || '').split(',')[0].split('-')[0].trim();
@@ -5615,7 +5615,7 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
               details: JSON.stringify({
                 oldRevenue, newRevenue, oldCost, newCost,
                 clientTable: calc.client.tableId,
-                providerTable: calc.provider.tableId
+                providerTable: (calc.provider.tableId && !String(calc.provider.tableId).startsWith('auto-')) ? calc.provider.tableId : null
               })
             }]);
           }

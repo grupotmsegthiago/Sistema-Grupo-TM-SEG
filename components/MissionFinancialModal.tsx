@@ -70,6 +70,12 @@ const formatHoursHHMM = (decimalHours: number): string => {
     return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}`;
 };
 
+// OS 5046: o motor automático gera uma tabela sintética com id "auto-...".
+// Esse id NÃO deve ser persistido nem tratado como seleção manual (senão o motor
+// se desligaria por engano ao reabrir). Retorna o id real ou null.
+const sanitizeProviderTableId = (id: any): string | null =>
+    (id && !String(id).startsWith('auto-')) ? String(id) : null;
+
 const LABEL_CLASS = "text-[10px] font-black text-gray-400 uppercase mb-1.5 block tracking-widest";
 
 const BillingPeriodOverridePanel: React.FC<{
@@ -328,6 +334,18 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
       || userNameLower.includes('barbara') || userNameLower.includes('bárbara') || userNameLower.includes('thiago')
       || userNameLower.includes('simone')
       || userNameLower.includes('plinio') || userNameLower.includes('plínio');
+  }, [userRoleLower, userNameLower]);
+  // OS 5046: libera a troca da TABELA DE CUSTO mesmo com o Motor Automático ativo
+  // para os responsáveis pela auditoria (Thiago Moreira, Simone, Barbara) e
+  // diretoria/admin. Ao selecionar uma tabela, o motor é desligado para esta
+  // missão (ver autoEngineActive em lib/financialUtils.ts) e o valor da tabela
+  // escolhida passa a valer. Usa "thiago moreira" (não só "thiago") para não
+  // pegar o comercial Thiago Arruda.
+  const canOverrideAutoProvider = useMemo(() => {
+    return userRoleLower === 'administrador' || userRoleLower === 'diretoria'
+      || userNameLower.includes('barbara') || userNameLower.includes('bárbara')
+      || userNameLower.includes('thiago moreira')
+      || userNameLower.includes('simone');
   }, [userRoleLower, userNameLower]);
   const [fullEditMode, setFullEditMode] = useState(false);
   // isController: identifica o cargo Controller para travas de edição.
@@ -1028,7 +1046,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                               setManualClientTableId(details.clientTableId);
                           }
                       }
-                      if (details.providerTableId) setManualProviderTableId(details.providerTableId);
+                      if (details.providerTableId && !String(details.providerTableId).startsWith('auto-')) setManualProviderTableId(details.providerTableId);
                       if (details.customClientBase) setCustomClientBase(details.customClientBase);
                       if (details.customClientKm) setCustomClientKm(details.customClientKm);
                       if (details.customClientHour) setCustomClientHour(details.customClientHour);
@@ -1406,7 +1424,10 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
               }
           }
           
-          if (financialData.provider.tableId) {
+          // OS 5046: nunca guardar o id sintético "auto-..." (gerado pelo motor
+          // automático) em manualProviderTableId — isso desligaria o motor por
+          // engano. Só persistimos ids de tabelas REAIS selecionadas.
+          if (financialData.provider.tableId && !String(financialData.provider.tableId).startsWith('auto-')) {
               if (!manualProviderTableId) {
                   setManualProviderTableId(financialData.provider.tableId);
               }
@@ -1885,7 +1906,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                       : (usedTable?.route_name || '-'),
                   tableName: usedTable?.operation_type || '-',
                   clientTableId: manualClientTableId || financialData.client.tableId || null,
-                  providerTableId: manualProviderTableId || financialData.provider.tableId || null,
+                  providerTableId: sanitizeProviderTableId(manualProviderTableId || financialData.provider.tableId),
                   activationFee: usedTable?.activation_fee ?? financialData.client.base,
                   franchiseKm: usedTable?.franchise_km ?? 0,
                   franchiseHours: usedTable?.franchise_hours ?? 0,
@@ -2082,7 +2103,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                       // tabela e breakdown atual — mantém o snapshot
                       // alinhado com a tabela escolhida na auditoria
                       clientTableId: newClientTableId,
-                      providerTableId: manualProviderTableId || financialData?.provider.tableId || existingSnap.providerTableId || null,
+                      providerTableId: sanitizeProviderTableId(manualProviderTableId || financialData?.provider.tableId || existingSnap.providerTableId),
                       tableName: newTableName,
                       activationFee: r2(newActivationFee),
                       franchiseKm: newFranchiseKm,
@@ -2112,7 +2133,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
               const routeKeyBase = `${mission.client}|${mission.origin}|${mission.destination}`.toUpperCase();
               const details = JSON.stringify({
                   clientTableId: manualClientTableId,
-                  providerTableId: manualProviderTableId || null,
+                  providerTableId: sanitizeProviderTableId(manualProviderTableId),
                   tollValue: toll,
                   tollProviderValue: tollProv,
                   customClientBase: customClientBase || null,
@@ -2142,7 +2163,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
           const sysCalcRevenue = calcRevTotal;
           const adjustmentDetails = JSON.stringify({
               clientTableId: manualClientTableId || financialData?.client.tableId || null,
-              providerTableId: manualProviderTableId || financialData?.provider.tableId || null,
+              providerTableId: sanitizeProviderTableId(manualProviderTableId || financialData?.provider.tableId),
               clientTableName: financialData?.client.tableName || null,
               providerTableName: financialData?.provider.tableName || null,
               customClientBase: customClientBase || null,
@@ -3920,13 +3941,16 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                             : (mission.is_same_os ? 'Custo Zero (Mesma OS)' : 'IA Detectando Melhor Custo...');
                                         const options: FilterableSelectOption[] = [
                                             { value: '', label: placeholderLabel },
-                                            ...(!mission.is_same_os && !financialData.autoEngine?.active
-                                                ? [...filteredProviderTables].sort((a, b) => (a.operation_type || '').localeCompare(b.operation_type || '', 'pt-BR', { numeric: true, sensitivity: 'base' }))
+                                            ...(!mission.is_same_os && (!financialData.autoEngine?.active || fullEditMode || canOverrideAutoProvider)
+                                                ? [...filteredProviderTables]
+                                                    .filter(t => !/^__AUTO_MASTER__/i.test((t.operation_type || '').trim()))
+                                                    .sort((a, b) => (a.operation_type || '').localeCompare(b.operation_type || '', 'pt-BR', { numeric: true, sensitivity: 'base' }))
                                                     .map(t => ({ value: String(t.id), label: t.operation_type || '' }))
                                                 : []),
                                         ];
                                         const handleChange = (val: string) => {
-                                            if ((isEffectivelyLocked || financialData.autoEngine?.active) && !fullEditMode) return;
+                                            if (isEffectivelyLocked && !fullEditMode) return;
+                                            if (financialData.autoEngine?.active && !fullEditMode && !canOverrideAutoProvider) return;
                                             setManualProviderTableId(val);
                                             setCustomProviderBase(''); setCustomProviderKm(''); setCustomProviderHour('');
                                             setUseSavedValues(false);
@@ -3936,7 +3960,10 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                         };
                                         // EDIÇÃO TOTAL (Barbara/Thiago/Simone/diretoria/admin) destrava o
                                         // seletor mesmo em MESMA OS, motor auto ativo ou faturamento travado.
-                                        const providerSelectorDisabled = !fullEditMode && (mission.is_same_os || isEffectivelyLocked || !!financialData.autoEngine?.active);
+                                        // OS 5046: a auditoria (canOverrideAutoProvider) também pode trocar a
+                                        // tabela com o motor auto ATIVO, sem precisar de EDIÇÃO TOTAL.
+                                        const autoBlocksSelector = !!financialData.autoEngine?.active && !canOverrideAutoProvider;
+                                        const providerSelectorDisabled = !fullEditMode && (mission.is_same_os || isEffectivelyLocked || autoBlocksSelector);
                                         return (
                                             <FilterableSelect
                                                 value={(!fullEditMode && financialData.autoEngine?.active) ? '' : (manualProviderTableId || '')}

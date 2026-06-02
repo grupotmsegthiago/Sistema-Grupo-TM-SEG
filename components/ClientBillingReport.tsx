@@ -1024,7 +1024,7 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
             const adj = billingAdjustments[m.id];
             const overrides = adj ? {
                 clientTableId: adj.clientTableId || undefined,
-                providerTableId: adj.providerTableId || undefined,
+                providerTableId: (adj.providerTableId && !String(adj.providerTableId).startsWith('auto-')) ? adj.providerTableId : undefined,
                 customClientBase: adj.customClientBase ? Number(adj.customClientBase) : undefined,
                 customClientUnitKm: adj.customClientKm ? Number(adj.customClientKm) : undefined,
                 customClientUnitHour: adj.customClientHour ? Number(adj.customClientHour) : undefined,
