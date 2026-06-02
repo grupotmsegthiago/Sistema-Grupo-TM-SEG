@@ -347,6 +347,13 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
       || userNameLower.includes('thiago moreira')
       || userNameLower.includes('simone');
   }, [userRoleLower, userNameLower]);
+  // Auditoria (mesma equipe: Thiago Moreira, Simone, Barbara + diretoria/admin)
+  // pode ABRIR para edição a TABELA DE PREÇO (cliente) e a TABELA DE CUSTO
+  // (fornecedor) mesmo depois do faturamento SALVO ou APROVADO, sem precisar
+  // ligar a EDIÇÃO TOTAL. Isso apenas destrava o campo; NÃO recalcula nem
+  // sobrescreve valores por conta própria (os snapshots de OS aprovadas seguem
+  // protegidos no fluxo de salvar/aprovar).
+  const canEditTablesEvenIfLocked = canOverrideAutoProvider;
   const [fullEditMode, setFullEditMode] = useState(false);
   // isController: identifica o cargo Controller para travas de edição.
   // Quando EDIÇÃO TOTAL está ligada, o gate de Controller é suspenso para
@@ -3435,13 +3442,17 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                             }),
                                         ];
                                         const handleChange = (newTableId: string) => {
-                                            if (isController || isEffectivelyLocked) return;
+                                            if ((isController || isEffectivelyLocked) && !canEditTablesEvenIfLocked) return;
                                             // Task #111: registra correção do auditor quando troca a sugestão do motor DHL.
                                             try {
                                                 const sug = dhlEngineSuggestionRef.current;
+                                                // "Só abrir o campo, sem regravar": numa OS travada (salva/aprovada)
+                                                // a auditoria pode abrir/trocar a tabela só para visualizar; não
+                                                // registramos correção na memória do motor DHL até o Salvar explícito.
                                                 if (
                                                     mission &&
                                                     newTableId &&
+                                                    !(isBillingLocked && canEditTablesEvenIfLocked) &&
                                                     isDhlSupplyClient(mission.originalClientName || mission.client) &&
                                                     sug &&
                                                     sug.region &&
@@ -3502,14 +3513,20 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                             setCustomClientBase(''); setCustomClientKm(''); setCustomClientHour('');
                                             setUseSavedValues(false);
                                             userManuallyEditedRef.current = false;
-                                            setMission(prev => prev ? { ...prev, revenue_edit_reason: '', cost_edit_reason: '', billing_verified_by: null } : prev);
-                                            if (mission) {
-                                                supabase.from('missions').update({ revenue_edit_reason: '', cost_edit_reason: '', billing_verified_by: null }).eq('id', mission.id).then(res => {
-                                                    if (res.error) {
-                                                        console.error('[Tabela Cliente] Falha ao limpar verificação:', res.error);
-                                                        showNotification('Erro', 'Não foi possível atualizar a tabela de preço: ' + res.error.message, 'error');
-                                                    }
-                                                });
+                                            // "Só abrir o campo, sem regravar": quando a auditoria troca a tabela
+                                            // numa OS já SALVA/APROVADA (lock ativo), a mudança fica apenas em
+                                            // estado local; nada é regravado no banco até o Salvar/Aprovar explícito,
+                                            // preservando billing_verified_by e os snapshots imutáveis.
+                                            if (!(isBillingLocked && canEditTablesEvenIfLocked)) {
+                                                setMission(prev => prev ? { ...prev, revenue_edit_reason: '', cost_edit_reason: '', billing_verified_by: null } : prev);
+                                                if (mission) {
+                                                    supabase.from('missions').update({ revenue_edit_reason: '', cost_edit_reason: '', billing_verified_by: null }).eq('id', mission.id).then(res => {
+                                                        if (res.error) {
+                                                            console.error('[Tabela Cliente] Falha ao limpar verificação:', res.error);
+                                                            showNotification('Erro', 'Não foi possível atualizar a tabela de preço: ' + res.error.message, 'error');
+                                                        }
+                                                    });
+                                                }
                                             }
                                         };
                                         return (
@@ -3517,7 +3534,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                                 value={manualClientTableId || ''}
                                                 onChange={handleChange}
                                                 options={options}
-                                                disabled={isController || isEffectivelyLocked}
+                                                disabled={(isController || isEffectivelyLocked) && !canEditTablesEvenIfLocked}
                                                 accentColor="blue"
                                                 data-testid="select-client-table"
                                             />
@@ -3949,21 +3966,26 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                                 : []),
                                         ];
                                         const handleChange = (val: string) => {
-                                            if (isEffectivelyLocked && !fullEditMode) return;
+                                            if (isEffectivelyLocked && !fullEditMode && !canEditTablesEvenIfLocked) return;
                                             if (financialData.autoEngine?.active && !fullEditMode && !canOverrideAutoProvider) return;
                                             setManualProviderTableId(val);
                                             setCustomProviderBase(''); setCustomProviderKm(''); setCustomProviderHour('');
                                             setUseSavedValues(false);
                                             userManuallyEditedRef.current = false;
-                                            setMission(prev => prev ? { ...prev, revenue_edit_reason: '', cost_edit_reason: '', billing_verified_by: null } : prev);
-                                            if (mission) supabase.from('missions').update({ revenue_edit_reason: '', cost_edit_reason: '', billing_verified_by: null }).eq('id', mission.id);
+                                            // "Só abrir o campo, sem regravar": numa OS já SALVA/APROVADA a troca da
+                                            // tabela de custo pela auditoria fica apenas em estado local até o
+                                            // Salvar/Aprovar explícito (preserva snapshots imutáveis).
+                                            if (!(isBillingLocked && canEditTablesEvenIfLocked)) {
+                                                setMission(prev => prev ? { ...prev, revenue_edit_reason: '', cost_edit_reason: '', billing_verified_by: null } : prev);
+                                                if (mission) supabase.from('missions').update({ revenue_edit_reason: '', cost_edit_reason: '', billing_verified_by: null }).eq('id', mission.id);
+                                            }
                                         };
                                         // EDIÇÃO TOTAL (Barbara/Thiago/Simone/diretoria/admin) destrava o
                                         // seletor mesmo em MESMA OS, motor auto ativo ou faturamento travado.
                                         // OS 5046: a auditoria (canOverrideAutoProvider) também pode trocar a
                                         // tabela com o motor auto ATIVO, sem precisar de EDIÇÃO TOTAL.
                                         const autoBlocksSelector = !!financialData.autoEngine?.active && !canOverrideAutoProvider;
-                                        const providerSelectorDisabled = !fullEditMode && (mission.is_same_os || isEffectivelyLocked || autoBlocksSelector);
+                                        const providerSelectorDisabled = !fullEditMode && (mission.is_same_os || (isEffectivelyLocked && !canEditTablesEvenIfLocked) || autoBlocksSelector);
                                         return (
                                             <FilterableSelect
                                                 value={(!fullEditMode && financialData.autoEngine?.active) ? '' : (manualProviderTableId || '')}
