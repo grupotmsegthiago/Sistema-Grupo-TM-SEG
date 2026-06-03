@@ -102,13 +102,13 @@ export default function FilterableSelect({
                 type="button"
                 onClick={() => { onChange(o.value); setOpen(false); setQuery(''); }}
                 title={o.title}
-                className={`w-full text-left px-3 py-2 text-xs font-bold uppercase flex items-center gap-2 ${hoverBg} ${o.value === value ? activeBg : 'text-gray-700'}`}
+                className={`w-full text-left px-3 py-2 text-xs font-bold uppercase flex items-start gap-2 ${hoverBg} ${o.value === value ? activeBg : 'text-gray-700'}`}
                 data-testid={`option-filterable-${o.value || 'empty'}`}
               >
                 {o.value === value
-                  ? <Check size={12} className={`shrink-0 ${checkColor}`} />
+                  ? <Check size={12} className={`shrink-0 mt-0.5 ${checkColor}`} />
                   : <span className="w-3 shrink-0" />}
-                <span className="truncate flex-1">{o.prefix}{o.label}</span>
+                <span className="flex-1 whitespace-normal break-words leading-snug">{o.prefix}{o.label}</span>
               </button>
             ))}
           </div>

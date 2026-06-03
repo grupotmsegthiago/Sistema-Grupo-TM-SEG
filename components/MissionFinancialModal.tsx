@@ -6,7 +6,7 @@ import { useLoadScript, Autocomplete } from '@react-google-maps/api';
 import { googleMapsLoadConfig } from '../lib/maps';
 import { authFetch } from '../lib/authFetch';
 import { useNotification } from '../lib/NotificationContext';
-import { calculateMissionFinancials, auditMissionFinancials, extractUF, UF_TO_REGION, clientFuzzyFilter, clientNameShort, extractCityFromAddress } from '../lib/financialUtils';
+import { calculateMissionFinancials, auditMissionFinancials, extractUF, UF_TO_REGION, clientFuzzyFilter, clientNameShort, isSameClientName, extractCityFromAddress } from '../lib/financialUtils';
 import {
   isDhlSupplyClient,
   validateDhlTableName,
@@ -249,7 +249,7 @@ const TableSwapControl: React.FC<{
             </button>
             {open && (
                 <div
-                    className="absolute right-0 z-[60] mt-1 w-72 bg-white rounded-xl border border-gray-200 shadow-2xl p-3"
+                    className="absolute right-0 z-[60] mt-1 w-80 bg-white rounded-xl border border-gray-200 shadow-2xl p-3"
                     onClick={e => e.stopPropagation()}
                     data-testid={`popover-swap-table-${kind}`}
                 >
@@ -3567,13 +3567,12 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                 <label className={LABEL_CLASS}>Tabela de Preço Aplicada</label>
                                 <div className="flex gap-2">
                                     {(() => {
-                                        const missionClientShort = clientNameShort(mission.originalClientName || mission.client || '').toLowerCase().trim();
+                                        const missionClientName = mission.originalClientName || mission.client || '';
                                         // Esconde linhas de configuração do motor automático (operation_type que começa com "__AUTO_MASTER__")
                                         const isMasterRow = (t: any) => /^__AUTO_MASTER__/i.test((t.operation_type || '').trim());
                                         const onlyThisClient = clientTables.filter(t => {
                                             if (isMasterRow(t)) return false;
-                                            const tShort = clientNameShort(t.client || '').toLowerCase().trim();
-                                            return missionClientShort && tShort && (tShort === missionClientShort || tShort.startsWith(missionClientShort) || missionClientShort.startsWith(tShort));
+                                            return isSameClientName(t.client || '', missionClientName);
                                         });
                                         const list = onlyThisClient.length > 0 ? onlyThisClient : clientTables.filter(t => !isMasterRow(t));
                                         const options: FilterableSelectOption[] = [
@@ -4452,12 +4451,11 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                     );
                                 })()}
                                 {!isController && (() => {
-                                    const missionClientShort = clientNameShort(mission.originalClientName || mission.client || '').toLowerCase().trim();
+                                    const missionClientName = mission.originalClientName || mission.client || '';
                                     const isMasterRow = (t: any) => /^__AUTO_MASTER__/i.test((t.operation_type || '').trim());
                                     const onlyThisClient = clientTables.filter(t => {
                                         if (isMasterRow(t)) return false;
-                                        const tShort = clientNameShort(t.client || '').toLowerCase().trim();
-                                        return missionClientShort && tShort && (tShort === missionClientShort || tShort.startsWith(missionClientShort) || missionClientShort.startsWith(tShort));
+                                        return isSameClientName(t.client || '', missionClientName);
                                     });
                                     const list = onlyThisClient.length > 0 ? onlyThisClient : clientTables.filter(t => !isMasterRow(t));
                                     const swapOptions: FilterableSelectOption[] = [

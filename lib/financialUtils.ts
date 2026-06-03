@@ -31,6 +31,40 @@ export function clientNameShort(clientName: string): string {
     return words.length >= 2 ? words[0] + ' ' + words[1].substring(0, Math.min(6, words[1].length)) : words[0] || trimmed;
 }
 
+// Normaliza um nome de cliente em um conjunto de tokens significativos:
+// caixa alta, sem acentos, sem pontuação e sem stop-words (LTDA, S/A, DE...).
+// Usado para decidir se duas grafias se referem ao mesmo cliente sem
+// descartar tabelas válidas por diferenças de pontuação/sufixo societário.
+function clientSignificantTokens(clientName: string): string[] {
+    const norm = (clientName || '')
+        .toUpperCase()
+        .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+        .replace(/[^A-Z0-9\s]/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+    if (!norm) return [];
+    return norm.split(' ').filter(w => w && !STOP_WORDS.includes(w));
+}
+
+// Decide se dois nomes de cliente representam o mesmo cliente.
+// Critério inclusivo (não descartar tabelas válidas): considera igual quando
+// o conjunto de tokens significativos de um é subconjunto do outro
+// (ex.: "DHL SUPPLY" ⊆ "GRUPO DHL SUPPLY CHAIN"). Marcas distintas que só
+// compartilham um token genérico (ex.: "DHL EXPRESS" x "DHL SUPPLY") não casam.
+export function isSameClientName(a: string, b: string): boolean {
+    const ta = clientSignificantTokens(a);
+    const tb = clientSignificantTokens(b);
+    if (ta.length === 0 || tb.length === 0) return false;
+    const setA = new Set(ta);
+    const setB = new Set(tb);
+    const smaller = setA.size <= setB.size ? setA : setB;
+    const larger = setA.size <= setB.size ? setB : setA;
+    for (const tok of smaller) {
+        if (!larger.has(tok)) return false;
+    }
+    return true;
+}
+
 export interface CalculatedFinancials {
     autoEngine?: {
         active: boolean;
