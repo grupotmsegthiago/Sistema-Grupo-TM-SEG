@@ -124,11 +124,18 @@ async function main() {
     if (m.is_same_os) { skipped.push({ os, reason: 'Mesma OS (valor herdado)' }); continue; }
     if (m.valor_zero_motivo) { skipped.push({ os, reason: `valor zero (${m.valor_zero_motivo})` }); continue; }
     if (isCancelled(m.status)) { skipped.push({ os, reason: 'cancelada (tratamento dedicado)' }); continue; }
+    if (m.revenue_edit_reason || m.cost_edit_reason) { skipped.push({ os, reason: 'editada à mão (revenue/cost_edit_reason)' }); continue; }
 
     const clientCanon = findDhlAutoClient(m.client) || m.client;
     const km = Number(m.total_distance || 0);
     const sel = selectDhlClientTable(tables as any, { origin: m.origin || '', destination: m.destination || '' }, km, { clientName: clientCanon });
     if (!sel.table) { skipped.push({ os, reason: `sem tabela DHL (${sel.detectedRegion || '?'} ${sel.band}km)` }); continue; }
+    // Só aplica casos de ALTA confiança: rota exata e região+faixa.
+    // Pula palpites fracos (region_any_km) e memória (memory_*).
+    if (sel.matchLevel !== 'exact_route' && sel.matchLevel !== 'region_band') {
+      skipped.push({ os, reason: `confiança baixa (${sel.matchLevel})` });
+      continue;
+    }
 
     const oldRevenue = Number(m.revenue_value || 0);
     const toll = Number(m.toll_value || 0);

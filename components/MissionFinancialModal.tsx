@@ -16,7 +16,7 @@ import {
   findDhlCorrectionSource,
   type DhlCorrectionRecord,
 } from '../lib/dhlAutoTableSelector';
-import { X, Calculator, Loader2, Save, CheckCircle2, TrendingUp, Landmark, Zap, RotateCcw, Building2, Briefcase, Plus, Users, MapPin, ArrowRight, BrainCircuit, AlertTriangle, AlertCircle, Edit2, Info, RefreshCw, Clock, Pencil, Lock, ShieldCheck, Camera, Image as ImageIcon, Link2, Layers, Scale, Sparkles, Navigation, History } from 'lucide-react';
+import { X, Calculator, Loader2, Save, CheckCircle2, TrendingUp, Landmark, Zap, RotateCcw, Building2, Briefcase, Plus, Users, MapPin, ArrowRight, BrainCircuit, AlertTriangle, AlertCircle, Edit2, Info, RefreshCw, Clock, Pencil, Lock, ShieldCheck, Camera, Image as ImageIcon, Link2, Layers, Scale, Sparkles, Navigation, History, Settings2 } from 'lucide-react';
 import { suggestPriceTable } from '../lib/gemini';
 import ProviderCostForm from './ProviderCostForm';
 import ClientPriceForm from './ClientPriceForm';
@@ -196,6 +196,97 @@ const BillingPeriodOverridePanel: React.FC<{
                             className="bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold px-4 py-2 rounded-lg disabled:opacity-50"
                         >
                             {saving ? 'Salvando…' : 'Salvar configuração'}
+                        </button>
+                    </div>
+                </div>
+            )}
+        </div>
+    );
+};
+
+// Botão de engrenagem + popover para TROCAR a tabela de preço (cliente) ou de
+// custo (fornecedor) de uma OS específica, diretamente nos campos de Receita e
+// Custo. A seleção atualiza o cálculo na hora (preview) e o botão "Aplicar e
+// Salvar" persiste no banco via handleUpdate, propagando em tempo real.
+const TableSwapControl: React.FC<{
+    kind: 'client' | 'provider';
+    accent: 'green' | 'blue';
+    options: FilterableSelectOption[];
+    value: string;
+    onSelect: (id: string) => void;
+    onApply: () => void | Promise<void>;
+    disabled: boolean;
+    isApplying: boolean;
+    previewTotal: number;
+}> = ({ kind, accent, options, value, onSelect, onApply, disabled, isApplying, previewTotal }) => {
+    const [open, setOpen] = useState(false);
+    const ref = useRef<HTMLDivElement>(null);
+    useEffect(() => {
+        if (!open) return;
+        const onDoc = (e: MouseEvent) => {
+            if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+        };
+        document.addEventListener('mousedown', onDoc);
+        return () => document.removeEventListener('mousedown', onDoc);
+    }, [open]);
+    const fmt = (v: number) => v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+    const btnAccent = accent === 'green'
+        ? 'text-green-700 bg-green-100 hover:bg-green-200 border-green-300'
+        : 'text-blue-700 bg-blue-100 hover:bg-blue-200 border-blue-300';
+    const applyAccent = accent === 'green'
+        ? 'bg-green-600 hover:bg-green-700'
+        : 'bg-blue-600 hover:bg-blue-700';
+    return (
+        <div ref={ref} className="relative">
+            <button
+                type="button"
+                onClick={() => setOpen(o => !o)}
+                className={`flex items-center gap-1 text-[9px] font-bold px-2 py-0.5 rounded border transition-colors ${btnAccent}`}
+                title={kind === 'client' ? 'Trocar tabela de preço do cliente' : 'Trocar tabela de custo do fornecedor'}
+                data-testid={`button-swap-table-${kind}`}
+            >
+                <Settings2 size={10} /> Trocar Tabela
+            </button>
+            {open && (
+                <div
+                    className="absolute right-0 z-[60] mt-1 w-72 bg-white rounded-xl border border-gray-200 shadow-2xl p-3"
+                    onClick={e => e.stopPropagation()}
+                    data-testid={`popover-swap-table-${kind}`}
+                >
+                    <p className="text-[10px] font-black uppercase tracking-widest text-gray-700 mb-2">
+                        {kind === 'client' ? 'Tabela de Preço (Cliente)' : 'Tabela de Custo (Fornecedor)'}
+                    </p>
+                    <FilterableSelect
+                        value={value}
+                        onChange={onSelect}
+                        options={options}
+                        disabled={disabled}
+                        accentColor={accent === 'green' ? 'blue' : 'red'}
+                        placeholder="Selecione a tabela…"
+                        data-testid={`select-swap-table-${kind}`}
+                    />
+                    <div className="mt-2 flex items-center justify-between text-[10px] font-bold text-gray-500">
+                        <span>{kind === 'client' ? 'Novo valor cliente:' : 'Novo custo fornecedor:'}</span>
+                        <span className="text-sm font-black text-gray-900" data-testid={`text-swap-preview-${kind}`}>{fmt(previewTotal)}</span>
+                    </div>
+                    <div className="mt-3 flex items-center gap-2">
+                        <button
+                            type="button"
+                            disabled={disabled || isApplying}
+                            onClick={async () => { await onApply(); setOpen(false); }}
+                            className={`flex-1 px-3 py-2 rounded-lg text-[10px] font-black uppercase text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-1 ${applyAccent}`}
+                            data-testid={`button-apply-swap-table-${kind}`}
+                        >
+                            {isApplying ? <Loader2 size={12} className="animate-spin" /> : <Save size={12} />}
+                            {isApplying ? 'Salvando…' : 'Aplicar e Salvar'}
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => setOpen(false)}
+                            className="px-3 py-2 rounded-lg text-[10px] font-black uppercase text-gray-500 bg-gray-100 hover:bg-gray-200 transition-colors"
+                            data-testid={`button-cancel-swap-table-${kind}`}
+                        >
+                            Cancelar
                         </button>
                     </div>
                 </div>
@@ -1669,6 +1760,46 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
           } catch (e) {
               console.error('Erro ao salvar recálculo fornecedor:', e);
               showNotification('Recalculado', 'Valores restaurados na tela, mas houve erro ao salvar no banco.', 'error');
+          }
+      }
+  };
+
+  // Troca rápida da TABELA DE PREÇO do cliente (campo Receita). Define a tabela
+  // manual, limpa overrides e flags de verificação/edição para que o cálculo
+  // automático refaça o total com a nova tabela. O autofill (effect de params)
+  // atualiza o revenueInput sozinho; "Aplicar e Salvar" chama handleUpdate.
+  const swapClientTable = (id: string) => {
+      setManualClientTableId(id);
+      setCustomClientBase(''); setCustomClientKm(''); setCustomClientHour('');
+      setUseSavedValues(false);
+      userManuallyEditedRef.current = false;
+      dbValuesLoadedRef.current = false;
+      if (!(isBillingLocked && canEditTablesEvenIfLocked)) {
+          setMission(prev => prev ? { ...prev, revenue_edit_reason: '', cost_edit_reason: '', billing_verified_by: null } : prev);
+          if (mission) {
+              supabase.from('missions')
+                  .update({ revenue_edit_reason: '', cost_edit_reason: '', billing_verified_by: null })
+                  .eq('id', mission.id)
+                  .then(({ error }) => { if (error) console.error('Erro ao limpar flags (troca tabela cliente):', error); });
+          }
+      }
+  };
+
+  // Troca rápida da TABELA DE CUSTO do fornecedor (campo Custo). Mesma lógica do
+  // cliente, aplicada aos parâmetros do fornecedor.
+  const swapProviderTable = (id: string) => {
+      setManualProviderTableId(id);
+      setCustomProviderBase(''); setCustomProviderKm(''); setCustomProviderHour('');
+      setUseSavedValues(false);
+      userManuallyEditedRef.current = false;
+      dbValuesLoadedRef.current = false;
+      if (!(isBillingLocked && canEditTablesEvenIfLocked)) {
+          setMission(prev => prev ? { ...prev, revenue_edit_reason: '', cost_edit_reason: '', billing_verified_by: null } : prev);
+          if (mission) {
+              supabase.from('missions')
+                  .update({ revenue_edit_reason: '', cost_edit_reason: '', billing_verified_by: null })
+                  .eq('id', mission.id)
+                  .then(({ error }) => { if (error) console.error('Erro ao limpar flags (troca tabela fornecedor):', error); });
           }
       }
   };
@@ -4298,6 +4429,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                         <div className="p-4 bg-green-50 border border-green-100 rounded-xl relative group">
                             <div className="flex justify-between items-center mb-2">
                                 <label className="text-[10px] font-black text-green-700 uppercase">Valor Final Cliente (Serviço + Pedágio)</label>
+                                <div className="flex items-center gap-2">
                                 {(() => {
                                     const calcTotalBtn = financialData ? financialData.client.total : 0;
                                     const inputValBtn = parseNumber(revenueInput);
@@ -4319,6 +4451,43 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                         </button>
                                     );
                                 })()}
+                                {!isController && (() => {
+                                    const missionClientShort = clientNameShort(mission.originalClientName || mission.client || '').toLowerCase().trim();
+                                    const isMasterRow = (t: any) => /^__AUTO_MASTER__/i.test((t.operation_type || '').trim());
+                                    const onlyThisClient = clientTables.filter(t => {
+                                        if (isMasterRow(t)) return false;
+                                        const tShort = clientNameShort(t.client || '').toLowerCase().trim();
+                                        return missionClientShort && tShort && (tShort === missionClientShort || tShort.startsWith(missionClientShort) || missionClientShort.startsWith(tShort));
+                                    });
+                                    const list = onlyThisClient.length > 0 ? onlyThisClient : clientTables.filter(t => !isMasterRow(t));
+                                    const swapOptions: FilterableSelectOption[] = [
+                                        { value: '', label: 'Automático (IA Detectando)' },
+                                        ...[...list].sort((a, b) => (a.operation_type || '').localeCompare(b.operation_type || '', 'pt-BR', { numeric: true, sensitivity: 'base' })).map(t => {
+                                            const isDhl = isDhlSupplyClient(t.client);
+                                            const dhlBad = isDhl && !validateDhlTableName(t.operation_type).valid;
+                                            return {
+                                                value: String(t.id),
+                                                label: onlyThisClient.length > 0 ? t.operation_type : `${t.operation_type} — ${t.client}`,
+                                                prefix: dhlBad ? '⚠️ ' : '',
+                                                title: dhlBad ? 'Tabela DHL fora do padrão — não é sugerida automaticamente' : undefined,
+                                            };
+                                        }),
+                                    ];
+                                    return (
+                                        <TableSwapControl
+                                            kind="client"
+                                            accent="green"
+                                            options={swapOptions}
+                                            value={manualClientTableId || ''}
+                                            onSelect={swapClientTable}
+                                            onApply={() => handleUpdate(false)}
+                                            disabled={isEffectivelyLocked && !canEditTablesEvenIfLocked}
+                                            isApplying={isUpdating}
+                                            previewTotal={financialData ? financialData.client.total : 0}
+                                        />
+                                    );
+                                })()}
+                                </div>
                             </div>
                             {(() => {
                                 const ibl = financialData.iblFee || 0;
@@ -4403,6 +4572,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                     Pagamento Fornecedor (Tabela + Pedágio)
                                     {mission?.verified_by && mission?.verified_at && <Lock size={12} className="text-blue-600" />}
                                 </label>
+                                <div className="flex items-center gap-2">
                                 {!(mission?.verified_by && mission?.verified_at) && (() => {
                                     const calcCostBtn = financialData ? (financialData.provider.serviceTotal + parseNumber(tollProviderInput)) : 0;
                                     const inputCostBtn = parseNumber(costInput);
@@ -4424,6 +4594,29 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                         </button>
                                     );
                                 })()}
+                                {!(mission?.verified_by && mission?.verified_at) && !mission.is_same_os && (() => {
+                                    const swapOptions: FilterableSelectOption[] = [
+                                        { value: '', label: 'IA Detectando Melhor Custo...' },
+                                        ...[...filteredProviderTables]
+                                            .filter(t => !/^__AUTO_MASTER__/i.test((t.operation_type || '').trim()))
+                                            .sort((a, b) => (a.operation_type || '').localeCompare(b.operation_type || '', 'pt-BR', { numeric: true, sensitivity: 'base' }))
+                                            .map(t => ({ value: String(t.id), label: t.operation_type || '' })),
+                                    ];
+                                    return (
+                                        <TableSwapControl
+                                            kind="provider"
+                                            accent="blue"
+                                            options={swapOptions}
+                                            value={manualProviderTableId || ''}
+                                            onSelect={swapProviderTable}
+                                            onApply={() => handleUpdate(false)}
+                                            disabled={(isEffectivelyLocked && !fullEditMode && !canEditTablesEvenIfLocked) || (!!financialData.autoEngine?.active && !fullEditMode && !canOverrideAutoProvider)}
+                                            isApplying={isUpdating}
+                                            previewTotal={financialData ? (financialData.provider.serviceTotal + parseNumber(tollProviderInput)) : 0}
+                                        />
+                                    );
+                                })()}
+                                </div>
                             </div>
                             {mission?.verified_by && mission?.verified_at && (
                                 <div className="bg-blue-100 border border-blue-300 rounded-lg px-3 py-1.5 mb-2 flex items-center gap-2">
