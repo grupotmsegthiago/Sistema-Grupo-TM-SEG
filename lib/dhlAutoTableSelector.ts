@@ -356,25 +356,33 @@ export const selectDhlClientTable = (
 
   if (originCity && destCity) {
     const routeKey = `${originCity}-${destCity}`;
-    const exact = dhlTables.find(t => {
+    const inverseKey = `${destCity}-${originCity}`;
+    // Casa região + faixa KM + rota (determinístico). A rota inversa só é
+    // considerada como FALLBACK, depois de tentar a rota direta — nunca a
+    // sobrepõe (pedido do cliente).
+    const matchRoute = (wantInverse: boolean) => dhlTables.find(t => {
       if ((t.franchise_km || 0) !== band) return false;
       const parts = stripDhlOpDescription(t.operation_type);
+      // Exige a mesma região quando a tabela tiver região identificável.
+      if (parts.region && parts.region !== detectedRegion) return false;
       const desc = parts.desc;
       if (!desc) return false;
       const hyphenMatch = desc.match(/^([A-Z0-9\s]+?)\s*-\s*([A-Z0-9\s]+?)(?:\s|$)/);
       if (!hyphenMatch) return false;
-      const tOrigin = hyphenMatch[1].trim();
-      const tDest = hyphenMatch[2].trim();
-      const tRoute = `${tOrigin}-${tDest}`;
-      return tRoute === routeKey;
+      const tRoute = `${hyphenMatch[1].trim()}-${hyphenMatch[2].trim()}`;
+      return tRoute === (wantInverse ? inverseKey : routeKey);
     });
+    const direct = matchRoute(false);
+    const exact = direct || matchRoute(true);
     if (exact) {
       return {
         table: exact,
         matchLevel: 'exact_route',
         detectedRegion,
         band,
-        reason: `Rota Exata (${detectedRegion} + ${band}km)`,
+        reason: direct
+          ? `Rota Exata (${detectedRegion} + ${band}km)`
+          : `Rota Inversa (${detectedRegion} + ${band}km)`,
         clientName: targetClient,
       };
     }
