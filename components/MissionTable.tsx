@@ -245,6 +245,13 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
     return nameLower.includes('daniel') || nameLower.includes('michelle') || nameLower.includes('barbara') || nameLower.includes('bárbara') || nameLower.includes('thiago moreira') || roleLower === 'controller';
   }, [currentUser]);
 
+  // Alerta "OS sem Tabela" restrito a: Thiago Moreira (Diretoria), Bárbara e Simone.
+  const canSeeMissingTableAlert = useMemo(() => {
+    if (!currentUser) return false;
+    const nameLower = (currentUser.name || '').toLowerCase();
+    return nameLower.includes('thiago moreira') || nameLower.includes('barbara') || nameLower.includes('bárbara') || nameLower.includes('simone');
+  }, [currentUser]);
+
   // Conta quantas OS estão com prejuízo direto (custo > receita) no período
   // canônico selecionado. Usado para esconder o botão "OS com Prejuízo"
   // quando não há nenhuma OS com prejuízo no período.
@@ -270,13 +277,13 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
   }, [canSeeFinancials, allMissions, clientTables, providerTables, clientsData, viewPeriod, customStartDate, customEndDate]);
 
   const missingTableRows = useMemo<MissingTableRow[]>(() => {
-    if (!canSeeFinancials) return [];
+    if (!canSeeMissingTableAlert) return [];
     try {
       return computeMissingTableRows(allMissions || [], clientTables, providerTables, clientsData, viewPeriod, customStartDate, customEndDate);
     } catch {
       return [];
     }
-  }, [canSeeFinancials, allMissions, clientTables, providerTables, clientsData, viewPeriod, customStartDate, customEndDate]);
+  }, [canSeeMissingTableAlert, allMissions, clientTables, providerTables, clientsData, viewPeriod, customStartDate, customEndDate]);
   const missingTableCount = missingTableRows.length;
 
   const isCommercial = useMemo(() => {
@@ -1385,7 +1392,7 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
                 </button>
              </div>
              )}
-             {canSeeFinancials && missingTableCount > 0 && (
+             {canSeeMissingTableAlert && missingTableCount > 0 && (
              <div className="w-full sm:w-auto sm:shrink-0 flex items-stretch">
                 <button
                    onClick={() => setIsMissingTableOpen(true)}
@@ -1786,7 +1793,7 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
             onOpenMission={(m) => handleOpenFinancialModal(m)}
           />
         )}
-        {isMissingTableOpen && canSeeFinancials && (
+        {isMissingTableOpen && canSeeMissingTableAlert && (
           <MissingTableDialog
             isOpen={isMissingTableOpen}
             onClose={() => setIsMissingTableOpen(false)}
