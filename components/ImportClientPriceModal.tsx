@@ -136,6 +136,8 @@ No campo "description" mantenha a rota original (ex.: "GUARULHOS - SERRA") sem i
               contents: [{ role: 'user', parts: [ contentPart, { text: prompt } ] }],
               config: {
                 responseMimeType: "application/json",
+                maxOutputTokens: 32768,
+                thinkingConfig: { thinkingBudget: 0 },
                 responseSchema: {
                     type: "ARRAY",
                     items: {
@@ -156,7 +158,17 @@ No campo "description" mantenha a rota original (ex.: "GUARULHOS - SERRA") sem i
               }
           });
 
-          const data = JSON.parse(resultText);
+          let data: any;
+          let recovered = false;
+          try {
+              data = JSON.parse(resultText);
+          } catch {
+              const lastObjEnd = resultText.lastIndexOf('}');
+              if (resultText.trimStart().startsWith('[') && lastObjEnd > -1) {
+                  try { data = JSON.parse(resultText.slice(0, lastObjEnd + 1) + ']'); recovered = true; } catch { /* ignore */ }
+              }
+              if (!data) throw new Error("A resposta da IA veio incompleta (tabela muito grande). Tente novamente ou divida a tabela em partes menores.");
+          }
 
           if (Array.isArray(data) && data.length > 0) {
               let duplicateCount = 0;
@@ -173,7 +185,10 @@ No campo "description" mantenha a rota original (ex.: "GUARULHOS - SERRA") sem i
                   return true;
               });
 
-              if (duplicateCount > 0) setError(`Nota: ${duplicateCount} itens ignorados por duplicidade.`);
+              const notices: string[] = [];
+              if (recovered) notices.push(`ATENÇÃO: a resposta da IA veio truncada — apenas ${processedData.length} linha(s) foram recuperadas e PODEM FALTAR ITENS. Revise antes de salvar e, se preciso, importe o restante separadamente.`);
+              if (duplicateCount > 0) notices.push(`${duplicateCount} itens ignorados por duplicidade.`);
+              setError(notices.join(' '));
               setParsedData(processedData);
           } else {
               throw new Error("Nenhum dado identificado.");
