@@ -146,8 +146,9 @@ async function main() {
         missionTyped, tables as any, [], undefined, new Date(),
         { clientTableId: String(sel.table.id) },
       );
-      // calc.client.total = receita base (serviço), sem pedágio.
-      newRevenue = Math.round((Number(calc.client?.total || 0)) * 100) / 100;
+      // IMPORTANTE: calc.client.total = serviço + pedágio. revenue_value guarda
+      // só o serviço (pedágio fica em toll_value), então usamos serviceTotal.
+      newRevenue = Math.round((Number(calc.client?.serviceTotal || 0)) * 100) / 100;
     } catch (e: any) {
       skipped.push({ os, reason: `erro de cálculo: ${e?.message || e}` });
       continue;
