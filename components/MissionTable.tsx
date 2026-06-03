@@ -25,6 +25,7 @@ import DailyGoalThermometer from './DailyGoalThermometer';
 import ExecutiveDashboard from './ExecutiveDashboard';
 import DhlSolicitationModal from './DhlSolicitationModal';
 import LossesDialog from './LossesDialog';
+import MissingTableDialog, { computeMissingTableRows, type MissingTableRow } from './MissingTableDialog';
 import {
   computeCanonicalRevenueCost as computeCanonicalRC,
   getCanonicalDateRange as getCanonicalDR,
@@ -167,6 +168,7 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
   const [isFinancialModalOpen, setIsFinancialModalOpen] = useState(false);
   const [missionForFinancials, setMissionForFinancials] = useState<Mission | null>(null);
   const [isLossesOpen, setIsLossesOpen] = useState(false);
+  const [isMissingTableOpen, setIsMissingTableOpen] = useState(false);
   const [showClientRequestModal, setShowClientRequestModal] = useState(false);
   const [solicitationCount, setSolicitationCount] = useState(0);
   const [accidentCount, setAccidentCount] = useState(0);
@@ -266,7 +268,17 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
       return 0;
     }
   }, [canSeeFinancials, allMissions, clientTables, providerTables, clientsData, viewPeriod, customStartDate, customEndDate]);
-  
+
+  const missingTableRows = useMemo<MissingTableRow[]>(() => {
+    if (!canSeeFinancials) return [];
+    try {
+      return computeMissingTableRows(allMissions || [], clientTables, providerTables, clientsData, viewPeriod, customStartDate, customEndDate);
+    } catch {
+      return [];
+    }
+  }, [canSeeFinancials, allMissions, clientTables, providerTables, clientsData, viewPeriod, customStartDate, customEndDate]);
+  const missingTableCount = missingTableRows.length;
+
   const isCommercial = useMemo(() => {
       if (!currentUser) return false;
       const roleLower = (currentUser.role || '').toLowerCase();
@@ -1373,6 +1385,20 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
                 </button>
              </div>
              )}
+             {canSeeFinancials && missingTableCount > 0 && (
+             <div className="w-full sm:w-auto sm:shrink-0 flex items-stretch">
+                <button
+                   onClick={() => setIsMissingTableOpen(true)}
+                   className="group w-full sm:w-[200px] h-full min-h-[110px] flex flex-col items-center justify-center gap-1.5 px-4 py-3 rounded-[35px] bg-gradient-to-br from-amber-500 to-orange-600 text-white shadow-[0_20px_50px_rgba(245,158,11,0.25)] hover:shadow-[0_25px_60px_rgba(245,158,11,0.4)] hover:-translate-y-0.5 transition-all border-x border-t border-b-4 border-amber-700/40 animate-pulse"
+                   title={`Listar OS sem tabela de preço (cliente) ou de custo (fornecedor) (${missingTableCount} OS)`}
+                   data-testid="button-open-missing-table"
+                >
+                   <AlertTriangle size={22} strokeWidth={2.5} className="drop-shadow" />
+                   <span className="text-[11px] font-black uppercase tracking-wider leading-tight text-center">OS sem Tabela</span>
+                   <span className="text-[10px] font-black uppercase tracking-widest bg-white/20 px-2 py-0.5 rounded-full">{missingTableCount} {missingTableCount === 1 ? 'OS' : 'OS'}</span>
+                </button>
+             </div>
+             )}
           </div>
           )}
         </div>
@@ -1757,6 +1783,15 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
             viewPeriod={viewPeriod}
             customStartDate={customStartDate}
             customEndDate={customEndDate}
+            onOpenMission={(m) => handleOpenFinancialModal(m)}
+          />
+        )}
+        {isMissingTableOpen && canSeeFinancials && (
+          <MissingTableDialog
+            isOpen={isMissingTableOpen}
+            onClose={() => setIsMissingTableOpen(false)}
+            rows={missingTableRows}
+            viewPeriod={viewPeriod}
             onOpenMission={(m) => handleOpenFinancialModal(m)}
           />
         )}
