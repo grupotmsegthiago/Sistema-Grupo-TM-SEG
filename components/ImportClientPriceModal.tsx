@@ -14,6 +14,19 @@ interface Props {
 
 const REGIONS = ['NORTE', 'NORDESTE', 'CENTRO-OESTE', 'SUDESTE', 'SUL', 'BRASIL'];
 
+const normalizeRegion = (raw?: string | null): string => {
+    if (!raw) return '';
+    let n = raw.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase();
+    n = n.replace(/REGIAO/g, ' ').replace(/[^A-Z\- ]/g, ' ').replace(/\s+/g, ' ').trim();
+    if (REGIONS.includes(n)) return n;
+    if (n.includes('CENTRO') && n.includes('OESTE')) return 'CENTRO-OESTE';
+    if (n.includes('BRASIL') || n.includes('NACIONAL')) return 'BRASIL';
+    for (const r of REGIONS) {
+        if (n.split(' ').includes(r)) return r;
+    }
+    return '';
+};
+
 const ImportClientPriceModal: React.FC<Props> = ({ onClose, onSuccess, fixedClientName }) => {
   const [clients, setClients] = useState<Client[]>([]);
   const [selectedClient, setSelectedClient] = useState('');
@@ -70,6 +83,13 @@ const ImportClientPriceModal: React.FC<Props> = ({ onClose, onSuccess, fixedClie
       if (fileInput) fileInput.value = '';
   };
 
+  const buildOperationType = (item: any): string => {
+      const effectiveRegion = selectedRegion || item.region;
+      const reg = effectiveRegion ? `${effectiveRegion} - ` : '';
+      const tn = tableName ? `${tableName.toUpperCase()} - ` : '';
+      return (reg + tn + (item.description || '')).toUpperCase();
+  };
+
   const handleRowChange = (index: number, field: string, value: any) => {
       const newData = [...parsedData];
       newData[index] = { ...newData[index], [field]: value };
@@ -88,17 +108,21 @@ const ImportClientPriceModal: React.FC<Props> = ({ onClose, onSuccess, fixedClie
           return;
       }
       const analyzeClientName = fixedClientName || clients.find(c => c.id.toString() === selectedClient)?.name;
-      if (isDhlAutoClient(analyzeClientName) && !selectedRegion) {
-          setError("Selecione a REGIÃO antes de processar — ela entra no prefixo da tabela DHL.");
-          return;
-      }
+      const autoRegion = isDhlAutoClient(analyzeClientName);
       setIsAnalyzing(true);
       setError('');
       setParsedData([]);
       setRetryConfig({ payload: inputPayload, isFile });
 
       try {
-          const prompt = `Analise a tabela de faturamento e extraia os dados estruturados em JSON.`;
+          const prompt = autoRegion
+            ? `Analise a tabela de faturamento da DHL e extraia os dados estruturados em JSON.
+Cada linha representa uma rota no formato "CIDADE_ORIGEM - CIDADE_DESTINO".
+Para CADA linha, determine o campo "region" com base na CIDADE DE ORIGEM (a primeira cidade, antes do traço), usando a geografia do Brasil.
+Use EXATAMENTE um destes valores em "region": NORTE, NORDESTE, CENTRO-OESTE, SUDESTE, SUL.
+Exemplos: GUARULHOS/SP=SUDESTE, EXTREMA/MG=SUDESTE, RIO DE JANEIRO/RJ=SUDESTE, SAO JOSE DOS PINHAIS/PR=SUL, FLORIANOPOLIS/SC=SUL, PORTO ALEGRE/RS=SUL, BRASILIA/DF=CENTRO-OESTE, SALVADOR/BA=NORDESTE, MANAUS/AM=NORTE.
+No campo "description" mantenha a rota original (ex.: "GUARULHOS - SERRA") sem incluir a região.`
+            : `Analise a tabela de faturamento e extraia os dados estruturados em JSON.`;
 
           let contentPart: any;
           if (isFile && typeof inputPayload !== 'string') {
@@ -117,6 +141,7 @@ const ImportClientPriceModal: React.FC<Props> = ({ onClose, onSuccess, fixedClie
                     items: {
                         type: "OBJECT",
                         properties: {
+                            region: { type: "STRING" },
                             description: { type: "STRING" },
                             km: { type: "NUMBER" },
                             hours: { type: "NUMBER" },
@@ -134,16 +159,13 @@ const ImportClientPriceModal: React.FC<Props> = ({ onClose, onSuccess, fixedClie
           const data = JSON.parse(resultText);
 
           if (Array.isArray(data) && data.length > 0) {
-              let prefix = '';
-              if (selectedRegion) prefix += `${selectedRegion} - `;
-              if (tableName) prefix += `${tableName.toUpperCase()} - `;
-
               let duplicateCount = 0;
               const processedData = data.map(item => ({
                   ...item,
+                  region: selectedRegion || normalizeRegion(item.region) || '',
                   description: item.description || `ATÉ ${item.km} KM`
               })).filter(item => {
-                  const potentialKey = (prefix + item.description).toUpperCase();
+                  const potentialKey = buildOperationType(item).toUpperCase();
                   if (existingOperations.has(potentialKey)) {
                       duplicateCount++;
                       return false;
@@ -191,18 +213,17 @@ const ImportClientPriceModal: React.FC<Props> = ({ onClose, onSuccess, fixedClie
   const handleSave = async () => {
       const clientName = fixedClientName || clients.find(c => c.id.toString() === selectedClient)?.name;
       if (!clientName) return setError("Erro: Cliente não identificado.");
-      if (isDhlAutoClient(clientName) && !selectedRegion) return setError("Selecione a REGIÃO antes de salvar — ela entra no prefixo da tabela DHL.");
       if (parsedData.length === 0) return setError("Nenhum dado.");
+      if (isDhlAutoClient(clientName) && !selectedRegion) {
+          const missing = parsedData.filter(r => !r.region).length;
+          if (missing > 0) return setError(`${missing} rota(s) sem REGIÃO detectada. Preencha a coluna REGIÃO ou escolha uma região no topo para forçar.`);
+      }
 
       setIsSaving(true);
       try {
-          let prefix = '';
-          if (selectedRegion) prefix += `${selectedRegion} - `;
-          if (tableName) prefix += `${tableName.toUpperCase()} - `;
-
           const payload = parsedData.map(item => ({
               client: clientName,
-              operation_type: (prefix + item.description).toUpperCase(),
+              operation_type: buildOperationType(item),
               activation_fee: parseFloat(item.activation) || 0,
               franchise_hours: parseFloat(item.hours) || 0,
               franchise_km: parseFloat(item.km) || 0,
@@ -230,7 +251,7 @@ const ImportClientPriceModal: React.FC<Props> = ({ onClose, onSuccess, fixedClie
   );
 
   const effectiveClientName = fixedClientName || clients.find(c => c.id.toString() === selectedClient)?.name || '';
-  const regionRequired = isDhlAutoClient(effectiveClientName);
+  const regionAuto = isDhlAutoClient(effectiveClientName);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in">
@@ -257,9 +278,9 @@ const ImportClientPriceModal: React.FC<Props> = ({ onClose, onSuccess, fixedClie
                         </div>
                     )}
                     <div>
-                        <label className="text-[10px] font-black uppercase text-gray-400 mb-1 block">REGIÃO (Prefixo) {regionRequired && <span className="text-red-500">*</span>}</label>
-                        <select className={`w-full p-2 border rounded-lg outline-none font-bold text-gray-700 uppercase ${regionRequired && !selectedRegion ? 'border-red-300 bg-red-50' : ''}`} value={selectedRegion} onChange={e => setSelectedRegion(e.target.value)}>
-                            <option value="">-- Selecione a Região --</option>
+                        <label className="text-[10px] font-black uppercase text-gray-400 mb-1 block">REGIÃO (Prefixo) {regionAuto && <span className="text-indigo-500 normal-case font-bold">(automática pela IA)</span>}</label>
+                        <select className="w-full p-2 border rounded-lg outline-none font-bold text-gray-700 uppercase" value={selectedRegion} onChange={e => setSelectedRegion(e.target.value)}>
+                            <option value="">{regionAuto ? '-- Automática (forçar região é opcional) --' : '-- Selecione a Região --'}</option>
                             {REGIONS.map(r => <option key={r} value={r}>{r}</option>)}
                         </select>
                     </div>
@@ -288,11 +309,12 @@ const ImportClientPriceModal: React.FC<Props> = ({ onClose, onSuccess, fixedClie
                         <div className="max-h-64 overflow-y-auto">
                             <table className="w-full text-left text-[10px]">
                                 <thead className="bg-white sticky top-0 border-b font-black uppercase">
-                                    <tr><th className="p-2 w-[30%]">DESCRIÇÃO</th><th className="p-2 w-[12%]">BASE</th><th className="p-2 w-[8%]">KM</th><th className="p-2 w-[8%]">H</th><th className="p-2 w-[10%]">EXC KM</th><th className="p-2 w-[10%]">EXC H</th><th className="p-2 w-[12%]">CANCEL.</th><th className="p-2 w-8"></th></tr>
+                                    <tr>{regionAuto && <th className="p-2 w-[12%]">REGIÃO</th>}<th className={`p-2 ${regionAuto ? 'w-[24%]' : 'w-[30%]'}`}>DESCRIÇÃO</th><th className="p-2 w-[11%]">BASE</th><th className="p-2 w-[7%]">KM</th><th className="p-2 w-[7%]">H</th><th className="p-2 w-[10%]">EXC KM</th><th className="p-2 w-[10%]">EXC H</th><th className="p-2 w-[11%]">CANCEL.</th><th className="p-2 w-8"></th></tr>
                                 </thead>
                                 <tbody className="divide-y divide-gray-50 bg-white">
                                     {displayedData.map((row, i) => (
                                         <tr key={i} className="hover:bg-gray-50">
+                                            {regionAuto && <td className="p-1"><select className={`w-full p-1 border rounded uppercase font-bold ${row.region ? 'border-transparent text-indigo-700' : 'border-red-300 bg-red-50 text-red-600'}`} value={row.region || ''} onChange={e => handleRowChange(i, 'region', e.target.value)}><option value="">??</option>{REGIONS.map(r => <option key={r} value={r}>{r}</option>)}</select></td>}
                                             <td className="p-1"><input type="text" className="w-full p-1 border border-transparent focus:border-green-300 rounded uppercase font-bold" value={row.description} onChange={e => handleRowChange(i, 'description', e.target.value)} /></td>
                                             <td className="p-1"><input type="number" step="0.01" className="w-full p-1 border border-transparent focus:border-green-300 rounded font-mono text-green-700 font-bold" value={row.activation} onChange={e => handleRowChange(i, 'activation', e.target.value)} /></td>
                                             <td className="p-1"><input type="number" className="w-full p-1 border border-transparent focus:border-green-300 rounded" value={row.km} onChange={e => handleRowChange(i, 'km', e.target.value)} /></td>
