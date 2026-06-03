@@ -4,6 +4,7 @@ import { X, Save, Loader2, FileSpreadsheet, AlertCircle, HelpCircle, UploadCloud
 import { Client } from '../types';
 import { generateContent } from '../lib/gemini';
 import { googleMapsApiKey } from '../lib/maps';
+import { isDhlAutoClient } from '../lib/dhlAutoTableSelector';
 
 interface Props {
   onClose: () => void;
@@ -11,7 +12,7 @@ interface Props {
   fixedClientName?: string; 
 }
 
-const REGIONS = ['NORTE', 'NORDESTE', 'CENTRO-OESTE', 'SUDESTE', 'SUL'];
+const REGIONS = ['NORTE', 'NORDESTE', 'CENTRO-OESTE', 'SUDESTE', 'SUL', 'BRASIL'];
 
 const ImportClientPriceModal: React.FC<Props> = ({ onClose, onSuccess, fixedClientName }) => {
   const [clients, setClients] = useState<Client[]>([]);
@@ -86,6 +87,11 @@ const ImportClientPriceModal: React.FC<Props> = ({ onClose, onSuccess, fixedClie
           setError("Por favor, selecione um cliente antes de processar.");
           return;
       }
+      const analyzeClientName = fixedClientName || clients.find(c => c.id.toString() === selectedClient)?.name;
+      if (isDhlAutoClient(analyzeClientName) && !selectedRegion) {
+          setError("Selecione a REGIÃO antes de processar — ela entra no prefixo da tabela DHL.");
+          return;
+      }
       setIsAnalyzing(true);
       setError('');
       setParsedData([]);
@@ -102,8 +108,8 @@ const ImportClientPriceModal: React.FC<Props> = ({ onClose, onSuccess, fixedClie
           }
 
           const resultText = await generateContent({
-              model: 'gemini-3-flash-preview', 
-              contents: { parts: [ contentPart, { text: prompt } ] },
+              model: 'gemini-2.5-flash',
+              contents: [{ role: 'user', parts: [ contentPart, { text: prompt } ] }],
               config: {
                 responseMimeType: "application/json",
                 responseSchema: {
@@ -185,6 +191,7 @@ const ImportClientPriceModal: React.FC<Props> = ({ onClose, onSuccess, fixedClie
   const handleSave = async () => {
       const clientName = fixedClientName || clients.find(c => c.id.toString() === selectedClient)?.name;
       if (!clientName) return setError("Erro: Cliente não identificado.");
+      if (isDhlAutoClient(clientName) && !selectedRegion) return setError("Selecione a REGIÃO antes de salvar — ela entra no prefixo da tabela DHL.");
       if (parsedData.length === 0) return setError("Nenhum dado.");
 
       setIsSaving(true);
@@ -222,6 +229,9 @@ const ImportClientPriceModal: React.FC<Props> = ({ onClose, onSuccess, fixedClie
       (row.description || '').toLowerCase().includes(tableSearchTerm.toLowerCase())
   );
 
+  const effectiveClientName = fixedClientName || clients.find(c => c.id.toString() === selectedClient)?.name || '';
+  const regionRequired = isDhlAutoClient(effectiveClientName);
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in">
         <div className="bg-white rounded-2xl shadow-2xl w-full max-w-5xl max-h-[90vh] overflow-y-auto flex flex-col">
@@ -247,8 +257,8 @@ const ImportClientPriceModal: React.FC<Props> = ({ onClose, onSuccess, fixedClie
                         </div>
                     )}
                     <div>
-                        <label className="text-[10px] font-black uppercase text-gray-400 mb-1 block">REGIÃO (Prefixo)</label>
-                        <select className="w-full p-2 border rounded-lg outline-none font-bold text-gray-700 uppercase" value={selectedRegion} onChange={e => setSelectedRegion(e.target.value)}>
+                        <label className="text-[10px] font-black uppercase text-gray-400 mb-1 block">REGIÃO (Prefixo) {regionRequired && <span className="text-red-500">*</span>}</label>
+                        <select className={`w-full p-2 border rounded-lg outline-none font-bold text-gray-700 uppercase ${regionRequired && !selectedRegion ? 'border-red-300 bg-red-50' : ''}`} value={selectedRegion} onChange={e => setSelectedRegion(e.target.value)}>
                             <option value="">-- Selecione a Região --</option>
                             {REGIONS.map(r => <option key={r} value={r}>{r}</option>)}
                         </select>
