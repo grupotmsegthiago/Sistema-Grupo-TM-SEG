@@ -2280,9 +2280,33 @@ export async function registerRoutes(
       const missionClientTrimmed = (mission.client || '').trim().toUpperCase();
       const clientData = (clients || []).find((c: any) => (c.name || '').trim().toUpperCase() === missionClientTrimmed);
 
+      // Horário do cancelamento (mission_history): permite ao motor cobrar as
+      // horas extras quando a OS foi cancelada DEPOIS da franquia (cancelada
+      // depois das 3h). Sem isso, o motor trata como "cancelada antes" e zera
+      // KM e horas, cobrando apenas a base (acionamento mínimo).
+      // Retry curto: o recálculo roda logo após o UPDATE de status; se a linha
+      // de histórico ainda não estiver visível, tenta de novo (evita subcobrança
+      // por _cancelStatusAt nulo numa OS comprovadamente Cancelada).
+      let cancelStatusAt: string | null = null;
+      for (let attempt = 0; attempt < 3 && !cancelStatusAt; attempt++) {
+        if (attempt > 0) await new Promise(r => setTimeout(r, 400));
+        try {
+          const { data: histRows } = await supabaseAdmin
+            .from('mission_history')
+            .select('changed_at, new_value')
+            .eq('mission_id', missionId)
+            .eq('field_name', 'status')
+            .order('changed_at', { ascending: true });
+          for (const h of (histRows || []) as any[]) {
+            if ((h.new_value || '').toString().toLowerCase().includes('cancel')) cancelStatusAt = h.changed_at;
+          }
+        } catch {}
+      }
+
       const { calculateMissionFinancials } = await import('../lib/financialUtils');
       const missionObj: any = {
         ...mission,
+        _cancelStatusAt: cancelStatusAt,
         startKm: mission.start_km, endKm: mission.end_km,
         startTime: mission.start_time, endTime: mission.end_time,
         agentCount: mission.agent_count || 1,

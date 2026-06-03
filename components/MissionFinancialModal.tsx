@@ -841,9 +841,28 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
           
           if (mRes.data) {
               const d = mRes.data;
+              // OS CANCELADA: busca o horário do cancelamento (mission_history)
+              // para o motor cobrar as horas extras quando cancelada DEPOIS da
+              // franquia. Sem isso, o motor trata como "cancelada antes" e zera
+              // KM e horas, cobrando apenas a base (acionamento mínimo).
+              let cancelStatusAt: string | null = (initialMission as any)._cancelStatusAt || null;
+              if (d.status === 'Cancelada' && !cancelStatusAt) {
+                  try {
+                      const { data: histRows } = await supabase
+                          .from('mission_history')
+                          .select('changed_at, new_value')
+                          .eq('mission_id', d.id)
+                          .eq('field_name', 'status')
+                          .order('changed_at', { ascending: true });
+                      for (const h of (histRows || []) as any[]) {
+                          if ((h.new_value || '').toString().toLowerCase().includes('cancel')) cancelStatusAt = h.changed_at;
+                      }
+                  } catch {}
+              }
               const fullMission = {
                   ...initialMission,
                   ...d,
+                  _cancelStatusAt: cancelStatusAt,
                   startKm: d.start_km ?? initialMission.startKm,
                   endKm: d.end_km ?? initialMission.endKm,
                   startTime: d.start_time ?? initialMission.startTime,

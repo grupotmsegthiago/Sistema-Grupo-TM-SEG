@@ -2,3 +2,4 @@
 - [Comercial data isolation](comercial-data-isolation.md) — no RLS; comercial role scoped 100% via frontend Supabase filters (created_by===name), guard `role==='comercial' && !perms('*')`; director name-match must use full name, not bare first name.
 - [Billing report client-specific columns](billing-report-client-columns.md) — adding a per-client column to the Boletim de Medição requires touching ~10 aligned spots (Excel + on-screen table); miss one and colSpans/widths drift.
 - [MissionFinancialModal table unlock](mission-financial-modal-table-unlock.md) — unlocking a price/cost table selector needs 3 coordinated edits (disabled, handleChange guard, options); to "open without rewriting" also suppress the onChange DB/system_logs side-effects.
+- [Cancelled OS extra hours](cancelled-os-extra-hours.md) — cancelada só cobra hora extra se caller passar `_cancelStatusAt` (de mission_history) ao motor; sem ele zera tudo e cobra só a base.
