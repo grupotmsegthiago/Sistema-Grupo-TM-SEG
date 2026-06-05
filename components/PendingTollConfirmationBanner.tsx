@@ -28,11 +28,13 @@ const PendingTollConfirmationBanner: React.FC<Props> = ({ onOpenMission }) => {
     const load = useCallback(async () => {
         setLoading(true);
         try {
+            // Só pedágios pendentes de OS concluídas a partir de maio/2026.
             const { data: candidateMissions, error } = await supabase
                 .from('missions')
                 .select('id, client, origin, destination, end_time, last_update')
                 .eq('status', 'Concluída')
                 .is('toll_value', null)
+                .gte('end_time', '2026-05-01')
                 .order('end_time', { ascending: false })
                 .limit(200);
 
