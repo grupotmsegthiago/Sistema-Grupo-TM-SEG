@@ -322,6 +322,204 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
       return isRestrictedClientView && resolvedClientName.toUpperCase().includes('CEVA');
   }, [isRestrictedClientView, resolvedClientName]);
 
+  // Mapas de lookup usados para enriquecer cada OS (placa do veículo, nome
+  // fantasia de cliente/fornecedor, veículo do cliente). Guardados em ref para
+  // permitir patch direcionado de UMA única OS no realtime, sem rebaixar a
+  // lista inteira a cada mudança.
+  const lookupMapsRef = useRef<{
+    vehicleMap: Record<string, any>;
+    clientVehicleMap: Record<string, any>;
+    clientNameMap: Record<string, string>;
+    providerNameMap: Record<string, string>;
+  }>({ vehicleMap: {}, clientVehicleMap: {}, clientNameMap: {}, providerNameMap: {} });
+
+  // Controle de recarga total: debounce + janela de supressão quando um patch
+  // direcionado já tratou a mudança (evita recarga total redundante disparada
+  // pelo evento global 'refreshMissions').
+  const refetchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const auxTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const suppressFullRefetchUntilRef = useRef<number>(0);
+  const hasSubscribedOnceRef = useRef<boolean>(false);
+  // Garante que o fetch inicial concluiu antes de aceitar patches direcionados
+  // (evita race de startup com eventos chegando antes do snapshot inicial).
+  const initialFetchDoneRef = useRef<boolean>(false);
+  // Versiona refreshDerivedData para descartar respostas fora de ordem.
+  const derivedReqIdRef = useRef<number>(0);
+  // Espelha allMissions para leitura síncrona dentro de callbacks realtime.
+  const allMissionsRef = useRef<Mission[]>([]);
+
+  // Converte uma linha bruta da tabela `missions` no objeto enriquecido usado
+  // pela UI, reaproveitando os mapas de lookup já carregados.
+  const mapRawMissionRow = useCallback((m: any): Mission => {
+    const maps = lookupMapsRef.current;
+    const clientKey = m.client ? (m.client || '').trim().toUpperCase() : '';
+    const providerKey = m.provider ? (m.provider || '').trim().toUpperCase() : '';
+    const resolvedVehicle = maps.vehicleMap[m.vehicle_id];
+    let displayVehicleId = m.vehicle_id;
+    if (resolvedVehicle) displayVehicleId = resolvedVehicle.plate;
+    const fallbackDate = m.last_update || m.created_at || new Date().toISOString();
+    const cargoId = m.client_vehicle?.toString();
+    const cargoVehicle = cargoId ? (maps.clientVehicleMap[cargoId] || { plate: `ID: ${cargoId}`, model: 'VEÍCULO NÃO LOCALIZADO' }) : null;
+    return {
+      ...m,
+      client: maps.clientNameMap[clientKey] || m.client,
+      provider: maps.providerNameMap[providerKey] || m.provider,
+      originalClientName: m.client,
+      clientVehicle: cargoVehicle,
+      driver_name: m.driver_name,
+      driver_phone: m.driver_phone,
+      lastUpdate: m.last_update,
+      updatedBy: m.updated_by,
+      createdAt: m.created_at || fallbackDate,
+      vehicleId: displayVehicleId,
+      vehicleData: resolvedVehicle,
+      totalDistance: m.total_distance,
+      traveledDistance: m.traveled_distance,
+      mapLink: m.map_link,
+      startKm: m.start_km,
+      start_time: m.start_time,
+      startTime: m.start_time,
+      endKm: m.end_km,
+      endTime: m.end_time,
+      estimatedTime: m.estimated_time,
+      currentLocation: m.current_location,
+      progress: m.progress || 0,
+      mission_type: m.mission_type || 'Caracterizada',
+      gr_espelhamento: m.gr_espelhamento,
+      revenue_value: m.revenue_value,
+      cost_value: m.cost_value,
+      toll_value: m.toll_value,
+      toll_value_provider: m.toll_value_provider,
+      billing_approved: m.billing_approved,
+      billing_verified_by: m.billing_verified_by,
+      reference_number: m.reference_number || '',
+      billing_release: m.billing_release || '',
+      dhl_se_number: m.dhl_se_number || ''
+    } as Mission;
+  }, []);
+
+  // Recalcula os dados DERIVADOS da lista de OS (contadores e mapas auxiliares
+  // de aprovação/evidência/logs/DHL/pedágio). É leve comparado à recarga total
+  // (consultas indexadas por id), e pode ser chamado após um patch direcionado
+  // para manter esses estados consistentes sem rebaixar a lista inteira.
+  const refreshDerivedData = useCallback(async (missions: Mission[]) => {
+    // Descarta respostas fora de ordem: se um refresh mais novo começar antes
+    // deste terminar, os setters abaixo são ignorados.
+    const reqId = ++derivedReqIdRef.current;
+    const portalMissions = missions.filter(m => m.status === MissionStatus.SOLICITED && (m.currentLocation || '').includes('Solicitação via Portal'));
+    setSolicitationCount(portalMissions.length);
+    setAccidentCount(portalMissions.filter(m => (m.currentLocation || '').includes('ACIDENTE')).length);
+
+    const completedIds = missions.filter(m => m.status === MissionStatus.COMPLETED && !m.billing_approved).map(m => m.id);
+    const allIds = missions.map(m => m.id);
+    const batchSize = 200;
+
+    const fetchApprovalLogs = async () => {
+        if (completedIds.length === 0) { if (reqId === derivedReqIdRef.current) setApprovalMap({}); return; }
+        const map: Record<string, { stage: string; date: string }[]> = {};
+        const batches = [];
+        for (let i = 0; i < completedIds.length; i += batchSize) batches.push(completedIds.slice(i, i + batchSize));
+        const results = await Promise.all(batches.map(batch => supabase.from('system_logs').select('entity_id, action_type, details, created_at').eq('entity', 'BillingApproval').in('entity_id', batch)));
+        results.forEach(({ data }) => {
+            (data || []).forEach((l: any) => {
+                if (!map[l.entity_id]) map[l.entity_id] = [];
+                try { const parsed = JSON.parse(l.details); map[l.entity_id].push({ stage: parsed.stage || l.action_type, date: parsed.date || l.created_at }); }
+                catch { map[l.entity_id].push({ stage: l.action_type, date: l.created_at }); }
+            });
+        });
+        if (reqId === derivedReqIdRef.current) setApprovalMap(map);
+    };
+
+    const fetchEvidenceLogs = async () => {
+        if (allIds.length === 0) { if (reqId === derivedReqIdRef.current) setEvidenceMap({}); return; }
+        const evMap: Record<string, { url: string; uploadedBy: string; uploadedAt: string }[]> = {};
+        const batches = [];
+        for (let i = 0; i < allIds.length; i += batchSize) batches.push(allIds.slice(i, i + batchSize));
+        const results = await Promise.all(batches.map(batch => supabase.from('system_logs').select('entity_id, details').eq('entity', 'MissionEvidence').in('entity_id', batch)));
+        results.forEach(({ data }) => {
+            (data || []).forEach((l: any) => {
+                if (!evMap[l.entity_id]) evMap[l.entity_id] = [];
+                try { const parsed = JSON.parse(l.details); evMap[l.entity_id].push({ url: parsed.publicUrl || '', uploadedBy: parsed.uploadedBy || '', uploadedAt: parsed.uploadedAt || '' }); } catch {}
+            });
+        });
+        if (reqId === derivedReqIdRef.current) setEvidenceMap(evMap);
+    };
+
+    const fetchMissionLogs = async () => {
+        if (allIds.length === 0) { if (reqId === derivedReqIdRef.current) setLastLogMap({}); return; }
+        const logMap: Record<string, MissionLog> = {};
+        const batches = [];
+        for (let i = 0; i < allIds.length; i += batchSize) batches.push(allIds.slice(i, i + batchSize));
+        const results = await Promise.all(batches.map(batch => supabase.from('mission_logs').select('*').in('mission_id', batch).order('created_at', { ascending: false })));
+        results.forEach(({ data }) => {
+            (data || []).forEach((l: any) => {
+                if (!logMap[l.mission_id]) logMap[l.mission_id] = l as MissionLog;
+            });
+        });
+        if (reqId === derivedReqIdRef.current) setLastLogMap(logMap);
+    };
+
+    const fetchDhlIntakes = async () => {
+        const dhlIds = missions.filter(m => {
+            const original = ((m as any).originalClientName || '').toUpperCase();
+            const displayed = (m.client || '').toUpperCase();
+            return original.includes('DHL') || displayed.includes('DHL');
+        }).map(m => m.id);
+        if (dhlIds.length === 0) { if (reqId === derivedReqIdRef.current) setDhlIntakeMap({}); return; }
+        const intakeMap: Record<string, { status: string; providerFilledAt: string | null; intakeId: string; progressAgent1?: boolean; progressAgent2?: boolean; progressVehicle?: boolean; progressMirror?: boolean }> = {};
+        const batches: string[][] = [];
+        for (let i = 0; i < dhlIds.length; i += batchSize) batches.push(dhlIds.slice(i, i + batchSize));
+        const results = await Promise.all(batches.map(batch =>
+            supabase.from('dhl_supplier_intakes')
+                .select('id, mission_id, status, provider_filled_at, created_at, progress_agent1, progress_agent2, progress_vehicle, progress_mirror')
+                .in('mission_id', batch)
+                .in('status', ['pendente', 'preenchido'])
+                .order('created_at', { ascending: false })
+        ));
+        results.forEach(({ data }) => {
+            (data || []).forEach((it: any) => {
+                if (!intakeMap[it.mission_id]) {
+                    intakeMap[it.mission_id] = {
+                        status: it.status,
+                        providerFilledAt: it.provider_filled_at || null,
+                        intakeId: it.id,
+                        progressAgent1: !!it.progress_agent1,
+                        progressAgent2: !!it.progress_agent2,
+                        progressVehicle: !!it.progress_vehicle,
+                        progressMirror: !!it.progress_mirror,
+                    };
+                }
+            });
+        });
+        if (reqId === derivedReqIdRef.current) setDhlIntakeMap(intakeMap);
+    };
+
+    const fetchTollConfirmations = async () => {
+        if (allIds.length === 0) { if (reqId === derivedReqIdRef.current) setTollConfirmMap({}); return; }
+        const tcMap: Record<string, { user: string; date: string; hasToll: boolean; value: number; source?: string }> = {};
+        const batches = [];
+        for (let i = 0; i < allIds.length; i += batchSize) batches.push(allIds.slice(i, i + batchSize));
+        const results = await Promise.all(batches.map(batch => supabase.from('system_logs').select('entity_id, user_name, details, created_at').eq('entity', 'MissionTollConfirmation').in('entity_id', batch).order('created_at', { ascending: false })));
+        results.forEach(({ data }) => {
+            (data || []).forEach((l: any) => {
+                if (tcMap[l.entity_id]) return; // keep most recent only
+                let parsed: any = {};
+                try { parsed = JSON.parse(l.details || '{}'); } catch {}
+                tcMap[l.entity_id] = {
+                    user: parsed.user || l.user_name || 'Usuário',
+                    date: parsed.confirmed_at || l.created_at,
+                    hasToll: !!parsed.has_toll,
+                    value: Number(parsed.value) || 0,
+                    source: parsed.source,
+                };
+            });
+        });
+        if (reqId === derivedReqIdRef.current) setTollConfirmMap(tcMap);
+    };
+
+    await Promise.all([fetchApprovalLogs(), fetchEvidenceLogs(), fetchMissionLogs(), fetchDhlIntakes(), fetchTollConfirmations()]);
+  }, []);
+
   const fetchMissions = useCallback(async (silent = false) => {
     if (!silent) setIsLoading(true);
     setDbStatus(null);
@@ -446,167 +644,17 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
               return acc;
           }, {});
 
-            const mapped: Mission[] = missionsData.map((m: any) => {
-                const clientKey = m.client ? (m.client || '').trim().toUpperCase() : '';
-                const providerKey = m.provider ? (m.provider || '').trim().toUpperCase() : '';
-                const resolvedVehicle = vehicleMap[m.vehicle_id];
-                let displayVehicleId = m.vehicle_id;
-                if (resolvedVehicle) displayVehicleId = resolvedVehicle.plate;
-  
-                const fallbackDate = m.last_update || m.created_at || new Date().toISOString();
-                const cargoId = m.client_vehicle?.toString();
-                const cargoVehicle = cargoId ? (clientVehicleMap[cargoId] || { plate: `ID: ${cargoId}`, model: 'VEÍCULO NÃO LOCALIZADO' }) : null;
-  
-                return { 
-                    ...m, 
-                    client: clientNameMap[clientKey] || m.client, 
-                    provider: providerNameMap[providerKey] || m.provider,
-                    originalClientName: m.client, 
-                    clientVehicle: cargoVehicle, 
-                    driver_name: m.driver_name, 
-                    driver_phone: m.driver_phone, 
-                    lastUpdate: m.last_update, 
-                    updatedBy: m.updated_by, 
-                    createdAt: m.created_at || fallbackDate, 
-                    vehicleId: displayVehicleId, 
-                    vehicleData: resolvedVehicle, 
-                    totalDistance: m.total_distance, 
-                    traveledDistance: m.traveled_distance, 
-                    mapLink: m.map_link, 
-                    startKm: m.start_km, 
-                    start_time: m.start_time, 
-                    startTime: m.start_time,
-                    endKm: m.end_km, 
-                    endTime: m.end_time, 
-                    estimatedTime: m.estimated_time, 
-                    currentLocation: m.current_location, 
-                    progress: m.progress || 0, 
-                    mission_type: m.mission_type || 'Caracterizada', 
-                    gr_espelhamento: m.gr_espelhamento,
-                    revenue_value: m.revenue_value,
-                    cost_value: m.cost_value,
-                    toll_value: m.toll_value,
-                    toll_value_provider: m.toll_value_provider,
-                    billing_approved: m.billing_approved,
-                    billing_verified_by: m.billing_verified_by,
-                    reference_number: m.reference_number || '',
-                    billing_release: m.billing_release || '',
-                    dhl_se_number: m.dhl_se_number || ''
-                };
-            });
+            // Publica os mapas de lookup para que o patch direcionado no realtime
+            // consiga enriquecer uma única OS sem recarregar a lista inteira.
+            lookupMapsRef.current = { vehicleMap, clientVehicleMap, clientNameMap, providerNameMap };
+
+            const mapped: Mission[] = missionsData.map((m: any) => mapRawMissionRow(m));
+            // Sincroniza o ref no mesmo tick para que callbacks realtime leiam o
+            // snapshot recém-carregado sem esperar o useEffect de espelhamento.
+            allMissionsRef.current = mapped;
             setAllMissions(mapped);
-            const portalMissions = mapped.filter(m => m.status === MissionStatus.SOLICITED && (m.currentLocation || '').includes('Solicitação via Portal'));
-            setSolicitationCount(portalMissions.length);
-            setAccidentCount(portalMissions.filter(m => (m.currentLocation || '').includes('ACIDENTE')).length);
-
-            const completedIds = mapped.filter(m => m.status === MissionStatus.COMPLETED && !m.billing_approved).map(m => m.id);
-            const allIds = mapped.map(m => m.id);
-            const batchSize = 200;
-
-            const fetchApprovalLogs = async () => {
-                if (completedIds.length === 0) return;
-                const map: Record<string, { stage: string; date: string }[]> = {};
-                const batches = [];
-                for (let i = 0; i < completedIds.length; i += batchSize) batches.push(completedIds.slice(i, i + batchSize));
-                const results = await Promise.all(batches.map(batch => supabase.from('system_logs').select('entity_id, action_type, details, created_at').eq('entity', 'BillingApproval').in('entity_id', batch)));
-                results.forEach(({ data }) => {
-                    (data || []).forEach((l: any) => {
-                        if (!map[l.entity_id]) map[l.entity_id] = [];
-                        try { const parsed = JSON.parse(l.details); map[l.entity_id].push({ stage: parsed.stage || l.action_type, date: parsed.date || l.created_at }); }
-                        catch { map[l.entity_id].push({ stage: l.action_type, date: l.created_at }); }
-                    });
-                });
-                setApprovalMap(map);
-            };
-
-            const fetchEvidenceLogs = async () => {
-                if (allIds.length === 0) return;
-                const evMap: Record<string, { url: string; uploadedBy: string; uploadedAt: string }[]> = {};
-                const batches = [];
-                for (let i = 0; i < allIds.length; i += batchSize) batches.push(allIds.slice(i, i + batchSize));
-                const results = await Promise.all(batches.map(batch => supabase.from('system_logs').select('entity_id, details').eq('entity', 'MissionEvidence').in('entity_id', batch)));
-                results.forEach(({ data }) => {
-                    (data || []).forEach((l: any) => {
-                        if (!evMap[l.entity_id]) evMap[l.entity_id] = [];
-                        try { const parsed = JSON.parse(l.details); evMap[l.entity_id].push({ url: parsed.publicUrl || '', uploadedBy: parsed.uploadedBy || '', uploadedAt: parsed.uploadedAt || '' }); } catch {}
-                    });
-                });
-                setEvidenceMap(evMap);
-            };
-
-            const fetchMissionLogs = async () => {
-                if (allIds.length === 0) return;
-                const logMap: Record<string, MissionLog> = {};
-                const batches = [];
-                for (let i = 0; i < allIds.length; i += batchSize) batches.push(allIds.slice(i, i + batchSize));
-                const results = await Promise.all(batches.map(batch => supabase.from('mission_logs').select('*').in('mission_id', batch).order('created_at', { ascending: false })));
-                results.forEach(({ data }) => {
-                    (data || []).forEach((l: any) => {
-                        if (!logMap[l.mission_id]) logMap[l.mission_id] = l as MissionLog;
-                    });
-                });
-                setLastLogMap(logMap);
-            };
-
-            const fetchDhlIntakes = async () => {
-                const dhlIds = mapped.filter(m => {
-                    const original = ((m as any).originalClientName || '').toUpperCase();
-                    const displayed = (m.client || '').toUpperCase();
-                    return original.includes('DHL') || displayed.includes('DHL');
-                }).map(m => m.id);
-                if (dhlIds.length === 0) { setDhlIntakeMap({}); return; }
-                const intakeMap: Record<string, { status: string; providerFilledAt: string | null; intakeId: string; progressAgent1?: boolean; progressAgent2?: boolean; progressVehicle?: boolean; progressMirror?: boolean }> = {};
-                const batches: string[][] = [];
-                for (let i = 0; i < dhlIds.length; i += batchSize) batches.push(dhlIds.slice(i, i + batchSize));
-                const results = await Promise.all(batches.map(batch =>
-                    supabase.from('dhl_supplier_intakes')
-                        .select('id, mission_id, status, provider_filled_at, created_at, progress_agent1, progress_agent2, progress_vehicle, progress_mirror')
-                        .in('mission_id', batch)
-                        .in('status', ['pendente', 'preenchido'])
-                        .order('created_at', { ascending: false })
-                ));
-                results.forEach(({ data }) => {
-                    (data || []).forEach((it: any) => {
-                        if (!intakeMap[it.mission_id]) {
-                            intakeMap[it.mission_id] = {
-                                status: it.status,
-                                providerFilledAt: it.provider_filled_at || null,
-                                intakeId: it.id,
-                                progressAgent1: !!it.progress_agent1,
-                                progressAgent2: !!it.progress_agent2,
-                                progressVehicle: !!it.progress_vehicle,
-                                progressMirror: !!it.progress_mirror,
-                            };
-                        }
-                    });
-                });
-                setDhlIntakeMap(intakeMap);
-            };
-
-            const fetchTollConfirmations = async () => {
-                if (allIds.length === 0) { setTollConfirmMap({}); return; }
-                const tcMap: Record<string, { user: string; date: string; hasToll: boolean; value: number; source?: string }> = {};
-                const batches = [];
-                for (let i = 0; i < allIds.length; i += batchSize) batches.push(allIds.slice(i, i + batchSize));
-                const results = await Promise.all(batches.map(batch => supabase.from('system_logs').select('entity_id, user_name, details, created_at').eq('entity', 'MissionTollConfirmation').in('entity_id', batch).order('created_at', { ascending: false })));
-                results.forEach(({ data }) => {
-                    (data || []).forEach((l: any) => {
-                        if (tcMap[l.entity_id]) return; // keep most recent only
-                        let parsed: any = {};
-                        try { parsed = JSON.parse(l.details || '{}'); } catch {}
-                        tcMap[l.entity_id] = {
-                            user: parsed.user || l.user_name || 'Usuário',
-                            date: parsed.confirmed_at || l.created_at,
-                            hasToll: !!parsed.has_toll,
-                            value: Number(parsed.value) || 0,
-                            source: parsed.source,
-                        };
-                    });
-                });
-                setTollConfirmMap(tcMap);
-            };
-
-            await Promise.all([fetchApprovalLogs(), fetchEvidenceLogs(), fetchMissionLogs(), fetchDhlIntakes(), fetchTollConfirmations()]);
+            await refreshDerivedData(mapped);
+            initialFetchDoneRef.current = true;
         }
       } catch (error: any) {
         console.error('Error fetching missions:', error.message || error);
@@ -615,11 +663,81 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
       } finally {
         if (!silent) setIsLoading(false);
       }
-    }, [showNotification, currentUser, isCommercial, isRestrictedClientView]);
-  
+    }, [showNotification, currentUser, isCommercial, isRestrictedClientView, mapRawMissionRow, refreshDerivedData]);
+
+    // Mantém allMissionsRef sincronizado para leitura síncrona em callbacks.
+    useEffect(() => { allMissionsRef.current = allMissions; }, [allMissions]);
+
+    // Recarga total com debounce (coalesce de rajadas de eventos realtime e do
+    // evento global 'refreshMissions').
+    const scheduleFullRefetch = useCallback(() => {
+      if (refetchTimerRef.current) clearTimeout(refetchTimerRef.current);
+      refetchTimerRef.current = setTimeout(() => { fetchMissions(true); }, 800);
+    }, [fetchMissions]);
+
+    // Reconcilia apenas os dados derivados (contadores + mapas auxiliares) a
+    // partir da lista atual, sem rebaixar missions/clientes/tabelas. Usado após
+    // patch direcionado e quando o evento global chega durante a supressão.
+    const scheduleAuxRefresh = useCallback(() => {
+      if (auxTimerRef.current) clearTimeout(auxTimerRef.current);
+      auxTimerRef.current = setTimeout(() => { refreshDerivedData(allMissionsRef.current); }, 900);
+    }, [refreshDerivedData]);
+
+    // Aplica uma mudança realtime de UMA OS direto no estado, sem rebaixar a
+    // lista inteira. Em qualquer incerteza (mapa de lookup ausente, payload
+    // incompleto) faz fallback para recarga total com debounce.
+    const applyRealtimeMissionChange = useCallback((payload: any) => {
+      try {
+        // Se o snapshot inicial ainda não concluiu, um patch direcionado poderia
+        // ser sobrescrito pelo fetch em andamento (race de startup). Faz recarga
+        // total com debounce, que roda após o fetch inicial assentar.
+        if (!initialFetchDoneRef.current) { scheduleFullRefetch(); return; }
+        if (payload.eventType === 'DELETE') {
+          const oldId = payload.old?.id;
+          if (oldId == null) { scheduleFullRefetch(); return; }
+          setAllMissions(prev => {
+            const next = prev.filter(m => String(m.id) !== String(oldId));
+            allMissionsRef.current = next;
+            return next;
+          });
+          suppressFullRefetchUntilRef.current = Date.now() + 1500;
+          scheduleAuxRefresh();
+          return;
+        }
+        const row = payload.new;
+        if (!row || row.id == null) { scheduleFullRefetch(); return; }
+        const maps = lookupMapsRef.current;
+        const needsVehicle = !!row.vehicle_id && !maps.vehicleMap[row.vehicle_id];
+        const needsClientVehicle = !!row.client_vehicle && !maps.clientVehicleMap[row.client_vehicle?.toString()];
+        if (needsVehicle || needsClientVehicle) { scheduleFullRefetch(); return; }
+        const mappedRow = mapRawMissionRow(row);
+        setAllMissions(prev => {
+          const idx = prev.findIndex(m => String(m.id) === String(row.id));
+          const next = idx === -1 ? [mappedRow, ...prev] : prev.slice();
+          if (idx !== -1) next[idx] = mappedRow;
+          allMissionsRef.current = next;
+          // Contadores de solicitações/acidentes (baratos) atualizados na hora.
+          const portal = next.filter(m => m.status === MissionStatus.SOLICITED && (m.currentLocation || '').includes('Solicitação via Portal'));
+          setSolicitationCount(portal.length);
+          setAccidentCount(portal.filter(m => (m.currentLocation || '').includes('ACIDENTE')).length);
+          return next;
+        });
+        suppressFullRefetchUntilRef.current = Date.now() + 1500;
+        // Reconcilia mapas auxiliares (aprovação/evidência/logs/DHL/pedágio) da
+        // OS afetada de forma leve, sem rebaixar a lista inteira.
+        scheduleAuxRefresh();
+      } catch {
+        scheduleFullRefetch();
+      }
+    }, [mapRawMissionRow, scheduleFullRefetch, scheduleAuxRefresh]);
+
     useEffect(() => {
       if (currentUser) {
           fetchMissions();
+          // Patch direcionado só para usuários com acesso total (listas grandes).
+          // Para visão restrita de cliente / comercial, o conjunto é pequeno e
+          // filtrado no servidor — uma recarga total com debounce é mais segura.
+          const canPatchInPlace = !isRestrictedClientView && !isCommercial;
           // Recalcula custo/receita das OS automaticamente ao abrir a tela
           // (silencioso, não altera tabelas de preço — apenas reflete tabelas atuais nas OS sem edição manual/aprovação).
           const role = (currentUser.role || '').toLowerCase();
@@ -644,13 +762,23 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
                     isAccident ? 'error' : 'info'
                   );
                 }
-                fetchMissions(true);
+                // Em vez de rebaixar TODAS as OS a cada evento, aplica a mudança
+                // de uma única OS direto no estado (acesso total) ou recarrega
+                // com debounce (visão restrita/comercial).
+                if (canPatchInPlace) applyRealtimeMissionChange(payload);
+                else scheduleFullRefetch();
               }
             )
             .subscribe((status: string) => {
               if (status === 'SUBSCRIBED') {
-                console.log('[Realtime] Canal missions reconectado — recarregando dados...');
-                fetchMissions(true);
+                // Não recarregar no primeiro SUBSCRIBED: o efeito já fez o fetch
+                // inicial. Em reconexões posteriores, ressincroniza com debounce.
+                if (hasSubscribedOnceRef.current) {
+                  console.log('[Realtime] Canal missions reconectado — ressincronizando...');
+                  scheduleFullRefetch();
+                } else {
+                  hasSubscribedOnceRef.current = true;
+                }
               }
               if (status === 'CLOSED' || status === 'CHANNEL_ERROR') {
                 console.warn('[Realtime] Canal missions desconectado — tentando reconexão em 3s...');
@@ -675,16 +803,31 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
               }
             });
           const interval = setInterval(() => fetchMissions(true), 300000);
-          const handleExternalRefresh = () => fetchMissions(true);
+          // O evento global 'refreshMissions' também dispara para mudanças em
+          // missions (via RealtimeProvider). Se um patch direcionado já tratou a
+          // mudança há instantes, ignora para não fazer recarga total redundante.
+          const handleExternalRefresh = () => {
+            if (Date.now() < suppressFullRefetchUntilRef.current) {
+              // Um patch direcionado já atualizou as OS há instantes. O evento
+              // global pode ter vindo de mudanças correlatas (DHL, pedágio,
+              // evidência, logs): reconcilia só os mapas derivados, sem rebaixar
+              // a lista inteira.
+              scheduleAuxRefresh();
+              return;
+            }
+            scheduleFullRefetch();
+          };
           window.addEventListener('refreshMissions', handleExternalRefresh);
           return () => {
             supabase.removeChannel(channel);
             supabase.removeChannel(broadcastChannel);
             clearInterval(interval);
+            if (refetchTimerRef.current) clearTimeout(refetchTimerRef.current);
+            if (auxTimerRef.current) clearTimeout(auxTimerRef.current);
             window.removeEventListener('refreshMissions', handleExternalRefresh);
           };
       }
-    }, [fetchMissions, currentUser, showNotification, isRestrictedClientView]);
+    }, [fetchMissions, currentUser, showNotification, isRestrictedClientView, isCommercial, applyRealtimeMissionChange, scheduleFullRefetch, scheduleAuxRefresh]);
   
     const periodMissions = useMemo(() => {
         const todayStart = new Date();
