@@ -184,6 +184,14 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
   const [showDhlSolicitation, setShowDhlSolicitation] = useState(false);
   const [tollConfirmMap, setTollConfirmMap] = useState<Record<string, { user: string; date: string; hasToll: boolean; value: number; source?: string }>>({});
   const [showTollNotConfirmedOnly, setShowTollNotConfirmedOnly] = useState(false);
+  // Resultados de busca server-side (OS/cliente/fornecedor/motorista/SE) para
+  // que a busca encontre OS fora do período atualmente carregado.
+  const [searchMatches, setSearchMatches] = useState<Mission[]>([]);
+  // Só liberamos a busca server-side depois que o escopo de cliente foi
+  // RESOLVIDO em fetchMissions. clientScopeRef nasce como { type: 'all' }, então
+  // buscar antes da resolução vazaria OS de outros clientes para usuários
+  // restritos/comercial (não há RLS no banco).
+  const [scopeReady, setScopeReady] = useState(false);
 
   // Paginação da tabela: 30 OS por página
   const PAGE_SIZE = 30;
@@ -347,6 +355,18 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
   const derivedReqIdRef = useRef<number>(0);
   // Espelha allMissions para leitura síncrona dentro de callbacks realtime.
   const allMissionsRef = useRef<Mission[]>([]);
+
+  // Parâmetros de período lidos por fetchMissions SEM entrar nas deps do
+  // callback — assim trocar de período não recria o canal realtime nem o
+  // intervalo de refetch (que dependem da identidade de fetchMissions).
+  const periodParamsRef = useRef({ viewPeriod, customStartDate, customEndDate });
+  useEffect(() => {
+    periodParamsRef.current = { viewPeriod, customStartDate, customEndDate };
+  }, [viewPeriod, customStartDate, customEndDate]);
+
+  // Escopo de cliente resolvido no último fetch — reaproveitado pela busca
+  // server-side para respeitar a visão restrita de cliente/comercial.
+  const clientScopeRef = useRef<{ type: 'all' | 'eq' | 'in' | 'empty'; value?: string; values?: string[] }>({ type: 'all' });
 
   // Converte uma linha bruta da tabela `missions` no objeto enriquecido usado
   // pela UI, reaproveitando os mapas de lookup já carregados.
@@ -524,15 +544,16 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
     if (!silent) setIsLoading(true);
     setDbStatus(null);
     try {
-      let query = supabase.from('missions').select('*').order('created_at', { ascending: false });
-      
+      // 1) Resolve o escopo de cliente (visão restrita por cliente / comercial).
+      //    Guardamos o escopo num ref para reaproveitar na busca server-side.
+      let scope: { type: 'all' | 'eq' | 'in' | 'empty'; value?: string; values?: string[] } = { type: 'all' };
       if (currentUser?.clientId) {
           const { data: clientData } = await supabase.from('clients').select('name').eq('id', currentUser.clientId).single();
-          if (clientData) { query = query.eq('client', clientData.name); setResolvedClientName(clientData.name); }
-          else { setAllMissions([]); setIsLoading(false); return; }
+          if (clientData) { scope = { type: 'eq', value: clientData.name }; setResolvedClientName(clientData.name); }
+          else { setAllMissions([]); allMissionsRef.current = []; setIsLoading(false); return; }
       } else if (isCommercial || (currentUser?.permissions && currentUser.permissions.some(p => p.startsWith('client_view:')))) {
           const allowedClientIds = currentUser?.permissions?.filter(p => p.startsWith('client_view:')).map(p => p.split(':')[1]) || [];
-          
+
           let clientNamesQuery = supabase.from('clients').select('name');
           if (allowedClientIds.length > 0) {
               clientNamesQuery = clientNamesQuery.or(`created_by.eq."${currentUser?.name}",id.in.(${allowedClientIds.join(',')})`);
@@ -544,19 +565,30 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
           const validNames = (myClients || []).map(c => c.name);
 
           if (validNames.length > 0) {
-              query = query.in('client', validNames);
+              scope = { type: 'in', values: validNames };
               if (validNames.length === 1) setResolvedClientName(validNames[0]);
           } else {
-              query = query.eq('client', 'NON_EXISTENT_CLIENT_TO_FORCE_EMPTY');
+              scope = { type: 'empty' };
           }
       }
+      clientScopeRef.current = scope;
+      setScopeReady(true);
 
-      const fetchAllPages = async () => {
+      // Constrói uma query base nova (com o escopo de cliente já aplicado).
+      const buildBase = () => {
+          let q = supabase.from('missions').select('*').order('created_at', { ascending: false });
+          if (scope.type === 'eq') q = q.eq('client', scope.value!);
+          else if (scope.type === 'in') q = q.in('client', scope.values!);
+          else if (scope.type === 'empty') q = q.eq('client', 'NON_EXISTENT_CLIENT_TO_FORCE_EMPTY');
+          return q;
+      };
+
+      const fetchAllPagesOf = async (q: any) => {
           let all: any[] = [];
           let from = 0;
           const pageSize = 1000;
           while (true) {
-              const { data, error } = await query.range(from, from + pageSize - 1);
+              const { data, error } = await q.range(from, from + pageSize - 1);
               if (error) throw error;
               if (data) all = all.concat(data);
               if (!data || data.length < pageSize) break;
@@ -565,8 +597,52 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
           return all;
       };
 
+      // OS "em aberto": sempre carregadas, independentemente do período. Mantém
+      // corretos os badges globais (aprovação, pedágio, "amanhã") e a visão
+      // "TOTAL ABERTOS". Settled = Concluída aprovada / Cancelada / Recusada
+      // (essas só são buscadas quando caem no intervalo de datas selecionado).
+      const OPEN_OR = 'status.in.("Pendente","Solicitada","Documentação","Agendada","Origem","Em Viagem"),and(status.eq."Concluída",billing_approved.not.is.true)';
+
+      const params = periodParamsRef.current;
+      const vp = params.viewPeriod;
+
+      // Busca SOMENTE o necessário para o período selecionado, em vez de baixar
+      // toda a base. HISTÓRICO continua trazendo tudo (é a visão de histórico).
+      const fetchScoped = async (): Promise<any[]> => {
+          // Visão restrita por cliente (portal do cliente / client_view): o
+          // conjunto de UM cliente já é pequeno e os painéis do cliente
+          // (ClientExecutiveDashboard/Relatórios/Comitê) têm seu PRÓPRIO
+          // seletor de período. Carrega tudo do cliente para não quebrá-los.
+          if (isRestrictedClientView) {
+              return fetchAllPagesOf(buildBase());
+          }
+          if (vp === 'HISTORY') {
+              return fetchAllPagesOf(buildBase());
+          }
+          if (vp === 'ALL') {
+              // "TOTAL ABERTOS" mostra apenas OS não-terminais.
+              return fetchAllPagesOf(buildBase().or(OPEN_OR));
+          }
+          const allowed: CanonicalPeriodT[] = ['TODAY', 'YESTERDAY', 'WEEK', 'MONTH', 'YEAR', 'CUSTOM'];
+          const period = (allowed.includes(vp as CanonicalPeriodT) ? vp : 'TODAY') as CanonicalPeriodT;
+          const [start, end] = getCanonicalDR(period, params.customStartDate, params.customEndDate);
+          const s = start.toISOString();
+          const e = end.toISOString();
+          // Espelha a regra do filtro local (start_time como referência, com
+          // fallback para created_at quando start_time é nulo).
+          const rangeOr = `and(start_time.gte.${s},start_time.lte.${e}),and(start_time.is.null,created_at.gte.${s},created_at.lte.${e})`;
+          const [inRange, open] = await Promise.all([
+              fetchAllPagesOf(buildBase().or(rangeOr)),
+              fetchAllPagesOf(buildBase().or(OPEN_OR)),
+          ]);
+          const byId = new Map<string, any>();
+          for (const m of inRange) byId.set(m.id, m);
+          for (const m of open) if (!byId.has(m.id)) byId.set(m.id, m);
+          return Array.from(byId.values());
+      };
+
       const [missionsData, clientTablesRes, providerTablesRes, clientsRes, providersRes] = await Promise.all([
-          fetchAllPages(),
+          fetchScoped(),
           supabase.from('client_price_tables').select('*'),
           supabase.from('provider_cost_tables').select('*'),
           supabase.from('clients').select('*'),
@@ -828,6 +904,43 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
           };
       }
     }, [fetchMissions, currentUser, showNotification, isRestrictedClientView, isCommercial, applyRealtimeMissionChange, scheduleFullRefetch, scheduleAuxRefresh]);
+
+    // Recarrega do servidor SÓ o período/datas selecionados quando o usuário
+    // troca de período. Pula o mount (o efeito de assinatura acima já fez o
+    // fetch inicial), evitando uma recarga dupla.
+    const periodChangeInitRef = useRef(true);
+    useEffect(() => {
+      if (!currentUser) return;
+      if (periodChangeInitRef.current) { periodChangeInitRef.current = false; return; }
+      fetchMissions();
+    }, [viewPeriod, customStartDate, customEndDate, currentUser, fetchMissions]);
+
+    // Busca server-side por termo (OS, cliente, fornecedor, motorista, SE),
+    // com debounce. Mantém a busca encontrando OS fora do período carregado,
+    // já que agora só baixamos o intervalo selecionado.
+    const searchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    useEffect(() => {
+      const term = (osFilterTerm.trim() || searchTerm.trim());
+      if (term.length < 2) { setSearchMatches([]); return; }
+      // Não busca antes do escopo de cliente estar resolvido (evita IDOR).
+      if (!scopeReady) { setSearchMatches([]); return; }
+      if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
+      searchDebounceRef.current = setTimeout(async () => {
+        try {
+          const scope = clientScopeRef.current;
+          if (scope.type === 'empty') { setSearchMatches([]); return; }
+          let q = supabase.from('missions').select('*').order('created_at', { ascending: false });
+          if (scope.type === 'eq') q = q.eq('client', scope.value!);
+          else if (scope.type === 'in') q = q.in('client', scope.values!);
+          // Sanitiza caracteres que quebram a sintaxe do filtro PostgREST.
+          const like = `%${term.replace(/[%,().]/g, ' ')}%`;
+          q = q.or(`id.ilike.${like},client.ilike.${like},provider.ilike.${like},driver_name.ilike.${like},dhl_se_number.ilike.${like}`);
+          const { data } = await q.limit(300);
+          if (data) setSearchMatches(data.map((m: any) => mapRawMissionRow(m)));
+        } catch { /* silencioso */ }
+      }, 400);
+      return () => { if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current); };
+    }, [osFilterTerm, searchTerm, scopeReady, mapRawMissionRow]);
   
     const periodMissions = useMemo(() => {
         const todayStart = new Date();
@@ -942,7 +1055,17 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
         const isOsFiltering = osFilterTerm && osFilterTerm.trim().length > 0;
 
         const needsAllMissions = showPendingOnly || showTomorrowOnly || showMyApprovalOnly || showNegativeMarginOnly || showTollNotConfirmedOnly || isOsFiltering;
-        const sourceMissions = needsAllMissions ? allMissions : periodMissions;
+        let sourceMissions: Mission[];
+        if (isSearching || isOsFiltering) {
+            // Combina o que já está carregado com os resultados da busca
+            // server-side (que podem estar fora do período atual).
+            const byId = new Map<string, Mission>();
+            for (const m of allMissions) byId.set(m.id, m);
+            for (const m of searchMatches) if (!byId.has(m.id)) byId.set(m.id, m);
+            sourceMissions = Array.from(byId.values());
+        } else {
+            sourceMissions = needsAllMissions ? allMissions : periodMissions;
+        }
 
         return sourceMissions.filter(mission => {
             if (isOsFiltering) {
@@ -1005,7 +1128,7 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
 
             return true;
         });
-    }, [allMissions, periodMissions, searchTerm, osFilterTerm, showPendingOnly, showTomorrowOnly, showMyApprovalOnly, showNegativeMarginOnly, showTollNotConfirmedOnly, tollConfirmMap, showDhlOnly, parentMissionIds, negativeLinkedIds]);
+    }, [allMissions, periodMissions, searchMatches, searchTerm, osFilterTerm, showPendingOnly, showTomorrowOnly, showMyApprovalOnly, showNegativeMarginOnly, showTollNotConfirmedOnly, tollConfirmMap, showDhlOnly, parentMissionIds, negativeLinkedIds]);
 
     // Status Counts based on the FILTERED set (to sync counters with visible criteria)
     const statusCounts = useMemo(() => {
@@ -1249,22 +1372,49 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
     const openMissionDeepLinkConsumedRef = useRef(false);
     useEffect(() => {
         if (openMissionDeepLinkConsumedRef.current) return;
-        if (!allMissions || allMissions.length === 0) return;
         try {
             const params = new URLSearchParams(window.location.search);
             const targetId = params.get('openMission');
             if (!targetId) return;
+            const consume = (mission: Mission) => {
+                openMissionDeepLinkConsumedRef.current = true;
+                setMissionForFinancials(mission);
+                setIsFinancialModalOpen(true);
+                params.delete('openMission');
+                const qs = params.toString();
+                const newUrl = window.location.pathname + (qs ? `?${qs}` : '') + window.location.hash;
+                window.history.replaceState({}, '', newUrl);
+            };
             const found = allMissions.find(m => String(m.id) === String(targetId));
-            if (!found) return;
+            if (found) { consume(found); return; }
+            // Não está no período carregado: só busca direto por id após o
+            // primeiro carregamento concluir (evita fetch prematuro).
+            if (!initialFetchDoneRef.current) return;
             openMissionDeepLinkConsumedRef.current = true;
-            setMissionForFinancials(found);
-            setIsFinancialModalOpen(true);
-            params.delete('openMission');
-            const qs = params.toString();
-            const newUrl = window.location.pathname + (qs ? `?${qs}` : '') + window.location.hash;
-            window.history.replaceState({}, '', newUrl);
+            (async () => {
+                try {
+                    // Aplica o MESMO escopo de cliente usado em fetchMissions —
+                    // caso contrário um usuário restrito poderia abrir a OS de
+                    // outro cliente via ?openMission=<id> (não há RLS).
+                    const sc = clientScopeRef.current;
+                    if (sc.type === 'empty') return;
+                    let q = supabase.from('missions').select('*').eq('id', targetId);
+                    if (sc.type === 'eq') q = q.eq('client', sc.value!);
+                    else if (sc.type === 'in') q = q.in('client', sc.values!);
+                    const { data } = await q.single();
+                    if (data) {
+                        const mapped = mapRawMissionRow(data);
+                        setMissionForFinancials(mapped);
+                        setIsFinancialModalOpen(true);
+                        params.delete('openMission');
+                        const qs = params.toString();
+                        const newUrl = window.location.pathname + (qs ? `?${qs}` : '') + window.location.hash;
+                        window.history.replaceState({}, '', newUrl);
+                    }
+                } catch { /* ignore */ }
+            })();
         } catch { /* ignore */ }
-    }, [allMissions]);
+    }, [allMissions, mapRawMissionRow]);
     const handleOpenPrintModal = (mission: Mission) => { setMissionForPrint(mission); setIsPrintModalOpen(true); };
     const handleDeleteClick = (mission: Mission) => { setMissionToDelete(mission); setDeletePassword(''); setCancelEscortAtOrigin(null); setIsDeleteModalOpen(true); };
     
