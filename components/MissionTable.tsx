@@ -193,8 +193,16 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
   // restritos/comercial (não há RLS no banco).
   const [scopeReady, setScopeReady] = useState(false);
 
-  // Paginação da tabela: 30 OS por página
-  const PAGE_SIZE = 30;
+  // Paginação da tabela: o usuário escolhe quantas OS por página (10 ou 100).
+  // A escolha é lembrada entre sessões via localStorage.
+  const PAGE_SIZE_OPTIONS = [10, 100] as const;
+  const [pageSize, setPageSize] = useState<number>(() => {
+    try {
+      const saved = Number(localStorage.getItem('missionTablePageSize'));
+      return PAGE_SIZE_OPTIONS.includes(saved as any) ? saved : 10;
+    } catch { return 10; }
+  });
+  const PAGE_SIZE = pageSize;
   const [currentPage, setCurrentPage] = useState(1);
 
   const topScrollRef = useRef<HTMLDivElement | null>(null);
@@ -1349,16 +1357,16 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
         });
     }, [filteredMissions, getDelayMinutes, getLastUpdateTimestamp]);
 
-    // Paginação: fatia 30 OS por página
+    // Paginação: fatia conforme o tamanho de página escolhido (10 ou 100).
     const totalPages = Math.max(1, Math.ceil(sortedMissions.length / PAGE_SIZE));
     const safePage = Math.min(currentPage, totalPages);
     const pagedMissions = useMemo(() => {
         const start = (safePage - 1) * PAGE_SIZE;
         return sortedMissions.slice(start, start + PAGE_SIZE);
-    }, [sortedMissions, safePage]);
+    }, [sortedMissions, safePage, PAGE_SIZE]);
 
-    // Reset pra página 1 sempre que algum filtro mudar
-    useEffect(() => { setCurrentPage(1); }, [searchTerm, osFilterTerm, filterStatus, viewPeriod, customStartDate, customEndDate, showPendingOnly, showTomorrowOnly, showMyApprovalOnly, showNegativeMarginOnly, showTollNotConfirmedOnly, approvalViewStage]);
+    // Reset pra página 1 sempre que algum filtro ou o tamanho de página mudar
+    useEffect(() => { setCurrentPage(1); }, [searchTerm, osFilterTerm, filterStatus, viewPeriod, customStartDate, customEndDate, showPendingOnly, showTomorrowOnly, showMyApprovalOnly, showNegativeMarginOnly, showTollNotConfirmedOnly, approvalViewStage, pageSize]);
 
     const handleOpenUpdateModal = (mission: Mission) => { setSelectedMission(mission); setIsUpdateModalOpen(true); };
     const handleUpdateSuccess = (reportText?: string) => { setIsUpdateModalOpen(false); setSelectedMission(null); fetchMissions(true); if (reportText) handleCopyToClipboard(reportText, 'relatorio', true); };
@@ -2038,14 +2046,34 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
                   </div>
                 </>
               )}
-              {!isLoading && sortedMissions.length > PAGE_SIZE && (
+              {!isLoading && sortedMissions.length > Math.min(...PAGE_SIZE_OPTIONS) && (
                 <div className="flex flex-wrap items-center justify-between gap-3 mt-4 px-2 py-3 bg-white border border-gray-200 rounded-lg" data-testid="pagination-bar">
-                  <div className="text-xs text-gray-600 font-medium">
-                    Mostrando <span className="font-bold text-gray-900">{(safePage - 1) * PAGE_SIZE + 1}</span>
-                    {' – '}
-                    <span className="font-bold text-gray-900">{Math.min(safePage * PAGE_SIZE, sortedMissions.length)}</span>
-                    {' de '}
-                    <span className="font-bold text-gray-900">{sortedMissions.length}</span> OS
+                  <div className="flex items-center gap-3">
+                    <div className="text-xs text-gray-600 font-medium">
+                      Mostrando <span className="font-bold text-gray-900">{(safePage - 1) * PAGE_SIZE + 1}</span>
+                      {' – '}
+                      <span className="font-bold text-gray-900">{Math.min(safePage * PAGE_SIZE, sortedMissions.length)}</span>
+                      {' de '}
+                      <span className="font-bold text-gray-900">{sortedMissions.length}</span> OS
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <label htmlFor="select-page-size" className="text-xs text-gray-600 font-medium">Por página:</label>
+                      <select
+                        id="select-page-size"
+                        value={pageSize}
+                        onChange={(e) => {
+                          const v = Number(e.target.value);
+                          setPageSize(v);
+                          try { localStorage.setItem('missionTablePageSize', String(v)); } catch {}
+                        }}
+                        data-testid="select-page-size"
+                        className="px-2 py-1.5 text-xs font-bold text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 cursor-pointer"
+                      >
+                        {PAGE_SIZE_OPTIONS.map(opt => (
+                          <option key={opt} value={opt}>{opt}</option>
+                        ))}
+                      </select>
+                    </div>
                   </div>
                   <div className="flex items-center gap-1">
                     <button
