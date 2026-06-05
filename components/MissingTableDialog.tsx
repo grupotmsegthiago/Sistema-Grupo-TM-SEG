@@ -37,11 +37,19 @@ export const computeMissingTableRows = (
   viewPeriod: string,
   customStartDate?: string,
   customEndDate?: string,
+  // Quando true, `missions` já vem filtrada pelo período canônico (evita varrer
+  // a lista inteira duas vezes quando o chamador já fez esse filtro).
+  alreadyFiltered = false,
 ): Row[] => {
-  const allowed: CanonicalPeriod[] = ['TODAY', 'YESTERDAY', 'WEEK', 'MONTH', 'YEAR', 'CUSTOM', 'ALL'];
-  const period = (allowed.includes(viewPeriod as CanonicalPeriod) ? viewPeriod : 'TODAY') as CanonicalPeriod;
-  const [start, end] = getCanonicalDateRange(period, customStartDate, customEndDate);
-  const inPeriod = filterMissionsByPeriod(missions || [], start, end);
+  let inPeriod: any[];
+  if (alreadyFiltered) {
+    inPeriod = missions || [];
+  } else {
+    const allowed: CanonicalPeriod[] = ['TODAY', 'YESTERDAY', 'WEEK', 'MONTH', 'YEAR', 'CUSTOM', 'ALL'];
+    const period = (allowed.includes(viewPeriod as CanonicalPeriod) ? viewPeriod : 'TODAY') as CanonicalPeriod;
+    const [start, end] = getCanonicalDateRange(period, customStartDate, customEndDate);
+    inPeriod = filterMissionsByPeriod(missions || [], start, end);
+  }
   const now = new Date();
   const out: Row[] = [];
   for (const m of inPeriod) {

@@ -255,16 +255,26 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
   // Conta quantas OS estão com prejuízo direto (custo > receita) no período
   // canônico selecionado. Usado para esconder o botão "OS com Prejuízo"
   // quando não há nenhuma OS com prejuízo no período.
-  const lossesCount = useMemo(() => {
-    if (!canSeeFinancials) return 0;
+  // Passada única de filtragem por período, compartilhada pelas memos pesadas
+  // abaixo (prejuízo e "OS sem tabela") para não varrer allMissions duas vezes.
+  const missionsInCanonicalPeriod = useMemo(() => {
+    if (!canSeeFinancials && !canSeeMissingTableAlert) return [];
     try {
       const allowed: CanonicalPeriodT[] = ['TODAY', 'YESTERDAY', 'WEEK', 'MONTH', 'YEAR', 'CUSTOM', 'ALL'];
       const period = (allowed.includes(viewPeriod as CanonicalPeriodT) ? viewPeriod : 'TODAY') as CanonicalPeriodT;
       const [start, end] = getCanonicalDR(period, customStartDate, customEndDate);
-      const inPeriod = filterByPeriodCanonical(allMissions || [], start, end);
+      return filterByPeriodCanonical(allMissions || [], start, end);
+    } catch {
+      return [];
+    }
+  }, [canSeeFinancials, canSeeMissingTableAlert, allMissions, viewPeriod, customStartDate, customEndDate]);
+
+  const lossesCount = useMemo(() => {
+    if (!canSeeFinancials) return 0;
+    try {
       const refs = { clientTables, providerTables, clientsData };
       let count = 0;
-      for (const m of inPeriod) {
+      for (const m of missionsInCanonicalPeriod) {
         if ((m as any).status === MissionStatus.REFUSED) continue;
         const r = computeCanonicalRC(m as any, refs);
         if (r.rev <= 0 && r.cost <= 0) continue;
@@ -274,16 +284,17 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
     } catch {
       return 0;
     }
-  }, [canSeeFinancials, allMissions, clientTables, providerTables, clientsData, viewPeriod, customStartDate, customEndDate]);
+  }, [canSeeFinancials, missionsInCanonicalPeriod, clientTables, providerTables, clientsData]);
 
   const missingTableRows = useMemo<MissingTableRow[]>(() => {
     if (!canSeeMissingTableAlert) return [];
     try {
-      return computeMissingTableRows(allMissions || [], clientTables, providerTables, clientsData, viewPeriod, customStartDate, customEndDate);
+      // missionsInCanonicalPeriod já está filtrada pelo período (alreadyFiltered=true).
+      return computeMissingTableRows(missionsInCanonicalPeriod, clientTables, providerTables, clientsData, viewPeriod, customStartDate, customEndDate, true);
     } catch {
       return [];
     }
-  }, [canSeeMissingTableAlert, allMissions, clientTables, providerTables, clientsData, viewPeriod, customStartDate, customEndDate]);
+  }, [canSeeMissingTableAlert, missionsInCanonicalPeriod, clientTables, providerTables, clientsData, viewPeriod, customStartDate, customEndDate]);
   const missingTableCount = missingTableRows.length;
 
   const isCommercial = useMemo(() => {

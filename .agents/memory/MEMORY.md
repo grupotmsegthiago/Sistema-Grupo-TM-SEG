@@ -4,4 +4,5 @@
 - [MissionFinancialModal table unlock](mission-financial-modal-table-unlock.md) — unlocking a price/cost table selector needs 3 coordinated edits (disabled, handleChange guard, options); to "open without rewriting" also suppress the onChange DB/system_logs side-effects.
 - [Cancelled OS extra hours](cancelled-os-extra-hours.md) — cancelada só cobra hora extra se caller passar `_cancelStatusAt` (de mission_history) ao motor; sem ele zera tudo e cobra só a base.
 - [OS table swap](os-table-swap.md) — trocar tabela de uma OS: set manual*TableId (autofill sincroniza inputs) → handleUpdate(false) persiste valores+ids e dispara realtime global; não criar .on por tela.
+- [Query cache vs Realtime](query-cache-realtime-tradeoff.md) — long staleTime + refetchOnWindowFocus off is safe because RealtimeProvider invalidates caches; MissionTable fetches manually, not via React Query.
 - [DHL audit sheet](dhl-audit-sheet.md) — "PREENCHER PLANILHA (SE)" mostra horários reais (mission_history) + tabela regional via selectDhlClientTable; nunca balancear franquia p/ casar boletim; selector direto p/ canceladas.
