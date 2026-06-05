@@ -695,29 +695,18 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
               return results.flatMap(r => r.data || []);
           };
 
-          const [vehiclesRows, clientVehiclesRows, allAgentPhones] = await Promise.all([
+          // Só veículos / veículos-do-cliente bloqueiam a renderização das
+          // linhas (as placas aparecem nos cards). Telefones de agente e os
+          // dados derivados (selos/contadores) são carregados DEPOIS, sem
+          // travar a tabela — eles não são necessários para desenhar as OS.
+          const [vehiclesRows, clientVehiclesRows] = await Promise.all([
               fetchInChunks('vehicles', '*', vehicleIds),
               fetchInChunks('client_vehicles', 'id, plate, model, brand, color', clientVehicleIds),
-              fetchAllAgentPhones()
           ]);
 
           const vehicleMap = vehiclesRows.reduce((acc: any, v: any) => ({ ...acc, [v.id]: v }), {});
           const clientVehicleMap = clientVehiclesRows.reduce((acc: any, v: any) => ({ ...acc, [v.id.toString()]: v }), {});
-          
-          const agentPhoneIndex = new Map<string, string>();
-          for (const a of allAgentPhones) {
-              if (a.name && a.phone) {
-                  agentPhoneIndex.set(a.name, a.phone);
-                  agentPhoneIndex.set(a.name.trim().toUpperCase(), a.phone);
-              }
-          }
-          const phonesMap: Record<string, string> = {};
-          for (const name of agentNames) {
-              const phone = agentPhoneIndex.get(name) || agentPhoneIndex.get(name.trim().toUpperCase());
-              if (phone) phonesMap[name] = phone;
-          }
-          setAgentPhonesMap(phonesMap);
-          
+
           const clientNameMap = (clientsRes.data || []).reduce((acc: any, c: any) => {
               if (c.trading_name && c.trading_name.trim() !== '') acc[(c.name || '').trim().toUpperCase()] = c.trading_name.trim();
               return acc;
@@ -737,8 +726,33 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
             // snapshot recém-carregado sem esperar o useEffect de espelhamento.
             allMissionsRef.current = mapped;
             setAllMissions(mapped);
-            await refreshDerivedData(mapped);
             initialFetchDoneRef.current = true;
+            // Tabela já pode aparecer: liberamos o loader sem esperar telefones
+            // de agente nem os dados derivados (selos/contadores).
+            if (!silent) setIsLoading(false);
+
+            // Telefones dos agentes — usados apenas nos botões de WhatsApp.
+            // Fora do caminho crítico; chegam logo após a tabela aparecer.
+            void (async () => {
+                const allAgentPhones = await fetchAllAgentPhones();
+                const agentPhoneIndex = new Map<string, string>();
+                for (const a of allAgentPhones) {
+                    if (a.name && a.phone) {
+                        agentPhoneIndex.set(a.name, a.phone);
+                        agentPhoneIndex.set(a.name.trim().toUpperCase(), a.phone);
+                    }
+                }
+                const phonesMap: Record<string, string> = {};
+                for (const name of agentNames) {
+                    const phone = agentPhoneIndex.get(name) || agentPhoneIndex.get(name.trim().toUpperCase());
+                    if (phone) phonesMap[name] = phone;
+                }
+                setAgentPhonesMap(phonesMap);
+            })().catch(err => console.error('Erro ao carregar telefones de agente:', err));
+
+            // Selos/contadores (aprovação, pedágio, evidência, logs, DHL) —
+            // reconciliados em segundo plano; já têm versionamento próprio.
+            void refreshDerivedData(mapped).catch(err => console.error('Erro ao carregar dados derivados:', err));
         }
       } catch (error: any) {
         console.error('Error fetching missions:', error.message || error);
