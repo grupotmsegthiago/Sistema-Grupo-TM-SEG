@@ -1493,13 +1493,39 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
 
     useEffect(() => {
       if (financialData && mission && !isLoading) {
+          const fmtBR = (v: number) => v.toLocaleString('pt-BR', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+          // Total da MEMÓRIA DE CÁLCULO — mesma expressão exibida na linha
+          // "base + km + hora + IBL + pedágio = total": serviço (já com IBL) + pedágio.
+          // O número grande deve ser cópia fiel deste valor.
+          const autoClientTotal = financialData.client.serviceTotal + parseNumber(tollInput);
+          const autoProviderTotal = financialData.provider.serviceTotal + parseNumber(tollProviderInput);
+
           const canAutoFill = !dbValuesLoadedRef.current && !userManuallyEditedRef.current && !isSavingRef.current;
           if (canAutoFill) {
-              const provTotalWithCorrectToll = financialData.provider.serviceTotal + parseNumber(tollProviderInput);
-              const newRevStr = financialData.client.total.toLocaleString('pt-BR', {minimumFractionDigits: 2, maximumFractionDigits: 2});
-              const newCostStr = provTotalWithCorrectToll.toLocaleString('pt-BR', {minimumFractionDigits: 2, maximumFractionDigits: 2});
-              setRevenueInput(newRevStr);
-              setCostInput(newCostStr);
+              setRevenueInput(fmtBR(autoClientTotal));
+              setCostInput(fmtBR(autoProviderTotal));
+          }
+
+          // Task #133: o número grande (cliente verde e fornecedor azul) é, por
+          // padrão, uma cópia fiel do total da memória de cálculo. Mesmo quando
+          // já existe valor salvo no banco (dbValuesLoadedRef), o número grande
+          // acompanha o cálculo — corrigindo valores antigos que ficavam
+          // "presos" e divergentes (o aviso âmbar indevido). NÃO roda quando:
+          //  - há edição manual de propósito (userManuallyEditedRef, setado no
+          //    load quando há revenue_edit_reason/cost_edit_reason ou
+          //    billing_verified_by) -> preserva o override da diretoria;
+          //  - está salvando;
+          //  - a OS está travada/aprovada (isEffectivelyLocked) -> o snapshot
+          //    financeiro congelado permanece intacto.
+          if (dbValuesLoadedRef.current && !userManuallyEditedRef.current && !isSavingRef.current && !isEffectivelyLocked) {
+              const currentRev = parseNumber(revenueInput);
+              if (autoClientTotal > 0 && Math.abs(currentRev - autoClientTotal) > 1) {
+                  setRevenueInput(fmtBR(autoClientTotal));
+              }
+              const currentCost = parseNumber(costInput);
+              if (autoProviderTotal > 0 && Math.abs(currentCost - autoProviderTotal) > 1) {
+                  setCostInput(fmtBR(autoProviderTotal));
+              }
           }
 
           // Motor automático é fonte oficial: se está ativo e o valor salvo
@@ -1521,7 +1547,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
           const isCevaLogitech = financialData.client?.detectionLog?.includes('LOGITECH SOBERANA');
           // Regra: depois de salvo/aprovado, NUNCA sobrescrever valores do banco
           // por recálculo automático (mesmo no caso especial CEVA/Logitech).
-          if (isCevaLogitech && dbValuesLoadedRef.current && !isSavingRef.current && !isEffectivelyLocked) {
+          if (isCevaLogitech && dbValuesLoadedRef.current && !userManuallyEditedRef.current && !isSavingRef.current && !isEffectivelyLocked) {
               const fmt = (v: number) => v.toLocaleString('pt-BR', {minimumFractionDigits: 2, maximumFractionDigits: 2});
               const calcRevTotal = financialData.client.total;
               const currentInput = parseNumber(revenueInput);
@@ -4507,7 +4533,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                 );
                             })()}
                             {(() => {
-                                const calcTotal = financialData ? financialData.client.total : 0;
+                                const calcTotal = financialData ? (financialData.client.serviceTotal + parseNumber(tollInput)) : 0;
                                 const inputVal = parseNumber(revenueInput);
                                 const isManualValue = inputVal > 0 && calcTotal > 0 && Math.abs(inputVal - calcTotal) > 1;
                                 return (
