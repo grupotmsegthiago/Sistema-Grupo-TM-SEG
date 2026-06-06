@@ -5,6 +5,7 @@
 - [Cancelled OS extra hours](cancelled-os-extra-hours.md) — cancelada só cobra hora extra se caller passar `_cancelStatusAt` (de mission_history) ao motor; sem ele zera tudo e cobra só a base.
 - [OS table swap](os-table-swap.md) — trocar tabela de uma OS: set manual*TableId (autofill sincroniza inputs) → handleUpdate(false) persiste valores+ids e dispara realtime global; não criar .on por tela.
 - [Query cache vs Realtime](query-cache-realtime-tradeoff.md) — long staleTime + refetchOnWindowFocus off is safe because RealtimeProvider invalidates caches; MissionTable fetches manually, not via React Query.
+- [DHL table naming standard](dhl-table-naming.md) — DHL price-table names need `REGIÃO - DESC NNNKM`; the KM to append is the row's franchise_km; exclude __AUTO_MASTER__ rows.
 - [DHL audit sheet](dhl-audit-sheet.md) — "PREENCHER PLANILHA (SE)" mostra horários reais (mission_history) + tabela regional via selectDhlClientTable; nunca balancear franquia p/ casar boletim; selector direto p/ canceladas.
 - [MissionTable initial render](missiontable-initial-render.md) — só missões+veículos bloqueiam o 1º paint; telefones de agente e dados derivados (selos) carregam em background depois de setIsLoading(false).
 - [MissionTable pagination](mission-table-pagination.md) — Operations loads per-period (in-range ∪ always-loaded OPEN set); badges stay global, restricted-client view loads full client set; realtime deps exclude period.
