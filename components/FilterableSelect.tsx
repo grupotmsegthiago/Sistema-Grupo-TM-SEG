@@ -71,12 +71,13 @@ export default function FilterableSelect({
         type="button"
         disabled={disabled}
         onClick={() => !disabled && setOpen(o => !o)}
+        title={current?.title || displayLabel}
         className={
           buttonClassName ||
           `w-full p-2 bg-gray-50 border border-gray-200 rounded-lg text-xs font-bold text-gray-700 uppercase outline-none ${focusBorder} flex items-center justify-between gap-2 ${disabled ? 'opacity-60 cursor-not-allowed' : 'hover:border-gray-300'}`
         }
       >
-        <span className="truncate text-left flex-1">{displayLabel}</span>
+        <span className="text-left flex-1 whitespace-normal break-words leading-snug">{displayLabel}</span>
         <ChevronDown size={14} className={`shrink-0 transition-transform ${open ? 'rotate-180' : ''}`} />
       </button>
       {open && (
