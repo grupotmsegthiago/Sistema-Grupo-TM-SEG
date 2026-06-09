@@ -159,7 +159,7 @@ const VehicleForm: React.FC<VehicleFormProps> = ({ onBack, id, initialProvider, 
             return;
         }
 
-        const url = `${API_BRASIL_CONFIG.BASE_URL}/${cleanPlate}/${API_BRASIL_CONFIG.TOKEN}`;
+        const url = API_BRASIL_CONFIG.consultaUrl(cleanPlate);
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), 8000); 
 
@@ -172,7 +172,13 @@ const VehicleForm: React.FC<VehicleFormProps> = ({ onBack, id, initialProvider, 
             throw new Error(`Servidor indisponível (${response.status})`);
         }
 
-        const data = await response.json();
+        const raw = await response.text();
+        let data: any;
+        try {
+            data = JSON.parse(raw);
+        } catch {
+            throw new Error('API de Placas retornou resposta inválida (indisponível).');
+        }
         if (data.error) throw new Error(data.mensagemRetorno || 'Veículo não encontrado.');
         
         setFormData(prev => ({

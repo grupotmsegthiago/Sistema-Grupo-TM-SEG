@@ -12,4 +12,5 @@
 - [DHL audit sheet](dhl-audit-sheet.md) — "PREENCHER PLANILHA (SE)": HORA INÍCIO=agendamento; RAIO segue raio da coluna E (franquia/AO/Q), não km rodado; nunca balancear franquia p/ casar boletim.
 - [MissionTable initial render](missiontable-initial-render.md) — só missões+veículos bloqueiam o 1º paint; telefones de agente e dados derivados (selos) carregam em background depois de setIsLoading(false).
 - [MissionTable pagination](mission-table-pagination.md) — Operations loads per-period (in-range ∪ always-loaded OPEN set); badges stay global, restricted-client view loads full client set; realtime deps exclude period.
+- [Plate lookup provider](placa-api-provider.md) — WDAPI2 virou apiplacas.com.br/api1.php?placa=&token=; Cloudflare bloqueia servidor (chamar direto do frontend); sempre text()+JSON.parse guard.
 - [Billing report provider mode](billing-report-provider-mode.md) — Boletim tem toggle Cliente/Fornecedor no MESMO componente; reusa rowsData genérico c/ fin.provider, total=cost_value+toll fornecedor, isolamento .in('provider',exact).

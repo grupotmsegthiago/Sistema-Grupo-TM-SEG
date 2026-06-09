@@ -312,11 +312,12 @@ PWA: Service Worker + Manifest (mobile-first)
 - **Secrets:** `VITE_ZAPI_INSTANCE_ID`, `VITE_ZAPI_TOKEN`, `VITE_ZAPI_CLIENT_TOKEN`
 - **Uso:** Envio de mensagens e imagens para grupos/contatos
 
-### 5.6 WDAPI (Consulta de Placas)
+### 5.6 API Placas (ex-WDAPI2) — Consulta de Placas
 - **Arquivo:** `constants.ts`
-- **Base URL:** `https://wdapi2.com.br/consulta`
+- **Base URL:** `https://apiplacas.com.br/api1.php` (formato query: `?placa={PLACA}&token={TOKEN}`)
 - **Secret:** `VITE_WDAPI_TOKEN`
 - **Uso:** Consulta de dados de veículo por placa
+- **Nota:** Domínio antigo `wdapi2.com.br/consulta/{placa}/{token}` foi descontinuado (passou a redirecionar para HTML, quebrando o JSON). Provedor atrás de Cloudflare; chamada direta do frontend funciona, mas a página pública de intake do fornecedor usa proxy backend (token não pode ser exposto a usuários públicos).
 
 ### 5.7 RapidAPI (Pedágio)
 - **Arquivo:** `server/routes.ts` (rotas `/api/toll/*`)

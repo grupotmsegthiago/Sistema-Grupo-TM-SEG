@@ -134,9 +134,20 @@ const ClientVehicleForm: React.FC<Props> = ({ onBack, id, initialClientId, onSuc
             return;
         }
 
-        const url = `${API_BRASIL_CONFIG.BASE_URL}/${cleanPlate}/${API_BRASIL_CONFIG.TOKEN}`;
+        const url = API_BRASIL_CONFIG.consultaUrl(cleanPlate);
         const response = await fetch(url, { method: 'GET' });
-        const data = await response.json();
+        if (!response.ok) {
+            if (response.status === 401 || response.status === 403) throw new Error('Falha de autenticação na API de Placas.');
+            if (response.status === 429) throw new Error('Limite de consultas excedido.');
+            throw new Error(`API de Placas indisponível (${response.status}).`);
+        }
+        const raw = await response.text();
+        let data: any;
+        try {
+            data = JSON.parse(raw);
+        } catch {
+            throw new Error('API de Placas retornou resposta inválida (indisponível).');
+        }
         
         if (data.error || (data.codigoSituacao && data.codigoSituacao !== '0')) {
              throw new Error(data.mensagemRetorno || 'Veículo não encontrado na base.');

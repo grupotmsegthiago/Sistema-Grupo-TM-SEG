@@ -3,7 +3,7 @@
 // ==========================================
 // VERSÃO DO SISTEMA
 // ==========================================
-export const APP_VERSION = "3.6.37";
+export const APP_VERSION = "3.6.38";
 
 // ==========================================
 // CONFIGURAÇÕES DE RETENÇÃO (ESPAÇO EM BANCO)
@@ -26,12 +26,20 @@ export const COST_ESTIMATES = {
 };
 
 // ==========================================
-// CONFIGURAÇÕES DE API (WDAPI - NOVA)
+// CONFIGURAÇÕES DE API (WDAPI / API Placas)
 // ==========================================
+// O serviço migrou de domínio: wdapi2.com.br -> apiplacas.com.br e mudou o
+// formato do endpoint (path -> query string: api1.php?placa=&token=). O domínio
+// antigo apenas redireciona para a home (HTML), o que quebrava o JSON.parse com
+// "Unexpected token '<'". Use SEMPRE consultaUrl(placa) para montar a URL.
 export const API_BRASIL_CONFIG = {
-    BASE_URL: 'https://wdapi2.com.br/consulta',
+    BASE_URL: 'https://apiplacas.com.br/api1.php',
     TOKEN: import.meta.env.VITE_WDAPI_TOKEN ?? '',
-    MONTHLY_LIMIT: 20000
+    MONTHLY_LIMIT: 20000,
+    consultaUrl(placa: string): string {
+        const p = encodeURIComponent((placa || '').trim().toUpperCase());
+        return `${this.BASE_URL}?placa=${p}&token=${encodeURIComponent(this.TOKEN)}`;
+    }
 };
 
 // ==========================================

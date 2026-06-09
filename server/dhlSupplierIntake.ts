@@ -1946,14 +1946,24 @@ export function registerDhlIntakeRoutes(
       const ctrl = new AbortController();
       const timer = setTimeout(() => ctrl.abort(), 8000);
       try {
-        const r = await fetch(`https://wdapi2.com.br/consulta/${placaRaw}/${wdToken}`, { signal: ctrl.signal as any });
+        // API Placas (ex-WDAPI2): novo domínio + formato query (?placa=&token=).
+        // O domínio antigo wdapi2.com.br passou a só redirecionar para a home
+        // (HTML), quebrando o JSON.parse com "Unexpected token '<'".
+        const lookupUrl = `https://apiplacas.com.br/api1.php?placa=${encodeURIComponent(placaRaw)}&token=${encodeURIComponent(wdToken)}`;
+        const r = await fetch(lookupUrl, { signal: ctrl.signal as any });
         clearTimeout(timer);
         if (!r.ok) {
           if (r.status === 404) return res.status(404).json({ error: 'Placa não encontrada.' });
           return res.status(502).json({ error: 'Falha ao consultar placa.' });
         }
-        const j: any = await r.json();
-        // WDAPI2 retorna chaves como MARCA, MODELO, ano, anoModelo, cor, etc.
+        const rawBody = await r.text();
+        let j: any;
+        try {
+          j = JSON.parse(rawBody);
+        } catch {
+          return res.status(502).json({ error: 'Falha ao consultar placa.' });
+        }
+        // API Placas retorna chaves como MARCA, MODELO, ano, anoModelo, cor, etc.
         const marca = String(j?.MARCA || j?.marca || '').trim();
         const modelo = String(j?.MODELO || j?.modelo || '').trim();
         const ano = String(j?.ano || j?.anoModelo || j?.ANO || j?.anoFabricacao || '').trim();

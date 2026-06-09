@@ -196,15 +196,15 @@ const ServerStats: React.FC = () => {
     setWdapi({ ...wdapi, status: 'TESTING', result: null, errorDetails: null });
     try {
         if (!API_BRASIL_CONFIG.TOKEN) {
-            setWdapi({ status: 'ERROR', result: 'Token não configurado', showHelp: true, errorDetails: { code: 'NO_TOKEN', steps: ["Configure VITE_WDAPI_TOKEN nas variáveis de ambiente do Replit"], link: "https://wdapi2.com.br" } });
+            setWdapi({ status: 'ERROR', result: 'Token não configurado', showHelp: true, errorDetails: { code: 'NO_TOKEN', steps: ["Configure VITE_WDAPI_TOKEN nas variáveis de ambiente do Replit"], link: "https://apiplacas.com.br" } });
             return;
         }
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), 5000);
-        const response = await fetch(`${API_BRASIL_CONFIG.BASE_URL}/TEST0000/${API_BRASIL_CONFIG.TOKEN}`, { signal: controller.signal });
+        const response = await fetch(API_BRASIL_CONFIG.consultaUrl('TEST0000'), { signal: controller.signal });
         clearTimeout(timeoutId);
         if (response.status === 401 || response.status === 403) {
-            setWdapi({ status: 'ERROR', result: 'Token inválido', showHelp: true, errorDetails: { code: 'AUTH_INVALID', steps: ["Acesse wdapi2.com.br", "Copie o Token atualizado", "Atualize VITE_WDAPI_TOKEN nos Secrets do Replit"], link: "https://wdapi2.com.br" } });
+            setWdapi({ status: 'ERROR', result: 'Token inválido', showHelp: true, errorDetails: { code: 'AUTH_INVALID', steps: ["Acesse apiplacas.com.br", "Copie o Token atualizado", "Atualize VITE_WDAPI_TOKEN nos Secrets do Replit"], link: "https://apiplacas.com.br" } });
         } else {
             setWdapi({ ...wdapi, status: 'SUCCESS', result: `OK: Vw`, errorDetails: null, showHelp: false });
         }
