@@ -78,3 +78,9 @@ id = "3xXetgMscf-N6hED6dkag"
 uri = "file://.local/exports/TORRES_tabelas_OS.xlsx"
 type = "table"
 title = "TORRES — KM / Tabela aplicada (com resolução automática)"
+
+[[outputs]]
+id = "LPmj-cQQM_mz8RZ43OS2X"
+uri = "file://attached_assets/PLANILHA_DHL_PREENCHIDA_20260609_(15)_1781033743478.xlsx"
+type = "table"
+title = "PLANILHA_DHL_PREENCHIDA_20260609 (15).xlsx"
