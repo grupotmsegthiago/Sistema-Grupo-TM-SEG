@@ -4,6 +4,7 @@
 - [Billing report client-specific columns](billing-report-client-columns.md) — adding a per-client column to the Boletim de Medição requires touching ~10 aligned spots (Excel + on-screen table); miss one and colSpans/widths drift.
 - [MissionFinancialModal table unlock](mission-financial-modal-table-unlock.md) — unlocking a price/cost table selector needs 3 coordinated edits (disabled, handleChange guard, options); to "open without rewriting" also suppress the onChange DB/system_logs side-effects.
 - [Cancelled OS extra hours](cancelled-os-extra-hours.md) — cancelada só cobra hora extra se caller passar `_cancelStatusAt` (de mission_history) ao motor; sem ele zera tudo e cobra só a base.
+- [Fixed table vs manual override](fixed-table-manual-override.md) — tabela 100KM/200KM/02H sem preço excedente vira regra fixa (capa na franquia); um override manual >0 (customClient/ProviderUnitKm/Hour) precisa destravar a cobrança do excedente.
 - [OS table swap](os-table-swap.md) — trocar tabela de uma OS: set manual*TableId (autofill sincroniza inputs) → handleUpdate(false) persiste valores+ids e dispara realtime global; não criar .on por tela.
 - [Query cache vs Realtime](query-cache-realtime-tradeoff.md) — long staleTime + refetchOnWindowFocus off is safe because RealtimeProvider invalidates caches; MissionTable fetches manually, not via React Query.
 - [DHL table naming standard](dhl-table-naming.md) — DHL price-table names need `REGIÃO - DESC NNNKM`; the KM to append is the row's franchise_km; exclude __AUTO_MASTER__ rows.

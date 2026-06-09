@@ -1202,12 +1202,14 @@ export const calculateMissionFinancials = (
     const missionDest = (mission.destination || '').toUpperCase();
 
     const isFranchiseTable = (name: string) => name.includes('ATÉ') || name.includes('ATE ') || name.includes('FAIXA') || /\bATE\W*\d/i.test(name);
-    const clientHasExtraKmPrice = (appliedClientTable?.price_per_extra_km || 0) > 0;
+    const clientHasExtraKmPrice = (appliedClientTable?.price_per_extra_km || 0) > 0
+        || (manualTableOverrides?.customClientUnitKm || 0) > 0;
     const clientTableIs200km = appliedTableName.includes('200KM') || appliedTableName.includes('200 KM') || appliedTableName.includes('LOGITECH') || missionDest.includes('200KM');
     const clientTableIs100km = appliedTableName.includes('100KM') || appliedTableName.includes('100 KM');
     const isFixedDistanceClientRule = (clientTableIs200km || clientTableIs100km) && !isFranchiseTable(appliedTableName) && !clientHasExtraKmPrice;
 
-    const clientHasExtraHrPrice = (appliedClientTable?.price_per_extra_hour || 0) > 0;
+    const clientHasExtraHrPrice = (appliedClientTable?.price_per_extra_hour || 0) > 0
+        || (manualTableOverrides?.customClientUnitHour || 0) > 0;
     const isVtcClient = missionClientName.includes('VTC');
     const isFixedHoursClientRule = !clientHasExtraHrPrice && (
                                    appliedTableName.includes('02H') || 
@@ -1231,12 +1233,14 @@ export const calculateMissionFinancials = (
     cExcessHr = Math.max(0, durationHours - cFranchiseHr);
 
     const providerTableName = (appliedProviderTable?.operation_type || '').toUpperCase();
-    const providerHasExtraKmCost = (appliedProviderTable?.cost_per_extra_km || 0) > 0;
+    const providerHasExtraKmCost = (appliedProviderTable?.cost_per_extra_km || 0) > 0
+        || (manualTableOverrides?.customProviderUnitKm || 0) > 0;
     const providerTableIs200km = providerTableName.includes('200KM') || providerTableName.includes('200 KM') || providerTableName.includes('LOGITECH');
     const providerTableIs100km = providerTableName.includes('100KM') || providerTableName.includes('100 KM');
     const isFixedDistanceProviderRule = (providerTableIs200km || providerTableIs100km) && !isFranchiseTable(providerTableName) && !providerHasExtraKmCost;
 
-    const providerHasExtraHrCost = (appliedProviderTable?.cost_per_extra_hour || 0) > 0;
+    const providerHasExtraHrCost = (appliedProviderTable?.cost_per_extra_hour || 0) > 0
+        || (manualTableOverrides?.customProviderUnitHour || 0) > 0;
     const isFixedHoursProviderRule = !providerHasExtraHrCost && (
                                      providerTableName.includes('02H') || 
                                      providerTableName.includes('02 HORAS'));
