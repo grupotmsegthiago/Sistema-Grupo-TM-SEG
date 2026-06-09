@@ -28,3 +28,23 @@ O rótulo do snapshot sintético também não pode cair em `mission.operation_ty
 (`frozenTable.operation_type = info.name || ''`). RAIO continua válido porque é
 declarado, não chutado. `descricao` pode manter fallback de operation_type (a
 linha fica vermelha de qualquer forma).
+
+## Linha MESTRE (__AUTO_MASTER__) nunca vai pra AO
+
+O cliente DHL SUPPLY CHAIN (BRAZIL) LTDA tem linhas
+`__AUTO_MASTER__ {REGIÃO}` em **client_price_tables** (cliente=DHL). Elas são
+só o GATILHO do motor de preço automático do cliente — NÃO são tabela de
+faturamento. Como têm `client=DHL`, passam pelo filtro e um ajuste/snapshot
+antigo pode apontar pra elas, vazando "__AUTO_MASTER__ SUDESTE" na coluna AO.
+
+**Why:** a diretoria viu a AO com tabela mestre/genérica e achou que era
+tabela da TORRES (fornecedor). TORRES fica em `provider_cost_tables`
+(nomes "100KM"/"200KM") e NUNCA é lida no caminho da AO — o que vazava era a
+MESTRE do próprio cliente DHL.
+
+**How to apply:** guard `isMasterOp(op) = /^__AUTO_MASTER__/i` em
+`handleFillSheet`: `resolveLiveTable` ignora mestre (por id e por nome);
+`frozenTable` retorna null se o snapshot congelou a mestre; rede de segurança
+final zera `usedTable` se ainda for mestre. Resultado: cai no motor de raio
+(tabela nomeada) ou em linha vermelha. NÃO casar nomes legítimos
+("SUDESTE - ... 100KM", "NÍVEL BRASIL - ...") — o regex só pega o prefixo.

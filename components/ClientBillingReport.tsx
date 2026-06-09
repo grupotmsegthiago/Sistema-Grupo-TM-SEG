@@ -2014,15 +2014,22 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
                     const snapInfo = fillSnapInfo[m.id];
                     // Resolve uma tabela VIGENTE pelo id e, se o id estiver velho
                     // (tabelas DHL recriadas), pelo NOME.
+                    // Linhas MESTRE do motor automático ("__AUTO_MASTER__ REGIÃO")
+                    // existem em client_price_tables APENAS como GATILHO do preço
+                    // automático do cliente DHL — NÃO são tabela de faturamento e
+                    // NUNCA podem aparecer na coluna AO. Quando um ajuste/snapshot
+                    // antigo aponta para a mestre, ignoramos aqui para a cadeia cair
+                    // no motor de raio (tabela nomeada) ou na linha vermelha.
+                    const isMasterOp = (op?: string | null) => /^__AUTO_MASTER__/i.test(String(op || '').trim());
                     const resolveLiveTable = (info?: { id?: string; name?: string }) => {
                         if (!info) return null;
                         if (info.id) {
                             const byId = fillPriceTables.find((t: any) => t.id.toString() === info.id);
-                            if (byId) return byId;
+                            if (byId && !isMasterOp(byId.operation_type)) return byId;
                         }
-                        if (info.name) {
+                        if (info.name && !isMasterOp(info.name)) {
                             const byNm = fillTablesByName.get(normTableName(info.name));
-                            if (byNm) return byNm;
+                            if (byNm && !isMasterOp(byNm.operation_type)) return byNm;
                         }
                         return null;
                     };
@@ -2031,6 +2038,8 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
                     const frozenTable = (info?: FillSnapInfo) => {
                         const f = info?.frozen;
                         if (!f) return null;
+                        // Snapshot que congelou a MESTRE não pode virar AO.
+                        if (isMasterOp(info?.name)) return null;
                         if (!(f.activationFee > 0 || f.franchiseKm > 0 || f.franchiseHours > 0 || f.unitKm > 0 || f.unitHr > 0)) return null;
                         return {
                             operation_type: info!.name || '',
@@ -2092,6 +2101,9 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
                     // "atoa". Agora NÃO inventamos nada: se nenhuma tabela aplicada foi
                     // resolvida, a linha INTEIRA fica VERMELHA para correção manual
                     // (aplicar/criar a tabela correta na OS).
+                    // Rede de segurança: nenhuma linha MESTRE do motor automático
+                    // pode chegar na AO, mesmo que algum caminho a tenha resolvido.
+                    if (usedTable && isMasterOp(usedTable.operation_type)) usedTable = null;
                     const noAppliedTable = !usedTable;
                     franchiseHours = usedTable?.franchise_hours ?? 0;
                     unitKm = usedTable?.price_per_extra_km ?? 0;
