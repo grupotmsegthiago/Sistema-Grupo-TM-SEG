@@ -1648,13 +1648,15 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
     // PREENCHIMENTO DE PLANILHA-MODELO DHL POR Nº SE
     // ---------------------------------------------------------------------
     // O usuario sobe uma planilha (virgem) contendo os numeros de SE. Para
-    // cada SE, buscamos a OS em TODO o sistema (qualquer data), calculamos os
-    // valores com o mesmo motor financeiro e geramos a planilha preenchida no
-    // mesmo formato do modelo, porem sem cores e com as formulas do cliente.
+    // cada SE, buscamos a OS DENTRO DO PERÍODO selecionado no filtro (start_time
+    // entre startDate e endDate), calculamos os valores com o mesmo motor
+    // financeiro e geramos a planilha preenchida no mesmo formato do modelo,
+    // porem sem cores e com as formulas do cliente.
     // =====================================================================
     const [fillingSheet, setFillingSheet] = useState(false);
 
     const handleFillDhlSheet = useCallback(() => {
+        if (!startDate || !endDate) { alert('Selecione o período antes de preencher a planilha.'); return; }
         const input = document.createElement('input');
         input.type = 'file';
         input.accept = '.xlsx,.xlsb,.xls,.csv';
@@ -1747,7 +1749,11 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
                     return;
                 }
 
-                // Busca as OS por dhl_se_number em todo o sistema (qualquer data), em lotes.
+                // Busca as OS por dhl_se_number, RESTRINGINDO ao PERÍODO do filtro
+                // (start_time entre startDate e endDate). SE da planilha que estiver
+                // fora do período não entra (fica em branco p/ tratamento).
+                const rangeStart = `${startDate}T03:00:00.000Z`;
+                const rangeEnd = new Date(new Date(`${endDate}T03:00:00.000Z`).getTime() + 86400000 - 1).toISOString();
                 const chunk = <T,>(arr: T[], size: number) => {
                     const out: T[][] = [];
                     for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size));
@@ -1758,7 +1764,9 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
                     const { data, error } = await supabase
                         .from('missions')
                         .select('*, company_vehicle:vehicles(*)')
-                        .in('dhl_se_number', batch);
+                        .in('dhl_se_number', batch)
+                        .gte('start_time', rangeStart)
+                        .lte('start_time', rangeEnd);
                     if (error) throw error;
                     if (data) foundMissions = foundMissions.concat(data);
                 }
@@ -2199,7 +2207,7 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
             }
         };
         input.click();
-    }, [clients, clientData, priceTables, providerTables]);
+    }, [clients, clientData, priceTables, providerTables, startDate, endDate]);
 
     const cellStyle: React.CSSProperties = {
         border: '1px solid #e5c4c4',
