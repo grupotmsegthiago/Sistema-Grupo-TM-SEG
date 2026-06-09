@@ -2005,21 +2005,6 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
                         || (findDhlAutoClient(dhlClientName) ? dhlClientName : DHL_CLIENT_NAME);
                     const routeKm = Number(m.total_distance || m.traveled_distance || 0) || 0;
                     let usedTable: any = null;
-                    // RAIO: a TABELA APLICADA (AO) e a FRANQUIA (R) seguem o RAIO
-                    // declarado na coluna E — NÃO o km rodado nem o snapshot. O
-                    // seletor casa região + faixa do raio e cai para o KM mais
-                    // próximo quando não há tabela exata cadastrada.
-                    if (raioKm > 0) {
-                        try {
-                            const selRaio = selectDhlClientTable(
-                                fillPriceTables as any,
-                                { origin: m.origin || '', destination: m.destination || '' },
-                                raioKm,
-                                { clientName: missionDhlName },
-                            );
-                            usedTable = selRaio.table;
-                        } catch {}
-                    }
                     const adjInfo = fillAdjInfo[m.id];
                     const snapInfo = fillSnapInfo[m.id];
                     // Resolve uma tabela VIGENTE pelo id e, se o id estiver velho
@@ -2054,11 +2039,36 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
                     // A acao MAIS RECENTE manda. O ajuste e reescrito a cada save no
                     // modal; quando ele e MAIS NOVO que o snapshot (margem de 2s para
                     // ignorar o par ajuste+snapshot escrito na mesma aprovacao), houve
-                    // CORRECAO apos a aprovacao (ex.: GTM-5022 congelada 200KM mas
-                    // corrigida para 100KM) -> a tabela vigente do ajuste vence.
-                    // Caso contrario o snapshot CONGELADO e a verdade (espelha o
-                    // boletim na tela, mesmo que a tabela tenha sido recriada).
+                    // TROCA/CORRECAO MANUAL da tabela no seletor apos a aprovacao
+                    // (ex.: GTM-5022 congelada 200KM mas corrigida para 100KM).
                     const adjNewer = !!adjInfo && (!snapInfo || adjInfo.at > snapInfo.at + 2000);
+                    // 1º) TROCA MANUAL no seletor "TABELA DE PRECO APLICADA" do modal
+                    // (ajuste mais novo que o snapshot) tem PRIORIDADE ABSOLUTA sobre o
+                    // motor de raio: a coluna AO (e a franquia/precos derivados) sempre
+                    // refletem a tabela que a diretoria escolheu no modal, INCLUSIVE em
+                    // OS de raio.
+                    if (adjNewer) {
+                        usedTable = resolveLiveTable(adjInfo);
+                    }
+                    // 2º) RAIO: sem troca manual, a TABELA APLICADA (AO) e a FRANQUIA
+                    // (R) seguem o RAIO declarado na coluna E — NAO o km rodado nem o
+                    // snapshot. O seletor casa regiao + faixa do raio e cai para o KM
+                    // mais proximo quando nao ha tabela exata cadastrada.
+                    if (!usedTable && raioKm > 0) {
+                        try {
+                            const selRaio = selectDhlClientTable(
+                                fillPriceTables as any,
+                                { origin: m.origin || '', destination: m.destination || '' },
+                                raioKm,
+                                { clientName: missionDhlName },
+                            );
+                            usedTable = selRaio.table;
+                        } catch {}
+                    }
+                    // 3º) Tabela GRAVADA (snapshot congelado / ajuste) para OS nao-raio
+                    // ou quando o raio nao resolveu. Caso o ajuste manual nao tenha
+                    // resolvido acima, o snapshot CONGELADO e a verdade (espelha o
+                    // boletim na tela, mesmo que a tabela tenha sido recriada).
                     if (!usedTable) {
                         if (adjNewer) {
                             usedTable = resolveLiveTable(adjInfo) || frozenTable(snapInfo) || resolveLiveTable(snapInfo);
@@ -2068,7 +2078,7 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
                             usedTable = resolveLiveTable(adjInfo);
                         }
                     }
-                    // 2º) Sem tabela gravada: motor de seleção DHL pela rota/KM.
+                    // 4º) Sem tabela gravada: motor de seleção DHL pela rota/KM.
                     if (!usedTable) {
                         try {
                             const sel = selectDhlClientTable(
@@ -2097,8 +2107,10 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
                     unitKm = usedTable?.price_per_extra_km ?? 0;
                     unitHr = usedTable?.price_per_extra_hour ?? 0;
                     // RAIO: franquia = raio declarado (coluna E). Caso contrário, a
-                    // franquia vem da tabela aplicada.
-                    franchiseKm = raioKm > 0 ? raioKm : (usedTable?.franchise_km ?? 0);
+                    // franquia vem da tabela aplicada. EXCECAO: troca MANUAL no seletor
+                    // do modal (adjNewer) vence o raio tambem na franquia, para a OS
+                    // ficar 100% coerente com a tabela escolhida pela diretoria.
+                    franchiseKm = (raioKm > 0 && !adjNewer) ? raioKm : (usedTable?.franchise_km ?? 0);
                     activationFee = usedTable?.activation_fee ?? 0;
 
                     rows.push({

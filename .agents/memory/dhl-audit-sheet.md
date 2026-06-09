@@ -19,8 +19,15 @@ force the total to match the stored boletim value.
 - HORA FINAL (col V) = real time of the TERMINAL status (Concluída/Cancelada/Pendente).
 - RAIO missions (col E e.g. "RAIO SP 200 KM", radius ∈ {100..500}): franquia (R), TABELA
   APLICADA (AO) and KM TOTAL (Q) follow the DECLARED radius, NOT the km traveled nor the
-  snapshot. `selectDhlClientTable(..., raioKm, ...)` runs BEFORE snapshot/adjust (region +
-  raio band, falls back to nearest km); Q is a fixed value (`kmTotalOverride=raioKm`).
+  snapshot — `selectDhlClientTable(..., raioKm, ...)` (region + raio band, falls back to
+  nearest km); Q is a fixed value (`kmTotalOverride=raioKm`). **EXCEPTION (manual override
+  beats raio):** a MANUAL table change in the modal selector (adjNewer: BillingAdjustment
+  newer than the snapshot) now resolves FIRST and overrides the raio engine — so AO, the
+  derived franquia/excedente/ativação AND `franchiseKm` all follow the table the diretoria
+  picked, even on a raio OS. Order is now: 1) adjNewer→resolveLive(adj); 2) raio engine (if
+  no manual override); 3) snapshot/adjust frozen; 4) route engine; 5) financial fallback.
+  `franchiseKm = (raioKm>0 && !adjNewer) ? raioKm : usedTable.franchise_km`. Auto raio OS
+  (no manual change, adjNewer=false) are UNCHANGED. Q (kmTotalOverride) still = raioKm.
 - Whole-row RED = OS for which NO DHL price table could be resolved at all. Final criterion:
   `raioKm===0 && !usedTable` (after exhausting snapshot/adjust → route engine → financial
   fallback). RAIO is NEVER red. Do NOT key the red on snapshot/adjust EXISTENCE (`!snapInfo
