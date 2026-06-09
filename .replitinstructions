@@ -1,0 +1,15 @@
+### REGRAS DE OURO - TMSEGO
+
+LER ANTES DE QUALQUER TAREFA.
+
+1. DIRETO AO PONTO: Proibido abrir investigações abertas, criar scripts de busca paralela ou analisar arquivos mortos. Vá direto ao arquivo indicado.
+
+2. MODIFICAÇÕES CIRÚRGICAS: Altere apenas as linhas necessárias. Não reescreva arquivos inteiros.
+
+3. ISOLAMENTO DE CLIENTES: Proibido filtros por aproximação (LIKE/ILIKE) com termos genéricos para nomes de clientes. Use sempre correspondência exata (.in() ou igualdade) usando o ID ou Nome Canônico Exato para evitar misturar clientes como FSM e UNIKA.
+
+4. REGRA SUPREMA FINANCEIRA: O faturamento/billing exibe estritamente "revenue_value" + "toll_value" direto do banco de dados. Sem cálculos ou deduções automáticas erradas no front-end.
+
+5. PRECISÃO DE TEMPO: Tranque todas as durações de horas para o minuto exato antes de calcular custos.
+
+6. FROTA FIXA: O sistema opera com uma frota fixa de exatamente 3 viaturas patrulhas.
