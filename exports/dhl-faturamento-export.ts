@@ -278,6 +278,7 @@ export interface DhlFilledRow {
   vlrKmExcedenteTab: number;
   franquiaTabela: number;
   pedagio: number;
+  tabelaAplicada?: string; // AO = tabela de preço aplicada para o cliente
 }
 
 export interface DhlFilledConfig {
@@ -335,6 +336,18 @@ export async function exportDhlFaturamentoFilled(config: DhlFilledConfig): Promi
     const c = headerRow.getCell(col);
     c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF0000' } };
     c.font = { bold: true, size: 10, color: { argb: 'FFFFFF' } };
+  });
+  // Colunas extras: AO (41) = tabela aplicada ao cliente; AP (42) = copia de KM TOTAL (=Q).
+  const extraHeaders: { col: number; title: string }[] = [
+    { col: 41, title: 'TABELA APLICADA' },
+    { col: 42, title: 'KM TOTAL' },
+  ];
+  extraHeaders.forEach(({ col, title }) => {
+    const c = headerRow.getCell(col);
+    c.value = title;
+    c.font = { bold: true, size: 10 };
+    c.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
+    applyBorder(c, 'BFBFBF');
   });
   headerRow.height = 30;
 
@@ -429,12 +442,27 @@ export async function exportDhlFaturamentoFilled(config: DhlFilledConfig): Promi
       cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF0000' } };
       cell.font = { size: 10, color: { argb: 'FFFFFF' }, bold: true };
     });
+    // AO (41) = tabela de preço aplicada ao cliente (texto).
+    const aoCell = row.getCell(41);
+    aoCell.value = r.tabelaAplicada || '';
+    aoCell.font = { size: 10 };
+    aoCell.alignment = { vertical: 'middle', horizontal: 'center', wrapText: false };
+    applyBorder(aoCell, 'E5E7EB');
+    // AP (42) = cópia da coluna Q (KM TOTAL) via fórmula =Q.
+    const apCell = row.getCell(42);
+    apCell.value = { formula: `Q${n}` } as any;
+    apCell.numFmt = intFmt;
+    apCell.font = { size: 10 };
+    apCell.alignment = { vertical: 'middle', horizontal: 'center', wrapText: false };
+    applyBorder(apCell, 'E5E7EB');
     row.height = 18;
   });
 
   // Larguras aproximadas
   const widths = [16, 12, 10, 14, 18, 12, 14, 10, 14, 14, 28, 9, 28, 9, 11, 11, 11, 11, 12, 13, 18, 18, 12, 11, 12, 14, 14, 14, 14, 14, 16, 12, 14, 12, 12, 14, 14, 12];
   widths.forEach((w, i) => { ws.getColumn(i + 1).width = w; });
+  ws.getColumn(41).width = 32; // AO = TABELA APLICADA
+  ws.getColumn(42).width = 11; // AP = KM TOTAL (=Q)
 
   const buf = await wb.xlsx.writeBuffer();
   return new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });

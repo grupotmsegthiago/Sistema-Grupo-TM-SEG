@@ -1863,6 +1863,7 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
                         vlrKmExcedenteTab: unitKm || 0,
                         franquiaTabela: activationFee || 0,
                         pedagio: Math.max(0, m.toll_value || 0),
+                        tabelaAplicada: usedTable?.operation_type || (m as any).operation_type || '',
                     });
                 }
 
