@@ -17,13 +17,17 @@ force the total to match the stored boletim value.
 - HORA FINAL (col V) = real time of the TERMINAL status (Concluída/Cancelada/Pendente).
 - Tabela aplicada / franquia / valores tabelados: priority order is
   (1) the table ACTUALLY SAVED on the OS, read from `system_logs.details.clientTableId`
-  with `BillingSnapshot` > `BillingAdjustment` (same source the financial modal uses
-  to restore the applied table); (2) only if none saved, re-select via
+  with `BillingAdjustment` > `BillingSnapshot`; (2) only if none saved, re-select via
   `selectDhlClientTable` (região da origem + faixa KM + rota); (3) financial fallback.
   `usedTable` drives BOTH the "TABELA APLICADA" column (AO) and the franquia/excedente/
   ativação fields, so the whole row stays consistent. Do NOT re-select by route when a
-  saved table exists — that caused GTM-5022 to show a 200KM table instead of the saved
-  100KM one.
+  saved table exists.
+  **Why BillingAdjustment wins over BillingSnapshot:** the financial modal restores its
+  table selector from the MOST RECENT `BillingAdjustment` (rewritten delete+insert on
+  every save), NOT from the snapshot. A snapshot can be frozen/stale: GTM-5022 was
+  approved 18/05 with a 200KM table but later corrected to 100KM (car drove only 53km);
+  snapshot-first wrongly showed 200KM. To match what the operator sees, prefer the
+  adjustment; snapshot is only a reserve for OS with no adjustment.
 - Cancelled before departure (no "Em Viagem" event) = início = fim = 0h.
 
 **Why:** Earlier the generator filled SCHEDULED times and derived `activationFee` from

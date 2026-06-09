@@ -1726,11 +1726,13 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
                 const fillProviderTables = (pctRes.data || providerTables) as any[];
 
                 // TABELA REALMENTE APLICADA NA OS: a planilha deve refletir a
-                // tabela que o sistema gravou na OS (snapshot congelado ou memória
-                // de ajuste), e NÃO re-selecionar pela rota. Caso contrário a
-                // coluna "TABELA APLICADA" (e franquias/valores) podem divergir do
-                // que o operador vê no modal financeiro. Snapshot tem prioridade
-                // sobre a memória de ajuste; só caímos no motor de rota quando a OS
+                // tabela que o sistema gravou na OS (memória de ajuste ou snapshot),
+                // e NÃO re-selecionar pela rota. Caso contrário a coluna "TABELA
+                // APLICADA" (e franquias/valores) podem divergir do que o operador
+                // vê no modal financeiro. A MEMÓRIA DE AJUSTE (BillingAdjustment) é
+                // a fonte que o modal usa para restaurar o seletor (mais recente,
+                // reescrita a cada save), então tem prioridade sobre o snapshot, que
+                // pode estar congelado/velho. Só caímos no motor de rota quando a OS
                 // nunca foi processada no modal.
                 const fillSnapTable: Record<string, string> = {};
                 const fillAdjTable: Record<string, string> = {};
@@ -1844,10 +1846,16 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
                         || (findDhlAutoClient(dhlClientName) ? dhlClientName : DHL_CLIENT_NAME);
                     const routeKm = Number(m.total_distance || m.traveled_distance || 0) || 0;
                     let usedTable: any = null;
-                    // 1º) Tabela efetivamente gravada na OS (snapshot > ajuste).
-                    const savedTableId = fillSnapTable[m.id] || fillAdjTable[m.id];
-                    if (savedTableId) {
-                        usedTable = fillPriceTables.find((t: any) => t.id.toString() === savedTableId) || null;
+                    // 1º) Tabela efetivamente aplicada na OS: a MEMÓRIA DE AJUSTE
+                    // (BillingAdjustment) é a fonte que o modal financeiro usa para
+                    // restaurar o seletor (mais recente, delete+insert a cada save),
+                    // então tem prioridade sobre o snapshot — que pode estar velho
+                    // (ex.: GTM-5022 congelada com 200KM, mas corrigida depois para
+                    // 100KM porque o carro rodou só 53km). Snapshot só como reserva.
+                    for (const sid of [fillAdjTable[m.id], fillSnapTable[m.id]]) {
+                        if (!sid) continue;
+                        const t = fillPriceTables.find((t: any) => t.id.toString() === sid);
+                        if (t) { usedTable = t; break; }
                     }
                     // 2º) Sem tabela gravada: motor de seleção DHL pela rota/KM.
                     if (!usedTable) {
