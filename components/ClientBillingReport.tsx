@@ -2123,23 +2123,19 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
                     franchiseKm = (raioKm > 0 && !adjNewer) ? raioKm : (usedTable?.franchise_km ?? 0);
                     activationFee = usedTable?.activation_fee ?? 0;
 
-                    // CANCELADA / CANCELAMENTO SOLICITADO (coluna D): a OS cobra o
-                    // MINIMO da tabela da regiao da origem (faixa 100km). KM TOTAL (Q)
-                    // e PEDAGIO (AF) vao a ZERO; os excedentes ja zeram (Q=0 e horas=0),
-                    // de modo que TOTAL FORNECEDOR (AG) = FRANQUIA TABELA (AE) = preco
-                    // minimo (ativacao) da tabela 100km da regiao da origem.
-                    let minTabela = activationFee || 0;
-                    if (isCancelledRow) {
-                        try {
-                            const sel100 = selectDhlClientTable(
-                                fillPriceTables as any,
-                                { origin: m.origin || '', destination: m.destination || '' },
-                                100,
-                                { clientName: missionDhlName },
-                            );
-                            if (sel100.table) minTabela = Number(sel100.table.activation_fee) || 0;
-                        } catch {}
-                    }
+                    // VALOR MINIMO DA FRANQUIA TABELA (coluna AE): para OS CANCELADA /
+                    // CANCELAMENTO SOLICITADO (coluna D) OU missoes dentro da faixa de
+                    // 100km, o minimo e um VALOR FIXO pela UF de ORIGEM:
+                    //   SC ou RS -> R$ 735,00 ; demais UFs -> R$ 690,00.
+                    // Faixas maiores (200km+) mantem a ativacao da propria tabela
+                    // aplicada. Em cancelada, KM TOTAL (Q) e PEDAGIO (AF) ja vao a ZERO
+                    // e os excedentes zeram (Q=0 e horas=0), de modo que TOTAL FORNECEDOR
+                    // (AG) = FRANQUIA TABELA (AE) = esse minimo.
+                    const ufOrigemRow = extractUF(m.origin || '');
+                    const dhlMinFranquia = (ufOrigemRow === 'SC' || ufOrigemRow === 'RS') ? 735 : 690;
+                    const isBelow100Km = franchiseKm > 0 && franchiseKm <= 100;
+                    const useMinFranquia = isCancelledRow || isBelow100Km;
+                    const minTabela = useMinFranquia ? dhlMinFranquia : (activationFee || 0);
 
                     rows.push({
                         ciaEscolta: 'TM SEG',
@@ -2167,7 +2163,7 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
                         franquiaHrDays: franchiseHours > 0 ? franchiseHours / 24 : 0,
                         vlrHoraExcedenteTab: unitHr || 0,
                         vlrKmExcedenteTab: unitKm || 0,
-                        franquiaTabela: isCancelledRow ? minTabela : (activationFee || 0),
+                        franquiaTabela: minTabela,
                         pedagio: isCancelledRow ? 0 : Math.max(0, m.toll_value || 0),
                         tabelaAplicada: usedTable?.operation_type || (m as any).operation_type || '',
                     });
