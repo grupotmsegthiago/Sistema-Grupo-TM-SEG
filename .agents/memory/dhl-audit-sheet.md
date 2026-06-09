@@ -15,9 +15,15 @@ Excel formulas compute the total — even when the natural total differs from th
 force the total to match the stored boletim value.
 - HORA INÍCIO (col U) = real time the status became "Em Viagem" (from `mission_history`).
 - HORA FINAL (col V) = real time of the TERMINAL status (Concluída/Cancelada/Pendente).
-- Franquia/valores tabelados come from the correct regional table via
-  `selectDhlClientTable` (região da origem + faixa KM + rota), called directly with
-  the route distance — applied to ALL OS including cancelled.
+- Tabela aplicada / franquia / valores tabelados: priority order is
+  (1) the table ACTUALLY SAVED on the OS, read from `system_logs.details.clientTableId`
+  with `BillingSnapshot` > `BillingAdjustment` (same source the financial modal uses
+  to restore the applied table); (2) only if none saved, re-select via
+  `selectDhlClientTable` (região da origem + faixa KM + rota); (3) financial fallback.
+  `usedTable` drives BOTH the "TABELA APLICADA" column (AO) and the franquia/excedente/
+  ativação fields, so the whole row stays consistent. Do NOT re-select by route when a
+  saved table exists — that caused GTM-5022 to show a 200KM table instead of the saved
+  100KM one.
 - Cancelled before departure (no "Em Viagem" event) = início = fim = 0h.
 
 **Why:** Earlier the generator filled SCHEDULED times and derived `activationFee` from

@@ -1725,6 +1725,34 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
                 const fillPriceTables = (ptRes.data || priceTables) as any[];
                 const fillProviderTables = (pctRes.data || providerTables) as any[];
 
+                // TABELA REALMENTE APLICADA NA OS: a planilha deve refletir a
+                // tabela que o sistema gravou na OS (snapshot congelado ou memória
+                // de ajuste), e NÃO re-selecionar pela rota. Caso contrário a
+                // coluna "TABELA APLICADA" (e franquias/valores) podem divergir do
+                // que o operador vê no modal financeiro. Snapshot tem prioridade
+                // sobre a memória de ajuste; só caímos no motor de rota quando a OS
+                // nunca foi processada no modal.
+                const fillSnapTable: Record<string, string> = {};
+                const fillAdjTable: Record<string, string> = {};
+                if (fillAllIds.length > 0) {
+                    try {
+                        for (const ids of chunk(fillAllIds, 100)) {
+                            const [snapL, adjL] = await Promise.all([
+                                supabase.from('system_logs').select('entity_id, details').eq('entity', 'BillingSnapshot').in('entity_id', ids).order('created_at', { ascending: false }),
+                                supabase.from('system_logs').select('entity_id, details').eq('entity', 'BillingAdjustment').in('entity_id', ids).order('created_at', { ascending: false }),
+                            ]);
+                            for (const row of (snapL.data || [])) {
+                                if (fillSnapTable[row.entity_id]) continue;
+                                try { const d = JSON.parse(row.details); if (d.clientTableId) fillSnapTable[row.entity_id] = String(d.clientTableId); } catch {}
+                            }
+                            for (const row of (adjL.data || [])) {
+                                if (fillAdjTable[row.entity_id]) continue;
+                                try { const d = JSON.parse(row.details); if (d.clientTableId) fillAdjTable[row.entity_id] = String(d.clientTableId); } catch {}
+                            }
+                        }
+                    } catch {}
+                }
+
                 // Indexa por SE. Quando houver MAIS de uma OS para a mesma SE,
                 // escolhe de forma deterministica (prioriza nao-cancelada e a
                 // de start_time mais recente) e registra a SE duplicada para
@@ -1816,15 +1844,23 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
                         || (findDhlAutoClient(dhlClientName) ? dhlClientName : DHL_CLIENT_NAME);
                     const routeKm = Number(m.total_distance || m.traveled_distance || 0) || 0;
                     let usedTable: any = null;
-                    try {
-                        const sel = selectDhlClientTable(
-                            fillPriceTables as any,
-                            { origin: m.origin || '', destination: m.destination || '' },
-                            routeKm,
-                            { clientName: missionDhlName },
-                        );
-                        usedTable = sel.table;
-                    } catch {}
+                    // 1º) Tabela efetivamente gravada na OS (snapshot > ajuste).
+                    const savedTableId = fillSnapTable[m.id] || fillAdjTable[m.id];
+                    if (savedTableId) {
+                        usedTable = fillPriceTables.find((t: any) => t.id.toString() === savedTableId) || null;
+                    }
+                    // 2º) Sem tabela gravada: motor de seleção DHL pela rota/KM.
+                    if (!usedTable) {
+                        try {
+                            const sel = selectDhlClientTable(
+                                fillPriceTables as any,
+                                { origin: m.origin || '', destination: m.destination || '' },
+                                routeKm,
+                                { clientName: missionDhlName },
+                            );
+                            usedTable = sel.table;
+                        } catch {}
+                    }
                     if (!usedTable) {
                         // Fallback defensivo: seleção padrão do motor financeiro.
                         const fin = calculateMissionFinancials(m as any, fillPriceTables as any, fillProviderTables as any, dhlClient as any, new Date());
