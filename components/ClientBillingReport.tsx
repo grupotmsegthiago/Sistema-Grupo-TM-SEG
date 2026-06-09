@@ -1729,30 +1729,69 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
                 // tabela que o sistema gravou na OS (memória de ajuste ou snapshot),
                 // e NÃO re-selecionar pela rota. Caso contrário a coluna "TABELA
                 // APLICADA" (e franquias/valores) podem divergir do que o operador
-                // vê no modal financeiro. A MEMÓRIA DE AJUSTE (BillingAdjustment) é
-                // a fonte que o modal usa para restaurar o seletor (mais recente,
-                // reescrita a cada save), então tem prioridade sobre o snapshot, que
-                // pode estar congelado/velho. Só caímos no motor de rota quando a OS
-                // nunca foi processada no modal.
-                const fillSnapTable: Record<string, string> = {};
-                const fillAdjTable: Record<string, string> = {};
+                // vê no modal financeiro / no boletim. A regra é por RECENCIA: se o
+                // ajuste (BillingAdjustment) for mais novo que o snapshot houve
+                // correção pós-aprovação e ele vence; senão o snapshot CONGELADO é a
+                // verdade (mesma fonte do boletim). Só caímos no motor de rota
+                // quando a OS nunca foi processada no modal.
+                // Por OS guardamos: ajuste (id/nome + created_at) e snapshot
+                // (id/nome + created_at + PARAMETROS CONGELADOS). As tabelas DHL
+                // foram recriadas com novos ids/nomes, entao o id/nome salvo pode
+                // nao existir mais; nesse caso a planilha usa os PARAMETROS
+                // CONGELADOS do snapshot (mesma fonte do boletim na tela), em vez
+                // de cair na selecao por rota.
+                type FillAdjInfo = { id?: string; name?: string; at: number };
+                type FillSnapFrozen = { franchiseKm: number; franchiseHours: number; unitKm: number; unitHr: number; activationFee: number };
+                type FillSnapInfo = { id?: string; name?: string; at: number; frozen?: FillSnapFrozen };
+                const fillSnapInfo: Record<string, FillSnapInfo> = {};
+                const fillAdjInfo: Record<string, FillAdjInfo> = {};
                 if (fillAllIds.length > 0) {
                     try {
                         for (const ids of chunk(fillAllIds, 100)) {
                             const [snapL, adjL] = await Promise.all([
-                                supabase.from('system_logs').select('entity_id, details').eq('entity', 'BillingSnapshot').in('entity_id', ids).order('created_at', { ascending: false }),
-                                supabase.from('system_logs').select('entity_id, details').eq('entity', 'BillingAdjustment').in('entity_id', ids).order('created_at', { ascending: false }),
+                                supabase.from('system_logs').select('entity_id, details, created_at').eq('entity', 'BillingSnapshot').in('entity_id', ids).order('created_at', { ascending: false }),
+                                supabase.from('system_logs').select('entity_id, details, created_at').eq('entity', 'BillingAdjustment').in('entity_id', ids).order('created_at', { ascending: false }),
                             ]);
                             for (const row of (snapL.data || [])) {
-                                if (fillSnapTable[row.entity_id]) continue;
-                                try { const d = JSON.parse(row.details); if (d.clientTableId) fillSnapTable[row.entity_id] = String(d.clientTableId); } catch {}
+                                if (fillSnapInfo[row.entity_id]) continue;
+                                try {
+                                    const d = JSON.parse(row.details);
+                                    fillSnapInfo[row.entity_id] = {
+                                        id: d.clientTableId ? String(d.clientTableId) : undefined,
+                                        name: d.tableName || undefined,
+                                        at: new Date(row.created_at).getTime() || 0,
+                                        frozen: {
+                                            franchiseKm: Number(d.franchiseKm) || 0,
+                                            franchiseHours: Number(d.franchiseHours) || 0,
+                                            unitKm: Number(d.unitKm) || 0,
+                                            unitHr: Number(d.unitHr) || 0,
+                                            activationFee: Number(d.activationFee) || 0,
+                                        },
+                                    };
+                                } catch {}
                             }
                             for (const row of (adjL.data || [])) {
-                                if (fillAdjTable[row.entity_id]) continue;
-                                try { const d = JSON.parse(row.details); if (d.clientTableId) fillAdjTable[row.entity_id] = String(d.clientTableId); } catch {}
+                                if (fillAdjInfo[row.entity_id]) continue;
+                                try {
+                                    const d = JSON.parse(row.details);
+                                    fillAdjInfo[row.entity_id] = {
+                                        id: d.clientTableId ? String(d.clientTableId) : undefined,
+                                        name: d.clientTableName || undefined,
+                                        at: new Date(row.created_at).getTime() || 0,
+                                    };
+                                } catch {}
                             }
                         }
                     } catch {}
+                }
+
+                // Indice por NOME (operation_type) das tabelas DHL vigentes, para
+                // casar pelo nome quando o id salvo nao existir mais.
+                const normTableName = (s: any) => String(s || '').trim().toUpperCase().replace(/\s+/g, ' ');
+                const fillTablesByName = new Map<string, any>();
+                for (const t of fillPriceTables as any[]) {
+                    const k = normTableName(t.operation_type);
+                    if (k && !fillTablesByName.has(k)) fillTablesByName.set(k, t);
                 }
 
                 // Indexa por SE. Quando houver MAIS de uma OS para a mesma SE,
@@ -1846,16 +1885,51 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
                         || (findDhlAutoClient(dhlClientName) ? dhlClientName : DHL_CLIENT_NAME);
                     const routeKm = Number(m.total_distance || m.traveled_distance || 0) || 0;
                     let usedTable: any = null;
-                    // 1º) Tabela efetivamente aplicada na OS: a MEMÓRIA DE AJUSTE
-                    // (BillingAdjustment) é a fonte que o modal financeiro usa para
-                    // restaurar o seletor (mais recente, delete+insert a cada save),
-                    // então tem prioridade sobre o snapshot — que pode estar velho
-                    // (ex.: GTM-5022 congelada com 200KM, mas corrigida depois para
-                    // 100KM porque o carro rodou só 53km). Snapshot só como reserva.
-                    for (const sid of [fillAdjTable[m.id], fillSnapTable[m.id]]) {
-                        if (!sid) continue;
-                        const t = fillPriceTables.find((t: any) => t.id.toString() === sid);
-                        if (t) { usedTable = t; break; }
+                    const adjInfo = fillAdjInfo[m.id];
+                    const snapInfo = fillSnapInfo[m.id];
+                    // Resolve uma tabela VIGENTE pelo id e, se o id estiver velho
+                    // (tabelas DHL recriadas), pelo NOME.
+                    const resolveLiveTable = (info?: { id?: string; name?: string }) => {
+                        if (!info) return null;
+                        if (info.id) {
+                            const byId = fillPriceTables.find((t: any) => t.id.toString() === info.id);
+                            if (byId) return byId;
+                        }
+                        if (info.name) {
+                            const byNm = fillTablesByName.get(normTableName(info.name));
+                            if (byNm) return byNm;
+                        }
+                        return null;
+                    };
+                    // PARAMETROS CONGELADOS do snapshot como "tabela sintetica":
+                    // mesma fonte que o boletim na tela usa para OS aprovadas.
+                    const frozenTable = (info?: FillSnapInfo) => {
+                        const f = info?.frozen;
+                        if (!f) return null;
+                        if (!(f.activationFee > 0 || f.franchiseKm > 0 || f.franchiseHours > 0 || f.unitKm > 0 || f.unitHr > 0)) return null;
+                        return {
+                            operation_type: info!.name || (m as any).operation_type || '',
+                            franchise_km: f.franchiseKm,
+                            franchise_hours: f.franchiseHours,
+                            price_per_extra_km: f.unitKm,
+                            price_per_extra_hour: f.unitHr,
+                            activation_fee: f.activationFee,
+                        };
+                    };
+                    // A acao MAIS RECENTE manda. O ajuste e reescrito a cada save no
+                    // modal; quando ele e MAIS NOVO que o snapshot (margem de 2s para
+                    // ignorar o par ajuste+snapshot escrito na mesma aprovacao), houve
+                    // CORRECAO apos a aprovacao (ex.: GTM-5022 congelada 200KM mas
+                    // corrigida para 100KM) -> a tabela vigente do ajuste vence.
+                    // Caso contrario o snapshot CONGELADO e a verdade (espelha o
+                    // boletim na tela, mesmo que a tabela tenha sido recriada).
+                    const adjNewer = !!adjInfo && (!snapInfo || adjInfo.at > snapInfo.at + 2000);
+                    if (adjNewer) {
+                        usedTable = resolveLiveTable(adjInfo) || frozenTable(snapInfo) || resolveLiveTable(snapInfo);
+                    } else if (snapInfo) {
+                        usedTable = frozenTable(snapInfo) || resolveLiveTable(snapInfo) || resolveLiveTable(adjInfo);
+                    } else if (adjInfo) {
+                        usedTable = resolveLiveTable(adjInfo);
                     }
                     // 2º) Sem tabela gravada: motor de seleção DHL pela rota/KM.
                     if (!usedTable) {

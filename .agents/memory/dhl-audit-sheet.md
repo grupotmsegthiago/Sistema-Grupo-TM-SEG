@@ -15,19 +15,35 @@ Excel formulas compute the total — even when the natural total differs from th
 force the total to match the stored boletim value.
 - HORA INÍCIO (col U) = real time the status became "Em Viagem" (from `mission_history`).
 - HORA FINAL (col V) = real time of the TERMINAL status (Concluída/Cancelada/Pendente).
-- Tabela aplicada / franquia / valores tabelados: priority order is
-  (1) the table ACTUALLY SAVED on the OS, read from `system_logs.details.clientTableId`
-  with `BillingAdjustment` > `BillingSnapshot`; (2) only if none saved, re-select via
-  `selectDhlClientTable` (região da origem + faixa KM + rota); (3) financial fallback.
+- Tabela aplicada / franquia / valores tabelados: priority is by RECENCIA, NOT a fixed
+  adjustment>snapshot order. Per OS capture BOTH `system_logs` rows with `created_at`:
+  `BillingAdjustment` -> {id (clientTableId), name (clientTableName), at} and
+  `BillingSnapshot` -> {id, name, at, FROZEN PARAMS (franchiseKm/Hours, unitKm/Hr,
+  activationFee, totalGeral)}. Resolution: `adjNewer = adj && (!snap || adj.at > snap.at + 2000ms)`
+  (the +2s guard ignores the adjustment+snapshot pair written in the SAME approval). If
+  adjNewer -> resolveLive(adj) || frozen(snap) || resolveLive(snap); else if snap ->
+  frozen(snap) || resolveLive(snap) || resolveLive(adj); else resolveLive(adj). Only if
+  all null re-select via `selectDhlClientTable` (route engine), then financial fallback.
+  - **resolveLive(info)**: find a CURRENTLY-LIVE table by id, then by NORMALIZED name
+    (`normTableName` = trim/upper/collapse-spaces; `fillTablesByName` Map keyed by
+    operation_type). Needed because DHL tables were RECREATED with new ids AND new names,
+    so the id/name saved on the OS is often orphaned (only 26/201 resolved by id alone).
+  - **frozen(snap)**: synthetic table from the snapshot frozen params (same source the
+    on-screen boletim uses for approved OS) — valid if ANY of activationFee/franchiseKm/
+    franchiseHours/unitKm/unitHr > 0. This makes the sheet mirror the boletim even when
+    the table no longer exists. After fix: 176 frozen + 11 live + 14 route (route = OS
+    never processed in the modal, no adj/snap — correct).
   `usedTable` drives BOTH the "TABELA APLICADA" column (AO) and the franquia/excedente/
-  ativação fields, so the whole row stays consistent. Do NOT re-select by route when a
-  saved table exists.
-  **Why BillingAdjustment wins over BillingSnapshot:** the financial modal restores its
-  table selector from the MOST RECENT `BillingAdjustment` (rewritten delete+insert on
-  every save), NOT from the snapshot. A snapshot can be frozen/stale: GTM-5022 was
-  approved 18/05 with a 200KM table but later corrected to 100KM (car drove only 53km);
-  snapshot-first wrongly showed 200KM. To match what the operator sees, prefer the
-  adjustment; snapshot is only a reserve for OS with no adjustment.
+  ativação fields, so the whole row stays consistent.
+  **Why recency, not adjustment-first:** the modal restores its selector from the MOST
+  RECENT `BillingAdjustment` (rewritten delete+insert each save). But the snapshot is the
+  frozen truth at approval. If the adjustment is NEWER than the snapshot there was a
+  post-approval correction (GTM-5022: approved 200KM, later corrected to 100KM) -> live
+  adjustment wins; otherwise the frozen snapshot wins (mirrors the boletim exactly).
+  **Manual-override caveat:** when the diretoria hand-edits revenue (billing_verified_by/
+  revenue_edit_reason), the boletim TOTAL is overridden to dbTotal but the audit sheet
+  recomputes via formula from the table params + real times — so the sheet total can
+  differ by the override amount. That is BY DESIGN (audit sheet validates the breakdown).
 - Cancelled before departure (no "Em Viagem" event) = início = fim = 0h.
 
 **Why:** Earlier the generator filled SCHEDULED times and derived `activationFee` from
