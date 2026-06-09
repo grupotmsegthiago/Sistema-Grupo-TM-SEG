@@ -4,16 +4,10 @@ import { authFetch } from '../lib/authFetch';
 import { supabase } from '../lib/supabase';
 import { Mission, Client, ClientPriceTable, ProviderCostTable } from '../types';
 import { FileText, Search, Printer, Loader2, FileSpreadsheet, BarChart3, Users, Building2, ChevronDown, ChevronRight, List, ExternalLink, Receipt, Camera, Sparkles, X, AlertCircle, CheckCircle2, ScanLine, Image as ImageIcon, DollarSign, Plus, Trash2, GitBranch, Calendar, Lock, Pencil, ArrowRight, ArrowLeftRight, Check, RefreshCw } from 'lucide-react';
-import { calculateMissionFinancials, extractCityFromAddress, extractUF, clientFuzzyFilter, clientNameShort, resolveCancelledWindow } from '../lib/financialUtils';
+import { calculateMissionFinancials, extractCityFromAddress, extractUF, clientFuzzyFilter, resolveCancelledWindow } from '../lib/financialUtils';
 import { computeDhlBand, findDhlAutoClient, selectDhlClientTable, DHL_CLIENT_NAME } from '../lib/dhlAutoTableSelector';
 import MissionFinancialModal from './MissionFinancialModal';
 
-// PostgREST .or() trata ( ) , . : como reservados. Para nomes com parênteses
-// (ex: "DHL SUPPLY CHAIN (BRAZIL) LTDA"), o valor precisa vir entre aspas
-// duplas, senão a consulta retorna 0 linhas silenciosamente.
-function quoteOrValue(v: string): string {
-    return /[(),.:]/.test(v) ? `"${v.replace(/"/g, '\\"')}"` : v;
-}
 import { generateContent } from '../lib/gemini';
 import {
     BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, LabelList
@@ -247,32 +241,21 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
             const clientObj = clients.find(c => c.id.toString() === selectedClient);
             const clientName = clientObj?.name || '';
             const tradingName = clientObj?.trading_name || '';
-            const escapedClientName = clientName.trim().replace(/[%_\\]/g, '\\$&');
-            const escapedTradingName = tradingName.trim().replace(/[%_\\]/g, '\\$&');
             const rangeStart = `${startDate}T03:00:00.000Z`;
             const rangeEnd = new Date(new Date(`${endDate}T03:00:00.000Z`).getTime() + 86400000 - 1).toISOString();
 
-            const clientFilters = [`client.ilike.${quoteOrValue('%' + escapedClientName + '%')}`];
-            if (escapedTradingName && escapedTradingName !== escapedClientName) {
-                clientFilters.push(`client.ilike.${quoteOrValue('%' + escapedTradingName + '%')}`);
+            // ISOLAMENTO DE CLIENTES: a OS guarda o NOME CANÔNICO EXATO do cliente
+            // no campo `client`. Filtramos por igualdade exata (razão social e/ou
+            // nome fantasia) — NUNCA por ILIKE/termos genéricos — para evitar
+            // cruzamento de dados entre clientes do mesmo ramo (ex.: FSM x UNIKA).
+            const canonicalNames = [clientName.trim()].filter(Boolean);
+            if (tradingName.trim() && tradingName.trim() !== clientName.trim()) {
+                canonicalNames.push(tradingName.trim());
             }
-            // BUG anterior: usávamos só `length > 2` como filtro de palavras, então
-            // pra "ET DO BRASIL LTDA" sobrava ["BRASIL","LTDA"] → padrão
-            // `%BRASIL%LTDA%` → casava SANKYU LOGISTICS DO BRASIL LTDA, etc.
-            // Agora também tira stop-words (LTDA, S.A., DO, DE, DA, ...) e exige
-            // pelo menos 2 palavras significativas com 4+ letras pra montar o
-            // filtro genérico, evitando colisões entre clientes.
-            const STOP_WORDS = new Set(['LTDA','LTDA.','S.A.','S.A','SA','S/A','S/A.','DO','DE','DA','E','DAS','DOS','BRASIL']);
-            const meaningfulParts = escapedClientName
-                .split(/\s+/)
-                .filter(p => p.length >= 4 && !STOP_WORDS.has(p.toUpperCase()));
-            if (meaningfulParts.length >= 2) {
-                const coreFilter = meaningfulParts.slice(0, 3).join('%');
-                clientFilters.push(`client.ilike.${quoteOrValue('%' + coreFilter + '%')}`);
-            }
-            const shortName = clientNameShort(clientName);
-            if (shortName && shortName.split(/\s+/).every(w => w.length >= 3)) {
-                clientFilters.push(`client.ilike.${quoteOrValue('%' + shortName + '%')}`);
+            if (canonicalNames.length === 0) {
+                setIsLoading(false);
+                alert('Cliente sem nome cadastrado. Não é possível gerar o boletim.');
+                return;
             }
 
             // Regra padrão: filtra por start_time (mês da viagem).
@@ -283,7 +266,7 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
             const { data: missionDataRaw, error } = await supabase
                 .from('missions')
                 .select('*, company_vehicle:vehicles(*)')
-                .or(clientFilters.join(','))
+                .in('client', canonicalNames)
                 .neq('status', 'Recusada')
                 .not('start_time', 'is', null)
                 .gte('start_time', rangeStart)
@@ -300,7 +283,7 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
                 const { data: overrideRaw, error: ovErr } = await supabase
                     .from('missions')
                     .select('*, company_vehicle:vehicles(*)')
-                    .or(clientFilters.join(','))
+                    .in('client', canonicalNames)
                     .neq('status', 'Recusada')
                     .not('billing_period_override', 'is', null)
                     .gte('billing_period_override', rangeStart)
@@ -312,56 +295,8 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
             const seen = new Set(baseList.map(m => m.id));
             const merged = [...baseList, ...overrideExtras.filter(m => !seen.has(m.id))];
 
-            // PROTEÇÃO CONTRA CONTAMINAÇÃO ENTRE CLIENTES:
-            // Os filtros .or() acima incluem um padrão GENÉRICO por palavras
-            // (ex.: UNIKA = "VMF TRANSPORTE E LOGISTICA LTDA" gera o filtro
-            // %TRANSPORTE%LOGISTICA%), que também casa o nome de OUTROS clientes
-            // do mesmo ramo (ex.: FSM = "...TRANSPORTES E LOGISTICA INTEGRADA
-            // LTDA"). Para a OS de um cliente não entrar no boletim de outro,
-            // resolvemos o campo `client` de cada OS de volta para o cliente real
-            // (match por razão social / nome fantasia MAIS específico) e
-            // descartamos as que pertencem a um OUTRO cliente conhecido.
-            const normName = (s: any) => (s || '').toString().toUpperCase()
-                .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
-                .replace(/\s+/g, ' ').trim();
-            // Resolve contra TODOS os clientes (inclusive inativos), não só os
-            // ativos carregados na tela: um cliente inativo com nome do mesmo
-            // ramo também poderia contaminar o boletim se ficasse de fora.
-            let allClientsForResolve: { id: any; name: string; trading_name: string }[] = clients as any;
-            try {
-                const { data: allCli } = await supabase
-                    .from('clients')
-                    .select('id, name, trading_name');
-                if (allCli && allCli.length) allClientsForResolve = allCli as any;
-            } catch {}
-            const resolveClientId = (candidate: any): string | null => {
-                const c = normName(candidate);
-                if (!c) return null;
-                let bestId: string | null = null;
-                let bestLen = 0;
-                for (const cl of allClientsForResolve) {
-                    for (const key of [cl.name, cl.trading_name]) {
-                        const k = normName(key);
-                        if (k.length >= 4 && (c === k || c.includes(k)) && k.length > bestLen) {
-                            bestLen = k.length;
-                            bestId = cl.id.toString();
-                        }
-                    }
-                }
-                return bestId;
-            };
-            const belongsToSelectedClient = (m: any) => {
-                const rid = resolveClientId(m.client);
-                // rid === null: o campo `client` não bate com NENHUM cliente
-                // conhecido (variação livre) -> mantém, pois veio de um filtro do
-                // cliente atual. Caso contrário, só entra se resolver para o
-                // cliente selecionado.
-                return rid === null || rid === selectedClient;
-            };
-
             // Aplica exclude_from_billing (se a coluna existir).
             const missionData: any[] = merged
-                .filter(belongsToSelectedClient)
                 .filter(m => m.exclude_from_billing !== true)
                 .sort((a, b) => new Date(a.start_time || 0).getTime() - new Date(b.start_time || 0).getTime());
 

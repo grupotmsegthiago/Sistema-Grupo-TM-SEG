@@ -1,26 +1,26 @@
 ---
-name: Billing report cross-client contamination
-description: Why the boletim de medição can pull another client's OS, and the guard that prevents it.
+name: Billing report client isolation
+description: How the boletim de medição must scope OS to a single client, and why fuzzy matching is banned.
 ---
 
-The client billing report (boletim de medição) fetches missions with a
-Supabase `.or()` of several `ilike` patterns on the `client` column, including
-a GENERIC word-based pattern built from the client's meaningful name parts
-(e.g. UNIKA = "VMF TRANSPORTE E LOGISTICA LTDA" produces `%TRANSPORTE%LOGISTICA%`).
+The client billing report (boletim de medição) must scope missions to ONE
+client using EXACT canonical matching, never fuzzy `ILIKE` with generic terms.
 
-**Why this bites:** in logistics, words like TRANSPORTE/TRANSPORTES/LOGISTICA
-are shared across many companies, so the generic pattern matches OTHER clients'
-canonical names (FSM = "...TRANSPORTES E LOGISTICA INTEGRADA LTDA"). Adding more
-stop-words is whack-a-mole and never fully safe.
+**Why:** mission rows store the full canonical client name in the `client`
+field. A generic word-based `.or()`/`ILIKE` filter (e.g. UNIKA "VMF TRANSPORTE
+E LOGISTICA LTDA" → `%TRANSPORTE%LOGISTICA%`) matches other same-industry
+clients (FSM "...TRANSPORTES E LOGISTICA INTEGRADA LTDA") and contaminates the
+report. Adding stop-words is whack-a-mole and never safe. A JS post-filter that
+re-derives ownership is a band-aid the directors explicitly rejected — fix at
+the query origin.
 
-**The durable rule:** the mission `client` field stores the full canonical
-client name. So after the broad fetch, resolve each mission's `client` back to
-the real client (longest name/trading_name containment match) and keep it only
-if it resolves to the selected client (or to no known client = free variant).
-Resolve against ALL clients including inactive ones, or an inactive same-industry
-client can still leak through as "unresolved".
+**The rule:** filter at the query with `.in('client', [name, trading_name])`
+(exact), on BOTH the main query and the `billing_period_override` query.
+`.in()` also safely handles names with commas/parentheses (e.g. "DHL SUPPLY
+CHAIN (BRAZIL) LTDA"), unlike hand-built `.or()` strings that need quoting.
 
-**How to apply:** any time you broaden the client `.or()` filter for performance/
-recall, keep the JS resolve-and-verify guard downstream; do not trust the SQL
-filter alone to scope a single client's billing. The DHL "PREENCHER PLANILHA"
-path fetches by dhl_se_number and is not affected.
+**How to apply:** never reintroduce ILIKE/generic-word client filters or a JS
+ownership post-filter here. Verified once that 0 of 1000 missions have a
+`client` value diverging from a canonical name, so exact match drops no
+legitimate OS. The DHL "PREENCHER PLANILHA" path fetches by dhl_se_number and
+is a separate concern.
