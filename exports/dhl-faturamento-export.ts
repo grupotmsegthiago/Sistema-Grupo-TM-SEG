@@ -461,9 +461,9 @@ export async function exportDhlFaturamentoFilled(config: DhlFilledConfig): Promi
     apCell.font = { size: 10 };
     apCell.alignment = { vertical: 'middle', horizontal: 'center', wrapText: false };
     applyBorder(apCell, 'E5E7EB');
-    // OS sem tabela de preço aplicada/aprovada (sem snapshot/ajuste): pinta a
-    // LINHA INTEIRA de vermelho (sobrepõe azul de vazias e colunas vermelhas)
-    // para sinalizar revisão manual.
+    // OS sem NENHUMA tabela de preço DHL aplicável (não existe no grupo DHL):
+    // pinta a LINHA INTEIRA de vermelho (sobrepõe azul de vazias e colunas
+    // vermelhas) para sinalizar revisão manual.
     if (r.noAppliedTable) {
       for (let c = 1; c <= 42; c++) {
         const cell = row.getCell(c);

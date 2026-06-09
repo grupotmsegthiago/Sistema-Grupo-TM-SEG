@@ -2068,12 +2068,6 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
                             usedTable = resolveLiveTable(adjInfo);
                         }
                     }
-                    // Linha vermelha = OS sem tabela de preço aplicada/aprovada no
-                    // sistema. Critério: NÃO é raio (raio sempre tem o raio) E não há
-                    // snapshot (aprovação) NEM ajuste do modal. Baseado na EXISTÊNCIA
-                    // dos logs, não na resolução da tabela viva (snapshot/ajuste órfão
-                    // ainda conta como tabela aplicada).
-                    const noAppliedTable = raioKm === 0 && !snapInfo && !adjInfo;
                     // 2º) Sem tabela gravada: motor de seleção DHL pela rota/KM.
                     if (!usedTable) {
                         try {
@@ -2091,6 +2085,14 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
                         const fin = calculateMissionFinancials(m as any, fillPriceTables as any, fillProviderTables as any, dhlClient as any, new Date());
                         usedTable = fillPriceTables.find((t: any) => t.id.toString() === fin.client.tableId) || null;
                     }
+                    // Linha vermelha = OS sem NENHUMA tabela de preço DHL aplicável.
+                    // Critério: NÃO é raio (raio segue o raio da coluna E) E NENHUMA
+                    // tabela foi resolvida (`usedTable` nulo) após esgotar snapshot,
+                    // ajuste, motor de rota e fallback financeiro — ou seja, "nem tem
+                    // no grupo DHL". Qualquer AO resolvido (aprovação/ajuste congelado,
+                    // rota ou financeiro) conta como aplicado e NÃO pinta de vermelho
+                    // (corrige o falso positivo de AO correto vindo de rota/financeiro).
+                    const noAppliedTable = raioKm === 0 && !usedTable;
                     franchiseHours = usedTable?.franchise_hours ?? 0;
                     unitKm = usedTable?.price_per_extra_km ?? 0;
                     unitHr = usedTable?.price_per_extra_hour ?? 0;
