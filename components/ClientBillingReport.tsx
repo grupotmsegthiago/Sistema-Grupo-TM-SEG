@@ -2068,6 +2068,12 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
                             usedTable = resolveLiveTable(adjInfo);
                         }
                     }
+                    // Linha vermelha = OS sem tabela de preço aplicada/aprovada no
+                    // sistema. Critério: NÃO é raio (raio sempre tem o raio) E não há
+                    // snapshot (aprovação) NEM ajuste do modal. Baseado na EXISTÊNCIA
+                    // dos logs, não na resolução da tabela viva (snapshot/ajuste órfão
+                    // ainda conta como tabela aplicada).
+                    const noAppliedTable = raioKm === 0 && !snapInfo && !adjInfo;
                     // 2º) Sem tabela gravada: motor de seleção DHL pela rota/KM.
                     if (!usedTable) {
                         try {
@@ -2112,6 +2118,7 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
                         kmFinal: kmFinalVal,
                         franquiaKm: franchiseKm || 0,
                         kmTotalOverride: raioKm > 0 ? raioKm : undefined,
+                        noAppliedTable,
                         kmDeslocamento: 0,
                         rawStart: rowStart,
                         rawEnd: rowEnd,

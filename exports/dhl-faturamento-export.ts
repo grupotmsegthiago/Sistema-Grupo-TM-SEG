@@ -280,6 +280,7 @@ export interface DhlFilledRow {
   pedagio: number;
   tabelaAplicada?: string; // AO = tabela de preço aplicada para o cliente
   kmTotalOverride?: number; // Q = valor fixo (raio) em vez da fórmula =P-O
+  noAppliedTable?: boolean; // OS sem tabela aplicada/aprovada -> linha inteira vermelha
 }
 
 export interface DhlFilledConfig {
@@ -460,6 +461,16 @@ export async function exportDhlFaturamentoFilled(config: DhlFilledConfig): Promi
     apCell.font = { size: 10 };
     apCell.alignment = { vertical: 'middle', horizontal: 'center', wrapText: false };
     applyBorder(apCell, 'E5E7EB');
+    // OS sem tabela de preço aplicada/aprovada (sem snapshot/ajuste): pinta a
+    // LINHA INTEIRA de vermelho (sobrepõe azul de vazias e colunas vermelhas)
+    // para sinalizar revisão manual.
+    if (r.noAppliedTable) {
+      for (let c = 1; c <= 42; c++) {
+        const cell = row.getCell(c);
+        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF0000' } };
+        cell.font = { size: 10, bold: true, color: { argb: 'FFFFFF' } };
+      }
+    }
     row.height = 18;
   });
 

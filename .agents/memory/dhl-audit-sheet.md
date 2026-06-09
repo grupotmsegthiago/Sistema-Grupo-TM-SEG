@@ -21,6 +21,11 @@ force the total to match the stored boletim value.
   APLICADA (AO) and KM TOTAL (Q) follow the DECLARED radius, NOT the km traveled nor the
   snapshot. `selectDhlClientTable(..., raioKm, ...)` runs BEFORE snapshot/adjust (region +
   raio band, falls back to nearest km); Q is a fixed value (`kmTotalOverride=raioKm`).
+- Whole-row RED = OS has NO applied/approved price table. Criterion is by EXISTENCE of the
+  approval/adjustment logs, NOT by whether a live table resolves: `raioKm===0 && !snapInfo
+  && !adjInfo`. RAIO is NEVER red (it always has the radius). An orphan snapshot/adjust
+  (log exists but table unresolved) still counts as "applied" → not red. The export paints
+  cols 1..42 last so it overrides the blank-cell blue and the always-red columns.
 - Tabela aplicada / franquia / valores tabelados: priority is by RECENCIA, NOT a fixed
   adjustment>snapshot order. Per OS capture BOTH `system_logs` rows with `created_at`:
   `BillingAdjustment` -> {id (clientTableId), name (clientTableName), at} and
