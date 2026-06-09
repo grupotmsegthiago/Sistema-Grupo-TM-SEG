@@ -66,6 +66,19 @@ force the total to match the stored boletim value.
   recomputes via formula from the table params + real times — so the sheet total can
   differ by the override amount. That is BY DESIGN (audit sheet validates the breakdown).
 - Cancelled before departure (no "Em Viagem" event) = início = fim = 0h.
+- **CANCELADA / CANCELAMENTO SOLICITADO (coluna D) = MÍNIMO da tabela 100km da região.**
+  Um único predicado `isCancelledRow = /CANCEL/.test(canceladaVal)` (canceladaVal =
+  situação importada OU status do sistema) governa TUDO, calculado logo após carregar
+  `imp`. Para cancelada: KM TOTAL (Q) = 0 (`kmTotalOverride=0`), PEDÁGIO (AF) = 0,
+  km início/fim = 0, e `rowEnd = rowStart` (duração 0 → HORA EXCEDENTE AB = 0 SEMPRE,
+  inclusive quando saiu "Em Viagem" e foi cancelada depois — isso SUBSTITUI a antiga
+  regra de "somar horas reais"). FRANQUIA TABELA (AE) = `activation_fee` da tabela
+  100km da região via `selectDhlClientTable(..., 100, {clientName})`; fallback para o
+  activation_fee da tabela aplicada se a região não for detectada. Resultado: como
+  AB=AC=AD=AF=0, `AG = SUM(AB:AF)` colapsa em AE = preço mínimo 100km. O export precisa
+  aceitar `kmTotalOverride === 0` (condição `typeof === 'number'`, NÃO `> 0`) senão Q
+  volta para a fórmula `=P-O`. **Why:** OS cancelada cobra o mínimo contratual da
+  região, independente de KM/horas reais (regra do cliente).
 
 **Why:** Earlier the generator filled SCHEDULED times and derived `activationFee` from
 the stored total so the sheet matched the boletim to the cent; DHL rejected ~72 rows

@@ -380,8 +380,9 @@ export async function exportDhlFaturamentoFilled(config: DhlFilledConfig): Promi
     // O, P = KM inicio / final (dados)
     set(15, r.kmInicio || 0);
     set(16, r.kmFinal || 0);
-    // Q = KM TOTAL: fórmula =P-O, exceto em RAIO (valor fixo do raio declarado).
-    if (typeof r.kmTotalOverride === 'number' && r.kmTotalOverride > 0) {
+    // Q = KM TOTAL: fórmula =P-O, exceto em RAIO (valor fixo do raio declarado) e
+    // em CANCELADA (override = 0). Aceita override 0 para zerar o KM da cancelada.
+    if (typeof r.kmTotalOverride === 'number') {
       row.getCell(17).value = r.kmTotalOverride;
     } else {
       row.getCell(17).value = { formula: `P${n}-O${n}` } as any;

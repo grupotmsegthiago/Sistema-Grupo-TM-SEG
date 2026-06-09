@@ -1938,6 +1938,12 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
                     if (!m) { notFound.push(se); continue; }
                     const isCancel = (m.status || '').toString().toLowerCase().includes('cancel');
                     const imp = seInfo.get(se);
+                    // Coluna D (situação): regra de cancelamento vale para "CANCELADA"
+                    // E "CANCELAMENTO SOLICITADO", venha do sistema ou da planilha
+                    // importada. Este predicado UNICO governa KM/horas/overrides para
+                    // a OS cancelada SEMPRE cair no minimo da tabela 100km da regiao.
+                    const canceladaVal = (imp?.situacao || (isCancel ? 'CANCELADA' : 'FINALIZADA')).toUpperCase();
+                    const isCancelledRow = /CANCEL/.test(canceladaVal);
                     // RAIO declarado na coluna E (ex.: "RAIO SP 200 KM"): extrai o
                     // raio contratado (100..500) do texto da SE/operação.
                     const parseRaioKm = (txt: any): number => {
@@ -1967,8 +1973,8 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
                     let cancelledBeforeFill = false;
 
                     // KM REAIS informados pelo usuário (cancelada => 0 pela regra).
-                    kmInicioVal = isCancel ? 0 : (m.start_km || 0);
-                    kmFinalVal = isCancel ? 0 : (m.end_km || 0);
+                    kmInicioVal = isCancelledRow ? 0 : (m.start_km || 0);
+                    kmFinalVal = isCancelledRow ? 0 : (m.end_km || 0);
 
                     // HORÁRIOS REAIS: início = "Em Viagem"; fim = status terminal.
                     const emViagemIso = fillEmViagemMap[m.id] || '';
@@ -1997,6 +2003,10 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
                     const agendamentoIso = m.start_time || rowStart;
                     rowStart = agendamentoIso;
                     if (cancelledBeforeFill) rowEnd = agendamentoIso;
+                    // OS cancelada cobra o MINIMO da tabela 100km: zera a duração
+                    // (fim = início) para que a HORA EXCEDENTE (AB) seja sempre 0 e o
+                    // TOTAL FORNECEDOR (AG) recaia apenas sobre a FRANQUIA TABELA (AE).
+                    if (isCancelledRow) rowEnd = rowStart;
 
                     // TABELA REGIONAL CORRETA: usa o motor de seleção DHL (região da
                     // origem + faixa de KM + rota exata/inversa) para TODAS as OS,
@@ -2113,11 +2123,29 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
                     franchiseKm = (raioKm > 0 && !adjNewer) ? raioKm : (usedTable?.franchise_km ?? 0);
                     activationFee = usedTable?.activation_fee ?? 0;
 
+                    // CANCELADA / CANCELAMENTO SOLICITADO (coluna D): a OS cobra o
+                    // MINIMO da tabela da regiao da origem (faixa 100km). KM TOTAL (Q)
+                    // e PEDAGIO (AF) vao a ZERO; os excedentes ja zeram (Q=0 e horas=0),
+                    // de modo que TOTAL FORNECEDOR (AG) = FRANQUIA TABELA (AE) = preco
+                    // minimo (ativacao) da tabela 100km da regiao da origem.
+                    let minTabela = activationFee || 0;
+                    if (isCancelledRow) {
+                        try {
+                            const sel100 = selectDhlClientTable(
+                                fillPriceTables as any,
+                                { origin: m.origin || '', destination: m.destination || '' },
+                                100,
+                                { clientName: missionDhlName },
+                            );
+                            if (sel100.table) minTabela = Number(sel100.table.activation_fee) || 0;
+                        } catch {}
+                    }
+
                     rows.push({
                         ciaEscolta: 'TM SEG',
                         periodo: periodLabel || monthLabel(m.start_time),
                         operacao: 'DHL',
-                        cancelada: (imp?.situacao || (isCancel ? 'CANCELADA' : 'FINALIZADA')).toUpperCase(),
+                        cancelada: canceladaVal,
                         descricao: imp?.descricao || (cancelledBeforeFill ? '' : buildDescricao(usedTable?.operation_type || (m as any).operation_type || '', franchiseKm)),
                         seNumber: se,
                         smNumber: (m as any).dhl_sm_number || '',
@@ -2131,7 +2159,7 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
                         kmInicio: kmInicioVal,
                         kmFinal: kmFinalVal,
                         franquiaKm: franchiseKm || 0,
-                        kmTotalOverride: raioKm > 0 ? raioKm : undefined,
+                        kmTotalOverride: isCancelledRow ? 0 : (raioKm > 0 ? raioKm : undefined),
                         noAppliedTable,
                         kmDeslocamento: 0,
                         rawStart: rowStart,
@@ -2139,8 +2167,8 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
                         franquiaHrDays: franchiseHours > 0 ? franchiseHours / 24 : 0,
                         vlrHoraExcedenteTab: unitHr || 0,
                         vlrKmExcedenteTab: unitKm || 0,
-                        franquiaTabela: activationFee || 0,
-                        pedagio: Math.max(0, m.toll_value || 0),
+                        franquiaTabela: isCancelledRow ? minTabela : (activationFee || 0),
+                        pedagio: isCancelledRow ? 0 : Math.max(0, m.toll_value || 0),
                         tabelaAplicada: usedTable?.operation_type || (m as any).operation_type || '',
                     });
                 }
