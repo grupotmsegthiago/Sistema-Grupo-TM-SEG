@@ -1972,6 +1972,15 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
                     kmInicioVal = isCancelledRow ? 0 : (m.start_km || 0);
                     kmFinalVal = isCancelledRow ? 0 : (m.end_km || 0);
 
+                    // NOVA REGRA RAIO (sempre calcular P-O primeiro): se houve RODAGEM
+                    // real (km final - km início > 0) e não foi cancelada, IGNORA o raio
+                    // DECLARADO e usa a FAIXA do km real (computeDhlBand): 1-150 -> 100,
+                    // 151-250 -> 200, 251-350 -> 300, etc. Ex.: raio 200 rodando 53 -> 100;
+                    // 220 -> 200; 301-350 -> 300. Sem rodagem (P-O = 0 / cancelada / sem
+                    // registro de km) mantém o raio declarado/mínimo como antes.
+                    const kmRealRaio = Math.max(0, (kmFinalVal || 0) - (kmInicioVal || 0));
+                    const effectiveRaioKm = (raioKm > 0 && kmRealRaio > 0) ? computeDhlBand(kmRealRaio) : raioKm;
+
                     // HORÁRIOS REAIS: início = "Em Viagem"; fim = status terminal.
                     const emViagemIso = fillEmViagemMap[m.id] || '';
                     const finalIso = fillFinalMap[m.id] || '';
@@ -2064,16 +2073,17 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
                     if (adjNewer) {
                         usedTable = resolveLiveTable(adjInfo);
                     }
-                    // 2º) RAIO: sem troca manual, a TABELA APLICADA (AO) e a FRANQUIA
-                    // (R) seguem o RAIO declarado na coluna E — NAO o km rodado nem o
-                    // snapshot. O seletor casa regiao + faixa do raio e cai para o KM
-                    // mais proximo quando nao ha tabela exata cadastrada.
-                    if (!usedTable && raioKm > 0) {
+                    // 2º) RAIO: sem troca manual, a TABELA APLICADA (AO) e a FRANQUIA (R)
+                    // seguem a FAIXA do KM REAL rodado quando houve rodagem (effectiveRaioKm
+                    // já aplicou computeDhlBand sobre P-O). Sem rodagem, cai no raio
+                    // declarado. O seletor casa regiao + faixa e vai para o KM mais
+                    // proximo quando nao ha tabela exata cadastrada.
+                    if (!usedTable && effectiveRaioKm > 0) {
                         try {
                             const selRaio = selectDhlClientTable(
                                 fillPriceTables as any,
                                 { origin: m.origin || '', destination: m.destination || '' },
-                                raioKm,
+                                effectiveRaioKm,
                                 { clientName: missionDhlName },
                             );
                             usedTable = selRaio.table;
@@ -2108,11 +2118,11 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
                     franchiseHours = usedTable?.franchise_hours ?? 0;
                     unitKm = usedTable?.price_per_extra_km ?? 0;
                     unitHr = usedTable?.price_per_extra_hour ?? 0;
-                    // RAIO: franquia = raio declarado (coluna E). Caso contrário, a
-                    // franquia vem da tabela aplicada. EXCECAO: troca MANUAL no seletor
-                    // do modal (adjNewer) vence o raio tambem na franquia, para a OS
-                    // ficar 100% coerente com a tabela escolhida pela diretoria.
-                    franchiseKm = (raioKm > 0 && !adjNewer) ? raioKm : (usedTable?.franchise_km ?? 0);
+                    // RAIO: franquia = FAIXA do km real rodado (effectiveRaioKm). Sem
+                    // rodagem, é o raio declarado. Caso contrário, vem da tabela aplicada.
+                    // EXCECAO: troca MANUAL no seletor do modal (adjNewer) vence tudo na
+                    // franquia, para a OS ficar coerente com a tabela escolhida pela diretoria.
+                    franchiseKm = (effectiveRaioKm > 0 && !adjNewer) ? effectiveRaioKm : (usedTable?.franchise_km ?? 0);
                     activationFee = usedTable?.activation_fee ?? 0;
 
                     // VALOR MINIMO DA FRANQUIA TABELA (coluna AE): para OS CANCELADA /
@@ -2128,12 +2138,6 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
                     const isBelow100Km = franchiseKm > 0 && franchiseKm <= 100;
                     const useMinFranquia = isCancelledRow || isBelow100Km;
                     const minTabela = useMinFranquia ? dhlMinFranquia : (activationFee || 0);
-
-                    // "FORA DO NORMAL": OS vendida como RAIO Nkm (raio declarado na
-                    // descrição) mas a franquia KM realmente aplicada é DIFERENTE
-                    // (ex.: troca manual no modal p/ tabela menor, poucos KM rodados).
-                    // Sinaliza p/ revisão manual: linha vermelha + célula franquia amarela.
-                    const franchiseMismatch = raioKm > 0 && raioKm !== (Number(franchiseKm) || 0);
 
                     rows.push({
                         ciaEscolta: 'TM SEG',
@@ -2153,9 +2157,8 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
                         kmInicio: kmInicioVal,
                         kmFinal: kmFinalVal,
                         franquiaKm: franchiseKm || 0,
-                        kmTotalOverride: isCancelledRow ? 0 : (raioKm > 0 ? raioKm : undefined),
+                        kmTotalOverride: isCancelledRow ? 0 : ((raioKm > 0 && kmRealRaio === 0) ? raioKm : undefined),
                         noAppliedTable,
-                        franchiseMismatch,
                         kmDeslocamento: 0,
                         rawStart: rowStart,
                         rawEnd: rowEnd,

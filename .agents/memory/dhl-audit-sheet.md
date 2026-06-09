@@ -17,20 +17,31 @@ force the total to match the stored boletim value.
   Viagem" time. Consequence: W/Y (HORA TOTAL/EXCEDENTE, `=V-U` in the sheet) count from
   agendamento → fim real (aligned with how the hour franchise is billed). User chose this.
 - HORA FINAL (col V) = real time of the TERMINAL status (Concluída/Cancelada/Pendente).
-- RAIO missions (col E e.g. "RAIO SP 200 KM", radius ∈ {100..500}): franquia (R), TABELA
-  APLICADA (AO) and KM TOTAL (Q) follow the DECLARED radius, NOT the km traveled nor the
-  snapshot — `selectDhlClientTable(..., raioKm, ...)` (region + raio band, falls back to
-  nearest km); Q is a fixed value (`kmTotalOverride=raioKm`). **EXCEPTION (manual override
-  beats raio):** a MANUAL table change in the modal selector (adjNewer: BillingAdjustment
-  newer than the snapshot) now resolves FIRST and overrides the raio engine — so AO, the
-  derived franquia/excedente/ativação AND `franchiseKm` all follow the table the diretoria
-  picked, even on a raio OS. Order is now: 1) adjNewer→resolveLive(adj); 2) raio engine (if
-  no manual override); 3) snapshot/adjust frozen; 4) route engine; 5) financial fallback.
-  `franchiseKm = (raioKm>0 && !adjNewer) ? raioKm : usedTable.franchise_km`. Auto raio OS
-  (no manual change, adjNewer=false) are UNCHANGED. Q (kmTotalOverride) still = raioKm.
+- RAIO missions (col E e.g. "RAIO SP 200 KM", radius ∈ {100..500}): **REGRA ATUAL (inverteu
+  a antiga "segue raio declarado"): SEMPRE calcular P-O primeiro.** `kmRealRaio = max(0,
+  km_final - km_inicio)`. Se houve RODAGEM real (`kmRealRaio > 0`, não cancelada) o raio
+  DECLARADO é IGNORADO e a faixa vem do km real: `effectiveRaioKm = computeDhlBand(kmRealRaio)`
+  (1-150→100, 151-250→200, 251-350→300, ...). Essa faixa dirige a TABELA APLICADA (AO,
+  `selectDhlClientTable(..., effectiveRaioKm, ...)`) e a FRANQUIA (R). KM TOTAL (Q) passa a
+  ser o km REAL (kmTotalOverride=undefined → fórmula Excel `=P-O`), e o excedente
+  (`=IF(Q-R<0,0,Q-R)`) sai natural. Ex.: raio 200 rodando 53 → tabela/franquia 100, Q=53,
+  exc 0 (automatiza a correção que antes era feita à mão); raio 200 rodando 220 → 200, exc 20;
+  raio 300 rodando 301-350 → 300. Sem rodagem (`kmRealRaio===0`: cancelada OU km não
+  registrado) MANTÉM o raio declarado (Q = raioKm, franquia = raioKm) como antes.
+  **EXCEPTION (manual override beats tudo):** troca MANUAL no seletor do modal (adjNewer:
+  BillingAdjustment mais novo que o snapshot) resolve PRIMEIRO e vence até a faixa do km
+  real — AO, franquia/excedente/ativação e `franchiseKm` seguem a tabela escolhida pela
+  diretoria. Ordem: 1) adjNewer→resolveLive(adj); 2) faixa do km real / raio (se sem
+  override manual); 3) snapshot/adjust frozen; 4) route engine; 5) financial fallback.
+  `franchiseKm = (effectiveRaioKm>0 && !adjNewer) ? effectiveRaioKm : usedTable.franchise_km`.
+  **Removida** a marcação "fora do normal" (raio declarado ≠ franquia → linha vermelha +
+  célula amarela): com a faixa auto vinda do km real ela dispararia à toa. Mantida só a
+  vermelha de `noAppliedTable` (OS sem tabela aplicada).
 - Whole-row RED = OS for which NO DHL price table could be resolved at all. Final criterion:
-  `raioKm===0 && !usedTable` (after exhausting snapshot/adjust → route engine → financial
-  fallback). RAIO is NEVER red. Do NOT key the red on snapshot/adjust EXISTENCE (`!snapInfo
+  `noAppliedTable = !usedTable` (after exhausting snapshot/adjust → route engine → financial
+  fallback). RAIO normalmente NÃO fica vermelho, mas PODE: como a faixa agora vem do km real,
+  se `computeDhlBand(kmReal)` cair numa banda sem tabela RAIO cadastrada (ex.: > 500km),
+  `usedTable=null` → vermelho (correto, p/ revisão). Do NOT key the red on snapshot/adjust EXISTENCE (`!snapInfo
   && !adjInfo`) — that wrongly reds correct rows whose AO came from the route/financial
   fallback (no approval logs but a real DHL table). Do NOT key on "id present in
   fillPriceTables" either — approved OS use a synthetic frozen table with no id and would

@@ -281,7 +281,6 @@ export interface DhlFilledRow {
   tabelaAplicada?: string; // AO = tabela de preço aplicada para o cliente
   kmTotalOverride?: number; // Q = valor fixo (raio) em vez da fórmula =P-O
   noAppliedTable?: boolean; // OS sem tabela aplicada/aprovada -> linha inteira vermelha
-  franchiseMismatch?: boolean; // raio declarado != franquia aplicada -> linha vermelha + célula FRANQUIA KM amarela
 }
 
 export interface DhlFilledConfig {
@@ -472,21 +471,6 @@ export async function exportDhlFaturamentoFilled(config: DhlFilledConfig): Promi
         cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF0000' } };
         cell.font = { size: 10, bold: true, color: { argb: 'FFFFFF' } };
       }
-    }
-    // "FORA DO NORMAL": raio declarado (descrição) diverge da franquia KM
-    // realmente aplicada (ex.: vendido RAIO 200KM mas franquia ficou 100KM por
-    // troca manual / poucos KM rodados). Pinta a LINHA INTEIRA de vermelho e a
-    // célula FRANQUIA KM (R, coluna 18) de AMARELO, sinalizando exatamente onde
-    // está o erro para ajuste manual.
-    else if (r.franchiseMismatch) {
-      for (let c = 1; c <= 42; c++) {
-        const cell = row.getCell(c);
-        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF0000' } };
-        cell.font = { size: 10, bold: true, color: { argb: 'FFFFFF' } };
-      }
-      const frCell = row.getCell(18);
-      frCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFF00' } };
-      frCell.font = { size: 10, bold: true, color: { argb: '000000' } };
     }
     row.height = 18;
   });
