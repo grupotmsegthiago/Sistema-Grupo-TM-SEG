@@ -311,8 +311,57 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
             const baseList: any[] = missionDataRaw || [];
             const seen = new Set(baseList.map(m => m.id));
             const merged = [...baseList, ...overrideExtras.filter(m => !seen.has(m.id))];
+
+            // PROTEÇÃO CONTRA CONTAMINAÇÃO ENTRE CLIENTES:
+            // Os filtros .or() acima incluem um padrão GENÉRICO por palavras
+            // (ex.: UNIKA = "VMF TRANSPORTE E LOGISTICA LTDA" gera o filtro
+            // %TRANSPORTE%LOGISTICA%), que também casa o nome de OUTROS clientes
+            // do mesmo ramo (ex.: FSM = "...TRANSPORTES E LOGISTICA INTEGRADA
+            // LTDA"). Para a OS de um cliente não entrar no boletim de outro,
+            // resolvemos o campo `client` de cada OS de volta para o cliente real
+            // (match por razão social / nome fantasia MAIS específico) e
+            // descartamos as que pertencem a um OUTRO cliente conhecido.
+            const normName = (s: any) => (s || '').toString().toUpperCase()
+                .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+                .replace(/\s+/g, ' ').trim();
+            // Resolve contra TODOS os clientes (inclusive inativos), não só os
+            // ativos carregados na tela: um cliente inativo com nome do mesmo
+            // ramo também poderia contaminar o boletim se ficasse de fora.
+            let allClientsForResolve: { id: any; name: string; trading_name: string }[] = clients as any;
+            try {
+                const { data: allCli } = await supabase
+                    .from('clients')
+                    .select('id, name, trading_name');
+                if (allCli && allCli.length) allClientsForResolve = allCli as any;
+            } catch {}
+            const resolveClientId = (candidate: any): string | null => {
+                const c = normName(candidate);
+                if (!c) return null;
+                let bestId: string | null = null;
+                let bestLen = 0;
+                for (const cl of allClientsForResolve) {
+                    for (const key of [cl.name, cl.trading_name]) {
+                        const k = normName(key);
+                        if (k.length >= 4 && (c === k || c.includes(k)) && k.length > bestLen) {
+                            bestLen = k.length;
+                            bestId = cl.id.toString();
+                        }
+                    }
+                }
+                return bestId;
+            };
+            const belongsToSelectedClient = (m: any) => {
+                const rid = resolveClientId(m.client);
+                // rid === null: o campo `client` não bate com NENHUM cliente
+                // conhecido (variação livre) -> mantém, pois veio de um filtro do
+                // cliente atual. Caso contrário, só entra se resolver para o
+                // cliente selecionado.
+                return rid === null || rid === selectedClient;
+            };
+
             // Aplica exclude_from_billing (se a coluna existir).
             const missionData: any[] = merged
+                .filter(belongsToSelectedClient)
                 .filter(m => m.exclude_from_billing !== true)
                 .sort((a, b) => new Date(a.start_time || 0).getTime() - new Date(b.start_time || 0).getTime());
 
