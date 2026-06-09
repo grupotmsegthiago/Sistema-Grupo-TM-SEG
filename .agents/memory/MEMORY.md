@@ -9,7 +9,7 @@
 - [OS table swap](os-table-swap.md) — trocar tabela de uma OS: set manual*TableId (autofill sincroniza inputs) → handleUpdate(false) persiste valores+ids e dispara realtime global; não criar .on por tela.
 - [Query cache vs Realtime](query-cache-realtime-tradeoff.md) — long staleTime + refetchOnWindowFocus off is safe because RealtimeProvider invalidates caches; MissionTable fetches manually, not via React Query.
 - [DHL table naming standard](dhl-table-naming.md) — DHL price-table names need `REGIÃO - DESC NNNKM`; the KM to append is the row's franchise_km; exclude __AUTO_MASTER__ rows.
-- [DHL audit sheet](dhl-audit-sheet.md) — "PREENCHER PLANILHA (SE)" mostra horários reais (mission_history) + tabela regional via selectDhlClientTable; nunca balancear franquia p/ casar boletim; selector direto p/ canceladas.
+- [DHL audit sheet](dhl-audit-sheet.md) — "PREENCHER PLANILHA (SE)": HORA INÍCIO=agendamento; RAIO segue raio da coluna E (franquia/AO/Q), não km rodado; nunca balancear franquia p/ casar boletim.
 - [MissionTable initial render](missiontable-initial-render.md) — só missões+veículos bloqueiam o 1º paint; telefones de agente e dados derivados (selos) carregam em background depois de setIsLoading(false).
 - [MissionTable pagination](mission-table-pagination.md) — Operations loads per-period (in-range ∪ always-loaded OPEN set); badges stay global, restricted-client view loads full client set; realtime deps exclude period.
 - [Billing report provider mode](billing-report-provider-mode.md) — Boletim tem toggle Cliente/Fornecedor no MESMO componente; reusa rowsData genérico c/ fin.provider, total=cost_value+toll fornecedor, isolamento .in('provider',exact).

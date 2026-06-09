@@ -13,8 +13,14 @@ Excel formulas compute the total — even when the natural total differs from th
 
 **Rule:** Fill only raw inputs; never hardcode totals or "balance" the franquia to
 force the total to match the stored boletim value.
-- HORA INÍCIO (col U) = real time the status became "Em Viagem" (from `mission_history`).
+- HORA INÍCIO (col U) = ALWAYS the AGENDAMENTO (`m.start_time`), never the real "Em
+  Viagem" time. Consequence: W/Y (HORA TOTAL/EXCEDENTE, `=V-U` in the sheet) count from
+  agendamento → fim real (aligned with how the hour franchise is billed). User chose this.
 - HORA FINAL (col V) = real time of the TERMINAL status (Concluída/Cancelada/Pendente).
+- RAIO missions (col E e.g. "RAIO SP 200 KM", radius ∈ {100..500}): franquia (R), TABELA
+  APLICADA (AO) and KM TOTAL (Q) follow the DECLARED radius, NOT the km traveled nor the
+  snapshot. `selectDhlClientTable(..., raioKm, ...)` runs BEFORE snapshot/adjust (region +
+  raio band, falls back to nearest km); Q is a fixed value (`kmTotalOverride=raioKm`).
 - Tabela aplicada / franquia / valores tabelados: priority is by RECENCIA, NOT a fixed
   adjustment>snapshot order. Per OS capture BOTH `system_logs` rows with `created_at`:
   `BillingAdjustment` -> {id (clientTableId), name (clientTableName), at} and

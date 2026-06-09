@@ -1937,6 +1937,17 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
                     const m = bySe.get(se);
                     if (!m) { notFound.push(se); continue; }
                     const isCancel = (m.status || '').toString().toLowerCase().includes('cancel');
+                    const imp = seInfo.get(se);
+                    // RAIO declarado na coluna E (ex.: "RAIO SP 200 KM"): extrai o
+                    // raio contratado (100..500) do texto da SE/operação.
+                    const parseRaioKm = (txt: any): number => {
+                        const t = String(txt || '').toUpperCase();
+                        if (!t.includes('RAIO')) return 0;
+                        const mm = t.match(/(\d{2,4})\s*KM/);
+                        const n = mm ? Number(mm[1]) : 0;
+                        return [100, 200, 300, 400, 500].includes(n) ? n : 0;
+                    };
+                    const raioKm = parseRaioKm(imp?.descricao) || parseRaioKm((m as any).operation_type);
 
                     // PLANILHA DE AUDITORIA (decisão do cliente): mostra os valores
                     // REAIS/corretos e deixa as FÓRMULAS da planilha calcularem o
@@ -1980,6 +1991,13 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
                         rowEnd = finalIso || m.end_time || m.start_time || '';
                     }
 
+                    // Coluna U (HORA INÍCIO) SEMPRE = horário do AGENDAMENTO
+                    // (start_time), independente do horário real de saída. Cancelada
+                    // ANTES do agendamento mantém início = fim = agendamento (0h).
+                    const agendamentoIso = m.start_time || rowStart;
+                    rowStart = agendamentoIso;
+                    if (cancelledBeforeFill) rowEnd = agendamentoIso;
+
                     // TABELA REGIONAL CORRETA: usa o motor de seleção DHL (região da
                     // origem + faixa de KM + rota exata/inversa) para TODAS as OS,
                     // inclusive canceladas, em vez de balancear pelo valor gravado.
@@ -1987,6 +2005,21 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
                         || (findDhlAutoClient(dhlClientName) ? dhlClientName : DHL_CLIENT_NAME);
                     const routeKm = Number(m.total_distance || m.traveled_distance || 0) || 0;
                     let usedTable: any = null;
+                    // RAIO: a TABELA APLICADA (AO) e a FRANQUIA (R) seguem o RAIO
+                    // declarado na coluna E — NÃO o km rodado nem o snapshot. O
+                    // seletor casa região + faixa do raio e cai para o KM mais
+                    // próximo quando não há tabela exata cadastrada.
+                    if (raioKm > 0) {
+                        try {
+                            const selRaio = selectDhlClientTable(
+                                fillPriceTables as any,
+                                { origin: m.origin || '', destination: m.destination || '' },
+                                raioKm,
+                                { clientName: missionDhlName },
+                            );
+                            usedTable = selRaio.table;
+                        } catch {}
+                    }
                     const adjInfo = fillAdjInfo[m.id];
                     const snapInfo = fillSnapInfo[m.id];
                     // Resolve uma tabela VIGENTE pelo id e, se o id estiver velho
@@ -2026,12 +2059,14 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
                     // Caso contrario o snapshot CONGELADO e a verdade (espelha o
                     // boletim na tela, mesmo que a tabela tenha sido recriada).
                     const adjNewer = !!adjInfo && (!snapInfo || adjInfo.at > snapInfo.at + 2000);
-                    if (adjNewer) {
-                        usedTable = resolveLiveTable(adjInfo) || frozenTable(snapInfo) || resolveLiveTable(snapInfo);
-                    } else if (snapInfo) {
-                        usedTable = frozenTable(snapInfo) || resolveLiveTable(snapInfo) || resolveLiveTable(adjInfo);
-                    } else if (adjInfo) {
-                        usedTable = resolveLiveTable(adjInfo);
+                    if (!usedTable) {
+                        if (adjNewer) {
+                            usedTable = resolveLiveTable(adjInfo) || frozenTable(snapInfo) || resolveLiveTable(snapInfo);
+                        } else if (snapInfo) {
+                            usedTable = frozenTable(snapInfo) || resolveLiveTable(snapInfo) || resolveLiveTable(adjInfo);
+                        } else if (adjInfo) {
+                            usedTable = resolveLiveTable(adjInfo);
+                        }
                     }
                     // 2º) Sem tabela gravada: motor de seleção DHL pela rota/KM.
                     if (!usedTable) {
@@ -2053,10 +2088,11 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
                     franchiseHours = usedTable?.franchise_hours ?? 0;
                     unitKm = usedTable?.price_per_extra_km ?? 0;
                     unitHr = usedTable?.price_per_extra_hour ?? 0;
-                    franchiseKm = usedTable?.franchise_km ?? 0;
+                    // RAIO: franquia = raio declarado (coluna E). Caso contrário, a
+                    // franquia vem da tabela aplicada.
+                    franchiseKm = raioKm > 0 ? raioKm : (usedTable?.franchise_km ?? 0);
                     activationFee = usedTable?.activation_fee ?? 0;
 
-                    const imp = seInfo.get(se);
                     rows.push({
                         ciaEscolta: 'TM SEG',
                         periodo: periodLabel || monthLabel(m.start_time),
@@ -2075,6 +2111,7 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
                         kmInicio: kmInicioVal,
                         kmFinal: kmFinalVal,
                         franquiaKm: franchiseKm || 0,
+                        kmTotalOverride: raioKm > 0 ? raioKm : undefined,
                         kmDeslocamento: 0,
                         rawStart: rowStart,
                         rawEnd: rowEnd,

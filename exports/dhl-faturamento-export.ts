@@ -279,6 +279,7 @@ export interface DhlFilledRow {
   franquiaTabela: number;
   pedagio: number;
   tabelaAplicada?: string; // AO = tabela de preço aplicada para o cliente
+  kmTotalOverride?: number; // Q = valor fixo (raio) em vez da fórmula =P-O
 }
 
 export interface DhlFilledConfig {
@@ -378,8 +379,12 @@ export async function exportDhlFaturamentoFilled(config: DhlFilledConfig): Promi
     // O, P = KM inicio / final (dados)
     set(15, r.kmInicio || 0);
     set(16, r.kmFinal || 0);
-    // Q = KM TOTAL (formula =P-O)
-    row.getCell(17).value = { formula: `P${n}-O${n}` } as any;
+    // Q = KM TOTAL: fórmula =P-O, exceto em RAIO (valor fixo do raio declarado).
+    if (typeof r.kmTotalOverride === 'number' && r.kmTotalOverride > 0) {
+      row.getCell(17).value = r.kmTotalOverride;
+    } else {
+      row.getCell(17).value = { formula: `P${n}-O${n}` } as any;
+    }
     // R = FRANQUIA KM (dado)
     set(18, r.franquiaKm || 0);
     // S = KM EXCEDENTE (formula)
