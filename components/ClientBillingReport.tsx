@@ -2129,6 +2129,12 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
                     const useMinFranquia = isCancelledRow || isBelow100Km;
                     const minTabela = useMinFranquia ? dhlMinFranquia : (activationFee || 0);
 
+                    // "FORA DO NORMAL": OS vendida como RAIO Nkm (raio declarado na
+                    // descrição) mas a franquia KM realmente aplicada é DIFERENTE
+                    // (ex.: troca manual no modal p/ tabela menor, poucos KM rodados).
+                    // Sinaliza p/ revisão manual: linha vermelha + célula franquia amarela.
+                    const franchiseMismatch = raioKm > 0 && raioKm !== (Number(franchiseKm) || 0);
+
                     rows.push({
                         ciaEscolta: 'TM SEG',
                         periodo: periodLabel || monthLabel(m.start_time),
@@ -2149,6 +2155,7 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
                         franquiaKm: franchiseKm || 0,
                         kmTotalOverride: isCancelledRow ? 0 : (raioKm > 0 ? raioKm : undefined),
                         noAppliedTable,
+                        franchiseMismatch,
                         kmDeslocamento: 0,
                         rawStart: rowStart,
                         rawEnd: rowEnd,
