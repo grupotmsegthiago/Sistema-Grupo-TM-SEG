@@ -17,6 +17,9 @@ interface ClientBillingReportProps { onNavigate?: (screen: string) => void; onOp
 const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, onOpenMission }) => {
     const [clients, setClients] = useState<Client[]>([]);
     const [selectedClient, setSelectedClient] = useState('');
+    const [reportMode, setReportMode] = useState<'cliente' | 'fornecedor'>('cliente');
+    const [providers, setProviders] = useState<{ id: any; name: string; trading_name?: string }[]>([]);
+    const [selectedProvider, setSelectedProvider] = useState('');
     const [startDate, setStartDate] = useState('');
     const [endDate, setEndDate] = useState('');
     const [selectedMonth, setSelectedMonth] = useState('');
@@ -135,6 +138,7 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
 
     useEffect(() => {
         fetchClients();
+        fetchProviders();
         const date = new Date();
         const y = date.getFullYear();
         const m = date.getMonth();
@@ -191,6 +195,10 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
         const { data } = await supabase.from('clients').select('*').eq('status', 'Ativo').order('name');
         if (data) setClients(data as any);
     };
+    const fetchProviders = async () => {
+        const { data } = await supabase.from('providers').select('id, name, trading_name').eq('status', 'Ativo').order('name');
+        if (data) setProviders(data as any);
+    };
 
     const handleSetFortnight = (period: 1 | 2) => {
         const refDate = startDate ? new Date(startDate + 'T12:00:00') : new Date();
@@ -234,27 +242,35 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
     };
 
     const handleGenerate = async () => {
-        if (!selectedClient) { alert("Selecione um cliente."); return; }
+        if (reportMode === 'cliente' && !selectedClient) { alert("Selecione um cliente."); return; }
+        if (reportMode === 'fornecedor' && !selectedProvider) { alert("Selecione um fornecedor."); return; }
         setIsLoading(true);
         setReportGenerated(false);
         try {
+            const isProviderMode = reportMode === 'fornecedor';
             const clientObj = clients.find(c => c.id.toString() === selectedClient);
             const clientName = clientObj?.name || '';
             const tradingName = clientObj?.trading_name || '';
+            const provObj = providers.find(p => p.id.toString() === selectedProvider);
             const rangeStart = `${startDate}T03:00:00.000Z`;
             const rangeEnd = new Date(new Date(`${endDate}T03:00:00.000Z`).getTime() + 86400000 - 1).toISOString();
 
-            // ISOLAMENTO DE CLIENTES: a OS guarda o NOME CANÔNICO EXATO do cliente
-            // no campo `client`. Filtramos por igualdade exata (razão social e/ou
-            // nome fantasia) — NUNCA por ILIKE/termos genéricos — para evitar
-            // cruzamento de dados entre clientes do mesmo ramo (ex.: FSM x UNIKA).
-            const canonicalNames = [clientName.trim()].filter(Boolean);
-            if (tradingName.trim() && tradingName.trim() !== clientName.trim()) {
-                canonicalNames.push(tradingName.trim());
-            }
+            // ISOLAMENTO: a OS guarda o NOME CANÔNICO EXATO do cliente (campo
+            // `client`) e do fornecedor (campo `provider`). Filtramos por
+            // igualdade exata (razão social e/ou nome fantasia) — NUNCA por
+            // ILIKE/termos genéricos — para evitar cruzamento de dados entre
+            // clientes/fornecedores do mesmo ramo (ex.: FSM x UNIKA).
+            const filterCol = isProviderMode ? 'provider' : 'client';
+            const canonicalNames = isProviderMode
+                ? [provObj?.name?.trim(), provObj?.trading_name?.trim()].filter((v): v is string => !!v).filter((v, i, a) => a.indexOf(v) === i)
+                : (() => {
+                    const arr = [clientName.trim()].filter(Boolean);
+                    if (tradingName.trim() && tradingName.trim() !== clientName.trim()) arr.push(tradingName.trim());
+                    return arr;
+                })();
             if (canonicalNames.length === 0) {
                 setIsLoading(false);
-                alert('Cliente sem nome cadastrado. Não é possível gerar o boletim.');
+                alert(isProviderMode ? 'Fornecedor sem nome cadastrado. Não é possível gerar o boletim.' : 'Cliente sem nome cadastrado. Não é possível gerar o boletim.');
                 return;
             }
 
@@ -266,7 +282,7 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
             const { data: missionDataRaw, error } = await supabase
                 .from('missions')
                 .select('*, company_vehicle:vehicles(*)')
-                .in('client', canonicalNames)
+                .in(filterCol, canonicalNames)
                 .neq('status', 'Recusada')
                 .not('start_time', 'is', null)
                 .gte('start_time', rangeStart)
@@ -283,7 +299,7 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
                 const { data: overrideRaw, error: ovErr } = await supabase
                     .from('missions')
                     .select('*, company_vehicle:vehicles(*)')
-                    .in('client', canonicalNames)
+                    .in(filterCol, canonicalNames)
                     .neq('status', 'Recusada')
                     .not('billing_period_override', 'is', null)
                     .gte('billing_period_override', rangeStart)
@@ -344,7 +360,7 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
             const missionIds = (missionData || []).map((m: any) => m.id).filter(Boolean);
 
             const [ptRes, pctRes, adjRes, snapRes] = await Promise.all([
-                supabase.from('client_price_tables').select('*').or(clientFuzzyFilter(clientName)),
+                isProviderMode ? Promise.resolve({ data: [] }) : supabase.from('client_price_tables').select('*').or(clientFuzzyFilter(clientName)),
                 supabase.from('provider_cost_tables').select('*'),
                 missionIds.length > 0
                     ? supabase.from('system_logs').select('entity_id, details').eq('entity', 'BillingAdjustment').in('entity_id', missionIds).order('created_at', { ascending: false }).limit(missionIds.length * 5)
@@ -857,6 +873,9 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
     const isCevaBilling = (clientData?.name || '').toUpperCase().includes('CEVA') || (clientData?.trading_name || '').toUpperCase().includes('CEVA');
     const isDhlBilling = (clientData?.name || '').toUpperCase().includes('DHL') || (clientData?.trading_name || '').toUpperCase().includes('DHL');
     const isIntermodalBilling = (clientData?.name || '').toUpperCase().includes('INTERMODAL') || (clientData?.trading_name || '').toUpperCase().includes('INTERMODAL');
+    const providerObj = providers.find(p => p.id.toString() === selectedProvider);
+    const selectedProviderName = providerObj ? (providerObj.trading_name || providerObj.name) : '';
+    const displayName = reportMode === 'fornecedor' ? selectedProviderName : displayClientName;
 
     const canFillDhlSheet = (() => {
         try {
@@ -887,6 +906,84 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
 
     const rowsData = useMemo(() => {
         return missions.map(m => {
+            if (reportMode === 'fornecedor') {
+                const adjP = billingAdjustments[m.id];
+                const overridesP = adjP ? {
+                    providerTableId: (adjP.providerTableId && !String(adjP.providerTableId).startsWith('auto-')) ? adjP.providerTableId : undefined,
+                    customProviderBase: adjP.customProviderBase ? Number(adjP.customProviderBase) : undefined,
+                    customProviderUnitKm: adjP.customProviderKm ? Number(adjP.customProviderKm) : undefined,
+                    customProviderUnitHour: adjP.customProviderHour ? Number(adjP.customProviderHour) : undefined,
+                } : undefined;
+                const finP = calculateMissionFinancials(m, priceTables, providerTables, clientData, new Date(), overridesP);
+                const prov = finP.provider;
+                const tollProv = Math.max(0, ((m.toll_value_provider != null ? m.toll_value_provider : m.toll_value)) || 0);
+                const savedCost = m.cost_value || 0;
+
+                const isCancelledP = (m.status || '').toString().toLowerCase().includes('cancel');
+                const cancelWindowP = isCancelledP ? resolveCancelledWindow(m.start_time, m._cancelStatusAt) : null;
+                const cancelledBeforeP = !!cancelWindowP?.cancelledBefore;
+                const effStartP = isCancelledP ? (cancelWindowP!.start || m.start_time || '') : (m.start_time || '');
+                const effEndP = isCancelledP ? (cancelWindowP!.end || m.start_time || '') : (m.end_time || '');
+                const kmTotalRawP = finP.realTraveledKm > 0 ? finP.realTraveledKm
+                    : ((m.start_km > 0 && m.end_km > 0 && m.end_km >= m.start_km) ? (m.end_km - m.start_km) : (m.total_distance || m.traveled_distance || 0));
+                const kmTotalP = isCancelledP ? 0 : kmTotalRawP;
+
+                const coP = extractCityFromAddress(m.origin || '');
+                const cdP = extractCityFromAddress(m.destination || '');
+                const refCidadesP = coP && cdP ? `${coP} X ${cdP}` : coP || cdP || m.region || '-';
+
+                return {
+                    id: (m.id || '').replace('GTM-', ''),
+                    route: refCidadesP,
+                    client: selectedProviderName,
+                    activationFee: prov.base ?? 0,
+                    franchiseHours: prov.franchiseHours ?? 0,
+                    franchiseKm: prov.franchiseKm ?? 0,
+                    unitHr: prov.unitCostHour ?? 0,
+                    unitKm: prov.unitCostKm ?? 0,
+                    tollLabel: 'À PARTE',
+                    status: 'CONCLUÍDO',
+                    missionStatus: m.status || 'Concluída',
+                    isApproved: !!m.billing_approved,
+                    startDate: fmtDate(effStartP),
+                    startTime: fmtTime(effStartP),
+                    viatura: m.company_vehicle?.plate || m.vehicle_id || '-',
+                    cargoPlate: m._clientVehicle?.plate || '-',
+                    endDate: fmtDate(effEndP),
+                    endTime: fmtTime(effEndP),
+                    kmStart: m.start_km ?? 0,
+                    kmEnd: m.end_km ?? 0,
+                    kmTotal: kmTotalP,
+                    timeStart: fmtTime(effStartP),
+                    timeEnd: fmtTime(effEndP),
+                    timeTotal: cancelledBeforeP ? fmtHHMM(0) : fmtHHMM(finP.durationHours),
+                    kmExtraQtd: prov.excessKm ?? 0,
+                    kmExtraUnit: prov.unitCostKm ?? 0,
+                    kmExtraTotal: prov.extraKmVal ?? 0,
+                    hrExtraQtd: prov.excessHours ?? 0,
+                    hrExtraUnit: prov.unitCostHour ?? 0,
+                    hrExtraTotal: prov.extraHrVal ?? 0,
+                    escoltaVal: prov.base ?? 0,
+                    tollVal: tollProv,
+                    totalGeral: savedCost + tollProv,
+                    franchiseHoursFmt: fmtFranchiseHr(prov.franchiseHours ?? 0),
+                    frozen: false,
+                    frozenBy: null as string | null,
+                    referenceNumber: m.reference_number || '',
+                    seNumber: (m as any).dhl_se_number || '',
+                    smNumber: (m as any).dhl_sm_number || '',
+                    billingRelease: m.billing_release || '',
+                    tipo: ((m.mission_type || '').toString().toUpperCase().includes('VELAD') ? 'PRONTA RESPOSTA' : 'CARACTERIZADA'),
+                    providerName: m.provider || '',
+                    originFull: m.origin || '',
+                    destinationFull: m.destination || '',
+                    originUf: extractUF(m.origin || ''),
+                    destinationUf: extractUF(m.destination || ''),
+                    operationTypeRaw: (m as any).operation_type || '',
+                    rawStartTime: effStartP,
+                    rawEndTime: effEndP
+                };
+            }
             const snap = m.snapshot_data;
             const hasValidSnapshot = !!(m.snapshot_approved_by && snap);
 
@@ -1110,7 +1207,7 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
                 rawEndTime: effEndTime
             };
         });
-    }, [missions, priceTables, providerTables, clientData, displayClientName, billingAdjustments]);
+    }, [missions, priceTables, providerTables, clientData, displayClientName, billingAdjustments, reportMode, selectedProviderName]);
 
     // DHL: diagnóstico de banda — verifica se a tabela aplicada corresponde
     // à faixa de KM real da OS. computeDhlBand(km) define a banda esperada
@@ -1138,11 +1235,16 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
 
     const grandTotal = useMemo(() => {
         return missions.reduce((s: number, m: any) => {
+            if (reportMode === 'fornecedor') {
+                const cost = m.cost_value ?? 0;
+                const tollP = Math.max(0, (m.toll_value_provider != null ? m.toll_value_provider : m.toll_value) || 0);
+                return s + cost + tollP;
+            }
             const rev = m.revenue_value ?? 0;
             const toll = Math.max(0, m.toll_value || 0);
             return s + rev + toll;
         }, 0);
-    }, [missions]);
+    }, [missions, reportMode]);
 
     const [pendingRecompare, setPendingRecompare] = useState(false);
 
@@ -1383,7 +1485,7 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
         totalRowData[0] = 'TOTAL';
         totalRowData[totalCols - 1] = grandTotal;
 
-        const clientLabel = displayClientName || 'CLIENTE';
+        const clientLabel = displayName || (reportMode === 'fornecedor' ? 'FORNECEDOR' : 'CLIENTE');
         const periodShort = startDate && endDate ? `${startDate.replace(/-/g, '')}_${endDate.replace(/-/g, '')}` : 'PERIODO';
 
         const headers: string[] = ['Nº'];
@@ -1444,9 +1546,9 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
             companyName: 'GRUPO TM SEG',
             companyCnpj: '28.804.378/0001-67',
             footerLeft: 'DOCUMENTO GERADO ELETRONICAMENTE PELO GRUPO TM SEG',
-            footerRight: 'ASSINATURA / CARIMBO CLIENTE',
+            footerRight: reportMode === 'fornecedor' ? 'ASSINATURA / CARIMBO FORNECEDOR' : 'ASSINATURA / CARIMBO CLIENTE',
         });
-    }, [rowsData, grandTotal, displayClientName, startDate, endDate, isCeslogBilling, isCevaBilling, isDhlBilling, isIntermodalBilling]);
+    }, [rowsData, grandTotal, displayName, reportMode, startDate, endDate, isCeslogBilling, isCevaBilling, isDhlBilling, isIntermodalBilling]);
 
     const handleExportDhlFaturamento = useCallback(async () => {
         if (rowsData.length === 0) return;
@@ -3173,13 +3275,27 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
                     </div>
                 </div>
                 <div className="bg-gray-50 p-4 rounded-lg border border-gray-200">
+                    <div className="flex items-center gap-2 mb-4">
+                        <span className="text-xs font-bold text-gray-500 uppercase">Boletim de:</span>
+                        <div className="inline-flex bg-white border border-gray-300 rounded-lg p-0.5">
+                            <button type="button" onClick={() => { setReportMode('cliente'); setReportGenerated(false); setSelectedProvider(''); }} className={`px-4 py-1.5 rounded-md text-xs font-black uppercase transition-colors ${reportMode === 'cliente' ? 'bg-blue-600 text-white' : 'text-gray-600 hover:bg-gray-100'}`} data-testid="btn-mode-cliente">Cliente</button>
+                            <button type="button" onClick={() => { setReportMode('fornecedor'); setReportGenerated(false); setSelectedClient(''); }} className={`px-4 py-1.5 rounded-md text-xs font-black uppercase transition-colors ${reportMode === 'fornecedor' ? 'bg-purple-700 text-white' : 'text-gray-600 hover:bg-gray-100'}`} data-testid="btn-mode-fornecedor">Fornecedor</button>
+                        </div>
+                    </div>
                     <div className="grid grid-cols-1 md:grid-cols-4 gap-4 items-end">
                         <div>
-                            <label className="text-xs font-bold text-gray-500 uppercase mb-1 block">Cliente</label>
-                            <select className="w-full p-2.5 border border-gray-300 rounded-lg text-sm outline-none focus:border-blue-500 bg-white uppercase font-bold" value={selectedClient} onChange={e => setSelectedClient(e.target.value)}>
-                                <option value="">Selecione...</option>
-                                {clients.map(c => <option key={c.id} value={c.id}>{c.trading_name || c.name}</option>)}
-                            </select>
+                            <label className="text-xs font-bold text-gray-500 uppercase mb-1 block">{reportMode === 'fornecedor' ? 'Fornecedor' : 'Cliente'}</label>
+                            {reportMode === 'fornecedor' ? (
+                                <select className="w-full p-2.5 border border-gray-300 rounded-lg text-sm outline-none focus:border-purple-500 bg-white uppercase font-bold" value={selectedProvider} onChange={e => setSelectedProvider(e.target.value)} data-testid="select-provider">
+                                    <option value="">Selecione...</option>
+                                    {providers.map(p => <option key={p.id} value={p.id}>{p.trading_name || p.name}</option>)}
+                                </select>
+                            ) : (
+                                <select className="w-full p-2.5 border border-gray-300 rounded-lg text-sm outline-none focus:border-blue-500 bg-white uppercase font-bold" value={selectedClient} onChange={e => setSelectedClient(e.target.value)}>
+                                    <option value="">Selecione...</option>
+                                    {clients.map(c => <option key={c.id} value={c.id}>{c.trading_name || c.name}</option>)}
+                                </select>
+                            )}
                         </div>
                         <div className="md:col-span-2">
                             <div className="flex justify-between items-center mb-1">
@@ -3209,6 +3325,8 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
                                 const blocked = pendCount > 0;
                                 return (
                                 <>
+                                    {reportMode === 'cliente' && (
+                                    <>
                                     <button
                                         onClick={openInvoiceModal}
                                         disabled={blocked}
@@ -3221,6 +3339,8 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
                                     <button onClick={() => { setShowPasteModal(true); setPasteText(''); setPasteResult(null); }} className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2.5 rounded-lg text-sm font-bold shadow-sm flex items-center justify-center gap-2" data-testid="btn-paste-spreadsheet">
                                         <ScanLine size={18} /> Colar Planilha
                                     </button>
+                                    </>
+                                    )}
                                     <button onClick={handleExportExcel} className="bg-emerald-700 hover:bg-emerald-800 text-white px-4 py-2.5 rounded-lg text-sm font-bold shadow-sm flex items-center justify-center gap-2">
                                         <FileSpreadsheet size={18} /> Excel
                                     </button>
