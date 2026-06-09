@@ -1820,12 +1820,8 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
                 // Tabelas de preco/custo do cliente DHL para o motor financeiro.
                 const dhlClient = clients.find(c => (c.name || '').toUpperCase().includes('DHL') || (c.trading_name || '').toUpperCase().includes('DHL')) || clientData;
                 const dhlClientName = dhlClient ? (dhlClient.name || dhlClient.trading_name || 'DHL') : 'DHL';
-                const [ptRes, pctRes] = await Promise.all([
-                    supabase.from('client_price_tables').select('*').or(clientFuzzyFilter(dhlClientName)),
-                    supabase.from('provider_cost_tables').select('*'),
-                ]);
+                const ptRes = await supabase.from('client_price_tables').select('*').or(clientFuzzyFilter(dhlClientName));
                 const fillPriceTables = (ptRes.data || priceTables) as any[];
-                const fillProviderTables = (pctRes.data || providerTables) as any[];
 
                 // TABELA REALMENTE APLICADA NA OS: a planilha deve refletir a
                 // tabela que o sistema gravou na OS (memória de ajuste ou snapshot),
@@ -2013,7 +2009,6 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
                     // inclusive canceladas, em vez de balancear pelo valor gravado.
                     const missionDhlName = findDhlAutoClient(m.client)
                         || (findDhlAutoClient(dhlClientName) ? dhlClientName : DHL_CLIENT_NAME);
-                    const routeKm = Number(m.total_distance || m.traveled_distance || 0) || 0;
                     let usedTable: any = null;
                     const adjInfo = fillAdjInfo[m.id];
                     const snapInfo = fillSnapInfo[m.id];
@@ -2038,7 +2033,7 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
                         if (!f) return null;
                         if (!(f.activationFee > 0 || f.franchiseKm > 0 || f.franchiseHours > 0 || f.unitKm > 0 || f.unitHr > 0)) return null;
                         return {
-                            operation_type: info!.name || (m as any).operation_type || '',
+                            operation_type: info!.name || '',
                             franchise_km: f.franchiseKm,
                             franchise_hours: f.franchiseHours,
                             price_per_extra_km: f.unitKm,
@@ -2088,31 +2083,16 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
                             usedTable = resolveLiveTable(adjInfo);
                         }
                     }
-                    // 4º) Sem tabela gravada: motor de seleção DHL pela rota/KM.
-                    if (!usedTable) {
-                        try {
-                            const sel = selectDhlClientTable(
-                                fillPriceTables as any,
-                                { origin: m.origin || '', destination: m.destination || '' },
-                                routeKm,
-                                { clientName: missionDhlName },
-                            );
-                            usedTable = sel.table;
-                        } catch {}
-                    }
-                    if (!usedTable) {
-                        // Fallback defensivo: seleção padrão do motor financeiro.
-                        const fin = calculateMissionFinancials(m as any, fillPriceTables as any, fillProviderTables as any, dhlClient as any, new Date());
-                        usedTable = fillPriceTables.find((t: any) => t.id.toString() === fin.client.tableId) || null;
-                    }
-                    // Linha vermelha = OS sem NENHUMA tabela de preço DHL aplicável.
-                    // Critério: NÃO é raio (raio segue o raio da coluna E) E NENHUMA
-                    // tabela foi resolvida (`usedTable` nulo) após esgotar snapshot,
-                    // ajuste, motor de rota e fallback financeiro — ou seja, "nem tem
-                    // no grupo DHL". Qualquer AO resolvido (aprovação/ajuste congelado,
-                    // rota ou financeiro) conta como aplicado e NÃO pinta de vermelho
-                    // (corrige o falso positivo de AO correto vindo de rota/financeiro).
-                    const noAppliedTable = raioKm === 0 && !usedTable;
+                    // SEM motor de rota / SEM fallback financeiro: a coluna AO (TABELA
+                    // APLICADA) só pode refletir uma tabela REALMENTE aplicada na OS —
+                    // troca manual no seletor (ajuste), RAIO declarado (coluna E) ou
+                    // snapshot congelado da aprovação. Antes, quando nada disso resolvia,
+                    // o sistema "chutava" uma tabela pela rota/KM (ex.: SUL - 100KM,
+                    // SUDESTE - 900KM) ou pelo motor financeiro; isso preenchia a AO
+                    // "atoa". Agora NÃO inventamos nada: se nenhuma tabela aplicada foi
+                    // resolvida, a linha INTEIRA fica VERMELHA para correção manual
+                    // (aplicar/criar a tabela correta na OS).
+                    const noAppliedTable = !usedTable;
                     franchiseHours = usedTable?.franchise_hours ?? 0;
                     unitKm = usedTable?.price_per_extra_km ?? 0;
                     unitHr = usedTable?.price_per_extra_hour ?? 0;
@@ -2165,7 +2145,7 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
                         vlrKmExcedenteTab: unitKm || 0,
                         franquiaTabela: minTabela,
                         pedagio: isCancelledRow ? 0 : Math.max(0, m.toll_value || 0),
-                        tabelaAplicada: usedTable?.operation_type || (m as any).operation_type || '',
+                        tabelaAplicada: usedTable?.operation_type || '',
                     });
                 }
 

@@ -1,0 +1,30 @@
+---
+name: Boletim DHL — coluna AO (tabela aplicada, sem chute)
+description: A coluna AO da planilha de medição só pode mostrar tabela realmente aplicada; senão linha vermelha
+---
+
+# Coluna AO (TABELA APLICADA) — nunca chutar
+
+Na planilha de medição DHL (fluxo "PREENCHER PLANILHA" / `handleFillSheet`), a
+coluna **AO = TABELA APLICADA** só pode refletir uma tabela **realmente aplicada
+na OS**:
+
+1. Troca manual no seletor do modal (ajuste, `adjInfo`).
+2. RAIO declarado (coluna E) — `selectDhlClientTable` pelo raio.
+3. Snapshot congelado da aprovação (`frozenTable`/`resolveLiveTable` do snapInfo).
+
+Quando NENHUMA dessas resolve, a linha INTEIRA fica **VERMELHA** (`noAppliedTable
+= !usedTable`) para correção manual.
+
+**Why:** a diretoria viu a AO preenchida "atoa" com tabelas chutadas (ex.:
+SUL - 100KM, SUDESTE - 900KM) para OS sem tabela aplicada. Isso vinha de DOIS
+fallbacks de adivinhação que foram REMOVIDOS: o motor de seleção por rota/KM
+(`selectDhlClientTable` pelo km rodado) e o fallback financeiro
+(`calculateMissionFinancials`). Prefere-se linha vermelha a um valor errado.
+
+**How to apply:** NÃO reintroduzir seleção por rota/KM nem fallback financeiro
+para a AO. AO = `usedTable?.operation_type || ''` (nunca `mission.operation_type`).
+O rótulo do snapshot sintético também não pode cair em `mission.operation_type`
+(`frozenTable.operation_type = info.name || ''`). RAIO continua válido porque é
+declarado, não chutado. `descricao` pode manter fallback de operation_type (a
+linha fica vermelha de qualquer forma).
