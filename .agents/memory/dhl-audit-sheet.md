@@ -76,12 +76,6 @@ force the total to match the stored boletim value.
   revenue_edit_reason), the boletim TOTAL is overridden to dbTotal but the audit sheet
   recomputes via formula from the table params + real times — so the sheet total can
   differ by the override amount. That is BY DESIGN (audit sheet validates the breakdown).
-- **Recorte por período (FILL):** as OS são buscadas por `dhl_se_number` em QUALQUER data
-  (a planilha enviada define o conjunto de SEs), mas DEPOIS o resultado é filtrado pelo
-  período escolhido (`startDate`/`endDate`): mantém só OS com `start_time` OU
-  `billing_period_override` (inclusão manual) dentro do intervalo — mesmo recorte do
-  boletim (`rowsData`). **Why:** SEs reaproveitadas / OS em andamento de períodos
-  anteriores entravam e saíam vermelhas (sem tabela). Sem período definido não filtra.
 - Cancelled before departure (no "Em Viagem" event) = início = fim = 0h.
 - **CANCELADA / CANCELAMENTO SOLICITADO (coluna D) = MÍNIMO da tabela 100km da região.**
   Um único predicado `isCancelledRow = /CANCEL/.test(canceladaVal)` (canceladaVal =

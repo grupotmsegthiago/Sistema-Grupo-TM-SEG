@@ -1771,25 +1771,6 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
                     m => !(m.status || '').toString().toLowerCase().includes('recus')
                 );
 
-                // Período: respeita a data escolhida no relatório. Mesmo que a SE
-                // exista no sistema, só entram OS cujo start_time (ou inclusão
-                // manual via billing_period_override) caia DENTRO do intervalo do
-                // período — mesmo recorte usado no boletim. Evita trazer missões
-                // de outra data / em andamento de períodos anteriores (que saíam
-                // sem tabela / linha vermelha).
-                if (startDate && endDate) {
-                    const pStart = new Date(`${startDate}T03:00:00.000Z`).getTime();
-                    const pEnd = new Date(`${endDate}T03:00:00.000Z`).getTime() + 86400000 - 1;
-                    const inPeriod = (val: any) => {
-                        if (!val) return false;
-                        const t = new Date(val).getTime();
-                        return Number.isFinite(t) && t >= pStart && t <= pEnd;
-                    };
-                    foundMissions = foundMissions.filter(
-                        m => inPeriod(m.start_time) || inPeriod(m.billing_period_override)
-                    );
-                }
-
                 // Enriquece com veiculo do cliente.
                 const cvIds = [...new Set(foundMissions.map(m => m.client_vehicle).filter(Boolean))];
                 const cvMap: Record<string, any> = {};
@@ -2218,7 +2199,7 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
             }
         };
         input.click();
-    }, [clients, clientData, priceTables, providerTables, startDate, endDate]);
+    }, [clients, clientData, priceTables, providerTables]);
 
     const cellStyle: React.CSSProperties = {
         border: '1px solid #e5c4c4',
