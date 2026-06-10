@@ -1966,14 +1966,24 @@ export function registerDhlIntakeRoutes(
       const ctrl = new AbortController();
       const timer = setTimeout(() => ctrl.abort(), 8000);
       try {
-        // API Placas (ex-WDAPI2): novo domínio + formato query (?placa=&token=).
-        // O domínio antigo wdapi2.com.br passou a só redirecionar para a home
-        // (HTML), quebrando o JSON.parse com "Unexpected token '<'".
-        const lookupUrl = `https://apiplacas.com.br/api1.php?placa=${encodeURIComponent(placaRaw)}&token=${encodeURIComponent(wdToken)}`;
-        const r = await fetch(lookupUrl, { signal: ctrl.signal as any });
+        // API Placas (ex-WDAPI2): endpoint oficial api.php (api1.php dá 404 na
+        // origem) + cabeçalhos de navegador obrigatórios — sem User-Agent o
+        // Cloudflare do provedor bloqueia a chamada servidor→servidor com 403.
+        const lookupUrl = `https://apiplacas.com.br/api.php?placa=${encodeURIComponent(placaRaw)}&token=${encodeURIComponent(wdToken)}`;
+        const placaHeaders = {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+          'Accept': 'application/json, text/plain, */*',
+          'Accept-Language': 'pt-BR,pt;q=0.9',
+        };
+        let r = await fetch(lookupUrl, { signal: ctrl.signal as any, headers: placaHeaders });
+        if (r.status === 403) {
+          await new Promise((rs) => setTimeout(rs, 400));
+          r = await fetch(lookupUrl, { signal: ctrl.signal as any, headers: placaHeaders });
+        }
         clearTimeout(timer);
         if (!r.ok) {
           if (r.status === 404) return res.status(404).json({ error: 'Placa não encontrada.' });
+          if (r.status === 403) return res.status(502).json({ error: 'Consulta bloqueada (Cloudflare). Preencha manualmente.' });
           return res.status(502).json({ error: 'Falha ao consultar placa.' });
         }
         const rawBody = await r.text();

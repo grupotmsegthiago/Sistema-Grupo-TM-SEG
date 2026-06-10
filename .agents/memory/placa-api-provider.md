@@ -7,10 +7,19 @@ description: External plate-lookup provider migrated domains; call it via backen
 
 O provedor de consulta de placas migrou de `wdapi2.com.br` para `apiplacas.com.br`.
 
-- **Endpoint atual:** `https://apiplacas.com.br/api1.php?placa={PLACA}&token={TOKEN}` (GET, token na query string).
+- **Endpoint atual:** `https://apiplacas.com.br/api.php?placa={PLACA}&token={TOKEN}` (GET, token na query string). NÃO usar `api1.php` — esse path dá 404 na origem.
 - **Resposta:** mesmo JSON de antes — `MARCA/MODELO/cor/anoModelo/uf/chassi/codigoSituacao` (`codigoSituacao !== '0'` = erro).
 - **Secret:** `VITE_WDAPI_TOKEN` (nome mantido apesar do rebrand).
 - Centralizado em `constants.ts` via `API_BRASIL_CONFIG.consultaUrl(placa)`.
+
+**Cloudflare exige cabeçalhos de navegador (senão 403):** o provedor está atrás do
+Cloudflare. O `fetch` do Node SEM `User-Agent` de navegador é bloqueado 100% com 403
+("Just a moment..."). Os dois proxies (em `server/routes.ts` via helper `fetchPlacaApi`,
+e inline em `server/dhlSupplierIntake.ts`) DEVEM enviar `User-Agent` de Chrome + `Accept`
++ `Accept-Language`, com 1 retry leve em 403. IPs de datacenter (dev e produção do Replit)
+também podem ser flagados por reputação/volume → 403 mesmo com UA; nesse caso é bloqueio
+externo (whitelist com provedor ou troca de fornecedor), não bug de código. Fallback manual
+sempre disponível.
 
 **Why:** o domínio antigo `wdapi2.com.br/consulta/{placa}/{token}` passou a dar 301
 para a home de apiplacas (path descartado) → retorna HTML → `JSON.parse` quebra com

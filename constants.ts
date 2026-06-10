@@ -3,7 +3,7 @@
 // ==========================================
 // VERSÃO DO SISTEMA
 // ==========================================
-export const APP_VERSION = "3.6.54";
+export const APP_VERSION = "3.6.55";
 
 // ==========================================
 // CONFIGURAÇÕES DE RETENÇÃO (ESPAÇO EM BANCO)
@@ -29,11 +29,13 @@ export const COST_ESTIMATES = {
 // CONFIGURAÇÕES DE API (WDAPI / API Placas)
 // ==========================================
 // O serviço migrou de domínio: wdapi2.com.br -> apiplacas.com.br e mudou o
-// formato do endpoint (path -> query string: api1.php?placa=&token=). O domínio
+// formato do endpoint (path -> query string: api.php?placa=&token=). O domínio
 // antigo apenas redireciona para a home (HTML), o que quebrava o JSON.parse com
-// "Unexpected token '<'". Use SEMPRE consultaUrl(placa) para montar a URL.
+// "Unexpected token '<'". A consulta SEMPRE passa pelo proxy backend
+// (/api/placa/lookup) porque o Cloudflare do provedor exige cabeçalhos de
+// navegador e não envia CORS. Use SEMPRE consultaUrl(placa) para montar a URL.
 export const API_BRASIL_CONFIG = {
-    BASE_URL: 'https://apiplacas.com.br/api1.php',
+    BASE_URL: 'https://apiplacas.com.br/api.php',
     TOKEN: import.meta.env.VITE_WDAPI_TOKEN ?? '',
     MONTHLY_LIMIT: 20000,
     consultaUrl(placa: string): string {

@@ -738,6 +738,22 @@ export async function registerRoutes(
     }
     return arr.length > PLACA_PROXY_MAX;
   };
+  // Fetch à API Placas com cabeçalhos de navegador (Cloudflare bloqueia o
+  // User-Agent padrão do Node com 403) + 1 retry leve para desafios intermitentes.
+  const fetchPlacaApi = async (url: string, signal: AbortSignal): Promise<Response> => {
+    const headers = {
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+      'Accept': 'application/json, text/plain, */*',
+      'Accept-Language': 'pt-BR,pt;q=0.9',
+    };
+    let last: Response | null = null;
+    for (let attempt = 0; attempt < 2; attempt++) {
+      last = await fetch(url, { signal: signal as any, headers });
+      if (last.status !== 403) return last;
+      if (attempt === 0) await new Promise((r) => setTimeout(r, 400));
+    }
+    return last as Response;
+  };
   app.get('/api/placa/lookup/:placa', requireAuth, requireRole('*'), async (req: Request, res: Response) => {
     try {
       const placaRaw = String(req.params.placa || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
@@ -752,11 +768,15 @@ export async function registerRoutes(
       const ctrl = new AbortController();
       const timer = setTimeout(() => ctrl.abort(), 8000);
       try {
-        const lookupUrl = `https://apiplacas.com.br/api1.php?placa=${encodeURIComponent(placaRaw)}&token=${encodeURIComponent(wdToken)}`;
-        const r = await fetch(lookupUrl, { signal: ctrl.signal as any });
+        // Endpoint oficial: api.php (api1.php retorna 404 na origem). Cabeçalhos de
+        // navegador são obrigatórios: sem User-Agent o Cloudflare do provedor bloqueia
+        // a chamada servidor→servidor com 403 ("Just a moment...").
+        const lookupUrl = `https://apiplacas.com.br/api.php?placa=${encodeURIComponent(placaRaw)}&token=${encodeURIComponent(wdToken)}`;
+        const r = await fetchPlacaApi(lookupUrl, ctrl.signal);
         clearTimeout(timer);
         if (!r.ok) {
           if (r.status === 404) return res.status(404).json({ error: 'Placa não encontrada.' });
+          if (r.status === 403) return res.status(502).json({ error: 'API de Placas bloqueou a consulta (Cloudflare). Preencha manualmente.' });
           return res.status(502).json({ error: `API de Placas indisponível (${r.status}).` });
         }
         const rawBody = await r.text();
