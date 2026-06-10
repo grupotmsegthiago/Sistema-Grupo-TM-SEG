@@ -13,9 +13,10 @@
 - [DHL coluna AO sem chute](dhl-ao-tabela-aplicada.md) — AO=tabela REALMENTE aplicada (manual/RAIO/snapshot); sem ela, linha vermelha; nunca rota/KM, fallback financeiro nem mission.operation_type.
 - [MissionTable initial render](missiontable-initial-render.md) — só missões+veículos bloqueiam o 1º paint; telefones de agente e dados derivados (selos) carregam em background depois de setIsLoading(false).
 - [MissionTable pagination](mission-table-pagination.md) — Operations loads per-period (in-range ∪ always-loaded OPEN set); badges stay global, restricted-client view loads full client set; realtime deps exclude period.
-- [Plate lookup provider](placa-api-provider.md) — WDAPI2 virou apiplacas.com.br/api1.php?placa=&token=; Cloudflare bloqueia servidor (chamar direto do frontend); sempre text()+JSON.parse guard.
+- [Plate lookup provider](placa-api-provider.md) — WDAPI2 virou apiplacas.com.br/api1.php?placa=&token=; chamar via proxy backend (browser bloqueado por CORS/Cloudflare); sempre text()+JSON.parse guard.
 - [Boletim DHL coluna AE](dhl-ae-minimo-uf.md) — FRANQUIA TABELA (AE) p/ cancelada ou faixa<=100km = mínimo FIXO por UF origem: SC/RS=735, demais=690 (não mais activation_fee dinâmico da tabela 100km).
 - [Billing report provider mode](billing-report-provider-mode.md) — Boletim tem toggle Cliente/Fornecedor no MESMO componente; reusa rowsData genérico c/ fin.provider, total=cost_value+toll fornecedor, isolamento .in('provider',exact).
 - [Supplier intake generalization](supplier-intake-generalization.md) — link /fornecedor/dhl atende TODOS os clientes; identidade amarela/Nº S.E./instruções técnicas só atrás de isDhl; comprovante obrigatório p/ todos.
 - [Deslocamento espelha pedágio](displacement-mirrors-toll.md) — displacement_value/_provider é aditivo igual toll; some na MESMA expressão do toll em todo relatório; margem (service-only) e filled-sheet ficam de fora.
+- [Screen authz & deep-link](screen-authz-deeplink.md) — ?page= burla o Sidebar e requireRole('*') = "qualquer interno"; tela sensível precisa de guard no App.tsx E authz backend espelhando a UI (clientId/comercial).
 - [React component tests](react-component-tests.md) — render component sob node --test via jsdom+React.act+asset loader (register.mjs, NÃO só exportar hooks); runner em scripts/run-tests.sh.

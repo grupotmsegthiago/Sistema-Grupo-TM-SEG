@@ -3,7 +3,7 @@
 // ==========================================
 // VERSÃO DO SISTEMA
 // ==========================================
-export const APP_VERSION = "3.6.51";
+export const APP_VERSION = "3.6.52";
 
 // ==========================================
 // CONFIGURAÇÕES DE RETENÇÃO (ESPAÇO EM BANCO)
@@ -88,6 +88,7 @@ export const NAV_ITEMS: NavItem[] = [
     id: 'monitoring-group',
     children: [
       { name: 'Painel de OS', id: 'missions' },
+      { name: 'Passagem de Plantão', id: 'shift-handover' },
       { name: 'Relatório de OS', id: 'mission-report' },
       { name: 'Ranking DHL', id: 'ranking-dhl' },
     ]

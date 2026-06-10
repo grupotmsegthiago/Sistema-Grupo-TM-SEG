@@ -188,7 +188,12 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, activeScreen, onNavigate, onL
         const forbiddenGroups = ['finance-group', 'providers-group', 'settings-group', 'commercial-group', 'support-network', 'whatsapp-center'];
         if (forbiddenGroups.includes(itemId)) return false;
         if (itemId === 'clients') return false;
+        if (itemId === 'shift-handover') return false;
     }
+
+    // Passagem de Plantão: ferramenta de operação interna (todos os operadores
+    // internos), nunca para usuários-cliente restritos (já bloqueado acima).
+    if (itemId === 'shift-handover') return true;
 
     if (itemId === 'alvara-control') {
         const isAuthorized = role === 'administrador' || role === 'avançado' || role === 'avancado' || role === 'diretoria' || userPermissions.includes('alvara-control');

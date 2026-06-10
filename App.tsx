@@ -47,6 +47,7 @@ import SystemLogs from './components/SystemLogs';
 import ReportsDashboard from './components/ReportsDashboard';
 import MissionReportPage from './components/MissionReportPage';
 import RankingDHL from './components/RankingDHL';
+import ShiftHandover from './components/ShiftHandover';
 import QuoteList from './components/QuoteList';
 import QuoteForm from './components/QuoteForm';
 import PublicAgentRegistration from './components/PublicAgentRegistration';
@@ -299,6 +300,14 @@ const App: React.FC = () => {
     switch (currentScreen) {
       case 'dashboard': return <Dashboard onOpenMission={handleOpenBillingMission} />; 
       case 'missions': return <MissionTable onNewMission={() => navigateTo('new-mission')} />;
+      case 'shift-handover': {
+        const u = (() => { try { return JSON.parse(localStorage.getItem('userData') || '{}'); } catch { return {}; } })();
+        const rl = (u.role || '').toLowerCase();
+        const perms: string[] = Array.isArray(u.permissions) ? u.permissions : [];
+        const isRestrictedClient = !!u.clientId || perms.some(p => typeof p === 'string' && p.startsWith('client_view:'));
+        const allowed = !isRestrictedClient && (rl !== 'comercial' || perms.includes('*') || perms.includes('shift-handover'));
+        return allowed ? <ShiftHandover /> : <Dashboard onOpenMission={handleOpenBillingMission} />;
+      }
       case 'new-mission': return <MissionForm onBack={() => navigateTo('missions')} onSaveAndContinue={handleSaveAndContinue} onAddClient={() => navigateTo('client-form')} />;
       case 'ai-support': return null;
       case 'cost-optimization': return <CostOptimizationDashboard />;

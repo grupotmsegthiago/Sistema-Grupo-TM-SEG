@@ -107,7 +107,7 @@ function extractUserIdFromToken(token: string): string | null {
   return match ? match[1] : null;
 }
 
-type ResolvedPrincipal = { id: string; name: string | null; email: string | null; role: string };
+type ResolvedPrincipal = { id: string; name: string | null; email: string | null; role: string; clientId: string | null; permissions: string[] };
 const principalCache = new Map<string, { principal: ResolvedPrincipal; expiresAt: number }>();
 
 async function resolvePrincipal(token: string): Promise<ResolvedPrincipal | null> {
@@ -121,13 +121,17 @@ async function resolvePrincipal(token: string): Promise<ResolvedPrincipal | null
     const sbUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || '';
     const sbKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY || '';
     const sb = createClient(sbUrl, sbKey);
-    const { data } = await sb.from('system_users').select('id, name, email, status, profiles:profile_id ( name )').eq('id', userId).single();
+    const { data } = await sb.from('system_users').select('id, name, email, status, client_id, permissions, profiles:profile_id ( name, permissions )').eq('id', userId).single();
     if (!data || data.status !== 'Ativo') return null;
+    const profilePerms: string[] = Array.isArray((data.profiles as any)?.permissions) ? (data.profiles as any).permissions : [];
+    const userPerms: string[] = Array.isArray((data as any).permissions) ? (data as any).permissions : [];
     const principal: ResolvedPrincipal = {
       id: data.id,
       name: (data as any).name || null,
       email: (data as any).email || null,
       role: ((data.profiles as any)?.name || '').toLowerCase(),
+      clientId: (data as any).client_id || null,
+      permissions: [...new Set([...profilePerms, ...userPerms])],
     };
     principalCache.set(token, { principal, expiresAt: Date.now() + ROLE_CACHE_TTL });
     // Mantém roleCache em sync para compatibilidade com código legado.
@@ -3698,6 +3702,69 @@ export async function registerRoutes(
   });
 
   const pgPool = new pg.Pool({ connectionString: process.env.DATABASE_URL, max: 3 });
+
+  // ===================== PASSAGEM DE PLANTÃO =====================
+  // Observação de passagem por OS (única coisa editável da tela). Tabela criada
+  // sob demanda; chave = mission_id (uma observação corrente por OS).
+  let handoverTableReady: Promise<void> | null = null;
+  const ensureHandoverTable = () => {
+    if (!handoverTableReady) {
+      handoverTableReady = pgPool.query(`CREATE TABLE IF NOT EXISTS public.shift_handover_notes (
+        mission_id text PRIMARY KEY,
+        note text DEFAULT '',
+        updated_by text DEFAULT '',
+        updated_at timestamptz DEFAULT now()
+      )`).then(() => undefined).catch((e) => { handoverTableReady = null; throw e; });
+    }
+    return handoverTableReady;
+  };
+
+  // Autorização da Passagem de Plantão — espelha o gating da UI (Sidebar/App.tsx):
+  // ferramenta interna; usuário-cliente (client_id) nunca acessa, e comercial só
+  // acessa com permissão explícita. Evita bypass por chamada direta à API.
+  const denyShiftHandover = (req: Request, res: Response): boolean => {
+    const principal = (req as any).user as ResolvedPrincipal | undefined;
+    const perms = principal?.permissions || [];
+    const hasExplicit = perms.includes('*') || perms.includes('shift-handover');
+    const blocked = !!principal?.clientId || (principal?.role === 'comercial' && !hasExplicit);
+    if (blocked) {
+      res.status(403).json({ error: 'Acesso restrito à operação interna' });
+      return true;
+    }
+    return false;
+  };
+
+  app.get("/api/shift-handover-notes", requireAuth, requireRole('*'), async (req: Request, res: Response) => {
+    if (denyShiftHandover(req, res)) return;
+    try {
+      await ensureHandoverTable();
+      const { rows } = await pgPool.query('SELECT mission_id, note, updated_by, updated_at FROM public.shift_handover_notes');
+      res.json(rows);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.post("/api/shift-handover-notes", requireAuth, requireRole('*'), async (req: Request, res: Response) => {
+    if (denyShiftHandover(req, res)) return;
+    try {
+      await ensureHandoverTable();
+      const { mission_id, note } = req.body || {};
+      if (!mission_id) return res.status(400).json({ error: 'mission_id obrigatório' });
+      const updatedBy = ((req as any).user?.name) || ((req as any).auth?.name) || '';
+      const { rows } = await pgPool.query(
+        `INSERT INTO public.shift_handover_notes (mission_id, note, updated_by, updated_at)
+         VALUES ($1, $2, $3, now())
+         ON CONFLICT (mission_id) DO UPDATE SET note = EXCLUDED.note, updated_by = EXCLUDED.updated_by, updated_at = now()
+         RETURNING mission_id, note, updated_by, updated_at`,
+        [String(mission_id), String(note ?? ''), updatedBy]
+      );
+      res.json(rows[0]);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+  // =============================================================
 
   app.post("/api/investment/init", async (_req: Request, res: Response) => {
     try {

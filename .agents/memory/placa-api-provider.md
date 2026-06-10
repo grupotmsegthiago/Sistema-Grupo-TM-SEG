@@ -1,6 +1,6 @@
 ---
 name: API Placas (ex-WDAPI2) plate lookup
-description: External plate-lookup provider migrated domains; how to call it and why backend proxy mostly fails
+description: External plate-lookup provider migrated domains; call it via backend proxy (browser is CORS/Cloudflare-blocked)
 ---
 
 # Consulta de placa — API Placas (ex-WDAPI2)
