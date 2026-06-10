@@ -1455,10 +1455,12 @@ export const auditMissionFinancials = (
     providers?: any[] | null,
 ): AuditResult => {
     const m = mission as any;
+    const dispVal = safeNumber(m.displacement_value);
+    const dispProvVal = safeNumber(m.displacement_value_provider != null ? m.displacement_value_provider : m.displacement_value);
     const hasManualOverride = !!(m.revenue_edit_reason) || !!(m.cost_edit_reason) || !!(m.snapshot_approved_by);
     if (hasManualOverride) {
-        const storedRev = safeNumber(mission.revenue_value) + safeNumber(mission.toll_value);
-        const storedCst = safeNumber(mission.cost_value) + safeNumber(mission.toll_value_provider != null ? mission.toll_value_provider : mission.toll_value);
+        const storedRev = safeNumber(mission.revenue_value) + safeNumber(mission.toll_value) + dispVal;
+        const storedCst = safeNumber(mission.cost_value) + safeNumber(mission.toll_value_provider != null ? mission.toll_value_provider : mission.toll_value) + dispProvVal;
         return {
             missionId: mission.id || '',
             client: mission.client || '',
@@ -1475,10 +1477,10 @@ export const auditMissionFinancials = (
 
     const fin = calculateMissionFinancials(mission, clientTables, providerTables, clientData, new Date(), undefined, providers);
     
-    const storedRevenue = safeNumber(mission.revenue_value) + safeNumber(mission.toll_value);
-    const storedCost = safeNumber(mission.cost_value) + safeNumber(mission.toll_value_provider != null ? mission.toll_value_provider : mission.toll_value);
-    const calculatedRevenue = fin.client.total;
-    const calculatedCost = fin.provider.total;
+    const storedRevenue = safeNumber(mission.revenue_value) + safeNumber(mission.toll_value) + dispVal;
+    const storedCost = safeNumber(mission.cost_value) + safeNumber(mission.toll_value_provider != null ? mission.toll_value_provider : mission.toll_value) + dispProvVal;
+    const calculatedRevenue = fin.client.total + dispVal;
+    const calculatedCost = fin.provider.total + dispProvVal;
     
     const revenueDiff = Math.abs(storedRevenue - calculatedRevenue);
     const costDiff = Math.abs(storedCost - calculatedCost);

@@ -71,7 +71,7 @@ const FinancialDRE: React.FC = () => {
         while (true) {
             const { data, error } = await supabase
                 .from('missions')
-                .select('id, revenue_value, cost_value, toll_value, toll_value_provider, status, end_time, billing_approved, is_same_os')
+                .select('id, revenue_value, cost_value, toll_value, toll_value_provider, displacement_value, displacement_value_provider, status, end_time, billing_approved, is_same_os')
                 .in('status', ['Concluída', 'Faturada'])
                 .gte('end_time', `${start}T00:00:00`)
                 .lte('end_time', `${end}T23:59:59`)
@@ -100,19 +100,21 @@ const FinancialDRE: React.FC = () => {
 
             const missionRevenue = missions.reduce((acc: number, m: any) => acc + (m.revenue_value || 0), 0);
             const missionTollClient = missions.reduce((acc: number, m: any) => acc + (m.toll_value || 0), 0);
+            const missionDisplacementClient = missions.reduce((acc: number, m: any) => acc + (m.displacement_value || 0), 0);
             const missionCost = missions.filter((m: any) => m.is_same_os !== true).reduce((acc: number, m: any) => acc + (m.cost_value || 0), 0);
             const missionTollProvider = missions.reduce((acc: number, m: any) => acc + (m.toll_value_provider || m.toll_value || 0), 0);
+            const missionDisplacementProvider = missions.reduce((acc: number, m: any) => acc + (m.displacement_value_provider != null ? m.displacement_value_provider : (m.displacement_value || 0)), 0);
             const totalMissionCount = missions.length;
 
             const rows: DRERow[] = [];
 
             const financialRevenue = sumByGroup('RECEITA_BRUTA');
-            const grossRevenue = missionRevenue + missionTollClient + financialRevenue;
+            const grossRevenue = missionRevenue + missionTollClient + missionDisplacementClient + financialRevenue;
             const deductions = sumByGroup('DEDUCOES');
             const netRevenue = grossRevenue - deductions;
 
             const financialVariableCosts = sumByGroup('CUSTOS_VARIAVEIS');
-            const variableCosts = missionCost + missionTollProvider + financialVariableCosts;
+            const variableCosts = missionCost + missionTollProvider + missionDisplacementProvider + financialVariableCosts;
             const grossProfit = netRevenue - variableCosts;
             const fixedExpenses = sumByGroup('DESPESAS_FIXAS');
             const operationalResult = grossProfit - fixedExpenses;
@@ -122,6 +124,7 @@ const FinancialDRE: React.FC = () => {
             rows.push({ label: '(=) RECEITA OPERACIONAL BRUTA', value: grossRevenue, type: 'header', indent: 0, color: 'text-blue-700' });
             rows.push({ label: `(+) RECEITA DE MISSÕES (${totalMissionCount} OS)`, value: missionRevenue, type: 'item', indent: 1 });
             if (missionTollClient > 0) rows.push({ label: '(+) PEDÁGIO CLIENTE', value: missionTollClient, type: 'item', indent: 1 });
+            if (missionDisplacementClient > 0) rows.push({ label: '(+) DESLOCAMENTO CLIENTE', value: missionDisplacementClient, type: 'item', indent: 1 });
             categories.filter(c => c.group === 'RECEITA_BRUTA').forEach(c => {
                 const val = sumByCategory(c.id);
                 if (val !== 0) rows.push({ label: `(+) ${c.name}`, value: val, type: 'item', indent: 1 });
@@ -137,6 +140,7 @@ const FinancialDRE: React.FC = () => {
             rows.push({ label: '(-) CUSTOS VARIÁVEIS (MISSÕES)', value: variableCosts, type: 'header', indent: 0, color: 'text-red-600' });
             rows.push({ label: '(-) CUSTO FORNECEDORES (MISSÕES)', value: missionCost, type: 'item', indent: 1 });
             if (missionTollProvider > 0) rows.push({ label: '(-) PEDÁGIO FORNECEDOR', value: missionTollProvider, type: 'item', indent: 1 });
+            if (missionDisplacementProvider > 0) rows.push({ label: '(-) DESLOCAMENTO FORNECEDOR', value: missionDisplacementProvider, type: 'item', indent: 1 });
             categories.filter(c => c.group === 'CUSTOS_VARIAVEIS').forEach(c => {
                 const val = sumByCategory(c.id);
                 if (val !== 0) rows.push({ label: `(-) ${c.name}`, value: val, type: 'item', indent: 1 });

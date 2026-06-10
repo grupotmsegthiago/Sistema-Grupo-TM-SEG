@@ -137,6 +137,8 @@ export async function runDhlIntakeMigrations(): Promise<void> {
       ALTER TABLE missions ADD COLUMN IF NOT EXISTS dhl_sm_number TEXT;
       ALTER TABLE missions ADD COLUMN IF NOT EXISTS dhl_deslocamento_km NUMERIC;
       ALTER TABLE missions ADD COLUMN IF NOT EXISTS dhl_deslocamento_approval_url TEXT;
+      ALTER TABLE missions ADD COLUMN IF NOT EXISTS displacement_value NUMERIC;
+      ALTER TABLE missions ADD COLUMN IF NOT EXISTS displacement_value_provider NUMERIC;
       ALTER TABLE providers ADD COLUMN IF NOT EXISTS dhl_channel_preference TEXT;
       ALTER TABLE providers ADD COLUMN IF NOT EXISTS dhl_solicitation_email TEXT;
       ALTER TABLE dhl_supplier_intakes ADD COLUMN IF NOT EXISTS mirror_proof_url TEXT;

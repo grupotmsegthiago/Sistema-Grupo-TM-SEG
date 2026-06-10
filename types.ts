@@ -65,6 +65,8 @@ export interface Mission {
   cost_value?: number;    
   toll_value?: number;
   toll_value_provider?: number;
+  displacement_value?: number;
+  displacement_value_provider?: number;
 
   provider_start_km?: number;
   provider_end_km?: number;

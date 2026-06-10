@@ -314,6 +314,8 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
   const [costInput, setCostInput] = useState('');
   const [tollInput, setTollInput] = useState('');
   const [tollProviderInput, setTollProviderInput] = useState('');
+  const [displacementInput, setDisplacementInput] = useState('');
+  const [displacementProviderInput, setDisplacementProviderInput] = useState('');
   
   // Custom Unit Prices (Edição Livre)
   const [customProviderKm, setCustomProviderKm] = useState<string>('');
@@ -1038,6 +1040,10 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
 
               const dbToll = Math.max(0, mRes.data.toll_value || 0);
               const dbTollProvider = Math.max(0, mRes.data.toll_value_provider != null ? mRes.data.toll_value_provider : dbToll);
+              const dbDisp = Math.max(0, mRes.data.displacement_value || 0);
+              const dbDispProvider = Math.max(0, mRes.data.displacement_value_provider != null ? mRes.data.displacement_value_provider : dbDisp);
+              setDisplacementInput(dbDisp.toLocaleString('pt-BR', {minimumFractionDigits: 2, maximumFractionDigits: 2}));
+              setDisplacementProviderInput((mRes.data.is_same_os ? 0 : dbDispProvider).toLocaleString('pt-BR', {minimumFractionDigits: 2, maximumFractionDigits: 2}));
               const savedRev = safeNumber(mRes.data.revenue_value);
               const savedCost = safeNumber(mRes.data.cost_value);
               const hasSavedData = mRes.data.billing_approved || mRes.data.billing_verified_by || savedRev > 0 || savedCost > 0;
@@ -1080,11 +1086,11 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                   }
                   const hasVerifiedOrApproved = !!(mRes.data.billing_verified_by || mRes.data.billing_approved);
                   if (savedRev > 0 || (savedRev === 0 && hasVerifiedOrApproved)) {
-                      const revTotal = savedRev + dbToll;
+                      const revTotal = savedRev + dbToll + dbDisp;
                       setRevenueInput(revTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
                   }
                   if (savedCost > 0 || (savedCost === 0 && hasVerifiedOrApproved)) {
-                      const costTotal = savedCost + dbTollProvider;
+                      const costTotal = savedCost + dbTollProvider + (mRes.data.is_same_os ? 0 : dbDispProvider);
                       setCostInput(costTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
                   }
                   dbValuesLoadedRef.current = true;
@@ -1497,8 +1503,8 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
           // Total da MEMÓRIA DE CÁLCULO — mesma expressão exibida na linha
           // "base + km + hora + IBL + pedágio = total": serviço (já com IBL) + pedágio.
           // O número grande deve ser cópia fiel deste valor.
-          const autoClientTotal = financialData.client.serviceTotal + parseNumber(tollInput);
-          const autoProviderTotal = financialData.provider.serviceTotal + parseNumber(tollProviderInput);
+          const autoClientTotal = financialData.client.serviceTotal + parseNumber(tollInput) + parseNumber(displacementInput);
+          const autoProviderTotal = financialData.provider.serviceTotal + parseNumber(tollProviderInput) + parseNumber(displacementProviderInput);
 
           const canAutoFill = !dbValuesLoadedRef.current && !userManuallyEditedRef.current && !isSavingRef.current;
           if (canAutoFill) {
@@ -1537,7 +1543,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
           // gravações antigas (anteriores ao motor).
           // Só não roda durante salvamento ou logo após edição manual.
           if (financialData.autoEngine?.active && !userManuallyEditedRef.current && !isSavingRef.current) {
-              const engineCostTotal = financialData.provider.serviceTotal + parseNumber(tollProviderInput);
+              const engineCostTotal = financialData.provider.serviceTotal + parseNumber(tollProviderInput) + parseNumber(displacementProviderInput);
               const currentCostInput = parseNumber(costInput);
               if (engineCostTotal > 0 && Math.abs(currentCostInput - engineCostTotal) > 1) {
                   setCostInput(engineCostTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
@@ -1549,7 +1555,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
           // por recálculo automático (mesmo no caso especial CEVA/Logitech).
           if (isCevaLogitech && dbValuesLoadedRef.current && !userManuallyEditedRef.current && !isSavingRef.current && !isEffectivelyLocked) {
               const fmt = (v: number) => v.toLocaleString('pt-BR', {minimumFractionDigits: 2, maximumFractionDigits: 2});
-              const calcRevTotal = financialData.client.total;
+              const calcRevTotal = financialData.client.total + parseNumber(displacementInput);
               const currentInput = parseNumber(revenueInput);
               if (calcRevTotal > 0 && Math.abs(currentInput - calcRevTotal) > 1) {
                   setRevenueInput(fmt(calcRevTotal));
@@ -1560,7 +1566,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                   setTollInput(fmt(calcToll));
                   setTollProviderInput(fmt(calcToll));
               }
-              const calcCostTotal = financialData.provider.total;
+              const calcCostTotal = financialData.provider.total + parseNumber(displacementProviderInput);
               const currentCostInput = parseNumber(costInput);
               if (calcCostTotal > 0 && Math.abs(currentCostInput - calcCostTotal) > 1) {
                   setCostInput(fmt(calcCostTotal));
@@ -1584,7 +1590,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
               }
           }
       }
-    }, [financialData, memoryLoaded, mission, tollProviderInput, useSavedValues, isLoading]); 
+    }, [financialData, memoryLoaded, mission, tollProviderInput, displacementInput, displacementProviderInput, useSavedValues, isLoading]); 
 
     // Auto-recálculo: quando o usuário mexer em qualquer parâmetro (tabela, base/km/hora customizados,
     // IBL, override do fornecedor) após o carregamento inicial, liberamos os refs para que o autofill
@@ -1641,6 +1647,37 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
       setTollConfirmed(false);
       const currentCost = parseNumber(costInput);
       const updatedCost = currentCost - oldTollProv + newTollProv;
+      setCostInput(updatedCost.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
+      setUseSavedValues(true);
+  };
+
+  // Deslocamento Aprovado (Cobrado): valor aditivo que espelha o comportamento
+  // do pedágio — entra no número grande (Valor Final) e em todos os relatórios.
+  const handleDisplacementChange = (val: string) => {
+      const oldDisp = parseNumber(displacementInput);
+      const newDisp = parseNumber(val);
+      setDisplacementInput(val);
+      if (!userManuallyEditedRef.current) {
+          const currentRev = parseNumber(revenueInput);
+          const updatedRev = currentRev - oldDisp + newDisp;
+          setRevenueInput(updatedRev.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
+      }
+      if (parseNumber(displacementProviderInput) === 0 && newDisp > 0) {
+          const oldDispProv = parseNumber(displacementProviderInput);
+          setDisplacementProviderInput(val);
+          const currentCost = parseNumber(costInput);
+          const updatedCost = currentCost - oldDispProv + newDisp;
+          setCostInput(updatedCost.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
+      }
+      setUseSavedValues(true);
+  };
+
+  const handleDisplacementProviderChange = (val: string) => {
+      const oldDispProv = parseNumber(displacementProviderInput);
+      const newDispProv = parseNumber(val);
+      setDisplacementProviderInput(val);
+      const currentCost = parseNumber(costInput);
+      const updatedCost = currentCost - oldDispProv + newDispProv;
       setCostInput(updatedCost.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
       setUseSavedValues(true);
   };
@@ -1948,13 +1985,15 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
           }
       }
 
-      const originalRevenue = (mission.revenue_value || 0) + (mission.toll_value || 0);
+      const originalRevenue = (mission.revenue_value || 0) + (mission.toll_value || 0) + ((mission as any).displacement_value || 0);
       const revTotal = isController ? originalRevenue : parseNumber(revenueInput);
       const costTotal = parseNumber(costInput);
       const toll = isController ? (mission.toll_value || 0) : parseNumber(tollInput);
       const tollProv = parseNumber(tollProviderInput) || toll;
-      const calcRevTotal = financialData ? (financialData.client.serviceTotal + toll) : 0;
-      const calcCostTotal = financialData ? (financialData.provider.serviceTotal + tollProv) : 0;
+      const displacement = isController ? ((mission as any).displacement_value || 0) : parseNumber(displacementInput);
+      const dispProv = parseNumber(displacementProviderInput) || displacement;
+      const calcRevTotal = financialData ? (financialData.client.serviceTotal + toll + displacement) : 0;
+      const calcCostTotal = financialData ? (financialData.provider.serviceTotal + tollProv + dispProv) : 0;
       const revDivergent = isController ? false : Math.abs(revTotal - calcRevTotal) > 1;
       const costDivergent = Math.abs(costTotal - calcCostTotal) > 1;
       // Task #66 — quando o motor automático de fornecedor está ativo, qualquer
@@ -1963,7 +2002,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
       // rastreabilidade real das exceções na aba "Edições Manuais".
       const autoEngineActive = !!financialData?.autoEngine?.active;
       const autoEngineSuggestedCost = autoEngineActive ? (financialData!.autoEngine!.totalCost || 0) : null;
-      const savedCostServiceOnly = costTotal - tollProv;
+      const savedCostServiceOnly = costTotal - tollProv - dispProv;
       const autoEngineDivergent = autoEngineActive
           && autoEngineSuggestedCost !== null
           && Math.abs(savedCostServiceOnly - autoEngineSuggestedCost) > 0.01;
@@ -1993,13 +2032,17 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
       const origCost = mission.cost_value || 0;
       const origToll = mission.toll_value || 0;
       const origTollProv = (mission as any).toll_value_provider || 0;
-      const newRevenueService = revTotal - toll;
-      const newCostService = costTotal - tollProv;
+      const origDisp = (mission as any).displacement_value || 0;
+      const origDispProv = (mission as any).displacement_value_provider || 0;
+      const newRevenueService = revTotal - toll - displacement;
+      const newCostService = costTotal - tollProv - dispProv;
       const detectedChanges: string[] = [];
       if (Math.abs(origRevenueService - newRevenueService) > 0.01) detectedChanges.push(`Serviço Cliente: R$ ${origRevenueService.toFixed(2)} → R$ ${newRevenueService.toFixed(2)}`);
       if (Math.abs(origCost - newCostService) > 0.01) detectedChanges.push(`Serviço Fornecedor: R$ ${origCost.toFixed(2)} → R$ ${newCostService.toFixed(2)}`);
       if (Math.abs(origToll - toll) > 0.01) detectedChanges.push(`Pedágio Cliente: R$ ${origToll.toFixed(2)} → R$ ${toll.toFixed(2)}`);
       if (Math.abs(origTollProv - tollProv) > 0.01) detectedChanges.push(`Pedágio Fornecedor: R$ ${origTollProv.toFixed(2)} → R$ ${tollProv.toFixed(2)}`);
+      if (Math.abs(origDisp - displacement) > 0.01) detectedChanges.push(`Deslocamento Cliente: R$ ${origDisp.toFixed(2)} → R$ ${displacement.toFixed(2)}`);
+      if (Math.abs(origDispProv - dispProv) > 0.01) detectedChanges.push(`Deslocamento Fornecedor: R$ ${origDispProv.toFixed(2)} → R$ ${dispProv.toFixed(2)}`);
       const requiresPostApprovalNote = wasAlreadyApproved && detectedChanges.length > 0 && !approve;
       if (requiresPostApprovalNote && !editObservation.trim()) {
           showNotification('Observação Obrigatória', 'OS já aprovada. Descreva brevemente o motivo da alteração para registrar no histórico.', 'error');
@@ -2016,8 +2059,8 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
           const { stage: captureStage } = getApprovalStage(userName, userRole);
           await captureModalScreenshot(approve ? captureStage : 'save', userName);
 
-          const revServiceOnly = revTotal - toll; 
-          const costServiceOnly = costTotal - tollProv;
+          const revServiceOnly = revTotal - toll - displacement; 
+          const costServiceOnly = costTotal - tollProv - dispProv;
           
           const { stage, label } = getApprovalStage(userName, userRole);
           
@@ -2070,6 +2113,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
               revenue_value: r2(revServiceOnly),
               cost_value: isSameOs ? 0 : r2(costServiceOnly),
               toll_value: r2(toll),
+              displacement_value: r2(displacement),
               billing_approved: isApprovedForBilling,
               last_update: new Date().toISOString(),
           };
@@ -2103,11 +2147,13 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                   durationHours: financialData.durationHours,
                   tollVal: toll,
                   tollProvider: tollProv,
+                  displacementVal: displacement,
+                  displacementProvider: isSameOs ? 0 : dispProv,
                   systemCalculatedRevenue: r2(calcRevTotal),
                   systemCalculatedCost: r2(calcCostTotal),
                   revenueServiceOnly: r2(revServiceOnly),
                   costServiceOnly: r2(costServiceOnly),
-                  totalGeral: r2(revServiceOnly + toll),
+                  totalGeral: r2(revServiceOnly + toll + displacement),
                   iblFee: financialData.iblFee || 0
               };
               basePayload.snapshot_data = snapshotObj;
@@ -2154,7 +2200,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
               }
           }
 
-          const fullPayload = { ...basePayload, toll_value_provider: isSameOs ? 0 : r2(tollProv), ...reasonFields };
+          const fullPayload = { ...basePayload, toll_value_provider: isSameOs ? 0 : r2(tollProv), displacement_value_provider: isSameOs ? 0 : r2(dispProv), ...reasonFields };
           let result = await supabase.from('missions').update(fullPayload).eq('id', mission.id).select('id, revenue_value, cost_value, toll_value, last_update').single();
           if (!result.error && shouldSnapshot && basePayload.snapshot_data) {
               await supabase.from('system_logs').insert([{
@@ -2170,7 +2216,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
               delete payloadWithoutSnapshot.snapshot_data;
               result = await supabase.from('missions').update(payloadWithoutSnapshot).eq('id', mission.id).select('id, revenue_value, cost_value, toll_value, last_update').single();
               if (result.error && (result.error.message?.includes('does not exist') || result.error.message?.includes('check_snapshot_not_empty'))) {
-                  const { toll_value_provider, snapshot_data: _sd, ...payloadMin } = payloadWithoutSnapshot;
+                  const { toll_value_provider, displacement_value, displacement_value_provider, snapshot_data: _sd, ...payloadMin } = payloadWithoutSnapshot;
                   delete payloadMin.snapshot_data;
                   result = await supabase.from('missions').update(payloadMin).eq('id', mission.id).select('id, revenue_value, cost_value, toll_value, last_update').single();
               }
@@ -2263,6 +2309,8 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
               const costChanged = existingSnap.costServiceOnly !== costServiceOnly;
               const tollChanged = existingSnap.tollVal !== toll;
               const tollProvChanged = existingSnap.tollProvider !== tollProv;
+              const dispChanged = (existingSnap.displacementVal || 0) !== displacement;
+              const dispProvChanged = (existingSnap.displacementProvider || 0) !== dispProv;
               const tableChanged = String(existingSnap.clientTableId || '') !== String(newClientTableId || '');
               const breakdownChanged = (
                   r2(existingSnap.activationFee || 0) !== r2(newActivationFee) ||
@@ -2274,7 +2322,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                   r2(existingSnap.hrExtraTotal || 0) !== r2(newHrExtraTotal)
               );
 
-              if (revenueChanged || costChanged || tollChanged || tollProvChanged || tableChanged || breakdownChanged) {
+              if (revenueChanged || costChanged || tollChanged || tollProvChanged || dispChanged || dispProvChanged || tableChanged || breakdownChanged) {
                   const updatedSnap = {
                       ...existingSnap,
                       // valores financeiros
@@ -2282,7 +2330,9 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                       costServiceOnly: r2(costServiceOnly),
                       tollVal: r2(toll),
                       tollProvider: r2(tollProv),
-                      totalGeral: r2(revServiceOnly + toll),
+                      displacementVal: r2(displacement),
+                      displacementProvider: r2(dispProv),
+                      totalGeral: r2(revServiceOnly + toll + displacement),
                       // tabela e breakdown atual — mantém o snapshot
                       // alinhado com a tabela escolhida na auditoria
                       clientTableId: newClientTableId,
@@ -2449,7 +2499,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
               showNotification('Sucesso', `Ajustes Salvos por ${userName}`, 'success');
           }
           
-          const resultado = revServiceOnly - costServiceOnly - toll;
+          const resultado = revServiceOnly - costServiceOnly - toll - displacement;
           if (resultado < 0) {
               try {
                   await authFetch(`/api/missions/${mission.id}/loss-alert-email`, {
@@ -3272,8 +3322,8 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                             if (financialData) {
                                                 const toll = financialData.tollValue;
                                                 setUseSavedValues(false);
-                                                setRevenueInput((financialData.client.total).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
-                                                setCostInput((financialData.provider.total).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
+                                                setRevenueInput((financialData.client.total + parseNumber(displacementInput)).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
+                                                setCostInput((financialData.provider.total + parseNumber(displacementProviderInput)).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
                                                 setTollInput(toll.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
                                                 setTollProviderInput(toll.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
                                                 showNotification('Tabela Aplicada', 'Valores ajustados conforme tabela oficial de franquia.', 'success');
@@ -4264,7 +4314,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                             <button
                                                 type="button"
                                                 onClick={() => {
-                                                    const engineTotal = financialData.provider.serviceTotal + parseNumber(tollProviderInput);
+                                                    const engineTotal = financialData.provider.serviceTotal + parseNumber(tollProviderInput) + parseNumber(displacementProviderInput);
                                                     if (engineTotal <= 0) return;
                                                     if (canUnlockBilling && isBillingLocked) setUnlockOverride(true);
                                                     userManuallyEditedRef.current = false;
@@ -4427,6 +4477,24 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                 )}
                             </div>
                             <div>
+                                <label className="text-[9px] font-black text-green-700 uppercase mb-1 block">Deslocamento Aprovado (Cobrado) — Cliente</label>
+                                <div className={`relative bg-green-50 border border-green-200 rounded-xl p-3 flex items-center ${isController ? 'opacity-70' : ''}`}>
+                                    <span className="text-sm font-bold text-green-500 mr-2">R$</span>
+                                    <input 
+                                        type="text" 
+                                        className={`flex-1 bg-transparent border-none outline-none font-black text-xl text-green-900 ${(isController || isEffectivelyLocked) ? 'pointer-events-none' : ''}`}
+                                        value={displacementInput} 
+                                        onChange={e => { if (!isController && !isEffectivelyLocked) handleDisplacementChange(e.target.value); }} 
+                                        readOnly={isController || isEffectivelyLocked}
+                                        data-testid="input-displacement-client"
+                                    />
+                                    <Building2 size={16} className="text-green-300 ml-2" />
+                                </div>
+                                {useSavedValues && parseNumber(displacementInput) > 0 && (
+                                    <span className="text-[8px] font-bold text-amber-600 mt-1 block">⚠ DESLOCAMENTO SALVO NA MEMÓRIA</span>
+                                )}
+                            </div>
+                            <div>
                                 <label className="text-[9px] font-black text-blue-700 uppercase mb-1 block">Pedágio Fornecedor</label>
                                 <div className="relative bg-blue-50 border border-blue-200 rounded-xl p-3 flex items-center">
                                     <span className="text-sm font-bold text-blue-500 mr-2">R$</span>
@@ -4446,6 +4514,23 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                     <span className="text-[8px] font-bold text-amber-600 mt-1 block">⚠ PEDÁGIO SALVO NA MEMÓRIA</span>
                                 )}
                             </div>
+                            <div>
+                                <label className="text-[9px] font-black text-blue-700 uppercase mb-1 block">Deslocamento Aprovado (Cobrado) — Fornecedor</label>
+                                <div className="relative bg-blue-50 border border-blue-200 rounded-xl p-3 flex items-center">
+                                    <span className="text-sm font-bold text-blue-500 mr-2">R$</span>
+                                    <input 
+                                        type="text" 
+                                        className="flex-1 bg-transparent border-none outline-none font-black text-xl text-blue-900" 
+                                        value={displacementProviderInput} 
+                                        onChange={e => handleDisplacementProviderChange(e.target.value)}
+                                        data-testid="input-displacement-provider"
+                                    />
+                                    <Briefcase size={16} className="text-blue-300 ml-2" />
+                                </div>
+                                {useSavedValues && parseNumber(displacementProviderInput) > 0 && (
+                                    <span className="text-[8px] font-bold text-amber-600 mt-1 block">⚠ DESLOCAMENTO SALVO NA MEMÓRIA</span>
+                                )}
+                            </div>
                         </div>
                         
                     </div>
@@ -4453,10 +4538,10 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                         <div className="p-4 bg-green-50 border border-green-100 rounded-xl relative group">
                             <div className="flex justify-between items-center mb-2">
-                                <label className="text-[10px] font-black text-green-700 uppercase">Valor Final Cliente (Serviço + Pedágio)</label>
+                                <label className="text-[10px] font-black text-green-700 uppercase">Valor Final Cliente (Serviço + Pedágio + Deslocamento)</label>
                                 <div className="flex items-center gap-2">
                                 {(() => {
-                                    const calcTotalBtn = financialData ? financialData.client.total : 0;
+                                    const calcTotalBtn = financialData ? (financialData.client.total + parseNumber(displacementInput)) : 0;
                                     const inputValBtn = parseNumber(revenueInput);
                                     const isManualValueBtn = inputValBtn > 0 && calcTotalBtn > 0 && Math.abs(inputValBtn - calcTotalBtn) > 1;
                                     // Faturamento travado (salvo/aprovado): nunca oferecer "Restaurar Auto".
@@ -4507,7 +4592,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                             onApply={() => handleUpdate(false)}
                                             disabled={isEffectivelyLocked && !canEditTablesEvenIfLocked}
                                             isApplying={isUpdating}
-                                            previewTotal={financialData ? financialData.client.total : 0}
+                                            previewTotal={financialData ? (financialData.client.total + parseNumber(displacementInput)) : 0}
                                         />
                                     );
                                 })()}
@@ -4515,7 +4600,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                             </div>
                             {(() => {
                                 const ibl = financialData.iblFee || 0;
-                                const calcTotal = financialData.client.serviceTotal + parseNumber(tollInput);
+                                const calcTotal = financialData.client.serviceTotal + parseNumber(tollInput) + parseNumber(displacementInput);
                                 const savedTotal = parseNumber(revenueInput);
                                 const isDivergent = Math.abs(calcTotal - savedTotal) > 1;
                                 return (
@@ -4526,6 +4611,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                             <span>+ {formatCurrency(financialData.client.extraHrVal)} <span className={isDivergent ? 'text-amber-400' : 'text-green-400'}>(hora{financialData.client.excessHours > 0 ? `: ${formatHoursHHMM(financialData.client.excessHoursReal)} real → ${formatHoursHHMM(financialData.client.excessHours)}×R$${financialData.client.unitPriceHour.toFixed(2)}` : ''})</span></span>
                                             {ibl > 0 && <span>+ {formatCurrency(ibl)} <span className={isDivergent ? 'text-amber-400' : 'text-green-400'}>(IBL 12%)</span></span>}
                                             <span>+ {formatCurrency(parseNumber(tollInput))} <span className={isDivergent ? 'text-amber-400' : 'text-green-400'}>(pedágio)</span></span>
+                                            <span>+ {formatCurrency(parseNumber(displacementInput))} <span className={isDivergent ? 'text-amber-400' : 'text-green-400'}>(deslocamento)</span></span>
                                             <span className="font-black">= {formatCurrency(calcTotal)}</span>
                                         </div>
 
@@ -4533,7 +4619,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                 );
                             })()}
                             {(() => {
-                                const calcTotal = financialData ? (financialData.client.serviceTotal + parseNumber(tollInput)) : 0;
+                                const calcTotal = financialData ? (financialData.client.serviceTotal + parseNumber(tollInput) + parseNumber(displacementInput)) : 0;
                                 const inputVal = parseNumber(revenueInput);
                                 const isManualValue = inputVal > 0 && calcTotal > 0 && Math.abs(inputVal - calcTotal) > 1;
                                 return (
@@ -4593,12 +4679,12 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                         <div className={`p-4 ${mission?.verified_by && mission?.verified_at ? 'bg-blue-50 border-2 border-blue-300' : 'bg-blue-50 border border-blue-100'} rounded-xl relative group`}>
                             <div className="flex justify-between items-center mb-2">
                                 <label className="text-[10px] font-black text-blue-700 uppercase flex items-center gap-1">
-                                    Pagamento Fornecedor (Tabela + Pedágio)
+                                    Pagamento Fornecedor (Tabela + Pedágio + Deslocamento)
                                     {mission?.verified_by && mission?.verified_at && <Lock size={12} className="text-blue-600" />}
                                 </label>
                                 <div className="flex items-center gap-2">
                                 {!(mission?.verified_by && mission?.verified_at) && (() => {
-                                    const calcCostBtn = financialData ? (financialData.provider.serviceTotal + parseNumber(tollProviderInput)) : 0;
+                                    const calcCostBtn = financialData ? (financialData.provider.serviceTotal + parseNumber(tollProviderInput) + parseNumber(displacementProviderInput)) : 0;
                                     const inputCostBtn = parseNumber(costInput);
                                     const isManualCostBtn = inputCostBtn > 0 && calcCostBtn > 0 && Math.abs(inputCostBtn - calcCostBtn) > 1;
                                     // Faturamento travado (salvo/aprovado): nunca oferecer "Restaurar Auto".
@@ -4636,7 +4722,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                             onApply={() => handleUpdate(false)}
                                             disabled={(isEffectivelyLocked && !fullEditMode && !canEditTablesEvenIfLocked) || (!!financialData.autoEngine?.active && !fullEditMode && !canOverrideAutoProvider)}
                                             isApplying={isUpdating}
-                                            previewTotal={financialData ? (financialData.provider.serviceTotal + parseNumber(tollProviderInput)) : 0}
+                                            previewTotal={financialData ? (financialData.provider.serviceTotal + parseNumber(tollProviderInput) + parseNumber(displacementProviderInput)) : 0}
                                         />
                                     );
                                 })()}
@@ -4649,7 +4735,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                 </div>
                             )}
                             {(() => {
-                                const currentCalcCost = financialData.provider.serviceTotal + parseNumber(tollProviderInput);
+                                const currentCalcCost = financialData.provider.serviceTotal + parseNumber(tollProviderInput) + parseNumber(displacementProviderInput);
                                 const currentSavedCost = parseNumber(costInput);
                                 const sysRef = systemCalculatedCost ?? currentCalcCost;
                                 const controllerRef = controllerSavedCost ?? currentSavedCost;
@@ -4694,7 +4780,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                 );
                             })()}
                             {(() => {
-                                const calcTotal = financialData.provider.serviceTotal + parseNumber(tollProviderInput);
+                                const calcTotal = financialData.provider.serviceTotal + parseNumber(tollProviderInput) + parseNumber(displacementProviderInput);
                                 const savedTotal = parseNumber(costInput);
                                 const isDivergent = Math.abs(calcTotal - savedTotal) > 1;
                                 return (
@@ -4704,6 +4790,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                             <span>+ {formatCurrency(financialData.provider.extraKmVal)} <span className={isDivergent ? 'text-amber-400' : 'text-blue-400'}>(km{financialData.provider.excessKm > 0 ? `: ${financialData.provider.excessKm.toFixed(1)}×R$${financialData.provider.unitCostKm.toFixed(2)}` : ''})</span></span>
                                             <span>+ {formatCurrency(financialData.provider.extraHrVal)} <span className={isDivergent ? 'text-amber-400' : 'text-blue-400'}>(hora{financialData.provider.excessHours > 0 ? `: ${formatHoursHHMM(financialData.provider.excessHoursReal)} real → ${formatHoursHHMM(financialData.provider.excessHours)}×R$${financialData.provider.unitCostHour.toFixed(2)}` : ''})</span></span>
                                             <span>+ {formatCurrency(parseNumber(tollProviderInput))} <span className={isDivergent ? 'text-amber-400' : 'text-blue-400'}>(pedágio)</span></span>
+                                            <span>+ {formatCurrency(parseNumber(displacementProviderInput))} <span className={isDivergent ? 'text-amber-400' : 'text-blue-400'}>(deslocamento)</span></span>
                                             <span className="font-black">= {formatCurrency(calcTotal)}</span>
                                         </div>
 

@@ -554,9 +554,11 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
             let revenue: number;
             let cost: number;
 
-            revenue = (m.revenue_value || 0) + Math.max(0, m.toll_value || 0);
+            const dispVal = Math.max(0, m.displacement_value || 0);
+            const dispProv = Math.max(0, m.displacement_value_provider != null ? m.displacement_value_provider : (m.displacement_value || 0));
+            revenue = (m.revenue_value || 0) + Math.max(0, m.toll_value || 0) + dispVal;
             const tollProv = Math.max(0, m.toll_value_provider != null ? m.toll_value_provider : (m.toll_value || 0));
-            cost = (m.cost_value || 0) + tollProv;
+            cost = (m.cost_value || 0) + tollProv + dispProv;
             const mLucro = revenue - cost;
             const mPct = revenue > 0 ? Math.round((mLucro / revenue) * 100) : 0;
 
@@ -917,6 +919,7 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
                 const finP = calculateMissionFinancials(m, priceTables, providerTables, clientData, new Date(), overridesP);
                 const prov = finP.provider;
                 const tollProv = Math.max(0, ((m.toll_value_provider != null ? m.toll_value_provider : m.toll_value)) || 0);
+                const dispProvP = Math.max(0, (m.displacement_value_provider != null ? m.displacement_value_provider : m.displacement_value) || 0);
                 const savedCost = m.cost_value || 0;
 
                 const isCancelledP = (m.status || '').toString().toLowerCase().includes('cancel');
@@ -965,7 +968,8 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
                     hrExtraTotal: prov.extraHrVal ?? 0,
                     escoltaVal: prov.base ?? 0,
                     tollVal: tollProv,
-                    totalGeral: savedCost + tollProv,
+                    displacementVal: dispProvP,
+                    totalGeral: savedCost + tollProv + dispProvP,
                     franchiseHoursFmt: fmtFranchiseHr(prov.franchiseHours ?? 0),
                     frozen: false,
                     frozenBy: null as string | null,
@@ -992,11 +996,12 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
                 const useKmEx = snap.kmExtraTotal ?? 0;
                 const useHrEx = snap.hrExtraTotal ?? 0;
                 const useToll = m.toll_value ?? snap.tollVal ?? 0;
+                const useDisp = Math.max(0, m.displacement_value ?? snap.displacementVal ?? 0);
                 const dbRevenue = m.revenue_value ?? 0;
-                const dbTotal = dbRevenue + Math.max(0, m.toll_value || 0);
+                const dbTotal = dbRevenue + Math.max(0, m.toll_value || 0) + useDisp;
                 const wasManuallyEdited = !!(m.billing_verified_by || m.revenue_edit_reason);
                 const snapTotal = snap.totalGeral ?? 0;
-                const useTotal = wasManuallyEdited ? dbTotal : (snapTotal > 0 ? snapTotal : (useBase + useKmEx + useHrEx + useToll));
+                const useTotal = wasManuallyEdited ? dbTotal : (snapTotal > 0 ? snapTotal : (useBase + useKmEx + useHrEx + useToll + useDisp));
 
                 // FALLBACK p/ snapshots legados: se franquia zerada mas há cálculo possível,
                 // busca os dados da tabela real para exibição (totais financeiros permanecem congelados)
@@ -1078,6 +1083,7 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
                     hrExtraTotal: useHrEx,
                     escoltaVal: useBase,
                     tollVal: useToll,
+                    displacementVal: useDisp,
                     totalGeral: useTotal,
                     franchiseHoursFmt: fmtFranchiseHr(snapFranchiseHours),
                     frozen: true,
@@ -1099,6 +1105,7 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
             }
 
             const tollVal = Math.max(0, m.toll_value || 0);
+            const dispValN = Math.max(0, m.displacement_value || 0);
             const savedRevenue = m.revenue_value || 0;
             const hasSavedRevenue = savedRevenue > 0;
 
@@ -1145,7 +1152,7 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
             const hrExtraTotal = fin.client.extraHrVal;
             const durationHours = fin.durationHours;
 
-            const totalGeral = savedRevenue + tollVal;
+            const totalGeral = savedRevenue + tollVal + dispValN;
 
             const cargoPlate = m._clientVehicle?.plate || '-';
 
@@ -1188,6 +1195,7 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
                 hrExtraTotal,
                 escoltaVal: activationFee,
                 tollVal,
+                displacementVal: dispValN,
                 totalGeral,
                 franchiseHoursFmt: fmtFranchiseHr(franchiseHours),
                 frozen: false,
@@ -1238,11 +1246,13 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
             if (reportMode === 'fornecedor') {
                 const cost = m.cost_value ?? 0;
                 const tollP = Math.max(0, (m.toll_value_provider != null ? m.toll_value_provider : m.toll_value) || 0);
-                return s + cost + tollP;
+                const dispP = Math.max(0, (m.displacement_value_provider != null ? m.displacement_value_provider : m.displacement_value) || 0);
+                return s + cost + tollP + dispP;
             }
             const rev = m.revenue_value ?? 0;
             const toll = Math.max(0, m.toll_value || 0);
-            return s + rev + toll;
+            const disp = Math.max(0, m.displacement_value || 0);
+            return s + rev + toll + disp;
         }, 0);
     }, [missions, reportMode]);
 
@@ -1363,9 +1373,10 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
             const numId = (m.id || '').replace(/\D/g, '');
             const rev = m.revenue_value ?? 0;
             const toll = Math.max(0, m.toll_value || 0);
+            const disp = Math.max(0, m.displacement_value || 0);
             const isVerified = !!(m.billing_verified_by || m.billing_approved);
             const hasDbValue = rev > 0 || (rev === 0 && isVerified);
-            missionDbMap.set(numId, { rev, toll, dbTotal: hasDbValue ? rev + toll : 0, hasDbValue });
+            missionDbMap.set(numId, { rev, toll, dbTotal: hasDbValue ? rev + toll + disp : 0, hasDbValue });
         });
 
         const systemMap = new window.Map<string, any>();
@@ -1631,7 +1642,7 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
                 vlrKmExcedenteTab: r.kmExtraUnit || 0,
                 vlrTotalHoraExcedente: r.hrExtraTotal || 0,
                 vlrTotalKmExcedidos: r.kmExtraTotal || 0,
-                vlrDeslocamento: 0,
+                vlrDeslocamento: r.displacementVal || 0,
                 franquiaTabela: r.activationFee || 0,
                 pedagio: r.tollVal || 0,
                 totalFornecedor: r.totalGeral || 0,
@@ -4186,7 +4197,8 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
                                             const totalSys = missions.reduce((s: number, m: any) => {
                                                 const rev = m.revenue_value ?? 0;
                                                 const toll = Math.max(0, m.toll_value || 0);
-                                                return s + rev + toll;
+                                                const disp = Math.max(0, m.displacement_value || 0);
+                                                return s + rev + toll + disp;
                                             }, 0);
                                             const validatedSheet = (pasteResult.validated || []).reduce((s: number, v: any) => s + v.sheet.totalCol, 0);
                                             const divSheet = pasteResult.divergences.reduce((s: number, d: any) => s + d.sheetTot, 0);
@@ -4296,7 +4308,8 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
                                             const userData = JSON.parse(localStorage.getItem('userData') || '{}');
                                             const userName = userData.name || 'Usuário';
                                             const tollVal = Math.max(0, m.toll_value || 0);
-                                            const newRevenue = Math.max(0, Math.round((newTotal - tollVal) * 100) / 100);
+                                            const dispVal = Math.max(0, m.displacement_value || 0);
+                                            const newRevenue = Math.max(0, Math.round((newTotal - tollVal - dispVal) * 100) / 100);
                                             const reasonStamp = `[${userName} - ${new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' })}] Ajustado pela conferência da planilha do cliente (Total ${fmtBRL(newTotal)})`;
                                             console.log('[DivergenceEdit] Tentando salvar', { fullId, newTotal, newRevenue, tollVal, userName });
                                             // Usa endpoint backend (com service-role) p/ contornar RLS e snapshots

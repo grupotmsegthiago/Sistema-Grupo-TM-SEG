@@ -143,6 +143,8 @@ const MissionReportPage: React.FC = () => {
             cost_value: m.cost_value,
             toll_value: m.toll_value,
             toll_value_provider: m.toll_value_provider,
+            displacement_value: m.displacement_value,
+            displacement_value_provider: m.displacement_value_provider,
             billing_approved: m.billing_approved,
             mission_type: m.mission_type || 'Caracterizada',
             is_same_os: m.is_same_os,
@@ -288,13 +290,13 @@ const MissionReportPage: React.FC = () => {
   }, [filteredMissions, clientPriceTables, providerCostTables, clientsData]);
 
   const totals = useMemo(() => {
-    let revBase = 0, tollRev = 0, costBase = 0, tollCost = 0, profit = 0;
+    let revBase = 0, tollRev = 0, dispRev = 0, costBase = 0, tollCost = 0, dispCost = 0, profit = 0;
     canonicalByMission.forEach(c => {
-      revBase += c.revBase; tollRev += c.tollRev;
-      costBase += c.costBase; tollCost += c.tollCost;
+      revBase += c.revBase; tollRev += c.tollRev; dispRev += c.dispRev;
+      costBase += c.costBase; tollCost += c.tollCost; dispCost += c.dispCost;
       profit += c.profit;
     });
-    return { revBase, tollRev, costBase, tollCost, profit, rev: revBase + tollRev, cost: costBase + tollCost };
+    return { revBase, tollRev, dispRev, costBase, tollCost, dispCost, profit, rev: revBase + tollRev + dispRev, cost: costBase + tollCost + dispCost };
   }, [canonicalByMission]);
 
   // Aliases para manter compatibilidade com o JSX existente.
@@ -302,11 +304,13 @@ const MissionReportPage: React.FC = () => {
   const totalCost = totals.costBase;
   const totalToll = totals.tollRev;
   const totalTollProvider = totals.tollCost;
+  const totalDisp = totals.dispRev;
+  const totalDispProvider = totals.dispCost;
 
   const handleExportCSV = () => {
     const sep = ';';
     const headers = ['#', 'OS', 'Status', 'Cliente', 'Veíc. Escoltado', 'Fornecedor', 'Viatura', 'Agentes', 'Rota', 'Data Inicial', 'Hora Inicial', 'Data Final', 'Hora Final'];
-    if (canSeeFinancials) headers.push('Receita', 'Custo', 'Ped. Recebido', 'Ped. Pago', 'Resultado', '% Lucro');
+    if (canSeeFinancials) headers.push('Receita', 'Custo', 'Ped. Recebido', 'Ped. Pago', 'Desloc. Recebido', 'Desloc. Pago', 'Resultado', '% Lucro');
 
     const exportParentIds = new Set<string>();
     filteredMissions.forEach(m => { if (m.is_same_os && m.parent_mission_id) exportParentIds.add(m.parent_mission_id); });
@@ -317,6 +321,8 @@ const MissionReportPage: React.FC = () => {
       const cost = c?.costBase || 0;
       const toll = c?.tollRev || 0;
       const tollPaid = c?.tollCost || 0;
+      const disp = c?.dispRev || 0;
+      const dispPaid = c?.dispCost || 0;
       const resultado = c?.profit || 0;
       const osLabel = exportParentIds.has(m.id) ? ' (OS MÃE)' : (m.is_same_os ? ` (MESMA OS${m.parent_mission_id ? ` → MÃE: ${m.parent_mission_id}` : ''})` : '');
       const row = [
@@ -335,12 +341,14 @@ const MissionReportPage: React.FC = () => {
         m.endTime ? fmtTime(m.endTime) : '',
       ];
       if (canSeeFinancials) {
-        const revTotal = rev + toll;
+        const revTotal = rev + toll + disp;
         row.push(
           rev > 0 ? rev.toFixed(2).replace('.', ',') : '',
           cost > 0 ? cost.toFixed(2).replace('.', ',') : '',
           toll > 0 ? toll.toFixed(2).replace('.', ',') : '',
           tollPaid > 0 ? tollPaid.toFixed(2).replace('.', ',') : '',
+          disp > 0 ? disp.toFixed(2).replace('.', ',') : '',
+          dispPaid > 0 ? dispPaid.toFixed(2).replace('.', ',') : '',
           resultado !== 0 ? resultado.toFixed(2).replace('.', ',') : '',
           revTotal > 0 ? ((resultado / revTotal) * 100).toFixed(1).replace('.', ',') + '%' : ''
         );
@@ -563,6 +571,8 @@ const MissionReportPage: React.FC = () => {
               <span className="text-blue-700">Custo Total: R$ {fmtMoney(totalCost)}</span>
               <span className="text-orange-700">Pedágio Recebido: R$ {fmtMoney(totalToll)}</span>
               <span className="text-orange-500">Pedágio Pago: R$ {fmtMoney(totalTollProvider)}</span>
+              <span className="text-purple-700">Deslocamento Recebido: R$ {fmtMoney(totalDisp)}</span>
+              <span className="text-purple-500">Deslocamento Pago: R$ {fmtMoney(totalDispProvider)}</span>
               <span className={`font-black ${totals.profit >= 0 ? 'text-emerald-700' : 'text-red-700'}`}>
                 Resultado: R$ {fmtMoney(totals.profit)}
               </span>
@@ -606,6 +616,8 @@ const MissionReportPage: React.FC = () => {
                       <th className="px-3 py-2.5 text-right font-black border-r border-gray-700">CUSTO</th>
                       <th className="px-3 py-2.5 text-right font-black border-r border-gray-700">PED. RECEB.</th>
                       <th className="px-3 py-2.5 text-right font-black border-r border-gray-700">PED. PAGO</th>
+                      <th className="px-3 py-2.5 text-right font-black border-r border-gray-700">DESL. RECEB.</th>
+                      <th className="px-3 py-2.5 text-right font-black border-r border-gray-700">DESL. PAGO</th>
                       <th className="px-3 py-2.5 text-right font-black border-r border-gray-700">RESULTADO</th>
                       <th className="px-3 py-2.5 text-right font-black border-r border-gray-700">% LUCRO</th>
                     </>
@@ -622,8 +634,10 @@ const MissionReportPage: React.FC = () => {
                   const cost = c?.costBase || 0;
                   const toll = c?.tollRev || 0;
                   const tollProvider = c?.tollCost || 0;
+                  const disp = c?.dispRev || 0;
+                  const dispProvider = c?.dispCost || 0;
                   const resultado = c?.profit || 0;
-                  const revTotal = rev + toll;
+                  const revTotal = rev + toll + disp;
                   const lucroPerc = revTotal > 0 ? ((resultado / revTotal) * 100) : 0;
                   const placaEscoltado = m.clientVehicle?.plate || '-';
                   const agentes = [m.agent1, m.agent2].filter(Boolean).join(' & ') || '-';
@@ -690,6 +704,8 @@ const MissionReportPage: React.FC = () => {
                           </td>
                           <td className="px-3 py-2 border-r border-gray-100 text-right text-orange-600 whitespace-nowrap">{toll > 0 ? fmtMoney(toll) : '-'}</td>
                           <td className="px-3 py-2 border-r border-gray-100 text-right text-orange-500 whitespace-nowrap">{tollProvider > 0 ? fmtMoney(tollProvider) : '-'}</td>
+                          <td className="px-3 py-2 border-r border-gray-100 text-right text-purple-600 whitespace-nowrap">{disp > 0 ? fmtMoney(disp) : '-'}</td>
+                          <td className="px-3 py-2 border-r border-gray-100 text-right text-purple-500 whitespace-nowrap">{dispProvider > 0 ? fmtMoney(dispProvider) : '-'}</td>
                           <td className={`px-3 py-2 border-r border-gray-100 text-right font-black whitespace-nowrap ${resultado >= 0 ? 'text-emerald-700' : 'text-red-600 bg-red-50'}`}>
                             {rev > 0 || cost > 0 ? fmtMoney(resultado) : '-'}
                           </td>
@@ -773,6 +789,8 @@ const MissionReportPage: React.FC = () => {
                     <td className="px-3 py-2.5 text-right border-r border-gray-600 text-blue-300">{fmtMoney(totalCost)}</td>
                     <td className="px-3 py-2.5 text-right border-r border-gray-600 text-orange-300">{fmtMoney(totalToll)}</td>
                     <td className="px-3 py-2.5 text-right border-r border-gray-600 text-orange-200">{fmtMoney(totalTollProvider)}</td>
+                    <td className="px-3 py-2.5 text-right border-r border-gray-600 text-purple-300">{fmtMoney(totalDisp)}</td>
+                    <td className="px-3 py-2.5 text-right border-r border-gray-600 text-purple-200">{fmtMoney(totalDispProvider)}</td>
                     <td className={`px-3 py-2.5 text-right border-r border-gray-600 ${totals.profit >= 0 ? 'text-emerald-300' : 'text-red-300'}`}>{fmtMoney(totals.profit)}</td>
                     <td className={`px-3 py-2.5 text-right border-r border-gray-600 ${totals.rev > 0 ? (totals.profit >= 0 ? 'text-emerald-300' : 'text-red-300') : ''}`}>
                       {totals.rev > 0 ? `${((totals.profit / totals.rev) * 100).toFixed(1)}%` : '-'}

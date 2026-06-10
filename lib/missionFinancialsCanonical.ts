@@ -22,12 +22,14 @@ export interface CanonicalRefs {
 }
 
 export interface CanonicalResult {
-  revBase: number;   // receita base (sem pedágio) — vem do stored ou da estimativa
+  revBase: number;   // receita base (sem pedágio/deslocamento) — vem do stored ou da estimativa
   tollRev: number;   // pedágio recebido do cliente
-  rev: number;       // revBase + tollRev — a "receita total" da OS
-  costBase: number;  // custo base (sem pedágio)
+  dispRev: number;   // deslocamento cobrado do cliente (aditivo, espelha pedágio)
+  rev: number;       // revBase + tollRev + dispRev — a "receita total" da OS
+  costBase: number;  // custo base (sem pedágio/deslocamento)
   tollCost: number;  // pedágio pago ao fornecedor
-  cost: number;      // costBase + tollCost — o "custo total" da OS
+  dispCost: number;  // deslocamento pago ao fornecedor (fallback p/ deslocamento cliente)
+  cost: number;      // costBase + tollCost + dispCost — o "custo total" da OS
   profit: number;    // rev - cost
   source: 'saved' | 'estimated' | 'mixed';
 }
@@ -35,8 +37,8 @@ export interface CanonicalResult {
 const num = (v: any): number => (typeof v === 'number' && isFinite(v)) ? v : 0;
 
 const ZERO_RESULT: CanonicalResult = {
-  revBase: 0, tollRev: 0, rev: 0,
-  costBase: 0, tollCost: 0, cost: 0,
+  revBase: 0, tollRev: 0, dispRev: 0, rev: 0,
+  costBase: 0, tollCost: 0, dispCost: 0, cost: 0,
   profit: 0, source: 'saved',
 };
 
@@ -66,6 +68,8 @@ export function computeCanonicalRevenueCost(
 
   const tollRev = Math.max(0, num(m.toll_value));
   const tollCost = Math.max(0, m.toll_value_provider != null ? num(m.toll_value_provider) : num(m.toll_value));
+  const dispRev = Math.max(0, num(m.displacement_value));
+  const dispCost = Math.max(0, m.displacement_value_provider != null ? num(m.displacement_value_provider) : num(m.displacement_value));
 
   let revBase = 0;
   let costBase = 0;
@@ -107,9 +111,9 @@ export function computeCanonicalRevenueCost(
     }
   }
 
-  const rev = revBase + tollRev;
-  const cost = costBase + tollCost;
-  return { revBase, tollRev, rev, costBase, tollCost, cost, profit: rev - cost, source };
+  const rev = revBase + tollRev + dispRev;
+  const cost = costBase + tollCost + dispCost;
+  return { revBase, tollRev, dispRev, rev, costBase, tollCost, dispCost, cost, profit: rev - cost, source };
 }
 
 /**
