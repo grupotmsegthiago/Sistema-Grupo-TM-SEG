@@ -309,11 +309,17 @@ function buildWhatsappText(opts: {
   scheduledAt: string;
   link: string;
   tecnologiasNoVeiculo?: string[];
+  isDhl?: boolean;
 }): string {
+  const isDhl = opts.isDhl !== false;
   const tecs = (opts.tecnologiasNoVeiculo || []).filter(Boolean);
-  const tecBlock = tecs.length > 0
-    ? `\n\n*Instruções de Espelhamento — Tecnologia(s): ${tecs.join(', ')}*\n${tecs.map(t => instrucaoEspelhamentoTexto(t)).join('\n\n')}`
-    : `\n\n*Instruções de Espelhamento* serão verificadas conforme a tecnologia informada do veículo.`;
+  // Instruções técnicas de espelhamento por tecnologia (contas/IPs DHL) são
+  // exclusivas da DHL. Demais clientes recebem orientação genérica + comprovante.
+  const tecBlock = !isDhl
+    ? `\n\n*Espelhamento do sinal:* realize o espelhamento conforme orientação do Operacional TM Seg e anexe o comprovante (print) ao preencher o veículo.`
+    : tecs.length > 0
+      ? `\n\n*Instruções de Espelhamento — Tecnologia(s): ${tecs.join(', ')}*\n${tecs.map(t => instrucaoEspelhamentoTexto(t)).join('\n\n')}`
+      : `\n\n*Instruções de Espelhamento* serão verificadas conforme a tecnologia informada do veículo.`;
 
   return `*Grupo TM SEG — Solicitação de Escolta*
 
@@ -1404,6 +1410,7 @@ export function registerDhlIntakeRoutes(
         destination: mission.destination || '—',
         scheduledAt,
         link,
+        isDhl,
       });
 
       // ── WhatsApp via Z-API (envio automático sem precisar copiar) ───
