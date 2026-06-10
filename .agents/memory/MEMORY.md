@@ -18,3 +18,4 @@
 - [Billing report provider mode](billing-report-provider-mode.md) — Boletim tem toggle Cliente/Fornecedor no MESMO componente; reusa rowsData genérico c/ fin.provider, total=cost_value+toll fornecedor, isolamento .in('provider',exact).
 - [Supplier intake generalization](supplier-intake-generalization.md) — link /fornecedor/dhl atende TODOS os clientes; identidade amarela/Nº S.E./instruções técnicas só atrás de isDhl; comprovante obrigatório p/ todos.
 - [Deslocamento espelha pedágio](displacement-mirrors-toll.md) — displacement_value/_provider é aditivo igual toll; some na MESMA expressão do toll em todo relatório; margem (service-only) e filled-sheet ficam de fora.
+- [React component tests](react-component-tests.md) — render component sob node --test via jsdom+React.act+asset loader (register.mjs, NÃO só exportar hooks); runner em scripts/run-tests.sh.
