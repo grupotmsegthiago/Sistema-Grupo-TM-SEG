@@ -31,3 +31,12 @@ peça Nº S.E. inexistente ou veja instruções técnicas DHL.
 **How to apply:** ao adicionar qualquer elemento visual/texto novo nesse fluxo,
 pergunte "isso é DHL?" — se sim, gate com isDhl. Cuidado com cores hardcoded
 (#FFCC00, #fff3cd) em e-mails: use o accent derivado de isDhl, não literal.
+
+**Armadilha do CSS (vazamento invisível):** o bloco `<style>` de `dhlTemplate`
+emitia SEMPRE `.dhl-bar { background:#FFCC00 }` mesmo com isDhl=false — a cor da
+DHL ficava no HTML de outros clientes (invisível, mas presente). Regras de CSS
+com cor da DHL também precisam ser condicionadas a isDhl, não só os elementos que
+as usam. Teste de regressão em `scripts/dhl-intake-isolation.test.ts` (roda com
+`npx tsx --test`) asserta que o HTML não-DHL não contém #FFCC00, "Nº S.E.",
+"S.E. DHL" nem IP/CNPJ/conta de espelhamento DHL; intercepta
+`transporter.sendMail` (exportado de emailService) p/ não disparar SMTP.

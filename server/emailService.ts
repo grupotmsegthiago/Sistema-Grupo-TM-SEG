@@ -1203,13 +1203,17 @@ function dhlTemplate(content: string, isDhl: boolean = true): string {
   const topBars = isDhl
     ? `<div class="dhl-bar"></div>\n  <div class="dhl-red-bar"></div>`
     : `<div style="background:#D40511; height:8px;"></div>`;
+  // A barra amarela (#FFCC00) só existe no CSS quando o e-mail é da DHL. Para os
+  // demais clientes nem a definição da classe é emitida — evita que a identidade
+  // amarela "vaze" no HTML (mesmo que invisível) para fornecedores de outros clientes.
+  const dhlBarStyles = isDhl
+    ? `\n  .dhl-bar { background:#FFCC00; height:8px; }\n  .dhl-red-bar { background:#D40511; height:4px; }`
+    : '';
   return `<!DOCTYPE html>
 <html lang="pt-BR"><head><meta charset="UTF-8">
 <style>
   body { margin:0; padding:0; background:#f4f4f4; font-family:'Segoe UI',Arial,sans-serif; }
-  .container { max-width:640px; margin:0 auto; background:#fff; border-radius:8px; overflow:hidden; box-shadow:0 2px 12px rgba(0,0,0,0.08); }
-  .dhl-bar { background:#FFCC00; height:8px; }
-  .dhl-red-bar { background:#D40511; height:4px; }
+  .container { max-width:640px; margin:0 auto; background:#fff; border-radius:8px; overflow:hidden; box-shadow:0 2px 12px rgba(0,0,0,0.08); }${dhlBarStyles}
   .header { background:#1a1a1a; padding:24px 32px; text-align:center; }
   .header h1 { color:#fff; font-size:22px; margin:0 0 4px; letter-spacing:1px; }
   .header h1 .red { color:#D40511; font-weight:700; }
