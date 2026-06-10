@@ -1204,6 +1204,9 @@ export function registerDhlIntakeRoutes(
       // instruções técnicas de espelhamento, identidade visual amarela) fica
       // condicionado a `isDhl`; demais clientes recebem o fluxo neutro TM SEG.
       const isDhl = isDhlMission(mission.client);
+      if (!mission.client || String(mission.client).trim() === '') {
+        return res.status(400).json({ error: 'Selecione um cliente na OS antes de gerar o link.' });
+      }
       if (isDhl && (!mission.dhl_se_number || String(mission.dhl_se_number).trim() === '')) {
         return res.status(400).json({ error: 'Preencha o número da S.E. DHL antes de gerar o link.' });
       }
