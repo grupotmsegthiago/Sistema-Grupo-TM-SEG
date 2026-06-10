@@ -165,6 +165,9 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
 
     const [iblWarning, setIblWarning] = useState('');
     const [originalStatus, setOriginalStatus] = useState('');
+    const [deslocFile, setDeslocFile] = useState<File | null>(null);
+    const [deslocSending, setDeslocSending] = useState(false);
+    const [deslocExistingUrl, setDeslocExistingUrl] = useState('');
     const [mirroringFile, setMirroringFile] = useState<File | null>(null);
     const [mirroringPreview, setMirroringPreview] = useState('');
     const [mirroringSending, setMirroringSending] = useState(false);
@@ -185,7 +188,7 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
         driver_name: '', driver_phone: '', gr_espelhamento: '',
         client_vehicle_id: '',
         client_vehicle_plate: '', client_vehicle_model: '',
-        reference_number: '', billing_release: '', dhl_se_number: '', dhl_sm_number: ''
+        reference_number: '', billing_release: '', dhl_se_number: '', dhl_sm_number: '', dhl_deslocamento_km: ''
     });
 
     const [currentPreviewCoords, setCurrentPreviewCoords] = useState<{ lat: number, lng: number } | null>(null);
@@ -406,8 +409,10 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
                 reference_number: m.reference_number || '',
                 billing_release: m.billing_release || '',
                 dhl_se_number: m.dhl_se_number || '',
-                dhl_sm_number: (m as any).dhl_sm_number || ''
+                dhl_sm_number: (m as any).dhl_sm_number || '',
+                dhl_deslocamento_km: (m as any).dhl_deslocamento_km != null ? String((m as any).dhl_deslocamento_km) : ''
             });
+            setDeslocExistingUrl((m as any).dhl_deslocamento_approval_url || '');
 
             setSearchTerm(m.provider || '');
             setSearchDriver(m.driver_name || '');
@@ -759,12 +764,55 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
         }
     };
 
+    const handleDeslocamentoUpload = async () => {
+        if (!deslocFile || !mission) return;
+        setDeslocSending(true);
+        try {
+            const ext = deslocFile.name.split('.').pop() || 'png';
+            const filePath = `${mission.id}/deslocamento_${Date.now()}.${ext}`;
+            const { error: upErr } = await supabase.storage.from('mission-evidence').upload(filePath, deslocFile, { contentType: deslocFile.type, upsert: true });
+            if (upErr) throw upErr;
+            const { data: urlData } = supabase.storage.from('mission-evidence').getPublicUrl(filePath);
+            const publicUrl = urlData?.publicUrl || '';
+            const { error: updErr } = await supabase.from('missions').update({ dhl_deslocamento_approval_url: publicUrl }).eq('id', mission.id);
+            if (updErr) throw updErr;
+            setDeslocExistingUrl(publicUrl);
+            setDeslocFile(null);
+            try {
+                await supabase.from('system_logs').insert({
+                    entity: 'MissionEvidence',
+                    entity_id: mission.id,
+                    action_type: 'dhl_deslocamento_print',
+                    details: JSON.stringify({ fileName: deslocFile.name, filePath, publicUrl, uploadedBy: currentUser?.name || 'Sistema', uploadedAt: new Date().toISOString(), context: 'Edição da OS - Print da aprovação de deslocamento DHL' }),
+                    created_at: new Date().toISOString()
+                });
+            } catch (logErr) { console.warn('Falha ao registrar log de print de deslocamento:', logErr); }
+            showNotification('Sucesso', 'Print da aprovação de deslocamento anexado.', 'success');
+        } catch (err: any) {
+            console.error('[DeslocamentoPrint]', err);
+            showNotification('Erro', 'Falha ao enviar print: ' + (err.message || ''), 'error');
+        } finally {
+            setDeslocSending(false);
+        }
+    };
+
     const handleUpdateSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         if (!mission || !currentUser) return;
 
         if (isCompletedMission && isBillingApproved && !canEditApproved) {
-            showNotification('Bloqueado', 'Esta OS já foi aprovada. Apenas Diretoria, Administrador ou Avançado podem alterar.', 'error');
+            // OS aprovada: o snapshot financeiro é IMUTÁVEL. Porém o KM de deslocamento
+            // DHL é auditoria-only (alimenta apenas a coluna T da planilha SE) e o
+            // requisito é que esse campo seja editável SEMPRE, inclusive em OS
+            // finalizada/aprovada. Persistimos só esse campo, sem tocar em
+            // revenue/cost/toll/snapshot, e bloqueamos o resto.
+            const deslocKmValue = editData.dhl_deslocamento_km !== '' ? (parseFloat(editData.dhl_deslocamento_km) || 0) : null;
+            const { error: deslocErr } = await supabase.from('missions').update({ dhl_deslocamento_km: deslocKmValue }).eq('id', mission.id);
+            if (deslocErr) {
+                showNotification('Erro', 'Falha ao salvar KM de deslocamento: ' + deslocErr.message, 'error');
+                return;
+            }
+            showNotification('Salvo', 'KM de deslocamento atualizado. Os demais campos estão travados porque a OS já foi aprovada.', 'success');
             return;
         }
 
@@ -1053,7 +1101,8 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
                 reference_number: editData.reference_number || null,
                 billing_release: editData.billing_release || null,
                 dhl_se_number: editData.dhl_se_number ? editData.dhl_se_number.trim().toUpperCase() : null,
-                dhl_sm_number: editData.dhl_sm_number ? editData.dhl_sm_number.trim().toUpperCase() : null
+                dhl_sm_number: editData.dhl_sm_number ? editData.dhl_sm_number.trim().toUpperCase() : null,
+                dhl_deslocamento_km: editData.dhl_deslocamento_km !== '' ? (parseFloat(editData.dhl_deslocamento_km) || 0) : null
             };
 
             // REGRA PRIORITÁRIA: OS Recusada SEMPRE zera valores de cliente,
@@ -2036,6 +2085,30 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
                             )}
                             {((mission?.client || '').toUpperCase().includes('DHL')) && (
                                 <div><label className={LABEL_CLASS}><span className="text-amber-700 font-black">Nº SM (DHL)</span></label><input type="text" className={`${INPUT_CLASS} border-amber-300 bg-amber-50/40`} placeholder="Ex: SM-789012 (opcional)" value={editData.dhl_sm_number} onChange={e => setEditData({...editData, dhl_sm_number: e.target.value.toUpperCase()})} data-testid="input-edit-dhl-sm-number" /></div>
+                            )}
+                            {((mission?.client || '').toUpperCase().includes('DHL')) && (
+                                <div className="md:col-span-2 p-3 rounded-xl border border-red-200 bg-red-50/30">
+                                    <label className={LABEL_CLASS}><span className="text-red-600 font-black">KM Deslocamento cobrado pra DHL</span></label>
+                                    <input type="number" min="0" step="1" className={`${INPUT_CLASS} border-red-300 bg-white`} placeholder="Ex: 170 (deixe vazio se não houver)" value={editData.dhl_deslocamento_km} onChange={e => setEditData({...editData, dhl_deslocamento_km: e.target.value})} data-testid="input-edit-dhl-deslocamento-km" />
+                                    <p className="text-[9px] text-red-700/70 mt-1">Esse KM alimenta a coluna KM DESLOCAMENTO (T) da planilha SE.</p>
+                                    <div className="mt-2">
+                                        <label className="text-[9px] font-black text-red-700 uppercase tracking-widest mb-1 block">Print da aprovação DHL</label>
+                                        {deslocExistingUrl && !deslocFile && (
+                                            <div className="mb-2 relative inline-block">
+                                                <a href={deslocExistingUrl} target="_blank" rel="noopener noreferrer">
+                                                    <img src={deslocExistingUrl} alt="Aprovação deslocamento" className="h-24 rounded-lg border border-red-200 object-cover" />
+                                                </a>
+                                                <span className="absolute top-1 right-1 bg-red-600 text-white text-[8px] px-2 py-0.5 rounded font-black">ENVIADO</span>
+                                            </div>
+                                        )}
+                                        <div className="flex items-center gap-2 flex-wrap">
+                                            <input type="file" accept="image/*" onChange={e => { const f = e.target.files?.[0]; if (f) setDeslocFile(f); }} className="text-[10px]" data-testid="input-edit-dhl-deslocamento-print" />
+                                            {deslocFile && (
+                                                <button type="button" onClick={handleDeslocamentoUpload} disabled={deslocSending} className="px-3 py-1.5 rounded-lg bg-red-600 text-white text-[10px] font-black uppercase tracking-wider hover:bg-red-700 disabled:opacity-50" data-testid="button-save-dhl-deslocamento-print">{deslocSending ? 'Enviando...' : 'Anexar print'}</button>
+                                            )}
+                                        </div>
+                                    </div>
+                                </div>
                             )}
                             {((mission?.client || '').toUpperCase().includes('CEVA')) && (
                                 <div><label className={LABEL_CLASS}><span className="text-teal-600 font-black">Liberação de Faturamento</span></label><input type="text" className={`${INPUT_CLASS} border-teal-300 bg-teal-50/30`} placeholder="Ex: A001, B002..." value={editData.billing_release} onChange={e => setEditData({...editData, billing_release: e.target.value.toUpperCase()})} data-testid="input-edit-billing-release" /></div>

@@ -139,7 +139,8 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
     driver_name_2: '', driver_phone_2: '',
     reference_number: '',
     dhl_se_number: '',
-    dhl_sm_number: ''
+    dhl_sm_number: '',
+    dhl_deslocamento_km: ''
   });
   const [dhlLinkModal, setDhlLinkModal] = useState<{ open: boolean; missionId: string; url: string; whatsappText: string; phone: string; channel: 'email' | 'whatsapp' | 'both'; emailSent: boolean; providerEmail: string; whatsappSent: boolean; whatsappError: string | null }>({ open: false, missionId: '', url: '', whatsappText: '', phone: '', channel: 'both', emailSent: false, providerEmail: '', whatsappSent: false, whatsappError: null });
   const [dhlChannelPicker, setDhlChannelPicker] = useState<{ open: boolean; preferred: 'email' | 'whatsapp' | 'both'; saveAsDefault: boolean }>({ open: false, preferred: 'both', saveAsDefault: false });
@@ -205,6 +206,9 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
   const [driverQuestion, setDriverQuestion] = useState<'asking' | 'yes' | 'no' | null>(null);
   const [scheduleMode, setScheduleMode] = useState<'asking' | 'immediate' | 'scheduled' | null>(null);
   const [dhlSeConfirmed, setDhlSeConfirmed] = useState<string>('');
+  const [dhlDeslocamentoEnabled, setDhlDeslocamentoEnabled] = useState(false);
+  const [dhlDeslocamentoFile, setDhlDeslocamentoFile] = useState<{ file: File; preview: string } | null>(null);
+  const dhlDeslocamentoInputRef = useRef<HTMLInputElement>(null);
 
   const { isLoaded: isGoogleLoaded } = useLoadScript(googleMapsLoadConfig);
   const originAutocompleteRef = useRef<google.maps.places.Autocomplete | null>(null);
@@ -643,6 +647,41 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
               }),
               created_at: new Date().toISOString()
           });
+      }
+  };
+
+  const uploadDhlDeslocamentoPrint = async (missionId: string) => {
+      if (!dhlDeslocamentoEnabled || !dhlDeslocamentoFile) return;
+      try {
+          const userData = JSON.parse(localStorage.getItem('userData') || '{}');
+          const file = dhlDeslocamentoFile.file;
+          const ext = file.name.split('.').pop() || 'png';
+          const filePath = `${missionId}/deslocamento_${Date.now()}.${ext}`;
+          const { error: uploadError } = await supabase.storage.from('mission-evidence').upload(filePath, file, { contentType: file.type, upsert: true });
+          if (uploadError) {
+              console.error('Erro upload print deslocamento DHL:', uploadError.message);
+              return;
+          }
+          const { data: urlData } = supabase.storage.from('mission-evidence').getPublicUrl(filePath);
+          const publicUrl = urlData?.publicUrl || '';
+          await supabase.from('missions').update({ dhl_deslocamento_approval_url: publicUrl }).eq('id', missionId);
+          await supabase.from('system_logs').insert({
+              entity: 'MissionEvidence',
+              entity_id: missionId,
+              action_type: 'dhl_deslocamento_print',
+              details: JSON.stringify({
+                  fileName: file.name,
+                  filePath,
+                  publicUrl,
+                  km: formData.dhl_deslocamento_km,
+                  uploadedBy: userData.name || 'Sistema',
+                  uploadedAt: new Date().toISOString(),
+                  context: 'Criação da OS - Print da aprovação de deslocamento DHL'
+              }),
+              created_at: new Date().toISOString()
+          });
+      } catch (e) {
+          console.error('Falha ao anexar print de deslocamento DHL:', e);
       }
   };
 
@@ -1238,7 +1277,8 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
                 snapshot_data: '', snapshot_approved_by: null, snapshot_approved_at: null,
                 reference_number: formData.reference_number || null,
                 dhl_se_number: formData.dhl_se_number ? formData.dhl_se_number.trim().toUpperCase() : null,
-                dhl_sm_number: formData.dhl_sm_number ? formData.dhl_sm_number.trim().toUpperCase() : null
+                dhl_sm_number: formData.dhl_sm_number ? formData.dhl_sm_number.trim().toUpperCase() : null,
+                dhl_deslocamento_km: (dhlDeslocamentoEnabled && formData.dhl_deslocamento_km !== '') ? (parseFloat(formData.dhl_deslocamento_km) || 0) : null
             };
             let { error } = await supabase.from('missions').insert([missionPayload]);
             if (error && error.message?.includes('valor_zero_motivo')) {
@@ -1259,6 +1299,7 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
             }]);
         } catch (logErr) { console.warn('Falha ao registrar log de criação da OS:', logErr); }
         await uploadEvidences(finalId);
+        await uploadDhlDeslocamentoPrint(finalId);
 
         // ── DHL: gerar link público para o fornecedor e abrir modal ──
         if (clientUpper.includes('DHL')) {
@@ -1722,6 +1763,69 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
                                       data-testid="input-dhl-sm-number"
                                   />
                               </div>
+                          </div>
+                          <div className="mt-3 pt-3 border-t border-red-200">
+                              <label className="flex items-center gap-2 cursor-pointer select-none">
+                                  <input
+                                      type="checkbox"
+                                      checked={dhlDeslocamentoEnabled}
+                                      onChange={e => {
+                                          const on = e.target.checked;
+                                          setDhlDeslocamentoEnabled(on);
+                                          if (!on) {
+                                              setFormData(prev => ({ ...prev, dhl_deslocamento_km: '' }));
+                                              if (dhlDeslocamentoFile) { URL.revokeObjectURL(dhlDeslocamentoFile.preview); }
+                                              setDhlDeslocamentoFile(null);
+                                          }
+                                      }}
+                                      className="w-4 h-4 accent-red-600"
+                                      data-testid="checkbox-dhl-deslocamento"
+                                  />
+                                  <span className="text-[11px] font-black uppercase tracking-wider" style={{ color: '#7f1d1d' }}>Tem deslocamento cobrado pra DHL?</span>
+                              </label>
+                              {dhlDeslocamentoEnabled && (
+                                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-3 animate-in slide-in-from-top-2 duration-300">
+                                      <div>
+                                          <label className={LABEL_CLASS}><span className="text-red-600">*</span> KM de deslocamento</label>
+                                          <input
+                                              type="number"
+                                              min="0"
+                                              step="1"
+                                              className={`${INPUT_CLASS} w-full`}
+                                              placeholder="Ex: 170"
+                                              value={formData.dhl_deslocamento_km}
+                                              onChange={e => setFormData(prev => ({ ...prev, dhl_deslocamento_km: e.target.value }))}
+                                              data-testid="input-dhl-deslocamento-km"
+                                          />
+                                      </div>
+                                      <div>
+                                          <label className={LABEL_CLASS}>Print da aprovação DHL</label>
+                                          <input
+                                              type="file"
+                                              accept="image/*"
+                                              ref={dhlDeslocamentoInputRef}
+                                              className="hidden"
+                                              onChange={e => {
+                                                  const f = e.target.files?.[0];
+                                                  if (!f) return;
+                                                  if (dhlDeslocamentoFile) URL.revokeObjectURL(dhlDeslocamentoFile.preview);
+                                                  setDhlDeslocamentoFile({ file: f, preview: URL.createObjectURL(f) });
+                                                  if (dhlDeslocamentoInputRef.current) dhlDeslocamentoInputRef.current.value = '';
+                                              }}
+                                              data-testid="input-dhl-deslocamento-print"
+                                          />
+                                          {dhlDeslocamentoFile ? (
+                                              <div className="flex items-center gap-2">
+                                                  <img src={dhlDeslocamentoFile.preview} alt="Print aprovação" className="h-10 w-10 rounded object-cover border border-red-200" />
+                                                  <button type="button" onClick={() => dhlDeslocamentoInputRef.current?.click()} className="text-[10px] font-bold text-red-700 underline" data-testid="button-change-dhl-deslocamento-print">Trocar</button>
+                                                  <button type="button" onClick={() => { URL.revokeObjectURL(dhlDeslocamentoFile.preview); setDhlDeslocamentoFile(null); }} className="text-[10px] font-bold text-gray-500 underline" data-testid="button-remove-dhl-deslocamento-print">Remover</button>
+                                              </div>
+                                          ) : (
+                                              <button type="button" onClick={() => dhlDeslocamentoInputRef.current?.click()} className="w-full px-3 py-2 rounded-lg border-2 border-dashed border-red-300 bg-red-50/30 text-[10px] font-bold text-red-700 uppercase tracking-wider hover:bg-red-50" data-testid="button-upload-dhl-deslocamento-print">Anexar print</button>
+                                          )}
+                                      </div>
+                                  </div>
+                              )}
                           </div>
                           {!dhlSeOk && formData.dhl_se_number.trim() && (
                               <p className="text-[10px] font-black mt-2 px-3 py-2 rounded-lg bg-red-50 border border-red-300 text-red-700 uppercase tracking-wider">

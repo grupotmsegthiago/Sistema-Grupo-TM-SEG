@@ -2167,7 +2167,7 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
                         franquiaKm: franchiseKm || 0,
                         kmTotalOverride: isCancelledRow ? 0 : ((raioKm > 0 && kmRealRaio === 0) ? raioKm : undefined),
                         noAppliedTable,
-                        kmDeslocamento: 0,
+                        kmDeslocamento: isCancelledRow ? 0 : (Number((m as any).dhl_deslocamento_km) || 0),
                         rawStart: rowStart,
                         rawEnd: rowEnd,
                         franquiaHrDays: franchiseHours > 0 ? franchiseHours / 24 : 0,
