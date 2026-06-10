@@ -40,6 +40,21 @@ const fmtDateTimeFull = (iso?: string | null): string => {
   try { return new Date(iso).toLocaleString('pt-BR', { timeZone: TZ, day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }); } catch { return ''; }
 };
 
+// Extrai SÓ a cidade de um endereço completo BR ("..., CIDADE - UF, CEP").
+// Procura o segmento "CIDADE - UF" (UF = 2 letras). Sem match (ex.: coordenadas),
+// devolve o texto original aparado.
+const cityFrom = (addr: any): string => {
+  const s = (addr || '').toString().trim();
+  if (!s) return '';
+  const parts = s.split(',');
+  for (let i = parts.length - 1; i >= 0; i--) {
+    const seg = parts[i].trim();
+    const m = seg.match(/^(.+?)\s*-\s*[A-Za-z]{2}$/);
+    if (m) return m[1].trim();
+  }
+  return s;
+};
+
 interface HandoverRow {
   id: string;
   dataInicial: string;
@@ -164,8 +179,8 @@ const ShiftHandover = () => {
         const veh = m.vehicle_id ? vehicleMap[m.vehicle_id] : null;
         const cargoId = m.client_vehicle?.toString();
         const cargo = cargoId ? clientVehicleMap[cargoId] : null;
-        const origin = (m.origin || '').trim();
-        const destination = (m.destination || '').trim();
+        const origin = cityFrom(m.origin);
+        const destination = cityFrom(m.destination);
         const startKm = m.start_km;
         const endKm = m.end_km;
         const kmRodado = (typeof startKm === 'number' && typeof endKm === 'number' && endKm >= startKm)
