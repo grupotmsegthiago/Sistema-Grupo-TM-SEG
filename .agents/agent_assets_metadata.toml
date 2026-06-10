@@ -84,3 +84,9 @@ id = "LPmj-cQQM_mz8RZ43OS2X"
 uri = "file://attached_assets/PLANILHA_DHL_PREENCHIDA_20260609_(15)_1781033743478.xlsx"
 type = "table"
 title = "PLANILHA_DHL_PREENCHIDA_20260609 (15).xlsx"
+
+[[outputs]]
+id = "xc6YrIGtz9wYIiuigbNR7"
+uri = "file://motor-calculo-padrao/motor-calculo-padrao.zip"
+type = "unspecified"
+title = "Motor de Cálculo Padrão (engine + card UI)"
