@@ -78,6 +78,9 @@ const DhlSupplierIntake: React.FC = () => {
   const [intake, setIntake] = useState<any>(null);
   const [savedEscoltistas, setSavedEscoltistas] = useState<any[]>([]);
   const [savedVeiculos, setSavedVeiculos] = useState<any[]>([]);
+  // Identidade visual e exigências DHL (amarelo, Nº S.E., instruções técnicas)
+  // só valem quando a OS é da DHL. Demais clientes usam o tema neutro TM SEG.
+  const [isDhl, setIsDhl] = useState(false);
 
   const [step, setStep] = useState<1 | 2 | 3 | 4>(1);
   const [agent1, setAgent1] = useState<Escoltista>({ ...EMPTY_ESCOLTISTA });
@@ -128,6 +131,7 @@ const DhlSupplierIntake: React.FC = () => {
         if (!r.ok) { setError(j.error || 'Link inválido ou expirado'); setLoading(false); return; }
         setMission(j.mission);
         setIntake(j.intake);
+        setIsDhl(!!j.isDhl);
         setSavedEscoltistas(j.escoltistas || []);
         setSavedVeiculos(j.vehicles || []);
         if (j.intake?.status === 'preenchido') {
@@ -323,14 +327,14 @@ const DhlSupplierIntake: React.FC = () => {
 
   if (done) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-yellow-50 to-white p-4">
+      <div className={`min-h-screen flex items-center justify-center bg-gradient-to-br ${isDhl ? 'from-yellow-50' : 'from-gray-100'} to-white p-4`}>
         <div className="max-w-md w-full bg-white rounded-2xl shadow-xl border-t-4 border-green-500 p-8 text-center">
           <CheckCircle2 className="w-16 h-16 text-green-500 mx-auto mb-4" />
           <h2 className="text-2xl font-bold text-gray-900 mb-2">Dados enviados!</h2>
           <p className="text-gray-600 text-sm mb-4">A equipe operacional da TM SEG foi notificada e dará sequência ao processo.</p>
           <div className="bg-gray-50 rounded-lg p-3 text-left text-xs text-gray-600 space-y-1">
             <p><span className="font-bold">OS:</span> {mission?.id}</p>
-            <p><span className="font-bold">S.E.:</span> {mission?.dhl_se_number || '—'}</p>
+            {isDhl && <p><span className="font-bold">S.E.:</span> {mission?.dhl_se_number || '—'}</p>}
             <p><span className="font-bold">Trajeto:</span> {mission?.origin} → {mission?.destination}</p>
           </div>
         </div>
@@ -340,16 +344,22 @@ const DhlSupplierIntake: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      {/* Header DHL */}
-      <div style={{ background: '#FFCC00', height: 8 }}></div>
-      <div style={{ background: '#D40511', height: 4 }}></div>
+      {/* Header — barras amarelas só p/ DHL; demais clientes usam vermelho neutro */}
+      {isDhl ? (
+        <>
+          <div style={{ background: '#FFCC00', height: 8 }}></div>
+          <div style={{ background: '#D40511', height: 4 }}></div>
+        </>
+      ) : (
+        <div style={{ background: '#D40511', height: 8 }}></div>
+      )}
       <header className="bg-[#1a1a1a] text-white">
         <div className="max-w-4xl mx-auto px-4 py-6 flex items-center justify-between gap-4">
           <div className="flex items-center gap-3">
             <img src={tmsegLogo} alt="Grupo TM SEG" className="h-14 md:h-16 w-auto object-contain" />
             <div>
               <h1 className="text-lg md:text-xl font-black tracking-wide">GRUPO <span className="text-red-500">TM SEG</span></h1>
-              <p className="text-[10px] uppercase tracking-widest text-yellow-400 font-bold">Intermediação de Escolta Armada</p>
+              <p className={`text-[10px] uppercase tracking-widest font-bold ${isDhl ? 'text-yellow-400' : 'text-gray-400'}`}>Intermediação de Escolta Armada</p>
             </div>
           </div>
           <div className="text-right">
@@ -362,9 +372,9 @@ const DhlSupplierIntake: React.FC = () => {
       <main className="max-w-4xl mx-auto px-4 py-6 space-y-6">
         {/* OS info card */}
         <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-5">
-          <h2 className="text-sm font-black uppercase text-gray-900 mb-3 border-b-2 border-yellow-400 pb-2">Dados da Solicitação</h2>
+          <h2 className={`text-sm font-black uppercase text-gray-900 mb-3 border-b-2 pb-2 ${isDhl ? 'border-yellow-400' : 'border-red-500'}`}>Dados da Solicitação</h2>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
-            <div><span className="text-[10px] uppercase text-gray-400 font-bold block">Nº S.E.</span><span className="font-bold text-red-600">{mission?.dhl_se_number || '—'}</span></div>
+            {isDhl && <div><span className="text-[10px] uppercase text-gray-400 font-bold block">Nº S.E.</span><span className="font-bold text-red-600">{mission?.dhl_se_number || '—'}</span></div>}
             <div><span className="text-[10px] uppercase text-gray-400 font-bold block">Fornecedor</span><span className="font-semibold text-gray-800">{intake?.providerName || '—'}</span></div>
             <div><span className="text-[10px] uppercase text-gray-400 font-bold block">Origem</span><span className="text-gray-700">{mission?.origin || '—'}</span></div>
             <div><span className="text-[10px] uppercase text-gray-400 font-bold block">Destino</span><span className="text-gray-700">{mission?.destination || '—'}</span></div>
@@ -443,6 +453,7 @@ const DhlSupplierIntake: React.FC = () => {
           {step === 3 && (
             <VeiculoForm
               token={token}
+              isDhl={isDhl}
               data={veiculo}
               setData={setVeiculo}
               savedList={savedVeiculos}
@@ -709,6 +720,7 @@ const EscoltistaForm: React.FC<{
 // ────────────────────────────────────────────────────────────
 const VeiculoForm: React.FC<{
   token: string;
+  isDhl: boolean;
   data: Veiculo;
   setData: React.Dispatch<React.SetStateAction<Veiculo>>;
   savedList: any[];
@@ -720,7 +732,7 @@ const VeiculoForm: React.FC<{
   onBack: () => void;
   onNext: () => void;
   saving?: boolean;
-}> = ({ token, data, setData, savedList, fromSavedVeic, mirrorProof, setMirrorProof, existingMirrorProof, clearExistingMirror, onBack, onNext, saving }) => {
+}> = ({ token, isDhl, data, setData, savedList, fromSavedVeic, mirrorProof, setMirrorProof, existingMirrorProof, clearExistingMirror, onBack, onNext, saving }) => {
   const [mode, setMode] = useState<'novo' | 'cadastrado'>(savedList.length > 0 ? 'cadastrado' : 'novo');
   const set = (patch: Partial<Veiculo>) => setData({ ...data, ...patch });
 
@@ -764,7 +776,7 @@ const VeiculoForm: React.FC<{
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [data.placa, mode, token]);
 
-  const mirrorRule = findDhlMirrorRule(data.tecnologia);
+  const mirrorRule = isDhl ? findDhlMirrorRule(data.tecnologia) : null;
 
   return (
     <div>

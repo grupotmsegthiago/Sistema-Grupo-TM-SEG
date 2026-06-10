@@ -1195,7 +1195,14 @@ export async function sendStuckNfsReport(to: string, items: any[], reportDate: s
 // ──────────────────────────────────────────────────────────────────────────
 // DHL Supplier Intake — e-mails (paleta DHL amarelo/vermelho + logo TM SEG)
 // ──────────────────────────────────────────────────────────────────────────
-function dhlTemplate(content: string): string {
+function dhlTemplate(content: string, isDhl: boolean = true): string {
+  // A identidade amarela (#FFCC00) é exclusiva da DHL. Para os demais clientes
+  // o template usa a paleta neutra TM SEG (vermelho/preto), sem barras amarelas.
+  const accent = isDhl ? '#FFCC00' : '#D40511';
+  const subColor = isDhl ? '#FFCC00' : '#bbb';
+  const topBars = isDhl
+    ? `<div class="dhl-bar"></div>\n  <div class="dhl-red-bar"></div>`
+    : `<div style="background:#D40511; height:8px;"></div>`;
   return `<!DOCTYPE html>
 <html lang="pt-BR"><head><meta charset="UTF-8">
 <style>
@@ -1206,24 +1213,23 @@ function dhlTemplate(content: string): string {
   .header { background:#1a1a1a; padding:24px 32px; text-align:center; }
   .header h1 { color:#fff; font-size:22px; margin:0 0 4px; letter-spacing:1px; }
   .header h1 .red { color:#D40511; font-weight:700; }
-  .header .sub { color:#FFCC00; font-size:11px; margin:0; letter-spacing:2px; text-transform:uppercase; font-weight:700; }
+  .header .sub { color:${subColor}; font-size:11px; margin:0; letter-spacing:2px; text-transform:uppercase; font-weight:700; }
   .body-content { padding:32px; color:#333; line-height:1.65; font-size:14px; }
-  .body-content h2 { color:#D40511; font-size:18px; border-bottom:3px solid #FFCC00; padding-bottom:8px; margin:0 0 16px; }
+  .body-content h2 { color:#D40511; font-size:18px; border-bottom:3px solid ${accent}; padding-bottom:8px; margin:0 0 16px; }
   .cta { display:inline-block; background:#D40511; color:#fff !important; padding:14px 26px; border-radius:6px; text-decoration:none; font-weight:700; letter-spacing:0.5px; margin:8px 0; }
   .info-table { width:100%; border-collapse:collapse; margin:14px 0; font-size:13px; }
   .info-table td { padding:8px 12px; border-bottom:1px solid #eee; vertical-align:top; }
   .info-table td:first-child { font-weight:600; width:38%; color:#1a1a1a; }
-  .highlight { background:#FFFBE6; border-left:4px solid #FFCC00; padding:12px 16px; margin:14px 0; border-radius:0 4px 4px 0; font-size:13px; }
+  .highlight { background:${isDhl ? '#FFFBE6' : '#fbeaec'}; border-left:4px solid ${accent}; padding:12px 16px; margin:14px 0; border-radius:0 4px 4px 0; font-size:13px; }
   .tech-block { background:#fafafa; border:1px solid #eee; border-radius:6px; padding:14px 16px; margin:10px 0; font-size:13px; }
   .tech-title { color:#D40511; font-weight:700; margin:0 0 6px; font-size:14px; }
-  .footer { background:#1a1a1a; padding:18px 32px; text-align:center; border-top:4px solid #FFCC00; }
+  .footer { background:#1a1a1a; padding:18px 32px; text-align:center; border-top:4px solid ${accent}; }
   .footer p { color:#999; font-size:11px; margin:3px 0; }
   .footer .company { color:#fff; font-weight:700; }
 </style></head>
 <body>
 <div class="container">
-  <div class="dhl-bar"></div>
-  <div class="dhl-red-bar"></div>
+  ${topBars}
   <div class="header">
     <h1>GRUPO <span class="red">TM SEG</span></h1>
     <p class="sub">Intermediação de Escolta Armada</p>
@@ -1272,7 +1278,21 @@ export async function sendDhlSupplierIntakeEmail(opts: {
   destination: string;
   scheduledAt: string;
   link: string;
+  isDhl?: boolean;
 }): Promise<void> {
+  const isDhl = opts.isDhl !== false;
+  const accent = isDhl ? '#FFCC00' : '#D40511';
+  const seRow = isDhl ? `<tr><td>Nº S.E.</td><td><strong>${opts.seNumber}</strong></td></tr>` : '';
+  // Instruções técnicas de espelhamento (IPs/portas/contas) são exclusivas da DHL.
+  // Para os demais clientes, pedimos apenas o espelhamento e o comprovante.
+  const espelhamentoBloco = isDhl
+    ? `
+    <h3 style="color:#1a1a1a; font-size:15px; margin-top:24px; border-bottom:2px solid ${accent}; padding-bottom:6px;">Instruções de Espelhamento — por tecnologia</h3>
+    <p style="font-size:13px; color:#555;">Realize o espelhamento conforme a tecnologia do veículo cadastrado:</p>
+    ${dhlTechBlocksHtml()}`
+    : `
+    <h3 style="color:#1a1a1a; font-size:15px; margin-top:24px; border-bottom:2px solid ${accent}; padding-bottom:6px;">Espelhamento do sinal</h3>
+    <p style="font-size:13px; color:#555;">Realize o espelhamento do sinal de rastreamento conforme orientação do Operacional TM Seg e anexe o comprovante (print) ao preencher o veículo.</p>`;
   const html = dhlTemplate(`
     <h2>Solicitação de Escolta — Preencher Dados</h2>
     <p>Olá, <strong>${opts.providerName}</strong>.</p>
@@ -1282,10 +1302,10 @@ export async function sendDhlSupplierIntakeEmail(opts: {
     </p>
     <p style="font-size:12px; color:#888; text-align:center;">Ou copie e cole no navegador:<br/><span style="word-break:break-all;">${opts.link}</span></p>
 
-    <h3 style="color:#1a1a1a; font-size:15px; margin-top:24px; border-bottom:2px solid #FFCC00; padding-bottom:6px;">Dados da OS</h3>
+    <h3 style="color:#1a1a1a; font-size:15px; margin-top:24px; border-bottom:2px solid ${accent}; padding-bottom:6px;">Dados da OS</h3>
     <table class="info-table">
       <tr><td>OS TM SEG</td><td>${opts.osNumber}</td></tr>
-      <tr><td>Nº S.E.</td><td><strong>${opts.seNumber}</strong></td></tr>
+      ${seRow}
       <tr><td>Origem</td><td>${opts.origin}</td></tr>
       <tr><td>Destino</td><td>${opts.destination}</td></tr>
       <tr><td>Início previsto</td><td>${opts.scheduledAt}</td></tr>
@@ -1295,19 +1315,18 @@ export async function sendDhlSupplierIntakeEmail(opts: {
       <strong>Ordem de preenchimento:</strong> Escoltista 1 → Escoltista 2 → Veículo.<br/>
       Se o escoltista ou o veículo já tiver sido cadastrado anteriormente, é possível selecioná-lo na lista para reaproveitamento.
     </div>
-
-    <h3 style="color:#1a1a1a; font-size:15px; margin-top:24px; border-bottom:2px solid #FFCC00; padding-bottom:6px;">Instruções de Espelhamento — por tecnologia</h3>
-    <p style="font-size:13px; color:#555;">Realize o espelhamento conforme a tecnologia do veículo cadastrado:</p>
-    ${dhlTechBlocksHtml()}
+    ${espelhamentoBloco}
 
     <p style="margin-top:20px; font-size:12px; color:#888;">Após o preenchimento, nossa equipe operacional será notificada automaticamente.</p>
-  `);
+  `, isDhl);
 
   await transporter.sendMail({
     from: SMTP_FROM,
     to: opts.to,
     bcc: ['operacional@grupotmseg.com.br'],
-    subject: `[TM SEG] Preencher dados de escolta — OS ${opts.osNumber} — S.E. ${opts.seNumber}`,
+    subject: isDhl
+      ? `[TM SEG] Preencher dados de escolta — OS ${opts.osNumber} — S.E. ${opts.seNumber}`
+      : `[TM SEG] Preencher dados de escolta — OS ${opts.osNumber}`,
     html,
   });
   console.log(`[Email] Intake fornecedor enviado → ${opts.to} | OS ${opts.osNumber}`);
@@ -1326,13 +1345,16 @@ export async function sendDhlIntakeSubmittedEmail(opts: {
   vehicle: any;
   mirrorProofUrl?: string | null;
   mirrorProofFilename?: string | null;
+  isDhl?: boolean;
 }): Promise<void> {
+  const isDhl = opts.isDhl !== false;
+  const accent = isDhl ? '#FFCC00' : '#D40511';
   const a = (x: any) => x || {};
   const fmt = (v: any) => v ? String(v) : '—';
   const escoltistaHtml = (label: string, x: any) => {
     const e = a(x);
     return `
-      <h3 style="color:#1a1a1a; font-size:15px; margin-top:20px; border-bottom:2px solid #FFCC00; padding-bottom:6px;">${label}</h3>
+      <h3 style="color:#1a1a1a; font-size:15px; margin-top:20px; border-bottom:2px solid ${accent}; padding-bottom:6px;">${label}</h3>
       <table class="info-table">
         <tr><td>Nome</td><td>${fmt(e.nome)}</td></tr>
         <tr><td>CPF</td><td>${fmt(e.cpf)}</td></tr>
@@ -1356,7 +1378,7 @@ export async function sendDhlIntakeSubmittedEmail(opts: {
   };
   const v = a(opts.vehicle);
   const veicHtml = `
-    <h3 style="color:#1a1a1a; font-size:15px; margin-top:20px; border-bottom:2px solid #FFCC00; padding-bottom:6px;">Veículo</h3>
+    <h3 style="color:#1a1a1a; font-size:15px; margin-top:20px; border-bottom:2px solid ${accent}; padding-bottom:6px;">Veículo</h3>
     <table class="info-table">
       <tr><td>Placa</td><td><strong>${fmt(v.placa)}</strong></td></tr>
       <tr><td>Renavam</td><td>${fmt(v.renavam)}</td></tr>
@@ -1369,12 +1391,13 @@ export async function sendDhlIntakeSubmittedEmail(opts: {
       <tr><td>Comunicação</td><td>${fmt(v.comunicacao)}</td></tr>
     </table>`;
 
+  const seRow = isDhl ? `<tr><td>Nº S.E. DHL</td><td><strong>${opts.seNumber}</strong></td></tr>` : '';
   const html = dhlTemplate(`
-    <h2>OS DHL — Dados Preenchidos pelo Fornecedor</h2>
+    <h2>OS — Dados Preenchidos pelo Fornecedor</h2>
     <p>O fornecedor <strong>${opts.providerName}</strong> concluiu o preenchimento dos dados da escolta:</p>
     <table class="info-table">
       <tr><td>OS</td><td>${opts.osNumber}</td></tr>
-      <tr><td>Nº S.E. DHL</td><td><strong>${opts.seNumber}</strong></td></tr>
+      ${seRow}
       <tr><td>Trajeto</td><td>${opts.origin} → ${opts.destination}</td></tr>
       <tr><td>Início previsto</td><td>${opts.scheduledAt}</td></tr>
     </table>
@@ -1382,23 +1405,25 @@ export async function sendDhlIntakeSubmittedEmail(opts: {
     ${escoltistaHtml('Escoltista 2', opts.agent2)}
     ${veicHtml}
     ${opts.mirrorProofUrl ? `
-    <h3 style="color:#1a1a1a; font-size:15px; margin-top:20px; border-bottom:2px solid #FFCC00; padding-bottom:6px;">Comprovante de Espelhamento</h3>
+    <h3 style="color:#1a1a1a; font-size:15px; margin-top:20px; border-bottom:2px solid ${accent}; padding-bottom:6px;">Comprovante de Espelhamento</h3>
     <p style="margin:8px 0;">O fornecedor anexou o print confirmando que o espelhamento foi realizado.</p>
     <p style="margin:8px 0;"><a href="${opts.mirrorProofUrl}" target="_blank" style="display:inline-block; background:#D40511; color:#fff; padding:10px 18px; border-radius:6px; text-decoration:none; font-weight:bold;">Abrir comprovante${opts.mirrorProofFilename ? ' — ' + opts.mirrorProofFilename : ''}</a></p>
     ` : `
-    <div class="highlight" style="margin-top:20px; background:#fff3cd; border-left:4px solid #FFCC00;">
+    <div class="highlight" style="margin-top:20px; background:${isDhl ? '#fff3cd' : '#fbeaec'}; border-left:4px solid ${accent};">
       <strong>Atenção:</strong> o fornecedor não anexou comprovante do espelhamento.
     </div>
     `}
     <div class="highlight" style="margin-top:20px;">
       <strong>Próximo passo:</strong> conferir os dados acima e o comprovante de espelhamento.
     </div>
-  `);
+  `, isDhl);
 
   await transporter.sendMail({
     from: SMTP_FROM,
     to: opts.to,
-    subject: `[DHL] Dados recebidos — OS ${opts.osNumber} — S.E. ${opts.seNumber} — ${opts.providerName}`,
+    subject: isDhl
+      ? `[DHL] Dados recebidos — OS ${opts.osNumber} — S.E. ${opts.seNumber} — ${opts.providerName}`
+      : `[TM SEG] Dados recebidos — OS ${opts.osNumber} — ${opts.providerName}`,
     html,
   });
   console.log(`[Email] DHL intake recebido → ${opts.to} | OS ${opts.osNumber}`);
@@ -1474,7 +1499,10 @@ export async function sendDhlIntakeReminderProviderEmail(opts: {
   link: string;
   firstOpenedAt: string | null;
   reason: 'opened_abandoned' | 'expiry_approaching';
+  isDhl?: boolean;
 }): Promise<void> {
+  const isDhl = opts.isDhl !== false;
+  const seRow = isDhl ? `<tr><td>Nº S.E.</td><td><strong>${opts.seNumber}</strong></td></tr>` : '';
   const motivoTxt = opts.reason === 'opened_abandoned'
     ? `Notamos que o link foi aberto em <strong>${opts.firstOpenedAt}</strong>, mas o preenchimento ainda não foi concluído.`
     : `O link de preenchimento <strong>expira em ${opts.expiresAt}</strong> e ainda não foi concluído.`;
@@ -1491,23 +1519,25 @@ export async function sendDhlIntakeReminderProviderEmail(opts: {
 
     <table class="info-table">
       <tr><td>OS TM SEG</td><td>${opts.osNumber}</td></tr>
-      <tr><td>Nº S.E.</td><td><strong>${opts.seNumber}</strong></td></tr>
+      ${seRow}
       <tr><td>Origem</td><td>${opts.origin}</td></tr>
       <tr><td>Destino</td><td>${opts.destination}</td></tr>
       <tr><td>Início previsto</td><td>${opts.scheduledAt}</td></tr>
       <tr><td>Link expira em</td><td>${opts.expiresAt}</td></tr>
     </table>
 
-    <div class="highlight" style="margin-top:20px; background:#fff3cd; border-left:4px solid #FFCC00;">
+    <div class="highlight" style="margin-top:20px; background:${isDhl ? '#fff3cd' : '#fbeaec'}; border-left:4px solid ${isDhl ? '#FFCC00' : '#D40511'};">
       <strong>Importante:</strong> sem o preenchimento, a operação não consegue prosseguir com o espelhamento. Em caso de dúvida, responda este e-mail ou fale com o Operacional TM Seg.
     </div>
-  `);
+  `, isDhl);
 
   await transporter.sendMail({
     from: SMTP_FROM,
     to: opts.to,
     bcc: ['operacional@grupotmseg.com.br'],
-    subject: `[TM SEG] Lembrete: concluir preenchimento — OS ${opts.osNumber} — S.E. ${opts.seNumber}`,
+    subject: isDhl
+      ? `[TM SEG] Lembrete: concluir preenchimento — OS ${opts.osNumber} — S.E. ${opts.seNumber}`
+      : `[TM SEG] Lembrete: concluir preenchimento — OS ${opts.osNumber}`,
     html,
   });
   console.log(`[Email] DHL intake reminder (fornecedor) → ${opts.to} | OS ${opts.osNumber}`);

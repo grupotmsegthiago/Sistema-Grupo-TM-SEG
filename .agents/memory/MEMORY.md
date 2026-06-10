@@ -16,4 +16,5 @@
 - [Plate lookup provider](placa-api-provider.md) — WDAPI2 virou apiplacas.com.br/api1.php?placa=&token=; Cloudflare bloqueia servidor (chamar direto do frontend); sempre text()+JSON.parse guard.
 - [Boletim DHL coluna AE](dhl-ae-minimo-uf.md) — FRANQUIA TABELA (AE) p/ cancelada ou faixa<=100km = mínimo FIXO por UF origem: SC/RS=735, demais=690 (não mais activation_fee dinâmico da tabela 100km).
 - [Billing report provider mode](billing-report-provider-mode.md) — Boletim tem toggle Cliente/Fornecedor no MESMO componente; reusa rowsData genérico c/ fin.provider, total=cost_value+toll fornecedor, isolamento .in('provider',exact).
+- [Supplier intake generalization](supplier-intake-generalization.md) — link /fornecedor/dhl atende TODOS os clientes; identidade amarela/Nº S.E./instruções técnicas só atrás de isDhl; comprovante obrigatório p/ todos.
 - [Deslocamento espelha pedágio](displacement-mirrors-toll.md) — displacement_value/_provider é aditivo igual toll; some na MESMA expressão do toll em todo relatório; margem (service-only) e filled-sheet ficam de fora.

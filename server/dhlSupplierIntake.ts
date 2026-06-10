@@ -414,11 +414,13 @@ function buildReminderWhatsappText(opts: {
   link: string;
   reason: 'opened_abandoned' | 'expiry_approaching';
   firstOpenedAt?: string | null;
+  isDhl?: boolean;
 }): string {
   const motivo = opts.reason === 'opened_abandoned'
     ? `Identificamos que o link foi aberto${opts.firstOpenedAt ? ` em ${opts.firstOpenedAt}` : ''}, mas ainda *não foi concluído*.`
     : `O link de cadastro está prestes a *expirar* em ${opts.expiresAt} e ainda não foi preenchido.`;
-  return `*Grupo TM SEG — Lembrete: cadastro DHL pendente*
+  const seLine = opts.isDhl && opts.seNumber && opts.seNumber !== '—' ? `\n• S.E. DHL: ${opts.seNumber}` : '';
+  return `*Grupo TM SEG — Lembrete: cadastro pendente*
 
 Olá, ${opts.providerName}!
 
@@ -429,8 +431,7 @@ Por favor, finalize o preenchimento dos dados de *Escoltista 1, Escoltista 2 e V
 🔗 ${opts.link}
 
 *Dados da OS:*
-• OS: ${opts.osNumber}
-• S.E. DHL: ${opts.seNumber}
+• OS: ${opts.osNumber}${seLine}
 • Origem: ${opts.origin}
 • Destino: ${opts.destination}
 • Início: ${opts.scheduledAt}
@@ -607,7 +608,7 @@ async function checkAndSendDhlIntakeReminders(): Promise<void> {
   // Hidrata dados das OS (para checar start_time e detalhes do envio).
   const missionIds = Array.from(new Set(lista.map(i => i.mission_id).filter(Boolean)));
   const { data: missions } = await sb.from('missions')
-    .select('id, dhl_se_number, origin, destination, start_time')
+    .select('id, client, dhl_se_number, origin, destination, start_time')
     .in('id', missionIds);
   const missionMap = new Map<string, any>((missions || []).map((m: any) => [m.id, m]));
 
@@ -743,6 +744,7 @@ async function checkAndSendDhlIntakeReminders(): Promise<void> {
         link,
         firstOpenedAt: intake.first_opened_at ? fmtBr(intake.first_opened_at) : null,
         reason,
+        isDhl: isDhlMission(mission.client),
       });
       emailStatus = 'success';
     } catch (e: any) {
@@ -787,6 +789,7 @@ async function checkAndSendDhlIntakeReminders(): Promise<void> {
       link,
       reason,
       firstOpenedAt: intake.first_opened_at ? fmtBr(intake.first_opened_at) : null,
+      isDhl: isDhlMission(mission.client),
     });
     const r = await sendZapiTextMessage(providerPhone, text);
     const whatsappStatus: 'success' | 'failure' = r.ok ? 'success' : 'failure';
@@ -1190,10 +1193,12 @@ export function registerDhlIntakeRoutes(
       const { data: mission, error: mErr } = await sb.from('missions').select('*').eq('id', missionId).single();
       if (mErr || !mission) return res.status(404).json({ error: 'Missão não encontrada' });
 
-      if (!isDhlMission(mission.client)) {
-        return res.status(400).json({ error: 'OS não é da DHL — fluxo não aplicável' });
-      }
-      if (!mission.dhl_se_number || String(mission.dhl_se_number).trim() === '') {
+      // Fluxo generalizado: o link de coleta de dados do fornecedor vale para
+      // TODOS os clientes. O comportamento específico da DHL (Nº S.E. obrigatório,
+      // instruções técnicas de espelhamento, identidade visual amarela) fica
+      // condicionado a `isDhl`; demais clientes recebem o fluxo neutro TM SEG.
+      const isDhl = isDhlMission(mission.client);
+      if (isDhl && (!mission.dhl_se_number || String(mission.dhl_se_number).trim() === '')) {
         return res.status(400).json({ error: 'Preencha o número da S.E. DHL antes de gerar o link.' });
       }
       if (!mission.provider) {
@@ -1375,11 +1380,12 @@ export function registerDhlIntakeRoutes(
               to: providerEmail,
               providerName: provider.trading_name || provider.name,
               osNumber: mission.id,
-              seNumber: mission.dhl_se_number,
+              seNumber: mission.dhl_se_number || '—',
               origin: mission.origin || '—',
               destination: mission.destination || '—',
               scheduledAt,
               link,
+              isDhl,
             });
             emailSent = true;
           } catch (e: any) {
@@ -2113,6 +2119,7 @@ export function registerDhlIntakeRoutes(
           providerName: intake.provider_name,
         },
         mission: mission || null,
+        isDhl: isDhlMission(mission?.client),
         escoltistas: escoltistas || [],
         vehicles: vehicles || [],
         // Progresso parcial + snapshots já salvos, para retomar de onde parou
@@ -2468,6 +2475,7 @@ export function registerDhlIntakeRoutes(
           vehicle: vh.snap,
           mirrorProofUrl,
           mirrorProofFilename,
+          isDhl: isDhlMission(mission?.client),
         });
       } catch (e: any) {
         console.error('[DHL Intake] erro ao notificar operacional:', e?.message);
