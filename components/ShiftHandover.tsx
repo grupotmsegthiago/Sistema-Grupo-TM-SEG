@@ -103,6 +103,9 @@ const ShiftHandover = () => {
   const [activeTab, setActiveTab] = useState<'hoje' | 'amanha'>('hoje');
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
 
+  const [refusedRows, setRefusedRows] = useState<{ id: string; dateKey: string }[]>([]);
+  const [statsError, setStatsError] = useState(false);
+
   const [editing, setEditing] = useState<HandoverRow | null>(null);
   const [editText, setEditText] = useState('');
   const [isSaving, setIsSaving] = useState(false);
@@ -126,15 +129,42 @@ const ShiftHandover = () => {
   const loadMissions = useCallback(async () => {
     setIsLoading(true);
     setError(null);
+    setStatsError(false);
     try {
-      const { data: missionsData, error: mErr } = await supabase
-        .from('missions')
-        .select('*')
-        .in('status', OPEN_STATUSES)
-        .order('start_time', { ascending: true });
+      // Brasil = UTC-3 fixo (sem horário de verão desde 2019) — limita a busca de
+      // recusadas à janela de hoje/amanhã sem varrer a tabela inteira. O critério
+      // de janela espelha o resto da tela: start_time quando existe, senão
+      // created_at (recusada nova ainda sem agendamento).
+      const rangeStart = `${todayKey}T00:00:00-03:00`;
+      const rangeEnd = `${tomorrowKey}T23:59:59-03:00`;
 
-      if (mErr) throw mErr;
-      const missions = missionsData || [];
+      const [openRes, refusedRes] = await Promise.all([
+        supabase
+          .from('missions')
+          .select('*')
+          .in('status', OPEN_STATUSES)
+          .order('start_time', { ascending: true }),
+        supabase
+          .from('missions')
+          .select('id, start_time, created_at')
+          .eq('status', MissionStatus.REFUSED)
+          .or(`and(start_time.gte.${rangeStart},start_time.lte.${rangeEnd}),and(start_time.is.null,created_at.gte.${rangeStart},created_at.lte.${rangeEnd})`),
+      ]);
+
+      if (openRes.error) throw openRes.error;
+      const missions = openRes.data || [];
+
+      if (refusedRes.error) {
+        // Não derruba a tabela (conteúdo principal); apenas sinaliza que os
+        // contadores de RECUSADAS/TOTAL podem estar incompletos.
+        setStatsError(true);
+        setRefusedRows([]);
+      } else {
+        const refusedMapped = (refusedRes.data || [])
+          .map((m: any) => ({ id: m.id, dateKey: spDateStr(m.start_time) || spDateStr(m.created_at) }))
+          .filter(r => r.dateKey === todayKey || r.dateKey === tomorrowKey);
+        setRefusedRows(refusedMapped);
+      }
 
       // Mantém só HOJE e AMANHÃ (start_time, com fallback para created_at).
       const inWindow = missions.filter((m: any) => {
@@ -231,6 +261,23 @@ const ShiftHandover = () => {
   const countHoje = useMemo(() => rows.filter(r => r.dateKey === todayKey).length, [rows, todayKey]);
   const countAmanha = useMemo(() => rows.filter(r => r.dateKey === tomorrowKey).length, [rows, tomorrowKey]);
 
+  const stats = useMemo(() => {
+    const key = activeTab === 'hoje' ? todayKey : tomorrowKey;
+    const dayOpen = rows.filter(r => r.dateKey === key);
+    const abertas = dayOpen.length;
+    const recusadas = refusedRows.filter(r => r.dateKey === key).length;
+    const semForn = dayOpen.filter(r => !r.fornecedor || !r.fornecedor.trim());
+    const [, m, d] = key.split('-');
+    return {
+      label: `${d}-${m}`,
+      total: abertas + recusadas,
+      abertas,
+      recusadas,
+      faltaAbrir: semForn.length,
+      semFornOs: semForn.map(r => r.id),
+    };
+  }, [rows, refusedRows, activeTab, todayKey, tomorrowKey]);
+
   const openObs = (row: HandoverRow) => {
     setEditing(row);
     setEditText(notes[row.id]?.note || '');
@@ -306,6 +353,43 @@ const ShiftHandover = () => {
         >
           Amanhã <span className="ml-1 opacity-80">({countAmanha})</span>
         </button>
+      </div>
+
+      <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4 mb-4" data-testid="panel-handover-stats">
+        <div className="flex items-center gap-2 mb-3">
+          <span className="text-sm font-black text-gray-800 tracking-wide" data-testid="text-stats-date">{stats.label}</span>
+          <span className="text-xs text-gray-400">— {activeTab === 'hoje' ? 'Hoje' : 'Amanhã'}</span>
+        </div>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          <div className="rounded-lg border border-gray-200 bg-gray-50 p-3">
+            <p className="text-[11px] font-bold uppercase tracking-wide text-gray-500">Total de Missões</p>
+            <p className="text-2xl font-black text-gray-800" data-testid="stat-total">{statsError ? '—' : stats.total}</p>
+          </div>
+          <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-3">
+            <p className="text-[11px] font-bold uppercase tracking-wide text-emerald-600">Missões Abertas</p>
+            <p className="text-2xl font-black text-emerald-700" data-testid="stat-abertas">{stats.abertas}</p>
+          </div>
+          <div className="rounded-lg border border-red-200 bg-red-50 p-3">
+            <p className="text-[11px] font-bold uppercase tracking-wide text-red-600">Recusadas</p>
+            <p className="text-2xl font-black text-red-700" data-testid="stat-recusadas">{statsError ? '—' : String(stats.recusadas).padStart(2, '0')}</p>
+          </div>
+          <div className="rounded-lg border border-amber-200 bg-amber-50 p-3">
+            <p className="text-[11px] font-bold uppercase tracking-wide text-amber-600">Falta Abrir</p>
+            <p className="text-2xl font-black text-amber-700" data-testid="stat-falta-abrir">{String(stats.faltaAbrir).padStart(2, '0')}</p>
+          </div>
+        </div>
+        {statsError && (
+          <div className="mt-3 text-xs text-red-700 bg-red-50 border border-red-200 rounded-lg p-2" data-testid="text-stats-error">
+            Não foi possível carregar as missões recusadas — os contadores de RECUSADAS e TOTAL podem estar incompletos. Clique em Atualizar.
+          </div>
+        )}
+        {stats.faltaAbrir > 0 && (
+          <div className="mt-3 text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg p-3" data-testid="text-stats-obs">
+            <span className="font-bold">OBSERVAÇÃO:</span>{' '}
+            {stats.faltaAbrir === 1 ? 'A OS' : 'As OS'} {stats.semFornOs.join(', ')}{' '}
+            {stats.faltaAbrir === 1 ? 'está' : 'estão'} sem fornecedor para atendimento até o momento.
+          </div>
+        )}
       </div>
 
       {error && (
