@@ -2,8 +2,8 @@
 import React, { useState, useEffect } from 'react';
 import { ArrowLeft, Save, Truck, Building2, Search, Loader2, AlertTriangle, Info } from 'lucide-react';
 import { supabase } from '../lib/supabase';
-import { API_BRASIL_CONFIG } from '../constants';
 import { useNotification } from '../lib/NotificationContext';
+import { authFetch } from '../lib/authFetch';
 
 interface Props {
   onBack: () => void;
@@ -134,12 +134,14 @@ const ClientVehicleForm: React.FC<Props> = ({ onBack, id, initialClientId, onSuc
             return;
         }
 
-        const url = API_BRASIL_CONFIG.consultaUrl(cleanPlate);
-        const response = await fetch(url, { method: 'GET' });
+        // Consulta via proxy backend (servidor→servidor) — mesma estratégia do
+        // intake da DHL. Evita o "Failed to fetch" da chamada direta do navegador
+        // (CORS/Cloudflare bloqueiam o front).
+        const response = await authFetch(`/api/placa/lookup/${encodeURIComponent(cleanPlate)}`, { method: 'GET' });
         if (!response.ok) {
-            if (response.status === 401 || response.status === 403) throw new Error('Falha de autenticação na API de Placas.');
-            if (response.status === 429) throw new Error('Limite de consultas excedido.');
-            throw new Error(`API de Placas indisponível (${response.status}).`);
+            let msg = `API de Placas indisponível (${response.status}).`;
+            try { const ej = await response.json(); if (ej?.error) msg = ej.error; } catch {}
+            throw new Error(msg);
         }
         const raw = await response.text();
         let data: any;

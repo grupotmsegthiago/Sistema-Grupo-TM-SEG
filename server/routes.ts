@@ -710,6 +710,70 @@ export async function registerRoutes(
     }
   });
 
+  // ──────────────────────────────────────────────────────────────
+  // GET /api/placa/lookup/:placa — consulta de placa via proxy backend
+  // Mesmo padrão do intake da DHL: a chamada à API Placas é feita
+  // servidor→servidor para evitar o "Failed to fetch" do navegador
+  // (CORS/Cloudflare bloqueiam a chamada direta do frontend). Protegido
+  // por requireAuth (apenas usuários internos logados) + rate limit leve
+  // porque a API é paga. Retorna o JSON bruto do provedor (os formulários
+  // já fazem o parse de MARCA/MODELO/uf/chassi/etc.).
+  // ──────────────────────────────────────────────────────────────
+  const placaProxyHits = new Map<string, number[]>();
+  const PLACA_PROXY_WINDOW_MS = 60_000;
+  const PLACA_PROXY_MAX = 20;
+  const placaProxyRateLimited = (key: string): boolean => {
+    const now = Date.now();
+    const arr = (placaProxyHits.get(key) || []).filter((t) => now - t < PLACA_PROXY_WINDOW_MS);
+    arr.push(now);
+    placaProxyHits.set(key, arr);
+    if (placaProxyHits.size > 500) {
+      for (const [k, v] of placaProxyHits) {
+        if (!v.length || now - v[v.length - 1] > PLACA_PROXY_WINDOW_MS) placaProxyHits.delete(k);
+      }
+    }
+    return arr.length > PLACA_PROXY_MAX;
+  };
+  app.get('/api/placa/lookup/:placa', requireAuth, requireRole('*'), async (req: Request, res: Response) => {
+    try {
+      const placaRaw = String(req.params.placa || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+      if (placaRaw.length !== 7) return res.status(400).json({ error: 'Placa deve conter 7 caracteres.' });
+      const ip = (req.headers['x-forwarded-for'] as string || '').split(',')[0].trim() || req.socket?.remoteAddress || 'unknown';
+      const tok = (req as any).authToken || ip;
+      if (placaProxyRateLimited(`tok:${tok}`) || placaProxyRateLimited(`ip:${ip}`)) {
+        return res.status(429).json({ error: 'Muitas consultas em sequência — aguarde alguns segundos.' });
+      }
+      const wdToken = process.env.VITE_WDAPI_TOKEN || process.env.WDAPI_TOKEN || '';
+      if (!wdToken) return res.status(503).json({ error: 'Consulta de placa indisponível no momento.' });
+      const ctrl = new AbortController();
+      const timer = setTimeout(() => ctrl.abort(), 8000);
+      try {
+        const lookupUrl = `https://apiplacas.com.br/api1.php?placa=${encodeURIComponent(placaRaw)}&token=${encodeURIComponent(wdToken)}`;
+        const r = await fetch(lookupUrl, { signal: ctrl.signal as any });
+        clearTimeout(timer);
+        if (!r.ok) {
+          if (r.status === 404) return res.status(404).json({ error: 'Placa não encontrada.' });
+          return res.status(502).json({ error: `API de Placas indisponível (${r.status}).` });
+        }
+        const rawBody = await r.text();
+        let j: any;
+        try {
+          j = JSON.parse(rawBody);
+        } catch {
+          return res.status(502).json({ error: 'API de Placas retornou resposta inválida (indisponível).' });
+        }
+        return res.json(j);
+      } catch (fetchErr: any) {
+        clearTimeout(timer);
+        if (fetchErr?.name === 'AbortError') return res.status(504).json({ error: 'Tempo esgotado ao consultar placa.' });
+        return res.status(502).json({ error: 'Falha de conexão ao consultar placa.' });
+      }
+    } catch (e: any) {
+      console.error('[Placa Proxy] lookup exception:', e);
+      return res.status(500).json({ error: e?.message || 'Erro interno' });
+    }
+  });
+
   app.post('/api/push/subscribe', async (req: Request, res: Response) => {
     try {
       const { subscription, userId } = req.body;

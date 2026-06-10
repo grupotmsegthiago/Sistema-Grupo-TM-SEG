@@ -6,6 +6,7 @@ import { VehicleStatus, VehicleTechnology } from '../types';
 import { supabase } from '../lib/supabase';
 import { logAction } from '../lib/logger';
 import { useNotification } from '../lib/NotificationContext';
+import { authFetch } from '../lib/authFetch';
 
 const INPUT_CLASS = "w-full px-4 py-3 bg-white border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500/20 focus:border-red-500 outline-none text-base transition-all uppercase font-medium";
 const LABEL_CLASS = "text-xs font-bold text-gray-500 uppercase mb-1 block tracking-wider";
@@ -159,17 +160,19 @@ const VehicleForm: React.FC<VehicleFormProps> = ({ onBack, id, initialProvider, 
             return;
         }
 
-        const url = API_BRASIL_CONFIG.consultaUrl(cleanPlate);
+        // Consulta via proxy backend (servidor→servidor) — mesma estratégia do
+        // intake da DHL. Evita o "Failed to fetch" da chamada direta do navegador
+        // (CORS/Cloudflare bloqueiam o front).
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 8000); 
+        const timeoutId = setTimeout(() => controller.abort(), 10000); 
 
-        const response = await fetch(url, { signal: controller.signal });
+        const response = await authFetch(`/api/placa/lookup/${encodeURIComponent(cleanPlate)}`, { signal: controller.signal });
         clearTimeout(timeoutId);
 
         if (!response.ok) {
-            if (response.status === 401 || response.status === 403) throw new Error('Falha de Autenticação na API de Placas.');
-            if (response.status === 429) throw new Error('Limite de consultas excedido.');
-            throw new Error(`Servidor indisponível (${response.status})`);
+            let msg = `Servidor indisponível (${response.status})`;
+            try { const ej = await response.json(); if (ej?.error) msg = ej.error; } catch {}
+            throw new Error(msg);
         }
 
         const raw = await response.text();
