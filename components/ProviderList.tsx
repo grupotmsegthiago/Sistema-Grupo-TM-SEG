@@ -8,6 +8,7 @@ import { ProviderData } from '../types';
 import { useQuery } from '@tanstack/react-query';
 import { Plus, Search, User, Briefcase, Car, Loader2, Trash2, RefreshCw, AlertTriangle, Pencil, Ban, CheckCircle2, Calendar, Database, FileSpreadsheet, DollarSign, FileWarning, Check, Hash, Fingerprint } from 'lucide-react';
 import ImportProviderModal from './ImportProviderModal';
+import { exportProviderCosts } from '../exports/provider-costs-export';
 
 interface ProviderListProps {
   onAddProvider: () => void;
@@ -32,6 +33,7 @@ const ProviderList: React.FC<ProviderListProps> = ({ onAddProvider, onEdit }) =>
   const [userNamesMap, setUserNamesMap] = useState<Record<string, string>>({});
   
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
+  const [isExportingCosts, setIsExportingCosts] = useState(false);
 
   useEffect(() => {
     const storedUser = localStorage.getItem('userData');
@@ -171,6 +173,47 @@ const ProviderList: React.FC<ProviderListProps> = ({ onAddProvider, onEdit }) =>
   const dbStatus = providersError ? 'error' : (!isLoading ? 'ok' : null);
   const fetchProviders = () => { refetchProviders(); };
 
+  const handleExportCosts = async () => {
+      setIsExportingCosts(true);
+      try {
+          let provQuery = supabase
+              .from('providers')
+              .select('name, trading_name, cnpj, state')
+              .order('name', { ascending: true });
+          if (isCommercial) {
+              provQuery = provQuery.eq('created_by', currentUser?.name);
+          }
+          let [{ data: provData, error: provErr }, { data: costData, error: costErr }] = await Promise.all([
+              provQuery,
+              supabase.from('provider_cost_tables').select('provider, operation_type, activation_cost, franchise_hours, franchise_km, cost_per_extra_km, cost_per_extra_hour, cancellation_fee'),
+          ]);
+          if (provErr) {
+              let fbQuery = supabase
+                  .from('providers')
+                  .select('name, trading_name, cnpj')
+                  .order('name', { ascending: true });
+              if (isCommercial) {
+                  fbQuery = fbQuery.eq('created_by', currentUser?.name);
+              }
+              const { data: fbData, error: fbErr } = await fbQuery;
+              if (fbErr) throw fbErr;
+              provData = fbData;
+          }
+          if (costErr) throw costErr;
+          if (!provData || provData.length === 0) {
+              showNotification('Atenção', 'Nenhum fornecedor encontrado para exportar.', 'error');
+              return;
+          }
+          await exportProviderCosts(provData as any, (costData || []) as any);
+          showNotification('Sucesso', 'Relatório de custos de fornecedores gerado.', 'success');
+      } catch (e) {
+          const msg = e instanceof Error ? e.message : 'Erro desconhecido';
+          showNotification('Erro', 'Falha ao exportar custos de fornecedores: ' + msg, 'error');
+      } finally {
+          setIsExportingCosts(false);
+      }
+  };
+
   const handleToggleStatus = async (id: string, currentStatus: string, name: string) => {
       const newStatus = (currentStatus === 'Ativo') ? 'Bloqueado' : 'Ativo';
       if (!confirm(`Deseja alterar o status de "${name}" para ${newStatus.toUpperCase()}?`)) return;
@@ -225,6 +268,7 @@ const ProviderList: React.FC<ProviderListProps> = ({ onAddProvider, onEdit }) =>
             <button onClick={fetchProviders} className="p-2.5 border rounded-lg hover:bg-gray-50 text-gray-500">
                 <RefreshCw size={18} className={isLoading ? "animate-spin" : ""} />
             </button>
+            <button onClick={handleExportCosts} disabled={isExportingCosts} className="flex items-center gap-2 bg-emerald-50 border border-emerald-200 text-emerald-700 hover:bg-emerald-100 disabled:opacity-60 disabled:cursor-not-allowed px-4 py-2.5 rounded-lg text-sm font-bold transition-colors shadow-sm uppercase" data-testid="button-export-provider-costs">{isExportingCosts ? <Loader2 size={18} className="animate-spin" /> : <DollarSign size={18} />} Exportar Custos (Excel)</button>
             <button onClick={() => setIsImportModalOpen(true)} className="flex items-center gap-2 bg-indigo-50 border border-indigo-200 text-indigo-700 hover:bg-indigo-100 px-4 py-2.5 rounded-lg text-sm font-bold transition-colors shadow-sm uppercase"><FileSpreadsheet size={18} /> Importar (IA)</button>
             <button onClick={onAddProvider} className="flex items-center gap-2 bg-gray-900 hover:bg-gray-800 text-white px-5 py-2.5 rounded-lg text-sm font-medium transition-colors shadow-sm uppercase"><Plus size={18} /> Novo Fornecedor</button>
         </div>
