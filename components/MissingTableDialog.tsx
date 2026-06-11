@@ -20,6 +20,8 @@ interface Props {
   rows: MissingTableRow[];
   viewPeriod: string;
   onOpenMission: (m: Mission) => void;
+  // Quando informado, substitui o rótulo de período no cabeçalho (ex.: piso fixo).
+  scopeLabel?: string;
 }
 
 const PERIOD_LABEL: Record<string, string> = {
@@ -91,7 +93,7 @@ export const computeMissingTableRows = (
 };
 
 const MissingTableDialog: React.FC<Props> = ({
-  isOpen, onClose, rows, viewPeriod, onOpenMission,
+  isOpen, onClose, rows, viewPeriod, onOpenMission, scopeLabel,
 }) => {
   const [search, setSearch] = useState('');
 
@@ -148,7 +150,7 @@ const MissingTableDialog: React.FC<Props> = ({
             </div>
             <div>
               <h2 className="text-lg font-bold text-gray-900">OS sem Tabela</h2>
-              <p className="text-xs text-gray-600">Período: <span className="font-semibold">{periodLabel}</span> — missões sem tabela de preço (cliente) ou de custo (fornecedor)</p>
+              <p className="text-xs text-gray-600">{scopeLabel ? <>Escopo: <span className="font-semibold">{scopeLabel}</span></> : <>Período: <span className="font-semibold">{periodLabel}</span></>} — missões sem tabela de preço (cliente) ou de custo (fornecedor)</p>
             </div>
           </div>
           <button onClick={onClose} className="p-2 rounded-lg hover:bg-white/60 text-gray-500 hover:text-gray-800 transition" data-testid="button-close-missing-table">

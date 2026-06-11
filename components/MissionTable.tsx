@@ -261,20 +261,32 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
     return nameLower.includes('daniel') || nameLower.includes('michelle') || nameLower.includes('barbara') || nameLower.includes('bárbara') || nameLower.includes('thiago moreira') || roleLower === 'controller';
   }, [currentUser]);
 
-  // Alerta "OS sem Tabela" restrito a: Thiago Moreira (Diretoria), Bárbara e Simone.
+  // Alerta "OS sem Tabela": visível para ADMINISTRADOR e AVANÇADO (e acesso total
+  // '*'), além dos nomes históricos (Thiago Moreira, Bárbara, Simone) para não
+  // remover acesso de quem já usava.
   const canSeeMissingTableAlert = useMemo(() => {
     if (!currentUser) return false;
     const nameLower = (currentUser.name || '').toLowerCase();
-    return nameLower.includes('thiago moreira') || nameLower.includes('barbara') || nameLower.includes('bárbara') || nameLower.includes('simone');
+    const roleLower = (currentUser.role || '').toLowerCase();
+    const isAdminOrAdvanced = ['administrador', 'avançado', 'avancado'].includes(roleLower) || currentUser.permissions?.includes('*');
+    return isAdminOrAdvanced || nameLower.includes('thiago moreira') || nameLower.includes('barbara') || nameLower.includes('bárbara') || nameLower.includes('simone');
+  }, [currentUser]);
+
+  // ADMINISTRADOR e AVANÇADO são OBRIGADOS a selecionar a tabela: o alerta abre
+  // automaticamente a cada atualização de tela enquanto houver OS sem tabela.
+  const mustForceMissingTable = useMemo(() => {
+    if (!currentUser) return false;
+    const roleLower = (currentUser.role || '').toLowerCase();
+    return ['administrador', 'avançado', 'avancado'].includes(roleLower) || currentUser.permissions?.includes('*');
   }, [currentUser]);
 
   // Conta quantas OS estão com prejuízo direto (custo > receita) no período
   // canônico selecionado. Usado para esconder o botão "OS com Prejuízo"
   // quando não há nenhuma OS com prejuízo no período.
-  // Passada única de filtragem por período, compartilhada pelas memos pesadas
-  // abaixo (prejuízo e "OS sem tabela") para não varrer allMissions duas vezes.
+  // Filtragem por período para a contagem de prejuízo (segue o período da tela).
+  // A detecção de "OS sem tabela" NÃO usa esta lista — ela tem piso fixo em maio/2026.
   const missionsInCanonicalPeriod = useMemo(() => {
-    if (!canSeeFinancials && !canSeeMissingTableAlert) return [];
+    if (!canSeeFinancials) return [];
     try {
       const allowed: CanonicalPeriodT[] = ['TODAY', 'YESTERDAY', 'WEEK', 'MONTH', 'YEAR', 'CUSTOM', 'ALL'];
       const period = (allowed.includes(viewPeriod as CanonicalPeriodT) ? viewPeriod : 'TODAY') as CanonicalPeriodT;
@@ -283,7 +295,7 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
     } catch {
       return [];
     }
-  }, [canSeeFinancials, canSeeMissingTableAlert, allMissions, viewPeriod, customStartDate, customEndDate]);
+  }, [canSeeFinancials, allMissions, viewPeriod, customStartDate, customEndDate]);
 
   const lossesCount = useMemo(() => {
     if (!canSeeFinancials) return 0;
@@ -302,16 +314,65 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
     }
   }, [canSeeFinancials, missionsInCanonicalPeriod, clientTables, providerTables, clientsData]);
 
+  // Fonte dedicada: TODAS as OS não-aprovadas de MAIO/2026 em diante, buscadas
+  // direto do banco — independente da paginação/período da tela (que pode não ter
+  // carregado, p.ex., canceladas fora do período). Só roda para quem vê o alerta.
+  const [missingTableExtra, setMissingTableExtra] = useState<any[]>([]);
+  const fetchMissingTableExtra = useCallback(async () => {
+    if (!canSeeMissingTableAlert) { setMissingTableExtra([]); return; }
+    try {
+      const floorIso = new Date(2026, 4, 1, 0, 0, 0, 0).toISOString(); // 01/05/2026
+      const dateOr = `start_time.gte.${floorIso},and(start_time.is.null,created_at.gte.${floorIso})`;
+      const q = supabase.from('missions').select('*').or(dateOr).not('billing_approved', 'is', true).order('created_at', { ascending: false });
+      let all: any[] = [];
+      let from = 0;
+      const pageSize = 1000;
+      while (true) {
+        const { data, error } = await q.range(from, from + pageSize - 1);
+        if (error) break;
+        if (data) all = all.concat(data);
+        if (!data || data.length < pageSize) break;
+        from += pageSize;
+      }
+      setMissingTableExtra(all);
+    } catch {
+      // mantém o último conjunto conhecido em caso de falha de rede
+    }
+  }, [canSeeMissingTableAlert]);
+
+  useEffect(() => { fetchMissingTableExtra(); }, [fetchMissingTableExtra]);
+
   const missingTableRows = useMemo<MissingTableRow[]>(() => {
     if (!canSeeMissingTableAlert) return [];
     try {
-      // missionsInCanonicalPeriod já está filtrada pelo período (alreadyFiltered=true).
-      return computeMissingTableRows(missionsInCanonicalPeriod, clientTables, providerTables, clientsData, viewPeriod, customStartDate, customEndDate, true);
+      // Regra: TODAS as OS sem tabela de MAIO/2026 em diante, independente do
+      // período. União de allMissions (dados mais frescos / realtime) com a fonte
+      // dedicada do banco (preenche lacunas), deduplicada por id.
+      const floor = new Date(2026, 4, 1, 0, 0, 0, 0); // 01/05/2026
+      const ceil = new Date(2100, 0, 1);
+      const fromMay2026 = filterByPeriodCanonical(allMissions || [], floor, ceil);
+      const byId = new Map<string, any>();
+      for (const m of fromMay2026) byId.set(String(m.id), m);
+      for (const m of (missingTableExtra || [])) { const k = String(m.id); if (!byId.has(k)) byId.set(k, m); }
+      const union = Array.from(byId.values());
+      return computeMissingTableRows(union, clientTables, providerTables, clientsData, 'ALL', undefined, undefined, true);
     } catch {
       return [];
     }
-  }, [canSeeMissingTableAlert, missionsInCanonicalPeriod, clientTables, providerTables, clientsData, viewPeriod, customStartDate, customEndDate]);
+  }, [canSeeMissingTableAlert, allMissions, missingTableExtra, clientTables, providerTables, clientsData]);
   const missingTableCount = missingTableRows.length;
+
+  // FORÇA administrador/avançado a tratar OS sem tabela: o alerta abre sozinho a
+  // cada montagem da tela (refresh) enquanto houver pendências. Ref evita reabrir
+  // repetidamente na mesma sessão depois que o usuário fechar.
+  const forcedMissingOpenRef = useRef(false);
+  useEffect(() => {
+    if (!mustForceMissingTable) return;
+    if (missingTableCount > 0 && !forcedMissingOpenRef.current) {
+      forcedMissingOpenRef.current = true;
+      setIsMissingTableOpen(true);
+    }
+  }, [mustForceMissingTable, missingTableCount]);
 
   const isCommercial = useMemo(() => {
       if (!currentUser) return false;
@@ -2077,7 +2138,7 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
         </div>
   
         {isStatusModalOpen && <MissionStatusModal isOpen={isStatusModalOpen} onClose={() => setIsStatusModalOpen(false)} mission={missionForStatusView!} logs={missionLogs} onUpdate={() => fetchMissions(true)} hideProviderInfo={isRestrictedClientView} />}
-        {isFinancialModalOpen && <MissionFinancialModal isOpen={isFinancialModalOpen} onClose={() => setIsFinancialModalOpen(false)} mission={missionForFinancials} onUpdate={() => fetchMissions(true)} />}
+        {isFinancialModalOpen && <MissionFinancialModal isOpen={isFinancialModalOpen} onClose={() => setIsFinancialModalOpen(false)} mission={missionForFinancials} onUpdate={() => { fetchMissions(true); fetchMissingTableExtra(); }} />}
         {isLossesOpen && canSeeFinancials && (
           <LossesDialog
             isOpen={isLossesOpen}
@@ -2098,6 +2159,7 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
             onClose={() => setIsMissingTableOpen(false)}
             rows={missingTableRows}
             viewPeriod={viewPeriod}
+            scopeLabel="Maio/2026 em diante"
             onOpenMission={(m) => handleOpenFinancialModal(m)}
           />
         )}
