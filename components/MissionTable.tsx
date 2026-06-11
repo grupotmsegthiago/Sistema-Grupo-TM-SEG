@@ -1168,16 +1168,17 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
     }, [filteredBySpecialCriteria]);
 
     // Missões em aberto — DHL vs Demais (visão global, baseada em allMissions)
-    // "Em aberto" = qualquer status não finalizado: Solicitada, Documentação,
-    // Agendada, Origem, Em Viagem, Pendente, ou Concluída sem KM final.
-    // Excluídas: Cancelada, Recusada e Concluída já fechada (com endKm).
-    const isMissionOpen = (m: Mission) => {
-        if (m.status === MissionStatus.CANCELLED || m.status === MissionStatus.REFUSED) return false;
-        if (m.status === MissionStatus.COMPLETED) {
-            return m.endKm === null || m.endKm === undefined || m.endKm === 0;
-        }
-        return true;
-    };
+    // "Em aberto" = SOMENTE os status operacionais ativos:
+    // Solicitada, Documentação, Agendada, Origem, Em Viagem.
+    // Excluídas: Pendente, Concluída, Cancelada e Recusada.
+    const OPEN_STATUSES = [
+        MissionStatus.SOLICITED,
+        MissionStatus.DOCUMENTATION,
+        MissionStatus.SCHEDULED,
+        MissionStatus.ORIGIN,
+        MissionStatus.IN_TRANSIT,
+    ];
+    const isMissionOpen = (m: Mission) => OPEN_STATUSES.includes(m.status);
     const openMissionStats = useMemo(() => {
         const open = allMissions.filter(isMissionOpen);
         const total = open.length;
