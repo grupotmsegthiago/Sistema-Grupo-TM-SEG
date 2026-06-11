@@ -479,6 +479,16 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
   useEffect(() => { setUnlockOverride(false); setEditObservation(''); setFullEditMode(false); setTollConfirmAutoOpened(false); }, [mission?.id]);
   useEffect(() => { if (!isOpen) { setFullEditMode(false); setUnlockOverride(false); setEditObservation(''); setShowTollConfirmDialog(false); setTollConfirmAutoOpened(false); } }, [isOpen]);
   const isEffectivelyLocked = isBillingLocked && !unlockOverride && !isAdminFullAccess;
+  // Task #143: o número grande (VALOR FINAL cliente/fornecedor) e o breakdown
+  // da memória de cálculo devem ACOMPANHAR a tabela escolhida sempre que o
+  // usuário tem permissão de trocar a tabela mesmo numa OS travada
+  // (auditoria via canEditTablesEvenIfLocked, EDIÇÃO TOTAL ou override de
+  // auto-fornecedor). Sem isso, o seletor de tabela ficava editável mas o
+  // número grande continuava preso ao valor salvo — parecia que "trocou a
+  // tabela e nada mudou". A recálculo acontece SÓ na tela (estado React);
+  // nenhuma escrita no banco/snapshot é disparada por trocar a tabela numa OS
+  // travada — a persistência continua exclusiva do fluxo de Salvar/Aprovar.
+  const lockAllowsRecalc = !isEffectivelyLocked || canEditTablesEvenIfLocked || fullEditMode;
 
   // Confirmação obrigatória de pedágio: ao abrir o modal sem pedágio confirmado,
   // exige resposta explícita do operador (Sim com valor / Não, sem pedágio).
@@ -1521,9 +1531,12 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
           //    load quando há revenue_edit_reason/cost_edit_reason ou
           //    billing_verified_by) -> preserva o override da diretoria;
           //  - está salvando;
-          //  - a OS está travada/aprovada (isEffectivelyLocked) -> o snapshot
-          //    financeiro congelado permanece intacto.
-          if (dbValuesLoadedRef.current && !userManuallyEditedRef.current && !isSavingRef.current && !isEffectivelyLocked) {
+          //  - a OS está travada/aprovada SEM permissão de troca de tabela
+          //    (lockAllowsRecalc=false) -> o snapshot financeiro congelado
+          //    permanece intacto. Task #143: quando o usuário PODE trocar a
+          //    tabela mesmo travado, o número grande acompanha a nova tabela
+          //    (só na tela; nada é gravado até Salvar/Aprovar).
+          if (dbValuesLoadedRef.current && !userManuallyEditedRef.current && !isSavingRef.current && lockAllowsRecalc) {
               const currentRev = parseNumber(revenueInput);
               if (autoClientTotal > 0 && Math.abs(currentRev - autoClientTotal) > 1) {
                   setRevenueInput(fmtBR(autoClientTotal));
@@ -1553,7 +1566,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
           const isCevaLogitech = financialData.client?.detectionLog?.includes('LOGITECH SOBERANA');
           // Regra: depois de salvo/aprovado, NUNCA sobrescrever valores do banco
           // por recálculo automático (mesmo no caso especial CEVA/Logitech).
-          if (isCevaLogitech && dbValuesLoadedRef.current && !userManuallyEditedRef.current && !isSavingRef.current && !isEffectivelyLocked) {
+          if (isCevaLogitech && dbValuesLoadedRef.current && !userManuallyEditedRef.current && !isSavingRef.current && lockAllowsRecalc) {
               const fmt = (v: number) => v.toLocaleString('pt-BR', {minimumFractionDigits: 2, maximumFractionDigits: 2});
               const calcRevTotal = financialData.client.total + parseNumber(displacementInput);
               const currentInput = parseNumber(revenueInput);
@@ -1607,12 +1620,15 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
         }
         // Quando o faturamento está travado (já salvo/aprovado) e não houve destravamento,
         // não permitimos que o auto-recálculo sobrescreva os valores salvos no banco.
-        if (isEffectivelyLocked) {
+        // Task #143: se o usuário tem permissão de trocar a tabela mesmo travado
+        // (lockAllowsRecalc), liberamos os refs para que o número grande/breakdown
+        // acompanhem a nova tabela na tela — sem gravar nada no banco.
+        if (!lockAllowsRecalc) {
             return;
         }
         dbValuesLoadedRef.current = false;
         userManuallyEditedRef.current = false;
-    }, [manualClientTableId, manualProviderTableId, customClientBase, customClientKm, customClientHour, customProviderBase, customProviderKm, customProviderHour, iblEnabled, providerOpsOverride, isLoading, isEffectivelyLocked]);
+    }, [manualClientTableId, manualProviderTableId, customClientBase, customClientKm, customClientHour, customProviderBase, customProviderKm, customProviderHour, iblEnabled, providerOpsOverride, isLoading, isEffectivelyLocked, lockAllowsRecalc]);
 
 
   const handleTollChange = (val: string) => {
