@@ -35,6 +35,12 @@ function isAutoMaster(op: string | undefined | null): boolean {
   return (op || '').toUpperCase().includes('__AUTO_MASTER__');
 }
 
+function is100KmTable(t: ProviderCostExportTable): boolean {
+  if (isAutoMaster(t.operation_type)) return false;
+  if (Number(t.franchise_km) === 100) return true;
+  return /(^|\D)100\s*KM(\D|$)/i.test(t.operation_type || '');
+}
+
 function providerLabel(p: ProviderCostExportProvider): string {
   const name = (p.name || '').trim();
   const trading = (p.trading_name || '').trim();
@@ -49,7 +55,7 @@ export async function exportProviderCosts(
   costTables: ProviderCostExportTable[],
 ): Promise<Blob> {
   const tablesByProvider = new Map<string, ProviderCostExportTable[]>();
-  for (const t of costTables) {
+  for (const t of costTables.filter(is100KmTable)) {
     const key = (t.provider || '').trim().toUpperCase();
     if (!key) continue;
     const list = tablesByProvider.get(key) || [];
