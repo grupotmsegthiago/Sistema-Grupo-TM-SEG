@@ -37,8 +37,9 @@ function isAutoMaster(op: string | undefined | null): boolean {
 
 function is100KmTable(t: ProviderCostExportTable): boolean {
   if (isAutoMaster(t.operation_type)) return false;
-  if (Number(t.franchise_km) === 100) return true;
-  return /(^|\D)100\s*KM(\D|$)/i.test(t.operation_type || '');
+  const km = Number(t.franchise_km);
+  if (km === 100 || km === 110) return true;
+  return /(^|\D)1(00|10)\s*KM(\D|$)/i.test(t.operation_type || '');
 }
 
 function providerLabel(p: ProviderCostExportProvider): string {
