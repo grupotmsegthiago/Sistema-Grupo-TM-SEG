@@ -38,8 +38,8 @@ function isAutoMaster(op: string | undefined | null): boolean {
 function is100KmTable(t: ProviderCostExportTable): boolean {
   if (isAutoMaster(t.operation_type)) return false;
   const km = Number(t.franchise_km);
-  if (km === 100 || km === 110) return true;
-  return /(^|\D)1(00|10)\s*KM(\D|$)/i.test(t.operation_type || '');
+  if (km === 50 || km === 100 || km === 110) return true;
+  return /(^|\D)(50|100|110)\s*KM(\D|$)/i.test(t.operation_type || '');
 }
 
 function providerLabel(p: ProviderCostExportProvider): string {
