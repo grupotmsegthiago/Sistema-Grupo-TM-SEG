@@ -1,5 +1,5 @@
-import React, { useMemo, useState } from 'react';
-import { X, TrendingDown, Download, ExternalLink, AlertTriangle, Search } from 'lucide-react';
+import React, { useMemo, useRef, useState } from 'react';
+import { X, TrendingDown, Download, ExternalLink, AlertTriangle, Search, Layers, Link2 } from 'lucide-react';
 import { Mission, MissionStatus, ClientPriceTable, ProviderCostTable, Client } from '../types';
 import {
   computeCanonicalRevenueCost,
@@ -42,6 +42,45 @@ const LossesDialog: React.FC<Props> = ({
 }) => {
   const [includeLowMargin, setIncludeLowMargin] = useState(false);
   const [search, setSearch] = useState('');
+  // Popover de OS Mãe (hover no desktop + clique para mobile/touch).
+  const [hoverParent, setHoverParent] = useState<{ id: string; top: number; left: number } | null>(null);
+
+  const refs = useMemo(
+    () => ({ clientTables, providerTables, clientsData }),
+    [clientTables, providerTables, clientsData]
+  );
+
+  // Mapa OS Mãe -> filhas (qualquer missão com parent_mission_id apontando para ela).
+  // parent_mission_id referencia o id da OS mãe (ex.: GTM-XXXX).
+  const childrenByParent = useMemo(() => {
+    const map = new Map<string, any[]>();
+    for (const m of (missions || [])) {
+      const pid = m?.parent_mission_id;
+      if (pid && m?.is_same_os === true) {
+        const arr = map.get(pid) || [];
+        arr.push(m);
+        map.set(pid, arr);
+      }
+    }
+    return map;
+  }, [missions]);
+
+  // Pequeno atraso ao fechar para permitir mover o mouse do selo até o popover.
+  const closeTimer = useRef<number | null>(null);
+  const cancelClose = () => { if (closeTimer.current) { window.clearTimeout(closeTimer.current); closeTimer.current = null; } };
+  const scheduleClose = () => { cancelClose(); closeTimer.current = window.setTimeout(() => setHoverParent(null), 150); };
+  const toggleParentPopover = (id: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    cancelClose();
+    if (hoverParent?.id === id) { setHoverParent(null); return; }
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    setHoverParent({ id, top: rect.bottom + 6, left: rect.left });
+  };
+  const openParentPopover = (id: string, e: React.MouseEvent) => {
+    cancelClose();
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    setHoverParent({ id, top: rect.bottom + 6, left: rect.left });
+  };
 
   const rows: Row[] = useMemo(() => {
     if (!isOpen) return [];
@@ -85,6 +124,26 @@ const LossesDialog: React.FC<Props> = ({
     for (const r of filteredRows) { t.rev += r.rev; t.cost += r.cost; t.loss += r.loss; }
     return t;
   }, [filteredRows]);
+
+  // Valores de cada OS filha do popover aberto (custo zero para continuidade/is_same_os).
+  const openParentDetail = useMemo(() => {
+    if (!hoverParent) return null;
+    const kids = childrenByParent.get(hoverParent.id) || [];
+    const children = kids.map((k) => {
+      const cr = computeCanonicalRevenueCost(k, refs);
+      const cost = k.is_same_os ? 0 : cr.cost;
+      return { id: k.id, status: k.status, rev: cr.rev, cost, margin: cr.rev - cost };
+    });
+    // Mãe vem do dataset base (não da lista filtrada por prejuízo/período),
+    // garantindo consolidado consistente mesmo com o popover aberto sob filtros.
+    const motherMission = (missions || []).find((m) => m?.id === hoverParent.id);
+    const motherCr = motherMission ? computeCanonicalRevenueCost(motherMission, refs) : { rev: 0, cost: 0 };
+    const motherRev = motherCr.rev;
+    const motherCost = motherCr.cost;
+    const groupRev = motherRev + children.reduce((s, c) => s + c.rev, 0);
+    const groupCost = motherCost + children.reduce((s, c) => s + c.cost, 0);
+    return { children, motherRev, motherCost, groupRev, groupCost, groupMargin: groupRev - groupCost };
+  }, [hoverParent, childrenByParent, refs, missions]);
 
   const exportCsv = () => {
     const header = ['OS', 'Cliente', 'Fornecedor', 'Status', 'Origem', 'Destino', 'KM', 'Receita', 'Custo', 'Prejuizo', 'Margem%'];
@@ -209,9 +268,27 @@ const LossesDialog: React.FC<Props> = ({
               <tbody>
                 {filteredRows.map(r => {
                   const isLoss = r.loss > 0;
+                  const childCount = (childrenByParent.get(r.m.id) || []).length;
+                  const isMother = childCount > 0;
                   return (
                     <tr key={r.m.id} className="border-b border-gray-100 hover:bg-red-50/40 transition" data-testid={`row-loss-${r.m.id}`}>
-                      <td className="px-4 py-2 font-mono font-bold text-gray-900 text-xs">{r.m.id}</td>
+                      <td className="px-4 py-2 font-mono font-bold text-gray-900 text-xs">
+                        <div className="flex items-center gap-1.5">
+                          <span>{r.m.id}</span>
+                          {isMother && (
+                            <span
+                              className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-amber-100 text-amber-800 border border-amber-300 text-[9px] font-black uppercase tracking-wide cursor-help select-none"
+                              onMouseEnter={(e) => openParentPopover(r.m.id, e)}
+                              onMouseLeave={scheduleClose}
+                              onClick={(e) => toggleParentPopover(r.m.id, e)}
+                              data-testid={`badge-mother-${r.m.id}`}
+                            >
+                              <Layers size={9} /> OS MÃE
+                              <span className="bg-amber-600 text-white rounded-full px-1 leading-none">{childCount}</span>
+                            </span>
+                          )}
+                        </div>
+                      </td>
                       <td className="px-3 py-2 text-gray-700 max-w-[200px] truncate" title={r.m.client || ''}>{r.m.client || '—'}</td>
                       <td className="px-3 py-2 text-gray-600 max-w-[180px] truncate" title={r.m.provider || ''}>{r.m.provider || '—'}</td>
                       <td className="px-3 py-2">
@@ -243,6 +320,58 @@ const LossesDialog: React.FC<Props> = ({
           )}
         </div>
       </div>
+
+      {hoverParent && openParentDetail && (
+        <div
+          className="fixed z-[110] w-[340px] max-w-[92vw] bg-white rounded-xl shadow-2xl border-2 border-amber-300 overflow-hidden"
+          style={{ top: hoverParent.top, left: Math.min(hoverParent.left, (typeof window !== 'undefined' ? window.innerWidth : 1024) - 350) }}
+          onMouseEnter={cancelClose}
+          onMouseLeave={scheduleClose}
+          data-testid={`popover-mother-${hoverParent.id}`}
+        >
+          <div className="flex items-center gap-2 bg-amber-600 text-white px-3 py-2">
+            <Layers size={13} />
+            <span className="text-[11px] font-black uppercase tracking-wider">OS Mãe {hoverParent.id}</span>
+            <span className="ml-auto text-[9px] bg-amber-800 px-2 py-0.5 rounded-full font-bold">
+              {openParentDetail.children.length} filha{openParentDetail.children.length !== 1 ? 's' : ''}
+            </span>
+          </div>
+          <div className="max-h-[260px] overflow-y-auto p-2 space-y-1.5">
+            <div className="flex items-center justify-between gap-2 p-2 rounded-lg bg-amber-50 border border-amber-200">
+              <span className="font-mono font-black text-[11px] text-amber-800">{hoverParent.id} <span className="text-[8px] font-bold text-amber-600">(MÃE)</span></span>
+              <div className="flex items-center gap-3 text-[10px] font-mono">
+                <span className="text-green-700">{fmt(openParentDetail.motherRev)}</span>
+                <span className="text-red-600">{fmt(openParentDetail.motherCost)}</span>
+              </div>
+            </div>
+            {openParentDetail.children.map((c) => (
+              <div key={c.id} className="flex items-center justify-between gap-2 p-2 rounded-lg bg-blue-50 border border-blue-200" data-testid={`popover-child-${c.id}`}>
+                <span className="font-mono font-bold text-[11px] text-blue-800 flex items-center gap-1">
+                  <Link2 size={9} /> {c.id}
+                </span>
+                <div className="flex items-center gap-3 text-[10px] font-mono">
+                  <span className="text-green-700">{fmt(c.rev)}</span>
+                  <span className={c.cost > 0 ? 'text-red-600' : 'text-gray-400'}>{fmt(c.cost)}</span>
+                </div>
+              </div>
+            ))}
+          </div>
+          <div className="grid grid-cols-3 gap-1.5 px-2 pb-2">
+            <div className="bg-green-100 rounded-lg p-1.5 text-center">
+              <p className="text-[8px] font-bold text-green-600 uppercase">Receita grupo</p>
+              <p className="text-[11px] font-black text-green-800">{fmt(openParentDetail.groupRev)}</p>
+            </div>
+            <div className="bg-red-100 rounded-lg p-1.5 text-center">
+              <p className="text-[8px] font-bold text-red-600 uppercase">Custo grupo</p>
+              <p className="text-[11px] font-black text-red-800">{fmt(openParentDetail.groupCost)}</p>
+            </div>
+            <div className={`rounded-lg p-1.5 text-center ${openParentDetail.groupMargin >= 0 ? 'bg-emerald-100' : 'bg-red-100'}`}>
+              <p className={`text-[8px] font-bold uppercase ${openParentDetail.groupMargin >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>Margem grupo</p>
+              <p className={`text-[11px] font-black ${openParentDetail.groupMargin >= 0 ? 'text-emerald-800' : 'text-red-800'}`}>{fmt(openParentDetail.groupMargin)}</p>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
