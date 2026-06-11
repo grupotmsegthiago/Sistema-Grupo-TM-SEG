@@ -1166,6 +1166,17 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
     const totalVolumeCount = useMemo(() => {
         return filteredBySpecialCriteria.length;
     }, [filteredBySpecialCriteria]);
+
+    // Missões em aberto (pendentes) — DHL vs Demais (visão global, baseada em allMissions)
+    const openMissionStats = useMemo(() => {
+        const open = allMissions.filter(isMissionPending);
+        const total = open.length;
+        const dhl = open.filter(m => (((m as any).originalClientName || m.client || '').toUpperCase().includes('DHL'))).length;
+        const demais = total - dhl;
+        const dhlPct = total > 0 ? Math.round((dhl / total) * 100) : 0;
+        const demaisPct = total > 0 ? 100 - dhlPct : 0;
+        return { total, dhl, demais, dhlPct, demaisPct };
+    }, [allMissions]);
   
     // Counts for Badge Indicators (Global context)
     const negativeMarginCount = useMemo(() => {
@@ -1804,6 +1815,60 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
             </div>
         )}
   
+        {!isRestrictedClientView && (
+            <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-4 mb-2">
+                <div className="flex items-center gap-2 mb-3">
+                    <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-red-50 text-red-600"><Activity size={16} /></div>
+                    <div className="flex-1">
+                        <h3 className="text-xs font-black uppercase tracking-wide text-gray-800 leading-none">Missões em Aberto</h3>
+                        <p className="text-[10px] text-gray-500 mt-0.5">DHL vs Demais clientes</p>
+                    </div>
+                    <div className="text-right">
+                        <div className="text-xl font-black text-gray-900 leading-none font-mono">{openMissionStats.total}</div>
+                        <div className="text-[8px] font-bold uppercase tracking-wide text-gray-400">Total</div>
+                    </div>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div className="rounded-xl border border-amber-200 bg-amber-50 p-3">
+                        <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-2">
+                                <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-amber-400 text-amber-900"><Truck size={14} /></div>
+                                <span className="text-xs font-black text-amber-900">DHL</span>
+                            </div>
+                            <div className="flex items-baseline gap-1.5">
+                                <span className="text-xl font-black text-amber-900 leading-none font-mono">{openMissionStats.dhl}</span>
+                                <span className="text-xs font-bold text-amber-700">{openMissionStats.dhlPct}%</span>
+                            </div>
+                        </div>
+                        <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-amber-200">
+                            <div className="h-full rounded-full bg-amber-500 transition-all" style={{ width: `${openMissionStats.dhlPct}%` }} />
+                        </div>
+                    </div>
+                    <div className="rounded-xl border border-gray-200 bg-gray-50 p-3">
+                        <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-2">
+                                <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-gray-600 text-white"><Building2 size={14} /></div>
+                                <span className="text-xs font-black text-gray-700">Demais Clientes</span>
+                            </div>
+                            <div className="flex items-baseline gap-1.5">
+                                <span className="text-xl font-black text-gray-800 leading-none font-mono">{openMissionStats.demais}</span>
+                                <span className="text-xs font-bold text-gray-500">{openMissionStats.demaisPct}%</span>
+                            </div>
+                        </div>
+                        <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-gray-200">
+                            <div className="h-full rounded-full bg-gray-500 transition-all" style={{ width: `${openMissionStats.demaisPct}%` }} />
+                        </div>
+                    </div>
+                </div>
+                <div className="mt-3">
+                    <div className="flex h-3 w-full overflow-hidden rounded-full bg-gray-100">
+                        <div className="h-full bg-amber-500 transition-all" style={{ width: `${openMissionStats.dhlPct}%` }} />
+                        <div className="h-full bg-gray-500 transition-all" style={{ width: `${openMissionStats.demaisPct}%` }} />
+                    </div>
+                </div>
+            </div>
+        )}
+
         <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-10 gap-1.5">
             {/* BOX TOTAL: Reflete o volume absoluto do período conforme solicitado */}
             <StatCard icon={Activity} title={totalVolumeCount < allMissions.length ? `Total (${allMissions.length})` : "Total"} value={totalVolumeCount} bgColor="bg-gray-800" loading={isLoading} isActive={filterStatus === 'ALL' && !showPendingOnly && !showTomorrowOnly && !showMyApprovalOnly && !showNegativeMarginOnly && !showTollNotConfirmedOnly} onClick={() => { setFilterStatus('ALL'); setShowPendingOnly(false); setShowTomorrowOnly(false); setShowMyApprovalOnly(false); setApprovalViewStage(null); setShowNegativeMarginOnly(false); setShowTollNotConfirmedOnly(false); }} />
