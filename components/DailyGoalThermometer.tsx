@@ -199,8 +199,8 @@ const DailyGoalThermometer: React.FC<Props> = ({ viewPeriod = 'TODAY', customSta
                       `Faturamento Período${suffix}`;
 
     return (
-        <div className="group perspective-1000 w-full max-w-lg mx-auto">
-            <div className="bg-white rounded-[35px] p-4 sm:p-5 border-x border-t border-b-4 border-gray-200/60 shadow-[0_20px_50px_rgba(0,0,0,0.06)] w-full overflow-hidden transition-all duration-700 hover:shadow-[0_25px_60px_rgba(0,0,0,0.1)] hover:-translate-y-0.5 transform hover:rotate-0.5 border-r-[5px] ml-[0px] mr-[0px]">
+        <div className="group perspective-1000 w-full max-w-lg mx-auto h-full">
+            <div className="bg-white rounded-[35px] p-4 sm:p-5 border-x border-t border-b-4 border-gray-200/60 shadow-[0_20px_50px_rgba(0,0,0,0.06)] w-full h-full overflow-hidden transition-all duration-700 hover:shadow-[0_25px_60px_rgba(0,0,0,0.1)] hover:-translate-y-0.5 transform hover:rotate-0.5 border-r-[5px] ml-[0px] mr-[0px]">
                 
                 <div className="flex justify-between items-center gap-2 mb-4 min-w-0">
                     <div className="flex items-center gap-2.5 min-w-0 flex-1">
