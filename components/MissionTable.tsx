@@ -1872,9 +1872,21 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
                     </div>
                 </div>
                 <div className="mt-3">
-                    <div className="flex h-3 w-full overflow-hidden rounded-full bg-gray-100">
-                        <div className="h-full bg-amber-500 transition-all" style={{ width: `${openMissionStats.dhlPct}%` }} />
-                        <div className="h-full bg-gray-500 transition-all" style={{ width: `${openMissionStats.demaisPct}%` }} />
+                    <div className="flex items-center justify-between mb-1.5">
+                        <span className="text-[9px] font-black uppercase tracking-wide text-gray-400">Distribuição</span>
+                        <span className="text-[9px] font-bold text-gray-400">{openMissionStats.total} em aberto</span>
+                    </div>
+                    <div className="flex h-8 w-full overflow-hidden rounded-xl bg-gray-100 gap-0.5">
+                        {openMissionStats.dhlPct > 0 && (
+                            <div className="h-full bg-amber-500 transition-all flex items-center justify-center min-w-0 px-1" style={{ width: `${openMissionStats.dhlPct}%` }} title={`DHL: ${openMissionStats.dhl} (${openMissionStats.dhlPct}%)`}>
+                                <span className="text-[10px] font-black text-amber-950 truncate whitespace-nowrap">DHL {openMissionStats.dhl} · {openMissionStats.dhlPct}%</span>
+                            </div>
+                        )}
+                        {openMissionStats.demaisPct > 0 && (
+                            <div className="h-full bg-gray-600 transition-all flex items-center justify-center min-w-0 px-1" style={{ width: `${openMissionStats.demaisPct}%` }} title={`Demais Clientes: ${openMissionStats.demais} (${openMissionStats.demaisPct}%)`}>
+                                <span className="text-[10px] font-black text-white truncate whitespace-nowrap">Demais {openMissionStats.demais} · {openMissionStats.demaisPct}%</span>
+                            </div>
+                        )}
                     </div>
                 </div>
             </div>
