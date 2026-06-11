@@ -245,9 +245,11 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
   }, []);
 
   useEffect(() => {
-    if (isDhlClient && hasSavedOs) fetchDhlIntakes(osId);
+    // O link de fornecedor atende TODOS os clientes (não só DHL). Busca os
+    // intakes sempre que a OS já estiver salva.
+    if (hasSavedOs) fetchDhlIntakes(osId);
     else setDhlIntakes([]);
-  }, [isDhlClient, hasSavedOs, osId, fetchDhlIntakes]);
+  }, [hasSavedOs, osId, fetchDhlIntakes]);
 
   const handleRegenerateDhlLink = async (channel: 'email' | 'whatsapp' | 'both' = 'both', opts?: { saveAsDefault?: boolean }) => {
     if (!hasSavedOs) { showNotification('OS não salva', 'Salve a OS antes de gerar o link.', 'warning'); return; }
@@ -1301,8 +1303,10 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
         await uploadEvidences(finalId);
         await uploadDhlDeslocamentoPrint(finalId);
 
-        // ── DHL: gerar link público para o fornecedor e abrir modal ──
-        if (clientUpper.includes('DHL')) {
+        // ── Gerar link público para o fornecedor e abrir modal ──
+        // Vale para TODOS os clientes: DHL sempre; demais quando há fornecedor
+        // selecionado (o link pede Escoltistas + Veículo ao fornecedor).
+        if (clientUpper.includes('DHL') || !!formData.provider) {
           try {
             const token = localStorage.getItem('authToken') || '';
             const r = await fetch('/api/dhl/intake/generate', {
@@ -1702,8 +1706,9 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
                           <p className="text-[9px] text-purple-600 font-bold mt-1">Campo obrigatório para clientes CESLOG e CESARI</p>
                       </div>
                   )}
-                  {isDhlClient && (
-                      <div className="p-4 rounded-xl border-2 animate-in slide-in-from-top-2 duration-300" style={{ borderColor: '#D40511', background: 'linear-gradient(180deg, #fff8d6 0%, #fffbe6 100%)' }}>
+                  {(isDhlClient || hasSavedOs) && (
+                      <div className="p-4 rounded-xl border-2 animate-in slide-in-from-top-2 duration-300" style={isDhlClient ? { borderColor: '#D40511', background: 'linear-gradient(180deg, #fff8d6 0%, #fffbe6 100%)' } : { borderColor: '#e5e7eb', background: '#ffffff' }}>
+                      {isDhlClient && (<>
                           <div className="flex items-center gap-2 mb-2">
                               <div style={{ width: 8, height: 24, background: '#FFCC00', borderRadius: 2 }}></div>
                               <div style={{ width: 8, height: 24, background: '#D40511', borderRadius: 2 }}></div>
@@ -1835,12 +1840,13 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
                           <p className="text-[9px] font-bold mt-1" style={{ color: '#7f1d1d' }}>
                               Após salvar a OS, o sistema gera automaticamente um link público para o fornecedor preencher Escoltistas e Veículo, com e-mail e mensagem para WhatsApp.
                           </p>
+                      </>)}
 
                           {hasSavedOs && (
-                            <div className="mt-4 pt-4 border-t-2 border-dashed" style={{ borderColor: '#D40511' }} data-testid="panel-dhl-intakes">
+                            <div className="mt-4 pt-4 border-t-2 border-dashed" style={{ borderColor: isDhlClient ? '#D40511' : '#e5e7eb' }} data-testid="panel-dhl-intakes">
                               <div className="flex items-center justify-between mb-2">
                                 <p className="text-[10px] font-black uppercase tracking-widest" style={{ color: '#7f1d1d' }}>
-                                  Links DHL desta OS {dhlIntakes.length > 0 && <span className="text-gray-500">({dhlIntakes.length})</span>}
+                                  Links {isDhlClient ? 'DHL' : 'do fornecedor'} desta OS {dhlIntakes.length > 0 && <span className="text-gray-500">({dhlIntakes.length})</span>}
                                 </p>
                               </div>
                               {dhlIntakesLoading && dhlIntakes.length === 0 ? (

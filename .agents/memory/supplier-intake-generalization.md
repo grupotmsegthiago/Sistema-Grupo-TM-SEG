@@ -25,8 +25,17 @@ funções `sendDhlSupplierIntakeEmail` / `sendDhlIntakeSubmittedEmail` /
 preservar chamadas legadas). Frontend `components/DhlSupplierIntake.tsx` lê
 `j.isDhl` e passa `isDhl` para `VeiculoForm`.
 
+**Armadilha do gatilho no frontend (MissionForm):** o backend já é genérico
+(S.E. só se isDhl), mas a GERAÇÃO do link no `components/MissionForm.tsx` ficava
+presa atrás de `isDhlClient` — fetch dos intakes, auto-geração ao salvar e o
+painel "Links desta OS" com os botões. Resultado: nenhum link para não-DHL.
+Regra: o gatilho/painel de geração vale para TODOS (auto-gera ao salvar quando
+há `formData.provider`; painel aparece com `hasSavedOs`); só identidade DHL
+(barras amarelas, título, Nº S.E./SM, deslocamento+print) fica em `isDhlClient`.
+
 **Why:** evitar que fornecedor de cliente não-DHL receba identidade visual DHL,
-peça Nº S.E. inexistente ou veja instruções técnicas DHL.
+peça Nº S.E. inexistente ou veja instruções técnicas DHL — e garantir que o link
+seja gerado para qualquer cliente, não só DHL.
 
 **How to apply:** ao adicionar qualquer elemento visual/texto novo nesse fluxo,
 pergunte "isso é DHL?" — se sim, gate com isDhl. Cuidado com cores hardcoded
