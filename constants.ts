@@ -3,7 +3,7 @@
 // ==========================================
 // VERSÃO DO SISTEMA
 // ==========================================
-export const APP_VERSION = "3.6.62";
+export const APP_VERSION = "3.6.63";
 
 // ==========================================
 // CONFIGURAÇÕES DE RETENÇÃO (ESPAÇO EM BANCO)
@@ -28,19 +28,19 @@ export const COST_ESTIMATES = {
 // ==========================================
 // CONFIGURAÇÕES DE API (WDAPI / API Placas)
 // ==========================================
-// O serviço migrou de domínio: wdapi2.com.br -> apiplacas.com.br e mudou o
-// formato do endpoint (path -> query string: api.php?placa=&token=). O domínio
-// antigo apenas redireciona para a home (HTML), o que quebrava o JSON.parse com
-// "Unexpected token '<'". A consulta SEMPRE passa pelo proxy backend
-// (/api/placa/lookup) porque o Cloudflare do provedor exige cabeçalhos de
-// navegador e não envia CORS. Use SEMPRE consultaUrl(placa) para montar a URL.
+// Endpoint oficial documentado do provedor: wdapi2.com.br/consulta/{placa}/{token}
+// (servidor nginx, sem Cloudflare). NÃO usar apiplacas.com.br/api.php: esse domínio
+// fica atrás do Cloudflare e bloqueia chamada servidor→servidor com 403
+// ("Just a moment..."). A consulta SEMPRE passa pelo proxy backend
+// (/api/placa/lookup) — o navegador não recebe CORS do provedor.
+// Use SEMPRE consultaUrl(placa) para montar a URL.
 export const API_BRASIL_CONFIG = {
-    BASE_URL: 'https://apiplacas.com.br/api.php',
+    BASE_URL: 'https://wdapi2.com.br/consulta',
     TOKEN: import.meta.env.VITE_WDAPI_TOKEN ?? '',
     MONTHLY_LIMIT: 20000,
     consultaUrl(placa: string): string {
         const p = encodeURIComponent((placa || '').trim().toUpperCase());
-        return `${this.BASE_URL}?placa=${p}&token=${encodeURIComponent(this.TOKEN)}`;
+        return `${this.BASE_URL}/${p}/${encodeURIComponent(this.TOKEN)}`;
     }
 };
 

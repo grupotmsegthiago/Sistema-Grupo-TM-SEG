@@ -768,10 +768,10 @@ export async function registerRoutes(
       const ctrl = new AbortController();
       const timer = setTimeout(() => ctrl.abort(), 8000);
       try {
-        // Endpoint oficial: api.php (api1.php retorna 404 na origem). Cabeçalhos de
-        // navegador são obrigatórios: sem User-Agent o Cloudflare do provedor bloqueia
-        // a chamada servidor→servidor com 403 ("Just a moment...").
-        const lookupUrl = `https://apiplacas.com.br/api.php?placa=${encodeURIComponent(placaRaw)}&token=${encodeURIComponent(wdToken)}`;
+        // Endpoint oficial documentado: wdapi2.com.br/consulta/PLACA/TOKEN. O domínio
+        // apiplacas.com.br/api.php fica atrás do Cloudflare e bloqueia a chamada
+        // servidor→servidor com 403 ("Just a moment..."); o wdapi2 (nginx) não bloqueia.
+        const lookupUrl = `https://wdapi2.com.br/consulta/${encodeURIComponent(placaRaw)}/${encodeURIComponent(wdToken)}`;
         const r = await fetchPlacaApi(lookupUrl, ctrl.signal);
         clearTimeout(timer);
         if (!r.ok) {
