@@ -1167,9 +1167,19 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
         return filteredBySpecialCriteria.length;
     }, [filteredBySpecialCriteria]);
 
-    // Missões em aberto (pendentes) — DHL vs Demais (visão global, baseada em allMissions)
+    // Missões em aberto — DHL vs Demais (visão global, baseada em allMissions)
+    // "Em aberto" = qualquer status não finalizado: Solicitada, Documentação,
+    // Agendada, Origem, Em Viagem, Pendente, ou Concluída sem KM final.
+    // Excluídas: Cancelada, Recusada e Concluída já fechada (com endKm).
+    const isMissionOpen = (m: Mission) => {
+        if (m.status === MissionStatus.CANCELLED || m.status === MissionStatus.REFUSED) return false;
+        if (m.status === MissionStatus.COMPLETED) {
+            return m.endKm === null || m.endKm === undefined || m.endKm === 0;
+        }
+        return true;
+    };
     const openMissionStats = useMemo(() => {
-        const open = allMissions.filter(isMissionPending);
+        const open = allMissions.filter(isMissionOpen);
         const total = open.length;
         const dhl = open.filter(m => (((m as any).originalClientName || m.client || '').toUpperCase().includes('DHL'))).length;
         const demais = total - dhl;
