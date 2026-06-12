@@ -1264,26 +1264,36 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
         MissionStatus.IN_TRANSIT,
     ];
     const isMissionOpen = (m: Mission) => OPEN_STATUSES.includes(m.status);
-    const openMissionStats = useMemo(() => {
-        // Mostra SOMENTE as que estão em aberto HOJE (iniciaram hoje ou estão
-        // atrasadas e seguem abertas). As agendadas para outro dia (futuro)
-        // NÃO entram nesta contagem.
+    // Dois recortes do painel "Missões em Aberto":
+    //  - HOJE: iniciaram hoje ou estão atrasadas e seguem abertas (<= fim de hoje).
+    //  - AGENDADAS: em aberto, mas agendadas para outro dia (futuro).
+    const { openTodayStats, openScheduledStats } = useMemo(() => {
         const endOfToday = new Date();
         endOfToday.setHours(23, 59, 59, 999);
         const endOfTodayTs = endOfToday.getTime();
-        const open = allMissions.filter(m => {
-            if (!isMissionOpen(m)) return false;
+        const computeStats = (list: Mission[]) => {
+            const total = list.length;
+            const dhl = list.filter(m => (((m as any).originalClientName || m.client || '').toUpperCase().includes('DHL'))).length;
+            const demais = total - dhl;
+            const dhlPct = total > 0 ? Math.round((dhl / total) * 100) : 0;
+            const demaisPct = total > 0 ? 100 - dhlPct : 0;
+            return { total, dhl, demais, dhlPct, demaisPct };
+        };
+        const allOpen = allMissions.filter(isMissionOpen);
+        const today = allOpen.filter(m => {
             const ts = new Date(m.startTime || m.createdAt).getTime();
-            if (isNaN(ts)) return true; // sem data válida: mantém visível
-            return ts <= endOfTodayTs; // hoje ou atrasada; exclui futuras
+            if (isNaN(ts)) return true; // sem data válida: cai em HOJE
+            return ts <= endOfTodayTs;
         });
-        const total = open.length;
-        const dhl = open.filter(m => (((m as any).originalClientName || m.client || '').toUpperCase().includes('DHL'))).length;
-        const demais = total - dhl;
-        const dhlPct = total > 0 ? Math.round((dhl / total) * 100) : 0;
-        const demaisPct = total > 0 ? 100 - dhlPct : 0;
-        return { total, dhl, demais, dhlPct, demaisPct };
+        const scheduled = allOpen.filter(m => {
+            const ts = new Date(m.startTime || m.createdAt).getTime();
+            if (isNaN(ts)) return false; // sem data válida nunca é "agendada"
+            return ts > endOfTodayTs;
+        });
+        return { openTodayStats: computeStats(today), openScheduledStats: computeStats(scheduled) };
     }, [allMissions]);
+    const [openPanelTab, setOpenPanelTab] = useState<'hoje' | 'agendadas'>('hoje');
+    const activeOpenStats = openPanelTab === 'hoje' ? openTodayStats : openScheduledStats;
   
     // Counts for Badge Indicators (Global context)
     const negativeMarginCount = useMemo(() => {
@@ -1931,9 +1941,27 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
                         <p className="text-[10px] text-gray-500 mt-0.5">DHL vs Demais clientes</p>
                     </div>
                     <div className="text-right">
-                        <div className="text-xl font-black text-gray-900 leading-none font-mono">{openMissionStats.total}</div>
+                        <div className="text-xl font-black text-gray-900 leading-none font-mono">{activeOpenStats.total}</div>
                         <div className="text-[8px] font-bold uppercase tracking-wide text-gray-400">Total</div>
                     </div>
+                </div>
+                <div className="flex items-center gap-1 mb-3">
+                    <button
+                        type="button"
+                        onClick={() => setOpenPanelTab('hoje')}
+                        data-testid="tab-open-hoje"
+                        className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wide transition-all ${openPanelTab === 'hoje' ? 'bg-red-600 text-white shadow-sm' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'}`}
+                    >
+                        Hoje ({openTodayStats.total})
+                    </button>
+                    <button
+                        type="button"
+                        onClick={() => setOpenPanelTab('agendadas')}
+                        data-testid="tab-open-agendadas"
+                        className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wide transition-all ${openPanelTab === 'agendadas' ? 'bg-red-600 text-white shadow-sm' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'}`}
+                    >
+                        Agendadas ({openScheduledStats.total})
+                    </button>
                 </div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div className="rounded-xl border border-amber-200 bg-amber-50 p-3">
@@ -1943,12 +1971,12 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
                                 <span className="text-xs font-black text-amber-900">DHL</span>
                             </div>
                             <div className="flex items-baseline gap-1.5">
-                                <span className="text-xl font-black text-amber-900 leading-none font-mono">{openMissionStats.dhl}</span>
-                                <span className="text-xs font-bold text-amber-700">{openMissionStats.dhlPct}%</span>
+                                <span className="text-xl font-black text-amber-900 leading-none font-mono">{activeOpenStats.dhl}</span>
+                                <span className="text-xs font-bold text-amber-700">{activeOpenStats.dhlPct}%</span>
                             </div>
                         </div>
                         <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-amber-200">
-                            <div className="h-full rounded-full bg-amber-500 transition-all" style={{ width: `${openMissionStats.dhlPct}%` }} />
+                            <div className="h-full rounded-full bg-amber-500 transition-all" style={{ width: `${activeOpenStats.dhlPct}%` }} />
                         </div>
                     </div>
                     <div className="rounded-xl border border-gray-200 bg-gray-50 p-3">
@@ -1958,29 +1986,29 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
                                 <span className="text-xs font-black text-gray-700">Demais Clientes</span>
                             </div>
                             <div className="flex items-baseline gap-1.5">
-                                <span className="text-xl font-black text-gray-800 leading-none font-mono">{openMissionStats.demais}</span>
-                                <span className="text-xs font-bold text-gray-500">{openMissionStats.demaisPct}%</span>
+                                <span className="text-xl font-black text-gray-800 leading-none font-mono">{activeOpenStats.demais}</span>
+                                <span className="text-xs font-bold text-gray-500">{activeOpenStats.demaisPct}%</span>
                             </div>
                         </div>
                         <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-gray-200">
-                            <div className="h-full rounded-full bg-gray-500 transition-all" style={{ width: `${openMissionStats.demaisPct}%` }} />
+                            <div className="h-full rounded-full bg-gray-500 transition-all" style={{ width: `${activeOpenStats.demaisPct}%` }} />
                         </div>
                     </div>
                 </div>
                 <div className="mt-3">
                     <div className="flex items-center justify-between mb-1.5">
-                        <span className="text-[9px] font-black uppercase tracking-wide text-gray-400">Distribuição</span>
-                        <span className="text-[9px] font-bold text-gray-400">{openMissionStats.total} em aberto</span>
+                        <span className="text-[9px] font-black uppercase tracking-wide text-gray-400">Distribuição (Hoje)</span>
+                        <span className="text-[9px] font-bold text-gray-400">{openTodayStats.total} em aberto</span>
                     </div>
                     <div className="flex h-8 w-full overflow-hidden rounded-xl bg-gray-100 gap-0.5">
-                        {openMissionStats.dhlPct > 0 && (
-                            <div className="h-full bg-amber-500 transition-all flex items-center justify-center min-w-0 px-1" style={{ width: `${openMissionStats.dhlPct}%` }} title={`DHL: ${openMissionStats.dhl} (${openMissionStats.dhlPct}%)`}>
-                                <span className="text-[10px] font-black text-amber-950 truncate whitespace-nowrap">DHL {openMissionStats.dhl} · {openMissionStats.dhlPct}%</span>
+                        {openTodayStats.dhlPct > 0 && (
+                            <div className="h-full bg-amber-500 transition-all flex items-center justify-center min-w-0 px-1" style={{ width: `${openTodayStats.dhlPct}%` }} title={`DHL: ${openTodayStats.dhl} (${openTodayStats.dhlPct}%)`}>
+                                <span className="text-[10px] font-black text-amber-950 truncate whitespace-nowrap">DHL {openTodayStats.dhl} · {openTodayStats.dhlPct}%</span>
                             </div>
                         )}
-                        {openMissionStats.demaisPct > 0 && (
-                            <div className="h-full bg-gray-600 transition-all flex items-center justify-center min-w-0 px-1" style={{ width: `${openMissionStats.demaisPct}%` }} title={`Demais Clientes: ${openMissionStats.demais} (${openMissionStats.demaisPct}%)`}>
-                                <span className="text-[10px] font-black text-white truncate whitespace-nowrap">Demais {openMissionStats.demais} · {openMissionStats.demaisPct}%</span>
+                        {openTodayStats.demaisPct > 0 && (
+                            <div className="h-full bg-gray-600 transition-all flex items-center justify-center min-w-0 px-1" style={{ width: `${openTodayStats.demaisPct}%` }} title={`Demais Clientes: ${openTodayStats.demais} (${openTodayStats.demaisPct}%)`}>
+                                <span className="text-[10px] font-black text-white truncate whitespace-nowrap">Demais {openTodayStats.demais} · {openTodayStats.demaisPct}%</span>
                             </div>
                         )}
                     </div>
