@@ -2748,8 +2748,39 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                               setCustomClientKm('');
                               setCustomClientHour('');
                               setUseSavedValues(false);
+                              const effectiveClientTableId = newTableId || manualClientTableId;
                               if (newTableId) {
                                   setManualClientTableId(newTableId);
+                              }
+                              // O número grande (VALOR FINAL CLIENTE) precisa ACOMPANHAR os
+                              // preços recém-editados da tabela. Quando a OS tem edição manual
+                              // ou aprovação (userManuallyEditedRef=true), o autofill não roda e
+                              // o número ficava "congelado" mesmo com a memória de cálculo já
+                              // refletindo os novos valores. Recalculamos SÓ o número do cliente,
+                              // usando a tabela fresca (`data`, pois setClientTables ainda não
+                              // refletiu no estado), sem tocar no fornecedor (preserva o override
+                              // do controller) e só quando há permissão de recálculo
+                              // (lockAllowsRecalc) — snapshot travado sem permissão fica intacto.
+                              if (lockAllowsRecalc && mission) {
+                                  try {
+                                      const fin = calculateMissionFinancials(
+                                          { ...mission, toll_value: parseNumber(tollInput) },
+                                          data as any, providerTables, clientData, currentTime,
+                                          {
+                                              clientTableId: effectiveClientTableId || undefined,
+                                              providerTableId: manualProviderTableId || undefined,
+                                              forceIblFee: iblEnabled,
+                                              providerOpsOverride,
+                                          },
+                                          providersList,
+                                      );
+                                      if (fin) {
+                                          const total = fin.client.serviceTotal + parseNumber(tollInput) + parseNumber(displacementInput);
+                                          setRevenueInput(total.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
+                                      }
+                                  } catch (e) {
+                                      console.warn('[Tabela Cliente] Falha ao recalcular número grande após edição da tabela:', e);
+                                  }
                               }
                               showNotification('Atualizado', 'Tabela de preço atualizada. Valores recalculados.', 'success');
                           }
