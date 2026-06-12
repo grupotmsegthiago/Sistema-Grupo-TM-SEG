@@ -178,6 +178,11 @@ export interface DhlSelectionResult {
   band: number;
   reason: string;
   clientName: string;
+  // Passo 2: true quando o resultado veio do match ESPECÍFICO por UF de origem
+  // (RAIO {UF} {band} / DISTRIBUIÇÃO {UF} {band}) — alta confiança, linha REAL
+  // do cadastro daquele estado. Distingue da proximidade genérica (region_band
+  // sem UF) e do region_any_km, que NÃO devem sobrescrever snapshot/auto.
+  ufSpecific?: boolean;
 }
 
 export interface DhlSelectionOptions {
@@ -317,6 +322,52 @@ export const selectDhlClientTable = (
     };
   }
 
+  // PASSO 1 (PRIORIDADE MÁXIMA): Rota Nomeada Exata do cadastro.
+  // Casa a CIDADE de origem + destino, INDEPENDENTE da faixa de KM. As rotas
+  // nomeadas (ex.: GUARULHOS-FORTALEZA, GUARULHOS-SERRA) têm franchise_km =
+  // distância REAL da rota (2927, 758...), que nunca bate com a faixa
+  // arredondada (band) — por isso o match de rota NÃO exige
+  // franchise_km === band. A franquia correta é a da própria linha da rota.
+  if (originCity && destCity) {
+    const routeKey = `${originCity}-${destCity}`;
+    const inverseKey = `${destCity}-${originCity}`;
+    // Extrai o par de cidades da descrição da tabela quebrando no PRIMEIRO
+    // hífen. Suporta cidades de nome composto no destino (ex.:
+    // "GUARULHOS-DUQUE DE CAXIAS", "GUARULHOS-SÃO JOSE DOS PINHAIS"), onde o
+    // regex de dois tokens truncava o destino.
+    const tableRouteKey = (op?: string | null): string | null => {
+      const parts = stripDhlOpDescription(op);
+      // Exige a mesma região quando a tabela tiver região identificável.
+      if (parts.region && parts.region !== detectedRegion) return null;
+      const desc = parts.desc;
+      if (!desc) return null;
+      const dash = desc.indexOf('-');
+      if (dash <= 0) return null;
+      const left = desc.slice(0, dash).trim();
+      const right = desc.slice(dash + 1).trim();
+      if (!left || !right) return null;
+      return `${left}-${right}`;
+    };
+    // A rota inversa só é considerada como FALLBACK, depois de tentar a rota
+    // direta — nunca a sobrepõe (pedido do cliente).
+    const matchRoute = (wantInverse: boolean) =>
+      dhlTables.find(t => tableRouteKey(t.operation_type) === (wantInverse ? inverseKey : routeKey));
+    const direct = matchRoute(false);
+    const exact = direct || matchRoute(true);
+    if (exact) {
+      return {
+        table: exact,
+        matchLevel: 'exact_route',
+        detectedRegion,
+        band,
+        reason: direct
+          ? `Rota Exata (${detectedRegion}, franquia ${exact.franchise_km || 0}km)`
+          : `Rota Inversa (${detectedRegion}, franquia ${exact.franchise_km || 0}km)`,
+        clientName: targetClient,
+      };
+    }
+  }
+
   // Task #111: Memória — prioriza correções anteriores do auditor.
   // 1º) mesma região + faixa + mesma rota (origem/destino normalizados).
   // 2º) mesma região + faixa (qualquer rota).
@@ -354,41 +405,33 @@ export const selectDhlClientTable = (
     }
   }
 
-  if (originCity && destCity) {
-    const routeKey = `${originCity}-${destCity}`;
-    const inverseKey = `${destCity}-${originCity}`;
-    // Casa região + faixa KM + rota (determinístico). A rota inversa só é
-    // considerada como FALLBACK, depois de tentar a rota direta — nunca a
-    // sobrepõe (pedido do cliente).
-    const matchRoute = (wantInverse: boolean) => dhlTables.find(t => {
-      if ((t.franchise_km || 0) !== band) return false;
-      const parts = stripDhlOpDescription(t.operation_type);
-      // Exige a mesma região quando a tabela tiver região identificável.
-      if (parts.region && parts.region !== detectedRegion) return false;
-      const desc = parts.desc;
-      if (!desc) return false;
-      const hyphenMatch = desc.match(/^([A-Z0-9\s]+?)\s*-\s*([A-Z0-9\s]+?)(?:\s|$)/);
-      if (!hyphenMatch) return false;
-      const tRoute = `${hyphenMatch[1].trim()}-${hyphenMatch[2].trim()}`;
-      return tRoute === (wantInverse ? inverseKey : routeKey);
-    });
-    const direct = matchRoute(false);
-    const exact = direct || matchRoute(true);
-    if (exact) {
-      return {
-        table: exact,
-        matchLevel: 'exact_route',
-        detectedRegion,
-        band,
-        reason: direct
-          ? `Rota Exata (${detectedRegion} + ${band}km)`
-          : `Rota Inversa (${detectedRegion} + ${band}km)`,
-        clientName: targetClient,
-      };
-    }
-  }
-
   const k = Math.max(0, Number(googleKm) || 0);
+
+  // PASSO 2 (FALLBACK por UF + faixa de KM): sem rota nomeada, amarra a linha
+  // do cadastro pela UF DE ORIGEM + faixa de KM, NUNCA por uma tabela genérica
+  // global. Prioridade: RAIO {UF} {band} -> DISTRIBUIÇÃO {UF} {band}. Assim a
+  // franquia (activation_fee) sai do registro correto daquele estado
+  // (ex.: Extrema/MG 200km -> RAIO MG 200KM = 1460; PR 500km -> RAIO PR 500KM).
+  const ufRaioDesc = `RAIO ${originUF}`;
+  const ufDistDesc = `DISTRIBUICAO ${originUF}`;
+  const ufBandMatch = (wanted: string) => dhlTables.find(t => {
+    if ((t.franchise_km || 0) !== band) return false;
+    const parts = stripDhlOpDescription(t.operation_type);
+    if (parts.region && parts.region !== detectedRegion) return false;
+    return parts.desc === wanted;
+  });
+  const ufTable = ufBandMatch(ufRaioDesc) || ufBandMatch(ufDistDesc);
+  if (ufTable) {
+    return {
+      table: ufTable,
+      matchLevel: 'region_band',
+      detectedRegion,
+      band,
+      reason: `Faixa por UF (${originUF} + ${band}km, ${ufTable.operation_type})`,
+      clientName: targetClient,
+      ufSpecific: true,
+    };
+  }
 
   const regionCandidates = dhlTables.filter(t => {
     if ((t.franchise_km || 0) !== band) return false;

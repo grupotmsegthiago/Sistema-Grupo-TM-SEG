@@ -2115,17 +2115,43 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
                     // 2º) RAIO: sem troca manual, a TABELA APLICADA (AO) e a FRANQUIA (R)
                     // seguem a FAIXA do KM REAL rodado quando houve rodagem (effectiveRaioKm
                     // já aplicou computeDhlBand sobre P-O). Sem rodagem, cai no raio
-                    // declarado. O seletor casa regiao + faixa e vai para o KM mais
-                    // proximo quando nao ha tabela exata cadastrada.
+                    // declarado. RAIO é operação de DESTINO VARIÁVEL ("DESTINO A DEFINIR"),
+                    // então (em OS NÃO-cancelada) IGNORAMOS rota nomeada (destination='') e
+                    // deixamos o motor casar a linha do cadastro por UF de ORIGEM + faixa
+                    // (Passo 2): RAIO {UF} {band} -> DISTRIBUIÇÃO {UF} {band}, caindo na
+                    // proximidade só como último recurso.
                     if (!usedTable && effectiveRaioKm > 0) {
                         try {
                             const selRaio = selectDhlClientTable(
                                 fillPriceTables as any,
-                                { origin: m.origin || '', destination: m.destination || '' },
+                                // Cancelada preserva a ENTRADA original (destino real) — não
+                                // mexemos no fluxo de cancelamento. Não-cancelada zera o destino
+                                // para o RAIO casar por UF, ignorando rota nomeada.
+                                { origin: m.origin || '', destination: isCancelledRow ? (m.destination || '') : '' },
                                 effectiveRaioKm,
                                 { clientName: missionDhlName },
                             );
                             usedTable = selRaio.table;
+                        } catch {}
+                    }
+                    // 2.5º) NÃO-RAIO (ponta a ponta): Passo 1 = ROTA NOMEADA EXATA do cadastro
+                    // (origem+destino por cidade, independente da faixa — a franquia é a da
+                    // própria linha da rota). Passo 2 (fallback) = FAIXA por UF de origem
+                    // (RAIO/DISTRIBUIÇÃO {UF} {band}). Só aplicamos quando o match é de ALTA
+                    // confiança (exact_route ou ufSpecific) — proximidade genérica NÃO entra
+                    // aqui (continua deixada ao snapshot abaixo, para não "inventar" tabela).
+                    // Cancelada NÃO usa este caminho (regra de cancelamento intacta).
+                    if (!usedTable && effectiveRaioKm <= 0 && !isCancelledRow) {
+                        try {
+                            const selRoute = selectDhlClientTable(
+                                fillPriceTables as any,
+                                { origin: m.origin || '', destination: m.destination || '' },
+                                kmRealRaio,
+                                { clientName: missionDhlName },
+                            );
+                            if (selRoute.table && (selRoute.matchLevel === 'exact_route' || selRoute.ufSpecific)) {
+                                usedTable = selRoute.table;
+                            }
                         } catch {}
                     }
                     // 3º) Tabela GRAVADA (snapshot congelado / ajuste) para OS nao-raio
