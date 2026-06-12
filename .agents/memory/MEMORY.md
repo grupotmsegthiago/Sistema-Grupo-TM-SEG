@@ -18,6 +18,7 @@
 - [searchMatches staleness](searchmatches-staleness.md) — OS vista por busca/filtro FORA do período vem de searchMatches; patch realtime/fetch só tocam allMissions; sincronizar searchMatches senão card "AUDITADO" trava em valor antigo.
 - [Boletim DHL coluna AE](dhl-ae-minimo-uf.md) — FRANQUIA TABELA (AE) p/ cancelada ou faixa<=100km = mínimo FIXO por UF origem: SC/RS=735, demais=690 (não mais activation_fee dinâmico da tabela 100km).
 - [Billing report provider mode](billing-report-provider-mode.md) — Boletim tem toggle Cliente/Fornecedor no MESMO componente; reusa rowsData genérico c/ fin.provider, total=cost_value+toll fornecedor, isolamento .in('provider',exact).
+- [Fonte de pedágio QualP](toll-source-qualp.md) — QualP é a fonte preferida (rota+pedágio por endereço, token só no backend); rota sem pedágio (R$0) é sucesso, NÃO falha — senão cai no fallback e lança valor indevido.
 - [Supplier intake generalization](supplier-intake-generalization.md) — link /fornecedor/dhl atende TODOS os clientes; identidade amarela/Nº S.E./instruções técnicas só atrás de isDhl; comprovante obrigatório p/ todos.
 - [Deslocamento espelha pedágio](displacement-mirrors-toll.md) — displacement_value/_provider é aditivo igual toll; some na MESMA expressão do toll em todo relatório; margem (service-only) e filled-sheet ficam de fora.
 - [Screen authz & deep-link](screen-authz-deeplink.md) — ?page= burla o Sidebar e requireRole('*') = "qualquer interno"; tela sensível precisa de guard no App.tsx E authz backend espelhando a UI (clientId/comercial).

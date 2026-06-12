@@ -1054,8 +1054,8 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
           });
           if (!resp.ok) return null;
           const data = await resp.json();
-          if (data.success && data.tollValue > 0) {
-              return { value: data.tollValue, count: data.tollCount, tolls: data.tolls || [], distance: data.distance, provider: 'qualp' };
+          if (data.success) {
+              return { value: data.tollValue || 0, count: data.tollCount || 0, tolls: data.tolls || [], distance: data.distance, provider: 'qualp' };
           }
           return null;
       } catch (e) {

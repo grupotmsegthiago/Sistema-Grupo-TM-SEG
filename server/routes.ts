@@ -4245,8 +4245,12 @@ export async function registerRoutes(
       const tollValue = tolls.reduce((sum: number, t: any) => sum + t.value, 0);
       const distance = typeof data?.distancia?.valor === 'number' ? data.distancia.valor : undefined;
 
+      // Rota calculada com sucesso (mesmo sem pedágio) quando a QualP retorna distância.
+      // Diferenciar "rota sem pedágio (R$ 0)" de "falha" evita cair em fallback e lançar valor indevido.
+      const routeComputed = typeof distance === 'number';
+
       return res.json({
-        success: tollValue > 0,
+        success: routeComputed,
         tollValue: parseFloat(tollValue.toFixed(2)),
         tollCount: tolls.length,
         tolls,
