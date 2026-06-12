@@ -201,6 +201,8 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
   const [manualOverrides, setManualOverrides] = useState({ revenue: false, cost: false, toll: false });
   const [operatorConfirmedCalc, setOperatorConfirmedCalc] = useState(false);
   const [isCalculatingToll, setIsCalculatingToll] = useState(false);
+  const [isGeneratingToll, setIsGeneratingToll] = useState(false);
+  const [tollProgress, setTollProgress] = useState(0);
   const [tollDetails, setTollDetails] = useState<{ count: number; tolls: any[]; observacoes?: string; confianca?: string; provider?: string } | null>(null);
   const [expandedStep, setExpandedStep] = useState<number>(1);
   const [driverQuestion, setDriverQuestion] = useState<'asking' | 'yes' | 'no' | null>(null);
@@ -1098,7 +1100,6 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
       }
       
       let suggestedToll = 0;
-      let tollSource = '';
 
       const clientUpper = (formData.client || '').toUpperCase();
       const originUpper = (route.origin || '').toUpperCase();
@@ -1106,7 +1107,6 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
       const isCevaJundiai200km = clientUpper.includes('CEVA') && originUpper.includes('JUNDIA') && destUpper.includes('200KM');
       if (isCevaJundiai200km) {
           suggestedToll = 35;
-          tollSource = 'fixed';
           showNotification('Regra CEVA', 'Pedágio fixo de R$ 35,00 aplicado (CEVA + Jundiaí + 200KM).', 'success');
       }
 
@@ -1115,23 +1115,9 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
       }
       calculatePricing(route);
 
-      if (tollSource !== 'fixed' && !manualOverrides.toll) {
-          const apiResult = await calculateTollFromAPI(route.origin, route.destination);
-          if (apiResult) {
-              if (apiResult.apiError && !apiResult.provider) {
-                  showNotification('Pedágio QualP', apiResult.apiError, 'error');
-              } else if (typeof apiResult.value === 'number') {
-                  setTollDetails({ count: apiResult.count, tolls: apiResult.tolls, observacoes: apiResult.observacoes, confianca: apiResult.confianca, provider: apiResult.provider });
-                  if (apiResult.value === 0) {
-                      setFormData(prev => ({ ...prev, tollValue: '0' }));
-                      showNotification('Pedágio QualP', 'Rota sem pedágio identificado. Se houver, informe manualmente.', 'info');
-                  } else {
-                      setFormData(prev => ({ ...prev, tollValue: apiResult.value.toFixed(2) }));
-                      showNotification('Pedágio QualP', `R$ ${apiResult.value.toFixed(2)} (${apiResult.count} praça${apiResult.count > 1 ? 's' : ''} - Veículo leve 2 eixos).`, 'success');
-                  }
-              }
-          }
-      } else if (manualOverrides.toll) {
+      // Pedágio (QualP) é consultado SOMENTE ao gerar a OS — ver handleSubmit.
+      // Aqui preservamos apenas regras fixas (ex.: CEVA 200KM) e o override manual.
+      if (manualOverrides.toll) {
           showNotification('Pedágio Manual', 'Valor de pedágio mantido (editado manualmente). Cálculo automático desativado.', 'info');
       }
   };
@@ -1150,32 +1136,19 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
       const handle = setTimeout(async () => {
           lastAutoRouteRef.current = key;
           setOperatorConfirmedCalc(false);
-          setTollDetails(null);
           setSelectedRouteId('manual');
           setRouteSearchTerm(`${origin.split(',')[0]} → ${destination.split(',')[0]}`);
 
           const gResult = await getGoogleMapsDistance(origin, destination);
-          let apiResult = !manualOverrides.toll ? await calculateTollFromAPI(origin, destination) : null;
-          const distKm = (gResult && gResult.distKm > 0)
-              ? gResult.distKm
-              : (apiResult && apiResult.distance && apiResult.distance > 0 ? apiResult.distance : 0);
+          const distKm = (gResult && gResult.distKm > 0) ? gResult.distKm : 0;
 
           const virtualRoute: any = { id: 'manual', name: `${origin.split(',')[0]} → ${destination.split(',')[0]}`, origin, destination, distance: String(distKm), toll_cost: 0 };
           if (gResult && gResult.durationMin > 0) virtualRoute._googleDurationMin = gResult.durationMin;
           await calculatePricing(virtualRoute);
-
-          if (apiResult) {
-              if (apiResult.provider === 'qualp' && typeof apiResult.value === 'number') {
-                  setTollDetails({ count: apiResult.count, tolls: apiResult.tolls, observacoes: apiResult.observacoes, confianca: apiResult.confianca, provider: apiResult.provider });
-                  setFormData(prev => ({ ...prev, tollValue: apiResult!.value.toFixed(2) }));
-                  showNotification('Pedágio QualP', apiResult.value === 0 ? 'Rota sem pedágio identificado. Se houver, informe manualmente.' : `R$ ${apiResult.value.toFixed(2)} (${apiResult.count} praça${apiResult.count > 1 ? 's' : ''} - Veículo leve 2 eixos).`, apiResult.value === 0 ? 'info' : 'success');
-              } else if (apiResult.apiError) {
-                  showNotification('Pedágio QualP', apiResult.apiError, 'error');
-              }
-          }
+          // Pedágio (QualP) é consultado SOMENTE ao gerar a OS — ver handleSubmit.
       }, 1200);
       return () => clearTimeout(handle);
-  }, [formData.origin, formData.destination, formData.client, selectedRouteId, clientRoutes, manualOverrides.toll]);
+  }, [formData.origin, formData.destination, formData.client, selectedRouteId, clientRoutes]);
 
   const handleVehicleSelect = (v: ClientVehicleDB) => {
       setFormData(prev => ({ 
@@ -1256,6 +1229,35 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
     }
 
     setIsSaving(true);
+
+    // ── Consulta de pedágio (QualP) SOMENTE no momento de gerar a OS ──
+    let resolvedTollValue = parseFloat(formData.tollValue) || 0;
+    const destForToll = (formData.destination || '');
+    const isSyntheticDest = /RAIO\s|DESTINO A DEFINIR|ACOMPANHAMENTO/i.test(destForToll);
+    const isCevaJundiai200km = clientUpper.includes('CEVA') && (formData.origin || '').toUpperCase().includes('JUNDIA') && destForToll.toUpperCase().includes('200KM');
+    if (!manualOverrides.toll && !isSyntheticDest && !isCevaJundiai200km && formData.origin && destForToll) {
+        setTollProgress(8);
+        setIsGeneratingToll(true);
+        const progTimer = setInterval(() => setTollProgress(p => (p < 92 ? Math.min(92, p + Math.random() * 11 + 3) : p)), 220);
+        try {
+            const apiResult = await calculateTollFromAPI(formData.origin, destForToll);
+            if (apiResult && apiResult.provider === 'qualp' && typeof apiResult.value === 'number') {
+                resolvedTollValue = apiResult.value;
+                setTollDetails({ count: apiResult.count, tolls: apiResult.tolls, observacoes: apiResult.observacoes, confianca: apiResult.confianca, provider: apiResult.provider });
+                setFormData(prev => ({ ...prev, tollValue: apiResult.value.toFixed(2) }));
+            } else if (apiResult && apiResult.apiError) {
+                showNotification('Pedágio QualP', `${apiResult.apiError} A OS será gerada com R$ ${resolvedTollValue.toFixed(2)}.`, 'error');
+            }
+        } catch (tollErr) {
+            console.warn('Falha na consulta QualP ao gerar OS:', tollErr);
+        } finally {
+            clearInterval(progTimer);
+            setTollProgress(100);
+            await new Promise(res => setTimeout(res, 350));
+            setIsGeneratingToll(false);
+        }
+    }
+
     try {
         let attempts = 0, saved = false, finalId = '';
         const nowIso = new Date().toISOString();
@@ -1275,7 +1277,7 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
                 total_distance: parseFloat(formData.totalDistance), start_time: scheduledIso,
                 mission_type: formData.missionType || 'Caracterizada', 
                 revenue_value: parseFloat(formData.revenueValue) || 0, cost_value: formData.isSameOs ? 0 : (parseFloat(formData.costValue) || 0),
-                toll_value: parseFloat(formData.tollValue) || 0,
+                toll_value: resolvedTollValue,
                 valor_zero_motivo: valorZeroMotivo,
                 ...(formData.isSameOs ? { is_same_os: true, parent_mission_id: formData.parentMissionId || null } : {}), current_location: 'Solicitação Criada',
                 client_vehicle: vehicleId ? parseInt(vehicleId) : null,
@@ -1639,6 +1641,26 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
               </div>
           ))}
       </div>
+
+      {isGeneratingToll && (
+          <div className="fixed inset-0 z-[1300] flex items-center justify-center bg-black/70 backdrop-blur-sm p-4" data-testid="overlay-toll-loading">
+              <div className="bg-white rounded-2xl shadow-2xl max-w-sm w-full p-8 flex flex-col items-center gap-5">
+                  <div className="relative w-24 h-24">
+                      <svg className="w-24 h-24 -rotate-90" viewBox="0 0 100 100">
+                          <circle cx="50" cy="50" r="42" fill="none" stroke="#e5e7eb" strokeWidth="10" />
+                          <circle cx="50" cy="50" r="42" fill="none" stroke="#f97316" strokeWidth="10" strokeLinecap="round" strokeDasharray={2 * Math.PI * 42} strokeDashoffset={2 * Math.PI * 42 * (1 - Math.min(100, tollProgress) / 100)} style={{ transition: 'stroke-dashoffset 0.25s ease' }} />
+                      </svg>
+                      <div className="absolute inset-0 flex items-center justify-center">
+                          <span className="text-xl font-black text-gray-800" data-testid="text-toll-progress">{Math.round(tollProgress)}%</span>
+                      </div>
+                  </div>
+                  <div className="text-center space-y-1">
+                      <p className="text-sm font-black uppercase tracking-wider text-gray-800">Calculando pedágio</p>
+                      <p className="text-[11px] font-bold text-gray-500">Consultando a QualP para a rota informada. Aguarde para gerar a Ordem de Serviço.</p>
+                  </div>
+              </div>
+          </div>
+      )}
 
       <div className="bg-white rounded-xl shadow-sm border border-gray-200" ref={dropdownRef}>
           <form onSubmit={handleSubmit} className="divide-y divide-gray-100">
@@ -2642,9 +2664,9 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
                       <div className="p-4 bg-amber-50 border-2 border-amber-300 rounded-xl space-y-3">
                           <div className="flex items-center gap-2">
                               <AlertTriangle size={16} className="text-amber-600" />
-                              <p className="text-[11px] font-black text-amber-800 uppercase">Pedágio: R$ 0,00</p>
+                              <p className="text-[11px] font-black text-amber-800 uppercase">Pedágio: calculado ao gerar a OS</p>
                           </div>
-                          <p className="text-[9px] text-amber-600 font-bold">Nenhum pedágio identificado nesta rota. Se houver, informe o valor abaixo. Caso contrário, pode prosseguir normalmente.</p>
+                          <p className="text-[9px] text-amber-600 font-bold">O valor do pedágio é consultado automaticamente na QualP no momento de gerar a Ordem de Serviço. Se preferir, informe um valor manual abaixo.</p>
                           <div className="flex items-center gap-2">
                               <span className="text-sm font-black text-amber-700">R$</span>
                               <input type="number" step="0.01" className="flex-1 px-3 py-2 border-2 border-amber-300 rounded-lg text-sm font-black text-amber-900 bg-white focus:border-amber-500 outline-none" placeholder="0.00" value={formData.tollValue === '0' ? '' : formData.tollValue} onChange={e => { setFormData(prev => ({ ...prev, tollValue: e.target.value || '0' })); setManualOverrides(prev => ({ ...prev, toll: true })); }} data-testid="input-toll-manual" />
@@ -2731,7 +2753,7 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
                                       <div className="flex items-center gap-2 px-3 py-2 bg-white rounded-lg border border-gray-200">
                                           <Navigation size={12} className="text-green-500 shrink-0" />
                                           <span className="font-black text-gray-900">Pedágio:</span>
-                                          <span>R$ {parseFloat(formData.tollValue || '0').toFixed(2)}</span>
+                                          <span>{(!manualOverrides.toll && parseFloat(formData.tollValue || '0') === 0) ? 'Calculado ao gerar a OS' : `R$ ${parseFloat(formData.tollValue || '0').toFixed(2)}`}</span>
                                           {tollDetails?.provider === 'qualp' && <span className="text-[8px] text-blue-600 font-black">(via QualP)</span>}
                                           {manualOverrides.toll && <span className="text-[8px] text-amber-600 font-black">(manual)</span>}
                                       </div>

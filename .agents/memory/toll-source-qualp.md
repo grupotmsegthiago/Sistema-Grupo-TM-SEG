@@ -19,7 +19,7 @@ O cálculo automático de pedágio do MissionForm usa **somente a QualP**. Foram
 
 ## Auto-cálculo por origem+destino digitados (sem rota cadastrada)
 
-No MissionForm (componente SÓ de nova OS), digitar origem+destino manualmente já dispara tudo automático (distância Google + tabelas/preço + pedágio QualP), sem exigir rota cadastrada. Um effect com debounce dispara quando há cliente+origem+destino, pula destinos sintéticos (RAIO/ACOMPANHAMENTO/DESTINO A DEFINIR) e pula se já há rota cadastrada real selecionada. Dedupe por chave `origin|||destination`. Monta uma rota virtual `{id:'manual'}` e seta `selectedRouteId='manual'` para destravar os painéis/step (que exigem `selectedRouteId`).
+No MissionForm (componente SÓ de nova OS), digitar origem+destino manualmente já dispara distância (Google) + tabelas/preço, sem exigir rota cadastrada. O PEDÁGIO (QualP) NÃO roda aqui — ver seção "QualP só na geração da OS". Um effect com debounce dispara quando há cliente+origem+destino, pula destinos sintéticos (RAIO/ACOMPANHAMENTO/DESTINO A DEFINIR) e pula se já há rota cadastrada real selecionada. Dedupe por chave `origin|||destination`. Monta uma rota virtual `{id:'manual'}` e seta `selectedRouteId='manual'` para destravar os painéis/step (que exigem `selectedRouteId`).
 
 **Why:** operador não devia precisar cadastrar rota só para precificar uma OS pontual; a regra de ouro é "direto ao ponto".
 
@@ -27,3 +27,15 @@ No MissionForm (componente SÓ de nova OS), digitar origem+destino manualmente j
 - Quem resolve a rota ativa dos handlers (troca de tabela, seleção de fornecedor, botão Recalcular) deve usar a rota cadastrada real OU uma virtual derivada de origem/destino — não só `clientRoutes.find(selectedRouteId)`, senão o fluxo manual não recalcula.
 - NUNCA herdar `formData.totalDistance` da rota anterior como fallback de distância: se Google e QualP falharem em distância, usar 0 (evita precificar a rota nova com km da rota velha).
 - Limpar a rota deve resetar o ref de dedupe e o estado de pedágio para permitir recalcular a mesma rota de novo.
+
+## QualP só na geração da OS (não na digitação/seleção)
+
+A consulta QualP de pedágio acontece SOMENTE ao gerar a OS (no handleSubmit), não durante a digitação de origem/destino nem na seleção de rota cadastrada. Antes/durante a edição só rodam Google (distância) + calculatePricing; o pedágio fica como pendente (R$ 0 ou manual). Ao clicar em gerar, abre um overlay de carregamento com % (progress animado) e só depois de a consulta concluir a OS é salva.
+
+**Why:** a diretoria pediu para economizar créditos da QualP (limitados) — uma chamada por OS gerada, não a cada pausa de digitação — e dar feedback visual claro de que o sistema está calculando o pedágio antes de salvar.
+
+**How to apply:**
+- O valor salvo no banco (`toll_value`) deve vir de uma variável LOCAL resolvida na hora (ex.: `resolvedTollValue`), NUNCA de `formData.tollValue` logo após `setFormData` (estado assíncrono fica defasado dentro do mesmo handler).
+- O overlay deve sempre fechar no `finally` (inclusive em erro/exceção da API), com `clearInterval` do timer de progresso. Em falha da QualP, gerar a OS com o valor existente e avisar — não bloquear o salvamento.
+- Pular a consulta QualP na geração quando: override manual, destino sintético (RAIO/ACOMPANHAMENTO/DESTINO A DEFINIR) ou regra fixa CEVA Jundiaí 200KM.
+- Gating (`step5Done`/`tollLoaded`) continua liberando a geração com `tollValue===0`, pois o pedágio é resolvido só no submit.
