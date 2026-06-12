@@ -1265,7 +1265,18 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
     ];
     const isMissionOpen = (m: Mission) => OPEN_STATUSES.includes(m.status);
     const openMissionStats = useMemo(() => {
-        const open = allMissions.filter(isMissionOpen);
+        // Mostra SOMENTE as que estão em aberto HOJE (iniciaram hoje ou estão
+        // atrasadas e seguem abertas). As agendadas para outro dia (futuro)
+        // NÃO entram nesta contagem.
+        const endOfToday = new Date();
+        endOfToday.setHours(23, 59, 59, 999);
+        const endOfTodayTs = endOfToday.getTime();
+        const open = allMissions.filter(m => {
+            if (!isMissionOpen(m)) return false;
+            const ts = new Date(m.startTime || m.createdAt).getTime();
+            if (isNaN(ts)) return true; // sem data válida: mantém visível
+            return ts <= endOfTodayTs; // hoje ou atrasada; exclui futuras
+        });
         const total = open.length;
         const dhl = open.filter(m => (((m as any).originalClientName || m.client || '').toUpperCase().includes('DHL'))).length;
         const demais = total - dhl;
