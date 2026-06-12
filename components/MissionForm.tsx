@@ -1045,9 +1045,32 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
       }
   };
 
+  const calculateTollQualP = async (origin: string, destination: string): Promise<{ value: number; count: number; tolls: any[]; distance?: number; provider?: string } | null> => {
+      try {
+          const resp = await authFetch('/api/toll/qualp', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ origin, destination, axis: 2 }),
+          });
+          if (!resp.ok) return null;
+          const data = await resp.json();
+          if (data.success && data.tollValue > 0) {
+              return { value: data.tollValue, count: data.tollCount, tolls: data.tolls || [], distance: data.distance, provider: 'qualp' };
+          }
+          return null;
+      } catch (e) {
+          console.error('Erro QualP pedágio:', e);
+          return null;
+      }
+  };
+
   const calculateTollFromAPI = async (origin: string, destination: string): Promise<{ value: number; count: number; tolls: any[]; apiError?: string; distance?: number; duration?: string; provider?: string; observacoes?: string; confianca?: string } | null> => {
       try {
           setIsCalculatingToll(true);
+
+          const qualpResult = await calculateTollQualP(origin, destination);
+          if (qualpResult) return qualpResult;
+
           const resp = await authFetch('/api/toll/calculate', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },

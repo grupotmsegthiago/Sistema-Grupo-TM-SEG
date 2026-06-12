@@ -4178,6 +4178,87 @@ export async function registerRoutes(
     }
   });
 
+  // ==========================================
+  // TOLL API (QualP - rotas v4) — fonte preferida
+  // ==========================================
+  const QUALP_API_TOKEN = process.env.QUALP_API_TOKEN || '';
+  const QUALP_ROUTE_URL = 'https://api.qualp.com.br/rotas/v4';
+
+  app.post('/api/toll/qualp', requireAuth, async (req: Request, res: Response) => {
+    try {
+      if (!QUALP_API_TOKEN) {
+        return res.json({ success: false, apiError: 'QUALP_API_TOKEN não configurada no servidor' });
+      }
+
+      const { origin, destination, axis } = req.body;
+      if (!origin || !destination) {
+        return res.json({ success: false, apiError: 'Origem e destino são obrigatórios' });
+      }
+
+      const eixos = Number(axis) >= 2 ? Number(axis) : 2;
+
+      const response = await fetch(QUALP_ROUTE_URL, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Access-Token': QUALP_API_TOKEN,
+        },
+        body: JSON.stringify({
+          locations: [origin, destination],
+          config: {
+            route: { type_route: 'efficient', calculate_return: false },
+            vehicle: { type: 'car', axis: eixos },
+          },
+          show: { tolls: true },
+        }),
+      });
+
+      if (!response.ok) {
+        const errText = await response.text();
+        console.error('QualP Pedágio error:', response.status, errText);
+        return res.json({ success: false, apiError: `API QualP retornou erro ${response.status}` });
+      }
+
+      const data = await response.json();
+      const pedagios = Array.isArray(data?.pedagios) ? data.pedagios : [];
+
+      const tolls = pedagios.map((p: any) => {
+        let v = 0;
+        const tar = p?.tarifa;
+        if (tar && typeof tar === 'object') {
+          if (tar[String(eixos)] !== undefined) {
+            v = parseFloat(tar[String(eixos)]) || 0;
+          } else {
+            const vals = Object.values(tar).map((x: any) => parseFloat(x)).filter((n: number) => !isNaN(n));
+            v = vals.length ? Math.min(...vals) : 0;
+          }
+        } else if (tar !== undefined) {
+          v = parseFloat(tar) || 0;
+        }
+        return {
+          name: p?.nome || p?.concessionaria || 'Praça de Pedágio',
+          value: v,
+          road: p?.rodovia || '',
+        };
+      });
+
+      const tollValue = tolls.reduce((sum: number, t: any) => sum + t.value, 0);
+      const distance = typeof data?.distancia?.valor === 'number' ? data.distancia.valor : undefined;
+
+      return res.json({
+        success: tollValue > 0,
+        tollValue: parseFloat(tollValue.toFixed(2)),
+        tollCount: tolls.length,
+        tolls,
+        distance,
+        provider: 'qualp',
+      });
+    } catch (e: any) {
+      console.error('Erro ao consultar QualP Pedágio:', e);
+      return res.json({ success: false, apiError: `Erro interno: ${e.message}` });
+    }
+  });
+
   // ═══════════════════════════════════════════════════════
   // TOLL ESTIMATION VIA GEMINI AI
   // ═══════════════════════════════════════════════════════

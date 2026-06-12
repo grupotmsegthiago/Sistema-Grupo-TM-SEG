@@ -1,4 +1,4 @@
-import { PackageOpen, Truck, Layers } from "lucide-react";
+import { PackageOpen, Layers } from "lucide-react";
 
 export function StatusCard() {
   const dhl = 18;
@@ -29,24 +29,6 @@ export function StatusCard() {
         </div>
 
         <div className="px-5 py-4 space-y-4">
-          <div className="rounded-xl border border-amber-200 bg-amber-50 p-4">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-amber-400 text-amber-900">
-                  <Truck className="h-4 w-4" />
-                </div>
-                <span className="text-sm font-bold text-amber-900">DHL</span>
-              </div>
-              <div className="flex items-baseline gap-2">
-                <span className="text-2xl font-extrabold text-amber-900 leading-none">{dhl}</span>
-                <span className="text-sm font-bold text-amber-700">{dhlPct}%</span>
-              </div>
-            </div>
-            <div className="mt-3 h-2 w-full overflow-hidden rounded-full bg-amber-200">
-              <div className="h-full rounded-full bg-amber-500" style={{ width: `${dhlPct}%` }} />
-            </div>
-          </div>
-
           <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
