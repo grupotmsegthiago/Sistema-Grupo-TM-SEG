@@ -1136,6 +1136,47 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
       }
   };
 
+  const lastAutoRouteRef = useRef('');
+  useEffect(() => {
+      if (!formData.client) return;
+      const origin = (formData.origin || '').trim();
+      const destination = (formData.destination || '').trim();
+      if (!origin || !destination) return;
+      if (/RAIO\s|DESTINO A DEFINIR|ACOMPANHAMENTO/i.test(destination)) return;
+      if (selectedRouteId && clientRoutes.some(r => r.id.toString() === selectedRouteId)) return;
+      const key = `${origin}|||${destination}`;
+      if (lastAutoRouteRef.current === key) return;
+
+      const handle = setTimeout(async () => {
+          lastAutoRouteRef.current = key;
+          setOperatorConfirmedCalc(false);
+          setTollDetails(null);
+          setSelectedRouteId('manual');
+          setRouteSearchTerm(`${origin.split(',')[0]} → ${destination.split(',')[0]}`);
+
+          const gResult = await getGoogleMapsDistance(origin, destination);
+          let apiResult = !manualOverrides.toll ? await calculateTollFromAPI(origin, destination) : null;
+          const distKm = (gResult && gResult.distKm > 0)
+              ? gResult.distKm
+              : (apiResult && apiResult.distance && apiResult.distance > 0 ? apiResult.distance : 0);
+
+          const virtualRoute: any = { id: 'manual', name: `${origin.split(',')[0]} → ${destination.split(',')[0]}`, origin, destination, distance: String(distKm), toll_cost: 0 };
+          if (gResult && gResult.durationMin > 0) virtualRoute._googleDurationMin = gResult.durationMin;
+          await calculatePricing(virtualRoute);
+
+          if (apiResult) {
+              if (apiResult.provider === 'qualp' && typeof apiResult.value === 'number') {
+                  setTollDetails({ count: apiResult.count, tolls: apiResult.tolls, observacoes: apiResult.observacoes, confianca: apiResult.confianca, provider: apiResult.provider });
+                  setFormData(prev => ({ ...prev, tollValue: apiResult!.value.toFixed(2) }));
+                  showNotification('Pedágio QualP', apiResult.value === 0 ? 'Rota sem pedágio identificado. Se houver, informe manualmente.' : `R$ ${apiResult.value.toFixed(2)} (${apiResult.count} praça${apiResult.count > 1 ? 's' : ''} - Veículo leve 2 eixos).`, apiResult.value === 0 ? 'info' : 'success');
+              } else if (apiResult.apiError) {
+                  showNotification('Pedágio QualP', apiResult.apiError, 'error');
+              }
+          }
+      }, 1200);
+      return () => clearTimeout(handle);
+  }, [formData.origin, formData.destination, formData.client, selectedRouteId, clientRoutes, manualOverrides.toll]);
+
   const handleVehicleSelect = (v: ClientVehicleDB) => {
       setFormData(prev => ({ 
           ...prev, 
@@ -1164,10 +1205,19 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
       setActiveDropdown(null);
   };
 
+  const getActiveRoute = (): any => {
+      const real = clientRoutes.find(r => r.id.toString() === selectedRouteId);
+      if (real) return real;
+      const origin = (formData.origin || '').trim();
+      const destination = (formData.destination || '').trim();
+      if (origin && destination) return { id: 'manual', name: `${origin.split(',')[0]} → ${destination.split(',')[0]}`, origin, destination, distance: formData.totalDistance || '0', toll_cost: 0 };
+      return null;
+  };
+
   const handleManualTableChange = (type: 'rev' | 'cst', val: string) => {
       if (type === 'rev') setManualOverrides(prev => ({ ...prev, revenue: false }));
       else setManualOverrides(prev => ({ ...prev, cost: false }));
-      const route = clientRoutes.find(r => r.id.toString() === selectedRouteId);
+      const route = getActiveRoute();
       if (!route) return;
       if (type === 'rev') { setManualRevenueTableId(val); calculatePricing(route, undefined, val, manualCostTableId); } 
       else { setManualCostTableId(val); calculatePricing(route, undefined, manualRevenueTableId, val); }
@@ -1176,7 +1226,7 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
   const handleProviderSelection = (newProviderName: string) => {
       setProviderSearchTerm(newProviderName);
       
-      const route = clientRoutes.find(r => r.id.toString() === selectedRouteId);
+      const route = getActiveRoute();
       if(route) { 
           calculatePricing(route, newProviderName, manualRevenueTableId, ''); 
       }
@@ -2524,7 +2574,7 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
                               <div className="flex items-center gap-2 px-3 py-2 bg-green-50 border border-green-200 rounded-lg animate-in fade-in">
                                   <Check size={14} className="text-green-600" />
                                   <span className="text-[10px] font-black text-green-700 uppercase tracking-wider">Rota selecionada: {routeSearchTerm}</span>
-                                  <button type="button" onClick={() => { setSelectedRouteId(''); setRouteSearchTerm(''); setFormData(prev => ({...prev, origin: '', destination: '', totalDistance: '', estimatedTime: ''})); setCalcDetails(''); }} className="ml-auto text-green-500 hover:text-red-500 transition-colors" data-testid="button-clear-route"><X size={14}/></button>
+                                  <button type="button" onClick={() => { lastAutoRouteRef.current = ''; setSelectedRouteId(''); setRouteSearchTerm(''); setFormData(prev => ({...prev, origin: '', destination: '', totalDistance: '', estimatedTime: ''})); setCalcDetails(''); setTollDetails(null); setManualOverrides(prev => ({ ...prev, toll: false })); }} className="ml-auto text-green-500 hover:text-red-500 transition-colors" data-testid="button-clear-route"><X size={14}/></button>
                               </div>
                           )}
                       </div>
@@ -2854,7 +2904,7 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
                                       </div>
                                       <p className="text-[8px] text-gray-400 font-bold mt-1">{manualOverrides.toll ? 'Editado pelo usuário' : tollDetails ? (tollDetails.count === 0 ? 'Sem pedágio · QualP' : `${tollDetails.count} praça${tollDetails.count > 1 ? 's' : ''} · QualP`) : isCalculatingToll ? 'Calculando...' : 'Via QualP'}</p>
                                       {tollDetails?.confianca && !manualOverrides.toll && <p className={`text-[7px] font-black uppercase mt-1 ${tollDetails.confianca === 'alta' ? 'text-green-600' : tollDetails.confianca === 'media' ? 'text-yellow-600' : 'text-red-600'}`}>Conf: {tollDetails.confianca}</p>}
-                                      {manualOverrides.toll && <button type="button" onClick={() => { setManualOverrides(prev => ({ ...prev, toll: false })); const route = clientRoutes.find(r => r.id.toString() === selectedRouteId); if (route) { setTollDetails(null); calculateTollFromAPI(route.origin, route.destination).then(r => { if (r && r.provider === 'qualp' && typeof r.value === 'number') { setFormData(prev => ({ ...prev, tollValue: r.value.toFixed(2) })); setTollDetails({ count: r.count, tolls: r.tolls, observacoes: r.observacoes, confianca: r.confianca, provider: r.provider }); showNotification('Pedágio QualP', r.value === 0 ? 'Rota sem pedágio identificado. Se houver, informe manualmente.' : `R$ ${r.value.toFixed(2)} (${r.count} praça${r.count > 1 ? 's' : ''} - Veículo leve 2 eixos).`, r.value === 0 ? 'info' : 'success'); } else { showNotification('Pedágio QualP', (r && r.apiError) || 'Não foi possível calcular o pedágio via QualP. Informe manualmente, se houver.', 'error'); } }); } }} className="text-[7px] font-bold text-amber-600 hover:text-amber-500 underline mt-1">Recalcular via QualP</button>}
+                                      {manualOverrides.toll && <button type="button" onClick={() => { setManualOverrides(prev => ({ ...prev, toll: false })); const route = getActiveRoute(); if (route) { setTollDetails(null); calculateTollFromAPI(route.origin, route.destination).then(r => { if (r && r.provider === 'qualp' && typeof r.value === 'number') { setFormData(prev => ({ ...prev, tollValue: r.value.toFixed(2) })); setTollDetails({ count: r.count, tolls: r.tolls, observacoes: r.observacoes, confianca: r.confianca, provider: r.provider }); showNotification('Pedágio QualP', r.value === 0 ? 'Rota sem pedágio identificado. Se houver, informe manualmente.' : `R$ ${r.value.toFixed(2)} (${r.count} praça${r.count > 1 ? 's' : ''} - Veículo leve 2 eixos).`, r.value === 0 ? 'info' : 'success'); } else { showNotification('Pedágio QualP', (r && r.apiError) || 'Não foi possível calcular o pedágio via QualP. Informe manualmente, se houver.', 'error'); } }); } }} className="text-[7px] font-bold text-amber-600 hover:text-amber-500 underline mt-1">Recalcular via QualP</button>}
                                   </div>
                               </div>
 
