@@ -1026,25 +1026,6 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
       } finally { setIsCalculating(false); }
   }, [formData.client, formData.provider, formData.applyCeva200km, formData.raioKm, formData.applyVtc02h, formData.isSameOs, clientPriceTables, providerCostTables, manualOverrides.revenue, manualOverrides.cost]);
 
-  const calculateTollGemini = async (origin: string, destination: string): Promise<{ value: number; count: number; tolls: any[]; observacoes?: string; confianca?: string; provider?: string } | null> => {
-      try {
-          const resp = await authFetch('/api/toll/gemini-estimate', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ origin, destination }),
-          });
-          if (!resp.ok) return null;
-          const data = await resp.json();
-          if (data.success && typeof data.tollValue === 'number') {
-              return { value: data.tollValue, count: data.tollCount || 0, tolls: data.tolls || [], observacoes: data.observacoes, confianca: data.confianca, provider: 'gemini-ai' };
-          }
-          return null;
-      } catch (e) {
-          console.error('Erro Gemini pedágio:', e);
-          return null;
-      }
-  };
-
   const calculateTollQualP = async (origin: string, destination: string): Promise<{ value: number; count: number; tolls: any[]; distance?: number; provider?: string } | null> => {
       try {
           const resp = await authFetch('/api/toll/qualp', {
@@ -1071,28 +1052,9 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
           const qualpResult = await calculateTollQualP(origin, destination);
           if (qualpResult) return qualpResult;
 
-          const resp = await authFetch('/api/toll/calculate', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ origin, destination }),
-          });
-          if (!resp.ok) return null;
-          const data = await resp.json();
-          if (data.success && data.tollValue > 0) {
-              return { value: data.tollValue, count: data.tollCount, tolls: data.tolls || [], distance: data.distance, duration: data.duration, provider: data.provider };
-          }
-
-          const geminiResult = await calculateTollGemini(origin, destination);
-          if (geminiResult) return geminiResult;
-
-          if (data.apiError) {
-              return { value: 0, count: 0, tolls: [], apiError: data.apiError };
-          }
-          return null;
+          return { value: 0, count: 0, tolls: [], apiError: 'Não foi possível calcular o pedágio via QualP. Informe manualmente, se houver.' };
       } catch (e) {
-          console.error('Erro ao consultar API de pedágio:', e);
-          const geminiResult = await calculateTollGemini(origin, destination);
-          if (geminiResult) return geminiResult;
+          console.error('Erro ao consultar QualP:', e);
           return null;
       } finally {
           setIsCalculatingToll(false);
@@ -1146,29 +1108,6 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
           suggestedToll = 35;
           tollSource = 'fixed';
           showNotification('Regra CEVA', 'Pedágio fixo de R$ 35,00 aplicado (CEVA + Jundiaí + 200KM).', 'success');
-      } else if (route.toll_cost && route.toll_cost > 0) {
-          suggestedToll = route.toll_cost;
-          tollSource = 'fixed';
-          showNotification('IA Logística', `Pedágio de R$ ${suggestedToll.toFixed(2)} aplicado via cadastro de rota fixa.`, 'success');
-      } else {
-          try {
-              const { data: lastMission } = await supabase
-                  .from('missions')
-                  .select('toll_value')
-                  .eq('client', formData.client)
-                  .eq('origin', route.origin)
-                  .eq('destination', route.destination)
-                  .eq('status', MissionStatus.COMPLETED)
-                  .order('created_at', { ascending: false })
-                  .limit(1)
-                  .maybeSingle();
-              
-              if (lastMission && lastMission.toll_value && lastMission.toll_value > 0) {
-                  suggestedToll = lastMission.toll_value;
-                  tollSource = 'history';
-                  showNotification('Aprendizado de Máquina', `Sugestão de R$ ${suggestedToll.toFixed(2)} identificada no histórico desta rota.`, 'info');
-              }
-          } catch (e) { console.error(e); }
       }
 
       if (!manualOverrides.toll) {
@@ -1180,18 +1119,15 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
           const apiResult = await calculateTollFromAPI(route.origin, route.destination);
           if (apiResult) {
               if (apiResult.apiError && !apiResult.provider) {
-                  showNotification('API Pedágio', apiResult.apiError, 'error');
+                  showNotification('Pedágio QualP', apiResult.apiError, 'error');
               } else if (typeof apiResult.value === 'number') {
                   setTollDetails({ count: apiResult.count, tolls: apiResult.tolls, observacoes: apiResult.observacoes, confianca: apiResult.confianca, provider: apiResult.provider });
                   if (apiResult.value === 0) {
                       setFormData(prev => ({ ...prev, tollValue: '0' }));
-                      const providerLabel = apiResult.provider === 'gemini-ai' ? 'Gemini IA' : 'API Pedágio';
-                      showNotification(providerLabel, 'Rota sem pedágio identificado. Se houver, informe manualmente.', 'info');
-                  } else if (tollSource !== 'history' || Math.abs(apiResult.value - suggestedToll) > 1) {
+                      showNotification('Pedágio QualP', 'Rota sem pedágio identificado. Se houver, informe manualmente.', 'info');
+                  } else {
                       setFormData(prev => ({ ...prev, tollValue: apiResult.value.toFixed(2) }));
-                      const providerLabel = apiResult.provider === 'gemini-ai' ? 'Gemini IA' : apiResult.provider === 'rotasbrasil' ? 'Rotas Brasil' : 'API Pedágio';
-                      const confiancaLabel = apiResult.confianca ? ` (Confiança: ${apiResult.confianca})` : '';
-                      showNotification(providerLabel, `R$ ${apiResult.value.toFixed(2)} estimado (${apiResult.count} praça${apiResult.count > 1 ? 's' : ''} - Veículo leve 2 eixos)${confiancaLabel}.`, 'success');
+                      showNotification('Pedágio QualP', `R$ ${apiResult.value.toFixed(2)} (${apiResult.count} praça${apiResult.count > 1 ? 's' : ''} - Veículo leve 2 eixos).`, 'success');
                   }
               }
           }
@@ -2746,7 +2682,7 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
                                           <Navigation size={12} className="text-green-500 shrink-0" />
                                           <span className="font-black text-gray-900">Pedágio:</span>
                                           <span>R$ {parseFloat(formData.tollValue || '0').toFixed(2)}</span>
-                                          {tollDetails?.provider === 'gemini-ai' && <span className="text-[8px] text-purple-600 font-black">(via IA)</span>}
+                                          {tollDetails?.provider === 'qualp' && <span className="text-[8px] text-blue-600 font-black">(via QualP)</span>}
                                           {manualOverrides.toll && <span className="text-[8px] text-amber-600 font-black">(manual)</span>}
                                       </div>
                                   </div>
@@ -2916,9 +2852,9 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
                                           <span className="text-[10px] font-black text-gray-400">R$</span>
                                           <input type="number" step="0.01" className="bg-transparent outline-none text-sm font-black text-gray-800 w-20" value={formData.tollValue} onChange={e => { setFormData(prev => ({ ...prev, tollValue: e.target.value })); setManualOverrides(prev => ({ ...prev, toll: true })); }} data-testid="input-toll-summary" />
                                       </div>
-                                      <p className="text-[8px] text-gray-400 font-bold mt-1">{manualOverrides.toll ? 'Editado pelo usuário' : tollDetails ? (tollDetails.count === 0 ? `Sem pedágio · ${tollDetails.provider === 'gemini-ai' ? 'IA' : 'API'}` : `${tollDetails.count} praça${tollDetails.count > 1 ? 's' : ''} · ${tollDetails.provider === 'gemini-ai' ? 'IA' : 'API'}`) : isCalculatingToll ? 'Calculando...' : 'Via API'}</p>
+                                      <p className="text-[8px] text-gray-400 font-bold mt-1">{manualOverrides.toll ? 'Editado pelo usuário' : tollDetails ? (tollDetails.count === 0 ? 'Sem pedágio · QualP' : `${tollDetails.count} praça${tollDetails.count > 1 ? 's' : ''} · QualP`) : isCalculatingToll ? 'Calculando...' : 'Via QualP'}</p>
                                       {tollDetails?.confianca && !manualOverrides.toll && <p className={`text-[7px] font-black uppercase mt-1 ${tollDetails.confianca === 'alta' ? 'text-green-600' : tollDetails.confianca === 'media' ? 'text-yellow-600' : 'text-red-600'}`}>Conf: {tollDetails.confianca}</p>}
-                                      {manualOverrides.toll && <button type="button" onClick={() => { setManualOverrides(prev => ({ ...prev, toll: false })); const route = clientRoutes.find(r => r.id.toString() === selectedRouteId); if (route) { setTollDetails(null); calculateTollFromAPI(route.origin, route.destination).then(r => { if (r && typeof r.value === 'number') { setFormData(prev => ({ ...prev, tollValue: r.value.toFixed(2) })); setTollDetails({ count: r.count, tolls: r.tolls, observacoes: r.observacoes, confianca: r.confianca, provider: r.provider }); } }); } }} className="text-[7px] font-bold text-amber-600 hover:text-amber-500 underline mt-1">Recalcular via IA</button>}
+                                      {manualOverrides.toll && <button type="button" onClick={() => { setManualOverrides(prev => ({ ...prev, toll: false })); const route = clientRoutes.find(r => r.id.toString() === selectedRouteId); if (route) { setTollDetails(null); calculateTollFromAPI(route.origin, route.destination).then(r => { if (r && r.provider === 'qualp' && typeof r.value === 'number') { setFormData(prev => ({ ...prev, tollValue: r.value.toFixed(2) })); setTollDetails({ count: r.count, tolls: r.tolls, observacoes: r.observacoes, confianca: r.confianca, provider: r.provider }); showNotification('Pedágio QualP', r.value === 0 ? 'Rota sem pedágio identificado. Se houver, informe manualmente.' : `R$ ${r.value.toFixed(2)} (${r.count} praça${r.count > 1 ? 's' : ''} - Veículo leve 2 eixos).`, r.value === 0 ? 'info' : 'success'); } else { showNotification('Pedágio QualP', (r && r.apiError) || 'Não foi possível calcular o pedágio via QualP. Informe manualmente, se houver.', 'error'); } }); } }} className="text-[7px] font-bold text-amber-600 hover:text-amber-500 underline mt-1">Recalcular via QualP</button>}
                                   </div>
                               </div>
 
@@ -2929,7 +2865,7 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
                                           <p className="text-[9px] font-black text-gray-500 uppercase tracking-widest flex items-center gap-1.5">
                                               <Navigation size={10} />
                                               Praças de Pedágio Identificadas
-                                              {tollDetails.provider === 'gemini-ai' && <span className="px-1.5 py-0.5 bg-purple-50 border border-purple-200 rounded text-[7px] text-purple-600">via Gemini IA</span>}
+                                              {tollDetails.provider === 'qualp' && <span className="px-1.5 py-0.5 bg-blue-50 border border-blue-200 rounded text-[7px] text-blue-600">via QualP</span>}
                                           </p>
                                       </div>
                                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
