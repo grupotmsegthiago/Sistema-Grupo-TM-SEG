@@ -115,7 +115,7 @@ export function FinalizeChecklist() {
               <TableProperties className="mt-0.5 h-4 w-4 shrink-0 text-blue-600" />
               <p className="text-[12px] font-medium text-blue-900">
                 Lembrete: verifique se a <b>tabela aplicada</b> nesta OS está correta —
-                <span className="font-bold"> SUDESTE - DHL 100KM</span>.
+                <span className="font-bold"> SUDESTE - DISTRIBUIÇÃO SP 100KM</span>.
               </p>
             </div>
             <Check label="Confirmo as cidades e a tabela aplicada" />
@@ -142,16 +142,16 @@ export function FinalizeChecklist() {
 
             <div className="mt-2 space-y-2">
               <TableSuggestion
-                title="SUDESTE - DHL 150KM"
-                meta="Origem + destino batem · KM mais próximo (150 km)"
+                title="SUDESTE - RAIO SP 200KM"
+                meta="Mesmo estado (SP) · raio de 200 km cobre os 148 km"
                 best
               />
               <TableSuggestion
-                title="SUDESTE - DHL 200KM"
-                meta="Mesma região · próximo KM acima (200 km)"
+                title="SUDESTE - RAIO SP 300KM"
+                meta="Mesma região · próxima faixa de raio"
               />
               <TableSuggestion
-                title="SUDESTE - DHL 100KM"
+                title="SUDESTE - DISTRIBUIÇÃO SP 100KM"
                 meta="Tabela atual · franquia 100 km"
                 current
               />
