@@ -1843,6 +1843,36 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
       }
   };
 
+  // Recálculo SÍNCRONO do número grande (VALOR FINAL cliente/fornecedor) no
+  // momento exato em que o usuário troca a "Tabela de Preço/Custo Aplicada".
+  // Não dependemos mais só do encadeamento de effects (autofill + guardas de
+  // lock), que em OS já SALVA/APROVADA podia deixar o número grande "congelado"
+  // no valor antigo enquanto a memória de cálculo (breakdown) já mudava. Aqui
+  // recalculamos na hora, com a tabela escolhida, e escrevemos direto no input
+  // exibido. É SÓ TELA: nada é gravado no banco — a persistência continua
+  // exclusiva do fluxo de Salvar/Aprovar, e o snapshot imutável de OS aprovada
+  // nunca é tocado por trocar a tabela.
+  const recalcBigNumbersOnTableSwap = (opts: { clientTableId?: string; providerTableId?: string }) => {
+      if (!mission) return;
+      const currentToll = parseNumber(tollInput);
+      const fin = calculateMissionFinancials({ ...mission, toll_value: currentToll }, clientTables, providerTables, clientData, currentTime, {
+          clientTableId: (opts.clientTableId ?? manualClientTableId) || undefined,
+          providerTableId: (opts.providerTableId ?? manualProviderTableId) || undefined,
+          forceIblFee: iblEnabled,
+          providerOpsOverride: providerOpsOverride,
+      }, providersList);
+      if (!fin) return;
+      const fmtBR = (v: number) => v.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+      if (opts.clientTableId !== undefined) {
+          const total = fin.client.serviceTotal + parseNumber(tollInput) + parseNumber(displacementInput);
+          setRevenueInput(fmtBR(total));
+      }
+      if (opts.providerTableId !== undefined) {
+          const total = fin.provider.serviceTotal + parseNumber(tollProviderInput) + parseNumber(displacementProviderInput);
+          setCostInput(fmtBR(total));
+      }
+  };
+
   // Troca rápida da TABELA DE PREÇO do cliente (campo Receita). Define a tabela
   // manual, limpa overrides e flags de verificação/edição para que o cálculo
   // automático refaça o total com a nova tabela. O autofill (effect de params)
@@ -1862,6 +1892,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                   .then(({ error }) => { if (error) console.error('Erro ao limpar flags (troca tabela cliente):', error); });
           }
       }
+      recalcBigNumbersOnTableSwap({ clientTableId: id });
   };
 
   // Troca rápida da TABELA DE CUSTO do fornecedor (campo Custo). Mesma lógica do
@@ -1881,6 +1912,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                   .then(({ error }) => { if (error) console.error('Erro ao limpar flags (troca tabela fornecedor):', error); });
           }
       }
+      recalcBigNumbersOnTableSwap({ providerTableId: id });
   };
 
   const getApprovalStage = (userName: string, userRole: string): { stage: string; label: string } => {
@@ -3769,6 +3801,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                                     });
                                                 }
                                             }
+                                            recalcBigNumbersOnTableSwap({ clientTableId: newTableId });
                                         };
                                         return (
                                             <FilterableSelect
@@ -4220,6 +4253,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                                 setMission(prev => prev ? { ...prev, revenue_edit_reason: '', cost_edit_reason: '', billing_verified_by: null } : prev);
                                                 if (mission) supabase.from('missions').update({ revenue_edit_reason: '', cost_edit_reason: '', billing_verified_by: null }).eq('id', mission.id);
                                             }
+                                            recalcBigNumbersOnTableSwap({ providerTableId: val });
                                         };
                                         // EDIÇÃO TOTAL (Barbara/Thiago/Simone/diretoria/admin) destrava o
                                         // seletor mesmo em MESMA OS, motor auto ativo ou faturamento travado.
