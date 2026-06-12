@@ -187,6 +187,10 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
   // Resultados de busca server-side (OS/cliente/fornecedor/motorista/SE) para
   // que a busca encontre OS fora do período atualmente carregado.
   const [searchMatches, setSearchMatches] = useState<Mission[]>([]);
+  // Sinal para re-disparar a busca server-side (searchMatches) após qualquer
+  // refresh de missões — cobre visão restrita/comercial (sem patch direcionado)
+  // e reconexão de realtime, mantendo os cards encontrados por busca em dia.
+  const [searchRefreshTick, setSearchRefreshTick] = useState(0);
   // Só liberamos a busca server-side depois que o escopo de cliente foi
   // RESOLVIDO em fetchMissions. clientScopeRef nasce como { type: 'all' }, então
   // buscar antes da resolução vazaria OS de outros clientes para usuários
@@ -861,12 +865,27 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
             allMissionsRef.current = next;
             return next;
           });
+          setSearchMatches(prev => prev.some(m => String(m.id) === String(oldId)) ? prev.filter(m => String(m.id) !== String(oldId)) : prev);
           suppressFullRefetchUntilRef.current = Date.now() + 1500;
           scheduleAuxRefresh();
           return;
         }
         const row = payload.new;
         if (!row || row.id == null) { scheduleFullRefetch(); return; }
+        // Mantém os resultados de busca (searchMatches) sincronizados: uma OS
+        // pode estar visível via busca/filtro de OS por estar FORA do período
+        // carregado em allMissions (ex.: OS Concluída antiga). O patch
+        // direcionado e o fetchMissions só tocam allMissions — sem isto,
+        // salvar/aprovar não atualizava o card encontrado por busca, que ficava
+        // preso nos valores antigos de revenue_value/cost_value.
+        setSearchMatches(prev => {
+          if (!prev.length) return prev;
+          const sidx = prev.findIndex(m => String(m.id) === String(row.id));
+          if (sidx === -1) return prev;
+          const snext = prev.slice();
+          snext[sidx] = mapRawMissionRow(row);
+          return snext;
+        });
         const maps = lookupMapsRef.current;
         const needsVehicle = !!row.vehicle_id && !maps.vehicleMap[row.vehicle_id];
         const needsClientVehicle = !!row.client_vehicle && !maps.clientVehicleMap[row.client_vehicle?.toString()];
@@ -937,6 +956,7 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
                 if (hasSubscribedOnceRef.current) {
                   console.log('[Realtime] Canal missions reconectado — ressincronizando...');
                   scheduleFullRefetch();
+                  setSearchRefreshTick(t => t + 1);
                 } else {
                   hasSubscribedOnceRef.current = true;
                 }
@@ -968,6 +988,10 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
           // missions (via RealtimeProvider). Se um patch direcionado já tratou a
           // mudança há instantes, ignora para não fazer recarga total redundante.
           const handleExternalRefresh = () => {
+            // Resultados de busca (searchMatches) também precisam refletir a
+            // mudança — inclusive na visão restrita/comercial, que não usa patch
+            // direcionado. Re-dispara a busca ativa (no-op se não há termo).
+            setSearchRefreshTick(t => t + 1);
             if (Date.now() < suppressFullRefetchUntilRef.current) {
               // Um patch direcionado já atualizou as OS há instantes. O evento
               // global pode ter vindo de mudanças correlatas (DHL, pedágio,
@@ -1025,7 +1049,7 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
         } catch { /* silencioso */ }
       }, 400);
       return () => { if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current); };
-    }, [osFilterTerm, searchTerm, scopeReady, mapRawMissionRow]);
+    }, [osFilterTerm, searchTerm, scopeReady, mapRawMissionRow, searchRefreshTick]);
   
     const periodMissions = useMemo(() => {
         const todayStart = new Date();
