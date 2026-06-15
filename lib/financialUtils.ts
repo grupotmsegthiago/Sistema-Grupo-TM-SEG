@@ -453,15 +453,17 @@ export const calculateMissionFinancials = (
         distanceForCalculation = totalDistance;
     }
 
-    // REGRA DE CANCELAMENTO (acionamento mínimo):
-    // Para qualquer OS CANCELADA — mesmo com valor salvo manualmente —
-    // a "Tabela Oficial" deve refletir apenas o acionamento mínimo da
-    // menor tabela regional. Zeramos KM da OS sempre, para que o cálculo
-    // a seguir não some extra-km na referência oficial.
+    // REGRA DE CANCELAMENTO (acionamento mínimo + excedente quando executada):
+    // Por padrão, OS CANCELADA cobra apenas o acionamento mínimo da menor
+    // tabela regional, com KM zerado (cancelada ANTES de executar).
+    // EXCEÇÃO confirmada pela diretoria: se a OS foi de fato EXECUTADA — há
+    // hodômetro válido com rodagem real (end_km > start_km) — o KM rodado conta
+    // normalmente e o excedente acima da franquia É cobrado. A pessoa foi
+    // contratada, rodou mais que o combinado, então tem que receber por isso.
+    // (As horas extras de cancelada seguem a regra própria via cancelStatusAt:
+    //  cobra-se a hora excedente quando o cancelamento ocorre após a franquia.)
     if (isCancelled) {
-        // Regra de cancelada (todas as OS): KM sempre zerado — cobra-se apenas o
-        // acionamento mínimo (+ horas extras quando cancelada após a franquia).
-        distanceForCalculation = 0;
+        distanceForCalculation = (hasValidKms && realTraveledKm > 0) ? realTraveledKm : 0;
     }
     
     const scheduledDate = parseSafeDate(mission.startTime || (mission as any).start_time); 
@@ -1333,15 +1335,22 @@ export const calculateMissionFinancials = (
     }
 
     // OS cancelada ANTES da execução: cobra APENAS o acionamento da menor faixa
-    // (ex.: R$ 690 da SUDESTE - 100KM da DHL). Zera todos os excessos (KM e hora)
-    // tanto do cliente quanto do fornecedor. OS que foi executada e cancelada
-    // depois (com hora de fim real) mantém os excedentes reais e cobra hora/KM
-    // extra normalmente.
+    // (ex.: R$ 690 da SUDESTE - 100KM da DHL). Zera os excessos (KM e hora)
+    // tanto do cliente quanto do fornecedor.
+    // EXCEÇÃO (regra confirmada pela diretoria): se a OS foi de fato EXECUTADA —
+    // hodômetro com rodagem real (end_km > start_km) — o KM excedente real é
+    // mantido e cobrado normalmente; a pessoa rodou mais que o combinado e tem
+    // que receber. As horas extras permanecem regidas por cancelStatusAt
+    // (cancelledWithHours), evitando inflar tempo por end_time administrativo
+    // gravado dias depois — por isso seguem zeradas neste ramo "antes".
+    const cancelledExecuted = isCancelled && hasValidKms && realTraveledKm > 0;
     if (cancelledBeforeExecution) {
-        cExcessKm = 0;
         cExcessHr = 0;
-        pExcessKm = 0;
         pExcessHr = 0;
+        if (!cancelledExecuted) {
+            cExcessKm = 0;
+            pExcessKm = 0;
+        }
     }
 
     let cExtraKmVal = round2(Math.max(0, cExcessKm * cUnitPriceKm));

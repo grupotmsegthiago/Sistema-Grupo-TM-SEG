@@ -1,14 +1,24 @@
 ---
-name: Cobrança de horas extras em OS CANCELADA
-description: Por que OS cancelada pode não cobrar hora excedente e o que alimenta o motor
+name: Cobrança de excedente (KM e horas) em OS CANCELADA
+description: Por que OS cancelada pode não cobrar excedente e o que alimenta o motor
 ---
 
-# Horas extras em OS CANCELADA
+# Excedente (KM e horas) em OS CANCELADA
 
 Regra de negócio (confirmada pela diretoria): OS cancelada que **chegou na origem**
 cobra a tabela mínima (100/110 KM) com a franquia de horas embutida na base; se o
 cancelamento ocorreu **depois** da franquia (ex.: 3h), cobra-se a(s) hora(s)
-excedente(s). KM extra nunca é cobrado em cancelada (só base + horas).
+excedente(s).
+
+**KM excedente em cancelada-EXECUTADA:** se a OS foi de fato executada — hodômetro
+com rodagem real (`end_km > start_km`, i.e. `hasValidKms && realTraveledKm > 0`) — o
+KM rodado conta e o excedente acima da franquia É cobrado normalmente (cliente E
+fornecedor). A pessoa rodou mais que o combinado, tem que receber. Sem rodagem real
+(cancelada antes de executar) o KM segue zerado e cobra-se só a base. No motor:
+`distanceForCalculation` usa `realTraveledKm` quando `isCancelled` com hodômetro
+válido; e o bloco `cancelledBeforeExecution` só zera `cExcessKm/pExcessKm` quando NÃO
+houve execução (`cancelledExecuted`). As horas, nesse ramo "antes", continuam zeradas
+de propósito (ver abaixo).
 
 O motor (`lib/financialUtils.ts`) só cobra essas horas quando recebe o **horário do
 cancelamento** em `mission._cancelStatusAt`. Esse timestamp NÃO está nas colunas de
