@@ -1,0 +1,33 @@
+Ajuste o comportamento e a lógica matemática da tela de **Auditoria de Faturamento**
+(componente que gerencia as ordens de serviço/missões, como as OS GTM-4942 e
+GTM-5213).
+**O PROBLEMA:** A tela renderiza os dados reais da missão no topo (KM Total e
+Duração) e possui duas tabelas de cálculo logo abaixo: o lado Esquerdo (Azul -
+Faturamento do Cliente) e o lado Direito (Vermelho - Pagamento do Fornecedor). No
+entanto, as informações não se conectam. O sistema está ignorando o cálculo de KM
+excedente e Hora excedente, mantendo o valor zerado (+R$ 0,00), mesmo quando o KM
+real ultrapassa a franquia.
+**REGRA DE NEGÓCIO MANDATÓRIA QUE VOCÊ DEVE IMPLEMENTAR:**
+1. Encontre o arquivo/componente dessa tela de Auditoria de Faturamento e as funções
+de cálculo associadas.
+2. Para o **Lado do Cliente (Faturamento)** e **Lado do Fornecedor (Custos)**, você
+deve capturar o `KM TOTAL` real da missão e subtrair a `Franquia KM` configurada na
+respectiva tabela de preço selecionada.
+- Se `KM TOTAL` for maior que `Franquia KM`, a diferença é o **KM Excedente**.
+- Multiplique o KM Excedente pelo `Valor do KM Extra` configurado na tabela.
+- O resultado deve preencher o campo de valor extra e somar automaticamente no
+valor total (Base + Extras).
+3. Faça exatamente a mesma lógica para o tempo: Subtraia a `Franquia Hora` da
+`Duração Total` da missão (lembre-se de truncar ou desconsiderar os segundos para
+bater com o display da tela).
+- Se a Duração for maior que a Franquia, calcule as **Horas Excedentes** e
+multiplique pelo `Valor da Hora Extra`.
+4. Garanta que esses cálculos sejam reativos (executados via `useEffect` ou funções
+de cálculo em tempo real assim que a tabela de preço ou a OS forem carregadas/
+alteradas).
+5. Certifique-se de que ao clicar em salvar, recalcular ou atualizar, esses valores
+calculados de KM Extra e Hora Extra sejam persistidos corretamente no banco de dados
+(Supabase/PostgreSQL) para evitar divergências no envio ao cliente ou fechamento do
+fornecedor.
+Revise o código dessa página, me mostre onde encontrou o erro e aplique a correção
+agora.
