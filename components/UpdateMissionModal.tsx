@@ -4,14 +4,15 @@ import { Mission, MissionStatus, ProviderData, Agent, Vehicle, User as UserType,
 import { authFetch } from '../lib/authFetch';
 import { supabase } from '../lib/supabase';
 import { logAction } from '../lib/logger';
-import { clientFuzzyFilter } from '../lib/financialUtils';
+import { clientFuzzyFilter, extractCityFromAddress } from '../lib/financialUtils';
 import { useNotification } from '../lib/NotificationContext';
 import { 
   X, Activity, MapPin, Flag, Truck, Plus, Save, 
   Layers, Navigation, History, 
   Calculator, Clock, Trash2, UserCheck, CarFront, DollarSign, AlertCircle, Info, ShieldAlert, AlertTriangle,
   Loader2, Search, ChevronDown, UserPlus, Package, ShieldCheck, Check, BadgeCheck, Sparkles,
-  Milestone, Timer, Calendar, Globe, Briefcase, Zap, TrendingUp, RefreshCw, User, Phone, CheckCircle2, Mail
+  Milestone, Timer, Calendar, Globe, Briefcase, Zap, TrendingUp, RefreshCw, User, Phone, CheckCircle2, Mail,
+  ExternalLink, Radar, ArrowRightLeft, TableProperties, Gauge, XCircle, CalendarClock, CircleDot
 } from 'lucide-react';
 import { useLoadScript, Autocomplete, GoogleMap, Marker } from '@react-google-maps/api';
 import { googleMapsApiKey, libraries, googleMapsLoadConfig } from '../lib/maps';
@@ -66,127 +67,365 @@ const toLocalDateTimeInput = (d: Date): string => {
     return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
 };
 
-interface FinalizeConfirmDialogProps {
+interface FinalizeTableSuggestion {
+    name: string;
+    meta: string;
+    best?: boolean;
+    current?: boolean;
+}
+
+export interface FinalizeConfirmPayload {
+    endKm: number | null;
+    iso: string;
+    endTravelIso: string | null;
+}
+
+interface FinalizeChecklistDialogProps {
     isOpen: boolean;
     kind: 'completed' | 'cancelled';
-    defaultKm: string;
+    osLabel: string;
+    providerName: string;
+    dateLabel: string;
+    isDhl: boolean;
+    destinationAddress: string;
+    mapLink: string;
+    originCity: string;
+    destCity: string;
+    appliedTableName: string;
+    isRaio: boolean;
+    raioFranchiseKm: number;
     startKm: number;
+    defaultEndKm: string;
+    franchiseKm: number;
+    suggestions: FinalizeTableSuggestion[];
     defaultDateTime: string;
     minDateTime?: string;
-    onConfirm: (km: number | null, iso: string) => void;
+    onConfirm: (payload: FinalizeConfirmPayload) => void;
     onCancel: () => void;
 }
 
-const FinalizeConfirmDialog: React.FC<FinalizeConfirmDialogProps> = ({ isOpen, kind, defaultKm, startKm, defaultDateTime, minDateTime, onConfirm, onCancel }) => {
-    const [km, setKm] = useState(defaultKm);
-    const [dt, setDt] = useState(defaultDateTime);
-    const [err, setErr] = useState('');
+const FinalizeChecklistDialog: React.FC<FinalizeChecklistDialogProps> = ({
+    isOpen, kind, osLabel, providerName, dateLabel, isDhl, destinationAddress, mapLink,
+    originCity, destCity, appliedTableName, isRaio, raioFranchiseKm, startKm, defaultEndKm,
+    franchiseKm, suggestions, defaultDateTime, minDateTime, onConfirm, onCancel,
+}) => {
     const isCompleted = kind === 'completed';
+    const [endKm, setEndKm] = useState(defaultEndKm);
+    const [dt, setDt] = useState(defaultDateTime);
+    const [endTravelDt, setEndTravelDt] = useState(defaultDateTime);
+    const [chkAddress, setChkAddress] = useState(false);
+    const [chkCities, setChkCities] = useState(false);
+    const [chkTable, setChkTable] = useState(false);
+    const [raioAnswer, setRaioAnswer] = useState<'yes' | 'no' | null>(null);
+    const [raioRealKm, setRaioRealKm] = useState('');
+    const [err, setErr] = useState('');
 
     useEffect(() => {
         if (isOpen) {
-            setKm(defaultKm);
+            setEndKm(defaultEndKm);
             setDt(defaultDateTime);
+            setEndTravelDt(defaultDateTime);
+            setChkAddress(false);
+            setChkCities(false);
+            setChkTable(false);
+            setRaioAnswer(null);
+            setRaioRealKm('');
             setErr('');
         }
-    }, [isOpen, defaultKm, defaultDateTime]);
+    }, [isOpen, defaultEndKm, defaultDateTime]);
 
     if (!isOpen) return null;
 
+    const endKmNum = (() => {
+        const s = (endKm || '').toString().trim();
+        if (s === '') return null;
+        const n = parseFloat(s.replace(',', '.'));
+        return isNaN(n) ? null : n;
+    })();
+    const traveled = endKmNum != null && startKm >= 0 ? Math.max(0, endKmNum - startKm) : 0;
+    const kmMismatch = isCompleted && franchiseKm > 0 && traveled > franchiseKm;
+
+    // Etapas visíveis nesta OS (para a barra de progresso).
+    const steps = {
+        address: true,
+        raio: isRaio,
+        cities: true,
+        km: isCompleted,
+        cancel: !isCompleted,
+    };
+    const totalSteps = Object.values(steps).filter(Boolean).length;
+    const doneSteps =
+        (chkAddress ? 1 : 0) +
+        (steps.raio && raioAnswer ? 1 : 0) +
+        (chkCities ? 1 : 0) +
+        (steps.km && endKmNum != null && endKmNum > 0 && (!kmMismatch || chkTable) ? 1 : 0) +
+        (steps.cancel && dt && endTravelDt ? 1 : 0);
+    const progressPct = totalSteps > 0 ? Math.round((doneSteps / totalSteps) * 100) : 0;
+    const allDone = doneSteps >= totalSteps;
+
     const handleConfirm = () => {
-        if (!dt) { setErr('Informe a data e a hora exata.'); return; }
+        if (!chkAddress) { setErr('Confirme o endereço de destino final.'); return; }
+        if (isRaio && !raioAnswer) { setErr('Responda se a viatura rodou o raio.'); return; }
+        if (isRaio && raioAnswer === 'no' && (raioRealKm || '').trim() === '') { setErr('Informe o raio realmente rodado (km).'); return; }
+        if (!chkCities) { setErr('Confirme as cidades e a tabela aplicada.'); return; }
+
+        if (isCompleted) {
+            if (endKmNum == null || endKmNum <= 0) { setErr('Informe o KM final.'); return; }
+            if (startKm > 0 && endKmNum < startKm) { setErr(`KM final não pode ser menor que o KM inicial (${startKm}).`); return; }
+            if (kmMismatch && !chkTable) { setErr('O KM rodado não bate com a tabela. Confirme a ciência da tabela aplicada.'); return; }
+            if (!dt) { setErr('Informe a data e a hora exata da finalização.'); return; }
+        } else {
+            if (!dt) { setErr('Informe a data e a hora do cancelamento.'); return; }
+            if (!endTravelDt) { setErr('Informe a data de fim de viagem.'); return; }
+            if (endKmNum != null && startKm > 0 && endKmNum < startKm) { setErr(`KM final não pode ser menor que o KM inicial (${startKm}).`); return; }
+        }
+
         const parsed = new Date(dt);
         if (isNaN(parsed.getTime())) { setErr('Data/hora inválida.'); return; }
-        let kmNum: number | null = null;
-        const kmStr = (km || '').toString().trim();
-        if (kmStr !== '') {
-            kmNum = parseFloat(kmStr.replace(',', '.'));
-            if (isNaN(kmNum)) { setErr('KM final inválido.'); return; }
-        }
-        if (isCompleted) {
-            if (kmNum == null || kmNum <= 0) { setErr('Informe o KM final.'); return; }
-            if (startKm > 0 && kmNum < startKm) { setErr(`KM final não pode ser menor que o KM inicial (${startKm}).`); return; }
-        }
-        onConfirm(kmNum, parsed.toISOString());
+        const endTravelParsed = endTravelDt ? new Date(endTravelDt) : null;
+
+        onConfirm({
+            endKm: endKmNum,
+            iso: parsed.toISOString(),
+            endTravelIso: !isCompleted && endTravelParsed && !isNaN(endTravelParsed.getTime()) ? endTravelParsed.toISOString() : null,
+        });
     };
 
-    const title = isCompleted ? 'Confirmar Finalização' : 'Confirmar Cancelamento';
-
     return (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 p-4" data-testid="dialog-finalize-confirm">
-            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden">
-                <div className={`px-6 py-4 flex items-center gap-3 ${isCompleted ? 'bg-green-600' : 'bg-red-600'}`}>
-                    <Clock size={20} className="text-white" />
-                    <h3 className="text-sm font-black text-white uppercase tracking-wide">{title}</h3>
+        <div className="fixed inset-0 z-[100] flex items-start justify-center bg-black/60 p-4 overflow-y-auto" data-testid="dialog-finalize-confirm">
+            <div className="my-6 w-full max-w-[600px] overflow-hidden rounded-2xl bg-white shadow-2xl ring-1 ring-slate-200">
+                {/* Header */}
+                <div className="flex items-center gap-3 border-b border-slate-100 bg-white px-5 py-4">
+                    <div className={`flex h-11 w-11 items-center justify-center rounded-xl ${isCompleted ? 'bg-emerald-500 text-white' : 'bg-red-500 text-white'}`}>
+                        {isCompleted ? <ShieldCheck className="h-6 w-6" /> : <XCircle className="h-6 w-6" />}
+                    </div>
+                    <div className="min-w-0">
+                        <h2 className="text-base font-extrabold leading-tight text-slate-900" data-testid="text-finalize-title">
+                            {isCompleted ? 'Finalizar Missão' : 'Cancelar Missão'}{isDhl ? ' DHL' : ''}
+                        </h2>
+                        <p className="truncate text-xs text-slate-500" data-testid="text-finalize-subtitle">
+                            {osLabel}{providerName ? ` · Fornecedor: ${providerName}` : ''}{dateLabel ? ` · ${dateLabel}` : ''}
+                        </p>
+                    </div>
+                    <span className={`ml-auto inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-bold ring-1 ${isCompleted ? 'bg-emerald-50 text-emerald-700 ring-emerald-200' : 'bg-red-50 text-red-700 ring-red-200'}`}>
+                        <CircleDot className="h-3 w-3" /> {isCompleted ? 'Em conferência' : 'Cancelamento'}
+                    </span>
                 </div>
-                <div className="p-6 space-y-4">
-                    <p className="text-xs text-gray-600 leading-relaxed">
-                        {isCompleted
-                            ? 'Confirme o KM final e a HORA EXATA em que a missão foi finalizada. Esses valores alimentam o cálculo (horas extras).'
-                            : 'Confirme a HORA EXATA em que a missão foi cancelada. Esse horário define a cobrança de horas extras quando o cancelamento ocorre após a franquia.'}
-                    </p>
 
-                    <div>
-                        <label className="block text-[10px] font-black text-gray-500 uppercase mb-1.5">
-                            KM Final {isCompleted ? '(obrigatório)' : '(opcional)'}
-                        </label>
-                        <div className="flex items-center gap-2">
-                            <Milestone size={16} className="text-gray-400" />
-                            <input
-                                type="text"
-                                inputMode="decimal"
-                                value={km}
-                                onChange={e => setKm(e.target.value)}
-                                placeholder="Ex: 123456"
-                                className="w-full text-sm font-bold text-gray-700 border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none"
-                                data-testid="input-confirm-end-km"
-                            />
+                {/* Progress */}
+                <div className="flex items-center gap-2 border-b border-slate-100 bg-slate-50 px-5 py-3">
+                    <div className="h-2 flex-1 overflow-hidden rounded-full bg-slate-200">
+                        <div className={`h-full rounded-full transition-all ${isCompleted ? 'bg-emerald-500' : 'bg-red-500'}`} style={{ width: `${progressPct}%` }} />
+                    </div>
+                    <span className="text-[11px] font-semibold text-slate-500" data-testid="text-finalize-progress">{doneSteps} de {totalSteps} verificados</span>
+                </div>
+
+                <div className="space-y-3 p-5">
+                    {/* 1 - Endereço destino final */}
+                    <FinSection n={1} done={chkAddress} icon={<MapPin className="h-4 w-4" />} title="Endereço de destino final">
+                        <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                            <p className="text-[13px] font-medium text-slate-800" data-testid="text-destination-address">
+                                {destinationAddress || 'Endereço de destino não informado'}
+                            </p>
+                            {mapLink && (
+                                <a href={mapLink} target="_blank" rel="noreferrer" className="mt-2 inline-flex items-center gap-1.5 rounded-md bg-blue-600 px-2.5 py-1.5 text-xs font-semibold text-white" data-testid="link-open-map">
+                                    <ExternalLink className="h-3.5 w-3.5" /> Abrir link do mapa
+                                </a>
+                            )}
                         </div>
-                    </div>
+                        <FinCheck label="Confirmo o endereço de destino final" checked={chkAddress} onToggle={() => setChkAddress(v => !v)} testId="check-address" />
+                    </FinSection>
 
-                    <div>
-                        <label className="block text-[10px] font-black text-gray-500 uppercase mb-1.5">
-                            Data e Hora exata ({isCompleted ? 'finalização' : 'cancelamento'})
-                        </label>
-                        <input
-                            type="datetime-local"
-                            step="1"
-                            value={dt}
-                            min={minDateTime}
-                            onChange={e => setDt(e.target.value)}
-                            className="w-full text-sm font-bold text-gray-700 border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none"
-                            data-testid="input-confirm-real-time"
-                        />
-                    </div>
+                    {/* 2 - Destino RAIO */}
+                    {isRaio && (
+                        <FinSection n={2} warn icon={<Radar className="h-4 w-4" />} title="Destino definido como RAIO">
+                            <div className="rounded-lg border border-amber-300 bg-amber-50 p-3">
+                                <div className="flex items-start gap-2">
+                                    <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
+                                    <p className="text-[13px] font-medium text-amber-900">
+                                        Esta OS foi cadastrada com destino por <b>raio de {raioFranchiseKm} km</b>. Confirme se a viatura realmente rodou esse raio.
+                                    </p>
+                                </div>
+                                <p className="mt-3 text-xs font-semibold text-amber-900">A viatura rodou o raio de {raioFranchiseKm} km?</p>
+                                <div className="mt-2 flex gap-2">
+                                    <button type="button" onClick={() => { setRaioAnswer('yes'); setRaioRealKm(''); }} className={`flex-1 rounded-md border px-3 py-2 text-xs font-bold ${raioAnswer === 'yes' ? 'border-emerald-400 bg-emerald-600 text-white' : 'border-emerald-300 bg-white text-emerald-700'}`} data-testid="button-raio-yes">
+                                        Sim, rodou o raio
+                                    </button>
+                                    <button type="button" onClick={() => setRaioAnswer('no')} className={`flex-1 rounded-md border px-3 py-2 text-xs font-bold ${raioAnswer === 'no' ? 'border-red-400 bg-red-600 text-white' : 'border-red-300 bg-white text-red-700'}`} data-testid="button-raio-no">
+                                        Não — ajustar
+                                    </button>
+                                </div>
+                                {raioAnswer === 'no' && (
+                                    <div className="mt-3 rounded-md border border-red-200 bg-white p-2.5">
+                                        <label className="text-[11px] font-semibold uppercase tracking-wide text-red-600">Ajustar raio realmente rodado (km)</label>
+                                        <input value={raioRealKm} onChange={e => setRaioRealKm(e.target.value)} inputMode="decimal" placeholder="Ex: 62" className="mt-1 w-full rounded-md border border-slate-300 px-2.5 py-1.5 text-sm font-semibold text-slate-800 outline-none focus:border-red-400" data-testid="input-raio-real-km" />
+                                    </div>
+                                )}
+                            </div>
+                        </FinSection>
+                    )}
+
+                    {/* 3 - Confirmar cidades + tabela */}
+                    <FinSection n={3} icon={<ArrowRightLeft className="h-4 w-4" />} title="Confirmar origem e destino">
+                        <div className="grid grid-cols-2 gap-2">
+                            <FinCityBox label="Cidade de origem (início da SM)" value={originCity || '—'} />
+                            <FinCityBox label="Cidade de fim (link do mapa)" value={destCity || '—'} mapLink={mapLink} />
+                        </div>
+                        <div className="mt-2 flex items-start gap-2 rounded-lg border border-blue-200 bg-blue-50 p-3">
+                            <TableProperties className="mt-0.5 h-4 w-4 shrink-0 text-blue-600" />
+                            <p className="text-[12px] font-medium text-blue-900">
+                                Lembrete: verifique se a <b>tabela aplicada</b> nesta OS está correta —
+                                <span className="font-bold"> {appliedTableName || 'tabela não identificada'}</span>.
+                            </p>
+                        </div>
+                        <FinCheck label="Confirmo as cidades e a tabela aplicada" checked={chkCities} onToggle={() => setChkCities(v => !v)} testId="check-cities" />
+                    </FinSection>
+
+                    {/* 4 - KM rodado x KM da tabela (somente conclusão) */}
+                    {isCompleted && (
+                        <FinSection n={4} warn={kmMismatch} icon={<Gauge className="h-4 w-4" />} title="KM rodado x KM da tabela">
+                            <div className="mb-2">
+                                <label className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">KM final (obrigatório)</label>
+                                <input value={endKm} onChange={e => setEndKm(e.target.value)} inputMode="decimal" placeholder="Ex: 123456" className="mt-1 w-full rounded-md border border-slate-300 px-2.5 py-2 text-sm font-bold text-slate-800 outline-none focus:border-emerald-500" data-testid="input-confirm-end-km" />
+                            </div>
+                            <div className="grid grid-cols-2 gap-2">
+                                <FinStat label="KM rodado (real)" value={`${traveled} km`} />
+                                <FinStat label="KM da tabela (franquia)" value={franchiseKm > 0 ? `${franchiseKm} km` : '—'} />
+                            </div>
+                            {kmMismatch && (
+                                <>
+                                    <div className="mt-2 flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 p-3">
+                                        <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-red-600" />
+                                        <p className="text-[12px] font-medium text-red-900">
+                                            O KM rodado <b>não bate</b> com o KM da tabela. Tabelas mais prováveis para esta REGIÃO (ajuste no Financeiro, se necessário):
+                                        </p>
+                                    </div>
+                                    {suggestions.length > 0 && (
+                                        <div className="mt-2 space-y-2">
+                                            {suggestions.map((s, i) => (
+                                                <FinTableSuggestion key={i} title={s.name} meta={s.meta} best={s.best} current={s.current} />
+                                            ))}
+                                        </div>
+                                    )}
+                                    <FinCheck label="Estou ciente da divergência e a tabela aplicada está correta" checked={chkTable} onToggle={() => setChkTable(v => !v)} testId="check-table" />
+                                </>
+                            )}
+                            <div className="mt-2">
+                                <label className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Data e hora exata da finalização</label>
+                                <input type="datetime-local" step={1} value={dt} min={minDateTime} onChange={e => setDt(e.target.value)} className="mt-1 w-full rounded-md border border-slate-300 px-2.5 py-2 text-sm font-bold text-slate-800 outline-none focus:border-emerald-500" data-testid="input-confirm-real-time" />
+                            </div>
+                        </FinSection>
+                    )}
+
+                    {/* 5 - Cancelamento (campos obrigatórios) */}
+                    {!isCompleted && (
+                        <FinSection n={isRaio ? 4 : 3} danger icon={<XCircle className="h-4 w-4" />} title="Missão cancelada — datas obrigatórias">
+                            <div className="rounded-lg border border-red-200 bg-red-50 p-3">
+                                <div className="flex items-start gap-2">
+                                    <CalendarClock className="mt-0.5 h-4 w-4 shrink-0 text-red-600" />
+                                    <p className="text-[12px] font-medium text-red-900">
+                                        Os dois campos abaixo são <b>obrigatórios</b> para evitar erro de cobrança. A data do cancelamento define a cobrança de horas extras.
+                                    </p>
+                                </div>
+                                <div className="mt-3 grid grid-cols-2 gap-2">
+                                    <FinDateField label="Data do cancelamento *" value={dt} min={minDateTime} onChange={setDt} testId="input-confirm-real-time" />
+                                    <FinDateField label="Data de fim de viagem *" value={endTravelDt} min={minDateTime} onChange={setEndTravelDt} testId="input-cancel-end-travel" />
+                                </div>
+                                <div className="mt-2">
+                                    <label className="text-[10px] font-semibold uppercase tracking-wide text-red-600">KM final (opcional)</label>
+                                    <input value={endKm} onChange={e => setEndKm(e.target.value)} inputMode="decimal" placeholder="Ex: 123456" className="mt-1 w-full rounded-md border border-red-300 bg-white px-2.5 py-1.5 text-[13px] font-semibold text-slate-800 outline-none focus:border-red-500" data-testid="input-confirm-end-km" />
+                                    <p className="mt-1 text-[10px] font-medium text-red-700">Preencha quando a viatura já tinha rodado km antes do cancelamento (cobra excedente).</p>
+                                </div>
+                            </div>
+                        </FinSection>
+                    )}
 
                     {err && (
-                        <div className="flex items-center gap-2 text-xs font-bold text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2" data-testid="text-confirm-error">
+                        <div className="flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs font-bold text-red-600" data-testid="text-confirm-error">
                             <AlertTriangle size={14} /> {err}
                         </div>
                     )}
                 </div>
-                <div className="px-6 py-4 bg-gray-50 flex justify-end gap-3">
-                    <button
-                        type="button"
-                        onClick={onCancel}
-                        className="px-5 py-2.5 border border-gray-200 rounded-xl text-[10px] font-black text-gray-500 uppercase hover:bg-gray-100 transition-all"
-                        data-testid="button-confirm-finalize-cancel"
-                    >
+
+                {/* Footer */}
+                <div className="flex items-center gap-3 border-t border-slate-100 bg-slate-50 px-5 py-4">
+                    <p className="text-[11px] text-slate-500">{allDone ? 'Tudo verificado. Você já pode finalizar.' : 'Conclua todos os itens para liberar a finalização.'}</p>
+                    <button type="button" onClick={onCancel} className="ml-auto rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-600" data-testid="button-confirm-finalize-cancel">
                         Voltar
                     </button>
-                    <button
-                        type="button"
-                        onClick={handleConfirm}
-                        className={`px-6 py-2.5 rounded-xl text-[10px] font-black text-white uppercase shadow-lg flex items-center gap-2 transition-all active:scale-95 ${isCompleted ? 'bg-green-600 hover:bg-green-700' : 'bg-red-600 hover:bg-red-700'}`}
-                        data-testid="button-confirm-finalize"
-                    >
-                        <CheckCircle2 size={14} /> {isCompleted ? 'Confirmar e Finalizar' : 'Confirmar e Cancelar'}
+                    <button type="button" onClick={handleConfirm} disabled={!allDone} className={`rounded-lg px-4 py-2 text-sm font-bold text-white transition-all active:scale-95 ${allDone ? (isCompleted ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-red-600 hover:bg-red-700') : 'cursor-not-allowed bg-slate-300 text-slate-500'}`} data-testid="button-confirm-finalize">
+                        {isCompleted ? 'Finalizar missão' : 'Confirmar cancelamento'}
                     </button>
                 </div>
             </div>
         </div>
     );
 };
+
+const FinSection: React.FC<{ n: number; title: string; icon: React.ReactNode; children: React.ReactNode; done?: boolean; warn?: boolean; danger?: boolean; }> = ({ n, title, icon, children, done, warn, danger }) => {
+    const ring = done ? 'ring-emerald-200' : danger ? 'ring-red-200' : warn ? 'ring-amber-200' : 'ring-slate-200';
+    const badge = done ? 'bg-emerald-500 text-white' : danger ? 'bg-red-500 text-white' : warn ? 'bg-amber-400 text-amber-900' : 'bg-slate-200 text-slate-600';
+    return (
+        <div className={`rounded-xl bg-white p-4 ring-1 ${ring}`}>
+            <div className="mb-2.5 flex items-center gap-2.5">
+                <div className={`flex h-6 w-6 items-center justify-center rounded-full text-[12px] font-extrabold ${badge}`}>
+                    {done ? <CheckCircle2 className="h-4 w-4" /> : n}
+                </div>
+                <div className="flex items-center gap-1.5 text-slate-700">{icon}</div>
+                <h3 className="text-sm font-bold text-slate-900">{title}</h3>
+            </div>
+            <div className="space-y-2 pl-1">{children}</div>
+        </div>
+    );
+};
+
+const FinCheck: React.FC<{ label: string; checked?: boolean; onToggle: () => void; testId?: string; }> = ({ label, checked, onToggle, testId }) => (
+    <button type="button" onClick={onToggle} className="mt-1 flex w-full items-center gap-2 text-left text-[13px] font-medium text-slate-700" data-testid={testId}>
+        <span className={`flex h-5 w-5 items-center justify-center rounded-md border ${checked ? 'border-emerald-500 bg-emerald-500 text-white' : 'border-slate-300 bg-white'}`}>
+            {checked && <CheckCircle2 className="h-3.5 w-3.5" />}
+        </span>
+        {label}
+    </button>
+);
+
+const FinCityBox: React.FC<{ label: string; value: string; mapLink?: string; }> = ({ label, value, mapLink }) => (
+    <div className="rounded-lg border border-slate-200 bg-slate-50 p-2.5">
+        <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">{label}</p>
+        <p className="mt-0.5 text-[13px] font-bold text-slate-800">{value}</p>
+        {mapLink && (
+            <a href={mapLink} target="_blank" rel="noreferrer" className="mt-1 inline-flex items-center gap-1 text-[11px] font-semibold text-blue-600">
+                <ExternalLink className="h-3 w-3" /> ver no mapa
+            </a>
+        )}
+    </div>
+);
+
+const FinStat: React.FC<{ label: string; value: string; }> = ({ label, value }) => (
+    <div className="rounded-lg border border-slate-200 bg-slate-50 p-2.5 text-center">
+        <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">{label}</p>
+        <p className="mt-0.5 text-lg font-extrabold text-slate-800">{value}</p>
+    </div>
+);
+
+const FinTableSuggestion: React.FC<{ title: string; meta: string; best?: boolean; current?: boolean; }> = ({ title, meta, best, current }) => (
+    <div className={`flex items-center gap-3 rounded-lg border p-2.5 ${best ? 'border-emerald-300 bg-emerald-50' : 'border-slate-200 bg-slate-50'}`}>
+        <div className="min-w-0">
+            <div className="flex items-center gap-2">
+                <p className="truncate text-[13px] font-bold text-slate-800">{title}</p>
+                {best && <span className="rounded-full bg-emerald-500 px-1.5 py-0.5 text-[9px] font-bold uppercase text-white">sugerida</span>}
+                {current && <span className="rounded-full bg-slate-300 px-1.5 py-0.5 text-[9px] font-bold uppercase text-slate-600">atual</span>}
+            </div>
+            <p className="truncate text-[11px] text-slate-500">{meta}</p>
+        </div>
+    </div>
+);
+
+const FinDateField: React.FC<{ label: string; value: string; min?: string; onChange: (v: string) => void; testId?: string; }> = ({ label, value, min, onChange, testId }) => (
+    <div>
+        <label className="text-[10px] font-semibold uppercase tracking-wide text-red-600">{label}</label>
+        <input type="datetime-local" step={1} value={value} min={min} onChange={e => onChange(e.target.value)} className="mt-1 w-full rounded-md border border-red-300 bg-white px-2.5 py-1.5 text-[13px] font-semibold text-slate-800 outline-none focus:border-red-500" data-testid={testId} />
+    </div>
+);
 
 const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose, mission, currentUser, onSuccess, hideProviderInfo = false }) => {
     const { isLoaded } = useLoadScript(googleMapsLoadConfig);
@@ -204,6 +443,9 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
     const finalizeConfirmedRef = useRef(false);
     const confirmedEndKmRef = useRef<number | null>(null);
     const confirmedRealTimeRef = useRef<string | null>(null);
+    // Cancelamento: "Data de fim de viagem" (operacional). A data do cancelamento
+    // em si vai para confirmedRealTimeRef (alimenta cancelStatusAt do recálculo).
+    const confirmedEndTravelRef = useRef<string | null>(null);
 
     useEffect(() => {
         tollConfirmedRef.current = false;
@@ -212,6 +454,7 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
         finalizeConfirmedRef.current = false;
         confirmedEndKmRef.current = null;
         confirmedRealTimeRef.current = null;
+        confirmedEndTravelRef.current = null;
         setPendingFinalizeConfirm(null);
     }, [mission?.id, isOpen]);
     
@@ -458,6 +701,41 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
 
         return { km: traveled.toFixed(1), time: timeStr, extraHours, plannedKm, traveled };
     }, [editData, clientTables, mission]);
+
+    // Dados REAIS que alimentam o Checklist de Finalização (sem cálculo financeiro novo).
+    const finalizeData = React.useMemo(() => {
+        const isDhl = (mission?.client || '').toUpperCase().includes('DHL');
+        const destinationAddress = editData.destination || mission?.destination || '';
+        const originCity = extractCityFromAddress(editData.origin || mission?.origin || '');
+        const destCity = extractCityFromAddress(destinationAddress);
+        const destUpper = destinationAddress.toUpperCase();
+        const isRaio = editData.applyCeva200km || /ACOMPANHAMENTO|RAIO/.test(destUpper);
+        const raioFranchiseKm = editData.applyCeva200km || destUpper.includes('200') ? 200 : 100;
+
+        const cTables = [...clientTables].sort((a, b) => a.franchise_km - b.franchise_km);
+        const appliedTable = cTables.find(t => t.franchise_km >= missionTotals.plannedKm) || cTables[cTables.length - 1];
+        const appliedTableName = appliedTable?.operation_type || '';
+        const franchiseKm = appliedTable?.franchise_km || 0;
+
+        // Sugestões (apenas GUIA): tabelas mais prováveis para a distância real.
+        // A troca de tabela e o recálculo continuam no Modal Financeiro.
+        const traveled = missionTotals.traveled;
+        let suggestions: { name: string; meta: string; best?: boolean; current?: boolean }[] = [];
+        if (isDhl && franchiseKm > 0 && traveled > franchiseKm) {
+            const best = cTables.find(t => t.franchise_km >= traveled);
+            suggestions = cTables
+                .filter(t => t.id === best?.id || t.id === appliedTable?.id || (t.franchise_km >= traveled && t.franchise_km <= traveled * 1.5))
+                .slice(0, 3)
+                .map(t => ({
+                    name: t.operation_type || `Tabela ${t.franchise_km}km`,
+                    meta: `Franquia ${t.franchise_km}km` + (t.franchise_hours ? ` · ${t.franchise_hours}h` : ''),
+                    best: t.id === best?.id,
+                    current: t.id === appliedTable?.id,
+                }));
+        }
+
+        return { isDhl, destinationAddress, originCity, destCity, isRaio, raioFranchiseKm, appliedTableName, franchiseKm, suggestions };
+    }, [editData, mission, clientTables, missionTotals]);
 
     React.useEffect(() => {
         const isAnomaly = missionTotals.plannedKm > 0 && missionTotals.traveled > 0 && missionTotals.traveled > missionTotals.plannedKm * 5;
@@ -1262,9 +1540,11 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
                 start_km: sKm || null,
                 start_time: startIso,
                 end_km: eKm || null,
-                // Cancelamento NÃO grava end_time — o motor usa _cancelStatusAt
-                // (enviado ao recalc-on-cancel). Conclusão grava a hora confirmada.
-                end_time: finalStatus === MissionStatus.CANCELLED ? null : endIso,
+                // Cancelamento: o motor financeiro usa _cancelStatusAt (a data do
+                // cancelamento, enviada ao recalc-on-cancel). O end_time, quando
+                // gravado, é apenas a "Data de fim de viagem" operacional do checklist
+                // (não afeta o cálculo). Conclusão grava a hora exata confirmada.
+                end_time: finalStatus === MissionStatus.CANCELLED ? (confirmedEndTravelRef.current || null) : endIso,
                 is_same_os: editData.isSameOs,
                 parent_mission_id: editData.isSameOs ? (editData.parentMissionId || null) : null,
                 valor_zero_motivo: editData.isSameOs ? 'MESMA OS' : ((parseFloat(editData.costValue || '0') === 0) ? 'AGUARDANDO DEFINIÇÃO' : ''),
@@ -1626,18 +1906,23 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
     // Grava os valores confirmados em refs (lidos pelo submit retomado) e
     // sincroniza o editData só para coerência visual. A SM segue para o
     // status final somente aqui, após a confirmação explícita do operador.
-    const handleFinalizeConfirmed = (km: number | null, iso: string) => {
+    const handleFinalizeConfirmed = (payload: FinalizeConfirmPayload) => {
+        const { endKm: km, iso, endTravelIso } = payload;
         const kind = pendingFinalizeConfirm?.kind;
         confirmedEndKmRef.current = km;
         confirmedRealTimeRef.current = iso;
+        confirmedEndTravelRef.current = endTravelIso;
         const d = new Date(iso);
         const endDate = d.toLocaleDateString('en-CA');
         const endTime = d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+        // Cancelamento: a "Data de fim de viagem" (operacional) vira endDate/endTime.
+        const et = endTravelIso ? new Date(endTravelIso) : null;
+        const etDate = et ? et.toLocaleDateString('en-CA') : '';
+        const etTime = et ? et.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' }) : '';
         setEditData(prev => ({
             ...prev,
             ...(km != null ? { endKm: String(km) } : {}),
-            // Em cancelamento NÃO escrevemos endDate/endTime (não gravar end_time).
-            ...(kind === 'completed' ? { endDate, endTime } : {}),
+            ...(kind === 'completed' ? { endDate, endTime } : (et ? { endDate: etDate, endTime: etTime } : {})),
         }));
         setPendingFinalizeConfirm(null);
         const resume = resumeSubmitRef.current;
@@ -2741,11 +3026,24 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
             onConfirm={handleTollConfirmedAfterCompletion}
           />
           {pendingFinalizeConfirm && (
-            <FinalizeConfirmDialog
+            <FinalizeChecklistDialog
               isOpen={!!pendingFinalizeConfirm}
               kind={pendingFinalizeConfirm.kind}
-              defaultKm={editData.endKm || ''}
+              osLabel={mission?.id ? `OS ${mission.id}` : 'OS'}
+              providerName={editData.provider || ''}
+              dateLabel={editData.startDate ? new Date(`${editData.startDate}T00:00:00`).toLocaleDateString('pt-BR') : ''}
+              isDhl={finalizeData.isDhl}
+              destinationAddress={finalizeData.destinationAddress}
+              mapLink={editData.mapLink || ''}
+              originCity={finalizeData.originCity}
+              destCity={finalizeData.destCity}
+              appliedTableName={finalizeData.appliedTableName}
+              isRaio={finalizeData.isRaio}
+              raioFranchiseKm={finalizeData.raioFranchiseKm}
+              franchiseKm={finalizeData.franchiseKm}
+              suggestions={finalizeData.suggestions}
               startKm={parseNumber(editData.startKm)}
+              defaultEndKm={editData.endKm || ''}
               defaultDateTime={
                 editData.endDate && editData.endTime
                   ? `${editData.endDate}T${editData.endTime}`

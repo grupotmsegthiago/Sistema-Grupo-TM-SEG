@@ -36,6 +36,16 @@ depois da franquia era subfaturada (só base) — inclusive a rota
 **How to apply:** qualquer caller que calcule/salve financeiro de OS cancelada DEVE
 buscar o cancel time em `mission_history` e passar `_cancelStatusAt`. O motor usa
 duração = `cancelStatusAt − agendamento` (start_time), truncada ao minuto, NÃO o
-end_time administrativo. OS já APROVADA tem snapshot imutável: corrigir exige update
+end_time administrativo.
+
+**end_time pode voltar a ser gravado no cancelamento (decisão revertida):** o
+Checklist de Finalização (substituto do gate simples) tem, no cancelamento, dois
+campos de data — "Data do cancelamento" (→ `_cancelStatusAt`, financeiro) e "Data de
+fim de viagem" (→ gravada em `end_time`, apenas operacional). Isso reverte a decisão
+anterior de NUNCA gravar end_time no cancel. É seguro porque o motor ignora end_time
+para cancelada (usa `_cancelStatusAt`). **Why:** o usuário pediu o campo no mockup.
+**How to apply:** nunca derive cobrança de cancelada a partir de end_time; ele é
+informativo. Se algum dia o motor passar a ler end_time, esse campo operacional
+quebraria o cálculo — manter a separação. OS já APROVADA tem snapshot imutável: corrigir exige update
 manual de `revenue_value`/`cost_value` + `snapshot_data` (hrExtraQtd/hrExtraTotal/
 durationHours/...ServiceOnly/totalGeral) + log em `system_logs`.
