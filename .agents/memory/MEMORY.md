@@ -24,4 +24,4 @@
 - [Deslocamento espelha pedágio](displacement-mirrors-toll.md) — displacement_value/_provider é aditivo igual toll; some na MESMA expressão do toll em todo relatório; margem (service-only) e filled-sheet ficam de fora.
 - [Screen authz & deep-link](screen-authz-deeplink.md) — ?page= burla o Sidebar e requireRole('*') = "qualquer interno"; tela sensível precisa de guard no App.tsx E authz backend espelhando a UI (clientId/comercial).
 - [React component tests](react-component-tests.md) — render component sob node --test via jsdom+React.act+asset loader (register.mjs, NÃO só exportar hooks); runner em scripts/run-tests.sh.
-- [Mission-end toll auto-recalc](mission-end-toll-recalc.md) — ao concluir OS, recalcula pedágio QualP e salva com guarda billing_approved no cliente E no UPDATE (.eq); segue padrão do gate manual (não atômico).
+- [Mission-end toll auto-recalc](mission-end-toll-recalc.md) — ao concluir OS o pedágio é estimado por IA (/api/toll/gemini-estimate, NÃO QualP por custo) e salvo com guarda billing_approved no cliente E no UPDATE.

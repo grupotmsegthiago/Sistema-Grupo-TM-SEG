@@ -2139,16 +2139,18 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
         confirmedEndTravelRef.current = endTravelIso;
         confirmedPrintUrlRef.current = odometerPrintUrl || null;
 
-        // Recálculo automático de pedágio (QualP) ao CONCLUIR. Salva direto em
-        // toll_value (e toll_value_provider = 0 quando é a mesma OS) sem pedir
-        // confirmação manual. OS aprovada NUNCA é tocada. Em falha, mantém o
-        // gate manual de pedágio (tollConfirmedRef permanece false).
+        // Recálculo automático de pedágio (estimativa por IA / Gemini) ao
+        // CONCLUIR. Não usamos a QualP aqui por custo; o endpoint
+        // /api/toll/gemini-estimate usa a integração Gemini já existente.
+        // Salva direto em toll_value (e toll_value_provider = 0 quando é a mesma
+        // OS) sem pedir confirmação manual. OS aprovada NUNCA é tocada. Em
+        // falha, mantém o gate manual de pedágio (tollConfirmedRef permanece false).
         if (mission && kind === 'completed' && !mission.billing_approved) {
             try {
-                const r = await authFetch('/api/toll/qualp', {
+                const r = await authFetch('/api/toll/gemini-estimate', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ origin: editData.origin, destination: editData.destination, axis: 2 }),
+                    body: JSON.stringify({ origin: editData.origin, destination: editData.destination }),
                 });
                 const j = await r.json().catch(() => ({} as any));
                 if (j?.success && typeof j.tollValue === 'number') {
@@ -2164,11 +2166,11 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
                     if (!tollErr) {
                         mission.toll_value = v;
                         tollConfirmedRef.current = true;
-                        console.log(`[FIM MISSÃO] Pedágio QualP recalculado e salvo: R$ ${v} (fornecedor R$ ${provToll})`);
+                        console.log(`[FIM MISSÃO] Pedágio (IA) recalculado e salvo: R$ ${v} (fornecedor R$ ${provToll})`);
                     }
                 }
             } catch (e) {
-                console.warn('[FIM MISSÃO] Falha ao recalcular pedágio QualP:', e);
+                console.warn('[FIM MISSÃO] Falha ao recalcular pedágio (IA):', e);
             }
         }
 
