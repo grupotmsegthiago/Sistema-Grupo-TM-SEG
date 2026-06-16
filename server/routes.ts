@@ -9,7 +9,7 @@ import { calculateMissionFinancials } from "../lib/financialUtils";
 import fs from "fs";
 import path from "path";
 import pg from "pg";
-import { sendMissionEmailToClient, sendMissionEmailToProvider, sendMissionResendToClient, sendMirroringEvidenceEmail, sendMissionChangeNotificationToClient, sendMissionChangeNotificationToProvider, sendWelcomeEmail, sendTestEmail, sendVerificationCodeEmail, sendPasswordResetEmail, sendBillingEmail, sendLegalReportEmail, sendPendingInfoReport, sendApprovalPendingReport, sendCancelledMissingInfoEmail, sendDailyMissingInfoReport, sendStuckNfsReport } from "./emailService";
+import { sendMissionEmailToClient, sendMissionEmailToProvider, sendMissionResendToClient, sendMirroringEvidenceEmail, sendMissionChangeNotificationToClient, sendMissionChangeNotificationToProvider, sendWelcomeEmail, sendTestEmail, sendVerificationCodeEmail, sendPasswordResetEmail, sendBillingEmail, sendLegalReportEmail, sendPendingInfoReport, sendApprovalPendingReport, sendCancelledMissingInfoEmail, sendDailyMissingInfoReport, sendStuckNfsReport, sendMissionEndToClient, sendMissionEndToProvider } from "./emailService";
 import { registerDhlIntakeRoutes, runDhlIntakeMigrations } from "./dhlSupplierIntake";
 import { findOrCreateCustomer, createPayment, getPayment, getPaymentPixQrCode, getPaymentBankSlip, listPayments, deletePayment, mapAsaasStatus, isAsaasConfigured, getAsaasCompanies, scheduleInvoice, listMunicipalServices, getInvoiceByPayment, getAllBalances } from "./asaasService";
 
@@ -1303,6 +1303,83 @@ export async function registerRoutes(
       res.json({ success, message: success ? 'E-mail de solicitação enviado ao fornecedor!' : 'Falha ao enviar' });
     } catch (err: any) {
       console.error('[Email] Erro mission-solicited:', err.message);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post("/api/email/mission-end", requireAuth, requireRole('administrador', 'diretoria', 'avançado', 'avancado', 'operador'), async (req: Request, res: Response) => {
+    try {
+      const { missionId, odometerPrintUrl, senderName } = req.body;
+      if (!missionId) return res.status(400).json({ error: 'Campo missionId obrigatório' });
+
+      const { data: m } = await supabase.from('missions').select('*').eq('id', missionId).single();
+      if (!m) return res.status(404).json({ error: 'Missão não encontrada' });
+
+      // Marcos operacionais a partir do mission_history (último de cada status).
+      let scheduledAt: string | null = m.created_at || m.start_time || null;
+      let originArrivalAt: string | null = null;
+      let startAt: string | null = m.start_time || null;
+      try {
+        const { data: hist } = await supabase
+          .from('mission_history')
+          .select('changed_at,new_value')
+          .eq('mission_id', missionId)
+          .eq('field_name', 'status')
+          .order('changed_at', { ascending: false });
+        if (hist) {
+          const lastOf = (val: string) => (hist as any[]).find(h => h.new_value === val)?.changed_at || null;
+          originArrivalAt = lastOf('Origem');
+          startAt = lastOf('Em Viagem') || startAt;
+        }
+      } catch {}
+
+      let vehiclePlate = '';
+      if (m.vehicle_id) {
+        const { data: veh } = await supabase.from('vehicles').select('plate, model').eq('id', m.vehicle_id).single();
+        if (veh) vehiclePlate = veh.model ? `${veh.plate} / ${veh.model}` : veh.plate;
+      }
+
+      const endData = {
+        id: missionId,
+        client: m.client || '',
+        provider: m.provider || '',
+        origin: m.origin || '',
+        destination: m.destination || '',
+        scheduled_at: scheduledAt,
+        origin_arrival_at: originArrivalAt,
+        start_at: startAt,
+        end_at: m.end_time || null,
+        start_km: m.start_km ?? null,
+        end_km: m.end_km ?? null,
+        map_link: m.map_link || null,
+        odometer_print_url: odometerPrintUrl || null,
+        vehicle_plate: vehiclePlate,
+      };
+
+      const fallback = (await loadAlertRecipientsSettings()).operationalFallback;
+      const results: { client?: boolean; provider?: boolean } = {};
+
+      // Cliente
+      const { email: cliEmail } = await findClientEmail(endData.client);
+      if (cliEmail) {
+        results.client = await sendMissionEndToClient(endData, cliEmail, senderName);
+      } else {
+        results.client = await sendMissionEndToClient({ ...endData, _noEmailAlert: true, _alertEntity: 'Cliente', _alertName: endData.client }, fallback, senderName);
+      }
+
+      // Fornecedor
+      if (endData.provider) {
+        const { email: provEmail } = await findProviderEmail(endData.provider);
+        if (provEmail) {
+          results.provider = await sendMissionEndToProvider(endData, provEmail, senderName);
+        } else {
+          results.provider = await sendMissionEndToProvider({ ...endData, _noEmailAlert: true, _alertEntity: 'Fornecedor', _alertName: endData.provider }, fallback, senderName);
+        }
+      }
+
+      res.json({ success: true, results });
+    } catch (err: any) {
+      console.error('[Email] Erro mission-end:', err.message);
       res.status(500).json({ error: err.message });
     }
   });

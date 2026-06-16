@@ -1,0 +1,72 @@
+Montar um sistema para calcular pedágio atualizado no Replit é um excelente projeto! Como o valor dos pedágios muda com frequência, o grande segredo aqui não é apenas o "prompt" em si, mas sim como o seu código vai buscar essa informação em tempo real (geralmente via API) e como você instrui a IA a interagir com o usuário.
+
+Aqui está um guia prático de como estruturar isso no Replit, dividindo entre a lógica do sistema e o prompt que você vai usar na IA.
+
+1. A Estratégia do Sistema
+IAs (como o GPT ou Claude) não têm os valores dos pedágios de hoje guardados na memória de forma 100% confiável. Para funcionar direito no Replit, você tem duas opções:
+
+Opção A (Mais precisa): Usar o Replit para rodar um código (Python/JavaScript) que consome uma API de rotas (como Google Maps API ou TollGuru API) e calcula o valor exato.
+
+Opção B (Mais simples/Nativa): Se você estiver usando os Replit Agent ou um modelo com acesso à web (Web Search habilitado), você pode dar um prompt para a IA pesquisar na internet no momento do cálculo.
+
+2. O Prompt Ideal para a IA
+Se você quer que a IA do Replit crie o código para você, ou se está configurando um agente para fazer essa busca, use o prompt abaixo:
+
+Prompt para copiar e colar no Replit:
+"Crie um script em [Python / JavaScript] para rodar aqui no Replit que calcule a rota e o valor atualizado dos pedágios entre uma origem e um destino (Exemplo: Origem: Santos, Destino: Rio de Janeiro).
+
+O sistema deve:
+
+Receber a origem e o destino do usuário.
+
+Utilizar uma ferramenta de busca web ou uma API de mapas/pedágios para obter os valores reais e rotas vigentes para a data de hoje.
+
+Considerar um veículo de passeio comum (2 eixos).
+
+Retornar a distância total, o tempo estimado de viagem e o valor somado de todos os pedágios do trajeto, listando as principais praças de pedágio se possível.
+
+Formatar a saída de forma clara e organizada no console."
+
+3. Como estruturar o código no Replit (Exemplo em Python)
+Se você for escrever o código ou quiser sugerir a estrutura para o Replit Agent, o caminho mais eficiente para a rota Santos ➔ Rio de Janeiro (geralmente feita pela BR-101/Rio-Santos ou subindo a serra pela Imigrantes/Dutra) envolve integrar com uma API.
+
+Aqui está um exemplo de lógica que o Replit pode gerar para você usando a API da TollGuru (uma das melhores para pedágios):
+
+Python
+import requests
+
+def calcular_pedagio(origem, destino):
+    # Exemplo usando a API TollGuru (requer chave de API gratuita)
+    url = "https://apis.tollguru.com/toll/v2/origin-destination-waypoints"
+    headers = {
+        "x-api-key": "SUA_CHAVE_API_AQUI",
+        "Content-Type": "application/json"
+    }
+    
+    payload = {
+        "from": {"address": origem},
+        "to": {"address": destino},
+        "vehicle": {
+            "type": "2Axles" # Carro de passeio comum
+        }
+    }
+    
+    response = requests.post(url, json=payload, headers=headers)
+    
+    if response.status_code == 200:
+        dados = response.json()
+        # Extrai os dados de pedágio e rota da API
+        valor_total = dados['route']['costs']['toll']
+        distancia = dados['route']['distance']
+        
+        print(f"\n--- Resumo da Viagem: {origem} para {destino} ---")
+        print(f"Distância estimada: {distancia / 1000:.2f} km")
+        print(f"Custo total de pedágio: R$ {valor_total:.2f}")
+    else:
+        print("Erro ao buscar dados de pedágio. Verifique a API.")
+
+# Execução no terminal do Replit
+origem_user = input("Digite a origem: ")   # Ex: Santos
+destino_user = input("Digite o destino: ") # Ex: Rio de Janeiro
+
+calcular_pedagio(origem_user, destino_user)

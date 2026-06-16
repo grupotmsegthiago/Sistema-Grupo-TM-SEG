@@ -3,7 +3,7 @@
 // ==========================================
 // VERSÃO DO SISTEMA
 // ==========================================
-export const APP_VERSION = "3.6.77";
+export const APP_VERSION = "3.6.78";
 
 // ==========================================
 // CONFIGURAÇÕES DE RETENÇÃO (ESPAÇO EM BANCO)

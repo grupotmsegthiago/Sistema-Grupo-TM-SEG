@@ -5,6 +5,7 @@ import { authFetch } from '../lib/authFetch';
 import { supabase } from '../lib/supabase';
 import { logAction } from '../lib/logger';
 import { clientFuzzyFilter, extractCityFromAddress } from '../lib/financialUtils';
+import { generateContent } from '../lib/gemini';
 import { useNotification } from '../lib/NotificationContext';
 import { 
   X, Activity, MapPin, Flag, Truck, Plus, Save, 
@@ -78,6 +79,14 @@ export interface FinalizeConfirmPayload {
     endKm: number | null;
     iso: string;
     endTravelIso: string | null;
+    odometerPrintUrl: string | null;
+}
+
+interface OdometerAiResult {
+    concluido: boolean;
+    km_extraido: string | null;
+    divergencia: boolean;
+    justificativa: string;
 }
 
 interface FinalizeChecklistDialogProps {
@@ -100,6 +109,7 @@ interface FinalizeChecklistDialogProps {
     suggestions: FinalizeTableSuggestion[];
     defaultDateTime: string;
     minDateTime?: string;
+    missionId: string;
     onConfirm: (payload: FinalizeConfirmPayload) => void;
     onCancel: () => void;
 }
@@ -107,7 +117,7 @@ interface FinalizeChecklistDialogProps {
 const FinalizeChecklistDialog: React.FC<FinalizeChecklistDialogProps> = ({
     isOpen, kind, osLabel, providerName, dateLabel, isDhl, destinationAddress, mapLink,
     originCity, destCity, appliedTableName, isRaio, raioFranchiseKm, startKm, defaultEndKm,
-    franchiseKm, suggestions, defaultDateTime, minDateTime, onConfirm, onCancel,
+    franchiseKm, suggestions, defaultDateTime, minDateTime, missionId, onConfirm, onCancel,
 }) => {
     const isCompleted = kind === 'completed';
     const [endKm, setEndKm] = useState(defaultEndKm);
@@ -120,6 +130,17 @@ const FinalizeChecklistDialog: React.FC<FinalizeChecklistDialogProps> = ({
     const [raioRealKm, setRaioRealKm] = useState('');
     const [err, setErr] = useState('');
 
+    // Auditoria do hodômetro por IA (somente conclusão).
+    const [odoFile, setOdoFile] = useState<File | null>(null);
+    const [odoPreview, setOdoPreview] = useState<string>('');
+    const [odoUrl, setOdoUrl] = useState<string>('');
+    const [odoUploading, setOdoUploading] = useState(false);
+    const [odoChecking, setOdoChecking] = useState(false);
+    const [odoResult, setOdoResult] = useState<OdometerAiResult | null>(null);
+    const [odoValidatedKm, setOdoValidatedKm] = useState<number | null>(null);
+    const [odoErr, setOdoErr] = useState('');
+    const [odoConfirmed, setOdoConfirmed] = useState(false);
+
     useEffect(() => {
         if (isOpen) {
             setEndKm(defaultEndKm);
@@ -131,6 +152,15 @@ const FinalizeChecklistDialog: React.FC<FinalizeChecklistDialogProps> = ({
             setRaioAnswer(null);
             setRaioRealKm('');
             setErr('');
+            setOdoFile(null);
+            setOdoPreview('');
+            setOdoUrl('');
+            setOdoUploading(false);
+            setOdoChecking(false);
+            setOdoResult(null);
+            setOdoValidatedKm(null);
+            setOdoErr('');
+            setOdoConfirmed(false);
         }
     }, [isOpen, defaultEndKm, defaultDateTime]);
 
@@ -145,6 +175,75 @@ const FinalizeChecklistDialog: React.FC<FinalizeChecklistDialogProps> = ({
     const traveled = endKmNum != null && startKm >= 0 ? Math.max(0, endKmNum - startKm) : 0;
     const kmMismatch = isCompleted && franchiseKm > 0 && traveled > franchiseKm;
 
+    // Auditoria do hodômetro: print obrigatório, validado pela IA contra o KM final;
+    // em caso de divergência exige confirmação manual.
+    const odoValidForKm = odoResult != null && odoValidatedKm != null && odoValidatedKm === endKmNum;
+    const odometerOk = !isCompleted ? true : (
+        !!odoUrl && odoValidForKm && (!odoResult!.divergencia || odoConfirmed)
+    );
+
+    const fileToBase64 = (file: File): Promise<string> => new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => {
+            const res = String(reader.result || '');
+            resolve(res.includes(',') ? res.split(',')[1] : res);
+        };
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+    });
+
+    const validateOdometer = async (file: File, targetKm: number | null) => {
+        if (targetKm == null || targetKm <= 0) { setOdoErr('Informe o KM final antes de validar o print.'); return; }
+        setOdoChecking(true); setOdoErr(''); setOdoResult(null); setOdoConfirmed(false);
+        try {
+            const base64 = await fileToBase64(file);
+            const prompt = `Você é um auditor de frotas. Analise a imagem do PAINEL/HODÔMETRO de um veículo e compare com o valor de KM FINAL informado pelo operador: ${targetKm}.
+Tarefas:
+1. Identifique se a imagem mostra de fato um hodômetro/painel de veículo (campo "concluido": true se for um hodômetro legível, false caso contrário).
+2. Extraia o número do hodômetro exibido na imagem (campo "km_extraido", apenas dígitos, sem pontos; null se ilegível).
+3. Compare o valor extraído com o KM FINAL informado (${targetKm}). Se forem diferentes (tolerância de 2 km), "divergencia": true.
+4. Escreva uma justificativa curta em português (campo "justificativa").
+Responda ESTRITAMENTE em JSON puro, sem markdown, no formato: {"concluido": boolean, "km_extraido": string|null, "divergencia": boolean, "justificativa": string}`;
+            const raw = await generateContent({
+                contents: { parts: [ { inlineData: { mimeType: file.type || 'image/png', data: base64 } }, { text: prompt } ] },
+                config: { responseMimeType: 'application/json' },
+            });
+            let txt = (raw || '').trim();
+            if (txt.startsWith('```')) txt = txt.replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/i, '').trim();
+            const parsed = JSON.parse(txt) as OdometerAiResult;
+            setOdoResult(parsed);
+            setOdoValidatedKm(targetKm);
+            if (!parsed.concluido) setOdoErr('A imagem não parece ser um hodômetro legível. Cole um print válido do painel.');
+        } catch (e: any) {
+            setOdoErr('Não foi possível validar o print com a IA. Tente novamente.');
+        } finally {
+            setOdoChecking(false);
+        }
+    };
+
+    const handleOdometerImage = async (file: File) => {
+        if (!file || !file.type.startsWith('image/')) { setOdoErr('O arquivo deve ser uma imagem.'); return; }
+        setOdoErr(''); setOdoResult(null); setOdoConfirmed(false); setOdoValidatedKm(null);
+        setOdoFile(file);
+        const localPreview = URL.createObjectURL(file);
+        setOdoPreview(localPreview);
+        setOdoUploading(true);
+        try {
+            const ext = (file.name.split('.').pop() || 'png').toLowerCase();
+            const path = `odometer/${missionId}/${Date.now()}.${ext}`;
+            const { error: upErr } = await supabase.storage.from('mission-evidence').upload(path, file, { upsert: true, contentType: file.type });
+            if (upErr) throw upErr;
+            const { data: pub } = supabase.storage.from('mission-evidence').getPublicUrl(path);
+            setOdoUrl(pub?.publicUrl || '');
+        } catch (e: any) {
+            setOdoErr('Falha ao enviar o print. Tente novamente.');
+            setOdoUploading(false);
+            return;
+        }
+        setOdoUploading(false);
+        await validateOdometer(file, endKmNum);
+    };
+
     // Etapas visíveis nesta OS (para a barra de progresso).
     const steps = {
         address: true,
@@ -158,7 +257,7 @@ const FinalizeChecklistDialog: React.FC<FinalizeChecklistDialogProps> = ({
         (chkAddress ? 1 : 0) +
         (steps.raio && raioAnswer ? 1 : 0) +
         (chkCities ? 1 : 0) +
-        (steps.km && endKmNum != null && endKmNum > 0 && (!kmMismatch || chkTable) ? 1 : 0) +
+        (steps.km && endKmNum != null && endKmNum > 0 && (!kmMismatch || chkTable) && odometerOk ? 1 : 0) +
         (steps.cancel && dt && endTravelDt ? 1 : 0);
     const progressPct = totalSteps > 0 ? Math.round((doneSteps / totalSteps) * 100) : 0;
     const allDone = doneSteps >= totalSteps;
@@ -173,6 +272,9 @@ const FinalizeChecklistDialog: React.FC<FinalizeChecklistDialogProps> = ({
             if (endKmNum == null || endKmNum <= 0) { setErr('Informe o KM final.'); return; }
             if (startKm > 0 && endKmNum < startKm) { setErr(`KM final não pode ser menor que o KM inicial (${startKm}).`); return; }
             if (kmMismatch && !chkTable) { setErr('O KM rodado não bate com a tabela. Confirme a ciência da tabela aplicada.'); return; }
+            if (!odoUrl) { setErr('Cole ou anexe o print do hodômetro (obrigatório).'); return; }
+            if (!odoValidForKm) { setErr('Valide o print do hodômetro com a IA antes de finalizar.'); return; }
+            if (odoResult && odoResult.divergencia && !odoConfirmed) { setErr('Há divergência no hodômetro. Confirme o total do hodômetro final.'); return; }
             if (!dt) { setErr('Informe a data e a hora exata da finalização.'); return; }
         } else {
             if (!dt) { setErr('Informe a data e a hora do cancelamento.'); return; }
@@ -188,6 +290,7 @@ const FinalizeChecklistDialog: React.FC<FinalizeChecklistDialogProps> = ({
             endKm: endKmNum,
             iso: parsed.toISOString(),
             endTravelIso: !isCompleted && endTravelParsed && !isNaN(endTravelParsed.getTime()) ? endTravelParsed.toISOString() : null,
+            odometerPrintUrl: isCompleted ? (odoUrl || null) : null,
         });
     };
 
@@ -286,11 +389,71 @@ const FinalizeChecklistDialog: React.FC<FinalizeChecklistDialogProps> = ({
                         <FinSection n={4} warn={kmMismatch} icon={<Gauge className="h-4 w-4" />} title="KM rodado x KM da tabela">
                             <div className="mb-2">
                                 <label className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">KM final (obrigatório)</label>
-                                <input value={endKm} onChange={e => setEndKm(e.target.value)} inputMode="decimal" placeholder="Ex: 123456" className="mt-1 w-full rounded-md border border-slate-300 px-2.5 py-2 text-sm font-bold text-slate-800 outline-none focus:border-emerald-500" data-testid="input-confirm-end-km" />
+                                <input value={endKm} onChange={e => { setEndKm(e.target.value); setOdoResult(null); setOdoValidatedKm(null); setOdoConfirmed(false); }} inputMode="decimal" placeholder="Ex: 123456" className="mt-1 w-full rounded-md border border-slate-300 px-2.5 py-2 text-sm font-bold text-slate-800 outline-none focus:border-emerald-500" data-testid="input-confirm-end-km" />
                             </div>
                             <div className="grid grid-cols-2 gap-2">
                                 <FinStat label="KM rodado (real)" value={`${traveled} km`} />
                                 <FinStat label="KM da tabela (franquia)" value={franchiseKm > 0 ? `${franchiseKm} km` : '—'} />
+                            </div>
+
+                            {/* Auditoria do hodômetro por IA */}
+                            <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50 p-3">
+                                <div className="flex items-center gap-2">
+                                    <Gauge className="h-4 w-4 text-slate-600" />
+                                    <p className="text-[12px] font-bold text-slate-800">Print do hodômetro (obrigatório)</p>
+                                </div>
+                                <p className="mt-1 text-[11px] font-medium text-slate-500">Cole o print (Ctrl+V) ou anexe a foto do painel. A IA confere o KM final automaticamente.</p>
+                                <div
+                                    tabIndex={0}
+                                    onPaste={(e) => {
+                                        const item = Array.from(e.clipboardData.items).find(it => it.type.startsWith('image/'));
+                                        const file = item?.getAsFile();
+                                        if (file) { e.preventDefault(); handleOdometerImage(file); }
+                                    }}
+                                    className="mt-2 flex min-h-[64px] cursor-text flex-col items-center justify-center gap-1 rounded-lg border-2 border-dashed border-slate-300 bg-white p-3 text-center outline-none focus:border-emerald-500"
+                                    data-testid="dropzone-odometer"
+                                >
+                                    {odoPreview ? (
+                                        <img src={odoPreview} alt="Hodômetro" className="max-h-44 rounded-md border border-slate-200" data-testid="img-odometer-preview" />
+                                    ) : (
+                                        <p className="text-[11px] font-semibold text-slate-400">Clique aqui e tecle Ctrl+V para colar o print</p>
+                                    )}
+                                    <label className="mt-1 inline-flex cursor-pointer items-center gap-1.5 rounded-md bg-slate-700 px-2.5 py-1.5 text-[11px] font-semibold text-white" data-testid="button-odometer-attach">
+                                        <Plus className="h-3.5 w-3.5" /> Anexar imagem
+                                        <input type="file" accept="image/*" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) handleOdometerImage(f); e.currentTarget.value=''; }} />
+                                    </label>
+                                </div>
+
+                                {(odoUploading || odoChecking) && (
+                                    <div className="mt-2 flex items-center gap-2 text-[12px] font-semibold text-slate-600" data-testid="status-odometer-loading">
+                                        <Loader2 className="h-4 w-4 animate-spin" /> {odoUploading ? 'Enviando print...' : 'Validando com IA...'}
+                                    </div>
+                                )}
+
+                                {odoErr && (
+                                    <div className="mt-2 flex items-center gap-2 rounded-md border border-red-200 bg-red-50 px-2.5 py-1.5 text-[11px] font-bold text-red-600" data-testid="text-odometer-error">
+                                        <AlertTriangle size={13} /> {odoErr}
+                                    </div>
+                                )}
+
+                                {odoUrl && odoResult && !odoChecking && (
+                                    <div className="mt-2 space-y-2">
+                                        <div className={`rounded-md border px-2.5 py-2 text-[12px] font-medium ${odoResult.divergencia ? 'border-amber-300 bg-amber-50 text-amber-900' : 'border-emerald-300 bg-emerald-50 text-emerald-900'}`} data-testid="text-odometer-result">
+                                            <div className="flex items-center gap-1.5 font-bold">
+                                                {odoResult.divergencia ? <AlertTriangle size={14} /> : <CheckCircle2 size={14} />}
+                                                {odoResult.divergencia ? 'Divergência detectada' : 'Hodômetro confere'}
+                                            </div>
+                                            <p className="mt-1">{odoResult.justificativa}</p>
+                                            {odoResult.km_extraido && <p className="mt-1 text-[11px] opacity-80">KM lido na imagem: <b>{odoResult.km_extraido}</b> · KM informado: <b>{endKmNum}</b></p>}
+                                        </div>
+                                        {odoResult.divergencia && (
+                                            <FinCheck label="OK, confirmo o total do hodômetro final" checked={odoConfirmed} onToggle={() => setOdoConfirmed(v => !v)} testId="check-odometer-confirm" />
+                                        )}
+                                        {odoFile && (
+                                            <button type="button" onClick={() => validateOdometer(odoFile, endKmNum)} className="text-[11px] font-bold text-emerald-700 underline" data-testid="button-odometer-revalidate">Revalidar com IA</button>
+                                        )}
+                                    </div>
+                                )}
                             </div>
                             {kmMismatch && (
                                 <>
@@ -446,6 +609,12 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
     // Cancelamento: "Data de fim de viagem" (operacional). A data do cancelamento
     // em si vai para confirmedRealTimeRef (alimenta cancelStatusAt do recálculo).
     const confirmedEndTravelRef = useRef<string | null>(null);
+    // Print do hodômetro confirmado no checklist (para relatório/foto/e-mails).
+    const confirmedPrintUrlRef = useRef<string | null>(null);
+    // Relatório de fim de missão (dois botões: copiar texto / copiar foto).
+    const [finalizeReport, setFinalizeReport] = useState<{ text: string; photoUrl: string | null } | null>(null);
+    const [copiedReportText, setCopiedReportText] = useState(false);
+    const [copiedReportPhoto, setCopiedReportPhoto] = useState(false);
 
     useEffect(() => {
         tollConfirmedRef.current = false;
@@ -455,6 +624,7 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
         confirmedEndKmRef.current = null;
         confirmedRealTimeRef.current = null;
         confirmedEndTravelRef.current = null;
+        confirmedPrintUrlRef.current = null;
         setPendingFinalizeConfirm(null);
     }, [mission?.id, isOpen]);
     
@@ -1744,6 +1914,61 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
                 showNotification('Relatório Copiado', 'Monitoramento formatado salvo e copiado.', 'success');
             } catch (err) { console.warn(err); }
 
+            // FIM DE MISSÃO: ao concluir, monta o relatório padrão de fechamento
+            // (dois botões: copiar texto / copiar foto) e dispara os e-mails de
+            // fim de missão para cliente e fornecedor.
+            const isNowCompleted = finalStatus === MissionStatus.COMPLETED && originalStatus !== MissionStatus.COMPLETED;
+            if (isNowCompleted) {
+                let originArrivalAt = '', operationStartAt = '';
+                try {
+                    const { data: marks } = await supabase
+                        .from('mission_history')
+                        .select('changed_at,new_value')
+                        .eq('mission_id', mission.id)
+                        .eq('field_name', 'status')
+                        .order('changed_at', { ascending: false });
+                    if (marks) {
+                        const lastOf = (val: string) => (marks as any[]).find(h => h.new_value === val)?.changed_at;
+                        originArrivalAt = fmtDateTime(lastOf('Origem'));
+                        operationStartAt = fmtDateTime(lastOf('Em Viagem'));
+                    }
+                } catch {}
+                const sKmN = parseNumber(editData.startKm);
+                const eKmN = confirmedEndKmRef.current != null ? confirmedEndKmRef.current : parseNumber(editData.endKm);
+                const totalKm = eKmN > sKmN ? eKmN - sKmN : 0;
+                const finalizeReportText = `*DADOS DA MISSÃO*
+
+*OS:* ${mission.id}
+*DATA:* ${fmtDateTime(endIso || undefined) || fmtDateTime(new Date().toISOString())}
+
+*DATA DO AGENDAMENTO:* ${fmtDateTime(mission.createdAt) || fmtDateTime(startIso)}
+*DATA DA CHEGADA NA ORIGEM:* ${originArrivalAt || '—'}
+*DATA DO INICIO:* ${operationStartAt || '—'}
+*DATA DO FIM DE MISSÃO:* ${fmtDateTime(endIso || undefined) || '—'}
+
+*KM INICIAL:* ${sKmN > 0 ? sKmN : '—'}
+*KM FINAL:* ${eKmN > 0 ? eKmN : '—'}
+*TOTAL RODADO:* ${totalKm} KM
+
+*LINK DO FIM DE MISSÃO:* ${editData.mapLink || 'N/A'}`;
+                setFinalizeReport({ text: finalizeReportText, photoUrl: confirmedPrintUrlRef.current });
+                setCopiedReportText(false);
+                setCopiedReportPhoto(false);
+
+                try {
+                    await authFetch('/api/email/mission-end', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            missionId: mission.id,
+                            odometerPrintUrl: confirmedPrintUrlRef.current || undefined,
+                            senderName: JSON.parse(localStorage.getItem('userData') || '{}').name || undefined,
+                        }),
+                    });
+                    showNotification('E-mails de Fim de Missão', 'Enviados para cliente e fornecedor.', 'success');
+                } catch (mailErr) { console.error('[Email] Erro fim de missão:', mailErr); }
+            }
+
             const vehiclePlateForEmail = searchVehicle || editData.client_vehicle_plate || '—';
 
             const sendClientEmail = finalStatus === MissionStatus.SCHEDULED && originalStatus !== MissionStatus.SCHEDULED;
@@ -1906,12 +2131,47 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
     // Grava os valores confirmados em refs (lidos pelo submit retomado) e
     // sincroniza o editData só para coerência visual. A SM segue para o
     // status final somente aqui, após a confirmação explícita do operador.
-    const handleFinalizeConfirmed = (payload: FinalizeConfirmPayload) => {
-        const { endKm: km, iso, endTravelIso } = payload;
+    const handleFinalizeConfirmed = async (payload: FinalizeConfirmPayload) => {
+        const { endKm: km, iso, endTravelIso, odometerPrintUrl } = payload;
         const kind = pendingFinalizeConfirm?.kind;
         confirmedEndKmRef.current = km;
         confirmedRealTimeRef.current = iso;
         confirmedEndTravelRef.current = endTravelIso;
+        confirmedPrintUrlRef.current = odometerPrintUrl || null;
+
+        // Recálculo automático de pedágio (QualP) ao CONCLUIR. Salva direto em
+        // toll_value (e toll_value_provider = 0 quando é a mesma OS) sem pedir
+        // confirmação manual. OS aprovada NUNCA é tocada. Em falha, mantém o
+        // gate manual de pedágio (tollConfirmedRef permanece false).
+        if (mission && kind === 'completed' && !mission.billing_approved) {
+            try {
+                const r = await authFetch('/api/toll/qualp', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ origin: editData.origin, destination: editData.destination, axis: 2 }),
+                });
+                const j = await r.json().catch(() => ({} as any));
+                if (j?.success && typeof j.tollValue === 'number') {
+                    const v = Number(j.tollValue.toFixed(2));
+                    const provToll = mission.is_same_os ? 0 : v;
+                    // Guarda no banco: nunca sobrescreve pedágio de OS aprovada
+                    // (fecha a janela de aprovação concorrente — o snapshot
+                    // financeiro congelado jamais é tocado).
+                    const { error: tollErr } = await supabase.from('missions')
+                        .update({ toll_value: v, toll_value_provider: provToll })
+                        .eq('id', mission.id)
+                        .eq('billing_approved', false);
+                    if (!tollErr) {
+                        mission.toll_value = v;
+                        tollConfirmedRef.current = true;
+                        console.log(`[FIM MISSÃO] Pedágio QualP recalculado e salvo: R$ ${v} (fornecedor R$ ${provToll})`);
+                    }
+                }
+            } catch (e) {
+                console.warn('[FIM MISSÃO] Falha ao recalcular pedágio QualP:', e);
+            }
+        }
+
         const d = new Date(iso);
         const endDate = d.toLocaleDateString('en-CA');
         const endTime = d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
@@ -3054,9 +3314,64 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
                   ? `${editData.startDate}T${editData.startTime}`
                   : undefined
               }
+              missionId={mission?.id ? String(mission.id) : ''}
               onConfirm={handleFinalizeConfirmed}
               onCancel={handleFinalizeCancelled}
             />
+          )}
+
+          {finalizeReport && (
+            <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/60 p-4" data-testid="dialog-finalize-report">
+              <div className="w-full max-w-[460px] overflow-hidden rounded-2xl bg-white shadow-2xl ring-1 ring-slate-200">
+                <div className="flex items-center gap-3 border-b border-slate-100 px-5 py-4">
+                  <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-500 text-white">
+                    <ShieldCheck className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <h2 className="text-base font-extrabold text-slate-900">Fim de Missão concluído</h2>
+                    <p className="text-xs text-slate-500">Copie o relatório para enviar no WhatsApp.</p>
+                  </div>
+                </div>
+                <div className="p-5">
+                  <pre className="max-h-52 overflow-auto whitespace-pre-wrap rounded-lg border border-slate-200 bg-slate-50 p-3 text-[12px] font-medium text-slate-700" data-testid="text-finalize-report">{finalizeReport.text}</pre>
+                  <div className="mt-4 grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      onClick={async () => { try { await navigator.clipboard.writeText(finalizeReport.text); setCopiedReportText(true); showNotification('Texto copiado', 'Relatório de fim de missão copiado.', 'success'); } catch { showNotification('Erro', 'Não foi possível copiar o texto.', 'error'); } }}
+                      className="flex items-center justify-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-2.5 text-sm font-bold text-white hover:bg-emerald-700"
+                      data-testid="button-copy-report-text"
+                    >
+                      {copiedReportText ? <Check className="h-4 w-4" /> : <Save className="h-4 w-4" />} Copiar texto
+                    </button>
+                    <button
+                      type="button"
+                      disabled={!finalizeReport.photoUrl}
+                      onClick={async () => {
+                        if (!finalizeReport.photoUrl) return;
+                        try {
+                          const resp = await fetch(finalizeReport.photoUrl);
+                          const blob = await resp.blob();
+                          const item = new ClipboardItem({ [blob.type || 'image/png']: blob });
+                          await navigator.clipboard.write([item]);
+                          setCopiedReportPhoto(true);
+                          showNotification('Foto copiada', 'Print do hodômetro copiado.', 'success');
+                        } catch { showNotification('Erro', 'Não foi possível copiar a foto. Baixe pelo link.', 'error'); }
+                      }}
+                      className={`flex items-center justify-center gap-1.5 rounded-lg px-3 py-2.5 text-sm font-bold text-white ${finalizeReport.photoUrl ? 'bg-slate-700 hover:bg-slate-800' : 'cursor-not-allowed bg-slate-300'}`}
+                      data-testid="button-copy-report-photo"
+                    >
+                      {copiedReportPhoto ? <Check className="h-4 w-4" /> : <CarFront className="h-4 w-4" />} Copiar foto
+                    </button>
+                  </div>
+                  {finalizeReport.photoUrl && (
+                    <a href={finalizeReport.photoUrl} target="_blank" rel="noreferrer" className="mt-2 block text-center text-[11px] font-semibold text-slate-400 underline" data-testid="link-odometer-photo">Abrir print do hodômetro</a>
+                  )}
+                  <button type="button" onClick={() => setFinalizeReport(null)} className="mt-4 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-600" data-testid="button-close-finalize-report">
+                    Fechar
+                  </button>
+                </div>
+              </div>
+            </div>
           )}
         </div>
     );

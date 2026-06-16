@@ -297,6 +297,114 @@ export async function sendMissionEmailToProvider(
   }
 }
 
+export interface MissionEndEmailData {
+  id: string;
+  client: string;
+  provider: string;
+  origin: string;
+  destination: string;
+  scheduled_at?: string | null;
+  origin_arrival_at?: string | null;
+  start_at?: string | null;
+  end_at?: string | null;
+  start_km?: number | null;
+  end_km?: number | null;
+  map_link?: string | null;
+  odometer_print_url?: string | null;
+  agent1?: string;
+  agent2?: string;
+  vehicle_plate?: string;
+}
+
+function endMissionContent(
+  mission: MissionEndEmailData,
+  audience: 'cliente' | 'fornecedor'
+): string {
+  const startKm = Number(mission.start_km || 0);
+  const endKm = Number(mission.end_km || 0);
+  const totalKm = endKm > startKm ? endKm - startKm : 0;
+  const fmtKm = (n: number) => n > 0 ? `${n.toLocaleString('pt-BR', { maximumFractionDigits: 0 })} km` : '—';
+  const printBlock = mission.odometer_print_url ? `
+    <div style="margin:20px 0; text-align:center;">
+      <p style="font-size:11px; font-weight:700; color:#666; text-transform:uppercase; letter-spacing:1px; margin-bottom:12px;">📸 Print do Hodômetro</p>
+      <img src="${mission.odometer_print_url}" alt="Hodômetro" style="max-width:100%; max-height:420px; border-radius:8px; border:2px solid #e0e0e0; box-shadow:0 2px 8px rgba(0,0,0,0.1);" />
+    </div>
+  ` : '';
+  const saudacao = audience === 'cliente' ? 'Prezado(a) Cliente' : `Prezado(a) ${mission.provider || 'Fornecedor'}`;
+  return `
+    <h2>✅ Fim de Missão — ${formatOS(mission.id)}</h2>
+    <p>${saudacao},</p>
+    <p>Informamos a finalização da operação de escolta armada. Seguem os dados oficiais de fechamento:</p>
+    <table class="info-table">
+      <tr><td>Nº da OS</td><td><span class="badge">${formatOS(mission.id)}</span></td></tr>
+      <tr><td>Cliente</td><td>${mission.client || '—'}</td></tr>
+      ${audience === 'fornecedor' ? `<tr><td>Fornecedor</td><td>${mission.provider || '—'}</td></tr>` : ''}
+      <tr><td>Origem</td><td>${mission.origin || '—'}</td></tr>
+      <tr><td>Destino</td><td>${mission.destination || '—'}</td></tr>
+      ${mission.vehicle_plate ? `<tr><td>Viatura</td><td>${mission.vehicle_plate}</td></tr>` : ''}
+      <tr><td>Agendamento</td><td>${formatDateTime(mission.scheduled_at)}</td></tr>
+      <tr><td>Chegada na Origem</td><td>${formatDateTime(mission.origin_arrival_at)}</td></tr>
+      <tr><td>Início da Operação</td><td>${formatDateTime(mission.start_at)}</td></tr>
+      <tr><td>Fim de Missão</td><td>${formatDateTime(mission.end_at)}</td></tr>
+      <tr><td>KM Inicial</td><td>${fmtKm(startKm)}</td></tr>
+      <tr><td>KM Final</td><td>${fmtKm(endKm)}</td></tr>
+      <tr><td>Total Rodado</td><td><strong>${fmtKm(totalKm)}</strong></td></tr>
+      ${mission.map_link ? `<tr><td>Link do Fim de Missão</td><td><a href="${mission.map_link}" style="color:#c0392b;">Abrir no mapa</a></td></tr>` : ''}
+    </table>
+    ${printBlock}
+    <p>Agradecemos a parceria nesta operação.</p>
+    <p>Atenciosamente,<br><strong>Equipe Grupo TM SEG</strong></p>
+  `;
+}
+
+export async function sendMissionEndToClient(
+  mission: MissionEndEmailData & { _noEmailAlert?: boolean; _alertEntity?: string; _alertName?: string },
+  clientEmail: string,
+  senderName?: string
+): Promise<boolean> {
+  const html = baseTemplate(endMissionContent(mission, 'cliente'), senderName);
+  try {
+    const isAlert = (mission as any)._noEmailAlert;
+    const subjectPrefix = isAlert ? '⚠️ SEM EMAIL — ' : '';
+    await transporter.sendMail({
+      from: SMTP_FROM,
+      to: clientEmail,
+      bcc: BCC_RECIPIENTS,
+      subject: `${subjectPrefix}Fim de Missão - OS ${formatOS(mission.id)}`,
+      html,
+    });
+    console.log(`[Email] Fim de missão ${mission.id} → Cliente: ${clientEmail}${isAlert ? ' (ALERTA: sem email)' : ''}`);
+    return true;
+  } catch (err: any) {
+    console.error(`[Email] Erro fim de missão cliente ${clientEmail}:`, err.message);
+    return false;
+  }
+}
+
+export async function sendMissionEndToProvider(
+  mission: MissionEndEmailData & { _noEmailAlert?: boolean; _alertEntity?: string; _alertName?: string },
+  providerEmail: string,
+  senderName?: string
+): Promise<boolean> {
+  const html = baseTemplate(endMissionContent(mission, 'fornecedor'), senderName);
+  try {
+    const isAlert = (mission as any)._noEmailAlert;
+    const subjectPrefix = isAlert ? '⚠️ SEM EMAIL — ' : '';
+    await transporter.sendMail({
+      from: SMTP_FROM,
+      to: providerEmail,
+      bcc: BCC_RECIPIENTS,
+      subject: `${subjectPrefix}Fim de Missão - OS ${formatOS(mission.id)}`,
+      html,
+    });
+    console.log(`[Email] Fim de missão ${mission.id} → Fornecedor: ${providerEmail}${isAlert ? ' (ALERTA: sem email)' : ''}`);
+    return true;
+  } catch (err: any) {
+    console.error(`[Email] Erro fim de missão fornecedor ${providerEmail}:`, err.message);
+    return false;
+  }
+}
+
 export interface WelcomeEmailData {
   name: string;
   email: string;
