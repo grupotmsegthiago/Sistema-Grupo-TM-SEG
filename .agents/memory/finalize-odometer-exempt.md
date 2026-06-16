@@ -6,11 +6,12 @@ description: Quais fornecedores dispensam o print do hodômetro ao concluir a OS
 # Dispensa do hodômetro na conclusão (KM final + print)
 
 Política: ao CONCLUIR (ou CANCELAR) uma OS dos fornecedores **ATIVA** e
-**TM SEG**, NEM o KM final NEM o print do hodômetro/auditoria por IA são
-exigência. Todos os demais fornecedores continuam OBRIGADOS a informar KM final
-+ anexar print + passar pela auditoria IA (controle anti-fraude do KM). Para os
-isentos, a conclusão exige apenas data/hora de fim (e ciência de tabela quando
-aplicável).
+**TM SEG / TM SEGURANÇA**, o FinalizeChecklistDialog vira PASSA-LIVRE — pula
+TODO o checklist de auditoria (endereço, raio, cidades, KM final, print do
+hodômetro/IA). A única exigência é a data/hora de fim (na conclusão) ou
+data/hora + fim de viagem (no cancelamento). É a "regra antiga" de fechamento.
+Todos os demais fornecedores continuam OBRIGADOS ao checklist completo: endereço
++ cidades + raio + KM final + print + auditoria IA (controle anti-fraude do KM).
 
 Match do fornecedor: helper module-level `isOdometerExemptProvider(name)` —
 palavra inteira para ATIVA (evitar falso positivo tipo COOPERATIVA); TM SEG/TM

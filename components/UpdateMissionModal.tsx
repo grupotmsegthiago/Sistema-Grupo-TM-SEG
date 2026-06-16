@@ -267,28 +267,37 @@ Responda ESTRITAMENTE em JSON puro, sem markdown, no formato: {"concluido": bool
         cancel: !isCompleted,
     };
     const totalSteps = Object.values(steps).filter(Boolean).length;
-    const doneSteps =
+    const rawDoneSteps =
         (chkAddress ? 1 : 0) +
         (steps.raio && raioAnswer ? 1 : 0) +
         (chkCities ? 1 : 0) +
-        (steps.km && (odometerExempt || (endKmNum != null && endKmNum > 0 && (!kmMismatch || chkTable) && odometerOk)) ? 1 : 0) +
+        (steps.km && (endKmNum != null && endKmNum > 0 && (!kmMismatch || chkTable) && odometerOk) ? 1 : 0) +
         (steps.cancel && dt && endTravelDt ? 1 : 0);
+    // Fornecedores isentos (ATIVA / TM SEG) seguem a regra ANTIGA: finalizar/cancelar
+    // sem o checklist de auditoria (endereço, raio, cidades, KM, print). Para eles,
+    // só a data/hora de fim libera o botão; as etapas visíveis contam como concluídas.
+    const essentialDone = isCompleted ? !!dt : (!!dt && !!endTravelDt);
+    const doneSteps = odometerExempt ? totalSteps : rawDoneSteps;
     const progressPct = totalSteps > 0 ? Math.round((doneSteps / totalSteps) * 100) : 0;
-    const allDone = doneSteps >= totalSteps;
+    const allDone = odometerExempt ? essentialDone : rawDoneSteps >= totalSteps;
 
     const handleConfirm = () => {
-        if (!chkAddress) { setErr('Confirme o endereço de destino final.'); return; }
-        if (isRaio && !raioAnswer) { setErr('Responda se a viatura rodou o raio.'); return; }
-        if (isRaio && raioAnswer === 'no' && (raioRealKm || '').trim() === '') { setErr('Informe o raio realmente rodado (km).'); return; }
-        if (!chkCities) { setErr('Confirme as cidades e a tabela aplicada.'); return; }
+        // Isentos (ATIVA / TM SEG): pula TODO o checklist de auditoria (endereço,
+        // raio, cidades, KM, print) — exige apenas data/hora de fim.
+        if (!odometerExempt) {
+            if (!chkAddress) { setErr('Confirme o endereço de destino final.'); return; }
+            if (isRaio && !raioAnswer) { setErr('Responda se a viatura rodou o raio.'); return; }
+            if (isRaio && raioAnswer === 'no' && (raioRealKm || '').trim() === '') { setErr('Informe o raio realmente rodado (km).'); return; }
+            if (!chkCities) { setErr('Confirme as cidades e a tabela aplicada.'); return; }
+        }
 
         if (isCompleted) {
             if (!odometerExempt) {
                 if (endKmNum == null || endKmNum <= 0) { setErr('Informe o KM final.'); return; }
             }
             if (endKmNum != null && startKm > 0 && endKmNum < startKm) { setErr(`KM final não pode ser menor que o KM inicial (${startKm}).`); return; }
-            if (kmMismatch && !chkTable) { setErr('O KM rodado não bate com a tabela. Confirme a ciência da tabela aplicada.'); return; }
             if (!odometerExempt) {
+                if (kmMismatch && !chkTable) { setErr('O KM rodado não bate com a tabela. Confirme a ciência da tabela aplicada.'); return; }
                 if (!odoUrl) { setErr('Cole ou anexe o print do hodômetro (obrigatório).'); return; }
                 if (!odoValidForKm) { setErr('Valide o print do hodômetro com a IA antes de finalizar.'); return; }
                 if (odoResult && odoResult.divergencia && !odoConfirmed) { setErr('Há divergência no hodômetro. Confirme o total do hodômetro final.'); return; }
