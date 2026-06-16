@@ -14,6 +14,7 @@ import {
 import { GoogleMap, useLoadScript, Marker, InfoWindow } from '@react-google-maps/api';
 import { googleMapsLoadConfig } from '../lib/maps';
 import { extractCoordinates } from '../lib/utils';
+import { copyTextAsync } from '../lib/clipboard';
 import MissionStatusModal from './MissionStatusModal';
 import UpdateMissionModal from './UpdateMissionModal';
 import MissionCard from './MissionCard';
@@ -1570,7 +1571,11 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
     const handleOpenPrintModal = (mission: Mission) => { setMissionForPrint(mission); setIsPrintModalOpen(true); };
     const handleDeleteClick = (mission: Mission) => { setMissionToDelete(mission); setDeletePassword(''); setCancelEscortAtOrigin(null); setIsDeleteModalOpen(true); };
     
-    const handleCopyMission = async (mission: Mission) => {
+    const handleCopyMission = (mission: Mission) => {
+        // Safari: o texto do relatório DHL depende de um await no Supabase. Para
+        // a cópia funcionar no Safari, montamos o texto numa Promise e passamos
+        // ela direto ao clipboard (gesto-safe) — sem dar await antes de copiar.
+        const buildText = async (): Promise<string> => {
         const dateObj = new Date(mission.startTime || mission.createdAt);
         const dateStr = dateObj.toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' });
         const timeStr = dateObj.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', timeZone: 'America/Sao_Paulo' });
@@ -1649,7 +1654,9 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
 🏙️ *LOCALIZAÇÃO:* ${cityField.toUpperCase()}
 🗾 *LINK DO GOOGLE:* ${mission.mapLink || 'N/A'}`;
         
-        await handleCopyToClipboard(text, (mission.id || 'OS'), true);
+            return text;
+        };
+        handleCopyToClipboard(buildText(), (mission.id || 'OS'), true);
     };
     
     const [isSendingEmail, setIsSendingEmail] = useState('');
@@ -1672,7 +1679,7 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
             setIsSendingEmail('');
         }
     };
-    const handleCopyToClipboard = async (text: string, id: string, isReport = false) => { try { await navigator.clipboard.writeText(text); if(isReport) showNotification('Sucesso', 'Relatório WhatsApp Copiado!', 'success'); else { setCopiedId(id); setTimeout(() => setCopiedId(null), 2000); } } catch (err) { console.error(err); } };
+    const handleCopyToClipboard = (textOrPromise: string | Promise<string>, id: string, isReport = false) => { void copyTextAsync(textOrPromise).then(ok => { if (!ok) { showNotification('Erro', 'Não foi possível copiar. Tente novamente.', 'error'); return; } if (isReport) showNotification('Sucesso', 'Relatório WhatsApp Copiado!', 'success'); else { setCopiedId(id); setTimeout(() => setCopiedId(null), 2000); } }); };
     const confirmDelete = async () => {
         if (!missionToDelete || cancelEscortAtOrigin === null) return;
         setIsDeleting(true);
