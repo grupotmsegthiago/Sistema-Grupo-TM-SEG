@@ -17,6 +17,14 @@ Match do fornecedor: helper module-level `isOdometerExemptProvider(name)` —
 palavra inteira para ATIVA (evitar falso positivo tipo COOPERATIVA); TM SEG/TM
 SECURITY por string normalizada sem espaços (TMSEG/TMSECURITY).
 
+IA do hodômetro NUNCA trava (todos os fornecedores): a conferência por IA do
+print é só AUXÍLIO informativo. Para concluir, basta anexar o print (prova do
+KM) — falha de IA ou "divergência" NÃO bloqueiam. A IA falhava em fotos
+escuras/embaçadas e travava o fechamento por completo. `odometerOk = print
+anexado` (não exige `odoValidForKm`); o gate de IA/divergência foi removido do
+`handleConfirm`. Demais validações não-IA seguem: KM final + ciência de tabela
+quando o KM rodado não bate. Não reintroduzir gate de validação por IA.
+
 Armadilha: a isenção precisa ser aplicada de forma CONSISTENTE em TODOS os
 pontos que derivam "tem fim?" / liberam a conclusão — o gate de progresso do
 checklist, a validação do dialog, os gates de finalização e de pedágio do submit

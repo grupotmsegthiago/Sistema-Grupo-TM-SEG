@@ -189,12 +189,10 @@ const FinalizeChecklistDialog: React.FC<FinalizeChecklistDialogProps> = ({
     // KM final e o print do hodômetro NÃO são obrigatórios na conclusão.
     const odometerExempt = isOdometerExemptProvider(providerName);
 
-    // Auditoria do hodômetro: print obrigatório, validado pela IA contra o KM final;
-    // em caso de divergência exige confirmação manual.
-    const odoValidForKm = odoResult != null && odoValidatedKm != null && odoValidatedKm === endKmNum;
-    const odometerOk = !isCompleted ? true : odometerExempt ? true : (
-        !!odoUrl && odoValidForKm && (!odoResult!.divergencia || odoConfirmed)
-    );
+    // Auditoria do hodômetro: print obrigatório como prova do KM. A conferência
+    // por IA é apenas um AUXÍLIO informativo — NUNCA trava a finalização (a IA
+    // falha em fotos escuras/embaçadas). Basta anexar o print para concluir.
+    const odometerOk = !isCompleted ? true : odometerExempt ? true : !!odoUrl;
 
     const fileToBase64 = (file: File): Promise<string> => new Promise((resolve, reject) => {
         const reader = new FileReader();
@@ -299,8 +297,8 @@ Responda ESTRITAMENTE em JSON puro, sem markdown, no formato: {"concluido": bool
             if (!odometerExempt) {
                 if (kmMismatch && !chkTable) { setErr('O KM rodado não bate com a tabela. Confirme a ciência da tabela aplicada.'); return; }
                 if (!odoUrl) { setErr('Cole ou anexe o print do hodômetro (obrigatório).'); return; }
-                if (!odoValidForKm) { setErr('Valide o print do hodômetro com a IA antes de finalizar.'); return; }
-                if (odoResult && odoResult.divergencia && !odoConfirmed) { setErr('Há divergência no hodômetro. Confirme o total do hodômetro final.'); return; }
+                // A IA é só um auxílio: não bloqueia a finalização mesmo se falhar
+                // ou acusar divergência. O print anexado já é a prova do KM.
             }
             if (!dt) { setErr('Informe a data e a hora exata da finalização.'); return; }
         } else {
@@ -437,7 +435,7 @@ Responda ESTRITAMENTE em JSON puro, sem markdown, no formato: {"concluido": bool
                                     <Gauge className="h-4 w-4 text-slate-600" />
                                     <p className="text-[12px] font-bold text-slate-800">Print do hodômetro (obrigatório)</p>
                                 </div>
-                                <p className="mt-1 text-[11px] font-medium text-slate-500">Cole o print (Ctrl+V) ou anexe a foto do painel. A IA confere o KM final automaticamente.</p>
+                                <p className="mt-1 text-[11px] font-medium text-slate-500">Cole o print (Ctrl+V) ou anexe a foto do painel. A conferência por IA é só um auxílio — basta anexar o print para concluir, mesmo que a IA não consiga ler.</p>
                                 <div
                                     tabIndex={0}
                                     onPaste={(e) => {
