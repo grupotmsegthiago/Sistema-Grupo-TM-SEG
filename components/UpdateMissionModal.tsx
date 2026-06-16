@@ -60,6 +60,134 @@ interface UpdateMissionModalProps {
     hideProviderInfo?: boolean;
 }
 
+// Formata uma data para o value do <input type="datetime-local"> (hora LOCAL).
+const toLocalDateTimeInput = (d: Date): string => {
+    const pad = (n: number) => String(n).padStart(2, '0');
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+};
+
+interface FinalizeConfirmDialogProps {
+    isOpen: boolean;
+    kind: 'completed' | 'cancelled';
+    defaultKm: string;
+    startKm: number;
+    defaultDateTime: string;
+    minDateTime?: string;
+    onConfirm: (km: number | null, iso: string) => void;
+    onCancel: () => void;
+}
+
+const FinalizeConfirmDialog: React.FC<FinalizeConfirmDialogProps> = ({ isOpen, kind, defaultKm, startKm, defaultDateTime, minDateTime, onConfirm, onCancel }) => {
+    const [km, setKm] = useState(defaultKm);
+    const [dt, setDt] = useState(defaultDateTime);
+    const [err, setErr] = useState('');
+    const isCompleted = kind === 'completed';
+
+    useEffect(() => {
+        if (isOpen) {
+            setKm(defaultKm);
+            setDt(defaultDateTime);
+            setErr('');
+        }
+    }, [isOpen, defaultKm, defaultDateTime]);
+
+    if (!isOpen) return null;
+
+    const handleConfirm = () => {
+        if (!dt) { setErr('Informe a data e a hora exata.'); return; }
+        const parsed = new Date(dt);
+        if (isNaN(parsed.getTime())) { setErr('Data/hora inválida.'); return; }
+        let kmNum: number | null = null;
+        const kmStr = (km || '').toString().trim();
+        if (kmStr !== '') {
+            kmNum = parseFloat(kmStr.replace(',', '.'));
+            if (isNaN(kmNum)) { setErr('KM final inválido.'); return; }
+        }
+        if (isCompleted) {
+            if (kmNum == null || kmNum <= 0) { setErr('Informe o KM final.'); return; }
+            if (startKm > 0 && kmNum < startKm) { setErr(`KM final não pode ser menor que o KM inicial (${startKm}).`); return; }
+        }
+        onConfirm(kmNum, parsed.toISOString());
+    };
+
+    const title = isCompleted ? 'Confirmar Finalização' : 'Confirmar Cancelamento';
+
+    return (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 p-4" data-testid="dialog-finalize-confirm">
+            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden">
+                <div className={`px-6 py-4 flex items-center gap-3 ${isCompleted ? 'bg-green-600' : 'bg-red-600'}`}>
+                    <Clock size={20} className="text-white" />
+                    <h3 className="text-sm font-black text-white uppercase tracking-wide">{title}</h3>
+                </div>
+                <div className="p-6 space-y-4">
+                    <p className="text-xs text-gray-600 leading-relaxed">
+                        {isCompleted
+                            ? 'Confirme o KM final e a HORA EXATA em que a missão foi finalizada. Esses valores alimentam o cálculo (horas extras).'
+                            : 'Confirme a HORA EXATA em que a missão foi cancelada. Esse horário define a cobrança de horas extras quando o cancelamento ocorre após a franquia.'}
+                    </p>
+
+                    <div>
+                        <label className="block text-[10px] font-black text-gray-500 uppercase mb-1.5">
+                            KM Final {isCompleted ? '(obrigatório)' : '(opcional)'}
+                        </label>
+                        <div className="flex items-center gap-2">
+                            <Milestone size={16} className="text-gray-400" />
+                            <input
+                                type="text"
+                                inputMode="decimal"
+                                value={km}
+                                onChange={e => setKm(e.target.value)}
+                                placeholder="Ex: 123456"
+                                className="w-full text-sm font-bold text-gray-700 border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none"
+                                data-testid="input-confirm-end-km"
+                            />
+                        </div>
+                    </div>
+
+                    <div>
+                        <label className="block text-[10px] font-black text-gray-500 uppercase mb-1.5">
+                            Data e Hora exata ({isCompleted ? 'finalização' : 'cancelamento'})
+                        </label>
+                        <input
+                            type="datetime-local"
+                            step="1"
+                            value={dt}
+                            min={minDateTime}
+                            onChange={e => setDt(e.target.value)}
+                            className="w-full text-sm font-bold text-gray-700 border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none"
+                            data-testid="input-confirm-real-time"
+                        />
+                    </div>
+
+                    {err && (
+                        <div className="flex items-center gap-2 text-xs font-bold text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2" data-testid="text-confirm-error">
+                            <AlertTriangle size={14} /> {err}
+                        </div>
+                    )}
+                </div>
+                <div className="px-6 py-4 bg-gray-50 flex justify-end gap-3">
+                    <button
+                        type="button"
+                        onClick={onCancel}
+                        className="px-5 py-2.5 border border-gray-200 rounded-xl text-[10px] font-black text-gray-500 uppercase hover:bg-gray-100 transition-all"
+                        data-testid="button-confirm-finalize-cancel"
+                    >
+                        Voltar
+                    </button>
+                    <button
+                        type="button"
+                        onClick={handleConfirm}
+                        className={`px-6 py-2.5 rounded-xl text-[10px] font-black text-white uppercase shadow-lg flex items-center gap-2 transition-all active:scale-95 ${isCompleted ? 'bg-green-600 hover:bg-green-700' : 'bg-red-600 hover:bg-red-700'}`}
+                        data-testid="button-confirm-finalize"
+                    >
+                        <CheckCircle2 size={14} /> {isCompleted ? 'Confirmar e Finalizar' : 'Confirmar e Cancelar'}
+                    </button>
+                </div>
+            </div>
+        </div>
+    );
+};
+
 const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose, mission, currentUser, onSuccess, hideProviderInfo = false }) => {
     const { isLoaded } = useLoadScript(googleMapsLoadConfig);
     const { showNotification } = useNotification();
@@ -70,10 +198,21 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
     const resumeSubmitRef = useRef<(() => void) | null>(null);
     const tollConfirmedRef = useRef(false);
 
+    // Confirmação obrigatória de KM final + hora EXATA ao Concluir/Cancelar.
+    // A SM só muda de status depois que o operador confirma esses valores.
+    const [pendingFinalizeConfirm, setPendingFinalizeConfirm] = useState<{ kind: 'completed' | 'cancelled' } | null>(null);
+    const finalizeConfirmedRef = useRef(false);
+    const confirmedEndKmRef = useRef<number | null>(null);
+    const confirmedRealTimeRef = useRef<string | null>(null);
+
     useEffect(() => {
         tollConfirmedRef.current = false;
         resumeSubmitRef.current = null;
         setPendingTollConfirm(null);
+        finalizeConfirmedRef.current = false;
+        confirmedEndKmRef.current = null;
+        confirmedRealTimeRef.current = null;
+        setPendingFinalizeConfirm(null);
     }, [mission?.id, isOpen]);
     
     // Controle de Relógio em Tempo Real
@@ -845,10 +984,17 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
         let endIso = null;
         if (editData.endDate && editData.endTime) {
             endIso = new Date(`${editData.endDate}T${editData.endTime}`).toISOString();
-             if (new Date(endIso) < new Date(startIso) && !canEditTimes) {
-                alert("ERRO DE CRONOLOGIA: A data/hora de término não pode ser anterior ao início da missão.\n\nPor favor, verifique se a data final está correta.");
-                return;
-            }
+        }
+        // Hora REAL confirmada pelo operador (gate de conclusão) vira o end_time
+        // oficial. Em CANCELAMENTO não gravamos end_time — o motor usa
+        // _cancelStatusAt; a hora real do cancelamento vai para o recálculo via
+        // body do recalc-on-cancel.
+        if (confirmedRealTimeRef.current && editData.status !== MissionStatus.CANCELLED) {
+            endIso = confirmedRealTimeRef.current;
+        }
+        if (endIso && new Date(endIso) < new Date(startIso) && !canEditTimes) {
+            alert("ERRO DE CRONOLOGIA: A data/hora de término não pode ser anterior ao início da missão.\n\nPor favor, verifique se a data final está correta.");
+            return;
         }
 
         if (isGoogleLinkRequired && !editData.mapLink) {
@@ -912,6 +1058,34 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
             if (provCheck && !(provCheck.os_email?.trim()) && !(provCheck.email?.trim())) {
                 setEmailMissingAlert({ type: 'provider', name: editData.provider, entityId: provCheck.id });
                 setQuickEmailInput('');
+                return;
+            }
+        }
+
+        // GATE de confirmação operacional (Concluir / Cancelar): antes de mudar
+        // o status para Concluída ou Cancelada, o operador PRECISA confirmar o
+        // KM final e a HORA EXATA do evento. A SM só muda de status APÓS essa
+        // confirmação. A hora confirmada alimenta o cálculo (end_time na
+        // conclusão; _cancelStatusAt no cancelamento via recalc-on-cancel).
+        if (!finalizeConfirmedRef.current && !mission.billing_approved) {
+            const _sKm = parseNumber(editData.startKm);
+            const _eKm = parseNumber(editData.endKm);
+            const _hasStart = _sKm > 0 && editData.startDate && editData.startTime;
+            const _hasEnd = _eKm > 0 && _eKm >= _sKm && editData.endDate && editData.endTime;
+            const _selected = editData.status as MissionStatus;
+            const _isInFlight = [MissionStatus.IN_TRANSIT, MissionStatus.ORIGIN].includes(_selected);
+            const _isPending = _selected === MissionStatus.PENDING;
+            const _isExplicitRevert = isCompletedMission && canRevertStatus && _selected === MissionStatus.IN_TRANSIT;
+            const willComplete = !_isExplicitRevert && mission.status !== MissionStatus.COMPLETED &&
+                (_selected === MissionStatus.COMPLETED || ((_isPending || _isInFlight) && _hasStart && _hasEnd));
+            const willCancel = _selected === MissionStatus.CANCELLED && mission.status !== MissionStatus.CANCELLED;
+            if (willComplete || willCancel) {
+                resumeSubmitRef.current = () => {
+                    finalizeConfirmedRef.current = true;
+                    handleUpdateSubmit({ preventDefault: () => {} } as React.FormEvent);
+                };
+                setIsEndTimeLocked(true);
+                setPendingFinalizeConfirm({ kind: willComplete ? 'completed' : 'cancelled' });
                 return;
             }
         }
@@ -1011,9 +1185,10 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
             let finalStatus = editData.status as MissionStatus;
 
             const sKm = parseNumber(editData.startKm);
-            const eKm = parseNumber(editData.endKm);
+            // KM final confirmado pelo operador (gate de conclusão) tem prioridade.
+            const eKm = confirmedEndKmRef.current != null ? confirmedEndKmRef.current : parseNumber(editData.endKm);
             const hasStart = sKm > 0 && editData.startDate && editData.startTime;
-            const hasEnd = eKm > 0 && eKm >= sKm && editData.endDate && editData.endTime;
+            const hasEnd = eKm > 0 && eKm >= sKm && !!endIso;
 
             const isCurrentPending = finalStatus === MissionStatus.PENDING;
             const isCurrentInFlight = [MissionStatus.IN_TRANSIT, MissionStatus.ORIGIN].includes(finalStatus);
@@ -1087,7 +1262,9 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
                 start_km: sKm || null,
                 start_time: startIso,
                 end_km: eKm || null,
-                end_time: endIso,
+                // Cancelamento NÃO grava end_time — o motor usa _cancelStatusAt
+                // (enviado ao recalc-on-cancel). Conclusão grava a hora confirmada.
+                end_time: finalStatus === MissionStatus.CANCELLED ? null : endIso,
                 is_same_os: editData.isSameOs,
                 parent_mission_id: editData.isSameOs ? (editData.parentMissionId || null) : null,
                 valor_zero_motivo: editData.isSameOs ? 'MESMA OS' : ((parseFloat(editData.costValue || '0') === 0) ? 'AGUARDANDO DEFINIÇÃO' : ''),
@@ -1165,7 +1342,11 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
             // edição manual NÃO são tocadas).
             if (finalStatus === MissionStatus.CANCELLED && mission.status !== MissionStatus.CANCELLED) {
                 try {
-                    const r = await authFetch(`/api/missions/${mission.id}/recalc-on-cancel`, { method: 'POST' });
+                    const cancelIso = confirmedRealTimeRef.current;
+                    const r = await authFetch(`/api/missions/${mission.id}/recalc-on-cancel`, {
+                        method: 'POST',
+                        ...(cancelIso ? { headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ cancelStatusAt: cancelIso }) } : {})
+                    });
                     if (r.ok) {
                         const j = await r.json().catch(() => ({} as any));
                         if (j?.success) {
@@ -1439,6 +1620,37 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
         resumeSubmitRef.current = null;
         setPendingTollConfirm(null);
         if (resume) resume();
+    };
+
+    // Confirmação de KM final + hora EXATA antes de Concluir/Cancelar.
+    // Grava os valores confirmados em refs (lidos pelo submit retomado) e
+    // sincroniza o editData só para coerência visual. A SM segue para o
+    // status final somente aqui, após a confirmação explícita do operador.
+    const handleFinalizeConfirmed = (km: number | null, iso: string) => {
+        const kind = pendingFinalizeConfirm?.kind;
+        confirmedEndKmRef.current = km;
+        confirmedRealTimeRef.current = iso;
+        const d = new Date(iso);
+        const endDate = d.toLocaleDateString('en-CA');
+        const endTime = d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+        setEditData(prev => ({
+            ...prev,
+            ...(km != null ? { endKm: String(km) } : {}),
+            // Em cancelamento NÃO escrevemos endDate/endTime (não gravar end_time).
+            ...(kind === 'completed' ? { endDate, endTime } : {}),
+        }));
+        setPendingFinalizeConfirm(null);
+        const resume = resumeSubmitRef.current;
+        resumeSubmitRef.current = null;
+        if (resume) resume();
+    };
+
+    const handleFinalizeCancelled = () => {
+        setPendingFinalizeConfirm(null);
+        resumeSubmitRef.current = null;
+        finalizeConfirmedRef.current = false;
+        // Destrava o relógio ao vivo que foi congelado ao abrir o gate.
+        setIsEndTimeLocked(false);
     };
 
     const filteredProviders = providersList.filter(p => p.name.toLowerCase().includes(searchProvider.toLowerCase()));
@@ -2528,6 +2740,26 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
             allowClose={false}
             onConfirm={handleTollConfirmedAfterCompletion}
           />
+          {pendingFinalizeConfirm && (
+            <FinalizeConfirmDialog
+              isOpen={!!pendingFinalizeConfirm}
+              kind={pendingFinalizeConfirm.kind}
+              defaultKm={editData.endKm || ''}
+              startKm={parseNumber(editData.startKm)}
+              defaultDateTime={
+                editData.endDate && editData.endTime
+                  ? `${editData.endDate}T${editData.endTime}`
+                  : toLocalDateTimeInput(new Date())
+              }
+              minDateTime={
+                editData.startDate && editData.startTime && !canEditTimes
+                  ? `${editData.startDate}T${editData.startTime}`
+                  : undefined
+              }
+              onConfirm={handleFinalizeConfirmed}
+              onCancel={handleFinalizeCancelled}
+            />
+          )}
         </div>
     );
 };

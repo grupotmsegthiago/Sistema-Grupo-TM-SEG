@@ -2372,10 +2372,19 @@ export async function registerRoutes(
       // horas extras quando a OS foi cancelada DEPOIS da franquia (cancelada
       // depois das 3h). Sem isso, o motor trata como "cancelada antes" e zera
       // KM e horas, cobrando apenas a base (acionamento mínimo).
+      // PRIORIDADE: hora real informada pelo operador (confirmação no modal de
+      // atualização). Quando presente, ela manda — o operador confirmou o
+      // horário EXATO em que a OS foi cancelada, então não dependemos mais do
+      // mission_history (que registra o instante do clique, não o evento real).
+      let cancelStatusAt: string | null = null;
+      const bodyCancelAt = req.body && req.body.cancelStatusAt ? String(req.body.cancelStatusAt) : null;
+      if (bodyCancelAt && !isNaN(new Date(bodyCancelAt).getTime())) {
+        cancelStatusAt = new Date(bodyCancelAt).toISOString();
+      }
+      // Fallback: deriva do mission_history (instante do clique de cancelamento).
       // Retry curto: o recálculo roda logo após o UPDATE de status; se a linha
       // de histórico ainda não estiver visível, tenta de novo (evita subcobrança
       // por _cancelStatusAt nulo numa OS comprovadamente Cancelada).
-      let cancelStatusAt: string | null = null;
       for (let attempt = 0; attempt < 3 && !cancelStatusAt; attempt++) {
         if (attempt > 0) await new Promise(r => setTimeout(r, 400));
         try {
