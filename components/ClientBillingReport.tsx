@@ -1842,25 +1842,12 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
                 const ptRes = await supabase.from('client_price_tables').select('*').or(clientFuzzyFilter(dhlClientName));
                 const fillPriceTables = (ptRes.data || priceTables) as any[];
 
-                // VALOR DE KM EXCEDENTE PADRAO DO CLIENTE (coluna AA da planilha PREENCHIDA):
-                // a coluna AA deve SEMPRE trazer o valor do KM excedente cadastrado na tabela
-                // de preco do cliente (ex.: DHL = R$ 6,90), mesmo quando a OS nao resolve uma
-                // tabela aplicada (linha vermelha) ou usa uma tabela fixa sem excedente. Usamos
-                // a moda (valor mais frequente) dos price_per_extra_km > 0 das tabelas do
-                // cliente, ignorando a linha mestre do motor automatico (__AUTO_MASTER__).
-                const clientDefaultUnitKm = (() => {
-                    const counts = new Map<number, number>();
-                    for (const t of fillPriceTables) {
-                        if (/^__AUTO_MASTER__/i.test(String(t.operation_type || '').trim())) continue;
-                        const v = Number(t.price_per_extra_km) || 0;
-                        if (v > 0) counts.set(v, (counts.get(v) || 0) + 1);
-                    }
-                    let best = 0, bestN = 0;
-                    // Desempate determinístico (independe da ordem do Supabase): mais
-                    // frequente; em empate, o MAIOR valor de km excedente.
-                    counts.forEach((n, v) => { if (n > bestN || (n === bestN && v > best)) { bestN = n; best = v; } });
-                    return best;
-                })();
+                // VALOR DE KM EXCEDENTE PADRAO DHL (coluna AA da planilha PREENCHIDA):
+                // valor FIXO por UF de ORIGEM (calculado por linha mais abaixo, em
+                // dhlUnitKmExcedente), espelhando a regra da franquia minima (AE):
+                // origens da regiao SUL (SC ou RS) -> R$ 7,35 ; demais UFs -> R$ 6,90.
+                // Vale inclusive em linha vermelha (sem tabela aplicada) ou tabela fixa
+                // sem excedente cadastrado.
 
                 // TABELA REALMENTE APLICADA NA OS: a planilha deve refletir a
                 // tabela que o sistema gravou na OS (memória de ajuste ou snapshot),
@@ -2200,6 +2187,12 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
                     // (AG) = FRANQUIA TABELA (AE) = esse minimo.
                     const ufOrigemRow = extractUF(m.origin || '');
                     const dhlMinFranquia = (ufOrigemRow === 'SC' || ufOrigemRow === 'RS') ? 735 : 690;
+                    // VALOR KM EXCEDENTE PADRAO DHL (coluna AA): valor FIXO por UF de
+                    // ORIGEM, espelhando a franquia minima (AE). Origens da regiao SUL
+                    // (SC ou RS) -> R$ 7,35 ; demais UFs -> R$ 6,90. A coluna AA alimenta
+                    // as formulas AC (=S*AA) e AD (=T*AA), entao o valor correto aqui
+                    // tambem corrige o total de KM excedido e o deslocamento.
+                    const dhlUnitKmExcedente = (ufOrigemRow === 'SC' || ufOrigemRow === 'RS') ? 7.35 : 6.90;
                     const isBelow100Km = franchiseKm > 0 && franchiseKm <= 100;
                     const useMinFranquia = isCancelledRow || isBelow100Km;
                     const minTabela = useMinFranquia ? dhlMinFranquia : (activationFee || 0);
@@ -2229,7 +2222,7 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
                         rawEnd: rowEnd,
                         franquiaHrDays: franchiseHours > 0 ? franchiseHours / 24 : 0,
                         vlrHoraExcedenteTab: unitHr || 0,
-                        vlrKmExcedenteTab: unitKm || clientDefaultUnitKm || 0,
+                        vlrKmExcedenteTab: dhlUnitKmExcedente,
                         franquiaTabela: minTabela,
                         pedagio: isCancelledRow ? 0 : Math.max(0, m.toll_value || 0),
                         tabelaAplicada: usedTable?.operation_type || '',
