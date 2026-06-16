@@ -82,6 +82,16 @@ export interface FinalizeConfirmPayload {
     odometerPrintUrl: string | null;
 }
 
+// Fornecedores ATIVA e TM SEG enviam o KM final só DEPOIS da missão. Para eles,
+// ao concluir/cancelar a OS, o KM final e o print do hodômetro NÃO são exigidos.
+// Demais fornecedores seguem com KM final + print obrigatórios.
+export const isOdometerExemptProvider = (providerName?: string): boolean => {
+    const raw = (providerName || '').toUpperCase();
+    const tokens = raw.split(/[^A-Z0-9]+/).filter(Boolean);
+    const collapsed = raw.replace(/\s+/g, '');
+    return tokens.includes('ATIVA') || collapsed.includes('TMSEG') || collapsed.includes('TMSECURITY');
+};
+
 interface OdometerAiResult {
     concluido: boolean;
     km_extraido: string | null;
@@ -176,14 +186,8 @@ const FinalizeChecklistDialog: React.FC<FinalizeChecklistDialogProps> = ({
     const kmMismatch = isCompleted && franchiseKm > 0 && traveled > franchiseKm;
 
     // Fornecedores ATIVA e TM SEG mandam o KM final só depois — para eles o
-    // print do hodômetro NÃO é obrigatório e a auditoria por IA é dispensada.
-    const odometerExempt = (() => {
-        const raw = (providerName || '').toUpperCase();
-        // ATIVA: casa por palavra inteira (evita falso positivo em COOPERATIVA etc.)
-        const tokens = raw.split(/[^A-Z0-9]+/).filter(Boolean);
-        const collapsed = raw.replace(/\s+/g, '');
-        return tokens.includes('ATIVA') || collapsed.includes('TMSEG') || collapsed.includes('TMSECURITY');
-    })();
+    // KM final e o print do hodômetro NÃO são obrigatórios na conclusão.
+    const odometerExempt = isOdometerExemptProvider(providerName);
 
     // Auditoria do hodômetro: print obrigatório, validado pela IA contra o KM final;
     // em caso de divergência exige confirmação manual.
@@ -267,7 +271,7 @@ Responda ESTRITAMENTE em JSON puro, sem markdown, no formato: {"concluido": bool
         (chkAddress ? 1 : 0) +
         (steps.raio && raioAnswer ? 1 : 0) +
         (chkCities ? 1 : 0) +
-        (steps.km && endKmNum != null && endKmNum > 0 && (!kmMismatch || chkTable) && odometerOk ? 1 : 0) +
+        (steps.km && (odometerExempt || (endKmNum != null && endKmNum > 0 && (!kmMismatch || chkTable) && odometerOk)) ? 1 : 0) +
         (steps.cancel && dt && endTravelDt ? 1 : 0);
     const progressPct = totalSteps > 0 ? Math.round((doneSteps / totalSteps) * 100) : 0;
     const allDone = doneSteps >= totalSteps;
@@ -279,8 +283,10 @@ Responda ESTRITAMENTE em JSON puro, sem markdown, no formato: {"concluido": bool
         if (!chkCities) { setErr('Confirme as cidades e a tabela aplicada.'); return; }
 
         if (isCompleted) {
-            if (endKmNum == null || endKmNum <= 0) { setErr('Informe o KM final.'); return; }
-            if (startKm > 0 && endKmNum < startKm) { setErr(`KM final não pode ser menor que o KM inicial (${startKm}).`); return; }
+            if (!odometerExempt) {
+                if (endKmNum == null || endKmNum <= 0) { setErr('Informe o KM final.'); return; }
+            }
+            if (endKmNum != null && startKm > 0 && endKmNum < startKm) { setErr(`KM final não pode ser menor que o KM inicial (${startKm}).`); return; }
             if (kmMismatch && !chkTable) { setErr('O KM rodado não bate com a tabela. Confirme a ciência da tabela aplicada.'); return; }
             if (!odometerExempt) {
                 if (!odoUrl) { setErr('Cole ou anexe o print do hodômetro (obrigatório).'); return; }
@@ -400,7 +406,7 @@ Responda ESTRITAMENTE em JSON puro, sem markdown, no formato: {"concluido": bool
                     {isCompleted && (
                         <FinSection n={4} warn={kmMismatch} icon={<Gauge className="h-4 w-4" />} title="KM rodado x KM da tabela">
                             <div className="mb-2">
-                                <label className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">KM final (obrigatório)</label>
+                                <label className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">KM final {odometerExempt ? '(opcional)' : '(obrigatório)'}</label>
                                 <input value={endKm} onChange={e => { setEndKm(e.target.value); setOdoResult(null); setOdoValidatedKm(null); setOdoConfirmed(false); }} inputMode="decimal" placeholder="Ex: 123456" className="mt-1 w-full rounded-md border border-slate-300 px-2.5 py-2 text-sm font-bold text-slate-800 outline-none focus:border-emerald-500" data-testid="input-confirm-end-km" />
                             </div>
                             <div className="grid grid-cols-2 gap-2">
@@ -1540,7 +1546,8 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
             const _sKm = parseNumber(editData.startKm);
             const _eKm = parseNumber(editData.endKm);
             const _hasStart = _sKm > 0 && editData.startDate && editData.startTime;
-            const _hasEnd = _eKm > 0 && _eKm >= _sKm && editData.endDate && editData.endTime;
+            const _exemptOdo = isOdometerExemptProvider(editData.provider);
+            const _hasEnd = (_exemptOdo ? true : (_eKm > 0 && _eKm >= _sKm)) && !!editData.endDate && !!editData.endTime;
             const _selected = editData.status as MissionStatus;
             const _isInFlight = [MissionStatus.IN_TRANSIT, MissionStatus.ORIGIN].includes(_selected);
             const _isPending = _selected === MissionStatus.PENDING;
@@ -1569,7 +1576,8 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
             const _sKm = parseNumber(editData.startKm);
             const _eKm = parseNumber(editData.endKm);
             const _hasStart = _sKm > 0 && editData.startDate && editData.startTime;
-            const _hasEnd = _eKm > 0 && _eKm >= _sKm && editData.endDate && editData.endTime;
+            const _exemptOdo = isOdometerExemptProvider(editData.provider);
+            const _hasEnd = (_exemptOdo ? true : (_eKm > 0 && _eKm >= _sKm)) && !!editData.endDate && !!editData.endTime;
             let _fs = editData.status as MissionStatus;
             const _isPending = _fs === MissionStatus.PENDING;
             const _isInFlight = [MissionStatus.IN_TRANSIT, MissionStatus.ORIGIN].includes(_fs);
@@ -1657,7 +1665,10 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
             // KM final confirmado pelo operador (gate de conclusão) tem prioridade.
             const eKm = confirmedEndKmRef.current != null ? confirmedEndKmRef.current : parseNumber(editData.endKm);
             const hasStart = sKm > 0 && editData.startDate && editData.startTime;
-            const hasEnd = eKm > 0 && eKm >= sKm && !!endIso;
+            // Fornecedores ATIVA/TM SEG enviam o KM final depois — para eles a
+            // conclusão exige apenas a data/hora de fim, não o KM final.
+            const exemptOdo = isOdometerExemptProvider(editData.provider);
+            const hasEnd = (exemptOdo ? true : (eKm > 0 && eKm >= sKm)) && !!endIso;
 
             const isCurrentPending = finalStatus === MissionStatus.PENDING;
             const isCurrentInFlight = [MissionStatus.IN_TRANSIT, MissionStatus.ORIGIN].includes(finalStatus);
@@ -1674,7 +1685,7 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
                 if (!editData.startDate || !editData.startTime) missing.push('Hora Inicial');
                 if (!editData.endDate || !editData.endTime) missing.push('Hora Final');
                 if (sKm <= 0) missing.push('KM Inicial');
-                if (eKm <= 0 || eKm < sKm) missing.push('KM Final');
+                if (!exemptOdo && (eKm <= 0 || eKm < sKm)) missing.push('KM Final');
                 showNotification('Status Pendente', `Faltam dados obrigatórios: ${missing.join(', ')}. A OS ficará como PENDENTE até o preenchimento completo.`, 'warning');
             }
 
@@ -2221,6 +2232,30 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
         setIsEndTimeLocked(false);
     };
 
+    // Atalho operacional: ao clicar em CONCLUÍDA / CANCELADA numa OS ativa, abre
+    // direto o checklist de finalização (mesma rota do gate em handleUpdateSubmit).
+    // Ao confirmar, o resume persiste a OS automaticamente com os campos da tela.
+    // OS já concluída/cancelada/aprovada cai no fluxo normal (só seleciona).
+    const handleStatusButton = (s: MissionStatus) => {
+        const isConclude = s === MissionStatus.COMPLETED;
+        const isCancel = s === MissionStatus.CANCELLED;
+        const directOK = mission && !mission.billing_approved
+            && mission.status !== MissionStatus.COMPLETED
+            && mission.status !== MissionStatus.CANCELLED
+            && mission.status !== s;
+        if ((isConclude || isCancel) && directOK) {
+            setEditData(prev => ({ ...prev, status: s }));
+            resumeSubmitRef.current = () => {
+                finalizeConfirmedRef.current = true;
+                handleUpdateSubmit({ preventDefault: () => {} } as React.FormEvent);
+            };
+            setIsEndTimeLocked(true);
+            setPendingFinalizeConfirm({ kind: isConclude ? 'completed' : 'cancelled' });
+            return;
+        }
+        setEditData({ ...editData, status: s });
+    };
+
     const filteredProviders = providersList.filter(p => p.name.toLowerCase().includes(searchProvider.toLowerCase()));
     const filteredVehicles = vehiclesList.filter(v => v.provider === editData.provider && (v.plate.toLowerCase().includes(searchVehicle.toLowerCase()) || (v.model && v.model.toLowerCase().includes(searchVehicle.toLowerCase()))));
     const filteredAgents = allAgentsList.filter(a => a.provider === editData.provider && a.name.toLowerCase().includes((activeDropdown === 'agent1' ? searchAgent1 : searchAgent2).toLowerCase()));
@@ -2584,7 +2619,7 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
                                     : isCompletedMission && canRevertStatus && s !== MissionStatus.IN_TRANSIT && s !== MissionStatus.COMPLETED ? true
                                     : false;
                                 return (
-                                    <button key={s} type="button" onClick={() => !isDisabled && setEditData({...editData, status: s})} disabled={isDisabled} className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase transition-all border ${editData.status === s ? 'bg-red-600 text-white border-red-600 shadow-md scale-105' : isDisabled ? 'bg-gray-100 text-gray-300 border-gray-100 cursor-not-allowed opacity-50' : 'bg-gray-50 text-gray-400 border-gray-200 hover:border-gray-300'}`}>{s}</button>
+                                    <button key={s} type="button" onClick={() => !isDisabled && handleStatusButton(s)} disabled={isDisabled} className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase transition-all border ${editData.status === s ? 'bg-red-600 text-white border-red-600 shadow-md scale-105' : isDisabled ? 'bg-gray-100 text-gray-300 border-gray-100 cursor-not-allowed opacity-50' : 'bg-gray-50 text-gray-400 border-gray-200 hover:border-gray-300'}`}>{s}</button>
                                 );
                             })}
                         </div>
@@ -2593,7 +2628,7 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
                                 {restrictedStatuses.map(s => {
                                     const isDisabled = canEditApproved ? false : isCompletedMission && (isBillingApproved || !canRevertStatus);
                                     return (
-                                        <button key={s} type="button" onClick={() => !isDisabled && setEditData({...editData, status: s})} disabled={isDisabled} className={`px-5 py-2 rounded-xl text-[10px] font-black uppercase transition-all border ${editData.status === s ? 'bg-gray-900 text-white border-black shadow-md' : isDisabled ? 'bg-gray-100 text-gray-300 border-gray-100 cursor-not-allowed opacity-50' : 'bg-red-50 text-red-400 border-red-100 hover:bg-red-100'}`}>{s}</button>
+                                        <button key={s} type="button" onClick={() => !isDisabled && handleStatusButton(s)} disabled={isDisabled} className={`px-5 py-2 rounded-xl text-[10px] font-black uppercase transition-all border ${editData.status === s ? 'bg-gray-900 text-white border-black shadow-md' : isDisabled ? 'bg-gray-100 text-gray-300 border-gray-100 cursor-not-allowed opacity-50' : 'bg-red-50 text-red-400 border-red-100 hover:bg-red-100'}`}>{s}</button>
                                     );
                                 })}
                             </div>
