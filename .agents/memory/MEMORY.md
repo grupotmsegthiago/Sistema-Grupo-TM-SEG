@@ -25,3 +25,4 @@
 - [Screen authz & deep-link](screen-authz-deeplink.md) — ?page= burla o Sidebar e requireRole('*') = "qualquer interno"; tela sensível precisa de guard no App.tsx E authz backend espelhando a UI (clientId/comercial).
 - [React component tests](react-component-tests.md) — render component sob node --test via jsdom+React.act+asset loader (register.mjs, NÃO só exportar hooks); runner em scripts/run-tests.sh.
 - [Mission-end toll auto-recalc](mission-end-toll-recalc.md) — ao concluir OS o pedágio é estimado por IA (/api/toll/gemini-estimate, NÃO QualP por custo) e salvo com guarda billing_approved no cliente E no UPDATE.
+- [Finalize odometer exemption](finalize-odometer-exempt.md) — fornecedores ATIVA e TM SEG dispensam print do hodômetro + auditoria IA ao concluir OS (mandam KM final depois); demais seguem obrigatórios.

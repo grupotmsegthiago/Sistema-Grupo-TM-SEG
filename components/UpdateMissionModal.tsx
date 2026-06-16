@@ -175,10 +175,20 @@ const FinalizeChecklistDialog: React.FC<FinalizeChecklistDialogProps> = ({
     const traveled = endKmNum != null && startKm >= 0 ? Math.max(0, endKmNum - startKm) : 0;
     const kmMismatch = isCompleted && franchiseKm > 0 && traveled > franchiseKm;
 
+    // Fornecedores ATIVA e TM SEG mandam o KM final só depois — para eles o
+    // print do hodômetro NÃO é obrigatório e a auditoria por IA é dispensada.
+    const odometerExempt = (() => {
+        const raw = (providerName || '').toUpperCase();
+        // ATIVA: casa por palavra inteira (evita falso positivo em COOPERATIVA etc.)
+        const tokens = raw.split(/[^A-Z0-9]+/).filter(Boolean);
+        const collapsed = raw.replace(/\s+/g, '');
+        return tokens.includes('ATIVA') || collapsed.includes('TMSEG') || collapsed.includes('TMSECURITY');
+    })();
+
     // Auditoria do hodômetro: print obrigatório, validado pela IA contra o KM final;
     // em caso de divergência exige confirmação manual.
     const odoValidForKm = odoResult != null && odoValidatedKm != null && odoValidatedKm === endKmNum;
-    const odometerOk = !isCompleted ? true : (
+    const odometerOk = !isCompleted ? true : odometerExempt ? true : (
         !!odoUrl && odoValidForKm && (!odoResult!.divergencia || odoConfirmed)
     );
 
@@ -272,9 +282,11 @@ Responda ESTRITAMENTE em JSON puro, sem markdown, no formato: {"concluido": bool
             if (endKmNum == null || endKmNum <= 0) { setErr('Informe o KM final.'); return; }
             if (startKm > 0 && endKmNum < startKm) { setErr(`KM final não pode ser menor que o KM inicial (${startKm}).`); return; }
             if (kmMismatch && !chkTable) { setErr('O KM rodado não bate com a tabela. Confirme a ciência da tabela aplicada.'); return; }
-            if (!odoUrl) { setErr('Cole ou anexe o print do hodômetro (obrigatório).'); return; }
-            if (!odoValidForKm) { setErr('Valide o print do hodômetro com a IA antes de finalizar.'); return; }
-            if (odoResult && odoResult.divergencia && !odoConfirmed) { setErr('Há divergência no hodômetro. Confirme o total do hodômetro final.'); return; }
+            if (!odometerExempt) {
+                if (!odoUrl) { setErr('Cole ou anexe o print do hodômetro (obrigatório).'); return; }
+                if (!odoValidForKm) { setErr('Valide o print do hodômetro com a IA antes de finalizar.'); return; }
+                if (odoResult && odoResult.divergencia && !odoConfirmed) { setErr('Há divergência no hodômetro. Confirme o total do hodômetro final.'); return; }
+            }
             if (!dt) { setErr('Informe a data e a hora exata da finalização.'); return; }
         } else {
             if (!dt) { setErr('Informe a data e a hora do cancelamento.'); return; }
@@ -397,6 +409,14 @@ Responda ESTRITAMENTE em JSON puro, sem markdown, no formato: {"concluido": bool
                             </div>
 
                             {/* Auditoria do hodômetro por IA */}
+                            {odometerExempt ? (
+                            <div className="mt-3 flex items-start gap-2 rounded-lg border border-blue-200 bg-blue-50 p-3" data-testid="note-odometer-exempt">
+                                <Gauge className="mt-0.5 h-4 w-4 shrink-0 text-blue-600" />
+                                <p className="text-[12px] font-medium text-blue-900">
+                                    Fornecedor <b>{providerName}</b>: print do hodômetro <b>não é obrigatório</b> (o KM final é enviado depois). Pode concluir sem a foto.
+                                </p>
+                            </div>
+                            ) : (
                             <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50 p-3">
                                 <div className="flex items-center gap-2">
                                     <Gauge className="h-4 w-4 text-slate-600" />
@@ -455,6 +475,7 @@ Responda ESTRITAMENTE em JSON puro, sem markdown, no formato: {"concluido": bool
                                     </div>
                                 )}
                             </div>
+                            )}
                             {kmMismatch && (
                                 <>
                                     <div className="mt-2 flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 p-3">
