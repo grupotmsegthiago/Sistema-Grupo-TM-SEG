@@ -1,0 +1,97 @@
+Para estruturar essa nova lógica de finalização das Ordens de Serviço (OS) no seu sistema dentro do Replit, mantendo a consistência dos dados e garantindo que você não quebre as regras de negócio existentes (como o truncamento de segundos e cálculos financeiros), precisamos dividir a solução em duas partes: a lógica do fluxo do front-end/back-end e o prompt do agente de IA que fará a validação do hodômetro.
+
+Aqui está o escopo completo e o prompt de sistema pronto para você aplicar no Replit.
+
+🛠️ Fluxo de Telas e Lógica do Sistema (Replit)
+Quando o usuário clicar em "Concluída" ou "Cancelada", o sistema deve abrir um modal step-by-step (passo a passo) ou redirecionar para a tela de fechamento com as seguintes etapas:
+
+Passo 1: Validação de Rota (Origem, Destino e Pedágio)
+Interface: Exibir Origem e Destino atuais. Pergunta: "Origem e destino estão OK?"
+
+Ação: Botão "Avançar".
+
+Endereço de Destino: Exibir o link do mapa. Botão "Avançar".
+
+Integração QualP: Chamar a API do QualP passando a rota para calcular o pedágio automaticamente e salvar o retorno diretamente no campo valor_pedagio da OS no Supabase.
+
+Passo 2: Auditoria de KM e Validação por IA
+Interface: Exibir o KM Inicial e o campo para digitar o KM Final.
+
+Upload do Print: Campo de input que aceita Ctrl+V (Paste) para colar o print do hodômetro. (Obrigatório para avançar).
+
+Validação da IA: O sistema envia a imagem colada + o KM digitado para a API de Visão (ex: Gemini/OpenAI).
+
+Se bater: Avança automaticamente.
+
+Se houver divergência: Bloqueia e exibe um alerta exigindo clique em: "OK, confirmo o total do hodômetro final".
+
+Tabela de KM: Valida se o KM rodado total bate com a tabela de preços/regras configurada. Botão "Avançar".
+
+Passo 3: Data e Hora de Fechamento
+Interface: Campos de Data, Hora e Minuto.
+
+Alerta em Destaque:
+
+⚠️ ATENÇÃO: Este deve ser o horário que a VTR entrou no cliente e você liberou OU que o cliente autorizou a finalização. Coloque HORA e MINUTO exatamente iguais ao relatório oficial.
+
+Passo 4: Finalização e Automações
+Ao clicar no botão final de conclusão:
+
+Cópia Automática (Clipboard): O sistema gera o texto formatado abaixo e usa a API do navegador (navigator.clipboard.writeText) para deixar o texto + o arquivo da imagem prontos na área de transferência (facilitando o Ctrl+V no WhatsApp, enviando texto e imagem juntos).
+
+Disparo de E-mails: O sistema dispara o e-mail de fim de missão para o Fornecedor e para o Cliente via seu serviço de SMTP configurado.
+
+📋 Layout do Relatório Automatizado (Padrão WhatsApp)
+Este é o layout exato da string que o seu sistema deve gerar e copiar para o Clipboard do usuário:
+
+Plaintext
+*DADOS DA MISSÃO*
+
+*OS:* [Número da OS]
+*DATA:* [Data de Fechamento]
+
+*DATA DO AGENDAMENTO:* [Data]
+*DATA DA CHEGADA NA ORIGEM:* [Data/Hora]
+*DATA DO INICIO:* [Data/Hora]
+*DATA DO FIM DE MISSÃO:* [Data/Hora]
+
+*KM INICIAL:* [KM Inicial]
+*KM FINAL:* [KM Final]
+*TOTAL RODADO:* [Total KM] KM
+
+*LINK DO FIM DE MISSÃO:* [Link do Google Maps]
+🤖 Prompt da IA para Análise do Hodômetro
+Para configurar a função de IA que vai analisar o print do hodômetro no seu código, utilize o prompt estruturado abaixo. Ele garante que a IA seja cirúrgica e retorne um JSON limpo para o seu sistema processar sem falhas.
+
+Markdown
+Você é um assistente de IA especializado em auditoria de frotas de segurança e logística. Sua única função é analisar uma imagem (print/foto) do painel/hodômetro de um veículo e validar se o valor numérico visível coincide com o valor digitado pelo operador do sistema.
+
+### Parâmetros de Entrada:
+- Imagem: [Print colado pelo usuário]
+- Valor Informado: {{km_final_digitado}}
+
+### Regras de Análise:
+1. Localize o hodômetro total (geralmente indicado por "ODO" ou o número principal de quilometragem total do veículo). Desconsidere odômetros parciais (Trip A/Trip B), relógios ou indicadores de temperatura.
+2. Extraia apenas os dígitos numéricos inteiros.
+3. Compare o valor extraído da imagem com o "Valor Informado" pelo operador.
+
+### Formato de Saída (Obrigatório retornar APENAS o JSON abaixo, sem textos adicionais, sem markdown de bloco de código, para não quebrar o parse do sistema):
+{
+  "concluido": true ou false,
+  "km_extraido": "número_extraído_aqui_ou_null",
+  "divergencia": true ou false,
+  "justificativa": "Mensagem curta caso haja divergência ou se a imagem estiver ilegível"
+}
+
+Se os valores baterem perfeitamente, retorne "divergencia": false e "concluido": true. Se o valor for diferente ou a imagem não permitir leitura clara, retorne "divergencia": true e "concluido": false.
+Dica para o ambiente Replit (JavaScript/TypeScript):
+Para implementar o "Ctrl+V" do print na tela, certifique-se de adicionar um listener de evento paste no input de KM Final ou na área do modal:
+
+JavaScript
+window.addEventListener('paste', e => {
+  const file = e.clipboardData.files[0];
+  if (file && file.type.startsWith('image/')) {
+    // Lógica para salvar o arquivo no seu bucket (Supabase Storage) 
+    // e enviar a URL/base64 para a validação da IA
+  }
+});
