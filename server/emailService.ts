@@ -338,7 +338,6 @@ function endMissionContent(
     <table class="info-table">
       <tr><td>Nº da OS</td><td><span class="badge">${formatOS(mission.id)}</span></td></tr>
       <tr><td>Cliente</td><td>${mission.client || '—'}</td></tr>
-      ${audience === 'fornecedor' ? `<tr><td>Fornecedor</td><td>${mission.provider || '—'}</td></tr>` : ''}
       <tr><td>Origem</td><td>${mission.origin || '—'}</td></tr>
       <tr><td>Destino</td><td>${mission.destination || '—'}</td></tr>
       ${mission.vehicle_plate ? `<tr><td>Viatura</td><td>${mission.vehicle_plate}</td></tr>` : ''}
