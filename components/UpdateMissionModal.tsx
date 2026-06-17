@@ -1513,7 +1513,10 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
         if (checkBlockedAgent(editData.agent1, 'Agente 1 (Líder)')) return;
         if (checkBlockedAgent(editData.agent2, 'Agente 2 (Auxiliar)')) return;
 
-        if (mission?.client) {
+        // DHL não exige e-mail de notificação cadastrado: o fechamento da OS
+        // alimenta a planilha SE / fluxo próprio da DHL, então não bloqueamos o
+        // operador pedindo e-mail do cliente DHL.
+        if (mission?.client && !/DHL/i.test(mission.client)) {
             const clientName = mission.client;
             let cliCheck: any = null;
             const { data: byName } = await supabase.from('clients').select('id, email, operational_email, trading_name, name, status').eq('name', clientName);
