@@ -1559,8 +1559,12 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
             const _isInFlight = [MissionStatus.IN_TRANSIT, MissionStatus.ORIGIN].includes(_selected);
             const _isPending = _selected === MissionStatus.PENDING;
             const _isExplicitRevert = isCompletedMission && canRevertStatus && _selected === MissionStatus.IN_TRANSIT;
+            // Fornecedores isentos (ATIVA / TM SEG) NÃO auto-concluem ao salvar:
+            // o processo de finalização/cancelamento só dispara quando o operador
+            // escolhe explicitamente CONCLUÍDA/CANCELADA — senão o dialog aparecia
+            // toda vez que iam só ATUALIZAR a OS (KM final vem depois p/ esses).
             const willComplete = !_isExplicitRevert && mission.status !== MissionStatus.COMPLETED &&
-                (_selected === MissionStatus.COMPLETED || ((_isPending || _isInFlight) && _hasStart && _hasEnd));
+                (_selected === MissionStatus.COMPLETED || (!_exemptOdo && (_isPending || _isInFlight) && _hasStart && _hasEnd));
             const willCancel = _selected === MissionStatus.CANCELLED && mission.status !== MissionStatus.CANCELLED;
             if (willComplete || willCancel) {
                 resumeSubmitRef.current = () => {
@@ -1589,7 +1593,7 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
             const _isPending = _fs === MissionStatus.PENDING;
             const _isInFlight = [MissionStatus.IN_TRANSIT, MissionStatus.ORIGIN].includes(_fs);
             const _isExplicitRevert = isCompletedMission && canRevertStatus && _fs === MissionStatus.IN_TRANSIT;
-            if ((_isPending || _isInFlight) && _hasStart && _hasEnd && !_isExplicitRevert) _fs = MissionStatus.COMPLETED;
+            if (!_exemptOdo && (_isPending || _isInFlight) && _hasStart && _hasEnd && !_isExplicitRevert) _fs = MissionStatus.COMPLETED;
             if (_fs === MissionStatus.COMPLETED && (!_hasStart || !_hasEnd)) _fs = MissionStatus.PENDING;
             const willBeCompleted = _fs === MissionStatus.COMPLETED && mission.status !== MissionStatus.COMPLETED;
             if (willBeCompleted) {
@@ -1681,7 +1685,7 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
             const isCurrentInFlight = [MissionStatus.IN_TRANSIT, MissionStatus.ORIGIN].includes(finalStatus);
             const isExplicitRevert = isCompletedMission && canRevertStatus && finalStatus === MissionStatus.IN_TRANSIT;
 
-            if ((isCurrentPending || isCurrentInFlight) && hasStart && hasEnd && !isExplicitRevert) {
+            if (!exemptOdo && (isCurrentPending || isCurrentInFlight) && hasStart && hasEnd && !isExplicitRevert) {
                 finalStatus = MissionStatus.COMPLETED;
                 showNotification('IA Operacional', 'Detectamos todos os dados necessários. OS concluída automaticamente.', 'success');
             }

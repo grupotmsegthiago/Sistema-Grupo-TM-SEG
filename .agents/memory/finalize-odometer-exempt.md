@@ -17,6 +17,16 @@ Match do fornecedor: helper module-level `isOdometerExemptProvider(name)` —
 palavra inteira para ATIVA (evitar falso positivo tipo COOPERATIVA); TM SEG/TM
 SECURITY por string normalizada sem espaços (TMSEG/TMSECURITY).
 
+Isentos NÃO auto-concluem ao salvar: a "IA Operacional" promovia in-flight/
+pending para COMPLETED quando `hasStart && hasEnd`. Para isentos, `hasEnd` é só
+data/hora (KM não exigido), então QUALQUER atualização de OS ATIVA/TM SEG em
+trânsito disparava o dialog de finalização ("não consigo atualizar"). Correção:
+guardar a auto-inferência de conclusão com `!exemptOdo` nos 3 pontos do
+`handleUpdateSubmit` (gate de finalização, gate de pedágio, resolução de
+finalStatus). Para isentos o processo de finalizar/cancelar SÓ dispara via
+seleção EXPLÍCITA de CONCLUÍDA/CANCELADA (handleStatusButton). Não-isentos
+seguem auto-concluindo ao preencher KM final + datas (KM é o sinal deliberado).
+
 IA do hodômetro NUNCA trava (todos os fornecedores): a conferência por IA do
 print é só AUXÍLIO informativo. Para concluir, basta anexar o print (prova do
 KM) — falha de IA ou "divergência" NÃO bloqueiam. A IA falhava em fotos
