@@ -139,6 +139,10 @@ const FinalizeChecklistDialog: React.FC<FinalizeChecklistDialogProps> = ({
     const [raioAnswer, setRaioAnswer] = useState<'yes' | 'no' | null>(null);
     const [raioRealKm, setRaioRealKm] = useState('');
     const [err, setErr] = useState('');
+    // Trava de duplo-clique: o onConfirm do pai roda uma estimativa de pedágio
+    // por IA (vários segundos) antes de fechar o dialog. Sem feedback, o operador
+    // clicava "Finalizar" várias vezes. Esta flag desabilita o botão no 1º clique.
+    const [submitting, setSubmitting] = useState(false);
 
     // Auditoria do hodômetro por IA (somente conclusão).
     const [odoFile, setOdoFile] = useState<File | null>(null);
@@ -162,6 +166,7 @@ const FinalizeChecklistDialog: React.FC<FinalizeChecklistDialogProps> = ({
             setRaioAnswer(null);
             setRaioRealKm('');
             setErr('');
+            setSubmitting(false);
             setOdoFile(null);
             setOdoPreview('');
             setOdoUrl('');
@@ -311,6 +316,8 @@ Responda ESTRITAMENTE em JSON puro, sem markdown, no formato: {"concluido": bool
         if (isNaN(parsed.getTime())) { setErr('Data/hora inválida.'); return; }
         const endTravelParsed = endTravelDt ? new Date(endTravelDt) : null;
 
+        if (submitting) return;
+        setSubmitting(true);
         onConfirm({
             endKm: endKmNum,
             iso: parsed.toISOString(),
@@ -550,8 +557,9 @@ Responda ESTRITAMENTE em JSON puro, sem markdown, no formato: {"concluido": bool
                     <button type="button" onClick={onCancel} className="ml-auto rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-600" data-testid="button-confirm-finalize-cancel">
                         Voltar
                     </button>
-                    <button type="button" onClick={handleConfirm} disabled={!allDone} className={`rounded-lg px-4 py-2 text-sm font-bold text-white transition-all active:scale-95 ${allDone ? (isCompleted ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-red-600 hover:bg-red-700') : 'cursor-not-allowed bg-slate-300 text-slate-500'}`} data-testid="button-confirm-finalize">
-                        {isCompleted ? 'Finalizar missão' : 'Confirmar cancelamento'}
+                    <button type="button" onClick={handleConfirm} disabled={!allDone || submitting} className={`inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-bold text-white transition-all active:scale-95 ${(allDone && !submitting) ? (isCompleted ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-red-600 hover:bg-red-700') : 'cursor-not-allowed bg-slate-300 text-slate-500'}`} data-testid="button-confirm-finalize">
+                        {submitting && <Loader2 className="h-4 w-4 animate-spin" />}
+                        {submitting ? (isCompleted ? 'Finalizando...' : 'Cancelando...') : (isCompleted ? 'Finalizar missão' : 'Confirmar cancelamento')}
                     </button>
                 </div>
             </div>

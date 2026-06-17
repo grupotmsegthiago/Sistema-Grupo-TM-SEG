@@ -55,6 +55,18 @@ ativa (não aprovada, não já concluída/cancelada) abre o checklist de
 finalização DIRETO e, ao confirmar, persiste a OS automaticamente com os campos
 da tela. OS aprovada/já finalizada cai no fluxo normal (só seleciona o status).
 
+Botão "Finalizar missão" precisa de estado de submissão: o onConfirm do pai
+(handleFinalizeConfirmed) roda uma estimativa de pedágio por IA (/api/toll/
+gemini-estimate, vários segundos) ANTES de fechar o dialog e retomar o submit.
+Sem trava, o botão ficava habilitado e sem feedback durante a espera, então o
+operador clicava "Finalizar" várias vezes ("temos que ficar clicando várias
+vezes"). Trava: flag `submitting` local no FinalizeChecklistDialog — set no 1º
+clique (em handleConfirm, após as validações), desabilita o botão e mostra
+"Finalizando.../Cancelando..." com spinner; reseta ao reabrir (isOpen). O dialog
+desmonta quando o pai zera pendingFinalizeConfirm, então a flag não precisa de
+reset manual no sucesso. Não tornar a estimativa de pedágio por IA não-bloqueante
+(o toll_value precisa ser gravado ANTES do status para o gate de pedágio).
+
 **Why:** ATIVA e TM SEG só enviam KM final/print depois da missão, então exigir
 no momento da conclusão travaria o fechamento. Os demais mandam na hora, então
 KM + print continuam sendo a prova. Snapshot de OS aprovada é imutável e nunca
