@@ -1675,10 +1675,12 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
             const sKm = parseNumber(editData.startKm);
             // KM final confirmado pelo operador (gate de conclusão) tem prioridade.
             const eKm = confirmedEndKmRef.current != null ? confirmedEndKmRef.current : parseNumber(editData.endKm);
-            const hasStart = sKm > 0 && editData.startDate && editData.startTime;
-            // Fornecedores ATIVA/TM SEG enviam o KM final depois — para eles a
-            // conclusão exige apenas a data/hora de fim, não o KM final.
+            // Fornecedores ATIVA/TM SEG (veladas/IBL) enviam o KM depois — para eles
+            // a conclusão NÃO exige KM (nem inicial nem final): o checklist de
+            // finalização só pede a data/hora de fim. Exigir start_km>0 deixava a OS
+            // presa (caía em PENDENTE e o status não mudava para Concluída).
             const exemptOdo = isOdometerExemptProvider(editData.provider);
+            const hasStart = exemptOdo ? true : (sKm > 0 && !!editData.startDate && !!editData.startTime);
             const hasEnd = (exemptOdo ? true : (eKm > 0 && eKm >= sKm)) && !!endIso;
 
             const isCurrentPending = finalStatus === MissionStatus.PENDING;
@@ -1693,9 +1695,9 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
             if (finalStatus === MissionStatus.COMPLETED && (!hasStart || !hasEnd)) {
                 finalStatus = MissionStatus.PENDING;
                 const missing = [];
-                if (!editData.startDate || !editData.startTime) missing.push('Hora Inicial');
+                if (!exemptOdo && (!editData.startDate || !editData.startTime)) missing.push('Hora Inicial');
                 if (!editData.endDate || !editData.endTime) missing.push('Hora Final');
-                if (sKm <= 0) missing.push('KM Inicial');
+                if (!exemptOdo && sKm <= 0) missing.push('KM Inicial');
                 if (!exemptOdo && (eKm <= 0 || eKm < sKm)) missing.push('KM Final');
                 showNotification('Status Pendente', `Faltam dados obrigatórios: ${missing.join(', ')}. A OS ficará como PENDENTE até o preenchimento completo.`, 'warning');
             }

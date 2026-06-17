@@ -42,6 +42,14 @@ e o cálculo de status final. Se algum ponto continuar exigindo KM, a OS ou trav
 (botão desabilitado) ou cai de COMPLETED para PENDENTE. A regra padrão é
 `isento ? true : (kmFim>0 && kmFim>=kmIni)`, mantendo apenas data/hora de fim.
 
+Armadilha gêmea (INÍCIO): o `hasStart` da resolução de status também exigia
+`start_km>0`. Em missão velada/IBL de ATIVA/TM SEG (sem hodômetro), concluir caía
+em PENDENTE e o operador via "finalizada mas o status não muda". O checklist de
+isento só coleta data/hora de FIM — então não dá para bloquear conclusão por dado
+que nunca é pedido. Regra: `hasStart = isento ? true : (kmIni>0 && dataIni &&
+horaIni)`. E a lista "Faltam dados obrigatórios" só cita KM/Hora Inicial/KM Final
+para não-isentos; para isento o único campo relevante é Hora Final.
+
 Atalho operacional: clicar nos botões de status CONCLUÍDA/CANCELADA de uma OS
 ativa (não aprovada, não já concluída/cancelada) abre o checklist de
 finalização DIRETO e, ao confirmar, persiste a OS automaticamente com os campos
