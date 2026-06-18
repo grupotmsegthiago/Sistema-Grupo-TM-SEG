@@ -39,6 +39,9 @@ const provEndTimeOf = (m: any) => (m.provider_ops_edited && m.provider_end_time)
 const provStartKmOf = (m: any) => (m.provider_ops_edited && m.provider_start_km != null) ? m.provider_start_km : m.start_km;
 const provEndKmOf = (m: any) => (m.provider_ops_edited && m.provider_end_km != null) ? m.provider_end_km : m.end_km;
 
+// Colunas buscadas para a tabela (compartilhado entre o load completo e a busca server-side).
+const MISSION_SELECT = 'id, client, provider, origin, destination, status, created_at, start_time, end_time, start_km, end_km, provider_start_time, provider_end_time, provider_start_km, provider_end_km, provider_ops_edited, total_distance, revenue_value, cost_value, toll_value, toll_value_provider, displacement_value, displacement_value_provider, billing_approved, vendor_os_number, invoice_number, release_date, payment_date, verified_by, verified_at, client_vehicle, client_vehicle_2, vehicle_id, is_same_os, parent_mission_id';
+
 const fmtDate = (d: string | null | undefined) => {
     if (!d) return '—';
     try {
@@ -71,6 +74,7 @@ const VendorVerificationControl: React.FC<VendorVerificationControlProps> = ({ o
     const [isLoading, setIsLoading] = useState(false);
     const [dataLoaded, setDataLoaded] = useState(false);
     const [counts, setCounts] = useState<{ verified: number; paid: number; pending: number } | null>(null);
+    const [serverRows, setServerRows] = useState<any[] | null>(null);
     const [currentPage, setCurrentPage] = useState(1);
     const PER_PAGE = 10;
     const [dateFrom, setDateFrom] = useState('2026-01-01');
@@ -267,14 +271,13 @@ const VendorVerificationControl: React.FC<VendorVerificationControlProps> = ({ o
     const loadData = async () => {
         setIsLoading(true);
         try {
-            const missionFields = 'id, client, provider, origin, destination, status, created_at, start_time, end_time, start_km, end_km, provider_start_time, provider_end_time, provider_start_km, provider_end_km, provider_ops_edited, total_distance, revenue_value, cost_value, toll_value, toll_value_provider, displacement_value, displacement_value_provider, billing_approved, vendor_os_number, invoice_number, release_date, payment_date, verified_by, verified_at, client_vehicle, client_vehicle_2, vehicle_id, is_same_os, parent_mission_id';
             const fetchAllMissions = async () => {
                 let all: any[] = [];
                 let from = 0;
                 const pageSize = 1000;
                 while (true) {
                     const { data, error } = await supabase.from('missions')
-                        .select(missionFields)
+                        .select(MISSION_SELECT)
                         .or('billing_approved.eq.true,status.eq.Concluída')
                         .gte('created_at', '2026-01-01')
                         .order('created_at', { ascending: false })
@@ -313,6 +316,87 @@ const VendorVerificationControl: React.FC<VendorVerificationControlProps> = ({ o
             setDataLoaded(true);
         } catch (e) {
             console.error(e);
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
+    // Busca server-side: em vez de baixar toda a base (milhares de OS) e filtrar
+    // no navegador, consulta direto no banco apenas as OS que casam com o termo.
+    // É o que torna a busca por OS/Placa/NF instantânea.
+    const runServerSearch = async (rawTerm: string) => {
+        const term = rawTerm.trim();
+        if (!term) { setServerRows(null); return; }
+        setIsLoading(true);
+        try {
+            const safe = term.replace(/[%,()*]/g, ' ').trim();
+            const like = `*${safe}*`;
+            const isNum = /^\d+$/.test(safe);
+            // Resolve placas -> ids de veículos (tabelas pequenas) para buscar por placa.
+            const [cvRes, vRes] = await Promise.all([
+                supabase.from('client_vehicles').select('id').ilike('plate', `%${safe}%`),
+                supabase.from('vehicles').select('id').ilike('plate', `%${safe}%`),
+            ]);
+            const cvIds = (cvRes.data || []).map((r: any) => r.id);
+            const vIds = (vRes.data || []).map((r: any) => r.id);
+            const orParts = [
+                `id.ilike.${like}`,
+                `client.ilike.${like}`,
+                `provider.ilike.${like}`,
+                `vendor_os_number.ilike.${like}`,
+                `invoice_number.ilike.${like}`,
+                `origin.ilike.${like}`,
+                `destination.ilike.${like}`,
+            ];
+            if (cvIds.length) orParts.push(`client_vehicle.in.(${cvIds.join(',')})`, `client_vehicle_2.in.(${cvIds.join(',')})`);
+            if (vIds.length) orParts.push(`vehicle_id.in.(${vIds.join(',')})`);
+            if (isNum) orParts.push(`start_km.eq.${safe}`, `end_km.eq.${safe}`, `total_distance.eq.${safe}`);
+
+            // Pagina TODAS as OS que casam (sem corte) p/ a soma/paginação ficarem corretas.
+            const searchOr = orParts.join(',');
+            let rows: any[] = [];
+            let from = 0;
+            const pageSize = 1000;
+            while (true) {
+                const { data, error } = await supabase.from('missions')
+                    .select(MISSION_SELECT)
+                    .or('billing_approved.eq.true,status.eq.Concluída')
+                    .gte('created_at', '2026-01-01')
+                    .or(searchOr)
+                    .order('created_at', { ascending: false })
+                    .range(from, from + pageSize - 1);
+                if (error) throw error;
+                if (data) rows = rows.concat(data);
+                if (!data || data.length < pageSize) break;
+                from += pageSize;
+            }
+
+            // Enriquece só os veículos das OS encontradas (placas dos cards).
+            const cvSet = new Set<number>();
+            const vSet = new Set<number>();
+            rows.forEach((m: any) => {
+                if (m.client_vehicle) cvSet.add(m.client_vehicle);
+                if (m.client_vehicle_2) cvSet.add(m.client_vehicle_2);
+                if (m.vehicle_id) vSet.add(m.vehicle_id);
+            });
+            const [cvFull, vFull] = await Promise.all([
+                cvSet.size ? supabase.from('client_vehicles').select('id, plate, model').in('id', Array.from(cvSet)) : Promise.resolve({ data: [] as any[] }),
+                vSet.size ? supabase.from('vehicles').select('id, plate, model').in('id', Array.from(vSet)) : Promise.resolve({ data: [] as any[] }),
+            ]);
+            const vmap = new Map<number, any>();
+            (cvFull.data || []).forEach((v: any) => vmap.set(v.id, v));
+            const emap = new Map<number, any>();
+            (vFull.data || []).forEach((v: any) => emap.set(v.id, v));
+            const enriched = rows.map((m: any) => ({
+                ...m,
+                _plate1: m.client_vehicle ? (vmap.get(m.client_vehicle)?.plate || '') : '',
+                _plate2: m.client_vehicle_2 ? (vmap.get(m.client_vehicle_2)?.plate || '') : '',
+                _escortPlate: m.vehicle_id ? (emap.get(m.vehicle_id)?.plate || '') : '',
+            }));
+            setServerRows(enriched);
+        } catch (e) {
+            console.error('Erro na busca:', e);
+            setServerRows([]);
         } finally {
             setIsLoading(false);
         }
@@ -478,14 +562,16 @@ const VendorVerificationControl: React.FC<VendorVerificationControlProps> = ({ o
                 setVerifiedAt(now);
                 setReleaseDate(finalReleaseDate);
 
-                setMissions(prev => prev.map(m =>
-                    m.id === selectedMission.id
-                        ? { ...m, vendor_os_number: vendorOsNumber.trim(), invoice_number: invoiceNumber.trim(), release_date: finalReleaseDate, payment_date: paymentDate || null, verified_by: userName, verified_at: now, cost_value: newCostValue, toll_value_provider: newTollProvValue }
-                        : m
-                ));
+                const patchRow = (m: any) => m.id === selectedMission.id
+                    ? { ...m, vendor_os_number: vendorOsNumber.trim(), invoice_number: invoiceNumber.trim(), release_date: finalReleaseDate, payment_date: paymentDate || null, verified_by: userName, verified_at: now, cost_value: newCostValue, toll_value_provider: newTollProvValue }
+                    : m;
+                setMissions(prev => prev.map(patchRow));
+                setServerRows(prev => prev ? prev.map(patchRow) : prev);
 
                 showNotification('Verificação Gravada', `OS ${selectedMission.id} verificada e travada por ${userName}. Custo: ${formatCurrency(newCostValue + newTollProvValue)}`, 'success');
-                loadData();
+                loadCounts();
+                if (dataLoaded) loadData();
+                else if (searchTerm.trim()) runServerSearch(searchTerm);
             } else {
                 throw new Error(json.error || 'Erro ao gravar');
             }
@@ -647,7 +733,9 @@ const VendorVerificationControl: React.FC<VendorVerificationControlProps> = ({ o
     }, []);
 
     const filteredMissions = useMemo(() => {
-        const baseFiltered = missions.filter(m => {
+        // Em modo busca usamos o resultado server-side; caso contrário a base completa.
+        const source = (serverRows !== null && !dataLoaded) ? serverRows : missions;
+        const baseFiltered = source.filter(m => {
             const matchesProvider = selectedProvider === 'ALL' || m.provider === selectedProvider;
             const isVerified = Boolean(m.verified_by && m.verified_at);
             const matchesStatus = filterStatus === 'ALL' || (filterStatus === 'VERIFIED' && isVerified) || (filterStatus === 'PENDING' && !isVerified);
@@ -679,25 +767,34 @@ const VendorVerificationControl: React.FC<VendorVerificationControlProps> = ({ o
             if (!getter) return true;
             return vals.includes(getter(m));
         }));
-    }, [missions, selectedProvider, filterStatus, searchTerm, dateFrom, dateTo, columnFilters, columnGetters]);
+    }, [missions, serverRows, dataLoaded, selectedProvider, filterStatus, searchTerm, dateFrom, dateTo, columnFilters, columnGetters]);
 
-    // Há algum filtro/busca ativo? Só então carregamos a tabela completa.
-    const hasActiveQuery = useMemo(() => (
-        searchTerm.trim() !== '' ||
+    // Filtros que NÃO são a busca textual: provider/status/data/coluna ainda
+    // disparam o load completo (necessário p/ as opções de filtro por coluna).
+    const hasNonSearchQuery = useMemo(() => (
         selectedProvider !== 'ALL' ||
         filterStatus !== 'ALL' ||
         !!dateTo ||
         dateFrom !== '2026-01-01' ||
         Object.values(columnFilters).some(v => v && v.length > 0)
-    ), [searchTerm, selectedProvider, filterStatus, dateFrom, dateTo, columnFilters]);
+    ), [selectedProvider, filterStatus, dateFrom, dateTo, columnFilters]);
 
-    // Carrega a tabela sob demanda quando o usuário busca/filtra.
+    // Carrega a base completa sob demanda quando o usuário aplica filtros (não busca).
     useEffect(() => {
-        if (hasActiveQuery && !dataLoaded && !isLoading) {
+        if (hasNonSearchQuery && !dataLoaded && !isLoading) {
             loadData();
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [hasActiveQuery]);
+    }, [hasNonSearchQuery]);
+
+    // A busca textual usa o caminho leve server-side (debounce), sem baixar a base.
+    useEffect(() => {
+        const term = searchTerm.trim();
+        if (dataLoaded || !term) { setServerRows(null); return; }
+        const t = setTimeout(() => { runServerSearch(term); }, 350);
+        return () => clearTimeout(t);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [searchTerm, dataLoaded]);
 
     // Paginação: 10 linhas por página.
     const totalPages = Math.max(1, Math.ceil(filteredMissions.length / PER_PAGE));
@@ -1938,7 +2035,7 @@ const VendorVerificationControl: React.FC<VendorVerificationControlProps> = ({ o
                         <tbody className="divide-y divide-gray-100">
                             {isLoading ? (
                                 <tr><td colSpan={18} className="p-20 text-center"><Loader2 size={40} className="animate-spin text-blue-700 mx-auto" /></td></tr>
-                            ) : !dataLoaded ? (
+                            ) : (!dataLoaded && serverRows === null) ? (
                                 <tr><td colSpan={18} className="p-20 text-center text-gray-400 font-bold uppercase" data-testid="text-search-prompt">
                                     <Search size={32} className="mx-auto mb-3 text-gray-300" />
                                     Use a busca ou os filtros acima para carregar as OS.
