@@ -61,7 +61,11 @@ const VendorVerificationControl: React.FC<VendorVerificationControlProps> = ({ o
     const [searchTerm, setSearchTerm] = useState('');
     const [selectedProvider, setSelectedProvider] = useState('ALL');
     const [filterStatus, setFilterStatus] = useState<'ALL' | 'PENDING' | 'VERIFIED'>('ALL');
-    const [isLoading, setIsLoading] = useState(true);
+    const [isLoading, setIsLoading] = useState(false);
+    const [dataLoaded, setDataLoaded] = useState(false);
+    const [counts, setCounts] = useState<{ verified: number; paid: number; pending: number } | null>(null);
+    const [currentPage, setCurrentPage] = useState(1);
+    const PER_PAGE = 10;
     const [dateFrom, setDateFrom] = useState('2026-01-01');
     const [dateTo, setDateTo] = useState('');
     // Filtros tipo Excel por coluna
@@ -225,11 +229,33 @@ const VendorVerificationControl: React.FC<VendorVerificationControlProps> = ({ o
     };
 
     useEffect(() => {
-        loadData();
-        const handleRefresh = () => loadData();
+        loadCounts();
+        const handleRefresh = () => { loadCounts(); if (dataLoaded) loadData(); };
         window.addEventListener('refreshMissions', handleRefresh);
         return () => window.removeEventListener('refreshMissions', handleRefresh);
-    }, []);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [dataLoaded]);
+
+    // Carrega apenas as contagens (cards do topo) sem trazer todas as linhas.
+    const loadCounts = async () => {
+        try {
+            const base = () => supabase.from('missions')
+                .select('id', { count: 'exact', head: true })
+                .or('billing_approved.eq.true,status.eq.Concluída')
+                .gte('created_at', '2026-01-01');
+            const [totalRes, verifiedRes, paidRes] = await Promise.all([
+                base(),
+                base().not('verified_by', 'is', null).not('verified_at', 'is', null),
+                base().not('payment_date', 'is', null),
+            ]);
+            const total = totalRes.count || 0;
+            const verified = verifiedRes.count || 0;
+            const paid = paidRes.count || 0;
+            setCounts({ verified, paid, pending: Math.max(0, total - verified) });
+        } catch (e) {
+            console.error('Erro ao carregar contagens:', e);
+        }
+    };
 
     const loadData = async () => {
         setIsLoading(true);
@@ -277,6 +303,7 @@ const VendorVerificationControl: React.FC<VendorVerificationControlProps> = ({ o
             const uniqueProviders = [...new Set(enrichedMissions.map((m: any) => m.provider).filter(Boolean))].sort();
             setProviders(uniqueProviders as string[]);
             setMissions(enrichedMissions);
+            setDataLoaded(true);
         } catch (e) {
             console.error(e);
         } finally {
@@ -647,6 +674,37 @@ const VendorVerificationControl: React.FC<VendorVerificationControlProps> = ({ o
         }));
     }, [missions, selectedProvider, filterStatus, searchTerm, dateFrom, dateTo, columnFilters, columnGetters]);
 
+    // Há algum filtro/busca ativo? Só então carregamos a tabela completa.
+    const hasActiveQuery = useMemo(() => (
+        searchTerm.trim() !== '' ||
+        selectedProvider !== 'ALL' ||
+        filterStatus !== 'ALL' ||
+        !!dateTo ||
+        dateFrom !== '2026-01-01' ||
+        Object.values(columnFilters).some(v => v && v.length > 0)
+    ), [searchTerm, selectedProvider, filterStatus, dateFrom, dateTo, columnFilters]);
+
+    // Carrega a tabela sob demanda quando o usuário busca/filtra.
+    useEffect(() => {
+        if (hasActiveQuery && !dataLoaded && !isLoading) {
+            loadData();
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [hasActiveQuery]);
+
+    // Paginação: 10 linhas por página.
+    const totalPages = Math.max(1, Math.ceil(filteredMissions.length / PER_PAGE));
+    const safePage = Math.min(currentPage, totalPages);
+    const paginatedMissions = useMemo(
+        () => filteredMissions.slice((safePage - 1) * PER_PAGE, safePage * PER_PAGE),
+        [filteredMissions, safePage]
+    );
+
+    // Volta para a primeira página sempre que os filtros mudam.
+    useEffect(() => {
+        setCurrentPage(1);
+    }, [searchTerm, selectedProvider, filterStatus, dateFrom, dateTo, columnFilters]);
+
     const stats = useMemo(() => {
         const total = missions.length;
         const verified = missions.filter(m => m.verified_by && m.verified_at).length;
@@ -655,11 +713,14 @@ const VendorVerificationControl: React.FC<VendorVerificationControlProps> = ({ o
         return { total, verified, pending, paid };
     }, [missions]);
 
+    // Cards do topo: usa contagens leves até a tabela completa ser carregada.
+    const cardStats = dataLoaded ? stats : (counts || { verified: 0, paid: 0, pending: 0 });
+
     useEffect(() => {
-        if (stats.total > 0) {
+        if (dataLoaded && stats.total > 0) {
             saveStatsSnapshot(stats, missions);
         }
-    }, [stats, missions, saveStatsSnapshot]);
+    }, [stats, missions, saveStatsSnapshot, dataLoaded]);
 
     // --- Conferência de Divergências (Boletim do Fornecedor) ---
     const [divergenceOpen, setDivergenceOpen] = useState(false);
@@ -1450,7 +1511,7 @@ const VendorVerificationControl: React.FC<VendorVerificationControlProps> = ({ o
                 <div className="bg-green-50 border border-green-200 rounded-2xl px-5 py-3 flex items-center gap-3 min-w-[140px]">
                     <CheckCircle2 size={24} className="text-green-600" />
                     <div>
-                        <p className="text-2xl font-black text-green-700" data-testid="text-verified-count">{stats.verified}</p>
+                        <p className="text-2xl font-black text-green-700" data-testid="text-verified-count">{cardStats.verified}</p>
                         <p className="text-[9px] font-black text-green-600 uppercase tracking-widest">Verificadas</p>
                     </div>
                 </div>
@@ -1458,7 +1519,7 @@ const VendorVerificationControl: React.FC<VendorVerificationControlProps> = ({ o
                 <div className="bg-blue-50 border border-blue-200 rounded-2xl px-5 py-3 flex items-center gap-3 min-w-[120px]">
                     <CreditCard size={24} className="text-blue-600" />
                     <div>
-                        <p className="text-2xl font-black text-blue-700" data-testid="text-paid-count">{stats.paid}</p>
+                        <p className="text-2xl font-black text-blue-700" data-testid="text-paid-count">{cardStats.paid}</p>
                         <p className="text-[9px] font-black text-blue-600 uppercase tracking-widest">Pagas</p>
                     </div>
                 </div>
@@ -1466,7 +1527,7 @@ const VendorVerificationControl: React.FC<VendorVerificationControlProps> = ({ o
                 <div className="bg-amber-50 border border-amber-200 rounded-2xl px-5 py-3 flex items-center gap-3 min-w-[130px]">
                     <AlertTriangle size={24} className="text-amber-600" />
                     <div>
-                        <p className="text-2xl font-black text-amber-700" data-testid="text-pending-count">{stats.pending}</p>
+                        <p className="text-2xl font-black text-amber-700" data-testid="text-pending-count">{cardStats.pending}</p>
                         <p className="text-[9px] font-black text-amber-600 uppercase tracking-widest">Pendentes</p>
                     </div>
                 </div>
@@ -1491,7 +1552,7 @@ const VendorVerificationControl: React.FC<VendorVerificationControlProps> = ({ o
 
                 <button
                     data-testid="btn-open-divergence"
-                    onClick={() => setDivergenceOpen(true)}
+                    onClick={() => { if (!dataLoaded && !isLoading) loadData(); setDivergenceOpen(true); }}
                     className="rounded-2xl px-5 py-3 flex items-center gap-3 min-w-[150px] bg-white border border-gray-200 hover:bg-amber-50 hover:border-amber-300 transition-all"
                 >
                     <Scale size={24} className="text-amber-600" />
@@ -1870,10 +1931,15 @@ const VendorVerificationControl: React.FC<VendorVerificationControlProps> = ({ o
                         <tbody className="divide-y divide-gray-100">
                             {isLoading ? (
                                 <tr><td colSpan={18} className="p-20 text-center"><Loader2 size={40} className="animate-spin text-blue-700 mx-auto" /></td></tr>
+                            ) : !dataLoaded ? (
+                                <tr><td colSpan={18} className="p-20 text-center text-gray-400 font-bold uppercase" data-testid="text-search-prompt">
+                                    <Search size={32} className="mx-auto mb-3 text-gray-300" />
+                                    Use a busca ou os filtros acima para carregar as OS.
+                                </td></tr>
                             ) : filteredMissions.length === 0 ? (
                                 <tr><td colSpan={18} className="p-20 text-center text-gray-400 font-bold uppercase">Nenhuma missão encontrada.</td></tr>
                             ) : (
-                                filteredMissions.map(m => {
+                                paginatedMissions.map(m => {
                                     const isVerified = Boolean(m.verified_by && m.verified_at);
                                     const totalCost = providerCostOf(m);
 
@@ -2000,9 +2066,9 @@ const VendorVerificationControl: React.FC<VendorVerificationControlProps> = ({ o
                     </table>
                 </div>
                 {!isLoading && filteredMissions.length > 0 && (
-                    <div className="px-4 py-3 bg-gray-50 border-t border-gray-200 text-[10px] font-bold text-gray-500 uppercase tracking-widest flex justify-between">
+                    <div className="px-4 py-3 bg-gray-50 border-t border-gray-200 text-[10px] font-bold text-gray-500 uppercase tracking-widest flex items-center justify-between gap-3 flex-wrap">
                         <span className="flex items-center gap-2">
-                            <span>Exibindo {filteredMissions.length} de {missions.length} missões</span>
+                            <span>Exibindo {filteredMissions.length === 0 ? 0 : (safePage - 1) * PER_PAGE + 1}–{Math.min(safePage * PER_PAGE, filteredMissions.length)} de {filteredMissions.length} missões</span>
                             {activeColumnFilterCount > 0 && (
                                 <span className="inline-flex items-center gap-1 text-amber-700 bg-amber-100 border border-amber-300 px-2 py-0.5 rounded normal-case" data-testid="badge-active-column-filters">
                                     <Filter size={10} />
@@ -2011,6 +2077,23 @@ const VendorVerificationControl: React.FC<VendorVerificationControlProps> = ({ o
                                 </span>
                             )}
                         </span>
+                        {totalPages > 1 && (
+                            <span className="flex items-center gap-2 normal-case">
+                                <button
+                                    onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                                    disabled={safePage <= 1}
+                                    className="px-3 py-1 rounded-lg border border-gray-300 bg-white text-gray-600 disabled:opacity-40 disabled:cursor-not-allowed hover:bg-gray-100 transition-colors"
+                                    data-testid="button-prev-page"
+                                >Anterior</button>
+                                <span className="text-gray-600" data-testid="text-page-info">Página {safePage} de {totalPages}</span>
+                                <button
+                                    onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                                    disabled={safePage >= totalPages}
+                                    className="px-3 py-1 rounded-lg border border-gray-300 bg-white text-gray-600 disabled:opacity-40 disabled:cursor-not-allowed hover:bg-gray-100 transition-colors"
+                                    data-testid="button-next-page"
+                                >Próxima</button>
+                            </span>
+                        )}
                         <span>Total Custo: <span className="text-red-600 font-black">{formatCurrency(filteredMissions.reduce((sum, m) => sum + providerCostOf(m), 0))}</span></span>
                     </div>
                 )}
