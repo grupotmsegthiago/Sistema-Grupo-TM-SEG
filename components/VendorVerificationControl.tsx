@@ -146,11 +146,11 @@ const VendorVerificationControl: React.FC<VendorVerificationControlProps> = ({ o
         const setUploading = type === 'invoice' ? setUploadingInvoice : setUploadingReceipt;
         const setUrl = type === 'invoice' ? setInvoiceImageUrl : setReceiptImageUrl;
 
-        const MAX_FILE_SIZE = 55 * 1024;
+        const MAX_FILE_SIZE = 100 * 1024;
         const isPdf = file.type === 'application/pdf';
 
         if (isPdf && file.size > MAX_FILE_SIZE) {
-            showNotification('Arquivo muito grande', `PDF máximo 55KB. Seu arquivo tem ${(file.size / 1024).toFixed(0)}KB.`, 'error');
+            showNotification('Arquivo muito grande', `PDF máximo 100KB. Seu arquivo tem ${(file.size / 1024).toFixed(0)}KB. Tente enviar como imagem (JPG/PNG) — fotos são compactadas automaticamente.`, 'error');
             return;
         }
 
