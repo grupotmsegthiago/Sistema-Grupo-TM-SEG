@@ -767,7 +767,10 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
       if (!currentMission.client || !currentMission.origin || isSavingRef.current) return;
       try {
           const dbToll = Math.max(0, currentMission.toll_value ?? 0);
-          const dbTollProv = Math.max(0, currentMission.toll_value_provider != null ? currentMission.toll_value_provider : dbToll);
+          // Pedágio do FORNECEDOR vem ESTRITAMENTE de toll_value_provider; se nulo, é 0.
+          // NUNCA herda dbToll (pedágio do cliente) — isso gerava o "pedágio fantasma"
+          // que inflava o custo do fornecedor ao reabrir a auditoria.
+          const dbTollProv = Math.max(0, currentMission.toll_value_provider != null ? currentMission.toll_value_provider : 0);
           const hasRevenue = currentMission.revenue_value != null && currentMission.revenue_value > 0;
           const hasCost = currentMission.cost_value != null && currentMission.cost_value > 0;
           const hasVerifiedBy = !!currentMission.billing_verified_by;
@@ -1049,7 +1052,10 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
               setShowCostReasonInput(false);
 
               const dbToll = Math.max(0, mRes.data.toll_value || 0);
-              const dbTollProvider = Math.max(0, mRes.data.toll_value_provider != null ? mRes.data.toll_value_provider : dbToll);
+              // Pedágio do FORNECEDOR vem ESTRITAMENTE de toll_value_provider; se nulo, é 0.
+              // NUNCA herda dbToll (pedágio do cliente) — era o "pedágio fantasma" que
+              // inflava o custo do fornecedor (savedCost + dbTollProvider) ao abrir a OS.
+              const dbTollProvider = Math.max(0, mRes.data.toll_value_provider != null ? mRes.data.toll_value_provider : 0);
               const dbDisp = Math.max(0, mRes.data.displacement_value || 0);
               const dbDispProvider = Math.max(0, mRes.data.displacement_value_provider != null ? mRes.data.displacement_value_provider : dbDisp);
               setDisplacementInput(dbDisp.toLocaleString('pt-BR', {minimumFractionDigits: 2, maximumFractionDigits: 2}));

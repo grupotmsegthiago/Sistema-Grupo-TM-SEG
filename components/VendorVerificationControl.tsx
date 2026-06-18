@@ -24,7 +24,10 @@ const formatCurrency = (val: number | null | undefined) => {
 // espelham exatamente o que o MissionFinancialModal mostra/grava (custo serviço
 // + toll_value_provider + displacement_value_provider). Em MESMA OS (filha) o
 // fornecedor não cobra deslocamento/pedágio próprios -> 0.
-const providerTollOf = (m: any) => Math.max(0, m.toll_value_provider != null ? m.toll_value_provider : (m.toll_value || 0));
+// Pedágio do FORNECEDOR é independente do pedágio do cliente: vem ESTRITAMENTE
+// de toll_value_provider. Se não houver valor próprio do fornecedor, é 0 — NUNCA
+// herda o toll_value (pedágio do cliente), que causava "pedágio fantasma".
+const providerTollOf = (m: any) => Math.max(0, m.toll_value_provider ?? 0);
 const providerDispOf = (m: any) => {
     if (m.is_same_os) return 0;
     const disp = m.displacement_value_provider != null ? m.displacement_value_provider : (m.displacement_value || 0);
@@ -241,11 +244,19 @@ const VendorVerificationControl: React.FC<VendorVerificationControlProps> = ({ o
 
     useEffect(() => {
         loadCounts();
-        const handleRefresh = () => { loadCounts(); if (dataLoaded) loadData(); };
+        const handleRefresh = () => {
+            loadCounts();
+            // Atualização automática após salvar/realtime: se a base completa já foi
+            // carregada, recarrega tudo; senão, se há busca ativa (modo server-side),
+            // refaz a busca para não deixar a linha pesquisada desatualizada (antes
+            // exigia Ctrl+Shift+R).
+            if (dataLoaded) loadData();
+            else if (searchTerm.trim()) runServerSearch(searchTerm);
+        };
         window.addEventListener('refreshMissions', handleRefresh);
         return () => window.removeEventListener('refreshMissions', handleRefresh);
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [dataLoaded]);
+    }, [dataLoaded, searchTerm]);
 
     // Carrega apenas as contagens (cards do topo) sem trazer todas as linhas.
     const loadCounts = async () => {
@@ -477,7 +488,7 @@ const VendorVerificationControl: React.FC<VendorVerificationControlProps> = ({ o
         setVerifiedBy(mission.verified_by || '');
         setVerifiedAt(mission.verified_at || '');
         const costVal = mission.cost_value || 0;
-        const tollProvVal = Math.max(0, mission.toll_value_provider ?? mission.toll_value ?? 0);
+        const tollProvVal = Math.max(0, mission.toll_value_provider ?? 0);
         setEditCostValue(costVal.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
         setEditTollProviderValue(tollProvVal.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
 
@@ -1175,8 +1186,8 @@ const VendorVerificationControl: React.FC<VendorVerificationControlProps> = ({ o
                     const diffMin = Math.abs(new Date(m.end_time).getTime() - row.endDt.getTime()) / 60000;
                     if (diffMin > 15) details.push({ field: 'Fim', planilha: formatDateTimeBR(row.endDt.toISOString()), sistema: formatDateTimeBR(m.end_time) });
                 }
-                if (row.pedagio && Math.abs(row.pedagio - (m.toll_value_provider ?? m.toll_value ?? 0)) > 0.5) {
-                    details.push({ field: 'Pedágio', planilha: row.pedagio, sistema: m.toll_value_provider ?? m.toll_value ?? 0 });
+                if (row.pedagio && Math.abs(row.pedagio - providerTollOf(m)) > 0.5) {
+                    details.push({ field: 'Pedágio', planilha: row.pedagio, sistema: providerTollOf(m) });
                 }
                 const mEscort = normalizePlate(m._escortPlate);
                 if (row.viaturaNorm && mEscort && row.viaturaNorm !== mEscort) {
@@ -1229,7 +1240,7 @@ const VendorVerificationControl: React.FC<VendorVerificationControlProps> = ({ o
                 'KM Fim Fornecedor': r.row.kmFim || 0,
                 'KM Fim TMSEG': r.mission?.end_km || 0,
                 'Pedágio Fornecedor': r.row.pedagio || 0,
-                'Pedágio TMSEG': r.mission?.toll_value_provider ?? r.mission?.toll_value ?? 0,
+                'Pedágio TMSEG': r.mission ? providerTollOf(r.mission) : 0,
                 'Total Fornecedor (R$)': r.valueProvider,
                 'Total TMSEG (R$)': r.valueSystem,
                 'Diferença (R$)': r.diff,
