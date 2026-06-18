@@ -646,6 +646,11 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
     // A SM só muda de status depois que o operador confirma esses valores.
     const [pendingFinalizeConfirm, setPendingFinalizeConfirm] = useState<{ kind: 'completed' | 'cancelled' } | null>(null);
     const finalizeConfirmedRef = useRef(false);
+    // Status REAL escolhido no gate de finalização (Concluída/Cancelada). O
+    // resume() do checklist re-dispara um handleUpdateSubmit CAPTURADO antes do
+    // setEditData({status}) propagar, então editData.status pode estar defasado.
+    // Este ref carrega a intenção do operador imune ao closure defasado.
+    const pendingFinalizeStatusRef = useRef<MissionStatus | null>(null);
     const confirmedEndKmRef = useRef<number | null>(null);
     const confirmedRealTimeRef = useRef<string | null>(null);
     // Cancelamento: "Data de fim de viagem" (operacional). A data do cancelamento
@@ -663,6 +668,7 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
         resumeSubmitRef.current = null;
         setPendingTollConfirm(null);
         finalizeConfirmedRef.current = false;
+        pendingFinalizeStatusRef.current = null;
         confirmedEndKmRef.current = null;
         confirmedRealTimeRef.current = null;
         confirmedEndTravelRef.current = null;
@@ -1582,6 +1588,7 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
                     finalizeConfirmedRef.current = true;
                     handleUpdateSubmit({ preventDefault: () => {} } as React.FormEvent);
                 };
+                pendingFinalizeStatusRef.current = willComplete ? MissionStatus.COMPLETED : MissionStatus.CANCELLED;
                 setIsEndTimeLocked(true);
                 setPendingFinalizeConfirm({ kind: willComplete ? 'completed' : 'cancelled' });
                 return;
@@ -1682,6 +1689,15 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
             else if (editData.applyCeva200km) finalDestination = '200KM DE ACOMPANHAMENTO';
 
             let finalStatus = editData.status as MissionStatus;
+            // Gate de finalização: o resume() do checklist invoca um
+            // handleUpdateSubmit capturado ANTES do setEditData({status}) ter
+            // efeito, então editData.status aqui pode estar defasado (ex.:
+            // "Em Viagem"). Para fornecedores isentos de hodômetro (ATIVA/TM SEG)
+            // não há o auto-complete abaixo que mascarava isso nos demais — a OS
+            // ficava presa sem concluir. Usamos o status REAL escolhido no gate.
+            if (finalizeConfirmedRef.current && pendingFinalizeStatusRef.current) {
+                finalStatus = pendingFinalizeStatusRef.current;
+            }
 
             const sKm = parseNumber(editData.startKm);
             // KM final confirmado pelo operador (gate de conclusão) tem prioridade.
@@ -2264,6 +2280,7 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
         setPendingFinalizeConfirm(null);
         resumeSubmitRef.current = null;
         finalizeConfirmedRef.current = false;
+        pendingFinalizeStatusRef.current = null;
         // Destrava o relógio ao vivo que foi congelado ao abrir o gate.
         setIsEndTimeLocked(false);
     };
@@ -2281,6 +2298,7 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
             && mission.status !== s;
         if ((isConclude || isCancel) && directOK) {
             setEditData(prev => ({ ...prev, status: s }));
+            pendingFinalizeStatusRef.current = s;
             resumeSubmitRef.current = () => {
                 finalizeConfirmedRef.current = true;
                 handleUpdateSubmit({ preventDefault: () => {} } as React.FormEvent);

@@ -27,4 +27,5 @@
 - [React component tests](react-component-tests.md) — render component sob node --test via jsdom+React.act+asset loader (register.mjs, NÃO só exportar hooks); runner em scripts/run-tests.sh.
 - [Mission-end toll auto-recalc](mission-end-toll-recalc.md) — ao concluir OS o pedágio é estimado por IA (/api/toll/gemini-estimate, NÃO QualP por custo) e salvo com guarda billing_approved no cliente E no UPDATE.
 - [Finalize odometer exemption](finalize-odometer-exempt.md) — fornecedores ATIVA e TM SEG dispensam print do hodômetro + auditoria IA ao concluir OS (mandam KM final depois); demais seguem obrigatórios.
+- [Finalize gate stale-closure](finalize-stale-closure.md) — resume() do checklist usa editData.status defasado; concluir/cancelar precisa de pendingFinalizeStatusRef (mesma vida útil de finalizeConfirmedRef, NUNCA reset no finally).
 - [iOS finalize clipboard](ios-finalize-clipboard.md) — ao concluir OS não feche o modal via onSuccess(report) nem auto-copie: iOS bloqueia cópia fora do gesto e o diálogo de fim de missão é desmontado; feche/refresh só no botão Fechar.
