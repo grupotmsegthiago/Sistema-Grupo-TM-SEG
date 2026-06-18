@@ -2160,7 +2160,19 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
 
             setEditData(prev => ({ ...prev, currentLocationName: '', mapLink: '' }));
 
-            onSuccess(report);
+            // OS recém-concluída: o diálogo "Fim de Missão concluído" (com botões
+            // Copiar texto / Copiar foto que funcionam no iOS dentro do gesto) já foi
+            // aberto acima (setFinalizeReport). NÃO chamar onSuccess(report) aqui: isso
+            // fecharia o modal (desmontando o diálogo via `if (!isOpen) return null`) e
+            // dispararia a auto-cópia FORA do gesto do clique — que no Safari/iOS é
+            // bloqueada e exibia "Não foi possível copiar. Tente novamente.", fazendo o
+            // operador achar que a finalização falhou (ela foi salva com sucesso).
+            // O fechamento do modal + refresh da lista ocorrem ao clicar em "Fechar"
+            // no diálogo. Demais atualizações seguem o fluxo normal (auto-cópia desktop).
+            const concludedNow = finalStatus === MissionStatus.COMPLETED && originalStatus !== MissionStatus.COMPLETED;
+            if (!concludedNow) {
+                onSuccess(report);
+            }
         } catch (error: any) { alert(error.message); } finally { setIsUpdating(false); }
     };
 
@@ -3448,7 +3460,7 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
                   {finalizeReport.photoUrl && (
                     <a href={finalizeReport.photoUrl} target="_blank" rel="noreferrer" className="mt-2 block text-center text-[11px] font-semibold text-slate-400 underline" data-testid="link-odometer-photo">Abrir print do hodômetro</a>
                   )}
-                  <button type="button" onClick={() => setFinalizeReport(null)} className="mt-4 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-600" data-testid="button-close-finalize-report">
+                  <button type="button" onClick={() => { setFinalizeReport(null); onSuccess(); }} className="mt-4 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-600" data-testid="button-close-finalize-report">
                     Fechar
                   </button>
                 </div>
