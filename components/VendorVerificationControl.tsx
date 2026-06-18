@@ -32,6 +32,13 @@ const providerDispOf = (m: any) => {
 };
 const providerCostOf = (m: any) => (m.cost_value || 0) + providerTollOf(m) + providerDispOf(m);
 
+// Dados operacionais do FORNECEDOR (espelha o MissionFinancialModal): usa os
+// campos provider_* quando a OS teve edição do fornecedor; senão cai na base.
+const provStartTimeOf = (m: any) => (m.provider_ops_edited && m.provider_start_time) ? m.provider_start_time : m.start_time;
+const provEndTimeOf = (m: any) => (m.provider_ops_edited && m.provider_end_time) ? m.provider_end_time : m.end_time;
+const provStartKmOf = (m: any) => (m.provider_ops_edited && m.provider_start_km != null) ? m.provider_start_km : m.start_km;
+const provEndKmOf = (m: any) => (m.provider_ops_edited && m.provider_end_km != null) ? m.provider_end_km : m.end_km;
+
 const fmtDate = (d: string | null | undefined) => {
     if (!d) return '—';
     try {
@@ -260,7 +267,7 @@ const VendorVerificationControl: React.FC<VendorVerificationControlProps> = ({ o
     const loadData = async () => {
         setIsLoading(true);
         try {
-            const missionFields = 'id, client, provider, origin, destination, status, created_at, start_time, end_time, start_km, end_km, total_distance, revenue_value, cost_value, toll_value, toll_value_provider, displacement_value, displacement_value_provider, billing_approved, vendor_os_number, invoice_number, release_date, payment_date, verified_by, verified_at, client_vehicle, client_vehicle_2, vehicle_id, is_same_os, parent_mission_id';
+            const missionFields = 'id, client, provider, origin, destination, status, created_at, start_time, end_time, start_km, end_km, provider_start_time, provider_end_time, provider_start_km, provider_end_km, provider_ops_edited, total_distance, revenue_value, cost_value, toll_value, toll_value_provider, displacement_value, displacement_value_provider, billing_approved, vendor_os_number, invoice_number, release_date, payment_date, verified_by, verified_at, client_vehicle, client_vehicle_2, vehicle_id, is_same_os, parent_mission_id';
             const fetchAllMissions = async () => {
                 let all: any[] = [];
                 let from = 0;
@@ -624,12 +631,12 @@ const VendorVerificationControl: React.FC<VendorVerificationControlProps> = ({ o
             fornecedor: m => `${m.provider || '—'} / ${m.client || '—'}`,
             origem: m => m.origin || '—',
             destino: m => m.destination || '—',
-            dt_inicial: m => m.start_time ? formatDateBR(m.start_time) : '—',
-            dt_final: m => m.end_time ? formatDateBR(m.end_time) : '—',
-            hr_inicial: m => timeOf(m.start_time),
-            hr_final: m => timeOf(m.end_time),
-            km_inicial: m => m.start_km != null ? String(m.start_km) : '—',
-            km_final: m => m.end_km != null ? String(m.end_km) : '—',
+            dt_inicial: m => provStartTimeOf(m) ? formatDateBR(provStartTimeOf(m)) : '—',
+            dt_final: m => provEndTimeOf(m) ? formatDateBR(provEndTimeOf(m)) : '—',
+            hr_inicial: m => timeOf(provStartTimeOf(m)),
+            hr_final: m => timeOf(provEndTimeOf(m)),
+            km_inicial: m => provStartKmOf(m) != null ? String(provStartKmOf(m)) : '—',
+            km_final: m => provEndKmOf(m) != null ? String(provEndKmOf(m)) : '—',
             custo: m => formatCurrency(providerCostOf(m)),
             os_forn: m => m.vendor_os_number || '—',
             nf: m => m.invoice_number || '—',
@@ -1987,22 +1994,22 @@ const VendorVerificationControl: React.FC<VendorVerificationControlProps> = ({ o
                                                 <div className="text-[10px] font-bold text-gray-700 max-w-[160px] truncate" title={m.destination}>{m.destination || '—'}</div>
                                             </td>
                                             <td className="px-4 py-3 text-center">
-                                                <span className="text-[10px] font-bold text-gray-700">{formatDateBR(m.start_time)}</span>
+                                                <span className="text-[10px] font-bold text-gray-700">{formatDateBR(provStartTimeOf(m))}</span>
                                             </td>
                                             <td className="px-4 py-3 text-center">
-                                                <span className="text-[10px] font-bold text-gray-700">{formatDateBR(m.end_time)}</span>
+                                                <span className="text-[10px] font-bold text-gray-700">{formatDateBR(provEndTimeOf(m))}</span>
                                             </td>
                                             <td className="px-4 py-3 text-center">
-                                                <span className="text-[10px] font-bold text-gray-700">{m.start_time ? new Date(m.start_time).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', timeZone: 'America/Sao_Paulo' }) : '—'}</span>
+                                                <span className="text-[10px] font-bold text-gray-700">{provStartTimeOf(m) ? new Date(provStartTimeOf(m)).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', timeZone: 'America/Sao_Paulo' }) : '—'}</span>
                                             </td>
                                             <td className="px-4 py-3 text-center">
-                                                <span className="text-[10px] font-bold text-gray-700">{m.end_time ? new Date(m.end_time).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', timeZone: 'America/Sao_Paulo' }) : '—'}</span>
+                                                <span className="text-[10px] font-bold text-gray-700">{provEndTimeOf(m) ? new Date(provEndTimeOf(m)).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', timeZone: 'America/Sao_Paulo' }) : '—'}</span>
                                             </td>
                                             <td className="px-4 py-3 text-center">
-                                                <span className="text-[10px] font-bold text-gray-700">{m.start_km != null ? Number(m.start_km).toLocaleString('pt-BR') : '—'}</span>
+                                                <span className="text-[10px] font-bold text-gray-700">{provStartKmOf(m) != null ? Number(provStartKmOf(m)).toLocaleString('pt-BR') : '—'}</span>
                                             </td>
                                             <td className="px-4 py-3 text-center">
-                                                <span className="text-[10px] font-bold text-gray-700">{m.end_km != null ? Number(m.end_km).toLocaleString('pt-BR') : '—'}</span>
+                                                <span className="text-[10px] font-bold text-gray-700">{provEndKmOf(m) != null ? Number(provEndKmOf(m)).toLocaleString('pt-BR') : '—'}</span>
                                             </td>
                                             <td className="px-4 py-3 text-right">
                                                 {(m as any).is_same_os && totalCost === 0 ? (
