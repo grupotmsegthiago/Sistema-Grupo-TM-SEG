@@ -19,6 +19,19 @@ const formatCurrency = (val: number | null | undefined) => {
     return val.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 };
 
+// CUSTO real do fornecedor gravado na OS = cost_value (serviço) + pedágio
+// fornecedor + deslocamento fornecedor. Pedágio e deslocamento são ADITIVOS e
+// espelham exatamente o que o MissionFinancialModal mostra/grava (custo serviço
+// + toll_value_provider + displacement_value_provider). Em MESMA OS (filha) o
+// fornecedor não cobra deslocamento/pedágio próprios -> 0.
+const providerTollOf = (m: any) => Math.max(0, m.toll_value_provider != null ? m.toll_value_provider : (m.toll_value || 0));
+const providerDispOf = (m: any) => {
+    if (m.is_same_os) return 0;
+    const disp = m.displacement_value_provider != null ? m.displacement_value_provider : (m.displacement_value || 0);
+    return Math.max(0, disp);
+};
+const providerCostOf = (m: any) => (m.cost_value || 0) + providerTollOf(m) + providerDispOf(m);
+
 const fmtDate = (d: string | null | undefined) => {
     if (!d) return '—';
     try {
@@ -221,7 +234,7 @@ const VendorVerificationControl: React.FC<VendorVerificationControlProps> = ({ o
     const loadData = async () => {
         setIsLoading(true);
         try {
-            const missionFields = 'id, client, provider, origin, destination, status, created_at, start_time, end_time, start_km, end_km, total_distance, revenue_value, cost_value, toll_value, toll_value_provider, billing_approved, vendor_os_number, invoice_number, release_date, payment_date, verified_by, verified_at, client_vehicle, client_vehicle_2, vehicle_id, is_same_os, parent_mission_id';
+            const missionFields = 'id, client, provider, origin, destination, status, created_at, start_time, end_time, start_km, end_km, total_distance, revenue_value, cost_value, toll_value, toll_value_provider, displacement_value, displacement_value_provider, billing_approved, vendor_os_number, invoice_number, release_date, payment_date, verified_by, verified_at, client_vehicle, client_vehicle_2, vehicle_id, is_same_os, parent_mission_id';
             const fetchAllMissions = async () => {
                 let all: any[] = [];
                 let from = 0;
@@ -590,7 +603,7 @@ const VendorVerificationControl: React.FC<VendorVerificationControlProps> = ({ o
             hr_final: m => timeOf(m.end_time),
             km_inicial: m => m.start_km != null ? String(m.start_km) : '—',
             km_final: m => m.end_km != null ? String(m.end_km) : '—',
-            custo: m => formatCurrency((m.cost_value || 0) + Math.max(0, m.toll_value_provider ?? m.toll_value ?? 0)),
+            custo: m => formatCurrency(providerCostOf(m)),
             os_forn: m => m.vendor_os_number || '—',
             nf: m => m.invoice_number || '—',
             liberacao: m => m.release_date ? fmtDate(m.release_date) : '—',
@@ -693,7 +706,7 @@ const VendorVerificationControl: React.FC<VendorVerificationControlProps> = ({ o
                 return { ...r, status: 'NOT_FOUND' };
             }
             const live = missionsById.get(String(r.mission.id)) || r.mission;
-            const systemCost = (live.cost_value || 0) + Math.max(0, live.toll_value_provider ?? live.toll_value ?? 0);
+            const systemCost = providerCostOf(live);
             const diff = (r.valueProvider || 0) - systemCost;
             return {
                 ...r,
@@ -978,7 +991,7 @@ const VendorVerificationControl: React.FC<VendorVerificationControlProps> = ({ o
                 }
 
                 const m = best.mission;
-                const systemCost = (m.cost_value || 0) + Math.max(0, m.toll_value_provider ?? m.toll_value ?? 0);
+                const systemCost = providerCostOf(m);
                 const diff = row.total - systemCost;
                 const details: { field: string; planilha: any; sistema: any }[] = [];
 
@@ -1862,8 +1875,7 @@ const VendorVerificationControl: React.FC<VendorVerificationControlProps> = ({ o
                             ) : (
                                 filteredMissions.map(m => {
                                     const isVerified = Boolean(m.verified_by && m.verified_at);
-                                    const tollProv = Math.max(0, m.toll_value_provider != null ? m.toll_value_provider : (m.toll_value || 0));
-                                    const totalCost = (m.cost_value || 0) + tollProv;
+                                    const totalCost = providerCostOf(m);
 
                                     return (
                                         <tr key={m.id} className={`hover:bg-gray-50/50 transition-colors ${isVerified ? 'bg-green-50/30' : ''} ${selectedIds.has(m.id) ? 'bg-blue-50/50' : ''}`} data-testid={`row-mission-${m.id}`}>
@@ -1999,7 +2011,7 @@ const VendorVerificationControl: React.FC<VendorVerificationControlProps> = ({ o
                                 </span>
                             )}
                         </span>
-                        <span>Total Custo: <span className="text-red-600 font-black">{formatCurrency(filteredMissions.reduce((sum, m) => sum + (m.cost_value || 0) + Math.max(0, m.toll_value_provider ?? m.toll_value ?? 0), 0))}</span></span>
+                        <span>Total Custo: <span className="text-red-600 font-black">{formatCurrency(filteredMissions.reduce((sum, m) => sum + providerCostOf(m), 0))}</span></span>
                     </div>
                 )}
             </div>
