@@ -811,6 +811,19 @@ Responda de forma concisa e profissional, em português, formatado com markdown.
                             <tr><td colSpan={6} className="p-8 text-center text-gray-400 text-xs">Nenhuma conta cadastrada. Clique em "Nova Conta" para começar.</td></tr>
                         )}
                     </tbody>
+                    {accounts.length > 0 && (
+                        <tfoot className="border-t-2 border-gray-200">
+                            <tr className="bg-gray-50">
+                                <td className="p-3">
+                                    <p className="text-[10px] font-black uppercase tracking-widest text-gray-500">Total Geral</p>
+                                </td>
+                                <td className="p-3">
+                                    <p className={`font-mono text-base font-black ${totalInvestido < 0 ? 'text-red-600' : 'text-blue-800'}`} data-testid="text-total-geral">{formatBRL(totalInvestido)}</p>
+                                </td>
+                                <td colSpan={4}></td>
+                            </tr>
+                        </tfoot>
+                    )}
                 </table>
             </div>
 
