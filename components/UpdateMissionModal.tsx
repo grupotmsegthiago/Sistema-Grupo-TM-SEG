@@ -428,6 +428,15 @@ Responda ESTRITAMENTE em JSON puro, sem markdown, no formato: {"concluido": bool
                                 <FinStat label="KM da tabela (franquia)" value={franchiseKm > 0 ? `${franchiseKm} km` : '—'} />
                             </div>
 
+                            {endKmNum != null && startKm > 0 && endKmNum < startKm && (
+                                <div className="mt-2 flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 p-3" data-testid="warn-end-km-below-start">
+                                    <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-red-600" />
+                                    <p className="text-[12px] font-medium text-red-900">
+                                        O KM final digitado (<b>{endKmNum}</b>) é <b>menor</b> que o KM inicial registrado (<b>{startKm}</b>). O hodômetro não pode diminuir, por isso o KM rodado aparece como <b>0</b>. Confira o número do painel — ou ajuste o KM inicial no Financeiro, se ele estiver errado.
+                                    </p>
+                                </div>
+                            )}
+
                             {/* Auditoria do hodômetro por IA */}
                             {odometerExempt ? (
                             <div className="mt-3 flex items-start gap-2 rounded-lg border border-blue-200 bg-blue-50 p-3" data-testid="note-odometer-exempt">
