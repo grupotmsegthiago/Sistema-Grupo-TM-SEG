@@ -380,6 +380,7 @@ export const calculateMissionFinancials = (
         customProviderUnitHour?: number;
         customClientBase?: number;
         customProviderBase?: number;
+        disableFixedKmRule?: boolean;
         providerOpsOverride?: {
             distanceKm: number;
             durationHours: number;
@@ -1221,10 +1222,10 @@ export const calculateMissionFinancials = (
     const originalDistanceForCalc = distanceForCalculation;
     const originalDurationHours = durationHours;
 
-    if (is200kmAccompaniment && !isZeroValueMission) {
+    if (is200kmAccompaniment && !isZeroValueMission && !manualTableOverrides?.disableFixedKmRule) {
         distanceForCalculation = Math.min(distanceForCalculation, 200);
     }
-    if (isFixedDistanceClientRule && !isZeroValueMission) {
+    if (isFixedDistanceClientRule && !isZeroValueMission && !manualTableOverrides?.disableFixedKmRule) {
         distanceForCalculation = Math.min(distanceForCalculation, cFranchiseKm);
     }
     if (isFixedHoursClientRule && !isZeroValueMission) {
@@ -1254,7 +1255,7 @@ export const calculateMissionFinancials = (
         ? manualTableOverrides.providerOpsOverride.durationHours 
         : originalDurationHours;
 
-    if (is200kmAccompaniment && !isZeroValueMission) {
+    if (is200kmAccompaniment && !isZeroValueMission && !manualTableOverrides?.disableFixedKmRule) {
         providerDistForCalc = Math.min(providerDistForCalc, 200);
     }
 
@@ -1273,7 +1274,7 @@ export const calculateMissionFinancials = (
     const pFranchiseKm = (appliedProviderTable?.franchise_km || 100);
     const pFranchiseHr = (appliedProviderTable?.franchise_hours || 3);
 
-    if (isFixedDistanceProviderRule && !isZeroValueMission) {
+    if (isFixedDistanceProviderRule && !isZeroValueMission && !manualTableOverrides?.disableFixedKmRule) {
         providerDistForCalc = Math.min(providerDistForCalc, pFranchiseKm);
     }
     if (isFixedHoursProviderRule && !isZeroValueMission) {
@@ -1418,7 +1419,7 @@ export const calculateMissionFinancials = (
             unitPriceHour: cUnitPriceHour,
             franchiseKm: cFranchiseKm,
             franchiseHours: cFranchiseHr,
-            usedSpecialRule: isFixedDistanceClientRule || isFixedHoursClientRule, 
+            usedSpecialRule: (isFixedDistanceClientRule && !manualTableOverrides?.disableFixedKmRule) || isFixedHoursClientRule, 
             tableName: appliedClientTable?.operation_type, 
             tableId: appliedClientTable?.id.toString(),
             detectionLog: clientLog
@@ -1434,7 +1435,7 @@ export const calculateMissionFinancials = (
             franchiseHours: pFranchiseHr,
             tableName: appliedProviderTable?.operation_type, 
             tableId: appliedProviderTable?.id.toString(),
-            usedSpecialRule: isFixedDistanceProviderRule || isFixedHoursProviderRule,
+            usedSpecialRule: (isFixedDistanceProviderRule && !manualTableOverrides?.disableFixedKmRule) || isFixedHoursProviderRule,
             detectionLog: providerLog
         },
         profit: totalRevenue - totalCost,

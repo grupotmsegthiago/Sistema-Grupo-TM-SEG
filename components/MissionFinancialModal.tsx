@@ -412,6 +412,11 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
   // pela Directions API.
   const [editKmManual, setEditKmManual] = useState('');
   const [disableKmAutoCalc, setDisableKmAutoCalc] = useState(false);
+  // Desliga o CAP de distância das regras fixas (200KM/100KM/ACOMPANHAMENTO e
+  // tabela de franquia fixa) para reconhecer o KM CHEIO rodado e cobrar o
+  // excedente nas tabelas aplicadas. NÃO troca a tabela soberana; só remove o
+  // teto de distância. Persiste por OS no BillingAdjustment (entity_id).
+  const [disableFixedKmRule, setDisableFixedKmRule] = useState(false);
 
   const userRoleLower = useMemo(() => {
     try { return (JSON.parse(localStorage.getItem('userData') || '{}').role || '').toLowerCase(); } catch { return ''; }
@@ -476,7 +481,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
   // a qualquer momento. O sistema registra cada alteração no histórico permanente.
   const isAdminFullAccess = userRoleLower === 'administrador' || fullEditMode || isPlinio;
   const [unlockOverride, setUnlockOverride] = useState(false);
-  useEffect(() => { setUnlockOverride(false); setEditObservation(''); setFullEditMode(false); setTollConfirmAutoOpened(false); }, [mission?.id]);
+  useEffect(() => { setUnlockOverride(false); setEditObservation(''); setFullEditMode(false); setTollConfirmAutoOpened(false); setDisableFixedKmRule(false); }, [mission?.id]);
   useEffect(() => { if (!isOpen) { setFullEditMode(false); setUnlockOverride(false); setEditObservation(''); setShowTollConfirmDialog(false); setTollConfirmAutoOpened(false); } }, [isOpen]);
   const isEffectivelyLocked = isBillingLocked && !unlockOverride && !isAdminFullAccess;
   // Task #143: o número grande (VALOR FINAL cliente/fornecedor) e o breakdown
@@ -1193,6 +1198,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                       if (details.customProviderKm) setCustomProviderKm(details.customProviderKm);
                       if (details.customProviderHour) setCustomProviderHour(details.customProviderHour);
                       if (details.iblEnabled !== undefined) setIblEnabled(details.iblEnabled);
+                      if (details.disableFixedKmRule !== undefined) setDisableFixedKmRule(!!details.disableFixedKmRule);
 
                       if (details.systemCalculatedCost != null) setSystemCalculatedCost(details.systemCalculatedCost);
                       if (details.systemCalculatedRevenue != null) setSystemCalculatedRevenue(details.systemCalculatedRevenue);
@@ -1479,9 +1485,10 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
           customProviderUnitHour: customProviderHour ? parseNumber(customProviderHour) : undefined,
           customClientBase: customClientBase ? parseNumber(customClientBase) : undefined,
           customProviderBase: customProviderBase ? parseNumber(customProviderBase) : undefined,
+          disableFixedKmRule: disableFixedKmRule || undefined,
           providerOpsOverride: providerOpsOverride
       }, providersList);
-  }, [mission, clientTables, providerTables, clientData, manualClientTableId, manualProviderTableId, iblEnabled, tollInput, customProviderKm, customProviderHour, customClientKm, customClientHour, customClientBase, customProviderBase, providerOpsOverride, providersList]);
+  }, [mission, clientTables, providerTables, clientData, manualClientTableId, manualProviderTableId, iblEnabled, tollInput, customProviderKm, customProviderHour, customClientKm, customClientHour, customClientBase, customProviderBase, disableFixedKmRule, providerOpsOverride, providersList]);
 
   // Task #111: registra a última sugestão emitida pelo motor DHL (quando
   // não há override manual) — usada para detectar quando o auditor troca
@@ -1865,6 +1872,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
           clientTableId: (opts.clientTableId ?? manualClientTableId) || undefined,
           providerTableId: (opts.providerTableId ?? manualProviderTableId) || undefined,
           forceIblFee: iblEnabled,
+          disableFixedKmRule: disableFixedKmRule || undefined,
           providerOpsOverride: providerOpsOverride,
       }, providersList);
       if (!fin) return;
@@ -2459,6 +2467,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
               customProviderBase: customProviderBase || null,
               customProviderKm: customProviderKm || null,
               customProviderHour: customProviderHour || null,
+              disableFixedKmRule: disableFixedKmRule,
               iblEnabled: iblEnabled,
               revenueTotal: r2(revTotal),
               costTotal: r2(costTotal),
@@ -2776,6 +2785,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                               clientTableId: effectiveClientTableId || undefined,
                                               providerTableId: manualProviderTableId || undefined,
                                               forceIblFee: iblEnabled,
+                                              disableFixedKmRule: disableFixedKmRule || undefined,
                                               providerOpsOverride,
                                           },
                                           providersList,
@@ -3215,6 +3225,25 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                           )}
                       </div>
                   </>
+              )}
+              {lockAllowsRecalc && (
+                  <div className="border-t border-gray-800 pt-2 mt-1">
+                      <label className="flex items-start gap-2 cursor-pointer select-none" title="Reconhece o KM cheio executado, cobrando o excedente acima da franquia nas tabelas aplicadas. Não troca a tabela; apenas remove o teto de distância.">
+                          <input
+                              type="checkbox"
+                              checked={disableFixedKmRule}
+                              onChange={e => setDisableFixedKmRule(e.target.checked)}
+                              className="w-3.5 h-3.5 accent-amber-500 mt-0.5 flex-shrink-0"
+                              data-testid="checkbox-disable-fixed-km-rule"
+                          />
+                          <span className="text-[10px] font-bold text-amber-300 leading-tight">
+                              RECONHECER KM CHEIO RODADO (desmarcar regra de 200KM / franquia fixa)
+                              <span className="block text-[9px] font-medium text-gray-400 mt-0.5">
+                                  Cobra o excedente acima da franquia nas tabelas aplicadas. Não troca a tabela; só remove o teto de distância.
+                              </span>
+                          </span>
+                      </label>
+                  </div>
               )}
           </div>
         </header>
