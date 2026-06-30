@@ -356,10 +356,10 @@ const ProviderList: React.FC<ProviderListProps> = ({ onAddProvider, onEdit }) =>
                     <td className="px-6 py-4 text-right">
                       <div className="flex items-center justify-end gap-2">
                            {isAdmin && (
-                                <>
-                                    <button onClick={() => handleToggleStatus(item.id, item.status, item.name)} className={`p-2 rounded-lg transition-all ${item.status === 'Ativo' ? 'text-gray-400 hover:text-red-600 hover:bg-red-50' : 'text-gray-400 hover:text-green-600 hover:bg-green-50'}`} title={item.status === 'Ativo' ? 'Bloquear Fornecedor' : 'Desbloquear Fornecedor'} disabled={isToggling === item.id}>{isToggling === item.id ? <Loader2 size={18} className="animate-spin" /> : item.status === 'Ativo' ? <Ban size={18} /> : <CheckCircle2 size={18} />}</button>
-                                    <button onClick={() => onEdit(item.id)} className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-all"><Pencil size={18} /></button>
-                                </>
+                                <button onClick={() => handleToggleStatus(item.id, item.status, item.name)} className={`p-2 rounded-lg transition-all ${item.status === 'Ativo' ? 'text-gray-400 hover:text-red-600 hover:bg-red-50' : 'text-gray-400 hover:text-green-600 hover:bg-green-50'}`} title={item.status === 'Ativo' ? 'Bloquear Fornecedor' : 'Desbloquear Fornecedor'} disabled={isToggling === item.id}>{isToggling === item.id ? <Loader2 size={18} className="animate-spin" /> : item.status === 'Ativo' ? <Ban size={18} /> : <CheckCircle2 size={18} />}</button>
+                            )}
+                           {(isAdmin || isCommercial) && (
+                                <button onClick={() => onEdit(item.id)} className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-all" title="Editar Fornecedor / Tabela de Custos"><Pencil size={18} /></button>
                             )}
                       </div>
                     </td>

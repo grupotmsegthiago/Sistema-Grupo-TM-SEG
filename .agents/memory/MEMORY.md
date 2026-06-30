@@ -31,3 +31,4 @@
 - [Finalize odometer exemption](finalize-odometer-exempt.md) — fornecedores ATIVA e TM SEG dispensam print do hodômetro + auditoria IA ao concluir OS (mandam KM final depois); demais seguem obrigatórios.
 - [Finalize gate stale-closure](finalize-stale-closure.md) — resume() do checklist usa editData.status defasado; concluir/cancelar precisa de pendingFinalizeStatusRef (mesma vida útil de finalizeConfirmedRef, NUNCA reset no finally).
 - [iOS finalize clipboard](ios-finalize-clipboard.md) — ao concluir OS não feche o modal via onSuccess(report) nem auto-copie: iOS bloqueia cópia fora do gesto e o diálogo de fim de missão é desmontado; feche/refresh só no botão Fechar.
+- [Comercial price/cost table gates](comercial-price-table-gates.md) — client tables blocked by readOnly value fields (form isFinanceAdmin allowlist); provider tables blocked upstream by admin-only edit button in provider list; tables insert via supabase-js, no RLS.

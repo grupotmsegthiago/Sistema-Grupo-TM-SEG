@@ -90,6 +90,7 @@ const ClientPriceForm: React.FC<Props> = ({ onBack, onSuccess, id, defaultClient
   const isFinanceAdmin = currentUser && (
       currentUser.role === 'Diretoria' || 
       currentUser.role === 'Administrador' || 
+      (currentUser.role || '').toLowerCase() === 'comercial' ||
       (currentUser.permissions && currentUser.permissions.includes('*')) ||
       ['MICKAEL', 'BARBARA', 'MICHELLE'].some(n => currentUser.name && currentUser.name.toUpperCase().includes(n))
   );
