@@ -3563,12 +3563,30 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
 
 ⚠️ ISTO É UM TESTE — NADA FOI SALVO NO SISTEMA.`;
                                     try {
-                                        const printBlob = updatePrintBlobRef.current;
-                                        if (printBlob && await startWhatsappPhotoTextFlow(printBlob, testText)) {
-                                            showNotification('Teste: foto copiada', 'Cole a FOTO no WhatsApp; ao voltar aqui, o TEXTO da legenda copia sozinho.', 'success');
+                                        let photoBlob: Blob | null = updatePrintBlobRef.current;
+                                        let usedSample = false;
+                                        if (!photoBlob) {
+                                            // Sem print colado: usa o logotipo do sistema como
+                                            // foto de exemplo, para o teste SEMPRE sair com foto.
+                                            try {
+                                                const resp = await fetch('/logo.png');
+                                                if (resp.ok) {
+                                                    const raw = await resp.blob();
+                                                    const bitmap = await createImageBitmap(raw);
+                                                    const canvas = document.createElement('canvas');
+                                                    canvas.width = bitmap.width;
+                                                    canvas.height = bitmap.height;
+                                                    canvas.getContext('2d')?.drawImage(bitmap, 0, 0);
+                                                    photoBlob = await new Promise<Blob | null>(res => canvas.toBlob(res, 'image/png'));
+                                                    usedSample = !!photoBlob;
+                                                }
+                                            } catch (sampleErr) { console.warn('[TesteCopia] Falha ao preparar foto de exemplo:', sampleErr); }
+                                        }
+                                        if (photoBlob && await startWhatsappPhotoTextFlow(photoBlob, testText)) {
+                                            showNotification('Teste: foto copiada', `${usedSample ? 'Sem print colado — usei o logotipo como foto de exemplo. ' : ''}Cole a FOTO no WhatsApp; ao voltar aqui, o TEXTO da legenda copia sozinho.`, 'success');
                                         } else {
                                             await navigator.clipboard.writeText(testText);
-                                            showNotification('Teste copiado', printBlob ? 'Este navegador não suporta copiar foto junto; só o texto foi copiado.' : 'Texto de teste copiado (nenhum print colado). Cole no WhatsApp para conferir.', 'success');
+                                            showNotification('Teste copiado', photoBlob ? 'Este navegador não suporta copiar foto junto; só o texto foi copiado.' : 'Não foi possível preparar uma foto; só o texto foi copiado.', 'success');
                                         }
                                     } catch {
                                         showNotification('Erro', 'Não foi possível copiar o teste neste navegador.', 'error');
