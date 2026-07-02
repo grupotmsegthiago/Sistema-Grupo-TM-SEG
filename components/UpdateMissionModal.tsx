@@ -13,7 +13,8 @@ import {
   Calculator, Clock, Trash2, UserCheck, CarFront, DollarSign, AlertCircle, Info, ShieldAlert, AlertTriangle,
   Loader2, Search, ChevronDown, UserPlus, Package, ShieldCheck, Check, BadgeCheck, Sparkles,
   Milestone, Timer, Calendar, Globe, Briefcase, Zap, TrendingUp, RefreshCw, User, Phone, CheckCircle2, Mail,
-  ExternalLink, Radar, ArrowRightLeft, TableProperties, Gauge, XCircle, CalendarClock, CircleDot
+  ExternalLink, Radar, ArrowRightLeft, TableProperties, Gauge, XCircle, CalendarClock, CircleDot,
+  ClipboardList
 } from 'lucide-react';
 import { useLoadScript, Autocomplete, GoogleMap, Marker } from '@react-google-maps/api';
 import { googleMapsApiKey, libraries, googleMapsLoadConfig } from '../lib/maps';
@@ -683,6 +684,9 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
         confirmedEndTravelRef.current = null;
         confirmedPrintUrlRef.current = null;
         setPendingFinalizeConfirm(null);
+        // Print de atualização é estritamente da sessão: limpa ao abrir/trocar OS
+        updatePrintBlobRef.current = null;
+        setUpdatePrintPreview('');
     }, [mission?.id, isOpen]);
     
     // Controle de Relógio em Tempo Real
@@ -781,6 +785,60 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
     const [mirroringPreview, setMirroringPreview] = useState('');
     const [mirroringSending, setMirroringSending] = useState(false);
     const [mirroringExistingUrl, setMirroringExistingUrl] = useState('');
+
+    // Print da atualização (temporário — NUNCA vai para o Supabase/bucket).
+    // Fica só em memória: blob PNG com a marca d'água da TM SEG, copiado
+    // junto com o texto do formulário na hora de salvar.
+    const [updatePrintPreview, setUpdatePrintPreview] = useState('');
+    const [updatePrintProcessing, setUpdatePrintProcessing] = useState(false);
+    const updatePrintBlobRef = useRef<Blob | null>(null);
+
+    const processUpdatePrint = async (file: File) => {
+        setUpdatePrintProcessing(true);
+        try {
+            const loadImg = (src: string) => new Promise<HTMLImageElement>((resolve, reject) => {
+                const img = new Image();
+                img.onload = () => resolve(img);
+                img.onerror = () => reject(new Error('Falha ao carregar imagem'));
+                img.src = src;
+            });
+            const photoUrl = URL.createObjectURL(file);
+            try {
+                const [photo, logo] = await Promise.all([loadImg(photoUrl), loadImg('/logo.png')]);
+                const canvas = document.createElement('canvas');
+                canvas.width = photo.naturalWidth;
+                canvas.height = photo.naturalHeight;
+                const ctx = canvas.getContext('2d');
+                if (!ctx) throw new Error('Canvas indisponível');
+                ctx.drawImage(photo, 0, 0);
+                // Logo TM SEG (fundo transparente) no canto superior esquerdo,
+                // ~20% da largura da foto, sem distorcer a proporção da logo.
+                const logoW = Math.max(48, Math.round(canvas.width * 0.20));
+                const logoH = Math.round(logoW * (logo.naturalHeight / logo.naturalWidth));
+                const margin = Math.round(canvas.width * 0.025);
+                ctx.drawImage(logo, margin, margin, logoW, logoH);
+                const blob: Blob = await new Promise((resolve, reject) =>
+                    canvas.toBlob(b => b ? resolve(b) : reject(new Error('Falha ao gerar PNG')), 'image/png')
+                );
+                updatePrintBlobRef.current = blob;
+                setUpdatePrintPreview(canvas.toDataURL('image/jpeg', 0.85));
+            } finally {
+                URL.revokeObjectURL(photoUrl);
+            }
+        } catch (e) {
+            console.warn('[UpdatePrint] Falha ao processar print:', e);
+            updatePrintBlobRef.current = null;
+            setUpdatePrintPreview('');
+            showNotification('Erro', 'Não foi possível processar o print colado. Tente novamente.', 'error');
+        } finally {
+            setUpdatePrintProcessing(false);
+        }
+    };
+
+    const clearUpdatePrint = () => {
+        updatePrintBlobRef.current = null;
+        setUpdatePrintPreview('');
+    };
 
     const [editData, setEditData] = useState({
         provider: '', vehicleId: '', agent1: '', agent2: '',
@@ -1991,8 +2049,26 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
 🗾 *LINK DO GOOGLE:* ${editData.mapLink || 'N/A'}`;
 
             try {
-                await navigator.clipboard.writeText(report);
-                showNotification('Relatório Copiado', 'Monitoramento formatado salvo e copiado.', 'success');
+                const printBlob = updatePrintBlobRef.current;
+                if (printBlob && typeof ClipboardItem !== 'undefined' && typeof navigator.clipboard?.write === 'function') {
+                    try {
+                        await navigator.clipboard.write([new ClipboardItem({
+                            'text/plain': new Blob([report], { type: 'text/plain' }),
+                            'image/png': printBlob,
+                        })]);
+                        showNotification('Formulário e Foto copiados', 'Formulário e foto com logotipo copiados para a área de transferência.', 'success');
+                        // Print é de uso único: evita reutilização acidental num próximo salvamento
+                        updatePrintBlobRef.current = null;
+                        setUpdatePrintPreview('');
+                    } catch (combinedErr) {
+                        console.warn('[UpdatePrint] Cópia combinada falhou, copiando só o texto:', combinedErr);
+                        await navigator.clipboard.writeText(report);
+                        showNotification('Relatório Copiado', 'Monitoramento copiado (a foto não pôde ser incluída neste navegador).', 'success');
+                    }
+                } else {
+                    await navigator.clipboard.writeText(report);
+                    showNotification('Relatório Copiado', 'Monitoramento formatado salvo e copiado.', 'success');
+                }
             } catch (err) { console.warn(err); }
 
             // FIM DE MISSÃO: ao concluir, monta o relatório padrão de fechamento
@@ -3362,6 +3438,57 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
                                     <p className="text-[10px] font-bold text-slate-300 mt-1.5 italic truncate">{mission.currentLocation || 'Nenhuma ocorrência anterior'}</p>
                                 </div>
                             </div>
+                        </div>
+
+                        {/* COLAR PRINT — temporário, só desta sessão (não vai para o banco/bucket) */}
+                        <div className="pt-4 border-t border-white/5">
+                            <label className="text-[9px] font-black uppercase tracking-[0.2em] mb-1.5 block text-slate-400">
+                                Print da Atualização (opcional — copiado junto com o formulário ao salvar)
+                            </label>
+                            <div
+                                tabIndex={0}
+                                onPaste={(e) => {
+                                    const item = Array.from(e.clipboardData?.items || []).find(it => it.type.startsWith('image/'));
+                                    const file = item?.getAsFile();
+                                    if (file) { e.preventDefault(); void processUpdatePrint(file); }
+                                }}
+                                className="relative flex min-h-[140px] cursor-text flex-col items-center justify-center gap-2 rounded-2xl border-2 border-dashed border-amber-500/40 bg-slate-800/60 p-4 text-center outline-none transition-all focus:border-amber-400 hover:border-amber-400/70"
+                                data-testid="dropzone-update-print"
+                            >
+                                {updatePrintProcessing ? (
+                                    <div className="flex items-center gap-2 text-[11px] font-bold text-slate-300" data-testid="status-update-print-processing">
+                                        <Loader2 className="h-4 w-4 animate-spin" /> Aplicando logotipo TM SEG...
+                                    </div>
+                                ) : updatePrintPreview ? (
+                                    <>
+                                        <img src={updatePrintPreview} alt="Print com logotipo TM SEG" className="max-h-56 rounded-xl border border-white/10" data-testid="img-update-print-preview" />
+                                        <button
+                                            type="button"
+                                            onClick={clearUpdatePrint}
+                                            className="mt-1 rounded-md bg-slate-700 px-2.5 py-1 text-[10px] font-black uppercase tracking-wider text-slate-200 hover:bg-slate-600"
+                                            data-testid="button-update-print-remove"
+                                        >
+                                            Remover print
+                                        </button>
+                                    </>
+                                ) : (
+                                    <>
+                                        <ClipboardList size={28} className="text-amber-500/70" />
+                                        <p className="text-[11px] font-black uppercase tracking-widest text-slate-200">Colar Print</p>
+                                        <p className="text-[9px] font-bold text-slate-400">Clique aqui e cole o print (Ctrl+V)</p>
+                                        <label className="mt-1 inline-flex cursor-pointer items-center gap-1.5 rounded-md bg-slate-700 px-2.5 py-1.5 text-[10px] font-bold text-slate-200 hover:bg-slate-600" data-testid="button-update-print-attach">
+                                            <Plus className="h-3.5 w-3.5" /> Anexar imagem
+                                            <input type="file" accept="image/*" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) void processUpdatePrint(f); e.currentTarget.value = ''; }} />
+                                        </label>
+                                    </>
+                                )}
+                            </div>
+                            {updatePrintPreview && !updatePrintProcessing && (
+                                <div className="mt-2 flex items-center gap-2 rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-3 py-2" data-testid="text-update-print-ready">
+                                    <CheckCircle2 size={14} className="shrink-0 text-emerald-400" />
+                                    <p className="text-[10px] font-bold text-emerald-300">Foto capturada e logotipo TM SEG aplicado para cópia. Ela NÃO é salva no sistema — só vai junto na área de transferência ao salvar.</p>
+                                </div>
+                            )}
                         </div>
                         <div className="grid grid-cols-3 gap-4 pt-4 border-t border-white/5">
                             <div className="flex items-center gap-2">

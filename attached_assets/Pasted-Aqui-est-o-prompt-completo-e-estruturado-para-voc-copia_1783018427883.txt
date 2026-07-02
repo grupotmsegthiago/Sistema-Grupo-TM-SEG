@@ -1,0 +1,31 @@
+Aqui está o prompt completo e estruturado para você copiar e colar diretamente no chat do Replit AI. Ele foi desenhado para agir estritamente como um aditivo, sem quebrar ou modificar o fluxo de dados e as validações que você já tem funcionando no seu sistema.
+
+Copie o prompt abaixo para usar no Replit:
+Plaintext
+Atue como um desenvolvedor especialista em React, TypeScript e Tailwind CSS. Preciso adicionar uma nova funcionalidade (um aditivo isolado, sem alterar o backend ou as regras existentes) na minha tela de "Atualizar Missão". 
+
+Atualmente, ao salvar as alterações, o sistema gera um formulário em formato de texto padronizado e o copia automaticamente para a área de transferência do usuário para ser enviado via WhatsApp. Eu quero que, além de copiar o texto do formulário, o sistema também copie junto a imagem que foi colada nessa tela.
+
+Requisitos específicos para a implementação:
+
+1. Área de Captura (Frontend):
+- Adicione um container/área visual na tela para colar o print. O usuário deve conseguir apenas clicar nessa área ou usar o atalho padrão (Ctrl+V).
+- Use a API do navegador (`navigator.clipboard` ou o evento `onPaste`) para capturar o arquivo de imagem do clipboard.
+- Essa imagem colada deve ser exibida temporariamente em um preview dentro desse container para o usuário ver que deu certo.
+- IMPORTANTE: Essa foto NÃO deve ser salva no banco de dados (Supabase) e nem enviada para nenhum bucket. Ela é estritamente temporária e serve apenas para o fluxo de atualização daquela sessão.
+
+2. Processamento da Imagem (Marca d'água automática via Canvas):
+- O sistema já possui a imagem do logotipo da TM SEG (use o caminho/componente da logo existente no projeto). Ela possui fundo transparente.
+- Assim que o print for colado, utilize um elemento <canvas> em segundo plano (oculto) para processar a imagem.
+- Insira o logotipo da TM SEG fixado no canto superior esquerdo da foto colada, sem fundo preto, comportando-se exatamente como uma marca d'água limpa sobreposta à imagem original (exatamente como uma aplicação padrão de logo em fotos de escolta). A logo não deve distorcer a proporção da imagem original.
+
+3. Fluxo de Cópia (Área de Transferência Combinada):
+- No momento em que o usuário salvar a atualização (no evento padrão que você já possui), o sistema deve gerar o arquivo final da imagem processada (com a marca d'água inserida).
+- Utilize a API `navigator.clipboard.write([new ClipboardItem({ ... })])` para injetar na área de transferência tanto o texto padrão do formulário do WhatsApp (`text/plain`) quanto o arquivo binário da imagem com a marca d'água (`image/png` ou `image/jpeg`). Dessa forma, ao dar Ctrl+V no WhatsApp do cliente, a foto com o logo e o texto do formulário subam juntos de forma idêntica ao envio manual.
+
+4. Restrições de Segurança do Código:
+- Não altere nenhuma lógica de cálculo de horas, faturamento, rotas, tabelas do Supabase ou states existentes que não sejam relacionados ao preview e processamento desse print.
+- Mantenha o layout em Tailwind integrado perfeitamente ao tema escuro/padrão atual da tela de atualização.
+- Apresente o código de forma modular (seja adicionando o novo container de colagem e os handlers de manipulação do canvas dentro do arquivo da tela ou isolando a função de render do canvas).
+
+Gere as alterações necessárias preservando 100% da integridade da estrutura atual.
