@@ -3547,6 +3547,38 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
                                     <p className="text-[10px] font-bold text-emerald-300">Foto capturada e logotipo TM SEG aplicado para cópia. Ela NÃO é salva no sistema — só vai junto na área de transferência ao salvar.</p>
                                 </div>
                             )}
+                            {/* TESTE DE CÓPIA: copia texto de teste + foto (se colada) sem salvar nada */}
+                            <button
+                                type="button"
+                                onClick={async () => {
+                                    const testText = `*MONITORAMENTO GRUPO TMSEG* (TESTE DE CÓPIA)
+*OS:* ${mission?.id || '—'} | *STATUS:* ${(editData.status || '').toString().toUpperCase()}
+
+🏢 *CLIENTE:* ${mission?.client || '—'}
+📣 *OCORRÊNCIA:* ${(editData.description || 'SEM INFORMAÇÃO').toUpperCase()}
+
+⚠️ ISTO É UM TESTE — NADA FOI SALVO NO SISTEMA.`;
+                                    try {
+                                        const printBlob = updatePrintBlobRef.current;
+                                        if (printBlob && typeof ClipboardItem !== 'undefined' && typeof navigator.clipboard?.write === 'function') {
+                                            await navigator.clipboard.write([new ClipboardItem({
+                                                'text/plain': new Blob([testText], { type: 'text/plain' }),
+                                                'image/png': printBlob,
+                                            })]);
+                                            showNotification('Teste copiado', 'Texto de teste + foto copiados juntos. Cole no WhatsApp para conferir.', 'success');
+                                        } else {
+                                            await navigator.clipboard.writeText(testText);
+                                            showNotification('Teste copiado', printBlob ? 'Este navegador não suporta copiar foto junto; só o texto foi copiado.' : 'Texto de teste copiado (nenhum print colado). Cole no WhatsApp para conferir.', 'success');
+                                        }
+                                    } catch {
+                                        showNotification('Erro', 'Não foi possível copiar o teste neste navegador.', 'error');
+                                    }
+                                }}
+                                className="mt-2 inline-flex items-center gap-1.5 rounded-lg bg-amber-500/20 px-3 py-2 text-[10px] font-black uppercase tracking-wider text-amber-300 ring-1 ring-amber-500/40 hover:bg-amber-500/30"
+                                data-testid="button-test-copy"
+                            >
+                                <ClipboardList size={14} /> Testar cópia (texto + foto)
+                            </button>
                         </div>
                         <div className="grid grid-cols-3 gap-4 pt-4 border-t border-white/5">
                             <div className="flex items-center gap-2">
