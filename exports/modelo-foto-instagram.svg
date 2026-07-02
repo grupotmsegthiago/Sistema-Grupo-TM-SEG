@@ -10,17 +10,21 @@
       <stop offset='90%' stop-color='#285AEB'/>
     </radialGradient>
     <filter id='sh' x='-40%' y='-40%' width='180%' height='180%'>
-      <feDropShadow dx='0' dy='1' stdDeviation='1.5' flood-color='#000' flood-opacity='0.85'/>
+      <feDropShadow dx='0' dy='0.8' stdDeviation='1.2' flood-color='#000' flood-opacity='0.85'/>
     </filter>
   </defs>
-  <g filter='url(#sh)'>
-    <g transform='translate(672, 499)'>
-      <rect x='0' y='0' width='20' height='20' rx='5.5' fill='url(#ig)'/>
-      <rect x='4' y='4' width='12' height='12' rx='4' fill='none' stroke='white' stroke-width='1.6'/>
-      <circle cx='10' cy='10' r='3.1' fill='none' stroke='white' stroke-width='1.6'/>
-      <circle cx='14.6' cy='5.4' r='1.1' fill='white'/>
-      <text x='26' y='15' font-family='Arial, Helvetica, sans-serif' font-size='14' font-weight='800' fill='white'>@grupo_tmseg</text>
-      <text x='165' y='34' text-anchor='end' font-family='Arial, Helvetica, sans-serif' font-size='11' font-weight='700' fill='white'>www.grupotmseg.com.br</text>
+  <g filter='url(#sh)' font-family='Arial, Helvetica, sans-serif' font-weight='700' fill='white'>
+    <g transform='translate(837, 535)'>
+      <!-- linha de baixo: site -->
+      <text x='0' y='0' text-anchor='end' font-size='11'>www.grupotmseg.com.br</text>
+      <!-- linha de cima: instagram (ícone + @) alinhada à direita, logo acima -->
+      <text x='0' y='-16' text-anchor='end' font-size='11'>@grupo_tmseg</text>
+      <g transform='translate(-106.55000000000001, -26.5)'>
+        <rect x='0' y='0' width='13' height='13' rx='3.6' fill='url(#ig)'/>
+        <rect x='2.6' y='2.6' width='7.8' height='7.8' rx='2.6' fill='none' stroke='white' stroke-width='1.1'/>
+        <circle cx='6.5' cy='6.5' r='2' fill='none' stroke='white' stroke-width='1.1'/>
+        <circle cx='9.5' cy='3.5' r='0.75' fill='white'/>
+      </g>
     </g>
   </g>
 </svg>
