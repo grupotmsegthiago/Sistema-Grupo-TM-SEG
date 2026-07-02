@@ -378,6 +378,11 @@ async function sendZapiTextMessage(phoneDigits: string, message: string): Promis
   if (!ZAPI_INSTANCE || !ZAPI_TOKEN) {
     return { ok: false, error: 'Z-API não configurada', messageId: null };
   }
+  // BOT SILENCIADO (pedido do usuário, jul/2026): nenhum envio de WhatsApp
+  // pelo número da Central, a menos que WHATSAPP_BOT_ENABLED=true.
+  if ((process.env.WHATSAPP_BOT_ENABLED || '').trim().toLowerCase() !== 'true') {
+    return { ok: false, error: 'Envio de WhatsApp desativado — bot silenciado', messageId: null };
+  }
   const digits = String(phoneDigits || '').replace(/\D/g, '');
   if (!digits) return { ok: false, error: 'telefone vazio', messageId: null };
   // Brasil: garante prefixo 55 quando vier apenas DDD+número (10/11 dígitos).
@@ -779,7 +784,13 @@ async function checkAndSendDhlIntakeReminders(): Promise<void> {
 
   // ── Canal 1b: lembrete por WhatsApp (Z-API) ───────────────────────────
   let marcadosWhatsapp = 0;
-  for (const el of precisaFornecedorWhatsapp) {
+  // BOT SILENCIADO: com o bot desativado, pula o canal inteiro em silêncio
+  // (uma linha de log por tick, sem spam de erro nem auditoria de falha).
+  const botWhatsappSilenciado = (process.env.WHATSAPP_BOT_ENABLED || '').trim().toLowerCase() !== 'true';
+  if (botWhatsappSilenciado && precisaFornecedorWhatsapp.length > 0) {
+    console.log(`[DHL Reminder Worker] bot WhatsApp silenciado — pulando ${precisaFornecedorWhatsapp.length} lembrete(s) de fornecedor.`);
+  }
+  for (const el of botWhatsappSilenciado ? [] : precisaFornecedorWhatsapp) {
     const { intake, mission, reason } = el;
     const { phone: providerPhone, name: providerName, link } = resolveDestinos(el);
     if (!providerPhone || !link) continue; // sem telefone — retry no próximo tick

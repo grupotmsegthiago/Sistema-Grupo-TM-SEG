@@ -78,6 +78,14 @@ const ZAPI_INSTANCE = process.env.ZAPI_INSTANCE_ID || process.env.VITE_ZAPI_INST
 const ZAPI_TOKEN = process.env.ZAPI_TOKEN || process.env.VITE_ZAPI_TOKEN || '';
 const ZAPI_CLIENT_TOKEN = process.env.ZAPI_CLIENT_TOKEN || process.env.VITE_ZAPI_CLIENT_TOKEN || '';
 const zapiBase = () => `https://api.z-api.io/instances/${ZAPI_INSTANCE}/token/${ZAPI_TOKEN}`;
+// BOT SILENCIADO (pedido do usuário, jul/2026): o número da Central NÃO pode
+// enviar nem responder nada pelo sistema. Todo envio de WhatsApp (manual ou
+// automático) fica bloqueado, a menos que WHATSAPP_BOT_ENABLED=true seja
+// definido explicitamente nos secrets. Leituras (listar grupos/status) seguem
+// liberadas — só o ENVIO é bloqueado.
+export const isWhatsappBotEnabled = () =>
+  (process.env.WHATSAPP_BOT_ENABLED || '').trim().toLowerCase() === 'true';
+console.log(`[WhatsApp Bot] Estado: ${isWhatsappBotEnabled() ? 'ATIVO (envios liberados)' : 'SILENCIADO (nenhum envio será feito)'}`);
 
 const ai = new GoogleGenAI({
   apiKey: process.env.AI_INTEGRATIONS_GEMINI_API_KEY,
@@ -874,6 +882,7 @@ export async function registerRoutes(
   app.post('/api/whatsapp/send', requireAuth, async (req: Request, res: Response) => {
     try {
       if (!ZAPI_INSTANCE || !ZAPI_TOKEN) return res.status(503).json({ error: 'Z-API não configurada' });
+      if (!isWhatsappBotEnabled()) return res.status(503).json({ error: 'Envio de WhatsApp desativado — o bot está silenciado por decisão da diretoria.' });
       const { phone, message } = req.body || {};
       if (!phone || !message) return res.status(400).json({ error: 'phone e message são obrigatórios' });
       const headers: any = { 'Content-Type': 'application/json' };
@@ -7308,7 +7317,9 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
           } else {
           const rawPhones = process.env.MANUAL_OVERRIDE_ALERT_WHATSAPP || '';
           const phones = rawPhones.split(/[,;\s]+/).map(s => s.replace(/\D/g, '')).filter(p => p.length >= 10);
-          if (phones.length > 0 && ZAPI_INSTANCE && ZAPI_TOKEN) {
+          if (phones.length > 0 && !isWhatsappBotEnabled()) {
+            console.log(`[OverrideAlert] ${scope}=${name} → bot WhatsApp silenciado; pulando envio.`);
+          } else if (phones.length > 0 && ZAPI_INSTANCE && ZAPI_TOKEN) {
             const waMessage =
               `⚠️ *TM SEG — Excesso de edições manuais*\n\n` +
               `${scopeLabel}: *${name}*\n` +
