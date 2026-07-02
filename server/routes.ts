@@ -902,6 +902,73 @@ export async function registerRoutes(
     }
   });
 
+  // ── Envio automático ao GRUPO de WhatsApp do cliente ─────────────────────
+  // EXCEÇÃO CONTROLADA ao kill-switch do bot: o bot NÃO fala com ninguém em
+  // conversa individual, mas PODE postar atualizações de OS no grupo que foi
+  // explicitamente vinculado ao cliente no cadastro (clients.whatsapp_group_id).
+  // O grupo de destino é SEMPRE resolvido server-side pelo cadastro do cliente
+  // (match EXATO por name/trading_name) — o frontend nunca escolhe o destino.
+  app.post('/api/whatsapp/send-group', requireAuth, async (req: Request, res: Response) => {
+    try {
+      if (!ZAPI_INSTANCE || !ZAPI_TOKEN) return res.status(503).json({ error: 'Z-API não configurada' });
+      const { clientName, message, imageBase64 } = req.body || {};
+      if (!clientName || !message) return res.status(400).json({ error: 'clientName e message são obrigatórios' });
+
+      const sbUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || '';
+      const sbKey = process.env.SUPABASE_SERVICE_KEY || process.env.VITE_SUPABASE_ANON_KEY || '';
+      if (!sbUrl || !sbKey) return res.status(503).json({ error: 'Supabase não configurado' });
+      const sb = createClient(sbUrl, sbKey);
+
+      // Isolamento de cliente: match EXATO (name OU trading_name), nunca ILIKE.
+      let { data: rows } = await sb.from('clients')
+        .select('id, name, whatsapp_group_id')
+        .eq('name', String(clientName))
+        .limit(1);
+      if (!rows || rows.length === 0) {
+        const r2 = await sb.from('clients')
+          .select('id, name, whatsapp_group_id')
+          .eq('trading_name', String(clientName))
+          .limit(1);
+        rows = r2.data || [];
+      }
+      const clientRow = rows?.[0];
+      if (!clientRow) return res.json({ skipped: true, reason: 'cliente não encontrado no cadastro' });
+      const groupId = String(clientRow.whatsapp_group_id || '').trim();
+      if (!groupId) return res.json({ skipped: true, reason: 'cliente sem grupo de WhatsApp configurado' });
+      // Guarda do kill-switch: o destino PRECISA ser um GRUPO (id termina em
+      // "-group" ou "@g.us"). Nunca enviar para contato individual por aqui.
+      if (!/-group$|@g\.us$/i.test(groupId)) {
+        console.warn(`[WhatsApp Grupo] BLOQUEADO: whatsapp_group_id do cliente ${clientRow.name} não é um ID de grupo válido.`);
+        return res.status(400).json({ error: 'O destino configurado no cadastro do cliente não é um grupo de WhatsApp válido.' });
+      }
+
+      const headers: any = { 'Content-Type': 'application/json' };
+      if (ZAPI_CLIENT_TOKEN) headers['Client-Token'] = ZAPI_CLIENT_TOKEN;
+
+      // Com foto: send-image (foto + texto como legenda). Sem foto: send-text.
+      const endpoint = imageBase64 ? 'send-image' : 'send-text';
+      const body = imageBase64
+        ? { phone: groupId, image: imageBase64, caption: message }
+        : { phone: groupId, message };
+      const r = await fetch(`${zapiBase()}/${endpoint}`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(body),
+      });
+      const text = await r.text();
+      let data: any = null;
+      try { data = JSON.parse(text); } catch { data = { raw: text }; }
+      if (!r.ok) {
+        console.warn(`[WhatsApp Grupo] Falha Z-API ${endpoint} → grupo ${groupId} (cliente ${clientRow.name}) HTTP ${r.status}: ${text.slice(0, 200)}`);
+        return res.status(r.status).json({ error: 'Falha Z-API', detail: data });
+      }
+      console.log(`[WhatsApp Grupo] Atualização enviada ao grupo do cliente ${clientRow.name} (${endpoint}).`);
+      res.json({ sent: true, endpoint, ...((data && typeof data === 'object') ? data : {}) });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
   app.post('/api/push/test', async (req: Request, res: Response) => {
     try {
       const { subscription } = req.body;

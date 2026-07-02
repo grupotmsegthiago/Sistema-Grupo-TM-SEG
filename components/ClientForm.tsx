@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { ArrowLeft, Save, Building2, Truck, Users, Search, Loader2, AlertTriangle, DollarSign, Edit, Trash2, Plus, FileSpreadsheet, MessageCircle, RefreshCw, Navigation, FileText, MapPin, CheckSquare, Square, X, Edit2, Clock, ScrollText, TrendingUp, Percent, Send, CheckCircle, ShieldCheck, ArrowRight, RotateCcw, Copy, Lock, Calendar, Check, Mail, Phone as PhoneIcon, Map as MapIcon, Hash, Fingerprint, Calculator, Target, UserCheck, XCircle } from 'lucide-react';
 import { Client, ClientPriceTable } from '../types';
 import { supabase } from '../lib/supabase';
+import { authFetch } from '../lib/authFetch';
 import { logAction } from '../lib/logger';
 import { clientFuzzyFilter } from '../lib/financialUtils';
 import { generateAutoBands, suggestAutoMasterFromManualTables, type ProviderAutoMasterConfig } from '../lib/providerAutoPricing';
@@ -95,6 +96,36 @@ const ClientForm: React.FC<ClientFormProps> = ({
   const [duplicateError, setDuplicateError] = useState('');
   
   const [priceTables, setPriceTables] = useState<ClientPriceTable[]>([]);
+
+  // Grupos de WhatsApp em que o bot (número da Central) está — para vincular
+  // o grupo do cliente e permitir o envio automático das atualizações de OS.
+  const [whatsappGroups, setWhatsappGroups] = useState<Array<{ id: string; name: string }>>([]);
+  const [whatsappGroupsLoading, setWhatsappGroupsLoading] = useState(false);
+  const [whatsappGroupsError, setWhatsappGroupsError] = useState('');
+  const loadWhatsappGroups = async () => {
+    setWhatsappGroupsLoading(true);
+    setWhatsappGroupsError('');
+    try {
+      const resp = await authFetch('/api/whatsapp/groups');
+      if (!resp.ok) {
+        const detail = await resp.json().catch(() => null);
+        throw new Error(detail?.error || `Falha ao listar grupos (HTTP ${resp.status})`);
+      }
+      const data = await resp.json();
+      const list = Array.isArray(data) ? data : (data?.groups || []);
+      const mapped = list
+        .map((g: any) => ({ id: String(g.id || g.phone || ''), name: String(g.subject || g.name || 'Grupo sem nome') }))
+        .filter((g: any) => g.id)
+        .sort((a: any, b: any) => a.name.localeCompare(b.name));
+      setWhatsappGroups(mapped);
+    } catch (e: any) {
+      setWhatsappGroupsError(e?.message || 'Falha ao consultar grupos do WhatsApp.');
+    } finally {
+      setWhatsappGroupsLoading(false);
+    }
+  };
+  useEffect(() => { loadWhatsappGroups(); }, []);
+
   const getEmailList = (field: 'operational_email' | 'medicao_email'): string[] => {
     const val = formData[field] || '';
     return val.split(',').map(e => e.trim()).filter(Boolean);
@@ -887,6 +918,44 @@ const ClientForm: React.FC<ClientFormProps> = ({
                             <option value="Ativo">Ativo</option>
                             <option value="Inativo">Inativo</option>
                         </select>
+                    </div>
+                    <div className="space-y-1.5 md:col-span-2">
+                        <label className={LABEL_CLASS}>Grupo de WhatsApp do Cliente (envio automático de atualizações de OS)</label>
+                        <div className="flex items-center gap-2">
+                            <div className="relative flex-1">
+                                <select
+                                    className={`${INPUT_CLASS} pl-10`}
+                                    value={formData.whatsapp_group_id}
+                                    onChange={e => setFormData({...formData, whatsapp_group_id: e.target.value})}
+                                    disabled={whatsappGroupsLoading}
+                                    data-testid="select-client-whatsapp-group"
+                                >
+                                    <option value="">— Nenhum (não enviar automaticamente) —</option>
+                                    {formData.whatsapp_group_id && !whatsappGroups.some(g => g.id === formData.whatsapp_group_id) && (
+                                        <option value={formData.whatsapp_group_id}>Grupo salvo (ID: {formData.whatsapp_group_id})</option>
+                                    )}
+                                    {whatsappGroups.map(g => (
+                                        <option key={g.id} value={g.id}>{g.name}</option>
+                                    ))}
+                                </select>
+                                <MessageCircle className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
+                            </div>
+                            <button
+                                type="button"
+                                onClick={loadWhatsappGroups}
+                                disabled={whatsappGroupsLoading}
+                                className="p-2.5 rounded-lg border border-white/10 bg-white/5 text-gray-300 hover:bg-white/10 disabled:opacity-50 transition-colors"
+                                title="Atualizar lista de grupos"
+                                data-testid="button-refresh-whatsapp-groups"
+                            >
+                                <RefreshCw size={16} className={whatsappGroupsLoading ? 'animate-spin' : ''} />
+                            </button>
+                        </div>
+                        {whatsappGroupsError ? (
+                            <p className="text-[10px] text-amber-400 font-bold" data-testid="text-whatsapp-groups-error">{whatsappGroupsError} — verifique a conexão do WhatsApp da Central.</p>
+                        ) : (
+                            <p className="text-[10px] text-gray-500">O bot precisa estar dentro do grupo. Toda atualização de OS deste cliente será enviada automaticamente para o grupo selecionado.</p>
+                        )}
                     </div>
                     <div className="space-y-1.5">
                         <label className={LABEL_CLASS}>Empresa Emissora (NF / Asaas)</label>

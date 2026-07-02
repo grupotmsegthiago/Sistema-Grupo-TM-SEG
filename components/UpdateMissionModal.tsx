@@ -55,6 +55,39 @@ const LABEL_CLASS = "text-[9px] font-black text-gray-400 uppercase mb-1 block tr
 const INPUT_CLASS = "w-full p-2.5 border border-gray-200 rounded-xl text-xs font-bold text-gray-700 focus:ring-2 focus:ring-red-500/10 focus:border-red-500 outline-none transition-all uppercase";
 const DROPDOWN_ITEM_CLASS = "w-full flex items-center justify-between p-3 text-[11px] font-bold hover:bg-red-50 border-b border-gray-50 uppercase text-gray-700 transition-colors text-left";
 
+// ── Envio automático ao grupo de WhatsApp do cliente ────────────────────────
+// O destino é resolvido no BACKEND pelo cadastro do cliente (whatsapp_group_id).
+// Fire-and-forget: nunca bloqueia o salvamento da OS.
+async function sendUpdateToClientGroup(
+    clientName: string,
+    message: string,
+    photo: Blob | null,
+): Promise<{ sent: boolean; skipped?: boolean; error?: string }> {
+    try {
+        if (!clientName || !message) return { sent: false, skipped: true };
+        let imageBase64: string | undefined;
+        if (photo) {
+            imageBase64 = await new Promise<string>((resolve, reject) => {
+                const fr = new FileReader();
+                fr.onload = () => resolve(String(fr.result));
+                fr.onerror = () => reject(fr.error);
+                fr.readAsDataURL(photo);
+            });
+        }
+        const resp = await authFetch('/api/whatsapp/send-group', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ clientName, message, imageBase64 }),
+        });
+        const data = await resp.json().catch(() => null);
+        if (resp.ok && data?.sent) return { sent: true };
+        if (data?.skipped) return { sent: false, skipped: true };
+        return { sent: false, error: data?.error || `HTTP ${resp.status}` };
+    } catch (e: any) {
+        return { sent: false, error: e?.message || 'falha de rede' };
+    }
+}
+
 interface UpdateMissionModalProps {
     isOpen: boolean;
     onClose: () => void;
@@ -2087,6 +2120,19 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
             let combinedCopied = false;
             // Na conclusão de OS a cópia é feita mais abaixo (texto de fim de
             // missão + foto), então este bloco só roda para atualizações normais.
+            // Envio automático ao grupo de WhatsApp do cliente (se configurado
+            // no cadastro). Fire-and-forget: não bloqueia o fluxo de cópia.
+            if (!isNowCompleted) {
+                const groupPhoto = updatePrintBlobRef.current;
+                void sendUpdateToClientGroup(mission.client || '', report, groupPhoto).then(r => {
+                    if (r.sent) {
+                        showNotification('WhatsApp', 'Atualização enviada automaticamente ao grupo do cliente.', 'success');
+                    } else if (r.error) {
+                        showNotification('WhatsApp', `Envio automático ao grupo do cliente falhou: ${r.error}`, 'error');
+                    }
+                }).catch(() => {});
+            }
+
             if (!isNowCompleted) try {
                 const printBlob = updatePrintBlobRef.current;
                 if (printBlob) {
@@ -2176,6 +2222,16 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
                             }
                         } catch (photoErr) { console.warn('[FimDeMissao] Falha ao preparar foto:', photoErr); }
                     }
+                    // Envio automático ao grupo de WhatsApp do cliente (se
+                    // configurado no cadastro). Fire-and-forget.
+                    void sendUpdateToClientGroup(mission.client || '', finalizeReportText, photoBlob).then(r => {
+                        if (r.sent) {
+                            showNotification('WhatsApp', 'Fim de missão enviado automaticamente ao grupo do cliente.', 'success');
+                        } else if (r.error) {
+                            showNotification('WhatsApp', `Envio automático ao grupo do cliente falhou: ${r.error}`, 'error');
+                        }
+                    }).catch(() => {});
+
                     if (photoBlob && showWhatsappCopyPopup(photoBlob, finalizeReportText)) {
                         // Popup guiado: COPIAR FOTO → COPIAR TEXTO → fecha sozinho.
                         finalizeAutoCopied = true;

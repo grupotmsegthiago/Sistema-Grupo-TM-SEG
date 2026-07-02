@@ -32,6 +32,6 @@
 - [Finalize gate stale-closure](finalize-stale-closure.md) — resume() do checklist usa editData.status defasado; concluir/cancelar precisa de pendingFinalizeStatusRef (mesma vida útil de finalizeConfirmedRef, NUNCA reset no finally).
 - [iOS finalize clipboard](ios-finalize-clipboard.md) — ao concluir OS não feche o modal via onSuccess(report) nem auto-copie: iOS bloqueia cópia fora do gesto e o diálogo de fim de missão é desmontado; feche/refresh só no botão Fechar.
 - [Dev server sem watch](dev-server-no-watch.md) — tsx roda sem watch; mudança em server/ exige restart do workflow, senão rota nova cai no catch-all do Vite (200 HTML em ~10ms, sem `:: json`).
-- [Z-API Central connection](zapi-central-connection.md) — conta exige Client-Token em TODA chamada; secrets ZAPI_* globais, prod só vê após republish; número oficial (11) 92683-9456.
-- [WhatsApp bot kill-switch](whatsapp-bot-kill-switch.md) — bot Z-API MUDO por padrão; todo envio bloqueado sem WHATSAPP_BOT_ENABLED=true; novos envios devem passar pelos guards existentes.
+- [Z-API Central connection](zapi-central-connection.md) — conta exige Client-Token em TODA chamada; secrets ZAPI_* globais, prod só vê após republish.
+- [WhatsApp bot kill-switch](whatsapp-bot-kill-switch.md) — bot Z-API MUDO por padrão (sem WHATSAPP_BOT_ENABLED=true); única exceção: postar atualização de OS no GRUPO vinculado ao cliente (send-group, validado server-side).
 - [Comercial price/cost table gates](comercial-price-table-gates.md) — client tables blocked by readOnly value fields (form isFinanceAdmin allowlist); provider tables blocked upstream by admin-only edit button in provider list; tables insert via supabase-js, no RLS.
