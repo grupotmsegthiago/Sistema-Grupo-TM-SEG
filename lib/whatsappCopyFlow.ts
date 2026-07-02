@@ -1,91 +1,114 @@
-// Fluxo FOTO → TEXTO para WhatsApp.
+// Popup guiado FOTO → TEXTO para WhatsApp.
 //
 // LIMITAÇÃO REAL (comprovada em teste): o WhatsApp Web IGNORA a imagem quando
-// o clipboard tem texto+imagem no mesmo ClipboardItem — ele sempre cola só o
-// texto, independentemente da ordem dos formatos. O padrão foto+legenda do
-// WhatsApp exige DUAS colagens: 1) colar a FOTO (abre a caixa de legenda),
-// 2) colar o TEXTO na legenda. Como o clipboard só comporta um conteúdo por
-// vez, este fluxo copia a FOTO primeiro e troca para o TEXTO automaticamente
-// quando o usuário volta o foco para a aba (após colar a foto no WhatsApp),
-// com um botão de apoio numa barra flutuante não bloqueante.
+// o clipboard tem texto+imagem no mesmo ClipboardItem — sempre cola só o
+// texto, em qualquer ordem. O padrão foto+legenda exige DUAS colagens:
+// 1) FOTO sozinha no clipboard (abre a caixa de legenda), 2) TEXTO na legenda.
+//
+// Este popup OBRIGA o funcionário a seguir o fluxo certo:
+//   PASSO 1: botão COPIAR FOTO  → cola a foto no WhatsApp
+//   PASSO 2: botão COPIAR TEXTO → cola na legenda e envia
+// Após copiar o texto, o popup fecha sozinho. Como cada cópia acontece num
+// clique (gesto do usuário), funciona também em Safari/iOS.
 
-let activeBar: HTMLDivElement | null = null;
-let cleanupFns: Array<() => void> = [];
+let activeOverlay: HTMLDivElement | null = null;
 
-function removeBar() {
-    cleanupFns.forEach(fn => { try { fn(); } catch {} });
-    cleanupFns = [];
-    if (activeBar) { activeBar.remove(); activeBar = null; }
+function removePopup() {
+    if (activeOverlay) { activeOverlay.remove(); activeOverlay = null; }
 }
 
 /**
- * Copia a FOTO para o clipboard e arma a troca automática para o TEXTO.
- * Retorna true se a foto foi copiada e o fluxo foi iniciado.
- * Lança/retorna false em navegadores sem suporte — o chamador decide o fallback.
+ * Abre o popup guiado de cópia FOTO → TEXTO.
+ * Retorna true se o popup foi aberto; false se o navegador não suporta
+ * copiar imagem (o chamador decide o fallback de texto).
  */
-export async function startWhatsappPhotoTextFlow(photoBlob: Blob, text: string): Promise<boolean> {
+export function showWhatsappCopyPopup(photoBlob: Blob, text: string): boolean {
     if (typeof ClipboardItem === 'undefined' || typeof navigator.clipboard?.write !== 'function') return false;
-    // FOTO SOZINHA no clipboard: é o único jeito de o WhatsApp abrir a
-    // pré-visualização da foto com a caixa de legenda.
-    await navigator.clipboard.write([new ClipboardItem({ 'image/png': photoBlob })]);
 
-    removeBar();
-    const bar = document.createElement('div');
-    bar.setAttribute('data-testid', 'bar-whatsapp-copy-flow');
-    bar.style.cssText = 'position:fixed;top:12px;left:50%;transform:translateX(-50%);z-index:2147483000;display:flex;align-items:center;gap:10px;background:#0f172a;color:#fff;border:1px solid rgba(245,158,11,.55);border-radius:14px;padding:10px 14px;box-shadow:0 10px 30px rgba(0,0,0,.45);max-width:92vw;';
+    removePopup();
 
-    const span = document.createElement('span');
-    span.style.cssText = 'font-size:12px;font-weight:800;letter-spacing:.02em;line-height:1.35;';
-    span.textContent = '1) FOTO copiada — cole no WhatsApp (Ctrl+V). 2) Volte aqui: o TEXTO da legenda copia sozinho.';
+    const overlay = document.createElement('div');
+    overlay.setAttribute('data-testid', 'overlay-whatsapp-copy-popup');
+    overlay.style.cssText = 'position:fixed;inset:0;z-index:2147483000;display:flex;align-items:center;justify-content:center;background:rgba(2,6,23,.78);backdrop-filter:blur(3px);padding:16px;';
+
+    const card = document.createElement('div');
+    card.style.cssText = 'width:100%;max-width:430px;background:#0f172a;border:1px solid rgba(245,158,11,.55);border-radius:20px;padding:26px 24px;box-shadow:0 24px 60px rgba(0,0,0,.6);text-align:center;';
+
+    const title = document.createElement('p');
+    title.style.cssText = 'font-size:13px;font-weight:900;letter-spacing:.08em;color:#f59e0b;text-transform:uppercase;margin:0 0 6px;';
+    title.textContent = 'Envio para WhatsApp — foto + texto';
+
+    const step = document.createElement('p');
+    step.setAttribute('data-testid', 'text-whatsapp-copy-step');
+    step.style.cssText = 'font-size:13px;font-weight:700;color:#e2e8f0;line-height:1.5;margin:0 0 18px;';
+    step.textContent = 'PASSO 1: copie a FOTO e cole no WhatsApp (Ctrl+V).';
 
     const btn = document.createElement('button');
     btn.type = 'button';
-    btn.textContent = 'COPIAR TEXTO';
-    btn.setAttribute('data-testid', 'button-copy-caption-text');
-    btn.style.cssText = 'font-size:11px;font-weight:900;background:#f59e0b;color:#111;border:none;border-radius:10px;padding:8px 12px;cursor:pointer;white-space:nowrap;';
+    btn.setAttribute('data-testid', 'button-whatsapp-copy-step');
+    btn.textContent = 'COPIAR FOTO';
+    const baseBtnCss = 'width:100%;font-size:14px;font-weight:900;letter-spacing:.06em;text-transform:uppercase;border:none;border-radius:14px;padding:14px 16px;cursor:pointer;transition:filter .15s;';
+    btn.style.cssText = baseBtnCss + 'background:#f59e0b;color:#111;';
+    btn.onmouseenter = () => { btn.style.filter = 'brightness(1.1)'; };
+    btn.onmouseleave = () => { btn.style.filter = ''; };
 
-    let textCopied = false;
-    const copyText = async () => {
-        try {
-            await navigator.clipboard.writeText(text);
-            textCopied = true;
-            span.textContent = '✅ TEXTO copiado — volte ao WhatsApp e cole (Ctrl+V) na LEGENDA da foto.';
-            btn.style.display = 'none';
-            bar.style.background = '#065f46';
-            bar.style.border = '1px solid rgba(16,185,129,.8)';
-            setTimeout(() => { if (activeBar === bar) removeBar(); }, 20000);
-        } catch {
-            // Sem foco/permissão: mantém o botão para o clique manual
-        }
+    const err = document.createElement('p');
+    err.style.cssText = 'display:none;font-size:11px;font-weight:700;color:#f87171;margin:12px 0 0;';
+
+    const closeLink = document.createElement('button');
+    closeLink.type = 'button';
+    closeLink.textContent = 'Fechar sem copiar';
+    closeLink.setAttribute('data-testid', 'button-whatsapp-copy-close');
+    closeLink.style.cssText = 'display:none;margin-top:12px;background:none;border:none;color:#64748b;font-size:11px;font-weight:700;text-decoration:underline;cursor:pointer;';
+    closeLink.onclick = () => removePopup();
+
+    const showError = (msg: string) => {
+        err.textContent = msg;
+        err.style.display = 'block';
+        // Só libera a saída quando algo deu errado — senão o fluxo é obrigatório
+        closeLink.style.display = 'inline-block';
     };
-    btn.onclick = () => { void copyText(); };
 
-    // Troca automática: quando o usuário SAI da aba (vai colar a foto no
-    // WhatsApp) e VOLTA, o texto é copiado sozinho. Gatilhos redundantes:
-    // focus da janela E visibilitychange (troca de aba no mesmo navegador).
-    let leftTab = false;
-    const markLeft = () => { leftTab = true; };
-    const tryAutoCopy = () => { if (leftTab && !textCopied) void copyText(); };
-    const onBlur = () => { markLeft(); };
-    const onFocus = () => { tryAutoCopy(); };
-    const onVisibility = () => {
-        if (document.visibilityState === 'hidden') markLeft();
-        else tryAutoCopy();
+    let stage: 'photo' | 'text' = 'photo';
+    btn.onclick = () => {
+        void (async () => {
+            btn.disabled = true;
+            try {
+                if (stage === 'photo') {
+                    // FOTO SOZINHA no clipboard: único jeito de o WhatsApp abrir a
+                    // pré-visualização da foto com a caixa de legenda.
+                    await navigator.clipboard.write([new ClipboardItem({ 'image/png': photoBlob })]);
+                    stage = 'text';
+                    err.style.display = 'none';
+                    step.textContent = 'FOTO copiada ✅ — cole no WhatsApp (Ctrl+V). Depois volte e copie o TEXTO da legenda.';
+                    btn.textContent = 'COPIAR TEXTO';
+                    btn.style.cssText = baseBtnCss + 'background:#10b981;color:#052e22;';
+                } else {
+                    await navigator.clipboard.writeText(text);
+                    err.style.display = 'none';
+                    step.textContent = 'TEXTO copiado ✅ — cole na LEGENDA da foto no WhatsApp e envie.';
+                    btn.style.display = 'none';
+                    closeLink.style.display = 'none';
+                    setTimeout(() => { if (activeOverlay === overlay) removePopup(); }, 1600);
+                }
+            } catch (e) {
+                console.warn('[WhatsappCopyPopup] Falha ao copiar:', e);
+                showError(stage === 'photo'
+                    ? 'Não foi possível copiar a foto neste navegador. Tente de novo ou feche.'
+                    : 'Não foi possível copiar o texto. Tente de novo ou feche.');
+            } finally {
+                btn.disabled = false;
+            }
+        })();
     };
-    window.addEventListener('blur', onBlur);
-    window.addEventListener('focus', onFocus);
-    document.addEventListener('visibilitychange', onVisibility);
-    cleanupFns.push(() => {
-        window.removeEventListener('blur', onBlur);
-        window.removeEventListener('focus', onFocus);
-        document.removeEventListener('visibilitychange', onVisibility);
-    });
 
-    bar.appendChild(span);
-    bar.appendChild(btn);
-    document.body.appendChild(bar);
-    activeBar = bar;
-    // Autolimpeza de segurança
-    setTimeout(() => { if (activeBar === bar) removeBar(); }, 180000);
+    card.appendChild(title);
+    card.appendChild(step);
+    card.appendChild(btn);
+    card.appendChild(err);
+    card.appendChild(closeLink);
+    overlay.appendChild(card);
+    document.body.appendChild(overlay);
+    activeOverlay = overlay;
     return true;
 }

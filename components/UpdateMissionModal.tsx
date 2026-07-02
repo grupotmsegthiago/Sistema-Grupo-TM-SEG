@@ -6,7 +6,7 @@ import { supabase } from '../lib/supabase';
 import { logAction } from '../lib/logger';
 import { clientFuzzyFilter, extractCityFromAddress } from '../lib/financialUtils';
 import { generateContent } from '../lib/gemini';
-import { startWhatsappPhotoTextFlow } from '../lib/whatsappCopyFlow';
+import { showWhatsappCopyPopup } from '../lib/whatsappCopyFlow';
 import { useNotification } from '../lib/NotificationContext';
 import { 
   X, Activity, MapPin, Flag, Truck, Plus, Save, 
@@ -2061,12 +2061,10 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
                 if (printBlob) {
                     try {
                         // WhatsApp ignora a imagem quando texto+foto vêm juntos no
-                        // clipboard. Fluxo correto: FOTO primeiro (abre legenda),
-                        // TEXTO depois (copiado sozinho ao voltar para a aba).
-                        const started = await startWhatsappPhotoTextFlow(printBlob, report);
-                        if (started) {
+                        // clipboard. Popup guiado obrigatório: COPIAR FOTO → colar
+                        // no WhatsApp → COPIAR TEXTO → colar na legenda → fecha só.
+                        if (showWhatsappCopyPopup(printBlob, report)) {
                             combinedCopied = true;
-                            showNotification('Foto copiada', 'Cole a FOTO no WhatsApp; ao voltar aqui, o TEXTO da legenda copia sozinho.', 'success');
                             // Print é de uso único: evita reutilização acidental num próximo salvamento
                             updatePrintBlobRef.current = null;
                             setUpdatePrintPreview('');
@@ -2147,14 +2145,12 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
                             }
                         } catch (photoErr) { console.warn('[FimDeMissao] Falha ao preparar foto:', photoErr); }
                     }
-                    if (photoBlob && await startWhatsappPhotoTextFlow(photoBlob, finalizeReportText)) {
-                        // FOTO copiada agora; TEXTO copia sozinho quando o usuário
-                        // voltar para a aba após colar a foto no WhatsApp.
+                    if (photoBlob && showWhatsappCopyPopup(photoBlob, finalizeReportText)) {
+                        // Popup guiado: COPIAR FOTO → COPIAR TEXTO → fecha sozinho.
                         finalizeAutoCopied = true;
                         // Print colado é de uso único
                         updatePrintBlobRef.current = null;
                         setUpdatePrintPreview('');
-                        showNotification('Fim de Missão: foto copiada', 'Cole a FOTO no WhatsApp; ao voltar aqui, o TEXTO da legenda copia sozinho.', 'success');
                     } else {
                         await navigator.clipboard.writeText(finalizeReportText);
                         finalizeAutoCopied = true;
@@ -3582,8 +3578,8 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
                                                 }
                                             } catch (sampleErr) { console.warn('[TesteCopia] Falha ao preparar foto de exemplo:', sampleErr); }
                                         }
-                                        if (photoBlob && await startWhatsappPhotoTextFlow(photoBlob, testText)) {
-                                            showNotification('Teste: foto copiada', `${usedSample ? 'Sem print colado — usei o logotipo como foto de exemplo. ' : ''}Cole a FOTO no WhatsApp; ao voltar aqui, o TEXTO da legenda copia sozinho.`, 'success');
+                                        if (photoBlob && showWhatsappCopyPopup(photoBlob, testText)) {
+                                            if (usedSample) showNotification('Teste', 'Sem print colado — usei o logotipo como foto de exemplo.', 'success');
                                         } else {
                                             await navigator.clipboard.writeText(testText);
                                             showNotification('Teste copiado', photoBlob ? 'Este navegador não suporta copiar foto junto; só o texto foi copiado.' : 'Não foi possível preparar uma foto; só o texto foi copiado.', 'success');
