@@ -842,12 +842,12 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
                 const ctx = canvas.getContext('2d');
                 if (!ctx) throw new Error('Canvas indisponível');
                 ctx.drawImage(photo, 0, 0);
-                // Logo TM SEG (fundo transparente) no canto superior esquerdo,
+                // Logo TM SEG (fundo transparente) no canto superior DIREITO,
                 // ~20% da largura da foto, sem distorcer a proporção da logo.
                 const logoW = Math.max(48, Math.round(canvas.width * 0.20));
                 const logoH = Math.round(logoW * (logo.naturalHeight / logo.naturalWidth));
                 const margin = Math.round(canvas.width * 0.025);
-                ctx.drawImage(logo, margin, margin, logoW, logoH);
+                ctx.drawImage(logo, canvas.width - logoW - margin, margin, logoW, logoH);
                 const blob: Blob = await new Promise((resolve, reject) =>
                     canvas.toBlob(b => b ? resolve(b) : reject(new Error('Falha ao gerar PNG')), 'image/png')
                 );
