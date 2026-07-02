@@ -383,7 +383,7 @@ const MissionCardComponent: React.FC<MissionCardProps> = ({
 
     const displayCost = useMemo(() => {
         const tollProv = Math.max(0, mission.toll_value_provider != null ? mission.toll_value_provider : (mission.toll_value || 0));
-        const dispProv = (mission as any).is_same_os === true ? 0 : Math.max(0, (mission as any).displacement_value_provider != null ? (mission as any).displacement_value_provider : ((mission as any).displacement_value || 0));
+        const dispProv = (mission as any).is_same_os === true ? 0 : Math.max(0, (mission as any).displacement_value_provider || 0);
         const storedValue = (mission.cost_value || 0) + tollProv + dispProv;
         const hasStoredCost = (mission.cost_value != null && mission.cost_value > 0);
         

@@ -555,7 +555,7 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
             let cost: number;
 
             const dispVal = Math.max(0, m.displacement_value || 0);
-            const dispProv = Math.max(0, m.displacement_value_provider != null ? m.displacement_value_provider : (m.displacement_value || 0));
+            const dispProv = Math.max(0, m.displacement_value_provider || 0);
             revenue = (m.revenue_value || 0) + Math.max(0, m.toll_value || 0) + dispVal;
             const tollProv = Math.max(0, m.toll_value_provider != null ? m.toll_value_provider : (m.toll_value || 0));
             cost = (m.cost_value || 0) + tollProv + dispProv;
@@ -919,7 +919,7 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
                 const finP = calculateMissionFinancials(m, priceTables, providerTables, clientData, new Date(), overridesP);
                 const prov = finP.provider;
                 const tollProv = Math.max(0, ((m.toll_value_provider != null ? m.toll_value_provider : m.toll_value)) || 0);
-                const dispProvP = Math.max(0, (m.displacement_value_provider != null ? m.displacement_value_provider : m.displacement_value) || 0);
+                const dispProvP = Math.max(0, m.displacement_value_provider || 0);
                 const savedCost = m.cost_value || 0;
 
                 const isCancelledP = (m.status || '').toString().toLowerCase().includes('cancel');
@@ -1246,7 +1246,7 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
             if (reportMode === 'fornecedor') {
                 const cost = m.cost_value ?? 0;
                 const tollP = Math.max(0, (m.toll_value_provider != null ? m.toll_value_provider : m.toll_value) || 0);
-                const dispP = Math.max(0, (m.displacement_value_provider != null ? m.displacement_value_provider : m.displacement_value) || 0);
+                const dispP = Math.max(0, m.displacement_value_provider || 0);
                 return s + cost + tollP + dispP;
             }
             const rev = m.revenue_value ?? 0;

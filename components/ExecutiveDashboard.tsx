@@ -218,7 +218,7 @@ const ExecutiveDashboard: React.FC<Props> = ({ missions, isDirector, clientTable
                             tollVal: mission.toll_value || 0,
                             tollProvider: mission.toll_value_provider || mission.toll_value || 0,
                             displacementVal: mission.displacement_value || 0,
-                            displacementProvider: mission.displacement_value_provider != null ? mission.displacement_value_provider : (mission.displacement_value || 0),
+                            displacementProvider: mission.displacement_value_provider || 0,
                             revenueServiceOnly: mission.revenue_value || 0,
                             costServiceOnly: mission.cost_value || 0,
                             totalGeral: (mission.revenue_value || 0) + (mission.toll_value || 0) + (mission.displacement_value || 0),

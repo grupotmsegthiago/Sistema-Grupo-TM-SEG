@@ -30,7 +30,7 @@ const formatCurrency = (val: number | null | undefined) => {
 const providerTollOf = (m: any) => Math.max(0, m.toll_value_provider ?? 0);
 const providerDispOf = (m: any) => {
     if (m.is_same_os) return 0;
-    const disp = m.displacement_value_provider != null ? m.displacement_value_provider : (m.displacement_value || 0);
+    const disp = m.displacement_value_provider || 0;
     return Math.max(0, disp);
 };
 const providerCostOf = (m: any) => (m.cost_value || 0) + providerTollOf(m) + providerDispOf(m);

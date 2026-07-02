@@ -103,7 +103,7 @@ const FinancialDRE: React.FC = () => {
             const missionDisplacementClient = missions.reduce((acc: number, m: any) => acc + (m.displacement_value || 0), 0);
             const missionCost = missions.filter((m: any) => m.is_same_os !== true).reduce((acc: number, m: any) => acc + (m.cost_value || 0), 0);
             const missionTollProvider = missions.reduce((acc: number, m: any) => acc + (m.toll_value_provider || m.toll_value || 0), 0);
-            const missionDisplacementProvider = missions.reduce((acc: number, m: any) => acc + (m.displacement_value_provider != null ? m.displacement_value_provider : (m.displacement_value || 0)), 0);
+            const missionDisplacementProvider = missions.reduce((acc: number, m: any) => acc + (m.displacement_value_provider || 0), 0);
             const totalMissionCount = missions.length;
 
             const rows: DRERow[] = [];

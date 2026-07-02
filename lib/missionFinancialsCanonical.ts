@@ -69,7 +69,7 @@ export function computeCanonicalRevenueCost(
   const tollRev = Math.max(0, num(m.toll_value));
   const tollCost = Math.max(0, m.toll_value_provider != null ? num(m.toll_value_provider) : num(m.toll_value));
   const dispRev = Math.max(0, num(m.displacement_value));
-  const dispCost = Math.max(0, m.displacement_value_provider != null ? num(m.displacement_value_provider) : num(m.displacement_value));
+  const dispCost = Math.max(0, num(m.displacement_value_provider));
 
   let revBase = 0;
   let costBase = 0;
