@@ -316,6 +316,12 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
   const [tollProviderInput, setTollProviderInput] = useState('');
   const [displacementInput, setDisplacementInput] = useState('');
   const [displacementProviderInput, setDisplacementProviderInput] = useState('');
+  // KM de deslocamento autorizado pela DHL (dhl_deslocamento_km, digitado no
+  // "Atualizar Missão"). Vira cobrança automática via o campo aditivo
+  // "Deslocamento Aprovado (Cobrado)" — mesma via do pedágio.
+  const dhlDeslocKmRef = React.useRef(0);
+  const dhlDeslocAutoAppliedRef = React.useRef(false);
+  const [dhlDeslocInfo, setDhlDeslocInfo] = useState<{ km: number; clientRate: number; provRate: number; clientVal: number; provVal: number } | null>(null);
   
   // Custom Unit Prices (Edição Livre)
   const [customProviderKm, setCustomProviderKm] = useState<string>('');
@@ -1065,6 +1071,9 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
               const dbDispProvider = Math.max(0, mRes.data.displacement_value_provider != null ? mRes.data.displacement_value_provider : dbDisp);
               setDisplacementInput(dbDisp.toLocaleString('pt-BR', {minimumFractionDigits: 2, maximumFractionDigits: 2}));
               setDisplacementProviderInput((mRes.data.is_same_os ? 0 : dbDispProvider).toLocaleString('pt-BR', {minimumFractionDigits: 2, maximumFractionDigits: 2}));
+              dhlDeslocKmRef.current = Math.max(0, Number((mRes.data as any).dhl_deslocamento_km) || 0);
+              dhlDeslocAutoAppliedRef.current = false;
+              setDhlDeslocInfo(null);
               const savedRev = safeNumber(mRes.data.revenue_value);
               const savedCost = safeNumber(mRes.data.cost_value);
               const hasSavedData = mRes.data.billing_approved || mRes.data.billing_verified_by || savedRev > 0 || savedCost > 0;
@@ -1617,6 +1626,41 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
           }
       }
     }, [financialData, memoryLoaded, mission, tollProviderInput, displacementInput, displacementProviderInput, useSavedValues, isLoading]); 
+
+    // KM de deslocamento autorizado pela DHL: o campo dhl_deslocamento_km
+    // (digitado no "Atualizar Missão") vira cobrança automática pelo campo
+    // aditivo "Deslocamento Aprovado (Cobrado)" — mesma via do pedágio.
+    // Cliente paga km × R$/km excedente da tabela aplicada; fornecedor
+    // recebe km × R$/km excedente da tabela de custo (0 se MESMA OS).
+    // NÃO toca: revenue/cost de serviço, OS travada/aprovada (snapshot
+    // imutável), override manual (userManuallyEditedRef) nem valor de
+    // deslocamento já salvo/digitado (> 0). Nesses casos apenas exibe a
+    // sugestão com botão APLICAR (quando destravado).
+    useEffect(() => {
+        if (!financialData || isLoading) return;
+        const km = dhlDeslocKmRef.current;
+        if (!(km > 0)) { if (dhlDeslocInfo) setDhlDeslocInfo(null); return; }
+        const isSameOsMission = (mission as any)?.is_same_os === true;
+        const clientRate = financialData.client.unitPriceKm || 0;
+        const provRate = isSameOsMission ? 0 : (financialData.provider.unitCostKm || 0);
+        const clientVal = Math.round(km * clientRate * 100) / 100;
+        const provVal = Math.round(km * provRate * 100) / 100;
+        if (!dhlDeslocInfo || dhlDeslocInfo.clientVal !== clientVal || dhlDeslocInfo.provVal !== provVal) {
+            setDhlDeslocInfo({ km, clientRate, provRate, clientVal, provVal });
+        }
+        if (dhlDeslocAutoAppliedRef.current) return;
+        if (isEffectivelyLocked || userManuallyEditedRef.current || isSavingRef.current) return;
+        if (parseNumber(displacementInput) > 0 || parseNumber(displacementProviderInput) > 0) {
+            // Já existe deslocamento salvo/digitado — não sobrescrever.
+            dhlDeslocAutoAppliedRef.current = true;
+            return;
+        }
+        if (clientVal <= 0 && provVal <= 0) return;
+        dhlDeslocAutoAppliedRef.current = true;
+        const fmtBR = (v: number) => v.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        if (clientVal > 0) setDisplacementInput(fmtBR(clientVal));
+        if (provVal > 0) setDisplacementProviderInput(fmtBR(provVal));
+    }, [financialData, isLoading, mission, displacementInput, displacementProviderInput, isEffectivelyLocked, dhlDeslocInfo]);
 
     // Auto-recálculo: quando o usuário mexer em qualquer parâmetro (tabela, base/km/hora customizados,
     // IBL, override do fornecedor) após o carregamento inicial, liberamos os refs para que o autofill
@@ -4609,6 +4653,27 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                 {useSavedValues && parseNumber(displacementInput) > 0 && (
                                     <span className="text-[8px] font-bold text-amber-600 mt-1 block">⚠ DESLOCAMENTO SALVO NA MEMÓRIA</span>
                                 )}
+                                {dhlDeslocInfo && dhlDeslocInfo.clientVal > 0 && (
+                                    <div className="mt-1 flex items-center gap-2 flex-wrap">
+                                        <span className="text-[8px] font-bold text-emerald-700" data-testid="text-dhl-desloc-client">
+                                            KM DHL AUTORIZADO: {dhlDeslocInfo.km.toLocaleString('pt-BR')} km × R$ {dhlDeslocInfo.clientRate.toFixed(2)} = {formatCurrency(dhlDeslocInfo.clientVal)}
+                                        </span>
+                                        {!isController && !isEffectivelyLocked && Math.abs(parseNumber(displacementInput) - dhlDeslocInfo.clientVal) > 0.01 && (
+                                            <button
+                                                type="button"
+                                                onClick={() => {
+                                                    const fmtBR = (v: number) => v.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+                                                    handleDisplacementChange(fmtBR(dhlDeslocInfo.clientVal));
+                                                    handleDisplacementProviderChange(fmtBR(dhlDeslocInfo.provVal));
+                                                }}
+                                                className="px-2 py-0.5 rounded-md bg-emerald-600 text-white text-[8px] font-black uppercase tracking-wider hover:bg-emerald-700"
+                                                data-testid="button-apply-dhl-desloc"
+                                            >
+                                                Aplicar
+                                            </button>
+                                        )}
+                                    </div>
+                                )}
                             </div>
                             <div>
                                 <label className="text-[9px] font-black text-blue-700 uppercase mb-1 block">Pedágio Fornecedor</label>
@@ -4645,6 +4710,11 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                 </div>
                                 {useSavedValues && parseNumber(displacementProviderInput) > 0 && (
                                     <span className="text-[8px] font-bold text-amber-600 mt-1 block">⚠ DESLOCAMENTO SALVO NA MEMÓRIA</span>
+                                )}
+                                {dhlDeslocInfo && dhlDeslocInfo.provVal > 0 && (
+                                    <span className="text-[8px] font-bold text-sky-700 mt-1 block" data-testid="text-dhl-desloc-provider">
+                                        KM DHL AUTORIZADO: {dhlDeslocInfo.km.toLocaleString('pt-BR')} km × R$ {dhlDeslocInfo.provRate.toFixed(2)} = {formatCurrency(dhlDeslocInfo.provVal)}
+                                    </span>
                                 )}
                             </div>
                         </div>

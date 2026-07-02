@@ -18,6 +18,13 @@ exatamente o pedágio (toll). NÃO é serviço.
 espelhando 100% o toll. Tratar como aditivo (não como parte do serviço) evita recalcular
 revenue/cost e mantém o snapshot financeiro imutável consistente.
 
+Auto-cobrança do KM DHL autorizado: o campo `dhl_deslocamento_km` (Atualizar Missão) alimenta
+automaticamente o deslocamento no modal financeiro — cliente = km × R$/km excedente da tabela
+aplicada (`financialData.client.unitPriceKm`), fornecedor = km × `provider.unitCostKm` (0 se
+MESMA OS). Autofill silencioso SÓ quando: não travado/aprovado, sem override manual
+(`userManuallyEditedRef`) e deslocamento atual == 0. Caso contrário, exibe só a sugestão
+"KM DHL AUTORIZADO" com botão APLICAR (habilitado após destravar). Nunca reescreve valor salvo.
+
 **How to apply:** ao tocar qualquer soma/relatório que já trata `toll_value`, adicione o
 deslocamento na MESMA expressão (mesmo Math.max(0,...) e mesmo fallback provider). Exceção:
 cálculos de MARGEM (MissionTable: rev-cost service-only) NÃO incluem toll — então também NÃO
