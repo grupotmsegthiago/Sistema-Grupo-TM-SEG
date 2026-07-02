@@ -2048,6 +2048,9 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
 🏙️ *LOCALIZAÇÃO:* ${cityPart.toUpperCase()}
 🗾 *LINK DO GOOGLE:* ${editData.mapLink || 'N/A'}`;
 
+            // Quando a cópia combinada (texto+foto) dá certo, o pai NÃO pode
+            // re-copiar só o texto (isso sobrescreveria a foto no clipboard).
+            let combinedCopied = false;
             try {
                 const printBlob = updatePrintBlobRef.current;
                 if (printBlob && typeof ClipboardItem !== 'undefined' && typeof navigator.clipboard?.write === 'function') {
@@ -2056,6 +2059,7 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
                             'text/plain': new Blob([report], { type: 'text/plain' }),
                             'image/png': printBlob,
                         })]);
+                        combinedCopied = true;
                         showNotification('Formulário e Foto copiados', 'Formulário e foto com logotipo copiados para a área de transferência.', 'success');
                         // Print é de uso único: evita reutilização acidental num próximo salvamento
                         updatePrintBlobRef.current = null;
@@ -2272,7 +2276,9 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
             // no diálogo. Demais atualizações seguem o fluxo normal (auto-cópia desktop).
             const concludedNow = finalStatus === MissionStatus.COMPLETED && originalStatus !== MissionStatus.COMPLETED;
             if (!concludedNow) {
-                onSuccess(report);
+                // combinedCopied: texto+foto já estão no clipboard; passar o texto
+                // faria o MissionTable re-copiar só o texto e APAGAR a foto.
+                onSuccess(combinedCopied ? undefined : report);
             }
         } catch (error: any) { alert(error.message); } finally { setIsUpdating(false); }
     };
