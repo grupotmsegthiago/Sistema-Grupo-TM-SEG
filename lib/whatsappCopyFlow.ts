@@ -44,12 +44,16 @@ export async function startWhatsappPhotoTextFlow(photoBlob: Blob, text: string):
     btn.setAttribute('data-testid', 'button-copy-caption-text');
     btn.style.cssText = 'font-size:11px;font-weight:900;background:#f59e0b;color:#111;border:none;border-radius:10px;padding:8px 12px;cursor:pointer;white-space:nowrap;';
 
+    let textCopied = false;
     const copyText = async () => {
         try {
             await navigator.clipboard.writeText(text);
-            span.textContent = 'TEXTO copiado — cole na legenda da foto no WhatsApp e envie.';
+            textCopied = true;
+            span.textContent = '✅ TEXTO copiado — volte ao WhatsApp e cole (Ctrl+V) na LEGENDA da foto.';
             btn.style.display = 'none';
-            setTimeout(() => { if (activeBar === bar) removeBar(); }, 8000);
+            bar.style.background = '#065f46';
+            bar.style.border = '1px solid rgba(16,185,129,.8)';
+            setTimeout(() => { if (activeBar === bar) removeBar(); }, 20000);
         } catch {
             // Sem foco/permissão: mantém o botão para o clique manual
         }
@@ -57,15 +61,24 @@ export async function startWhatsappPhotoTextFlow(photoBlob: Blob, text: string):
     btn.onclick = () => { void copyText(); };
 
     // Troca automática: quando o usuário SAI da aba (vai colar a foto no
-    // WhatsApp) e VOLTA, o texto é copiado sozinho.
+    // WhatsApp) e VOLTA, o texto é copiado sozinho. Gatilhos redundantes:
+    // focus da janela E visibilitychange (troca de aba no mesmo navegador).
     let leftTab = false;
-    const onBlur = () => { leftTab = true; };
-    const onFocus = () => { if (leftTab) void copyText(); };
+    const markLeft = () => { leftTab = true; };
+    const tryAutoCopy = () => { if (leftTab && !textCopied) void copyText(); };
+    const onBlur = () => { markLeft(); };
+    const onFocus = () => { tryAutoCopy(); };
+    const onVisibility = () => {
+        if (document.visibilityState === 'hidden') markLeft();
+        else tryAutoCopy();
+    };
     window.addEventListener('blur', onBlur);
     window.addEventListener('focus', onFocus);
+    document.addEventListener('visibilitychange', onVisibility);
     cleanupFns.push(() => {
         window.removeEventListener('blur', onBlur);
         window.removeEventListener('focus', onFocus);
+        document.removeEventListener('visibilitychange', onVisibility);
     });
 
     bar.appendChild(span);
