@@ -112,14 +112,14 @@ export function showWhatsappCopyPopup(photoBlob: Blob, text: string): boolean {
                     // FOTO SOZINHA no clipboard: único jeito de o WhatsApp abrir a
                     // pré-visualização da foto com a caixa de legenda.
                     // A escrita começa JÁ no clique (gesto) — a animação corre em paralelo.
-                    await runProgress('COPIANDO FOTO...', navigator.clipboard.write([new ClipboardItem({ 'image/png': photoBlob })]));
+                    await runProgress('FOTO COPIADA', navigator.clipboard.write([new ClipboardItem({ 'image/png': photoBlob })]));
                     stage = 'text';
                     err.style.display = 'none';
                     step.textContent = 'FOTO copiada ✅ — cole no WhatsApp (Ctrl+V). Depois volte e copie o TEXTO da legenda.';
                     label.textContent = 'COPIAR TEXTO';
                     btn.style.cssText = baseBtnCss + 'background:#10b981;color:#052e22;position:relative;overflow:hidden;';
                 } else {
-                    await runProgress('COPIANDO TEXTO...', navigator.clipboard.writeText(text));
+                    await runProgress('TEXTO COPIADO', navigator.clipboard.writeText(text));
                     err.style.display = 'none';
                     step.textContent = 'TEXTO copiado ✅ — cole na LEGENDA da foto no WhatsApp e envie.';
                     btn.style.display = 'none';

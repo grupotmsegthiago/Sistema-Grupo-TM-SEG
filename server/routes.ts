@@ -1,7 +1,7 @@
 import type { Express, Request, Response } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
-import { GoogleGenAI } from "@google/genai";
+import { GoogleGenAI, Modality } from "@google/genai";
 import { createClient } from "@supabase/supabase-js";
 import { Resend } from "resend";
 import webpush from "web-push";
@@ -1579,6 +1579,36 @@ export async function registerRoutes(
       } else {
         res.status(500).json({ error: error.message || "Erro interno do servidor" });
       }
+    }
+  });
+
+  // Limpeza de print por IA (uso único, imagem NUNCA persiste): remove
+  // logotipos/marcas d'água/escritas de terceiros do print colado no
+  // "Atualizar Missão". O logotipo TM SEG é aplicado depois, no frontend.
+  app.post("/api/gemini/clean-print", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const { image } = req.body || {};
+      if (!image?.data || !image?.mimeType) return res.status(400).json({ error: 'Imagem ausente' });
+      if (typeof image.mimeType !== 'string' || !image.mimeType.startsWith('image/')) return res.status(400).json({ error: 'Tipo de arquivo inválido' });
+      if (typeof image.data !== 'string' || image.data.length > 20_000_000) return res.status(413).json({ error: 'Imagem grande demais para limpeza por IA' });
+      const response = await ai.models.generateContent({
+        model: "gemini-2.5-flash-image",
+        contents: [{
+          role: "user",
+          parts: [
+            { inlineData: { mimeType: image.mimeType, data: image.data } },
+            { text: "Edite esta imagem de rastreamento/monitoramento veicular: REMOVA todos os logotipos, marcas d'água, ícones de marca e nomes de empresas/sistemas de terceiros sobrepostos na imagem (ex.: logotipo de rastreadora, nome do software de monitoramento, marca no cabeçalho). Preencha as áreas removidas de forma natural e discreta. MANTENHA intactos o mapa, a rota, o veículo, placas, horários, datas, coordenadas e todas as informações operacionais. Não adicione nenhum elemento novo. Retorne somente a imagem editada." }
+          ]
+        }],
+        config: { responseModalities: [Modality.TEXT, Modality.IMAGE] },
+      });
+      const parts = response.candidates?.[0]?.content?.parts || [];
+      const imgPart = parts.find((p: any) => p.inlineData?.data);
+      if (!imgPart?.inlineData?.data) return res.status(502).json({ error: 'IA não retornou imagem editada' });
+      res.json({ image: imgPart.inlineData.data, mimeType: imgPart.inlineData.mimeType || 'image/png' });
+    } catch (error: any) {
+      console.error('Erro Gemini clean-print:', error);
+      res.status(500).json({ error: 'Falha ao limpar a imagem por IA' });
     }
   });
 

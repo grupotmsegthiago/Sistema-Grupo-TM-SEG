@@ -792,7 +792,35 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
     // junto com o texto do formulário na hora de salvar.
     const [updatePrintPreview, setUpdatePrintPreview] = useState('');
     const [updatePrintProcessing, setUpdatePrintProcessing] = useState(false);
+    const [updatePrintAiCleaned, setUpdatePrintAiCleaned] = useState(false);
     const updatePrintBlobRef = useRef<Blob | null>(null);
+
+    // Limpeza por IA (Gemini, via backend): remove logos/escritas de terceiros
+    // do print ANTES de aplicar o logotipo TM SEG. Fail-soft: se a IA falhar,
+    // segue com a foto original (só com o logotipo TM SEG por cima).
+    const cleanPrintWithAI = async (file: File): Promise<string | null> => {
+        try {
+            const base64 = await new Promise<string>((resolve, reject) => {
+                const r = new FileReader();
+                r.onload = () => resolve(String(r.result).split(',')[1] || '');
+                r.onerror = () => reject(new Error('Falha ao ler imagem'));
+                r.readAsDataURL(file);
+            });
+            if (!base64) return null;
+            const resp = await authFetch('/api/gemini/clean-print', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ image: { mimeType: file.type || 'image/png', data: base64 } }),
+            });
+            if (!resp.ok) return null;
+            const j = await resp.json();
+            if (!j?.image) return null;
+            return `data:${j.mimeType || 'image/png'};base64,${j.image}`;
+        } catch (e) {
+            console.warn('[UpdatePrint] Limpeza por IA falhou (segue com a foto original):', e);
+            return null;
+        }
+    };
 
     const processUpdatePrint = async (file: File) => {
         setUpdatePrintProcessing(true);
@@ -803,9 +831,11 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
                 img.onerror = () => reject(new Error('Falha ao carregar imagem'));
                 img.src = src;
             });
+            const cleanedSrc = await cleanPrintWithAI(file);
+            setUpdatePrintAiCleaned(!!cleanedSrc);
             const photoUrl = URL.createObjectURL(file);
             try {
-                const [photo, logo] = await Promise.all([loadImg(photoUrl), loadImg('/logo.png')]);
+                const [photo, logo] = await Promise.all([loadImg(cleanedSrc || photoUrl), loadImg('/logo.png')]);
                 const canvas = document.createElement('canvas');
                 canvas.width = photo.naturalWidth;
                 canvas.height = photo.naturalHeight;
@@ -839,6 +869,7 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
     const clearUpdatePrint = () => {
         updatePrintBlobRef.current = null;
         setUpdatePrintPreview('');
+        setUpdatePrintAiCleaned(false);
     };
 
     const [editData, setEditData] = useState({
@@ -3515,7 +3546,7 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
                             >
                                 {updatePrintProcessing ? (
                                     <div className="flex items-center gap-2 text-[11px] font-bold text-slate-300" data-testid="status-update-print-processing">
-                                        <Loader2 className="h-4 w-4 animate-spin" /> Aplicando logotipo TM SEG...
+                                        <Loader2 className="h-4 w-4 animate-spin" /> Limpando logos de terceiros (IA) e aplicando logotipo TM SEG...
                                     </div>
                                 ) : updatePrintPreview ? (
                                     <>
@@ -3544,7 +3575,9 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
                             {updatePrintPreview && !updatePrintProcessing && (
                                 <div className="mt-2 flex items-center gap-2 rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-3 py-2" data-testid="text-update-print-ready">
                                     <CheckCircle2 size={14} className="shrink-0 text-emerald-400" />
-                                    <p className="text-[10px] font-bold text-emerald-300">Foto capturada e logotipo TM SEG aplicado para cópia. Ela NÃO é salva no sistema — só vai junto na área de transferência ao salvar.</p>
+                                    <p className="text-[10px] font-bold text-emerald-300">{updatePrintAiCleaned
+                                        ? 'Foto tratada: logos de terceiros removidos (IA) e logotipo TM SEG aplicado. Ela NÃO é salva no sistema — só vai junto na área de transferência ao salvar.'
+                                        : 'Logotipo TM SEG aplicado (limpeza por IA indisponível — confira se sobrou logo de terceiros). A foto NÃO é salva no sistema — só vai junto na área de transferência ao salvar.'}</p>
                                 </div>
                             )}
                             {/* TESTE DE CÓPIA: copia texto de teste + foto (se colada) sem salvar nada */}
