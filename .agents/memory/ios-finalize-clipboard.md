@@ -1,27 +1,27 @@
 ---
 name: iOS finalize clipboard / report dialog
-description: Why concluding an OS must keep the finalize dialog mounted and must not auto-copy outside the click gesture (Safari/iOS).
+description: Conclusão de OS copia AUTOMÁTICO (texto+foto num ClipboardItem); o diálogo "Fim de Missão concluído" é só plano B quando a cópia automática falha (Safari/iOS).
 ---
 
-# Conclusão de OS, cópia no iOS e o diálogo "Fim de Missão concluído"
+# Conclusão de OS: cópia automática primeiro, diálogo como plano B
 
-Regra: ao CONCLUIR uma OS (status -> Concluída), NÃO feche o modal de
-atualização via `onSuccess(report)` e NÃO dispare auto-cópia do relatório.
-O diálogo de fim de missão (com botões "Copiar texto"/"Copiar foto") é
-renderizado DENTRO do UpdateMissionModal, que faz `if (!isOpen) return null`.
-Fechar o modal desmonta o diálogo na hora, e a auto-cópia roda fora do gesto
-do clique.
+Regra atual (pedido explícito do usuário): ao CONCLUIR uma OS, o sistema
+tenta AUTOMATICAMENTE copiar o relatório de fim de missão + foto num único
+`ClipboardItem` (`text/plain` + `image/png`), padrão WhatsApp (foto com
+legenda). Foto: prioriza o print colado na sessão (COLAR PRINT, já com logo);
+senão baixa o print do hodômetro confirmado e converte para PNG via canvas.
+Se a cópia automática tiver sucesso, NÃO abrir diálogo: fechar via
+`onSuccess(undefined)` (undefined impede o pai de re-copiar só o texto e
+apagar a foto do clipboard). O bloco de auto-cópia do relatório de
+monitoramento NÃO roda na conclusão (evita duas escritas concorrentes).
 
-**Why:** No Safari/iOS, escrever na área de transferência só é permitido
-DENTRO do gesto do usuário. Auto-cópia após `await` (save + fetch) é bloqueada
-e mostrava o erro "Não foi possível copiar. Tente novamente." — fazendo o
-operador achar que a finalização falhou (ela foi salva). Caso real: GTM-5861.
+**Why:** o usuário rejeitou a tela com botões ("Copiar texto"/"Copiar foto");
+quer colar direto no WhatsApp. Mas no Safari/iOS escrever no clipboard fora
+do gesto do clique é bloqueado (caso real de erro "Não foi possível copiar"
+fazendo o operador achar que a finalização falhou).
 
-**How to apply:** Na conclusão (`finalStatus===COMPLETED && originalStatus
-!==COMPLETED`), pule `onSuccess(report)` — deixe o modal aberto exibindo o
-diálogo. O fechamento + refresh da lista acontecem quando o usuário clica em
-"Fechar" no diálogo (chama `onSuccess()` sem report, então sem auto-cópia).
-Atualizações que NÃO são conclusão mantêm o fluxo normal (auto-cópia no
-desktop). A lista também atualiza sozinha via realtime global. Os botões do
-diálogo funcionam porque a escrita acontece dentro do clique (writeText para
-texto; ClipboardItem para a foto).
+**How to apply:** manter a ordem: tentar auto-cópia → em falha, abrir o
+diálogo `setFinalizeReport` (os botões funcionam porque a escrita ocorre
+dentro do clique) e NÃO chamar `onSuccess` (o modal faz `if (!isOpen) return
+null`; fechar desmontaria o diálogo). Nesse plano B o fechamento + refresh
+acontecem no botão "Fechar". Nunca remover o plano B: ele é o caminho iOS.

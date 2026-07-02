@@ -2048,10 +2048,14 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
 🏙️ *LOCALIZAÇÃO:* ${cityPart.toUpperCase()}
 🗾 *LINK DO GOOGLE:* ${editData.mapLink || 'N/A'}`;
 
+            const isNowCompleted = finalStatus === MissionStatus.COMPLETED && originalStatus !== MissionStatus.COMPLETED;
+
             // Quando a cópia combinada (texto+foto) dá certo, o pai NÃO pode
             // re-copiar só o texto (isso sobrescreveria a foto no clipboard).
             let combinedCopied = false;
-            try {
+            // Na conclusão de OS a cópia é feita mais abaixo (texto de fim de
+            // missão + foto), então este bloco só roda para atualizações normais.
+            if (!isNowCompleted) try {
                 const printBlob = updatePrintBlobRef.current;
                 if (printBlob && typeof ClipboardItem !== 'undefined' && typeof navigator.clipboard?.write === 'function') {
                     try {
@@ -2075,10 +2079,11 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
                 }
             } catch (err) { console.warn(err); }
 
-            // FIM DE MISSÃO: ao concluir, monta o relatório padrão de fechamento
-            // (dois botões: copiar texto / copiar foto) e dispara os e-mails de
-            // fim de missão para cliente e fornecedor.
-            const isNowCompleted = finalStatus === MissionStatus.COMPLETED && originalStatus !== MissionStatus.COMPLETED;
+            // FIM DE MISSÃO: ao concluir, copia AUTOMATICAMENTE o relatório de
+            // fechamento (texto + foto juntos, padrão WhatsApp). O diálogo com
+            // botões só aparece como plano B se a cópia automática falhar
+            // (ex.: Safari/iOS bloqueia cópia fora do gesto de clique).
+            let finalizeAutoCopied = false;
             if (isNowCompleted) {
                 let originArrivalAt = '', operationStartAt = '';
                 try {
@@ -2112,9 +2117,55 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
 *TOTAL RODADO:* ${totalKm} KM
 
 *LINK DO FIM DE MISSÃO:* ${editData.mapLink || 'N/A'}`;
-                setFinalizeReport({ text: finalizeReportText, photoUrl: confirmedPrintUrlRef.current });
-                setCopiedReportText(false);
-                setCopiedReportPhoto(false);
+
+                // Cópia automática (texto + foto juntos, padrão WhatsApp).
+                // Foto: prioriza o print colado no COLAR PRINT (já com logo);
+                // senão, usa o print do hodômetro confirmado no checklist.
+                try {
+                    let photoBlob: Blob | null = updatePrintBlobRef.current;
+                    if (!photoBlob && confirmedPrintUrlRef.current) {
+                        try {
+                            const resp = await fetch(confirmedPrintUrlRef.current);
+                            if (resp.ok) {
+                                const raw = await resp.blob();
+                                if (raw.type === 'image/png') {
+                                    photoBlob = raw;
+                                } else {
+                                    // ClipboardItem só aceita image/png: converte via canvas
+                                    const bmp = await createImageBitmap(raw);
+                                    const cv = document.createElement('canvas');
+                                    cv.width = bmp.width; cv.height = bmp.height;
+                                    cv.getContext('2d')?.drawImage(bmp, 0, 0);
+                                    photoBlob = await new Promise<Blob | null>(res => cv.toBlob(res, 'image/png'));
+                                }
+                            }
+                        } catch (photoErr) { console.warn('[FimDeMissao] Falha ao preparar foto:', photoErr); }
+                    }
+                    if (photoBlob && typeof ClipboardItem !== 'undefined' && typeof navigator.clipboard?.write === 'function') {
+                        await navigator.clipboard.write([new ClipboardItem({
+                            'text/plain': new Blob([finalizeReportText], { type: 'text/plain' }),
+                            'image/png': photoBlob,
+                        })]);
+                        finalizeAutoCopied = true;
+                        // Print colado é de uso único
+                        updatePrintBlobRef.current = null;
+                        setUpdatePrintPreview('');
+                        showNotification('Fim de Missão copiado', 'Texto e foto copiados juntos. É só colar no WhatsApp.', 'success');
+                    } else {
+                        await navigator.clipboard.writeText(finalizeReportText);
+                        finalizeAutoCopied = true;
+                        showNotification('Fim de Missão copiado', 'Relatório de fim de missão copiado. É só colar no WhatsApp.', 'success');
+                    }
+                } catch (copyErr) {
+                    console.warn('[FimDeMissao] Cópia automática falhou, abrindo diálogo:', copyErr);
+                }
+
+                if (!finalizeAutoCopied) {
+                    // Plano B (ex.: iOS): diálogo com botões dentro do gesto de clique
+                    setFinalizeReport({ text: finalizeReportText, photoUrl: confirmedPrintUrlRef.current });
+                    setCopiedReportText(false);
+                    setCopiedReportPhoto(false);
+                }
 
                 try {
                     await authFetch('/api/email/mission-end', {
@@ -2265,17 +2316,18 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
 
             setEditData(prev => ({ ...prev, currentLocationName: '', mapLink: '' }));
 
-            // OS recém-concluída: o diálogo "Fim de Missão concluído" (com botões
-            // Copiar texto / Copiar foto que funcionam no iOS dentro do gesto) já foi
-            // aberto acima (setFinalizeReport). NÃO chamar onSuccess(report) aqui: isso
-            // fecharia o modal (desmontando o diálogo via `if (!isOpen) return null`) e
-            // dispararia a auto-cópia FORA do gesto do clique — que no Safari/iOS é
-            // bloqueada e exibia "Não foi possível copiar. Tente novamente.", fazendo o
-            // operador achar que a finalização falhou (ela foi salva com sucesso).
-            // O fechamento do modal + refresh da lista ocorrem ao clicar em "Fechar"
-            // no diálogo. Demais atualizações seguem o fluxo normal (auto-cópia desktop).
-            const concludedNow = finalStatus === MissionStatus.COMPLETED && originalStatus !== MissionStatus.COMPLETED;
-            if (!concludedNow) {
+            // OS recém-concluída: se a cópia automática (texto+foto) funcionou,
+            // fecha o modal normalmente SEM diálogo — onSuccess(undefined) para o
+            // pai não re-copiar só o texto (apagaria a foto do clipboard).
+            // Se a cópia automática falhou (ex.: Safari/iOS bloqueia cópia fora do
+            // gesto de clique), o diálogo "Fim de Missão concluído" foi aberto acima
+            // (setFinalizeReport) como plano B: NÃO chamar onSuccess aqui, pois isso
+            // fecharia o modal (desmontando o diálogo via `if (!isOpen) return null`).
+            // Nesse caso o fechamento + refresh ocorrem ao clicar em "Fechar".
+            // Demais atualizações seguem o fluxo normal (auto-cópia desktop).
+            if (isNowCompleted) {
+                if (finalizeAutoCopied) onSuccess(undefined);
+            } else {
                 // combinedCopied: texto+foto já estão no clipboard; passar o texto
                 // faria o MissionTable re-copiar só o texto e APAGAR a foto.
                 onSuccess(combinedCopied ? undefined : report);
