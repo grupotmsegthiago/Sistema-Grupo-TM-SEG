@@ -1600,7 +1600,10 @@ export async function registerRoutes(
             // Prompt em inglês: testado contra o carimbo de data/cidade de câmera —
             // a versão em português preservava o carimbo; a em inglês remove
             // carimbo, marcas d'água e logos de terceiros (inclusive na carroceria).
-            { text: "Remove ALL text overlays from this image. This includes: (1) any date/time and city/location stamp printed on the photo (camera timestamp overlays), (2) any watermarks, captions, app UI text or software names, (3) any third-party company logos or brand names, including ones painted or printed on the truck/vehicle body. Inpaint the removed areas naturally with the surrounding background (sky, road, vehicle surface). Keep everything else in the photo exactly the same: vehicle, license plate, road, map, route, landscape and framing. Do not add any new text, logo or element. Output only the edited image." }
+            // IMPORTANTE (pedido do usuário): a PLACA do veículo é intocável —
+            // o modelo estava cobrindo a placa com retângulo branco; a instrução
+            // reforçada abaixo proíbe apagar/borrar/cobrir placas.
+            { text: "Remove ALL text overlays from this image. This includes: (1) any date/time and city/location stamp printed on the photo (camera timestamp overlays), (2) any watermarks, captions, app UI text or software names, (3) any third-party company logos or brand names, including ones painted or printed on the truck/vehicle body. Inpaint the removed areas naturally with the surrounding background (sky, road, vehicle surface). CRITICAL: the vehicle LICENSE PLATE must remain 100% untouched, visible and readable — NEVER remove, blur, cover, whiten or alter license plates. The same applies to road signs and any text that is a physical part of the scene (except third-party company logos). Keep everything else in the photo exactly the same: vehicle, license plate, road, map, route, landscape and framing. Do not add any new text, logo or element. Output only the edited image." }
           ]
         }],
         config: { responseModalities: [Modality.TEXT, Modality.IMAGE] },
