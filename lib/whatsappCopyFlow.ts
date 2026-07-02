@@ -12,9 +12,19 @@
 // clique (gesto do usuário), funciona também em Safari/iOS.
 
 let activeOverlay: HTMLDivElement | null = null;
+let waWindow: Window | null = null;
 
 function removePopup() {
     if (activeOverlay) { activeOverlay.remove(); activeOverlay = null; }
+}
+
+// "Alt+Tab" para o WhatsApp: foca a aba do WhatsApp Web já aberta por nós,
+// ou abre uma nova. (Página não consegue focar o app desktop do WhatsApp.)
+function focusWhatsapp() {
+    try {
+        if (waWindow && !waWindow.closed) { waWindow.focus(); return; }
+        waWindow = window.open('https://web.whatsapp.com', 'tmseg-whatsapp-web');
+    } catch { /* popup bloqueado: usuário troca de janela manualmente */ }
 }
 
 /**
@@ -69,35 +79,70 @@ export function showWhatsappCopyPopup(photoBlob: Blob, text: string): boolean {
         closeLink.style.display = 'inline-block';
     };
 
+    // Animação de progresso "preenchendo o botão" enquanto copia
+    const fill = document.createElement('div');
+    fill.style.cssText = 'position:absolute;left:0;top:0;bottom:0;width:0;background:rgba(255,255,255,.35);pointer-events:none;transition:width .9s ease;';
+    const label = document.createElement('span');
+    label.style.cssText = 'position:relative;z-index:1;';
+    label.textContent = 'COPIAR FOTO';
+    btn.textContent = '';
+    btn.style.position = 'relative';
+    btn.style.overflow = 'hidden';
+    btn.appendChild(fill);
+    btn.appendChild(label);
+
+    const delay = (ms: number) => new Promise<void>(res => setTimeout(res, ms));
+    const runProgress = async (loadingLabel: string, work: Promise<unknown>) => {
+        label.textContent = loadingLabel;
+        fill.style.transition = 'none';
+        fill.style.width = '0';
+        // Força reflow para a transição reiniciar do zero
+        void fill.offsetWidth;
+        fill.style.transition = 'width .9s ease';
+        fill.style.width = '100%';
+        // Cópia é rápida; segura ~0,9s para a animação completar o botão
+        await Promise.all([work, delay(900)]);
+        fill.style.transition = 'none';
+        fill.style.width = '0';
+    };
+
     let stage: 'photo' | 'text' = 'photo';
     btn.onclick = () => {
         void (async () => {
             btn.disabled = true;
+            btn.style.cursor = 'wait';
             try {
                 if (stage === 'photo') {
                     // FOTO SOZINHA no clipboard: único jeito de o WhatsApp abrir a
                     // pré-visualização da foto com a caixa de legenda.
-                    await navigator.clipboard.write([new ClipboardItem({ 'image/png': photoBlob })]);
+                    // A escrita começa JÁ no clique (gesto) — a animação corre em paralelo.
+                    await runProgress('COPIANDO FOTO...', navigator.clipboard.write([new ClipboardItem({ 'image/png': photoBlob })]));
                     stage = 'text';
                     err.style.display = 'none';
                     step.textContent = 'FOTO copiada ✅ — cole no WhatsApp (Ctrl+V). Depois volte e copie o TEXTO da legenda.';
-                    btn.textContent = 'COPIAR TEXTO';
-                    btn.style.cssText = baseBtnCss + 'background:#10b981;color:#052e22;';
+                    label.textContent = 'COPIAR TEXTO';
+                    btn.style.cssText = baseBtnCss + 'background:#10b981;color:#052e22;position:relative;overflow:hidden;';
+                    // "Alt+Tab": leva direto para a aba do WhatsApp Web
+                    focusWhatsapp();
                 } else {
-                    await navigator.clipboard.writeText(text);
+                    await runProgress('COPIANDO TEXTO...', navigator.clipboard.writeText(text));
                     err.style.display = 'none';
                     step.textContent = 'TEXTO copiado ✅ — cole na LEGENDA da foto no WhatsApp e envie.';
                     btn.style.display = 'none';
                     closeLink.style.display = 'none';
                     setTimeout(() => { if (activeOverlay === overlay) removePopup(); }, 1600);
+                    // Volta para o WhatsApp para colar a legenda
+                    focusWhatsapp();
                 }
             } catch (e) {
                 console.warn('[WhatsappCopyPopup] Falha ao copiar:', e);
+                label.textContent = stage === 'photo' ? 'COPIAR FOTO' : 'COPIAR TEXTO';
                 showError(stage === 'photo'
                     ? 'Não foi possível copiar a foto neste navegador. Tente de novo ou feche.'
                     : 'Não foi possível copiar o texto. Tente de novo ou feche.');
             } finally {
                 btn.disabled = false;
+                btn.style.cursor = 'pointer';
             }
         })();
     };
