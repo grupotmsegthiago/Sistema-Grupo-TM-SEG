@@ -2059,9 +2059,12 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
                 const printBlob = updatePrintBlobRef.current;
                 if (printBlob && typeof ClipboardItem !== 'undefined' && typeof navigator.clipboard?.write === 'function') {
                     try {
+                        // ORDEM IMPORTA: foto ANTES do texto — o WhatsApp usa o
+                        // primeiro formato do pacote; com a foto primeiro, ele abre
+                        // a foto com a caixa de legenda (padrão foto + texto).
                         await navigator.clipboard.write([new ClipboardItem({
-                            'text/plain': new Blob([report], { type: 'text/plain' }),
                             'image/png': printBlob,
+                            'text/plain': new Blob([report], { type: 'text/plain' }),
                         })]);
                         combinedCopied = true;
                         showNotification('Formulário e Foto copiados', 'Formulário e foto com logotipo copiados para a área de transferência.', 'success');
@@ -2142,9 +2145,10 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
                         } catch (photoErr) { console.warn('[FimDeMissao] Falha ao preparar foto:', photoErr); }
                     }
                     if (photoBlob && typeof ClipboardItem !== 'undefined' && typeof navigator.clipboard?.write === 'function') {
+                        // ORDEM IMPORTA: foto ANTES do texto (padrão WhatsApp)
                         await navigator.clipboard.write([new ClipboardItem({
-                            'text/plain': new Blob([finalizeReportText], { type: 'text/plain' }),
                             'image/png': photoBlob,
+                            'text/plain': new Blob([finalizeReportText], { type: 'text/plain' }),
                         })]);
                         finalizeAutoCopied = true;
                         // Print colado é de uso único
@@ -3561,9 +3565,10 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
                                     try {
                                         const printBlob = updatePrintBlobRef.current;
                                         if (printBlob && typeof ClipboardItem !== 'undefined' && typeof navigator.clipboard?.write === 'function') {
+                                            // ORDEM IMPORTA: foto ANTES do texto (padrão WhatsApp)
                                             await navigator.clipboard.write([new ClipboardItem({
-                                                'text/plain': new Blob([testText], { type: 'text/plain' }),
                                                 'image/png': printBlob,
+                                                'text/plain': new Blob([testText], { type: 'text/plain' }),
                                             })]);
                                             showNotification('Teste copiado', 'Texto de teste + foto copiados juntos. Cole no WhatsApp para conferir.', 'success');
                                         } else {
