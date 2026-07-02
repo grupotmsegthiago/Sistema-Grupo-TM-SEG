@@ -12,20 +12,14 @@
 // clique (gesto do usuário), funciona também em Safari/iOS.
 
 let activeOverlay: HTMLDivElement | null = null;
-let waWindow: Window | null = null;
 
 function removePopup() {
     if (activeOverlay) { activeOverlay.remove(); activeOverlay = null; }
 }
 
-// "Alt+Tab" para o WhatsApp: foca a aba do WhatsApp Web já aberta por nós,
-// ou abre uma nova. (Página não consegue focar o app desktop do WhatsApp.)
-function focusWhatsapp() {
-    try {
-        if (waWindow && !waWindow.closed) { waWindow.focus(); return; }
-        waWindow = window.open('https://web.whatsapp.com', 'tmseg-whatsapp-web');
-    } catch { /* popup bloqueado: usuário troca de janela manualmente */ }
-}
+// NÃO abrir/focar o WhatsApp via window.open: abre uma NOVA aba do WhatsApp Web
+// e desconecta a sessão que o funcionário já tem aberta. Alt+Tab real não é
+// possível a partir de uma página — o usuário troca de janela manualmente.
 
 /**
  * Abre o popup guiado de cópia FOTO → TEXTO.
@@ -91,6 +85,8 @@ export function showWhatsappCopyPopup(photoBlob: Blob, text: string): boolean {
     btn.appendChild(fill);
     btn.appendChild(label);
 
+    // Duração pedida pelo usuário: ~10s de preenchimento para deixar claro que é para esperar
+    const PROGRESS_MS = 10000;
     const delay = (ms: number) => new Promise<void>(res => setTimeout(res, ms));
     const runProgress = async (loadingLabel: string, work: Promise<unknown>) => {
         label.textContent = loadingLabel;
@@ -98,10 +94,10 @@ export function showWhatsappCopyPopup(photoBlob: Blob, text: string): boolean {
         fill.style.width = '0';
         // Força reflow para a transição reiniciar do zero
         void fill.offsetWidth;
-        fill.style.transition = 'width .9s ease';
+        fill.style.transition = `width ${PROGRESS_MS / 1000}s linear`;
         fill.style.width = '100%';
-        // Cópia é rápida; segura ~0,9s para a animação completar o botão
-        await Promise.all([work, delay(900)]);
+        // Cópia é rápida; segura a animação inteira para completar o botão
+        await Promise.all([work, delay(PROGRESS_MS)]);
         fill.style.transition = 'none';
         fill.style.width = '0';
     };
@@ -122,8 +118,6 @@ export function showWhatsappCopyPopup(photoBlob: Blob, text: string): boolean {
                     step.textContent = 'FOTO copiada ✅ — cole no WhatsApp (Ctrl+V). Depois volte e copie o TEXTO da legenda.';
                     label.textContent = 'COPIAR TEXTO';
                     btn.style.cssText = baseBtnCss + 'background:#10b981;color:#052e22;position:relative;overflow:hidden;';
-                    // "Alt+Tab": leva direto para a aba do WhatsApp Web
-                    focusWhatsapp();
                 } else {
                     await runProgress('COPIANDO TEXTO...', navigator.clipboard.writeText(text));
                     err.style.display = 'none';
@@ -131,8 +125,6 @@ export function showWhatsappCopyPopup(photoBlob: Blob, text: string): boolean {
                     btn.style.display = 'none';
                     closeLink.style.display = 'none';
                     setTimeout(() => { if (activeOverlay === overlay) removePopup(); }, 1600);
-                    // Volta para o WhatsApp para colar a legenda
-                    focusWhatsapp();
                 }
             } catch (e) {
                 console.warn('[WhatsappCopyPopup] Falha ao copiar:', e);
