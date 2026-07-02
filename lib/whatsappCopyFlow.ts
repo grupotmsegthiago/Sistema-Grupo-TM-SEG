@@ -85,8 +85,8 @@ export function showWhatsappCopyPopup(photoBlob: Blob, text: string): boolean {
     btn.appendChild(fill);
     btn.appendChild(label);
 
-    // Duração pedida pelo usuário: ~10s de preenchimento para deixar claro que é para esperar
-    const PROGRESS_MS = 10000;
+    // Duração pedida pelo usuário: ~5s de preenchimento para deixar claro que é para esperar
+    const PROGRESS_MS = 5000;
     const delay = (ms: number) => new Promise<void>(res => setTimeout(res, ms));
     const runProgress = async (loadingLabel: string, work: Promise<unknown>) => {
         label.textContent = loadingLabel;

@@ -1597,7 +1597,10 @@ export async function registerRoutes(
           role: "user",
           parts: [
             { inlineData: { mimeType: image.mimeType, data: image.data } },
-            { text: "Edite esta imagem de rastreamento/monitoramento veicular: REMOVA todos os logotipos, marcas d'água, ícones de marca e nomes de empresas/sistemas de terceiros sobrepostos na imagem (ex.: logotipo de rastreadora, nome do software de monitoramento, marca no cabeçalho). Preencha as áreas removidas de forma natural e discreta. MANTENHA intactos o mapa, a rota, o veículo, placas, horários, datas, coordenadas e todas as informações operacionais. Não adicione nenhum elemento novo. Retorne somente a imagem editada." }
+            // Prompt em inglês: testado contra o carimbo de data/cidade de câmera —
+            // a versão em português preservava o carimbo; a em inglês remove
+            // carimbo, marcas d'água e logos de terceiros (inclusive na carroceria).
+            { text: "Remove ALL text overlays from this image. This includes: (1) any date/time and city/location stamp printed on the photo (camera timestamp overlays), (2) any watermarks, captions, app UI text or software names, (3) any third-party company logos or brand names, including ones painted or printed on the truck/vehicle body. Inpaint the removed areas naturally with the surrounding background (sky, road, vehicle surface). Keep everything else in the photo exactly the same: vehicle, license plate, road, map, route, landscape and framing. Do not add any new text, logo or element. Output only the edited image." }
           ]
         }],
         config: { responseModalities: [Modality.TEXT, Modality.IMAGE] },
