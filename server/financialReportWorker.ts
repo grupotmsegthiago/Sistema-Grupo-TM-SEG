@@ -142,6 +142,11 @@ async function fetchRevenueSummary() {
   const startMonthMs = startOfMonthSP(now).getTime();
   const startWeekMs = startOfWeekSP(now).getTime();
   const startDayMs = startOfDaySP(now).getTime();
+  // Limite SUPERIOR de todas as janelas: fim do dia de HOJE (23:59:59.999).
+  // Sem ele, OS agendadas para o FUTURO (amanhã em diante) inflavam o "Hoje"
+  // (e semana/mês/ano) do e-mail, divergindo do termômetro do Monitoramento
+  // (getCanonicalDateRange termina todos os períodos em "hoje 23:59").
+  const endDayMs = startDayMs + 24 * 60 * 60 * 1000 - 1;
 
   const startYearIso = new Date(startYear.getTime() - new Date().getTimezoneOffset() * 60000).toISOString();
 
@@ -182,6 +187,7 @@ async function fetchRevenueSummary() {
   for (const m of (missions || [])) {
     const r = computeMissionRevenue(m, refs.clientTables, refs.providerTables, refs.clients, currentTime);
     if (!r) continue;
+    if (r.ts > endDayMs) continue; // agendadas para o futuro ficam de fora (regra do termômetro)
     if (r.ts >= startYearMs) {
       buckets.year.count++; buckets.year.revenue += r.revenue; buckets.year.cost += r.cost;
       const k = r.client.toUpperCase();
