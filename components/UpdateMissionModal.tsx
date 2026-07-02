@@ -828,10 +828,13 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
     const [updatePrintAiCleaned, setUpdatePrintAiCleaned] = useState(false);
     const updatePrintBlobRef = useRef<Blob | null>(null);
 
-    // Limpeza por IA (Gemini, via backend): remove logos/escritas de terceiros
-    // do print ANTES de aplicar o logotipo TM SEG. Fail-soft: se a IA falhar,
-    // segue com a foto original (só com o logotipo TM SEG por cima).
-    const cleanPrintWithAI = async (file: File): Promise<string | null> => {
+    // Limpeza por IA (Gemini, via backend): detecta as REGIÕES com carimbo/
+    // logos colados (inclusive um logo TM SEG antigo) e devolve a imagem
+    // "limpa" para usar como REMENDO só dentro dessas regiões. A foto final é
+    // sempre montada na RESOLUÇÃO ORIGINAL — nunca substituída pela imagem
+    // regenerada da IA (que sai em ~1024px e deixava a foto borrada).
+    // Fail-soft: se a IA falhar, segue com a foto original.
+    const cleanPrintWithAI = async (file: File): Promise<{ src: string | null; boxes: number[][] } | null> => {
         try {
             const base64 = await new Promise<string>((resolve, reject) => {
                 const r = new FileReader();
@@ -847,8 +850,13 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
             });
             if (!resp.ok) return null;
             const j = await resp.json();
-            if (!j?.image) return null;
-            return `data:${j.mimeType || 'image/png'};base64,${j.image}`;
+            const boxes: number[][] = (Array.isArray(j?.boxes) ? j.boxes : [])
+                .map((b: any) => b?.box_2d)
+                .filter((b: any) => Array.isArray(b) && b.length === 4);
+            if (boxes.length === 0) return null;
+            // Sem imagem editada (ex.: filtro de segurança do Gemini bloqueou a
+            // remoção do logo): segue só com as caixas — o remendo vira borrão local.
+            return { src: j?.image ? `data:${j.mimeType || 'image/png'};base64,${j.image}` : null, boxes };
         } catch (e) {
             console.warn('[UpdatePrint] Limpeza por IA falhou (segue com a foto original):', e);
             return null;
@@ -864,17 +872,82 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
                 img.onerror = () => reject(new Error('Falha ao carregar imagem'));
                 img.src = src;
             });
-            const cleanedSrc = await cleanPrintWithAI(file);
-            setUpdatePrintAiCleaned(!!cleanedSrc);
+            const cleaned = await cleanPrintWithAI(file);
+            setUpdatePrintAiCleaned(!!cleaned);
             const photoUrl = URL.createObjectURL(file);
             try {
-                const [photo, logo] = await Promise.all([loadImg(cleanedSrc || photoUrl), loadImg('/logo.png')]);
+                // Base da foto = SEMPRE a original em resolução cheia (qualidade).
+                const [photo, logo] = await Promise.all([loadImg(photoUrl), loadImg('/logo.png')]);
                 const canvas = document.createElement('canvas');
                 canvas.width = photo.naturalWidth;
                 canvas.height = photo.naturalHeight;
                 const ctx = canvas.getContext('2d');
                 if (!ctx) throw new Error('Canvas indisponível');
                 ctx.drawImage(photo, 0, 0);
+                // Remendos só DENTRO das caixas detectadas (carimbo/logos):
+                // com imagem limpa da IA, cola o trecho limpo escalado; sem ela
+                // (filtro de segurança bloqueou), aplica borrão local forte.
+                if (cleaned) {
+                    try {
+                        let patchImg = cleaned.src ? await loadImg(cleaned.src) : null;
+                        const W = canvas.width, H = canvas.height;
+                        // Guarda de proporção: se a imagem da IA veio com aspect
+                        // ratio diferente do original (>5%), o mapeamento das
+                        // caixas ficaria torto — cai no remendo local.
+                        if (patchImg) {
+                            const arOrig = W / H, arPatch = patchImg.naturalWidth / patchImg.naturalHeight;
+                            if (Math.abs(arPatch - arOrig) / arOrig > 0.05) {
+                                console.warn('[UpdatePrint] Proporção da imagem da IA difere do original — usando remendo local.');
+                                patchImg = null;
+                            }
+                        }
+                        // ctx.filter não é suportado em todo navegador (iOS antigo):
+                        // detecta e usa pixelização determinística como alternativa.
+                        const filterSupported = typeof (ctx as any).filter === 'string';
+                        const localPatch = (dx: number, dy: number, dw: number, dh: number) => {
+                            if (filterSupported) {
+                                const blurPx = Math.max(16, Math.round(Math.max(dw, dh) / 6));
+                                ctx.save();
+                                ctx.beginPath();
+                                ctx.rect(dx, dy, dw, dh);
+                                ctx.clip();
+                                ctx.filter = `blur(${blurPx}px)`;
+                                ctx.drawImage(canvas, dx, dy, dw, dh, dx, dy, dw, dh);
+                                ctx.drawImage(canvas, dx, dy, dw, dh, dx, dy, dw, dh);
+                                ctx.restore();
+                                ctx.filter = 'none';
+                                return;
+                            }
+                            // Pixelização: reduz a região a ~8px de lado e volta
+                            // ampliada com suavização — funciona em qualquer navegador.
+                            const tiny = document.createElement('canvas');
+                            tiny.width = Math.max(2, Math.round(dw / Math.max(dw, dh) * 8));
+                            tiny.height = Math.max(2, Math.round(dh / Math.max(dw, dh) * 8));
+                            const tctx = tiny.getContext('2d');
+                            if (!tctx) return;
+                            tctx.drawImage(canvas, dx, dy, dw, dh, 0, 0, tiny.width, tiny.height);
+                            ctx.imageSmoothingEnabled = true;
+                            ctx.drawImage(tiny, 0, 0, tiny.width, tiny.height, dx, dy, dw, dh);
+                        };
+                        for (const [ymin, xmin, ymax, xmax] of cleaned.boxes) {
+                            // Coordenadas normalizadas 0-1000 + folga de 1,5%.
+                            const pad = 15;
+                            const y0 = Math.max(0, ymin - pad) / 1000, x0 = Math.max(0, xmin - pad) / 1000;
+                            const y1 = Math.min(1000, ymax + pad) / 1000, x1 = Math.min(1000, xmax + pad) / 1000;
+                            if (y1 <= y0 || x1 <= x0) continue;
+                            const dx = x0 * W, dy = y0 * H, dw = (x1 - x0) * W, dh = (y1 - y0) * H;
+                            if (patchImg) {
+                                const pw = patchImg.naturalWidth, ph = patchImg.naturalHeight;
+                                ctx.drawImage(patchImg, x0 * pw, y0 * ph, (x1 - x0) * pw, (y1 - y0) * ph, dx, dy, dw, dh);
+                            } else {
+                                localPatch(dx, dy, dw, dh);
+                            }
+                        }
+                    } catch (e) {
+                        console.warn('[UpdatePrint] Remendo da IA falhou (segue com a foto original):', e);
+                        setUpdatePrintAiCleaned(false);
+                    }
+                }
                 // Logo TM SEG (fundo transparente) no canto superior DIREITO,
                 // ~20% da largura da foto, sem distorcer a proporção da logo.
                 const logoW = Math.max(48, Math.round(canvas.width * 0.20));

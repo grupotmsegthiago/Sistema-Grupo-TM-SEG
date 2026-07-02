@@ -35,3 +35,4 @@
 - [Z-API Central connection](zapi-central-connection.md) — conta exige Client-Token em TODA chamada; secrets ZAPI_* globais, prod só vê após republish.
 - [WhatsApp bot kill-switch](whatsapp-bot-kill-switch.md) — bot Z-API MUDO por padrão (sem WHATSAPP_BOT_ENABLED=true); única exceção: postar atualização de OS no GRUPO vinculado ao cliente (send-group, validado server-side).
 - [Comercial price/cost table gates](comercial-price-table-gates.md) — client tables blocked by readOnly value fields (form isFinanceAdmin allowlist); provider tables blocked upstream by admin-only edit button in provider list; tables insert via supabase-js, no RLS.
+- [Limpeza de print sem perder qualidade](print-clean-quality.md) — foto de OS usa SEMPRE a original em resolução cheia; IA só remenda caixas detectadas; Gemini bloqueia remoção de logo (SAFETY) → fallback borrão local.

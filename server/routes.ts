@@ -1667,27 +1667,82 @@ export async function registerRoutes(
       if (!image?.data || !image?.mimeType) return res.status(400).json({ error: 'Imagem ausente' });
       if (typeof image.mimeType !== 'string' || !image.mimeType.startsWith('image/')) return res.status(400).json({ error: 'Tipo de arquivo inválido' });
       if (typeof image.data !== 'string' || image.data.length > 20_000_000) return res.status(413).json({ error: 'Imagem grande demais para limpeza por IA' });
-      const response = await ai.models.generateContent({
-        model: "gemini-2.5-flash-image",
+      // PASSO 1 — detectar as REGIÕES com sobreposições (carimbo de câmera,
+      // marca d'água, logos colados — inclusive um logo TM SEG antigo colado
+      // na foto). A foto final é montada no frontend em RESOLUÇÃO ORIGINAL e a
+      // imagem regenerada pela IA (que sai em ~1024px, borrada) só é usada
+      // como remendo DENTRO dessas caixas — nunca como base da foto inteira.
+      const boxResp = await ai.models.generateContent({
+        model: "gemini-2.5-flash",
         contents: [{
           role: "user",
           parts: [
             { inlineData: { mimeType: image.mimeType, data: image.data } },
-            // Prompt em inglês: testado contra o carimbo de data/cidade de câmera —
-            // a versão em português preservava o carimbo; a em inglês remove
-            // carimbo, marcas d'água e logos de terceiros (inclusive na carroceria).
-            // IMPORTANTE (pedido do usuário): a PLACA do veículo é intocável —
-            // o modelo estava cobrindo a placa com retângulo branco; a instrução
-            // reforçada abaixo proíbe apagar/borrar/cobrir placas.
-            { text: "Remove ALL text overlays from this image. This includes: (1) any date/time and city/location stamp printed on the photo (camera timestamp overlays), (2) any watermarks, captions, app UI text or software names, (3) any third-party company logos or brand names, including ones painted or printed on the truck/vehicle body. Inpaint the removed areas naturally with the surrounding background (sky, road, vehicle surface). CRITICAL: the vehicle LICENSE PLATE must remain 100% untouched, visible and readable — NEVER remove, blur, cover, whiten or alter license plates. The same applies to road signs and any text that is a physical part of the scene (except third-party company logos). Do NOT enhance, retouch, sharpen, brighten or otherwise alter the photo quality — preserve the original exposure, colors, grain and blur exactly as they are. Keep everything else in the photo exactly the same: vehicle, license plate, road, map, route, landscape and framing. Do not add any new text, logo or element. Output only the edited image." }
+            { text: "Detect every OVERLAY element stamped ON TOP of this photo: (1) date/time and city/location camera stamps, (2) watermarks, captions, app UI text or software names, (3) pasted/stamped company logos of ANY brand (including a 'TMSEG' shield logo if present as an overlay), (4) third-party company logos or brand names painted/printed on the truck or vehicle body. Do NOT include: vehicle license plates, road signs, or any text that is a physical part of the scene. Return a JSON array where each item is {\"box_2d\": [ymin, xmin, ymax, xmax], \"label\": string} with coordinates normalized to 0-1000. Return [] if there are no overlays." }
           ]
         }],
-        config: { responseModalities: [Modality.TEXT, Modality.IMAGE] },
+        config: {
+          responseMimeType: "application/json",
+          responseSchema: {
+            type: "array",
+            items: {
+              type: "object",
+              properties: {
+                box_2d: { type: "array", items: { type: "integer" } },
+                label: { type: "string" },
+              },
+              required: ["box_2d"],
+            },
+          },
+        },
       });
-      const parts = response.candidates?.[0]?.content?.parts || [];
-      const imgPart = parts.find((p: any) => p.inlineData?.data);
-      if (!imgPart?.inlineData?.data) return res.status(502).json({ error: 'IA não retornou imagem editada' });
-      res.json({ image: imgPart.inlineData.data, mimeType: imgPart.inlineData.mimeType || 'image/png' });
+      let boxes: Array<{ box_2d: number[]; label?: string }> = [];
+      try { boxes = JSON.parse(boxResp.text || '[]'); } catch { boxes = []; }
+      boxes = (Array.isArray(boxes) ? boxes : []).filter(b => Array.isArray(b?.box_2d) && b.box_2d.length === 4);
+      if (boxes.length === 0) {
+        // Nada para remover — o frontend usa a foto original em qualidade cheia.
+        return res.json({ boxes: [] });
+      }
+
+      // PASSO 2 — gerar a versão "limpa" (inpainting) para servir de remendo.
+      // Prompt em inglês: testado contra o carimbo de data/cidade de câmera —
+      // a versão em português preservava o carimbo; a em inglês remove
+      // carimbo, marcas d'água e logos de terceiros (inclusive na carroceria).
+      // IMPORTANTE (pedido do usuário): a PLACA do veículo é intocável —
+      // o modelo estava cobrindo a placa com retângulo branco; a instrução
+      // reforçada abaixo proíbe apagar/borrar/cobrir placas.
+      const editPrompt = "Remove ALL text overlays from this image. This includes: (1) any date/time and city/location stamp printed on the photo (camera timestamp overlays), (2) any watermarks, captions, app UI text or software names, (3) any pasted/stamped company logos of any brand (including a 'TMSEG' shield logo overlay if present), (4) any third-party company logos or brand names, including ones painted or printed on the truck/vehicle body. Inpaint the removed areas naturally with the surrounding background (sky, road, vehicle surface). CRITICAL: the vehicle LICENSE PLATE must remain 100% untouched, visible and readable — NEVER remove, blur, cover, whiten or alter license plates. The same applies to road signs and any text that is a physical part of the scene (except third-party company logos). Do NOT enhance, retouch, sharpen, brighten or otherwise alter the photo quality — preserve the original exposure, colors, grain and blur exactly as they are. Keep everything else in the photo exactly the same: vehicle, license plate, road, map, route, landscape and framing. Do not add any new text, logo or element. Output only the edited image.";
+      let imgPart: any = null;
+      for (let attempt = 1; attempt <= 2 && !imgPart; attempt++) {
+        const response = await ai.models.generateContent({
+          model: "gemini-2.5-flash-image",
+          contents: [{
+            role: "user",
+            parts: [
+              { inlineData: { mimeType: image.mimeType, data: image.data } },
+              { text: editPrompt }
+            ]
+          }],
+          config: { responseModalities: [Modality.TEXT, Modality.IMAGE] },
+        });
+        const parts = response.candidates?.[0]?.content?.parts || [];
+        imgPart = parts.find((p: any) => p.inlineData?.data) || null;
+        if (!imgPart) {
+          const txt = parts.map((p: any) => p.text).filter(Boolean).join(' ').slice(0, 300);
+          const block = (response as any).promptFeedback?.blockReason || '';
+          console.warn(`[clean-print] Tentativa ${attempt}: sem imagem na resposta. Texto: ${txt || '(vazio)'} | finishReason: ${response.candidates?.[0]?.finishReason || '?'} | block: ${block || '-'}`);
+          // O filtro de segurança do Gemini costuma BLOQUEAR pedidos de
+          // remoção de logo/marca d'água (blockReason SAFETY) — retentar não
+          // adianta. O frontend cobre as caixas com borrão local.
+          if (block) break;
+        }
+      }
+      if (!imgPart?.inlineData?.data) {
+        // Sem imagem editada: devolve só as caixas — o frontend faz o remendo
+        // local (borrão) por cima do carimbo/logo, mantendo a foto original nítida.
+        return res.json({ boxes });
+      }
+      res.json({ image: imgPart.inlineData.data, mimeType: imgPart.inlineData.mimeType || 'image/png', boxes });
     } catch (error: any) {
       console.error('Erro Gemini clean-print:', error);
       res.status(500).json({ error: 'Falha ao limpar a imagem por IA' });
