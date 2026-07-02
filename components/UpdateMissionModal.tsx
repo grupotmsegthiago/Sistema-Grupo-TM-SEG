@@ -863,15 +863,82 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
         }
     };
 
+    // Carimbo padrão da marca nas fotos enviadas ao cliente (modelo aprovado
+    // em exports/modelo-foto-instagram.svg): logo TM SEG no canto superior
+    // DIREITO + badge do Instagram com @grupo_tmseg e www.grupotmseg.com.br
+    // no canto inferior direito. Tudo escalado pela largura da foto.
+    const stampBrandOverlays = (ctx: CanvasRenderingContext2D, W: number, H: number, logo: HTMLImageElement) => {
+        // Logo TM SEG (fundo transparente), ~20% da largura, sem distorcer.
+        const logoW = Math.max(48, Math.round(W * 0.20));
+        const logoH = Math.round(logoW * (logo.naturalHeight / logo.naturalWidth));
+        const margin = Math.round(W * 0.025);
+        ctx.drawImage(logo, W - logoW - margin, margin, logoW, logoH);
+
+        // Rodapé Instagram + site (canto inferior direito). O modelo foi
+        // desenhado num viewport de 800px de largura — escala proporcional.
+        const s = W / 800;
+        const ig = 40 * s;             // lado do badge do Instagram
+        const blockW = 330 * s;        // largura do bloco (badge + textos)
+        const ox = W - margin - blockW;
+        const oy = H - margin - ig - 30 * s;
+        ctx.save();
+        ctx.shadowColor = 'rgba(0,0,0,0.85)';
+        ctx.shadowBlur = 5 * s;
+        ctx.shadowOffsetY = 1.5 * s;
+        // Badge: quadrado arredondado com o gradiente oficial do Instagram.
+        const grad = ctx.createRadialGradient(ox + 0.30 * ig, oy + 1.07 * ig, 0, ox + 0.30 * ig, oy + 1.07 * ig, 1.5 * ig);
+        grad.addColorStop(0, '#fdf497');
+        grad.addColorStop(0.05, '#fdf497');
+        grad.addColorStop(0.45, '#fd5949');
+        grad.addColorStop(0.60, '#d6249f');
+        grad.addColorStop(0.90, '#285AEB');
+        const rr = (x: number, y: number, w: number, h: number, r: number) => {
+            ctx.beginPath();
+            ctx.moveTo(x + r, y);
+            ctx.arcTo(x + w, y, x + w, y + h, r);
+            ctx.arcTo(x + w, y + h, x, y + h, r);
+            ctx.arcTo(x, y + h, x, y, r);
+            ctx.arcTo(x, y, x + w, y, r);
+            ctx.closePath();
+        };
+        ctx.fillStyle = grad;
+        rr(ox, oy, ig, ig, 11 * s);
+        ctx.fill();
+        // Glifo da câmera (branco): moldura, lente e flash.
+        ctx.strokeStyle = '#fff';
+        ctx.lineWidth = 3 * s;
+        rr(ox + 8 * s, oy + 8 * s, 24 * s, 24 * s, 8 * s);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.arc(ox + 20 * s, oy + 20 * s, 6.2 * s, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.arc(ox + 29.2 * s, oy + 10.8 * s, 2.1 * s, 0, Math.PI * 2);
+        ctx.fillStyle = '#fff';
+        ctx.fill();
+        // Textos: @grupo_tmseg ao lado do badge; site logo abaixo, alinhado à direita.
+        ctx.fillStyle = '#fff';
+        ctx.textAlign = 'left';
+        ctx.font = `800 ${Math.round(27 * s)}px Arial, Helvetica, sans-serif`;
+        ctx.fillText('@grupo_tmseg', ox + 50 * s, oy + 29 * s);
+        ctx.textAlign = 'right';
+        ctx.font = `700 ${Math.round(21 * s)}px Arial, Helvetica, sans-serif`;
+        ctx.fillText('www.grupotmseg.com.br', ox + blockW, oy + ig + 27 * s);
+        ctx.restore();
+        ctx.textAlign = 'left';
+    };
+
+    const loadStampImg = (src: string) => new Promise<HTMLImageElement>((resolve, reject) => {
+        const img = new Image();
+        img.onload = () => resolve(img);
+        img.onerror = () => reject(new Error('Falha ao carregar imagem'));
+        img.src = src;
+    });
+
     const processUpdatePrint = async (file: File) => {
         setUpdatePrintProcessing(true);
         try {
-            const loadImg = (src: string) => new Promise<HTMLImageElement>((resolve, reject) => {
-                const img = new Image();
-                img.onload = () => resolve(img);
-                img.onerror = () => reject(new Error('Falha ao carregar imagem'));
-                img.src = src;
-            });
+            const loadImg = loadStampImg;
             const cleaned = await cleanPrintWithAI(file);
             setUpdatePrintAiCleaned(!!cleaned);
             const photoUrl = URL.createObjectURL(file);
@@ -948,12 +1015,9 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
                         setUpdatePrintAiCleaned(false);
                     }
                 }
-                // Logo TM SEG (fundo transparente) no canto superior DIREITO,
-                // ~20% da largura da foto, sem distorcer a proporção da logo.
-                const logoW = Math.max(48, Math.round(canvas.width * 0.20));
-                const logoH = Math.round(logoW * (logo.naturalHeight / logo.naturalWidth));
-                const margin = Math.round(canvas.width * 0.025);
-                ctx.drawImage(logo, canvas.width - logoW - margin, margin, logoW, logoH);
+                // Carimbo da marca: logo TM SEG no canto superior direito +
+                // Instagram @grupo_tmseg e site no canto inferior direito.
+                stampBrandOverlays(ctx, canvas.width, canvas.height, logo);
                 const blob: Blob = await new Promise((resolve, reject) =>
                     canvas.toBlob(b => b ? resolve(b) : reject(new Error('Falha ao gerar PNG')), 'image/png')
                 );
@@ -2282,15 +2346,50 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
                             const resp = await fetch(confirmedPrintUrlRef.current);
                             if (resp.ok) {
                                 const raw = await resp.blob();
-                                if (raw.type === 'image/png') {
-                                    photoBlob = raw;
-                                } else {
-                                    // ClipboardItem só aceita image/png: converte via canvas
-                                    const bmp = await createImageBitmap(raw);
-                                    const cv = document.createElement('canvas');
-                                    cv.width = bmp.width; cv.height = bmp.height;
-                                    cv.getContext('2d')?.drawImage(bmp, 0, 0);
-                                    photoBlob = await new Promise<Blob | null>(res => cv.toBlob(res, 'image/png'));
+                                // Foto do hodômetro do checklist: aplica o MESMO
+                                // carimbo da marca (logo + Instagram + site) antes
+                                // de copiar/enviar ao grupo. Também garante PNG
+                                // (ClipboardItem só aceita image/png).
+                                // A FOTO é obrigatória; o carimbo é best-effort:
+                                // qualquer falha de decodificação/logo não pode
+                                // derrubar a foto (fallback = PNG cru).
+                                if (raw.type === 'image/png') photoBlob = raw;
+                                try {
+                                    // Decodifica com fallback: createImageBitmap
+                                    // pode não existir/falhar em navegadores antigos.
+                                    let src: CanvasImageSource | null = null;
+                                    let sw = 0, sh = 0;
+                                    let objUrl = '';
+                                    try {
+                                        const bmp = await createImageBitmap(raw);
+                                        src = bmp; sw = bmp.width; sh = bmp.height;
+                                    } catch {
+                                        objUrl = URL.createObjectURL(raw);
+                                        const img = await loadStampImg(objUrl);
+                                        src = img; sw = img.naturalWidth; sh = img.naturalHeight;
+                                    }
+                                    try {
+                                        if (src && sw > 0 && sh > 0) {
+                                            const cv = document.createElement('canvas');
+                                            cv.width = sw; cv.height = sh;
+                                            const cctx = cv.getContext('2d');
+                                            if (cctx) {
+                                                cctx.drawImage(src, 0, 0);
+                                                try {
+                                                    const logoImg = await loadStampImg('/logo.png');
+                                                    stampBrandOverlays(cctx, cv.width, cv.height, logoImg);
+                                                } catch (logoErr) {
+                                                    console.warn('[FimDeMissao] Logo indisponível, foto segue sem carimbo:', logoErr);
+                                                }
+                                                const stamped = await new Promise<Blob | null>(res => cv.toBlob(res, 'image/png'));
+                                                if (stamped) photoBlob = stamped;
+                                            }
+                                        }
+                                    } finally {
+                                        if (objUrl) URL.revokeObjectURL(objUrl);
+                                    }
+                                } catch (stampErr) {
+                                    console.warn('[FimDeMissao] Carimbo falhou, foto segue original:', stampErr);
                                 }
                             }
                         } catch (photoErr) { console.warn('[FimDeMissao] Falha ao preparar foto:', photoErr); }
