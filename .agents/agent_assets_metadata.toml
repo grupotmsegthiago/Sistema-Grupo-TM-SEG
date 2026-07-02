@@ -96,3 +96,9 @@ id = "MUgUnWP3GkWPUXfLORCwI"
 uri = "file://dist-reports/agentes-CTS-PADLOCK-MALAGA.xlsx"
 type = "table"
 title = "Agentes — CTS, Padlock e Malaga (299 agentes)"
+
+[[outputs]]
+id = "t-t8jopRfbUvmgF3RKJR0"
+uri = "file://exports/modelo-foto-instagram.svg"
+type = "image"
+title = "Modelo: foto com Instagram + site no canto inferior direito"
