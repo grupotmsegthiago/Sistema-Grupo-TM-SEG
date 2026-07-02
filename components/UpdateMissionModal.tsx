@@ -3580,52 +3580,6 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
                                         : 'Logotipo TM SEG aplicado (limpeza por IA indisponível — confira se sobrou logo de terceiros). A foto NÃO é salva no sistema — só vai junto na área de transferência ao salvar.'}</p>
                                 </div>
                             )}
-                            {/* TESTE DE CÓPIA: copia texto de teste + foto (se colada) sem salvar nada */}
-                            <button
-                                type="button"
-                                onClick={async () => {
-                                    const testText = `*MONITORAMENTO GRUPO TMSEG* (TESTE DE CÓPIA)
-*OS:* ${mission?.id || '—'} | *STATUS:* ${(editData.status || '').toString().toUpperCase()}
-
-🏢 *CLIENTE:* ${mission?.client || '—'}
-📣 *OCORRÊNCIA:* ${(editData.description || 'SEM INFORMAÇÃO').toUpperCase()}
-
-⚠️ ISTO É UM TESTE — NADA FOI SALVO NO SISTEMA.`;
-                                    try {
-                                        let photoBlob: Blob | null = updatePrintBlobRef.current;
-                                        let usedSample = false;
-                                        if (!photoBlob) {
-                                            // Sem print colado: usa o logotipo do sistema como
-                                            // foto de exemplo, para o teste SEMPRE sair com foto.
-                                            try {
-                                                const resp = await fetch('/logo.png');
-                                                if (resp.ok) {
-                                                    const raw = await resp.blob();
-                                                    const bitmap = await createImageBitmap(raw);
-                                                    const canvas = document.createElement('canvas');
-                                                    canvas.width = bitmap.width;
-                                                    canvas.height = bitmap.height;
-                                                    canvas.getContext('2d')?.drawImage(bitmap, 0, 0);
-                                                    photoBlob = await new Promise<Blob | null>(res => canvas.toBlob(res, 'image/png'));
-                                                    usedSample = !!photoBlob;
-                                                }
-                                            } catch (sampleErr) { console.warn('[TesteCopia] Falha ao preparar foto de exemplo:', sampleErr); }
-                                        }
-                                        if (photoBlob && showWhatsappCopyPopup(photoBlob, testText)) {
-                                            if (usedSample) showNotification('Teste', 'Sem print colado — usei o logotipo como foto de exemplo.', 'success');
-                                        } else {
-                                            await navigator.clipboard.writeText(testText);
-                                            showNotification('Teste copiado', photoBlob ? 'Este navegador não suporta copiar foto junto; só o texto foi copiado.' : 'Não foi possível preparar uma foto; só o texto foi copiado.', 'success');
-                                        }
-                                    } catch {
-                                        showNotification('Erro', 'Não foi possível copiar o teste neste navegador.', 'error');
-                                    }
-                                }}
-                                className="mt-2 inline-flex items-center gap-1.5 rounded-lg bg-amber-500/20 px-3 py-2 text-[10px] font-black uppercase tracking-wider text-amber-300 ring-1 ring-amber-500/40 hover:bg-amber-500/30"
-                                data-testid="button-test-copy"
-                            >
-                                <ClipboardList size={14} /> Testar cópia (texto + foto)
-                            </button>
                         </div>
                         <div className="grid grid-cols-3 gap-4 pt-4 border-t border-white/5">
                             <div className="flex items-center gap-2">
