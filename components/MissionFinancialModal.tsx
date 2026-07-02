@@ -1641,7 +1641,15 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
         const km = dhlDeslocKmRef.current;
         if (!(km > 0)) { if (dhlDeslocInfo) setDhlDeslocInfo(null); return; }
         const isSameOsMission = (mission as any)?.is_same_os === true;
-        const clientRate = financialData.client.unitPriceKm || 0;
+        let clientRate = financialData.client.unitPriceKm || 0;
+        // Tabelas DHL fixas (ex: SUL - RAIO SC 200KM) têm price_per_extra_km = 0.
+        // Para o KM de deslocamento autorizado vale a taxa FIXA por UF de origem
+        // do boletim DHL (coluna AA): SC/RS = R$ 7,35; demais UFs = R$ 6,90.
+        const isDhlClient = (mission?.client || '').toUpperCase().includes('DHL');
+        if (isDhlClient && clientRate <= 0) {
+            const ufOrigem = extractUF(mission?.origin || '');
+            clientRate = (ufOrigem === 'SC' || ufOrigem === 'RS') ? 7.35 : 6.90;
+        }
         const provRate = isSameOsMission ? 0 : (financialData.provider.unitCostKm || 0);
         const clientVal = Math.round(km * clientRate * 100) / 100;
         const provVal = Math.round(km * provRate * 100) / 100;
@@ -4653,12 +4661,12 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                 {useSavedValues && parseNumber(displacementInput) > 0 && (
                                     <span className="text-[8px] font-bold text-amber-600 mt-1 block">⚠ DESLOCAMENTO SALVO NA MEMÓRIA</span>
                                 )}
-                                {dhlDeslocInfo && dhlDeslocInfo.clientVal > 0 && (
+                                {dhlDeslocInfo && (dhlDeslocInfo.clientVal > 0 || dhlDeslocInfo.provVal > 0) && (
                                     <div className="mt-1 flex items-center gap-2 flex-wrap">
                                         <span className="text-[8px] font-bold text-emerald-700" data-testid="text-dhl-desloc-client">
                                             KM DHL AUTORIZADO: {dhlDeslocInfo.km.toLocaleString('pt-BR')} km × R$ {dhlDeslocInfo.clientRate.toFixed(2)} = {formatCurrency(dhlDeslocInfo.clientVal)}
                                         </span>
-                                        {!isController && !isEffectivelyLocked && Math.abs(parseNumber(displacementInput) - dhlDeslocInfo.clientVal) > 0.01 && (
+                                        {!isController && !isEffectivelyLocked && (Math.abs(parseNumber(displacementInput) - dhlDeslocInfo.clientVal) > 0.01 || Math.abs(parseNumber(displacementProviderInput) - dhlDeslocInfo.provVal) > 0.01) && (
                                             <button
                                                 type="button"
                                                 onClick={() => {

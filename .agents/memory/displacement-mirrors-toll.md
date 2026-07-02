@@ -24,6 +24,9 @@ aplicada (`financialData.client.unitPriceKm`), fornecedor = km × `provider.unit
 MESMA OS). Autofill silencioso SÓ quando: não travado/aprovado, sem override manual
 (`userManuallyEditedRef`) e deslocamento atual == 0. Caso contrário, exibe só a sugestão
 "KM DHL AUTORIZADO" com botão APLICAR (habilitado após destravar). Nunca reescreve valor salvo.
+ARMADILHA: tabelas DHL fixas (ex: SUL - RAIO SC 200KM) têm `price_per_extra_km = 0` — nesse
+caso a taxa do cliente cai no fallback FIXO por UF de origem (regra AA do boletim: SC/RS = 7,35;
+demais = 6,90), guardado por cliente DHL. Sem esse fallback o cálculo dá 0 e nada aparece.
 
 **How to apply:** ao tocar qualquer soma/relatório que já trata `toll_value`, adicione o
 deslocamento na MESMA expressão (mesmo Math.max(0,...) e mesmo fallback provider). Exceção:
