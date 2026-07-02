@@ -6,6 +6,7 @@ import { supabase } from '../lib/supabase';
 import { logAction } from '../lib/logger';
 import { clientFuzzyFilter, extractCityFromAddress } from '../lib/financialUtils';
 import { generateContent } from '../lib/gemini';
+import { startWhatsappPhotoTextFlow } from '../lib/whatsappCopyFlow';
 import { useNotification } from '../lib/NotificationContext';
 import { 
   X, Activity, MapPin, Flag, Truck, Plus, Save, 
@@ -2057,22 +2058,24 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
             // missão + foto), então este bloco só roda para atualizações normais.
             if (!isNowCompleted) try {
                 const printBlob = updatePrintBlobRef.current;
-                if (printBlob && typeof ClipboardItem !== 'undefined' && typeof navigator.clipboard?.write === 'function') {
+                if (printBlob) {
                     try {
-                        // ORDEM IMPORTA: foto ANTES do texto — o WhatsApp usa o
-                        // primeiro formato do pacote; com a foto primeiro, ele abre
-                        // a foto com a caixa de legenda (padrão foto + texto).
-                        await navigator.clipboard.write([new ClipboardItem({
-                            'image/png': printBlob,
-                            'text/plain': new Blob([report], { type: 'text/plain' }),
-                        })]);
-                        combinedCopied = true;
-                        showNotification('Formulário e Foto copiados', 'Formulário e foto com logotipo copiados para a área de transferência.', 'success');
-                        // Print é de uso único: evita reutilização acidental num próximo salvamento
-                        updatePrintBlobRef.current = null;
-                        setUpdatePrintPreview('');
+                        // WhatsApp ignora a imagem quando texto+foto vêm juntos no
+                        // clipboard. Fluxo correto: FOTO primeiro (abre legenda),
+                        // TEXTO depois (copiado sozinho ao voltar para a aba).
+                        const started = await startWhatsappPhotoTextFlow(printBlob, report);
+                        if (started) {
+                            combinedCopied = true;
+                            showNotification('Foto copiada', 'Cole a FOTO no WhatsApp; ao voltar aqui, o TEXTO da legenda copia sozinho.', 'success');
+                            // Print é de uso único: evita reutilização acidental num próximo salvamento
+                            updatePrintBlobRef.current = null;
+                            setUpdatePrintPreview('');
+                        } else {
+                            await navigator.clipboard.writeText(report);
+                            showNotification('Relatório Copiado', 'Monitoramento copiado (este navegador não suporta copiar foto).', 'success');
+                        }
                     } catch (combinedErr) {
-                        console.warn('[UpdatePrint] Cópia combinada falhou, copiando só o texto:', combinedErr);
+                        console.warn('[UpdatePrint] Cópia da foto falhou, copiando só o texto:', combinedErr);
                         await navigator.clipboard.writeText(report);
                         showNotification('Relatório Copiado', 'Monitoramento copiado (a foto não pôde ser incluída neste navegador).', 'success');
                     }
@@ -2144,17 +2147,14 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
                             }
                         } catch (photoErr) { console.warn('[FimDeMissao] Falha ao preparar foto:', photoErr); }
                     }
-                    if (photoBlob && typeof ClipboardItem !== 'undefined' && typeof navigator.clipboard?.write === 'function') {
-                        // ORDEM IMPORTA: foto ANTES do texto (padrão WhatsApp)
-                        await navigator.clipboard.write([new ClipboardItem({
-                            'image/png': photoBlob,
-                            'text/plain': new Blob([finalizeReportText], { type: 'text/plain' }),
-                        })]);
+                    if (photoBlob && await startWhatsappPhotoTextFlow(photoBlob, finalizeReportText)) {
+                        // FOTO copiada agora; TEXTO copia sozinho quando o usuário
+                        // voltar para a aba após colar a foto no WhatsApp.
                         finalizeAutoCopied = true;
                         // Print colado é de uso único
                         updatePrintBlobRef.current = null;
                         setUpdatePrintPreview('');
-                        showNotification('Fim de Missão copiado', 'Texto e foto copiados juntos. É só colar no WhatsApp.', 'success');
+                        showNotification('Fim de Missão: foto copiada', 'Cole a FOTO no WhatsApp; ao voltar aqui, o TEXTO da legenda copia sozinho.', 'success');
                     } else {
                         await navigator.clipboard.writeText(finalizeReportText);
                         finalizeAutoCopied = true;
@@ -3564,13 +3564,8 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
 ⚠️ ISTO É UM TESTE — NADA FOI SALVO NO SISTEMA.`;
                                     try {
                                         const printBlob = updatePrintBlobRef.current;
-                                        if (printBlob && typeof ClipboardItem !== 'undefined' && typeof navigator.clipboard?.write === 'function') {
-                                            // ORDEM IMPORTA: foto ANTES do texto (padrão WhatsApp)
-                                            await navigator.clipboard.write([new ClipboardItem({
-                                                'image/png': printBlob,
-                                                'text/plain': new Blob([testText], { type: 'text/plain' }),
-                                            })]);
-                                            showNotification('Teste copiado', 'Texto de teste + foto copiados juntos. Cole no WhatsApp para conferir.', 'success');
+                                        if (printBlob && await startWhatsappPhotoTextFlow(printBlob, testText)) {
+                                            showNotification('Teste: foto copiada', 'Cole a FOTO no WhatsApp; ao voltar aqui, o TEXTO da legenda copia sozinho.', 'success');
                                         } else {
                                             await navigator.clipboard.writeText(testText);
                                             showNotification('Teste copiado', printBlob ? 'Este navegador não suporta copiar foto junto; só o texto foi copiado.' : 'Texto de teste copiado (nenhum print colado). Cole no WhatsApp para conferir.', 'success');
