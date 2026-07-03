@@ -651,6 +651,8 @@ Qualquer dúvida, estamos a disposição.
                 if (dhlIntake.providerFilledAt) return null;
                 const isTerminalStatus = [MissionStatus.COMPLETED, MissionStatus.CANCELLED, MissionStatus.REFUSED].includes(mission.status);
                 if (isTerminalStatus) return null;
+                const isDhlBanner = /DHL/i.test(((mission as any).originalClientName || mission.client || ''));
+                const fornecedorLabel = isDhlBanner ? 'FORNECEDOR DHL' : 'FORNECEDOR';
                 const now = (currentTime || new Date()).getTime();
                 const startMs = mission.startTime ? new Date(mission.startTime).getTime() : 0;
                 const minutesToStart = startMs > 0 ? (startMs - now) / 60000 : Number.POSITIVE_INFINITY;
@@ -665,11 +667,11 @@ Qualquer dúvida, estamos a disposição.
                         <div
                             className={`relative text-[12px] font-black uppercase py-1.5 px-3 flex items-center justify-center gap-2 overflow-hidden ${isExtraHourActive || (missingInfo.length > 0 || isPendingKm) ? '' : 'rounded-t-xl'} animate-pulse`}
                             style={{ background: 'repeating-linear-gradient(135deg, #facc15 0 12px, #dc2626 12px 24px)', color: '#1f2937', textShadow: '0 1px 0 rgba(255,255,255,0.6)' }}
-                            title="Fornecedor DHL ainda nao preencheu — missao comeca em menos de 2 horas"
+                            title={`${isDhlBanner ? 'Fornecedor DHL' : 'Fornecedor'} ainda nao preencheu — missao comeca em menos de 2 horas`}
                         >
                             <span className="absolute inset-0 bg-white/20 animate-pulse pointer-events-none" />
                             <AlertTriangle size={14} strokeWidth={3} className="text-red-900 drop-shadow animate-bounce" />
-                            <span className="tracking-wider">FORNECEDOR DHL NAO PREENCHEU — INICIO EM {hoursLabel || '< 2H'}</span>
+                            <span className="tracking-wider">{fornecedorLabel} NAO PREENCHEU — INICIO EM {hoursLabel || '< 2H'}</span>
                             <AlertTriangle size={14} strokeWidth={3} className="text-red-900 drop-shadow animate-bounce" />
                         </div>
                     );
@@ -677,9 +679,9 @@ Qualquer dúvida, estamos a disposição.
                 return (
                     <div
                         className={`bg-amber-300 text-amber-950 text-[12px] font-black uppercase py-1.5 px-3 flex items-center justify-center gap-2 border-y-2 border-amber-600 ${isExtraHourActive || (missingInfo.length > 0 || isPendingKm) ? '' : 'rounded-t-xl'}`}
-                        title="Fornecedor DHL ainda nao preencheu os dados — cobrar preenchimento"
+                        title={`${isDhlBanner ? 'Fornecedor DHL' : 'Fornecedor'} ainda nao preencheu os dados — cobrar preenchimento`}
                     >
-                        <AlertTriangle size={12} strokeWidth={3} /> PENDENTE FORNECEDOR DHL PREENCHER {hoursLabel ? `• INICIO EM ${hoursLabel}` : ''}
+                        <AlertTriangle size={12} strokeWidth={3} /> PENDENTE {fornecedorLabel} PREENCHER {hoursLabel ? `• INICIO EM ${hoursLabel}` : ''}
                     </div>
                 );
             })()}
@@ -744,7 +746,7 @@ Qualquer dúvida, estamos a disposição.
                                 <AlertTriangle size={10} strokeWidth={3} /> DOC: AGUARDANDO LINK
                             </span>
                         ) : null}
-                        {!hideProviderInfo && (/DHL/i.test(((mission as any).originalClientName || mission.client || ''))) && dhlIntake ? (() => {
+                        {!hideProviderInfo && dhlIntake ? (() => {
                             const a1 = !!dhlIntake.progressAgent1;
                             const a2 = !!dhlIntake.progressAgent2;
                             const vh = !!dhlIntake.progressVehicle;

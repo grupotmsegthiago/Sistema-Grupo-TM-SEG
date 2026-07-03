@@ -556,11 +556,8 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
     };
 
     const fetchDhlIntakes = async () => {
-        const dhlIds = missions.filter(m => {
-            const original = ((m as any).originalClientName || '').toUpperCase();
-            const displayed = (m.client || '').toUpperCase();
-            return original.includes('DHL') || displayed.includes('DHL');
-        }).map(m => m.id);
+        // O formulário do fornecedor (intake) atende TODOS os clientes — buscar para todas as OS visíveis.
+        const dhlIds = missions.map(m => m.id);
         if (dhlIds.length === 0) { if (reqId === derivedReqIdRef.current) setDhlIntakeMap({}); return; }
         const intakeMap: Record<string, { status: string; providerFilledAt: string | null; intakeId: string; progressAgent1?: boolean; progressAgent2?: boolean; progressVehicle?: boolean; progressMirror?: boolean }> = {};
         const batches: string[][] = [];
