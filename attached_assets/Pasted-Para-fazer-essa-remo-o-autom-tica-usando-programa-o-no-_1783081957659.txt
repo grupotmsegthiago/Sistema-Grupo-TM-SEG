@@ -1,0 +1,56 @@
+Para fazer essa remoção automática usando programação no Replit, você precisará usar Python combinado com alguma biblioteca ou API de Inpainting (preenchimento inteligente de imagens).
+
+Como as marcas d'água e textos promocionais estão em posições bem específicas (no topo esquerdo e no rodapé), a lógica ideal é criar uma máscara que cubra essas regiões e pedir para a IA "limpar" o que está ali, preservando o centro da foto (onde fica a placa do veículo).
+
+Aqui está o passo a passo de como estruturar seu código e o prompt que você pode usar se decidir integrar uma API de IA (como a da OpenAI ou Stability AI) no Replit.
+
+Opção 1: Usando uma API de IA (Inpainting)
+Esta é a forma mais eficaz, pois a IA recria o fundo (como o céu ou o painel do carro) de forma natural.
+
+Se você estiver usando a API da OpenAI (DALL-E 2/3) ou da Stability AI para fazer o Inpainting, o segredo está em enviar a imagem original, uma imagem de máscara (preta e branca, onde o branco indica onde estão os textos que devem sumir) e o prompt textual.
+
+O Prompt que você deve usar no código:
+"A clean, realistic photograph without any text overlays, watermarks, logos, or digital text. Smoothly blend and fill the top-left area with a clear blue sky with light clouds, and seamlessly fill the bottom area with a clean, dark car dashboard. Do not alter or blur the truck, the license plate, or any text attached to the vehicle itself."
+
+Opção 2: Código Python no Replit (Sem API paga)
+Se você quer tentar resolver direto no Replit usando apenas bibliotecas gratuitas de processamento de imagem (como OpenCV), você pode usar uma técnica chamada cv2.inpaint. Ela não usa inteligência artificial generativa, mas tenta "borrar" o texto com base nos pixels ao redor.
+
+Você pode criar um arquivo main.py no Replit e colar o seguinte código:
+
+Python
+import cv2
+import numpy as np
+
+# 1. Carrega a imagem original
+img = cv2.imread('sua_imagem.jpg')
+h, w, _ = img.shape
+
+# 2. Cria uma máscara preta do mesmo tamanho da imagem
+mask = np.zeros((h, w), dtype=np.uint8)
+
+# 3. Define as áreas onde estão os textos para "pintar" de branco na máscara
+# Ajuste as coordenadas [y_inicial:y_final, x_inicial:x_final] se necessário
+
+# Texto do topo esquerdo (Torres)
+mask[0:int(h*0.25), 0:int(w*0.35)] = 255 
+
+# Texto do rodapé (Instagram, Telefone, Site)
+mask[int(h*0.80):h, 0:w] = 255
+
+# 4. Aplica o Inpainting para remover o texto baseado na máscara
+# O raio (ex: 3 ou 7) dita o quão longe ele busca pixels para preencher
+result = cv2.inpaint(img, mask, inpaintRadius=7, flags=cv2.INPAINT_TELEA)
+
+# 5. Salva o resultado
+cv2.imwrite('resultado_sem_texto.jpg', result)
+print("Imagem processada com sucesso!")
+Como configurar isso no Replit:
+Crie um novo Repl escolhendo o template Python.
+
+Faça o upload da sua imagem para a barra lateral esquerda do Replit (mude o nome dela para sua_imagem.jpg ou ajuste no código).
+
+No arquivo main.py, cole o código acima.
+
+Clique em Run no topo. O Replit vai instalar o OpenCV (opencv-python) automaticamente e gerar o arquivo resultado_sem_texto.jpg.
+
+⚠️ Nota realista: O método do OpenCV (Opção 2) funciona muito bem para o céu, mas no painel do carro (que tem degradê e detalhes) ele pode deixar um aspecto levemente borrado. Para um resultado comercial perfeito, o ideal é usar a Opção 1 conectada a uma API de IA.
