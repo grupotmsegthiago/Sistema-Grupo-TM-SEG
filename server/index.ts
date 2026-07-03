@@ -4,6 +4,7 @@ import { startNfRetryWorker } from "./nfRetryWorker";
 import { startFinancialReportWorker } from "./financialReportWorker";
 import { startDhlIntakeExpiryWorker } from "./dhlSupplierIntake";
 import { startClientEmailQueueWorker } from "./clientEmailQueueWorker";
+import { startZapiWatchdog } from "./zapiWatchdog";
 import { serveStatic } from "./static";
 import { createServer } from "http";
 
@@ -126,6 +127,7 @@ app.use((req, res, next) => {
       try { startFinancialReportWorker(); } catch (e: any) { log(`Financial report worker falhou ao iniciar: ${e.message}`); }
       try { startDhlIntakeExpiryWorker(); } catch (e: any) { log(`DHL intake expiry worker falhou ao iniciar: ${e.message}`); }
       try { startClientEmailQueueWorker(); } catch (e: any) { log(`Client email queue worker falhou ao iniciar: ${e.message}`); }
+      try { startZapiWatchdog(); } catch (e: any) { log(`Z-API vigia falhou ao iniciar: ${e.message}`); }
     },
   );
 })();

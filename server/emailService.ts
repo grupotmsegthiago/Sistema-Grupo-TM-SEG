@@ -27,6 +27,24 @@ const transporter = nodemailer.createTransport({
 
 console.log(`[Email] SMTP configurado: ${EMAIL_USER} | from: adm@grupotmseg.com.br | senha: ${EMAIL_PASS ? '***configurada***' : '⚠ VAZIA'}`);
 
+// Alerta de sistema genérico (ex.: vigia do WhatsApp/Z-API). Reusa o mesmo
+// transporter e template visual dos demais e-mails.
+export async function sendSystemAlertEmail(to: string[], subject: string, contentHtml: string): Promise<boolean> {
+  try {
+    await transporter.sendMail({
+      from: '"Grupo TM SEG - Sistema" <adm@grupotmseg.com.br>',
+      to: to.join(', '),
+      subject,
+      html: baseTemplate(contentHtml),
+    });
+    console.log(`[Email] Alerta de sistema enviado → ${to.join(', ')} | ${subject}`);
+    return true;
+  } catch (e: any) {
+    console.error(`[Email] Falha ao enviar alerta de sistema: ${e.message}`);
+    return false;
+  }
+}
+
 function toTitleCase(str: string): string {
   return str.replace(/\w\S*/g, (txt) => txt.charAt(0).toUpperCase() + txt.substring(1).toLowerCase());
 }
