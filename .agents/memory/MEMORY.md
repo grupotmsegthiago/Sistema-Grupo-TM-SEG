@@ -34,6 +34,7 @@
 - [Dev server sem watch](dev-server-no-watch.md) — tsx roda sem watch; mudança em server/ exige restart do workflow, senão rota nova cai no catch-all do Vite (200 HTML em ~10ms, sem `:: json`).
 - [Z-API Central connection](zapi-central-connection.md) — conta exige Client-Token em TODA chamada; secrets ZAPI_* globais, prod só vê após republish.
 - [WhatsApp bot kill-switch](whatsapp-bot-kill-switch.md) — bot Z-API MUDO por padrão (sem WHATSAPP_BOT_ENABLED=true); única exceção: postar atualização de OS no GRUPO vinculado ao cliente (send-group, validado server-side).
+- [Filtro de marcos DHL no grupo](dhl-group-update-filter.md) — grupo DHL só recebe marcos (origem/início/pernoite/fim/atípicos); rotina não vai; keywords sem acento; pernoite deduplica pela ocorrência anterior.
 - [Z-API watchdog anti-ban](zapi-watchdog.md) — restart do bot é suave: 1 por incidente, cooldown 30min persistido em system_settings, queda só com 2 leituras; loop de reconexão = risco de ban.
 - [Comercial price/cost table gates](comercial-price-table-gates.md) — client tables blocked by readOnly value fields (form isFinanceAdmin allowlist); provider tables blocked upstream by admin-only edit button in provider list; tables insert via supabase-js, no RLS.
 - [Limpeza de print sem perder qualidade](print-clean-quality.md) — foto de OS usa SEMPRE a original em resolução cheia; IA só remenda caixas detectadas; Gemini bloqueia remoção de logo (SAFETY) → fallback borrão local.

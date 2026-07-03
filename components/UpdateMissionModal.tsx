@@ -7,6 +7,7 @@ import { logAction } from '../lib/logger';
 import { clientFuzzyFilter, extractCityFromAddress } from '../lib/financialUtils';
 import { generateContent } from '../lib/gemini';
 import { showWhatsappCopyPopup } from '../lib/whatsappCopyFlow';
+import { shouldSendDhlGroupUpdate } from '../lib/dhlGroupUpdateFilter';
 import { useNotification } from '../lib/NotificationContext';
 import { 
   X, Activity, MapPin, Flag, Truck, Plus, Save, 
@@ -2260,14 +2261,26 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
             // Envio automático ao grupo de WhatsApp do cliente (se configurado
             // no cadastro). Fire-and-forget: não bloqueia o fluxo de cópia.
             if (!isNowCompleted) {
-                const groupPhoto = updatePrintBlobRef.current;
-                void sendUpdateToClientGroup(mission.client || '', report, groupPhoto).then(r => {
-                    if (r.sent) {
-                        showNotification('WhatsApp', 'Atualização enviada automaticamente ao grupo do cliente.', 'success');
-                    } else if (r.error) {
-                        showNotification('WhatsApp', `Envio automático ao grupo do cliente falhou: ${r.error}`, 'error');
-                    }
-                }).catch(() => {});
+                // DHL só recebe marcos (origem, início, pernoite, atípicos) —
+                // atualização rotineira de monitoramento não vai para o grupo.
+                const dhlRoutineSkip = isDHL && !shouldSendDhlGroupUpdate({
+                    finalStatus,
+                    originalStatus,
+                    occurrence: finalDescription,
+                    previousOccurrence: mission.currentLocation || '',
+                });
+                if (dhlRoutineSkip) {
+                    showNotification('WhatsApp', 'Atualização rotineira registrada no sistema — NÃO enviada ao grupo DHL (cliente só recebe: chegada na origem, início/fim de missão, início/reinício de pernoite e situações atípicas).', 'info');
+                } else {
+                    const groupPhoto = updatePrintBlobRef.current;
+                    void sendUpdateToClientGroup(mission.client || '', report, groupPhoto).then(r => {
+                        if (r.sent) {
+                            showNotification('WhatsApp', 'Atualização enviada automaticamente ao grupo do cliente.', 'success');
+                        } else if (r.error) {
+                            showNotification('WhatsApp', `Envio automático ao grupo do cliente falhou: ${r.error}`, 'error');
+                        }
+                    }).catch(() => {});
+                }
             }
 
             if (!isNowCompleted) try {
