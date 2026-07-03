@@ -12,6 +12,7 @@ import pg from "pg";
 import { sendMissionEmailToClient, sendMissionEmailToProvider, sendMissionResendToClient, sendMirroringEvidenceEmail, sendMissionChangeNotificationToClient, sendMissionChangeNotificationToProvider, sendWelcomeEmail, sendTestEmail, sendVerificationCodeEmail, sendPasswordResetEmail, sendBillingEmail, sendLegalReportEmail, sendPendingInfoReport, sendApprovalPendingReport, sendCancelledMissingInfoEmail, sendDailyMissingInfoReport, sendStuckNfsReport, sendMissionEndToClient, sendMissionEndToProvider } from "./emailService";
 import { registerDhlIntakeRoutes, runDhlIntakeMigrations } from "./dhlSupplierIntake";
 import { findOrCreateCustomer, createPayment, getPayment, getPaymentPixQrCode, getPaymentBankSlip, listPayments, deletePayment, mapAsaasStatus, isAsaasConfigured, getAsaasCompanies, scheduleInvoice, listMunicipalServices, getInvoiceByPayment, getAllBalances } from "./asaasService";
+import { assertOfficialBotNumber } from "./zapiGuard";
 
 const resend = new Resend(process.env.RESEND_API_KEY);
 
@@ -928,6 +929,8 @@ export async function registerRoutes(
     try {
       if (!ZAPI_INSTANCE || !ZAPI_TOKEN) return res.status(503).json({ error: 'Z-API não configurada' });
       if (!isWhatsappBotEnabled()) return res.status(503).json({ error: 'Envio de WhatsApp desativado — o bot está silenciado por decisão da diretoria.' });
+      const numGuard = await assertOfficialBotNumber();
+      if (!numGuard.ok) return res.status(503).json({ error: numGuard.error });
       const { phone, message } = req.body || {};
       if (!phone || !message) return res.status(400).json({ error: 'phone e message são obrigatórios' });
       const headers: any = { 'Content-Type': 'application/json' };
@@ -986,6 +989,10 @@ export async function registerRoutes(
         console.warn(`[WhatsApp Grupo] BLOQUEADO: whatsapp_group_id do cliente ${clientRow.name} não é um ID de grupo válido.`);
         return res.status(400).json({ error: 'O destino configurado no cadastro do cliente não é um grupo de WhatsApp válido.' });
       }
+
+      // Trava do número oficial: nunca postar no grupo por um número errado.
+      const numGuard = await assertOfficialBotNumber();
+      if (!numGuard.ok) return res.status(503).json({ error: numGuard.error });
 
       const headers: any = { 'Content-Type': 'application/json' };
       if (ZAPI_CLIENT_TOKEN) headers['Client-Token'] = ZAPI_CLIENT_TOKEN;
@@ -7486,7 +7493,7 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
           const phones = rawPhones.split(/[,;\s]+/).map(s => s.replace(/\D/g, '')).filter(p => p.length >= 10);
           if (phones.length > 0 && !isWhatsappBotEnabled()) {
             console.log(`[OverrideAlert] ${scope}=${name} → bot WhatsApp silenciado; pulando envio.`);
-          } else if (phones.length > 0 && ZAPI_INSTANCE && ZAPI_TOKEN) {
+          } else if (phones.length > 0 && ZAPI_INSTANCE && ZAPI_TOKEN && (await assertOfficialBotNumber()).ok) {
             const waMessage =
               `⚠️ *TM SEG — Excesso de edições manuais*\n\n` +
               `${scopeLabel}: *${name}*\n` +

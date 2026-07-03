@@ -7,6 +7,7 @@
 
 import { createClient } from '@supabase/supabase-js';
 import { sendSystemAlertEmail } from "./emailService";
+import { getConnectedBotPhone, invalidateBotPhoneCache, OFFICIAL_BOT_PHONE, OFFICIAL_BOT_PHONE_DISPLAY } from "./zapiGuard";
 
 const COOLDOWN_SETTINGS_KEY = 'zapi_watchdog_last_restart_at';
 
@@ -84,6 +85,7 @@ export function startZapiWatchdog() {
   let incidentOpen = false;                    // já alertamos esta queda?
   let incidentStartedAt: string | null = null;
   let restartTriedThisIncident = false;
+  let wrongNumberAlerted = false;              // já alertamos que conectaram o número ERRADO?
   let lastRestartAt = 0;                       // cooldown global de restart (persistido no banco)
   void loadLastRestartAt().then(ts => { if (ts > lastRestartAt) lastRestartAt = ts; }).catch(() => {});
   // Histórico de quedas nas últimas 24h (só timestamps) — vai no e-mail para
@@ -108,6 +110,41 @@ export function startZapiWatchdog() {
 
     if (connected) {
       downStreak = 0;
+
+      // ── Trava do número oficial: o bot SÓ pode operar no (11) 92683-9456 ──
+      // Se alguém parear a instância com OUTRO número, os envios já são
+      // bloqueados pela guarda em server/zapiGuard.ts; aqui o vigia alerta a
+      // equipe por e-mail (1 alerta por incidente de número errado).
+      if (lastConnected !== true) invalidateBotPhoneCache(); // reconectou agora — não confiar no cache
+      const phone = await getConnectedBotPhone(lastConnected !== true).catch(() => null);
+      if (phone && phone !== OFFICIAL_BOT_PHONE) {
+        if (!wrongNumberAlerted) {
+          wrongNumberAlerted = true;
+          console.error(`[Z-API Vigia] NÚMERO ERRADO conectado: ${phone} (oficial: ${OFFICIAL_BOT_PHONE}). Envios bloqueados pela guarda.`);
+          void sendSystemAlertEmail(
+            ALERT_RECIPIENTS,
+            'ALERTA: WhatsApp Bot conectado no NÚMERO ERRADO — Central de Monitoramento',
+            `<h2>Bot conectado em um número não autorizado</h2>
+             <p>Em <strong>${nowSP()}</strong> a instância Z-API foi detectada conectada no número <strong>${phone}</strong>.</p>
+             <table class="info-table">
+               <tr><td>Número oficial do bot</td><td><strong>${OFFICIAL_BOT_PHONE_DISPLAY}</strong> (${OFFICIAL_BOT_PHONE})</td></tr>
+               <tr><td>Número conectado agora</td><td>${phone}</td></tr>
+               <tr><td>Envios automáticos</td><td><strong>BLOQUEADOS</strong> — nenhuma mensagem sai por número errado.</td></tr>
+             </table>
+             <div class="highlight-box"><p><strong>Ação:</strong> desconecte esse número no painel da Z-API e reconecte o número oficial ${OFFICIAL_BOT_PHONE_DISPLAY} via QR Code.</p></div>`
+          ).catch(() => {});
+        }
+      } else if (phone === OFFICIAL_BOT_PHONE && wrongNumberAlerted) {
+        wrongNumberAlerted = false;
+        console.log(`[Z-API Vigia] Número oficial ${OFFICIAL_BOT_PHONE_DISPLAY} reconectado — envios liberados.`);
+        void sendSystemAlertEmail(
+          ALERT_RECIPIENTS,
+          'WhatsApp Bot de volta no número OFICIAL — Central de Monitoramento',
+          `<h2>Número oficial reconectado</h2>
+           <p>Em <strong>${nowSP()}</strong> a instância voltou a operar no número oficial <strong>${OFFICIAL_BOT_PHONE_DISPLAY}</strong>. Envios automáticos liberados.</p>`
+        ).catch(() => {});
+      }
+
       if (incidentOpen) {
         // RECUPEROU: fecha o incidente e avisa.
         incidentOpen = false;

@@ -12,6 +12,7 @@
 
 import type { Express, Request, Response } from 'express';
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
+import { assertOfficialBotNumber } from './zapiGuard';
 import { randomUUID } from 'crypto';
 import fs from 'fs';
 import path from 'path';
@@ -382,6 +383,11 @@ async function sendZapiTextMessage(phoneDigits: string, message: string): Promis
   // pelo número da Central, a menos que WHATSAPP_BOT_ENABLED=true.
   if ((process.env.WHATSAPP_BOT_ENABLED || '').trim().toLowerCase() !== 'true') {
     return { ok: false, error: 'Envio de WhatsApp desativado — bot silenciado', messageId: null };
+  }
+  // Trava do número oficial: nunca enviar por número diferente do (11) 92683-9456.
+  const numGuard = await assertOfficialBotNumber();
+  if (!numGuard.ok) {
+    return { ok: false, error: numGuard.error || 'Bot fora do número oficial', messageId: null };
   }
   const digits = String(phoneDigits || '').replace(/\D/g, '');
   if (!digits) return { ok: false, error: 'telefone vazio', messageId: null };
