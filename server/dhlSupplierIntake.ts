@@ -13,6 +13,7 @@
 import type { Express, Request, Response } from 'express';
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import { assertOfficialBotNumber } from './zapiGuard';
+import { throttleZapiSend } from './zapiThrottle';
 import { randomUUID } from 'crypto';
 import fs from 'fs';
 import path from 'path';
@@ -396,11 +397,11 @@ async function sendZapiTextMessage(phoneDigits: string, message: string): Promis
   try {
     const headers: any = { 'Content-Type': 'application/json' };
     if (ZAPI_CLIENT_TOKEN) headers['Client-Token'] = ZAPI_CLIENT_TOKEN;
-    const r = await fetch(`https://api.z-api.io/instances/${ZAPI_INSTANCE}/token/${ZAPI_TOKEN}/send-text`, {
+    const r = await throttleZapiSend('send-text intake fornecedor', () => fetch(`https://api.z-api.io/instances/${ZAPI_INSTANCE}/token/${ZAPI_TOKEN}/send-text`, {
       method: 'POST',
       headers,
       body: JSON.stringify({ phone, message }),
-    });
+    }));
     const txt = await r.text();
     let parsed: any = null;
     try { parsed = JSON.parse(txt); } catch {}

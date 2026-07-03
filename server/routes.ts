@@ -13,6 +13,7 @@ import { sendMissionEmailToClient, sendMissionEmailToProvider, sendMissionResend
 import { registerDhlIntakeRoutes, runDhlIntakeMigrations } from "./dhlSupplierIntake";
 import { findOrCreateCustomer, createPayment, getPayment, getPaymentPixQrCode, getPaymentBankSlip, listPayments, deletePayment, mapAsaasStatus, isAsaasConfigured, getAsaasCompanies, scheduleInvoice, listMunicipalServices, getInvoiceByPayment, getAllBalances } from "./asaasService";
 import { assertOfficialBotNumber } from "./zapiGuard";
+import { throttleZapiSend } from "./zapiThrottle";
 
 const resend = new Resend(process.env.RESEND_API_KEY);
 
@@ -935,11 +936,11 @@ export async function registerRoutes(
       if (!phone || !message) return res.status(400).json({ error: 'phone e message são obrigatórios' });
       const headers: any = { 'Content-Type': 'application/json' };
       if (ZAPI_CLIENT_TOKEN) headers['Client-Token'] = ZAPI_CLIENT_TOKEN;
-      const r = await fetch(`${zapiBase()}/send-text`, {
+      const r = await throttleZapiSend('send-text individual', () => fetch(`${zapiBase()}/send-text`, {
         method: 'POST',
         headers,
         body: JSON.stringify({ phone, message }),
-      });
+      }));
       const text = await r.text();
       let data: any = null;
       try { data = JSON.parse(text); } catch { data = { raw: text }; }
@@ -1002,11 +1003,11 @@ export async function registerRoutes(
       const body = imageBase64
         ? { phone: groupId, image: imageBase64, caption: message }
         : { phone: groupId, message };
-      const r = await fetch(`${zapiBase()}/${endpoint}`, {
+      const r = await throttleZapiSend(`${endpoint} grupo do cliente`, () => fetch(`${zapiBase()}/${endpoint}`, {
         method: 'POST',
         headers,
         body: JSON.stringify(body),
-      });
+      }));
       const text = await r.text();
       let data: any = null;
       try { data = JSON.parse(text); } catch { data = { raw: text }; }
@@ -7504,11 +7505,11 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
             if (ZAPI_CLIENT_TOKEN) headers['Client-Token'] = ZAPI_CLIENT_TOKEN;
             for (const phone of phones) {
               try {
-                const r = await fetch(`${zapiBase()}/send-text`, {
+                const r = await throttleZapiSend('send-text alerta override', () => fetch(`${zapiBase()}/send-text`, {
                   method: 'POST',
                   headers,
                   body: JSON.stringify({ phone, message: waMessage }),
-                });
+                }));
                 if (!r.ok) {
                   const t = await r.text().catch(() => '');
                   console.warn(`[OverrideAlert] WhatsApp ${phone} HTTP ${r.status}: ${t.slice(0, 200)}`);
