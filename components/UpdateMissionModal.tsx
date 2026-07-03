@@ -2349,6 +2349,13 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
 
 *LINK DO FIM DE MISSÃO:* ${editData.mapLink || 'N/A'}`;
 
+                // DHL: o fim de missão mantém o MESMO padrão "ESCOLTA ARMADA"
+                // das demais atualizações (pedido do cliente), agora com o
+                // campo FIM DE OPERAÇÃO preenchido. O texto interno "DADOS DA
+                // MISSÃO" (com KM inicial/final) NÃO vai para o grupo da DHL
+                // nem para a área de transferência — só o padrão oficial.
+                const finalizeShareText = isDHL ? report : finalizeReportText;
+
                 // Cópia automática (texto + foto juntos, padrão WhatsApp).
                 // Foto: prioriza o print colado no COLAR PRINT (já com logo);
                 // senão, usa o print do hodômetro confirmado no checklist.
@@ -2409,7 +2416,7 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
                     }
                     // Envio automático ao grupo de WhatsApp do cliente (se
                     // configurado no cadastro). Fire-and-forget.
-                    void sendUpdateToClientGroup(mission.client || '', finalizeReportText, photoBlob).then(r => {
+                    void sendUpdateToClientGroup(mission.client || '', finalizeShareText, photoBlob).then(r => {
                         if (r.sent) {
                             showNotification('WhatsApp', 'Fim de missão enviado automaticamente ao grupo do cliente.', 'success');
                         } else if (r.error) {
@@ -2417,14 +2424,14 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
                         }
                     }).catch(() => {});
 
-                    if (photoBlob && showWhatsappCopyPopup(photoBlob, finalizeReportText)) {
+                    if (photoBlob && showWhatsappCopyPopup(photoBlob, finalizeShareText)) {
                         // Popup guiado: COPIAR FOTO → COPIAR TEXTO → fecha sozinho.
                         finalizeAutoCopied = true;
                         // Print colado é de uso único
                         updatePrintBlobRef.current = null;
                         setUpdatePrintPreview('');
                     } else {
-                        await navigator.clipboard.writeText(finalizeReportText);
+                        await navigator.clipboard.writeText(finalizeShareText);
                         finalizeAutoCopied = true;
                         showNotification('Fim de Missão copiado', 'Relatório de fim de missão copiado. É só colar no WhatsApp.', 'success');
                     }
@@ -2434,7 +2441,7 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
 
                 if (!finalizeAutoCopied) {
                     // Plano B (ex.: iOS): diálogo com botões dentro do gesto de clique
-                    setFinalizeReport({ text: finalizeReportText, photoUrl: confirmedPrintUrlRef.current });
+                    setFinalizeReport({ text: finalizeShareText, photoUrl: confirmedPrintUrlRef.current });
                     setCopiedReportText(false);
                     setCopiedReportPhoto(false);
                 }
