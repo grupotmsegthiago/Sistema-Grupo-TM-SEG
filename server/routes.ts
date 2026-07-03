@@ -868,12 +868,57 @@ export async function registerRoutes(
       if (!ZAPI_INSTANCE || !ZAPI_TOKEN) return res.status(503).json({ error: 'Z-API não configurada' });
       const headers: any = { 'Content-Type': 'application/json' };
       if (ZAPI_CLIENT_TOKEN) headers['Client-Token'] = ZAPI_CLIENT_TOKEN;
-      const r = await fetch(`${zapiBase()}/groups`, { method: 'GET', headers });
-      const text = await r.text();
-      let data: any = null;
-      try { data = JSON.parse(text); } catch { data = { raw: text }; }
-      if (!r.ok) return res.status(r.status).json({ error: 'Falha Z-API', detail: data });
-      res.json(data);
+      // A Z-API PAGINA a lista de grupos — buscar só a 1ª página faz grupos
+      // novos "sumirem" do seletor do cadastro. Varre todas as páginas e
+      // devolve a lista completa (deduplicada por id/phone).
+      const PAGE_SIZE = 100;
+      const MAX_PAGES = 20; // trava de segurança (2000 grupos)
+      const all: any[] = [];
+      const seen = new Set<string>();
+      const fetchPage = async (url: string) => {
+        const r = await fetch(url, { method: 'GET', headers });
+        const text = await r.text();
+        let data: any = null;
+        try { data = JSON.parse(text); } catch { data = { raw: text }; }
+        return { r, data };
+      };
+      const collect = (data: any): number => {
+        const list: any[] = Array.isArray(data) ? data : (Array.isArray(data?.groups) ? data.groups : []);
+        let added = 0;
+        for (const g of list) {
+          const key = String(g?.id || g?.phone || '');
+          if (!key || seen.has(key)) continue;
+          seen.add(key);
+          all.push(g);
+          added++;
+        }
+        return list.length ? added : -1; // -1 = página vazia
+      };
+      for (let page = 1; page <= MAX_PAGES; page++) {
+        let { r, data } = await fetchPage(`${zapiBase()}/groups?page=${page}&pageSize=${PAGE_SIZE}`);
+        if (!r.ok && page === 1 && r.status >= 400 && r.status < 500 && !/connected/i.test(String(data?.error || ''))) {
+          // Compatibilidade: se a Z-API rejeitar page/pageSize, tenta o endpoint legado sem paginação.
+          ({ r, data } = await fetchPage(`${zapiBase()}/groups`));
+          if (r.ok) { collect(data); break; }
+        }
+        if (!r.ok) {
+          // Se a 1ª página já falhou, propaga o erro; senão devolve o que veio.
+          if (page === 1) {
+            const zapiMsg = String(data?.error || '');
+            const friendly = /connected/i.test(zapiMsg)
+              ? 'WhatsApp da Central está DESCONECTADO — reconecte a instância (QR Code no painel Z-API) e tente novamente'
+              : 'Falha Z-API';
+            return res.status(r.status).json({ error: friendly, detail: data });
+          }
+          break;
+        }
+        const added = collect(data);
+        // Para se a página veio vazia, incompleta, ou sem NENHUM grupo novo
+        // (Z-API ignorando a paginação e repetindo a mesma lista).
+        if (added <= 0 || (added >= 0 && (Array.isArray(data) ? data.length : (data?.groups?.length || 0)) < PAGE_SIZE)) break;
+      }
+      console.log(`[WhatsApp Grupos] ${all.length} grupo(s) retornado(s) ao seletor.`);
+      res.json(all);
     } catch (e: any) {
       res.status(500).json({ error: e.message });
     }
