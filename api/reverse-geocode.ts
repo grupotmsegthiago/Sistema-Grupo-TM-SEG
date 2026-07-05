@@ -24,19 +24,24 @@ function formatNominatimAddress(address: any): string {
 }
 
 async function reverseWithGoogle(lat: number, lng: number): Promise<ReverseResult | null> {
-  const key = process.env.GOOGLE_MAPS_API_KEY || process.env.VITE_GOOGLE_MAPS_API_KEY || PUBLIC_GOOGLE_MAPS_KEY;
-  if (!key) return null;
+  const keys = Array.from(new Set([
+    process.env.GOOGLE_MAPS_API_KEY,
+    process.env.VITE_GOOGLE_MAPS_API_KEY,
+    PUBLIC_GOOGLE_MAPS_KEY,
+  ].map((key) => String(key || "").trim()).filter(Boolean)));
 
-  const url = `https://maps.googleapis.com/maps/api/geocode/json?latlng=${lat},${lng}&language=pt-BR&region=br&key=${encodeURIComponent(key)}`;
-  const resp = await fetch(url);
-  const data: any = await resp.json();
-  if (data.status === "OK" && data.results?.[0]?.formatted_address) {
-    return {
-      success: true,
-      address: data.results[0].formatted_address,
-      fullAddress: data.results[0].formatted_address,
-      source: "google",
-    };
+  for (const key of keys) {
+    const url = `https://maps.googleapis.com/maps/api/geocode/json?latlng=${lat},${lng}&language=pt-BR&region=br&key=${encodeURIComponent(key)}`;
+    const resp = await fetch(url);
+    const data: any = await resp.json();
+    if (data.status === "OK" && data.results?.[0]?.formatted_address) {
+      return {
+        success: true,
+        address: data.results[0].formatted_address,
+        fullAddress: data.results[0].formatted_address,
+        source: "google",
+      };
+    }
   }
   return null;
 }

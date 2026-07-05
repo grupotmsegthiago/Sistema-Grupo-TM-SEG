@@ -9,20 +9,25 @@ type GeoResult = {
 const PUBLIC_GOOGLE_MAPS_KEY = "AIzaSyBIs-lrtAP6hoA1z_VA4Gbx1ujA-AlJe2k";
 
 async function geocodeWithGoogle(address: string): Promise<GeoResult | null> {
-  const key = process.env.GOOGLE_MAPS_API_KEY || process.env.VITE_GOOGLE_MAPS_API_KEY || PUBLIC_GOOGLE_MAPS_KEY;
-  if (!key) return null;
+  const keys = Array.from(new Set([
+    process.env.GOOGLE_MAPS_API_KEY,
+    process.env.VITE_GOOGLE_MAPS_API_KEY,
+    PUBLIC_GOOGLE_MAPS_KEY,
+  ].map((key) => String(key || "").trim()).filter(Boolean)));
 
-  const url = `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(address)}&language=pt-BR&region=br&key=${encodeURIComponent(key)}`;
-  const resp = await fetch(url);
-  const data: any = await resp.json();
-  if (data.status === "OK" && data.results?.[0]?.geometry?.location) {
-    const first = data.results[0];
-    return {
-      success: true,
-      address: first.formatted_address,
-      location: first.geometry.location,
-      source: "google",
-    };
+  for (const key of keys) {
+    const url = `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(address)}&language=pt-BR&region=br&key=${encodeURIComponent(key)}`;
+    const resp = await fetch(url);
+    const data: any = await resp.json();
+    if (data.status === "OK" && data.results?.[0]?.geometry?.location) {
+      const first = data.results[0];
+      return {
+        success: true,
+        address: first.formatted_address,
+        location: first.geometry.location,
+        source: "google",
+      };
+    }
   }
   return null;
 }
