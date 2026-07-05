@@ -22,13 +22,11 @@ try {
 let React: typeof import('react');
 let createRoot: typeof import('react-dom/client').createRoot;
 let DailyGoalThermometer: React.ComponentType<any>;
-let NotificationProvider: React.ComponentType<{ children: React.ReactNode }>;
 
 before(async () => {
   React = await import('react');
   ({ createRoot } = await import('react-dom/client'));
   DailyGoalThermometer = (await import('../components/DailyGoalThermometer')).default;
-  ({ NotificationProvider } = await import('../lib/NotificationContext'));
 });
 
 async function renderGoal(canSeeMonetary: boolean): Promise<string> {
@@ -41,21 +39,17 @@ async function renderGoal(canSeeMonetary: boolean): Promise<string> {
 
   await React.act(async () => {
     root.render(
-      React.createElement(
-        NotificationProvider,
-        null,
-        React.createElement(DailyGoalThermometer, {
-          canSeeMonetary,
-          viewPeriod: 'TODAY',
-          missions: [],
-          clientTables: [{ id: 1 }],
-          providerTables: [],
-          clientsData: [],
-          lastDataUpdatedAt: new Date('2026-07-05T12:00:00.000Z'),
-          onRefreshMissions: async () => true,
-          historyKey: `test-meta-${canSeeMonetary ? 'on' : 'off'}`,
-        }),
-      ),
+      React.createElement(DailyGoalThermometer, {
+        canSeeMonetary,
+        viewPeriod: 'TODAY',
+        missions: [],
+        clientTables: [{ id: 1 }],
+        providerTables: [],
+        clientsData: [],
+        lastDataUpdatedAt: new Date('2026-07-05T12:00:00.000Z'),
+        onRefreshMissions: async () => true,
+        historyKey: `test-meta-${canSeeMonetary ? 'on' : 'off'}`,
+      }),
     );
   });
   await React.act(async () => { await Promise.resolve(); });
