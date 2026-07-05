@@ -16,12 +16,14 @@ import {
   findDhlCorrectionSource,
   type DhlCorrectionRecord,
 } from '../lib/dhlAutoTableSelector';
-import { X, Calculator, Loader2, Save, CheckCircle2, TrendingUp, Landmark, Zap, RotateCcw, Building2, Briefcase, Plus, Users, MapPin, ArrowRight, BrainCircuit, AlertTriangle, AlertCircle, Edit2, Info, RefreshCw, Clock, Pencil, Lock, ShieldCheck, Camera, Image as ImageIcon, Link2, Layers, Scale, Sparkles, Navigation, History, Settings2 } from 'lucide-react';
+import { X, Calculator, Loader2, Save, CheckCircle2, TrendingUp, Landmark, Zap, RotateCcw, Building2, Briefcase, Plus, Users, MapPin, ArrowRight, BrainCircuit, AlertTriangle, AlertCircle, Edit2, Info, RefreshCw, Clock, Pencil, Lock, ShieldCheck, Camera, Image as ImageIcon, Link2, Layers, Scale, Sparkles, Navigation, History, Settings2, FileText, Copy } from 'lucide-react';
 import { suggestPriceTable } from '../lib/gemini';
 import ProviderCostForm from './ProviderCostForm';
 import ClientPriceForm from './ClientPriceForm';
 import TollConfirmationDialog from './TollConfirmationDialog';
 import { formatProviderName } from '../lib/utils';
+import { copyTextAsync } from '../lib/clipboard';
+import { buildFullAuditSummary } from '../lib/auditSummaryBuilder';
 import { formatDateTimeBR, formatNowDateTimeBR, formatDateBR, formatTimeBR } from '../lib/dateUtils';
 import { useRealtimeRefresh } from '../lib/RealtimeProvider';
 import html2canvas from 'html2canvas';
@@ -410,6 +412,9 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
   const [savedByInfo, setSavedByInfo] = useState<string | null>(null);
 
   const [aiLoading, setAiLoading] = useState(false);
+  const [showAuditSummary, setShowAuditSummary] = useState(false);
+  const [auditSummaryText, setAuditSummaryText] = useState('');
+  const [auditSummaryLoading, setAuditSummaryLoading] = useState(false);
   const [aiSuggestion, setAiSuggestion] = useState<{
     clientSuggestion: { tableId: string; tableName: string; reason: string } | null;
     providerSuggestion: { tableId: string; tableName: string; reason: string } | null;
@@ -510,6 +515,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
   // ADMINISTRADOR (ex: Barbara) tem liberação permanente: pode editar OS aprovada
   // a qualquer momento. O sistema registra cada alteração no histórico permanente.
   const isAdminFullAccess = userRoleLower === 'administrador' || fullEditMode || isPlinio;
+  const isDirectorAccess = userRoleLower === 'diretoria' || userRoleLower === 'administrador';
   const [unlockOverride, setUnlockOverride] = useState(false);
   useEffect(() => { setUnlockOverride(false); setEditObservation(''); setFullEditMode(false); setTollConfirmAutoOpened(false); setDisableFixedKmRule(false); }, [mission?.id]);
   useEffect(() => { if (!isOpen) { setFullEditMode(false); setUnlockOverride(false); setEditObservation(''); setShowTollConfirmDialog(false); setTollConfirmAutoOpened(false); } }, [isOpen]);
@@ -2872,6 +2878,48 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
   const footerCostTotal = parseNumber(costInput);
   const footerProfit = footerRevTotal - footerCostTotal;
   const footerMarginPct = footerRevTotal > 0 ? (footerProfit / footerRevTotal) * 100 : 0;
+
+  const openAuditSummaryPanel = async () => {
+    if (!mission || auditSummaryLoading) return;
+    setShowAuditSummary(true);
+    setAuditSummaryLoading(true);
+    setAuditSummaryText('');
+    try {
+      const clientTable = clientTables.find(t => String(t.id) === String(manualClientTableId));
+      const providerTable = providerTables.find(t => String(t.id) === String(manualProviderTableId));
+      const tradingName =
+        providersList.find(p => p.trading_name && p.trading_name.trim())?.trading_name?.trim() ||
+        formatProviderName(mission.provider);
+      const text = await buildFullAuditSummary({
+        mission,
+        providerTradingName: tradingName,
+        clientTableLabel: clientTable?.operation_type,
+        providerTableLabel: providerTable?.operation_type,
+        includeDirectorSection: isDirectorAccess,
+        withAiSummary: isDirectorAccess,
+        revenueTotal: footerRevTotal,
+        costTotal: footerCostTotal,
+        marginPct: footerMarginPct,
+      });
+      setAuditSummaryText(text);
+    } catch (e) {
+      console.error('[auditSummary]', e);
+      showNotification('Erro', 'Não foi possível gerar o resumo da auditoria.', 'error');
+      setShowAuditSummary(false);
+    } finally {
+      setAuditSummaryLoading(false);
+    }
+  };
+
+  const copyAuditSummary = () => {
+    void copyTextAsync(auditSummaryText).then(ok => {
+      if (!ok) {
+        showNotification('Erro', 'Não foi possível copiar o resumo.', 'error');
+        return;
+      }
+      showNotification('Sucesso', 'Resumo da auditoria copiado!', 'success');
+    });
+  };
   
   const isInheritedToll = false;
   const isSavedZero = tollSource === 'VALOR SALVO (R$ 0,00)';
@@ -2880,6 +2928,74 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-in fade-in">
       
+      {showAuditSummary && (
+          <div className="absolute inset-0 z-[125] flex items-center justify-center bg-black/70 backdrop-blur-sm p-4" onClick={() => setShowAuditSummary(false)}>
+              <div
+                  className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-hidden flex flex-col border border-gray-200"
+                  onClick={e => e.stopPropagation()}
+                  data-testid="panel-audit-summary"
+              >
+                  <div className="bg-[#0f172a] text-white px-5 py-4 flex items-center justify-between gap-3">
+                      <div className="flex items-center gap-3 min-w-0">
+                          <div className="p-2 bg-emerald-600 rounded-xl shrink-0"><FileText size={18} /></div>
+                          <div className="min-w-0">
+                              <h4 className="font-black text-sm uppercase tracking-wide">Resumo da Auditoria</h4>
+                              <p className="text-[10px] text-gray-400 truncate">OS {mission.id}{isDirectorAccess ? ' · bloco diretoria incluído' : ''}</p>
+                          </div>
+                      </div>
+                      <button type="button" onClick={() => setShowAuditSummary(false)} className="p-2 rounded-full hover:bg-white/10 shrink-0">
+                          <X size={18} />
+                      </button>
+                  </div>
+
+                  <div className="flex-1 overflow-auto p-4 bg-slate-50">
+                      {auditSummaryLoading ? (
+                          <div className="flex flex-col items-center justify-center py-16 gap-3 text-gray-500">
+                              <Loader2 size={28} className="animate-spin text-emerald-600" />
+                              <p className="text-xs font-bold uppercase tracking-widest">Montando resumo{isDirectorAccess ? ' e IA' : ''}…</p>
+                          </div>
+                      ) : (
+                          <pre
+                              className="whitespace-pre-wrap break-words text-[12px] leading-relaxed font-mono text-gray-800 bg-white border border-gray-200 rounded-xl p-4 shadow-inner"
+                              data-testid="text-audit-summary"
+                          >
+                              {auditSummaryText}
+                          </pre>
+                      )}
+                  </div>
+
+                  <div className="px-4 py-3 border-t bg-white flex flex-wrap gap-2 justify-end">
+                      <button
+                          type="button"
+                          onClick={() => setShowAuditSummary(false)}
+                          className="px-4 py-2 rounded-xl text-[10px] font-black uppercase text-gray-600 bg-gray-100 hover:bg-gray-200 transition-colors"
+                      >
+                          Fechar
+                      </button>
+                      <button
+                          type="button"
+                          onClick={copyAuditSummary}
+                          disabled={auditSummaryLoading || !auditSummaryText}
+                          className="px-4 py-2 rounded-xl text-[10px] font-black uppercase text-white bg-emerald-600 hover:bg-emerald-700 transition-colors disabled:opacity-50 flex items-center gap-1.5"
+                          data-testid="btn-copy-audit-summary"
+                      >
+                          <Copy size={12} /> Copiar Resumo
+                      </button>
+                      {isDirectorAccess && (
+                          <button
+                              type="button"
+                              onClick={() => void openAuditSummaryPanel()}
+                              disabled={auditSummaryLoading}
+                              className="px-4 py-2 rounded-xl text-[10px] font-black uppercase text-indigo-700 bg-indigo-50 border border-indigo-200 hover:bg-indigo-100 transition-colors disabled:opacity-50 flex items-center gap-1.5"
+                          >
+                              <Sparkles size={12} /> Atualizar IA
+                          </button>
+                      )}
+                  </div>
+              </div>
+          </div>
+      )}
+
       {isCapturing && (
           <div className="absolute inset-0 z-[120] flex items-center justify-center bg-black/40 backdrop-blur-sm">
               <div className="bg-white rounded-2xl px-8 py-6 flex items-center gap-4 shadow-2xl border-2 border-blue-200 animate-pulse">
@@ -3145,6 +3261,17 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                 {fullEditMode ? 'EDIÇÃO TOTAL ✓' : 'EDIÇÃO TOTAL'}
               </button>
             )}
+            <button
+              type="button"
+              data-testid="btn-audit-summary"
+              onClick={() => void openAuditSummaryPanel()}
+              disabled={auditSummaryLoading}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-black uppercase transition-all shadow-md active:scale-95 bg-emerald-600 text-white hover:bg-emerald-500 disabled:opacity-60"
+              title="Gerar resumo operacional da OS para copiar (WhatsApp/e-mail)"
+            >
+              {auditSummaryLoading ? <Loader2 size={12} className="animate-spin" /> : <FileText size={12} />}
+              Resumo
+            </button>
             <button onClick={onClose} className="p-2 rounded-full hover:bg-white/10 transition-colors"><X size={24}/></button>
           </div>
           </div>

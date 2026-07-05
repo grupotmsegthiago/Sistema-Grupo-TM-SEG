@@ -1,4 +1,5 @@
 import { formatDateTimeBR } from '../lib/dateUtils';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Bell, Clock, MapPin, Phone, Users, X, AlertTriangle, CheckCircle2, ChevronRight, ChevronLeft, Volume2, MessageCircle, Timer, XCircle, Maximize2, Minimize2, Shield } from 'lucide-react';
 
 const alertAnimation = `

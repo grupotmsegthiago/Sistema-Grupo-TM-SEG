@@ -1,4 +1,5 @@
 import { formatDateTimeBR } from '../lib/dateUtils';
+import React, { useState, useEffect, useCallback } from 'react';
 import { authFetch } from '../lib/authFetch';
 import { 
   Activity, Database, Zap, Clock, Server, RefreshCw, Truck, Play, 

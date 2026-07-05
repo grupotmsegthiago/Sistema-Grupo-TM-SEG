@@ -29,7 +29,9 @@ Nunca diga "pronto" ou "publicado" sem evidencia de que testou.
 
 ### Frontend (se tocou `components/`, `lib/`, `App.tsx`, etc.)
 - Confirmar que o build injeta Supabase (`dist/public/index.html` contem `__TMSEG_SUPABASE__` ou URL valida)
+- **Ao adicionar imports em arquivos `.tsx`:** nunca remover o `import ... from 'react'`. Se usar `useState`, `useEffect`, etc., o import de `react` deve continuar presente. Rodar busca: arquivos com `useState` sem `from 'react'` = bug critico.
 - Se possivel: verificar pagina no browser (login carrega, sem overlay de erro JS)
+- Apos alterar multiplos componentes: `npm run build` **nao basta sozinho** — build passa mesmo sem import React; validar que a app abre sem "useState is not defined" ou similar
 
 ### Testes automatizados (se existirem para o escopo)
 - `bash scripts/run-tests.sh` ou `node --test` nos arquivos `*.test.ts` / `*.test.tsx` relacionados
@@ -54,3 +56,7 @@ Nunca diga "pronto" ou "publicado" sem evidencia de que testou.
 ## Exemplo de entrega incorreta (proibido)
 
 > Pronto, corrigi o Supabase. Pode testar ai.
+
+## Incidente conhecido (nao repetir)
+
+Commit de timezone removeu acidentalmente `import React, { useState, ... } from 'react'` em `MissionAlertMonitor.tsx` e `ServerStats.tsx`. Build passou, mas producao quebrou com **"useState is not defined"**. Sempre verificar imports React apos editar cabecalho de arquivos `.tsx`.

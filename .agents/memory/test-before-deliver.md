@@ -10,3 +10,5 @@ description: Regra permanente do usuario — testar tudo antes de entregar qualq
 Cursor rule: `.cursor/rules/testar-antes-entregar.mdc` (`alwaysApply: true`).
 
 Fluxo: implementar → testar (build, API, browser se aplicavel) → corrigir → so entao avisar o usuario. Apos publicar, validar producao (deploy + site + health).
+
+**Licao aprendida (jul/2026):** ao inserir `import ... from '../lib/dateUtils'` no topo de `.tsx`, nao apagar o import de `react`. Build nao detecta `useState is not defined` — so aparece no browser. Antes de publicar, checar arquivos editados: todo `.tsx` com hooks precisa de `from 'react'`.
