@@ -14,6 +14,12 @@
     },
     "api/reverse-geocode.ts": {
       "maxDuration": 60
+    },
+    "api/gemini/health.ts": {
+      "maxDuration": 60
+    },
+    "api/gemini/generate.ts": {
+      "maxDuration": 300
     }
   },
   "rewrites": [
@@ -32,6 +38,14 @@
     {
       "source": "/api/reverse-geocode",
       "destination": "/api/reverse-geocode"
+    },
+    {
+      "source": "/api/gemini/health",
+      "destination": "/api/gemini/health"
+    },
+    {
+      "source": "/api/gemini/generate",
+      "destination": "/api/gemini/generate"
     },
     {
       "source": "/(.*)",
