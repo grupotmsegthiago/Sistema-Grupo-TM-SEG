@@ -69,6 +69,109 @@ const formatCurrency = (val: number) => {
     return val.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 };
 
+const CHART_W = 118;
+const CHART_H = 42;
+const CHART_PAD = 5;
+
+const GoalUpdateSparkline: React.FC<{
+    rows: GoalUpdateSnapshot[];
+    stroke: string;
+    isRefreshing: boolean;
+    onRefresh: () => void;
+    title: string;
+}> = ({ rows, stroke, isRefreshing, onRefresh, title }) => {
+    const [hoverIdx, setHoverIdx] = useState<number | null>(null);
+    const chronological = useMemo(() => [...rows].slice(0, 5).reverse(), [rows]);
+
+    const points = useMemo(() => {
+        if (chronological.length === 0) return [];
+        const values = chronological.map(r => r.revenue);
+        const min = Math.min(...values);
+        const max = Math.max(...values);
+        const range = max - min || 1;
+        const innerW = CHART_W - CHART_PAD * 2;
+        const innerH = CHART_H - CHART_PAD * 2;
+        return chronological.map((row, i) => {
+            const x = CHART_PAD + (chronological.length === 1 ? innerW / 2 : (i / (chronological.length - 1)) * innerW);
+            const y = CHART_PAD + (1 - (row.revenue - min) / range) * innerH;
+            const prev = i > 0 ? chronological[i - 1].revenue : null;
+            const delta = prev !== null ? row.revenue - prev : null;
+            return { x, y, row, delta, i };
+        });
+    }, [chronological]);
+
+    const pathD = points.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x.toFixed(1)} ${p.y.toFixed(1)}`).join(' ');
+
+    return (
+        <div
+            className="relative w-full select-none"
+            data-testid="goal-update-sparkline"
+            title={title}
+        >
+            <div className="flex items-center justify-between gap-1 mb-0.5">
+                <span className="text-[7px] font-black uppercase text-slate-400 leading-none">Monitoramento 24h</span>
+                <button
+                    type="button"
+                    onClick={(e) => { e.stopPropagation(); onRefresh(); }}
+                    disabled={isRefreshing}
+                    className="p-0.5 rounded text-slate-400 hover:text-slate-700 disabled:opacity-40"
+                    aria-label={title}
+                    data-testid="button-refresh-goal"
+                >
+                    <RefreshCw size={10} className={isRefreshing ? 'animate-spin' : ''} />
+                </button>
+            </div>
+            <button
+                type="button"
+                onClick={onRefresh}
+                disabled={isRefreshing}
+                className="block w-full rounded-lg border border-slate-200/80 bg-slate-50/80 hover:bg-slate-100/90 transition-colors disabled:opacity-50 overflow-visible"
+                aria-label={title}
+            >
+                {points.length === 0 ? (
+                    <div className="flex items-center justify-center h-[42px] text-[8px] font-semibold text-slate-400 uppercase">
+                        Sem histórico
+                    </div>
+                ) : (
+                    <svg width={CHART_W} height={CHART_H} viewBox={`0 0 ${CHART_W} ${CHART_H}`} className="w-full h-[42px]">
+                        {points.length > 1 && (
+                            <path d={pathD} fill="none" stroke={stroke} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" opacity={0.85} />
+                        )}
+                        {points.map((p) => (
+                            <circle
+                                key={p.row.at}
+                                cx={p.x}
+                                cy={p.y}
+                                r={hoverIdx === p.i ? 4 : 3}
+                                fill={hoverIdx === p.i ? stroke : '#fff'}
+                                stroke={stroke}
+                                strokeWidth={2}
+                                onMouseEnter={() => setHoverIdx(p.i)}
+                                onMouseLeave={() => setHoverIdx(null)}
+                            />
+                        ))}
+                    </svg>
+                )}
+            </button>
+            {hoverIdx !== null && points[hoverIdx] && (
+                <div
+                    className="absolute z-[500] bottom-full mb-1 right-0 w-[min(92vw,200px)] rounded-lg border border-slate-200 bg-white shadow-lg px-2 py-1.5 text-left pointer-events-none"
+                    data-testid="sparkline-tooltip"
+                >
+                    <p className="text-[9px] font-bold text-slate-700">{formatDateTimeAuditBR(points[hoverIdx].row.at)}</p>
+                    <p className="text-[9px] text-slate-600">{formatCurrency(points[hoverIdx].row.revenue)}</p>
+                    {points[hoverIdx].delta !== null && (
+                        <p className={`text-[9px] font-black ${points[hoverIdx].delta! > 0.01 ? 'text-emerald-600' : points[hoverIdx].delta! < -0.01 ? 'text-red-600' : 'text-slate-500'}`}>
+                            Δ {formatGoalDelta(points[hoverIdx].delta)}
+                        </p>
+                    )}
+                    <p className="text-[8px] text-slate-400 mt-0.5">{points[hoverIdx].row.missionCount} missões</p>
+                </div>
+            )}
+        </div>
+    );
+};
+
 // Janela CANÔNICA delegada para lib/missionFinancialsCanonical (mesma usada
 // pelo Relatório, Dashboard e worker do e-mail).
 function getDateRange(viewPeriod: string, customStartDate?: string, customEndDate?: string): [Date, Date] {
@@ -85,7 +188,6 @@ const DailyGoalThermometer: React.FC<Props> = ({ viewPeriod = 'TODAY', customSta
     const [userRole, setUserRole] = useState<string>('');
     const [currentTime, setCurrentTime] = useState(new Date());
     const [isRefreshing, setIsRefreshing] = useState(false);
-    const [showHistoryPopover, setShowHistoryPopover] = useState(false);
     const [updateHistory, setUpdateHistory] = useState<GoalUpdateSnapshot[]>([]);
     const lastRecordedFetchAt = useRef<number | null>(null);
     const pendingManualRecord = useRef(false);
@@ -248,18 +350,13 @@ const DailyGoalThermometer: React.FC<Props> = ({ viewPeriod = 'TODAY', customSta
         }
     }, [onRefreshMissions, showNotification, isRefreshing, isLoading]);
 
-    const deltaColor = (val: number | null) => {
-        if (val === null) return 'text-slate-400';
-        if (val > 0.01) return 'text-emerald-600';
-        if (val < -0.01) return 'text-red-600';
-        return 'text-slate-500';
-    };
-
     const REFRESH_BUTTON_LABEL = 'Monitoramento 24h';
 
     const refreshButtonTitle = lastDataUpdatedAt
         ? `${REFRESH_BUTTON_LABEL} — Última atualização: ${formatDateTimeAuditBR(lastDataUpdatedAt)}`
         : `${REFRESH_BUTTON_LABEL} — Aguardando primeira sincronização`;
+
+    const chartStroke = stats.percentage >= 91 ? '#16a34a' : stats.percentage >= 50 ? '#ca8a04' : '#dc2626';
 
     const suffix = titleSuffix ? ` ${titleSuffix}` : '';
     const labelText = viewPeriod === 'TODAY' ? `Meta Agendada${suffix} (Hoje)` :
@@ -271,10 +368,10 @@ const DailyGoalThermometer: React.FC<Props> = ({ viewPeriod = 'TODAY', customSta
                       `Faturamento Período${suffix}`;
 
     return (
-        <div className="group perspective-1000 w-full max-w-lg mx-auto h-full overflow-visible">
-            <div className="bg-white rounded-[35px] p-4 sm:p-5 border-x border-t border-b-4 border-gray-200/60 shadow-[0_20px_50px_rgba(0,0,0,0.06)] w-full h-full overflow-visible transition-all duration-700 hover:shadow-[0_25px_60px_rgba(0,0,0,0.1)] hover:-translate-y-0.5 transform hover:rotate-0.5 border-r-[5px] ml-[0px] mr-[0px]">
+        <div className="group perspective-1000 w-full max-w-lg mx-auto h-full">
+            <div className="bg-white rounded-[35px] p-4 sm:p-5 border-x border-t border-b-4 border-gray-200/60 shadow-[0_20px_50px_rgba(0,0,0,0.06)] w-full h-full overflow-hidden transition-all duration-700 hover:shadow-[0_25px_60px_rgba(0,0,0,0.1)] hover:-translate-y-0.5 transform hover:rotate-0.5 border-r-[5px] ml-[0px] mr-[0px]">
                 
-                <div className="flex justify-between items-center gap-2 mb-4 overflow-visible">
+                <div className="flex justify-between items-start gap-2 mb-4 min-w-0">
                     <div className="flex items-center gap-2.5 min-w-0 flex-1">
                         <div className="relative shrink-0">
                             <div className={`p-2 rounded-[15px] text-white shadow-lg transition-colors duration-500 ${accentClass ? `bg-gradient-to-br ${accentClass}` : stats.colorClass}`}>
@@ -306,7 +403,7 @@ const DailyGoalThermometer: React.FC<Props> = ({ viewPeriod = 'TODAY', customSta
                         </div>
                     </div>
                     {canSeeMonetary && (
-                        <div className="flex items-center gap-2 shrink-0 overflow-visible relative z-[300]">
+                        <div className="flex flex-col items-end gap-1 shrink-0 w-[118px]">
                             <p className={`text-sm md:text-base font-black font-mono tracking-tighter whitespace-nowrap transition-colors duration-500 ${stats.textClass}`}>
                                 {isLoading ? (
                                     <Loader2 size={14} className="animate-spin inline text-red-500" />
@@ -314,62 +411,13 @@ const DailyGoalThermometer: React.FC<Props> = ({ viewPeriod = 'TODAY', customSta
                                     formatCurrency(currentRevenue)
                                 )}
                             </p>
-                            <div
-                                className="relative overflow-visible z-[300]"
-                                onMouseEnter={() => setShowHistoryPopover(true)}
-                                onMouseLeave={() => setShowHistoryPopover(false)}
-                            >
-                                <button
-                                    onClick={handleManualRefresh}
-                                    disabled={isRefreshing || isLoading}
-                                    className="flex items-center gap-1.5 px-2 py-1.5 rounded-xl bg-gray-100 hover:bg-gray-200 border border-gray-200 text-gray-600 hover:text-gray-800 transition-all disabled:opacity-40 disabled:cursor-not-allowed active:scale-95 whitespace-nowrap"
-                                    title={refreshButtonTitle}
-                                    aria-label={refreshButtonTitle}
-                                    data-testid="button-refresh-goal"
-                                >
-                                    <RefreshCw size={13} className={`shrink-0 ${isRefreshing ? 'animate-spin' : ''}`} />
-                                    <span className="text-[7px] font-black uppercase leading-tight">{REFRESH_BUTTON_LABEL}</span>
-                                </button>
-                                {showHistoryPopover && (
-                                    <div
-                                        className="absolute right-0 top-full mt-2 z-[500] w-[min(92vw,340px)] rounded-xl border border-slate-200 bg-white shadow-xl p-3 text-left overflow-visible"
-                                        data-testid="popover-goal-update-history"
-                                        onClick={e => e.stopPropagation()}
-                                    >
-                                        <p className="text-[10px] font-black uppercase tracking-wider text-slate-500 mb-2">
-                                            Últimas {updateHistory.length || 0} atualizações
-                                        </p>
-                                        {updateHistory.length === 0 ? (
-                                            <p className="text-xs text-slate-400 py-2">Nenhuma atualização registrada ainda. Clique no botão para atualizar a meta.</p>
-                                        ) : (
-                                            <div className="max-h-[280px] overflow-y-auto space-y-2">
-                                                {updateHistory.map((row, i) => (
-                                                    <div key={`${row.at}-${i}`} className="rounded-lg border border-slate-100 bg-slate-50/80 p-2">
-                                                        <div className="flex items-center justify-between gap-2 mb-1">
-                                                            <span className="text-[10px] font-bold text-slate-700">{formatDateTimeAuditBR(row.at)}</span>
-                                                            <span className={`text-[9px] font-black uppercase px-1.5 py-0.5 rounded ${row.source === 'manual' ? 'bg-blue-100 text-blue-700' : 'bg-slate-200 text-slate-600'}`}>
-                                                                {row.source === 'manual' ? 'Manual' : 'Sync'}
-                                                            </span>
-                                                        </div>
-                                                        <div className="grid grid-cols-2 gap-x-2 gap-y-0.5 text-[10px]">
-                                                            <span className="text-slate-500">Faturamento</span>
-                                                            <span className="font-bold text-slate-800 text-right">{formatCurrency(row.revenue)}</span>
-                                                            <span className="text-slate-500">Variação</span>
-                                                            <span className={`font-black text-right ${deltaColor(row.deltaRevenue)}`}>{formatGoalDelta(row.deltaRevenue)}</span>
-                                                            <span className="text-slate-500">Missões</span>
-                                                            <span className="font-bold text-slate-800 text-right">{row.missionCount}</span>
-                                                            <span className="text-slate-500">Δ Missões</span>
-                                                            <span className={`font-black text-right ${deltaColor(row.deltaMissions)}`}>{formatGoalDelta(row.deltaMissions, false)}</span>
-                                                            <span className="text-slate-500">Atingido</span>
-                                                            <span className="font-bold text-slate-800 text-right">{row.percentage.toFixed(1)}%</span>
-                                                        </div>
-                                                    </div>
-                                                ))}
-                                            </div>
-                                        )}
-                                    </div>
-                                )}
-                            </div>
+                            <GoalUpdateSparkline
+                                rows={updateHistory}
+                                stroke={chartStroke}
+                                isRefreshing={isRefreshing || isLoading}
+                                onRefresh={handleManualRefresh}
+                                title={refreshButtonTitle}
+                            />
                         </div>
                     )}
                 </div>

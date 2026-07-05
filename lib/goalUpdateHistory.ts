@@ -1,4 +1,4 @@
-// Histórico das últimas atualizações de meta (botão Monitoramento 24h) — só diretoria vê no UI.
+// Histórico das últimas atualizações de meta (gráfico Monitoramento 24h) — só diretoria vê no UI.
 
 export type GoalUpdateSnapshot = {
   at: string;
