@@ -1,5 +1,3 @@
-import "../server/loadEnv";
-
 let handler: any = null;
 let bootError: Error | null = null;
 
@@ -10,7 +8,8 @@ export default async function vercelHandler(req: any, res: any) {
         res.status(503).json({ error: "Backend indisponivel", detail: bootError.message });
         return;
       }
-      const [{ default: serverless }, { getApp }] = await Promise.all([
+      const [, { default: serverless }, { getApp }] = await Promise.all([
+        import("../server/loadEnv"),
         import("serverless-http"),
         import("../server/createApp"),
       ]);
