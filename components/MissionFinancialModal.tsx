@@ -3136,7 +3136,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
 
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-5xl overflow-hidden flex flex-col max-h-[95vh] border border-gray-200 relative z-[100]">
         <header className="bg-[#0f172a] text-white p-5 flex flex-col gap-3 shrink-0">
-          <div className="flex justify-between items-start gap-3">
+          <div className="flex flex-col xl:flex-row xl:justify-between xl:items-start gap-3">
             <div className="flex items-center gap-4 flex-1 min-w-0">
               <div className="p-2.5 bg-red-600 rounded-xl shadow-lg shrink-0"><Calculator size={24} /></div>
               <div className="min-w-0 flex-1">
@@ -3159,7 +3159,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                   </div>
               </div>
             </div>
-          <div className="flex items-center gap-2 ml-4 shrink-0">
+          <div className="flex flex-wrap items-center gap-2 xl:shrink-0">
             {mission.is_same_os && mission.parent_mission_id && (
               <span data-testid="chip-is-child" className="text-[9px] font-black bg-blue-600 text-white px-2 py-1 rounded uppercase flex items-center gap-1">
                 <Link2 size={10} /> FILHA DE: {mission.parent_mission_id}

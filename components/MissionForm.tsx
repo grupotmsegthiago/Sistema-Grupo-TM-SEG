@@ -202,9 +202,9 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
   const [manualOverrides, setManualOverrides] = useState({ revenue: false, cost: false, toll: false });
   const [operatorConfirmedCalc, setOperatorConfirmedCalc] = useState(false);
   const [isCalculatingToll, setIsCalculatingToll] = useState(false);
-  const [isGeneratingToll, setIsGeneratingToll] = useState(false);
-  const [tollProgress, setTollProgress] = useState(0);
   const [tollDetails, setTollDetails] = useState<{ count: number; tolls: any[]; observacoes?: string; confianca?: string; provider?: string } | null>(null);
+  const [tollFetchDone, setTollFetchDone] = useState(false);
+  const lastTollRouteRef = useRef('');
   const [expandedStep, setExpandedStep] = useState<number>(1);
   const [driverQuestion, setDriverQuestion] = useState<'asking' | 'yes' | 'no' | null>(null);
   const [scheduleMode, setScheduleMode] = useState<'asking' | 'immediate' | 'scheduled' | null>(null);
@@ -218,7 +218,28 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
   const destinationAutocompleteRef = useRef<google.maps.places.Autocomplete | null>(null);
 
   const step3Done = !!(formData.clientVehicleId && (driverQuestion === 'no' || (driverQuestion === 'yes' && formData.driver_name && formData.driver_phone && formData.driver_phone.replace(/\D/g, '').length >= 10)));
-  const tollLoaded = !isCalculatingToll && (parseFloat(formData.tollValue) > 0 || manualOverrides.toll || parseFloat(formData.tollValue) === 0);
+  const isSyntheticTollDest = (dest: string) => /RAIO\s|DESTINO A DEFINIR|ACOMPANHAMENTO/i.test(dest || '');
+  const isCevaJundiaiToll = (origin: string, dest: string, client: string) => {
+      const cu = (client || '').toUpperCase();
+      return cu.includes('CEVA') && (origin || '').toUpperCase().includes('JUNDIA') && (dest || '').toUpperCase().includes('200KM');
+  };
+  const getTollDestination = (destination: string, flags?: { vtc02h?: boolean; raioKm?: number; ceva200km?: boolean }) => {
+      const f = flags || { vtc02h: formData.applyVtc02h, raioKm: formData.raioKm, ceva200km: formData.applyCeva200km };
+      if (f.vtc02h) return '02 HORAS DE ACOMPANHAMENTO';
+      const radius = f.raioKm && f.raioKm > 0 ? f.raioKm : (f.ceva200km ? 200 : 0);
+      if (radius > 0) {
+          const isDhl = (formData.client || '').toUpperCase().includes('DHL');
+          return isDhl ? `RAIO ${radius} KM — DESTINO A DEFINIR` : `${radius}KM DE ACOMPANHAMENTO`;
+      }
+      return destination;
+  };
+  const tollLoaded = !isCalculatingToll && (
+      manualOverrides.toll ||
+      tollFetchDone ||
+      isSyntheticTollDest(formData.destination || '') ||
+      isCevaJundiaiToll(formData.origin || '', formData.destination || '', formData.client || '') ||
+      (!!selectedRouteId && !!formData.origin && !!formData.destination)
+  );
   const step5Done = !!(formData.origin && formData.destination && selectedRouteId && formData.estimatedTime && manualRevenueTableId && tollLoaded && operatorConfirmedCalc);
   const isScheduledInPast = scheduleMode === 'scheduled' && formData.scheduledDate && formData.scheduledTime && new Date(`${formData.scheduledDate}T${formData.scheduledTime}:00`).getTime() < Date.now();
   const step6Done = step5Done && (scheduleMode === 'immediate' || (scheduleMode === 'scheduled' && !!formData.scheduledDate && !!formData.scheduledTime && !isScheduledInPast));
@@ -939,7 +960,10 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
       let revenue = 0;
       let cost = 0;
 
-      const realDist = parseFloat(route.distance) || 0;
+      const googleDurationMin = (route as any)._googleDurationMin;
+      let realDist = parseFloat(route.distance) || 0;
+      const googleDistKm = (route as any)._googleDistKm || 0;
+      if (realDist <= 0 && googleDistKm > 0) realDist = googleDistKm;
       const originUpper = normalizeStr(route.origin);
       const originCity = originUpper.split(',')[0].trim();
       const geoInfo = CITY_MAP[originCity] || { uf: '', region: '' };
@@ -958,8 +982,12 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
       else if (radius > 0 || isLogitech) { effectiveDist = isLogitech ? 200 : radius; forceKeyword = isLogitech ? 'LOGITECH' : `${radius}KM`; }
 
       try {
-          const googleDurationMin = (route as any)._googleDurationMin;
           const estHours = isSpecialRuleActive ? (currentFlags.vtc02h ? 2 : isLogitech ? 3 : 4) : (googleDurationMin ? Math.max(1, Math.ceil(googleDurationMin / 60)) : Math.max(2, Math.ceil(realDist / 45)));
+
+          let displayDist = realDist;
+          if (currentFlags.vtc02h) displayDist = 100;
+          else if (radius > 0) displayDist = radius;
+          else if (isLogitech) displayDist = 200;
 
           let revTable: any = null;
           if (revTableId) {
@@ -1020,7 +1048,7 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
               ...prev, provider: activeProvider,
               revenueValue: manualOverrides.revenue ? prev.revenueValue : revenue.toFixed(2),
               costValue: manualOverrides.cost ? prev.costValue : cost.toFixed(2),
-              totalDistance: realDist.toString(), origin: route.origin, destination: finalDestination,
+              totalDistance: displayDist.toString(), origin: route.origin, destination: finalDestination,
               estimatedTime: isSpecialRuleActive ? (currentFlags.vtc02h ? '2 horas' : isLogitech ? '3 horas' : '4 horas') : (googleDurationMin ? (googleDurationMin < 60 ? `${googleDurationMin} min` : `${Math.floor(googleDurationMin / 60)}h${googleDurationMin % 60 > 0 ? `${googleDurationMin % 60}min` : ''}`) : `${Math.max(2, Math.ceil(realDist / 45))} horas`)
           }));
           setCalcDetails(details.join(' | '));
@@ -1117,6 +1145,50 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
       }
   };
 
+  const applyTollForRoute = async (origin: string, destination: string, opts?: { notify?: boolean; force?: boolean }): Promise<number | null> => {
+      if (manualOverrides.toll) return parseFloat(formData.tollValue) || 0;
+      const originT = (origin || '').trim();
+      const destT = (destination || '').trim();
+      if (!originT || !destT) return null;
+
+      if (isSyntheticTollDest(destT)) {
+          setTollFetchDone(true);
+          setTollDetails(null);
+          setFormData(prev => ({ ...prev, tollValue: '0' }));
+          return 0;
+      }
+
+      if (isCevaJundiaiToll(originT, destT, formData.client)) {
+          setTollFetchDone(true);
+          setTollDetails({ count: 0, tolls: [], provider: 'fixed' });
+          setFormData(prev => ({ ...prev, tollValue: '35.00' }));
+          if (opts?.notify !== false) showNotification('Regra CEVA', 'Pedágio fixo de R$ 35,00 aplicado (CEVA + Jundiaí + 200KM).', 'success');
+          return 35;
+      }
+
+      const key = `${originT}|||${destT}`;
+      if (!opts?.force && lastTollRouteRef.current === key && tollFetchDone) {
+          return parseFloat(formData.tollValue) || 0;
+      }
+      lastTollRouteRef.current = key;
+      setTollFetchDone(false);
+      setTollDetails(null);
+
+      const apiResult = await calculateTollFromAPI(originT, destT);
+      if (isAutoTollResult(apiResult)) {
+          setFormData(prev => ({ ...prev, tollValue: apiResult.value.toFixed(2) }));
+          setTollDetails({ count: apiResult.count, tolls: apiResult.tolls, observacoes: apiResult.observacoes, confianca: apiResult.confianca, provider: apiResult.provider });
+          setTollFetchDone(true);
+          if (opts?.notify !== false) notifyTollResult(apiResult);
+          return apiResult.value;
+      }
+      setTollFetchDone(true);
+      if (apiResult?.apiError && opts?.notify !== false) {
+          showNotification('Pedágio', apiResult.apiError, 'error');
+      }
+      return parseFloat(formData.tollValue) || 0;
+  };
+
   const getGoogleMapsDistance = async (origin: string, destination: string): Promise<{ distKm: number; durationMin: number } | null> => {
       if (!isGoogleLoaded || !window.google) return null;
       try {
@@ -1140,37 +1212,25 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
       setRouteSearchTerm(route.name);
       setActiveDropdown(null);
       setTollDetails(null);
+      setTollFetchDone(false);
+      lastTollRouteRef.current = '';
       setOperatorConfirmedCalc(false);
 
       const routeDist = parseFloat(route.distance) || 0;
       const gResult = await getGoogleMapsDistance(route.origin, route.destination);
       if (gResult) {
-          if (routeDist <= 0 && gResult.distKm > 0) {
-              (route as any).distance = gResult.distKm.toString();
+          if (gResult.distKm > 0) {
+              if (routeDist <= 0) (route as any).distance = gResult.distKm.toString();
+              (route as any)._googleDistKm = gResult.distKm;
           }
           if (gResult.durationMin > 0) {
               (route as any)._googleDurationMin = gResult.durationMin;
           }
       }
-      
-      let suggestedToll = 0;
 
-      const clientUpper = (formData.client || '').toUpperCase();
-      const originUpper = (route.origin || '').toUpperCase();
-      const destUpper = (route.destination || '').toUpperCase();
-      const isCevaJundiai200km = clientUpper.includes('CEVA') && originUpper.includes('JUNDIA') && destUpper.includes('200KM');
-      if (isCevaJundiai200km) {
-          suggestedToll = 35;
-          showNotification('Regra CEVA', 'Pedágio fixo de R$ 35,00 aplicado (CEVA + Jundiaí + 200KM).', 'success');
-      }
+      await calculatePricing(route);
+      await applyTollForRoute(route.origin, getTollDestination(route.destination));
 
-      if (!manualOverrides.toll) {
-          setFormData(prev => ({ ...prev, tollValue: suggestedToll.toString() }));
-      }
-      calculatePricing(route);
-
-      // Pedágio (QualP) é consultado SOMENTE ao gerar a OS — ver handleSubmit.
-      // Aqui preservamos apenas regras fixas (ex.: CEVA 200KM) e o override manual.
       if (manualOverrides.toll) {
           showNotification('Pedágio Manual', 'Valor de pedágio mantido (editado manualmente). Cálculo automático desativado.', 'info');
       }
@@ -1198,8 +1258,9 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
 
           const virtualRoute: any = { id: 'manual', name: `${origin.split(',')[0]} → ${destination.split(',')[0]}`, origin, destination, distance: String(distKm), toll_cost: 0 };
           if (gResult && gResult.durationMin > 0) virtualRoute._googleDurationMin = gResult.durationMin;
+          if (gResult && gResult.distKm > 0) virtualRoute._googleDistKm = gResult.distKm;
           await calculatePricing(virtualRoute);
-          // Pedágio (QualP) é consultado SOMENTE ao gerar a OS — ver handleSubmit.
+          await applyTollForRoute(origin, destination);
       }, 1200);
       return () => clearTimeout(handle);
   }, [formData.origin, formData.destination, formData.client, selectedRouteId, clientRoutes]);
@@ -1284,33 +1345,11 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
 
     setIsSaving(true);
 
-    // ── Consulta de pedágio (QualP) SOMENTE no momento de gerar a OS ──
     let resolvedTollValue = parseFloat(formData.tollValue) || 0;
     const destForToll = (formData.destination || '');
-    const isSyntheticDest = /RAIO\s|DESTINO A DEFINIR|ACOMPANHAMENTO/i.test(destForToll);
-    const isCevaJundiai200km = clientUpper.includes('CEVA') && (formData.origin || '').toUpperCase().includes('JUNDIA') && destForToll.toUpperCase().includes('200KM');
-    if (!manualOverrides.toll && !isSyntheticDest && !isCevaJundiai200km && formData.origin && destForToll) {
-        setTollProgress(8);
-        setIsGeneratingToll(true);
-        const progTimer = setInterval(() => setTollProgress(p => (p < 92 ? Math.min(92, p + Math.random() * 11 + 3) : p)), 220);
-        try {
-            const apiResult = await calculateTollFromAPI(formData.origin, destForToll);
-            if (isAutoTollResult(apiResult)) {
-                resolvedTollValue = apiResult.value;
-                setTollDetails({ count: apiResult.count, tolls: apiResult.tolls, observacoes: apiResult.observacoes, confianca: apiResult.confianca, provider: apiResult.provider });
-                setFormData(prev => ({ ...prev, tollValue: apiResult.value.toFixed(2) }));
-                notifyTollResult(apiResult);
-            } else if (apiResult && apiResult.apiError) {
-                showNotification('Pedágio', `${apiResult.apiError} A OS será gerada com R$ ${resolvedTollValue.toFixed(2)}.`, 'error');
-            }
-        } catch (tollErr) {
-            console.warn('Falha na consulta QualP ao gerar OS:', tollErr);
-        } finally {
-            clearInterval(progTimer);
-            setTollProgress(100);
-            await new Promise(res => setTimeout(res, 350));
-            setIsGeneratingToll(false);
-        }
+    if (!manualOverrides.toll && !tollFetchDone && formData.origin && destForToll && !isSyntheticTollDest(destForToll)) {
+        const tollFromApi = await applyTollForRoute(formData.origin, destForToll, { notify: false });
+        if (tollFromApi !== null) resolvedTollValue = tollFromApi;
     }
 
     try {
@@ -1689,33 +1728,16 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
               { n: 4, t: 'Fornecedor', done: stepComplete.step4 },
               { n: 5, t: 'Rota', done: stepComplete.step5 },
               { n: 6, t: 'Agendamento', done: stepComplete.step6 },
+              { n: 7, t: 'Resumo', done: stepComplete.step6, icon: 'resumo' as const },
           ].map(s => (
-              <div key={s.n} className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[9px] font-black uppercase tracking-wider shrink-0 transition-all ${s.done ? 'bg-green-100 text-green-700 border border-green-300' : 'bg-gray-100 text-gray-400 border border-gray-200'}`}>
-                  <div className={`w-5 h-5 rounded-full flex items-center justify-center text-[8px] font-black ${s.done ? 'bg-green-600 text-white' : 'bg-gray-300 text-white'}`}>{s.done ? <Check size={10}/> : s.n}</div>
+              <div key={s.n} className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[9px] font-black uppercase tracking-wider shrink-0 transition-all ${s.done ? 'bg-green-100 text-green-700 border border-green-300' : s.n === 7 && stepComplete.step5 ? 'bg-emerald-50 text-emerald-700 border border-emerald-300' : 'bg-gray-100 text-gray-400 border border-gray-200'}`}>
+                  <div className={`w-5 h-5 rounded-full flex items-center justify-center text-[8px] font-black ${s.done ? 'bg-green-600 text-white' : s.n === 7 && stepComplete.step5 ? 'bg-emerald-600 text-white' : 'bg-gray-300 text-white'}`}>
+                      {s.done ? <Check size={10}/> : s.icon === 'resumo' ? <FileText size={10}/> : s.n}
+                  </div>
                   {s.t}
               </div>
           ))}
       </div>
-
-      {isGeneratingToll && (
-          <div className="fixed inset-0 z-[1300] flex items-center justify-center bg-black/70 backdrop-blur-sm p-4" data-testid="overlay-toll-loading">
-              <div className="bg-white rounded-2xl shadow-2xl max-w-sm w-full p-8 flex flex-col items-center gap-5">
-                  <div className="relative w-24 h-24">
-                      <svg className="w-24 h-24 -rotate-90" viewBox="0 0 100 100">
-                          <circle cx="50" cy="50" r="42" fill="none" stroke="#e5e7eb" strokeWidth="10" />
-                          <circle cx="50" cy="50" r="42" fill="none" stroke="#f97316" strokeWidth="10" strokeLinecap="round" strokeDasharray={2 * Math.PI * 42} strokeDashoffset={2 * Math.PI * 42 * (1 - Math.min(100, tollProgress) / 100)} style={{ transition: 'stroke-dashoffset 0.25s ease' }} />
-                      </svg>
-                      <div className="absolute inset-0 flex items-center justify-center">
-                          <span className="text-xl font-black text-gray-800" data-testid="text-toll-progress">{Math.round(tollProgress)}%</span>
-                      </div>
-                  </div>
-                  <div className="text-center space-y-1">
-                      <p className="text-sm font-black uppercase tracking-wider text-gray-800">Calculando pedágio</p>
-                      <p className="text-[11px] font-bold text-gray-500">Consultando QualP para a rota. Se indisponível, usa estimativa por IA. Aguarde para gerar a OS.</p>
-                  </div>
-              </div>
-          </div>
-      )}
 
       <div className="bg-white rounded-xl shadow-sm border border-gray-200" ref={dropdownRef}>
           <form onSubmit={handleSubmit} className="divide-y divide-gray-100">
@@ -2598,6 +2620,7 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
                                       setRouteSearchTerm(`DHL — Raio ${km} km`);
                                       setActiveDropdown(null);
                                       setTollDetails(null);
+                                      setTollFetchDone(true);
                                       setOperatorConfirmedCalc(false);
                                       setFormData(prev => ({ ...prev, applyCeva200km: true, raioKm: km, destination: `RAIO ${km} KM — DESTINO A DEFINIR`, tollValue: '0' }));
                                       calculatePricing(virtualRoute, undefined, '', '', { ceva200km: true, vtc02h: false, isSameOs: formData.isSameOs, raioKm: km });
@@ -2651,7 +2674,7 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
                               <div className="flex items-center gap-2 px-3 py-2 bg-green-50 border border-green-200 rounded-lg animate-in fade-in">
                                   <Check size={14} className="text-green-600" />
                                   <span className="text-[10px] font-black text-green-700 uppercase tracking-wider">Rota selecionada: {routeSearchTerm}</span>
-                                  <button type="button" onClick={() => { lastAutoRouteRef.current = ''; setSelectedRouteId(''); setRouteSearchTerm(''); setFormData(prev => ({...prev, origin: '', destination: '', totalDistance: '', estimatedTime: ''})); setCalcDetails(''); setTollDetails(null); setManualOverrides(prev => ({ ...prev, toll: false })); }} className="ml-auto text-green-500 hover:text-red-500 transition-colors" data-testid="button-clear-route"><X size={14}/></button>
+                                  <button type="button" onClick={() => { lastAutoRouteRef.current = ''; lastTollRouteRef.current = ''; setSelectedRouteId(''); setRouteSearchTerm(''); setFormData(prev => ({...prev, origin: '', destination: '', totalDistance: '', estimatedTime: '', tollValue: '0'})); setCalcDetails(''); setTollDetails(null); setTollFetchDone(false); setManualOverrides(prev => ({ ...prev, toll: false })); }} className="ml-auto text-green-500 hover:text-red-500 transition-colors" data-testid="button-clear-route"><X size={14}/></button>
                               </div>
                           )}
                       </div>
@@ -2715,17 +2738,43 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
                       </div>
                   )}
 
-                  {selectedRouteId && !isCalculatingToll && parseFloat(formData.tollValue) === 0 && !manualOverrides.toll && (
-                      <div className="p-4 bg-amber-50 border-2 border-amber-300 rounded-xl space-y-3">
+                  {selectedRouteId && !isCalculatingToll && (tollFetchDone || manualOverrides.toll) && (
+                      <div className={`p-4 border-2 rounded-xl space-y-3 ${manualOverrides.toll ? 'bg-amber-50 border-amber-300' : parseFloat(formData.tollValue || '0') > 0 ? 'bg-green-50 border-green-300' : 'bg-blue-50 border-blue-300'}`}>
+                          <div className="flex items-center justify-between gap-2">
+                              <div className="flex items-center gap-2">
+                                  {manualOverrides.toll ? <AlertTriangle size={16} className="text-amber-600" /> : <CheckCircle2 size={16} className={parseFloat(formData.tollValue || '0') > 0 ? 'text-green-600' : 'text-blue-600'} />}
+                                  <p className="text-[11px] font-black uppercase text-gray-800">
+                                      Pedágio: R$ {parseFloat(formData.tollValue || '0').toFixed(2)}
+                                  </p>
+                              </div>
+                              {tollDetails?.provider === 'qualp' && !manualOverrides.toll && <span className="text-[8px] font-black text-blue-600 uppercase">QualP</span>}
+                              {tollDetails?.provider === 'gemini-ai' && !manualOverrides.toll && <span className="text-[8px] font-black text-purple-600 uppercase">Estimativa IA</span>}
+                              {tollDetails?.provider === 'fixed' && !manualOverrides.toll && <span className="text-[8px] font-black text-orange-600 uppercase">Regra fixa</span>}
+                          </div>
+                          {tollDetails?.provider === 'gemini-ai' && !manualOverrides.toll && (
+                              <p className="text-[9px] text-purple-700 font-bold">Estimativa por IA — confirme o valor manualmente se necessário.</p>
+                          )}
+                          {tollDetails && tollDetails.count > 0 && !manualOverrides.toll && (
+                              <p className="text-[9px] text-gray-600 font-bold">{tollDetails.count} praça{tollDetails.count > 1 ? 's' : ''} identificada{tollDetails.count > 1 ? 's' : ''}</p>
+                          )}
+                          {!manualOverrides.toll && (
+                              <button type="button" onClick={() => applyTollForRoute(formData.origin, formData.destination, { force: true })} className="text-[9px] font-bold text-blue-600 hover:text-blue-800 underline" data-testid="button-recalc-toll-step5">Recalcular pedágio</button>
+                          )}
+                          <div className="flex items-center gap-2 pt-1 border-t border-gray-200/60">
+                              <span className="text-sm font-black text-gray-600">R$</span>
+                              <input type="number" step="0.01" className="flex-1 px-3 py-2 border-2 border-gray-300 rounded-lg text-sm font-black text-gray-900 bg-white focus:border-amber-500 outline-none" placeholder="0.00" value={formData.tollValue === '0' && !manualOverrides.toll ? '' : formData.tollValue} onChange={e => { setFormData(prev => ({ ...prev, tollValue: e.target.value || '0' })); setManualOverrides(prev => ({ ...prev, toll: true })); }} data-testid="input-toll-manual" />
+                              <span className="text-[8px] font-bold text-gray-400 uppercase">Editar</span>
+                          </div>
+                      </div>
+                  )}
+
+                  {selectedRouteId && !isCalculatingToll && !tollFetchDone && !manualOverrides.toll && (
+                      <div className="p-4 bg-amber-50 border-2 border-amber-300 rounded-xl space-y-2">
                           <div className="flex items-center gap-2">
                               <AlertTriangle size={16} className="text-amber-600" />
-                              <p className="text-[11px] font-black text-amber-800 uppercase">Pedágio: calculado ao gerar a OS</p>
+                              <p className="text-[11px] font-black text-amber-800 uppercase">Aguardando cálculo do pedágio</p>
                           </div>
-                          <p className="text-[9px] text-amber-600 font-bold">Ao gerar a OS, o pedágio é calculado pela QualP. Se a QualP falhar, o sistema usa estimativa por IA — confirme manualmente. Você também pode informar o valor abaixo.</p>
-                          <div className="flex items-center gap-2">
-                              <span className="text-sm font-black text-amber-700">R$</span>
-                              <input type="number" step="0.01" className="flex-1 px-3 py-2 border-2 border-amber-300 rounded-lg text-sm font-black text-amber-900 bg-white focus:border-amber-500 outline-none" placeholder="0.00" value={formData.tollValue === '0' ? '' : formData.tollValue} onChange={e => { setFormData(prev => ({ ...prev, tollValue: e.target.value || '0' })); setManualOverrides(prev => ({ ...prev, toll: true })); }} data-testid="input-toll-manual" />
-                          </div>
+                          <button type="button" onClick={() => applyTollForRoute(formData.origin, formData.destination, { force: true })} className="text-[9px] font-bold text-amber-700 underline">Calcular agora</button>
                       </div>
                   )}
 
@@ -2760,11 +2809,11 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
                           </div>
 
                           {/* RESUMO CLARO PARA CONFIRMAÇÃO DO OPERADOR */}
-                          {manualRevenueTableId && tollLoaded && (
+                          {manualRevenueTableId && (
                               <div className={`p-4 rounded-xl border-2 space-y-3 ${operatorConfirmedCalc ? 'bg-green-50 border-green-300' : 'bg-blue-50 border-blue-300'}`}>
                                   <div className="flex items-center gap-2">
-                                      <AlertCircle size={16} className={operatorConfirmedCalc ? 'text-green-700' : 'text-blue-700'} />
-                                      <p className="text-[11px] font-black uppercase text-gray-800">Confira os dados antes de avançar</p>
+                                      <FileText size={16} className={operatorConfirmedCalc ? 'text-green-700' : 'text-blue-700'} />
+                                      <p className="text-[11px] font-black uppercase text-gray-800">Resumo — Confira os dados antes de avançar</p>
                                   </div>
                                   <div className="grid grid-cols-1 gap-2 text-[10px] font-bold text-gray-700">
                                       <div className="flex items-center gap-2 px-3 py-2 bg-white rounded-lg border border-gray-200">
@@ -2808,7 +2857,7 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
                                       <div className="flex items-center gap-2 px-3 py-2 bg-white rounded-lg border border-gray-200">
                                           <Navigation size={12} className="text-green-500 shrink-0" />
                                           <span className="font-black text-gray-900">Pedágio:</span>
-                                          <span>{(!manualOverrides.toll && parseFloat(formData.tollValue || '0') === 0) ? 'Calculado ao gerar a OS' : `R$ ${parseFloat(formData.tollValue || '0').toFixed(2)}`}</span>
+                                          <span>{isCalculatingToll ? 'Calculando...' : `R$ ${parseFloat(formData.tollValue || '0').toFixed(2)}`}</span>
                                           {tollDetails?.provider === 'qualp' && <span className="text-[8px] text-blue-600 font-black">(via QualP)</span>}
                                           {tollDetails?.provider === 'gemini-ai' && <span className="text-[8px] text-purple-600 font-black">(estimativa IA — confirmar)</span>}
                                           {manualOverrides.toll && <span className="text-[8px] text-amber-600 font-black">(manual)</span>}
@@ -2927,7 +2976,7 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
               )}
 
               {/* SEÇÕES FINAIS - FINANCEIRO, EVIDÊNCIAS */}
-              {stepComplete.step6 && (
+              {(stepComplete.step6 || (stepComplete.step5 && operatorConfirmedCalc)) && (
               <div className="p-6 space-y-6">
 
                   {/* RESUMO INTELIGENTE DA OPERAÇÃO */}
@@ -2954,7 +3003,7 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
                       return (
                           <div className="bg-white rounded-2xl p-5 border border-gray-200 shadow-sm space-y-4">
                               <div className="flex items-center gap-2 mb-1">
-                                  <div className="p-1.5 bg-red-600 rounded-lg"><Zap size={12} className="text-white" /></div>
+                                  <div className="p-1.5 bg-red-600 rounded-lg"><FileText size={12} className="text-white" /></div>
                                   <span className="text-[10px] font-black text-gray-700 uppercase tracking-widest">Resumo da Operação</span>
                                   {warnings.length > 0 && <span className="ml-auto flex items-center gap-1 px-2 py-0.5 bg-amber-50 border border-amber-200 rounded-lg text-[9px] font-black text-amber-600 uppercase"><AlertTriangle size={10} /> {warnings.length} alerta{warnings.length > 1 ? 's' : ''}</span>}
                               </div>
@@ -2980,12 +3029,12 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
                                           <span className="text-[10px] font-black text-gray-400">R$</span>
                                           <input type="number" step="0.01" className="bg-transparent outline-none text-sm font-black text-gray-800 w-20" value={formData.tollValue} onChange={e => { setFormData(prev => ({ ...prev, tollValue: e.target.value })); setManualOverrides(prev => ({ ...prev, toll: true })); }} data-testid="input-toll-summary" />
                                       </div>
-                                      <p className="text-[8px] text-gray-400 font-bold mt-1">{manualOverrides.toll ? 'Editado pelo usuário' : tollDetails ? (tollDetails.provider === 'gemini-ai' ? (tollDetails.count === 0 ? 'Sem pedágio · Estimativa IA' : `${tollDetails.count} praça${tollDetails.count > 1 ? 's' : ''} · Estimativa IA`) : (tollDetails.count === 0 ? 'Sem pedágio · QualP' : `${tollDetails.count} praça${tollDetails.count > 1 ? 's' : ''} · QualP`)) : isCalculatingToll ? 'Calculando...' : 'QualP ou IA ao gerar OS'}</p>
+                                      <p className="text-[8px] text-gray-400 font-bold mt-1">{manualOverrides.toll ? 'Editado pelo usuário' : tollDetails ? (tollDetails.provider === 'gemini-ai' ? (tollDetails.count === 0 ? 'Sem pedágio · Estimativa IA' : `${tollDetails.count} praça${tollDetails.count > 1 ? 's' : ''} · Estimativa IA`) : tollDetails.provider === 'fixed' ? 'Regra fixa CEVA' : (tollDetails.count === 0 ? 'Sem pedágio · QualP' : `${tollDetails.count} praça${tollDetails.count > 1 ? 's' : ''} · QualP`)) : isCalculatingToll ? 'Calculando...' : tollFetchDone ? 'Calculado nesta tela' : 'Aguardando cálculo'}</p>
                                       {tollDetails?.provider === 'gemini-ai' && !manualOverrides.toll && (
                                           <p className="text-[7px] font-black uppercase mt-1 text-purple-700">Estimativa IA — confirmar manualmente</p>
                                       )}
                                       {tollDetails?.confianca && !manualOverrides.toll && <p className={`text-[7px] font-black uppercase mt-1 ${tollDetails.confianca === 'alta' ? 'text-green-600' : tollDetails.confianca === 'media' ? 'text-yellow-600' : 'text-red-600'}`}>Conf: {tollDetails.confianca}</p>}
-                                      {manualOverrides.toll && <button type="button" onClick={() => { setManualOverrides(prev => ({ ...prev, toll: false })); const route = getActiveRoute(); if (route) { setTollDetails(null); calculateTollFromAPI(route.origin, route.destination).then(r => { if (isAutoTollResult(r)) { setFormData(prev => ({ ...prev, tollValue: r.value.toFixed(2) })); setTollDetails({ count: r.count, tolls: r.tolls, observacoes: r.observacoes, confianca: r.confianca, provider: r.provider }); notifyTollResult(r); } else { showNotification('Pedágio', (r && r.apiError) || 'Não foi possível calcular o pedágio. Informe manualmente, se houver.', 'error'); } }); } }} className="text-[7px] font-bold text-amber-600 hover:text-amber-500 underline mt-1">Recalcular pedágio</button>}
+                                      {manualOverrides.toll && <button type="button" onClick={() => { setManualOverrides(prev => ({ ...prev, toll: false })); applyTollForRoute(formData.origin, formData.destination, { force: true }); }} className="text-[7px] font-bold text-amber-600 hover:text-amber-500 underline mt-1">Recalcular pedágio</button>}
                                   </div>
                               </div>
 
@@ -3104,9 +3153,12 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
                               </div>
                           )}
                       </div>
-                      <div className="flex justify-end gap-3">
+                      <div className="flex justify-end gap-3 items-center">
+                          {!stepComplete.step6 && (
+                              <p className="text-[9px] font-bold text-amber-600 uppercase mr-auto flex items-center gap-1"><Calendar size={12} /> Conclua o agendamento para gerar a OS</p>
+                          )}
                           <button type="button" onClick={onBack} className="px-8 py-3 bg-white text-gray-500 rounded-xl font-bold uppercase text-xs hover:bg-gray-100 border border-gray-200 transition-all" data-testid="button-cancel">Cancelar</button>
-                          <button type="submit" disabled={isSaving} className="px-10 py-3 bg-orange-500 text-black rounded-xl font-black uppercase text-sm shadow-lg hover:bg-orange-600 flex items-center gap-2 transition-all active:scale-95" data-testid="button-submit-os">
+                          <button type="submit" disabled={isSaving || !stepComplete.step6} className="px-10 py-3 bg-orange-500 text-black rounded-xl font-black uppercase text-sm shadow-lg hover:bg-orange-600 flex items-center gap-2 transition-all active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed" data-testid="button-submit-os">
                               {isSaving ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />} Gerar Ordem de Serviço
                           </button>
                       </div>
