@@ -2673,6 +2673,14 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
                     if (!tollErr) {
                         mission.toll_value = v;
                         tollConfirmedRef.current = true;
+                        const confLabel = j.confianca === 'alta' ? 'alta' : j.confianca === 'media' ? 'média' : 'baixa';
+                        showNotification(
+                            'Pedágio (Estimativa IA)',
+                            v === 0
+                                ? 'IA não identificou pedágio nesta rota. Confirme manualmente se houver.'
+                                : `R$ ${v.toFixed(2)} (${j.tollCount || 0} praça${(j.tollCount || 0) > 1 ? 's' : ''}) — estimativa IA ao concluir. Confirme manualmente. Confiança: ${confLabel}.`,
+                            'info'
+                        );
                         console.log(`[FIM MISSÃO] Pedágio (IA) recalculado e salvo: R$ ${v} (fornecedor R$ ${provToll})`);
                     }
                 }

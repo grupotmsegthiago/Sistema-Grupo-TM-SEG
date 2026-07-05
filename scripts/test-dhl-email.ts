@@ -19,7 +19,7 @@ async function main() {
     origin: baseInfo.origin,
     destination: baseInfo.destination,
     scheduledAt: baseInfo.scheduledAt,
-    link: 'https://app.grupotmseg.com.br/fornecedor/dhl?token=SIMULACAO_TOKEN_TESTE',
+    link: 'https://sistema.grupotmseg.com.br/fornecedor/dhl?token=SIMULACAO_TOKEN_TESTE',
   });
   console.log('[TESTE] 1/2 enviado.');
 

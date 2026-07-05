@@ -1048,6 +1048,56 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
       }
   };
 
+  const calculateTollGemini = async (origin: string, destination: string): Promise<{ value: number; count: number; tolls: any[]; provider?: string; observacoes?: string; confianca?: string } | null> => {
+      try {
+          const resp = await authFetch('/api/toll/gemini-estimate', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ origin, destination }),
+          });
+          if (!resp.ok) return null;
+          const data = await resp.json();
+          if (data.success && typeof data.tollValue === 'number') {
+              return {
+                  value: data.tollValue,
+                  count: data.tollCount || 0,
+                  tolls: data.tolls || [],
+                  observacoes: data.observacoes,
+                  confianca: data.confianca,
+                  provider: 'gemini-ai',
+              };
+          }
+          return null;
+      } catch (e) {
+          console.error('Erro Gemini pedágio:', e);
+          return null;
+      }
+  };
+
+  const isAutoTollResult = (r: { provider?: string; value?: number } | null | undefined): r is { provider: 'qualp' | 'gemini-ai'; value: number; count: number; tolls: any[]; observacoes?: string; confianca?: string } =>
+      !!r && (r.provider === 'qualp' || r.provider === 'gemini-ai') && typeof r.value === 'number';
+
+  const notifyTollResult = (r: { provider?: string; value: number; count: number; confianca?: string }) => {
+      if (r.provider === 'gemini-ai') {
+          const confLabel = r.confianca === 'alta' ? 'alta' : r.confianca === 'media' ? 'média' : 'baixa';
+          showNotification(
+              'Pedágio (Estimativa IA)',
+              r.value === 0
+                  ? 'IA não identificou pedágio nesta rota. Confirme manualmente se houver.'
+                  : `R$ ${r.value.toFixed(2)} (${r.count} praça${r.count > 1 ? 's' : ''}) — estimativa IA. Confirme manualmente. Confiança: ${confLabel}.`,
+              'info'
+          );
+          return;
+      }
+      showNotification(
+          'Pedágio QualP',
+          r.value === 0
+              ? 'Rota sem pedágio identificado. Se houver, informe manualmente.'
+              : `R$ ${r.value.toFixed(2)} (${r.count} praça${r.count > 1 ? 's' : ''} - Veículo leve 2 eixos).`,
+          r.value === 0 ? 'info' : 'success'
+      );
+  };
+
   const calculateTollFromAPI = async (origin: string, destination: string): Promise<{ value: number; count: number; tolls: any[]; apiError?: string; distance?: number; duration?: string; provider?: string; observacoes?: string; confianca?: string } | null> => {
       try {
           setIsCalculatingToll(true);
@@ -1055,9 +1105,12 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
           const qualpResult = await calculateTollQualP(origin, destination);
           if (qualpResult) return qualpResult;
 
-          return { value: 0, count: 0, tolls: [], apiError: 'Não foi possível calcular o pedágio via QualP. Informe manualmente, se houver.' };
+          const geminiResult = await calculateTollGemini(origin, destination);
+          if (geminiResult) return geminiResult;
+
+          return { value: 0, count: 0, tolls: [], apiError: 'QualP indisponível e a estimativa por IA também falhou. Informe o pedágio manualmente, se houver.' };
       } catch (e) {
-          console.error('Erro ao consultar QualP:', e);
+          console.error('Erro ao consultar pedágio:', e);
           return null;
       } finally {
           setIsCalculatingToll(false);
@@ -1242,12 +1295,13 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
         const progTimer = setInterval(() => setTollProgress(p => (p < 92 ? Math.min(92, p + Math.random() * 11 + 3) : p)), 220);
         try {
             const apiResult = await calculateTollFromAPI(formData.origin, destForToll);
-            if (apiResult && apiResult.provider === 'qualp' && typeof apiResult.value === 'number') {
+            if (isAutoTollResult(apiResult)) {
                 resolvedTollValue = apiResult.value;
                 setTollDetails({ count: apiResult.count, tolls: apiResult.tolls, observacoes: apiResult.observacoes, confianca: apiResult.confianca, provider: apiResult.provider });
                 setFormData(prev => ({ ...prev, tollValue: apiResult.value.toFixed(2) }));
+                notifyTollResult(apiResult);
             } else if (apiResult && apiResult.apiError) {
-                showNotification('Pedágio QualP', `${apiResult.apiError} A OS será gerada com R$ ${resolvedTollValue.toFixed(2)}.`, 'error');
+                showNotification('Pedágio', `${apiResult.apiError} A OS será gerada com R$ ${resolvedTollValue.toFixed(2)}.`, 'error');
             }
         } catch (tollErr) {
             console.warn('Falha na consulta QualP ao gerar OS:', tollErr);
@@ -1657,7 +1711,7 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
                   </div>
                   <div className="text-center space-y-1">
                       <p className="text-sm font-black uppercase tracking-wider text-gray-800">Calculando pedágio</p>
-                      <p className="text-[11px] font-bold text-gray-500">Consultando a QualP para a rota informada. Aguarde para gerar a Ordem de Serviço.</p>
+                      <p className="text-[11px] font-bold text-gray-500">Consultando QualP para a rota. Se indisponível, usa estimativa por IA. Aguarde para gerar a OS.</p>
                   </div>
               </div>
           </div>
@@ -2667,7 +2721,7 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
                               <AlertTriangle size={16} className="text-amber-600" />
                               <p className="text-[11px] font-black text-amber-800 uppercase">Pedágio: calculado ao gerar a OS</p>
                           </div>
-                          <p className="text-[9px] text-amber-600 font-bold">O valor do pedágio é consultado automaticamente na QualP no momento de gerar a Ordem de Serviço. Se preferir, informe um valor manual abaixo.</p>
+                          <p className="text-[9px] text-amber-600 font-bold">Ao gerar a OS, o pedágio é calculado pela QualP. Se a QualP falhar, o sistema usa estimativa por IA — confirme manualmente. Você também pode informar o valor abaixo.</p>
                           <div className="flex items-center gap-2">
                               <span className="text-sm font-black text-amber-700">R$</span>
                               <input type="number" step="0.01" className="flex-1 px-3 py-2 border-2 border-amber-300 rounded-lg text-sm font-black text-amber-900 bg-white focus:border-amber-500 outline-none" placeholder="0.00" value={formData.tollValue === '0' ? '' : formData.tollValue} onChange={e => { setFormData(prev => ({ ...prev, tollValue: e.target.value || '0' })); setManualOverrides(prev => ({ ...prev, toll: true })); }} data-testid="input-toll-manual" />
@@ -2756,6 +2810,7 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
                                           <span className="font-black text-gray-900">Pedágio:</span>
                                           <span>{(!manualOverrides.toll && parseFloat(formData.tollValue || '0') === 0) ? 'Calculado ao gerar a OS' : `R$ ${parseFloat(formData.tollValue || '0').toFixed(2)}`}</span>
                                           {tollDetails?.provider === 'qualp' && <span className="text-[8px] text-blue-600 font-black">(via QualP)</span>}
+                                          {tollDetails?.provider === 'gemini-ai' && <span className="text-[8px] text-purple-600 font-black">(estimativa IA — confirmar)</span>}
                                           {manualOverrides.toll && <span className="text-[8px] text-amber-600 font-black">(manual)</span>}
                                       </div>
                                   </div>
@@ -2925,9 +2980,12 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
                                           <span className="text-[10px] font-black text-gray-400">R$</span>
                                           <input type="number" step="0.01" className="bg-transparent outline-none text-sm font-black text-gray-800 w-20" value={formData.tollValue} onChange={e => { setFormData(prev => ({ ...prev, tollValue: e.target.value })); setManualOverrides(prev => ({ ...prev, toll: true })); }} data-testid="input-toll-summary" />
                                       </div>
-                                      <p className="text-[8px] text-gray-400 font-bold mt-1">{manualOverrides.toll ? 'Editado pelo usuário' : tollDetails ? (tollDetails.count === 0 ? 'Sem pedágio · QualP' : `${tollDetails.count} praça${tollDetails.count > 1 ? 's' : ''} · QualP`) : isCalculatingToll ? 'Calculando...' : 'Via QualP'}</p>
+                                      <p className="text-[8px] text-gray-400 font-bold mt-1">{manualOverrides.toll ? 'Editado pelo usuário' : tollDetails ? (tollDetails.provider === 'gemini-ai' ? (tollDetails.count === 0 ? 'Sem pedágio · Estimativa IA' : `${tollDetails.count} praça${tollDetails.count > 1 ? 's' : ''} · Estimativa IA`) : (tollDetails.count === 0 ? 'Sem pedágio · QualP' : `${tollDetails.count} praça${tollDetails.count > 1 ? 's' : ''} · QualP`)) : isCalculatingToll ? 'Calculando...' : 'QualP ou IA ao gerar OS'}</p>
+                                      {tollDetails?.provider === 'gemini-ai' && !manualOverrides.toll && (
+                                          <p className="text-[7px] font-black uppercase mt-1 text-purple-700">Estimativa IA — confirmar manualmente</p>
+                                      )}
                                       {tollDetails?.confianca && !manualOverrides.toll && <p className={`text-[7px] font-black uppercase mt-1 ${tollDetails.confianca === 'alta' ? 'text-green-600' : tollDetails.confianca === 'media' ? 'text-yellow-600' : 'text-red-600'}`}>Conf: {tollDetails.confianca}</p>}
-                                      {manualOverrides.toll && <button type="button" onClick={() => { setManualOverrides(prev => ({ ...prev, toll: false })); const route = getActiveRoute(); if (route) { setTollDetails(null); calculateTollFromAPI(route.origin, route.destination).then(r => { if (r && r.provider === 'qualp' && typeof r.value === 'number') { setFormData(prev => ({ ...prev, tollValue: r.value.toFixed(2) })); setTollDetails({ count: r.count, tolls: r.tolls, observacoes: r.observacoes, confianca: r.confianca, provider: r.provider }); showNotification('Pedágio QualP', r.value === 0 ? 'Rota sem pedágio identificado. Se houver, informe manualmente.' : `R$ ${r.value.toFixed(2)} (${r.count} praça${r.count > 1 ? 's' : ''} - Veículo leve 2 eixos).`, r.value === 0 ? 'info' : 'success'); } else { showNotification('Pedágio QualP', (r && r.apiError) || 'Não foi possível calcular o pedágio via QualP. Informe manualmente, se houver.', 'error'); } }); } }} className="text-[7px] font-bold text-amber-600 hover:text-amber-500 underline mt-1">Recalcular via QualP</button>}
+                                      {manualOverrides.toll && <button type="button" onClick={() => { setManualOverrides(prev => ({ ...prev, toll: false })); const route = getActiveRoute(); if (route) { setTollDetails(null); calculateTollFromAPI(route.origin, route.destination).then(r => { if (isAutoTollResult(r)) { setFormData(prev => ({ ...prev, tollValue: r.value.toFixed(2) })); setTollDetails({ count: r.count, tolls: r.tolls, observacoes: r.observacoes, confianca: r.confianca, provider: r.provider }); notifyTollResult(r); } else { showNotification('Pedágio', (r && r.apiError) || 'Não foi possível calcular o pedágio. Informe manualmente, se houver.', 'error'); } }); } }} className="text-[7px] font-bold text-amber-600 hover:text-amber-500 underline mt-1">Recalcular pedágio</button>}
                                   </div>
                               </div>
 
@@ -2939,6 +2997,7 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
                                               <Navigation size={10} />
                                               Praças de Pedágio Identificadas
                                               {tollDetails.provider === 'qualp' && <span className="px-1.5 py-0.5 bg-blue-50 border border-blue-200 rounded text-[7px] text-blue-600">via QualP</span>}
+                                              {tollDetails.provider === 'gemini-ai' && <span className="px-1.5 py-0.5 bg-purple-50 border border-purple-200 rounded text-[7px] text-purple-700">estimativa IA</span>}
                                           </p>
                                       </div>
                                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">

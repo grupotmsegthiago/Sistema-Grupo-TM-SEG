@@ -2149,7 +2149,7 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
                     onScroll={() => { if (mainScrollRef.current && topScrollRef.current && !syncingFromTopRef.current) { syncingFromMainRef.current = true; topScrollRef.current.scrollLeft = mainScrollRef.current.scrollLeft; requestAnimationFrame(() => { syncingFromMainRef.current = false; }); } }}
                     data-testid="mission-list-scroll"
                   >
-                    <div ref={mainContentRef} className="flex flex-col gap-3 lg:min-w-[1100px]">
+                    <div ref={mainContentRef} className="flex flex-col gap-3 min-w-0 xl:min-w-[1100px]">
                       {pagedMissions.map((mission) => {
                           const diffMinutes = getDelayMinutes(mission);
                           const isPending = isMissionPending(mission);
