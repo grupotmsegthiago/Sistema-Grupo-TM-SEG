@@ -1,4 +1,4 @@
-import { before, test } from 'node:test';
+import { after, before, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { JSDOM } from 'jsdom';
 
@@ -22,11 +22,19 @@ try {
 let React: typeof import('react');
 let createRoot: typeof import('react-dom/client').createRoot;
 let DailyGoalThermometer: React.ComponentType<any>;
+let supabase: typeof import('../lib/supabase').supabase;
 
 before(async () => {
   React = await import('react');
   ({ createRoot } = await import('react-dom/client'));
   DailyGoalThermometer = (await import('../components/DailyGoalThermometer')).default;
+  ({ supabase } = await import('../lib/supabase'));
+});
+
+after(async () => {
+  try { await supabase.removeAllChannels(); } catch { /* noop */ }
+  try { (supabase as any).realtime?.disconnect?.(); } catch { /* noop */ }
+  try { window.close(); } catch { /* noop */ }
 });
 
 async function renderGoal(canSeeMonetary: boolean): Promise<string> {
