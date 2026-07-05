@@ -263,6 +263,13 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
     return nameLower.includes('daniel') || nameLower.includes('michelle') || nameLower.includes('barbara') || nameLower.includes('bárbara') || nameLower.includes('thiago moreira') || roleLower === 'controller';
   }, [currentUser]);
 
+  const canSeeGoalThermometers = useMemo(() => {
+    if (!currentUser) return false;
+    const roleLower = (currentUser.role || '').toLowerCase();
+    if (currentUser.permissions?.includes('*')) return true;
+    return !['operador', 'avançado', 'avancado'].includes(roleLower);
+  }, [currentUser]);
+
   // Alerta "OS sem Tabela": visível para ADMINISTRADOR e AVANÇADO (e acesso total
   // '*'), além dos nomes históricos (Thiago Moreira, Bárbara, Simone) para não
   // remover acesso de quem já usava.
@@ -1835,6 +1842,8 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
 
           {!isRestrictedClientView && (
           <div className="flex flex-wrap gap-3 w-full justify-start overflow-visible">
+             {canSeeGoalThermometers && (
+             <>
              <div className="w-full sm:w-[320px] sm:shrink-0 flex overflow-visible">
                 <DailyGoalThermometer 
                    viewPeriod={viewPeriod} 
@@ -1895,6 +1904,8 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
                    historyKey="meta-total"
                 />
              </div>
+             </>
+             )}
              {canSeeFinancials && lossesCount > 0 && (
              <div className="w-full sm:w-auto sm:shrink-0 flex items-stretch">
                 <button

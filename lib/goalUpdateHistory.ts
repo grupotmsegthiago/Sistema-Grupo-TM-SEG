@@ -1,4 +1,5 @@
-// Histórico das últimas atualizações de meta (gráfico Monitoramento 24h) — só diretoria vê no UI.
+// Histórico das últimas atualizações de meta (gráfico Monitoramento) — só diretoria vê no UI.
+// Amostras agrupadas a cada 30 minutos por filtro de período.
 
 export type GoalUpdateSnapshot = {
   at: string;
@@ -14,7 +15,15 @@ export type GoalUpdateSnapshot = {
   source: 'manual' | 'sync';
 };
 
-const MAX_ENTRIES = 10;
+/** Intervalo fixo de amostragem do gráfico. */
+export const GOAL_SAMPLE_INTERVAL_MS = 30 * 60 * 1000;
+
+/** Pontos exibidos no sparkline (últimas 30 amostras de 30 min = 15 h). */
+export const GOAL_CHART_POINTS = 30;
+
+/** ~31 dias de amostras de 30 min por filtro. */
+export const GOAL_MAX_HISTORY_ENTRIES = 48 * 31;
+
 const STORAGE_PREFIX = 'tmseg_goal_history_';
 
 function pad2(n: number) {
@@ -23,6 +32,11 @@ function pad2(n: number) {
 
 function localDateKey(d: Date) {
   return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+}
+
+export function bucketTimestampMs(at: string | Date): number {
+  const t = typeof at === 'string' ? new Date(at).getTime() : at.getTime();
+  return Math.floor(t / GOAL_SAMPLE_INTERVAL_MS) * GOAL_SAMPLE_INTERVAL_MS;
 }
 
 /** Chave de histórico escopada ao filtro ativo (hoje, mês corrente, semana, etc.). */
@@ -71,10 +85,22 @@ export function loadGoalUpdateHistory(key: string): GoalUpdateSnapshot[] {
     const raw = localStorage.getItem(storageKey(key));
     if (!raw) return [];
     const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed.slice(0, MAX_ENTRIES) : [];
+    if (!Array.isArray(parsed)) return [];
+    return parsed
+      .slice(0, GOAL_MAX_HISTORY_ENTRIES)
+      .sort((a, b) => new Date(b.at).getTime() - new Date(a.at).getTime());
   } catch {
     return [];
   }
+}
+
+/** Últimas N amostras de 30 min em ordem cronológica (para o gráfico). */
+export function selectChartSnapshots(
+  rows: GoalUpdateSnapshot[],
+  maxPoints = GOAL_CHART_POINTS,
+): GoalUpdateSnapshot[] {
+  const sorted = [...rows].sort((a, b) => new Date(a.at).getTime() - new Date(b.at).getTime());
+  return sorted.slice(-maxPoints);
 }
 
 export function pushGoalUpdateHistory(
@@ -82,27 +108,29 @@ export function pushGoalUpdateHistory(
   entry: Omit<GoalUpdateSnapshot, 'deltaRevenue' | 'deltaCost' | 'deltaProfit' | 'deltaMissions'>,
 ): GoalUpdateSnapshot[] {
   const prev = loadGoalUpdateHistory(key);
-  const last = prev[0] ?? null;
+  const bucketMs = bucketTimestampMs(entry.at);
+  const bucketAt = new Date(bucketMs).toISOString();
+
+  const chronologicallyPrev = prev
+    .filter(p => bucketTimestampMs(p.at) < bucketMs)
+    .sort((a, b) => new Date(b.at).getTime() - new Date(a.at).getTime())[0] ?? null;
+
   const snapshot: GoalUpdateSnapshot = {
     ...entry,
-    deltaRevenue: last ? entry.revenue - last.revenue : null,
-    deltaCost: last ? entry.cost - last.cost : null,
-    deltaProfit: last ? entry.profit - last.profit : null,
-    deltaMissions: last ? entry.missionCount - last.missionCount : null,
+    at: bucketAt,
+    deltaRevenue: chronologicallyPrev ? entry.revenue - chronologicallyPrev.revenue : null,
+    deltaCost: chronologicallyPrev ? entry.cost - chronologicallyPrev.cost : null,
+    deltaProfit: chronologicallyPrev ? entry.profit - chronologicallyPrev.profit : null,
+    deltaMissions: chronologicallyPrev ? entry.missionCount - chronologicallyPrev.missionCount : null,
   };
 
-  // Evita duplicata se nada mudou (mesmo faturamento e missões)
-  if (
-    last
-    && Math.abs(snapshot.revenue - last.revenue) < 0.01
-    && Math.abs(snapshot.cost - last.cost) < 0.01
-    && snapshot.missionCount === last.missionCount
-    && entry.source === 'sync'
-  ) {
-    return prev;
-  }
+  const hasBucket = prev.some(p => bucketTimestampMs(p.at) === bucketMs);
+  const next = hasBucket
+    ? prev
+        .map(p => (bucketTimestampMs(p.at) === bucketMs ? snapshot : p))
+        .sort((a, b) => new Date(b.at).getTime() - new Date(a.at).getTime())
+    : [snapshot, ...prev].slice(0, GOAL_MAX_HISTORY_ENTRIES);
 
-  const next = [snapshot, ...prev].slice(0, MAX_ENTRIES);
   try {
     localStorage.setItem(storageKey(key), JSON.stringify(next));
   } catch { /* quota */ }

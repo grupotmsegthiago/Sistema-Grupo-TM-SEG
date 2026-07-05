@@ -10,9 +10,11 @@ import {
 } from '../lib/missionFinancialsCanonical';
 import {
   formatGoalDelta,
+  GOAL_SAMPLE_INTERVAL_MS,
   loadGoalUpdateHistory,
   pushGoalUpdateHistory,
   resolveGoalHistoryKey,
+  selectChartSnapshots,
   type GoalUpdateSnapshot,
 } from '../lib/goalUpdateHistory';
 
@@ -70,23 +72,26 @@ const formatCurrency = (val: number) => {
     return val.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 };
 
-const CHART_VIEW_W = 280;
-const CHART_VIEW_H = 72;
-const CHART_PAD = 8;
+const CHART_VIEW_W = 320;
+const CHART_VIEW_H = 88;
+const CHART_PAD_X = 4;
+const CHART_PAD_Y = 10;
 const VALUE_EPS = 0.01;
 
-function buildStepPath(points: Array<{ x: number; y: number; row: GoalUpdateSnapshot }>): string {
-    if (points.length < 2) return '';
+function buildSmoothPath(points: Array<{ x: number; y: number }>): string {
+    if (points.length === 0) return '';
+    if (points.length === 1) return `M ${points[0].x.toFixed(1)} ${points[0].y.toFixed(1)}`;
     let d = `M ${points[0].x.toFixed(1)} ${points[0].y.toFixed(1)}`;
-    for (let i = 1; i < points.length; i++) {
-        const prev = points[i - 1];
-        const curr = points[i];
-        const same = Math.abs(curr.row.revenue - prev.row.revenue) < VALUE_EPS;
-        if (same) {
-            d += ` L ${curr.x.toFixed(1)} ${prev.y.toFixed(1)}`;
-        } else {
-            d += ` L ${curr.x.toFixed(1)} ${prev.y.toFixed(1)} L ${curr.x.toFixed(1)} ${curr.y.toFixed(1)}`;
-        }
+    for (let i = 0; i < points.length - 1; i++) {
+        const p0 = points[Math.max(0, i - 1)];
+        const p1 = points[i];
+        const p2 = points[i + 1];
+        const p3 = points[Math.min(points.length - 1, i + 2)];
+        const cp1x = p1.x + (p2.x - p0.x) / 6;
+        const cp1y = p1.y + (p2.y - p0.y) / 6;
+        const cp2x = p2.x - (p3.x - p1.x) / 6;
+        const cp2y = p2.y - (p3.y - p1.y) / 6;
+        d += ` C ${cp1x.toFixed(1)} ${cp1y.toFixed(1)} ${cp2x.toFixed(1)} ${cp2y.toFixed(1)} ${p2.x.toFixed(1)} ${p2.y.toFixed(1)}`;
     }
     return d;
 }
@@ -102,7 +107,7 @@ const GoalUpdateAreaChart: React.FC<{
 }> = ({ rows, stroke, gradientId, isRefreshing, onRefresh, title, periodLabel }) => {
     const [hoverIdx, setHoverIdx] = useState<number | null>(null);
     const [tooltipPos, setTooltipPos] = useState({ top: 0, left: 0 });
-    const chronological = useMemo(() => [...rows].slice(0, 5).reverse(), [rows]);
+    const chronological = useMemo(() => selectChartSnapshots(rows), [rows]);
 
     const points = useMemo(() => {
         if (chronological.length === 0) return [];
@@ -110,26 +115,28 @@ const GoalUpdateAreaChart: React.FC<{
         const min = Math.min(...values);
         const max = Math.max(...values);
         const range = max - min;
-        const innerW = CHART_VIEW_W - CHART_PAD * 2;
-        const innerH = CHART_VIEW_H - CHART_PAD * 2;
-        const midY = CHART_PAD + innerH / 2;
-        const baseY = CHART_VIEW_H - CHART_PAD;
+        const innerW = CHART_VIEW_W - CHART_PAD_X * 2;
+        const innerH = CHART_VIEW_H - CHART_PAD_Y * 2;
+        const midY = CHART_PAD_Y + innerH / 2;
+        const baseY = CHART_VIEW_H - CHART_PAD_Y;
         return chronological.map((row, i) => {
-            const x = CHART_PAD + (chronological.length === 1 ? innerW / 2 : (i / (chronological.length - 1)) * innerW);
-            const y = range < VALUE_EPS ? midY : CHART_PAD + (1 - (row.revenue - min) / range) * innerH;
+            const x = CHART_PAD_X + (chronological.length === 1 ? innerW / 2 : (i / (chronological.length - 1)) * innerW);
+            const y = range < VALUE_EPS ? midY : CHART_PAD_Y + (1 - (row.revenue - min) / range) * innerH;
             const prev = i > 0 ? chronological[i - 1].revenue : null;
             const delta = prev !== null ? row.revenue - prev : null;
             return { x, y, baseY, row, delta, i };
         });
     }, [chronological]);
 
-    const linePath = useMemo(() => buildStepPath(points), [points]);
+    const linePath = useMemo(() => buildSmoothPath(points), [points]);
     const areaPath = useMemo(() => {
         if (!linePath || points.length === 0) return '';
         const last = points[points.length - 1];
         const first = points[0];
         return `${linePath} L ${last.x.toFixed(1)} ${last.baseY.toFixed(1)} L ${first.x.toFixed(1)} ${first.baseY.toFixed(1)} Z`;
     }, [linePath, points]);
+
+    const lastPoint = points.length > 0 ? points[points.length - 1] : null;
 
     const showTooltip = (idx: number, el: SVGCircleElement) => {
         setHoverIdx(idx);
@@ -139,8 +146,8 @@ const GoalUpdateAreaChart: React.FC<{
 
     return (
         <div className="relative w-full select-none overflow-visible" data-testid="goal-update-sparkline">
-            <div className="flex items-center justify-between gap-2 mb-1.5">
-                <span className="text-[8px] font-black uppercase tracking-wider text-slate-400">Monitoramento · {periodLabel} · últimas 5</span>
+            <div className="flex items-center justify-between gap-2 mb-1">
+                <span className="text-[8px] font-bold uppercase tracking-wider text-slate-400">Amostras a cada 30 min · {periodLabel}</span>
                 <button
                     type="button"
                     onClick={onRefresh}
@@ -157,43 +164,55 @@ const GoalUpdateAreaChart: React.FC<{
                 type="button"
                 onClick={onRefresh}
                 disabled={isRefreshing}
-                className="block w-full rounded-xl overflow-visible focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-1 focus-visible:ring-slate-300"
+                className="block w-full overflow-visible focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-1 focus-visible:ring-slate-300 rounded-lg"
                 aria-label={title}
             >
                 {points.length === 0 ? (
-                    <div className="flex items-center justify-center h-[72px] rounded-xl border border-dashed border-slate-200 bg-slate-50/80 text-[9px] font-semibold text-slate-400 uppercase">
-                        Sem histórico — clique ↻ para registrar
+                    <div className="flex items-center justify-center h-[88px] rounded-lg border border-dashed border-slate-200/80 bg-gradient-to-b from-slate-50/50 to-white text-[9px] font-semibold text-slate-400 uppercase">
+                        Sem histórico — aguardando amostra de 30 min
                     </div>
                 ) : (
                     <svg
                         viewBox={`0 0 ${CHART_VIEW_W} ${CHART_VIEW_H}`}
-                        className="w-full h-[72px] overflow-visible"
+                        className="w-full h-[88px] overflow-visible"
                         preserveAspectRatio="none"
-                        style={{ overflow: 'visible' }}
                     >
                         <defs>
                             <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
-                                <stop offset="0%" stopColor={stroke} stopOpacity={0.35} />
-                                <stop offset="100%" stopColor={stroke} stopOpacity={0.02} />
+                                <stop offset="0%" stopColor={stroke} stopOpacity={0.42} />
+                                <stop offset="55%" stopColor={stroke} stopOpacity={0.12} />
+                                <stop offset="100%" stopColor={stroke} stopOpacity={0} />
                             </linearGradient>
                         </defs>
                         {areaPath && <path d={areaPath} fill={`url(#${gradientId})`} stroke="none" />}
                         {linePath && (
-                            <path d={linePath} fill="none" stroke={stroke} strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round" />
+                            <path
+                                d={linePath}
+                                fill="none"
+                                stroke={stroke}
+                                strokeWidth={2.25}
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                            />
                         )}
                         {points.map((p) => (
                             <circle
-                                key={p.row.at}
+                                key={`${p.row.at}-hit`}
                                 cx={p.x}
                                 cy={p.y}
-                                r={hoverIdx === p.i ? 5 : 3.5}
-                                fill={hoverIdx === p.i ? stroke : '#fff'}
-                                stroke={stroke}
-                                strokeWidth={2}
+                                r={8}
+                                fill="transparent"
+                                className="cursor-pointer"
                                 onMouseEnter={(e) => showTooltip(p.i, e.currentTarget)}
                                 onMouseLeave={() => setHoverIdx(null)}
                             />
                         ))}
+                        {lastPoint && (
+                            <>
+                                <circle cx={lastPoint.x} cy={lastPoint.y} r={11} fill={stroke} fillOpacity={0.18} />
+                                <circle cx={lastPoint.x} cy={lastPoint.y} r={5.5} fill={stroke} stroke="#fff" strokeWidth={2} />
+                            </>
+                        )}
                     </svg>
                 )}
             </button>
@@ -385,6 +404,14 @@ const DailyGoalThermometer: React.FC<Props> = ({ viewPeriod = 'TODAY', customSta
         pendingManualRecord.current = false;
         recordSnapshot(source);
     }, [lastDataUpdatedAt, userRole, recordSnapshot, resolvedHistoryKey, parentClientTables?.length, currentRevenue, currentCost, stats.profit, stats.percentage, filteredMissions.length]);
+
+    // Amostra automática a cada 30 min (atualiza o bucket corrente ou abre um novo).
+    useEffect(() => {
+        if (userRole !== 'diretoria' || !parentClientTables?.length) return;
+        recordSnapshot('sync');
+        const id = setInterval(() => recordSnapshot('sync'), GOAL_SAMPLE_INTERVAL_MS);
+        return () => clearInterval(id);
+    }, [userRole, parentClientTables?.length, recordSnapshot, resolvedHistoryKey]);
 
     const handleManualRefresh = useCallback(async () => {
         if (isRefreshing || isLoading) return;
