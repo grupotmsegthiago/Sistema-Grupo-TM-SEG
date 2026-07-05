@@ -17,6 +17,51 @@ export type GoalUpdateSnapshot = {
 const MAX_ENTRIES = 10;
 const STORAGE_PREFIX = 'tmseg_goal_history_';
 
+function pad2(n: number) {
+  return String(n).padStart(2, '0');
+}
+
+function localDateKey(d: Date) {
+  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+}
+
+/** Chave de histórico escopada ao filtro ativo (hoje, mês corrente, semana, etc.). */
+export function resolveGoalHistoryKey(
+  baseKey: string,
+  viewPeriod: string,
+  customStartDate?: string,
+  customEndDate?: string,
+  now: Date = new Date(),
+): string {
+  const period = viewPeriod || 'TODAY';
+  switch (period) {
+    case 'TODAY':
+      return `${baseKey}-TODAY-${localDateKey(now)}`;
+    case 'YESTERDAY': {
+      const y = new Date(now);
+      y.setDate(y.getDate() - 1);
+      return `${baseKey}-YESTERDAY-${localDateKey(y)}`;
+    }
+    case 'WEEK': {
+      const weekStart = new Date(now);
+      weekStart.setDate(weekStart.getDate() - weekStart.getDay());
+      return `${baseKey}-WEEK-${localDateKey(weekStart)}`;
+    }
+    case 'MONTH':
+      return `${baseKey}-MONTH-${now.getFullYear()}-${pad2(now.getMonth() + 1)}`;
+    case 'YEAR':
+      return `${baseKey}-YEAR-${now.getFullYear()}`;
+    case 'CUSTOM':
+      if (customStartDate && customEndDate) {
+        return `${baseKey}-CUSTOM-${customStartDate}_${customEndDate}`;
+      }
+      return `${baseKey}-CUSTOM`;
+    case 'ALL':
+    default:
+      return `${baseKey}-ALL`;
+  }
+}
+
 function storageKey(key: string) {
   return `${STORAGE_PREFIX}${key}`;
 }

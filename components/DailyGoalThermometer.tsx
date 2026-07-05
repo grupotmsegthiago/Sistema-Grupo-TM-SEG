@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import { Target, Loader2, Trophy, Zap, Clock, RefreshCw } from 'lucide-react';
+import React, { useState, useEffect, useMemo, useCallback, useRef, useId } from 'react';
+import { Target, Loader2, Trophy, Zap, Clock, RefreshCw, Coins, ShoppingCart, Landmark, TrendingDown, TrendingUp, Minus } from 'lucide-react';
 import { ClientPriceTable, ProviderCostTable, Client } from '../types';
 import { useNotification } from '../lib/NotificationContext';
 import { formatDateTimeAuditBR } from '../lib/dateUtils';
@@ -12,6 +12,7 @@ import {
   formatGoalDelta,
   loadGoalUpdateHistory,
   pushGoalUpdateHistory,
+  resolveGoalHistoryKey,
   type GoalUpdateSnapshot,
 } from '../lib/goalUpdateHistory';
 
@@ -69,21 +70,38 @@ const formatCurrency = (val: number) => {
     return val.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 };
 
-const CHART_W = 132;
-const CHART_H = 52;
-const CHART_PAD = 10;
+const CHART_VIEW_W = 280;
+const CHART_VIEW_H = 72;
+const CHART_PAD = 8;
 const VALUE_EPS = 0.01;
 
-const GoalUpdateSparkline: React.FC<{
+function buildStepPath(points: Array<{ x: number; y: number; row: GoalUpdateSnapshot }>): string {
+    if (points.length < 2) return '';
+    let d = `M ${points[0].x.toFixed(1)} ${points[0].y.toFixed(1)}`;
+    for (let i = 1; i < points.length; i++) {
+        const prev = points[i - 1];
+        const curr = points[i];
+        const same = Math.abs(curr.row.revenue - prev.row.revenue) < VALUE_EPS;
+        if (same) {
+            d += ` L ${curr.x.toFixed(1)} ${prev.y.toFixed(1)}`;
+        } else {
+            d += ` L ${curr.x.toFixed(1)} ${prev.y.toFixed(1)} L ${curr.x.toFixed(1)} ${curr.y.toFixed(1)}`;
+        }
+    }
+    return d;
+}
+
+const GoalUpdateAreaChart: React.FC<{
     rows: GoalUpdateSnapshot[];
     stroke: string;
+    gradientId: string;
     isRefreshing: boolean;
     onRefresh: () => void;
     title: string;
-}> = ({ rows, stroke, isRefreshing, onRefresh, title }) => {
+    periodLabel: string;
+}> = ({ rows, stroke, gradientId, isRefreshing, onRefresh, title, periodLabel }) => {
     const [hoverIdx, setHoverIdx] = useState<number | null>(null);
     const [tooltipPos, setTooltipPos] = useState({ top: 0, left: 0 });
-    const chartRef = useRef<HTMLDivElement>(null);
     const chronological = useMemo(() => [...rows].slice(0, 5).reverse(), [rows]);
 
     const points = useMemo(() => {
@@ -92,37 +110,26 @@ const GoalUpdateSparkline: React.FC<{
         const min = Math.min(...values);
         const max = Math.max(...values);
         const range = max - min;
-        const innerW = CHART_W - CHART_PAD * 2;
-        const innerH = CHART_H - CHART_PAD * 2;
+        const innerW = CHART_VIEW_W - CHART_PAD * 2;
+        const innerH = CHART_VIEW_H - CHART_PAD * 2;
         const midY = CHART_PAD + innerH / 2;
+        const baseY = CHART_VIEW_H - CHART_PAD;
         return chronological.map((row, i) => {
             const x = CHART_PAD + (chronological.length === 1 ? innerW / 2 : (i / (chronological.length - 1)) * innerW);
-            const y = range < VALUE_EPS
-                ? midY
-                : CHART_PAD + (1 - (row.revenue - min) / range) * innerH;
+            const y = range < VALUE_EPS ? midY : CHART_PAD + (1 - (row.revenue - min) / range) * innerH;
             const prev = i > 0 ? chronological[i - 1].revenue : null;
             const delta = prev !== null ? row.revenue - prev : null;
-            return { x, y, row, delta, i };
+            return { x, y, baseY, row, delta, i };
         });
     }, [chronological]);
 
-    const pathD = useMemo(() => {
-        if (points.length < 2) return '';
-        let d = `M ${points[0].x.toFixed(1)} ${points[0].y.toFixed(1)}`;
-        for (let i = 1; i < points.length; i++) {
-            const prev = points[i - 1];
-            const curr = points[i];
-            const same = Math.abs(curr.row.revenue - prev.row.revenue) < VALUE_EPS;
-            if (same) {
-                // Valor igual → segmento horizontal (linha reta)
-                d += ` L ${curr.x.toFixed(1)} ${prev.y.toFixed(1)}`;
-            } else {
-                // Valor mudou → degrau: horizontal até o ponto, depois vertical
-                d += ` L ${curr.x.toFixed(1)} ${prev.y.toFixed(1)} L ${curr.x.toFixed(1)} ${curr.y.toFixed(1)}`;
-            }
-        }
-        return d;
-    }, [points]);
+    const linePath = useMemo(() => buildStepPath(points), [points]);
+    const areaPath = useMemo(() => {
+        if (!linePath || points.length === 0) return '';
+        const last = points[points.length - 1];
+        const first = points[0];
+        return `${linePath} L ${last.x.toFixed(1)} ${last.baseY.toFixed(1)} L ${first.x.toFixed(1)} ${first.baseY.toFixed(1)} Z`;
+    }, [linePath, points]);
 
     const showTooltip = (idx: number, el: SVGCircleElement) => {
         setHoverIdx(idx);
@@ -131,59 +138,58 @@ const GoalUpdateSparkline: React.FC<{
     };
 
     return (
-        <div
-            ref={chartRef}
-            className="relative select-none overflow-visible z-[160]"
-            style={{ width: CHART_W }}
-            data-testid="goal-update-sparkline"
-            title={title}
-        >
-            <div className="flex items-center justify-between gap-1 mb-0.5">
-                <span className="text-[7px] font-black uppercase text-slate-400 leading-none whitespace-nowrap">Monitoramento 24h</span>
+        <div className="relative w-full select-none overflow-visible" data-testid="goal-update-sparkline">
+            <div className="flex items-center justify-between gap-2 mb-1.5">
+                <span className="text-[8px] font-black uppercase tracking-wider text-slate-400">Monitoramento · {periodLabel} · últimas 5</span>
                 <button
                     type="button"
-                    onClick={(e) => { e.stopPropagation(); onRefresh(); }}
+                    onClick={onRefresh}
                     disabled={isRefreshing}
-                    className="p-0.5 rounded text-slate-400 hover:text-slate-700 disabled:opacity-40 shrink-0"
+                    className="p-1 rounded-md text-slate-400 hover:text-slate-700 hover:bg-slate-100 disabled:opacity-40"
                     aria-label={title}
+                    title={title}
                     data-testid="button-refresh-goal"
                 >
-                    <RefreshCw size={10} className={isRefreshing ? 'animate-spin' : ''} />
+                    <RefreshCw size={12} className={isRefreshing ? 'animate-spin' : ''} />
                 </button>
             </div>
             <button
                 type="button"
                 onClick={onRefresh}
                 disabled={isRefreshing}
-                className="block rounded-lg border border-slate-200/80 bg-white/95 shadow-md hover:bg-slate-50 transition-colors disabled:opacity-50 overflow-visible backdrop-blur-sm"
-                style={{ width: CHART_W, height: CHART_H }}
+                className="block w-full rounded-xl overflow-visible focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-1 focus-visible:ring-slate-300"
                 aria-label={title}
             >
                 {points.length === 0 ? (
-                    <div className="flex items-center justify-center h-full text-[8px] font-semibold text-slate-400 uppercase">
-                        Sem histórico
+                    <div className="flex items-center justify-center h-[72px] rounded-xl border border-dashed border-slate-200 bg-slate-50/80 text-[9px] font-semibold text-slate-400 uppercase">
+                        Sem histórico — clique ↻ para registrar
                     </div>
                 ) : (
                     <svg
-                        width={CHART_W}
-                        height={CHART_H}
-                        viewBox={`0 0 ${CHART_W} ${CHART_H}`}
-                        className="overflow-visible"
+                        viewBox={`0 0 ${CHART_VIEW_W} ${CHART_VIEW_H}`}
+                        className="w-full h-[72px] overflow-visible"
+                        preserveAspectRatio="none"
                         style={{ overflow: 'visible' }}
                     >
-                        {points.length > 1 && (
-                            <path d={pathD} fill="none" stroke={stroke} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" opacity={0.9} />
+                        <defs>
+                            <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
+                                <stop offset="0%" stopColor={stroke} stopOpacity={0.35} />
+                                <stop offset="100%" stopColor={stroke} stopOpacity={0.02} />
+                            </linearGradient>
+                        </defs>
+                        {areaPath && <path d={areaPath} fill={`url(#${gradientId})`} stroke="none" />}
+                        {linePath && (
+                            <path d={linePath} fill="none" stroke={stroke} strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round" />
                         )}
                         {points.map((p) => (
                             <circle
                                 key={p.row.at}
                                 cx={p.x}
                                 cy={p.y}
-                                r={hoverIdx === p.i ? 4.5 : 3.5}
+                                r={hoverIdx === p.i ? 5 : 3.5}
                                 fill={hoverIdx === p.i ? stroke : '#fff'}
                                 stroke={stroke}
                                 strokeWidth={2}
-                                style={{ overflow: 'visible' }}
                                 onMouseEnter={(e) => showTooltip(p.i, e.currentTarget)}
                                 onMouseLeave={() => setHoverIdx(null)}
                             />
@@ -193,12 +199,12 @@ const GoalUpdateSparkline: React.FC<{
             </button>
             {hoverIdx !== null && points[hoverIdx] && (
                 <div
-                    className="fixed z-[9999] -translate-x-1/2 -translate-y-full rounded-lg border border-slate-200 bg-white shadow-xl px-2.5 py-1.5 text-left pointer-events-none min-w-[140px]"
+                    className="fixed z-[9999] -translate-x-1/2 -translate-y-full rounded-lg border border-slate-200 bg-white shadow-xl px-2.5 py-1.5 text-left pointer-events-none min-w-[150px]"
                     style={{ top: tooltipPos.top, left: tooltipPos.left }}
                     data-testid="sparkline-tooltip"
                 >
                     <p className="text-[9px] font-bold text-slate-700">{formatDateTimeAuditBR(points[hoverIdx].row.at)}</p>
-                    <p className="text-[9px] text-slate-600">{formatCurrency(points[hoverIdx].row.revenue)}</p>
+                    <p className="text-[10px] font-black text-slate-800">{formatCurrency(points[hoverIdx].row.revenue)}</p>
                     {points[hoverIdx].delta !== null && (
                         <p className={`text-[9px] font-black ${Math.abs(points[hoverIdx].delta!) < VALUE_EPS ? 'text-slate-500' : points[hoverIdx].delta! > 0 ? 'text-emerald-600' : 'text-red-600'}`}>
                             Δ {formatGoalDelta(points[hoverIdx].delta)}
@@ -210,6 +216,14 @@ const GoalUpdateSparkline: React.FC<{
         </div>
     );
 };
+
+const MetricRow: React.FC<{ icon: React.ReactNode; label: string; value: string; valueClass?: string }> = ({ icon, label, value, valueClass = 'text-slate-800' }) => (
+    <div className="flex items-center gap-2.5 py-2 border-b border-slate-100 last:border-b-0">
+        <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-slate-50 text-slate-500">{icon}</div>
+        <span className="flex-1 text-[10px] font-bold uppercase tracking-wide text-slate-500">{label}</span>
+        <span className={`text-[11px] font-black tabular-nums ${valueClass}`}>{value}</span>
+    </div>
+);
 
 // Janela CANÔNICA delegada para lib/missionFinancialsCanonical (mesma usada
 // pelo Relatório, Dashboard e worker do e-mail).
@@ -228,10 +242,13 @@ const DailyGoalThermometer: React.FC<Props> = ({ viewPeriod = 'TODAY', customSta
     const [currentTime, setCurrentTime] = useState(new Date());
     const [isRefreshing, setIsRefreshing] = useState(false);
     const [updateHistory, setUpdateHistory] = useState<GoalUpdateSnapshot[]>([]);
-    const lastRecordedFetchAt = useRef<number | null>(null);
+    const lastRecordedFetchAt = useRef<{ key: string; ts: number } | null>(null);
     const pendingManualRecord = useRef(false);
 
-    const resolvedHistoryKey = historyKeyProp || `meta-${(titleSuffix || 'geral').toLowerCase().replace(/\s+/g, '-')}-${viewPeriod}`;
+    const resolvedHistoryKey = useMemo(() => {
+        const base = historyKeyProp || `meta-${(titleSuffix || 'geral').toLowerCase().replace(/\s+/g, '-')}`;
+        return resolveGoalHistoryKey(base, viewPeriod, customStartDate, customEndDate, currentTime);
+    }, [historyKeyProp, titleSuffix, viewPeriod, customStartDate, customEndDate, currentTime]);
 
     useEffect(() => {
         const timer = setInterval(() => setCurrentTime(new Date()), 60000);
@@ -355,17 +372,19 @@ const DailyGoalThermometer: React.FC<Props> = ({ viewPeriod = 'TODAY', customSta
         }
     }, [resolvedHistoryKey, userRole]);
 
-    // Registra após cada sincronização (manual ou automática) quando os dados do pai mudam
+    // Registra após cada sincronização (manual ou automática) quando os dados do pai mudam.
+    // A chave inclui o filtro (ex.: MONTH-2026-03) — trocar filtro ou virar o dia grava no bucket correto.
     useEffect(() => {
         if (userRole !== 'diretoria' || !lastDataUpdatedAt) return;
         const ts = lastDataUpdatedAt.getTime();
-        if (lastRecordedFetchAt.current === ts) return;
-        lastRecordedFetchAt.current = ts;
+        const prev = lastRecordedFetchAt.current;
+        if (prev && prev.key === resolvedHistoryKey && prev.ts === ts) return;
+        lastRecordedFetchAt.current = { key: resolvedHistoryKey, ts };
         if (!parentClientTables?.length) return;
         const source = pendingManualRecord.current ? 'manual' : 'sync';
         pendingManualRecord.current = false;
         recordSnapshot(source);
-    }, [lastDataUpdatedAt, userRole, recordSnapshot, parentClientTables?.length, currentRevenue, currentCost, stats.profit, stats.percentage, filteredMissions.length]);
+    }, [lastDataUpdatedAt, userRole, recordSnapshot, resolvedHistoryKey, parentClientTables?.length, currentRevenue, currentCost, stats.profit, stats.percentage, filteredMissions.length]);
 
     const handleManualRefresh = useCallback(async () => {
         if (isRefreshing || isLoading) return;
@@ -396,8 +415,31 @@ const DailyGoalThermometer: React.FC<Props> = ({ viewPeriod = 'TODAY', customSta
         : `${REFRESH_BUTTON_LABEL} — Aguardando primeira sincronização`;
 
     const chartStroke = stats.percentage >= 91 ? '#16a34a' : stats.percentage >= 50 ? '#ca8a04' : '#dc2626';
+    const gradientId = useId().replace(/:/g, '');
+
+    const variationPct = useMemo(() => {
+        if (updateHistory.length < 2) return null;
+        const prev = updateHistory[1].revenue;
+        if (Math.abs(prev) < VALUE_EPS) return null;
+        return ((updateHistory[0].revenue - prev) / prev) * 100;
+    }, [updateHistory]);
+
+    const statusTitle = stats.isGoalMet
+        ? 'Meta atingida'
+        : stats.percentage >= 91
+            ? 'Quase na meta'
+            : stats.percentage >= 50
+                ? 'Meta em andamento'
+                : 'Abaixo da meta';
 
     const suffix = titleSuffix ? ` ${titleSuffix}` : '';
+    const chartPeriodLabel = viewPeriod === 'TODAY' ? 'Hoje' :
+                      viewPeriod === 'YESTERDAY' ? 'Ontem' :
+                      viewPeriod === 'WEEK' ? 'Semana' :
+                      viewPeriod === 'MONTH' ? 'Mês' :
+                      viewPeriod === 'YEAR' ? 'Ano' :
+                      viewPeriod === 'CUSTOM' ? 'Período' :
+                      'Geral';
     const labelText = viewPeriod === 'TODAY' ? `Meta Agendada${suffix} (Hoje)` :
                       viewPeriod === 'YESTERDAY' ? `Meta Agendada${suffix} (Ontem)` :
                       viewPeriod === 'WEEK' ? `Meta Semanal${suffix}` :
@@ -407,129 +449,114 @@ const DailyGoalThermometer: React.FC<Props> = ({ viewPeriod = 'TODAY', customSta
                       `Faturamento Período${suffix}`;
 
     return (
-        <div className="group perspective-1000 w-full max-w-lg mx-auto h-full overflow-visible">
-            <div className="relative bg-white rounded-[35px] p-4 sm:p-5 border-x border-t border-b-4 border-gray-200/60 shadow-[0_20px_50px_rgba(0,0,0,0.06)] w-full h-full overflow-visible transition-all duration-700 hover:shadow-[0_25px_60px_rgba(0,0,0,0.1)] hover:-translate-y-0.5 transform hover:rotate-0.5 border-r-[5px] ml-[0px] mr-[0px]">
-                
-                <div className="relative flex justify-between items-start gap-2 mb-4 min-w-0 min-h-[72px] overflow-visible">
-                    <div className={`flex items-center gap-2.5 min-w-0 flex-1 ${canSeeMonetary ? 'pr-[138px]' : ''}`}>
-                        <div className="relative shrink-0">
-                            <div className={`p-2 rounded-[15px] text-white shadow-lg transition-colors duration-500 ${accentClass ? `bg-gradient-to-br ${accentClass}` : stats.colorClass}`}>
-                                <Target size={16} strokeWidth={3} />
-                            </div>
-                            <div className="absolute -top-1 -right-1">
-                                <Zap size={12} className="text-yellow-400 fill-yellow-400 animate-pulse" />
-                            </div>
-                        </div>
+        <div className="group w-full max-w-lg mx-auto h-full">
+            <div className="relative bg-white rounded-[28px] p-4 sm:p-5 border border-gray-200/80 shadow-[0_12px_40px_rgba(0,0,0,0.06)] w-full h-full overflow-visible transition-all duration-500 hover:shadow-[0_18px_48px_rgba(0,0,0,0.09)]">
+
+                {/* Cabeçalho */}
+                <div className="flex items-start justify-between gap-2 mb-3">
+                    <div className="flex items-center gap-2 min-w-0">
+                        <div className={`h-2.5 w-2.5 shrink-0 rounded-full ${stats.colorClass} ${stats.isGoalMet ? '' : 'animate-pulse'}`} />
                         <div className="min-w-0">
-                            <div className="flex items-center gap-1.5">
-                                <span className="text-[9px] font-black text-slate-400 uppercase tracking-wider block leading-none mb-0.5 truncate">
-                                    {labelText}
-                                </span>
-                                <Clock size={10} className="text-gray-300 animate-spin duration-[5000ms]" />
-                            </div>
-                            <div className="flex items-center gap-1 flex-wrap">
-                                <span className={`w-1.5 h-1.5 rounded-full ${stats.isGoalMet ? 'bg-green-500' : 'animate-pulse ' + stats.colorClass}`}></span>
-                                <span className="text-[8px] font-black text-slate-500 uppercase tracking-widest">Sincronização Ativa</span>
-                                <span className="text-[8px] font-black text-slate-300">•</span>
-                                <span
-                                    className="text-[8px] font-black text-slate-700 uppercase tracking-widest bg-slate-100 px-1.5 py-[1px] rounded-md border border-slate-200 whitespace-nowrap"
-                                    data-testid="text-mission-count"
-                                    title="Quantidade de missões no período"
-                                >
-                                    {filteredMissions.length} {filteredMissions.length === 1 ? 'Missão' : 'Missões'}
-                                </span>
-                            </div>
+                            <p className={`text-[11px] font-black uppercase tracking-wide leading-tight ${stats.textClass}`}>{statusTitle}</p>
+                            <p className="text-[8px] font-bold text-slate-400 uppercase tracking-wider truncate">{labelText}</p>
                         </div>
                     </div>
-                    {canSeeMonetary && (
-                        <div className="absolute -right-1 -top-1 z-[160] flex flex-col items-end gap-1 overflow-visible pointer-events-auto">
-                            <p className={`text-sm md:text-base font-black font-mono tracking-tighter whitespace-nowrap transition-colors duration-500 ${stats.textClass}`}>
-                                {isLoading ? (
-                                    <Loader2 size={14} className="animate-spin inline text-red-500" />
-                                ) : (
-                                    formatCurrency(currentRevenue)
-                                )}
+                    <div className="flex items-center gap-1 shrink-0 text-slate-400">
+                        <Clock size={10} className="animate-spin duration-[5000ms]" />
+                        <span className="text-[8px] font-bold uppercase">{filteredMissions.length} missões</span>
+                    </div>
+                </div>
+
+                {/* Valor + variação */}
+                {canSeeMonetary ? (
+                    <>
+                        <div className="flex items-end justify-between gap-3 mb-1">
+                            <p className={`text-xl sm:text-2xl font-black font-mono tracking-tight leading-none ${stats.textClass}`} data-testid="text-goal-revenue">
+                                {isLoading ? <Loader2 size={20} className="animate-spin inline" /> : formatCurrency(currentRevenue)}
                             </p>
-                            <GoalUpdateSparkline
-                                rows={updateHistory}
-                                stroke={chartStroke}
-                                isRefreshing={isRefreshing || isLoading}
-                                onRefresh={handleManualRefresh}
-                                title={refreshButtonTitle}
-                            />
-                        </div>
-                    )}
-                </div>
-
-                <div className="relative w-full h-3.5 bg-slate-100 rounded-full mb-3.5 shadow-[inset_0_1.5px_4px_rgba(0,0,0,0.1)] border border-gray-200/50 overflow-hidden">
-                    <div 
-                        className={`h-full rounded-full transition-all duration-1000 ease-out relative shadow-md`}
-                        style={{ 
-                            width: `${stats.percentage}%`,
-                            backgroundColor: stats.percentage < 50 ? '#ef4444' : stats.percentage <= 90 ? '#eab308' : '#22c55e'
-                        }}
-                    >
-                        <div className="absolute top-0 left-0 right-0 h-[30%] bg-white/20 rounded-full"></div>
-                        <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/15 to-transparent animate-shimmer-fast"></div>
-                    </div>
-                </div>
-                
-                <div className="flex justify-between items-center gap-2 flex-wrap min-w-0">
-                    <div className={`px-3 py-1.5 rounded-2xl border shadow-inner flex items-baseline gap-1.5 shrink-0 transition-all ${stats.percentage < 50 ? 'bg-red-50 border-red-100' : stats.percentage <= 90 ? 'bg-yellow-50 border-yellow-100' : 'bg-green-50 border-green-100'}`}>
-                        <span className={`text-sm font-black italic leading-none ${stats.textClass}`}>
-                            {stats.percentage.toFixed(1)}% 
-                        </span>
-                        <span className="text-[8px] uppercase font-black text-slate-400 tracking-tight">
-                            Atingido
-                        </span>
-                    </div>
-
-                    {canSeeMonetary && (
-                        <div className="text-right min-w-0 shrink">
-                            {stats.remaining > 0 ? (
-                                <div className="flex flex-col items-end min-w-0">
-                                    <span className="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-1 truncate max-w-full">Restante para Alvo</span>
-                                    <span className="text-[9px] md:text-[10px] font-black text-slate-700 bg-white px-2 py-0.5 rounded-lg border border-gray-100 shadow-sm whitespace-nowrap">
-                                        {formatCurrency(stats.remaining)}
-                                    </span>
-                                </div>
-                            ) : (
-                                <div className="flex items-center gap-1.5 bg-emerald-600 text-white px-2.5 py-1 rounded-2xl shadow-lg shadow-emerald-100 animate-bounce">
-                                    <Trophy size={11} fill="currentColor" />
-                                    <span className="text-[8px] font-black uppercase tracking-widest leading-none whitespace-nowrap">Alvo Superado!</span>
+                            {variationPct !== null && (
+                                <div className="text-right shrink-0 pb-0.5">
+                                    <p className="text-[8px] font-bold uppercase text-slate-400">variação</p>
+                                    <p className={`text-[11px] font-black flex items-center justify-end gap-0.5 ${Math.abs(variationPct) < 0.05 ? 'text-slate-500' : variationPct > 0 ? 'text-emerald-600' : 'text-red-600'}`}>
+                                        {Math.abs(variationPct) < 0.05 ? <Minus size={10} /> : variationPct > 0 ? <TrendingUp size={10} /> : <TrendingDown size={10} />}
+                                        {Math.abs(variationPct).toFixed(1).replace('.', ',')}%
+                                    </p>
                                 </div>
                             )}
                         </div>
+
+                        {/* Gráfico área — últimas 5 atualizações */}
+                        <div className="mb-3 -mx-1 overflow-visible">
+                            <GoalUpdateAreaChart
+                                rows={updateHistory}
+                                stroke={chartStroke}
+                                gradientId={gradientId}
+                                isRefreshing={isRefreshing || isLoading}
+                                onRefresh={handleManualRefresh}
+                                title={refreshButtonTitle}
+                                periodLabel={chartPeriodLabel}
+                            />
+                        </div>
+                    </>
+                ) : (
+                    <div className="mb-3 flex items-center gap-2">
+                        <div className={`p-2 rounded-[15px] text-white shadow-lg ${accentClass ? `bg-gradient-to-br ${accentClass}` : stats.colorClass}`}>
+                            <Target size={16} strokeWidth={3} />
+                        </div>
+                        <span className="text-[9px] font-black text-slate-500 uppercase">Sincronização ativa</span>
+                    </div>
+                )}
+
+                {/* Barra de progresso */}
+                <div className="relative w-full h-2 bg-slate-100 rounded-full mb-3 overflow-hidden">
+                    <div
+                        className="h-full rounded-full transition-all duration-1000 ease-out"
+                        style={{
+                            width: `${stats.percentage}%`,
+                            backgroundColor: stats.percentage < 50 ? '#ef4444' : stats.percentage <= 90 ? '#eab308' : '#22c55e',
+                        }}
+                    />
+                </div>
+
+                <div className="flex justify-between items-center gap-2 mb-3">
+                    <span className={`text-[11px] font-black ${stats.textClass}`}>{stats.percentage.toFixed(1)}% atingido</span>
+                    {canSeeMonetary && (
+                        stats.remaining > 0 ? (
+                            <span className="text-[9px] font-bold text-slate-500">Restante: {formatCurrency(stats.remaining)}</span>
+                        ) : (
+                            <span className="inline-flex items-center gap-1 text-[9px] font-black uppercase text-emerald-600">
+                                <Trophy size={10} /> Alvo superado
+                            </span>
+                        )
                     )}
                 </div>
 
-                {canSeeMonetary && currentRevenue > 0 && (
-                    <div className="mt-3 pt-3 border-t border-dashed border-gray-200">
-                        <div className="flex items-center justify-between gap-x-3 gap-y-1.5 flex-wrap min-w-0">
-                            <div className="flex items-center gap-1 min-w-0">
-                                <span className="text-[7px] font-bold text-red-400 uppercase tracking-wide shrink-0">Custo:</span>
-                                <span className="text-[10px] font-extrabold text-red-600 tracking-tight whitespace-nowrap truncate" data-testid="text-provider-cost">{formatCurrency(currentCost)}</span>
-                            </div>
-                            <div className="flex items-center gap-1 min-w-0">
-                                <span className={`text-[7px] font-bold uppercase tracking-wide shrink-0 ${stats.profit >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>Lucro:</span>
-                                <span className={`text-[10px] font-extrabold tracking-tight whitespace-nowrap truncate ${stats.profit >= 0 ? 'text-emerald-600' : 'text-red-600'}`} data-testid="text-profit">{formatCurrency(stats.profit)}</span>
-                            </div>
-                            <div className="flex items-center gap-1 min-w-0">
-                                <span className={`text-[7px] font-bold uppercase tracking-wide shrink-0 ${stats.marginPercent >= 30 ? 'text-emerald-400' : stats.marginPercent >= 15 ? 'text-yellow-500' : 'text-red-400'}`}>Margem:</span>
-                                <span className={`text-[10px] font-extrabold tracking-tight whitespace-nowrap truncate ${stats.marginPercent >= 30 ? 'text-emerald-600' : stats.marginPercent >= 15 ? 'text-yellow-600' : 'text-red-600'}`} data-testid="text-margin">{stats.marginPercent.toFixed(1)}%</span>
-                            </div>
-                        </div>
+                {/* Detalhes financeiros */}
+                {canSeeMonetary && (
+                    <div className="rounded-xl border border-slate-100 bg-slate-50/50 px-2.5 py-0.5">
+                        <MetricRow
+                            icon={<Coins size={14} />}
+                            label="Receita"
+                            value={`${formatCurrency(currentRevenue)} (${stats.percentage.toFixed(1)}%)`}
+                            valueClass={stats.textClass}
+                        />
+                        <MetricRow
+                            icon={<ShoppingCart size={14} />}
+                            label="Custos operacionais"
+                            value={formatCurrency(currentCost)}
+                            valueClass="text-red-600"
+                        />
+                        <MetricRow
+                            icon={<Landmark size={14} />}
+                            label="Lucro líquido"
+                            value={`${formatCurrency(stats.profit)} (${stats.marginPercent.toFixed(1)}%)`}
+                            valueClass={stats.profit >= 0 ? 'text-emerald-600' : 'text-red-600'}
+                        />
                         {torresCost > 0 && (
-                            <div className="mt-2 pt-2 border-t border-dashed border-gray-200 flex items-center justify-between gap-x-3 gap-y-1.5 flex-wrap min-w-0">
-                                <div className="flex items-center gap-1 min-w-0">
-                                    <span className="text-[7px] font-bold text-amber-500 uppercase tracking-wide shrink-0">Custo Torres:</span>
-                                    <span className="text-[10px] font-extrabold text-amber-600 tracking-tight whitespace-nowrap truncate" data-testid="text-torres-cost">{formatCurrency(torresCost)}</span>
-                                </div>
-                                <div className="flex items-center gap-1 min-w-0">
-                                    <span className="text-[7px] font-bold text-slate-400 uppercase tracking-wide shrink-0">Custo Fornecedores:</span>
-                                    <span className="text-[10px] font-extrabold text-slate-600 tracking-tight whitespace-nowrap truncate" data-testid="text-other-cost">{formatCurrency(otherCost)}</span>
-                                </div>
-                            </div>
+                            <>
+                                <MetricRow icon={<Zap size={14} />} label="Custo Torres" value={formatCurrency(torresCost)} valueClass="text-amber-600" />
+                                <MetricRow icon={<Target size={14} />} label="Custo fornecedores" value={formatCurrency(otherCost)} valueClass="text-slate-600" />
+                            </>
                         )}
                     </div>
                 )}
@@ -542,9 +569,6 @@ const DailyGoalThermometer: React.FC<Props> = ({ viewPeriod = 'TODAY', customSta
                 }
                 .animate-shimmer-fast {
                     animation: shimmer-fast 3s infinite linear;
-                }
-                .perspective-1000 {
-                    perspective: 1000px;
                 }
             `}</style>
         </div>
